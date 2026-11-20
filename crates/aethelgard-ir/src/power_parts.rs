@@ -33,8 +33,8 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// The `schema_version` the parser reads. Version 4 gave the MCU row
 /// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6). Version 5
 /// added the `crystal` kind (`AET-WO-4240a` §1.3). Version 6 gave the MCU
-/// row `io`, each I/O pin's structure and what each structure tolerates
-/// (`AET-WO-1211e` A1).
+/// row `io`, each I/O pin's structure and the input each structure takes in
+/// operation (`AET-WO-1211e` A1).
 pub const POWER_PARTS_SCHEMA_VERSION: u32 = 6;
 
 /// A document the table cites.
@@ -437,25 +437,30 @@ pub struct Mcu {
     pub io: McuIo,
 }
 
-/// The MCU's I/O pins against the input each tolerates (`AET-WO-1211e` A1):
+/// The MCU's I/O pins against the input each takes (`AET-WO-1211e` A1):
 /// every pin the pin table holds (the vendored pin data's `I/O` pins, by
 /// canonical name), its structure as the datasheet's pin table prints it
-/// (`FT_h`, `TT_a`, …), and each structure family's absolute maximum input.
+/// (`FT_h`, `TT_a`, …), and each structure family's input in operation. A
+/// pull is permanent, so the operating conditions bound it, not the stress
+/// ratings (ruled D-A1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McuIo {
     /// Each pin's structure, and where it was read.
     pub pins: BTreeMap<String, (String, At)>,
     /// Each family (the structure before its first `_`), once.
     pub families: Vec<IoFamily>,
+    /// Above the supply plus this, the internal pulls must be off.
+    pub pulls_off_above_supply: Limit,
 }
 
-/// What one structure family tolerates: `max`, or, with `above_supply_mv`,
-/// the lesser of `max` and the pin's supply plus that much.
+/// What one structure family takes: the lesser of the pin's supply plus
+/// `above_supply_mv` and `max_mv`, each where stated (at least one is).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct IoFamily {
     pub family: String,
     pub above_supply_mv: Option<i64>,
-    pub max_mv: Limit,
+    pub max_mv: Option<i64>,
+    pub at: At,
 }
 
 impl McuIo {
@@ -486,10 +491,8 @@ impl McuIo {
 impl IoFamily {
     /// The input this family tolerates with its supply at `supply_mv`.
     pub fn limit(&self, supply_mv: i64) -> i64 {
-        match self.above_supply_mv {
-            Some(above) => self.max_mv.value.min(supply_mv + above),
-            None => self.max_mv.value,
-        }
+        let above = self.above_supply_mv.map_or(i64::MAX, |a| supply_mv + a);
+        above.min(self.max_mv.unwrap_or(i64::MAX))
     }
 }
 
@@ -1116,6 +1119,7 @@ struct RawMcuIo {
     pins: BTreeMap<String, RawIoPin>,
     pins_at: RawAt,
     families: Vec<RawIoFamily>,
+    pulls_off_above_supply_millivolts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1131,7 +1135,9 @@ struct RawIoFamily {
     family: String,
     #[serde(deserialize_with = "Option::deserialize")]
     above_supply_millivolts: Option<i64>,
-    max_millivolts: RawLimit,
+    #[serde(deserialize_with = "Option::deserialize")]
+    max_millivolts: Option<i64>,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -2175,12 +2181,14 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
         {
             return Err(format!("`{at}` is not an upper-case family named once"));
         }
-        if f.above_supply_millivolts.is_some_and(|a| a <= 0) {
-            return Err(format!("`{at}.above_supply_millivolts` is not above zero"));
+        let terms = [f.above_supply_millivolts, f.max_millivolts];
+        if terms.iter().all(Option::is_none) || terms.iter().flatten().any(|v| *v <= 0) {
+            return Err(format!("`{at}` states neither term, or one not above zero"));
         }
         families.push(IoFamily {
             above_supply_mv: f.above_supply_millivolts,
-            max_mv: r.positive(f.max_millivolts, &format!("{at}.max_millivolts"))?,
+            max_mv: f.max_millivolts,
+            at: r.at(f.at, &format!("{at}.at"))?,
             family: f.family,
         });
     }
@@ -2211,7 +2219,14 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
     if pins.is_empty() {
         return Err("`kind.mcu.io.pins` is empty".to_owned());
     }
-    Ok(McuIo { pins, families })
+    Ok(McuIo {
+        pins,
+        families,
+        pulls_off_above_supply: r.positive(
+            m.pulls_off_above_supply_millivolts,
+            "kind.mcu.io.pulls_off_above_supply_millivolts",
+        )?,
+    })
 }
 
 fn row(raw: RawRow, r: &mut Reader<'_>) -> Result<Row, String> {

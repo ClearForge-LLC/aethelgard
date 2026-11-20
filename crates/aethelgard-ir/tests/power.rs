@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "2d12ecd78be4c4ea23562fc1fc8ddb7b0a4d0b4027e90e10f19f641513f1555b";
+const TABLE_SHA256: &str = "e27592cd02a3e596e813bc4f30371a5b511238455b06901de0832971394266b1";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -2060,7 +2060,8 @@ fn a_malformed_io_row_is_refused() {
     fn io(t: &mut Value) -> &mut Value {
         &mut row(t, "STM32H753ZITx")["kind"]["mcu"]["io"]
     }
-    let cases: [(&str, fn(&mut Value)); 7] = [
+    type Case = (&'static str, fn(&mut Value));
+    let cases: [Case; 7] = [
         ("named once", |io| io["families"][1]["family"] = json!("FT")),
         ("named once", |io| io["families"][1]["family"] = json!("tt")),
         ("not above zero", |io| {
@@ -2082,7 +2083,8 @@ fn a_malformed_io_row_is_refused() {
 }
 
 /// The held rows: 114 I/O pins, 102 FT and 12 TT, each cited on its page
-/// of DS12117 Rev 10 Table 8; FT tolerates `Min(VDD + 4.0 V, 6 V)`, TT 4.0 V.
+/// of DS12117 Rev 10 Table 8; in operation (Table 13) FT takes
+/// `Min(VDD + 3.6 V, 5499 mV)` and TT `VDD + 0.3 V`.
 #[test]
 fn the_io_rows_are_the_lqfp144_s_pins() {
     let t = power_parts::table().unwrap();
@@ -2096,13 +2098,14 @@ fn the_io_rows_are_the_lqfp144_s_pins() {
     );
     assert_eq!(
         m.io.tolerated("PA1", 3135).map(|x| (x.0, x.2)),
-        Some(("FT_ha", 6000))
+        Some(("FT_ha", 5499))
     );
-    assert_eq!(m.io.tolerated("PA1", 1805).map(|x| x.2), Some(5805));
+    assert_eq!(m.io.tolerated("PA1", 1805).map(|x| x.2), Some(5405));
     assert_eq!(
         m.io.tolerated("PA4", 3135).map(|x| (x.0, x.2)),
-        Some(("TT_a", 4000))
+        Some(("TT_a", 3435))
     );
     assert!(m.io.pins["PA4"].1.section.starts_with("p. 69, Table 8"));
-    assert_eq!(m.io.floor(3135), 4000);
+    assert_eq!(m.io.floor(3135), 3435);
+    assert_eq!(m.io.pulls_off_above_supply.value, 300);
 }

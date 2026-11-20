@@ -3,7 +3,8 @@
 - power-parts.json (schema 5 -> 6): the MCU row's `io`, each LQFP144 I/O pin's
   structure from DS12117 Rev 10 Table 8 (out/table8-text.tsv, which the visual
   read out/table8-visual.tsv agrees with row for row) keyed by the pin table's
-  canonical name, and each structure family's tolerated input from Table 10.
+  canonical name, and each structure family's operating input from Table 13
+  (ruled D-A1, 19:58Z; the WO's Table 10 is a stress rating).
 - parts.json (schema 11 -> 12): the DRV8876 row's `trip` (VREF sets ITRIP
   against IPROPI, SLVSDS7B p. 13) and `bulk_unstated` (CVM2, p. 10 Table 1 and
   section 9.1 p. 31).
@@ -27,17 +28,18 @@ for line in open(f"{repo}/spike/1211e/out/table8-text.tsv"):
     pins[key] = {"structure": struct, "page": int(page)}
 assert len(pins) == 114, len(pins)
 
-T10 = "p. 103, Table 10 (rev Y) = p. 207, Table 108 (rev V), VIN"
-NOTES = "notes p. 104 = p. 208"
+T13 = "p. 105, Table 13 (rev Y) = p. 209, Table 111 (rev V), general operating conditions, VIN"
 io = {
     "pins": dict(sorted(pins.items(), key=lambda kv: (kv[0][:2], int(kv[0][2:])))),
     "pins_at": {"document": "DS12117", "section": "Table 8 (pin/ball definition), the I/O structure column; legend Table 7, p. 63"},
+    # A pull is permanent: an operating condition, not Table 10's stress rating (ruled D-A1).
     "families": [
-        {"family": "FT", "above_supply_millivolts": 4000,
-         "max_millivolts": {"value": 6000, "at": {"document": "DS12117", "section": f"{T10} on FT_xxx pins: Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0, 6 V); {NOTES} 3 (its structure's supplies), 4 (above 4 V no internal pull), 5"}}},
-        {"family": "TT", "above_supply_millivolts": None,
-         "max_millivolts": {"value": 4000, "at": {"document": "DS12117", "section": f"{T10} on TT_xx pins: 4.0 V"}}},
+        {"family": "FT", "above_supply_millivolts": 3600, "max_millivolts": 5499,
+         "at": {"document": "DS12117", "section": f"{T13} of all I/O but BOOT0 and TT_xx: Min(VDD, VDDA, VDD33USB) + 3.6 V, < 5.5 V (at most 5499 mV); note 2, the structure's own supplies"}},
+        {"family": "TT", "above_supply_millivolts": 300, "max_millivolts": None,
+         "at": {"document": "DS12117", "section": f"{T13} of TT_xx I/O: VDD + 0.3 V"}},
     ],
+    "pulls_off_above_supply_millivolts": {"value": 300, "at": {"document": "DS12117", "section": "p. 105, Table 13 note 3 (= p. 209, Table 111 note 3): above Min(VDD, VDDA, VDD33USB) + 0.3 V the internal pull-up and pull-down must be disabled"}},
 }
 
 p = f"{data}/power-parts.json"

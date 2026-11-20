@@ -16,8 +16,11 @@
 //! `AET-WO-1211e` adds three rules. An input's pull is judged on the MCU's
 //! side as well as the part's (A1, `PullAboveMcuTolerance`,
 //! `McuPinStructureUnheld`), against the pin's structure in the MCU row's
-//! `io`. A row's `trip` refuses a reference on `GND` and a trip below the
-//! declared full scale (A2, `TripReferenceGrounded`, `TripBelowFullScale`).
+//! `io`, by DS12117's operating conditions (Table 13); a pull to the MCU's
+//! own supply is exempt. A row's `trip` refuses a reference on `GND`, a
+//! sense pin no analog input terminates, and a trip below the declared full
+//! scale (A2, `TripReferenceGrounded`, `TripSenseUnbound`,
+//! `TripBelowFullScale`).
 //! A row's `bulk_unstated` makes `bulk` required, and every other row refuses
 //! one (`BulkUndeclared`, `BulkNotAllowed`, `BulkUnderRated`).
 //!
@@ -53,8 +56,9 @@ pub const MCU_IO_LEVELS: &str = "DS12117 Rev 10 Table 50 p. 139 (rev Y) = Table 
 pub const MCU_RESET_PULL_UPS: [&str; 3] = ["PA13", "PA15", "PB4"];
 /// The pin whose `PUPDR` resets to a pull-down (the same page: PA14). With
 /// [`MCU_RESET_PULL_UPS`], every pin holding an internal pull from reset to
-/// the first write, which above 4 V must be off (DS12117 Rev 10 Table 10
-/// note 4, p. 104 = Table 108 note 4, p. 208; `AET-WO-1211e` A1).
+/// the first write, which above the supply plus 0.3 V must be off (DS12117
+/// Rev 10 Table 13 note 3, p. 105 = Table 111 note 3, p. 209; `AET-WO-1211e`
+/// A1).
 pub const MCU_RESET_PULL_DOWNS: [&str; 1] = ["PA14"];
 
 /// The MCU's weak pull-up, at least (DS12117 Rev 10 Table 49 rev Y p. 137 =
@@ -362,6 +366,7 @@ pub enum PinKindOfRefusal {
     McuPinStructureUnheld,
     TripReferenceGrounded,
     TripBelowFullScale,
+    TripSenseUnbound,
     BulkUndeclared,
     BulkNotAllowed,
     BulkUnderRated,
@@ -411,6 +416,7 @@ impl PinKindOfRefusal {
             K::McuPinStructureUnheld => "McuPinStructureUnheld",
             K::TripReferenceGrounded => "TripReferenceGrounded",
             K::TripBelowFullScale => "TripBelowFullScale",
+            K::TripSenseUnbound => "TripSenseUnbound",
             K::BulkUndeclared => "BulkUndeclared",
             K::BulkNotAllowed => "BulkNotAllowed",
             K::BulkUnderRated => "BulkUnderRated",
@@ -1041,7 +1047,7 @@ impl<'s> Device<'s> {
                                 pull_up_max_mv,
                                 &s.device_pin,
                             )?;
-                            self.pull_tolerated(s, crate::maximum_millivolts(v), &at)?;
+                            self.pull_tolerated(s, v, &at)?;
                         }
                         _ => {
                             return Err(shape("`pull` states exactly one of `mcu` and `resistor`"));
@@ -1317,26 +1323,31 @@ impl<'s> Device<'s> {
         Ok((out_ua * r_hi, r_hi))
     }
 
-    /// A1 (`AET-WO-1211e`): a pull of up to `v_max` mV on `s`'s MCU pin is
-    /// within what the pin tolerates (DS12117 Rev 10 Table 10 p. 103 = Table
-    /// 108 p. 207), its supply taken at the MCU domain's minimum, where
-    /// `Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0 V, 6 V)` is least (the
-    /// emitter ties all four to `mcu.supply`). At or below the least input
-    /// any held structure tolerates, nothing is looked up; above it, an
-    /// unpinned signal may land anywhere and is refused, a pin holding an
-    /// internal pull from reset is refused (note 4), and a hand pin is judged
-    /// by its held structure or refused for having none.
+    /// A1 (`AET-WO-1211e`): a pull to `to` on `s`'s MCU pin is within what
+    /// the pin takes in operation (DS12117 Rev 10 Table 13 p. 105 = Table 111
+    /// p. 209; a pull is permanent, so not Table 10's stress ratings, ruled
+    /// D-A1), its supply taken at the MCU domain's minimum, where each
+    /// `Min(VDD, VDDA, VDD33USB) + …` is least (the emitter ties all three to
+    /// `mcu.supply`). A pull to `mcu.supply` itself is exempt: on the same
+    /// rail VIN never exceeds VDD. At or below the least input any held
+    /// structure takes, nothing is looked up; above it, an unpinned signal
+    /// may land anywhere and is refused, a pin holding an internal pull from
+    /// reset is refused (note 3), and a hand pin is judged by its held
+    /// structure or refused for having none.
     fn pull_tolerated(
         &self,
         s: &GpioSignal,
-        v_max: u32,
+        to: &VoltageDomain,
         at: &str,
     ) -> Result<(), IrValidationError> {
+        let mcu = self.mcu_domain()?;
+        if to.id == mcu.id {
+            return Ok(());
+        }
         let io = &self.mcu_row()?.io;
         let pp = crate::power_parts::table()?;
-        let mcu = self.mcu_domain()?;
         let vdd = i64::from(crate::minimum_millivolts(mcu));
-        let v = i64::from(v_max);
+        let v = i64::from(crate::maximum_millivolts(to));
         let floor = io.floor(vdd);
         if v <= floor {
             return Ok(());
@@ -1344,13 +1355,17 @@ impl<'s> Device<'s> {
         let over = |why: String| self.err(K::PullAboveMcuTolerance, &format!("{at}.pull"), why);
         let Some(pin) = s.pin.as_deref() else {
             return Err(over(format!(
-                "the pull holds `{}` at up to {v} mV, above {floor} mV, the least any MCU pin tolerates with `{}` at its minimum of {vdd} mV (DS12117 Rev 10 Table 10 p. 103): the solver may place it on such a pin; pin it by hand on one whose structure tolerates {v} mV",
-                s.net, mcu.id
+                "the pull to `{}` holds `{}` at up to {v} mV, above {floor} mV, the least any MCU pin takes in operation with `{}` at its minimum of {vdd} mV (DS12117 Rev 10 Table 13 p. 105 = Table 111 p. 209): the solver may place it on such a pin; pin it by hand on one whose structure takes {v} mV",
+                to.id, s.net, mcu.id
             )));
         };
-        if MCU_RESET_PULL_UPS.contains(&pin) || MCU_RESET_PULL_DOWNS.contains(&pin) {
+        let pulls_off = vdd + io.pulls_off_above_supply.value;
+        if v > pulls_off
+            && (MCU_RESET_PULL_UPS.contains(&pin) || MCU_RESET_PULL_DOWNS.contains(&pin))
+        {
             return Err(over(format!(
-                "the pull holds `{pin}` at up to {v} mV; `{pin}` holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542), and above 4 V the internal pulls must be disabled (DS12117 Rev 10 Table 10 note 4, p. 104)"
+                "the pull holds `{pin}` at up to {v} mV; `{pin}` holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542), and above {pulls_off} mV the internal pulls must be off ({})",
+                pp.cite(&io.pulls_off_above_supply.at)
             )));
         }
         let Some((structure, cite, limit, family)) = io.tolerated(pin, vdd) else {
@@ -1358,16 +1373,17 @@ impl<'s> Device<'s> {
                 K::McuPinStructureUnheld,
                 &format!("{at}.pin"),
                 format!(
-                    "`{pin}` has no held I/O structure (DS12117 Rev 10 Table 8 holds the LQFP144's I/O pins), and the pull holds it at up to {v} mV, above the {floor} mV every held structure tolerates: no structure is assumed"
+                    "`{pin}` has no held I/O structure (DS12117 Rev 10 Table 8 holds the LQFP144's I/O pins), and the pull holds it at up to {v} mV, above the {floor} mV every held structure takes: no structure is assumed"
                 ),
             ));
         };
         if v > limit {
             return Err(over(format!(
-                "the pull holds `{pin}` at up to {v} mV; `{pin}` is {structure} ({}), which tolerates {limit} mV with `{}` at its minimum of {vdd} mV ({})",
+                "the pull to `{}` holds `{pin}` at up to {v} mV; `{pin}` is {structure} ({}), which takes {limit} mV in operation with `{}` at its minimum of {vdd} mV ({})",
+                to.id,
                 pp.cite(cite),
                 mcu.id,
-                pp.cite(&family.max_mv.at)
+                pp.cite(&family.at)
             )));
         }
         Ok(())
@@ -1394,6 +1410,19 @@ impl<'s> Device<'s> {
                 format!(
                     "`{}` is tied to `GND`: the trip current ITRIP x A = V{} / R is 0, so the outputs chop at no current ({}, {})",
                     t.reference, t.reference, self.row.document, t.page
+                ),
+            ));
+        }
+        // The sense pin terminated by nothing is neither of the part's two
+        // configurations (a resistor to ground, or a tie to GND that turns
+        // regulation off), and no specification can tie it (ruled D-A2).
+        if !self.d.analog.iter().any(|a| a.device_pin == t.sense) {
+            return Err(self.err(
+                K::TripSenseUnbound,
+                ".analog",
+                format!(
+                    "`{}` sets the trip against `{}`, which no analog input terminates: its resistor to ground is not declared ({}, {})",
+                    t.reference, t.sense, self.row.document, t.page
                 ),
             ));
         }

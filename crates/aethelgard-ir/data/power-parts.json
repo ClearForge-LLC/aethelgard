@@ -1888,27 +1888,30 @@
             "families": [
               {
                 "family": "FT",
-                "above_supply_millivolts": 4000,
-                "max_millivolts": {
-                  "value": 6000,
-                  "at": {
-                    "document": "DS12117",
-                    "section": "p. 103, Table 10 (rev Y) = p. 207, Table 108 (rev V), VIN on FT_xxx pins: Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0, 6 V); notes p. 104 = p. 208 3 (its structure's supplies), 4 (above 4 V no internal pull), 5"
-                  }
+                "above_supply_millivolts": 3600,
+                "max_millivolts": 5499,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 105, Table 13 (rev Y) = p. 209, Table 111 (rev V), general operating conditions, VIN of all I/O but BOOT0 and TT_xx: Min(VDD, VDDA, VDD33USB) + 3.6 V, < 5.5 V (at most 5499 mV); note 2, the structure's own supplies"
                 }
               },
               {
                 "family": "TT",
-                "above_supply_millivolts": null,
-                "max_millivolts": {
-                  "value": 4000,
-                  "at": {
-                    "document": "DS12117",
-                    "section": "p. 103, Table 10 (rev Y) = p. 207, Table 108 (rev V), VIN on TT_xx pins: 4.0 V"
-                  }
+                "above_supply_millivolts": 300,
+                "max_millivolts": null,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 105, Table 13 (rev Y) = p. 209, Table 111 (rev V), general operating conditions, VIN of TT_xx I/O: VDD + 0.3 V"
                 }
               }
-            ]
+            ],
+            "pulls_off_above_supply_millivolts": {
+              "value": 300,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 105, Table 13 note 3 (= p. 209, Table 111 note 3): above Min(VDD, VDDA, VDD33USB) + 0.3 V the internal pull-up and pull-down must be disabled"
+              }
+            }
           }
         }
       }
