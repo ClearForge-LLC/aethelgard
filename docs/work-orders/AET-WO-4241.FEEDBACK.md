@@ -1,19 +1,42 @@
-# AET-WO-4241 — FEEDBACK (STOPPED at §1.1: the twin's response to an unmodelled read is a failed modelled device's, byte for byte)
+# AET-WO-4241 — FEEDBACK (built to the architect's ruling of 10:05Z; STOPPED on D3's instants, and on droop flips that 2305 absorbs)
 
 **Branch and inputs.**
 - Branch `wo/aet-4241-read-every-identity`, from `main` at `d70a99e5`.
-- The work order is read from `~/.cache/aet-4241-wo.md`, and the kickoff from `~/.cache/aet-4241-from-architect.md`.
+- The work order is read from `~/.cache/aet-4241-wo.md`, the kickoff from `~/.cache/aet-4241-from-architect.md`, and
+  the ruling from `~/.cache/aet-bus/4241.md` (10:05Z).
 
 Each statement is labelled:
-- **measured:** run on Furnace in the pinned tools image (`container/IMAGE`), under `capped-run --mem 8G`, nice 10;
-- **read at source:** file:line at `d70a99e5`;
+- **measured:** run on Furnace, in the pinned tools image (`container/IMAGE`) under `capped-run`, nice 10, or by the
+  host gates under a capped scope;
+- **read at source:** file:line;
 - **inferred.**
 
 ## 0. Status
 
-**Stopped at §1.1 under §7's first condition.** The predictions were committed before every run (`dcee6433`,
-`207fe5a8`, `7df1b14b`), and nothing is built on this branch. The selection that §1.2 asks for was measured in a
-spike tree only (`spike/4241/sh/instrument.diff`), so `src` is unchanged. The ruling I ask for is in §3.
+- **History.**
+  - **First stop:** at §1.1 (record `dc85747f`, §1 to §2 below).
+  - **The 10:05Z ruling:** D1 accepted, D2 (a), and D3, under which unmodelled identity reads come after every
+    modelled step.
+  - **The build:** done to that ruling (§3), with every CLAUDE.md gate green on the host (§Gates).
+- **Stopped again, for two reasons (§5):**
+  1. **D3 says no modelled instant may move, but they all do, by a few instructions** (measured).
+     - The shift is −2 to +25 instructions, before the first modelled step.
+     - **The reset's `.bss` loop:** the record array grows by 2 words per unmodelled read, which costs 8
+       instructions (read at source).
+     - **`main`'s code generation:** the rest, inferred. `main`'s source up to the first unmodelled read is byte
+       for byte the no-TMP117 board's, by a tier-1 test.
+     - I cannot meet D3's letter without changing what every board's firmware compiles to, so I ask (D4).
+  2. **Three droop verdicts flip on today's `main`.** `min/droop-bor3`, `s01/droop-bor3` and
+     `dshot/motors-dshot600-droop` go from `pass` to `fail` with `brownout_unrecovered` (measured). The 3.6 ms wait
+     puts the boot word past `main`'s fixed recovery bound.
+     - **With 2305 trial-merged (clean), all three pass** (measured, `out/rejudge/trial-2305*`). That is the
+       ruling's prediction.
+     - Per D3 the flip is a stop until 2305 merges, and then I re-run it.
+- **Nothing else moved** (measured):
+  - **Campaign runs:** 47 committed and fixture runs. 44 are unchanged in verdict, `matched`, findings, replay and
+    attribute, apart from the trace bytes.
+  - **Boots:** in 11 committed boots every verdict and every finding kind but the new info row is unchanged. Each
+    boot word is later by the measured total.
 
 ## 1. The measurement table (§1.1), with the predictions beside it
 
@@ -48,71 +71,220 @@ spike tree only (`spike/4241/sh/instrument.diff`), so `src` is unchanged. The ru
 | C8 (16 TMP117) | `fail`: shifted BME280 records | **as predicted**: `i2c_timeout` on S6, S7, S12, S13, `spi_record_invalid` on S1000; every BME280's `absent` holds 72–75 of its controller |
 | C10 (12 unmodelled W25Q64, lever) | `ok`, no SPI wait; `fail` from shifted BME280 records | **as predicted**, but for the time above: 48 `Tried to transmit` lines (12 reads × 4 bytes), no SPI timeout; `fail` (`i2c_timeout` ×4) |
 
-## 2. The stop
 
-§1.1 says: stop and report if the twin's response to an unmodelled read cannot be told apart from a modelled
-device that failed. **It cannot.**
+## 2. The first stop, and its ruling (10:05Z)
 
-- **On I2C.** Renode 1.17.0 models no NACK. An address with no model draws `TXIS` never rising, a `timeout_txis`
-  record with value 0, and one `Unknown slave at address N.` line. A modelled device that is absent, or that the
-  firmware addresses wrongly, draws the same three, byte for byte (3305's `wrong-address`).
-- **On SPI.** The controller completes the transfer whatever is behind the chip select. The record reads `ok` with
-  the multiplexer's dummy bytes (`0xFF…`), and the multiplexer logs `Tried to transmit byte … not connected` for
-  each byte. A modelled device absent behind its chip select (`4200` D4) draws the same.
+**The stop (§1.1).** An unmodelled read is, byte for byte, what a modelled device that failed leaves:
+- **I2C:** `timeout_txis`, value 0, and `Unknown slave at address 72.`;
+- **SPI:** `ok`, the multiplexer's dummy bytes `0xFFFFFF`, and `Tried to transmit … not connected`.
 
-**What the judge would need (the design I would build on a ruling):**
+**The ruling:**
+- **D1, accepted:** the device is unmodelled by the plan (`model::kind` None). The twin places its record. The step
+  hook and the SPI window attribute its evidence. `identity_not_witnessable` (info) replaces `device_unmodelled`
+  for generated firmware. `verify` lists it as a `twin_limits` row.
+- **D2, (a):** a record that was never written is `record_invalid` (error).
+- **D3:** the unmodelled reads come last. No modelled record's instant may move, and that is to be tested. The
+  verdict states the cost as a twin limit. Any verdict that flips is still a stop. 2305 should absorb the
+  recovery bound.
 
-1. **The classification comes from the plan, never from the response.**
-   - A device's read is "not witnessable" exactly when `aethelgard_twin::model::kind(part)` is `None`, which is
-     the parts table's `renode: null`.
-   - That uses the specification and the table only, never the firmware (`INV-07`).
-   - So the indistinguishability above cannot hide a modelled failure: a modelled device is never classified by
-     what it answered.
-2. **Each unmodelled identity record gets its own slot, placed by the twin.** The twin places it in the
-   firmware's order, from its own copy of the layout.
-   - Today `boot::identity` places records from modelled checks alone, so every later record shifts (C1–C5, C8).
-   - The record stays out of `checks`, so nothing that reads `checks` (the witness, the stimulus, the probe's
-     `checks.first()`, kind-12 trace records, evolve's `i2c_timeout` count) sees it.
-3. **The evidence goes to the unmodelled step that drew it.**
-   - **I2C:** the unmodelled step's status word gets `3305`'s step hook, so `absent_by_step` gives its
-     `Unknown slave` line to it. Without that, the line falls back to every I2C check on the controller (C1–C4),
-     or to the next modelled step (C5's U7).
-   - **SPI:** the unmodelled device's chip-select window counts as a window, so its multiplexer lines go to no
-     modelled step. Today a line inside no modelled window goes to every modelled device's identity step on that
-     multiplexer (`renode.rs` L1120–1133).
-4. **The named outcome.**
-   - Each unmodelled identity read is reported as `identity_not_witnessable` (info), with the part, the reason
-     (no Renode 1.17.0 model) and what the record holds, as information only.
-   - It replaces `device_unmodelled`, whose "its identity was not read" becomes false, for generated firmware.
-     The foreign judge keeps `device_unmodelled`.
-   - In `verify`, each read is a `twin_limits` row beside the ledger, class `silicon-only` ("nothing: no model
-     exists for it; only the bench measures it"). It is never acknowledged and never blocking, as every twin
-     limit is.
+## 3. The build
 
-## 3. Rulings asked
+- **The generator** (`svd-hal/src/board/firmware.rs` `reads`, the selection only):
+  - every modelled device's steps, exactly as before;
+  - then, before the boot word, every unmodelled device's identity step, in the specification's device order
+    (I2C, then SPI);
+  - `step_read` keeps configuration and data steps for modelled parts only.
+  - `generate()` (with `answers` false) now reads every identity. `generate_with`'s doc says so, a one-paragraph
+    edit in `board.rs` just outside the fence (flagged).
+- **The twin** (`boot.rs`):
+  - `Unmodelled.identity: Option<NotWitnessable>`, holding the table's identity, its record placed after every
+    check's, and the path a model would take.
+  - `Wire::status`, which reads a status word per bus. `StepCheck::judge` now uses it, with every mapping as before.
+  - `checks` stays modelled-only, so nothing that reads `checks` sees an unmodelled read: the witness, stimulus,
+    probe, kind-12/13 trace records and evolve's counts.
+- **The judge** (`cli/src/renode.rs`):
+  - **Re-arm and read:** the unmodelled records are re-armed and read.
+  - **Step hooks:** each unmodelled read gets one, with index `checks.len() + j`, which never names a check.
+    - `absent_by_step` takes the unmodelled I2C steps as steps on their controller, so their `Unknown slave` line is
+      their own.
+    - `attribute` registers an unmodelled SPI device's chip-select window.
+  - **The cost:** one more hook, `cost_anchor`, on the last check's status word (on the brown-out word with no
+    check). `unmodelled_costs` measures each read from the write before it, and a word not written exactly once
+    gives no cost.
+  - **The finding:** `unmodelled_finding` names each read `identity_not_witnessable` (info), giving the record,
+    the absent addresses, the cost and the table value.
+    - A never-written record after the fixed point is `<bus>_record_invalid` (D2).
+    - Before the fixed point the finding is still info.
+    - A part with no row keeps `device_unmodelled`.
+  - **The foreign judge** is unchanged. It never calls `rearm` or `boot_hooks`.
+- **The verdicts:**
+  - **`simulate`:** `boot.not_witnessable` carries `count`, each read (on, register, width, table value, status,
+    observed, `cost_ns`), `total_ns` and the twin-limit sentence. It is absent on a board with none, so such a
+    board reports as before.
+  - **`verify`:** `twin_limits` gains `IDENTITY.<ref>`, `silicon-only`, never acknowledged
+    (`ledger.rs` `identity_rows`).
+- **Goldens moved by tooling, each explained:**
+  - **`boards/sentinel-01*`** (`AETHELGARD_BLESS=1`): `main.rs` gains the TMP117's read as record 2, before the boot
+    word. Nothing else moves.
+  - **`order_2203`:** `main.rs` and the boot image move; the platforms do not.
+  - **`serial_ports`:** only `main.rs` moves.
+  - **`spi_devices`:** U3 becomes record 13 after the data read, and the array grows 13 → 15 words.
+  - **The tier-1 stub transcripts** (`boot_tier1`, `campaign_tier1`): two re-arm writes and U3's record (`TXIS`, 0).
+  - **The pinned monitor scripts** (`renode.rs` tests): U3's hook and the cost anchor.
+  - **`ledger_tier1`:** the `IDENTITY.U3` row.
+  - **The tier-2 assertions** (`twin_tier2`, `campaign_tier2`): `identity_not_witnessable` and `not_witnessable`.
 
-- **D1. The stop.** May I build to §2's four points, which classify by the plan? Or is a response-level
-  distinction required, which would need a model (out of this order's scope)?
-- **D2. A record the firmware never wrote.** Suppose an unmodelled device's record still reads `0xFFFFFFFF`, and
-  no step hook fired. The twin then witnessed that **the read was not made**, which is a firmware defect, not a
-  device judgement.
-  - **(a), recommended:** that is `i2c_record_invalid` / `spi_record_invalid` (error), as for a modelled record.
-    "Never pass, never fail" then holds only for a read that was made.
-  - **(b):** always `identity_not_witnessable`, whatever the record. The `answers`-filter mutant is then killed
-    by a generator test only.
-- **D3. Time.**
-  - Each unmodelled I2C read costs 3.6 to 4.8 ms of virtual time in the twin, which is a `TXIS` wait silicon
-    never makes with the part fitted.
-  - Every later event moves by it: the boot word, the serial frames' anchor, a droop's recovery bound.
-  - §1.4's re-judge will show whether any modelled verdict moves by time alone. If one does, I will stop again
-    under §7.
-  - A board with 21 to 28 or more unmodelled I2C devices, by board, would not boot inside `MAX_VIRTUAL_NS`
-    (inferred, from C8 and C10). Its boot word would be missing, a named failure, never a silent pass. It is
-    noted, and not built for.
+## 4. Re-judge (§1.4, measured; `out/rejudge/`)
 
-## 4. Fence and owed
+- **What ran:** `main`'s CLI against `main`'s firmware, and the branch's CLI against the branch's firmware.
+  - Every committed scenario of every group ran through `campaign`, `replay` and `attribute`.
+  - Each group's specification was booted once by `simulate`, with an instrumented copy of each side (`RAWLOG`) for
+    the hook instants.
+- **Campaigns:** 47 runs.
+  - 44 are `=`: the same verdict, `matched`, findings, replay and attribute, apart from the trace bytes.
+  - 3 flip: `min/droop-bor3`, `s01/droop-bor3` and `dshot/motors-dshot600-droop`, each `pass`/matched →
+    `fail`/unmatched, `brownout_unrecovered`, attributed I1.
+  - With 2305 trial-merged, all 3 pass.
+- **Boots:** 11 specifications booted.
+  - **Verdicts:** all `pass` → `pass`, with other finding kinds equal.
+  - **The new row:** one `identity_not_witnessable` per TMP117.
+  - **The cost:** `total_ns` is 3,600,410–3,601,040 ns on the Sentinel-01 family and 4,801,180 on Sentinel-03. The
+    boot word moves by the same, within 600 ns.
+  - **Not runnable on either side, both identically:** the `own` and `imu` groups (generate or simulate exit 3).
+- **Modelled instants (STEP counts, instructions):**
 
-- **Pushed:** `spike/4241/` and this file, nothing else.
-- **On a ruling:** the selection in `firmware.rs` (§1.2, measured in `instrument.diff`) and the twin's record
-  placement are drafted locally, and are not pushed.
-- **Gates:** none apply to a spike-only branch. No `src` changed.
+| group | moved |
+|---|---|
+| min | 2102→2127 |
+| s01 | 2345→2370 |
+| serial | 4240→4265 |
+| dshot, pwm | 1555→1575 |
+| pow | 1605→1627 |
+| two | 1219→1229, 1382→1402 |
+| ext | 2353→2371, 2538→2558, 2727→2747, 1952448→1952465 |
+| s03 | 6845→6849, 7093→7101, 3910887→3910899 |
+| shaped | 3905934→3905932 |
+| spionly | (no I2C check hooked) |
+
+## 5. The second stop: rulings asked
+
+- **D4. D3's "no modelled record's instant may move. Test that."** It holds for every record's **place**, which is
+  tested at tier 1 in the twin and the generator, and in every pinned layout. It does not hold for the **instants**,
+  which move by −2 to +25 instructions (0.25 µs at most), measured.
+  - **The `.bss` share (read at source):** 8 of those instructions. The record array grows by 2 words per
+    unmodelled read, and the reset zeroes `.bss` at 4 instructions per word (`boards/sentinel-01/firmware/src/main.rs`
+    L92–98).
+  - **The rest is `main`'s code generation (inferred).** `main`'s source up to the first unmodelled read is byte for
+    byte the board's without it (`the_unmodelled_read_moves_no_modelled_step`).
+  - **No verdict moves by it.**
+  - **The options:**
+    - **(a), recommended:** accept a bounded pre-step shift. I add a tier-2 test of the measured bound, ≤ 32
+      instructions on the reference with and without U3, and keep the place test.
+    - **(b):** put the unmodelled records in a separate no-load static, after the boot record. That removes the
+      `.bss` share but not the code-generation share, and splits the judge's one record array in two.
+    - **(c):** the source-identity test as the test of D3, as built.
+- **D5. The droops.** They flip on today's `main` and pass with 2305 trial-merged. I merge `main` after 2305 lands
+  and re-run all three before READY. Confirm that is the ruled path.
+- **Package:** the bench package moves with the ELF, so it is third in the queue after 2306 and 2305. It is ready to
+  dispatch once D4 and D5 are settled.
+- **Mutants of the reduction:** re-run on `434c861e`, all killed.
+
+## 6. Mutants (one per guard this build adds; each on a fresh tree at `3f886653`; `out/mutants.txt`)
+
+All 12 are killed:
+
+| mutant | what it does | killed by |
+|---|---|---|
+| M1 | unmodelled finding dropped (a silent pass) | `boot_tier1` |
+| M1b | the kind renamed, so not reported as the named outcome | `boot_tier1` |
+| M2 | the `answers` filter kept for identity steps (the WO's mutant) | `svd-hal board` (layout parity, golden) |
+| M3 | unmodelled reads interleaved | `svd-hal board` |
+| M4 | twin slots placed first | twin unit |
+| M5 | D2 removed | cli unit |
+| M6 | unmodelled steps left out of `absent_by_step` | cli unit |
+| M7 | the SPI window ignored | cli unit |
+| M8 | the unmodelled hook dropped | pinned scripts |
+| M9 | the re-arm dropped | `boot_tier1` stub |
+| M10 | the cost's once-check removed | cli unit |
+| M11 | the twin-limit row dropped | `ledger_tier1` |
+| M12 | a status counted off its bus | cli unit |
+
+## 7. Adversarial pass (full; a fresh Opus subagent, given the code, the WO and the ruling, not my conclusions)
+
+- **F1 (stop-class): the droops flip.** It found them in my own re-judge, which confirms them. Cause: `main`'s fixed
+  `RECOVERY_BOUND_NS` against a boot word 3.6 ms later. §5 D5.
+- **F2 (D3's letter): instants move.** Confirmed by the re-judge. §5 D4. The wording "no modelled record moves" in
+  the twin-limit sentence and the ledger note now says "place".
+- **F3 (backlog):** a failure caused by the unmodelled cost never names the twin limit.
+  - With enough unmodelled I2C reads, `boot_word_missing` follows: 21 to 28 by board, inferred from 3.6–4.8 ms each
+    against 100 ms. So does a motor or serial window past the run.
+  - No committed board comes near: at most 16 TMP117, the `d1`/`d3` fixtures, which boot at 57.6 and 76.9 ms.
+  - Proposed as a §7.1 row: refuse before the boot (count × measured cost against the window, as
+    `SerialWireTimePastWindow` does), or name it in the failure.
+- **F4 (fixed in wording):** with no modelled check, the cost anchor is the brown-out word, so the first read's cost
+  includes the bring-up between. The twin-limit sentence now says so.
+- **F5 (2306):** 2306's `NO_WITNESSED_DEVICE` text, "the boot reads no device's identity", becomes inaccurate on a
+  board whose devices are all unmodelled. Its count is right: 4241 adds no trace witness. It is for whichever of us
+  merges second.
+- **F6 (nits, kept):**
+  - The I2C loop checks the bus before the row, the SPI loop the row first. `validate` refuses a part with no row,
+    so this cannot be reached.
+  - The ledger's SPI note names the bus without the chip select.
+- **The WO's four lenses:**
+  - **Misclassification:** the generator's `answers`, the twin and the ledger all go through `model::kind`, and an
+    error refuses. Found nothing.
+  - **F-COLLIDE:** a same-bus address collision is refused at `validate` (`DuplicateI2cAddress`). Found nothing new.
+  - **An all-unmodelled board (C7):**
+    - `simulate` passes on the boot witnesses alone, with info rows, and 2306 counts it as `judged: 1`.
+    - Its identity coverage of 0 shows as empty `i2c`/`spi` and `not_witnessable.count`. I offer it as a §7.1 row
+      if the architect wants it named.
+  - **SPI timing:** unmodelled reads come last, so nothing modelled follows one, and its window is its own (M7).
+
+## 8. `BENCH.md`: the TMP117's expected record (for the architect to place)
+
+- **The read:** Sentinel-01 as ordered (`examples/sentinel-01.json`, `boards/sentinel-01-bench`). U3 (TMP117) on
+  I2C1 at `0x48`, ADD0 on GND (SNOSD82D Table 7-2). It is record 2, after U2's and U4's: status at boot word
+  + `0x18`, value at + `0x1C`.
+- **The register:** it writes `0x0F`, the `Device_ID` register, and reads 2 bytes, most significant first.
+- **Expected status:** `0x22020000` (ok).
+- **Expected value:** `0x00000117`, from SNOSD82D §7.6.11 (`Device_ID`, reset `0x0117`; `DID[11:0]` = `0x117`;
+  `Rev[3:0]` reads 0 at reset). The table cites document sha256 `78212e91…b789`. The mask is the full 16 bits.
+- **The twin's prediction:** none, since it has no model. The twin's record is `timeout_txis`, 0, which is the
+  twin's limit, not a prediction of the board.
+- **Supersedes:** it replaces B9's address probe as the TMP117's witness (`3403` F6, U1), if the architect agrees.
+
+## 9. Owed and fence
+
+- **Owed after 2305 lands:**
+  - merge `main`;
+  - re-run the three droops and the re-judge;
+  - adopt 2305's hook additions: the STEP indices are checked against it, and its trial merge was clean;
+  - the package dispatch, third in the queue.
+- **Owed after 2306 lands:** merge `main`, and settle F5's sentence.
+- **Fence:**
+  - Everything is inside it but `generate_with`'s doc comment in `svd-hal/src/board.rs` and one unit test there
+    (`spi_init_takes_every_select_and_drives_it_high`, whose firmware now reads both devices).
+  - No IR, specification, `BENCH.md`, workflow or `ci/` file changed.
+  - `TIER2_MIN` does not move: no tier-2 test was added, two were re-asserted.
+
+## Gates (host, capped scope, at the pushed head)
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --workspace`: green (`t1-3`, rc 0).
+- Tier 2 is CI's. The three droop tests in `campaign_tier2` are expected red until 2305 (§5).
+- Reduction pass (diff): −8 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 6
+  findings below.
+  - **Removed (re-tested; M1, M5, M10 and M12 still die at `434c861e`):**
+    - the status→name mapping, now one `status_name(wire, status)` for checks and unmodelled reads alike;
+    - the ns conversion, now `Unwitnessed::cost_ns`.
+  - **Findings:** each is a mechanism merge in the judge, left for review rather than churned at a stop.
+    - The ledger's `identity_rows` could read `boot::identity(...).unmodelled`, a second walk of the device list.
+    - `absent_by_step` could return one list indexed by hook index.
+    - The unmodelled records could ride `Read::Record`.
+    - `mux_of` and `controller` could take a path.
+    - `NotWitnessable`'s construction chain could be shortened.
+    - The twin-limit sentence is restated in the ledger note and the finding.
+  - **Kept, deliberate:**
+    - `steps_of` in the tests, an independent oracle of the hook order.
+    - `count` in `not_witnessable`, which the ruling names.
