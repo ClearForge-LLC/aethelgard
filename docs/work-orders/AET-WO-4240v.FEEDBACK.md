@@ -461,5 +461,9 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
       - `channels_tier1`'s 7 and `sockets_tier1`'s 1 failed because the fresh target had not uplifted `examples/sandbox_probe`. With `cargo build --examples` first, all 8 pass. CI's shared build makes them; this branch changed neither file;
       - the committed-package test, as before;
     - `twin_tier2` and `verify_2k2_tier2`: 91 of 91 passed;
+  - after `main` `2fda6e13` (`1209`) and `416a6dd3` (`3305`, `TIER2_MIN` 194, unchanged by this PR) were merged, checked locally in the image (examples built first):
+    - fmt 0 and clippy 0;
+    - tier 1: 2,382 passed, and only the committed-package test failed;
+    - `twin_tier2` and `verify_2k2_tier2`: 92 of 92 passed, `3305`'s new two-device test included;
   - the head pushed when the architect called 4240v: see the READY commit's run.
 - **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER
