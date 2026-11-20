@@ -108,9 +108,9 @@ pub struct HseCrystal {
     /// The service life, hours: at most the span the row's aging is stated
     /// for (`4300d` D-B4's 8,000 h is the precedent).
     pub life_hours: u32,
-    /// The bring-up's `HSERDY` bound, µs ([`Startup`]).
+    /// The bring-up's `HSERDY` bound, µs ([`Hse::startup_max_us`]).
     pub startup_max_us: u32,
-    /// Where `startup_max_us` comes from ([`Startup`]).
+    /// Where `startup_max_us` comes from ([`Hse::startup_max_us`]).
     pub startup_source: String,
 }
 
@@ -129,9 +129,9 @@ pub struct HseExternal {
     /// text's form only, as it does `core_supply.source`; whether it names a
     /// document is the reviewer's to judge (adversarial A8).
     pub source: String,
-    /// The bring-up's `HSERDY` bound, µs ([`Startup`]).
+    /// The bring-up's `HSERDY` bound, µs ([`Hse::startup_max_us`]).
     pub startup_max_us: u32,
-    /// Where `startup_max_us` comes from ([`Startup`]).
+    /// Where `startup_max_us` comes from ([`Hse::startup_max_us`]).
     pub startup_source: String,
 }
 
@@ -145,19 +145,14 @@ pub struct HseExternal {
 /// names a document is the reviewer's to judge). A 0 is refused
 /// (`HseDeclarationZero`). Too short a bound halts a good board; too long
 /// only delays the halt of a dead one.
-pub trait Startup {
-    fn startup_max_us(&self) -> u32;
-    fn startup_source(&self) -> &str;
-}
-
-impl Startup for Hse {
-    fn startup_max_us(&self) -> u32 {
+impl Hse {
+    pub fn startup_max_us(&self) -> u32 {
         match self {
             Self::Crystal(c) => c.startup_max_us,
             Self::External(e) => e.startup_max_us,
         }
     }
-    fn startup_source(&self) -> &str {
+    pub fn startup_source(&self) -> &str {
         match self {
             Self::Crystal(c) => &c.startup_source,
             Self::External(e) => &e.startup_source,

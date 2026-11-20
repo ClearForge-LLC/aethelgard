@@ -1932,7 +1932,7 @@ pub enum IrValidationError {
     )]
     SerialPortMismatch { id: String },
     #[error(
-        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the reset clock gives it, its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at HSI's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
+        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the solved clock gives it (the reset selects' `pll1_q`/`pclk` on an HSE tree, `AET-WO-4240b` Q3), its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at the kernel's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
     )]
     SpiControllerMismatch { id: String },
     #[error(
@@ -1958,7 +1958,7 @@ pub enum IrValidationError {
         cite: String,
     },
     #[error(
-        "FLASH_ACR at reset (LATENCY 7, WRHIGHFREQ 11) is below RM0433 Rev 9 Table 17's row for VOS {vos} at an AXI clock of {hclk_fastest_hz} Hz at its fastest (`AET-WO-4240v` D-7)"
+        "FLASH_ACR as the firmware leaves it (at reset, LATENCY 7 and WRHIGHFREQ 11, or an HSE tree's solved flash_acr) is below RM0433 Rev 9 Table 17's row for VOS {vos} at an AXI clock of {hclk_fastest_hz} Hz at its fastest, or sets a reserved bit (`AET-WO-4240v` D-7, `AET-WO-4240b` Q6)"
     )]
     FlashWaitStatesBelowTable { vos: vos::Vos, hclk_fastest_hz: u64 },
     #[error("mcu.foreign_clock.{field} is 0 Hz")]

@@ -5149,8 +5149,9 @@ mod bor_recovery {
 /// boots to `pass` in 100 ms. The platform sets the RCC's `hseFrequency` to
 /// the solved `hse_hz`, the twin's clock rule names nothing (no `clock_access`
 /// finding: every solved word once, in order, with the HSERDY, PLL1RDY and SWS
-/// reads between), and the verdict states what the twin cannot see of the HSE
-/// (its residual and unobservable fields).
+/// reads between), every motor is witnessed at its solved timing (so Renode's
+/// `sys_ck` is the solved 64 MHz), and the verdict states what the twin cannot
+/// see of the HSE (its residual and unobservable fields).
 #[test]
 fn each_hse_fixture_boots_to_pass_under_the_clock_rule() {
     for (fixture, hz) in [
@@ -5177,5 +5178,15 @@ fn each_hse_fixture_boots_to_pass_under_the_clock_rule() {
             v["boot"]["boot_word"]["observed"], "0x2100b007",
             "{fixture}: {v}"
         );
+        // `sys_ck` is read back through the timers Renode pushes it to: every
+        // motor (TIM1 and TIM2) witnessed at its solved timing. A wrong
+        // `hseFrequency` moves every edge (adversarial pass A1, measured: all
+        // four outputs `motor_timing_mismatch` at 8 MHz on the crystal fixture).
+        let outputs = motors(&v);
+        assert_eq!(outputs.len(), 4, "{fixture}: {v}");
+        for m in outputs {
+            assert_eq!(m["twin"]["status"], "witnessed", "{fixture}: {m}");
+            assert_eq!(m["silicon"]["kernel_hz"], 64_000_000, "{fixture}: {m}");
+        }
     }
 }

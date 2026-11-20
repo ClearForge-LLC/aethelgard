@@ -452,7 +452,6 @@ fn the_startup_bound_is_declared_and_never_zero() {
     }
     let t = solved(c(|_| {}));
     let h = t.clock.hse.as_ref().unwrap();
-    use clock::Startup as _;
     assert_eq!(h.declared.startup_max_us(), 20_000);
 }
 

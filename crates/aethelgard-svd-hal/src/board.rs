@@ -1255,7 +1255,7 @@ impl HsePlan {
     /// runs on the HSI until `SW`; a read takes at least one core cycle),
     /// rounded up, and refused where a `u32` cannot count them.
     fn new(hse: &aethelgard_ir::clock::SolvedHse, sysclk_hz: u64) -> Result<Self, BoardError> {
-        use aethelgard_ir::clock::{Hse, Startup};
+        use aethelgard_ir::clock::Hse;
         let hz = hsi_fastest(RESET_HZ);
         let polls = |wait: &'static str, us: u32| -> Result<u32, BoardError> {
             (u128::from(us) * u128::from(hz))
