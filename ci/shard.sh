@@ -56,10 +56,12 @@ DEFAULT_WEIGHT=0.05
 #  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
 #  4. ci/SHARDS is 12 (AET-WO-1911 §1.3, measured at 8, 12 and 16 shards, lone and three pull requests at once; ruled D1 by
-#     the architect on PR #242, 2026-11-19 22:10 UTC; it replaces Scotty's 2026-11-14 "stays 8"). From 11 shards up the slowest
-#     shard is one indivisible block (four_layer_fab_tier2), so more shards bought no wall time (31.4 min lone at 12, 31.6 at 16),
-#     and each costs a job against the account's ceiling (consistent with 60 concurrent jobs; GitHub does not report it). Change
-#     the count only from a new measurement of the same kind. Rebalance with each block whole (ci/colocate.tsv), and check the plan
+#     the architect on the builders' bus, 2026-11-19 22:10 UTC, for PR #242; it replaces Scotty's 2026-11-14 "stays 8"). When
+#     measured, before AET-WO-3303b's schedule split, the slowest shard from 11 up was one indivisible block (four_layer_fab_tier2,
+#     about 1,400 s), so 16 bought no wall time over 12 (31.6 min lone against 31.4). After the split that block is 582 s and the
+#     plan is balanced at every count (1911 FEEDBACK, F8), so whether 16 now pays is unmeasured. Each shard costs a job against the
+#     account's ceiling (consistent with 60 concurrent jobs; GitHub does not report it). Change the count only from a new
+#     measurement of the same kind. Rebalance with each block whole (ci/colocate.tsv), and check the plan
 #     with `bash ci/shard.sh plan DIR`, which prints each shard's planned seconds: a shard planned above the mean only because one
 #     indivisible block alone exceeds the mean is the floor, not an imbalance.
 #  5. (AET-WO-4300b, architect's ruling on PR #152, comment 6903399822, Q10.) A CPU-heavy test (Kani, verify,

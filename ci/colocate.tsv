@@ -6,7 +6,7 @@
 # their rows. Then at the worst of that run, 44624532447 and 44629051297: attribute_seeded 321.89 and 478.53 (raised to 479); verify_47k_tier2
 # 226.99, 226.61; four_layer_fab_tier2 485.65, 556.99 (kept at the first run's).
 # AET-WO-1911 §1.4 refit (REFIT RULE 3 and 5): every block at its worst libtest `finished in` over runs 44585686986, 44605214137, 44605212605,
-# 44605218028 and 44622353365, rounded up; four_layer_fab_tier2 (1,575 s) is the floor every shard count above 10 meets (rule 4).
+# 44605218028 and 44622353365, rounded up; four_layer_fab_tier2 measured 1,575 s there, before AET-WO-3303b's schedule split (see the merge note below).
 tests/attribute_seeded.rs	479
 # AET-WO-1909: each of these binaries reads one shared run (common::verify::Shared), which pays only inside one process.
 # Weighed by ci/shard.sh's REFIT RULE step 3, at the block's worst in-process wall time on CI (libtest's `finished in`) over runs 43570762262, 43573333731, 43574423322, 43575564961.

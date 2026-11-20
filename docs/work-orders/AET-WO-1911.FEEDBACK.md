@@ -1,6 +1,9 @@
 # AET-WO-1911 — FEEDBACK
 
-**Status: READY.** Built to the ruling on the §1.3 stop (architect, bus, 2026-11-19 22:10 UTC). On the final merged tree, run 44644135555: `tools` green at 20.4 min, tier 2 190/190 exact; it was 36.1–38.7 min before this order.
+**Status: READY.** Built to the ruling on the §1.3 stop (architect, bus, 2026-11-19 22:10 UTC).
+- **This order's own effect, like for like:** three counted runs at 12 shards with `tools` green at 29.8, 38.9 and 30.0 min, against 36.1–38.7 at 8 before.
+- **On the final merged tree,** which adds `AET-WO-3303b`'s schedule split (most of the further gain): 20.4 min (run 44644135555), tier 2 190/190 exact.
+- **Docs-only PRs:** green in under two minutes (93 s and 109 s).
 - **D1:** `ci/SHARDS` 12, accepted.
 - **D2:** keep the shared build.
 - §1.4 is done: refit, REFIT RULE 4 rewritten, and the counted runs below.
@@ -50,7 +53,7 @@
 |---|---|---|---|---|---|---|---|---|---|
 | 44644135555 | `7ad5d0df` (`main` 52a2d62e merged) | 20.4 | 20.4 | 325 | 89–272 | 340–734 | 3 | 144 | 190 (floor 190, exact) |
 
-- **The final tree at 12 shards:** `tools` green at 20.4 min, against 36.1–38.7 at 8 before this order. Shard tests ran 340–734 s on the 816 s plan.
+- **The final tree at 12 shards:** `tools` green at 20.4 min. Most of the drop from the counted runs' 29.8–38.9 is `3303b`'s split; this order's like-for-like figure is the counted runs. Shard tests ran 340–734 s on the 816 s plan.
 - That run lists 2,514 tests and 2,507 names. `TIER2_MIN` is exact at 190: 3303b added no tier-2 test, and this order adds none.
 - Local gates at `b9572ce0`: fmt, clippy, and `cargo test --workspace` (2,299 passed, 0 failed). On CI, `gates` is green on every run.
 
@@ -121,7 +124,7 @@ Reduction pass (diff): −51 net · 5 duplicates removed · 6 dead paths removed
   - At 12: up to 464 s, green at 35.4–44.5.
   - At 16: up to 547 s, green at 28.0–35.0.
   - The windows had 20–57 other jobs running. The measured queueing is ambiguous as a function of N (§7), so the recommendation rests on the lone times, the ceiling arithmetic and the plan.
-- **A docs-only PR is green in 93 s** (scratch #246, run 44578347985, at `0a98b9c0`, before §4's fixes changed `decide` and the list's format): every document-reading test ran. A README edit that breaks `readme_status` turned `gates` red in 91 s (run 44578760473).
+- **A docs-only PR is green in 93 s** (scratch #246, run 44578347985, at `0a98b9c0`, before §4's fixes changed `decide` and the list's format): every document-reading test ran. On the READY head it was again green, in 109 s (scratch #260, run 44647141482). A local run with a broken README status line exits nonzero with `readme_status`'s two tests named. A README edit that breaks `readme_status` turned `gates` red in 91 s (run 44578760473).
 - **The shared build produces the same tests with the same outcomes:** 8 of 8 shards byte-identical, 2,470 tests (§2).
 - **The shared build, measured, as predicted on the bus before it was built:**
   - It cuts each shard's setup from 211–331 s to 80–375 s (typically 85–240), but puts a 247–322 s build job in series in front of every shard.
