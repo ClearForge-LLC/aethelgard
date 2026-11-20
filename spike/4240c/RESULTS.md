@@ -53,3 +53,25 @@ between ground and mutual is unknown.** With `C1 = C2 = 18 pF`:
 So the load at the declared 18 pF lies somewhere in 9.0–17.9 pF against the row's CL 12 pF, and the value that
 would give CL 12 lies anywhere from about 6 pF to 24 pF (24 pF with no stray at all). No held source narrows
 either. The declaration is not changed: a finding.
+
+## After the rulings (16:34Z, 17:45Z) and the merge of `main` `c1012a2d`
+
+The crystal fixture now names the cited row, C0402C180J5GACTU (KEMET C1003_C0G rev 2/20/2025), on both load
+capacitors. In the tools image at `fdd29ea2` (`kit/img.sh`; `~/.cache/aet-4240c/image-final.txt`):
+
+| Check | Verdict | Findings |
+|---|---|---|
+| `check erc` | pass | none |
+| `check drc --spec --schematic` (parity) | pass | none |
+| `check support` (step 7 on KiCad's own netlist) | pass | none |
+| `extract` | pass | none |
+
+`extract`'s oscillator report: `/U1_OSC_IN` 7,473 fF, 10.75 mm, 0 vias, crystal gap 5,310 µm; `/U1_OSC_OUT`
+6,016 fF, 6.875 mm, 0 vias, 3,614 µm (the figures above, unchanged by the row).
+
+**The null corpus against a fresh baseline of `c1012a2d`** (1210 renumbered every specification to 21): emit
+IDENTICAL, 72 files, 29 specifications; `extract` stdout and exit codes IDENTICAL on all 24 emitted boards.
+
+**Neighbours** (adversarial, `~/.cache/aet-4240c/adv-b/s/prox.py`): a B.Cu `VDD_3V3` track,
+(86.375, 100.5)–(86.375, 104.75) mm, crosses under both oscillator nets; `NRST` (U1 pin 25) is 0.20 mm from
+`OSC_OUT`'s pad. No SPI, I2C, motor or serial net within 1 mm. Reported, not judged (no held source).
