@@ -69,7 +69,7 @@ On the NUCLEO-H753ZI, revision V (`DBGMCU_IDC` `0x20036450`, measured in `3302`)
 
 ### §1.1 The declaration (`aethelgard-ir`)
 
-- **`mcu.core_supply` = `{mode, source}`** (`lib.rs` `CoreSupply`, `vos::CoreSupplyMode`), required, in specification schema **18**. `mode` is `ldo` or `bypass`, the two legal rows of RM0433 Rev 9 Table 34 (p. 261, read at source from the page image): "LDO supply" `LDOEN` 1 `BYPASS` 0, and "LDO Bypass" `LDOEN` 0 `BYPASS` 1. The other two pairs are "Illegal combination, the default configuration is kept (write data will be ignored)". By §6.8.4 (p. 308), "the written-once mechanism will lock the register ... The system shall be power cycled before writing a new value", so no other pair is offered.
+- **`mcu.core_supply` = `{mode, source}`** (`lib.rs` `CoreSupply`, `vos::CoreSupplyMode`), required, in specification schema **19**: built as 18, and renumbered to 19 when `2304b` merged first with 18 (WO §1.1's rule). The renumbering was one script (`~/.cache/aet-4240v/kit/renumber19.py`) whose diff is version lines only: 27 specifications' `"schema_version"` and 13 test pins. `mode` is `ldo` or `bypass`, the two legal rows of RM0433 Rev 9 Table 34 (p. 261, read at source from the page image): "LDO supply" `LDOEN` 1 `BYPASS` 0, and "LDO Bypass" `LDOEN` 0 `BYPASS` 1. The other two pairs are "Illegal combination, the default configuration is kept (write data will be ignored)". By §6.8.4 (p. 308), "the written-once mechanism will lock the register ... The system shall be power cycled before writing a new value", so no other pair is offered.
   - The H753 has no SMPS: the header's `PWR_CR3` has no SMPS field (L14492–14518), and RM0433 Rev 9 has no "SMPS" anywhere in its text (read at source, by search).
   - `source` takes `foreign_clock`'s shape: 1–200 bytes of printable ASCII, no space at either end, refused as `InvalidSource` at `mcu.core_supply.source` (validate step 2c). The field's documentation states F-CITE strict.
   - Missing is ``missing field `core_supply` ``; `null` is "invalid type: null, expected a CoreSupply object"; any other mode, mixed case included, is "unknown variant `LDO`, expected `ldo` or `bypass`". All are tested (`ir/tests/vos.rs`).
@@ -82,7 +82,7 @@ On the NUCLEO-H753ZI, revision V (`DBGMCU_IDC` `0x20036450`, measured in `3302`)
 
 ### §1.2 Every committed specification declares, with its source
 
-All 26 files at schema 17 moved to 18 by one script (`~/.cache/aet-4240v/kit/specs.py`), which inserts `core_supply` after `bor_level` and keeps each file's formatting.
+All 26 files at schema 17 moved to 18 (19 after `2304b`, §1.1) by one script (`~/.cache/aet-4240v/kit/specs.py`), which inserts `core_supply` after `bor_level` and keeps each file's formatting.
 
 | Path | Mode | Source (as written) | How read |
 |---|---|---|---|
