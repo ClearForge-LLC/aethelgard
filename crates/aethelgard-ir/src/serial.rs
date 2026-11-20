@@ -22,7 +22,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::motor::{HSI_FAST_PPM, HSI_SLOW_PPM, SolvedClock};
+use crate::motor::SolvedClock;
 use crate::{IrValidationError, Signal, SolvedTopology};
 
 /// What a port carries. The framing is declared, never inferred from it.
@@ -370,10 +370,12 @@ pub struct SiliconFraming {
     pub error_ppm: i64,
     /// `|kernel / BRR − baud| / baud`, in ppm, rounded up: HSI at nominal.
     pub quantization_ppm: u64,
-    /// The HSI bound at the worse extreme: [`HSI_FAST_PPM`] or
-    /// [`HSI_SLOW_PPM`], whichever gives the larger `receiver_ppm`. It is
-    /// the direction that adds when the quantization error and HSI share a
-    /// sign, and the slow bound when they do not and HSI is far the larger.
+    /// The clock source's bound at the worse extreme, its budget's fast or
+    /// slow side ([`SolvedClock::budget`]), whichever gives the larger
+    /// `receiver_ppm`. It is the direction that adds when the quantization
+    /// error and the source share a sign, and the slow bound when they do not
+    /// and the source is far the larger. The field keeps the name it had when
+    /// the HSI was the only source, so the verdict's shape does not move.
     pub hsi_ppm: u32,
     /// `|(1 + e)(1 + h) − 1|` in ppm, rounded up, for the quantization error
     /// `e` and the HSI deviation `h` of `hsi_ppm` taken with the sign that
@@ -399,9 +401,9 @@ pub struct SiliconFraming {
 
 /// The static check for silicon: `port`'s `BRR` and framing on `clock`, in
 /// exact integers. The receiver's tolerance is judged against the worst
-/// case: the quantization error at each of HSI's two extremes
-/// ([`HSI_FAST_PPM`] / [`HSI_SLOW_PPM`], DS12117 Rev 10 Table 36), the larger
-/// taken, plus the remote transmitter's declared deviation. It never reads
+/// case: the quantization error at each of the clock source's two extremes
+/// ([`SolvedClock::budget`]: for the HSI, DS12117 Rev 10 Table 36), the
+/// larger taken, plus the remote transmitter's declared deviation. It never reads
 /// the generated firmware or board (`INV-07`).
 pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFraming {
     let kernel = kernel_hz(clock, &port.peripheral);
@@ -425,12 +427,13 @@ pub fn check_silicon(clock: &SolvedClock, port: &SolvedSerialPort) -> SiliconFra
             u64::try_from(n.div_ceil(d)).unwrap_or(u64::MAX)
         }
     };
-    let fast = off(1_000_000 + u128::from(HSI_FAST_PPM));
-    let slow = off(1_000_000 - u128::from(HSI_SLOW_PPM));
+    let budget = clock.budget();
+    let fast = off(1_000_000 + u128::from(budget.fast_ppm));
+    let slow = off(1_000_000 - u128::from(budget.slow_ppm));
     let (hsi_ppm, worse) = if fast > slow {
-        (HSI_FAST_PPM, fast)
+        (budget.fast_ppm, fast)
     } else {
-        (HSI_SLOW_PPM, slow)
+        (budget.slow_ppm, slow)
     };
     let quantization_ppm = ceil_ppm(off(1_000_000));
     let receiver_ppm = ceil_ppm(worse);

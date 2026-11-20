@@ -5,6 +5,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use crate::clock::Budget as PpmBudget;
 use crate::motor::{self, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput, TimingError};
 use crate::serial::{self, SolvedSerialPort};
 use crate::{
@@ -130,6 +131,18 @@ pub enum SolveError {
         fast_hz: u64,
         floor_hz: u64,
     },
+    /// An I2C controller's kernel clock gives `mode` no `TIMINGR` at its
+    /// source's extremes (`4240` F-PANIC, `AET-WO-4240a` §1.7): once a pin
+    /// that was a panic.
+    #[error(
+        "I2C bus `{bus}` on `{peripheral}`: its {kernel_hz} Hz kernel clock gives {mode} no TIMINGR (below the mode's least kernel at the source's slowest, or no PRESC fits at its fastest; RM0433 Rev 9 §47.4.9)"
+    )]
+    NoI2cTiming {
+        bus: String,
+        peripheral: String,
+        mode: String,
+        kernel_hz: u64,
+    },
     /// No selectable output speed serves a solved SPI line (`AET-WO-4400b`
     /// D2: the choice moved here from the board generator).
     #[error("net `{net}` on `{pin}` has no output speed: {refusal}")]
@@ -174,6 +187,7 @@ impl SolveError {
             Self::SerialClock { .. } => "SerialClock",
             Self::SpiKernelClockUnavailable { .. } => "SpiKernelClockUnavailable",
             Self::SpiSpeedBelowKernelRange { .. } => "SpiSpeedBelowKernelRange",
+            Self::NoI2cTiming { .. } => "NoI2cTiming",
             Self::PinSpeed { refusal, .. } => match refusal {
                 crate::speeds::Refusal::SupplyOutsideTable { .. } => "SupplyOutsideSpeedTable",
                 crate::speeds::Refusal::LoadAboveTable { .. } => "LoadAboveSpeedTable",
@@ -196,7 +210,8 @@ impl SolveError {
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
-            | Self::SpiSpeedBelowKernelRange { bus, .. } => Some(bus),
+            | Self::SpiSpeedBelowKernelRange { bus, .. }
+            | Self::NoI2cTiming { bus, .. } => Some(bus),
             Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => Some(net),
             Self::NoTimerChannel { output, .. } => Some(output),
             Self::TimerRateConflict { timer, .. } => Some(timer),
@@ -227,7 +242,8 @@ impl SolveError {
             Self::NoInstance { bus, .. }
             | Self::BudgetExceeded { bus, .. }
             | Self::SpiKernelClockUnavailable { bus, .. }
-            | Self::SpiSpeedBelowKernelRange { bus, .. } => vec![bus.clone()],
+            | Self::SpiSpeedBelowKernelRange { bus, .. }
+            | Self::NoI2cTiming { bus, .. } => vec![bus.clone()],
             Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } => vec![output.clone()],
@@ -409,9 +425,7 @@ fn solve_inner(
     }
     for bus in &spec.i2c_buses {
         let p = out.assignments[&bus.sda.net].peripheral.clone();
-        let t = i2c_timing(&out.clock, &p).expect(
-            "the reset clock gives every I2C peripheral 64 MHz, on which every mode has a TIMINGR",
-        );
+        let t = i2c_controller(&bus.id, &out.clock, &p)?;
         out.i2c_timings.insert(p, t);
     }
     // Every cs last, in document order: a hand pin is already owned; the rest
@@ -636,26 +650,10 @@ fn port_on(
     Ok(port)
 }
 
-// belt-and-suspenders: `aethelgard_ir::silicon` holds its own copy of these
-// bounds, so the rule that judges the solver's MBR and TIMINGR never shares
-// a constant with it (contract D1, amendment 1, `RUL-20`).
-/// HSI's worst-case deviations, ppm: DS12117 Rev 10 Table 36 (rev Y) =
-/// Table 133 (rev V), ±0.3 MHz at 3.3 V 30 °C, −0.12/+0.03 % over VDD and
-/// −2/+1 % over TJ −40 °C to TJmax, summed (`AET-WO-4230` contract,
-/// amendment 1). The solver's own copy; `silicon` keeps another (`RUL-20`).
-const HSI_FAST_PPM: u64 = 14_984;
-const HSI_SLOW_PPM: u64 = 25_894;
-
-/// `hz` at HSI's fastest, rounded up.
+/// `hz` at the HSI's fastest, rounded up: an SPI kernel is `hsi_ker_ck`
+/// whatever the system clock ([`spi_kernel`]).
 pub(crate) fn hsi_fastest(hz: u64) -> u64 {
-    let n = u128::from(hz) * u128::from(1_000_000 + HSI_FAST_PPM);
-    u64::try_from(n.div_ceil(1_000_000)).unwrap_or(u64::MAX)
-}
-
-/// `hz` at HSI's slowest, rounded down.
-pub(crate) fn hsi_slowest(hz: u64) -> u64 {
-    let n = u128::from(hz) * u128::from(1_000_000 - HSI_SLOW_PPM);
-    u64::try_from(n / 1_000_000).unwrap_or(u64::MAX)
+    PpmBudget::HSI.fastest_hz(hz)
 }
 
 /// The kernel clock the firmware gives SPI `peripheral` on `clock`: SPI1–3
@@ -775,7 +773,7 @@ const I2C_AF_MIN_NS: u64 = 50;
 
 /// `TIMINGR` for `mode` on a kernel of `kernel_hz` (RM0433 Rev 9 §47.4.9,
 /// p. 1957–1958 and p. 1971; contract D3 and amendment 1), every minimum
-/// met at HSI's fastest. In kernel cycles `c(t) = ⌈t · fast⌉`, with
+/// met at the source's fastest (`budget`). In kernel cycles `c(t) = ⌈t · fast⌉`, with
 /// `tSYNC1` and `tSYNC2` two cycles each at least (Tables 391–393 notes):
 /// for the least `PRESC` (multiplier `m`) at which every field fits,
 /// - `SCLH` the least with `2 + (SCLH+1)·m ≥ c(tHIGH)`;
@@ -787,15 +785,15 @@ const I2C_AF_MIN_NS: u64 = 50;
 ///
 /// `tVD;DAT`'s maximum is not a bound here: RM0433 p. 1958, it "can be
 /// violated when NOSTRETCH = 0", which [`I2C_CR1`] keeps. `None` for an
-/// unknown mode, a kernel below the mode's least at HSI's slowest, or no
-/// `PRESC` that fits.
-pub(crate) fn synthesize_timingr(kernel_hz: u64, mode: &str) -> Option<u32> {
+/// unknown mode, a kernel below the mode's least at the source's slowest, or
+/// no `PRESC` that fits.
+pub(crate) fn synthesize_timingr(budget: PpmBudget, kernel_hz: u64, mode: &str) -> Option<u32> {
     let &(_, scl_hz, t_low, t_high, tr, tf, t_su, t_hd, kernel_min) =
         I2C_MODES.iter().find(|m| m.0 == mode)?;
-    if hsi_slowest(kernel_hz) < kernel_min {
+    if budget.slowest_hz(kernel_hz) < kernel_min {
         return None;
     }
-    let fast = u128::from(hsi_fastest(kernel_hz));
+    let fast = u128::from(budget.fastest_hz(kernel_hz));
     let cycles = |t_ns: u64| (u128::from(t_ns) * fast).div_ceil(1_000_000_000);
     // The least `n ≥ 0` with `n · m ≥ need`.
     let least = |need: u128, m: u128| need.div_ceil(m);
@@ -828,12 +826,33 @@ pub(crate) fn synthesize_timingr(kernel_hz: u64, mode: &str) -> Option<u32> {
 /// I2C `peripheral`'s solved timing on `clock`; `None` if it has no kernel
 /// clock or a mode has no `TIMINGR`.
 pub(crate) fn i2c_timing(clock: &SolvedClock, peripheral: &str) -> Option<SolvedI2cTiming> {
-    let kernel_hz = i2c_kernel_hz(clock, peripheral)?;
+    i2c_controller("", clock, peripheral).ok()
+}
+
+/// I2C bus `bus`'s controller `peripheral` on `clock`: its kernel clock, `CR1`
+/// and one `TIMINGR` per mode, each refusal by name (`4240` F-PANIC).
+pub(crate) fn i2c_controller(
+    bus: &str,
+    clock: &SolvedClock,
+    peripheral: &str,
+) -> Result<SolvedI2cTiming, SolveError> {
+    let refuse = |mode: &str, kernel_hz: u64| SolveError::NoI2cTiming {
+        bus: bus.to_owned(),
+        peripheral: peripheral.to_owned(),
+        mode: mode.to_owned(),
+        kernel_hz,
+    };
+    let kernel_hz = i2c_kernel_hz(clock, peripheral).ok_or_else(|| refuse("any mode", 0))?;
+    let budget = clock.budget();
     let timingr = I2C_MODES
         .iter()
-        .map(|&(mode, ..)| synthesize_timingr(kernel_hz, mode).map(|w| (mode.to_owned(), w)))
-        .collect::<Option<_>>()?;
-    Some(SolvedI2cTiming {
+        .map(|&(mode, ..)| {
+            synthesize_timingr(budget, kernel_hz, mode)
+                .map(|w| (mode.to_owned(), w))
+                .ok_or_else(|| refuse(mode, kernel_hz))
+        })
+        .collect::<Result<_, _>>()?;
+    Ok(SolvedI2cTiming {
         kernel_hz,
         cr1: I2C_CR1,
         timingr,
@@ -2332,26 +2351,54 @@ mod differential {
     fn timingr_is_synthesized_for_every_mode_on_the_reset_kernel() {
         // The hand values of `silicon`'s tests.
         assert_eq!(
-            synthesize_timingr(64_000_000, "Standard100k"),
+            synthesize_timingr(PpmBudget::HSI, 64_000_000, "Standard100k"),
             Some(0x50D3_2A40)
         );
         assert_eq!(
-            synthesize_timingr(64_000_000, "Fast400k"),
+            synthesize_timingr(PpmBudget::HSI, 64_000_000, "Fast400k"),
             Some(0x10C7_123C)
         );
         assert_eq!(
-            synthesize_timingr(64_000_000, "FastPlus1M"),
+            synthesize_timingr(PpmBudget::HSI, 64_000_000, "FastPlus1M"),
             Some(0x00B2_0E2D)
         );
-        assert_eq!(synthesize_timingr(64_000_000, "HighSpeed3M4"), None);
+        assert_eq!(synthesize_timingr(PpmBudget::HSI, 64_000_000, "HighSpeed3M4"), None);
         // Below DS12117 Table 93's 17 MHz at HSI's slowest, no Fm+ word.
-        assert_eq!(synthesize_timingr(17_000_000, "FastPlus1M"), None);
+        assert_eq!(synthesize_timingr(PpmBudget::HSI, 17_000_000, "FastPlus1M"), None);
         let reset = SolvedClock::reset();
         for p in ["I2C1", "I2C2", "I2C3", "I2C4"] {
             assert_eq!(i2c_kernel_hz(&reset, p), Some(64_000_000));
             assert_eq!(i2c_timing(&reset, p).unwrap().timingr.len(), 3);
         }
         assert_eq!(i2c_timing(&reset, "I2C5"), None);
+    }
+
+    /// `4240` F-PANIC: H0 at 8 MHz (`sys_ck` the HSE, every prescaler 1)
+    /// gives every I2C controller an 8 MHz kernel. At the source's slowest
+    /// that is below Fast-mode's least kernel, 8 MHz (DS12117 Rev 10 Table
+    /// 93), the first mode in order to fail; Fast-mode Plus's 17 MHz fails
+    /// too. The solver refuses it by name where it once panicked.
+    #[test]
+    fn an_8_mhz_h0_clock_is_a_named_refusal_not_a_panic() {
+        let h0 = SolvedClock {
+            source: "HSE".into(),
+            sysclk_hz: 8_000_000,
+            hse_hz: 8_000_000,
+            ..SolvedClock::reset()
+        };
+        let err = i2c_controller("I2C_BUS_0", &h0, "I2C1").unwrap_err();
+        assert_eq!(err.kind(), "NoI2cTiming");
+        assert_eq!(
+            err,
+            SolveError::NoI2cTiming {
+                bus: "I2C_BUS_0".into(),
+                peripheral: "I2C1".into(),
+                mode: "Fast400k".into(),
+                kernel_hz: 8_000_000,
+            }
+        );
+        assert_eq!(err.claimants(), ["I2C_BUS_0"]);
+        assert!(i2c_controller("I2C_BUS_0", &SolvedClock::reset(), "I2C1").is_ok());
     }
 
     #[test]

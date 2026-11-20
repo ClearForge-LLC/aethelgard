@@ -319,6 +319,7 @@ Each check runs in document order: bus signals, then every `cs`. `kind()` is the
 | 7a | Each serial port, in document order: its peripheral has a kernel clock on `clock` (its `BRR` and `serial::check_silicon` are `validate`'s step 21, `AET-WO-1208` §1.3) | `SerialClock` | the label |
 | 7b | Each SPI bus, in document order: its controller has a kernel clock on `clock` (`per_ck` or `hsi_ker_ck` from HSI) | `SpiKernelClockUnavailable` | the bus id |
 | | … and its controller's lowest declared speed is at least the kernel at HSI's fastest divided by 256 (`MBR` 111). The verdict is the specification's (every SPI kernel is HSI on the reset clock), but the message names the controller the search chose, so it stays here (`AET-WO-1208` FEEDBACK) | `SpiSpeedBelowKernelRange` | the bus id |
+| 7c | Each I2C bus, in document order: its controller's kernel clock on `clock` gives every mode a `TIMINGR` at the source's extremes (`4240` F-PANIC: once a panic) | `NoI2cTiming` | the bus id |
 | 8 | Every `cs` finds a free pin | `NoFreePin` | the `cs` |
 
 The output passes `SolvedTopology::validate` before it is returned.

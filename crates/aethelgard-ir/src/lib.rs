@@ -27,6 +27,7 @@ pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
+pub mod clock;
 pub mod vos;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};

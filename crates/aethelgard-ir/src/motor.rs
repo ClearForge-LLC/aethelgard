@@ -193,6 +193,12 @@ impl SolvedClock {
         }
     }
 
+    /// The deviation of the source every clock of this tree derives from
+    /// (`AET-WO-4240a` §1.4): the HSI's, [`crate::clock::Budget::HSI`].
+    pub fn budget(&self) -> crate::clock::Budget {
+        crate::clock::Budget::HSI
+    }
+
     /// `rcc_hclk1`: `sys_ck` / `D1CPRE` / `HPRE` (RM0433 Rev 9 Figure 49).
     pub fn hclk_hz(&self) -> u64 {
         u64::from(self.sysclk_hz) / u64::from(self.d1cpre.max(1)) / u64::from(self.hpre.max(1))
@@ -665,20 +671,6 @@ pub fn solve_timing(
     Ok((narrow(psc), narrow(ticks - 1), narrow(ccr)))
 }
 
-/// HSI's deviation from its nominal 64 MHz at the fastest it can run, in
-/// ppm, rounded up: DS12117 Rev 10 Table 36 (rev Y, p. 128) = Table 133 (rev
-/// V, p. 232): `fHSI` max 64.3 MHz at 3.3 V and 30 °C (+4,688 ppm, rounded
-/// away from zero from 4,687.5), `ΔVDD` +0.03 % (+300), `ΔTEMP` +1 % over
-/// TJ −40 °C to TJmax (+10,000), summed. The junction temperature is not
-/// bounded by any declaration, so the wider row is taken (`AET-WO-4230`).
-/// The serial check reads it; `solve` and `silicon` keep their own copies
-/// (`RUL-20`).
-pub const HSI_FAST_PPM: u32 = 14_984;
-/// HSI's deviation at the slowest it can run, in ppm, rounded up: `fHSI` min
-/// 63.7 MHz (−4,688), `ΔVDD` −0.12 % (−1,200), `ΔTEMP` −2 % (−20,000), the
-/// same tables, summed.
-pub const HSI_SLOW_PPM: u32 = 25_894;
-
 /// What [`check_silicon`] found for one output, in picoseconds where a time
 /// is named (`period_ps` and `high_ps` are floors; the verdict is exact).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -691,8 +683,8 @@ pub struct SiliconTiming {
     pub period_ps: u64,
     /// `CCR` ticks: the high time of PWM mode 1.
     pub high_ps: u64,
-    /// The period and the high time at HSI's slowest and fastest
-    /// ([`HSI_SLOW_PPM`], [`HSI_FAST_PPM`]): the same cycle counts on a
+    /// The period and the high time at the clock source's slowest and
+    /// fastest ([`SolvedClock::budget`]): the same cycle counts on a
     /// kernel clock of `kernel × (1 − slow)` (floored) and
     /// `kernel × (1 + fast)` (ceiled), floors in picoseconds.
     pub period_slowest_ps: u64,
@@ -732,8 +724,9 @@ pub fn check_silicon(clock: &SolvedClock, timer: u32, output: &SolvedMotorOutput
     let tick_ps = ps(psc1);
     let period_ps = ps(arr1 * psc1);
     let high_ps = ps(ccr * psc1);
-    let slow = kernel * u128::from(1_000_000 - HSI_SLOW_PPM) / 1_000_000;
-    let fast = (kernel * u128::from(1_000_000 + HSI_FAST_PPM)).div_ceil(1_000_000);
+    let budget = clock.budget();
+    let slow = kernel * u128::from(1_000_000 - budget.slow_ppm) / 1_000_000;
+    let fast = (kernel * u128::from(1_000_000 + budget.fast_ppm)).div_ceil(1_000_000);
     let ps_at = |cycles: u128, k: u128| {
         u64::try_from(cycles * 1_000_000_000_000 / k.max(1)).unwrap_or(u64::MAX)
     };
