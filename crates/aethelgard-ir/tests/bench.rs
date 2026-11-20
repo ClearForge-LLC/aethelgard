@@ -54,12 +54,18 @@ fn absent_fields_are_todays_board_and_are_not_written_back() {
     assert!(!spec.mcu.reset_switch);
     assert!(!bench::carries_boot0(&spec));
     assert_eq!(bench::switch_reference(&spec), None);
-    assert_eq!(serde_json::to_value(&spec).unwrap(), v0);
+    // `hse_hz` 0, version 19's spelling, is written back as `hse: null`
+    // (`AET-WO-4240a`); nothing else moves.
+    let mut written = v0.clone();
+    let mcu = written["mcu"].as_object_mut().unwrap();
+    assert_eq!(mcu.remove("hse_hz"), Some(json!(0)));
+    mcu.insert("hse".into(), Value::Null);
+    assert_eq!(serde_json::to_value(&spec).unwrap(), written);
     // Written empty or false, they read the same and are dropped on writing.
     let mut v = v0.clone();
     v["test_points"] = json!([]);
     v["mcu"]["reset_switch"] = json!(false);
-    assert_eq!(serde_json::to_value(spec_of(&v)).unwrap(), v0);
+    assert_eq!(serde_json::to_value(spec_of(&v)).unwrap(), written);
 }
 
 #[test]
@@ -225,7 +231,7 @@ fn the_switch_skips_a_spelled_sw1_and_refuses_another_spelling_of_it() {
 /// without the new fields, never read as today's board.
 #[test]
 fn an_older_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 19);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 20);
     for base in [bench_json(), serde_json::from_str(V0).unwrap()] {
         for version in [12, 13] {
             let mut v = base.clone();
@@ -234,7 +240,7 @@ fn an_older_file_is_refused_by_its_version() {
                 refusal(&v),
                 E::UnsupportedSchemaVersion {
                     version,
-                    expected: 19
+                    expected: 20
                 }
             );
         }

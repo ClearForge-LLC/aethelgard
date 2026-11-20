@@ -173,15 +173,24 @@ fn a_motor_output_s_label_is_a_net_and_its_net_takes_no_constraint() {
     );
 }
 
+/// `AET-WO-4240a` §1.2: `hse_hz`, the key `mcu.hse` replaced, reads as
+/// `null` at 0, the only value it ever admitted; any other value is refused
+/// at parsing, as is the key beside `hse`.
 #[test]
-fn a_crystal_is_refused_by_name_until_a_crystal_part_exists() {
+fn the_version_19_hse_hz_reads_as_null_at_0_and_is_refused_otherwise() {
     let mut v = spec_json(vec![]);
+    v["mcu"].as_object_mut().unwrap().remove("hse");
+    v["mcu"]["hse_hz"] = json!(0);
+    let s: Specification = serde_json::from_value(v.clone()).unwrap();
+    assert_eq!(s.mcu.hse, None);
+    assert!(serde_json::to_value(&s).unwrap()["mcu"]["hse"].is_null());
     v["mcu"]["hse_hz"] = json!(8_000_000);
-    let s: Specification = serde_json::from_value(v).unwrap();
-    assert_eq!(
-        s.validate().unwrap_err(),
-        IrValidationError::CrystalNotSupported { hse_hz: 8_000_000 }
-    );
+    let e = serde_json::from_value::<Specification>(v.clone()).unwrap_err();
+    assert!(e.to_string().contains("mcu.hse_hz is 8000000"), "{e}");
+    v["mcu"]["hse_hz"] = json!(0);
+    v["mcu"]["hse"] = json!(null);
+    let e = serde_json::from_value::<Specification>(v).unwrap_err();
+    assert!(e.to_string().contains("duplicate field `hse`"), "{e}");
 }
 
 #[test]
@@ -392,6 +401,12 @@ fn the_topology_refuses_a_motor_output_that_disagrees_with_its_assignment() {
     assert_eq!(
         kind(&|t| {
             t.clock.hse_hz = 8_000_000;
+        }),
+        Err("UnsupportedClock")
+    );
+    assert_eq!(
+        kind(&|t| {
+            t.clock.source = "PLL1".into();
         }),
         Err("UnsupportedClock")
     );
@@ -833,7 +848,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 19);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 20);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -848,7 +863,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 16,
-                expected: 19
+                expected: 20
             }
         );
     }

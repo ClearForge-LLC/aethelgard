@@ -206,7 +206,12 @@ fn digests() -> Vec<(&'static str, String)> {
 /// (`ffd83362…`) in each text, `main.rs` and the two platforms are
 /// `427baa54…7b38`, `81a4ecac…fb2d` and `7b36e730…d61b` exactly, the digests
 /// before the merge (measured); the boot image did not move.
-/// Moved again by `AET-WO-4241` (the architect's D3), on purpose: `main.rs`
+/// Re-taken for specification 20 (`AET-WO-4240a`, version line only): with
+/// the document's version-19 sha256 put back for its version-20 one in each
+/// text, `main.rs` and the two platforms are `f443af76…2c3a`,
+/// `b57442b4…e5e9` and `455de730…7a7c` exactly, the digests before
+/// (measured); the boot image did not move.
+/// Then moved again by `AET-WO-4241` (the architect's D3), on purpose: `main.rs`
 /// gains U3's identity read (the TMP117, which the twin has no model for)
 /// after every modelled read and before the boot word, and the boot image
 /// gains U3's record, placed after every check's; the two platforms did not
@@ -214,15 +219,15 @@ fn digests() -> Vec<(&'static str, String)> {
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "3bfcb48417736295914c430e52addafec7cd7ec481f4e60fd58780b76d149924",
+        "a95a1bb6d934584cc62bea46c3d8cf6a1e0c79565b69884486351dae9d77f918",
     ),
     (
         "platform",
-        "b57442b48ae3bcbcd73a50a2b12c4167b127305a384a6bf42ddc8179d430e5e9",
+        "bb101271b7927c14bf383c0f3864597b26bcc7f8f1f9f2670be07c44a545ebdb",
     ),
     (
         "platform faulted",
-        "455de730d725dee2c6731b96e2d64f27c6b1974cd4832dc68508a0dc66d27a7c",
+        "26e266be5379b82fe6d25feb24fb1cdb30acce6dc6903863d815fda212b579a3",
     ),
     (
         "boot image",

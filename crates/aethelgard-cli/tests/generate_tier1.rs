@@ -241,6 +241,49 @@ fn a_bypass_core_supply_validates_and_solves_and_is_never_generated() {
     ]);
 }
 
+/// `AET-WO-4240a` §1.7: a declared HSE (the 16 MHz crystal) validates, its
+/// acknowledgements left unjudged as `bypass`'s are, and solves to the HSE
+/// tree; `generate`, `emit` and `simulate` refuse it by name, writing
+/// nothing.
+#[test]
+fn a_declared_hse_validates_and_solves_and_is_never_generated() {
+    let dir = scratch("hse");
+    fs::create_dir_all(&dir).unwrap();
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    spec["mcu"].as_object_mut().unwrap().remove("hse_hz");
+    spec["mcu"]["hse"] = serde_json::json!({"crystal": {"part": "ABM8AIG-16.000MHZ-12-2Z-T3",
+        "load_caps_femtofarads": [18000, 18000], "pull_ppm": 30,
+        "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}});
+    let hse = dir.join("hse.json");
+    fs::write(&hse, spec.to_string()).unwrap();
+    let (code, v) = run(&["validate", "--file", s(&hse)], true);
+    assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");
+    let (code, v) = run(&["solve", "--file", s(&hse)], true);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["clock"]["source"], "PLL1");
+    assert_eq!(v["clock"]["hse"]["pll1divr"], 0x0103_064F);
+    let out = dir.join("out");
+    let refused = |args: &[&str]| {
+        let (code, v) = run(args, true);
+        assert_eq!(code, Some(2), "{args:?}: {v}");
+        assert_eq!(v["error"]["kind"], "HseNotGenerated", "{v}");
+        assert!(!out.exists(), "{args:?}");
+    };
+    refused(&["generate", "--spec", s(&hse), "--out", s(&out)]);
+    refused(&["emit", "--file", s(&hse), "--out", s(&out)]);
+    refused(&[
+        "simulate",
+        "--platform",
+        s(&root().join("boards/sentinel-01/sentinel-01.repl")),
+        "--firmware",
+        s(&dir.join("absent.elf")),
+        "--spec",
+        s(&hse),
+        "--for",
+        "10ms",
+    ]);
+}
+
 /// §3.3 and §3.4, the half before any tool: `--against` names every
 /// differing, missing and extra file, and no gate runs.
 #[test]
