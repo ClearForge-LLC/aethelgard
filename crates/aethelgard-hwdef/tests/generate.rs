@@ -440,3 +440,34 @@ fn a_chip_select_named_like_an_alternate_function_is_refused() {
         assert!(text.contains(&format!(" {name} CS ")), "{name}");
     }
 }
+
+/// `OscillatorNotCited`'s first test (`AET-WO-4240a` §1.5, `4240` §8): the
+/// reference board on the 16 MHz crystal's HSE tree, its I2C words re-solved
+/// for the crystal's budget, is a valid topology, and the generator refuses
+/// it by name: the MCU row cites ArduPilot's SPI kernel clocks only at
+/// `OSCILLATOR_HZ` 0.
+#[test]
+fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
+    let mut v = sentinel_01();
+    v["clock"] = json!({"source": "PLL1", "sysclk_hz": 64_000_000, "hse_hz": 16_000_000,
+        "d1cpre": 1, "hpre": 1, "d1ppre": 1, "d2ppre1": 1, "d2ppre2": 1, "d3ppre": 1,
+        "timpre": false, "vos": "scale2",
+        "hse": {"declared": {"crystal": {"part": "ABM8AIG-16.000MHZ-12-2Z-T3",
+            "load_caps_femtofarads": [18000, 18000], "pull_ppm": 30,
+            "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}},
+            "fast_ppm": 102, "slow_ppm": 102,
+            "pllckselr": 0x52, "pllcfgr": 0x0003_0004, "pll1divr": 0x0103_064F}});
+    v["i2c_timings"]["I2C1"]["timingr"] =
+        json!({"Fast400k": 0x10C7_123B, "FastPlus1M": 0x00A2_0E2D, "Standard100k": 0x50D3_2A3F});
+    let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
+    assert_eq!(t.validate(), Ok(()));
+    let e = refused(&v);
+    assert_eq!(e.kind(), "OscillatorNotCited", "{e}");
+    assert!(matches!(
+        e,
+        Refusal::OscillatorNotCited {
+            hse_hz: 16_000_000,
+            cited: 0
+        }
+    ));
+}
