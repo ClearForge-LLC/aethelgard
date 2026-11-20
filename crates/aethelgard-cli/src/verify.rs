@@ -712,8 +712,10 @@ const OPEN: &[&str] = &["serial_echo_missing"];
 enum Seeded {
     /// Expects a pass and every override changes nothing: the no-fault baseline.
     Baseline,
-    /// Expects a pass: the design must survive each of these.
-    Tolerable(Vec<Target>),
+    /// Expects a pass: the design must survive each of these. The second
+    /// list says, for each droop on the MCU's supply that crossed no active
+    /// BOR threshold, why it covers nothing (`AET-WO-2305` §1.4).
+    Tolerable(Vec<Target>, Vec<String>),
     /// Expects a fail by one fault's mechanism, on one target.
     Detect(Target, Mechanism),
     /// Anything else: it covers nothing, and its run is judged as before.
@@ -821,11 +823,13 @@ fn stress(
             );
             let loaded = aethelgard_chaos::campaign::rail_levels(d, v.nominal_millivolts)
                 .map(|(floor, _)| floor);
-            Some(if loaded.is_none_or(|f| f < band) {
-                (Some(Target::Rail(d.domain.clone())), None)
-            } else {
-                (None, None)
-            })
+            Some(
+                if loaded.is_none_or(|f| f < band) && uncrossed(spec, d).is_none() {
+                    (Some(Target::Rail(d.domain.clone())), None)
+                } else {
+                    (None, None)
+                },
+            )
         }
         // A battery sag the checks admit stresses the battery when its
         // static operating point lies below the battery's declared minimum
@@ -881,6 +885,39 @@ fn stress(
     }
 }
 
+/// Why a droop below its domain's band covers no rail (`AET-WO-2305` §1.4):
+/// on the MCU's supply at the board's BOR level above 0, a loaded floor at
+/// or above that level's falling threshold renders no reset, so no recovery
+/// is ever judged. `None` for any other droop, and for one inside the band,
+/// which covers nothing already (§4 F3). The level is the specification's
+/// (`mcu.bor_level`), which the campaign holds the droop's to, so no droop
+/// declares its way past this; the threshold is the typical value the
+/// scheduler renders at, and `check_droop` refuses a floor inside its band.
+fn uncrossed(
+    spec: &aethelgard_ir::Specification,
+    d: &aethelgard_chaos::record::Droop,
+) -> Option<String> {
+    let level = spec.mcu.bor_level;
+    if d.domain != spec.mcu.supply || level == 0 {
+        return None;
+    }
+    let v = spec.voltage_domains.iter().find(|v| v.id == d.domain)?;
+    let (floor, _) = aethelgard_chaos::campaign::rail_levels(d, v.nominal_millivolts)?;
+    let band = aethelgard_chaos::campaign::tolerance_floor_uv(
+        v.nominal_millivolts,
+        u32::from(v.tolerance_permille),
+    );
+    let t = aethelgard_chaos::power::BOR.get(usize::from(level))?;
+    (floor < band && floor >= t.falling()).then(|| {
+        format!(
+            "at BOR level {level} a droop must cross {}'s falling level, {} mV; its loaded floor is {} mV",
+            t.name,
+            t.falling() / 1000,
+            floor / 1000
+        )
+    })
+}
+
 /// What `scenario` seeds (`AET-WO-3303` D1, ruled (a)).
 fn classify(
     spec: &aethelgard_ir::Specification,
@@ -922,10 +959,22 @@ fn classify(
                     | Override::RailOutOfBand { .. }
             )
         });
+        // A droop that crossed no BOR threshold covers nothing, as an eased
+        // override does, and says why (`AET-WO-2305` §1.4).
+        let lacks: Vec<String> = scenario
+            .overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::Droop(d) => {
+                    uncrossed(spec, d).map(|why| format!("`{}` crosses none: {why}", scenario.name))
+                }
+                _ => None,
+            })
+            .collect();
         if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
-            return Seeded::Tolerable(Vec::new());
+            return Seeded::Tolerable(Vec::new(), lacks);
         }
-        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect());
+        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect(), lacks);
     }
     // One target, one mechanism, every changed override stressing it, and the
     // declared findings within that mechanism's kinds.
@@ -991,7 +1040,7 @@ fn coverage(
     let mut covered: BTreeSet<&Target> = BTreeSet::new();
     for (i, s) in seeded.iter().enumerate() {
         match s {
-            Seeded::Tolerable(targets) if ran(i) => covered.extend(targets),
+            Seeded::Tolerable(targets, _) if ran(i) => covered.extend(targets),
             Seeded::Detect(t, _) if baseline && ran(i) => {
                 covered.insert(t);
             }
@@ -1029,10 +1078,26 @@ fn coverage(
         if covered.contains(&target) {
             continue;
         }
-        // A rail no fault can reach says why (`AET-WO-2304b` §1.10).
+        // A rail no fault can reach says why (`AET-WO-2304b` §1.10); the
+        // MCU's supply names each droop that crossed no BOR threshold
+        // (`AET-WO-2305` §1.4).
+        let lacks: Vec<&str> = seeded
+            .iter()
+            .enumerate()
+            .filter(|&(i, _)| ran(i))
+            .flat_map(|(_, s)| match s {
+                Seeded::Tolerable(_, lacks) => lacks.as_slice(),
+                _ => &[],
+            })
+            .map(String::as_str)
+            .collect();
         match crate::campaign::rendered(spec, &v.id) {
             Err(e) if v.id != spec.mcu.supply => {
                 c.unmet.push(format!("{} ({})", target.name(), e.message));
+            }
+            _ if v.id == spec.mcu.supply && !lacks.is_empty() => {
+                c.unmet
+                    .push(format!("{} ({})", target.name(), lacks.join("; ")));
             }
             _ => c.unmet.push(target.name()),
         }
@@ -2087,10 +2152,12 @@ mod tests {
     /// floor, the declared floor less the load's I·R drop (the floor the
     /// scheduler renders), lies below the band. 3,140 mV with 100 mA through
     /// 500 mΩ is 3,090 mV loaded, below 3,135 mV: covered, though the
-    /// declared floor is above it; 3,200 mV is 3,150 mV loaded: not.
+    /// declared floor is above it; 3,200 mV is 3,150 mV loaded: not. On a
+    /// board at BOR level 0, where the band alone decides (`AET-WO-2305`
+    /// §1.4 moved this test off Sentinel-01, whose level is 3).
     #[test]
     fn a_droop_covers_its_rail_by_its_loaded_floor() {
-        let (spec, t) = solved(S1);
+        let (spec, t) = solved(FOUR_LAYER);
         let droop = |floor: u32| {
             json_scenario(
                 true,
@@ -2098,14 +2165,68 @@ mod tests {
                 json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
                     "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
                     "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
-                    "bor_level": 3}}]),
+                    "bor_level": 0}}]),
             )
         };
         assert_eq!(
             classify(&spec, &t, &droop(3140)),
-            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())])
+            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
         );
-        assert_eq!(classify(&spec, &t, &droop(3200)), Seeded::Tolerable(vec![]));
+        assert_eq!(
+            classify(&spec, &t, &droop(3200)),
+            Seeded::Tolerable(vec![], vec![])
+        );
+    }
+
+    /// `AET-WO-2305` §1.4: on the MCU's supply at BOR level 3, a droop below
+    /// the band covers the rail only by crossing VBOR3's falling level,
+    /// 2,610 mV. 2,900 mV is 2,850 mV loaded: below the band, above the
+    /// threshold, so no reset and no recovery is judged; it covers nothing,
+    /// and the rail's row names the crossing it lacks. 2,400 mV covers. A
+    /// droop on the same rail at BOR level 0 is judged by the band alone.
+    #[test]
+    fn a_droop_covers_the_mcu_rail_only_by_crossing_its_bor_level() {
+        let (spec, t) = solved(S1);
+        let droop = |floor: u32, bor: u8| {
+            json_scenario(
+                true,
+                &[],
+                json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
+                    "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
+                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
+                    "bor_level": bor}}]),
+            )
+        };
+        let why = "`x` crosses none: at BOR level 3 a droop must cross VBOR3's falling level, 2610 mV; its loaded floor is 2850 mV";
+        assert_eq!(
+            classify(&spec, &t, &droop(2900, 3)),
+            Seeded::Tolerable(vec![], vec![why.to_owned()])
+        );
+        assert_eq!(
+            classify(&spec, &t, &droop(2400, 3)),
+            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
+        );
+        // The board's level decides, not the droop's own field.
+        assert_eq!(
+            classify(&spec, &t, &droop(2900, 0)),
+            Seeded::Tolerable(vec![], vec![why.to_owned()])
+        );
+        let (four, t4) = solved(FOUR_LAYER);
+        assert_eq!(
+            classify(&four, &t4, &droop(2900, 0)),
+            Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
+        );
+        let s = |d: aethelgard_chaos::campaign::Scenario| {
+            let mut v = seeded(
+                &spec,
+                &t,
+                &[TOLERATED_I2C, ABSENT_U4, OPEN_CONSOLE, BASELINE],
+            );
+            v.push(classify(&spec, &t, &d));
+            coverage(&spec, &t, &v, None).unmet
+        };
+        assert_eq!(s(droop(2900, 3)), [format!("rail `VDD_3V3` ({why})")]);
+        assert!(s(droop(2400, 3)).is_empty());
     }
 
     /// Adversarial 5 (`AET-WO-2304b`): a rail out of band is detected only
@@ -2174,6 +2295,7 @@ mod tests {
     }
 
     const S1: &str = "examples/sentinel-01-minimal.json";
+    const FOUR_LAYER: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
     const BASELINE: &str = "scenarios/sentinel-01/pullup-2k2.json";
     const TOLERATED_I2C: &str = "scenarios/sentinel-01/seeded/pullup-3k3.json";
     const RAIL: &str = "scenarios/sentinel-01/droop-bor3.json";
@@ -2331,7 +2453,7 @@ mod tests {
                 &[],
                 json!([{"serial_rx_open": "GPS"}])
             )),
-            Seeded::Tolerable(Vec::new())
+            Seeded::Tolerable(Vec::new(), Vec::new())
         );
         assert_eq!(
             c(&json_scenario(
@@ -2400,26 +2522,26 @@ mod tests {
             &[],
             json!([{"net": sda, "max_capacitance_femtofarads": 1}]),
         );
-        assert_eq!(c(&eased), Seeded::Tolerable(Vec::new()));
+        assert_eq!(c(&eased), Seeded::Tolerable(Vec::new(), Vec::new()));
         // Adversary 2: a lowered pull-up only eases (F1); a stressing fault
         // beside an eased one covers nothing (F2); a held line or an absent
         // device expected to pass is never survived (F4).
         let lowered = json_scenario(true, &[], json!([{"bus": "SENSORS", "pull_up_ohms": 1000}]));
-        assert_eq!(c(&lowered), Seeded::Tolerable(Vec::new()));
+        assert_eq!(c(&lowered), Seeded::Tolerable(Vec::new(), Vec::new()));
         let mixed = json_scenario(
             true,
             &[],
             json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
                 {"net": sda, "max_capacitance_femtofarads": 1}]),
         );
-        assert_eq!(c(&mixed), Seeded::Tolerable(Vec::new()));
+        assert_eq!(c(&mixed), Seeded::Tolerable(Vec::new(), Vec::new()));
         for o in [
             json!([{"spi_device_absent": "U4"}]),
             json!([{"bus": "SENSORS", "line_held_low": "scl"}]),
         ] {
             assert_eq!(
                 c(&json_scenario(true, &[], o)),
-                Seeded::Tolerable(Vec::new())
+                Seeded::Tolerable(Vec::new(), Vec::new())
             );
         }
         let lowered_fail = json_scenario(

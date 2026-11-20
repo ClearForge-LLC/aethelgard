@@ -650,10 +650,41 @@ fn recovered_words(
     (words, witness)
 }
 
-/// Whether a witness shows exactly the model's lines; no witness (no
-/// identity read) is vacuous, and an unknown format never shows them.
-fn witnessed(w: Option<&crate::verdict::WitnessReport>) -> bool {
-    w.is_none_or(|w| !w.expected.is_empty() && w.observed.as_ref() == Some(&w.expected))
+/// Whether a probe's witness shows the first device brought up again
+/// ([`power::witness_recovers`], `AET-WO-2305` §1.3): its identity read's
+/// lines, then only that device's later steps, in the image's order. No
+/// witness (no identity read) is vacuous; lines not read whole, or a step
+/// with no known format first, never show it.
+fn witnessed(
+    image: &aethelgard_twin::boot::Image,
+    w: Option<&crate::verdict::WitnessReport>,
+) -> bool {
+    let Some(w) = w else { return true };
+    let checks = &image.identity.checks;
+    let script: Vec<&[String]> = checks
+        .iter()
+        .filter(|c| checks.first().is_some_and(|f| f.device == c.device))
+        .map(|c| c.witness.as_deref().unwrap_or_default())
+        .collect();
+    w.observed
+        .as_deref()
+        .is_some_and(|o| power::witness_recovers(&script, o))
+}
+
+/// Whether a probe's reads show the firmware recovered: the boot word and
+/// the first identity record's status and value each read as expected, and
+/// its witness shows that device brought up again ([`witnessed`]). A wrong
+/// identity fails twice over, by its value and by its line (`AET-WO-2305`
+/// §1.3): still `brownout_unrecovered`, by name.
+fn holds(
+    image: &aethelgard_twin::boot::Image,
+    words: [&crate::verdict::Word; 3],
+    witness: Option<&crate::verdict::WitnessReport>,
+) -> bool {
+    words
+        .iter()
+        .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
+        && witnessed(image, witness)
 }
 
 /// A droop's records and findings (`AET-WO-2301` §2.2, §2.3): the declared
@@ -726,11 +757,7 @@ pub fn droop_report(
             continue;
         };
         let ([boot, status, value], witness) = recovered_words(image, boot_word, probe);
-        let ok = [&boot, &status, &value]
-            .iter()
-            .all(|w| w.observed.as_deref() == Some(w.expected.as_str()))
-            && witnessed(witness.as_ref());
-        if !ok {
+        if !holds(image, [&boot, &status, &value], witness.as_ref()) {
             findings.push(Finding::plain(
                 campaign::UNRECOVERED_FINDING,
                 format!(
@@ -1031,6 +1058,60 @@ mod tests {
             BRIDGE_SOURCE_SHA256,
             "the bridge changed: update BRIDGE_SOURCE_SHA256"
         );
+    }
+
+    /// `AET-WO-2305` §1.3, on Sentinel-03's image (its first identity read is
+    /// U7's, a BMP581 with a configuration and a data read): a probe after
+    /// the bring-up recovers with the device's later lines; a wrong identity,
+    /// a repeated identity read (a boot that started over) or a stray line
+    /// does not, nor does an unset boot word.
+    #[test]
+    fn a_probe_recovers_by_its_reads_and_its_first_devices_own_lines() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let bytes =
+            fs::read(root.join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+        let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let checks = &image.identity.checks;
+        let first = &checks[0];
+        let script: Vec<String> = checks
+            .iter()
+            .filter(|c| c.device == first.device)
+            .flat_map(|c| c.witness.clone().unwrap())
+            .collect();
+        assert!(
+            script.len() > first.witness.as_ref().unwrap().len(),
+            "U7 has later steps"
+        );
+        let boot_word = aethelgard_twin::boot::boot_word().unwrap();
+        let identity = u32::try_from(first.expected).unwrap();
+        let judge = |boot: u32, value: u32, lines: Vec<String>| {
+            let probe = crate::renode::Probe {
+                at_ns: 0,
+                boot_word: boot,
+                record: Some((aethelgard_twin::boot::STATUS_OK, value)),
+                witness: Some(lines),
+            };
+            let ([b, s, v], w) = recovered_words(&image, boot_word, Some(&probe));
+            holds(&image, [&b, &s, &v], w.as_ref())
+        };
+        let magic = aethelgard_twin::boot::BOOT_MAGIC;
+        assert!(judge(magic, identity, script.clone()));
+        assert!(judge(magic, identity, first.witness.clone().unwrap()));
+        // A wrong identity: its value, and its line as the model would log it.
+        assert!(!judge(magic, identity ^ 1, script.clone()));
+        let mut wrong = script.clone();
+        wrong[0] = format!("{}?", wrong[0]);
+        assert!(!judge(magic, identity, wrong));
+        let mut again = script.clone();
+        again.extend(first.witness.clone().unwrap());
+        assert!(!judge(magic, identity, again));
+        let mut stray = script.clone();
+        stray.insert(1, format!("{} stray", first.level.1));
+        assert!(!judge(magic, identity, stray));
+        assert!(!judge(0, identity, script));
     }
 
     /// A stale or impostor bridge is refused before any of its answer is read.

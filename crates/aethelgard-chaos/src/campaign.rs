@@ -1322,7 +1322,7 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
                 _ => None,
             })
         });
-    let has_witness = first_witness(records).is_some();
+    let has_witness = !first_script(records).is_empty();
     let same = |a: &Reading, b: &Reading| {
         (a.address, a.mask, a.expected) == (b.address, b.mask, b.expected)
     };
@@ -1352,19 +1352,34 @@ fn check_observed_against_the_boot(records: &[Record]) -> Result<(), &'static st
 /// The first identity read's expected witness lines (kind 13, or kind 22 on
 /// a board with no I2C read), which a droop's observation must show since
 /// its release.
-fn first_witness(records: &[Record]) -> Option<&[String]> {
-    records
-        .iter()
-        .find_map(|r| match r {
-            Record::I2cWitness { expected, .. } => Some(expected.as_slice()),
-            _ => None,
-        })
-        .or_else(|| {
-            records.iter().find_map(|r| match r {
-                Record::SpiWitness { expected, .. } => Some(expected.as_slice()),
-                _ => None,
-            })
-        })
+/// The first identity read's device's steps' expected lines, in the
+/// archive's (the script's) order: the first kind 13's device, or with no
+/// I2C read the first kind 22's (`AET-WO-2305` §1.3). Empty without one.
+fn first_script(records: &[Record]) -> Vec<&[String]> {
+    let i2c = records.iter().filter_map(|r| match r {
+        Record::I2cWitness {
+            device, expected, ..
+        } => Some((device, expected.as_slice())),
+        _ => None,
+    });
+    let spi = records.iter().filter_map(|r| match r {
+        Record::SpiWitness {
+            device, expected, ..
+        } => Some((device, expected.as_slice())),
+        _ => None,
+    });
+    let steps: Vec<(&String, &[String])> = match i2c.clone().next() {
+        Some(_) => i2c.collect(),
+        None => spi.collect(),
+    };
+    let Some((first, _)) = steps.first().copied() else {
+        return Vec::new();
+    };
+    steps
+        .into_iter()
+        .filter(|(d, _)| *d == first)
+        .map(|(_, e)| e)
+        .collect()
 }
 
 /// A reading as the judge sees it: observed, and equal to the expected
@@ -1438,7 +1453,7 @@ fn check_droop_records(
             _ => None,
         })
         .collect();
-    let want = first_witness(records);
+    let script = first_script(records);
     let observed: Vec<(u64, bool)> = records
         .iter()
         .filter_map(|r| match r {
@@ -1453,7 +1468,11 @@ fn check_droop_records(
                 [boot_word, status, value]
                     .iter()
                     .all(|r| reads_as_expected(r))
-                    && witness.as_deref() == want,
+                    && match witness {
+                        // No identity read: nothing to witness, vacuously.
+                        None => script.is_empty(),
+                        Some(w) => power::witness_recovers(&script, w),
+                    },
             )),
             _ => None,
         })

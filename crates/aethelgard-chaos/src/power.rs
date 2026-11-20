@@ -86,6 +86,32 @@ pub const NUDGE_NS: u64 = 10;
 /// this long after a release (`AET-WO-2301` §2.3). Measured: 20 µs.
 pub const RECOVERY_BOUND_NS: u64 = 100_000;
 
+/// Whether a probe's witness shows the first device brought up again
+/// (`AET-WO-2305` §1.3): the lines from the release begin with that
+/// device's first step's whole lines (its identity read), and every line
+/// after them continues the same device's own later steps, in the script's
+/// order, each step whole. Nothing else may follow: a second identity read
+/// is a boot that started over (a reset loop), not a recovery. `steps` is
+/// the device's steps' expected lines in script order, the identity read
+/// first. No step, or a first step with no known lines, never shows it.
+/// The judge and replay both judge by this, so the rule lives here alone.
+pub fn witness_recovers(steps: &[&[String]], observed: &[String]) -> bool {
+    if steps.first().is_none_or(|s| s.is_empty()) {
+        return false;
+    }
+    let mut rest = observed;
+    for (k, step) in steps.iter().enumerate() {
+        if k > 0 && rest.is_empty() {
+            break;
+        }
+        match rest.strip_prefix(*step) {
+            Some(r) if !step.is_empty() => rest = r,
+            _ => return false,
+        }
+    }
+    rest.is_empty()
+}
+
 /// How a reset is rendered, as kind 18 records it: Renode 1.17.0 models no
 /// BOR, PVD or reset cause (`AET-WO-2301` P1, F6), so these monitor commands
 /// stand in for the supervisor. The campaign composes exactly these.
@@ -374,6 +400,33 @@ mod tests {
             schedule(3, &[c("VBOR3_falling", 2_600_000, 1, true)]).unwrap_err(),
             "a crossing's level is not the table's typical value"
         );
+    }
+
+    /// `AET-WO-2305` §1.3: the identity read's lines first, then only the
+    /// same device's later steps, in order and whole.
+    #[test]
+    fn a_witness_recovers_by_its_identity_then_its_own_later_steps() {
+        let l = |v: &[&str]| v.iter().map(|s| (*s).to_owned()).collect::<Vec<String>>();
+        let (id, cfg, data) = (l(&["id"]), l(&["cfg"]), l(&["d1", "d2"]));
+        let steps: [&[String]; 3] = [&id, &cfg, &data];
+        assert!(witness_recovers(&steps, &l(&["id"])));
+        assert!(witness_recovers(&steps, &l(&["id", "cfg"])));
+        assert!(witness_recovers(&steps, &l(&["id", "cfg", "d1", "d2"])));
+        // A step cut short, a step out of order, a stray line, a repeat.
+        assert!(!witness_recovers(&steps, &l(&["id", "cfg", "d1"])));
+        assert!(!witness_recovers(&steps, &l(&["id", "d1", "d2"])));
+        assert!(!witness_recovers(&steps, &l(&["id", "x"])));
+        assert!(!witness_recovers(&steps, &l(&["x", "id"])));
+        assert!(!witness_recovers(
+            &steps,
+            &l(&["id", "cfg", "d1", "d2", "id"])
+        ));
+        // A wrong identity, or nothing, never shows it.
+        assert!(!witness_recovers(&steps, &l(&["id?"])));
+        assert!(!witness_recovers(&steps, &[]));
+        assert!(!witness_recovers(&[], &l(&["id"])));
+        let unknown: [&[String]; 1] = [&[]];
+        assert!(!witness_recovers(&unknown, &[]));
     }
 
     #[test]
