@@ -1,6 +1,6 @@
 # AET-WO-1911 — FEEDBACK
 
-**Status: built to the ruling on the §1.3 stop (architect, bus, 2026-11-19 22:10 UTC).**
+**Status: READY.** Built to the ruling on the §1.3 stop (architect, bus, 2026-11-19 22:10 UTC). On the final merged tree, run 44644135555: `tools` green at 20.4 min, tier 2 190/190 exact; it was 36.1–38.7 min before this order.
 - **D1:** `ci/SHARDS` 12, accepted.
 - **D2:** keep the shared build.
 - §1.4 is done: refit, REFIT RULE 4 rewritten, and the counted runs below.
@@ -45,6 +45,14 @@
   - Run 2 queued 203 s on a loaded account.
   - Runner-minutes: 227–242, against 244–260 before.
   - Every job was green, with tier 2 at 190/190 each time.
+
+| run on the merged plan | head | `tools` green, min | all done, min | build job, s | shard setup, s | shard test, s | max queue, s | runner-min | tier 2 |
+|---|---|---|---|---|---|---|---|---|---|
+| 44644135555 | `7ad5d0df` (`main` 52a2d62e merged) | 20.4 | 20.4 | 325 | 89–272 | 340–734 | 3 | 144 | 190 (floor 190, exact) |
+
+- **The final tree at 12 shards:** `tools` green at 20.4 min, against 36.1–38.7 at 8 before this order. Shard tests ran 340–734 s on the 816 s plan.
+- That run lists 2,514 tests and 2,507 names. `TIER2_MIN` is exact at 190: 3303b added no tier-2 test, and this order adds none.
+- Local gates at `b9572ce0`: fmt, clippy, and `cargo test --workspace` (2,299 passed, 0 failed). On CI, `gates` is green on every run.
 
 ## `main` merged after 3303b (52a2d62e): the floor moved
 
