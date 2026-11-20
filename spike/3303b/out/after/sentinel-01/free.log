@@ -1,0 +1,11 @@
+2026-11-19T21:28:22+00:00 tree 13fef3aca9a17e9c438f892b7e282e95fb4e741e
+2026-11-19T21:28:22+00:00 after sentinel-01 prove:every_valid_sequence_i2c1 free -g available=36
+2026-11-19T21:28:44+00:00 after sentinel-01 prove:every_valid_sequence_spi1 free -g available=36
+2026-11-19T21:29:38+00:00 after sentinel-01 prove:i2c1_transfer_is_bounded_and_ordered free -g available=36
+2026-11-19T21:29:48+00:00 after sentinel-01 prove:spi1_transfer_is_bounded_and_ordered free -g available=36
+2026-11-19T21:30:06+00:00 after sentinel-01 prove:spi1_transfer_refuses_too_many_frames free -g available=35
+2026-11-19T21:30:14+00:00 after sentinel-01 prove:reset_clock_is_ok_exactly_at_reset free -g available=37
+2026-11-19T21:30:16+00:00 after sentinel-01 prove:usart1_start_writes_the_solved_values free -g available=37
+2026-11-19T21:30:24+00:00 after sentinel-01 prove:flash_option_status_is_one_read free -g available=37
+2026-11-19T21:30:26+00:00 after sentinel-01 prove:every_valid_sequence(absent) free -g available=37
+2026-11-19T21:30:28+00:00 after sentinel-01 verify free -g available=37

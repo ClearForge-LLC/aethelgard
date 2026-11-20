@@ -1,0 +1,12 @@
+logger-spi-only-cap	generate	0	2017	67358720	17179869184
+logger-spi-only-cap	prove:every_valid_sequence_spi1	0	62177	3638980608	17179869184
+logger-spi-only-cap	prove:every_valid_sequence_spi2	0	102482	4436279296	17179869184
+logger-spi-only-cap	prove:spi1_transfer_is_bounded_and_ordered	0	22120	1179295744	17179869184
+logger-spi-only-cap	prove:spi1_transfer_refuses_too_many_frames	0	6028	494497792	17179869184
+logger-spi-only-cap	prove:spi2_transfer_is_bounded_and_ordered	0	16099	1260650496	17179869184
+logger-spi-only-cap	prove:spi2_transfer_refuses_too_many_frames	0	7023	547389440	17179869184
+logger-spi-only-cap	prove:reset_clock_is_ok_exactly_at_reset	0	2005	99344384	17179869184
+logger-spi-only-cap	prove:usart1_start_writes_the_solved_values	0	8037	861593600	17179869184
+logger-spi-only-cap	prove:flash_option_status_is_one_read	0	2007	118075392	17179869184
+logger-spi-only-cap	prove:every_valid_sequence(absent)	1	1002	88440832	17179869184
+logger-spi-only-cap	verify	1	210062	4716208128	17179869184
