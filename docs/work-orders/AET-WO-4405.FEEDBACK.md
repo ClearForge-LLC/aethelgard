@@ -1,7 +1,7 @@
 # AET-WO-4405 FEEDBACK — serial protocol, options and baud read from the firmware; a third GPS port named
 
 **Builder:** Claude (standard tier), worktree `~/aethelgard-4405`, branch `wo/aet-4405-serial-from-elf` from `main` `5eecc929`.
-**Cadence:** build, with one measured stop (§1.1, did not fire). The work order is read from the docs branch (`~/.cache/aet-4405-wo.md`) and is not committed here.
+**Cadence:** build, with one measured stop (§1.1, did not fire). The work order was built from the docs-branch copy (`~/.cache/aet-4405-wo.md`), identical to the one `main` `bb1bcb8c` merged.
 
 Labels:
 - **[read]**: at source, this repository or ArduPilot `Copter-4.7.2` (`fb773567`), copied read-only out of the pinned image `160f9955…`;
