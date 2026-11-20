@@ -11,7 +11,7 @@ Each statement is labelled:
 
 ## 0. Status
 
-- **`main` merged:** `52a2d62e` (3303b) cleanly, then `03d89554` (4202), then `3341dc6b` (1911, 2304b, 1314b).
+- **`main` merged:** `52a2d62e` (3303b) cleanly, then `03d89554` (4202), then `3341dc6b` (1911, 2304b, 1314b), then `ff31328d` (documents only: `docs/roadmap.md` and a bench note; `readme_status`, the one test that reads the roadmap, passes on the merged tree).
   - 4202's conflicts: its exact `RunFor` in the pinned monitor-script tests (§4.5), each keeping the step hook, and one `TIER2_MIN` line.
   - 2304b's: the trace number (16 on top of its 15, both docs kept) and the golden. 2304b changed the version byte alone, so this order's hashes at 16 stand (the golden test passes).
   - 1911's: `ci/test-weights.tsv`, resolved as its refit plus this order's one row.
