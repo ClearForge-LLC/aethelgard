@@ -1646,6 +1646,7 @@ fn footprint(
     let sym = library::symbol(part.lib_id)?;
     let fields: Vec<(&str, &str)> = sym
         .children("property")
+        .filter(|p| !library::private(p))
         .filter_map(|p| Some((p.arg(1)?, p.arg(2).unwrap_or(""))))
         .filter(|(name, _)| !matches!(*name, "Reference" | "Value" | "Footprint"))
         .collect();

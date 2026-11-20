@@ -30,6 +30,8 @@ use crate::sexpr::{self, Sx, mm};
 mod power;
 #[path = "schematic_support.rs"]
 mod support;
+#[path = "schematic_hse.rs"]
+pub mod hse;
 use aethelgard_ir::power::BATTERY_NET;
 
 /// KiCad 10's own schematic format version (ruled D7 on PR #40).
@@ -1327,6 +1329,9 @@ pub(crate) fn design(
     // Its support pins and network, from its row (`AET-WO-4300g`); signal
     // pins are set below.
     let mut conns = support::draw(&mut b, &mcu_ref)?;
+    // The oscillator pins beside a crystal (`AET-WO-4240c`); nothing for a
+    // specification that declares no HSE.
+    let hse = hse::tie(&mut b, &mcu_ref, table, &mut conns)?;
     let solved_pins = solved
         .assignments
         .iter()
@@ -1378,6 +1383,9 @@ pub(crate) fn design(
         offboard: BTreeMap::new(),
         seat: None,
     });
+    if let Some(group) = hse {
+        group.draw(&mut b, &mcu_ref)?;
+    }
 
     // The I2C buses' pull-ups, then their devices.
     for bus in &spec.i2c_buses {
@@ -1850,7 +1858,7 @@ impl Sheet<'_> {
         }
         v.push(Sx::node("dnp", &["no"]));
         v.push(uuid_sx(key));
-        for prop in sym.children("property") {
+        for prop in sym.children("property").filter(|p| !library::private(p)) {
             let name = prop.arg(1).unwrap_or("");
             let text = match name {
                 "Reference" => reference.to_owned(),

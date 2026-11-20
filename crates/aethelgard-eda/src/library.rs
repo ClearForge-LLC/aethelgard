@@ -384,6 +384,14 @@ fn flatten(lib: &str, name: &str, depth: usize) -> Result<Sx, LibraryError> {
     Ok(Sx::List(out))
 }
 
+/// Whether a symbol's `(property …)` is a private one: a library note
+/// (`(property private "KLC_S3.3" …)` in `Device:Crystal_GND24`) that stays
+/// in the library symbol and is drawn on no instance or footprint
+/// (`AET-WO-4240c`; checked by ERC and the DRC gate's schematic parity).
+pub fn private(property: &Sx) -> bool {
+    matches!(property.items().get(1), Some(Sx::Atom(a)) if a == "private")
+}
+
 /// `lib:name`, flattened and renamed as a schematic's `lib_symbols` embeds
 /// it, without `ki_fp_filters`.
 pub fn symbol(lib_id: &str) -> Result<Sx, LibraryError> {

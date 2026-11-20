@@ -7,5 +7,6 @@ while read -r s; do
   n=$(echo "$s" | tr '/' '_' | sed 's/\.json$//')
   rc=0; "$A" emit --file "$s" --out "$O/$n" > "$O/$n.out" 2>&1 || rc=$?
   echo "$s emit=$rc" >> "$O/rows.txt"
+  sed -i "s#$O/#OUT/#g" "$O/$n.out"
 done < "$L"
 ( cd "$O" && find . -type f \( -name '*.kicad_sch' -o -name '*.kicad_pcb' -o -name '*.bom.csv' \) -print0 | sort -z | xargs -0 sha256sum ) > "$O/SHA256SUMS"
