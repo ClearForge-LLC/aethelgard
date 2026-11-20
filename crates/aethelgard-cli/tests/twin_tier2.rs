@@ -5141,3 +5141,41 @@ mod bor_recovery {
         );
     }
 }
+
+// ---------------------------------------------------------------- AET-WO-4240b
+
+/// `AET-WO-4240b` §1.9: each HSE fixture (the 16 MHz crystal and the 8 MHz
+/// external clock, `sentinel-02-shaped` with `mcu.hse`) generates, builds and
+/// boots to `pass` in 100 ms. The platform sets the RCC's `hseFrequency` to
+/// the solved `hse_hz`, the twin's clock rule names nothing (no `clock_access`
+/// finding: every solved word once, in order, with the HSERDY, PLL1RDY and SWS
+/// reads between), and the verdict states what the twin cannot see of the HSE
+/// (its residual and unobservable fields).
+#[test]
+fn each_hse_fixture_boots_to_pass_under_the_clock_rule() {
+    for (fixture, hz) in [
+        ("hse-crystal-16", 16_000_000),
+        ("hse-external-8", 8_000_000),
+    ] {
+        let (platform, spec, elf) = motor_board(fixture, fixture, |_| {}, |_| {});
+        let text = fs::read_to_string(&platform).unwrap();
+        assert!(
+            text.contains(&format!("rcc:\n    hseFrequency: {hz}\n")),
+            "{fixture}: {text}"
+        );
+        let (code, v) = boot_on(fixture, &platform, &spec, &elf, "100ms");
+        assert_eq!(code, Some(0), "{fixture}: {v}");
+        assert_eq!(v["verdict"], "pass", "{fixture}: {v}");
+        assert!(!kinds(&v).contains(&"clock_access"), "{fixture}: {v}");
+        let residuals = v["boot"]["residuals"].to_string();
+        assert!(residuals.contains("HSE (AET-WO-4240b)"), "{fixture}: {v}");
+        let unobservable = v["boot"]["unobservable"].to_string();
+        for field in ["RCC.CR.HSERDY", "RCC.CR.PLL1RDY", "RCC.PLLCFGR"] {
+            assert!(unobservable.contains(field), "{fixture} {field}: {v}");
+        }
+        assert_eq!(
+            v["boot"]["boot_word"]["observed"], "0x2100b007",
+            "{fixture}: {v}"
+        );
+    }
+}

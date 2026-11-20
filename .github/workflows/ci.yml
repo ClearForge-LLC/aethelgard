@@ -484,7 +484,7 @@ jobs:
       # 200 (AET-WO-4241, at its merge of main 472d2d84, which held 199): one
       # tier-2 test in twin_tier2.rs,
       # the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions.
-      TIER2_MIN: "200"
+      TIER2_MIN: "201"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
       # only when the route job succeeded, said docs, and the build and every shard were skipped.
