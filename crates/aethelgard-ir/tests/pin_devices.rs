@@ -605,3 +605,45 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
     );
     bad.validate().unwrap();
 }
+
+/// M5 (`AET-WO-1211a` §1.1): the 4600 driver (`driver-judges-nothing.json`,
+/// as `spike/1211a/migrate.py` moved it: each idle the old `pulse_min_us`,
+/// 1 us) with its `HB_IN1`/`HB_IN2` pair declared as an IN/IN bridge is
+/// refused `BridgeIdlePulsed`: 4600 F2's hazard, an IN/IN pair chopping from
+/// boot, now caught. Idled `low`, the same declaration validates.
+#[test]
+fn the_4600_driver_s_pair_as_a_bridge_is_refused_pulsed() {
+    let mut v: Value = serde_json::from_str(include_str!(
+        "../../aethelgard-cli/tests/fixtures/driver-judges-nothing.json"
+    ))
+    .unwrap();
+    assert_eq!(
+        motor(&mut v, "HB_IN1")["pwm"]["idle"],
+        json!({"pulse_us": 1})
+    );
+    v["voltage_domains"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "VMOTOR", "nominal_millivolts": 12000, "tolerance_permille": 50}));
+    v["pin_devices"] = json!([{
+        "reference": "U9",
+        "part": "DRV8876PWPR",
+        "supplies": {"VM": "VMOTOR"},
+        "straps": {"PMODE": {"tie": "VDD_3V3"}, "IMODE": {"tie": "GND"}, "VREF": {"tie": "VDD_3V3"}},
+        "signals": [{"device_pin": "nSLEEP", "net": "HB_NSLEEP", "pin": null,
+                     "direction": "output", "initial": "low"}],
+        "analog": [],
+        "bridges": [{"id": "HB", "mode": "in_in",
+                     "inputs": {"EN/IN1": "HB_IN1", "PH/IN2": "HB_IN2"},
+                     "outputs": {"OUT1": "HB_OUT1", "OUT2": "HB_OUT2"}}],
+        "part_limits": {"input_pwm_max_hz": null},
+        "temperature_celsius": null
+    }]);
+    let e = refused(&v);
+    assert_eq!(e.kind(), "BridgeIdlePulsed", "{e}");
+    assert!(e.to_string().contains("HB_IN1"), "{e}");
+    for l in ["HB_IN1", "HB_IN2"] {
+        motor(&mut v, l)["pwm"]["idle"] = json!({"level": "low"});
+    }
+    spec(&v).validate().unwrap();
+}
