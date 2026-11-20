@@ -75,3 +75,7 @@ IDENTICAL, 72 files, 29 specifications; `extract` stdout and exit codes IDENTICA
 **Neighbours** (adversarial, `~/.cache/aet-4240c/adv-b/s/prox.py`): a B.Cu `VDD_3V3` track,
 (86.375, 100.5)–(86.375, 104.75) mm, crosses under both oscillator nets; `NRST` (U1 pin 25) is 0.20 mm from
 `OSC_OUT`'s pad. No SPI, I2C, motor or serial net within 1 mm. Reported, not judged (no held source).
+
+**After merging `main` `25203c58` (1211a):** the corpus is 31 specifications (1211a's `d1-drv8876` and
+`d2-drv8833` fixtures added; both refuse `emit` on base and branch alike). Against a fresh baseline of
+`25203c58`: emit IDENTICAL, 72 files, 31 specifications; `extract` IDENTICAL on all 24 emitted boards.

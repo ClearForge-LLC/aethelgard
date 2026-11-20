@@ -6,7 +6,7 @@ Every answer is labelled **measured** (run here, the log or file named), **read 
 
 ## §0 The answer in one screen
 
-- **No `hse: null` KiCad byte moved** [measured]. 29 committed specifications, 24 emit and 5 refuse, on base `8df353ee` and on every branch commit that could move an emitted byte, and again against `c1012a2d` after merging `main`. All 72 files (`.kicad_sch`, `.kicad_pcb`, `.bom.csv`), the `emit` stdout and the exit codes are byte-identical, with no mask. `extract`'s stdout and exit codes on all 24 emitted null boards are identical too. An independent subagent rebuilt both ends and confirmed it.
+- **No `hse: null` KiCad byte moved** [measured]. 29 committed specifications, 24 emit and 5 refuse, on base `8df353ee` and on every branch commit that could move an emitted byte, and again against `c1012a2d` and `25203c58` (1211a, 31 specifications, its two driver fixtures refused on both) after merging `main`. All 72 files (`.kicad_sch`, `.kicad_pcb`, `.bom.csv`), the `emit` stdout and the exit codes are byte-identical, with no mask. `extract`'s stdout and exit codes on all 24 emitted null boards are identical too. An independent subagent rebuilt both ends and confirmed it.
 - **Vendored, byte for byte from KiCad 10.0.7** [measured]: `Device:Crystal_GND24` (git blob `97e45475…`) and `Crystal:Crystal_SMD_3225-4Pin_3.2x2.5mm` (`11874e16…`). Each equals GitLab's files-API `blob_id` at ref `10.0.7`. `PINS` and `FILES` are 54, with the README rows. The crystal row named `Crystal:Crystal_GND24`, which does not exist upstream; it is now `Device:Crystal_GND24` (Q3).
 - **The crystal is drawn** (`schematic_hse.rs`):
   - crystal `Y1` on PH0/PH1 (LQFP-144 pins 23 and 24, by package position);
@@ -210,6 +210,6 @@ A fresh subagent proposed the cuts, reading only; the builder ruled on each and 
 
 ## §10 State at READY
 
-- Head: the READY commit. `main` `c1012a2d` (1210, 1912, the work order) is merged in. The null corpus was re-baselined against it: emit and `extract` identical.
-- `4240b` (generator, twin, the CLI's `HseNotGenerated` lift) and `1211a` are not on `main` yet. Merge order: whichever lands second takes the other. `4240b`'s `mcu.hse` gains `startup_max_us`/`startup_source` (specification 22), so `hse_eda_tier1`'s fixture builder takes those fields then.
+- Head: the READY commit. `main` `25203c58` (1210, 1912, the work order, 1211a) is merged in. The one conflict, `EmitError`'s new variants beside 1211a's `PinDeviceNotDrawn`, keeps all three. The null corpus was re-baselined against it: emit 72 files and `extract` 24 boards identical; 31 specifications (24 emit, 7 refuse on both).
+- `4240b` (generator, twin, the CLI's `HseNotGenerated` lift) is not on `main` yet. Merge order: whichever lands second takes the other. `4240b`'s `mcu.hse` gains `startup_max_us`/`startup_source` (specification 22), so `hse_eda_tier1`'s fixture builder takes those fields then.
 - The architect merges; the builder never does.
