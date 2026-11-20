@@ -2386,11 +2386,14 @@ enum Witness {
 }
 
 /// A `renode` stub for a droop boot: it refuses (exit 98) anything but
-/// `--config <file> --disable-gui --console --plain -e <one line>`, refuses
-/// (exit 99) a command line without the rendered reset, its release marker
-/// and its probe, and prints the release, U2's witness where `witness` says,
-/// the probe `probe`, then a boot that ran 9,877,201 instructions after the
-/// release.
+/// `--config <file> --disable-gui --console --plain -e <one line>`. The
+/// undisturbed boot (`AET-WO-2305` §1.2: no reset, the hooks before one
+/// `RunFor` of the whole boot) prints a boot whose boot word lands at
+/// instruction 2575, 25,750 ns, so the bound is 125,750 ns. The droop's
+/// boot is refused (exit 99) without the rendered reset, its release marker
+/// and its probe at the release, the nudge and that bound, and prints the
+/// release, U2's witness where `witness` says, the probe `probe`, then a
+/// boot that ran 9,877,201 instructions after the release.
 fn droop_toolbox(probe: [&str; 3], witness: Witness) -> Dir {
     droop_toolbox_then(probe, witness, "")
 }
@@ -2420,6 +2423,18 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
         .replacen(&injection(0), &injection(1_227_990), 1),
     );
     let out = tb.write("renode.out", out.as_bytes());
+    let undisturbed = tb.write(
+        "undisturbed.out",
+        transcript(
+            &format!("{GOOD_WITNESS}{GOOD_SPI_WITNESS}"),
+            &boot_reads(GOOD_RECORD)
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>(),
+            CPU_LISTING,
+        )
+        .as_bytes(),
+    );
     let capture = capture_lines(&tb.write("capture.bin", &droop_capture_of(&elf())));
     let body = format!(
         r#"#!/bin/sh
@@ -2427,13 +2442,19 @@ fn droop_toolbox_then(probe: [&str; 3], witness: Witness, then: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {build}\n'; exit 0; fi
 [ $# = 7 ] || exit 98
 case "$7" in
-  *"emulation RunFor \"0.0010144305\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.0002135505\"; {HOOK}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.0000000105\"; emulation RunFor \"0.0000999905\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
+  *"machine Reset"*) ;;
+  *"{HOOK}"*"emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\""*) /bin/cat '{undisturbed}'; exit 0;;
+  *) exit 99;;
+esac
+case "$7" in
+  *"emulation RunFor \"0.0010144305\"; machine Reset; "*"cpu IsHalted true; "*"emulation RunFor \"0.0002135505\"; {HOOK}; cpu IsHalted false; echo \"AETHELGARD-RELEASE-0\"; emulation RunFor \"0.0000000105\"; emulation RunFor \"0.0001257505\"; echo \"AETHELGARD-PROBE-BEGIN-0\""*) ;;
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
 {then}
 "#,
         out = out.display(),
+        undisturbed = undisturbed.display(),
         build = BUILD,
     );
     let stub = tb.0.join("renode");

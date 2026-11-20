@@ -1,0 +1,52 @@
+s01min s01min-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+s01min droop-bor3: verdict pass->pass matched True->True state moved; 3 records differ
+    - [19, 1331690, 1331690, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    + [32, 0, [26620], 100000, [126620]]
+    + [19, 1358320, 1358320, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+s01min droop-tolerated: verdict pass->pass matched True->True state moved; 0 records differ
+s01bench s01bench-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+s01bench droop-bor3: verdict pass->pass matched True->True state moved; 3 records differ
+    - [19, 1331690, 1331690, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    + [32, 0, [29050], 100000, [129050]]
+    + [19, 1360750, 1360750, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+dshot600 dshot600-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+dshot600 motors-dshot600-droop: verdict pass->pass matched True->True state moved; 3 records differ
+    - [19, 431690, 431690, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    + [32, 0, [22720], 100000, [122720]]
+    + [19, 454420, 454420, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+four-layer four-layer-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+four-layer four-layer-droop: verdict pass->pass matched True->True state moved; 0 records differ
+spi-only spi-only-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+spi-only spi-only-droop-bor3: verdict pass->pass matched True->True state moved; 3 records differ
+    - [19, 1331650, 1331650, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 15679511, [15679511]], [['[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation', '[NO
+    + [32, 0, [16130], 100000, [116130]]
+    + [19, 1347790, 1347790, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 15679511, [15679511]], [['[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation', '[NO
+s03 s03-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+s03 droop-tolerated: verdict pass->pass matched True->True state moved; 0 records differ
+s03 droop-bor3: verdict fail->pass matched False->True state moved; 5 records differ
+    - [19, 1744090, 1744090, [536870912, 4294967295, 553693191, [0]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 80, [80]], [['[NOISY] i2c1.u7: read 0x01 -> 0x50', '[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81']]]
+    - [14, 100000000, 0, [['brownout_reset', 'info', 1], ['brownout_unrecovered', 'error', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]
+    + [32, 0, [39128390], 100000, [39228390]]
+    + [19, 40872490, 40872490, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 80, [80]], [['[NOISY] i2c1.u7: read 0x01 -> 0x50', '[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81', '[NOISY] i2c1.u7: 
+    + [14, 100000000, 1, [['brownout_reset', 'info', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]
+s02 s02-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+s02 s02-droop: verdict fail->pass matched False->True state moved; 5 records differ
+    - [19, 432670, 432670, [536870912, 4294967295, 553693191, [0]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    - [14, 100000000, 0, [['brownout_reset', 'info', 1], ['brownout_unrecovered', 'error', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]
+    + [32, 0, [39073260], 100000, [39173260]]
+    + [19, 39505940, 39505940, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    + [14, 100000000, 1, [['brownout_reset', 'info', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]
+logger logger-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+logger logger-droop-bor3: verdict fail->pass matched False->True state moved; 5 records differ
+    - [19, 1331850, 1331850, [536870912, 4294967295, 553693191, [0]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 80, [80]], [['[NOISY] i2c2.u20: read 0x01 -> 0x50', '[NOISY] i2c2.u20: write 0x36 <- 0x40 0x81']]]
+    - [14, 100000000, 0, [['brownout_reset', 'info', 1], ['brownout_unrecovered', 'error', 1], ['device_unmodelled', 'info', 4], ['rail_below_tolerance', 'info', 1]]]
+    + [32, 0, [19523150], 100000, [19623150]]
+    + [19, 20855010, 20855010, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 80, [80]], [['[NOISY] i2c2.u20: read 0x01 -> 0x50', '[NOISY] i2c2.u20: write 0x36 <- 0x40 0x81', '[NOISY] i2c2.u2
+    + [14, 100000000, 1, [['brownout_reset', 'info', 1], ['device_unmodelled', 'info', 4], ['rail_below_tolerance', 'info', 1]]]
+ext-bmp581 ext-bmp581-undisturbed: verdict pass->pass matched True->True state moved; 0 records differ
+ext-bmp581 ext-bmp581-droop-bor3: verdict fail->pass matched False->True state moved; 5 records differ
+    - [19, 1331770, 1331770, [536870912, 4294967295, 553693191, [0]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    - [14, 100000000, 0, [['brownout_reset', 'info', 1], ['brownout_unrecovered', 'error', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]
+    + [32, 0, [19524710], 100000, [19624710]]
+    + [19, 20856490, 20856490, [536870912, 4294967295, 553693191, [553693191]], [536870920, 4294967295, 570556416, [570556416]], [536870924, 4294967295, 96, [96]], [['[NOISY] i2c1.u2: Write D0', '[NOISY] i2c1.u2: Read 60']]]
+    + [14, 100000000, 1, [['brownout_reset', 'info', 1], ['device_unmodelled', 'info', 1], ['rail_below_tolerance', 'info', 1]]]

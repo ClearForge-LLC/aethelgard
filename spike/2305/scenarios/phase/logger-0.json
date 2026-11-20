@@ -1,0 +1,24 @@
+{
+  "schema_version": 3,
+  "name": "logger-phase-0",
+  "base": "../../../../crates/aethelgard-cli/tests/fixtures/logger-4600.json",
+  "expect": "fail",
+  "expect_findings": [
+    "brownout_unrecovered"
+  ],
+  "overrides": [
+    {
+      "droop": {
+        "domain": "VDD_3V3",
+        "floor_millivolts": 2400,
+        "start_ns": 1000000,
+        "fall_ns": 20000,
+        "hold_ns": 200000,
+        "rise_ns": 20000,
+        "source_milliohms": 500,
+        "load_milliamps": 100,
+        "bor_level": 3
+      }
+    }
+  ]
+}

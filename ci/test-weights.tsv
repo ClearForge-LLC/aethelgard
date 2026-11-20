@@ -55,6 +55,7 @@
 # AET-WO-1911 second refit (REFIT RULE's spread clause fired on the merged tree: slowest minus fastest shard 6.7 and 6.3 min on runs 44644135555
 # and 44647140730, two in a row): every row re-weighed by rule 5 from those two runs alone, on the merged tree (main 52a2d62e and 8c42b437), the
 # same method as the first refit; 17 rows under 0.5 s dropped, 7 added. It supersedes the merged values above.
+# AET-WO-2305: twin_tier2's three bor_recovery:: tests (a lock-serialised binary, so each carries a row): Furnace estimates, each its libtest --report-time in the pinned image on Furnace (9.571, 8.191, 13.618 s) times 2.8, the factor 2304b's estimates used; refit when a run measures them.
 # AET-WO-2304b (K7 carve-out): twin_tier2's battery_sag::sentinel_03_s_campaign_... and battery_sag::the_power_fixture_s_campaign_... by rule 5 of ci/shard.sh's REFIT RULE, run 44621743414 (head 08e2aaf7, 8 shards): each its `ok` less twin_tier2's `Running` in its shard, an upper bound (288.767 and 88.251; were Furnace estimates 338.856 and 110.348); kept beside AET-WO-1911's 12-shard refit, which ran before these tests existed.
 # AET-WO-3305: twin_tier2's a_fault_on_a_bus_with_two_devices_is_not_masked_... is a Furnace estimate (AET-WO-2302's rule: its worst libtest `finished in` in the pinned image, 6.99 s, times 1.2, rounded up), until the refit rule measures it. On run 44654820709 (bfad4c96, before 1911) its two campaigns held the Renode lock 5.08 and 5.01 s, and its `ok` came 5.0 s after the previous completion.
 # AET-WO-2306: board_tier2's verify_names_what_judged_nothing_on_the_motor_driver is a Furnace estimate, not a run: 73.14 s in the pinned image on Furnace (libtest `finished in`, one verify of the motor driver with its droop), times 2.8 (AET-WO-1310's factor), 204.792; replace it at the next refit.
@@ -405,6 +406,9 @@ tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	13.60
 tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	0.100
 tests/twin_tier2.rs	battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats	288.767
 tests/twin_tier2.rs	battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats	88.251
+tests/twin_tier2.rs	bor_recovery::the_bmp581_extension_recovers_after_its_settle	26.799
+tests/twin_tier2.rs	bor_recovery::the_logger_recovers_with_its_first_devices_later_steps_witnessed	22.935
+tests/twin_tier2.rs	bor_recovery::the_sentinel_02_shape_recovers_after_its_imus_settle	38.130
 tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	4.100
 tests/twin_tier2.rs	f2_a_late_dshot_anchor_fails_by_name	9.000
 tests/twin_tier2.rs	h1a_a_pin_bit_banged_after_the_window_fails_by_name	13.100
