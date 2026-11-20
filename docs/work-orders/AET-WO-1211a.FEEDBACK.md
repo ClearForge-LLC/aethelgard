@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211a-pin-devices-ir` from `main` `824c3ff3`; `main` merged at `8df353ee`, then at `63334d69` (1210, specification 21). **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker for the readers' named refusals, one Opus adversarial reviewer, each report checked at source before use). Written 2026-11-20.
 
-**The answer, in five lines:**
+**Status: READY.** **The answer, in five lines:**
 - **Specification 22, solved 14.** A device with no bus (`pin_devices`) binds a busless parts row (parts schema 11: DRV8876PWPR, DRV8833PWPR, every value cited to SLVSDS7B / SLVSAR1E by page); `pwm.idle` and `pwm.resolution_ps` are required on every PWM output. `validate` judges a device by 33 named refusals (step 24), `solve` places its ADC inputs (ADC1, then ADC3) and signals after every other pin and writes the directional `gpio`, `adc_inputs` and `pin_devices`.
 - **No solved word of an existing specification moved** (§1): 29 committed specifications, `validate`, `solve`, `emit` and `generate`, branch against `main` as merged: 0 moved; each generated tree moves 8 files by one sha line.
 - **D1 validates and solves on the real table; D2 is refused `PartLimitUndeclared` alone; the 4600 driver's pair as a bridge is `BridgeIdlePulsed`.** D1 needed two changes from the spike's file, each a finding (§3 F1).
@@ -98,4 +98,7 @@ Weaknesses recorded, not changed: W7 (ARR + 1 at 16 bits, unreachable at 64 MHz;
 
 ## 9. The package
 
-The bench package moves by its version and sha lines; dispatch requested on the bus, to be committed byte for byte.
+From the architect's write=true dispatch, run **44779144734** (on `184411c5`; the commits after it change no package input: `generate` of `examples/sentinel-01.json` at `5be2d319` is byte-identical), committed byte for byte. It moved exactly as predicted:
+- `FAB-NOTES.md`: its specification-sha line, `3973e8d0…` → `9d7b6f58…` (the sha256 of `examples/sentinel-01.json` at 22);
+- `MANIFEST.json`: `specification_sha256`, `topology_sha256` (solved 14), `verdict_sha256` and `FAB-NOTES.md`'s hash;
+- `sentinel-01-bench.elf` and every Gerber, drill, placement and BOM file: byte-identical.
