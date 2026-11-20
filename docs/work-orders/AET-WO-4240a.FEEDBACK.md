@@ -29,7 +29,9 @@ Every answer is labelled **measured** (run here, the log or file named), **read 
   - all 66 KiCad files of 22 generated specifications are byte-identical;
   - every board-crate file differs by its "Solved topology of specification sha256" line alone;
   - the bench ELF is `e4e24372…`, on `main` and on the branch.
-- **The bench package moves by the version line:** its `FAB-NOTES.md` and `MANIFEST.json` name the specification's sha256. **The architect dispatches** (ruled 10:05Z); until then `bench_board_tier1` fails by design.
+- **The bench package moved by the version line alone.** It is committed byte for byte from the architect's write=true dispatch: run 44733886395, artifact 14627643309, on `7dd8799d`.
+  - 15 of 17 files are identical, the ELF and every Gerber included.
+  - `MANIFEST.json` and `FAB-NOTES.md` moved by their hashes alone: the specification's (`803882c7…` to `92abdb0d…`), the topology's and the verdict's.
 - **`TIER2_MIN` does not move:** every new test is tier 1.
 
 ## §1 Predictions, scored
@@ -96,7 +98,10 @@ The predictions are `spike/4240a/PREDICTIONS.md`, committed at `d94a5782` before
 ### §2.3 The ELF and the bench package
 
 - **The ELF:** `boards/sentinel-01-bench` built with `aethelgard build` in the tools image (`kit`: `capped-run`, 8 GiB, swap 0 read back). It gives `e4e24372ef2d4bb4…`, on `main`'s board and on the branch's [measured]. That is the package's `sentinel-01-bench.elf` (`MANIFEST.json`).
-- **The package** (`fab/sentinel-01-bench/package/`) moves by the specification's sha256 in `FAB-NOTES.md` and `MANIFEST.json`. `bench_board_tier1` refuses the committed package until the architect's write=true dispatch replaces it (ruled 10:05Z).
+- **The package** (`fab/sentinel-01-bench/package/`), from dispatch run 44733886395, artifact 14627643309 at `7dd8799d`, copied byte for byte [measured]:
+  - **identical:** 15 of 17 files, the ELF (`e4e24372…`) and every Gerber among them;
+  - **moved:** `MANIFEST.json` (`specification_sha256` `803882c7…` → `92abdb0d…`, `topology_sha256` `db74c032…` → `4401d1fb…`, `verdict_sha256` `78ffb908…` → `26b203a3…`, and `FAB-NOTES.md`'s hash) and `FAB-NOTES.md` (its specification-sha line).
+  - `bench_board_tier1`: 2 of 2 pass locally on it.
 
 ## §3 What was built
 
@@ -265,5 +270,8 @@ A fresh subagent proposed the cuts, reading only; the builder ruled on each and 
 
 ## §10 State at READY
 
-- **AWAITING-PACKAGE.** Pushed for CI and for the architect's write=true bench-package dispatch. The package is then committed byte for byte, CI must be green, and a READY commit closes this section.
+- **READY.** Head: this READY commit, after `7dd8799d`.
+  - `main` `a75fffcc` (2305) is merged in, and every committed specification is at 20.
+  - The bench package is from dispatch run 44733886395 (artifact 14627643309), committed byte for byte.
+  - CI on the READY head is reported on the bus with its run ids. The architect merges; the builder never does.
 - **The specification version:** 20 is this branch's (ruled 11:10Z: `1210` renumbers to 21 after this). Were `1210` to merge first, `python3 -I spike/4240a/kit/renumber.py . 20 21 13 13` renumbers by version lines only, and `boards/` and `BENCH-EXT-BMP581.md` L9 are regenerated as ruled.
