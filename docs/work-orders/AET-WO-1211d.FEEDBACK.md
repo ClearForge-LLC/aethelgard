@@ -1,6 +1,6 @@
 # AET-WO-1211d — FEEDBACK: pin devices drawn (DRV8876PWPR, DRV8833PWPR)
 
-**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs), then `adb8f61a` (4240c, 1213) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
+**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs), then `adb8f61a` (4240c, 1213), then `349c75f5` (docs only) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
 - an Opus subagent authored the DRV8876 symbol and footprint;
 - a Sonnet subagent ran the D4 spike;
 - a fresh Opus reviewer ran the adversarial pass;
