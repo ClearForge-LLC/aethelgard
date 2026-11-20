@@ -525,6 +525,35 @@ pub struct Unmodelled {
     pub part: String,
     pub peripheral: String,
     pub wire: Wire,
+    /// Its identity read's record, when its part has a row in the table: the
+    /// firmware makes the read whatever the twin models (`AET-WO-4241`),
+    /// after every check's step, so no check's record moves for it (the
+    /// architect's D3). `None` for a part with no row, which no firmware
+    /// reads.
+    pub identity: Option<NotWitnessable>,
+}
+
+/// An unmodelled device's identity read, which the firmware makes and the
+/// twin cannot witness (`AET-WO-4241`): no model answers it, so what the
+/// record holds is neither a pass nor a failure. Its place comes from the
+/// parts table and this crate's record layout, never from the firmware
+/// (`INV-07`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NotWitnessable {
+    /// The bytes written first: the identity register or command.
+    pub write: Vec<u8>,
+    pub width: u8,
+    /// What the part answers on silicon, under `mask` (the table's identity),
+    /// which no model in the twin answers.
+    pub expected: u64,
+    pub mask: u64,
+    /// The record in RAM: its status word, then [`value_words`] words.
+    pub status_at: u32,
+    pub value_at: u32,
+    /// The path Renode would give its model (`i2c1.u3`, `spi1.spi1mux.u4`),
+    /// derived as a check's [`StepCheck::device`]: no element is declared
+    /// there, and the judge reads its controller or multiplexer from it.
+    pub device: String,
 }
 
 /// What a boot must leave for the devices.
@@ -537,6 +566,8 @@ pub struct IdentityPlan {
     /// devices in theirs, and each device's steps in its script's order; the
     /// record index is the position.
     pub checks: Vec<StepCheck>,
+    /// Every device with no model, in the order above; each identity read's
+    /// record after the last check's, in that order (`AET-WO-4241`, D3).
     pub unmodelled: Vec<Unmodelled>,
 }
 
@@ -557,24 +588,37 @@ impl StepCheck {
     /// The status word and value, judged. Pass needs both: a status of OK and
     /// exactly the table's value under its mask.
     pub fn judge(&self, status: u32, value: u64) -> Outcome {
-        // A status counts only on its own bus: an I2C read never writes
-        // `RXP`, and an SPI read none of the I2C waits.
-        let spi = matches!(self.wire, Wire::Spi { .. });
-        match (status, spi) {
-            (STATUS_OK, _)
+        match self.wire.status(status) {
+            Some(None)
                 if value & !parts::width_mask(self.width) == 0
                     && value & self.mask == self.expected & self.mask =>
             {
                 Outcome::Pass
             }
-            (STATUS_OK, _) => Outcome::Mismatch,
-            (STATUS_TXIS, false) => Outcome::Timeout("TXIS"),
-            (STATUS_TC, false) => Outcome::Timeout("TC"),
-            (STATUS_RXNE, false) => Outcome::Timeout("RXNE"),
-            (STATUS_STOP, false) => Outcome::Timeout("STOPF"),
-            (STATUS_RXP, true) => Outcome::Timeout("RXP"),
-            (STATUS_EOT, true) => Outcome::Timeout("EOT"),
-            _ => Outcome::Invalid,
+            Some(None) => Outcome::Mismatch,
+            Some(Some(stage)) => Outcome::Timeout(stage),
+            None => Outcome::Invalid,
+        }
+    }
+}
+
+impl Wire {
+    /// What a record's status word says of a read on this bus: `Some(None)`
+    /// when the transaction finished, `Some(Some(stage))` when the
+    /// firmware's bounded wait for `stage` expired, and `None` for any word a
+    /// read on this bus never writes. A status counts only on its own bus: an
+    /// I2C read never writes `RXP`, and an SPI read none of the I2C waits.
+    pub fn status(&self, status: u32) -> Option<Option<&'static str>> {
+        let spi = matches!(self, Wire::Spi { .. });
+        match (status, spi) {
+            (STATUS_OK, _) => Some(None),
+            (STATUS_TXIS, false) => Some(Some("TXIS")),
+            (STATUS_TC, false) => Some(Some("TC")),
+            (STATUS_RXNE, false) => Some(Some("RXNE")),
+            (STATUS_STOP, false) => Some(Some("STOPF")),
+            (STATUS_RXP, true) => Some(Some("RXP")),
+            (STATUS_EOT, true) => Some(Some("EOT")),
+            _ => None,
         }
     }
 }
@@ -596,16 +640,40 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
                 wire: Wire,
                 device: &dyn Fn() -> Result<String, TwinError>|
      -> Result<(), TwinError> {
+        let table = parts::table().map_err(TwinError::InvalidTopology)?;
         let Some(model) = model::kind(part)? else {
+            // The firmware reads only the identity of a part with no model
+            // (`AET-WO-4241`), and nothing of a part with no row.
+            let identity = match table.get(part) {
+                Some(p) => Some((p, device()?)),
+                None => None,
+            };
+            let identity = identity
+                .and_then(|(p, device)| {
+                    p.steps()
+                        .into_iter()
+                        .find(|s| s.kind == parts::StepKind::Identity)
+                        .map(|id| (id, device))
+                })
+                .map(|(id, device)| NotWitnessable {
+                    write: id.write,
+                    width: id.width,
+                    expected: id.expected,
+                    mask: id.mask,
+                    // Placed below, with the checks.
+                    status_at: 0,
+                    value_at: 0,
+                    device,
+                });
             plan.unmodelled.push(Unmodelled {
                 reference: reference.to_owned(),
                 part: part.to_owned(),
                 peripheral: peripheral.to_owned(),
                 wire,
+                identity,
             });
             return Ok(());
         };
-        let table = parts::table().map_err(TwinError::InvalidTopology)?;
         let Some(p) = table.get(part) else {
             return Ok(());
         };
@@ -668,20 +736,30 @@ pub fn identity(topology: &SolvedTopology) -> Result<IdentityPlan, TwinError> {
         )?;
     }
     // Every identity and configuration step, then every data read, each half
-    // in the order above (a stable sort), then each record after the last.
+    // in the order above (a stable sort), then each record after the last;
+    // then each unmodelled device's identity record, after every check's
+    // (`AET-WO-4241`, the architect's D3).
     plan.checks.sort_by_key(|c| c.step == parts::StepKind::Data);
     let mut next = RECORD_OFFSET;
-    for c in &mut plan.checks {
+    let mut place = |reference: &str, width: u8| -> Result<u32, TwinError> {
         let overflow = || TwinError::InvalidDeviceName {
-            reference: c.reference.clone(),
+            reference: reference.to_owned(),
         };
         let at = next;
         next = at
-            .checked_add(4 * (1 + value_words(c.width)))
+            .checked_add(4 * (1 + value_words(width)))
             .ok_or_else(overflow)?;
-        let status_at = base.checked_add(at).ok_or_else(overflow)?;
-        c.status_at = status_at;
-        c.value_at = status_at + 4;
+        base.checked_add(at).ok_or_else(overflow)
+    };
+    for c in &mut plan.checks {
+        c.status_at = place(&c.reference, c.width)?;
+        c.value_at = c.status_at + 4;
+    }
+    for u in &mut plan.unmodelled {
+        if let Some(n) = u.identity.as_mut() {
+            n.status_at = place(&u.reference, n.width)?;
+            n.value_at = n.status_at + 4;
+        }
     }
     Ok(plan)
 }

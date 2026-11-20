@@ -1,0 +1,54 @@
+built min main rc=0
+campaign min main rc=0 sim=0
+built min branch rc=0
+campaign min branch rc=1 sim=0
+built s01 main rc=0
+campaign s01 main rc=0 sim=0
+built s01 branch rc=0
+campaign s01 branch rc=1 sim=0
+built dshot main rc=0
+campaign dshot main rc=0 sim=0
+built dshot branch rc=0
+campaign dshot branch rc=1 sim=0
+built pwm main rc=0
+campaign pwm main rc=0 sim=0
+built pwm branch rc=0
+campaign pwm branch rc=0 sim=0
+built serial main rc=0
+campaign serial main rc=0 sim=0
+built serial branch rc=0
+campaign serial branch rc=0 sim=0
+built ext main rc=0
+campaign ext main rc=0 sim=0
+built ext branch rc=0
+campaign ext branch rc=0 sim=0
+built two main rc=0
+campaign two main rc=0 sim=0
+built two branch rc=0
+campaign two branch rc=0 sim=0
+built s03 main rc=0
+campaign s03 main rc=0 sim=0
+built s03 branch rc=0
+campaign s03 branch rc=0 sim=0
+built pow main rc=0
+campaign pow main rc=0 sim=0
+built pow branch rc=0
+campaign pow branch rc=0 sim=0
+built own main rc=0
+campaign own main rc=3 sim=3
+built own branch rc=0
+campaign own branch rc=3 sim=3
+built shaped main rc=0
+campaign shaped main rc=0 sim=0
+built shaped branch rc=0
+campaign shaped branch rc=0 sim=0
+built spionly main rc=0
+campaign spionly main rc=0 sim=0
+built spionly branch rc=0
+campaign spionly branch rc=0 sim=0
+built imu main rc=3
+ls: cannot access '/cache/rj/fw/gen-imu-main/board/*.repl': No such file or directory
+campaign imu main rc=3 sim=64
+built imu branch rc=3
+ls: cannot access '/cache/rj/fw/gen-imu-branch/board/*.repl': No such file or directory
+campaign imu branch rc=3 sim=64

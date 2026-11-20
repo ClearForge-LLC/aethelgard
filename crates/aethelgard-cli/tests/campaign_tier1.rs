@@ -256,6 +256,9 @@ fn boot_reads(record: [&str; 2]) -> Vec<String> {
     v.extend(GOOD_REGISTERS.iter().map(|r| (*r).to_owned()));
     v.extend(record.iter().map(|r| (*r).to_owned()));
     v.extend(GOOD_SPI_RECORD.iter().map(|r| (*r).to_owned()));
+    // U3's, the unmodelled TMP117's identity, read after every modelled
+    // step: no model answers, so the TXIS wait expired (`AET-WO-4241`).
+    v.extend(["0x22020001", "0x00000000"].map(str::to_owned));
     v
 }
 
@@ -303,7 +306,7 @@ fn toolbox_built(stdout: &str, build: &str) -> Dir {
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n{build_line}'; exit 0; fi
 printf '%s' "$7" | /bin/grep -Eq 'logLevel [0-3]|logLevel -1 [^s]' && exit 96
 case "$7" in
-  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
+  "emulation SetSeed 2100; emulation SetGlobalQuantum \"0.000100000\"; mach create; machine LoadPlatformDescription @"*"; sysbus LoadELF @"*"firmware.elf; sysbus LogPeripheralAccess sysbus.flashController true; sysbus WriteDoubleWord 0x580244d4 0x0; sysbus WriteDoubleWord 0x580244d8 0x0; sysbus WriteDoubleWord 0x580244dc 0x0; sysbus WriteDoubleWord 0x580244e0 0x0; sysbus WriteDoubleWord 0x580244e4 0x0; sysbus WriteDoubleWord 0x580244e8 0x0; sysbus WriteDoubleWord 0x580244ec 0x0; sysbus WriteDoubleWord 0x580244f0 0x0; sysbus WriteDoubleWord 0x580244f4 0x10000; sysbus WriteDoubleWord 0x20000000 0x0; sysbus WriteDoubleWord 0x20000004 0xffffffff; sysbus WriteDoubleWord 0x20000008 0xffffffff; sysbus WriteDoubleWord 0x2000000c 0xffffffff; sysbus WriteDoubleWord 0x20000010 0xffffffff; sysbus WriteDoubleWord 0x20000014 0xffffffff; sysbus WriteDoubleWord 0x20000018 0xffffffff; sysbus WriteDoubleWord 0x2000001c 0xffffffff; cpu VectorTableOffset 0x08000000; "*"sysbus.usart1 CreateFileBackend @"*"/capture/usart1.bin true; {HOOK}; emulation RunFor \"0.1000000005\"; echo \"AETHELGARD-BOOT-BEGIN\"; sysbus ReadDoubleWord 0x20000000; cpu ExecutedInstructions; cpu PerformanceInMips; cpu PC; sysbus ReadDoubleWord 0xe000ed04; sysbus ReadWord 0x08000010; sysbus ReadWord 0x08000012; sysbus ReadDoubleWord 0x20000004; sysbus ReadDoubleWord 0x40011000;"*"; echo \"AETHELGARD-BOOT-END\"; peripherals; quit") ;;
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
@@ -2495,6 +2498,14 @@ fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
     );
     assert_eq!(all[0]["scenario"], "droop-bor3");
     assert_eq!(all[0]["matched"], true, "{all:?}");
+    // `AET-WO-2306`'s count, with U3's unmodelled read on the board
+    // (`AET-WO-4241` §1.3): the one release is judged by U2's witness, and
+    // U3's `identity_not_witnessable` adds nothing to it.
+    assert_eq!(
+        all[0]["observation_witness"],
+        json!({"judged": 1}),
+        "{all:?}"
+    );
     // The stub exits 98 unless handed exactly `--disable-gui --console
     // --plain -e <one line>`: Renode's history is that one line.
     let run = PathBuf::from(all[0]["run"].as_str().unwrap());

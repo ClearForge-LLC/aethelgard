@@ -326,9 +326,49 @@ fn sentinel_02_s_scripted_devices_give_their_waits_and_model_rows() {
             .filter(|r| r.family == "MODEL")
             .all(|r| r.class == Class::IgnoredByModel && r.acknowledged.is_none())
     );
-    assert_eq!(limits.len(), waits.len() + models.len());
-    // The reference runs no script and has no own model: no twin limit.
-    assert!(ledger::twin_limits(&reference().0).unwrap().is_empty());
+    // And U3's identity read, the TMP117's, which no model answers
+    // (`AET-WO-4241`).
+    let identities: Vec<&str> = limits
+        .iter()
+        .filter(|r| r.family == "IDENTITY")
+        .map(|r| r.id.as_str())
+        .collect();
+    assert_eq!(identities, ["IDENTITY.U3"]);
+    assert_eq!(limits.len(), waits.len() + models.len() + identities.len());
+    // The reference runs no script and has no own model: its one twin limit
+    // is the TMP117's identity read (`AET-WO-4241`), silicon-only, never
+    // acknowledged.
+    let reference = ledger::twin_limits(&reference().0).unwrap();
+    assert_eq!(reference.len(), 1, "{reference:?}");
+    let u3 = &reference[0];
+    assert_eq!(
+        (
+            u3.id.as_str(),
+            u3.family.as_str(),
+            u3.class,
+            u3.value,
+            u3.acknowledged
+        ),
+        (
+            "IDENTITY.U3",
+            "IDENTITY",
+            Class::SiliconOnly,
+            Some(0x0117),
+            None
+        )
+    );
+    assert!(
+        u3.judge.contains("identity_not_witnessable"),
+        "{}",
+        u3.judge
+    );
+    assert!(
+        u3.note.starts_with(
+            "U3 (TMP117) I2C1 at I2C address 0x48: the firmware writes 0x0f and reads 2 byte(s)"
+        ),
+        "{}",
+        u3.note
+    );
 }
 
 /// `AET-WO-4230` R1: the reference acknowledges every unwitnessed row of its
@@ -624,7 +664,16 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
         v["declared_peers"],
         serde_json::json!([{"port": "CONSOLE", "peer_deviation_ppm": 5000}])
     );
-    assert_eq!(v["twin_limits"], serde_json::json!([]));
+    // One twin limit: the TMP117's identity read, which no model answers
+    // (`AET-WO-4241`), beside the ledger's unwitnessed rows.
+    let limits = v["twin_limits"].as_array().unwrap();
+    assert_eq!(
+        limits
+            .iter()
+            .map(|r| (r["id"].as_str(), r["class"].as_str()))
+            .collect::<Vec<_>>(),
+        [(Some("IDENTITY.U3"), Some("silicon-only"))]
+    );
     assert!(
         v["findings"]
             .as_array()
