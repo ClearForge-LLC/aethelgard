@@ -355,8 +355,10 @@ pub struct Attribution {
 /// observed under the same mask, and whether attribution counts it as
 /// evidence. `register` is named as the ST header names it (`RCC.APB1LENR`,
 /// `GPIOB.AFRL`), `boot_word`, or a witness's `i2c1.u2.address`, `.Write`
-/// or `.Read`. The values are 64-bit, so a read of up to 8 bytes shows
-/// whole (`AET-WO-4210` F-B5).
+/// or `.Read`; for a transaction its device's script does not hold
+/// (`AET-WO-3306`), `i2c1.u5.transactions` and the step it was,
+/// `i2c1.u2.identity.address`. The values are 64-bit, so a read of up to 8
+/// bytes shows whole (`AET-WO-4210` F-B5).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Field {
     pub register: String,
@@ -669,6 +671,26 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     })
 }
 
+/// `lines` as `device`'s transactions (`AET-WO-3306`), each its range of
+/// lines: a `Write` line opens one and the `Read` lines after it are its, as
+/// the model logs a transfer; a `Read` with no `Write` before it opens one
+/// of its own. `None` if any line is not a `Write` or `Read` of the device
+/// (a warning, an error, another device's).
+fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<usize>>> {
+    let mut starts = Vec::new();
+    for (i, l) in lines.iter().enumerate() {
+        if witness_bytes(l, device, "Write").is_some() {
+            starts.push(i);
+        } else if witness_bytes(l, device, "Read").is_none() {
+            return None;
+        } else if i == 0 {
+            starts.push(i);
+        }
+    }
+    starts.push(lines.len());
+    Some(starts.windows(2).map(|w| w[0]..w[1]).collect())
+}
+
 /// A step's read as its check records it (`AET-WO-4210`), as the judge holds
 /// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
 /// bit of it lies above the read's `width` bytes (so a configuration's is 0),
@@ -929,6 +951,9 @@ impl<'a> Run<'a> {
     /// address other than the device's, during this step (`absent` is the
     /// step's own since trace 16, `AET-WO-3305`), is evidence. A faulted bus
     /// finds none at the device's own, which is not, nor at another step's.
+    /// A transfer to another device's address that answers leaves no such
+    /// line, but that device logs a transaction its script does not hold:
+    /// its own witness is evidence ([`Self::surplus`], `AET-WO-3306`).
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)
             .is_some_and(|f| f.iter().any(|f| f.wrong))
@@ -1019,7 +1044,162 @@ impl<'a> Run<'a> {
         if let Some(want) = value_want {
             fields.push(at("Read", width_mask(want.1), want.0, read));
         }
+        fields.extend(self.surplus_fields(b, record, *address));
         Some(fields)
+    }
+
+    /// The transactions device `reference`'s witnesses observed that its
+    /// script does not hold (`AET-WO-3306`), each as the index of the
+    /// witness its first line went to and its lines. A device's witnesses,
+    /// in record order, hold its whole log: each step takes as many lines as
+    /// it expects and the last the rest (`renode.rs` `attribute`). Their
+    /// lines are judged whole: every one a `Write` or `Read` of the device,
+    /// and its script's transactions, each whole, in order among the
+    /// observed ones. What is left over is a transaction the firmware sent
+    /// to this device's address that none of its steps is. Empty unless all
+    /// of that holds: a missing or wrong transaction is left to each
+    /// witness's own fields, and an unreadable witness says nothing.
+    fn surplus(&self, reference: &str) -> (usize, Vec<(usize, Vec<String>)>) {
+        let mut script = Vec::new();
+        let mut log = Vec::new();
+        let mut at = Vec::new();
+        let mut device = None;
+        for (i, r) in self.records.iter().enumerate() {
+            if let Record::I2cWitness {
+                reference: x,
+                device: d,
+                expected,
+                observed,
+                ..
+            } = r
+                && x == reference
+            {
+                let Some(observed) = observed else {
+                    return (0, Vec::new());
+                };
+                device = Some(d.as_str());
+                script.extend(expected.iter().cloned());
+                log.extend(observed.iter().cloned());
+                at.extend(observed.iter().map(|_| i));
+            }
+        }
+        let Some((want, got)) =
+            device.and_then(|d| transactions(&script, d).zip(transactions(&log, d)))
+        else {
+            return (0, Vec::new());
+        };
+        // Each scripted transaction is the earliest observed one equal to it.
+        let mut held = 0;
+        let mut extra = Vec::new();
+        for t in got {
+            if want
+                .get(held)
+                .is_some_and(|w| script[w.clone()] == log[t.clone()])
+            {
+                held += 1;
+            } else {
+                extra.push((at[t.start], log[t].to_vec()));
+            }
+        }
+        if held < want.len() {
+            return (0, Vec::new());
+        }
+        (held, extra)
+    }
+
+    /// The fields that witness `record` of a device at `address`, on bus
+    /// `b`, shows for the transactions its device's script does not hold
+    /// that start in it ([`Self::surplus`]): the device's transaction count
+    /// against its script's, at the address the firmware sent them to; and
+    /// for each, when exactly one other device on the bus has a step of its
+    /// shape (its write, and its read's width) whose own witness does not
+    /// hold it, that step's address field, as the firmware sent it. Two such
+    /// steps, or none, and only the address is named.
+    fn surplus_fields(&self, b: usize, record: &Record, address: u8) -> Vec<Field> {
+        let Record::I2cWitness {
+            reference, device, ..
+        } = record
+        else {
+            return Vec::new();
+        };
+        let (scripted, extra) = self.surplus(reference);
+        let here: Vec<&Vec<String>> = extra
+            .iter()
+            .filter(|(at, _)| std::ptr::eq(&self.records[*at], record))
+            .map(|(_, t)| t)
+            .collect();
+        if here.is_empty() {
+            return Vec::new();
+        }
+        let mut fields = vec![Field {
+            register: format!("{device}.transactions"),
+            address: u32::from(address),
+            mask: u64::MAX,
+            solved: scripted as u64,
+            observed: Some((scripted + extra.len()) as u64),
+            wrong: true,
+        }];
+        for t in here {
+            let write = t.first().and_then(|l| witness_bytes(l, device, "Write"));
+            let width: usize = t
+                .iter()
+                .filter_map(|l| witness_bytes(l, device, "Read"))
+                .map(|(_, n)| n)
+                .sum();
+            let owners: Vec<(&str, &str, u8)> = self
+                .records
+                .iter()
+                .filter_map(|r| match r {
+                    Record::I2cCheck {
+                        reference: x,
+                        address: a,
+                        step,
+                        write: w,
+                        width: n,
+                        ..
+                    } if x != reference
+                        && self.buses[b].devices.iter().any(|(d, _)| d == x)
+                        && write.is_some_and(|(v, len)| {
+                            len == w.len()
+                                && v == w.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b))
+                        })
+                        && usize::from(*n) == width
+                        && !self.holds_its_own(x, step) =>
+                    {
+                        Some((x.as_str(), step.as_str(), *a))
+                    }
+                    _ => None,
+                })
+                .collect();
+            if let [(owner, step, solved)] = owners[..] {
+                let owner_device = self.records.iter().find_map(|r| match r {
+                    Record::I2cWitness {
+                        reference: x,
+                        device: d,
+                        ..
+                    } if x == owner => Some(d.as_str()),
+                    _ => None,
+                });
+                fields.push(Field {
+                    register: format!("{}.{step}.address", owner_device.unwrap_or(owner)),
+                    address: u32::from(solved),
+                    mask: 0x7F,
+                    solved: u64::from(solved),
+                    observed: Some(u64::from(address)),
+                    wrong: true,
+                });
+            }
+        }
+        fields
+    }
+
+    /// Whether `reference`'s witness of `step` observed exactly what it
+    /// expects: its transaction reached its own device.
+    fn holds_its_own(&self, reference: &str, step: &str) -> bool {
+        self.records.iter().any(|r| {
+            matches!(r, Record::I2cWitness { reference: x, step: s, expected, observed: Some(o), .. }
+                if x == reference && s == step && o == expected)
+        })
     }
 
     /// The fields of `reading` the bus owns that are wrong.
