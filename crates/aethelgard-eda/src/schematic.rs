@@ -1285,24 +1285,6 @@ pub fn anchored(
     Ok(Drawing::of(spec, solved, table)?.anchored())
 }
 
-/// [`Drawing::drawn`] of one specification.
-pub fn drawn(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<BTreeMap<String, String>, EmitError> {
-    Ok(Drawing::of(spec, solved, table)?.drawn())
-}
-
-/// [`Drawing::drawn_nets`] of one specification.
-pub fn drawn_nets(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<BTreeMap<String, BTreeSet<String>>, EmitError> {
-    Ok(Drawing::of(spec, solved, table)?.drawn_nets())
-}
-
 /// Every part and what each of its pins connects to, and every rail.
 pub(crate) fn design(
     spec: &Specification,

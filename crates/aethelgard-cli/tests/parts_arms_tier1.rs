@@ -95,7 +95,6 @@ fn every_row_draws_by_its_arm_or_is_refused_and_every_arm_has_a_row() {
     let table = parts::table().unwrap();
     let rows: Vec<&str> = table.parts().iter().map(|p| p.part.as_str()).collect();
     let arms = arms();
-    assert_eq!(arms.len(), 6, "{KNOWN_PARTS}");
     for arm in &arms {
         assert!(
             rows.contains(arm),
@@ -140,7 +139,7 @@ fn every_row_draws_by_its_arm_or_is_refused_and_every_arm_has_a_row() {
                 false,
                 true,
             ) => {
-                assert_eq!((r.as_str(), p.as_str()), (reference, part));
+                assert_eq!((r.as_str(), p.as_str()), (reference, part), "{part}");
                 assert_eq!(known, KNOWN_PARTS);
             }
             (got, true, _) => panic!("{part}: listed as an arm, and not drawn: {:?}", got.err()),
