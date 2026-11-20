@@ -44,8 +44,10 @@ pub const VERSION: u64 = 1;
 /// realizes at kind 25's `kernel_hz` (`record::realized_ns`), no longer
 /// 4 ns cycles of a fixed 250 MHz. 15 since `AET-WO-2304b`: kind 31 declares
 /// a battery sag's chain, and a scenario's overrides take tags 6
-/// (`battery_sag`) and 7 (`rail_out_of_band`).
-pub const TRACE_VERSION: u64 = 15;
+/// (`battery_sag`) and 7 (`rail_out_of_band`). 16 since `AET-WO-3305`: kind
+/// 13's `absent` holds the addresses found absent during its own step, no
+/// longer during the whole run.
+pub const TRACE_VERSION: u64 = 16;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

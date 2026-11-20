@@ -926,8 +926,9 @@ impl<'a> Run<'a> {
     /// that could not be read whole, is no evidence. A transfer to a wrong
     /// address leaves the device's log empty, as a fault on the bus does, but
     /// its controller logs that it found no device at that address: an
-    /// address other than the device's is evidence. A
-    /// faulted bus finds none at the device's own, which is not.
+    /// address other than the device's, during this step (`absent` is the
+    /// step's own since trace 16, `AET-WO-3305`), is evidence. A faulted bus
+    /// finds none at the device's own, which is not, nor at another step's.
     fn witness_wrong(&self, b: usize, record: &Record) -> bool {
         self.witness_fields(b, record)
             .is_some_and(|f| f.iter().any(|f| f.wrong))
