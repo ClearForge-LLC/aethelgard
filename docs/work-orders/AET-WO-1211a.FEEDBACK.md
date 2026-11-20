@@ -90,9 +90,8 @@ Weaknesses recorded, not changed: W7 (ARR + 1 at 16 bits, unreachable at 64 MHz;
 ## 8. Gates, fence, reduction pass
 
 - **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean.
-- **`cargo test --workspace`** (main 63334d69 merged): every test passes but two:
-  - `bench_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit` — the package waits on the dispatch (§9);
-  - `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` — `BaseOutsideRoot`: its scratch sits under my out-of-tree `CARGO_TARGET_DIR`, outside the checkout; CI builds in-tree.
+- **`cargo test --workspace`** (main 63334d69 merged): every test passes but one, `bench_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: the package waits on the dispatch (§9).
+  - `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` failed with `BaseOutsideRoot` under an out-of-tree `CARGO_TARGET_DIR` (its scratch then sits outside the checkout); rerun with the in-tree target, as CI builds, `fab_tier1` is 11/11.
 - **`TIER2_MIN`:** unchanged; no tier-2 test was added.
 - **Fence:** `crates/aethelgard-ir`; the named refusals in cli, svd-hal, twin, eda, hwdef and pincheck (and their `clippy.toml` `RUL-16` lines); committed specifications and fixtures; `boards/sentinel-01*` sha lines by the generator; tests; `spike/1211a/`; this file. No workflow, `ci/`, generator, twin, chaos or eda feature.
 - **Reduction pass (diff):** −1 (`compare.py`'s unused key). Kept on purpose: row fields no check reads yet (`t_wake_max_us`, pin numbers, the document's sha256) — ruled row data (Q6) for 1211b/1211d.
