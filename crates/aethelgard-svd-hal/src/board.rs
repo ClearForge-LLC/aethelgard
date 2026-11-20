@@ -38,8 +38,9 @@ mod firmware;
 mod ledger;
 
 pub use firmware::{
-    BOOT_ACTVOSRDY_TIMEOUT, BOOT_SUPPLY_NOT_DECLARED, BOOT_VOSRDY_TIMEOUT, ECHO_POLLS, FRAME_LEN,
-    PATTERN_TAIL, PWR_POLLS,
+    BOOT_ACTVOSRDY_TIMEOUT, BOOT_FLASH_ACR_NOT_TAKEN, BOOT_HSE_CSS_FAULT, BOOT_HSE_NOT_READY,
+    BOOT_PLL1_NOT_LOCKED, BOOT_SUPPLY_NOT_DECLARED, BOOT_SW_NOT_TAKEN, BOOT_VOSRDY_TIMEOUT,
+    ECHO_POLLS, FRAME_LEN, PATTERN_TAIL, PWR_POLLS,
 };
 pub use ledger::{FieldAccess, FieldUse, register_fields};
 
@@ -134,6 +135,14 @@ pub enum BoardError {
         "the core supply is declared `bypass`: no board this engine emits draws an external VCORE, and under bypass the voltage scale is the external supply's, VOSRDY forced to 1 by hardware (RM0433 Rev 9 §6.8.6, p. 310; AET-WO-4240v D-1)"
     )]
     CoreSupplyNotGenerated,
+    #[error(
+        "the {wait} wait of {us} us is more reads than a u32 counts at HSI's fastest ({hz} Hz): the bound would wrap, so it is refused (AET-WO-4240b)"
+    )]
+    HsePollsOverflow {
+        wait: &'static str,
+        us: u64,
+        hz: u64,
+    },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -169,6 +178,7 @@ impl BoardError {
             Self::SiliconRuleFails { .. } => "SiliconRuleFails",
             Self::VosRuleFails { .. } => "VosRuleFails",
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
+            Self::HsePollsOverflow { .. } => "HsePollsOverflow",
             Self::Register(e) => e.kind(),
         }
     }
@@ -284,7 +294,7 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
         }
     }
     for (peripheral, t) in &solved.i2c_timings {
-        let f = silicon::check_i2c(peripheral, t);
+        let f = silicon::check_i2c_on(solved.clock.budget(), peripheral, t);
         if !f.holds {
             let mut failed: Vec<String> = [
                 ("kernel_ok", f.kernel_ok),
@@ -693,10 +703,17 @@ const SR_ROUND: u32 = 16;
 /// `2^(MBR+1)` kernel cycles, at the slowest kernel, counted in core cycles at
 /// the fastest core (both are HSI, but no common drift is credited), each
 /// read at least one core cycle.
-fn eot_delay_reads(c: &SolvedSpiController) -> u64 {
-    let period = u128::from(2u64 << c.mbr) * u128::from(hsi_fastest(RESET_HZ));
+///
+/// On an HSE board (`AET-WO-4240b`) both are the source's: the core after the
+/// switch, and `pll1_q_ck` or the APB clock, each at its extreme.
+fn eot_delay_reads(plan: &Plan, c: &SolvedSpiController) -> u64 {
+    let period = u128::from(2u64 << c.mbr) * u128::from(plan.core_fastest());
+    let slowest = match (&plan.hse, c.kernel) {
+        (Some(h), SpiKernel::Pll1Q | SpiKernel::Pclk) => h.slowest(c.kernel_hz),
+        _ => hsi_slowest(c.kernel_hz),
+    };
     period
-        .div_ceil(u128::from(hsi_slowest(c.kernel_hz).max(1)))
+        .div_ceil(u128::from(slowest.max(1)))
         .try_into()
         .unwrap_or(u64::MAX)
 }
@@ -716,7 +733,7 @@ fn emit_spi_transfer(w: &mut String, name: &str, selects: &[Select], plan: &Plan
     let Some(s) = &pf.spi else { return };
     let c = &plan.spi[name];
     let code = spi_code(c, s, pf.enable, pf.master.unwrap_or_default());
-    let delay = eot_delay_reads(c);
+    let delay = eot_delay_reads(plan, c);
     let rounds = delay.div_ceil(u64::from(SR_ROUND));
     let bit = |pos: u32| format!("{:#010x}", 1u32 << pos);
     let arms: Vec<String> = selects
@@ -1193,6 +1210,81 @@ struct Plan {
     /// `solve`; `AET-WO-4240v` D-1): `Ldo`, since [`Plan::new`] refuses
     /// `Bypass`.
     core_supply: CoreSupplyMode,
+    /// The HSE tree (`AET-WO-4240b`), `None` on a board that runs on the HSI.
+    hse: Option<HsePlan>,
+    /// The topology's clock, for the oracle only (its budgets, `aethelgard_ir`).
+    ir_clock: aethelgard_ir::motor::SolvedClock,
+}
+
+/// An HSE board's bring-up (`AET-WO-4240b`): the solved words, copied
+/// (`RUL-16`), the source's fastest after the switch, and each wait's bound in
+/// reads, all by this generator's own arithmetic.
+#[derive(Debug, Clone)]
+struct HsePlan {
+    /// `RCC_CR.HSEBYP`: an external clock into `OSC_IN`.
+    bypass: bool,
+    pllckselr: u32,
+    pllcfgr: u32,
+    pll1divr: u32,
+    flash_acr: u32,
+    slow_ppm: u32,
+    /// `sys_ck` after the switch at the source's fastest, Hz, rounded up.
+    core_fastest: u64,
+    /// The reads of the `HSERDY`, `PLL1RDY` and `SWS` waits.
+    polls: [u32; 3],
+}
+
+/// `PLL1RDY`'s bound, µs: DS12117 Rev 10 Table 39 (rev Y, p. 130) = Table 136
+/// (rev V), PLL lock time 150 µs maximum.
+pub const PLL_LOCK_US: u32 = 150;
+/// `SWS`'s bound, µs (`AET-WO-4240b` Q5, ruled as a generous bound): once
+/// `PLL1RDY` reads 1 only the switch's handover of two cycles of each clock
+/// remains (RM0433 Rev 9 p. 371), far below this.
+pub const SWS_US: u32 = 150;
+
+impl HsePlan {
+    /// `hse`'s plan: the declared start-up bound, the lock time and the
+    /// switch's bound each in reads of a register at HSI's fastest (the core
+    /// runs on the HSI until `SW`; a read takes at least one core cycle),
+    /// rounded up, and refused where a `u32` cannot count them.
+    fn new(hse: &aethelgard_ir::clock::SolvedHse, sysclk_hz: u64) -> Result<Self, BoardError> {
+        use aethelgard_ir::clock::{Hse, Startup};
+        let hz = hsi_fastest(RESET_HZ);
+        let polls = |wait: &'static str, us: u32| -> Result<u32, BoardError> {
+            (u128::from(us) * u128::from(hz))
+                .div_ceil(1_000_000)
+                .try_into()
+                .map_err(|_| BoardError::HsePollsOverflow {
+                    wait,
+                    us: u64::from(us),
+                    hz,
+                })
+        };
+        Ok(Self {
+            bypass: matches!(hse.declared, Hse::External(_)),
+            pllckselr: hse.pllckselr,
+            pllcfgr: hse.pllcfgr,
+            pll1divr: hse.pll1divr,
+            flash_acr: hse.flash_acr,
+            slow_ppm: hse.slow_ppm,
+            core_fastest: (u128::from(sysclk_hz) * (1_000_000 + u128::from(hse.fast_ppm)))
+                .div_ceil(1_000_000)
+                .try_into()
+                .unwrap_or(u64::MAX),
+            polls: [
+                polls("HSERDY", hse.declared.startup_max_us())?,
+                polls("PLL1RDY", PLL_LOCK_US)?,
+                polls("SWS", SWS_US)?,
+            ],
+        })
+    }
+
+    /// The slowest `hz` of a clock from the HSE can run, rounded down.
+    fn slowest(&self, hz: u64) -> u64 {
+        (u128::from(hz) * (1_000_000 - u128::from(self.slow_ppm.min(999_999))) / 1_000_000)
+            .try_into()
+            .unwrap_or(u64::MAX)
+    }
 }
 
 impl Plan {
@@ -1212,8 +1304,26 @@ impl Plan {
     /// Whether the board reads the reset clock: its timers' values, its
     /// USARTs' `BRR`, and its I2C and SPI peripherals' kernel clocks were
     /// solved for it (`AET-WO-4230` D6).
+    /// An HSE board always does: its bring-up takes the reset clock's token.
     fn needs_clock(&self) -> bool {
-        !self.timers.is_empty() || !self.serials.is_empty() || !self.peripherals.is_empty()
+        !self.timers.is_empty()
+            || !self.serials.is_empty()
+            || !self.peripherals.is_empty()
+            || self.hse.is_some()
+    }
+
+    /// Whether the bring-up selects SPI kernels: never on an HSE board, whose
+    /// selects stay at reset (`4240` D6, `AET-WO-4240b` Q3).
+    fn selects_kernels(&self) -> bool {
+        !self.spi.is_empty() && self.hse.is_none()
+    }
+
+    /// The core clock at its fastest: HSI's on a board without HSE, the
+    /// source's after the switch on an HSE board.
+    fn core_fastest(&self) -> u64 {
+        self.hse
+            .as_ref()
+            .map_or_else(|| hsi_fastest(RESET_HZ), |h| h.core_fastest)
     }
 }
 
@@ -1561,6 +1671,13 @@ impl Plan {
             i2c,
             core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
             core_supply: solved.core_supply,
+            hse: solved
+                .clock
+                .hse
+                .as_ref()
+                .map(|h| HsePlan::new(h, u64::from(solved.clock.sysclk_hz)))
+                .transpose()?,
+            ir_clock: solved.clock.clone(),
         })
     }
 }
@@ -1889,6 +2006,92 @@ struct Facts {
     kernel_selects: Vec<SelectWrite>,
     flash: FlashFacts,
     pwr: PwrFacts,
+    /// An HSE board's clock bring-up registers (`AET-WO-4240b`).
+    hse: Option<HseFacts>,
+}
+
+/// The registers and fields an HSE board's bring-up writes and polls
+/// (`AET-WO-4240b`), every place and position from ST's header: `RCC_CR`'s
+/// `HSION`, `HSEON`, `HSERDY`, `HSEBYP`, `CSSHSEON` (RM0433's `HSECSSON`),
+/// `PLL1ON` and `PLL1RDY`; `RCC_CFGR`'s `SW` and `SWS`; the three PLL
+/// registers; `FLASH_ACR`'s `LATENCY` and `WRHIGHFREQ`.
+#[derive(Debug, Clone)]
+struct HseFacts {
+    cr: u32,
+    cfgr: u32,
+    pllckselr: u32,
+    pllcfgr: u32,
+    pll1divr: u32,
+    hsion: u32,
+    hseon: u32,
+    hserdy: u32,
+    hsebyp: u32,
+    hsecsson: u32,
+    pll1on: u32,
+    pll1rdy: u32,
+    sw: (u32, u32),
+    sws: (u32, u32),
+    acr: u32,
+    /// `LATENCY` and `WRHIGHFREQ`: the bits the read-back compares.
+    acr_mask: u32,
+    flash_words: u32,
+}
+
+/// `RCC_CFGR.SW`'s code for PLL1, `011` (RM0433 Rev 9 §8.7.7, p. 392). The
+/// generator's own copy.
+const SW_PLL1: u32 = 0b011;
+
+impl HseFacts {
+    fn new(f: &RegisterFacts, rcc: &cmsis::Layout) -> Result<Self, BoardError> {
+        let field_mask = |name: &str| -> Result<u32, BoardError> {
+            let (pos, width) = f.field(name)?;
+            Ok(((1u32 << width) - 1) << pos)
+        };
+        Ok(Self {
+            cr: rcc.offset("CR", 0)?,
+            cfgr: rcc.offset("CFGR", 0)?,
+            pllckselr: rcc.offset("PLLCKSELR", 0)?,
+            pllcfgr: rcc.offset("PLLCFGR", 0)?,
+            pll1divr: rcc.offset("PLL1DIVR", 0)?,
+            hsion: f.position("RCC_CR_HSION_Pos")?,
+            hseon: f.position("RCC_CR_HSEON_Pos")?,
+            hserdy: f.position("RCC_CR_HSERDY_Pos")?,
+            hsebyp: f.position("RCC_CR_HSEBYP_Pos")?,
+            hsecsson: f.position("RCC_CR_CSSHSEON_Pos")?,
+            pll1on: f.position("RCC_CR_PLL1ON_Pos")?,
+            pll1rdy: f.position("RCC_CR_PLL1RDY_Pos")?,
+            sw: f.field("RCC_CFGR_SW")?,
+            sws: f.field("RCC_CFGR_SWS")?,
+            acr: f.layout("FLASH")?.offset("ACR", 0)?,
+            acr_mask: field_mask("FLASH_ACR_LATENCY")? | field_mask("FLASH_ACR_WRHIGHFREQ")?,
+            flash_words: f.layout("FLASH")?.size / 4,
+        })
+    }
+
+    /// The whole `RCC_CR` words the bring-up writes, in order, each its
+    /// reset value (`0x0000 0001`, `HSION` alone: RM0433 Rev 9 §8.7.2,
+    /// p. 383) with the bits set so far: `HSEBYP` (external only), `HSEON`,
+    /// `HSECSSON`, then `PLL1ON`. (name, word).
+    fn cr_words(&self, bypass: bool) -> Vec<(&'static str, u32)> {
+        let reset = 1u32 << self.hsion;
+        let byp = if bypass { 1u32 << self.hsebyp } else { 0 };
+        let on = reset | byp | (1 << self.hseon);
+        let css = on | (1 << self.hsecsson);
+        let mut out = Vec::new();
+        if bypass {
+            out.push(("HSEBYP", reset | byp));
+        }
+        out.push(("HSEON", on));
+        out.push(("HSECSSON", css));
+        out.push(("PLL1ON", css | (1 << self.pll1on)));
+        out
+    }
+
+    /// `RCC_CFGR` as the switch writes it, whole: `SW` = PLL1, every other
+    /// field at its reset value 0 (`RCC_CFGR` reset `0x0000 0000`, §8.7.7).
+    fn cfgr_word(&self) -> u32 {
+        SW_PLL1 << self.sw.0
+    }
 }
 
 /// The flash controller's register block (`FLASH_R_BASE`, not the memory at
@@ -2330,7 +2533,16 @@ impl Facts {
             bor_lev: f.field("FLASH_OPTSR_BOR_LEV")?,
         };
         Ok(Facts {
-            kernel_selects: kernel_selects(plan, f, &rcc)?,
+            kernel_selects: if plan.selects_kernels() {
+                kernel_selects(plan, f, &rcc)?
+            } else {
+                Vec::new()
+            },
+            hse: plan
+                .hse
+                .as_ref()
+                .map(|_| HseFacts::new(f, &rcc))
+                .transpose()?,
             flash,
             pwr: PwrFacts::new(f)?,
             rcc_base: f.base("RCC")?,
@@ -2661,7 +2873,45 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          }\n\
          \n",
     );
-    if plan.needs_clock() {
+    if plan.hse.is_some() {
+        w.push_str(
+            "/// The clock tree at reset, read before any write: HSI at 64 MHz, every prescaler\n\
+             /// 1, `TIMPRE` 0, every kernel clock selection at its reset value, and the core at\n\
+             /// VOS Scale 2 ([`Scale2`]). Only [`Rcc::reset_clock`] makes one, and only\n\
+             /// [`Hse::start`] takes it: this board's values were solved for PLL1 from the HSE\n\
+             /// (`AET-WO-4240b`), so no peripheral starts on it.\n\
+             pub struct ResetClock {\n    \
+                 _private: (),\n\
+             }\n\
+             \n\
+             /// [`Rcc::reset_clock`] read a field away from its reset value.\n\
+             #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+             pub struct NotResetClock;\n\
+             \n\
+             /// The clock tree this board's values were solved for (`AET-WO-4240b`): PLL1 from\n\
+             /// the HSE, `SWS` read PLL1, every prescaler 1, every kernel clock selection at its\n\
+             /// reset value (SPI1–3 on `pll1_q_ck`, SPI4–6 on the APB clock), the core at VOS\n\
+             /// Scale 2. Only [`Hse::start`] makes one, after `HSERDY`, `PLL1RDY` and `SWS` each\n\
+             /// read ready; every peripheral start and every SPI clock enable takes it.\n\
+             pub struct SolvedClock {\n    \
+                 _private: (),\n\
+             }\n\
+             \n\
+             /// Why [`Hse::start`] stopped, each by its own name. Nothing is written after one.\n\
+             #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+             pub enum ClockFault {\n    \
+                 /// `RCC_CR.HSERDY` did not read 1 within its bound.\n    \
+                 HseNotReady,\n    \
+                 /// `RCC_CR.PLL1RDY` did not read 1 within its bound.\n    \
+                 Pll1NotLocked,\n    \
+                 /// `FLASH_ACR` read back `LATENCY` or `WRHIGHFREQ` other than written.\n    \
+                 FlashAcrNotTaken,\n    \
+                 /// `RCC_CFGR.SWS` did not read PLL1 within its bound.\n    \
+                 SwNotTaken,\n\
+             }\n\
+             \n",
+        );
+    } else if plan.needs_clock() {
         let solved_for = "/// The clock tree is the reset clock this board's values were solved for: HSI\n\
              /// at 64 MHz, every prescaler 1, `TIMPRE` 0, and every kernel clock selection at\n\
              /// its reset value; the core is at VOS Scale 2 ([`Scale2`]). Only\n\
@@ -2680,7 +2930,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              pub struct NotResetClock;\n"
         );
     }
-    if !plan.spi.is_empty() {
+    if plan.selects_kernels() {
         w.push_str(
             "/// The SPI controllers' kernel clocks selected, each the solved topology's\n\
              /// (`AET-WO-4230` §1.1). Only [`Rcc::select_spi_kernels`] makes one, from a\n\
@@ -2876,6 +3126,7 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let _ = writeln!(w, "        }}\n    }}\n}}\n");
     }
     // Peripherals.
+    let mark = w.len();
     for (name, p) in &plan.peripherals {
         let t = type_name(name);
         let pf = &facts.peripherals[name];
@@ -3065,6 +3316,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             emit_usart(w, name, sp, plan, u);
         }
     }
+    // On an HSE board every start takes the solved clock (`AET-WO-4240b`).
+    if plan.hse.is_some() {
+        let starts = w.split_off(mark);
+        w.push_str(
+            &starts
+                .replace("&ResetClock", "&SolvedClock")
+                .replace("[`ResetClock`]", "[`SolvedClock`]")
+                .replace("reset clock's", "solved tree's"),
+        );
+    }
     // RCC.
     let _ = writeln!(
         w,
@@ -3149,12 +3410,19 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             bit = g.bit,
             off = g.offset,
             mask = 1u32 << g.bit,
-            kernels_doc = if spi {
-                "/// Only once its kernel clock is selected ([`SpiKernels`]).\n    "
-            } else {
-                ""
+            kernels_doc = match (spi, plan.hse.is_some()) {
+                (false, _) => "",
+                (true, false) =>
+                    "/// Only once its kernel clock is selected ([`SpiKernels`]).\n    ",
+                (true, true) => {
+                    "/// Only once its kernel clock runs ([`SolvedClock`]: the select at reset).\n    "
+                }
             },
-            kernels = if spi { ", _kernels: &SpiKernels" } else { "" },
+            kernels = match (spi, plan.hse.is_some()) {
+                (false, _) => "",
+                (true, false) => ", _kernels: &SpiKernels",
+                (true, true) => ", _clock: &SolvedClock",
+            },
         );
     }
     if let Some(clock) = &facts.clock {
@@ -3189,10 +3457,15 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
          pub struct Board {{\n    \
              pub rcc: Rcc,\n    \
              pub flash: Flash,\n    \
-             pub pwr: Pwr,",
+             pub pwr: Pwr,{hse_field}",
         hi = bor_pos + bor_width - 1,
         optsr = facts.flash.optsr_cur,
-        pwr = pwr_api(plan, &facts.pwr),
+        pwr = pwr_api(plan, &facts.pwr) + &hse_api(plan, facts),
+        hse_field = if plan.hse.is_some() {
+            "\n    pub hse: Hse,"
+        } else {
+            ""
+        },
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -3237,7 +3510,12 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                  Some(Board {{\n            \
                      rcc: Rcc {{ _private: () }},\n            \
                      flash: Flash {{ _private: () }},\n            \
-                     pwr: Pwr {{ _private: () }},"
+                     pwr: Pwr {{ _private: () }},{hse}",
+        hse = if plan.hse.is_some() {
+            "\n            hse: Hse { _private: () },"
+        } else {
+            ""
+        },
     );
     for port in &plan.ports {
         let _ = writeln!(
@@ -3267,7 +3545,188 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         );
     }
     let _ = writeln!(w, "        }})\n    }}\n}}");
+    emit_css_hold(w, plan, facts);
     s
+}
+
+/// An HSE board's [`Hse`]-to-be and its one method, `start` (`AET-WO-4240b`):
+/// the contract's steps 1–11, every word whole and written once, each wait
+/// bounded by its argument. The PLL and flash words are the solved
+/// topology's, copied (`RUL-16`); `RCC_CR`'s and `RCC_CFGR`'s are this
+/// generator's own ([`HseFacts::cr_words`], [`HseFacts::cfgr_word`]), every
+/// place the header's. Empty on a board without HSE.
+fn hse_api(plan: &Plan, facts: &Facts) -> String {
+    let (Some(h), Some(f)) = (&plan.hse, &facts.hse) else {
+        return String::new();
+    };
+    let cr = f.cr_words(h.bypass);
+    let ready = |w: &str, offset: u32, mask: u32, want: u32, polls: &str, fault: &str| {
+        format!(
+            "        if !clock_ready(r, {offset:#05x}, {mask:#010x}, {want:#010x}, {polls}) {{\n            \
+                 return Err(ClockFault::{fault}); // {w}\n        \
+             }}\n"
+        )
+    };
+    let write = |offset: u32, word: u32, what: &str| {
+        format!("        r.write(TOKEN, Block::Rcc, {offset:#05x}, {word:#010x}); // {what}\n")
+    };
+    let mut body = String::new();
+    for (name, word) in &cr[..cr.len() - 2] {
+        body += &write(f.cr, *word, &format!("CR: {name}"));
+    }
+    body += &ready(
+        "HSERDY",
+        f.cr,
+        1 << f.hserdy,
+        1 << f.hserdy,
+        "hse_polls",
+        "HseNotReady",
+    );
+    let (_, css) = cr[cr.len() - 2];
+    body += &write(f.cr, css, "CR: HSECSSON");
+    body += &write(f.pllckselr, h.pllckselr, "PLLCKSELR");
+    body += &write(f.pllcfgr, h.pllcfgr, "PLLCFGR");
+    body += &write(f.pll1divr, h.pll1divr, "PLL1DIVR");
+    let (_, pll) = cr[cr.len() - 1];
+    body += &write(f.cr, pll, "CR: PLL1ON");
+    body += &ready(
+        "PLL1RDY",
+        f.cr,
+        1 << f.pll1rdy,
+        1 << f.pll1rdy,
+        "pll_polls",
+        "Pll1NotLocked",
+    );
+    let _ = write!(
+        body,
+        "        r.write(TOKEN, Block::Flash, {acr:#04x}, {word:#010x}); // ACR: LATENCY, WRHIGHFREQ\n        \
+             if (r.read(TOKEN, Block::Flash, {acr:#04x}) ^ {word:#010x}) & {mask:#010x} != 0 {{\n            \
+                 return Err(ClockFault::FlashAcrNotTaken);\n        \
+             }}\n",
+        acr = f.acr,
+        word = h.flash_acr,
+        mask = f.acr_mask,
+    );
+    body += &write(f.cfgr, f.cfgr_word(), "CFGR: SW = PLL1");
+    let sws_mask = ((1u32 << f.sws.1) - 1) << f.sws.0;
+    body += &ready(
+        "SWS",
+        f.cfgr,
+        sws_mask,
+        SW_PLL1 << f.sws.0,
+        "sws_polls",
+        "SwNotTaken",
+    );
+    format!(
+        "\n\
+         /// The HSE and PLL1, once (`AET-WO-4240b`): [`Hse::start`] consumes it.\n\
+         pub struct Hse {{\n    \
+             _private: (),\n\
+         }}\n\
+         \n\
+         /// Reads `RCC` at `offset` at most `polls` times, until a read masked by `mask` is\n\
+         /// `want`.\n\
+         fn clock_ready<R: Registers>(r: &mut R, offset: usize, mask: u32, want: u32, polls: u32) -> bool {{\n    \
+             for _ in 0..polls {{\n        \
+                 if r.read(TOKEN, Block::Rcc, offset) & mask == want {{\n            \
+                     return true;\n        \
+                 }}\n    \
+             }}\n    \
+             false\n\
+         }}\n\
+         \n\
+         impl Hse {{\n    \
+             /// H1 from the reset clock, never falling back to the HSI (`4240` D5): {source}\n    \
+             /// on, at most `hse_polls` reads for `HSERDY`, then `HSECSSON`; `PLLCKSELR`,\n    \
+             /// `PLLCFGR` and `PLL1DIVR` as solved, then `PLL1ON` and at most `pll_polls` reads\n    \
+             /// for `PLL1RDY`; `FLASH_ACR` as solved (Table 17's VOS Scale 2 row) and read back;\n    \
+             /// then `SW` = PLL1 and at most `sws_polls` reads for `SWS`. Every word is written\n    \
+             /// whole, once; a wait that expires is its own [`ClockFault`], and nothing is written\n    \
+             /// after it. The kernel clock selections stay at reset.\n    \
+             pub fn start<R: Registers>(\n        \
+                 self,\n        \
+                 r: &mut R,\n        \
+                 _clock: ResetClock,\n        \
+                 hse_polls: u32,\n        \
+                 pll_polls: u32,\n        \
+                 sws_polls: u32,\n    \
+             ) -> Result<SolvedClock, ClockFault> {{\n\
+         {body}        \
+                 Ok(SolvedClock {{ _private: () }})\n    \
+             }}\n\
+         }}\n",
+        source = if h.bypass {
+            "`HSEBYP`, then `HSEON`"
+        } else {
+            "`HSEON` (a crystal)"
+        },
+    )
+}
+
+/// An HSE board's `css_hold` (`AET-WO-4240b`), which the firmware's CSS NMI
+/// calls: every motor output driven to its safe level, low (the pull-down
+/// level, [`MOTOR_PULL`]), as a GPIO output (its `BSRR` reset bit, then its
+/// `MODER` field `01`), then a park that never returns. Every motor is
+/// driven, whatever its timer: the CSS break event reaches TIM1/8/15/16/17
+/// only through `BDTR.BKE` (RM0433 Rev 9 §38.4.20 p. 1614, §41.6.16
+/// p. 1818), and [`timer_writes`] writes `BDTR` as `MOE` alone, so no timer's
+/// break is armed; TIM2–5 have no break at all.
+fn emit_css_hold(w: &mut String, plan: &Plan, facts: &Facts) {
+    if plan.hse.is_none() {
+        return;
+    }
+    let mw = facts.gpio.widths[0];
+    let mut motors = Vec::new();
+    let mut body = String::new();
+    for (n, t) in &plan.timers {
+        for (k, (pin, _)) in &t.channels {
+            let p = &plan.pins[pin];
+            let pf = &facts.pins[pin];
+            motors.push(format!(
+                "/// - `{pin}`, net `{}`: `TIM{n}` channel {k}.",
+                p.net
+            ));
+            let block = port_type(p.port);
+            let mask = oracle_mask(mw, pf.moder);
+            let _ = write!(
+                body,
+                "    r.write(TOKEN, Block::{block}, {bsrr:#04x}, {br:#010x}); // {pin} low\n    \
+                 r.modify(TOKEN, Block::{block}, {moder:#04x}, |v| (v & !{mask:#010x}) | {out:#010x}); // {pin} output\n",
+                bsrr = facts.gpio.bsrr,
+                br = 1u32 << pf.br,
+                moder = facts.gpio.moder,
+                out = MODE_OUTPUT << pf.moder,
+            );
+        }
+    }
+    let motors = if motors.is_empty() {
+        "/// - none: the board has no motor output.".to_owned()
+    } else {
+        motors.join("\n")
+    };
+    let _ = writeln!(
+        w,
+        "\n\
+         /// The clock security system's hold (`AET-WO-4240b`), for the firmware's NMI only:\n\
+         /// the HSE failed, the part switched to the HSI and PLL1 stopped (RM0433 Rev 9 §8.5.3,\n\
+         /// p. 344). Each motor output is driven low, its safe level, as a GPIO output (its\n\
+         /// `BSRR` reset bit, then `MODER` output), then the core parks for good: it never\n\
+         /// returns, so nothing runs on after it on the HSI. No timer's break holds a motor:\n\
+         /// TIM2–5 have none, and TIM1/8/15/16/17's takes the CSS event only with\n\
+         /// `BDTR.BKE`, which this crate never sets (RM0433 Rev 9 p. 1614, p. 1818). The\n\
+         /// motors it drives:\n\
+         {motors}\n\
+         pub fn css_hold<R: Registers>(r: &mut R) -> ! {{\n    \
+             css_drive(r);\n    \
+             loop {{\n        \
+                 core::hint::spin_loop();\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// [`css_hold`]'s writes, so a proof can follow them.\n\
+         fn css_drive<R: Registers>(r: &mut R) {{\n\
+         {body}}}"
+    );
 }
 
 /// One timer's start (`AET-WO-4300a` §1.3), as [`emit_timer_start`] writes
@@ -3811,6 +4270,9 @@ fn oracle_selects(plan: &Plan) -> BTreeMap<u32, u32> {
 /// peripherals, then the timers. A USART's block is never in it.
 fn image_fields(plan: &Plan) -> Vec<String> {
     let mut blocks: Vec<String> = vec!["rcc".into(), "pwr".into()];
+    if plan.hse.is_some() {
+        blocks.push("flash".into());
+    }
     blocks.extend(plan.ports.iter().map(|p| port_field(*p)));
     blocks.extend(plan.peripherals.keys().map(|n| n.to_ascii_lowercase()));
     blocks.extend(plan.timers.keys().map(|n| format!("tim{n}")));
@@ -3927,7 +4389,7 @@ impl Scope {
         if !self.timers.is_empty() || !self.peripherals.is_empty() {
             out.push(Action::ResetClock);
         }
-        if self.peripherals.iter().any(|n| plan.spi.contains_key(n)) {
+        if plan.selects_kernels() && self.peripherals.iter().any(|n| plan.spi.contains_key(n)) {
             out.push(Action::SelectKernels);
         }
         out.extend(self.timers.iter().map(|n| Action::TimerClock(*n)));
@@ -4053,7 +4515,17 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
                 }
             }
         }
-        Action::ResetClock => {}
+        // On an HSE board the reset clock's read and the bring-up, one action
+        // (`AET-WO-4240b`): `RCC_CR`, `RCC_CFGR` and the PLL words whole, and
+        // `FLASH_ACR`, at the oracle's offsets.
+        Action::ResetClock => {
+            if plan.hse.is_some() {
+                for offset in ORACLE_RCC_HSE_WORDS {
+                    add("Rcc".to_owned(), offset, !0);
+                }
+                add("Flash".to_owned(), ORACLE_FLASH_ACR, !0);
+            }
+        }
         // Each select register is written whole; the offsets are the oracle's
         // (`aethelgard_ir::silicon::spi_words`).
         Action::SelectKernels => {
@@ -4092,15 +4564,25 @@ fn check_parts(plan: &Plan, facts: &Facts, parts: &[Scope]) -> Result<(), BoardE
         .ports
         .iter()
         .map(|p| Action::Port(*p))
-        .chain((!plan.spi.is_empty()).then_some(Action::SelectKernels))
+        .chain(plan.selects_kernels().then_some(Action::SelectKernels))
+        // An HSE board's bring-up is one owner too (`AET-WO-4240b`).
+        .chain(
+            (plan.hse.is_some()
+                && Scope::whole(plan)
+                    .actions(plan)
+                    .contains(&Action::ResetClock))
+            .then_some(Action::ResetClock),
+        )
         .map(|a| (a.describe(), footprint(plan, facts, &a)))
         .collect();
     for (part, acts) in parts.iter().zip(&scheduled) {
         let mut own = Footprint::new();
-        for a in acts
-            .iter()
-            .filter(|a| !matches!(a, Action::Port(_) | Action::SelectKernels))
-        {
+        for a in acts.iter().filter(|a| {
+            !matches!(
+                a,
+                Action::Port(_) | Action::SelectKernels | Action::ResetClock
+            )
+        }) {
             for (key, mask) in footprint(plan, facts, a) {
                 *own.entry(key).or_default() |= mask;
             }
@@ -4172,7 +4654,316 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
     emit_timer_proofs(w, plan, facts);
     emit_flash_proof(w);
     emit_pwr_proof(w, plan);
+    if let Some(h) = &plan.hse {
+        emit_hse_proof(w, plan, h, facts.rcc_words);
+        // Every targeted harness takes its token from the stub
+        // (`solved_clock_token`), so its image's RCC holds only its gates.
+        for regs in ["img", "spy"] {
+            s = s.replace(
+                &format!(
+                    "    let clock = rcc.reset_clock(&mut {regs}, &scale2);\n    \
+                     kani::assume(clock.is_ok());\n    \
+                     let clock = clock.unwrap();\n"
+                ),
+                "    let clock = solved_clock_token(&rcc, board.hse, &scale2);\n",
+            );
+        }
+        s = s.replace(
+            "    let kernels = rcc.select_spi_kernels(&mut img, &clock);\n",
+            "",
+        );
+        s = s.replace(", scale2, &kernels)\n", ", scale2, &clock)\n");
+    }
     Ok(s)
+}
+
+// belt-and-suspenders: the oracle's RCC and flash places and bits for an HSE
+// board's bring-up (`AET-WO-4240b`), written from RM0433 Rev 9; the code's
+// come from the header ([`HseFacts`]), so an error in either is a failed proof
+// (`INV-07`).
+/// `RCC_CR` (§8.7.2, p. 383, offset 0x000, reset `0x0000 0001`), `RCC_CFGR`
+/// (§8.7.7, 0x010), `RCC_PLLCKSELR` (§8.7.11, 0x028), `RCC_PLLCFGR` (§8.7.12,
+/// 0x02C), `RCC_PLL1DIVR` (§8.7.13, 0x030), and `FLASH_ACR` (§4.9.1, p. 201,
+/// 0x000).
+const ORACLE_RCC_CR: u32 = 0x000;
+const ORACLE_RCC_CFGR: u32 = 0x010;
+const ORACLE_RCC_HSE_WORDS: [u32; 5] = [0x000, 0x010, 0x028, 0x02C, 0x030];
+const ORACLE_FLASH_ACR: u32 = 0x000;
+/// `RCC_CR`: `HSION` 0, `HSEON` 16, `HSERDY` 17, `HSEBYP` 18, `HSECSSON` 19,
+/// `PLL1ON` 24, `PLL1RDY` 25.
+const ORACLE_CR_RESET: u32 = 1;
+const ORACLE_CR_HSEON: u32 = 1 << 16;
+const ORACLE_CR_HSERDY: u32 = 1 << 17;
+const ORACLE_CR_HSEBYP: u32 = 1 << 18;
+const ORACLE_CR_HSECSSON: u32 = 1 << 19;
+const ORACLE_CR_PLL1ON: u32 = 1 << 24;
+const ORACLE_CR_PLL1RDY: u32 = 1 << 25;
+/// `RCC_CFGR.SW` (bits 2:0) and `SWS` (bits 5:3); `011` is PLL1 (p. 392).
+const ORACLE_CFGR_SW: u32 = 0b111;
+const ORACLE_CFGR_SWS: u32 = 0b111 << 3;
+const ORACLE_CFGR_PLL1: u32 = 0b011;
+/// `FLASH_ACR`'s `LATENCY` (bits 3:0) and `WRHIGHFREQ` (bits 5:4), p. 201.
+const ORACLE_ACR_MASK: u32 = 0x3F;
+
+/// The oracle's `RCC_CR` words in the order the contract writes them
+/// (`AET-WO-4240b` steps 1, 2, 4 and 6): (name, word).
+fn oracle_cr_words(h: &HsePlan) -> Vec<(&'static str, u32)> {
+    let byp = if h.bypass { ORACLE_CR_HSEBYP } else { 0 };
+    let mut out = Vec::new();
+    if h.bypass {
+        out.push(("HSEBYP", ORACLE_CR_RESET | byp));
+    }
+    let on = ORACLE_CR_RESET | byp | ORACLE_CR_HSEON;
+    out.push(("HSEON", on));
+    out.push(("HSECSSON", on | ORACLE_CR_HSECSSON));
+    out.push(("PLL1ON", on | ORACLE_CR_HSECSSON | ORACLE_CR_PLL1ON));
+    out
+}
+
+/// What the schedule's image holds in each RCC word the bring-up writes
+/// (offset, word, what): the last `RCC_CR` word with `HSERDY` and `PLL1RDY`,
+/// `RCC_CFGR` `SW` and `SWS` PLL1, and the topology's PLL words.
+fn oracle_hse_words(h: &HsePlan) -> Vec<(u32, u32, &'static str)> {
+    let (_, cr) = *oracle_cr_words(h).last().expect("four words");
+    vec![
+        (
+            ORACLE_RCC_CR,
+            cr | ORACLE_CR_HSERDY | ORACLE_CR_PLL1RDY,
+            "CR, HSERDY and PLL1RDY read their ON bits",
+        ),
+        (
+            ORACLE_RCC_CFGR,
+            ORACLE_CFGR_PLL1 | (ORACLE_CFGR_PLL1 << 3),
+            "CFGR: SW = SWS = PLL1",
+        ),
+        (0x028, h.pllckselr, "PLLCKSELR, solved"),
+        (0x02C, h.pllcfgr, "PLLCFGR, solved"),
+        (0x030, h.pll1divr, "PLL1DIVR, solved"),
+    ]
+}
+
+/// The final-state oracle's flash clause on an HSE board (`AET-WO-4240b`):
+/// `FLASH_ACR` is the topology's word once the bring-up ran (an action
+/// outside a part may have changed it), and every other word is unchanged.
+fn emit_flash_clause(w: &mut String, plan: &Plan, words: u32, brought_up: bool) {
+    let acr = ORACLE_FLASH_ACR / 4;
+    if let (Some(h), true) = (&plan.hse, brought_up) {
+        let _ = writeln!(
+            w,
+            "    kani::assert(after.flash[{acr}] == {word:#010x}, \"FLASH_ACR is not the solved word (clock.hse.flash_acr)\");",
+            word = h.flash_acr,
+        );
+    }
+    for i in (0..words).filter(|i| *i != acr) {
+        let _ = writeln!(
+            w,
+            "    kani::assert(after.flash[{i}] == before.flash[{i}], \"the flash controller's word {i} changed\");"
+        );
+    }
+}
+
+/// An HSE board's bring-up proof (`AET-WO-4240b`),
+/// `hse_start_is_in_order_bounded_and_named`: on a spy whose every ready read
+/// (`HSERDY`, `PLL1RDY`, `SWS`) and whose `FLASH_ACR` read-back are any
+/// words, at symbolic bounds of one or two reads, `Hse::start` writes exactly
+/// the contract's words, in order, each once; a timeout is its own fault with
+/// nothing written after it; `SolvedClock` comes back only after all three
+/// ready bits read ready and the read-back matched; and on success the
+/// RCC/FLASH writes are exactly the solved words. Also the stub every
+/// targeted harness takes its `SolvedClock` from.
+fn emit_hse_proof(w: &mut String, plan: &Plan, h: &HsePlan, rcc_words: u32) {
+    let mut expect: Vec<(String, u32, u32)> = oracle_cr_words(h)
+        .into_iter()
+        .map(|(_, word)| ("Block::Rcc".to_owned(), ORACLE_RCC_CR, word))
+        .collect();
+    // Step order: HSEBYP/HSEON, (HSERDY), HSECSSON, the PLL words, PLL1ON,
+    // (PLL1RDY), FLASH_ACR, (read-back), SW, (SWS).
+    let n = expect.len();
+    let pll1on = expect.remove(n - 1);
+    expect.push(("Block::Rcc".into(), 0x028, h.pllckselr));
+    expect.push(("Block::Rcc".into(), 0x02C, h.pllcfgr));
+    expect.push(("Block::Rcc".into(), 0x030, h.pll1divr));
+    expect.push(pll1on);
+    expect.push(("Block::Flash".into(), ORACLE_FLASH_ACR, h.flash_acr));
+    expect.push(("Block::Rcc".into(), ORACLE_RCC_CFGR, ORACLE_CFGR_PLL1));
+    let total = expect.len();
+    // How many writes each outcome has made: before HSERDY, before PLL1RDY,
+    // before the read-back, before SWS (the last).
+    let at_hse = if h.bypass { 2 } else { 1 };
+    let at_pll = at_hse + 5;
+    let at_acr = at_pll + 1;
+    let checks: Vec<String> = expect
+        .iter()
+        .enumerate()
+        .map(|(i, (b, off, word))| {
+            format!(
+                "            {i} => kani::assert(block == {b} && offset == {off:#05x} && value == {word:#010x}, \"write {k} is not the contract's\"),",
+                k = i + 1
+            )
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "\n\
+         /// RCC and the flash controller as `Hse::start` may touch them: each write held\n\
+         /// to the contract's, in order; each ready read and the `FLASH_ACR` read-back any\n\
+         /// word. `hse`, `pll`, `sws`: the last ready read; `acr`: the read-back matched.\n\
+         struct HseSpy {{\n    \
+             writes: usize,\n    \
+             hse_reads: u32,\n    \
+             pll_reads: u32,\n    \
+             sws_reads: u32,\n    \
+             hse: bool,\n    \
+             pll: bool,\n    \
+             sws: bool,\n    \
+             acr: Option<bool>,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for HseSpy {{}}\n\
+         \n\
+         impl Registers for HseSpy {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 let v: u32 = kani::any();\n        \
+                 if block == Block::Rcc && offset == {cr:#05x} && self.writes == {at_hse} {{\n            \
+                     kani::assert(!self.hse, \"CR polled after HSERDY read 1\");\n            \
+                     self.hse_reads += 1;\n            \
+                     self.hse = v & {hserdy:#010x} != 0;\n        \
+                 }} else if block == Block::Rcc && offset == {cr:#05x} && self.writes == {at_pll} {{\n            \
+                     kani::assert(!self.pll, \"CR polled after PLL1RDY read 1\");\n            \
+                     self.pll_reads += 1;\n            \
+                     self.pll = v & {pll1rdy:#010x} != 0;\n        \
+                 }} else if block == Block::Flash && offset == {acr:#05x} && self.writes == {at_acr} {{\n            \
+                     kani::assert(self.acr.is_none(), \"FLASH_ACR read back twice\");\n            \
+                     self.acr = Some((v ^ {flash:#010x}) & {acr_mask:#010x} == 0);\n        \
+                 }} else if block == Block::Rcc && offset == {cfgr:#05x} && self.writes == {total} {{\n            \
+                     kani::assert(!self.sws, \"CFGR polled after SWS read PLL1\");\n            \
+                     self.sws_reads += 1;\n            \
+                     self.sws = v & {sws:#010x} == {sws_pll1:#010x};\n        \
+                 }} else {{\n            \
+                     kani::assert(false, \"start read a register out of the contract's order\");\n        \
+                 }}\n        \
+                 v\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 match self.writes {{\n\
+         {checks}\n            \
+                     _ => kani::assert(false, \"start wrote more than the contract's {total} words\"),\n        \
+                 }}\n        \
+                 // Each write only once its step's waits read ready.\n        \
+                 kani::assert(self.writes < {at_hse} || self.hse, \"a write after HSEON before HSERDY read 1\");\n        \
+                 kani::assert(self.writes < {at_pll} || self.pll, \"a write after PLL1ON before PLL1RDY read 1\");\n        \
+                 kani::assert(self.writes < {at_acr} || self.acr == Some(true), \"SW written before FLASH_ACR read back as written\");\n        \
+                 self.writes += 1;\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"start made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"start made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// `Hse::start` on any ready reads and any `FLASH_ACR` read-back, its three bounds\n\
+         /// symbolic, one or two reads each: the contract's {total} words, in order, once each;\n\
+         /// each timeout its own [`ClockFault`] after exactly its bound's reads, with nothing\n\
+         /// written after it; `SolvedClock` only once `HSERDY`, `PLL1RDY` and `SWS` read ready\n\
+         /// and `FLASH_ACR` read back as written, every word written.\n\
+         #[kani::proof]\n\
+         #[kani::unwind(3)]\n\
+         fn hse_start_is_in_order_bounded_and_named() {{\n    \
+             let (hb, pb, sb): (u32, u32, u32) = (kani::any(), kani::any(), kani::any());\n    \
+             kani::assume((1..=2).contains(&hb) && (1..=2).contains(&pb) && (1..=2).contains(&sb));\n    \
+             let mut regs = ClockReady {{ rcc: [0; {rcc_words}], acr: 0 }};\n    \
+             let board = Board::take().unwrap();\n    \
+             let scale2 = scale2_token(board.pwr);\n    \
+             let reset = board.rcc.reset_clock(&mut regs, &scale2);\n    \
+             kani::assert(reset.is_ok(), \"the reset clock refused a reset RCC\");\n    \
+             let mut spy = HseSpy {{ writes: 0, hse_reads: 0, pll_reads: 0, sws_reads: 0, hse: false, pll: false, sws: false, acr: None }};\n    \
+             let result = board.hse.start(&mut spy, reset.unwrap(), hb, pb, sb);\n    \
+             match result {{\n        \
+                 Ok(_) => {{\n            \
+                     kani::assert(\n                \
+                         spy.writes == {total} && spy.hse && spy.pll && spy.acr == Some(true) && spy.sws,\n                \
+                         \"SolvedClock without every word written and HSERDY, PLL1RDY, the read-back and SWS ready\",\n            \
+                     );\n            \
+                     kani::cover!(true, \"the clock is brought up\");\n        \
+                 }}\n        \
+                 Err(ClockFault::HseNotReady) => {{\n            \
+                     kani::assert(spy.writes == {at_hse} && !spy.hse && spy.hse_reads == hb, \"HseNotReady other than after the bound's reads of HSERDY, each 0, with nothing written after\");\n            \
+                     kani::cover!(true, \"HSERDY times out\");\n        \
+                 }}\n        \
+                 Err(ClockFault::Pll1NotLocked) => {{\n            \
+                     kani::assert(spy.writes == {at_pll} && spy.hse && !spy.pll && spy.pll_reads == pb, \"Pll1NotLocked other than after the bound's reads of PLL1RDY, each 0, with nothing written after\");\n            \
+                     kani::cover!(true, \"PLL1RDY times out\");\n        \
+                 }}\n        \
+                 Err(ClockFault::FlashAcrNotTaken) => {{\n            \
+                     kani::assert(spy.writes == {at_acr} && spy.pll && spy.acr == Some(false), \"FlashAcrNotTaken other than on a read-back that differs, with nothing written after\");\n            \
+                     kani::cover!(true, \"FLASH_ACR is not taken\");\n        \
+                 }}\n        \
+                 Err(ClockFault::SwNotTaken) => {{\n            \
+                     kani::assert(spy.writes == {total} && spy.acr == Some(true) && !spy.sws && spy.sws_reads == sb, \"SwNotTaken other than after the bound's reads of SWS, none PLL1\");\n            \
+                     kani::cover!(true, \"SWS times out\");\n        \
+                 }}\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// RCC and the flash controller always ready: each word reads as last written\n\
+         /// (0 at first, the reset clock), `HSERDY` and `PLL1RDY` their ON bits, `SWS` `SW`.\n\
+         struct ClockReady {{\n    \
+             rcc: [u32; {rcc_words}],\n    \
+             acr: u32,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for ClockReady {{}}\n\
+         \n\
+         impl Registers for ClockReady {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 if block == Block::Flash {{ self.acr }} else {{ self.rcc[offset / 4] }}\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 if block == Block::Flash {{\n            \
+                     self.acr = value;\n        \
+                 }} else if offset == {cr:#05x} {{\n            \
+                     self.rcc[offset / 4] = value | ((value & {on:#010x}) << 1);\n        \
+                 }} else if offset == {cfgr:#05x} {{\n            \
+                     self.rcc[offset / 4] = (value & !{sws:#010x}) | ((value & {sw:#010x}) << 3);\n        \
+                 }} else {{\n            \
+                     self.rcc[offset / 4] = value;\n        \
+                 }}\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{}}\n\
+         }}\n\
+         \n\
+         /// The token the targeted harnesses start their peripherals with: the reset clock\n\
+         /// and the bring-up on [`ClockReady`], which returns `Ok`\n\
+         /// (`hse_start_is_in_order_bounded_and_named` proves the bring-up itself).\n\
+         #[allow(dead_code)]\n\
+         fn solved_clock_token(rcc: &Rcc, hse: Hse, scale2: &Scale2) -> SolvedClock {{\n    \
+             let mut regs = ClockReady {{ rcc: [0; {rcc_words}], acr: 0 }};\n    \
+             let reset = rcc.reset_clock(&mut regs, scale2);\n    \
+             kani::assert(reset.is_ok(), \"the reset clock refused a reset RCC\");\n    \
+             let solved = hse.start(&mut regs, reset.unwrap(), 1, 1, 1);\n    \
+             kani::assert(solved.is_ok(), \"the bring-up refused a ready RCC\");\n    \
+             solved.unwrap()\n\
+         }}",
+        cr = ORACLE_RCC_CR,
+        cfgr = ORACLE_RCC_CFGR,
+        acr = ORACLE_FLASH_ACR,
+        hserdy = ORACLE_CR_HSERDY,
+        pll1rdy = ORACLE_CR_PLL1RDY,
+        on = ORACLE_CR_HSEON | ORACLE_CR_PLL1ON,
+        sws = ORACLE_CFGR_SWS,
+        sw = ORACLE_CFGR_SW,
+        sws_pll1 = ORACLE_CFGR_PLL1 << 3,
+        flash = h.flash_acr,
+        acr_mask = ORACLE_ACR_MASK,
+        checks = checks.join("\n"),
+    );
+    let _ = plan;
 }
 
 /// `FLASH_OPTSR_CUR`'s offset in the flash controller's block: "Address
@@ -4504,6 +5295,11 @@ fn emit_schedule(
         ("Rcc".into(), "rcc".into(), facts.rcc_words, None),
         ("Pwr".into(), "pwr".into(), facts.pwr.words, None),
     ];
+    // An HSE board's image holds the flash controller: the bring-up writes
+    // `FLASH_ACR` and reads it back (`AET-WO-4240b`).
+    if let Some(h) = &facts.hse {
+        blocks.push(("Flash".into(), "flash".into(), h.flash_words, None));
+    }
     for port in &scope.ports {
         blocks.push((
             port_type(*port),
@@ -4537,7 +5333,11 @@ fn emit_schedule(
         ));
     }
     // A part's image holds only its own blocks; any other is outside it.
-    let partial = blocks.len() < 2 + plan.ports.len() + plan.peripherals.len() + plan.timers.len();
+    let partial = blocks.len()
+        < 2 + usize::from(facts.hse.is_some())
+            + plan.ports.len()
+            + plan.peripherals.len()
+            + plan.timers.len();
     let acts = scope.actions(plan);
     let actions = acts.len();
     let unwind = blocks
@@ -4607,14 +5407,16 @@ fn emit_schedule(
         );
     } else {
         // Nor is the flash controller's: only `Flash::option_status` reads it
-        // (`flash_option_status_is_one_read`).
-        let _ = writeln!(
-            w,
-            "            Block::Flash => {{\n                \
-                 kani::assert(false, \"the flash controller was accessed through the harness image\");\n                \
-                 &mut self.rcc\n            \
-             }}"
-        );
+        // (`flash_option_status_is_one_read`). On an HSE board it is.
+        if facts.hse.is_none() {
+            let _ = writeln!(
+                w,
+                "            Block::Flash => {{\n                \
+                     kani::assert(false, \"the flash controller was accessed through the harness image\");\n                \
+                     &mut self.rcc\n            \
+                 }}"
+            );
+        }
         for name in plan.serials.keys() {
             let _ = writeln!(
                 w,
@@ -4642,8 +5444,10 @@ fn emit_schedule(
                  Block::Rcc => {{}}\n            \
                  Block::Pwr => {{}}"
     );
-    if !partial {
+    if !partial || facts.hse.is_some() {
         let _ = writeln!(w, "            Block::Flash => {{}}");
+    }
+    if !partial {
         for name in plan.serials.keys() {
             let _ = writeln!(w, "            Block::{} => {{}}", type_name(name));
         }
@@ -4779,6 +5583,16 @@ fn emit_schedule(
             );
         }
     }
+    if facts.hse.is_some() {
+        let _ = writeln!(
+            w,
+            "        kani::assert(\n            \
+                 block != Block::Flash || offset == {acr:#05x},\n            \
+                 \"a flash controller register other than ACR was read\",\n        \
+             );",
+            acr = ORACLE_FLASH_ACR,
+        );
+    }
     let _ = writeln!(
         w,
         "        *self.slot(block, offset)\n    \
@@ -4805,6 +5619,34 @@ fn emit_schedule(
         d = ORACLE_PWR_D3CR / 4,
         ready = ORACLE_PWR_READY,
     );
+    // An HSE board (`AET-WO-4240b`): `HSERDY` and `PLL1RDY` read their ON bits
+    // and `SWS` reads `SW`, at once, as Renode 1.17.0's do; the waits are
+    // `hse_start_is_in_order_bounded_and_named`'s, on any reads. The flash
+    // controller takes `ACR` alone.
+    if facts.hse.is_some() {
+        let _ = writeln!(
+            w,
+            "        // RCC (RM0433 Rev 9 §8.7.2, §8.7.7): HSERDY and PLL1RDY follow HSEON and\n        \
+             // PLL1ON, SWS follows SW, at once.\n        \
+             let value = if block == Block::Rcc && offset == {cr:#05x} {{\n            \
+                 value | ((value & {on:#010x}) << 1)\n        \
+             }} else if block == Block::Rcc && offset == {cfgr:#05x} {{\n            \
+                 (value & !{sws:#010x}) | ((value & {sw:#010x}) << 3)\n        \
+             }} else {{\n            \
+                 value\n        \
+             }};\n        \
+             kani::assert(\n            \
+                 block != Block::Flash || offset == {acr:#05x},\n            \
+                 \"a flash controller register other than ACR was written\",\n        \
+             );",
+            cr = ORACLE_RCC_CR,
+            cfgr = ORACLE_RCC_CFGR,
+            on = ORACLE_CR_HSEON | ORACLE_CR_PLL1ON,
+            sws = ORACLE_CFGR_SWS,
+            sw = ORACLE_CFGR_SW,
+            acr = ORACLE_FLASH_ACR,
+        );
+    }
     for (name, pf) in facts
         .peripherals
         .iter()
@@ -5099,6 +5941,9 @@ fn emit_schedule(
         timingr_params.concat()
     );
     emit_pwr_clause(w, plan, facts.pwr.words);
+    if let Some(h) = &facts.hse {
+        emit_flash_clause(w, plan, h.flash_words, acts.contains(&Action::ResetClock));
+    }
     for port in &scope.ports {
         let field = port_field(*port);
         let mut expect: BTreeMap<u32, (u32, u32)> = BTreeMap::new();
@@ -5233,6 +6078,13 @@ fn emit_schedule(
     let _ = writeln!(w, "    let mut rcc = before.rcc;");
     for (word, mask) in &gates {
         let _ = writeln!(w, "    rcc[{word}] |= {mask:#010x};");
+    }
+    // An HSE board's bring-up (`AET-WO-4240b`): RCC is before plus exactly the
+    // solved words, with the ready bits the image sets.
+    if let (Some(h), true) = (&plan.hse, acts.contains(&Action::ResetClock)) {
+        for (offset, word, what) in oracle_hse_words(h) {
+            let _ = writeln!(w, "    rcc[{i}] = {word:#010x}; // {what}", i = offset / 4);
+        }
     }
     // Each kernel-clock select register, the rule's whole word.
     if acts.contains(&Action::SelectKernels) {
@@ -5456,6 +6308,9 @@ fn emit_schedule(
     }
     if acts.contains(&Action::ResetClock) {
         let _ = writeln!(w, "    let mut clock = None;");
+        if plan.hse.is_some() {
+            let _ = writeln!(w, "    let mut hse = Some(board.hse);");
+        }
     }
     if acts.contains(&Action::SelectKernels) {
         let _ = writeln!(w, "    let mut kernels = None;");
@@ -5518,10 +6373,10 @@ fn emit_schedule(
     {
         debug_assert_eq!(acts[a], Action::Clock(name.clone()));
         let f = name.to_ascii_lowercase();
-        let (ready, kernels) = if plan.spi.contains_key(name) {
-            (" && kernels.is_some()", ", kernels.as_ref().unwrap()")
-        } else {
-            ("", "")
+        let (ready, kernels) = match (plan.spi.contains_key(name), plan.hse.is_some()) {
+            (true, false) => (" && kernels.is_some()", ", kernels.as_ref().unwrap()"),
+            (true, true) => (" && clock.is_some()", ", clock.as_ref().unwrap()"),
+            (false, _) => ("", ""),
         };
         let _ = writeln!(
             w,
@@ -5710,14 +6565,29 @@ fn emit_schedule(
                  kani::assume(clock.is_none());"
         );
         running(w, a);
-        let _ = writeln!(
-            w,
-            "                let read = rcc.reset_clock(&mut img, &scale2);\n                \
-                 kani::assume(read.is_ok());\n                \
-                 clock = read.ok();\n                \
-                 kani::cover!(true, \"the reset clock was read\");\n            \
-             }}"
-        );
+        if plan.hse.is_some() {
+            // The bring-up on the image, whose ready bits follow their ON
+            // bits: it must reach `SolvedClock` at one read a wait.
+            let _ = writeln!(
+                w,
+                "                let read = rcc.reset_clock(&mut img, &scale2);\n                \
+                     kani::assume(read.is_ok());\n                \
+                     let solved = hse.take().unwrap().start(&mut img, read.unwrap(), 1, 1, 1);\n                \
+                     kani::assert(solved.is_ok(), \"the bring-up stopped though every ready bit followed its ON bit\");\n                \
+                     clock = solved.ok();\n                \
+                     kani::cover!(true, \"the clock was brought up\");\n            \
+                 }}"
+            );
+        } else {
+            let _ = writeln!(
+                w,
+                "                let read = rcc.reset_clock(&mut img, &scale2);\n                \
+                     kani::assume(read.is_ok());\n                \
+                     clock = read.ok();\n                \
+                     kani::cover!(true, \"the reset clock was read\");\n            \
+                 }}"
+            );
+        }
         a += 1;
     }
     if acts.contains(&Action::SelectKernels) {
@@ -6298,8 +7168,15 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         // `2^(MBR+1)` kernel cycles at the slowest kernel, in core cycles at
         // the fastest core, each `SR` read at least one (ES0392 Rev 16 §2.22.6).
         let c = &plan.spi[name];
-        let delay = (u128::from(1u64 << (c.mbr + 1)) * u128::from(silicon::fast_hz(plan.core_hz)))
-            .div_ceil(u128::from(silicon::slow_hz(c.kernel_hz).max(1)));
+        // On an HSE board the core and the kernel are the tree's budget's
+        // (`aethelgard_ir::clock`, `silicon::spi_kernel_budget`; `AET-WO-4240b`).
+        let delay = (u128::from(1u64 << (c.mbr + 1))
+            * u128::from(plan.ir_clock.budget().fastest_hz(plan.core_hz)))
+        .div_ceil(u128::from(
+            silicon::spi_kernel_budget(c.kernel, &plan.ir_clock)
+                .slowest_hz(c.kernel_hz)
+                .max(1),
+        ));
         let arms: Vec<String> = selects
             .iter()
             .map(|sel| {
@@ -6552,7 +7429,7 @@ fn emit_spi_transfer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         // proof, never passes it.
         let unwind = u128::try_from(frames_most)
             .unwrap_or(u128::MAX)
-            .max(u128::from(eot_delay_reads(c).div_ceil(u64::from(SR_ROUND))) + 1);
+            .max(u128::from(eot_delay_reads(plan, c).div_ceil(u64::from(SR_ROUND))) + 1);
         let covers: String = scripted
             .iter()
             .map(|(a, b, step)| {
