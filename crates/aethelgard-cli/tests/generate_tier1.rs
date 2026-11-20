@@ -287,6 +287,18 @@ fn a_declared_hse_validates_and_solves_and_h1_is_not_refused_as_hse() {
         "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
         "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}});
     let hse = dir.join("hse.json");
+    // An HSE board writes FLASH_ACR (AET-WO-4240b Q6), so the reference's
+    // acknowledgement of its reset fields as silicon-only is stale there and
+    // refused by name; without it the board validates.
+    fs::write(&hse, spec.to_string()).unwrap();
+    let (code, v) = run(&["validate", "--file", s(&hse)], true);
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "UnwitnessedAcknowledgementStale", "{v}");
+    assert_eq!(v["error"]["id"], "FLASH.ACR", "{v}");
+    spec["acknowledge_unwitnessed"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["register"] != "FLASH.ACR");
     fs::write(&hse, spec.to_string()).unwrap();
     let (code, v) = run(&["validate", "--file", s(&hse)], true);
     assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");

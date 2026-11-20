@@ -838,6 +838,66 @@ fn table() -> Vec<Entry> {
         &format!("{RCC_CS} L219–226; {hse_measured}: CFGR reads 0x1B after SW = PLL1, sys_ck 64,000,000 Hz"),
         "SW = PLL1 (011), after the PLL1RDY read and FLASH_ACR; its SWS read (the CFGR SWS reset row's field) is the twin's clock rule's, read at once in Renode",
     ));
+    // Every other field of the whole words the bring-up writes (`RCC_CR`,
+    // `RCC_PLLCKSELR`, `RCC_CFGR`): written at its reset value, or a
+    // read-only bit the write cannot move (RM0433 Rev 9 §8.7.2 p. 383, §8.7.7
+    // p. 393, §8.7.11 p. 399). The twin's clock rule judges each whole word as
+    // written; `PLLSRC` is the header's two overlapping masks.
+    for (register, field, what) in [
+        ("CR", "HSION", "HSI on, its reset 1"),
+        ("CR", "HSIKERON", "reset 0"),
+        ("CR", "HSIRDY", "read-only"),
+        ("CR", "HSIDIV", "reset 00 (÷1), which ResetClock read first"),
+        ("CR", "HSIDIVF", "read-only"),
+        ("CR", "CSION", "reset 0"),
+        ("CR", "CSIRDY", "read-only"),
+        ("CR", "CSIKERON", "reset 0"),
+        ("CR", "HSI48ON", "reset 0"),
+        ("CR", "HSI48RDY", "read-only"),
+        ("CR", "D1CKRDY", "read-only"),
+        ("CR", "D2CKRDY", "read-only"),
+        ("CR", "HSERDY", "read-only"),
+        ("CR", "PLL1RDY", "read-only"),
+        ("CR", "PLL2ON", "reset 0, PLL2 unused"),
+        ("CR", "PLL2RDY", "read-only"),
+        ("CR", "PLL3ON", "reset 0, PLL3 unused"),
+        ("CR", "PLL3RDY", "read-only"),
+        (
+            "PLLCKSELR",
+            "PLLSRC_CSI",
+            "PLLSRC's low bit, 0: PLLSRC 10 is the HSE",
+        ),
+        (
+            "PLLCKSELR",
+            "PLLSRC_HSE",
+            "PLLSRC's high bit, 1: PLLSRC 10 is the HSE",
+        ),
+        (
+            "CFGR",
+            "SWS",
+            "read-only; read back after SW by the clock rule",
+        ),
+        ("CFGR", "STOPWUCK", "reset 0"),
+        ("CFGR", "STOPKERWUCK", "reset 0"),
+        ("CFGR", "RTCPRE", "reset 0"),
+        ("CFGR", "HRTIMSEL", "reset 0"),
+        ("CFGR", "TIMPRE", "reset 0, as the solved clock's timpre"),
+        ("CFGR", "MCO#PRE", "reset 0"),
+        ("CFGR", "MCO#", "reset 0"),
+    ] {
+        t.push(e(
+            "RCC",
+            register,
+            field,
+            W,
+            Rule,
+            clock_rule,
+            "",
+            &format!(
+                "a field of the whole word the HSE bring-up writes, {what}; the twin's clock rule judges the word as written (RM0433 Rev 9 pp. 383, 393, 399)"
+            ),
+        ));
+    }
     let acr_source = format!(
         "STM32H7_FlashController.cs L76–80 (LATENCY and WRHIGHFREQ stored, read back, no wait state); {hse_measured}: written 0x11, read back 0x11"
     );
@@ -2486,8 +2546,22 @@ mod tests {
             let e = classify(&TABLE, family, register, field, access, field).unwrap();
             assert_eq!(e.class, class, "{family}.{register}.{field}");
         }
-        assert!(classify(&TABLE, "RCC", "CR", "HSIKERON", W, "h").is_err());
-        assert!(classify(&TABLE, "RCC", "CR", "PLL2ON", W, "p").is_err());
+        // The other fields of each whole word, written at reset or read-only,
+        // are the clock rule's (the generator lists every field it writes).
+        for (register, field) in [
+            ("CR", "HSION"),
+            ("CR", "HSIKERON"),
+            ("CR", "PLL2ON"),
+            ("CR", "HSERDY"),
+            ("PLLCKSELR", "PLLSRC_HSE"),
+            ("CFGR", "SWS"),
+            ("CFGR", "MCO2PRE"),
+            ("CFGR", "MCO1"),
+        ] {
+            let e = classify(&TABLE, "RCC", register, field, W, field).unwrap();
+            assert_eq!(e.class, Class::IndependentRule, "RCC.{register}.{field}");
+        }
+        assert!(classify(&TABLE, "RCC", "CR", "HSEEXT", W, "h").is_err());
     }
 
     #[test]
