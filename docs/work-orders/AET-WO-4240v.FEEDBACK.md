@@ -454,5 +454,12 @@ A fresh Opus agent read RM0433 and DS12117 from the page images and the header, 
 - **CI on #259:**
   - `9988b6f1`: every job passed but the package-bound three (`gates`' bench test, its tools shard, `bench-package`) and `twin_tier2`'s completeness test, fixed in `6102b12b` (§1.7);
   - `d4b4fe12` (`main` `03d89554` merged): every job passed but the package-bound three and `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes`. That test pinned eight `prove` gates, and the PWR harness is the ninth. It is now pinned by name, and passed locally in the image (263 s; weight row 434.3 s unchanged);
-  - the head after it: see the READY commit's run.
+  - `72ae7e9f` (`main` `cb489f2a` merged, 1911's CI): every job green but the package-bound three (run 44658220823);
+  - the merge of `main` `36a494fd` (`2304b`, `1314b`; specification 19), checked locally in the image before pushing:
+    - fmt 0 and clippy (with tools) 0;
+    - tier 1: 2,367 passed. 8 failed:
+      - `channels_tier1`'s 7 and `sockets_tier1`'s 1 failed because the fresh target had not uplifted `examples/sandbox_probe`. With `cargo build --examples` first, all 8 pass. CI's shared build makes them; this branch changed neither file;
+      - the committed-package test, as before;
+    - `twin_tier2` and `verify_2k2_tier2`: 91 of 91 passed;
+  - the head pushed when the architect called 4240v: see the READY commit's run.
 - **The bench package:** from the architect's `bench-package` `write=true` dispatch, committed byte for byte. CI_RUN_PLACEHOLDER
