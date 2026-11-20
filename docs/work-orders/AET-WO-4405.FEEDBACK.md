@@ -112,8 +112,31 @@ The adversary also notes that `4404` §5's "defaults.parm … hold" cannot be tr
 
 ## 6. Reduction pass, mutants and gates
 
-(pending)
+- **Reduction pass (diff): −45 lines net from one table · 1 duplicate removed · 2 mechanisms removed · 2 protected kept · 1 finding below.**
+  - **The `SerialProtocol` name table** went from 51 rows to 6. Its parsing job is gone (§2), so it only labels a finding now: None, MAVLink, MAVLink 2, GPS, GPS2 and RCIN, the names a finding can carry, each tied to the judge's own constants. Any other value is shown as its number.
+  - **Duplicate:** `map_baudrate` has one copy in the crate (`elf.rs`); `identity.rs`'s copy is gone.
+  - **Mechanisms:** a `var_info` name is read where its `PT_LOAD` flashes it, not through the section table as well. That dropped the section lookup and its offset comparison, which no test could reach (mutant M17 survived before the change). Names identify rows and do not change what ArduPilot applies (A5).
+  - **Protected, kept:** `map_baudrate` (the generator holds its own copy, labelled `belt-and-suspenders:` at both sites) and the role → protocol match (`RUL-20`).
+  - **Finding, outside the fence:** `container/ardupilot-pinout.sh:14-16` still says the identity judge reads "bauds" from `hwdef.h`. It now reads them from the ELF, apart from SERIAL0's boot rate. The comment needs a one-word fix by whoever next touches `container/`.
+- **Mutants** (`spike/4405/mutants.py`; one per guard this work order adds, each against `pincheck/tests/identity.rs`; the file is restored from a copy, and a mutant that does not compile is never counted as killed): **19 of 19 killed, each by a named failing test** (`spike/4405/out/mutants.txt`), on the head that merged `main` `943f7112`.
+  - The work order's three: **M1**, the baud float taken as a baud, is killed on SERIAL0 (`the_serial_order_and_bauds_are_judged`, `each_baud_is_the_parameter_mapped`, …). **M2**, reading past `AP_GROUPEND`, is killed (`every_malformed_var_info_is_refused_by_name`). **M3**, the GPS cap dropped, is killed: the five-GPS-port board then passes, and `a_third_gps_port_is_named` fails.
+  - The rest: GPS2 counted; undeclared ports counted; flags; type; a duplicate; an unknown row; a fractional default; a default above and below its type (M11, M11b, the adversary's A9); a partial port; `AP_GROUPEND`'s fields; the name length; the name's end flashed; a missing declared port; SERIAL0's boot rate; RC twice.
+  - Dropped as not meaningful: one equivalent mutant (`continue` for `break` at a terminator that must be last), and one that broke every read.
+- **CI planner (`1910`):** no tier-2 test; no test in a lock-serialised binary; the renamed tests are tier 1 in `pincheck`, under 0.5 s, with no row in `ci/test-weights.tsv` (P1, P2). `TIER2_MIN` is unchanged.
 
-## 7. Status
+## 7. Gates, CI and status
 
-(pending)
+- **Gates** at `cd1fafbe` (`main` `943f7112`, `4240v`, merged; capped scope):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace`: **2,396 passed, 0 failed**. An earlier run at `0409ad4f` gave 2,360 passed, 0 failed.
+- **The final binary on the real boards** [measured]. It reads `4240v`'s topology schema, so every topology was re-solved first: the CI three and Sentinel-01 from their committed specs, and `4404`'s three at specification 19 with Serial-Four's `core_supply`. Every regenerated `hwdef.dat` has `4404`'s lines exactly.
+  - `container/ardupilot-pinout.sh`, unchanged, on the seven CI boards: exit 0, no `::error` (`spike/4405/out/pinout-final.log`).
+  - The thirteen `4404` boards: each verdict is identical to the earlier branch run (`out/judge-final.txt`).
+  - The crossed headers: as §3 (`out/cross-final.txt`).
+- **CI on the first push** (`9fc09d59`, PR #277): every job but one tools shard had passed when checked, the ardupilot-image `pinout` job among them (run 44711552849).
+- **Outside the fence:**
+  - the two crate READMEs (`aethelgard-pincheck`, and the `check pinout` paragraph and exit-3 list in `aethelgard-cli`'s). The work order's rules make their old "read from `hwdef.h`" sentence false, so they were brought true;
+  - `spike/4405/` holds Python decode and prediction scripts, as `spike/1303` does. No ELF or `hwdef.h` byte is committed.
+  - Nothing else: no generator, IR, specification, `container/`, workflow or `ci/` change.
+- **Status:** built. CI on this head follows; the READY commit comes after it is green.
