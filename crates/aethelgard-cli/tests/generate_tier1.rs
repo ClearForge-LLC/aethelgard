@@ -271,12 +271,13 @@ fn a_bypass_core_supply_validates_and_solves_and_is_never_generated() {
     ]);
 }
 
-/// `AET-WO-4240a` §1.7: a declared HSE (the 16 MHz crystal) validates, its
-/// acknowledgements left unjudged as `bypass`'s are, and solves to the HSE
-/// tree; `generate`, `emit` and `simulate` refuse it by name, writing
-/// nothing.
+/// `AET-WO-4240a` §1.7: a declared HSE (the 16 MHz crystal) validates and
+/// solves to the HSE tree, H1; since `AET-WO-4240b` §1.7 `generate`, `emit`
+/// and `simulate` no longer refuse it as `HseNotGenerated` (the end-to-end
+/// build and simulation of the HSE fixtures is the PM's, with the
+/// generator's bring-up).
 #[test]
-fn a_declared_hse_validates_and_solves_and_is_never_generated() {
+fn a_declared_hse_validates_and_solves_and_h1_is_not_refused_as_hse() {
     let dir = scratch("hse");
     fs::create_dir_all(&dir).unwrap();
     let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
@@ -293,16 +294,13 @@ fn a_declared_hse_validates_and_solves_and_is_never_generated() {
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["clock"]["source"], "PLL1");
     assert_eq!(v["clock"]["hse"]["pll1divr"], 0x0103_064F);
-    let out = dir.join("out");
-    let refused = |args: &[&str]| {
-        let (code, v) = run(args, true);
-        assert_eq!(code, Some(2), "{args:?}: {v}");
-        assert_eq!(v["error"]["kind"], "HseNotGenerated", "{v}");
-        assert!(!out.exists(), "{args:?}");
+    let lifted = |args: &[&str]| {
+        let (_, v) = run(args, true);
+        assert_ne!(v["error"]["kind"], "HseNotGenerated", "{args:?}: {v}");
     };
-    refused(&["generate", "--spec", s(&hse), "--out", s(&out)]);
-    refused(&["emit", "--file", s(&hse), "--out", s(&out)]);
-    refused(&[
+    lifted(&["generate", "--spec", s(&hse), "--out", s(&dir.join("gen"))]);
+    lifted(&["emit", "--file", s(&hse), "--out", s(&dir.join("emit"))]);
+    lifted(&[
         "simulate",
         "--platform",
         s(&root().join("boards/sentinel-01/sentinel-01.repl")),

@@ -580,8 +580,13 @@ fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>,
 /// The boot of a droop scenario: the bridge owns Renode as its child
 /// (`--renode`, ruled D1), with Renode's own arguments, environment and
 /// grants; Renode's output is the bridge's after its identity line, read
-/// through [`crate::renode::LOG_FILTER`].
-pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run::Stop> {
+/// through `filter`, the boot's own ([`crate::renode::LOG_FILTER`], or
+/// [`crate::renode::LOG_FILTER_HSE`] on an HSE board).
+pub fn boot(
+    inv: &run::Invocation<'_>,
+    renode: &Path,
+    filter: run::LogFilter,
+) -> Result<run::Output, run::Stop> {
     let tool = bridge()?;
     let mut args: Vec<std::ffi::OsString> = vec!["--renode".into(), renode.as_os_str().into()];
     args.extend(inv.args.iter().cloned());
@@ -597,7 +602,7 @@ pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run
         read_only,
         read_write: inv.read_write.clone(),
     }
-    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, crate::renode::LOG_FILTER)?;
+    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, filter)?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let rest = identified(&text)?.1.as_bytes().to_vec();
     out.stdout = rest;
