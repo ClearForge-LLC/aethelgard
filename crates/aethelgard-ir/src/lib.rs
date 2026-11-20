@@ -1396,6 +1396,17 @@ impl PinTable {
     }
 }
 
+/// A solved `CCR` of the shape its output's idle gives (`AET-WO-1211a`): 0
+/// for an idle `low`, `ARR + 1` for `high`, else from 1 to below `ARR` (a
+/// pulse idle, and DShot's `0` bit).
+fn ccr_shaped(m: &SolvedMotorOutput) -> bool {
+    match m.pwm.as_ref().map(|p| p.idle) {
+        Some(motor::Idle::Level(motor::Level::Low)) => m.ccr == 0,
+        Some(motor::Idle::Level(motor::Level::High)) => m.ccr == m.arr + 1,
+        _ => m.ccr != 0 && m.ccr < m.arr,
+    }
+}
+
 /// One variant per refusal. Each names what `id()` returns, or nothing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IrValidationError {
@@ -4502,7 +4513,7 @@ impl SolvedTopology {
         }
         let mut seen = BTreeSet::new();
         let mut channels = BTreeSet::new();
-        let mut timers: BTreeMap<u32, (MotorProtocol, Option<u32>, u32, u32)> = BTreeMap::new();
+        let mut timers: BTreeMap<u32, (MotorProtocol, Option<(u32, u64)>, u32, u32)> = BTreeMap::new();
         for (net, m) in &self.motor_outputs {
             let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
             let Some((timer, channel)) = motor::timer_channel(&a.signal) else {
@@ -4522,12 +4533,16 @@ impl SolvedTopology {
                 || m.psc > 0xFFFF
                 || m.arr == 0
                 || m.arr > 0xFFFF
-                || m.ccr == 0
-                || m.ccr >= m.arr
+                || !ccr_shaped(m)
             {
                 return Err(mismatch(net));
             }
-            let key = (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz), m.psc, m.arr);
+            let key = (
+                m.protocol,
+                m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps)),
+                m.psc,
+                m.arr,
+            );
             if *timers.entry(timer).or_insert(key) != key {
                 return Err(E::TimerShared {
                     id: format!("TIM{timer}"),
