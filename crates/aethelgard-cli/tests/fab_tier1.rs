@@ -503,9 +503,28 @@ fn reference() -> Value {
 /// dropped (`GPIOB.OTYPER`, 16 rows) and one field of another
 /// (`GPIOA.MODER`'s `MODER0`, which is what a field the generator newly
 /// writes in an acknowledged register looks like to the check).
+/// `AET-WO-2307`: `error.entries` holds the two entries the specification
+/// lacks, `GPIOA.MODER` completed with its reason kept and `GPIOB.OTYPER`
+/// with reason "", fields sorted; the message states the reason rule.
 #[test]
 fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one() {
     let mut spec = reference();
+    let held = |register: &str| {
+        let mut a = spec["acknowledge_unwitnessed"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|a| a["register"] == register)
+            .unwrap()
+            .clone();
+        a["fields"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by(|x, y| x.as_str().unwrap().cmp(y.as_str().unwrap()));
+        a
+    };
+    let mut want = Value::Array(vec![held("GPIOA.MODER"), held("GPIOB.OTYPER")]);
+    want[1]["reason"] = "".into();
     let entries = spec["acknowledge_unwitnessed"].as_array_mut().unwrap();
     entries.retain(|a| a["register"] != "GPIOB.OTYPER");
     let moder = entries
@@ -526,13 +545,19 @@ fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_on
         assert!(m.contains("17 unwitnessed ledger row(s)"), "{m}");
         for id in &named {
             assert!(
-                m.contains(&format!("{id},")) || m.ends_with(id.as_str()),
+                m.contains(&format!("{id},")) || m.contains(&format!("{id}. ")),
                 "{id}: {m}"
             );
         }
         assert_eq!(
             v["error"]["id"], "GPIOB.OTYPER.OT0",
             "the first in the ledger's order: {v}"
+        );
+        assert_eq!(v["error"]["entries"], want, "{flag}");
+        assert!(
+            m.contains("`entries` holds the 2 entries")
+                && m.ends_with("1 to 200 bytes of printable ASCII with no space at either end; `validate` refuses an empty one (`InvalidSource`)"),
+            "{m}"
         );
         if flag == "--fab-out" {
             assert!(!out.exists(), "nothing is created");

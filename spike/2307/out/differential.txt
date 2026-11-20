@@ -1,0 +1,17 @@
+unsupported-schema	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-unsupported-schema	exit 2	UnsupportedSchemaVersion	same
+not-json	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-not-json	exit 3	InvalidJson	same
+schema-violation	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-schema-violation	exit 2	SchemaViolation	same
+stale	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-stale	exit 2	UnwitnessedAcknowledgementStale	same
+invalid-source	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-invalid-source	exit 2	InvalidSource	same
+acknowledged-twice	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-acknowledged-twice	exit 2	UnwitnessedAcknowledgedTwice	same
+base-mismatch	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-base-mismatch	exit 3	ScenarioBaseMismatch	same
+base-outside-root	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-base-outside-root	exit 3	BaseOutsideRoot	same
+coverage-short	verify --spec spec.json --scenarios scen/baseline.json --fab-out ../fab-coverage	exit 3	CampaignCoverageShort	same
+unsupported-schema	validate --file spec.json	exit 2	UnsupportedSchemaVersion	same
+schema-violation	validate --file spec.json	exit 2	SchemaViolation	same
+stale	validate --file spec.json	exit 2	UnwitnessedAcknowledgementStale	same
+invalid-source	validate --file spec.json	exit 2	InvalidSource	same
+acknowledged-twice	validate --file spec.json	exit 2	UnwitnessedAcknowledgedTwice	same
+stale	verify --spec spec.json --fab-out ../fab-usage	exit 64	UsageError	same
+stale	verify	exit 64	UsageError	same
+unack	verify --spec spec.json --scenarios scen/baseline.json scen/battery-sag-tolerated.json scen/droop-bor3.json scen/droop-tolerated.json scen/held-low-sda.json scen/serial-rx-open-console.json scen/serial-rx-open-crsf.json scen/serial-rx-open-mavlink.json scen/spi-absent-u4.json scen/spi-absent-u5.json scen/vdd5v-out-of-band.json --fab-out ../fab-unack	exit 2	UnwitnessedFieldNotAcknowledged	DIFFERS

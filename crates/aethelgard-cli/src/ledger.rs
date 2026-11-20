@@ -36,13 +36,14 @@
 //! models whose source this work order did not hold (GPIO, I2C, USART, timer)
 //! the evidence is the committed FEEDBACK passage that read or measured it.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::LazyLock;
 
 use aethelgard_ir::silicon::{self, BrrFinding, I2cFinding, SpiFinding};
 use aethelgard_ir::{
-    PeerDeviationSource, PinTable, SolvedTopology, Specification, UnwitnessedClass,
+    PeerDeviationSource, PinTable, SolvedTopology, Specification, UnwitnessedAcknowledgement,
+    UnwitnessedClass,
 };
 use aethelgard_svd_hal::board::{FieldAccess, FieldUse, register_fields};
 use aethelgard_svd_hal::cmsis;
@@ -1853,6 +1854,45 @@ pub fn acknowledge(ledger: &mut Ledger, spec: &Specification) -> Vec<String> {
     }
     ledger.counts.unacknowledged = missing.len();
     missing
+}
+
+/// The entries `acknowledge_unwitnessed` lacks, from a ledger [`acknowledge`]
+/// has marked (`AET-WO-2307`): one per register and class with a row left
+/// unacknowledged, sorted by register, then class. Its fields are those rows'
+/// fields, sorted, each once. Where `spec` already has the entry for that
+/// register and class, it is that entry completed: its fields added and its
+/// reason kept. Otherwise its reason is empty, which `validate` refuses
+/// (`InvalidSource`), so a pasted entry cannot pass before a person writes it.
+/// Every field is a ledger row of its register and class once [`stale`] has
+/// found nothing in `spec`.
+pub fn missing_entries(ledger: &Ledger, spec: &Specification) -> Vec<UnwitnessedAcknowledgement> {
+    let mut missing: BTreeMap<(&str, UnwitnessedClass), BTreeSet<&str>> = BTreeMap::new();
+    for r in &ledger.rows {
+        if r.acknowledged == Some(false)
+            && let Some(class) = r.class.unwitnessed()
+        {
+            missing
+                .entry((&r.register, class))
+                .or_default()
+                .insert(&r.field);
+        }
+    }
+    missing
+        .into_iter()
+        .map(|((register, class), mut fields)| {
+            let held = spec.unwitnessed_acknowledgement(register, class);
+            fields.extend(
+                held.iter()
+                    .flat_map(|a| a.fields.iter().map(String::as_str)),
+            );
+            UnwitnessedAcknowledgement {
+                register: register.to_owned(),
+                class: class.name().to_owned(),
+                fields: fields.into_iter().map(str::to_owned).collect(),
+                reason: held.map(|a| a.reason.clone()).unwrap_or_default(),
+            }
+        })
+        .collect()
 }
 
 /// An acknowledgement that names what the ledger lacks.

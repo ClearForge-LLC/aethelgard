@@ -771,3 +771,234 @@ fn silicon_derives_each_usart_s_kernel_itself_and_holds_the_topology_s_to_it() {
         "{gps}"
     );
 }
+
+// ------------------------------------------------- AET-WO-2307: the entries
+
+fn spec_of(path: &str) -> Specification {
+    serde_json::from_slice(&fs::read(root().join(path)).unwrap()).unwrap()
+}
+
+/// §5: every field an entry names is a ledger row of that register and
+/// class, so no entry claims a row that was never unwitnessed in that class,
+/// and no two entries share a register and class.
+fn covers_only_ledger_rows(l: &Ledger, entries: &[UnwitnessedAcknowledgement]) {
+    for a in entries {
+        for f in &a.fields {
+            assert!(
+                l.rows.iter().any(|r| r.register == a.register
+                    && r.class.unwitnessed().map(|c| c.name()) == Some(a.class.as_str())
+                    && r.field == *f),
+                "{} {} {f}: no ledger row of that register and class",
+                a.register,
+                a.class
+            );
+        }
+    }
+    let pairs: std::collections::BTreeSet<_> =
+        entries.iter().map(|a| (&a.register, &a.class)).collect();
+    assert_eq!(
+        pairs.len(),
+        entries.len(),
+        "one entry per register and class"
+    );
+}
+
+/// §1.3: a specification with no acknowledgement gets one entry per register
+/// and class, each reason "", fields sorted, sorted by register then class,
+/// and the same on a second call. On the reference that is its own 30
+/// hand-written entries with each reason emptied.
+#[test]
+fn with_no_acknowledgement_each_register_and_class_gets_one_unwritten_entry() {
+    let written = reference_spec();
+    let mut spec = written.clone();
+    spec.acknowledge_unwitnessed.clear();
+    let mut l = reference_ledger();
+    assert_eq!(ledger::acknowledge(&mut l, &spec).len(), 168);
+    let entries = ledger::missing_entries(&l, &spec);
+    // The ledger's own grouping (`every_row_acknowledged`), fields sorted and
+    // each reason "".
+    let want: Vec<_> = every_row_acknowledged(&l)
+        .into_iter()
+        .map(|mut a| {
+            a.fields.sort();
+            a.reason.clear();
+            a
+        })
+        .collect();
+    assert_eq!(entries, want);
+    assert_eq!(entries, ledger::missing_entries(&l, &spec), "stable");
+    assert!(
+        entries
+            .windows(2)
+            .all(|w| (&w[0].register, &w[0].class) < (&w[1].register, &w[1].class)),
+        "sorted by register, then class"
+    );
+    for a in &entries {
+        assert_eq!(a.reason, "", "{}", a.register);
+        assert!(a.fields.windows(2).all(|w| w[0] < w[1]), "{}", a.register);
+    }
+    covers_only_ledger_rows(&l, &entries);
+    let mut emptied: Vec<_> = written
+        .acknowledge_unwitnessed
+        .into_iter()
+        .map(|mut a| {
+            a.fields.sort();
+            a.reason.clear();
+            a
+        })
+        .collect();
+    emptied.sort_by(|a, b| (&a.register, &a.class).cmp(&(&b.register, &b.class)));
+    assert_eq!(entries, emptied);
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 168);
+}
+
+/// §1.3: the entries pasted in with each reason written pass the
+/// acknowledgement step (`validate`'s shape, no stale entry, no row left);
+/// pasted with reason "", `validate` refuses the first as `InvalidSource`.
+#[test]
+fn pasted_entries_pass_once_written_and_are_refused_unwritten() {
+    let mut spec = reference_spec();
+    spec.acknowledge_unwitnessed.clear();
+    let mut l = reference_ledger();
+    ledger::acknowledge(&mut l, &spec);
+    let entries = ledger::missing_entries(&l, &spec);
+
+    spec.acknowledge_unwitnessed = entries.clone();
+    let err = spec.validate().unwrap_err();
+    assert_eq!(err.kind(), "InvalidSource");
+    assert!(
+        err.to_string()
+            .contains("acknowledge_unwitnessed[0].reason"),
+        "{err}"
+    );
+
+    spec.acknowledge_unwitnessed = entries
+        .into_iter()
+        .enumerate()
+        .map(|(i, mut a)| {
+            a.reason = format!("a test's reason {i}");
+            a
+        })
+        .collect();
+    spec.validate().unwrap();
+    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
+}
+
+/// §1.3: an entry the specification holds that misses fields is reported as
+/// that entry completed, its reason kept; it replaces the held one and the
+/// result passes. Pasted beside the held one instead, `validate` refuses the
+/// pair (`UnwitnessedAcknowledgedTwice`).
+#[test]
+fn a_partial_entry_is_reported_completed_with_its_reason_kept() {
+    let written = reference_spec();
+    let held = |register: &str| {
+        written
+            .acknowledge_unwitnessed
+            .iter()
+            .find(|a| a.register == register)
+            .unwrap()
+            .clone()
+    };
+    let (moder, otyper) = (held("GPIOA.MODER"), held("GPIOB.OTYPER"));
+    let mut spec = written.clone();
+    spec.acknowledge_unwitnessed
+        .retain(|a| a.register != "GPIOB.OTYPER");
+    let at = spec
+        .acknowledge_unwitnessed
+        .iter()
+        .position(|a| a.register == "GPIOA.MODER")
+        .unwrap();
+    spec.acknowledge_unwitnessed[at]
+        .fields
+        .retain(|f| f != "MODER0");
+    let mut l = reference_ledger();
+    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::acknowledge(&mut l, &spec).len(), 17);
+    let entries = ledger::missing_entries(&l, &spec);
+    let sorted = |mut a: UnwitnessedAcknowledgement, reason: &str| {
+        a.fields.sort();
+        a.reason = reason.to_owned();
+        a
+    };
+    let completed = sorted(moder.clone(), &moder.reason);
+    assert_eq!(entries, [completed.clone(), sorted(otyper, "")]);
+    covers_only_ledger_rows(&l, &entries);
+
+    let mut beside = spec.clone();
+    beside.acknowledge_unwitnessed.push(completed.clone());
+    assert_eq!(
+        beside.validate().unwrap_err().kind(),
+        "UnwitnessedAcknowledgedTwice"
+    );
+
+    spec.acknowledge_unwitnessed[at] = completed;
+    let mut new = entries[1].clone();
+    new.reason = "a test's reason".into();
+    spec.acknowledge_unwitnessed.push(new);
+    spec.validate().unwrap();
+    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
+}
+
+/// §1.1, §1.3 on Sentinel-03 (measured in `spike/2307/`): its 280
+/// unacknowledged rows across 35 registers need 43 entries, 6 completing an
+/// entry it holds (reason kept) and 37 new (reason ""), 313 fields in all.
+/// No entry's reason is ever a ledger row's `judge` text, and none covers a
+/// row outside its register and class.
+#[test]
+fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
+    let spec = spec_of("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+    let (t, table) = fixture("sentinel-03");
+    let mut l = ledger::build(&t, &table).unwrap();
+    assert_eq!(ledger::stale(&l, &spec), None);
+    let missing = ledger::acknowledge(&mut l, &spec);
+    let entries = ledger::missing_entries(&l, &spec);
+    let registers: std::collections::BTreeSet<_> = entries.iter().map(|a| &a.register).collect();
+    let held: Vec<_> = entries.iter().filter(|a| !a.reason.is_empty()).collect();
+    assert_eq!(
+        (missing.len(), registers.len(), entries.len(), held.len()),
+        (280, 35, 43, 6)
+    );
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 313);
+    for a in &held {
+        let class = a.class_kind().unwrap();
+        let mine = spec
+            .unwitnessed_acknowledgement(&a.register, class)
+            .unwrap();
+        assert_eq!(a.reason, mine.reason, "{}", a.register);
+    }
+    for a in &entries {
+        for r in &l.rows {
+            assert_ne!(a.reason, r.judge, "{} carries {}'s judge", a.register, r.id);
+        }
+    }
+    covers_only_ledger_rows(&l, &entries);
+    // Every missing row is in its entry, and an entry has no field beyond the
+    // missing rows and the held entry's own.
+    for r in l.rows.iter().filter(|r| r.acknowledged == Some(false)) {
+        let c = r.class.unwitnessed().unwrap().name();
+        assert!(
+            entries
+                .iter()
+                .any(|a| a.register == r.register && a.class == c && a.fields.contains(&r.field)),
+            "{}",
+            r.id
+        );
+    }
+    for a in &entries {
+        let own = spec
+            .unwitnessed_acknowledgement(&a.register, a.class_kind().unwrap())
+            .map_or(&[][..], |h| &h.fields[..]);
+        for f in &a.fields {
+            assert!(
+                own.contains(f)
+                    || l.rows.iter().any(|r| r.acknowledged == Some(false)
+                        && r.register == a.register
+                        && r.field == *f),
+                "{} {f}",
+                a.register
+            );
+        }
+    }
+}
