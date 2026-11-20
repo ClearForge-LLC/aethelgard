@@ -1,8 +1,8 @@
 # AET-WO-1912 FEEDBACK — CI's third refit, measured on `main`
 
-## Status: MEASURING — §1 (the table before any row changes) committed; the throwaway alone run is next
+## Status: READY — built. Every shard under 20 minutes on the PR's run 44762196410 (worst 17.1 min). The spread was 7.2 minutes, over §2's 6: decision needed (D1).
 
-Builder: Claude (Opus 5.5), a fresh `1912` session, 2026-11-20, from ~13:45 UTC. Worktree `~/aethelgard-1912`, branch `wo/aet-1912-refit` from `origin/main` `472d2d84`.
+Builder: Claude (Opus 5.5), a fresh `1912` session, 2026-11-20, from ~13:45 UTC. Worktree `~/aethelgard-1912`, branch `wo/aet-1912-refit` from `origin/main` `472d2d84`, with `main` `a37b787f` (`4240a`, `1211`, docs) and `8fdc9422` (`4406`, `4241`) merged in. No merge touched a row of this order; `4241` added one `twin_tier2` row, which is its own.
 
 Labels: **measured** (from CI's own logs or runs), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1912/`; the scripts are in `spike/1912/`.
 
@@ -343,7 +343,173 @@ Labels: **measured** (from CI's own logs or runs), **read** (read at source), **
 - **`supply_tier1` is bimodal:** 291.74, 379.35 and 443.66 on three runs, 716.11 and 720.39 on two, always in one process [measured]. The throwaway run prints each runner's CPU model, to test whether the runner explains it.
 - **Tests:**
   - 16 rows lag a `solo` sample, an alone time on CI.
-  - 176 are candidates on a `lock` or `ub` sample. Their weights wait for §2's alone run.
+  - 172 are candidates on a `lock` or `ub` sample: 159 with no alone time yet, and 13 whose `solo` sample already holds the row.
+  - All 188 go to §2's alone run. (Count corrected after the §1 commit, which said 16 and 176 because it counted the header's own lines.)
   - The largest: `twin_tier2::kani_proves_every_part_of_both_motor_fixtures` (169.8 row, 447.74 `lock`), `board_tier2::every_admitted_identifier_character_survives_every_output` (181.2, 271.16 `lock`) and `verify_2k2_tier2::verify_binds_the_reference_and_two_runs_print_the_same_bytes` (372.6, 515.84 `solo`).
 - **`a_missing_clock_enable_fails`'s 62.42 s** (44712465606, shard 8, `1318` F2) is read as a lock wait [read, the job log]. Its own prove ("seed-no-clock") held the lock 10.80 s. The 51.61 s before it was `the_generated_board_proves`' `board_i2c1` prove. On the five runs it is 8.95 s `solo` at worst. §2's alone run decides its row.
 - **Overhead is not in any row.** The shared build's download took 47–444 s on one run (44732069104: shard 9 444 s, shard 10 388 s, shard 3 277 s) [measured]. That is up to 9 minutes of a 20-minute job, before any test. It is outside this fence (F1).
+
+## 2. Alone times and the new rows (§1 steps 2–4)
+
+**The throwaway** (REFIT RULE 1):
+- After a shard's own tests, `ci/shard.sh run` ran each name `spike/1912/alone.tsv` gave that shard alone: `cargo test --workspace … -- --exact NAME --test-threads=1`, one invocation each.
+  - A one-test, one-thread binary's libtest `finished in` is the test's alone time.
+  - `RUSTC_BOOTSTRAP` and `--report-time` were not needed. They would have made the shard compile, which `compiled_in` refuses since `1911`.
+- **The names** (`spike/1912/alone.py`): every test that §1 named lagging or candidate, 188 in all. They were spread longest-first over the 12 shards, so no shard carried more than about 520 s of alone runs.
+- **The first try failed** (run 44751773365, `bdf74b1d`), harmlessly: every alone invocation failed `SandboxUnavailable` [measured].
+  - A loop fed by `< <(…)` left fd 63 open in cargo's tests. The CLI's descriptors sandbox refuses any descriptor inherited without close-on-exec, so INV-06 held.
+  - The fix (`1d583f6e`) reads the list whole with `mapfile` first.
+  - Its normal passes were green, so its block times are kept as samples.
+- **The second try** (run 44755810025, `1d583f6e`) was green. It measured all 188 names, each once [measured, `spike/1912/alone_times.py`].
+- Both throwaway commits are undone. `ci/shard.sh` is `main`'s byte for byte (`git diff 472d2d84 -- ci/shard.sh` is empty).
+
+**Runners are not alike.** The throwaway printed each shard's CPU [measured]: AMD EPYC 9V45, 9V74 and 7763, Intel Xeon 6975P-C and Xeon Platinum 8573C, five models over 24 jobs. A row is CI's worst; it is not any one runner's time.
+
+**The rule applied** (`spike/1912/refit.py`, REFIT RULE 1–3 and 5):
+- **A test row** changes only when it sits more than 25 % under its worst trustworthy sample, and then it takes that sample to 3 decimals.
+  - Trustworthy means an alone time: the throwaway's, or a `solo` sample of the five runs.
+  - A test with no row gets one at 0.5 s or more.
+- **A block row** takes the worst libtest `finished in` over the five runs and both throwaways' normal passes, rounded up.
+- **No row was lowered.**
+- **Of the 188 names:** 37 rows were raised, 10 added and 141 kept.
+  - Of the kept, 130 had a `lock` or `ub` candidate more than 25 % above the row, but their alone time held the row. The candidate was a lock wait or an upper bound.
+
+| binary | test | row before | row after | from (s, run, shard, job) | worst lock/ub candidate | verdict |
+|---|---|---|---|---|---|---|
+| tests/battery_sag_tier1.rs | sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger | - | 23.450 | 23.45 (44735701946, 7, job 136289665198) | 22.04 | new row |
+| tests/battery_sag_tier1.rs | the_power_fixture_s_vdd_5v_stays_unmet_with_its_reason | - | 30.110 | 30.11 (44747464266, 11, job 136329323330) | - | new row |
+| tests/bench_tier1.rs | boot0_shared_with_another_pin_fails | 0.8 | 1.380 | 1.38 (44755810025, 6, job 136358895954) | 1.42 | raised |
+| tests/board.rs | the_firmware_follows_the_judges_pwr_boot_words | - | 1.510 | 1.51 (44735207864, 3, job 136286966295) | 1.94 | new row |
+| tests/board_tier2.rs | a_missing_clock_enable_fails | 6.3 | 9.290 | 9.29 (44755810025, 6, job 136358895954) | 8.10 | raised |
+| tests/board_tier2.rs | a_wrong_alternate_function_fails | 15.7 | 29.110 | 29.11 (44755810025, 9, job 136358895794) | 31.95 | raised |
+| tests/board_tier2.rs | every_admitted_identifier_character_survives_every_output | 181.2 | 265.850 | 265.85 (44755810025, 2, job 136358895656) | 271.16 | raised |
+| tests/board_tier2.rs | every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict | 15.0 | 49.950 | 49.95 (44755810025, 5, job 136358895693) | 77.49 | raised |
+| tests/board_tier2.rs | verify_refuses_a_board_swapped_before_extract | 3.3 | 4.550 | 4.55 (44755810025, 6, job 136358895954) | 4.76 | raised |
+| tests/campaign_tier1.rs | a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays | 7.1 | 9.540 | 9.54 (44755810025, 9, job 136358895794) | 12.62 | raised |
+| tests/campaign_tier1.rs | a_rail_out_of_band_is_refused_by_name_and_rendered_by_exactly_its_consumers | - | 1.110 | 1.11 (44755810025, 6, job 136358895954) | 2.29 | new row |
+| tests/campaign_tier1.rs | a_scenario_on_a_power_tree_passes_every_check_before_its_run | - | 1.340 | 1.34 (44755810025, 7, job 136358895679) | 2.09 | new row |
+| tests/classes_tier1.rs | extract_bounds_a_classed_line_at_its_own_width | 0.6 | 0.920 | 0.92 (44755810025, 5, job 136358895693) | 1.40 | raised |
+| tests/escape_tier1.rs | a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring | 2.0 | 3.170 | 3.17 (44755810025, 6, job 136358895954) | 2.94 | raised |
+| tests/extract_tier1.rs | a_board_with_no_bounded_line_judges_nothing_and_says_so | - | 0.940 | 0.94 (44755810025, 4, job 136358895734) | 1.27 | new row |
+| tests/extract_tier1.rs | a_board_without_test_points_states_no_probe | 1.3 | 2.810 | 2.81 (44755810025, 7, job 136358895679) | 1.59 | raised |
+| tests/extract_tier1.rs | a_bound_missed_where_the_ladder_ran_states_no_cause | - | 25.390 | 25.39 (44735701946, 10, job 136289665037) | 15.62 | new row |
+| tests/extract_tier1.rs | a_bound_missed_with_no_ladder_names_the_field_that_runs_it | - | 1.600 | 1.60 (44732069104, 1, job 136276909823) | 1.58 | new row |
+| tests/fab_tier1.rs | an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one | 2.4 | 3.770 | 3.77 (44755810025, 6, job 136358895954) | 3.66 | raised |
+| tests/generate_tier1.rs | two_generations_are_identical_and_a_used_directory_is_refused_untouched | 5.3 | 7.810 | 7.81 (44747545277, 3, job 136329613012) | 8.30 | raised |
+| tests/generate_tier1.rs | verify_against_fails_on_one_changed_byte_in_any_file_naming_it | 17.4 | 28.170 | 28.17 (44755810025, 6, job 136358895954) | 26.34 | raised |
+| tests/routing_tier1.rs | every_pair_of_copper_items_keeps_the_clearance | 1.0 | 1.490 | 1.49 (44747464266, 4, job 136329323270) | 1.47 | raised |
+| tests/routing_tier1.rs | the_routers_judges_refuse_orphan_and_relabelled_copper | 1.0 | 1.620 | 1.62 (44747545277, 4, job 136329612963) | 1.09 | raised |
+| tests/speeds_tier1.rs | the_motor_driver_judges_no_line_and_says_so | - | 1.130 | 1.13 (44735207864, 2, job 136286966414) | 1.10 | new row |
+| tests/support_tier1.rs | a_strap_or_a_supply_pin_off_its_net_fails | 1.0 | 1.560 | 1.56 (44747545277, 4, job 136329612963) | 1.08 | raised |
+| tests/twin_tier2.rs | a_device_named_for_a_renode_instance_or_keyword_breaks_the_load | 2.1 | 3.040 | 3.04 (44755810025, 10, job 136358895770) | 5.10 | raised |
+| tests/twin_tier2.rs | a_firmware_that_skips_the_read_or_its_record_cannot_pass | 3.1 | 11.930 | 11.93 (44755810025, 7, job 136358895679) | 8.13 | raised |
+| tests/twin_tier2.rs | a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten | 3.3 | 4.660 | 4.66 (44755810025, 6, job 136358895954) | 5.21 | raised |
+| tests/twin_tier2.rs | a_forged_spi_record_fails_unwitnessed | 4.9 | 7.390 | 7.39 (44755810025, 10, job 136358895770) | 15.23 | raised |
+| tests/twin_tier2.rs | a_tdr_store_with_ue_clear_sends_no_pattern | 4.3 | 6.220 | 6.22 (44755810025, 5, job 136358895693) | 11.97 | raised |
+| tests/twin_tier2.rs | adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails | 4.1 | 5.630 | 5.63 (44755810025, 5, job 136358895693) | 8.11 | raised |
+| tests/twin_tier2.rs | adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail | 4.1 | 6.130 | 6.13 (44755810025, 11, job 136358895637) | 22.39 | raised |
+| tests/twin_tier2.rs | an_open_rx_line_is_detected_by_name_and_attributed_e3 | 0.1 | 9.070 | 9.07 (44755810025, 10, job 136358895770) | 19.01 | raised |
+| tests/twin_tier2.rs | kani_proves_every_part_of_both_motor_fixtures | 169.8 | 410.230 | 410.23 (44755810025, 1, job 136358895632) | 447.74 | raised |
+| tests/twin_tier2.rs | kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check | 1.0 | 16.350 | 16.35 (44755810025, 7, job 136358895679) | 18.27 | raised |
+| tests/twin_tier2.rs | m2_a_dma_start_of_cen_fails_closed_by_name | 3.8 | 6.100 | 6.10 (44755810025, 6, job 136358895954) | 8.10 | raised |
+| tests/twin_tier2.rs | renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone | 3.3 | 8.620 | 8.62 (44755810025, 5, job 136358895693) | 5.41 | raised |
+| tests/twin_tier2.rs | the_dshot600_fixture_s_campaign_passes_inside_its_window | 0.1 | 13.430 | 13.43 (44755810025, 9, job 136358895794) | 23.15 | raised |
+| tests/twin_tier2.rs | the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot | 1.3 | 4.730 | 4.73 (44755810025, 8, job 136358895641) | 47.73 | raised |
+| tests/twin_tier2.rs | the_emitted_platform_loads_and_lists_every_solved_peripheral | 0.1 | 2.470 | 2.47 (44755810025, 4, job 136358895734) | 6.46 | raised |
+| tests/twin_tier2.rs | the_fixture_s_campaign_archives_each_configuration_and_replays | 0.1 | 11.740 | 11.74 (44755810025, 5, job 136358895693) | 22.19 | raised |
+| tests/twin_tier2.rs | the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused | 0.1 | 4.000 | 4.00 (44755810025, 10, job 136358895770) | 23.26 | raised |
+| tests/twin_tier2.rs | the_four_port_fixture_s_campaign_passes_and_replays | 0.1 | 4.700 | 4.70 (44755810025, 4, job 136358895734) | 5.11 | raised |
+| tests/twin_tier2.rs | the_reference_firmware_boots_and_two_boots_agree | 5.4 | 7.340 | 7.34 (44755810025, 4, job 136358895734) | 154.77 | raised |
+| tests/verify_2k2_tier2.rs | verify_binds_the_reference_and_two_runs_print_the_same_bytes | 372.6 | 537.170 | 537.17 (44755810025, 0, job 136358895660) | - | raised |
+| unittests src/lib.rs | supply::tests::a_relieved_pad_joins_no_plane | 39.5 | 57.430 | 57.43 (44755810025, 6, job 136358895954) | 58.94 | raised |
+| unittests src/main.rs | renode::tests::every_run_for_runs_exactly_its_nanoseconds_in_renode | - | 0.760 | 0.76 (44755810025, 6, job 136358895954) | 1.05 | new row |
+| tests/attribute_seeded.rs | (block) | 380.0 | 526 | 525.12 (44735207864, 5, job 136286966303) | - | raised |
+| tests/campaign_tier2.rs | (block) | 54.0 | 83 | 82.74 (44735207864, 7, job 136286966265) | - | raised |
+| tests/supply_tier1.rs | (block) | 302.0 | 721 | 720.39 (44747464266, 8, job 136329323352) | - | raised |
+
+**`a_missing_clock_enable_fails` (§1 step 4):**
+- Alone, it took 9.29 s (44755810025, shard 6, Xeon Platinum 8573C). Its `solo` samples on the five runs are at most 8.95 s.
+- Its row rises 6.3 → 9.29 on the alone time, which is more than 25 % over the row.
+- The 62.42 s of 44712465606 was a lock wait [read]. That reading was its own 10.80 s prove behind `the_generated_board_proves`' 51.61 s `board_i2c1` prove. That run is not what raised the row.
+
+## 4. Adversarial pass, targeted (§5)
+
+`spike/1912/adv.py`, over the five runs and both throwaways' normal passes [measured]:
+
+- **A row raised from one outlier that would over-plan a shard every run.**
+  - Every alone time is one sample, by the rule. So every raised row was checked against the test's in-shard upper bound on all seven runs: its `ok` less its binary's `Running`, which bounds any test, locked or not.
+  - **6 of the 47 raised rows sit above every upper bound** over eight runs (the five, both throwaways and the PR's run 44762196410).
+    - Four are within 0.11 s, rounding: `a_via_in_a_courtyard…` 3.17/3.06, `a_bound_missed_with_no_ladder…` 1.60/1.60, `an_unacknowledged_unwitnessed_row…` 3.77/3.66, `a_strap_or_a_supply_pin…` 1.56/1.56.
+    - Two are material: `verify_binds_the_reference_and_two_runs_print_the_same_bytes` 537.17 against 515.84 (+4 %, alone on an EPYC 7763), and `verify_against_fails_on_one_changed_byte…` 28.17 against 26.34 (+7 %).
+    - Kept at the alone times, as the rule says. Together they over-plan their shards by at most about 23 s, 3 % of a shard.
+  - **The large raises are corroborated by the five runs.**
+    - `kani_proves_every_part_of_both_motor_fixtures` 410.23: the `twin_tier2` binary holding it finished in 416–571 s on all seven runs.
+    - `every_admitted_identifier…` 265.85 against a 271.16 `lock` candidate.
+    - `verify_binds…` 537.17 against `solo` 364–516 on the five runs and 494–498 on the throwaways.
+  - **`supply_tier1` at 721 is the widest:** samples 291.74–720.39, three of eight at 621 or more.
+    - It is not one outlier. It is a mode, two runs of the five, and the 20-minute ceiling needs it.
+    - On a fast runner it over-plans its shard by up to about 430 s. That is the spread's cost (F2).
+- **A colocated block weighed from a shared-process run while it waited on a lock.**
+  - Every block sample of `supply_tier1` (10 tests), `attribute_seeded` (11) and `campaign_tier2` (10), on all eight runs, ran its whole binary in one process (passed = the binary's total, 0 filtered).
+  - Cargo runs a shard's binaries one after another, so no other binary's process held a lock during a block.
+  - The three raised blocks were weighed only from such runs.
+
+## 3. The plan, and the table after (§1 step 5)
+
+**The plan** [measured, `ci/shard.sh assign 12 … 37 colocate "$LOCKED"` on CI's own list, the `shard-0` artifact's `entries.tsv`]:
+- **Before:** `main` 472d2d84's rows on that run's list (44747545277) plan 706 s on every shard. That reproduces CI's plan byte for byte (`shard-0.tsv` identical).
+- **After:** this order's rows on the same list plan **819 s on every shard**, `guard ok: 2642 test names, 2649 listed occurrences, 12 shards`.
+- CI's own plan on the merged tree printed 819 s per shard (run 44762196410). REFIT RULE 5's clause (every shard at or under 1006 s) holds.
+- **On the final tree** (`main` `8fdc9422` merged, with `4406`'s and `4241`'s tests; list from `main`'s run 44764528379, whose own plan this reproduces byte for byte at 710 s): **823 s on every shard**, `guard ok: 2676 test names, 2683 listed occurrences, 12 shards`.
+
+**The PR's run 44762196410** (head `22f7d8f3`, `main` `a37b787f` merged), green, against the rows of this order [measured]:
+
+| shard | job | job min | run step s | overhead s | planned s (its head) | rows at REV, s | binaries over their rows by 60 s or more: finished in / rows | under by 60 s or more |
+|---|---|---|---|---|---|---|---|---|
+| 0 | 136381084692 | 9.9 | 423 | 174 | 819 | 782 |  | twin_tier2.rs 59/306 |
+| 1 | 136381084560 | 10.5 | 438 | 191 | 819 | 819 |  | supply_tier1.rs 380/721 |
+| 2 | 136381084554 | 17.1 | 909 | 120 | 819 | 819 | four_layer_fab_tier2.rs 741/625 |  |
+| 3 | 136381084650 | 14.3 | 703 | 155 | 819 | 819 |  | verify_2k2_tier2.rs 463/537 |
+| 4 | 136381084495 | 13.0 | 649 | 133 | 819 | 819 |  | attribute_seeded.rs 443/526 |
+| 5 | 136381084422 | 14.9 | 732 | 163 | 819 | 819 |  | board_tier2.rs 98/162 |
+| 6 | 136381084924 | 14.9 | 733 | 159 | 819 | 819 |  |  |
+| 7 | 136381085061 | 15.2 | 776 | 133 | 819 | 819 | against_fab_tier2.rs 490/421 |  |
+| 8 | 136381084582 | 16.9 | 916 | 100 | 819 | 819 | twin_tier2.rs 636/536 |  |
+| 9 | 136381084536 | 13.5 | 658 | 152 | 819 | 819 |  |  |
+| 10 | 136381084611 | 10.6 | 513 | 124 | 819 | 819 |  | board_tier2.rs 138/205; twin_tier2.rs 241/396 |
+| 11 | 136381084594 | 14.6 | 762 | 116 | 819 | 819 |  | twin_tier2.rs 130/198 |
+
+- **Every shard is under 20 minutes.** Worst: shard 2 at 17.1 min, on `four_layer_fab_tier2` 740.63 s against 625. That is a new worst, 0.84 of its row, so not lagging by the WO's 25 % (D2).
+- **The spread is 7.2 minutes** (9.9 to 17.1), over §2's 6 minutes (D1).
+  - The fast end is rows that ran under: `supply_tier1` 380 s against 721 (shard 1), and `twin_tier2` 59 s against 306 s of rows (shard 0).
+  - The slow end is `four_layer_fab_tier2` (shard 2) and `twin_tier2` 636 s against 536 (shard 8).
+- **On main before this order** the spread was 7.8, 10.7, 12.2, 7.3 and 11.3 minutes on the five runs. Main's worst shard was 23.0 min; here it is 17.1.
+
+## 5. Gates, the reduction pass and CI
+
+| Gate | Result |
+|---|---|
+| `cargo fmt --all -- --check` | clean on `2045e7a0` and on the final tree `af964568` |
+| `cargo clippy --workspace --all-targets -- -D warnings` | clean on both |
+| `cargo test --workspace` | **2,452 passed, 0 failed, 0 ignored** on the final tree `af964568` (2,436 on `2045e7a0`) |
+| `bash ci/test-shard.sh` | passes on the final tree |
+| `ci/shard.sh` | `main`'s byte for byte: the throwaway (`bdf74b1d`, `1d583f6e`) is undone |
+| `TIER2_MIN` | unchanged; no workflow touched |
+| CI | green on `22f7d8f3` (run 44762196410, every shard under 20 min). The READY head's run is the final one, reported on the bus |
+
+- **Reduction pass (diff):** about −9 lines net in `spike/1912/` · 2 duplicates removed (the LOCKED list now read from `ci/shard.sh`; one upper-bound walker, so `over.py` folded into `adv.py`) · 2 dead paths removed (`shard()`'s unused CPU field, `alone.py`'s unused extra names) · 0 protected kept · 0 findings below. The tsv rows are data, and each fact has one row.
+
+## 6. Findings and decisions
+
+| # | Finding | For |
+|---|---|---|
+| D1 | **The spread clause (§2, under 6 min) did not hold:** 7.2 min on the PR's run. On `main` before this order it was 7.3–12.2 min on all five runs. Three causes, measured on run 44762196410 and the five (`table.py`'s over/under columns):<br>(i) `supply_tier1` runs in two modes, 292–444 s and 621–720 s. Weighed at its worst, as the 20-minute ceiling needs, its shard finishes up to about 430 s early in the fast mode. The throwaway saw 621 s on a Xeon 6975P-C and 373 s on an EPYC 9V74: two CPU-labelled samples, so the cause is **not established** [inferred, not measured].<br>(ii) **`twin_tier2`'s rows sit high:** they total 1,807–1,811 s against 1,201–1,390 s run per run. Examples (in-shard `lock` readings, which are candidates, not alone times): `on_a_bus_with_two_devices_each_read_is_witnessed` 216.4 (added by AET-WO-2204) read 7.8 s on run 44762196410; two of the three `bor_recovery::` Furnace estimates (22.9, 38.1) read 2.2 and 3.7 s. This order raises only rows that lag (fence), so none was lowered.<br>(iii) Runners differ: five CPU models over 24 throwaway jobs.<br>Options: **(a)** widen the fence to lower rows that sit high, from one more throwaway alone run of every `twin_tier2` and `board_tier2` test (the locked binaries, where no in-shard bound exists); **(b)** reword the spread clause, or REFIT RULE's 6-minute spread trigger, which fires on `main` every run; **(c)** both. | Architect (ruling) |
+| D2 | **Two rows under but within 25 %** drive the slowest shard: `four_layer_fab_tier2` 625 against 740.63 (a new worst, run 44762196410) and `verify_47k_tier2` 220 against 277.29. Not raised (the WO's 25 %); raising them is the weights-only lever on the worst shard. | Architect |
+| F1 | **The shared build's download is up to 9 minutes of a 20-minute job:** 47–444 s within one run (44732069104), overhead 90–555 s across the five. No row can weigh it. | Note; outside the fence (workflow) |
+| F2 | **`supply_tier1`'s modes** (D1 (i)) are measured; their cause is not. One CPU-labelled run of the block on each runner type would settle it. | Backlog |
+| F3 | **The throwaway's lesson:** a shell loop fed by `< <(…)` leaves its descriptor open in every command it runs. The CLI's descriptors sandbox refuses it (run 44751773365, all 188 alone runs `SandboxUnavailable`). Read such a list whole first (`mapfile`). | Note for the next refit |
+
+## 7. Neighbours
+
+- `4240a` (#281), `1211`, `4406` and `4241` merged into `main` while this was built. All came in by clean merges. `4241` adds one `twin_tier2` row (45 s), its own. No row of this order moved.
+- `1210` (#280) is still open. Its rows are its own.
