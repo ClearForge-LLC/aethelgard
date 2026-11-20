@@ -222,17 +222,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `main.rs` and the two platforms are `a95a1bb6…f918`, `bb101271…ebdb` and
 /// `26e266be…4fca` exactly, the digests before (measured); the boot image
 /// did not move.
-/// The boot image moved in `AET-WO-4240b` by its shape alone: the judge's
-/// `BrownOut` gained `clock_acr` (the HSE bring-up's `FLASH_ACR`, `None` on
-/// this board); with `, clock_acr: None` taken out of its text it is
-/// `221f6b59…6d70` exactly (measured).
-/// `firmware/src/main.rs` moved in `AET-WO-4240b` by `4240v` F2 alone (ruled
-/// Q2): every `enable_*` call passes the `Scale2` token (`424d86d2…d26d`
-/// before); the ELF of every null board is unchanged (measured).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "a6265034cb65aeda040b2abaa65bb64896327b9476be6cc1886d37a0f4891076",
+        "424d86d2cc6a61aefe9fbc9a0e46ce334a5dd1ad08d8ca6749015d5647acd26d",
     ),
     (
         "platform",
@@ -244,7 +237,7 @@ const BEFORE: [(&str, &str); 4] = [
     ),
     (
         "boot image",
-        "5b33b4cebaf567a3df3744db6402b12a4532486fce46e1cafc360de7c33450ce",
+        "221f6b5975901f30fb5dd12e0ccdad3ad7fc4d8626745923b33e356fb2976d70",
     ),
 ];
 

@@ -57,7 +57,8 @@ fn table() -> PinTable {
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
     json!({"label": label, "pin": pin, "protocol": "pwm",
-           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null})
+           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000,
+                   "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000}, "esc": null})
 }
 
 fn dshot(label: &str, pin: Option<&str>) -> Value {
@@ -131,7 +132,8 @@ fn a_motor_output_s_timing_is_refused_by_name() {
     m["pwm"] = Value::Null;
     assert_eq!(refused(vec![m]).kind(), "MotorTimingShape");
     let mut m = dshot("M1", None);
-    m["pwm"] = json!({"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000});
+    m["pwm"] = json!({"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
+        "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000});
     assert_eq!(refused(vec![m]).kind(), "MotorTimingShape");
     assert_eq!(refused(vec![pwm("M1", None, 0)]).kind(), "ZeroMotorRate");
     let mut m = pwm("M1", None, 400);
@@ -245,6 +247,23 @@ fn outputs_at_two_rates_take_two_timers() {
             t.motor_outputs["M2"].ccr
         ),
         (0, 106, 40)
+    );
+}
+
+/// `AET-WO-1211a`: `resolution_ps` joins the timer-share key; one rate at
+/// two ticks cannot share TIM1's counter.
+#[test]
+fn a_resolution_conflict_on_one_timer_is_refused_by_name() {
+    let mut fine = pwm("M2", Some("PA9"), 400);
+    fine["pwm"]["resolution_ps"] = json!(500_000);
+    let s = spec(vec![pwm("M1", Some("PA8"), 400), fine]);
+    assert_eq!(
+        solve(&s, &table(), HASH).unwrap_err(),
+        SolveError::TimerResolutionConflict {
+            timer: "TIM1".into(),
+            first: "M1".into(),
+            second: "M2".into()
+        }
     );
 }
 
@@ -367,11 +386,13 @@ fn the_topology_refuses_a_motor_output_that_disagrees_with_its_assignment() {
         }),
         Err("MotorOutputMismatch")
     );
+    // A pulse idle's CCR may reach ARR (one tick short of the period,
+    // `AET-WO-1211a`): the shape holds, and only the silicon check judges it.
     assert_eq!(
         kind(&|t| {
             t.motor_outputs.get_mut("M2").unwrap().ccr = 2499;
         }),
-        Err("MotorOutputMismatch")
+        Ok(())
     );
     assert_eq!(
         kind(&|t| {
@@ -438,7 +459,9 @@ fn the_solved_motor_output_round_trips_and_keeps_the_declared_timing() {
         Some(PwmTiming {
             rate_hz: 400,
             pulse_min_us: 1000,
-            pulse_max_us: 2000
+            pulse_max_us: 2000,
+            idle: aethelgard_ir::motor::Idle::PulseUs(1000),
+            resolution_ps: 1_000_000,
         })
     );
     let declared: Vec<MotorOutput> = spec(vec![pwm("M1", None, 400)]).motor_outputs;

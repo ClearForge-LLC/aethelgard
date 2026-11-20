@@ -143,6 +143,12 @@ pub enum BoardError {
         us: u64,
         hz: u64,
     },
+    /// `AET-WO-1211a`: the board emits no pin of a pin device (a GPIO input,
+    /// a wake line, an ADC input) until a work order builds it.
+    #[error(
+        "`{reference}` ({part}) is a pin device: this engine emits no board that drives or reads its pins (AET-WO-1211a)"
+    )]
+    PinDeviceNotGenerated { reference: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -179,6 +185,7 @@ impl BoardError {
             Self::VosRuleFails { .. } => "VosRuleFails",
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
             Self::HsePollsOverflow { .. } => "HsePollsOverflow",
+            Self::PinDeviceNotGenerated { .. } => "PinDeviceNotGenerated",
             Self::Register(e) => e.kind(),
         }
     }
@@ -1423,6 +1430,14 @@ impl Plan {
         if solved.core_supply == CoreSupplyMode::Bypass {
             return Err(BoardError::CoreSupplyNotGenerated);
         }
+        // Every gpio entry read below is a chip select only because a
+        // topology with a pin device is refused here (`AET-WO-1211a`).
+        if let Some((reference, d)) = solved.pin_devices.iter().next() {
+            return Err(BoardError::PinDeviceNotGenerated {
+                reference: reference.clone(),
+                part: d.part.clone(),
+            });
+        }
         let speeds_table = speeds::table().map_err(BoardError::SpeedTable)?;
         if speeds_table.mcu != table.part {
             return Err(BoardError::SpeedTableMismatch {
@@ -1434,7 +1449,7 @@ impl Plan {
             .assignments
             .values()
             .map(|a| &a.pin)
-            .chain(solved.gpio.values())
+            .chain(solved.gpio.values().map(|g| &g.pin))
             .find(|p| RESERVED_PINS.contains(&p.as_str()));
         if let Some(pin) = reserved {
             return Err(BoardError::ReservedPin { pin: pin.clone() });
@@ -1541,7 +1556,8 @@ impl Plan {
                     .push(a.pin.clone());
             }
         }
-        for (net, pin) in &solved.gpio {
+        for (net, g) in &solved.gpio {
+            let pin = &g.pin;
             let (port, index) = split_pin(pin)?;
             if !table.pins.contains_key(pin) {
                 return Err(BoardError::UnknownPin { pin: pin.clone() });
@@ -1591,7 +1607,7 @@ impl Plan {
                 });
             }
             // `validate` refuses a chip select that is not a solved GPIO.
-            let pin = solved.gpio.get(&d.cs).ok_or_else(|| {
+            let pin = solved.gpio.get(&d.cs).map(|g| &g.pin).ok_or_else(|| {
                 BoardError::InvalidTopology(IrValidationError::SpiDeviceSelect {
                     id: reference.to_owned(),
                 })
@@ -7726,7 +7742,13 @@ mod tests {
                 ("SCL".into(), assign("PB6", "I2C1", "I2C1_SCL", 4)),
                 ("SDA".into(), assign("PB7", "I2C1", "I2C1_SDA", 4)),
             ]),
-            gpio: BTreeMap::from([("CS".into(), "PA0".into())]),
+            gpio: BTreeMap::from([(
+                "CS".into(),
+                aethelgard_ir::pin_devices::SolvedGpio::output(
+                    "PA0",
+                    aethelgard_ir::motor::Level::High,
+                ),
+            )]),
             i2c_ceilings: BTreeMap::from([("BUS".into(), 400_000)]),
             i2c_speeds: BTreeMap::from([("BUS".into(), 400_000)]),
             analog_lines: analog_lines(&[("SCL", "BUS"), ("SDA", "BUS")]),
@@ -7755,6 +7777,8 @@ mod tests {
             core_supply: aethelgard_ir::vos::CoreSupplyMode::Ldo,
             mcu: "STM32H753ZITx".into(),
             pin_speeds: BTreeMap::from([("CS".into(), 0), ("SCL".into(), 0), ("SDA".into(), 0)]),
+            adc_inputs: BTreeMap::new(),
+            pin_devices: BTreeMap::new(),
             foreign_clock: None,
         }
     }
@@ -8041,11 +8065,23 @@ mod tests {
         assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
-        s.gpio.insert("CS2".into(), "PB6".into());
+        s.gpio.insert(
+            "CS2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PB6",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
-        s.gpio.insert("SWDIO".into(), "PA13".into());
+        s.gpio.insert(
+            "SWDIO".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA13",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         s.pin_speeds.insert("SWDIO".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "ReservedPin");
 
@@ -8054,12 +8090,24 @@ mod tests {
         assert_eq!(kind(generate("b", &s, &t)), "InvalidTopology");
 
         let mut s = solved();
-        s.gpio.insert("CS2".into(), "PB16".into());
+        s.gpio.insert(
+            "CS2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PB16",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         s.pin_speeds.insert("CS2".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "InvalidPin");
 
         let mut s = solved();
-        s.gpio.insert("CS2".into(), "PK15".into());
+        s.gpio.insert(
+            "CS2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PK15",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         s.pin_speeds.insert("CS2".into(), 0);
         assert_eq!(kind(generate("b", &s, &t)), "UnknownPin");
 
@@ -8433,7 +8481,13 @@ mod tests {
         }
         s.gpio.clear();
         for (i, (reference, net, pin)) in devices.iter().enumerate() {
-            s.gpio.insert((*net).into(), (*pin).into());
+            s.gpio.insert(
+                (*net).into(),
+                aethelgard_ir::pin_devices::SolvedGpio::output(
+                    *pin,
+                    aethelgard_ir::motor::Level::High,
+                ),
+            );
             s.spi_devices.insert(
                 (*reference).into(),
                 spi_device(u32::try_from(i).unwrap(), "SPI1", net),
@@ -8535,7 +8589,13 @@ mod tests {
     #[test]
     fn a_bus_without_devices_keeps_its_init_and_has_no_transfer() {
         let mut s = with_spi(&[]);
-        s.gpio.insert("CS".into(), "PA0".into());
+        s.gpio.insert(
+            "CS".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA0",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         s.pin_speeds.insert("CS".into(), 0);
         let files = generate("b", &s, &table()).unwrap();
         let lib = &files["src/board.rs"];
@@ -8568,7 +8628,13 @@ mod tests {
                 s.spi_lines.insert(net.into(), line);
             }
         }
-        s.gpio.insert("CS2".into(), "PA1".into());
+        s.gpio.insert(
+            "CS2".into(),
+            aethelgard_ir::pin_devices::SolvedGpio::output(
+                "PA1",
+                aethelgard_ir::motor::Level::High,
+            ),
+        );
         s.spi_devices
             .insert("U5".into(), spi_device(1, "SPI2", "CS2"));
         s.derive_controllers();
@@ -9039,6 +9105,41 @@ mod tests {
             register_fields(&s, &table()).unwrap_err().kind(),
             "CoreSupplyNotGenerated"
         );
+        assert!(generate("b", &solved(), &table()).is_ok());
+    }
+
+    /// `AET-WO-1211a`: the board emits no pin of a pin device, so `generate`
+    /// refuses a topology with one by the device's reference and part.
+    #[test]
+    fn a_pin_device_is_refused_as_not_generated() {
+        use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
+        let mut s = solved();
+        s.pin_devices.insert(
+            "U9".into(),
+            SolvedPinDevice {
+                part: "WAKE_SWITCH".into(),
+            },
+        );
+        s.gpio.insert(
+            "WAKE".into(),
+            SolvedGpio {
+                pin: "PB5".into(),
+                direction: Direction::Input,
+                initial: None,
+                pull: Some(McuPull::Up),
+            },
+        );
+        s.pin_speeds.insert("WAKE".into(), 0);
+        s.validate().unwrap();
+        let e = generate("b", &s, &table()).unwrap_err();
+        assert_eq!(
+            e,
+            BoardError::PinDeviceNotGenerated {
+                reference: "U9".into(),
+                part: "WAKE_SWITCH".into()
+            }
+        );
+        assert_eq!(e.kind(), "PinDeviceNotGenerated");
         assert!(generate("b", &solved(), &table()).is_ok());
     }
 

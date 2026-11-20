@@ -122,8 +122,8 @@ use sha2::{Digest, Sha256};
 /// reference's output hashes to `a431ad59…0292`, and with the stress
 /// fixture's old sha256 (`6b82460e…c011`) its to `db746468…69c9`, the old
 /// digests, exactly (measured).
-const REFERENCE_DIGEST: &str = "0111005c3271d2b372812a0e93af66e26af24daf17bd02dd383ccaa987ad9767";
-const STRESS_DIGEST: &str = "27c2a209cca189ac443a08016b4411c18bd93d87c13fa89fce7272830c7e075b";
+const REFERENCE_DIGEST: &str = "be5e5cdb30652abfa13d3553ea5c6316c2e4cc429cf96271792058a72e5ad38a";
+const STRESS_DIGEST: &str = "a35c14cf8691157cd43e2868f9788b53ec7735f9c7bc94c2556f1aaed680f460";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -289,7 +289,7 @@ fn the_reference_solves_to_the_expected_pins() {
     );
     assert_eq!(t.assignments["I2C_SDA"].peripheral, "I2C1");
     assert_eq!(t.assignments["SPI_SCK"].signal, "SPI1_SCK");
-    assert_eq!(t.gpio["FLASH_CS"], "PA0");
+    assert_eq!(t.gpio["FLASH_CS"].pin, "PA0");
     // Both lines declare 300 ns: Fast-mode, 400 kHz, the bus's own speed.
     assert_eq!(t.i2c_ceilings, [("SENSORS".to_owned(), 400_000)].into());
     assert_eq!(t.i2c_speeds, [("SENSORS".to_owned(), 400_000)].into());
@@ -369,7 +369,7 @@ fn the_four_port_fixture_solves_on_distinct_peripherals() {
         ]
     );
     // UART4 took PA0, so the chip select takes the next free pin.
-    assert_eq!(t.gpio["FLASH_CS"], "PA11");
+    assert_eq!(t.gpio["FLASH_CS"].pin, "PA11");
 }
 
 #[test]
@@ -647,7 +647,7 @@ fn a_power_tree_solves_into_the_topology_and_emits_its_board() {
         .assignments
         .values()
         .map(|a| a.pin.as_str())
-        .chain(t.gpio.values().map(String::as_str))
+        .chain(t.gpio.values().map(|g| g.pin.as_str()))
         .collect();
     assert!(!taken.contains(&sense.pin.as_str()));
     let lowest = table

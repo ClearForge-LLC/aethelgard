@@ -1,0 +1,247 @@
+{
+ "files": 29,
+ "moved": [],
+ "hash_lines": {
+  "crates/aethelgard-cli/tests/fixtures/connectors.json": {
+   "board/connectors.repl": 1,
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json": {
+   "board/d1-24-i2c.repl": 1,
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json": {
+   "board/d3-24-i2c-12-spi.repl": 1,
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json": {
+   "board/bench-motor-driver.repl": 1,
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/four-layer-power.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01-4l-power.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/four-layer.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01-4l.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/logger-4600.json": {
+   "board/field-logger.repl": 1,
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/motors-dshot600.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/motors-dshot600.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/motors-pwm.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/motors-pwm.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/pair-standin.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01-pair.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-02-own.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-02-shaped.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/sentinel-03.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-03.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/motors-dshot600-console.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/serial-four.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/serial-four.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/solve/stress.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1,
+   "board/stress.repl": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/spi-only.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-cli/tests/fixtures/two-bme.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-02-power.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "examples/sentinel-01-ext-bmp581.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01-ext-bmp581.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "examples/sentinel-01-minimal.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "examples/sentinel-01.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-01-bench.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  },
+  "examples/sentinel-02-bench.json": {
+   "board/firmware/.cargo/config.toml": 1,
+   "board/firmware/Cargo.toml": 1,
+   "board/firmware/link.x": 1,
+   "board/firmware/src/main.rs": 1,
+   "board/sentinel-02-bench.repl": 1,
+   "board/src/board.rs": 1,
+   "board/src/lib.rs": 1,
+   "board/src/proofs.rs": 1
+  }
+ },
+ "notes": []
+}

@@ -829,6 +829,7 @@ fn divider(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
 /// `GPIOx_PUPDR.PUPDy[1:0]` (RM0433 Rev 9 §11.4.4, p. 542): `00` no
 /// pull-up or pull-down, `01` pull-up, `10` pull-down, `11` reserved.
 const PUPDR_PULL_DOWN: u32 = 0b10;
+const PUPDR_PULL_UP: u32 = 0b01;
 
 /// The `PUPDR` field of every motor-output pin: pull-down, written in the
 /// port's first GPIO init as part of the whole word, so that a motor line is
@@ -839,18 +840,30 @@ pub fn motor_output_pupd() -> u32 {
     PUPDR_PULL_DOWN
 }
 
+/// The `PUPDR` field that follows a motor output's declared idle
+/// (`AET-WO-1211a`, `1211` Q9 as ruled): pull-up for `{"level": "high"}`,
+/// else [`motor_output_pupd`]'s pull-down (a low or pulsed idle, and DShot,
+/// whose `pwm` is `null`), so the pad before `start_outputs` never fights
+/// the idle. The generator writes [`motor_output_pupd`] alone until
+/// `AET-WO-1211b`, and `generate` refuses a `high` idle by name until then.
+pub fn idle_pupd(idle: Option<&crate::motor::Idle>) -> u32 {
+    match idle {
+        Some(crate::motor::Idle::Level(crate::motor::Level::High)) => PUPDR_PULL_UP,
+        _ => motor_output_pupd(),
+    }
+}
+
 /// The `PUPDR` field the solved topology implies for the pin of `net`
-/// (`AET-WO-4400b` D3): pull-down on a motor output
-/// ([`motor_output_pupd`]), and no internal pull on every other pin. The
+/// (`AET-WO-4400b` D3): on a motor output the pull its idle implies
+/// ([`idle_pupd`], `AET-WO-1211a`), and no internal pull on every other pin. The
 /// specification declares no internal pull, and an I2C line's pull-up is
 /// external (`analog_lines[..].pull_up_ohms`). A pull a board needs is a
 /// declared fact, never a generator's default. The pinout check reads this;
 /// no generator calls it (`RUL-20`).
 pub fn implied_pupd(t: &crate::SolvedTopology, net: &str) -> u32 {
-    if t.motor_outputs.contains_key(net) {
-        motor_output_pupd()
-    } else {
-        0
+    match t.motor_outputs.get(net) {
+        Some(m) => idle_pupd(m.pwm.as_ref().map(|p| &p.idle)),
+        None => 0,
     }
 }
 

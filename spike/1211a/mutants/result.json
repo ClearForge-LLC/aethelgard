@@ -1,0 +1,235 @@
+[
+ {
+  "id": "W1 a pulsed bridge idle accepted (read as low)",
+  "status": "killed",
+  "by": [
+   "a_driving_idle_is_refused",
+   "a_pulsed_bridge_input_is_refused",
+   "both_inputs_high_on_an_in_in_bridge_is_brake_and_validates",
+   "the_4600_driver_s_pair_as_a_bridge_is_refused_pulsed"
+  ]
+ },
+ {
+  "id": "W2 the bridge idle judged without nSLEEP",
+  "status": "killed",
+  "by": [
+   "a_sleeping_part_idles_whatever_its_inputs"
+  ]
+ },
+ {
+  "id": "W3 resolution_ps defaults",
+  "status": "killed",
+  "by": [
+   "removing_any_key_of_any_object_is_refused"
+  ]
+ },
+ {
+  "id": "W4 the solver chooses ADC2",
+  "status": "killed",
+  "by": [
+   "only_adc2_pins_left_is_adc_unmodelled",
+   "an_adc2_only_pin_is_never_chosen_unpinned"
+  ]
+ },
+ {
+  "id": "G1 a reset pull-up passed",
+  "status": "killed",
+  "by": [
+   "no_driven_input_sits_on_a_reset_pull_up"
+  ]
+ },
+ {
+  "id": "G2 a channel input outside a bridge",
+  "status": "killed",
+  "by": [
+   "a_channel_input_outside_a_bridge_is_refused"
+  ]
+ },
+ {
+  "id": "G3 AERR outside its supply",
+  "status": "killed",
+  "by": [
+   "an_error_band_outside_its_supply_condition_is_undeclared"
+  ]
+ },
+ {
+  "id": "G4 a device net named as a sense",
+  "status": "killed",
+  "by": [
+   "a_device_net_named_as_a_sense_is_refused"
+  ]
+ },
+ {
+  "id": "G5 a sense off its ADC input",
+  "status": "killed",
+  "by": [
+   "the_sense_is_its_adc_input_and_a_disagreeing_topology_is_refused"
+  ]
+ },
+ {
+  "id": "G6 an idle of the whole period",
+  "status": "killed",
+  "by": [
+   "an_idle_pulse_of_the_whole_period_is_spelled_twice"
+  ]
+ },
+ {
+  "id": "G7 the solved CCR of idle low",
+  "status": "SURVIVED",
+  "by": []
+ },
+ {
+  "id": "G8 check_silicon's idle",
+  "status": "killed",
+  "by": [
+   "d1_with_an_idle_high_input_solves_to_arr_plus_one"
+  ]
+ },
+ {
+  "id": "G9 check_silicon's tick",
+  "status": "SURVIVED",
+  "by": []
+ },
+ {
+  "id": "G10 the full scale at VREF+",
+  "status": "killed",
+  "by": [
+   "d1_as_the_spike_wrote_it_is_refused_twice"
+  ]
+ },
+ {
+  "id": "G11 the typical gain for the band edge",
+  "status": "killed",
+  "by": [
+   "d1_as_the_spike_wrote_it_is_refused_twice"
+  ]
+ },
+ {
+  "id": "G12 RAIN",
+  "status": "killed",
+  "by": [
+   "a_source_above_rain_with_no_reservoir_is_refused",
+   "d1_as_the_spike_wrote_it_is_refused_twice"
+  ]
+ },
+ {
+  "id": "G13 a driving idle",
+  "status": "killed",
+  "by": [
+   "a_driving_idle_is_refused",
+   "both_inputs_high_on_an_in_in_bridge_is_brake_and_validates"
+  ]
+ },
+ {
+  "id": "G14 the strap's mode",
+  "status": "killed",
+  "by": [
+   "a_mode_its_strap_does_not_select_is_refused"
+  ]
+ },
+ {
+  "id": "G15 the input rate",
+  "status": "killed",
+  "by": [
+   "an_input_rate_above_the_part_is_refused"
+  ]
+ },
+ {
+  "id": "G16 an undeclared input PWM limit",
+  "status": "killed",
+  "by": [
+   "d2_is_refused_part_limit_undeclared_and_only_that"
+  ]
+ },
+ {
+  "id": "G17 the MCU's levels",
+  "status": "killed",
+  "by": [
+   "an_output_the_pin_cannot_read_is_refused"
+  ]
+ },
+ {
+  "id": "G18 an input with no pull from reset",
+  "status": "killed",
+  "by": [
+   "an_input_no_pull_holds_from_reset_is_refused"
+  ]
+ },
+ {
+  "id": "G19 a pull-up the part cannot sink",
+  "status": "killed",
+  "by": [
+   "a_pull_up_the_part_cannot_sink_is_refused"
+  ]
+ },
+ {
+  "id": "G20 a device's gpio without its device",
+  "status": "killed",
+  "by": [
+   "a_topology_with_a_device_s_gpio_and_no_device_is_refused"
+  ]
+ },
+ {
+  "id": "G21 the timer key's tick",
+  "status": "killed",
+  "by": [
+   "a_resolution_conflict_on_one_timer_is_refused_by_name"
+  ]
+ },
+ {
+  "id": "G22 an ADC2 channel named without its pin",
+  "status": "killed",
+  "by": [
+   "an_adc2_channel_named_without_a_pin_is_adc_unmodelled"
+  ]
+ },
+ {
+  "id": "G23 an IN/IN pair on two timers",
+  "status": "killed",
+  "by": [
+   "an_in_in_pair_on_two_timers_is_refused"
+  ]
+ },
+ {
+  "id": "G24 idle pulse 0",
+  "status": "killed",
+  "by": [
+   "idle_pulse_zero_is_idle_spelled_twice"
+  ]
+ },
+ {
+  "id": "G25 a forbidden state",
+  "status": "killed",
+  "by": [
+   "an_idle_in_a_forbidden_state_is_refused"
+  ]
+ },
+ {
+  "id": "G26 a bus part in pin_devices",
+  "status": "killed",
+  "by": [
+   "a_bus_part_in_pin_devices_is_part_has_bus"
+  ]
+ },
+ {
+  "id": "G27 a busless part on a bus",
+  "status": "killed",
+  "by": [
+   "a_busless_part_on_a_bus_is_part_without_bus"
+  ]
+ },
+ {
+  "id": "R1 cli generate takes a pin device",
+  "status": "killed",
+  "by": [
+   "generable_refuses_a_pin_device_by_reference_and_part"
+  ]
+ },
+ {
+  "id": "R2 cli generate takes idle high",
+  "status": "killed",
+  "by": [
+   "generable_refuses_a_motor_output_that_idles_high"
+  ]
+ }
+]

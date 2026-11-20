@@ -89,8 +89,38 @@ pub enum SolveError {
     BudgetExceeded { bus: String, limit: u64 },
     #[error("`{claimant}` has no free pin left")]
     NoFreePin { claimant: String },
-    #[error("no free pin carries a single-ended ADC input for sense net `{net}`")]
+    #[error("no free pin carries a single-ended ADC input for ADC net `{net}`")]
     NoAdcPin { net: String },
+    /// `AET-WO-1211a`: a pin device's ADC input pinned, or its channel
+    /// named, where the pin carries no such input.
+    #[error("ADC net `{net}`: {reason}")]
+    AdcChannelNotOnPin { net: String, reason: String },
+    /// `AET-WO-1211a`, `1211` Q8: the only free ADC pins carry an ADC2 input
+    /// alone, which the twin does not model; pin one by hand to take it.
+    #[error(
+        "ADC net `{net}`: the free ADC pins {} carry ADC2 alone, which the twin does not model (`1211` Q8); the solver takes ADC1 or ADC3, and an ADC2 pin only when the specification pins it",
+        quoted(.pins)
+    )]
+    AdcUnmodelled { net: String, pins: Vec<String> },
+    /// `AET-WO-1211a`, `1211` §2.6: a pin device's driven input on a pin the
+    /// MCU pulls up from reset (PA13, PA15, PB4), against the part's own
+    /// pull-down until the first write.
+    #[error(
+        "`{net}` drives a pin device's input from `{pin}`, which the MCU pulls up from reset to the first write (RM0433 Rev 9 p. 542): the part's pull-down cannot hold it; pin it elsewhere"
+    )]
+    UnheldDuringReset { net: String, pin: String },
+    /// `AET-WO-1211a`, `1211` §2.7 (e): an IN/IN bridge's two motor outputs
+    /// on two timers, so no one counter times both.
+    #[error(
+        "bridge `{bridge}`: its inputs `{first}` and `{second}` are on `{first_timer}` and `{second_timer}`; an IN/IN pair shares one timer, so pin both to one"
+    )]
+    BridgeSplitAcrossTimers {
+        bridge: String,
+        first: String,
+        second: String,
+        first_timer: String,
+        second_timer: String,
+    },
     #[error("no timer channel can serve motor output `{output}`: {}", .reasons.join("; "))]
     NoTimerChannel {
         output: String,
@@ -100,6 +130,14 @@ pub enum SolveError {
         "motor outputs `{first}` and `{second}` can only be on timer `{timer}`, and their timing differs: the outputs of one timer share its rate"
     )]
     TimerRateConflict {
+        timer: String,
+        first: String,
+        second: String,
+    },
+    #[error(
+        "motor outputs `{first}` and `{second}` can only be on timer `{timer}`, and their resolution_ps differs: the outputs of one timer share its tick"
+    )]
+    TimerResolutionConflict {
         timer: String,
         first: String,
         second: String,
@@ -190,8 +228,13 @@ impl SolveError {
             Self::BudgetExceeded { .. } => "BudgetExceeded",
             Self::NoFreePin { .. } => "NoFreePin",
             Self::NoAdcPin { .. } => "NoAdcPin",
+            Self::AdcChannelNotOnPin { .. } => "AdcChannelNotOnPin",
+            Self::AdcUnmodelled { .. } => "AdcUnmodelled",
+            Self::BridgeSplitAcrossTimers { .. } => "BridgeSplitAcrossTimers",
+            Self::UnheldDuringReset { .. } => "UnheldDuringReset",
             Self::NoTimerChannel { .. } => "NoTimerChannel",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
+            Self::TimerResolutionConflict { .. } => "TimerResolutionConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
             Self::SerialPinsSplit { .. } => "SerialPinsSplit",
             Self::NoSerialPeripheral { .. } => "NoSerialPeripheral",
@@ -224,9 +267,16 @@ impl SolveError {
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. }
             | Self::NoI2cTiming { bus, .. } => Some(bus),
-            Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => Some(net),
+            Self::NoAdcPin { net }
+            | Self::AdcChannelNotOnPin { net, .. }
+            | Self::AdcUnmodelled { net, .. }
+            | Self::PinSpeed { net, .. } => Some(net),
+            Self::BridgeSplitAcrossTimers { bridge, .. } => Some(bridge),
+            Self::UnheldDuringReset { net, .. } => Some(net),
             Self::NoTimerChannel { output, .. } => Some(output),
-            Self::TimerRateConflict { timer, .. } => Some(timer),
+            Self::TimerRateConflict { timer, .. } | Self::TimerResolutionConflict { timer, .. } => {
+                Some(timer)
+            }
             Self::SerialPinsSplit { port, .. }
             | Self::NoSerialPeripheral { port, .. }
             | Self::SerialClock { port, .. } => Some(port),
@@ -256,10 +306,20 @@ impl SolveError {
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. }
             | Self::NoI2cTiming { bus, .. } => vec![bus.clone()],
-            Self::NoAdcPin { net } | Self::PinSpeed { net, .. } => vec![net.clone()],
+            Self::NoAdcPin { net }
+            | Self::AdcChannelNotOnPin { net, .. }
+            | Self::AdcUnmodelled { net, .. }
+            | Self::PinSpeed { net, .. } => vec![net.clone()],
+            Self::BridgeSplitAcrossTimers { first, second, .. } => {
+                vec![first.clone(), second.clone()]
+            }
+            Self::UnheldDuringReset { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
             Self::NoTimerChannel { output, .. } => vec![output.clone()],
-            Self::TimerRateConflict { first, second, .. } => vec![first.clone(), second.clone()],
+            Self::TimerRateConflict { first, second, .. }
+            | Self::TimerResolutionConflict { first, second, .. } => {
+                vec![first.clone(), second.clone()]
+            }
             Self::MotorsInfeasible { claimants } | Self::SerialPortsInfeasible { claimants } => {
                 claimants.clone()
             }
@@ -313,6 +373,7 @@ fn solve_inner(
         specification_sha256: specification_sha256.to_owned(),
         assignments: BTreeMap::new(),
         gpio: BTreeMap::new(),
+        adc_inputs: BTreeMap::new(),
         i2c_ceilings: BTreeMap::new(),
         i2c_speeds: BTreeMap::new(),
         analog_lines: BTreeMap::new(),
@@ -330,6 +391,18 @@ fn solve_inner(
         mcu: spec.mcu.part.clone(),
         pin_speeds: BTreeMap::new(),
         foreign_clock: spec.mcu.foreign_clock.as_ref().map(Into::into),
+        pin_devices: spec
+            .declared_pin_devices()
+            .iter()
+            .map(|d| {
+                (
+                    d.reference.clone(),
+                    crate::pin_devices::SolvedPinDevice {
+                        part: d.part.clone(),
+                    },
+                )
+            })
+            .collect(),
     };
     out.validate().map_err(SolveError::InvalidSpecification)?;
     out.i2c_ceilings = i2c_ceilings(spec);
@@ -463,7 +536,10 @@ fn solve_inner(
                 pin
             }
         };
-        out.gpio.insert(cs.net.to_owned(), pin.to_owned());
+        out.gpio.insert(
+            cs.net.to_owned(),
+            crate::pin_devices::SolvedGpio::output(pin, crate::motor::Level::High),
+        );
     }
     out.analog_lines = analog_lines(spec);
     out.i2c_devices = i2c_devices(spec, &out);
@@ -477,6 +553,7 @@ fn solve_inner(
     // that carries a single-ended ADC input (`AET-WO-4300d2` §1.7), after
     // every pin above is owned, so it never takes one of theirs. It is in
     // `power.sense`, not `assignments`: an analog pin has no alternate function.
+    let mut sense_inputs = BTreeMap::new();
     if let (Some(solved), Some(power)) = (out.power.as_mut(), spec.power.as_ref()) {
         let mut candidates: Vec<(&str, &crate::Pin)> = table
             .pins
@@ -488,13 +565,38 @@ fn solve_inner(
             .collect();
         candidates.sort_by_key(|(_, pin)| pin.position);
         for s in &power.sense {
-            let Some((name, pin)) = candidates
+            let free: Vec<(&str, &crate::Pin)> = candidates
                 .iter()
-                .find(|(name, _)| !search.used.contains_key(name))
+                .filter(|(name, _)| !search.used.contains_key(name))
                 .copied()
-            else {
-                return Err(SolveError::NoAdcPin { net: s.net.clone() });
+                .collect();
+            // ADC1 or ADC3 (`AET-WO-1211a`, `1211` Q8): a sense is never
+            // pinned, so an ADC2-only pin is never its.
+            let modelled = free
+                .iter()
+                .find(|(_, pin)| {
+                    crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some()
+                })
+                .copied();
+            let Some((name, pin)) = modelled else {
+                if free.is_empty() {
+                    return Err(SolveError::NoAdcPin { net: s.net.clone() });
+                }
+                return Err(SolveError::AdcUnmodelled {
+                    net: s.net.clone(),
+                    pins: free.iter().map(|(n, _)| (*n).to_owned()).collect(),
+                });
             };
+            let (peripheral, channel) =
+                crate::pin_devices::choose_channel(&pin.adc_channels, false).expect("found above");
+            sense_inputs.insert(
+                s.net.clone(),
+                crate::pin_devices::SolvedAdcInput {
+                    pin: name.to_owned(),
+                    peripheral,
+                    channel,
+                },
+            );
             search.used.insert(name, format!("power.sense {}", s.net));
             solved.sense.insert(
                 s.net.clone(),
@@ -504,6 +606,32 @@ fn solve_inner(
                     channels: pin.adc_channels.iter().cloned().collect(),
                 },
             );
+        }
+    }
+    out.adc_inputs = sense_inputs;
+    // Each pin device's ADC inputs, then its signals, after every pin above
+    // is owned, so none of theirs moves (`AET-WO-1211a`).
+    crate::pin_devices::place(
+        spec,
+        table,
+        &reserved,
+        &mut search.used,
+        &mut out.gpio,
+        &mut out.adc_inputs,
+    )?;
+    crate::pin_devices::reset_held(spec, &out)?;
+    // An IN/IN bridge's two motor outputs share one timer (`1211` §2.7 (e)).
+    for (bridge, first, second) in crate::pin_devices::in_in_motor_pairs(spec) {
+        let timer = |l: &str| out.assignments[l].peripheral.clone();
+        let (first_timer, second_timer) = (timer(&first), timer(&second));
+        if first_timer != second_timer {
+            return Err(SolveError::BridgeSplitAcrossTimers {
+                bridge,
+                first,
+                second,
+                first_timer,
+                second_timer,
+            });
         }
     }
     out.pin_speeds = pin_speeds(&out)?;
@@ -531,7 +659,7 @@ pub(crate) fn solved_pins(t: &SolvedTopology) -> impl Iterator<Item = (&String, 
     t.assignments
         .iter()
         .map(|(net, a)| (net, &a.pin))
-        .chain(t.gpio.iter())
+        .chain(t.gpio.iter().map(|(net, g)| (net, &g.pin)))
 }
 
 /// One pin's speed, as [`pin_speeds`] gives it.
@@ -1025,22 +1153,77 @@ pub(crate) fn motor_timing(
     spec.motor_outputs
         .iter()
         .map(|m| {
-            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| IrValidationError::MotorTiming {
-                output: m.label.clone(),
-                reason: match e {
-                    TimingError::NoMicrosecondTick => {
-                        "the timer clock is not a whole number of MHz, so no prescaler gives a 1 us tick"
+            motor::solve_timing(m.protocol, m.pwm.as_ref(), k1).map_err(|e| {
+                let output = m.label.clone();
+                let p = m.pwm.as_ref();
+                let res = p.map_or(0, |p| p.resolution_ps);
+                let tick = |reason| IrValidationError::MotorTiming {
+                    output: output.clone(),
+                    reason,
+                };
+                let pwm = |r| IrValidationError::Pwm(r);
+                match (e, p) {
+                    // At a 1 us tick (every specification before
+                    // `AET-WO-1211a`'s) and for DShot, the messages are the
+                    // ones they were.
+                    (TimingError::RateOutOfRange, _) if res == 1_000_000 || p.is_none() => tick(
+                        "its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)",
+                    ),
+                    (TimingError::RateOutOfRange, _) => tick(
+                        "its period is not 3 to 65,536 ticks, or its shortest pulse is not at least 1 tick and 2 ticks short of the period",
+                    ),
+                    (TimingError::PulseExceedsPeriod, _) if res == 1_000_000 => tick(
+                        "its longest pulse does not fit inside the period the rate rounds to at a 1 us tick",
+                    ),
+                    (TimingError::PulseExceedsPeriod, _) => tick(
+                        "its longest pulse does not fit inside the period the rate rounds to at its tick",
+                    ),
+                    (TimingError::ResolutionNotDerivable, _) => {
+                        pwm(motor::PwmRefusal::ResolutionNotDerivable {
+                            output,
+                            resolution_ps: res,
+                            kernel_hz: k1,
+                        })
                     }
-                    TimingError::RateOutOfRange => {
-                        "its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)"
+                    (TimingError::PulseNotOnTick, Some(p)) => pwm(motor::PwmRefusal::PulseNotOnTick {
+                        output,
+                        min_us: p.pulse_min_us,
+                        max_us: p.pulse_max_us,
+                        resolution_ps: res,
+                    }),
+                    (TimingError::IdleNotOnTick, Some(p)) => pwm(motor::PwmRefusal::IdleNotOnTick {
+                        output,
+                        pulse_us: idle_us(p),
+                        resolution_ps: res,
+                    }),
+                    (TimingError::IdleSpelledTwice, Some(p)) => {
+                        pwm(motor::PwmRefusal::IdleSpelledTwice {
+                            output,
+                            pulse_us: idle_us(p),
+                            ccr: "ARR + 1",
+                            level: "high",
+                        })
                     }
-                    TimingError::PulseExceedsPeriod => {
-                        "its longest pulse does not fit inside the period the rate rounds to at a 1 us tick"
+                    (TimingError::IdleExceedsPeriod, Some(p)) => {
+                        pwm(motor::PwmRefusal::IdleExceedsPeriod {
+                            output,
+                            pulse_us: idle_us(p),
+                            rate_hz: p.rate_hz,
+                        })
                     }
-                },
+                    (_, None) => unreachable!("only a PWM output's timing names a tick"),
+                }
             })
         })
         .collect()
+}
+
+/// A pulse idle's length; 0 for a level, which no tick refusal names.
+fn idle_us(p: &motor::PwmTiming) -> u32 {
+    match p.idle {
+        motor::Idle::PulseUs(us) => us,
+        motor::Idle::Level(_) => 0,
+    }
 }
 
 /// Each I2C line's analog facts, copied from the specification (`AET-WO-2200`
@@ -1240,7 +1423,9 @@ struct Motor<'s, 't> {
     hand: Option<&'t str>,
     protocol: MotorProtocol,
     pwm: Option<&'s PwmTiming>,
-    key: (MotorProtocol, Option<u32>),
+    /// The timer-share key: outputs of one timer share its protocol, rate
+    /// and tick (`AET-WO-1211a`: `resolution_ps` joins it).
+    key: crate::motor::TimerKey,
 }
 
 /// A timer channel on a pin: `(timer, channel, pin, af)`.
@@ -1262,6 +1447,8 @@ type UartPlaced<'t> = (&'static str, (&'t str, u8), (&'t str, u8));
 struct Model<'s, 't> {
     buses: Vec<Bus<'s, 't>>,
     cs: Vec<Sig<'s, 't>>,
+    /// Each pin device's hand pin with its claimant (`AET-WO-1211a`).
+    device_hands: Vec<(&'t str, String)>,
     motors: Vec<Motor<'s, 't>>,
     serial: Vec<Uart<'s, 't>>,
     /// The peripherals of `serial::PERIPHERALS` the table offers (both
@@ -1391,7 +1578,10 @@ impl<'s, 't> Model<'s, 't> {
                 path,
                 protocol: m.protocol,
                 pwm: m.pwm.as_ref(),
-                key: (m.protocol, m.pwm.as_ref().map(|p| p.rate_hz)),
+                key: (
+                    m.protocol,
+                    m.pwm.as_ref().map(|p| (p.rate_hz, p.resolution_ps)),
+                ),
             });
         }
         let mut serial = Vec::new();
@@ -1436,6 +1626,31 @@ impl<'s, 't> Model<'s, 't> {
                 .values()
                 .any(|p| p.alternate_functions.contains_key(wanted))
         };
+        // A pin device's hand pins (`AET-WO-1211a`), claimed here so that
+        // the search places nothing on them and two claims are refused by
+        // name; the device's signals and ADC inputs are placed after it.
+        let mut device_hands = Vec::new();
+        for (i, d) in spec.declared_pin_devices().iter().enumerate() {
+            let held =
+                d.signals
+                    .iter()
+                    .enumerate()
+                    .map(|(k, s)| (&s.net, &s.pin, format!("pin_devices[{i}].signals[{k}]")))
+                    .chain(
+                        d.analog.iter().enumerate().map(|(k, a)| {
+                            (&a.net, &a.pin, format!("pin_devices[{i}].analog[{k}]"))
+                        }),
+                    );
+            for (net, pin, path) in held {
+                let signal = Signal {
+                    net: net.clone(),
+                    pin: pin.clone(),
+                };
+                if let Some(key) = hand(&signal, &path)? {
+                    device_hands.push((key, path));
+                }
+            }
+        }
         let uart_instances: Vec<&'static str> = serial::PERIPHERALS
             .into_iter()
             .filter(|p| carried(&format!("{p}_TX")) && carried(&format!("{p}_RX")))
@@ -1471,6 +1686,7 @@ impl<'s, 't> Model<'s, 't> {
         let model = Model {
             buses,
             cs,
+            device_hands,
             motors,
             serial,
             uart_instances,
@@ -1606,6 +1822,14 @@ impl<'s, 't> Model<'s, 't> {
             for (b, second) in self.motors.iter().enumerate().skip(a + 1) {
                 if first.key != second.key && timers[a].len() == 1 && timers[a] == timers[b] {
                     let timer = timers[a].iter().next().expect("one timer");
+                    let rate = |k: &crate::motor::TimerKey| (k.0, k.1.map(|p| p.0));
+                    if rate(&first.key) == rate(&second.key) {
+                        return Err(SolveError::TimerResolutionConflict {
+                            timer: format!("TIM{timer}"),
+                            first: first.label.to_owned(),
+                            second: second.label.to_owned(),
+                        });
+                    }
                     return Err(SolveError::TimerRateConflict {
                         timer: format!("TIM{timer}"),
                         first: first.label.to_owned(),
@@ -1829,7 +2053,7 @@ struct Search<'m, 's, 't> {
     motor_chosen: Vec<Option<Channel<'t>>>,
     /// The timer channels taken, and each timer's shared key and outputs.
     channels_used: BTreeSet<(u32, u32)>,
-    timer_keys: BTreeMap<u32, ((MotorProtocol, Option<u32>), usize)>,
+    timer_keys: BTreeMap<u32, (crate::motor::TimerKey, usize)>,
     /// The serial ports placed once every motor output is, in order.
     serial_active: Vec<usize>,
     /// Per serial port, its placement once placed.
@@ -1859,6 +2083,9 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             if let Some(pin) = sig.hand {
                 used.insert(pin, sig.path.clone());
             }
+        }
+        for (pin, path) in &model.device_hands {
+            used.insert(*pin, path.clone());
         }
         let n = active.len();
         Search {
@@ -2440,6 +2667,7 @@ mod differential {
             motor_outputs: vec![],
             serial_ports: vec![],
             test_points: vec![],
+            pin_devices: vec![],
         }
     }
 

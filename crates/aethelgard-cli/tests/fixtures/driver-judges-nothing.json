@@ -214,7 +214,11 @@
       "pwm": {
         "rate_hz": 20000,
         "pulse_min_us": 1,
-        "pulse_max_us": 49
+        "pulse_max_us": 49,
+        "idle": {
+          "pulse_us": 1
+        },
+        "resolution_ps": 1000000
       },
       "esc": null
     },
@@ -225,7 +229,11 @@
       "pwm": {
         "rate_hz": 20000,
         "pulse_min_us": 1,
-        "pulse_max_us": 49
+        "pulse_max_us": 49,
+        "idle": {
+          "pulse_us": 1
+        },
+        "resolution_ps": 1000000
       },
       "esc": null
     },
@@ -236,7 +244,11 @@
       "pwm": {
         "rate_hz": 50,
         "pulse_min_us": 1000,
-        "pulse_max_us": 2000
+        "pulse_max_us": 2000,
+        "idle": {
+          "pulse_us": 1000
+        },
+        "resolution_ps": 1000000
       },
       "esc": null
     },
@@ -247,7 +259,11 @@
       "pwm": {
         "rate_hz": 50,
         "pulse_min_us": 1000,
-        "pulse_max_us": 2000
+        "pulse_max_us": 2000,
+        "idle": {
+          "pulse_us": 1000
+        },
+        "resolution_ps": 1000000
       },
       "esc": null
     }

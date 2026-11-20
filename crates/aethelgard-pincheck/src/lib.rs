@@ -171,6 +171,29 @@ pub enum Refusal {
     /// not validated.
     #[error("the topology holds no pin speed for {net}")]
     NoPinSpeed { net: String },
+    /// `AET-WO-1211a`: a pin device, or a gpio entry that is not a chip
+    /// select, is a fact this check cannot yet judge from the image.
+    #[error("`{id}` ({detail}) is a gpio fact the pinout check does not judge (AET-WO-1211a)")]
+    GpioNotJudged { id: String, detail: String },
+}
+
+/// Refuses a topology the check would mis-read: a pin device, or a gpio entry
+/// that is not a chip select (`AET-WO-1211a`). Every gpio entry the check
+/// reads after this is a chip select.
+pub fn refuse_unjudged_gpio(t: &SolvedTopology) -> Result<(), Refusal> {
+    if let Some((reference, d)) = t.pin_devices.iter().next() {
+        return Err(Refusal::GpioNotJudged {
+            id: reference.clone(),
+            detail: d.part.clone(),
+        });
+    }
+    if let Some((net, _)) = t.gpio.iter().find(|(_, g)| !g.is_high_output()) {
+        return Err(Refusal::GpioNotJudged {
+            id: net.clone(),
+            detail: "not a chip select".to_owned(),
+        });
+    }
+    Ok(())
 }
 
 impl Refusal {
@@ -184,6 +207,7 @@ impl Refusal {
             Self::UnsupportedPart { .. } => "UnsupportedPart",
             Self::InvalidPin { .. } => "InvalidPin",
             Self::NoPinSpeed { .. } => "NoPinSpeed",
+            Self::GpioNotJudged { .. } => "GpioNotJudged",
         }
     }
 
@@ -193,6 +217,7 @@ impl Refusal {
             Self::Header { name, .. } | Self::Conditional { name, .. } => Some(name.clone()),
             Self::DecodesDisagree { port, register, .. } => Some(format!("GPIO{port}_{register}")),
             Self::InvalidPin { net, .. } | Self::NoPinSpeed { net } => Some(net.clone()),
+            Self::GpioNotJudged { id, .. } => Some(id.clone()),
             Self::UnsupportedPart { part } => Some(part.clone()),
             Self::Elf { .. } | Self::Allow { .. } => None,
         }
@@ -354,6 +379,7 @@ pub fn judge(
             part: package.part.clone(),
         });
     }
+    refuse_unjudged_gpio(topology)?;
     if let Some(header) = header {
         cross_check(elf, header)?;
     }
@@ -371,8 +397,8 @@ pub fn judge(
             (net.clone(), Some(a.alternate_function)),
         );
     }
-    for (net, pin) in &topology.gpio {
-        named.insert(parse(net, pin)?, (net.clone(), None));
+    for (net, g) in &topology.gpio {
+        named.insert(parse(net, &g.pin)?, (net.clone(), None));
     }
     if let Some((pin, _)) = allow.0.iter().find(|(pin, _)| named.contains_key(pin)) {
         return allow_refusal(

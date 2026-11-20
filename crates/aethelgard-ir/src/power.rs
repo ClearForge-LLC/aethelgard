@@ -541,7 +541,7 @@ fn div_ceil(a: i128, b: i128) -> i128 {
 /// A resistor's worst relative error over the board's declared range, ppm:
 /// its tolerance, its temperature coefficient over the larger excursion from
 /// its reference temperature, and its stated drift (spike A2).
-fn resistor_error_ppm(r: &pp::Resistor, t: &Temperature) -> i128 {
+pub(crate) fn resistor_error_ppm(r: &pp::Resistor, t: &Temperature) -> i128 {
     let excursion = (i128::from(t.max) - i128::from(r.tcr_reference_celsius))
         .max(i128::from(r.tcr_reference_celsius) - i128::from(t.min))
         .max(0);

@@ -143,6 +143,18 @@ pub enum Refusal {
     NoSystemTimer,
     #[error("`{net}` is solved on `{pin}`, but no emitted line configures it")]
     PinNotEmitted { net: String, pin: String },
+    /// `AET-WO-1211a`: ArduPilot's hwdef has no `GPIO(n)` line for a pin
+    /// device's pins until a work order writes it.
+    #[error(
+        "`{reference}` ({part}) is a pin device; hwdef.dat has no GPIO(n) line this generator writes for its pins (AET-WO-1211a)"
+    )]
+    GpioNotEmitted { reference: String, part: String },
+    /// `AET-WO-1211a`: the motor line's pull is `PULLDOWN`, which a high idle
+    /// contradicts; the pull follows the idle at `AET-WO-1211b`.
+    #[error(
+        "motor output `{net}` idles high, but this generator's motor line is PULLDOWN until AET-WO-1211b"
+    )]
+    IdleHighNotEmitted { net: String },
     #[error(
         "battery sense `{net}` is solved, but its divider ratio (SCALE) has no source in the topology (AET-WO-4400b D7)"
     )]
@@ -187,6 +199,8 @@ impl Refusal {
             Self::NoSystemTimer => "NoSystemTimer",
             Self::SenseNotEmitted { .. } => "SenseNotEmitted",
             Self::PinNotEmitted { .. } => "PinNotEmitted",
+            Self::GpioNotEmitted { .. } => "GpioNotEmitted",
+            Self::IdleHighNotEmitted { .. } => "IdleHighNotEmitted",
             Self::ImuOrientationUndeclared { .. } => "ImuOrientationUndeclared",
             Self::ImuFrameNotCited { .. } => "ImuFrameNotCited",
         }
@@ -206,7 +220,9 @@ impl Refusal {
             | Self::LabelCollision { net }
             | Self::LabelTakesAfPrefix { net, .. }
             | Self::SenseNotEmitted { net }
+            | Self::IdleHighNotEmitted { net }
             | Self::PinNotEmitted { net, .. } => Some(net),
+            Self::GpioNotEmitted { reference, .. } => Some(reference),
             Self::DuplicateSpidev { second, .. } => Some(second),
             Self::ImuOrientationUndeclared { reference, .. }
             | Self::ImuFrameNotCited { reference, .. } => Some(reference),
@@ -404,6 +420,22 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             cited: ap.oscillator_hz,
         });
     }
+    if let Some((reference, d)) = t.pin_devices.iter().next() {
+        return Err(Refusal::GpioNotEmitted {
+            reference: reference.clone(),
+            part: d.part.clone(),
+        });
+    }
+    if let Some((net, _)) = t.motor_outputs.iter().find(|(_, m)| {
+        matches!(
+            m.pwm.as_ref().map(|p| p.idle),
+            Some(aethelgard_ir::motor::Idle::Level(
+                aethelgard_ir::motor::Level::High
+            ))
+        )
+    }) {
+        return Err(Refusal::IdleHighNotEmitted { net: net.clone() });
+    }
     if let Some(net) = t.power.as_ref().and_then(|p| p.sense.keys().next()) {
         return Err(Refusal::SenseNotEmitted { net: net.clone() });
     }
@@ -529,7 +561,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         .assignments
         .iter()
         .map(|(net, a)| (net, &a.pin))
-        .chain(t.gpio.iter());
+        .chain(t.gpio.iter().map(|(net, g)| (net, &g.pin)));
     for (net, pin) in solved {
         if !emitted.contains(pin.as_str()) {
             return Err(Refusal::PinNotEmitted {
@@ -951,7 +983,7 @@ fn spi(
         l.push(
             format!(
                 "{} {} CS {} PUSHPULL FLOATING",
-                t.gpio[&d.cs],
+                t.gpio[&d.cs].pin,
                 d.cs,
                 speed(&d.cs)
             ),
