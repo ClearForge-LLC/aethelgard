@@ -14,7 +14,10 @@ Each statement is labelled:
 ## 0. Status
 
 **AWAITING-PACKAGE** (the `3402`/`1604` flow). Built, re-judged, and CI green but the package. The head merges
-`main` `472d2d84` (2306, 1209c, 2305, 4405, 1318, 3306 and docs). Next, in order:
+`main` `14bb1e5b` (2306, 1209c, 2305, 4405, 1318, 3306, 4240a with specification 20, and docs). 4240a's one
+conflict was `order_2203`'s `main.rs` digest, which both sides moved: the spec-20 version line and the TMP117 read.
+It was re-measured by tooling on the merged tree as `a95a1bb6…f918`. The platforms equal `main`'s, and the boot image
+equals this branch's. Next, in order:
 - the architect's `write=true` dispatch, after 4240a;
 - the artifact committed byte for byte into `fab/sentinel-01-bench/package/`;
 - `bench-package` green;
