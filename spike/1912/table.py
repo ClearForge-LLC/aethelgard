@@ -32,7 +32,7 @@ def shard(path):
         m = TS.match(l.rstrip('\n'))
         if m: lines.append((ts(m.group(1)), m.group(2)))
     start = next(t for t, s in lines if s.startswith('##[group]Run') and 'shard.sh run' in s)
-    end = next(t for t, s in lines if re.match(r'shard=\d+ expected=', s))
+    end = next((t for t, s in lines if re.match(r'shard=\d+ expected=', s)), lines[-1][0])  # a failed shard has no result line
     planned = {}
     for t, s in lines:
         m = re.match(r'shard (\d+): \d+ tests, planned (\d+) s', s)
@@ -41,6 +41,7 @@ def shard(path):
     bins, cur = [], None  # bins: dict(binary, tests=[(name, s, how)], passed, fin)
     for t, s in lines:
         if t < start: continue
+        if s.startswith('ALONE ') or 'model name' in s: break  # the throwaway's alone pass follows the shard's own tests
         m = re.match(r'\s*Running (.+?) \(', s)
         if m: cur = dict(binary=m.group(1), run=t, prev=t, tests=[]); continue
         if cur is None: continue
@@ -120,4 +121,4 @@ def main():
         out.append((worst, f'| {key[0]} | {key[1]} | {row if row is not None else "-"} | {f"{solo:.2f}" if solo is not None else "-"} | {f"{cand:.2f}" if cand is not None else "-"} | {len(ss)} | {v} |'))
     for _, l in sorted(out, reverse=True): print(l)
 
-main()
+if __name__ == '__main__': main()
