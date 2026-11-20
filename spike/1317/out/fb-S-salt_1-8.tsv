@@ -1,0 +1,307 @@
+variant	knobs	removed	class	w_mm	h_mm	full_class	full_w	full_h	ms
+base		-	fit	95.800	67.600	fit	95.800	67.600	0
+base		i2c_devices:U3	fit	84.950	80.200	fit	95.800	67.600	26
+base		i2c_devices:U7	fit	96.500	68.600	fit	95.800	67.600	28
+base		spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	95.800	67.600	0
+base		spi_devices:U5	fit	95.750	67.600	fit	95.800	67.600	28
+base		connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+base		connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	95.800	67.600	0
+base		connectors:J3	fit	86.700	80.950	fit	95.800	67.600	26
+base		connectors:J5	fit	95.600	67.600	fit	95.800	67.600	29
+base		connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	95.800	67.600	0
+base		connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+base		connectors:J8	fit	86.700	79.200	fit	95.800	67.600	27
+base		test_points:TP1	fit	85.450	80.950	fit	95.800	67.600	27
+base		test_points:TP2	fit	84.750	79.950	fit	95.800	67.600	27
+base		test_points:TP3	fit	95.800	68.600	fit	95.800	67.600	29
+base		test_points:TP4	fit	95.800	67.600	fit	95.800	67.600	29
+base		test_points:TP11	fit	85.250	80.950	fit	95.800	67.600	26
+base		test_points:TP13	fit	84.750	80.950	fit	95.800	67.600	26
+base		test_points:TP14	fit	86.700	80.950	fit	95.800	67.600	26
+base		test_points:TP15	fit	95.800	67.600	fit	95.800	67.600	29
+base		test_points:TP16	fit	95.750	67.600	fit	95.800	67.600	29
+base		test_points:TP17	fit	95.800	70.100	fit	95.800	67.600	29
+base		test_points:TP18	fit	86.700	79.200	fit	95.800	67.600	26
+base		test_points:TP19	fit	84.750	79.950	fit	95.800	67.600	26
+base		test_points:TP20	fit	85.450	79.550	fit	95.800	67.600	26
+base		test_points:TP21	fit	84.750	79.950	fit	95.800	67.600	26
+base		test_points:TP22	fit	86.700	79.450	fit	95.800	67.600	26
+base		test_points:TP23	fit	95.800	67.600	fit	95.800	67.600	29
+base		test_points:TP24	fit	86.700	80.950	fit	95.800	67.600	26
+base		test_points:TP25	fit	84.750	79.950	fit	95.800	67.600	26
+base		test_points:TP26	fit	86.700	80.950	fit	95.800	67.600	26
+base		test_points:TP27	fit	86.700	80.950	fit	95.800	67.600	26
+base		test_points:TP28	fit	85.450	80.950	fit	95.800	67.600	26
+base		test_points:TP29	fit	95.800	67.600	fit	95.800	67.600	29
+turn-right		-	fit	95.800	67.600	fit	95.800	67.600	0
+turn-right		i2c_devices:U3	fit	84.950	80.200	fit	95.800	67.600	25
+turn-right		i2c_devices:U7	fit	96.500	68.600	fit	95.800	67.600	28
+turn-right		spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	95.800	67.600	0
+turn-right		spi_devices:U5	fit	95.750	67.600	fit	95.800	67.600	28
+turn-right		connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+turn-right		connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	95.800	67.600	0
+turn-right		connectors:J3	fit	86.700	80.950	fit	95.800	67.600	27
+turn-right		connectors:J5	fit	95.600	67.600	fit	95.800	67.600	30
+turn-right		connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	95.800	67.600	0
+turn-right		connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+turn-right		connectors:J8	fit	86.700	79.200	fit	95.800	67.600	27
+turn-right		test_points:TP1	fit	85.450	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP2	fit	84.750	79.950	fit	95.800	67.600	26
+turn-right		test_points:TP3	fit	95.800	68.600	fit	95.800	67.600	29
+turn-right		test_points:TP4	fit	95.800	67.600	fit	95.800	67.600	29
+turn-right		test_points:TP11	fit	85.250	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP13	fit	84.750	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP14	fit	86.700	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP15	fit	95.800	67.600	fit	95.800	67.600	29
+turn-right		test_points:TP16	fit	95.750	67.600	fit	95.800	67.600	29
+turn-right		test_points:TP17	fit	95.800	70.100	fit	95.800	67.600	29
+turn-right		test_points:TP18	fit	86.700	79.200	fit	95.800	67.600	27
+turn-right		test_points:TP19	fit	84.750	79.950	fit	95.800	67.600	26
+turn-right		test_points:TP20	fit	85.450	79.550	fit	95.800	67.600	26
+turn-right		test_points:TP21	fit	84.750	79.950	fit	95.800	67.600	26
+turn-right		test_points:TP22	fit	86.700	79.450	fit	95.800	67.600	26
+turn-right		test_points:TP23	fit	95.800	67.600	fit	95.800	67.600	29
+turn-right		test_points:TP24	fit	86.700	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP25	fit	84.750	79.950	fit	95.800	67.600	26
+turn-right		test_points:TP26	fit	86.700	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP27	fit	86.700	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP28	fit	85.450	80.950	fit	95.800	67.600	26
+turn-right		test_points:TP29	fit	95.800	67.600	fit	95.800	67.600	29
+turn-forward		-	fit	95.050	67.850	fit	95.050	67.850	0
+turn-forward		i2c_devices:U3	fit	85.150	79.450	fit	95.050	67.850	26
+turn-forward		i2c_devices:U7	fit	96.250	67.200	fit	95.050	67.850	53
+turn-forward		spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	95.050	67.850	0
+turn-forward		spi_devices:U5	fit	95.750	67.600	fit	95.050	67.850	28
+turn-forward		connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	95.050	67.850	0
+turn-forward		connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	95.050	67.850	0
+turn-forward		connectors:J3	fit	86.700	80.200	fit	95.050	67.850	28
+turn-forward		connectors:J5	fit	96.050	67.350	fit	95.050	67.850	30
+turn-forward		connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	95.050	67.850	0
+turn-forward		connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	95.050	67.850	0
+turn-forward		connectors:J8	fit	86.700	80.200	fit	95.050	67.850	27
+turn-forward		test_points:TP1	fit	85.250	80.200	fit	95.050	67.850	27
+turn-forward		test_points:TP2	fit	85.200	79.450	fit	95.050	67.850	27
+turn-forward		test_points:TP3	fit	86.700	80.200	fit	95.050	67.850	54
+turn-forward		test_points:TP4	fit	96.250	67.350	fit	95.050	67.850	30
+turn-forward		test_points:TP11	fit	85.250	80.200	fit	95.050	67.850	27
+turn-forward		test_points:TP13	fit	85.200	79.450	fit	95.050	67.850	27
+turn-forward		test_points:TP14	fit	85.250	80.950	fit	95.050	67.850	27
+turn-forward		test_points:TP15	fit	96.250	67.350	fit	95.050	67.850	30
+turn-forward		test_points:TP16	fit	96.250	67.850	fit	95.050	67.850	31
+turn-forward		test_points:TP17	fit	96.250	67.850	fit	95.050	67.850	30
+turn-forward		test_points:TP18	fit	86.700	79.550	fit	95.050	67.850	28
+turn-forward		test_points:TP19	fit	85.200	79.450	fit	95.050	67.850	27
+turn-forward		test_points:TP20	fit	85.200	79.550	fit	95.050	67.850	27
+turn-forward		test_points:TP21	fit	85.200	79.450	fit	95.050	67.850	27
+turn-forward		test_points:TP22	fit	85.200	79.700	fit	95.050	67.850	27
+turn-forward		test_points:TP23	fit	97.500	67.850	fit	95.050	67.850	28
+turn-forward		test_points:TP24	fit	85.250	79.700	fit	95.050	67.850	27
+turn-forward		test_points:TP25	fit	85.200	80.200	fit	95.050	67.850	27
+turn-forward		test_points:TP26	fit	85.200	80.950	fit	95.050	67.850	27
+turn-forward		test_points:TP27	fit	86.700	80.200	fit	95.050	67.850	28
+turn-forward		test_points:TP28	fit	86.700	80.200	fit	95.050	67.850	27
+turn-forward		test_points:TP29	fit	85.200	80.200	fit	95.050	67.850	52
+turn-left		-	fit	95.800	67.600	fit	95.800	67.600	0
+turn-left		i2c_devices:U3	fit	84.950	80.200	fit	95.800	67.600	26
+turn-left		i2c_devices:U7	fit	96.500	68.600	fit	95.800	67.600	28
+turn-left		spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	95.800	67.600	0
+turn-left		spi_devices:U5	fit	95.750	67.600	fit	95.800	67.600	27
+turn-left		connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+turn-left		connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	95.800	67.600	0
+turn-left		connectors:J3	fit	86.700	79.450	fit	95.800	67.600	26
+turn-left		connectors:J5	fit	95.600	67.600	fit	95.800	67.600	30
+turn-left		connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	95.800	67.600	0
+turn-left		connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	95.800	67.600	0
+turn-left		connectors:J8	fit	86.700	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP1	fit	85.450	80.950	fit	95.800	67.600	27
+turn-left		test_points:TP2	fit	84.750	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP3	fit	96.300	67.600	fit	95.800	67.600	29
+turn-left		test_points:TP4	fit	95.800	67.600	fit	95.800	67.600	29
+turn-left		test_points:TP11	fit	85.250	79.450	fit	95.800	67.600	26
+turn-left		test_points:TP13	fit	85.250	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP14	fit	86.700	80.950	fit	95.800	67.600	26
+turn-left		test_points:TP15	fit	95.800	67.600	fit	95.800	67.600	30
+turn-left		test_points:TP16	fit	95.750	67.600	fit	95.800	67.600	29
+turn-left		test_points:TP17	fit	95.800	67.600	fit	95.800	67.600	29
+turn-left		test_points:TP18	fit	86.700	79.200	fit	95.800	67.600	27
+turn-left		test_points:TP19	fit	84.750	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP20	fit	85.450	79.550	fit	95.800	67.600	27
+turn-left		test_points:TP21	fit	84.750	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP22	fit	86.700	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP23	fit	95.800	67.600	fit	95.800	67.600	29
+turn-left		test_points:TP24	fit	86.700	80.950	fit	95.800	67.600	26
+turn-left		test_points:TP25	fit	84.750	79.950	fit	95.800	67.600	26
+turn-left		test_points:TP26	fit	85.200	80.950	fit	95.800	67.600	26
+turn-left		test_points:TP27	fit	86.700	79.450	fit	95.800	67.600	27
+turn-left		test_points:TP28	fit	85.450	80.950	fit	95.800	67.600	26
+turn-left		test_points:TP29	fit	95.800	67.600	fit	95.800	67.600	29
+turn-aft		-	fit	96.250	67.350	fit	96.250	67.350	0
+turn-aft		i2c_devices:U3	fit	85.150	79.450	fit	96.250	67.350	26
+turn-aft		i2c_devices:U7	fit	97.750	67.350	fit	96.250	67.350	29
+turn-aft		spi_devices:U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	96.250	67.350	0
+turn-aft		spi_devices:U5	fit	95.750	67.600	fit	96.250	67.350	28
+turn-aft		connectors:J1	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	96.250	67.350	0
+turn-aft		connectors:J2	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	96.250	67.350	0
+turn-aft		connectors:J3	fit	86.700	79.450	fit	96.250	67.350	27
+turn-aft		connectors:J5	fit	96.050	67.100	fit	96.250	67.350	30
+turn-aft		connectors:J6	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	96.250	67.350	0
+turn-aft		connectors:J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	96.250	67.350	0
+turn-aft		connectors:J8	fit	86.700	79.450	fit	96.250	67.350	27
+turn-aft		test_points:TP1	fit	85.250	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP2	fit	85.200	79.450	fit	96.250	67.350	26
+turn-aft		test_points:TP3	fit	96.250	67.350	fit	96.250	67.350	29
+turn-aft		test_points:TP4	fit	97.250	67.350	fit	96.250	67.350	30
+turn-aft		test_points:TP11	fit	85.250	80.200	fit	96.250	67.350	27
+turn-aft		test_points:TP13	fit	85.200	79.450	fit	96.250	67.350	27
+turn-aft		test_points:TP14	fit	85.250	80.200	fit	96.250	67.350	27
+turn-aft		test_points:TP15	fit	96.250	67.350	fit	96.250	67.350	30
+turn-aft		test_points:TP16	fit	96.250	67.850	fit	96.250	67.350	30
+turn-aft		test_points:TP17	fit	96.250	67.850	fit	96.250	67.350	30
+turn-aft		test_points:TP18	fit	86.700	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP19	fit	85.200	79.450	fit	96.250	67.350	27
+turn-aft		test_points:TP20	fit	85.200	79.550	fit	96.250	67.350	27
+turn-aft		test_points:TP21	fit	85.200	79.450	fit	96.250	67.350	27
+turn-aft		test_points:TP22	fit	85.200	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP23	fit	96.250	67.350	fit	96.250	67.350	30
+turn-aft		test_points:TP24	fit	85.250	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP25	fit	85.200	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP26	fit	85.200	79.700	fit	96.250	67.350	27
+turn-aft		test_points:TP27	fit	86.700	80.200	fit	96.250	67.350	27
+turn-aft		test_points:TP28	fit	85.200	79.550	fit	96.250	67.350	27
+turn-aft		test_points:TP29	fit	97.250	67.350	fit	96.250	67.350	29
+size-1		-	fit	98.800	69.850	fit	98.800	69.850	0
+size-1		i2c_devices:Q_U4	fit	87.500	80.200	fit	98.800	69.850	26
+size-1		i2c_devices:Q_U3	fit	99.000	69.600	fit	98.800	69.850	30
+size-1		spi_devices:Q_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	98.800	69.850	0
+size-1		spi_devices:Q_U7	fit	97.550	69.850	fit	98.800	69.850	29
+size-1		connectors:Q_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	98.800	69.850	0
+size-1		connectors:Q_J1	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	98.800	69.850	0
+size-1		connectors:Q_J3	fit	87.750	79.450	fit	98.800	69.850	29
+size-1		connectors:Q_J2	fit	98.600	67.850	fit	98.800	69.850	31
+size-1		connectors:Q_J5	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	98.800	69.850	0
+size-1		connectors:Q_J7	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	98.800	69.850	0
+size-1		connectors:Q_J6	fit	87.750	82.700	fit	98.800	69.850	29
+size-1		test_points:Q_TP4	fit	87.750	82.450	fit	98.800	69.850	29
+size-1		test_points:Q_TP1	fit	87.750	80.950	fit	98.800	69.850	28
+size-1		test_points:Q_TP3	fit	98.800	67.850	fit	98.800	69.850	31
+size-1		test_points:Q_TP2	fit	98.800	70.100	fit	98.800	69.850	61
+size-1		test_points:Q_TP18	fit	87.750	82.700	fit	98.800	69.850	28
+size-1		test_points:Q_TP19	fit	87.750	80.200	fit	98.800	69.850	28
+size-1		test_points:Q_TP14	fit	87.750	82.700	fit	98.800	69.850	28
+size-1		test_points:Q_TP15	fit	98.800	69.850	fit	98.800	69.850	32
+size-1		test_points:Q_TP16	fit	98.800	69.850	fit	98.800	69.850	31
+size-1		test_points:Q_TP17	fit	98.800	70.850	fit	98.800	69.850	31
+size-1		test_points:Q_TP11	fit	91.750	82.450	fit	98.800	69.850	28
+size-1		test_points:Q_TP13	fit	87.750	81.200	fit	98.800	69.850	28
+size-1		test_points:Q_TP25	fit	87.750	79.450	fit	98.800	69.850	28
+size-1		test_points:Q_TP24	fit	87.750	81.700	fit	98.800	69.850	28
+size-1		test_points:Q_TP27	fit	87.750	82.700	fit	98.800	69.850	28
+size-1		test_points:Q_TP26	fit	98.800	67.850	fit	98.800	69.850	31
+size-1		test_points:Q_TP21	fit	87.750	82.700	fit	98.800	69.850	29
+size-1		test_points:Q_TP20	fit	87.750	81.700	fit	98.800	69.850	28
+size-1		test_points:Q_TP23	fit	87.750	82.700	fit	98.800	69.850	29
+size-1		test_points:Q_TP22	fit	91.750	82.450	fit	98.800	69.850	28
+size-1		test_points:Q_TP29	fit	87.750	82.450	fit	98.800	69.850	28
+size-1		test_points:Q_TP28	fit	98.800	67.950	fit	98.800	69.850	31
+size-2		-	fit	89.200	83.200	fit	89.200	83.200	0
+size-2		i2c_devices:Qx_U3	fit	88.700	83.200	fit	89.200	83.200	28
+size-2		i2c_devices:Qx_U7	fit	88.700	83.200	fit	89.200	83.200	196
+size-2		spi_devices:Qx_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	89.200	83.200	0
+size-2		spi_devices:Qx_U4	fit	89.400	81.800	fit	89.200	83.200	86
+size-2		connectors:Qx_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	89.200	83.200	0
+size-2		connectors:Qx_J5	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	89.200	83.200	0
+size-2		connectors:Qx_J6	fit	89.200	81.950	fit	89.200	83.200	30
+size-2		connectors:Qx_J7	fit	89.250	83.200	fit	89.200	83.200	92
+size-2		connectors:Qx_J1	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	89.200	83.200	0
+size-2		connectors:Qx_J2	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	89.200	83.200	0
+size-2		connectors:Qx_J3	fit	89.450	83.200	fit	89.200	83.200	30
+size-2		test_points:Qx_TP2	fit	89.200	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP3	fit	89.200	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP1	fit	89.200	83.200	fit	89.200	83.200	59
+size-2		test_points:Qx_TP4	fit	89.200	83.200	fit	89.200	83.200	90
+size-2		test_points:Qx_TP28	fit	89.200	83.200	fit	89.200	83.200	30
+size-2		test_points:Qx_TP29	fit	89.200	83.200	fit	89.200	83.200	30
+size-2		test_points:Qx_TP20	fit	89.450	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP21	fit	89.200	83.200	fit	89.200	83.200	60
+size-2		test_points:Qx_TP22	fit	89.200	83.200	fit	89.200	83.200	122
+size-2		test_points:Qx_TP23	fit	89.200	83.200	fit	89.200	83.200	183
+size-2		test_points:Qx_TP24	fit	89.450	83.050	fit	89.200	83.200	30
+size-2		test_points:Qx_TP25	fit	91.450	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP26	fit	89.200	81.950	fit	89.200	83.200	29
+size-2		test_points:Qx_TP27	fit	89.200	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP11	fit	89.200	82.450	fit	89.200	83.200	30
+size-2		test_points:Qx_TP13	fit	89.200	83.200	fit	89.200	83.200	120
+size-2		test_points:Qx_TP15	fit	89.450	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP14	fit	89.200	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP17	fit	89.200	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP16	fit	89.450	83.200	fit	89.200	83.200	29
+size-2		test_points:Qx_TP19	fit	89.200	83.200	fit	89.200	83.200	28
+size-2		test_points:Qx_TP18	fit	89.200	83.200	fit	89.200	83.200	59
+size-6		-	fit	98.150	87.450	fit	98.150	87.450	0
+size-6		i2c_devices:Qxxxxx_U5	fit	94.400	85.700	fit	98.150	87.450	29
+size-6		i2c_devices:Qxxxxx_U3	fit	95.150	83.700	fit	98.150	87.450	208
+size-6		spi_devices:Qxxxxx_U4	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	fit	98.150	87.450	0
+size-6		spi_devices:Qxxxxx_U7	fit	94.650	86.450	fit	98.150	87.450	91
+size-6		connectors:Qxxxxx_J8	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	fit	98.150	87.450	0
+size-6		connectors:Qxxxxx_J1	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	fit	98.150	87.450	0
+size-6		connectors:Qxxxxx_J2	fit	96.900	87.450	fit	98.150	87.450	32
+size-6		connectors:Qxxxxx_J3	fit	96.700	87.700	fit	98.150	87.450	96
+size-6		connectors:Qxxxxx_J5	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	fit	98.150	87.450	0
+size-6		connectors:Qxxxxx_J6	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	fit	98.150	87.450	0
+size-6		connectors:Qxxxxx_J7	fit	96.900	87.450	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP4	fit	96.650	87.950	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP2	fit	98.150	87.450	fit	98.150	87.450	31
+size-6		test_points:Qxxxxx_TP3	fit	96.900	87.450	fit	98.150	87.450	64
+size-6		test_points:Qxxxxx_TP1	fit	99.400	85.550	fit	98.150	87.450	95
+size-6		test_points:Qxxxxx_TP28	fit	94.650	87.950	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP29	fit	99.400	87.450	fit	98.150	87.450	33
+size-6		test_points:Qxxxxx_TP24	fit	96.900	88.200	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP25	fit	98.150	87.450	fit	98.150	87.450	63
+size-6		test_points:Qxxxxx_TP26	fit	97.150	87.950	fit	98.150	87.450	126
+size-6		test_points:Qxxxxx_TP27	fit	98.150	87.450	fit	98.150	87.450	188
+size-6		test_points:Qxxxxx_TP20	fit	96.900	84.200	fit	98.150	87.450	31
+size-6		test_points:Qxxxxx_TP21	fit	99.400	85.550	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP22	fit	96.900	87.200	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP23	fit	99.350	86.200	fit	98.150	87.450	31
+size-6		test_points:Qxxxxx_TP15	fit	94.400	87.950	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP14	fit	96.650	87.700	fit	98.150	87.450	123
+size-6		test_points:Qxxxxx_TP17	fit	96.650	86.450	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP16	fit	98.150	85.550	fit	98.150	87.450	31
+size-6		test_points:Qxxxxx_TP11	fit	96.650	87.950	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP13	fit	96.650	87.950	fit	98.150	87.450	32
+size-6		test_points:Qxxxxx_TP19	fit	96.650	87.950	fit	98.150	87.450	31
+size-6		test_points:Qxxxxx_TP18	fit	98.150	87.950	fit	98.150	87.450	62
+size-8		-	OutlineUnreachable	118.500	79.450	OutlineUnreachable	118.500	79.450	0
+size-8		i2c_devices:Qxxxxxxx_U7	fit	99.350	88.200	OutlineUnreachable	118.500	79.450	31
+size-8		i2c_devices:Qxxxxxxx_U3	fit	99.150	88.950	OutlineUnreachable	118.500	79.450	282
+size-8		spi_devices:Qxxxxxxx_U5	validate:`accept_lifecycle` acknowledges `W25Q64JVxIQ`, which no devi	0.000	0.000	OutlineUnreachable	118.500	79.450	0
+size-8		spi_devices:Qxxxxxxx_U4	OutlineUnreachable	116.750	75.350	OutlineUnreachable	118.500	79.450	276
+size-8		connectors:Qxxxxxxx_J6	validate:serial port `CONSOLE`'s TX net `CONSOLE_TX` is on no connect	0.000	0.000	OutlineUnreachable	118.500	79.450	0
+size-8		connectors:Qxxxxxxx_J7	validate:no declared connector carries `SWDIO`, `SWCLK`, `GND` and th	0.000	0.000	OutlineUnreachable	118.500	79.450	0
+size-8		connectors:Qxxxxxxx_J5	OutlineUnreachable	102.400	91.700	OutlineUnreachable	118.500	79.450	292
+size-8		connectors:Qxxxxxxx_J2	OutlineUnreachable	115.750	78.350	OutlineUnreachable	118.500	79.450	295
+size-8		connectors:Qxxxxxxx_J3	validate:serial port `CRSF`'s TX net `CRSF_TX` is on no connector pin	0.000	0.000	OutlineUnreachable	118.500	79.450	0
+size-8		connectors:Qxxxxxxx_J1	validate:serial port `MAVLINK`'s TX net `MAVLINK_TX` is on no connect	0.000	0.000	OutlineUnreachable	118.500	79.450	0
+size-8		connectors:Qxxxxxxx_J8	OutlineUnreachable	102.400	90.700	OutlineUnreachable	118.500	79.450	296
+size-8		test_points:Qxxxxxxx_TP4	fit	99.650	87.950	OutlineUnreachable	118.500	79.450	252
+size-8		test_points:Qxxxxxxx_TP1	OutlineUnreachable	105.150	87.450	OutlineUnreachable	118.500	79.450	292
+size-8		test_points:Qxxxxxxx_TP2	OutlineUnreachable	116.800	77.100	OutlineUnreachable	118.500	79.450	285
+size-8		test_points:Qxxxxxxx_TP3	OutlineUnreachable	117.750	75.850	OutlineUnreachable	118.500	79.450	290
+size-8		test_points:Qxxxxxxx_TP17	fit	99.850	93.450	OutlineUnreachable	118.500	79.450	33
+size-8		test_points:Qxxxxxxx_TP16	fit	99.650	91.700	OutlineUnreachable	118.500	79.450	98
+size-8		test_points:Qxxxxxxx_TP15	OutlineUnreachable	101.400	88.200	OutlineUnreachable	118.500	79.450	286
+size-8		test_points:Qxxxxxxx_TP14	OutlineUnreachable	119.950	76.100	OutlineUnreachable	118.500	79.450	287
+size-8		test_points:Qxxxxxxx_TP13	OutlineUnreachable	116.600	75.350	OutlineUnreachable	118.500	79.450	294
+size-8		test_points:Qxxxxxxx_TP11	OutlineUnreachable	118.550	77.600	OutlineUnreachable	118.500	79.450	288
+size-8		test_points:Qxxxxxxx_TP19	OutlineUnreachable	104.400	88.200	OutlineUnreachable	118.500	79.450	288
+size-8		test_points:Qxxxxxxx_TP18	OutlineUnreachable	102.150	91.350	OutlineUnreachable	118.500	79.450	292
+size-8		test_points:Qxxxxxxx_TP28	OutlineUnreachable	101.650	87.850	OutlineUnreachable	118.500	79.450	291
+size-8		test_points:Qxxxxxxx_TP29	OutlineUnreachable	105.350	87.550	OutlineUnreachable	118.500	79.450	290
+size-8		test_points:Qxxxxxxx_TP22	OutlineUnreachable	101.400	87.950	OutlineUnreachable	118.500	79.450	287
+size-8		test_points:Qxxxxxxx_TP23	OutlineUnreachable	117.300	74.600	OutlineUnreachable	118.500	79.450	288
+size-8		test_points:Qxxxxxxx_TP20	OutlineUnreachable	103.150	88.200	OutlineUnreachable	118.500	79.450	291
+size-8		test_points:Qxxxxxxx_TP21	OutlineUnreachable	103.600	90.700	OutlineUnreachable	118.500	79.450	286
+size-8		test_points:Qxxxxxxx_TP26	fit	99.650	90.950	OutlineUnreachable	118.500	79.450	95
+size-8		test_points:Qxxxxxxx_TP27	OutlineUnreachable	102.400	91.200	OutlineUnreachable	118.500	79.450	289
+size-8		test_points:Qxxxxxxx_TP24	fit	99.650	91.700	OutlineUnreachable	118.500	79.450	31
+size-8		test_points:Qxxxxxxx_TP25	OutlineUnreachable	115.800	79.350	OutlineUnreachable	118.500	79.450	280

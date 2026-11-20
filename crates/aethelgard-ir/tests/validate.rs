@@ -2390,8 +2390,9 @@ fn an_i2c_address_the_part_does_not_offer_is_refused() {
 
 #[test]
 /// `AET-WO-1206` §1.8: a part with no row in the table is refused by name,
-/// I2C then SPI in document order, by the emitter's kind, `id` and message.
-/// Before, it passed every limit unheld (and `generate` refused it).
+/// I2C then SPI in document order, by the emitter's kind and `id`, its
+/// message naming the table's rows (`AET-WO-1316`). Before, it passed every
+/// limit unheld (and `generate` refused it).
 fn a_part_the_table_does_not_hold_is_refused() {
     let mut spec = valid();
     devs(&mut spec).spi[0].part = "UNLISTED".into();
@@ -2407,7 +2408,7 @@ fn a_part_the_table_does_not_hold_is_refused() {
     assert_refusal(err.clone(), "UnknownPart", Some("U4"));
     assert_eq!(
         err.to_string(),
-        "`U4` is a `UNLISTED`, which has no vendored model; known: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P"
+        "`U4` is a `UNLISTED`, which has no row in the parts table; known: BME280, BMP581, ICM20948, ICM42688P, ICP10111, TMP117, W25Q64JVxIQ"
     );
     devs(&mut spec).i2c[1].part = "LM75".into();
     assert_refusal(spec.validate().unwrap_err(), "UnknownPart", Some("U3"));

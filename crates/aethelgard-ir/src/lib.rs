@@ -1937,10 +1937,12 @@ pub enum IrValidationError {
     },
     /// Step 14 (`AET-WO-1206` §1.8): a device whose part has no row in the
     /// parts table, so no address, supply or clock limit could be held; the
-    /// emitter's `UnknownPart`, by kind, `id` and message.
+    /// emitter's `UnknownPart` by kind and `id`. The message names the set
+    /// the refusal means, the table's rows (`AET-WO-1316`), where the
+    /// emitter's names the parts it has an arm for.
     #[error(
-        "`{reference}` is a `{part}`, which has no vendored model; known: {}",
-        names::VENDORED_PARTS
+        "`{reference}` is a `{part}`, which has no row in the parts table; known: {}",
+        table_parts()
     )]
     PartWithoutRow { reference: String, part: String },
     /// `AET-WO-4400d`: an orientation is in the board frame, whose x points
@@ -3803,6 +3805,19 @@ pub(crate) fn references_distinct<'r>(
         }
     }
     Ok(())
+}
+
+/// The parts table's rows, in its order, as [`IrValidationError::PartWithoutRow`]
+/// names them. That refusal is built only from a table that loaded, so the
+/// second arm prints the load's error rather than an empty list.
+fn table_parts() -> String {
+    match parts::table() {
+        Ok(t) => {
+            let names: Vec<&str> = t.parts().iter().map(|p| p.part.as_str()).collect();
+            names.join(", ")
+        }
+        Err(e) => format!("none, as the parts table does not load: {e}"),
+    }
 }
 
 /// A device's part entry, or `None` for a part the table does not hold; the

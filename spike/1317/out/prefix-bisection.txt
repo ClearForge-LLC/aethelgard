@@ -1,0 +1,52 @@
+# prefix bisection: the first k entries of the with-U2 order (less U2,C37,R5), the rest in the reduced order; reduced parts (u2-turn-forward less U2,C37,R5)
+40 U4 result OutlineUnreachable 103.500 67.100 boar
+41 U5 result OutlineUnreachable 103.500 67.100 boar
+42 U7 result OutlineUnreachable 103.500 67.100 boar
+43 U3 result OutlineUnreachable 103.500 67.100 boar
+44 C14 result OutlineUnreachable 102.250 67.100 boar
+45 C15 result OutlineUnreachable 102.250 67.100 boar
+46 C16 result OutlineUnreachable 102.300 67.200 boar
+47 C17 result OutlineUnreachable 102.300 67.200 boar
+48 C24 result OutlineUnreachable 102.300 67.200 boar
+49 C25 result OutlineUnreachable 102.300 67.200 boar
+50 C26 result OutlineUnreachable 102.300 67.200 boar
+51 C27 result OutlineUnreachable 102.300 67.200 boar
+52 R51 result OutlineUnreachable 102.300 67.200 boar
+53 R50 result OutlineUnreachable 102.300 67.200 boar
+54 R3 result OutlineUnreachable 102.300 67.200 boar
+55 R1 result OutlineUnreachable 102.300 67.200 boar
+56 R2 result OutlineUnreachable 102.300 67.200 boar
+57 R4 result OutlineUnreachable 102.300 67.200 boar
+58 R6 result OutlineUnreachable 102.300 67.200 boar
+59 R7 result OutlineUnreachable 102.300 67.200 boar
+60 R8 result OutlineUnreachable 102.300 67.200 boar
+61 C42 result OutlineUnreachable 102.300 67.200 boar
+62 C43 result OutlineUnreachable 102.300 67.200 boar
+63 C44 result OutlineUnreachable 102.300 67.200 boar
+64 C38 result OutlineUnreachable 102.300 67.200 boar
+65 C39 result OutlineUnreachable 102.300 67.200 boar
+66 C40 result OutlineUnreachable 102.300 67.200 boar
+67 C41 result OutlineUnreachable 102.300 67.200 boar
+68 SW1 result OutlineUnreachable 102.300 67.200 boar
+69 TP25 result OutlineUnreachable 102.300 67.200 boar
+70 TP26 result fit 97.550 67.200
+71 TP19 result fit 97.550 67.200
+72 TP1 result fit 96.300 67.200
+73 TP14 result fit 96.300 67.200
+74 TP13 result OutlineUnreachable 102.300 67.200 boar
+75 TP4 result OutlineUnreachable 102.300 67.850 boar
+76 TP17 result OutlineUnreachable 102.300 67.850 boar
+77 TP15 result OutlineUnreachable 102.300 67.850 boar
+78 TP27 result OutlineUnreachable 102.300 67.850 boar
+79 TP21 result OutlineUnreachable 102.300 67.850 boar
+80 TP11 result OutlineUnreachable 102.300 67.850 boar
+81 TP18 result OutlineUnreachable 102.300 67.850 boar
+82 TP20 result OutlineUnreachable 102.300 67.850 boar
+83 TP3 result OutlineUnreachable 102.300 67.850 boar
+84 TP24 result OutlineUnreachable 102.300 67.850 boar
+85 TP22 result OutlineUnreachable 102.300 67.850 boar
+86 TP2 result OutlineUnreachable 102.300 67.850 boar
+87 TP16 result OutlineUnreachable 102.300 67.850 boar
+88 TP23 result fit 96.300 67.850
+89 TP28 result fit 96.300 67.850
+90 TP29 result fit 96.300 67.850

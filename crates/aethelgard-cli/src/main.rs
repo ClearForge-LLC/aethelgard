@@ -2425,8 +2425,7 @@ fn bytes(write: &[u8]) -> String {
 fn validate(file: Option<&Path>) -> ExitCode {
     match read_spec(file).and_then(|(spec, sha256)| {
         acknowledgements_current(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
-        outline_holds(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
-        loads_drawn(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
+        drawing_holds(&spec, &sha256).map_err(|r| (r, EXIT_INVALID_SPEC))?;
         Ok((spec, sha256))
     }) {
         Ok((spec, _)) => emit(
@@ -2443,22 +2442,34 @@ fn validate(file: Option<&Path>) -> ExitCode {
     }
 }
 
-/// `AET-WO-1313` §2.1: a declared `board.max_outline_um` that cannot hold
-/// the parts at all (one keep-out box, or their sum, against the bound less
-/// its margins) is refused by name before any placement, by the emitter's
-/// own judgement (`aethelgard_eda::schematic::bound_holds`). Drawing the
-/// parts needs the solve: a specification that does not solve, or that the
-/// emitter refuses for another reason, is left to `solve` and `emit` to
-/// refuse by their names, as `validate` always has.
-fn outline_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
-    use aethelgard_eda::schematic::{EmitError, bound_holds};
-    if spec.board.max_outline_um.is_none() {
+/// The checks that judge the drawn design, [`outline_holds`] then
+/// [`loads_drawn`], read one drawing: solved and drawn once, and only when
+/// either has something to judge (`AET-WO-1316`). Drawing the parts needs
+/// the solve: a specification that does not solve, or that the emitter
+/// refuses, is left to `solve` and `emit` to refuse by their names, as
+/// `validate` always has.
+fn drawing_holds(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
+    let loads = spec.power.iter().flat_map(|p| &p.loads);
+    if spec.board.max_outline_um.is_none() && loads.clone().all(|l| l.reference.is_none()) {
         return Ok(());
     }
     let Some((table, topology)) = quiet_solve(spec, sha256) else {
         return Ok(());
     };
-    match bound_holds(spec, &topology, &table) {
+    let Ok(drawing) = aethelgard_eda::schematic::Drawing::of(spec, &topology, &table) else {
+        return Ok(());
+    };
+    outline_holds(&drawing)?;
+    loads_drawn(spec, &drawing)
+}
+
+/// `AET-WO-1313` §2.1: a declared `board.max_outline_um` that cannot hold
+/// the parts at all (one keep-out box, or their sum, against the bound less
+/// its margins) is refused by name before any placement, by the emitter's
+/// own judgement (`aethelgard_eda::schematic::Drawing::bound_holds`).
+fn outline_holds(drawing: &aethelgard_eda::schematic::Drawing) -> Result<(), Refusal> {
+    use aethelgard_eda::schematic::EmitError;
+    match drawing.bound_holds() {
         Err(e @ EmitError::OutlineTooSmall { .. }) => {
             Err(Refusal::new(e.kind(), e.id(), e.to_string()).at(Some("board.max_outline_um")))
         }
@@ -2478,28 +2489,22 @@ fn quiet_solve(
 }
 
 /// `AET-WO-1209` D3, as ruled: each `power.loads` reference names a part the
-/// emitter draws for this specification (`aethelgard_eda::schematic::drawn_nets`),
+/// emitter draws for this specification (`aethelgard_eda::schematic::Drawing::drawn_nets`),
 /// such as a removed crossing's CS pull-up no longer; step 20a holds only the
 /// form. `AET-WO-1209b`: and the part, as drawn, has a pin on the entry's
 /// rail, such as a renumbered strap now on `GND` no longer. This holds every
 /// form a reference takes (declared, the MCU, the reset switch, an
 /// emitter-numbered `R<n>`/`C<n>`), since each names a drawn part. A wrong
 /// part that is also on the rail stays unseen (a renumbered `R7`, still on
-/// `VDD_3V3`: a roadmap §7.1 row). A specification the emitter refuses is
-/// left to `emit`.
-fn loads_drawn(spec: &Specification, sha256: &str) -> Result<(), Refusal> {
+/// `VDD_3V3`: a roadmap §7.1 row).
+fn loads_drawn(
+    spec: &Specification,
+    drawing: &aethelgard_eda::schematic::Drawing,
+) -> Result<(), Refusal> {
     let Some(power) = &spec.power else {
         return Ok(());
     };
-    if power.loads.iter().all(|l| l.reference.is_none()) {
-        return Ok(());
-    }
-    let Some((table, topology)) = quiet_solve(spec, sha256) else {
-        return Ok(());
-    };
-    let Ok(drawn) = aethelgard_eda::schematic::drawn_nets(spec, &topology, &table) else {
-        return Ok(());
-    };
+    let drawn = drawing.drawn_nets();
     for (i, l) in power.loads.iter().enumerate() {
         let Some(r) = &l.reference else {
             continue;
