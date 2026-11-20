@@ -211,18 +211,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// text, `main.rs` and the two platforms are `f443af76…2c3a`,
 /// `b57442b4…e5e9` and `455de730…7a7c` exactly, the digests before
 /// (measured); the boot image did not move.
+/// Moved by `AET-WO-1210` (specification 21, renumbered after `4240a`):
+/// with the version-20 document's sha256 (`ccc80f11…e8b2`) put back for the
+/// new (`3dc38592…f2d1`) in each text, `main.rs` and the two platforms are
+/// `3a09d043…ad50`, `bb101271…ebdb` and `26e266be…4fca` exactly, the digests
+/// before (measured); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "3a09d0430c44c1478cf53bdd68b51166f68ec3b1c84bc8969cfb5d1eef60ad50",
+        "7417bff312f947c6b9b32c1542d4318ee131065ea6eebfe8afa932d486bdacc2",
     ),
     (
         "platform",
-        "bb101271b7927c14bf383c0f3864597b26bcc7f8f1f9f2670be07c44a545ebdb",
+        "10302bcebc154e72f134348be4e42cbc4d2043ef1ac67503b574c4966b92d47d",
     ),
     (
         "platform faulted",
-        "26e266be5379b82fe6d25feb24fb1cdb30acce6dc6903863d815fda212b579a3",
+        "380b9dcf1aa4d1725727d950830de2b4cadcceac0678a1b65a563d21501b4fca",
     ),
     (
         "boot image",

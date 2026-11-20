@@ -103,7 +103,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// same rule, merging after `4240a`), optional by the same precedent: absent
 /// is a drawn board, and `false` declares a twin stand-in no board is drawn
 /// from.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 20;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 21;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
