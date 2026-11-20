@@ -212,7 +212,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   | RCC.D1CCIPR | `0x5802444c` | `0x30000000` | `0x00000000` | not predicted (no model reacts) |
   | RCC.D2CCIP2R | `0x58024454` | `0x0000303f` | `0x00000000` | not predicted (no model reacts) |
 
-- **The supply state, `4240`'s bench row B-2** (review F14). The ordered ELF runs at VOS3 with every APB clock at 64 MHz, above DS12117's 50 MHz for VOS3, and never writes a PWR register. `PWR_CR3` is reset only by a power-on reset, so **power-cycle the board first** (remove J3's supply), then attach under reset and read, before and again after the boot:
+- **The supply state, `4240`'s bench row B-2** (review F14). Before `4240v` (#259), the package ELF ran at VOS3 with every APB clock at 64 MHz, above DS12117's 50 MHz for VOS3, and never wrote a PWR register. Since `4240v`, the package ELF (`e4e24372…1d496f11`) programs the supply first: `PWR_CR3` written once and read back, then VOS Scale 2. Flash that ELF. `PWR_CR3` is reset only by a power-on reset, so **power-cycle the board first** (remove J3's supply), then attach under reset and read, before and again after the boot:
 
   ```
   $P read --chip STM32H753ZITx b32 0x5802480C 1   # PWR_CR3: SCUEN bit 2, LDOEN bit 1, BYPASS bit 0
@@ -220,7 +220,18 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   $P read --chip STM32H753ZITx b32 0x58024818 1   # PWR_D3CR: VOS bits 15:14, VOSRDY bit 13
   ```
 
-  Source: **not predicted.** The twin's PWR is a stub (it reads `CR3` = `0x04000000` and `VOS` = 00, `4240` FEEDBACK F-VOS). `4240` read RM0433's reset values (`CR3` `0x46` on rev V, `0x06` on rev Y; `D3CR` VOS = Scale 3), and these reads say whether `ACTVOSRDY` is 1 without the firmware writing `CR3`. They are recorded beside B2, not judged: the B2 and B4 readings come from an ELF outside DS12117's operating conditions, and are read again with `4240v`'s ELF once it lands.
+  Predicted (`AET-WO-4240v` FEEDBACK §1.10). Sentinel-01's silicon revision is not declared (F-REV), so `CR3` is predicted for both:
+
+  | Read | When | Predicted | Class |
+  |---|---|---|---|
+  | `PWR_CR3` `0x5802480C` | power cycle (J3 removed), attach under reset | rev V `0x0000_0046`; rev Y `0x0000_0006` | rule (RM0433 p. 307) |
+  | `PWR_D3CR` `0x58024818` | the same | `0x0000_6000` (`VOS` `01`, `VOSRDY` 1) | rule (p. 310; Table 49's `VOSRDY` 0 is RM0433's own unresolved ambiguity) |
+  | `PWR_CSR1` `0x58024804` | the same | not predicted: `ACTVOSRDY` before the supply is programmed is F-VOS's own question | — |
+  | `PWR_CR3` | after the boot (word 0 `0x2100_B007`) | rev V `0x0000_0042`; rev Y `0x0000_0002` | generator; `SCUEN` reading as written is inferred |
+  | `PWR_CSR1` under `0x0000_E000` | after the boot | `0x0000_A000` | rule for `ACTVOSRDY`; `ACTVOS` `10` inferred (RM0433 gives no encoding) |
+  | `PWR_D3CR` | after the boot | `0x0000_A000` | rule |
+
+  The package's own bench-row sheet (`ledger::bench_rows`) carries three more rows: `PWR.CSR1` `ACTVOSRDY` (mask `0x2000`, expect `0x2000`), and `FLASH.ACR` `LATENCY` (mask `0xF`, expect `7`) and `WRHIGHFREQ` (mask `0x30`, expect `0x30`). The twin's PWR is still a stub, overridden on generated platforms by `PwrRule` (`4240v`), so these are predicted from the rule and the generator, never from the twin.
 - **On a disagreement:** a corrections row per register field, as `3302` B2 did.
 
 ## B3. `BOR_LEV`
