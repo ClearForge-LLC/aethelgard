@@ -16,8 +16,8 @@ fn firmware() {
     let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
     let _optsr: u32 = board.flash.option_status(&mut r);
     let kernels = rcc.select_spi_kernels(&mut r, &clock);
-    let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
-    let b = rcc.enable_gpiob(&mut r, board.gpiob).split(&mut r);
+    let a = rcc.enable_gpioa(&mut r, board.gpioa, scale2).split(&mut r);
+    let b = rcc.enable_gpiob(&mut r, board.gpiob, scale2).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);
     let sda = b.pb7.into_i2c1_sda(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);
@@ -25,9 +25,9 @@ fn firmware() {
     let miso = a.pa6.into_spi1_miso(&mut r);
     let mut cs = a.pa0.into_output(&mut r);
     cs.set_high(&mut r);
-    let mut i2c = rcc.enable_i2c1(&mut r, board.i2c1).init::<Fast400k, _>(&mut r, &clock, scl, sda);
+    let mut i2c = rcc.enable_i2c1(&mut r, board.i2c1, scale2).init::<Fast400k, _>(&mut r, &clock, scl, sda);
     let mut spi = rcc
-        .enable_spi1(&mut r, board.spi1, &kernels)
+        .enable_spi1(&mut r, board.spi1, scale2, &kernels)
         .init(&mut r, &clock, sck, mosi, miso, Spi1Selects { pa0: cs });
     i2c.write_byte(&mut r, 0x76);
     let mut id = [0u8; 1];

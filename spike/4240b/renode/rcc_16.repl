@@ -1,0 +1,4 @@
+using "platforms/cpus/stm32h753.repl"
+
+rcc:
+    hseFrequency: 16000000

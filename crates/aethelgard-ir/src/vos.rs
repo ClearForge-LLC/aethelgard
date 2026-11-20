@@ -328,7 +328,7 @@ pub fn generated_clocks(t: &SolvedTopology) -> (Vec<Clock>, Vec<String>) {
             "SPI4" | "SPI5" => Family::Spi45,
             _ => Family::Spi6,
         };
-        match silicon::spi_kernel_hz(peripheral, c.kernel) {
+        match silicon::spi_kernel_on(peripheral, c.kernel, &t.clock) {
             Some(hz) => clocks.push(Clock {
                 name: format!("{peripheral} kernel"),
                 family,
@@ -375,13 +375,16 @@ pub fn hsi_fastest(nominal_hz: u64) -> Option<u64> {
     Some(silicon::fast_hz(nominal_hz))
 }
 
-/// `FLASH_ACR` at reset, judged against RM0433 Rev 9 Table 17 (p. 160) at
-/// the AXI clock's fastest (`AET-WO-4240v` D-7): nothing writes it.
+/// `FLASH_ACR` as the firmware leaves it, judged against RM0433 Rev 9 Table
+/// 17 (p. 160) at the AXI clock's fastest: the reset word on a `null` board,
+/// which nothing writes (`AET-WO-4240v` D-7), and the solved word an HSE
+/// board's bring-up writes before the switch (`AET-WO-4240b` Q6).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FlashJudged {
     pub hclk_fastest_hz: u64,
-    /// `LATENCY` and `WRHIGHFREQ` at reset (`FLASH_ACR` reset `0x0000 0037`,
-    /// RM0433 Rev 9 §4.9.1, p. 201).
+    /// `LATENCY` and `WRHIGHFREQ` as the firmware leaves them: at reset
+    /// (`FLASH_ACR` reset `0x0000 0037`, RM0433 Rev 9 §4.9.1, p. 201), or the
+    /// solved `clock.hse.flash_acr`.
     pub latency: u32,
     pub wrhighfreq: u32,
     /// What Table 17's row for `vos` and the clock needs; `None` past the
@@ -451,8 +454,11 @@ const TABLE_17: [(Vos, &[FlashRow]); 4] = [
 /// never programs the flash (inferred, `AET-WO-4240v` FEEDBACK).
 pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
     let hclk_fastest_hz = clock.budget().fastest_hz(hclk(clock).unwrap_or(0));
-    let latency = FLASH_ACR_RESET & 0xF;
-    let wrhighfreq = (FLASH_ACR_RESET >> 4) & 0b11;
+    let word = clock.hse.as_ref().map_or(FLASH_ACR_RESET, |h| h.flash_acr);
+    let latency = word & 0xF;
+    let wrhighfreq = (word >> 4) & 0b11;
+    // Bits 31:6 are reserved, "must be kept at reset value" 0 (p. 201).
+    let reserved_clear = word & !0x3F == 0;
     let needed = TABLE_17
         .iter()
         .find(|(v, _)| *v == clock.vos)
@@ -463,7 +469,7 @@ pub fn flash_at_reset(clock: &SolvedClock) -> FlashJudged {
         latency,
         wrhighfreq,
         needed,
-        holds: needed.is_some_and(|(ws, wr)| latency >= ws && wrhighfreq >= wr),
+        holds: reserved_clear && needed.is_some_and(|(ws, wr)| latency >= ws && wrhighfreq >= wr),
     }
 }
 
@@ -500,18 +506,24 @@ impl Verdict {
 /// its fastest.
 pub fn judge_generated(t: &SolvedTopology) -> Verdict {
     let (clocks, unread) = generated_clocks(t);
-    // The SPI kernels are `per_ck`/`hsi_ker_ck`, the HSI whatever the system
-    // clock (`AET-WO-4240a` D-9), so they are judged at the HSI's fastest;
-    // every other clock at the tree's source's (adversarial A5).
+    // Each SPI kernel at its own kernel's budget: `per_ck`/`hsi_ker_ck` are
+    // the HSI whatever the system clock (`AET-WO-4240a` D-9, adversarial A5),
+    // `pll1_q_ck` and the APB clock the tree's source's (`4240b` Q3); every
+    // other clock at the tree's source's.
     let budget = t.clock.budget();
-    let spi = |c: &Clock| matches!(c.family, Family::Spi123 | Family::Spi45 | Family::Spi6);
+    let spi_budget = |c: &Clock| {
+        let peripheral = c.name.strip_suffix(" kernel")?;
+        let k = t.spi_controllers.get(peripheral)?.kernel;
+        Some(silicon::spi_kernel_budget(k, &t.clock))
+    };
     let clocks: Vec<Judged> = clocks
         .iter()
         .map(|c| {
-            let b = if spi(c) {
-                crate::clock::Budget::HSI
-            } else {
-                budget
+            let b = match c.family {
+                Family::Spi123 | Family::Spi45 | Family::Spi6 => {
+                    spi_budget(c).unwrap_or(crate::clock::Budget::HSI)
+                }
+                _ => budget,
             };
             judge(t.clock.vos, std::slice::from_ref(c), |hz| {
                 Some(b.fastest_hz(hz))

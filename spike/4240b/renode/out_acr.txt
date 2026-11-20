@@ -1,0 +1,14 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2999750-i183319126.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+[15:46:17.2150] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) i @/cache/m/renode/acr.resc
+[15:46:17.3015] [INFO] Including script(s): /cache/m/renode/acr.resc
+[15:46:17.3110] [INFO] System bus created.
+[15:46:17.8824] [INFO] Pseudorandom Number Generator was created with seed: 202397106
+ACR at reset
+0x00000037
+ACR after write 0x11
+0x00000011
+Renode is quitting
+[15:46:18.0053] [INFO] acr: Disposed.

@@ -871,7 +871,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 22);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 23);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -886,7 +886,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 16,
-                expected: 22
+                expected: 23
             }
         );
     }
