@@ -1027,7 +1027,16 @@ enum Load {
     /// as every pad's is; no part sits on it, so it has no `Ci`. A probe
     /// clipped to it is outside the bound, as a part body is ([`CONDITIONS`]).
     TestPad,
+    /// A part on an oscillator net beside a crystal (`AET-WO-4240c` §1.4):
+    /// copper only. The crystal's own `C0` is inside its row's `CL`, the load
+    /// capacitor is `CL1` or `CL2` itself, and the MCU's OSC pin has no
+    /// stated maximum (DS12117 `CIO`, 5 pF typical), so none is added here
+    /// and [`OSC_PIN_CONDITION`] says so.
+    Oscillator,
 }
+
+/// What an oscillator net's bound leaves out (`AET-WO-4240c` §1.4).
+pub const OSC_PIN_CONDITION: &str = "copper only: the MCU's OSC_IN and OSC_OUT pins are not counted, because DS12117 Rev 10 states their capacitance only as CIO 5 pF typical, with no minimum or maximum (Table 49 p. 137, rev Y; Table 146 p. 241, rev V); the crystal's C0 is inside its CL and each load capacitor is CL1 or CL2 itself";
 
 /// A connector's declared off-board capacitance for each of `pads`, the pads
 /// it has on `net`.
@@ -1282,6 +1291,52 @@ pub fn lines(
     Ok(out)
 }
 
+/// The two oscillator nets beside a declared crystal (`AET-WO-4240c` §1.4),
+/// `OSC_IN` then `OSC_OUT`, each with every part the generator's design puts
+/// on it, all at [`Load::Oscillator`]; none for a specification that declares
+/// no crystal. [`bound`] takes them as it takes a bus line: the board must
+/// hold exactly the design's parts and pads on each, and its copper is
+/// bounded from above the same way.
+pub fn oscillator_lines(
+    spec: &Specification,
+    solved: &SolvedTopology,
+    table: &PinTable,
+) -> Result<Vec<Line>, Refused> {
+    let Some(aethelgard_ir::clock::Hse::Crystal(_)) = &spec.mcu.hse else {
+        return Ok(Vec::new());
+    };
+    let (parts, _) = crate::schematic::design(spec, solved, table).map_err(|e| invalid(&e))?;
+    let mcu = aethelgard_ir::names::mcu_reference(spec);
+    let mut out = Vec::new();
+    for net in aethelgard_ir::names::oscillator_nets(&mcu) {
+        let on = board_net(&net);
+        let mut roles = BTreeMap::new();
+        for part in &parts {
+            let pads = pads_on(part, &on)?;
+            if pads.is_empty() {
+                continue;
+            }
+            roles.insert(
+                part.reference.clone(),
+                Role {
+                    footprint: part.footprint.clone(),
+                    value: part.value.clone(),
+                    pads,
+                    load: Load::Oscillator,
+                    offboard: Vec::new(),
+                },
+            );
+        }
+        out.push(Line {
+            net,
+            bus: "HSE".to_owned(),
+            spi_signal: None,
+            parts: roles,
+        });
+    }
+    Ok(out)
+}
+
 /// Every line of `lines`, bounded on a board `read` accepted. The parts on
 /// each line must be exactly the design's: each by reference, footprint and
 /// `Value`, each with exactly the design's pads on the line. Every pad's
@@ -1399,7 +1454,7 @@ fn line_with(read: &ReadBoard, want: &Line, force_cap: bool) -> Result<LineBound
                         .ok_or_else(|| overflow(net))?;
                 }
                 Load::Driver => drivers.push(format!("{reference}.{}", pad.number)),
-                Load::PullUp | Load::Connector | Load::TestPad => {}
+                Load::PullUp | Load::Connector | Load::TestPad | Load::Oscillator => {}
             }
         }
     }
