@@ -8,20 +8,21 @@
 #   colocated block: its worst libtest `finished in` over the five runs and the throwaway's normal pass, rounded up.
 import importlib.util, math, os, re, sys
 
-repo, rev, d, alone_tsv, throwaway, runs = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6:]
+repo, rev, d, alone_tsv, throwaways, runs = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split(','), sys.argv[6:]
+throwaway = throwaways[-1]  # the run whose alone pass is ALONE_TSV
 spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 coloc = table.rows(repo, rev, 'colocate.tsv', 1); weights = table.rows(repo, rev, 'test-weights.tsv', 2)
 
 solo, cand, blocks = {}, {}, {}
-for run in runs + [throwaway]:
+for run in runs + throwaways:
     for f in os.listdir(f'{d}/{run}'):
         m = re.match(r'shard-(\d+)\.log$', f)
         if not m: continue
         _, _, bins, _ = table.shard(f'{d}/{run}/{f}')
         for b in bins:
             if (b['binary'],) in coloc: blocks.setdefault(b['binary'], []).append((b['fin'], run, int(m.group(1)))); continue
-            if run == throwaway: continue  # the throwaway's normal pass: blocks only; its tests are weighed by the alone pass
+            if run in throwaways: continue  # the throwaway's normal pass: blocks only; its tests are weighed by the alone pass
             for n, s, how in b['tests']:
                 (solo if how == 'solo' else cand).setdefault((b['binary'], n), []).append((s, run, int(m.group(1))))
 alone = {}
