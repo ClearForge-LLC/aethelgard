@@ -348,7 +348,9 @@ fn printed_as_designed(name: &str, spec: &Value, sha256: &str, board: &str) {
     let spec: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
     let solved = aethelgard_ir::solve(&spec, &table, sha256).unwrap();
-    let anchored = aethelgard_eda::schematic::anchored(&spec, &solved, &table).unwrap();
+    let anchored = aethelgard_eda::schematic::Drawing::of(&spec, &solved, &table)
+        .unwrap()
+        .anchored();
     let fab: BTreeSet<&str> = anchored
         .keys()
         .map(String::as_str)
