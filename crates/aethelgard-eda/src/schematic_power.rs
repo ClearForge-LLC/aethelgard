@@ -205,9 +205,30 @@ fn capacitor(
     two_pin(b, reference, part, value, one, two)
 }
 
-fn resistor(b: &mut Builder<'_>, r: &Resistor, one: Conn, two: Conn) -> Result<(), EmitError> {
+pub(super) fn resistor(
+    b: &mut Builder<'_>,
+    r: &Resistor,
+    one: Conn,
+    two: Conn,
+) -> Result<(), EmitError> {
     let value = format!("{} {}", super::ohms(r.ohms), r.part);
     two_pin(b, &r.reference, &r.part, value, one, two)
+}
+
+/// A declared reservoir capacitor on an ADC input, by the MCU's pin at
+/// package `position`, as a battery sense's is (`AET-WO-1211d`: a pin
+/// device's analog output).
+pub(super) fn reservoir(
+    b: &mut Builder<'_>,
+    mcu: &str,
+    c: &aethelgard_ir::power::Reservoir,
+    net: Conn,
+    g: Conn,
+    position: &str,
+) -> Result<(), EmitError> {
+    capacitor(b, &c.reference, &c.part, net, g)?;
+    anchor(b, mcu, &[("1", position)], RESERVOIR_NM, RESERVOIR_RULE);
+    Ok(())
 }
 
 /// An IC of the table, with each pin role's connection.

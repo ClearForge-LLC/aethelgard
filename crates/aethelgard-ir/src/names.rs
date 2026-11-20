@@ -189,6 +189,27 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
             }
         }
     }
+    // `AET-WO-1211d` (Q1, ruled 18:18Z): each pin device's own nets, its
+    // row's passive pins (a charge pump's, a regulator's capacitor) and each
+    // strap it declares through a resistor. A specification with no pin
+    // device lists exactly what it did.
+    let parts = crate::parts::table()?;
+    for d in spec.declared_pin_devices() {
+        if let Some(row) = parts.pin_part(&d.part) {
+            out.extend(
+                row.pins
+                    .iter()
+                    .filter(|(_, p)| p.kind == crate::pin_parts::PinKind::Passive)
+                    .map(|(pin, _)| format!("{}_{pin}", d.reference)),
+            );
+        }
+        out.extend(
+            d.straps
+                .iter()
+                .filter(|(_, s)| matches!(s, crate::pin_devices::Strap::Resistor(_)))
+                .map(|(pin, _)| format!("{}_{pin}", d.reference)),
+        );
+    }
     Ok(out)
 }
 

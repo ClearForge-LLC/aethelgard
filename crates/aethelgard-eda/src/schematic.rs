@@ -26,6 +26,8 @@ use crate::sexpr::{self, Sx, mm};
 
 // The power tree's drawing, a child of this module beside it in `src/`
 // (`strict_fence` gives every file of `src/` a role).
+#[path = "schematic_pin_device.rs"]
+mod pin_device;
 #[path = "schematic_power.rs"]
 mod power;
 #[path = "schematic_support.rs"]
@@ -169,12 +171,41 @@ pub enum EmitError {
     /// are `extract`'s.
     #[error("the capacitance ladder cannot judge the board: {}", .0.message)]
     LadderRefused(crate::extract::Refused),
-    /// `AET-WO-1211a`: the emitter draws no pin device (its pins, its
-    /// parts) until a work order builds it.
+    /// `AET-WO-1211a`: a pin device whose part has no arm here
+    /// (`AET-WO-1211d` draws the DRV8876PWPR and the DRV8833PWPR).
     #[error(
         "`{reference}` ({part}) is a pin device; the emitter draws nothing for it (AET-WO-1211a)"
     )]
     PinDeviceNotDrawn { reference: String, part: String },
+    /// `AET-WO-1211d`: a pin device whose declaration leaves a pin the arm
+    /// cannot draw without inventing a connection.
+    #[error("`{reference}` ({part}) cannot be drawn: {why}")]
+    PinDeviceNotDrawable {
+        reference: String,
+        part: String,
+        why: String,
+    },
+    /// `AET-WO-1211d` (ruled S1): a passive the datasheet requires and
+    /// gives no value for. Nothing invents one.
+    #[error(
+        "`{reference}` ({part}) needs {passive}, whose value no held datasheet states ({cite}); nothing invents one"
+    )]
+    PassiveValueUnstated {
+        reference: String,
+        part: String,
+        passive: String,
+        cite: String,
+    },
+    /// `AET-WO-1211d`: a bridge output whose net no declared connector pin
+    /// carries, so the motor it drives has nowhere to connect.
+    #[error(
+        "`{reference}`'s bridge output `{pin}` is on net `{net}`, which no declared connector pin carries"
+    )]
+    BridgeOutputNotOnConnector {
+        reference: String,
+        pin: String,
+        net: String,
+    },
     #[error("{0}")]
     Internal(String),
 }
@@ -207,6 +238,9 @@ impl EmitError {
             Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
             Self::LadderRefused(r) => r.kind,
             Self::PinDeviceNotDrawn { .. } => "PinDeviceNotDrawn",
+            Self::PinDeviceNotDrawable { .. } => "PinDeviceNotDrawable",
+            Self::PassiveValueUnstated { .. } => "PassiveValueUnstated",
+            Self::BridgeOutputNotOnConnector { .. } => "BridgeOutputNotOnConnector",
             Self::Internal(_) => "EmitterError",
         }
     }
@@ -220,7 +254,10 @@ impl EmitError {
             | Self::PadEscapeExhausted { reference, .. }
             | Self::CompactionUnbounded { reference, .. }
             | Self::ImuRotationUnplaceable { reference, .. }
-            | Self::PinDeviceNotDrawn { reference, .. } => Some(reference),
+            | Self::PinDeviceNotDrawn { reference, .. }
+            | Self::PinDeviceNotDrawable { reference, .. }
+            | Self::PassiveValueUnstated { reference, .. }
+            | Self::BridgeOutputNotOnConnector { reference, .. } => Some(reference),
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
@@ -591,7 +628,8 @@ pub(crate) const MCU: &str = "MCU_ST_STM32H7:STM32H753ZITx";
 /// (ICP-10111) passes `validate` and is refused here. `AET-WO-1316`'s
 /// agreement test (`parts_arms_tier1.rs`) holds this list, the arms and the
 /// table to one another.
-pub const KNOWN_PARTS: &str = "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P";
+pub const KNOWN_PARTS: &str =
+    "BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P, DRV8876PWPR, DRV8833PWPR";
 const STRAP: u32 = 10_000;
 
 struct Builder<'a> {
@@ -1202,6 +1240,16 @@ fn picofarads(value: &str) -> Option<u64> {
 /// [`Drawing::drawn`], [`Drawing::drawn_nets`] and [`Drawing::bound_holds`].
 /// It borrows the three inputs it was drawn from, so none of them can change
 /// while it is read.
+/// One drawn part, read by [`Drawing::pins`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DrawnPart {
+    pub value: String,
+    pub footprint: String,
+    pub symbol: String,
+    /// Each pin number, with its net or rail; `None` for a no-connect.
+    pub pins: BTreeMap<String, Option<String>>,
+}
+
 pub struct Drawing<'a> {
     spec: &'a Specification,
     parts: Vec<Part>,
@@ -1260,6 +1308,30 @@ impl<'a> Drawing<'a> {
             .collect()
     }
 
+    /// Part `reference`'s pins, each with the net or rail it is drawn on
+    /// (`None` for a no-connect), and its value and footprint: what a test
+    /// needs to judge a pin device pin by pin (`AET-WO-1211d`).
+    pub fn pins(&self, reference: &str) -> Option<DrawnPart> {
+        let p = self.parts.iter().find(|p| p.reference == reference)?;
+        let pins = p
+            .conns
+            .iter()
+            .map(|(n, c)| {
+                let on = match c {
+                    Conn::Net(x) | Conn::Rail(x) => Some(x.clone()),
+                    Conn::NoConnect => None,
+                };
+                (n.clone(), on)
+            })
+            .collect();
+        Some(DrawnPart {
+            value: p.value.clone(),
+            footprint: p.footprint.clone(),
+            symbol: p.lib_id.to_owned(),
+            pins,
+        })
+    }
+
     /// `AET-WO-1313`: whether the declared outline bound can hold these
     /// parts at all, before any placement ([`crate::pcb::bound_holds`]). A
     /// specification that declares no bound passes.
@@ -1284,9 +1356,14 @@ pub(crate) fn design(
             known: "STM32H753ZITx",
         });
     }
-    // Every gpio entry drawn below is a chip select only because a topology
-    // with a pin device is refused here (`AET-WO-1211a`).
-    if let Some((reference, d)) = solved.pin_devices.iter().next() {
+    // A pin device is drawn by its part's arm (`AET-WO-1211d`); a part with
+    // none is refused, so every gpio entry is a chip select or a drawn pin
+    // device's signal.
+    if let Some((reference, d)) = solved
+        .pin_devices
+        .iter()
+        .find(|(_, d)| !pin_device::draws(&d.part))
+    {
         return Err(EmitError::PinDeviceNotDrawn {
             reference: reference.clone(),
             part: d.part.clone(),
@@ -1301,6 +1378,7 @@ pub(crate) fn design(
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
         .chain(spec.declared_test_points().iter().map(|t| &t.reference))
+        .chain(pin_device::references(spec))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -1343,11 +1421,25 @@ pub(crate) fn design(
     // Its support pins and network, from its row (`AET-WO-4300g`); signal
     // pins are set below.
     let mut conns = support::draw(&mut b, &mcu_ref)?;
+    // A pin device's ADC inputs (`AET-WO-1211d`); a battery sense, also in
+    // `adc_inputs`, is connected by the power tree.
+    let analog: BTreeSet<&String> = spec
+        .declared_pin_devices()
+        .iter()
+        .flat_map(|d| d.analog.iter().map(|a| &a.net))
+        .collect();
     let solved_pins = solved
         .assignments
         .iter()
         .map(|(net, a)| (net, &a.pin))
-        .chain(solved.gpio.iter().map(|(net, g)| (net, &g.pin)));
+        .chain(solved.gpio.iter().map(|(net, g)| (net, &g.pin)))
+        .chain(
+            solved
+                .adc_inputs
+                .iter()
+                .filter(|(net, _)| analog.contains(net))
+                .map(|(net, a)| (net, &a.pin)),
+        );
     for (net, pin) in solved_pins {
         let unknown = || EmitError::UnknownPin {
             net: net.clone(),
@@ -1628,9 +1720,19 @@ pub(crate) fn design(
             &ended,
         )?;
     }
+    pin_device::draw(&mut b, solved, table, &mcu_ref)?;
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
     Ok((b.parts, b.rails))
+}
+
+/// Whether pin `number` of symbol `lib_id` is a `power_in` pin.
+fn power_in(lib_id: &str, number: &str) -> Result<bool, EmitError> {
+    let sym = library::symbol(lib_id)?;
+    Ok(pins(&sym)
+        .map_err(EmitError::Internal)?
+        .iter()
+        .any(|p| p.number == number && p.etype == "power_in"))
 }
 
 /// Bench access (`AET-WO-1312`), after every other part so that no other
@@ -2274,7 +2376,10 @@ mod tests {
             }
         }
         assert_eq!(matches, 2, "the I2C and the SPI device matches");
-        let mut known: Vec<&str> = KNOWN_PARTS.split(", ").collect();
+        // The pin devices' arms are `pin_device`'s table (`AET-WO-1211d`).
+        let (pins, mut known): (Vec<&str>, Vec<&str>) =
+            KNOWN_PARTS.split(", ").partition(|p| pin_device::draws(p));
+        assert_eq!(pins, ["DRV8876PWPR", "DRV8833PWPR"]);
         for name in &found {
             assert!(known.contains(name), "{name}: an arm, not in KNOWN_PARTS");
         }
