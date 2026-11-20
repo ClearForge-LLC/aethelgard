@@ -126,13 +126,14 @@ fn the_reference_s_counts_are_pinned() {
     let l = reference_ledger();
     // `AET-WO-4230` R5: `PUPDR` is written whole per port, 16 rows each on
     // ports A and B (24 more than the 8 solved pins' rows); R7: `D2CKRDY`.
-    // `AET-WO-4240v` §1.7: nine PWR and FLASH.ACR rows.
-    assert_eq!(l.total, 298);
+    // `AET-WO-4240v` §1.7: nine PWR and FLASH.ACR rows, and PWR_CR3's three
+    // reserved runs written back as read.
+    assert_eq!(l.total, 301);
     let by_class: BTreeMap<&str, usize> = l.counts.by_class.clone();
     assert_eq!(
         by_class,
         BTreeMap::from([
-            ("independent-rule", 72),
+            ("independent-rule", 75),
             ("observed", 58),
             ("same-source", 83),
             ("ignored-by-model", 80),
@@ -147,7 +148,7 @@ fn the_reference_s_counts_are_pinned() {
             ("FLASH".to_owned(), 3),
             ("GPIO".to_owned(), 119),
             ("I2C".to_owned(), 46),
-            ("PWR".to_owned(), 7),
+            ("PWR".to_owned(), 10),
             ("RCC".to_owned(), 28),
             ("SPI".to_owned(), 46),
             ("USART".to_owned(), 47),
@@ -407,7 +408,7 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
     l.rows.push(extra);
     assert_eq!(ledger::acknowledge(&mut l, &spec), ["GPIOA.MODER.MODER1"]);
     assert_eq!(l.counts.unacknowledged, 1);
-    assert_eq!(l.rows.len(), 299);
+    assert_eq!(l.rows.len(), 302);
     let new = l.rows.last().unwrap();
     assert_eq!(
         (new.acknowledged, new.reason.as_deref()),
@@ -589,9 +590,9 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     let line = run(&root().join("examples/sentinel-01-minimal.json"));
     let v: serde_json::Value = serde_json::from_slice(&line).unwrap();
     assert_eq!(v["against"], "differs");
-    assert_eq!(v["ledger"]["total"], 298);
-    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 298);
-    assert_eq!(v["ledger"]["counts"]["by_class"]["independent-rule"], 72);
+    assert_eq!(v["ledger"]["total"], 301);
+    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 301);
+    assert_eq!(v["ledger"]["counts"]["by_class"]["independent-rule"], 75);
     assert_eq!(v["ledger"]["evidence"].as_object().unwrap().len(), 5);
     assert_eq!(v["silicon"]["holds"], true);
     assert_eq!(v["silicon"]["spi"][0]["peripheral"], "SPI1");
@@ -615,7 +616,7 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
         rows.iter()
             .filter(|r| r.get("acknowledged").is_none())
             .count(),
-        72 + 58,
+        75 + 58,
         "judged rows carry no acknowledgement"
     );
     assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0);

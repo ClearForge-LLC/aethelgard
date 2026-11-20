@@ -105,6 +105,12 @@ enum Write {
     Whole { word: u32, known: u32 },
     /// A read-modify-write of the bits of `mask`, to `value`.
     Changed { mask: u32, value: u32 },
+    /// The bits of the register that no header field names, written back as
+    /// read by a read-modify-write: RM0433 Rev 9 has them "kept at reset
+    /// value" (`AET-WO-4240v`: `PWR_CR3`, whose bit 6 resets to 1 on
+    /// revision V). One row per run, named `RES[hi:lo]` or `RES[k]` by the
+    /// register's bit numbers, its value decided at run time.
+    KeptReserved,
 }
 
 /// A register the firmware writes: its family, instance, name, CMSIS prefix,
@@ -186,6 +192,7 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             value: p.supply_bits(plan.core_supply),
         },
     );
+    add("PWR", "PWR", "CR3", "PWR_CR3", p.cr3, Write::KeptReserved);
     add(
         "PWR",
         "PWR",
@@ -482,13 +489,36 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
     let mut covered = 0u32;
     let mut whole_word = false;
     let mut chosen: BTreeMap<u32, (String, u32)> = BTreeMap::new();
+    let named = fields.iter().fold(0u32, |m, (_, _, mask)| m | mask);
     for w in &r.writes {
         let touched = match w {
             Write::Whole { .. } => {
                 whole_word = true;
-                fields.iter().fold(0, |m, (_, _, mask)| m | mask)
+                named
             }
             Write::Changed { mask, .. } => *mask,
+            Write::KeptReserved => {
+                let mut rest = !named;
+                while rest != 0 {
+                    let lo = rest.trailing_zeros();
+                    let len = (rest >> lo).trailing_ones();
+                    let run = if len == 32 {
+                        !0
+                    } else {
+                        ((1u32 << len) - 1) << lo
+                    };
+                    let hi = lo + len - 1;
+                    let name = if len == 1 {
+                        format!("RES[{lo}]")
+                    } else {
+                        format!("RES[{hi}:{lo}]")
+                    };
+                    chosen.insert(lo, (name, run));
+                    rest &= !run;
+                }
+                covered |= !named;
+                continue;
+            }
         };
         for (name, _, mask) in fields.iter().filter(|(_, _, m)| m & touched != 0) {
             for (run_name, run) in runs(name, *mask) {
@@ -499,6 +529,7 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
         let written = match w {
             Write::Whole { word, known } => word & known,
             Write::Changed { mask, value } => mask | value,
+            Write::KeptReserved => 0,
         };
         if written & !covered != 0 {
             return Err(BoardError::Register(RegisterError::MalformedSource {
@@ -525,6 +556,9 @@ fn rows(f: &RegisterFacts, r: &Register) -> Result<Vec<FieldUse>, BoardError> {
                     Some(Some((value & mask) >> pos))
                 }
                 Write::Changed { .. } => None,
+                // Written back as read: decided at run time.
+                Write::KeptReserved if !named & mask == mask => Some(None),
+                Write::KeptReserved => None,
             });
             FieldUse {
                 family: r.family.to_owned(),

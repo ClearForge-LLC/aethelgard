@@ -3994,6 +3994,10 @@ fn every_bit_the_reference_writes_is_covered_by_a_ledger_row() {
         if source == "flashController" {
             return Some("FLASH".into());
         }
+        // The emitted PWR override (`AET-WO-4240v` D-3 (a)).
+        if source == "pwr" {
+            return Some("PWR".into());
+        }
         // Renode's `nvic` is the whole system control space from 0xE000E000.
         if source == "nvic" {
             return Some("SCS".into());

@@ -645,6 +645,16 @@ fn table() -> Vec<Entry> {
             "a read-modify-write of the word as read: the declared mode's row of RM0433 Rev 9 Table 34",
         ),
         (
+            "CR3",
+            "RES[#:#]",
+            "the bits no header field names, written back as read by the read-modify-write: \"Reserved, must be kept at reset value\" (RM0433 Rev 9 §6.8.4, p. 308; bit 6 resets to 1 on revision V, p. 307)",
+        ),
+        (
+            "CR3",
+            "RES[#]",
+            "a reserved bit written back as read (RM0433 Rev 9 §6.8.4, p. 308)",
+        ),
+        (
             "D3CR",
             "VOS",
             "written whole: 10, Scale 2 (RM0433 Rev 9 §6.8.6, p. 310)",

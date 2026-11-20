@@ -327,11 +327,25 @@ fn the_reference_rows_carry_the_solved_values() {
         row("FLASH.ACR.WRHIGHFREQ", reset),
         (0x00, 4, 2, Some(0b11), false)
     );
-    assert_eq!(rows.iter().filter(|r| r.family == "PWR").count(), 7);
-    // No other `PWR_CR3` field is a row: every other bit is written as read.
+    // `PWR_CR3`'s bits no header field names, written back as read (RM0433
+    // Rev 9 p. 308, "kept at reset value"; bit 6 resets to 1 on revision V),
+    // one run-time row per run, so the twin's completeness test covers them.
+    assert_eq!(row("PWR.CR3.RES[7:3]", written), (0x0C, 3, 5, None, false));
+    assert_eq!(
+        row("PWR.CR3.RES[23:10]", written),
+        (0x0C, 10, 14, None, false)
+    );
+    assert_eq!(
+        row("PWR.CR3.RES[31:27]", written),
+        (0x0C, 27, 5, None, false)
+    );
+    assert_eq!(rows.iter().filter(|r| r.family == "PWR").count(), 10);
+    // No other `PWR_CR3` field is a row: every named bit but the supply
+    // configuration's is written as read too, as every read-modify-write's.
     assert!(
         rows.iter()
             .filter(|r| r.register == "PWR.CR3")
-            .all(|r| ["SCUEN", "LDOEN", "BYPASS"].contains(&r.field.as_str()))
+            .all(|r| ["SCUEN", "LDOEN", "BYPASS"].contains(&r.field.as_str())
+                || r.field.starts_with("RES["))
     );
 }
