@@ -61,4 +61,10 @@ Decoded with `measure.py`, a self-contained ELF32 reader, on 2026-11-20. Raw out
 
 ### 2.3 The serial row offsets
 
-On all 24 ELFs every `SERIALn` row's offset is `24n` (`n_BAUD`), `24n + 4` (`n_OPTIONS`), `24n + 8` (`n_PROTOCOL`) (Q7). The pass-through rows sit after the last compiled port: `_PASS1`, `_PASS2`, `_PASSTIMO` at 96, 97, 98 (four ports) or 240, 241, 242 (ten). So §1.4 of the work order applies: the offsets are held.
+On all 24 ELFs every `SERIALn` row's offset is `24n` (`n_BAUD`), `24n + 4` (`n_OPTIONS`), `24n + 8` (`n_PROTOCOL`) (Q7). The pass-through rows sit after `state[]`: `_PASS1`, `_PASS2`, `_PASSTIMO` at 96, 97, 98 (four `UARTState`s) or 240, 241, 242 (ten, the eight-port boards). So §1.4 of the work order applies: the offsets are held.
+
+## 3. After the build [measured]
+
+- **The absent branches.** A board with no ROMFS (`fc-base` with `NO_ROMFS_HWDEF=1` and `define AP_SCRIPTING_ENABLED 0`; without the second, `AP_Scripting_config.h:15` stops the build) has **no `AP_ROMFS::files` symbol** (`out/measure-advnoromfs.txt`): absent is how ArduPilot writes "no ROMFS". `fc-base` with `define AP_GPS_ENABLED 0` **does not build Copter** at this tag (`out/advnogps-build-errors.txt`: `AP_AdvancedFailsafe.cpp:234`, `AP_Airspeed_Health.cpp:43`), so `GpsNotCompiled` is the reader's rule, not a measured board.
+- **Both binaries on every ELF** (`judge.sh`, `out/judge.txt`; `main` `472d2d84`, branch `b287abb2`): the 21 boards' verdicts do not move. `eight`, `eight-opt6` and `eight-opt7` keep their findings (kind, pin, decoded), with the cap's new expected text. `container/ardupilot-pinout.sh` exits 0 with no `::error` on the CI set with either binary. `advromfs` and `advapj` are refused (`ParamDefaultsOverride`, exit 3), each naming its two signatures, with `--hwdef-h` and without. `advgps1` gives `GpsPortUnbound SERIAL3` (one receiver). `4405`'s `swap.elf` (A5) is refused (`VarInfoRowOffset`). `advnoromfs` passes on both.
+- **`advlua`** (adversarial, `out/advlua.hwdef.dat`, `out/advlua.lua`): `fc-base` with `define SCRIPTING_ENABLE_DEFAULT 1` and a ROMFS script setting `SERIAL3_PROTOCOL`. It builds, its ROMFS lists `scripts/adv.lua`, `AP_Scripting::var_info`'s `ENABLE` defaults to 1 (0 on `fc-base`), and **both binaries pass it** (`out/judge-advlua.txt`).

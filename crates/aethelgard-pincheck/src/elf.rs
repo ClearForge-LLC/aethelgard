@@ -683,9 +683,6 @@ fn group_rows<'a>(
 /// object's offset 0: `n_BAUD` is at `24n`, `n_OPTIONS` at `24n + 4`,
 /// `n_PROTOCOL` at `24n + 8`, measured on every board (`spike/4406` §2.3).
 const UART_STATE_LEN: i64 = 24;
-const BAUD_AT: i64 = 0;
-const OPTIONS_AT: i64 = 4;
-const PROTOCOL_AT: i64 = 8;
 
 /// Each compiled port's protocol, baud and options, SERIAL0 first, read from
 /// `AP_SerialManager::var_info` ([`group_rows`]). Every row must be one
@@ -729,9 +726,9 @@ pub fn serial_params(bytes: &[u8]) -> Result<Vec<SerialParam>, Refusal> {
         }
         let at = match row {
             Row::Pass => None,
-            Row::Baud(n) => Some(UART_STATE_LEN * i64::from(n) + BAUD_AT),
-            Row::Options(n) => Some(UART_STATE_LEN * i64::from(n) + OPTIONS_AT),
-            Row::Protocol(n) => Some(UART_STATE_LEN * i64::from(n) + PROTOCOL_AT),
+            Row::Baud(n) => Some(UART_STATE_LEN * i64::from(n)),
+            Row::Options(n) => Some(UART_STATE_LEN * i64::from(n) + 4),
+            Row::Protocol(n) => Some(UART_STATE_LEN * i64::from(n) + 8),
         };
         if let Some(at) = at.filter(|at| *at != i64::from(offset)) {
             return refuse(
@@ -869,16 +866,8 @@ const ROMFS_NAME_MAX: usize = 128;
 const ROMFS_DEFAULTS: &str = "defaults.parm";
 
 /// Every way the ELF can apply parameter defaults at boot over what
-/// `var_info` compiles, one line each, empty when it can apply none:
-/// - a symbol `AP_Param::load_defaults_file`: linked only when
-///   `AP_PARAM_DEFAULTS_FILE_PARSING_ENABLED`, which `chibios_hwdef.py`
-///   writes for a board with a defaults file (`:2509-2512`);
-/// - a symbol `AP_Param::load_embedded_param_defaults`: linked when
-///   `AP_PARAM_MAX_EMBEDDED_PARAM` is above 0, so `apj_tool` can write
-///   defaults into the image after the build (`AP_Param.cpp:2602-2605`);
-/// - `AP_Param::param_defaults_data`'s `length` is not 0
-///   (`AP_Param.cpp:1618-1622`);
-/// - `AP_ROMFS::files` lists `defaults.parm`.
+/// `var_info` compiles, one line each (each line below cites its source;
+/// when each is linked, `spike/4406` §1.1), empty when it can apply none.
 ///
 /// `AP_Param::reload_defaults_file` is defined in every build and is not a
 /// signature. A symbol that is absent is not read: a board without ROMFS
