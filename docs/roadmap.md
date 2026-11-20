@@ -447,6 +447,15 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
     - The foreign judge's `clock-contradicted` check is pinned exactly: two GPIOB mismatches, because the U2-less ArduPilot boots on a different timeline.
   - **`AET-WO-3305` stopped and was ruled (A):** the twin records each I2C step's own result (trace 16). A collision with another real device's address remains misattributed (F-COLLIDE), and is a §7.1 row.
   - **`AET-WO-1103`** (written 2026-11-20; a build): no board's name in engine code, held by a test whose file selection is pinned by a planted hit.
+  - **`AET-WO-4202` merged** (#257, `03d8955`), ahead of `1911`, because it was green and unblocks `1209` and `2304b`:
+    - Renode's `run_for` is exact to the ns, which fixes the BMP581 stamp fault;
+    - U2 is gone from `sentinel-02-own` and `sentinel-03`;
+    - Sentinel-03 is 95.80 × 67.60 mm;
+    - `TIER2_MIN` is 191.
+
+    Its F1: the BMP581 bench spec now fails `brownout_unrecovered` (`4600` F1's recovery bound) instead of being refused. `BENCH-EXT-BMP581.md` L35 needs to say so.
+  - **`AET-WO-1911` F8, ruled:** `ci/SHARDS` stays 12. After `3303b` the four-layer floor is gone, so 16 would save about 200 s at 4 more jobs a run, against a 60-job ceiling shared by every PR.
+  - **`AET-WO-1314b`** (written 2026-11-20; a measurement, then a build): when the capacitance ladder does not run, `extract`'s refusal says so. It also measures whether declaring `fab_tolerances` would have met `logger-spi-only-cap`'s bound.
   - **`AET-WO-1910` merged** (#233, `47ec18f`): CI's second reduction pass. `gates` went from 38–66 min to 14–18 min, and the suite dropped 19 % over three counted runs. Every guarded failure is kept, with eight shards. The planner now refuses a stale weight row and a heavy unweighted test.
   - **`AET-WO-1911`** running: docs-only routing, one shared build, and the shard count measured.
   - **`AET-WO-4240` stopped and was ruled** (#240, merged as the record; comment 7014986899):
@@ -915,7 +924,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | No device without a bus, no GPIO, no ADC input: a driver IC's sleep and fault pins and its current sense cannot be declared | `4600` F6 | a specification work order **before the P4 baseline** (D7) |
 | The power input is an XT30 and a series pack, or nothing: no 1S regulator, no buck-boost, no USB or wall input. An off-board device (a probe on a cable) exists only as copper capacitance | `4600` F7, F8 | additive, after the P4 baseline (D7); a 1S input before the gate's logger (D2) |
 | Acknowledgements are learned by refusal and make up 75 % of a driver's specification; copying the ledger's `judge` text makes them say nothing. The refusal should print `register · class · fields` per entry with an empty reason for a person to fill | `4600` F12 | a ledger work order |
-| The capacitance ladder (`1314`) runs only when `board.stackup.fab_tolerances` is declared (`eda/src/stack.rs` L64–66), and nothing says so: a specification copied from Sentinel-01-minimal is routed with no regard to its bounds, and fails its own `extract` (37.5 pF against 30) | `4600` F18 | an eda work order: `validate` refuses a bounded line with no `fab_tolerances`, or the ladder runs from the specification's rules; a labelled variant measures it first |
+| The capacitance ladder (`1314`) runs only when `board.stackup.fab_tolerances` is declared (`eda/src/stack.rs` L64–66), and nothing says so: a specification copied from Sentinel-01-minimal is routed with no regard to its bounds, and fails its own `extract` (37.5 pF against 30) | `4600` F18 | **`AET-WO-1314b`** (ruled: not a `validate` refusal, since Sentinel-01 declares bounds and no tolerances and is ordered; `extract`'s refusal names the cause, and the labelled variant is measured) |
 | The bring-up firmware reads only the devices the twin models (`svd-hal/src/board/firmware.rs` L339–353), so the twin's model set decides what the firmware does: Sentinel-01's TMP117 is never read, and its bench witness is the debugger's (`3403` U1) | `4600` F19 | a svd-hal/twin work order after `4240v`: read every device whose part row has an identity, and name the ones the twin cannot witness |
 | A new device part costs code in four files, so "capability enters through the specification" fails its own test for parts. The emitter's per-part arms become data in the row. ICP10111 has a row and no arm (`validate` passes, `emit` refuses) | `4600` D4, F15 | an emitter work order; the early refusal of a part with no arm is **`AET-WO-1209`** |
 | No test holds board names out of engine code; the obvious pathspec is vacuous. Wanted: a tier-1 test over `crates/*/src/**`, `bridge/src/**` and `models/**`, skipping `#[cfg(test)]` regions, with its pathspec pinned by a planted hit; `ledger.rs:388`'s board path moves to a doc comment. Roadmap §6's measured sentence is re-measured once it lands | `4600` D5, F13 | **`AET-WO-1103`** |
