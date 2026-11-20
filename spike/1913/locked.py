@@ -5,7 +5,7 @@
 # `finished in`, and rows less measured (positive: the plan over-weighs the shard; negative: it under-weighs it, the
 # WO-1913 §5 risk). Then per binary the totals, the worst under-weighing and the mean absolute error.
 import importlib.util, os, sys
-spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
+spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '1912', 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 wf, d, runs = sys.argv[1], sys.argv[2], sys.argv[3:]
 w = {}

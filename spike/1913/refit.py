@@ -14,7 +14,7 @@ for i, a in enumerate(sys.argv):
     if a == '--floor': b, s = sys.argv[i + 1].split('='); floors[b] = float(s)
 args = [a for a in args if '=' not in a]
 repo, rev, alone_tsv, d, throwaway, runs = args[0], args[1], args[2], args[3], args[4], args[5:]
-spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
+spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '1912', 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 BINS = ('tests/twin_tier2.rs', 'tests/board_tier2.rs')
 BLOCKS = ('tests/four_layer_fab_tier2.rs', 'tests/verify_47k_tier2.rs')

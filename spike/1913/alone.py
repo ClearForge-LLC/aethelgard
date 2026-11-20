@@ -5,7 +5,7 @@
 # Usage: python3 -I alone.py N REPO REV RUNSDIR RUN... > spike/1913/alone.tsv   (shard<TAB>name<TAB>estimate s)
 # The estimate is only for spreading: the test's row, capped at its worst in-shard `ok` less `Running`.
 import importlib.util, os, sys
-spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
+spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '1912', 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 n, repo, rev, d, runs = int(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5:]
 BINS = ('tests/twin_tier2.rs', 'tests/board_tier2.rs')

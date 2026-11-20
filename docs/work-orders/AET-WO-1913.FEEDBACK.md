@@ -4,11 +4,11 @@
 
 Builder: Claude (Opus 5.5), a fresh `1913` session, 2026-11-20. Worktree `~/aethelgard-1913`, branch `wo/aet-1913-refit-lower` from `origin/main` `c1012a2d`.
 
-Labels: **measured** (from CI's own logs or runs), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1913/`; the scripts are in `spike/1913/` (1912's kit, plus `alone.py` rewritten and `locked.py` new).
+Labels: **measured** (from CI's own logs or runs), **read** (read at source), **inferred** (reasoned, not run). Evidence is under `~/.cache/aet-1913/`; the scripts are in `spike/1913/` (`alone.py`, `alone_times.py`, `refit.py` adapted from `spike/1912/`, `locked.py` new); they read `spike/1912/table.py`, and runs are fetched with `spike/1912/fetch.sh`.
 
 ## 1. The table before (§1 step 1)
 
-**The five runs:** the five most recent green `ci.yml` runs on `main` at 17:00Z, each with 12 tools shards: 44775091139 (`c1012a2d`, this branch's base), 44774672284 (`63334d69`), 44774205804 (`08f9fb9c`, `1912`'s merge), 44768742667 (`8df353ee`) and 44764528379 (`8fdc9422`). The first three were planned with `1912`'s rows. Each was read with `spike/1913/fetch.sh` (jobs API, `gh run view --job ID --log`) and tabulated by `spike/1913/table.py` and `spike/1913/locked.py` [measured].
+**The five runs:** the five most recent green `ci.yml` runs on `main` at 17:00Z, each with 12 tools shards: 44775091139 (`c1012a2d`, this branch's base), 44774672284 (`63334d69`), 44774205804 (`08f9fb9c`, `1912`'s merge), 44768742667 (`8df353ee`) and 44764528379 (`8fdc9422`). The first three were planned with `1912`'s rows. Each was read with `spike/1912/fetch.sh` (jobs API, `gh run view --job ID --log`) and tabulated by `spike/1912/table.py` and `spike/1913/locked.py` [measured].
 
 **How to read it** (as in `1912` FEEDBACK §1):
 - Every measurement is set against the rows at `c1012a2d`. The plan column is the plan CI printed at each run's own head.

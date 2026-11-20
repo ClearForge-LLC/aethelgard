@@ -4,7 +4,7 @@
 # `finished in` (one test, one thread, one invocation). Prints shard<TAB>binary<TAB>name<TAB>seconds<TAB>cpu,
 # and each shard's CPU model and colocated blocks' `finished in` from the normal pass on stderr.
 import glob, importlib.util, os, re, sys
-spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), 'table.py'))
+spec = importlib.util.spec_from_file_location('table', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '1912', 'table.py'))
 table = importlib.util.module_from_spec(spec); spec.loader.exec_module(table)
 d = sys.argv[1]
 for f in sorted(glob.glob(f'{d}/shard-*.log'), key=lambda p: int(p.rsplit('-', 1)[1][:-4])):
