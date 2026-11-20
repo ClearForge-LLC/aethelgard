@@ -190,7 +190,8 @@ fn refuses_unsupported_schema_version() {
         17,
         18,
         19,
-        21,
+        20,
+        22,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -1316,7 +1317,8 @@ fn solved_refuses_version_and_hash() {
     // `foreign_clock` (`AET-WO-4400g`), 11 the file before `core_supply`
     // and the clock's `vos` (`AET-WO-4240v`), 12 the file before the
     // clock's `hse` (`AET-WO-4240a`), 13 the file before `AET-WO-4240b`'s
-    // renumber (solved 14), 15 one this build does not know.
+    // HSE tree (`flash_acr`, the start-up bound, solved 14), 15 one this
+    // build does not know.
     for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 15] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
@@ -2543,6 +2545,7 @@ fn a_device_whose_io_range_excludes_its_bus_domain_is_refused() {
     spec.voltage_domains[0].nominal_millivolts = 1_800;
     spec.spi_buses[0].speed_hz = 7_000_000;
     spec.accept_lifecycle = acknowledge(&["ICP10111", "ICM20948"]);
+    spec.board.drawn = false; // the twin's stand-ins (`AET-WO-1210`)
     spec.validate().unwrap();
     // The BME280 separates VDDIO (1.2 to 3.6 V): at 1.2 V its supply refuses
     // it first, at its own minimum the I/O range alone would not.
@@ -2647,6 +2650,8 @@ fn stand_ins() -> Specification {
     spec.spi_buses[0].speed_hz = 7_000_000;
     // The flash is gone, so its acknowledgement would stand for no part.
     spec.accept_lifecycle.clear();
+    // The twin's stand-ins, never drawn (`AET-WO-1210`).
+    spec.board.drawn = false;
     spec
 }
 

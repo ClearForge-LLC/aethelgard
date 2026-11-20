@@ -216,11 +216,12 @@ fn digests() -> Vec<(&'static str, String)> {
 /// after every modelled read and before the boot word, and the boot image
 /// gains U3's record, placed after every check's; the two platforms did not
 /// move (measured).
-/// Re-taken for specification 22 (`AET-WO-4240b`, version line only): with
-/// the document's version-20 sha256 put back for its version-22 one in each
-/// text, `main.rs` and the two platforms are `a95a1bb6…f918`,
-/// `bb101271…ebdb` and `26e266be…79a3` exactly, the digests before
-/// (measured); the boot image did not move.
+/// Moved by `AET-WO-1210` (specification 21, renumbered after `4240a`), on
+/// top of `4241`'s move: with the version-20 document's sha256
+/// (`ccc80f11…e8b2`) put back for the new (`3dc38592…f2d1`) in each text,
+/// `main.rs` and the two platforms are `a95a1bb6…f918`, `bb101271…ebdb` and
+/// `26e266be…4fca` exactly, the digests before (measured); the boot image
+/// did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",

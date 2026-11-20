@@ -117,12 +117,11 @@ use sha2::{Digest, Sha256};
 /// key): with `5945da18…` and version 12 put back, the reference's output is
 /// byte for byte main's, `fa009ce7…9a16`, and with `0b511dc9…` the stress
 /// fixture's, `a62263f7…a9f` (measured).
-/// Moved by `AET-WO-4240b` (specification 22, solved 14), which moved only
-/// the specification's sha256 and `schema_version` (a `null` HSE adds no
-/// key): with `9d6b2309…` and version 13 put back, the reference's output is
-/// byte for byte main's, `a431ad59…0292`, and with the stress fixture's old
-/// sha256 (`6b82460e…c011`) its `db746468…69c9`, the old digests, exactly
-/// (measured).
+/// Moved by `AET-WO-1210` (specification 21, solved 13 unchanged), which
+/// moved only the specification's sha256: with `9d6b2309…3eba` put back, the
+/// reference's output hashes to `a431ad59…0292`, and with the stress
+/// fixture's old sha256 (`6b82460e…c011`) its to `db746468…69c9`, the old
+/// digests, exactly (measured).
 const REFERENCE_DIGEST: &str = "0111005c3271d2b372812a0e93af66e26af24daf17bd02dd383ccaa987ad9767";
 const STRESS_DIGEST: &str = "27c2a209cca189ac443a08016b4411c18bd93d87c13fa89fce7272830c7e075b";
 

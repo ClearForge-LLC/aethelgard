@@ -1308,6 +1308,17 @@ pub fn verify(
         Ok(s) => s,
         Err((r, code)) => return crate::emit(&r, code),
     };
+    // No board gates, and no fabrication package written or compared, for a
+    // board never drawn (`AET-WO-1210` §1.4): `generate::tree` draws none
+    // for it (F1), so there is nothing for ERC, DRC or `extract` to judge.
+    let command = match fab_mode {
+        Some(FabMode::Write(_)) => "verify --fab-out",
+        Some(FabMode::Compare(_)) => "verify --against-fab",
+        None => "verify",
+    };
+    if let Err(r) = crate::draws_a_board(&spec, command) {
+        return crate::emit(&r, EXIT_INVALID_SPEC);
+    }
     let (topology, table) = match crate::solve_spec(&spec, &spec_sha256) {
         Ok(s) => s,
         Err(code) => return code,
