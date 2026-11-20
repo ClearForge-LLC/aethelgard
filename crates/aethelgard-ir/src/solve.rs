@@ -732,7 +732,7 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
     ];
     for m in 1..=63u64 {
         let d = den.checked_mul(m)?;
-        if num % d != 0 {
+        if !num.is_multiple_of(d) {
             continue;
         }
         let reference = num / d;
@@ -750,7 +750,7 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
         };
         for p in (2..=128u64).step_by(2) {
             let vco = H1_SYS_HZ * p;
-            if vco < lo || vco > hi || vco % reference != 0 {
+            if vco < lo || vco > hi || !vco.is_multiple_of(reference) {
                 continue;
             }
             let n = vco / reference;

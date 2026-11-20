@@ -537,7 +537,7 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
     ][rge as usize];
     // The reference is num / (den · DIVM1), compared in exact integers.
     let (rn, rd) = (u128::from(num), u128::from(den) * u128::from(divm1));
-    let ref_den = den.checked_mul(divm1).unwrap_or(u64::MAX);
+    let ref_den = den.saturating_mul(divm1);
     if rn <= u128::from(min_hz) * rd || rn >= u128::from(max_hz) * rd {
         return Err(refuse(HseRefusal::PllReferenceNotInsideRange {
             num,

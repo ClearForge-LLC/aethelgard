@@ -572,7 +572,7 @@ pub enum Kind {
     Mcu(Box<Mcu>),
     BulkCapacitor(BulkCapacitor),
     Tvs(Tvs),
-    Crystal(Crystal),
+    Crystal(Box<Crystal>),
 }
 
 impl Kind {
@@ -825,7 +825,7 @@ enum RawKind {
     Mcu(Box<RawMcu>),
     BulkCapacitor(RawBulk),
     Tvs(RawTvs),
-    Crystal(RawCrystal),
+    Crystal(Box<RawCrystal>),
 }
 
 #[derive(Deserialize)]
@@ -1902,7 +1902,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 }
                 Ok(d)
             };
-            Kind::Crystal(Crystal {
+            Kind::Crystal(Box::new(Crystal {
                 frequency_hz: r.positive(c.frequency_hz, "kind.crystal.frequency_hz")?,
                 load_femtofarads: r
                     .positive(c.load_femtofarads, "kind.crystal.load_femtofarads")?,
@@ -1918,7 +1918,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     c.drive_level_max_microwatts,
                     "kind.crystal.drive_level_max_microwatts",
                 )?,
-            })
+            }))
         }
         RawKind::Tvs(t) => {
             text(&t.clamp_condition, "kind.tvs.clamp_condition", 200)?;
