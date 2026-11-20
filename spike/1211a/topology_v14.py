@@ -30,11 +30,12 @@ def migrate(d):
             out[k] = v
     return out
 
-for path in sys.argv[1:]:
-    text = open(path).read()
-    d = json.loads(text, object_pairs_hook=collections.OrderedDict)
-    nl = "\n" if text.endswith("\n") else ""
-    assert json.dumps(d, separators=(",", ":")) + nl == text, f"{path} does not round-trip"
-    assert d["schema_version"] == 14, path
-    open(path, "w").write(json.dumps(migrate(d), separators=(",", ":")) + nl)
-    print(path)
+if __name__ == "__main__":
+    for path in sys.argv[1:]:
+        text = open(path).read()
+        d = json.loads(text, object_pairs_hook=collections.OrderedDict)
+        nl = "\n" if text.endswith("\n") else ""
+        assert json.dumps(d, separators=(",", ":")) + nl == text, f"{path} does not round-trip"
+        assert d["schema_version"] == 14, path
+        open(path, "w").write(json.dumps(migrate(d), separators=(",", ":")) + nl)
+        print(path)
