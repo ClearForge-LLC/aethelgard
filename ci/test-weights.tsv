@@ -40,6 +40,18 @@
 # 44605212605, 44605218028 (12 shards) and 44622353365 (8 shards, main 96517013 merged in): each test's worst in-shard seconds over the five
 # (libtest name order on 4 threads; in a lock-serialised binary its `ok` less the previous completion); rows under 0.5 s dropped (4) except in
 # lock-serialised binaries; 17 rows added, among them hot_plug_tier1's bulk-capacitor test (63 s, which P2 refused on 44622353365).
+# AET-WO-3303b (REFIT RULE 5, the architect's ruling of 2026-11-19 21:40Z): every row whose cost the schedule split moves, at its in-shard time on
+# run 44621800144 (PR #255, head 47983ca5), main's run 44613208491 (96517013) as the control: board_tier2's generated-board proof and its two
+# seeds on the I2C1 part (each prove's ANSWER wall_s; main 404.6, 317.1, 380.5 s), verify_2k2_tier2's and against_fab_tier2's verifies (`ok` less the
+# previous lock-holder's; main 848.4, 971.6, 1081.9, 891.6 s). Lowered against the earlier rows although the tests' code is the same: the cost
+# those rows measured, the whole schedule harness on a board without a timer, no longer exists. hot_plug_tier1's bulk-capacitor test (AET-WO-1315)
+# had no row and ran 60.48 s on that run, past P2's line: its `ok` less its binary's `Running` (alone in the binary there), 60.5.
+# Then at the worse of that run and the next, 44624532447 (the bench-package write dispatch, same head, green): raised there a_wrong_alternate 19.45,
+# verify_binds 434.3, verify_fab_out 448.9; every other row above kept at the first run's larger figure (hot_plug 49.9 on the second).
+# Then at the worst of those two and 44629051297 (dd50ffa4, the first run on these rows, green): raised there the_generated_board_proves 118.24
+# (34.08 + 84.16), a_write_past_the_block_fails 26.54, verify_against_fab_names_every_changed_and_extra_file 428.4, verify_fab_out 461.3.
+# AET-WO-1911 merge of main 52a2d62e: every row AET-WO-3303b re-measured after the schedule split keeps its value (1911's refit runs
+# predate the split); hot_plug_tier1's bulk-capacitor test, added by both, at the worse of the two (63.0, 1911; 60.5, 3303b).
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.300
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.800
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.600
@@ -55,8 +67,8 @@ tests/adversarial_1301_tools.rs	kicad_parity_does_not_see_metadata_only_differen
 tests/adversarial_1301_tools.rs	parity_fails_every_other_mismatch_with_kicads_finding	23.900
 tests/adversarial_1302_tools.rs	kicad_does_not_judge_the_net_a_track_is_labelled_with	3.100
 tests/adversarial_1302_tools.rs	kicad_does_not_see_a_floating_loop_on_a_net_no_pad_carries	3.000
-tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	1202.800
-tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	1237.500
+tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	450.800
+tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	428.400
 tests/attribute.rs	each_finding_selects_only_the_events_that_show_it	0.600
 tests/attribute.rs	each_part_of_a_sound_witness_is_required	0.500
 tests/attribute.rs	every_witness_line_is_evidence_within_its_width	0.500
@@ -82,8 +94,8 @@ tests/board.rs	two_generations_are_byte_identical	3.200
 tests/board_tier2.rs	a_cargo_configuration_another_uid_plants_in_tmp_is_not_read	0.800
 tests/board_tier2.rs	a_missing_clock_enable_fails	8.500
 tests/board_tier2.rs	a_vacuous_harness_fails	7.800
-tests/board_tier2.rs	a_write_past_the_block_fails	426.300
-tests/board_tier2.rs	a_wrong_alternate_function_fails	322.100
+tests/board_tier2.rs	a_write_past_the_block_fails	26.600
+tests/board_tier2.rs	a_wrong_alternate_function_fails	19.500
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.700
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.000
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	8.100
@@ -93,7 +105,7 @@ tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	17.900
 tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	11.800
 tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	30.600
-tests/board_tier2.rs	the_generated_board_proves	487.900
+tests/board_tier2.rs	the_generated_board_proves	118.300
 tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	43.800
 tests/board_tier2.rs	the_ordered_board_passes_every_board_gate_with_no_finding	5.900
 tests/board_tier2.rs	the_own_parts_fixture_passes_erc_drc_with_parity_and_extract	11.100
@@ -435,8 +447,8 @@ tests/validate.rs	positional_sequence_form_is_refused_for_each_struct	0.500
 tests/validate.rs	refuses_a_signal_net_named_like_a_domain	0.500
 tests/validate.rs	removing_any_key_of_any_object_is_refused	0.600
 tests/validate_cli.rs	a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify	2.100
-tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	1180.300
-tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	1182.300
+tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	434.300
+tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	461.300
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	1.900
 tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	9.000
 tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	8.300
