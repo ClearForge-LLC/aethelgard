@@ -75,7 +75,7 @@ Results:
 
 - **The inventory:** §1.
 - **The fields appear exactly when a gate judged nothing.** Tests:
-  - **The motor driver** (`tests/fixtures/driver-judges-nothing.json`: `4600`'s `spike/4600/driver.json`, its `schema_version` 18 and each output's `esc: null`, nothing else changed):
+  - **The motor driver** (`tests/fixtures/driver-judges-nothing.json`: `4600`'s `spike/4600/driver.json`, its `schema_version` 18 and each output's `esc: null`; after `4240v` merged, spec 19 as 4240v migrated Sentinel-03 (same MCU): `mcu.core_supply` and the three silicon-only acks `PWR.CSR1`, `PWR.D3CR` and `FLASH.ACR`, copied word for word; nothing else changed):
     - `extract_tier1::a_board_with_no_bounded_line_judges_nothing_and_says_so`: `judged: 0`, `nothing_in_scope: true`, the reason, verdict `pass`, findings `[]`.
     - `speeds_tier1::the_motor_driver_judges_no_line_and_says_so`: the same, and its six lines are out of scope at `00`.
     - `board_tier2::verify_names_what_judged_nothing_on_the_motor_driver` runs `verify` with its droop past BOR 3, in the pinned image: 73.1 s, scope peak 6.1 GB. It checks:
@@ -103,12 +103,12 @@ Results:
   - the three unit tests;
   - the reference's `extract` and `speeds` tests: the key they assert absent now appears as `false`.
 
-  Log: `~/.cache/aet-2306/mut/mutant.log`.
+  Log: `~/.cache/aet-2306/mut/mutant.log`. Re-run on the tree with `main` 943f7112 merged (the unit suite and tier 1 only): the same 8 fail (`mutant-48.log`, `mutant-48-bin.log`).
 - **The bench package:** `MANIFEST.json`'s `verdict_sha256` moves, because the verdict gains keys. It is not hand-edited: it is committed byte for byte from the architect's `write=true` dispatch (§6).
   - **Reproduced locally**, on the merged tree, in the pinned image: CI's `bench-package` `verify --against-fab` exits 1 (186 s, 6.4 GB scope peak), and its one difference is "MANIFEST.json differs from the derived file".
   - On that verdict `judged_nothing` is `[]`, and `droop-bor3`'s `observation_witness` is `{"judged": 1}`.
-  - On the merged tree the driver's tier-2 test passes again, in 94.6 s.
-- **The gates,** on the tree with `main` 48a78b22 merged (1103, 1209b), on Furnace in a capped scope, each exit read directly: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0, and again with `--features aethelgard-cli/with-tools` 0; `cargo test --workspace --no-fail-fast` 0, 2,360 passed, 0 failed, 0 ignored. CI is reported on the bus and in the PR.
+  - On the merged tree the driver's tier-2 test passes again, in 94.6 s. With `main` 943f7112 merged (4240v, spec 19) it passes in 106.2 s, and Sentinel-01's `verify --fab-out` (`judged_nothing == []`) in 322.4 s, each under a 16G cap read back (peak 6.6 GB).
+- **The gates,** on the tree with `main` 943f7112 merged (1103, 1209b, 1316, 1317, 4240v), on Furnace in a capped scope, each exit read directly: `cargo fmt --all -- --check` 0; `cargo clippy --workspace --all-targets -- -D warnings` 0, and again with `--features aethelgard-cli/with-tools` 0; `cargo test --workspace --no-fail-fast` 0, 2,398 passed, 0 failed, 0 ignored. CI is reported on the bus and in the PR.
 
 ## 3. How verdict consumers treat the new keys (§1.2)
 
@@ -116,7 +116,7 @@ Results:
   - `--against-fab` compares the package byte for byte, and `MANIFEST.json` names the verdict line's sha256. So the committed bench package differs in `MANIFEST.json` alone until it is re-committed from the dispatch. That is the bench-package job's expected red before the dispatch.
   - `against_fab_tier2` writes its own package and compares that, so it does not move.
 - **Byte identity:** two runs still print the same bytes. The keys are functions of the gates' own lines, and the campaign's of the archived records, never of a path or a time. Asserted by the existing two-run tests.
-- **Goldens:** no committed golden holds a whole `extract`, `speeds`, `campaign` or `verify` line. The full workspace suite passes, 2,360 tests, with only the tests above changed.
+- **Goldens:** no committed golden holds a whole `extract`, `speeds`, `campaign` or `verify` line. The full workspace suite passes, 2,398 tests, with only the tests above changed.
 - **No archived record changes:** replay, `attribute`, every trace and every `state_sequence_hash` are unchanged.
 - **MCP:** `verify`, `extract` and `check_speeds` pass the line through. The tool snapshot (`tests/mcp-tools.json`) holds input schemas only, and is unchanged.
 - **FAB-NOTES** reads no gate key and does not move: `extract`'s conditions, `support`'s record and the campaign's conditions are unchanged.
@@ -162,7 +162,7 @@ Results:
   With 2305, which changes the droop recovery rule on the same observation (trace 17), whichever lands second merges. These fields stay CLI-derived and move no archived record.
 - **D1 · How `judged_nothing` names an observation (ruled: accepted).** It reads `campaign:<scenario>` beside the gate names, so one list shows everything that judged nothing.
 - **D2 · `check speeds` is not a gate `verify` runs.** The P4 clause (roadmap §5) lists "`check speeds` passes" separately. Its own line now says `nothing_in_scope`, but `verify`'s `judged_nothing` cannot list it. Adding `speeds` as a `verify` gate changes `verify`, which is outside this WO. Recommend it to a later WO if the P4 board's verdict should carry it.
-- **D3 · `TIER2_MIN` (ruled 06:05Z: raise it yourself; the fence is widened to that line).** It is raised 194 → 195 in `.github/workflows/ci.yml`: this PR adds one tier-2 test, `board_tier2`'s driver test, and CI counted `tier2_tests_passed=195` on bc96bc3f. It is recomputed at each merge of `main`: with 48a78b22 merged (1103, 1209b; no tier-2 test added, main still 194) it stays 195. The test's weight row is in `ci/test-weights.tsv`: a Furnace estimate, 73.14 s × 2.8 = 204.8 s, since every test of the lock-serialised `board_tier2` needs one.
+- **D3 · `TIER2_MIN` (ruled 06:05Z: raise it yourself; the fence is widened to that line).** It is raised 194 → 195 in `.github/workflows/ci.yml`: this PR adds one tier-2 test, `board_tier2`'s driver test, and CI counted `tier2_tests_passed=195` on bc96bc3f. It is recomputed at each merge of `main`: with 943f7112 merged (1103, 1209b, 1316, 1317, 4240v; main still 194, so none of them added a tier-2 test) it stays 195. The test's weight row is in `ci/test-weights.tsv`: a Furnace estimate, 73.14 s × 2.8 = 204.8 s, since every test of the lock-serialised `board_tier2` needs one.
 - **D4 · The CLI README** (`crates/aethelgard-cli/README.md`, outside the fence) does not yet name `judged`, `nothing_in_scope` or `judged_nothing`. Suggested sentence for `verify`'s verdict: "Each gate's entry carries `judged`, the items it judged, and when that is 0, `nothing_in_scope: true` and its reason; `judged_nothing` lists every gate, and each droop run as `campaign:<scenario>`, that judged nothing."
 - **D5 · Backlog A4:** `check erc` counts sheets.
 
