@@ -1269,6 +1269,103 @@ fn a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_
     );
 }
 
+/// `AET-WO-3306` (F-COLLIDE): U2's identity read sent to 0x77, where U5, a
+/// second BME280, answers. U2's model logs nothing; U5's logs U2's write and
+/// read beside its own. `attribute` judges U5's whole log against its
+/// script, so the run is the software's by both witnesses (it was I4 on
+/// `main`, `AET-WO-3305` §5), and `propose`'s generator report names the
+/// extra transaction at 0x77 and U2's step as sent there. Attributed twice
+/// from the archive alone, it is the same bytes (`INV-04`).
+#[test]
+fn a_step_sent_to_another_devices_address_that_answers_is_the_softwares() {
+    let (_, board) = two_bme();
+    let collide = mutant_of(board, "two-3306-collide", |d| {
+        edit(
+            d,
+            "src/main.rs",
+            "i2c1.transfer(&mut r, 0x76, &[0xd0], &mut buf0)",
+            "i2c1.transfer(&mut r, 0x77, &[0xd0], &mut buf0)",
+        );
+    });
+    let scenario = "crates/aethelgard-cli/tests/fixtures/two-bme-collide.json";
+    let (_, code, lines) = run_campaign("two-3306-collide", &[scenario], &collide);
+    assert_eq!(code, Some(0), "{lines:?}");
+    assert_eq!(lines[0]["matched"], true, "{lines:?}");
+    let run = lines[0]["run"].as_str().unwrap().to_owned();
+    let (code, a) = aethelgard(&["attribute", "--archive", &run]);
+    assert_eq!(code, Some(0), "{a}");
+    assert_eq!(
+        (a["domain"].as_str(), a["rule"].as_str()),
+        (Some("software"), Some("S1")),
+        "{a}"
+    );
+    let witnesses: Vec<&Value> = a["evidence"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] == 13)
+        .collect();
+    assert_eq!(witnesses.len(), 2, "U2's and U5's witnesses: {a}");
+    assert_eq!(a["masked"], serde_json::json!([]), "{a}");
+    assert_eq!(
+        a["subjects"],
+        serde_json::json!(["bus:SENSORS", "device:U2", "device:U5"]),
+        "{a}"
+    );
+    assert_eq!(aethelgard(&["attribute", "--archive", &run]).1, a);
+    let out = std::env::temp_dir().join(format!("aet-3306-t2-{}-propose", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    let (code, p) = aethelgard(&[
+        "propose",
+        "--archive",
+        &run,
+        "--scenario",
+        root().join(scenario).to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
+    assert_eq!(
+        code,
+        Some(6),
+        "a software attribution gives a generator report: {p}"
+    );
+    let report: Value =
+        serde_json::from_slice(&fs::read(out.join("generator-report.json")).unwrap()).unwrap();
+    let named: Vec<(&str, &str, &str, &str)> = report["expectations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["index"] == witnesses[1]["index"])
+        .map(|e| {
+            (
+                e["what"].as_str().unwrap(),
+                e["address"].as_str().unwrap(),
+                e["solved"].as_str().unwrap(),
+                e["observed"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        named,
+        [
+            (
+                "i2c1.u5.transactions",
+                "0x00000077",
+                "0x00000001",
+                "0x00000002"
+            ),
+            (
+                "i2c1.u2.identity.address",
+                "0x00000076",
+                "0x00000076",
+                "0x00000077"
+            ),
+        ],
+        "U5's witness names the extra transaction at 0x77 and U2's step as sent there: {report}"
+    );
+    fs::remove_dir_all(&out).unwrap();
+}
+
 #[test]
 fn a_firmware_parked_in_its_fault_handler_fails_naming_vectactive() {
     // AET-WO-2301 F9, AET-WO-2204 D3: `systick-before`, as a firmware edit:

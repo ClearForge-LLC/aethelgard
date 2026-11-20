@@ -29,7 +29,7 @@ tests/campaign_tier2.rs	54
 # power_board_tier1 (D1): its worst gates whole-binary 797.5 s times the measured 0.68 of the shared prototype = 542.
 tests/power_board_tier1.rs	331
 # outline_tier1 (D2): 535.9 s times 0.84 = 450.
-tests/outline_tier1.rs	152
+tests/outline_tier1.rs	251
 # four_layer_fab_tier2 (D3): one --fab-out verify and two --against-fab, at the worst measured 530 s each = 1590.
 tests/four_layer_fab_tier2.rs	625
 # AET-WO-1910 refit after the build (REFIT RULE 3 and 5): every block above at its libtest `finished in` on run 44461834066 (head bc31f19c),
@@ -45,3 +45,6 @@ tests/via_ring_tier1.rs	61
 # AET-WO-1911 merge of main 52a2d62e: the three blocks AET-WO-3303b re-measured after the schedule split keep its rows (attribute_seeded 479,
 # verify_47k_tier2 228, four_layer_fab_tier2 582): 1911's refit runs predate the split. The other five keep 1911's refit.
 # AET-WO-1911 second refit: every block at its worst libtest `finished in` over runs 44644135555 and 44647140730 (the merged tree), rounded up.
+# AET-WO-1318 (REFIT RULE 3 and 5): outline_tier1, whose size test AET-WO-1317 made emit sizes 2 and 6 on the eight-rung ladder, at its worst libtest
+# `finished in` over the five green main runs after 1317 and this PR's two runs, rounded up: 44706411946 157.13, 44711555077 203.26, 44712465606 195.92,
+# 44722695274 163.88, 44724070629 237.61, 44728879123 202.47, 44734895126 250.19 s. No other block changed.

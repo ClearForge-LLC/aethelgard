@@ -1110,19 +1110,6 @@ fn choose(rungs: &[Option<&[Figure]>]) -> Choice {
     }
 }
 
-/// [`Drawing::bound_holds`] of one specification, drawn only when it
-/// declares a bound.
-pub fn bound_holds(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<(), EmitError> {
-    if spec.board.max_outline_um.is_none() {
-        return Ok(());
-    }
-    Drawing::of(spec, solved, table)?.bound_holds()
-}
-
 /// The decoupling capacitance the emitter places on each rail, in pF, keyed
 /// by domain: every part `design` marks as decoupling an IC, summed by the
 /// rail it connects (`AET-WO-2301`, ruled D7: a droop's rail is computed with
@@ -1274,15 +1261,6 @@ impl<'a> Drawing<'a> {
             None => Ok(()),
         }
     }
-}
-
-/// [`Drawing::anchored`] of one specification.
-pub fn anchored(
-    spec: &Specification,
-    solved: &SolvedTopology,
-    table: &PinTable,
-) -> Result<BTreeMap<String, String>, EmitError> {
-    Ok(Drawing::of(spec, solved, table)?.anchored())
 }
 
 /// Every part and what each of its pins connects to, and every rail.
