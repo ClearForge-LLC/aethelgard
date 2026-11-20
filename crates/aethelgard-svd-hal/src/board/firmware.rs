@@ -393,10 +393,15 @@ impl Read {
 /// Q-E: the devices power up together, so one wait between the two halves
 /// serves them all), each half with the I2C devices in the specification's
 /// order, then the SPI devices in theirs, each device's script in order
-/// (`aethelgard_ir::parts::Part::steps`); for each device that `answers`
-/// accepts (the twin has a model for it; this crate cannot
-/// depend on the twin) and whose part is in the table. A device on a
-/// peripheral the board does not have as a bus of its kind is refused.
+/// (`aethelgard_ir::parts::Part::steps`), for each device that `answers`
+/// accepts (the twin has a model for it; this crate cannot depend on the
+/// twin) and whose part is in the table. Then, after every one of those and
+/// before the boot word, the identity of every other device whose part is in
+/// the table, in the same device order (`AET-WO-4241`, the architect's D3):
+/// the specification decides what the firmware reads, never the twin's model
+/// set (`INV-07`), and no modelled step's record or instant moves for it. A
+/// device on a peripheral the board does not have as a bus of its kind is
+/// refused.
 fn reads(
     plan: &Plan,
     solved: &SolvedTopology,
@@ -404,10 +409,9 @@ fn reads(
 ) -> Result<Vec<Read>, BoardError> {
     let steps = |part: &str| aethelgard_ir::parts::steps(part).map_err(BoardError::InvalidTopology);
     let mut out = Vec::new();
+    // Each unmodelled device's identity, read after everything else.
+    let mut unanswered = Vec::new();
     for (reference, d) in solved.i2c_devices_in_order() {
-        if !answers(&d.part) {
-            continue;
-        }
         if plan.peripherals.get(&d.peripheral).map(|p| p.kind) != Some(Kind::I2c) {
             return Err(BoardError::DeviceNotOnABus {
                 reference: reference.to_owned(),
@@ -417,8 +421,16 @@ fn reads(
         let Some(steps) = steps(&d.part)? else {
             continue;
         };
-        for step in steps {
-            out.push(Read {
+        let into = if answers(&d.part) {
+            &mut out
+        } else {
+            &mut unanswered
+        };
+        for step in steps
+            .into_iter()
+            .filter(|s| step_read(&d.part, s.kind, answers))
+        {
+            into.push(Read {
                 bus: d.peripheral.to_ascii_lowercase(),
                 target: Target::I2c { address: d.address },
                 data: step.kind == StepKind::Data,
@@ -429,9 +441,6 @@ fn reads(
         }
     }
     for (reference, d) in solved.spi_devices_in_order() {
-        if !answers(&d.part) {
-            continue;
-        }
         let Some(steps) = steps(&d.part)? else {
             continue;
         };
@@ -444,8 +453,16 @@ fn reads(
                 reference: reference.to_owned(),
                 peripheral: d.peripheral.clone(),
             })?;
-        for step in steps {
-            out.push(Read {
+        let into = if answers(&d.part) {
+            &mut out
+        } else {
+            &mut unanswered
+        };
+        for step in steps
+            .into_iter()
+            .filter(|s| step_read(&d.part, s.kind, answers))
+        {
+            into.push(Read {
                 bus: d.peripheral.to_ascii_lowercase(),
                 target: Target::Spi {
                     device: format!("{}Device", type_name(&d.peripheral)),
@@ -459,10 +476,17 @@ fn reads(
         }
     }
     // Every identity and configuration step, then every data read, each half
-    // in the order above.
+    // in the order above; then every unmodelled identity.
     let (mut first, data): (Vec<Read>, Vec<Read>) = out.into_iter().partition(|r| !r.data);
     first.extend(data);
+    first.extend(unanswered);
     Ok(first)
+}
+
+/// Whether a step of `part` is read: every step of a part the twin models,
+/// and only the identity of any other (`AET-WO-4241`).
+fn step_read(part: &str, kind: StepKind, answers: &dyn Fn(&str) -> bool) -> bool {
+    kind == StepKind::Identity || answers(part)
 }
 
 fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {

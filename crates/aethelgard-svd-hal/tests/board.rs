@@ -251,7 +251,9 @@ fn the_firmware_follows_the_judges_pwr_boot_words() {
 /// `AET-WO-2202`, `AET-WO-4200`: the record layout and the statuses are
 /// written twice, by the firmware's generator and by the judge,
 /// independently. They must agree, and the firmware must read exactly the
-/// devices the judge will check, in its record order.
+/// records the judge places, in its record order: each check, then each
+/// unmodelled device's identity (`AET-WO-4241`: the TMP117 is read too, after
+/// every modelled step, the architect's D3).
 #[test]
 fn the_firmware_follows_the_judges_record_layout() {
     use aethelgard_twin::boot::{
@@ -284,14 +286,14 @@ fn the_firmware_follows_the_judges_record_layout() {
         )),
         "the brown-out word at the judge's offset {BROWN_OUT_OFFSET}"
     );
-    // The array holds the boot word, then one record per read: the BME280's
-    // and the flash's.
-    let words = (RECORD_OFFSET + 2 * RECORD_BYTES) / 4;
+    // The array holds the boot word, then one record per read: the BME280's,
+    // the flash's and the TMP117's.
+    let words = (RECORD_OFFSET + 3 * RECORD_BYTES) / 4;
     assert!(
         main.contains(&format!(
             "static mut AETHELGARD_BOOT: [u32; {words}] = [0; {words}];"
         )),
-        "two reads: {words} words"
+        "three reads: {words} words"
     );
     assert!(main.contains(&format!(
         "base.add({} + {} * index)",
@@ -304,10 +306,10 @@ fn the_firmware_follows_the_judges_record_layout() {
         RECORD_BYTES / 4
     )));
 
-    // Exactly the judge's checks are read, each into its own record, in the
-    // judge's order: the BME280 at 0x76 (register 0xD0, one byte), then the
-    // W25Q64JV behind PA0 (0x9F, three bytes); the TMP117 is unmodelled and
-    // has no read.
+    // Exactly the judge's records are read, each into its own, in the judge's
+    // order: the BME280 at 0x76 (register 0xD0, one byte), the W25Q64JV
+    // behind PA0 (0x9F, three bytes), then the TMP117 at 0x48 (0x0F, two
+    // bytes), which the twin cannot witness.
     let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let sha: String = Sha256::digest(&bytes)
@@ -323,24 +325,56 @@ fn the_firmware_follows_the_judges_record_layout() {
         "{wires:?}"
     );
     assert_eq!(plan.unmodelled.len(), 1);
+    // Every record the judge places, by where it sits.
+    type Placed<'a> = (u32, &'a str, &'a str, &'a Wire, u8, &'a [u8]);
+    let mut records: Vec<Placed> = plan
+        .checks
+        .iter()
+        .map(|c| {
+            (
+                c.status_at,
+                c.peripheral.as_str(),
+                c.reference.as_str(),
+                &c.wire,
+                c.width,
+                c.write.as_slice(),
+            )
+        })
+        .collect();
+    for u in &plan.unmodelled {
+        let n = u.identity.as_ref().expect("the TMP117 has an identity row");
+        records.push((
+            n.status_at,
+            &u.peripheral,
+            &u.reference,
+            &u.wire,
+            n.width,
+            &n.write,
+        ));
+    }
+    records.sort_by_key(|r| r.0);
+    let tmp117 = records.iter().position(|r| r.2 == "U3");
+    assert_eq!(
+        tmp117,
+        Some(2),
+        "the TMP117's record is the last: {records:?}"
+    );
     let mut at = 0;
-    for (k, c) in plan.checks.iter().enumerate() {
-        let bus = c.peripheral.to_ascii_lowercase();
-        let to = match &c.wire {
+    for (k, &(_, peripheral, reference, wire, width, write)) in records.iter().enumerate() {
+        let bus = peripheral.to_ascii_lowercase();
+        let to = match wire {
             Wire::I2c { address } => format!("{address:#04x}"),
             // The bus's device enum, and the reference upper-cased.
             Wire::Spi { .. } => format!(
                 "Spi{}Device::{}",
-                &c.peripheral[3..],
-                c.reference.to_ascii_uppercase()
+                &peripheral[3..],
+                reference.to_ascii_uppercase()
             ),
         };
         let read = format!(
-            "    let mut buf{k} = [0u8; {w}];\n    \
+            "    let mut buf{k} = [0u8; {width}];\n    \
              let (status, value) = match {bus}.transfer(&mut r, {to}, &[{reg}], &mut buf{k}) {{",
-            w = c.width,
-            reg = c
-                .write
+            reg = write
                 .iter()
                 .map(|b| format!("{b:#04x}"))
                 .collect::<Vec<_>>()
@@ -353,7 +387,7 @@ fn the_firmware_follows_the_judges_record_layout() {
         let record = format!("    record({k}, status, value);\n");
         at = main[start..].find(&record).unwrap() + start;
     }
-    assert_eq!(main.matches(".transfer(").count(), plan.checks.len());
+    assert_eq!(main.matches(".transfer(").count(), records.len());
 }
 
 /// `AET-WO-4230` R6 (the architect's ruling on Q-E): the parts power up
@@ -436,4 +470,53 @@ fn one_wait_separates_every_configuration_from_every_data_read() {
     let last_configure = main.find("let mut buf6 = ").unwrap();
     let first_data = main.find("let mut buf7 = ").unwrap();
     assert!(last_configure < wait && wait < first_data);
+}
+
+/// `AET-WO-4241`, the architect's D3: the unmodelled TMP117's identity read
+/// comes after every modelled step and before the boot word, so no modelled
+/// step's source or record moves for it. `main` up to the TMP117's read is
+/// byte for byte `main` of the same board without the TMP117, and after it
+/// comes only the boot word's tail. (This is the source; the instants are
+/// measured in the twin: the record array's two more words cost the reset's
+/// `.bss` loop 8 instructions, FEEDBACK §5.)
+#[test]
+fn the_unmodelled_read_moves_no_modelled_step() {
+    let with = generated();
+    let bytes = fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap();
+    let mut v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+    v["i2c_devices"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|d| d["reference"] != "U3");
+    let spec: Specification = serde_json::from_value(v).unwrap();
+    let table = pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, "0".repeat(64).as_str()).unwrap();
+    let prefix = format!("{}/", generate::BOARD_DIR);
+    let without: BTreeMap<String, String> = generate::tree(&spec, &solved, &table)
+        .unwrap()
+        .into_iter()
+        .filter_map(|(path, text)| Some((path.strip_prefix(&prefix)?.to_owned(), text)))
+        .collect();
+    let main_of = |files: &BTreeMap<String, String>| {
+        let m = &files["firmware/src/main.rs"];
+        m[m.find("extern \"C\" fn main() -> ! {").unwrap()..].to_owned()
+    };
+    let (with, without) = (main_of(&with), main_of(&without));
+    let read = with
+        .find("    let mut buf2 = [0u8; 2];\n    let (status, value) = match i2c1.transfer(&mut r, 0x48, &[0x0f], &mut buf2)")
+        .expect("the TMP117's identity read is the third record");
+    let boot_word = without
+        .find("    // SAFETY: a word only this line writes")
+        .unwrap();
+    assert_eq!(
+        with[..read],
+        without[..boot_word],
+        "every modelled step before it, unchanged"
+    );
+    assert_eq!(
+        with[with.find("    record(2, status, value);\n").unwrap()
+            + "    record(2, status, value);\n".len()..],
+        without[boot_word..],
+        "then the boot word, as without it"
+    );
 }
