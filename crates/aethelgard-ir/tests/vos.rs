@@ -360,16 +360,19 @@ fn bypass_validates() {
     assert_eq!(parse(v).unwrap().validate(), Ok(()));
 }
 
-/// A version-17 file is refused by its version, with or without the new
-/// key; a version-18 file without it is refused by the key.
+/// A version-17 or version-18 file (`2304b`'s) is refused by its version
+/// with the new key, and without it by the key; a version-19 file without it
+/// is refused by the key.
 #[test]
-fn a_version_17_file_is_refused_with_or_without_core_supply() {
-    let mut v = spec_value();
-    v["schema_version"] = json!(17);
-    let e = parse(v.clone()).unwrap().validate().unwrap_err();
-    assert_eq!(e.kind(), "UnsupportedSchemaVersion");
-    v["mcu"].as_object_mut().unwrap().remove("core_supply");
-    assert!(parse(v).is_err());
+fn an_older_file_is_refused_with_or_without_core_supply() {
+    for version in [17, 18] {
+        let mut v = spec_value();
+        v["schema_version"] = json!(version);
+        let e = parse(v.clone()).unwrap().validate().unwrap_err();
+        assert_eq!(e.kind(), "UnsupportedSchemaVersion", "{version}");
+        v["mcu"].as_object_mut().unwrap().remove("core_supply");
+        assert!(parse(v).is_err(), "{version}");
+    }
 }
 
 /// An older solved file is refused, never given a `vos` or a supply: one

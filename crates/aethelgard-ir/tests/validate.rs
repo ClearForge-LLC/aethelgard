@@ -188,7 +188,8 @@ fn refuses_unsupported_schema_version() {
         15,
         16,
         17,
-        19,
+        18,
+        20,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -3628,7 +3629,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             e,
             E::UnsupportedSchemaVersion {
                 version: 12,
-                expected: 18
+                expected: 19
             }
         ),
         "{e}"

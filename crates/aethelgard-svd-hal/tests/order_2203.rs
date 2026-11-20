@@ -201,19 +201,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// and the boot image is the new digest there too, so it moved only by
 /// `Image::unobservable`'s `PWR.CSR1.ACTVOSRDY` and `PWR.D3CR.VOSRDY`.
 /// Re-taken at the merge of `main` after `2304b` (`AET-WO-4240v`,
-/// specification 19): PROOF_PENDING.
+/// specification 19, which adds `2304b`'s keys and renumbers): with the
+/// document's sha256 before the merge (`45b7fbfb…`) put back for the new
+/// (`ffd83362…`) in each text, `main.rs` and the two platforms are
+/// `427baa54…7b38`, `81a4ecac…fb2d` and `7b36e730…d61b` exactly, the digests
+/// before the merge (measured); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "PENDING_MAIN",
+        "f443af765a0c5090b3e80c26d82fd1f6b8ac3f1dd0fc0883b2ea6e7a07332c3a",
     ),
     (
         "platform",
-        "PENDING_PLATFORM",
+        "b57442b48ae3bcbcd73a50a2b12c4167b127305a384a6bf42ddc8179d430e5e9",
     ),
     (
         "platform faulted",
-        "PENDING_FAULTED",
+        "455de730d725dee2c6731b96e2d64f27c6b1974cd4832dc68508a0dc66d27a7c",
     ),
     (
         "boot image",
