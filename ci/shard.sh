@@ -403,6 +403,18 @@ run() {
     set -e
   fi
   for log in "$out/test-ws.log" "$out/test-bridge.log"; do [ ! -e "$log" ] || compiled_in "$log"; done
+  # AET-WO-1912 THROWAWAY (reverted before READY; REFIT RULE 1): after the shard's own tests, each name
+  # spike/1912/alone.tsv gives this shard runs alone, one invocation and one thread each; its libtest `finished in` is its alone time.
+  grep -m1 'model name' /proc/cpuinfo || true
+  local sk name
+  while IFS="$TAB" read -r sk name _; do
+    [ "$sk" = "$k" ] || continue
+    echo "ALONE $name"
+    set +e
+    cargo test --workspace "${FEATURES[@]}" -- --exact "$name" --test-threads=1 </dev/null 2>&1 | tee -a "$out/alone.log"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
+    set -e
+  done < <(grep -v '^#' "$here/../spike/1912/alone.tsv")
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
