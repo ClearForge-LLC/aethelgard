@@ -179,3 +179,7 @@ Notes from the run: L13 (F3) is killed by the CLI's tier-1 pin, not by any test 
 
 - Every job green but the one expected red test, `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit` (in `gates` and in tools shard 1, which stopped there), and `bench-package`: AWAITING-PACKAGE. `TIER2_MIN` 192 read by the aggregate.
 - Both tier-2 tests pass in CI. Their weight rows are replaced from this run by rule 5 (`ok` less twin_tier2's `Running`, an upper bound): Sentinel-03's 288.767 s, the power fixture's 88.251 s (the Furnace estimates were 338.856 and 110.348).
+
+## Merges after the PR
+
+- `main` `52a2d62e` (`3303b`, merged ahead of `1911`, 2026-11-20 00:10Z): `fab/sentinel-01-bench/package/MANIFEST.json` conflicted on `verdict_sha256` (this branch's specification against `3303b`'s split harnesses); this side kept until the architect re-dispatches `write=true` on the merged branch. `TIER2_MIN` recomputed on top of it: `3303b`'s head ran 190 tier-2 tests (run 44629051297), and this branch adds 2, so 192 (the architect's 00:10Z rule). `ci/test-weights.tsv` conflicted on its comment lines only. The gates set on the merged tree: 134 binaries green, fmt and clippy clean.
