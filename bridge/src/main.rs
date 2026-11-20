@@ -30,6 +30,7 @@
 
 #![deny(unsafe_code)]
 
+mod chain;
 #[allow(unsafe_code)]
 mod ffi;
 #[cfg(test)]
@@ -85,6 +86,16 @@ fn main() -> ExitCode {
                 return fatal(2, "usage", USAGE);
             };
             return run_rail(path);
+        }
+        Some("--chain") => {
+            let [_, path] = args.as_slice() else {
+                return fatal(
+                    2,
+                    "usage",
+                    "usage: aethelgard-bridge --chain <request.json>",
+                );
+            };
+            return run_chain(path);
         }
         Some("--renode") => return run_renode(&args[1..]),
         _ => {}
@@ -242,6 +253,131 @@ fn solve_rail(
         "rail": "solved",
     }));
     Ok(lines)
+}
+
+/// How far the transient's first point may lie from the analytic HIGH
+/// operating point, in µV (see the tests for the measured agreement).
+const INITIAL_TOLERANCE_UV: f64 = 50.0;
+
+/// A refusal of the request is exit 2, an unusable library 3, a failure of
+/// ngspice, of the operating point or of the agreement between the two
+/// methods 1.
+fn run_chain(path: &std::ffi::OsStr) -> ExitCode {
+    let chain = match read(path).and_then(|b| chain::parse(&b)) {
+        Ok(chain) => chain,
+        Err(e) => return fatal(2, "request_refused", &e),
+    };
+    let mut spice = match Ngspice::start() {
+        Ok(s) => s,
+        Err(e) => return fatal(3, "ngspice_unusable", &e),
+    };
+    let answer = match solve_chain(&mut spice, &chain) {
+        Ok(answer) => answer,
+        Err((kind, message)) => return fatal(1, kind, &message),
+    };
+    if host::exit().is_some() {
+        return ExitCode::from(3);
+    }
+    if emit(&answer).is_err() {
+        return ExitCode::from(3);
+    }
+    ExitCode::SUCCESS
+}
+
+/// The answer to a chain: the minimum of V(vbat) and when, the first and last
+/// values, and each sink's first falling crossing of its floor, none written
+/// until ngspice's `meas` has agreed with the interpolation on every one.
+fn solve_chain(spice: &mut Ngspice, chain: &chain::Chain) -> Result<Value, (&'static str, String)> {
+    let solver = |e: String| ("solver_failed", e);
+    let span = chain.span_ns as f64 * 1e-9;
+    spice.instantiate(&chain.deck()).map_err(solver)?;
+    spice.set_breakpoints(&chain.breakpoints());
+    let step = spice.do_step(0.0, span).map_err(solver)?;
+    if step.early_return {
+        return Err((
+            "early_return",
+            format!(
+                "the transient stopped at {} s, before {span} s",
+                step.last_successful_time
+            ),
+        ));
+    }
+    let time = spice.get_output("time").map_err(solver)?;
+    let v = spice.get_output("vbat").map_err(solver)?;
+    if time.len() != v.len() || v.is_empty() || v.iter().any(|x| !x.is_finite()) {
+        return Err((
+            "solver_failed",
+            format!("{} times and {} values", time.len(), v.len()),
+        ));
+    }
+    // Which of the two operating points the start is.
+    let v0 = chain
+        .steady_volts(chain.healthy_mohm)
+        .expect("parse checked the healthy operating point");
+    if (v[0] * 1e6 - v0 * 1e6).abs() > INITIAL_TOLERANCE_UV {
+        return Err((
+            "wrong_operating_point",
+            format!(
+                "the transient starts at {} V, not the high operating point {v0} V",
+                v[0]
+            ),
+        ));
+    }
+    let mut sinks = Vec::new();
+    for (i, sink) in chain.sinks.iter().enumerate() {
+        let level = sink.floor_uv as f64 / 1e6;
+        let first = rail::crossings(&time, &v, level, i)
+            .into_iter()
+            .find(|c| c.falling);
+        let meas = spice
+            .meas_when(
+                &format!("aethelgard_c{i}"),
+                "vbat",
+                &decimal(sink.floor_uv, 6),
+                true,
+                1,
+            )
+            .map_err(solver)?;
+        let at_ps = match (first, meas) {
+            (None, None) => None,
+            (Some(own), Some(m)) if (own.time - m).abs() * 1e9 <= rail_agreement_ns(own.time) => {
+                Some(rail::picoseconds(own.time))
+            }
+            (own, meas) => {
+                return Err((
+                    "methods_disagree",
+                    format!(
+                        "`{}`: the interpolation gives {:?} s and ngspice's meas {meas:?} s",
+                        sink.name,
+                        own.map(|c| c.time)
+                    ),
+                ));
+            }
+        };
+        sinks.push(json!({
+            "at_ps": at_ps,
+            "floor_microvolts": sink.floor_uv,
+            "name": sink.name,
+        }));
+    }
+    let (at, min) =
+        v.iter().enumerate().fold(
+            (0, f64::INFINITY),
+            |(bi, bv), (i, &x)| {
+                if x < bv { (i, x) } else { (bi, bv) }
+            },
+        );
+    Ok(json!({
+        "accepted_points": v.len(),
+        "chain": "solved",
+        "final_microvolts": (v[v.len() - 1] * 1e6).round() as i64,
+        "initial_microvolts": (v[0] * 1e6).round() as i64,
+        "minimum_at_ns": (time[at] * 1e9).round() as u64,
+        "minimum_microvolts": (min * 1e6).round() as i64,
+        "ngspice": NGSPICE,
+        "sinks": sinks,
+        "step_ns": chain.step_ns(),
+    }))
 }
 
 /// Renode is the bridge's child: the same stdin, stdout, stderr and

@@ -1,5 +1,5 @@
 {
-  "schema_version": 17,
+  "schema_version": 18,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -275,25 +275,29 @@
       "label": "MOTOR1",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR2",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR3",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     },
     {
       "label": "MOTOR4",
       "pin": null,
       "protocol": "dshot600",
-      "pwm": null
+      "pwm": null,
+      "esc": null
     }
   ],
   "net_classes": [],

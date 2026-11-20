@@ -79,7 +79,7 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 14. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 15. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
@@ -96,8 +96,14 @@ Version 14 (`AET-WO-4400g`) changed what kind 26's period and high time mean:
 the ns Renode realizes at kind 25's `kernel_hz`, the frequency the twin now
 builds every timer at (`record::realized_ns`, the one definition the twin
 also calls), no longer 4 ns cycles of a fixed 250 MHz; the golden trace's
-bytes changed in the version byte only. An older trace is refused by name
-(`event::TRACE_VERSION`), never read under version 14's rules. The mirror record
+bytes changed in the version byte only. Version 15 (`AET-WO-2304b`) added
+kind 31, a battery sag's declared chain (its sag, the pack's open voltage, the
+healthy path R, each battery-fed sink's power and floors, the capacitance on
+`VBAT`, the static operating point, the deck's solved minimum and the binding
+floor), re-judged in replay by `battery::check_battery_sag` from its own
+fields, and the overrides' tags 6 (`battery_sag`) and 7 (`rail_out_of_band`);
+the golden trace's bytes changed in the version byte only. An older trace is
+refused by name (`event::TRACE_VERSION`), never read under version 15's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -244,10 +250,15 @@ apart from anything generated (`INV-07`):
 
 - Every key is required (but `expect_counts`) and no other is allowed, at
   either level; a duplicate key, a positional array or `null` in a key an
-  override does not use is refused. `schema_version` is 1, 2 or 3, and a file
+  override does not use is refused. `schema_version` is 1 to 4, and a file
   may use only what its version admits (`SchemaViolation` otherwise): version
   2 (`AET-WO-2301`, `AET-WO-4200`) admits `droop`, `spi_device_absent` and
-  `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`.
+  `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`;
+  version 4 (`AET-WO-2304b`) also admits `battery_sag` (`{series_milliohms,
+  start_ns}`, one per scenario and never beside a droop: `BatterySagRefused`)
+  and `rail_out_of_band` (a domain, one per scenario, beside exactly the
+  `serial_rx_open` and `spi_device_absent` overrides it renders and nothing
+  else: `RailOutOfBandRefused`).
   A version-1 file reads as it always did. `name` is 1 to 64 bytes of
   `0x21`–`0x7E`.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),

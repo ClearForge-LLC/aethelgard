@@ -57,11 +57,11 @@ fn table() -> PinTable {
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
     json!({"label": label, "pin": pin, "protocol": "pwm",
-           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}})
+           "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000}, "esc": null})
 }
 
 fn dshot(label: &str, pin: Option<&str>) -> Value {
-    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null})
+    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null, "esc": null})
 }
 
 fn spec_json(motors: Vec<Value>) -> Value {
@@ -811,7 +811,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 17);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 18);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -826,8 +826,41 @@ fn a_version_16_file_is_refused_by_its_version() {
             e,
             IrValidationError::UnsupportedSchemaVersion {
                 version: 16,
-                expected: 17
+                expected: 18
             }
         );
+    }
+}
+
+/// `AET-WO-2304b` §1.2: an output's `esc` is `null` or `{"none": {source}}`
+/// with a source; an empty source, an unknown variant and an empty object
+/// are refused, never read as a default.
+#[test]
+fn an_esc_is_null_or_none_with_a_source() {
+    let with = |esc: Value| {
+        let mut m = dshot("M1", Some("PE9"));
+        m["esc"] = esc;
+        serde_json::from_value::<Specification>(spec_json(vec![m]))
+    };
+    assert!(with(Value::Null).unwrap().validate().is_ok());
+    assert!(
+        with(json!({"none": {"source": "a bench header"}}))
+            .unwrap()
+            .validate()
+            .is_ok()
+    );
+    assert!(matches!(
+        with(json!({"none": {"source": ""}})).unwrap().validate(),
+        Err(aethelgard_ir::IrValidationError::InvalidSource { ref path })
+            if path == "motor_outputs[0].esc.none.source"
+    ));
+    for bad in [
+        json!({}),
+        json!({"part": {"source": "s"}}),
+        json!({"none": {"source": "s"}, "x": 1}),
+        json!({"none": {}}),
+        json!("none"),
+    ] {
+        assert!(with(bad.clone()).is_err(), "{bad}");
     }
 }

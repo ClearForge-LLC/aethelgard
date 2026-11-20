@@ -71,7 +71,7 @@ impl Pass {
 /// its own package; a test recomputes it from the bridge's files on disk, so
 /// an edit to the bridge fails the build's tests until this is updated with it.
 pub const BRIDGE_SOURCE_SHA256: &str =
-    "91e72fcc04983c3a872db8306c525deb3d9b1321dbb3311c24f7318b515dcebb";
+    "5bdc40e4cac43a6aceba8c1fb30f22b78f2b86be77d4dd75df2b32c37c92636e";
 
 /// The bridge's first line (`AET-WO-2200` F15): its name, version and the
 /// digest of the sources it was built from, which must be the ones this CLI
@@ -340,6 +340,182 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
         sandbox: out.sandbox,
         tools,
     })
+}
+
+/// One battery-fed sink's floor crossing, as the chain's deck answered it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SinkCrossing {
+    pub name: String,
+    pub floor_microvolts: u64,
+    /// The first falling crossing of its floor, ps; `None` when none.
+    pub at_ps: Option<u64>,
+}
+
+/// The battery chain as the deck solved it (`AET-WO-2304b` §1.8).
+pub struct ChainSolved {
+    pub minimum_microvolts: u64,
+    pub crossings: Vec<SinkCrossing>,
+    pub sandbox: run::SandboxReport,
+    /// The bridge's identity digest and the ngspice its answer named.
+    pub tools: Vec<(&'static str, String)>,
+}
+
+/// Solves the battery chain once with the bridge (`--chain`, `RUL-17`):
+/// `V_open` behind the path R, which steps from the healthy R to the sag's
+/// at its `start_ns`; the bulk capacitors with their ESR maximum and the
+/// input ceramics as ideal; one constant-power sink per battery-fed
+/// regulator, at its higher floor. The request is integers and checked
+/// names; the bridge writes the deck. In `dir`, a directory of its own;
+/// `status` is the reaper's.
+pub fn chain(
+    sag: &aethelgard_chaos::record::BatterySag,
+    side: &aethelgard_ir::power::BatterySide,
+    chain: &aethelgard_chaos::battery::SagChain,
+    span_ns: u64,
+    dir: &Path,
+    status: &Path,
+) -> Result<ChainSolved, run::Stop> {
+    let tool = bridge()?;
+    fs::DirBuilder::new()
+        .mode(0o700)
+        .create(dir)
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot create its directory: {e}")))?;
+    let bulk: Vec<Value> = side
+        .capacitors
+        .iter()
+        .filter_map(|c| {
+            c.esr_max_milliohms
+                .map(|esr| json!({"picofarads": c.picofarads, "esr_milliohms": esr}))
+        })
+        .collect();
+    let ceramics: u64 = side
+        .capacitors
+        .iter()
+        .filter(|c| c.esr_max_milliohms.is_none())
+        .map(|c| c.picofarads)
+        .sum();
+    let sinks: Vec<Value> = chain
+        .sinks
+        .iter()
+        .map(|k| {
+            json!({"name": k.name, "milliwatts": k.input_milliwatts,
+                   "floor_microvolts": k.floor_microvolts()})
+        })
+        .collect();
+    let body = json!({
+        "v_open_microvolts": chain.v_open_microvolts,
+        "healthy_milliohms": chain.healthy_milliohms,
+        "fault_milliohms": sag.series_milliohms,
+        "start_ns": sag.start_ns,
+        "span_ns": span_ns,
+        "bulk": bulk,
+        "ceramics_picofarads": ceramics,
+        "sinks": sinks,
+    });
+    let request = dir.join("chain.json");
+    fs::write(&request, body.to_string())
+        .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot write its request: {e}")))?;
+    let out = run::Invocation {
+        tool: &tool,
+        args: vec!["--chain".into(), request.into_os_string()],
+        env: Vec::new(),
+        workdir: dir,
+        cwd: dir.to_path_buf(),
+        status: status.to_path_buf(),
+        read_only: tool.dirs(),
+        read_write: Vec::new(),
+    }
+    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    let code = out.code(BRIDGE)?;
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let (identity, stdout) = identified(&stdout)?;
+    let fail = |m: String| run::Stop::tool_error(BRIDGE, m);
+    if code != 0 {
+        return Err(fail(format!(
+            "exited {code} solving the battery chain: {} {}",
+            stdout.trim(),
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    let (minimum_microvolts, crossings) = chain_answer(stdout, chain).map_err(fail)?;
+    Ok(ChainSolved {
+        minimum_microvolts,
+        crossings,
+        sandbox: out.sandbox,
+        tools: vec![(BRIDGE, identity), (campaign::NGSPICE, NGSPICE.to_owned())],
+    })
+}
+
+/// The bridge's chain answer: one line, every field the mode writes and no
+/// other, its sinks the request's in its order, named by the pinned ngspice.
+fn chain_answer(
+    stdout: &str,
+    chain: &aethelgard_chaos::battery::SagChain,
+) -> Result<(u64, Vec<SinkCrossing>), String> {
+    let lines: Vec<&str> = stdout.lines().collect();
+    let [line] = lines.as_slice() else {
+        return Err(format!(
+            "the chain answer is {} lines, not one",
+            lines.len()
+        ));
+    };
+    let Ok(Value::Object(o)) = serde_json::from_str::<Value>(line) else {
+        return Err(format!("`{}` is not a JSON object", line.escape_debug()));
+    };
+    const FIELDS: [&str; 9] = [
+        "accepted_points",
+        "chain",
+        "final_microvolts",
+        "initial_microvolts",
+        "minimum_at_ns",
+        "minimum_microvolts",
+        "ngspice",
+        "sinks",
+        "step_ns",
+    ];
+    let keys: Vec<&str> = o.keys().map(String::as_str).collect();
+    if keys != FIELDS
+        || o["chain"] != "solved"
+        || o["ngspice"] != NGSPICE
+        || [
+            "accepted_points",
+            "final_microvolts",
+            "initial_microvolts",
+            "minimum_at_ns",
+            "step_ns",
+        ]
+        .iter()
+        .any(|k| o[*k].as_u64().is_none())
+    {
+        return Err(format!("`{line}` is not the chain's answer"));
+    }
+    let minimum = o["minimum_microvolts"]
+        .as_u64()
+        .ok_or_else(|| format!("`{line}` holds no minimum"))?;
+    let sinks = o["sinks"].as_array().map_or(&[][..], Vec::as_slice);
+    if sinks.len() != chain.sinks.len() {
+        return Err(format!(
+            "`{line}` answers {} sinks, not {}",
+            sinks.len(),
+            chain.sinks.len()
+        ));
+    }
+    let mut out = Vec::new();
+    for (v, k) in sinks.iter().zip(&chain.sinks) {
+        let ok = v.as_object().is_some_and(|s| s.len() == 3)
+            && v["name"] == k.name.as_str()
+            && v["floor_microvolts"].as_u64() == Some(k.floor_microvolts())
+            && (v["at_ps"].is_null() || v["at_ps"].is_u64());
+        if !ok {
+            return Err(format!("`{v}` is not the answer for sink `{}`", k.name));
+        }
+        out.push(SinkCrossing {
+            name: k.name.clone(),
+            floor_microvolts: k.floor_microvolts(),
+            at_ps: v["at_ps"].as_u64(),
+        });
+    }
+    Ok((minimum, out))
 }
 
 /// The bridge's rail answer: crossing lines in time order, each of a
