@@ -1118,8 +1118,17 @@ pub(crate) fn motor_timing(
                 };
                 let pwm = |r| IrValidationError::Pwm(r);
                 match (e, p) {
+                    // At a 1 us tick (every specification before
+                    // `AET-WO-1211a`'s) and for DShot, the messages are the
+                    // ones they were.
+                    (TimingError::RateOutOfRange, _) if res == 1_000_000 || p.is_none() => tick(
+                        "its period does not fit a 16-bit ARR (a PWM rate below 16 Hz at a 1 us tick)",
+                    ),
                     (TimingError::RateOutOfRange, _) => tick(
                         "its period is not 3 to 65,536 ticks, or its shortest pulse is not at least 1 tick and 2 ticks short of the period",
+                    ),
+                    (TimingError::PulseExceedsPeriod, _) if res == 1_000_000 => tick(
+                        "its longest pulse does not fit inside the period the rate rounds to at a 1 us tick",
                     ),
                     (TimingError::PulseExceedsPeriod, _) => tick(
                         "its longest pulse does not fit inside the period the rate rounds to at its tick",
