@@ -1878,6 +1878,20 @@ pub enum IrValidationError {
         domain: String,
         reference: String,
     },
+    /// Step 20a (`AET-WO-1209c`): a load naming the MCU or a declared
+    /// regulator, whose current a row of its own already counts
+    /// (`power.rs`'s tree; [`power::Load::reference`]): on a regulator's
+    /// input rail it would count twice, and on the rail it makes it is that
+    /// rail's source, not a load. `counted_by` names the row.
+    #[error(
+        "{path} on `{domain}` names `{reference}`, whose current is already counted by {counted_by}"
+    )]
+    LoadNamesCountedPart {
+        path: String,
+        domain: String,
+        reference: String,
+        counted_by: String,
+    },
     /// Step 14 (`AET-WO-1206` §1.8): a device whose part has no row in the
     /// parts table, so no address, supply or clock limit could be held; the
     /// emitter's `UnknownPart` by kind and `id`. The message names the set
@@ -2188,6 +2202,7 @@ impl IrValidationError {
             Self::ReservedName(_) => "ReservedName",
             Self::InvalidDeviceName { .. } => "InvalidDeviceName",
             Self::LoadNamesNoPart { .. } => "LoadNamesNoPart",
+            Self::LoadNamesCountedPart { .. } => "LoadNamesCountedPart",
             Self::PartWithoutRow { .. } => "UnknownPart",
             Self::ForwardUndeclared { .. } => "ForwardUndeclared",
             Self::ImuAxesNotPerpendicular { .. } => "ImuAxesNotPerpendicular",
@@ -2390,7 +2405,8 @@ impl IrValidationError {
             }
             Self::EmitterReference(id) | Self::ReservedName(id) => Some(id),
             Self::InvalidDeviceName { .. } => None,
-            Self::LoadNamesNoPart { reference, .. } => Some(reference),
+            Self::LoadNamesNoPart { reference, .. }
+            | Self::LoadNamesCountedPart { reference, .. } => Some(reference),
             Self::PartWithoutRow { reference, .. }
             | Self::ForwardUndeclared { reference }
             | Self::ImuAxesNotPerpendicular { reference, .. }
@@ -2414,7 +2430,8 @@ impl IrValidationError {
             | Self::OutlineBound { path, .. }
             | Self::ClassBelowMinimum { path, .. }
             | Self::ClassAboveMaximum { path, .. }
-            | Self::LoadNamesNoPart { path, .. } => Some(path),
+            | Self::LoadNamesNoPart { path, .. }
+            | Self::LoadNamesCountedPart { path, .. } => Some(path),
             _ => None,
         }
     }
