@@ -1,0 +1,8 @@
+main elf=fc-base hwdef.h=adv-opt-swap exit 1 ["WrongSerialOptions SERIAL1 0x8"] 
+main elf=adv-opt-swap hwdef.h=fc-base exit 0 [] 
+main elf=fc-base hwdef.h=adv-proto-swap exit 1 ["WrongSerialProtocol SERIAL1 SerialProtocol_RCIN (23)","WrongSerialProtocol SERIAL2 SerialProtocol_GPS (5)"] 
+main elf=adv-proto-swap hwdef.h=fc-base exit 0 [] 
+branch elf=fc-base hwdef.h=adv-opt-swap exit 0 [] 
+branch elf=adv-opt-swap hwdef.h=fc-base exit 1 ["WrongSerialOptions SERIAL1 0x8"] 
+branch elf=fc-base hwdef.h=adv-proto-swap exit 0 [] 
+branch elf=adv-proto-swap hwdef.h=fc-base exit 1 ["WrongSerialProtocol SERIAL1 SerialProtocol_RCIN (23)","WrongSerialProtocol SERIAL2 SerialProtocol_GPS (5)"] 
