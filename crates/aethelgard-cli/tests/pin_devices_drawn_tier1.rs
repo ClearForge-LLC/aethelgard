@@ -8,8 +8,8 @@
 //!   output (`AET-WO-1211` Q7). D2 as committed drives its inputs by PWM and
 //!   is refused `PartLimitUndeclared` by `solve` itself, since SLVSAR1E states
 //!   no input PWM maximum, so it cannot be drawn at any level.
-//! - **D1 drawn** is D1 on a drawn board. It is refused `PassiveValueUnstated`
-//!   for CVM2 (ruled S1), after every other part of it is drawn.
+//! - **D1 drawn** is D1 on a drawn board. CVM2, which SLVSDS7B leaves
+//!   unstated (ruled S1), is its declared `bulk` (`AET-WO-1211f`).
 //!
 //! The image runs (ERC, DRC with parity, `check support`, `extract`) are in
 //! `spike/1211d/RESULTS.md`.
@@ -267,7 +267,8 @@ fn a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail() {
 /// declaration's); a current output left undeclared is refused, since
 /// SLVSDS7B p. 13's alternative, IPROPI tied to GND, cannot be declared.
 /// Since `AET-WO-1211e` (ruled D-A2) `validate` refuses the DRV8876's
-/// unterminated IPROPI first (`TripSenseUnbound`), before any drawing.
+/// unterminated IPROPI first (`TripSenseUnbound`), before any drawing; eda
+/// keeps its own refusal, held here directly (`AET-WO-1211f`).
 #[test]
 fn an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused() {
     let mut v = d2_drawn();
@@ -281,31 +282,110 @@ fn an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused() {
 
     let mut v = d1_drawn();
     v["pin_devices"][0]["analog"] = json!([]);
-    let e = serde_json::from_value::<Specification>(v)
-        .unwrap()
-        .validate()
-        .unwrap_err();
+    let e = self::spec(&v).validate().unwrap_err();
     assert_eq!((e.kind(), e.id()), ("TripSenseUnbound", Some("U2")));
     assert!(e.to_string().contains("`IPROPI`"), "{e}");
+    // eda's own guard, which `validate` now stands in front of (`1211e`
+    // F13), still refuses it when passed by.
+    let e = unvalidated_err(&v, &d1_drawn());
+    assert!(
+        matches!(&e, EmitError::PinDeviceNotDrawable { reference, why, .. }
+            if reference == "U2" && why.contains("`IPROPI`")),
+        "{e:?}"
+    );
 }
 
-/// Ruled S1: D1 is refused for CVM2, whose value SLVSDS7B does not state,
-/// and for nothing else: the arm draws CVM2 last, after the device, its
-/// declared resistors and reservoir and every other capacitor, so any other
-/// refusal would come first.
+/// `AET-WO-1211f`: D1 is drawn whole. CVM2, whose value SLVSDS7B does not
+/// state (ruled S1), is the declared `bulk`: its reference from the
+/// declaration, its value, rating, symbol and footprint from its power-parts
+/// row, between VM's net and GND, anchored by VM, and its source verbatim in
+/// the BOM's note, where D1's says it is a stand-in, not a design.
 #[test]
-fn d1_is_refused_for_cvm2_alone() {
-    let e = drawing_err(&d1_drawn());
+fn d1_is_drawn_with_its_declared_bulk() {
+    let (spec, solved, table) = solved(&d1_drawn());
+    let d = Drawing::of(&spec, &solved, &table).unwrap();
+    let c2 = d.pins("C2").unwrap();
+    assert_eq!(c2.symbol, "Device:C");
+    assert_eq!(c2.footprint, "Capacitor_SMD:C_1210_3225Metric");
+    assert_eq!(c2.value, "10u 50V GCM32EC71H106KA03");
+    let on = |n: &str| Some(n.to_owned());
+    assert_eq!(
+        c2.pins,
+        BTreeMap::from([("1".into(), on("VMOTOR")), ("2".into(), on("GND"))])
+    );
+    assert_eq!(d.anchored()["C2"], "U2");
+    // CVM2 is the one passive on VM and GND that is not the arm's CVM1.
+    let on_vm: Vec<_> = parts_on(&d, &["GND", "VMOTOR"]);
+    assert_eq!(on_vm.len(), 2, "{on_vm:?}");
+    assert!(on_vm.iter().any(|(_, v)| v == "100n >12.6V"), "{on_vm:?}");
+    let bom = schematic::emit(&spec, &solved, &table).unwrap().bom;
+    let row = bom.lines().find(|l| l.starts_with("C2,")).unwrap();
+    assert_eq!(
+        row,
+        "C2,10u 50V GCM32EC71H106KA03,Capacitor_SMD:C_1210_3225Metric,Device:C,\"CVM2 declared, TI SLVSDS7B DRV8876 states no value: D1 fixture stand-in, not a design: SLVSDS7B 9.1 p. 31 leaves CVM2 to system testing\""
+    );
+}
+
+/// A declared electrolytic (`bulk_capacitor`, which `validate` admits) is
+/// drawn on its own polarised symbol and footprint, its positive (pin 1) on
+/// VM.
+#[test]
+fn a_declared_electrolytic_bulk_is_drawn_positive_on_vm() {
+    let mut v = d1_drawn();
+    v["pin_devices"][0]["bulk"]["part"] = json!("UCZ1H470MCL1GS");
+    let (spec, solved, table) = solved(&v);
+    let d = Drawing::of(&spec, &solved, &table).unwrap();
+    let c2 = d.pins("C2").unwrap();
+    assert_eq!(c2.symbol, "Device:C_Polarized");
+    assert_eq!(c2.footprint, "Capacitor_SMD:CP_Elec_8x10");
+    assert_eq!(c2.value, "47u 50V UCZ1H470MCL1GS");
+    assert_eq!(c2.pins["1"].as_deref(), Some("VMOTOR"));
+    assert_eq!(c2.pins["2"].as_deref(), Some("GND"));
+}
+
+/// `v` drawn without `validate`, against `donor`'s solved topology (`solve`
+/// validates first): what eda refuses on its own.
+fn unvalidated_err(v: &Value, donor: &Value) -> EmitError {
+    let (_, solved, table) = solved(donor);
+    match Drawing::of(&spec(v), &solved, &table) {
+        Ok(_) => panic!("drawn"),
+        Err(e) => e,
+    }
+}
+
+/// With no `bulk`, CVM2 is still refused by name: by `validate`
+/// (`BulkUndeclared`), and by eda itself when `validate` is passed by
+/// (`PassiveValueUnstated`), after every other part is drawn.
+#[test]
+fn an_unstated_passive_with_no_bulk_is_still_refused() {
+    let mut v = d1_drawn();
+    v["pin_devices"][0]["bulk"] = Value::Null;
+    let e = spec(&v).validate().unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("BulkUndeclared", Some("U2")));
+    let e = unvalidated_err(&v, &d1_drawn());
     assert!(
         matches!(&e, EmitError::PassiveValueUnstated { reference, part, passive, .. }
             if reference == "U2" && part == "DRV8876PWPR" && passive == "CVM2"),
         "{e:?}"
     );
     assert!(e.to_string().contains("SLVSDS7B"), "{e}");
-    // And emit, the one path a board takes, refuses it the same way.
-    let (spec, solved, table) = solved(&d1_drawn());
-    let e = schematic::emit(&spec, &solved, &table).unwrap_err();
-    assert_eq!((e.kind(), e.id()), ("PassiveValueUnstated", Some("U2")));
+}
+
+/// A `bulk` on a row that states its own supply capacitance (the DRV8833's
+/// 10 µF VM capacitor) is refused before eda (`BulkNotAllowed`); eda, passed
+/// by, refuses to drop the declared part (`PinDeviceNotDrawable`).
+#[test]
+fn a_bulk_on_a_row_that_states_its_value_is_refused_before_eda() {
+    let mut v = d2_drawn();
+    v["pin_devices"][0]["bulk"] = fixture("d1-drv8876.json")["pin_devices"][0]["bulk"].clone();
+    let e = spec(&v).validate().unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("BulkNotAllowed", Some("U2")));
+    let e = unvalidated_err(&v, &d2_drawn());
+    assert!(
+        matches!(&e, EmitError::PinDeviceNotDrawable { reference, why, .. }
+            if reference == "U2" && why.contains("`bulk`")),
+        "{e:?}"
+    );
 }
 
 /// Q1 (ruled): the pin devices' own nets are in `own_nets`, so `validate`

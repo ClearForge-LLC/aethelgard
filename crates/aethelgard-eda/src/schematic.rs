@@ -443,7 +443,8 @@ pub(crate) struct Part {
     pub(crate) footprint: String,
     /// By pin number; pins absent here get a no-connect.
     pub(crate) conns: BTreeMap<String, Conn>,
-    pub(crate) note: Option<&'static str>,
+    /// The BOM's note: a stand-in's, or a declared bulk's source.
+    pub(crate) note: Option<String>,
     /// The IC this part belongs to, if any: one relation for a decoupling
     /// capacitor and for a part a datasheet asks to sit by an IC's pins.
     pub(crate) owner: Option<Owner>,
@@ -1766,7 +1767,7 @@ impl From<&Part> for BomRow {
             value: p.value.clone(),
             footprint: p.footprint.clone(),
             symbol: p.lib_id.to_owned(),
-            note: p.note.unwrap_or("").to_owned(),
+            note: p.note.clone().unwrap_or_default(),
         }
     }
 }
