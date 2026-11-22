@@ -67,6 +67,10 @@ fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger()
             .starts_with("no package: 280 unwitnessed ledger row(s)"),
         "{v}"
     );
+    // `AET-WO-2307` §1.1: the 43 entries they need, measured in `spike/2307/`.
+    let entries = v["error"]["entries"].as_array().unwrap();
+    assert_eq!(entries.len(), 43, "{v}");
+    assert!(entries.iter().all(|a| a["reason"] == ""), "{v}");
 }
 
 /// §2: the power fixture's campaign is for the campaign only. Its
