@@ -1,7 +1,7 @@
 //! `AET-WO-1215`: an older specification is refused with every change it
 //! lacks, from `versions::CHANGES`, and the table is held to the version
 //! literal, to the schema (by serde, on every committed current-version
-//! specification) and to the README's prose. Uses only `aethelgard_ir`,
+//! specification); `readme_versions.rs` holds it to the README's prose. Uses only `aethelgard_ir`,
 //! `serde_json` and `std` (`workspace_shape`).
 
 use aethelgard_ir::versions::{self, CHANGES, VersionChange};
@@ -357,52 +357,6 @@ fn every_rule_is_a_kind_this_crate_returns() {
             assert!(
                 src.contains(&format!("=> \"{kind}\"")),
                 "{}: `{kind}`",
-                c.version
-            );
-        }
-    }
-}
-
-// The README's prose, row by row.
-
-#[test]
-fn every_row_is_the_readme_prose_for_its_version() {
-    let readme =
-        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md")).unwrap();
-    let prose = readme
-        .lines()
-        .find(|l| l.starts_with("Version 2 ("))
-        .expect("the version paragraph");
-    for (i, c) in CHANGES.iter().enumerate() {
-        let start = prose
-            .find(&format!("Version {} (`{}`", c.version, c.work_order))
-            .unwrap_or_else(|| {
-                panic!("README names no `Version {} ({})`", c.version, c.work_order)
-            });
-        let end = CHANGES
-            .get(i + 1)
-            .and_then(|n| prose.find(&format!("Version {} (", n.version)))
-            .unwrap_or_else(|| prose.find("A file of another version is refused").unwrap());
-        let text = &prose[start..end];
-        let paths = c
-            .requires
-            .iter()
-            .chain(c.optional)
-            .copied()
-            .chain(c.replaced.iter().flat_map(|r| [r.path, r.by]))
-            .chain(c.removed.iter().copied());
-        for path in paths {
-            let key = path.rsplit('.').next().unwrap();
-            assert!(
-                text.contains(key),
-                "{}: README's prose names no `{key}`",
-                c.version
-            );
-        }
-        for kind in c.rules {
-            assert!(
-                text.contains(kind),
-                "{}: README's prose names no `{kind}`",
                 c.version
             );
         }

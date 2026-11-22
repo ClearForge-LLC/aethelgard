@@ -134,7 +134,7 @@ Every bump's work order is the one README §`Specification` names, in order. **(
   - C3: `mcu.hse` is "a required key, for which `hse_hz: 0` alone still stands".
   - Every listed rule is named in its version's sentence.
   - The closing sentence states the listing, the path notation, and "a row names paths, never a value".
-- **Tests.** `crates/aethelgard-ir/tests/versions.rs` (11):
+- **Tests.** `crates/aethelgard-ir/tests/versions.rs` (10):
   - the last row is the literal, and the rows run 2..=literal with none skipped;
   - version 20 lists 21, 22 and 23 with their work orders;
   - version 1 lists 2 to 23;
@@ -142,7 +142,8 @@ Every bump's work order is the one README §`Specification` names, in order. **(
   - every older version lacks exactly the rows after it;
   - the message suggests no value.
   - The schema is tested by serde on all 33 committed version-23 specifications. Each required path, removed wherever it is present, gives `missing field`. Each optional path parses when absent and, given a wrong value, gives no `unknown field`. Each replaced path gives `unknown field`, except `mcu.hse_hz`, which is pinned by name (D5).
-  - Every rule is a kind the crate returns (`=> "Kind"`), and every row's paths and kinds are named in its README sentence.
+  - Every rule is a kind the crate returns (`=> "Kind"`).
+  - `readme_versions.rs` gains the prose test: every row's work order, paths and kinds are named in its README sentence. It lives there because that target already reads the crate's `README.md` through `readme()`, so `ci/docs-tests.tsv` (the route job's inventory of literals naming a docs-only name) is unchanged. A second `"/README.md"` literal in a new target failed the route job on the first push (run 44981417341), and `ci/` is outside the fence.
   - `stackups_tier1.rs` gains `an_older_specification_lists_every_change_it_lacks`: `validate`, `solve`, `emit` and `verify` at versions 20, 1, 24 and 0.
   - Two existing CLI tests pinned an older version's exact message (`bench_tier1.rs` v13, `outline_tier1.rs` v14). They now compare it to `versions::unsupported(N)`. Seven IR tests put `changes: _` (or `lacked_by(v)`) first in the variant, so `expected: 23` stays the line the renumber kit rewrites.
 - **The next bump** (`1211e`, 24) writes row 24, and the last-row test fails until it does. It also edits by hand the literal lists the WO asks for (`[21, 22, 23]`, `2..=23`) and the `not 23; ` prefixes, which the kit does not rewrite. The kit gains nothing.
@@ -166,7 +167,7 @@ Every bump's work order is the one README §`Specification` names, in order. **(
 ## 8. Gates, mutants, reduction
 
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace --no-fail-fast`: run in a 32 G capped scope on the head before the reduction, it gave 156 binaries, 2,624 passed and 0 failed. The final run is on the READY head (§9). `TIER2_MIN` is unchanged, and no `ci/` row is needed: no new test binary, and nothing reads a docs-only path.
+- `cargo test --workspace --no-fail-fast`: run in a 32 G capped scope on the head before the reduction, it gave 156 binaries, 2,624 passed and 0 failed. The final run is on the READY head (§9). `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
 - **Mutants** (`spike/1215/mutants.sh` → `out/mutants.txt`): 12 of 12 killed.
   - M1: drop row 22. M2 and M2b: swap rows 21/22 and 2/3.
   - M3: version 0 lists every row. M4: an older file lists its own row.

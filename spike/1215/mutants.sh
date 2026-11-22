@@ -9,7 +9,7 @@ cd "$repo"
 export PATH=$HOME/.cargo/bin:$PATH
 V=crates/aethelgard-ir/src/versions.rs
 M=crates/aethelgard-cli/src/main.rs
-ir() { nice -n 10 cargo test -q -p aethelgard-ir --test versions >/dev/null 2>&1; }
+ir() { nice -n 10 cargo test -q -p aethelgard-ir --test versions --test readme_versions >/dev/null 2>&1; }
 cli() { nice -n 10 cargo test -q -p aethelgard-cli --test stackups_tier1 an_older >/dev/null 2>&1; }
 mutant() { # name file suite old new
   local name=$1 file=$2 suite=$3 old=$4 new=$5 save
