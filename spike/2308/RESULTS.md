@@ -93,3 +93,12 @@ All 5 lines are byte-identical, base against branch.
 ## R5. The sweep
 
 `spike/1211d/measure/sweep.sh` with the branch release CLI, judged by `same.sh` against R0's: **identical, 34 specifications, 280 files.**
+
+## R6. Re-measured after 1216b (`main` 22a1b3c0, specification 25)
+
+The branch at `55553a1f` was built in the image (the CLI and the bridge) and ran the bench-package `verify` with `--fab-out`: rc 0, 193 s. Against the committed package, which is 1216b's:
+- **exactly 3 of 17 files differ**: `FAB-NOTES.md`, `sentinel-01-bench-jlcpcb-bom.csv` and `MANIFEST.json`;
+- `MANIFEST.json` differs in those two files' hashes and in `verdict_sha256` (L3, and the local sandbox);
+- `FAB-NOTES.md` differs only by this work order's lines: the JLCPCB grouping sentence, its `Note` bullet, and "Parts with a note".
+
+Specification 25's bytes are already in the committed package.

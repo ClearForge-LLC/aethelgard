@@ -128,10 +128,10 @@ One per guard this work order adds or changes, each run against the suite it liv
 
 ## 6. Gates, fence, reduction pass
 
-- **Gates** on the merged tree (after `f46c3c42`):
+- **Gates** on the merged tree (after `22a1b3c0`, 1216b's specification 25, and `86bd00fc`, 1320):
   - `cargo fmt --all -- --check`: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean; also with `--features aethelgard-cli/with-tools`.
-  - `cargo test --workspace --no-fail-fast`, target in the repository as CI builds it: **2737 passed, 0 failed** (159 binaries) at `ef14522b`.
+  - `cargo test --workspace --no-fail-fast`, target in the repository as CI builds it: **2759 passed, 0 failed** (160 binaries) at `55553a1f`. Earlier, after `1606` only: 2737/0, 159 binaries.
 - **Before `1606` was merged** (code head `1b833307`): the host test was **2736 passed, 0 failed** (159 binaries). In the image, CI's layout: `verify_2k2_tier2` 2/2 and `against_fab_tier2` 2/2, the new assertions included. After `1606` was merged (its bridge rebuilt beside the CLI): `verify_47k_tier2` 2/2, `four_layer_fab_tier2` 2/2, and `board_tier2`'s two campaign `verify` runs (the motor driver with its droop, and RUL-14) 2/2. So `campaign_renode` replays every run those campaigns hold (the motor driver's droop included), and no passing board turns into `ToolError`.
 - **Fence:**
   - `crates/aethelgard-cli`: `verify.rs`, `fab.rs`, `ledger.rs`, `tree.rs` (`verify`'s comparator), and tests.
@@ -144,5 +144,5 @@ One per guard this work order adds or changes, each run against the suite it liv
 ## 7. State
 
 - One PR, unmerged; the architect merges.
-- **The bench package moves by rows 1 and 2** (R3). It waits on a `bench-package` write dispatch, in the queue after `1606` and `1216b`. Until then, CI's `--against-fab` step on the committed package differs, as R3 predicts. The dispatch's artifact will be committed unchanged, and then READY is the last push.
+- **The bench package moves by rows 1 and 2** (R3), re-measured after 1216b (R6): the same 3 of 17 files. It waits on a `bench-package` write dispatch, in the queue after `1606` and `1216b`. Until then, CI's `--against-fab` step on the committed package differs, as R3 predicts. The dispatch's artifact will be committed unchanged, and then READY is the last push.
 - Title and body: `~/.cache/aet-2308/pr-title-body.md`.
