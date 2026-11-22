@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"DrawsNoBoard","id":"drv8876-ph-en","path":"board.drawn","message":"`drv8876-ph-en` declares `board.drawn: false`, a twin stand-in no board is drawn from, so `verify` refuses it"}}

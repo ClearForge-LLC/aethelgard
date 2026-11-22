@@ -25,13 +25,21 @@ for net, pin in inputs:
 put("d2g.json", d2g)
 d1d = fx("d1-drv8876.json"); d1d["board"].pop("drawn"); put("d1-drawn.json", d1d)
 droop = {"domain": "VMOTOR", "floor_millivolts": 4000, "start_ns": 1000000, "fall_ns": 20000,
-         "hold_ns": 600000, "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100}
+         "hold_ns": 600000, "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}
 for base in ["d2g", "d1"]:
-    for name, sv, exp, ov in [
-        ("baseline", 1, "pass", []),
-        ("droop-vmotor", 2, "pass", [{"droop": droop}]),
-        ("vmotor-out-of-band", 4, "fail", [{"rail_out_of_band": "VMOTOR"}]),
+    for name, sv, exp, ov, fx_ in [
+        ("baseline", 1, "pass", [], []),
+        ("droop-vmotor", 2, "pass", [{"droop": droop}], []),
+        ("vmotor-out-of-band", 4, "fail", [{"rail_out_of_band": "VMOTOR"}], ["spi_identity_mismatch"]),
     ]:
         put(f"sc/{base}-{name}.json", {"schema_version": sv, "name": name, "base": f"../{base}.json",
-             "expect": exp, "expect_findings": [], "overrides": ov})
+             "expect": exp, "expect_findings": fx_, "overrides": ov})
+# Isolation (added after M3's first run, on the advisor's point): with a detected serial_rx_open on
+# CMD and a BOR-crossing droop on the MCU's supply beside the baseline, VMOTOR should be the only
+# unmet target. The droop is sentinel-03/droop-bor3.json's, its base changed.
+bor = json.load(open(os.path.join(REPO, "scenarios/sentinel-03/droop-bor3.json")))
+for base in ["d2g", "d1"]:
+    put(f"sc/{base}-rx-open.json", {"schema_version": 3, "name": "rx-open", "base": f"../{base}.json",
+         "expect": "fail", "expect_findings": ["serial_echo_missing"], "overrides": [{"serial_rx_open": "CMD"}]})
+    put(f"sc/{base}-droop-bor3.json", dict(bor, base=f"../{base}.json"))
 print("written", sorted(os.listdir(OUT)), sorted(os.listdir(os.path.join(OUT, "sc"))))

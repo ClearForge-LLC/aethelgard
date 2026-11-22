@@ -1,16 +1,20 @@
-# M4: D1's own generated firmware (/cache/m/d1/fw.elf, from today.sh) on Renode's stock stm32h753
-# platform, nothing added. As the twin's boot plan: seed, quantum, the ELF, the vector table at flash.
+# M4: D1's own generated firmware (/cache/m/d1/fw.elf, from today.sh) on the twin's platform for 4600's motor driver
+# (/cache/m/djn.repl: the same MCU, clock, TIM1 on PA8/PA9 and TIM2 on PA0/PA1 with observers, the PWR
+# model; D1 itself has no .repl until 1211c). As the twin's boot plan: seed, quantum, the ELF, the vector table at flash.
 # Before the run: 1.5 V on ADC3 INP5 (PF3, DRV_IPROPI) and PA11 (nFAULT) driven low. GPIOA, ADC3 and
 # TIM1 accesses are logged, so the order of PA1's BSRR and MODER writes is read from the log.
 emulation SetSeed 1
 emulation SetGlobalQuantum "0.000100000"
 mach create
-machine LoadPlatformDescription @platforms/cpus/stm32h753.repl
+machine LoadPlatformDescription @/cache/m/djn.repl
 sysbus LoadELF @/cache/m/d1/fw.elf
 cpu VectorTableOffset 0x08000000
 sysbus LogPeripheralAccess sysbus.gpioPortA true
 sysbus LogPeripheralAccess sysbus.adc3 true
 sysbus LogPeripheralAccess sysbus.timer1 true
+logLevel -1 gpioPortA.pa8obs
+logLevel -1 gpioPortA.pa9obs
+logLevel -1 gpioPortA.pa1obs
 adc3 SetVoltage 1500000 5
 gpioPortA OnGPIO 11 false
 echo "M4 GPIOA IDR at t=0 (PA11 held low)"
