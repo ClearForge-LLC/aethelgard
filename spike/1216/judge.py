@@ -137,9 +137,9 @@ def a_sidecar(spec, rows, seq):
     supply = spec["mcu"]["supply"]
     out = []
     up = []
-    for i, step in enumerate(seq["steps"]):
-        if not step.get("source", "").strip():
-            out.append(("SequenceStepUnsourced", f"steps[{i}]"))
+    out += [("SequenceStepUnsourced", f"steps[{i}]") for i, step in enumerate(seq["steps"])
+            if not step.get("source", "").strip()]
+    for step in seq["steps"]:
         if supply in step["rails"]:
             # rails in the MCU's own step may lead it within the step: judge them too
             led = [x for x in step["rails"] if x != supply]
