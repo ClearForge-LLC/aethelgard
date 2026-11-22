@@ -1625,12 +1625,41 @@ fn table() -> Vec<Entry> {
     }
 
     // ---- ADC (`AET-WO-1211b`; `1211` §2.7 (c)): a pin device's ADC input's
-    // bring-up. `simulate` refuses a pin device until `AET-WO-1211c`, so the
-    // twin witnesses none of these fields: each is silicon-only, held only by
-    // the board crate's proof (`adcN_bring_up_is_in_order_and_bounded`, whose
-    // words are the oracle's, consistency) and the bench. `AET-WO-1211c`
-    // re-classes PCSEL and SQR1 once the twin runs them (`1211` §2.7 (c)).
-    let adc_judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the board crate's proof holds each word to its oracle, which is consistency, and only the bench reads the silicon";
+    // bring-up, held by the board crate's proof
+    // (`adcN_bring_up_is_in_order_and_bounded`, whose words are the
+    // oracle's, consistency) and the bench. Since `AET-WO-1211c` the twin
+    // runs it: `PCSEL` and `SQR1` are in the image it reads back, and `RES`
+    // decides the code the ADC witness judges (`1211c` P4e), so the three
+    // are observed; `ADCAL`, `JQDIS` and `SMP#` are tags the model logs as
+    // unhandled (measured, `1211c` M4); every other field is silicon-only
+    // (`1211` §4 A0, A1: the model starts in `0x0FC00000` and gives `ADRDY`
+    // and the calibration at once, and models no kernel clock).
+    let adc_judge = "none: Renode's ADC model starts in 0x0FC00000, gives ADRDY and the calibration at once and models no kernel clock or sampling time (AET-WO-1211 §4 A0, A1), so the twin cannot see this field; the board crate's proof holds the word to its oracle, which is consistency, and only the bench reads the silicon";
+    let adc_class = |register: &str, field: &str| -> (Class, &'static str, &'static str) {
+        match (register, field) {
+            ("PCSEL", _) => (
+                Obs,
+                "the twin's image (aethelgard-twin boot::expected, AET-WO-1211c): ADCn.PCSEL read back against the specification's channels",
+                "STM32_ADC_Common.cs L196 (the model warns of a channel not preselected); AET-WO-1211c FEEDBACK §2, measured (PCSEL 0x20)",
+            ),
+            ("SQR#", _) => (
+                Obs,
+                "the twin's image (aethelgard-twin boot::expected, AET-WO-1211c): ADCn.SQR1 read back, and DR returns the sequenced channel's sample",
+                "AET-WO-1211c FEEDBACK §2, measured (SQR1 0x140, DR 0x745 at 1.5 V on INP5)",
+            ),
+            ("CFGR", "RES") => (
+                Obs,
+                "the ADC witness (AET-WO-1211c): the code DR holds after the firmware's read is the declared resolution's; 12 bits alone is run",
+                "AET-WO-1211c FEEDBACK §2, measured (RES 010 converts at 12 bits, P4e)",
+            ),
+            ("CR", "ADCAL") | ("CFGR", "JQDIS") | ("SMPR#", _) => (
+                Ign,
+                "none: the model logs the write as an unhandled tag and stores nothing",
+                "AET-WO-1211c FEEDBACK §2, measured (Unhandled bits: ADCAL, JQDIS, SMP5)",
+            ),
+            _ => (Si, adc_judge, ""),
+        }
+    };
     for (register, fields) in [
         (
             "CR",
@@ -1674,14 +1703,15 @@ fn table() -> Vec<Entry> {
         ),
     ] {
         for field in fields {
+            let (class, judge, source) = adc_class(register, field);
             t.push(e(
                 "ADC",
                 register,
                 field,
                 W,
-                Si,
-                adc_judge,
-                "",
+                class,
+                judge,
+                source,
                 "written by the ADC bring-up (RM0433 Rev 9 ch. 25; spike/1211b/adc-contract.md): ADEN and ADSTART read-modify-write with the other command bits 0, every other word whole",
             ));
         }
@@ -1989,7 +2019,74 @@ pub fn twin_limits(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerEr
     let mut rows = wait_rows(topology)?;
     rows.extend(model_rows(topology));
     rows.extend(identity_rows(topology)?);
+    rows.extend(pin_rows(topology));
     Ok(rows)
+}
+
+/// The twin's limits on a pin device (`AET-WO-1211c`, the fidelity notes of
+/// `1211` §4 as reasons): one row per input, per ADC input and per motor
+/// output idling at a static level, naming what the twin cannot see of it.
+/// None for a board with none.
+fn pin_rows(topology: &SolvedTopology) -> Vec<LedgerRow> {
+    use aethelgard_ir::pin_devices::Direction;
+    let row = |family: &str, field: &str, judge: String, note: String| LedgerRow {
+        id: format!("{family}.{field}"),
+        family: family.into(),
+        register: String::new(),
+        field: field.to_owned(),
+        pos: 0,
+        width: 0,
+        access: "none",
+        value: None,
+        class: Class::SiliconOnly,
+        judge,
+        note,
+        acknowledged: None,
+        reason: None,
+        address: None,
+    };
+    let mut out = Vec::new();
+    for (net, g) in topology
+        .gpio
+        .iter()
+        .filter(|(_, g)| g.direction == Direction::Input)
+    {
+        out.push(row(
+            "PIN",
+            net,
+            "none: the twin drives the input at the level its declared pull holds when the device asserts nothing, and reads it back through IDR; the pull is never witnessed (AET-WO-1211 §4 G2: an undriven input reads 0 whatever PUPDR holds) and the device is not modelled".to_owned(),
+            format!(
+                "pin device input on {}: no generated step reads an input, so the read shows that the level reached the pin, never that the firmware reacted (AET-WO-1211c M4, M4g)",
+                g.pin
+            ),
+        ));
+    }
+    for (net, a) in topology.adc_inputs.iter().filter(|(_, a)| a.bits.is_some()) {
+        out.push(row(
+            "ADC",
+            net,
+            "none: the twin sets the channel's voltage and judges the code DR holds after the firmware's read; the transfer, the source impedance against the sampling time, the regulator's and calibration's timing and ADC2 are never witnessed (AET-WO-1211 §4 A0, A1, A6), and are the rules' and the bench's".to_owned(),
+            format!("{} {} on {}", a.peripheral, a.channel, a.pin),
+        ));
+    }
+    for (label, m, _) in topology.motor_outputs_in_order() {
+        let Some(aethelgard_ir::motor::Idle::Level(level)) = m.pwm.as_ref().map(|p| p.idle) else {
+            continue;
+        };
+        out.push(row(
+            "IDLE",
+            label,
+            "none: Renode shows no output level before CEN and holds an idle high low until the first update event (AET-WO-1211 §4 O1-O2, H1-H2), so the static level is judged from one period after CEN (Q10, ruled) and the window before it is the bench's".to_owned(),
+            format!(
+                "motor output idling {}: on silicon OCxREF follows CCR from the update event the bring-up's EGR.UG raises, before CEN (RM0433 Rev 9 p. 1558)",
+                match level {
+                    aethelgard_ir::motor::Level::Low => "low",
+                    aethelgard_ir::motor::Level::High => "high",
+                }
+            ),
+        ));
+    }
+    out
 }
 
 /// Each identity read the firmware makes of a device the twin has no model
@@ -2182,12 +2279,10 @@ pub fn gpio_rows(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<()
                     if let Some(row) = rows.iter_mut().find(|r| {
                         r.access == "written" && r.register == register && r.field == field
                     }) {
-                        // Nothing simulates a pin device until AET-WO-1211c
-                        // (`simulate` refuses it), so nothing observes the
-                        // level: silicon-only, as the ADC's rows (the
-                        // adversarial pass's F6).
-                        row.class = Class::SiliconOnly;
-                        row.judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the proof's ready clause takes the declared level's word (svd-hal board.rs oracle_level_bit), which is consistency, and only the bench reads the pad".to_owned();
+                        // The GPIO witness (`AET-WO-1211c`): the write and
+                        // its order, never the pad (`1211` §4 G1).
+                        row.class = Class::Observed;
+                        row.judge = "the GPIO witness (AET-WO-1211c): the first BSRR word touching the pin carries the declared level's bit alone, before MODER makes the pin an output; never a pad level (AET-WO-1211 §4 G1), which only the bench reads".to_owned();
                         row.note = format!(
                             "pin device output `{net}` on {pin}: its declared initial level `{level}`, written before MODER makes it an output (AET-WO-1211b; RM0433 Rev 9 p. 534)"
                         );
