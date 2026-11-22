@@ -66,3 +66,18 @@ The BOM's C2 row:
 | P5.2 | one interpreter case, no new row field | **holds** |
 | P5.3 | no `fab/` byte moves | **holds** (the sweep; no committed board declares a pin device) |
 | P5.4 | `TIER2_MIN` unchanged | **holds** (no tier-2 test added) |
+
+## M6. Mutants (§1.5): 17 of 17 killed
+
+`kit/mutants.py` applies one mutant per new line of the arm to a tree copy of `64a6f916`. It then runs `aethelgard-eda --lib arms` and `aethelgard-cli --test pin_devices_drawn_tier1`, and counts a mutant killed only when a test fails. The records are `out/mutants.json` and `out/mutants-m4.json`.
+- **First run:** 16 killed. M4 (an emitter-numbered reference) broke the build: `b` was borrowed twice inside `push`.
+- **M4 rewritten** to hoist the call, then killed.
+- **M1 and M2** (`answers()` taking any pin, or any second end) are killed by the eda unit test `a_bulk_answers_only_its_supply_to_ground`. The kit's name filter drops `::` paths, so their `failing` lists are empty.
+
+| mutant | killed by |
+|---|---|
+| M1 answers any pin; M2 any second end | `a_bulk_answers_only_its_supply_to_ground` |
+| M3 the lift never answers; M5 capacitance; M6 rating; M7 footprint; M9 ends swapped; M13 drawn not recorded; M16 reference not claimed; M4 reference emitter-numbered | `d1_is_drawn_with_its_declared_bulk`, `a_declared_electrolytic_bulk_is_drawn_positive_on_vm` |
+| M8 symbol; M15 electrolytic row refused | `a_declared_electrolytic_bulk_is_drawn_positive_on_vm` |
+| M10 no note; M11 note without the source; M12 not anchored; M17 BOM note dropped | `d1_is_drawn_with_its_declared_bulk` |
+| M14 dropped bulk not refused | `a_bulk_on_a_row_that_states_its_value_is_refused_before_eda` |

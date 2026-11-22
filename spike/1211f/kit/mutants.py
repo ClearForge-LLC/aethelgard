@@ -2,16 +2,17 @@
 """AET-WO-1211f §1.5: one mutant per new line of the arm. Each is applied to a copy of the tree
 (never the worktree, never by git checkout), the tests that hold the arm are run, and the mutant is
 killed only by a failing test, not by a build break. Usage:
-mutants.py <tree copy> <cargo target dir> <out.json>"""
+mutants.py <tree copy> <cargo target dir> <out.json> [name prefix]"""
 import json, subprocess, sys
 tree, target, out = sys.argv[1:4]
+only = sys.argv[4] if len(sys.argv) > 4 else None  # run the mutants whose name starts with this
 A = "crates/aethelgard-eda/src/schematic_arms.rs"
 S = "crates/aethelgard-eda/src/schematic.rs"
 M = [
     ("M1 answers: any pin", A, "if p == u.supply)", "if true)"),
     ("M2 answers: any second end", A, "(End::Pin(p), End::Ground) if p", "(End::Pin(p), _) if p"),
     ("M3 the lift never answers", A, ".map(|_| (bulk, parts_row.document.as_str()))", ".and(None::<(&aethelgard_ir::pin_devices::Bulk, &str)>)"),
-    ("M4 reference emitter-numbered", A, "reference: bulk.reference.clone(),\n        value: format!(", "reference: b.reference('C')?,\n        value: format!("),
+    ("M4 reference emitter-numbered", A, "    b.parts.push(Part {\n        lib_id: row.symbol.as_str(),\n        reference: bulk.reference.clone(),", "    let numbered = b.reference('C')?;\n    b.parts.push(Part {\n        lib_id: row.symbol.as_str(),\n        reference: numbered,"),
     ("M5 capacitance", A, "super::power::farads(pf)", "super::power::farads(pf / 10)"),
     ("M6 rating", A, "volts(mv), bulk.part)", "volts(mv / 2), bulk.part)"),
     ("M7 footprint", A, "footprint: row.footprint.clone(),\n        conns: BTreeMap::from([(\"1\".into(), one)", "footprint: \"Capacitor_SMD:C_0402_1005Metric\".into(),\n        conns: BTreeMap::from([(\"1\".into(), one)"),
@@ -28,6 +29,8 @@ M = [
 ]
 res = []
 for name, f, old, new in M:
+    if only and not name.startswith(only):
+        continue
     p = f"{tree}/{f}"
     src = open(p).read()
     assert src.count(old) == 1, f"{name}: anchor count {src.count(old)}"
