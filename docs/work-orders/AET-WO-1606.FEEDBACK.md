@@ -169,7 +169,7 @@ After the reduction pass, the five whose code it touched were run again, and all
   - The one tier-2 test added is `board_tier2::build_names_the_rustc_cargo_ran`.
   - `edges.rs::version_names_the_banner_the_library_printed` is in the bridge suite, which `TIER2_RE` does not count.
   - The floor lives in `.github/workflows/ci.yml`, outside §3's fence: named, one line and its comment.
-  - No weight row: the test takes under a second, and `DEFAULT_WEIGHT` serves it.
+  - **A weight row,** `ci/test-weights.tsv` (the one `ci/` edit §3 allows): `board_tier2` is lock-serialised, so every one of its tests needs a row. CI's plan refused the first push's shards for the missing row, which I had wrongly taken to be needed only past 60 s. The row is a Furnace estimate: 0.40 s alone in the pinned image, × 2.8 (`1310`'s factor) = 1.12 s. `ci/shard.sh plan`, run locally in the CI layout, then passes ("guard ok").
 - **The package (§2): a `fab/` byte moves, so stop before READY.**
   - **What I measured:** `verify --fab-out` for sentinel-01-bench with `main`'s CLI and with this branch's, in the pinned image on Furnace (`spike/1606/out/bench-package.txt`):
     - only `MANIFEST.json` differs, and only its `verdict_sha256`;
