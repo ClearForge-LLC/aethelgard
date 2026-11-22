@@ -4637,6 +4637,48 @@ mod tests {
         }
     }
 
+    /// `AET-WO-1211c`: an output at a static level. Low: no edge from its
+    /// anchor on, ending low. High: one rise inside the first period (and
+    /// quantum) after the anchor, then none, ending high. An edge after the
+    /// settled instant, the wrong end level, no anchor, or a log not read
+    /// whole each fail closed.
+    #[test]
+    fn a_static_level_is_witnessed_only_still_from_its_settled_instant() {
+        let m = motor();
+        let p = m.observer.period_ns;
+        let q = aethelgard_twin::boot::QUANTUM_NS;
+        let (anchor, end) = (1_000_000, 100_000_000);
+        let w =
+            |high, edges: &[(u64, bool)], anchor| witness_level(&m, high, Some(edges), anchor, end);
+        assert_eq!(w(false, &[], Some(anchor)).status, "witnessed");
+        assert_eq!(w(false, &[], Some(anchor)).settle_ns, Some(anchor));
+        let rise = [(anchor + p, true)];
+        assert_eq!(w(true, &rise, Some(anchor)).status, "witnessed");
+        assert_eq!(w(true, &rise, Some(anchor)).settle_ns, Some(anchor + p + q));
+        // Idle high read low at the end, or idle low read high.
+        assert_eq!(w(true, &[], Some(anchor)).status, "mismatch");
+        assert_eq!(w(false, &rise, Some(anchor)).status, "mismatch");
+        // An edge after the settled instant.
+        let late = [
+            (anchor + p, true),
+            (anchor + p + q + 1, false),
+            (anchor + 2 * p + q, true),
+        ];
+        let l = w(true, &late, Some(anchor));
+        assert_eq!((l.status, l.rises_after, l.falls_after), ("mismatch", 1, 1));
+        // No anchor, or the log not read whole.
+        assert_eq!(w(false, &[], None).status, "unanchored");
+        assert_eq!(
+            witness_level(&m, false, None, Some(anchor), end).status,
+            "unreadable"
+        );
+        // An edge past the window's end is not the window's.
+        assert_eq!(
+            w(false, &[(end + 1, true)], Some(anchor)).status,
+            "witnessed"
+        );
+    }
+
     /// Edges as the probes measured them (`pwm400-63`): each the exact time
     /// plus a deviation under the 10 ns grain, from the first rise at 639,750.
     fn measured(n: u64, jitter: &[i64]) -> Vec<(u64, bool)> {
@@ -4909,6 +4951,68 @@ mod tests {
         assert_eq!(c.matches("AddWatchpointHook").count(), 4);
         assert_eq!(c.matches("AETHELGARD-STEP").count(), 3);
         assert!(!c.contains("WriteChar") && !c.contains("ScheduleAction"));
+    }
+
+    /// `AET-WO-1211c`: a pin device's stimuli and hooks go in before the run,
+    /// and its stimuli again after each rendered reset (which returns the
+    /// GPIO and ADC models to their own); its IDR and DR reads follow the
+    /// others. A board without one boots exactly as before.
+    #[test]
+    fn a_pin_device_s_stimuli_hooks_and_reads_are_in_the_boot() {
+        let image = image();
+        let pins = aethelgard_twin::pins::Pins {
+            devices: vec![("U2".into(), "DRV8876PWPR".into())],
+            outputs: vec![aethelgard_twin::pins::Output {
+                net: "DRV_NSLEEP".into(),
+                pin: "PA1".into(),
+                bit: 1,
+                high: false,
+                bsrr_at: 0x5802_0018,
+                moder_at: 0x5802_0000,
+            }],
+            inputs: vec![aethelgard_twin::pins::Input {
+                net: "DRV_NFAULT".into(),
+                pin: "PA11".into(),
+                renode: "gpioPortA",
+                bit: 11,
+                high: true,
+                active_high: false,
+                held: false,
+                idr_at: 0x5802_0010,
+            }],
+            analog: vec![aethelgard_twin::pins::Analog {
+                net: "DRV_IPROPI".into(),
+                pin: "PF3".into(),
+                peripheral: "ADC3".into(),
+                renode: "adc3",
+                channel: 5,
+                bits: 12,
+                microvolts: 0,
+                held: false,
+                code: 0,
+                dr_at: 0x5802_6040,
+            }],
+        };
+        let resets = [power::Reset {
+            asserted_ns: 1_014_430,
+            released_ns: Some(1_634_430),
+            cause: vec!["VBOR3".to_owned()],
+        }];
+        let before = plan(&image, &resets).commands();
+        let mut p = plan(&image, &resets);
+        p.pins = &pins;
+        let c = p.commands();
+        assert_eq!(c.matches("gpioPortA OnGPIO 11 true").count(), 2, "{c}");
+        assert_eq!(c.matches("adc3 SetVoltage 0 5").count(), 2, "{c}");
+        let after_reset = c.find("machine Reset").unwrap();
+        assert!(c[after_reset..].contains("gpioPortA OnGPIO 11 true"));
+        assert_eq!(c.matches("AETHELGARD-GPIO").count(), 2, "{c}");
+        assert_eq!(c.matches("AETHELGARD-DR").count(), 1, "{c}");
+        assert!(c.contains("sysbus ReadDoubleWord 0x58020010"));
+        assert!(c.contains("sysbus ReadDoubleWord 0x58026040"));
+        // The same board without the pin device: no command of it.
+        assert!(!before.contains("OnGPIO") && !before.contains("SetVoltage"));
+        assert!(!before.contains("AETHELGARD-GPIO") && !before.contains("AETHELGARD-DR"));
     }
 
     /// `AET-WO-2302` D4, sequential: the boot word schedules the first

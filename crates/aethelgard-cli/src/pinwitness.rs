@@ -436,4 +436,124 @@ mod tests {
         v["pin_devices"][0]["bridges"] = json!([]);
         assert!(of(v).devices[0].analog[0].idle_microvolts.is_err());
     }
+
+    /// D1's plan, as the twin builds it from its declaration.
+    fn plan() -> Pins {
+        let v = d1();
+        let spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        aethelgard_twin::pins::plan(&declared(&spec), &t, &Default::default()).unwrap()
+    }
+
+    const BSRR: u32 = 0x5802_0018;
+    const MODER: u32 = 0x5802_0000;
+
+    fn gpio(i: usize, address: u32, value: u32, before: u32) -> (usize, Hook, u64) {
+        (
+            i,
+            Hook::Gpio {
+                address,
+                value,
+                before,
+                count: 0,
+            },
+            0,
+        )
+    }
+
+    /// nSLEEP (PA1, low): BR1 alone before MODER makes PA1 an output is
+    /// witnessed; after it, or carrying BS1 too, or with no MODER write, it
+    /// is not; another pin's BSRR write is never its; a log not read whole
+    /// is unreadable.
+    #[test]
+    fn an_output_is_witnessed_by_its_level_s_bsrr_write_before_moder() {
+        let p = plan();
+        let status = |h: &[(usize, Hook, u64)]| outputs(&p, Some(h))[0].status;
+        let set_mode = gpio(2, MODER, 0x0000_0004, 0);
+        assert_eq!(
+            status(&[gpio(1, BSRR, 1 << 17, 0), set_mode.clone()]),
+            "witnessed"
+        );
+        assert_eq!(
+            status(&[set_mode.clone(), gpio(3, BSRR, 1 << 17, 0)]),
+            "mismatch"
+        );
+        assert_eq!(
+            status(&[gpio(1, BSRR, 1 << 1, 0), set_mode.clone()]),
+            "mismatch"
+        );
+        assert_eq!(
+            status(&[gpio(1, BSRR, (1 << 17) | (1 << 1), 0), set_mode.clone()]),
+            "mismatch"
+        );
+        assert_eq!(status(&[gpio(1, BSRR, 1 << 17, 0)]), "unwitnessed");
+        // Another pin's write first is not nSLEEP's; nor a MODER write that
+        // leaves PA1's mode as it was.
+        assert_eq!(
+            status(&[
+                gpio(0, BSRR, 1 << 20, 0),
+                gpio(1, BSRR, 1 << 17, 0),
+                set_mode.clone()
+            ]),
+            "witnessed"
+        );
+        assert_eq!(
+            status(&[gpio(1, BSRR, 1 << 17, 0), gpio(2, MODER, 4, 4)]),
+            "unwitnessed"
+        );
+        assert_eq!(outputs(&p, None)[0].status, "unreadable");
+    }
+
+    /// nFAULT (PA11, driven high): IDR bit 11 high is witnessed and passes;
+    /// low is a mismatch; at its active level (held low, read low) it is
+    /// witnessed and named asserted; no word is unreadable.
+    #[test]
+    fn an_input_is_read_back_and_named_asserted_at_its_active_level() {
+        let mut p = plan();
+        assert_eq!(inputs(&p, &[Some(1 << 11)])[0].status, "witnessed");
+        assert_eq!(inputs(&p, &[Some(0)])[0].status, "mismatch");
+        assert_eq!(inputs(&p, &[None])[0].status, "unreadable");
+        assert!(findings(&p, &inputs(&p, &[Some(1 << 11)]), &[]).is_empty());
+        p.inputs[0].high = false;
+        p.inputs[0].held = true;
+        let w = inputs(&p, &[Some(0)]);
+        assert_eq!(w[0].status, "witnessed");
+        let f = findings(&p, &w, &[]);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, GPIO_INPUT_ASSERTED_FINDING);
+    }
+
+    /// IPROPI (code 0 at idle): read by the firmware and holding its code is
+    /// witnessed; another code is a mismatch; never read, or no word, is
+    /// unwitnessed, whatever DR holds.
+    #[test]
+    fn an_adc_input_needs_the_firmware_s_read_and_its_code() {
+        let p = plan();
+        let read = [(0, Hook::Dr { input: 0, count: 9 }, 0)];
+        assert_eq!(analog(&p, Some(&read), &[Some(0)])[0].status, "witnessed");
+        assert_eq!(analog(&p, Some(&read), &[Some(7)])[0].status, "mismatch");
+        assert_eq!(analog(&p, Some(&[]), &[Some(0)])[0].status, "unwitnessed");
+        assert_eq!(analog(&p, Some(&read), &[None])[0].status, "unwitnessed");
+        assert_eq!(analog(&p, None, &[Some(0)])[0].status, "unwitnessed");
+        let other = [(0, Hook::Dr { input: 1, count: 9 }, 0)];
+        assert_eq!(analog(&p, Some(&other), &[Some(0)])[0].reads, 0);
+    }
+
+    /// The stimuli drive each input at its plan's level and set each ADC
+    /// input to its plan's value, in the measured monitor forms; the hooks
+    /// watch nSLEEP's port's BSRR and MODER once each, and IPROPI's DR.
+    #[test]
+    fn the_stimuli_and_hooks_are_the_measured_commands() {
+        let p = plan();
+        assert_eq!(
+            stimuli(&p),
+            ["gpioPortA OnGPIO 11 true", "adc3 SetVoltage 0 5"]
+        );
+        let h = hooks(&p);
+        assert_eq!(h.len(), 3, "{h:?}");
+        assert!(h[0].starts_with("sysbus AddWatchpointHook 0x58020018 DoubleWord Write"));
+        assert!(h[1].starts_with("sysbus AddWatchpointHook 0x58020000 DoubleWord Write"));
+        assert!(h[2].starts_with("sysbus AddWatchpointHook 0x58026040 DoubleWord Read"));
+    }
 }

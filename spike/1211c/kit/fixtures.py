@@ -51,4 +51,7 @@ for name, sv, exp, fx_, ov in [
 ]:
     put(f"sc/d1-{name}.json", {"schema_version": sv, "name": name, "base": "../d1.json",
          "expect": exp, "expect_findings": fx_, "overrides": ov})
+put("sc/d2g-nfault-held-low.json", {"schema_version": 5, "name": "nfault-held-low", "base": "../d2g.json",
+     "expect": "fail", "expect_findings": ["pin_device_input_asserted"],
+     "overrides": [{"pin_held": {"net": "DRV_NFAULT", "level": "low"}}]})
 print("written", sorted(os.listdir(OUT)), sorted(os.listdir(os.path.join(OUT, "sc"))))
