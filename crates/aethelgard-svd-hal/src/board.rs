@@ -7744,7 +7744,7 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
              let clock = rcc.reset_clock(&mut img, &scale2);\n    \
              kani::assume(clock.is_ok());\n    \
              let clock = clock.unwrap();\n    \
-             let {f} = rcc.enable_{f}(&mut img, board.{f});\n",
+             let {f} = rcc.enable_{f}(&mut img, board.{f}, scale2);\n",
             harness_setup(plan, &pins)
         );
         // The oracle's own reading. An ADC it does not see is proved against

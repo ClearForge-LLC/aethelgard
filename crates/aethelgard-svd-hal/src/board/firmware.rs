@@ -923,7 +923,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     }
     for name in plan.adcs.keys() {
         let f = name.to_ascii_lowercase();
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2);");
     }
     for (pin, p) in plan
         .pins

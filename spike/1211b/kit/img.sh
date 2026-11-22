@@ -9,7 +9,10 @@ export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 IMAGE=$(cat "$REPO/container/IMAGE")
 exec 9>"$CACHE/container.lock"; flock 9
 echo "$(date -Is) image=$IMAGE repo=$REPO mem=${MEM:-8G} cmd: $*" >> "$CACHE/caps.log"
+# The cargo home: CARGO_HOME_DIR if set (a host cache), else the image's own.
+CH=()
+[ -n "${CARGO_HOME_DIR:-}" ] && CH=(-v "$CARGO_HOME_DIR":/cargo-home -e CARGO_HOME=/cargo-home)
 exec nice -n 10 ~/bin/capped-run --mem "${MEM:-8G}" --tasks 8192 -- --rm --network none \
-  -v "$REPO":/repo -v "$CACHE":/cache -v "$HOME/.cache/aet-4400e/cargo-home":/cargo-home -w /repo \
-  -e CARGO_HOME=/cargo-home -e CARGO_NET_OFFLINE=true -e CARGO_TARGET_DIR=${TDIR:-/cache/target} \
+  -v "$REPO":/repo -v "$CACHE":/cache "${CH[@]}" -w /repo \
+  -e CARGO_NET_OFFLINE=true -e CARGO_TARGET_DIR=${TDIR:-/cache/target} \
   "$IMAGE" "$@" 2> >(tee -a "$CACHE/caps.log" >&2)
