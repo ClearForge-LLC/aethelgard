@@ -1098,6 +1098,39 @@ def main():
     H.append({"unit": "H", "id": "H:pin-table", "type_name": "PinTable", "member": "", "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)", "at": pt["file"] + ":%d" % pt["line"],
               "cites": "no page cited: rows are built from a vendored source, cited by repository, commit and sha256 (PinSource)"})
 
+    # Citations resolved by hand from held documents (citations.tsv): every
+    # page-less held fact gets a document and a page, or a stated locator for
+    # a source with no pages (RULES §3; FEEDBACK §7 F1).
+    cit = {}
+    cpath = pathlib.Path(a.out).parent / "citations.tsv"
+    if cpath.exists():
+        for line in cpath.read_text().splitlines()[1:]:
+            f = line.split("\t")
+            cit[f[0]] = f
+    for h in H:
+        if h["id"] in cit:
+            h["cites"] = "%s, %s" % (cit[h["id"]][1], cit[h["id"]][2])
+    for h in H:
+        if h["id"].count(":") == 2 or h["id"] == "H:pin-table":
+            continue
+        data = [d for i, d, _ in TABLE_ROOTS if i == h["id"]][0]
+        rows_unpaged = set()
+        def collect(v):
+            if isinstance(v, dict):
+                if isinstance(v.get("document"), str) and not PAGE.search(json.dumps(v)):
+                    rows_unpaged.add("row|%s|%s|%s" % (pathlib.Path(data).name, v["document"], v.get("section", "")[:60].replace("\t", " ")))
+                for x in v.values():
+                    collect(x)
+            elif isinstance(v, list):
+                for x in v:
+                    collect(x)
+        collect(json.loads((repo / data).read_text()))
+        unresolved = sorted(r for r in rows_unpaged if r not in cit)
+        for r in unresolved:
+            fail.append("A PAGE-LESS ROW CITATION NOT IN citations.tsv: " + r)
+        if rows_unpaged:
+            h["cites"] += "; its %d page-less row citations each resolved in citations.tsv" % len(rows_unpaged)
+
     # T: the solved topology, from its Serialize derive (what solve prints),
     # then every other serde type no walk reached, each as its own root.
     st = crate.get("SolvedTopology", "lib.rs")
@@ -1194,6 +1227,10 @@ def join(inv, cls_path, here):
                 fail.append("D is for a held table or source item only (rule 1): %s" % e["id"])
             e.update(r)
             e["rp2350"] = NOT_HELD if r["class"] in ("N", "S") else ""
+    LOCATED = re.compile(r"\bpp?\.\s*\d|not paginated|whole document|not held data")
+    for e in inv["H"]:
+        if e["id"].count(":") == 2 and rows.get(e["id"], {}).get("class") in ("D", "S", "N") and not LOCATED.search(e.get("cites", "")):
+            fail.append("HELD DATA WITH NO PAGE (RULES §3, WO §1.2): %s: %s" % (e["id"], e.get("cites")))
     for i in sorted(set(rows) - ids):
         fail.append("CLASSED BUT NO SUCH ENTRY: %s" % i)
     # No second-chip fact in any reason (RULES §2: judged from ST's side alone).

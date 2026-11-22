@@ -1,0 +1,90 @@
+id	document	page	method
+H:bench:BOOT0_PULL_DOWN_OHMS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 136–137 (Table 49, BOOT0 leakage), p. 139 (Table 50)	an engine value judged against these; pagefind.py on the held PyMuPDF text
+H:bench:DRIVER_DROP_MILLIVOLTS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 139 (Table 50, VOH at IIO 4 mA)	pagefind.py on the held PyMuPDF text
+H:lib:NRST	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 66 (pin/ball definitions, NRST)	pagefind.py on the held PyMuPDF text
+H:lib:BOOT0	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 86 (pin/ball definitions, BOOT0)	pagefind.py on the held PyMuPDF text
+H:lib:DEBUG_NETS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 66 (NRST), pp. 80–81 (PA13 JTMS-SWDIO, PA14 JTCK-SWCLK), p. 86 (BOOT0)	pagefind.py on the held PyMuPDF text
+H:lib:MAX_BOR_LEVEL	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	p. 214 (BOR_LEV: VBOR0 to VBOR3)	pagefind.py on the held PyMuPDF text
+H:lib:RESERVED_REFERENCES	Renode 1.17.0 platform files pinned by the twin	not paginated: the names the pinned .repl files declare, asserted by aethelgard-twin/tests/reserved_names.rs	source comment lib.rs:2852
+H:lib:OBSERVER_RULE	AET-WO-4300a (Renode observer names)	not paginated: a work order (markdown); the port letters and pin numbers it spans are DS12117 pp. 64–88	source comment
+H:motor:OFFSETS	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	p. 497 (RCC register map and reset values)	pagefind.py on the held PyMuPDF text
+H:motor:TIMERS	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	pp. 134–135 (§2.3.2, Table 8)	pagefind.py on the held PyMuPDF text
+H:off_domain:FOREIGN_CLOCK_NET	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 66 (pin/ball definitions, PH0-OSC_IN)	pagefind.py on the held PyMuPDF text
+H:pin_devices:MODELLED_ADCS	AET-WO-1211 §4 A6 (Renode models ADC1 and ADC3)	not paginated: a work order (markdown)	source comment pin_devices.rs:2117
+H:power:BATTERY_NET	none: an engine net name for the battery rail	not held data	reclassed V (overrides.tsv)
+H:serial:PERIPHERALS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 23 (the USART, UART and LPUART instances)	pagefind.py on the held PyMuPDF text
+H:serial:LPUART	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	p. 471 (RCC_APB4ENR, LPUART1EN); DS12117 p. 23	pagefind.py on the held PyMuPDF text
+H:serial:TOLERANCE	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	pp. 2036–2037 (Tables 406 and 407)	pagefind.py on the held PyMuPDF text
+H:silicon:I2C_LIMITS	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	p. 1958 (Table 388), p. 1973 (Table 390)	pagefind.py on the held PyMuPDF text
+H:solve:RESERVED_PINS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 65 (PC14-OSC32_IN, PC15-OSC32_OUT), pp. 80–81 (PA13 JTMS-SWDIO, PA14 JTCK-SWCLK)	pagefind.py on the held PyMuPDF text
+H:solve:H1_SYS_HZ	STMicroelectronics RM0433 Rev 9 (sha256 672a9433…, ~/.cache/aet-1211/ds/rm0433-rev9.pdf)	p. 393 (HSI the system clock after reset), p. 341 (HSI at 64 MHz)	pagefind.py on the held PyMuPDF text
+H:solve:I2C_AF_MIN_NS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 188 (Table 94, rev Y), p. 298 (Table 192, rev V)	pagefind.py on the held PyMuPDF text
+H:speeds:LOADS_PICOFARADS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 245–246 (Table 149)	pagefind.py on the held PyMuPDF text
+H:speeds:BANDS_MILLIVOLTS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 245–246 (Table 149)	pagefind.py on the held PyMuPDF text
+H:vos:BUS_LIMITS_REV_V	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 209–210 (Table 111, revision V)	pagefind.py on the held PyMuPDF text
+H:vos:VOS_LIMIT_AT_BOUNDARY	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 209–210 (Table 111)	pagefind.py on the held PyMuPDF text
+H:vos:LIMITS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	pp. 209–210 (Table 111); RM0433 Rev 9 pp. 355–356 (Table 60)	pagefind.py on the held PyMuPDF text
+row|parts.json|Bosch Sensortec BST-BME280-DS001-24|6.2 (SDO to GND 0x76, to VDDIO 0x77)	Bosch Sensortec BST-BME280-DS001-24	PDF p. 32	held text ~/.cache/aet-4300c/adv-scratch/bme280.txt (same document, rev 1.24), pagefind.py
+row|parts.json|Bosch Sensortec BST-BME280-DS001-24|5.4.1 and table 18 (id, register 0xD0, 0x60)	Bosch Sensortec BST-BME280-DS001-24	PDF pp. 26–27	as above
+row|parts.json|Bosch Sensortec BST-BME280-DS001-24|1.1, table 1 (VDD 1.71 to 3.6 V)	Bosch Sensortec BST-BME280-DS001-24	PDF p. 8	as above
+row|parts.json|Bosch Sensortec BST-BME280-DS001-24|1.1, table 1 (VDDIO 1.2 to 3.6 V, apart from VDD)	Bosch Sensortec BST-BME280-DS001-24	PDF p. 8	as above
+row|parts.json|Bosch Sensortec BST-BME280-DS001-24|6.4.1 (no pin capacitance is printed; only the I2C bus load 	Bosch Sensortec BST-BME280-DS001-24	PDF p. 35	as above
+row|parts.json|Bosch Sensortec BME280 product page|listed in the current humidity-sensor catalogue with its dat	Bosch Sensortec BME280 product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp|lines 39 and 76: BME280_ID 0x60, which AP_Baro_BMP280's prob	ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp	not paginated: source file at commit fb773567, by the lines the section names	row section
+row|parts.json|Bosch Sensortec BMP581 product page|no lifecycle word; listed in Bosch's current pressure-sensor	Bosch Sensortec BMP581 product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp|lines 23 and 99: BMP581_ID 0x50, the chip ID AP_Baro_BMP581'	ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp	not paginated: source file at commit fb773567, by the lines the section names	row section
+row|parts.json|TDK InvenSense DS-000189 ICM-20948|6.5 (SCLK at most 7 MHz; data latched on the rising edge, so	TDK InvenSense DS-000189 ICM-20948	PDF p. 31	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|TDK InvenSense DS-000189 ICM-20948|8.1 (WHO_AM_I, bank 0 address 0x00, 0xEA) and 6.5 (first bit	TDK InvenSense DS-000189 ICM-20948	PDF p. 36	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|TDK InvenSense DS-000189 ICM-20948|3.4 (VDD 1.71 to 3.6 V; VDDIO is 1.71 to 1.95 V)	TDK InvenSense DS-000189 ICM-20948	PDF p. 13	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|TDK InvenSense DS-000189 ICM-20948|3.4 (digital input CI "< 10" pF in the TYP column: a typical	TDK InvenSense DS-000189 ICM-20948	PDF p. 14	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|TDK InvenSense ICM-20948 product page|the heading carries the EOL badge	TDK InvenSense ICM-20948 product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|TDK InvenSense ICM-42688-P product page|the status badge beside the part's own title reads "Producti	TDK InvenSense ICM-42688-P product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp|lines 139 and 1011: INV3_ID_ICM42688_P 0x47, a WHOAMI AP_Ine	ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp	not paginated: source file at commit fb773567, by the lines the section names	row section
+row|parts.json|ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp|lines 463-464 and 522-527: each FIFO sample is Vector3f{x, y	ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp	not paginated: source file at commit fb773567, by the lines the section names	row section
+row|parts.json|Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567|no datasheet value (DS-000177 5.7, table 15: bits 5:0 produc	Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567	not paginated: source file at commit 066a7f13	row section
+row|parts.json|TDK InvenSense ICP-10111 product page|the heading carries the EOL badge	TDK InvenSense ICP-10111 product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|Texas Instruments SNOSD82D TMP117|7.5.3.1.2, table 7-2 (ADD0 to GND, V+, SDA, SCL: 0x48 to 0x4	Texas Instruments SNOSD82D TMP117	PDF p. 21	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Texas Instruments SNOSD82D TMP117|7.6.11 (Device_ID, register 0x0F, reset 0x0117; Rev[3:0] rea	Texas Instruments SNOSD82D TMP117	PDF p. 32	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Texas Instruments SNOSD82D TMP117|6.3 (V+ 1.8 to 5.5 V)	Texas Instruments SNOSD82D TMP117	PDF p. 5	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Texas Instruments SNOSD82D TMP117|6.5 (input capacitance 4 pF, typical only)	Texas Instruments SNOSD82D TMP117	PDF p. 6	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Texas Instruments TMP117 product page|the status badge reads ACTIVE beside the part number	Texas Instruments TMP117 product page	not paginated: a web page as fetched 2026-11-15, held by sha256	row revision
+row|parts.json|Winbond W25Q64JV|6.1 (modes 0 and 3) and 9.6 (FR 104 MHz at 2.7 to 3.0 V, 133	Winbond W25Q64JV	PDF p. 12, and p. 64 (9.6)	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Winbond W25Q64JV|8.1 (Read JEDEC ID 9Fh: EFh, then 4017h for the IQ and JQ or	Winbond W25Q64JV	PDF p. 22 (the ID table); the instruction is on p. 50	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Winbond W25Q64JV|9.2 (VCC 2.7 to 3.6 V)	Winbond W25Q64JV	PDF p. 60	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Winbond W25Q64JV|9.4 (CIN 6 pF max, Cout 8 pF max; the larger is held; note 1	Winbond W25Q64JV	PDF p. 62	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|parts.json|Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv|column 15 Status-Industrial = N for all 16 xIQ codes (legend	Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv	not paginated: a CSV export, by the column the section names	row section
+row|parts.json|ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp|lines 54, 65 and 140: JEDEC_ID_WINBOND_W25Q64 0xEF4017, on t	ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp	not paginated: source file at commit fb773567, by the lines the section names	row section
+row|parts.json|TI SLVSAR1E DRV8833|	TI SLVSAR1E DRV8833	whole document (30 pp.): the row's document of record; its values cite their own pages	row source field
+row|parts.json|TI SLVSDS7B DRV8876|	TI SLVSDS7B DRV8876	whole document (48 pp.): the row's document of record; its values cite their own pages	row source field
+row|power-parts.json|ST_PIN_DATA_H753ZI|each Pin's Name and Position, LQFP144 (VDD 11 pins, VSS 9; P	ST_PIN_DATA_H753ZI	not paginated: ST's pin data, by the pin entries the section names	row section
+row|power-parts.json|ST_PIN_DATA_H753ZI|PA13 carries JTMS-SWDIO: the debug port's data line, its own	ST_PIN_DATA_H753ZI	not paginated: ST's pin data, by the pin entries the section names	row section
+row|power-parts.json|ST_PIN_DATA_H753ZI|PA14 carries JTCK-SWCLK: the debug port's clock, its own sig	ST_PIN_DATA_H753ZI	not paginated: ST's pin data, by the pin entries the section names	row section
+row|power-parts.json|AP_CHIBIOS_HWDEF|lines 2894-2897: `MCU <series> <type>` sets mcu_series and m	AP_CHIBIOS_HWDEF	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|AP_STM32H753XX|the AltFunction_map the MCU line imports	AP_STM32H753XX	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|AP_STM32H7_MCUCONF|lines 113-121 and 168-178: with STM32_HSECLK 0 the PLLs run 	AP_STM32H7_MCUCONF	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|CHIBIOS_HAL_LLD_TYPE1|OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz 	CHIBIOS_HAL_LLD_TYPE1	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|CHIBIOS_HAL_LLD_TYPE1|OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz 	CHIBIOS_HAL_LLD_TYPE1	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|CHIBIOS_HAL_LLD_TYPE1|OSCILLATOR_HZ 0: SPI6 on PLL2_Q (mcuconf 345); HSI 64 MHz th	CHIBIOS_HAL_LLD_TYPE1	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|AP_SPIDEVICE|lines 259-276: the bus clock / 2 halved at most 7 times to t	AP_SPIDEVICE	not paginated: source file at a pinned commit, by the lines the section names	row section
+row|power-parts.json|MURATA_GCM32EC71H106KA03|Rated Value table, operating temp. range -55 to 125 C	MURATA_GCM32EC71H106KA03	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM32EC71H106KA03|Rated Value table, capacitance	MURATA_GCM32EC71H106KA03	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM32EC71H106KA03|Rated Value table, rated voltage	MURATA_GCM32EC71H106KA03	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM32EC71H106KA03_DCBIAS|the whole chart, 0 to 50 V; digitized from the maker's chart	MURATA_GCM32EC71H106KA03_DCBIAS	not paginated: the maker's DC-bias chart, digitized (held PNG)	row section
+row|power-parts.json|MURATA_GCM32EC71H106KA03|Rated Value table, capacitance tolerance +/-10 %	MURATA_GCM32EC71H106KA03	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM32EC71H106KA03|Rated Value table, X7S, cap. change -22 to 22 % over -55 to 	MURATA_GCM32EC71H106KA03	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H224KA64|Rated Value table, operating temp. range -55 to 125 C	MURATA_GCM188R71H224KA64	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H224KA64|Rated Value table, capacitance	MURATA_GCM188R71H224KA64	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H224KA64|Rated Value table, rated voltage	MURATA_GCM188R71H224KA64	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H104KA57|Rated Value table, operating temp. range -55 to 125 C	MURATA_GCM188R71H104KA57	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H104KA57|Rated Value table, capacitance	MURATA_GCM188R71H104KA57	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GCM188R71H104KA57|Rated Value table, rated voltage	MURATA_GCM188R71H104KA57	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM188R71C105KA12|Rated Value table, operating temp. range -55 to 125 C	MURATA_GRM188R71C105KA12	PDF p. 1	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM188R71C105KA12|Rated Value table, capacitance	MURATA_GRM188R71C105KA12	PDF p. 1	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM188R71C105KA12|Rated Value table, rated voltage	MURATA_GRM188R71C105KA12	PDF p. 1	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER71A226KE20|Rated Value table, operating temp. range -55 to 125 C	MURATA_GRM32ER71A226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER71A226KE20|Rated Value table, capacitance	MURATA_GRM32ER71A226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER71A226KE20|Rated Value table, rated voltage	MURATA_GRM32ER71A226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER61C226KE20|Rated Value table, operating temp. range -55 to 85 C	MURATA_GRM32ER61C226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER61C226KE20|Rated Value table, capacitance	MURATA_GRM32ER61C226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+row|power-parts.json|MURATA_GRM32ER61C226KE20|Rated Value table, rated voltage	MURATA_GRM32ER61C226KE20	PDF p. 2	pdftext.py (this spike) on the held PDF, then pagefind.py
+H:electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS	STMicroelectronics DS12117 Rev 10 (sha256 607b9ead…, ~/.cache/aet-1211/ds/ds12117-rev10.pdf)	p. 139 (Table 50, rev Y: VOL at 8 mA, 2.7 V ≤ VDD ≤ 3.6 V); p. 243 (rev V)	pagefind.py on the held PyMuPDF text

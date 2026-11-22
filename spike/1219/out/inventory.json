@@ -10761,7 +10761,7 @@
    "member": "",
    "json": "crates/aethelgard-ir/data/parts.json",
    "at": "crates/aethelgard-ir/src/parts.rs:675",
-   "cites": "62 row citations, 30 name a page; documents: ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp, ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp, ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp, ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp, Bosch Sensortec BME280 product page, Bosch Sensortec BMP581 product page, Bosch Sensortec BST-BME280-DS001-24, Bosch Sensortec BST-BMP581-DS004-13, Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567, TDK InvenSense DS-000177 ICP-10111, TDK InvenSense DS-000189 ICM-20948, TDK InvenSense DS-000347 ICM-42688-P, TDK InvenSense ICM-20948 product page, TDK InvenSense ICM-42688-P product page, TDK InvenSense ICP-10111 product page, TI SLVSAR1E DRV8833, TI SLVSDS7B DRV8876, Texas Instruments SNOSD82D TMP117, Texas Instruments TMP117 product page, Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv, Winbond W25Q64JV"
+   "cites": "62 row citations, 30 name a page; documents: ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp, ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp, ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp, ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp, Bosch Sensortec BME280 product page, Bosch Sensortec BMP581 product page, Bosch Sensortec BST-BME280-DS001-24, Bosch Sensortec BST-BMP581-DS004-13, Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567, TDK InvenSense DS-000177 ICP-10111, TDK InvenSense DS-000189 ICM-20948, TDK InvenSense DS-000347 ICM-42688-P, TDK InvenSense ICM-20948 product page, TDK InvenSense ICM-42688-P product page, TDK InvenSense ICP-10111 product page, TI SLVSAR1E DRV8833, TI SLVSDS7B DRV8876, Texas Instruments SNOSD82D TMP117, Texas Instruments TMP117 product page, Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv, Winbond W25Q64JV; its 32 page-less row citations each resolved in citations.tsv"
   },
   {
    "unit": "H",
@@ -10770,7 +10770,7 @@
    "member": "",
    "json": "crates/aethelgard-ir/data/power-parts.json",
    "at": "crates/aethelgard-ir/src/power_parts.rs:899",
-   "cites": "163 row citations, 129 name a page; documents: ABM8AIG, AN2834, AP_CHIBIOS_HWDEF, AP_SPIDEVICE, AP_STM32H753XX, AP_STM32H7_MCUCONF, CHIBIOS_HAL_LLD_TYPE1, DS12117, KEMET_C1003_C0G, MURATA_GCM188R71H104KA57, MURATA_GCM188R71H224KA64, MURATA_GCM32EC71H106KA03, MURATA_GCM32EC71H106KA03_DCBIAS, MURATA_GRM188R71C105KA12, MURATA_GRM32ER61C226KE20, MURATA_GRM32ER71A226KE20, NICHICON_UCZ, RM0433, SBVS320D, SCES935A, SNVSAN3F, ST_PIN_DATA_H753ZI, VISHAY_20035, VISHAY_28758, VISHAY_34123"
+   "cites": "163 row citations, 129 name a page; documents: ABM8AIG, AN2834, AP_CHIBIOS_HWDEF, AP_SPIDEVICE, AP_STM32H753XX, AP_STM32H7_MCUCONF, CHIBIOS_HAL_LLD_TYPE1, DS12117, KEMET_C1003_C0G, MURATA_GCM188R71H104KA57, MURATA_GCM188R71H224KA64, MURATA_GCM32EC71H106KA03, MURATA_GCM32EC71H106KA03_DCBIAS, MURATA_GRM188R71C105KA12, MURATA_GRM32ER61C226KE20, MURATA_GRM32ER71A226KE20, NICHICON_UCZ, RM0433, SBVS320D, SCES935A, SNVSAN3F, ST_PIN_DATA_H753ZI, VISHAY_20035, VISHAY_28758, VISHAY_34123; its 31 page-less row citations each resolved in citations.tsv"
   },
   {
    "unit": "H",
@@ -10789,7 +10789,7 @@
    "json": "u32",
    "at": "crates/aethelgard-ir/src/bench.rs:39",
    "value": "10_000",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 136\u2013137 (Table 49, BOOT0 leakage), p. 139 (Table 50)"
   },
   {
    "unit": "H",
@@ -10819,7 +10819,7 @@
    "json": "u64",
    "at": "crates/aethelgard-ir/src/bench.rs:53",
    "value": "400",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 139 (Table 50, VOH at IIO 4 mA)"
   },
   {
    "unit": "H",
@@ -11139,7 +11139,7 @@
    "json": "u64",
    "at": "crates/aethelgard-ir/src/electrical.rs:54",
    "value": "2700",
-   "cites": "DS12117, no page cited"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 139 (Table 50, rev Y: VOL at 8 mA, 2.7 V \u2264 VDD \u2264 3.6 V); p. 243 (rev V)"
   },
   {
    "unit": "H",
@@ -11199,7 +11199,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/lib.rs:151",
    "value": "\"NRST\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 66 (pin/ball definitions, NRST)"
   },
   {
    "unit": "H",
@@ -11209,7 +11209,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/lib.rs:152",
    "value": "\"BOOT0\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 86 (pin/ball definitions, BOOT0)"
   },
   {
    "unit": "H",
@@ -11219,7 +11219,7 @@
    "json": "[&str; 4]",
    "at": "crates/aethelgard-ir/src/lib.rs:153",
    "value": "[SWDIO, SWCLK, NRST, BOOT0]",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 66 (NRST), pp. 80\u201381 (PA13 JTMS-SWDIO, PA14 JTCK-SWCLK), p. 86 (BOOT0)"
   },
   {
    "unit": "H",
@@ -11249,7 +11249,7 @@
    "json": "u8",
    "at": "crates/aethelgard-ir/src/lib.rs:416",
    "value": "3",
-   "cites": "RM0433, no page cited"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), p. 214 (BOR_LEV: VBOR0 to VBOR3)"
   },
   {
    "unit": "H",
@@ -11349,7 +11349,7 @@
    "json": "&[&str]",
    "at": "crates/aethelgard-ir/src/lib.rs:2864",
    "value": "&[ \"adc3\", \"as\", \"bdma\", \"cpu\", \"crc\", \"crypto\", \"dma1\", \"dma2\", \"dma2d\", \"dmamux1\", \"dtcm\", \"dwt\", \"empty\", \"ethernet\", \"exti\", \"false\", \"fdcan1\", \"fdcan2\", \"fmc\", \"hsem\", \"i2c1\", \"i2c2\", \"i2c3\", \"i2c4\", \"init\", \"itcm\", \"local\", \"lptimer1\", \"lptimer2\", \"lptimer3\", \"lptimer4\", \"lptimer5\", \"lpuart1\",\u2026",
-   "cites": "no citation"
+   "cites": "Renode 1.17.0 platform files pinned by the twin, not paginated: the names the pinned .repl files declare, asserted by aethelgard-twin/tests/reserved_names.rs"
   },
   {
    "unit": "H",
@@ -11369,7 +11369,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/lib.rs:3027",
    "value": "\"a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)\"",
-   "cites": "no citation"
+   "cites": "AET-WO-4300a (Renode observer names), not paginated: a work order (markdown); the port letters and pin numbers it spans are DS12117 pp. 64\u201388"
   },
   {
    "unit": "H",
@@ -11409,7 +11409,7 @@
    "json": "[(&'static str, u32); 6]",
    "at": "crates/aethelgard-ir/src/motor.rs:536",
    "value": "[ (\"RCC_CR\", 0x000), (\"RCC_CFGR\", 0x010), (\"RCC_D1CFGR\", 0x018), (\"RCC_D2CFGR\", 0x01C), (\"RCC_PLLCKSELR\", 0x028), (\"RCC_PLL1DIVR\", 0x030), ]",
-   "cites": "RM0433, no page cited"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), p. 497 (RCC register map and reset values)"
   },
   {
    "unit": "H",
@@ -11419,7 +11419,7 @@
    "json": "[u32; 12]",
    "at": "crates/aethelgard-ir/src/motor.rs:659",
    "value": "[1, 2, 3, 4, 5, 8, 12, 13, 14, 15, 16, 17]",
-   "cites": "RM0433, no page cited"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), pp. 134\u2013135 (\u00a72.3.2, Table 8)"
   },
   {
    "unit": "H",
@@ -11479,7 +11479,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/off_domain.rs:141",
    "value": "\"OSC_IN\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 66 (pin/ball definitions, PH0-OSC_IN)"
   },
   {
    "unit": "H",
@@ -11779,7 +11779,7 @@
    "json": "[&str; 2]",
    "at": "crates/aethelgard-ir/src/pin_devices.rs:2119",
    "value": "[\"ADC1\", \"ADC3\"]",
-   "cites": "no citation"
+   "cites": "AET-WO-1211 \u00a74 A6 (Renode models ADC1 and ADC3), not paginated: a work order (markdown)"
   },
   {
    "unit": "H",
@@ -11809,7 +11809,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/power.rs:82",
    "value": "\"VBAT\"",
-   "cites": "no citation"
+   "cites": "none: an engine net name for the battery rail, not held data"
   },
   {
    "unit": "H",
@@ -11869,7 +11869,7 @@
    "json": "[&str; 8]",
    "at": "crates/aethelgard-ir/src/serial.rs:188",
    "value": "[ \"USART1\", \"USART2\", \"USART3\", \"UART4\", \"UART5\", \"USART6\", \"UART7\", \"UART8\", ]",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 23 (the USART, UART and LPUART instances)"
   },
   {
    "unit": "H",
@@ -11879,7 +11879,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/serial.rs:193",
    "value": "\"LPUART1\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), p. 471 (RCC_APB4ENR, LPUART1EN); DS12117 p. 23"
   },
   {
    "unit": "H",
@@ -11899,7 +11899,7 @@
    "json": "[ToleranceRow; 6]",
    "at": "crates/aethelgard-ir/src/serial.rs:249",
    "value": "[ ToleranceRow { table: \"Table 406\", m_bits: 0b00, tolerance_ppm: 37_500, }, ToleranceRow { table: \"Table 406\", m_bits: 0b01, tolerance_ppm: 34_100, }, ToleranceRow { table: \"Table 406\", m_bits: 0b10, tolerance_ppm: 41_600, }, ToleranceRow { table: \"Table 407\", m_bits: 0b00, tolerance_ppm: 33_300, }\u2026",
-   "cites": "RM0433, no page cited"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), pp. 2036\u20132037 (Tables 406 and 407)"
   },
   {
    "unit": "H",
@@ -12089,7 +12089,7 @@
    "json": "[I2cLimits; 3]",
    "at": "crates/aethelgard-ir/src/silicon.rs:394",
    "value": "[ I2cLimits { mode: \"Standard100k\", scl_hz: 100_000, t_low_ns: 4_700, t_high_ns: 4_000, tr_max_ns: 1_000, tf_max_ns: 300, t_su_dat_ns: 250, t_hd_dat_min_ns: 0, t_vd_dat_max_ns: 3_450, kernel_min_hz: 2_000_000, }, I2cLimits { mode: \"Fast400k\", scl_hz: 400_000, t_low_ns: 1_300, t_high_ns: 600, tr_max_\u2026",
-   "cites": "no citation"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), p. 1958 (Table 388), p. 1973 (Table 390)"
   },
   {
    "unit": "H",
@@ -12189,7 +12189,7 @@
    "json": "[&str; 4]",
    "at": "crates/aethelgard-ir/src/solve.rs:21",
    "value": "[\"PA13\", \"PA14\", \"PC14\", \"PC15\"]",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 65 (PC14-OSC32_IN, PC15-OSC32_OUT), pp. 80\u201381 (PA13 JTMS-SWDIO, PA14 JTCK-SWCLK)"
   },
   {
    "unit": "H",
@@ -12219,7 +12219,7 @@
    "json": "u64",
    "at": "crates/aethelgard-ir/src/solve.rs:890",
    "value": "64_000_000",
-   "cites": "no citation"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), p. 393 (HSI the system clock after reset), p. 341 (HSI at 64 MHz)"
   },
   {
    "unit": "H",
@@ -12259,7 +12259,7 @@
    "json": "u64",
    "at": "crates/aethelgard-ir/src/solve.rs:1082",
    "value": "50",
-   "cites": "DS12117, no page cited"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 188 (Table 94, rev Y), p. 298 (Table 192, rev V)"
   },
   {
    "unit": "H",
@@ -12309,7 +12309,7 @@
    "json": "[u32; 3]",
    "at": "crates/aethelgard-ir/src/speeds.rs:35",
    "value": "[10, 30, 50]",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 245\u2013246 (Table 149)"
   },
   {
    "unit": "H",
@@ -12319,7 +12319,7 @@
    "json": "[(u32, u32); 2]",
    "at": "crates/aethelgard-ir/src/speeds.rs:40",
    "value": "[(1620, 2700), (2700, 3600)]",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 245\u2013246 (Table 149)"
   },
   {
    "unit": "H",
@@ -12379,7 +12379,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/vos.rs:56",
    "value": "\"bus_limits_rev_v\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 209\u2013210 (Table 111, revision V)"
   },
   {
    "unit": "H",
@@ -12389,7 +12389,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/vos.rs:60",
    "value": "\"vos_limit_at_boundary\"",
-   "cites": "no citation"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 209\u2013210 (Table 111)"
   },
   {
    "unit": "H",
@@ -12419,7 +12419,7 @@
    "json": "[(Family, [Option<u64>; 4], &str); 12]",
    "at": "crates/aethelgard-ir/src/vos.rs:89",
    "value": "[ ( Family::Cpu, [Some(480), Some(400), Some(300), Some(200)], DS12117_TABLE_111, ), ( Family::Hclk, [Some(240), Some(200), Some(150), Some(100)], DS12117_TABLE_111, ), ( Family::Pclk, [Some(120), Some(100), Some(75), Some(50)], DS12117_TABLE_111, ), ( Family::Tim, [Some(240), Some(200), Some(150), \u2026",
-   "cites": "DS12117, RM0433, no page cited"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 209\u2013210 (Table 111); RM0433 Rev 9 pp. 355\u2013356 (Table 60)"
   },
   {
    "unit": "H",

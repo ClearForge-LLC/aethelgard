@@ -1,6 +1,6 @@
 id	class	flag	tags	value_at	reason
 H:bench:BOOT0_LEAKAGE_NANOAMPS	D				Reviewer, amendment 4: DS12117 BOOT0 leakage figure in nA; a held fact, rule 1.
-H:bench:BOOT0_PULL_DOWN_OHMS	D				Reviewer, amendment 4: one ST-pin figure in ohms; a second vendor supplies its own value (rule 1 before rule 3).
+H:bench:BOOT0_PULL_DOWN_OHMS	V			bench.rs:39	Reviewer (re-read for its citation): the 10 kOhm the emitter draws, an engine design value that judge_boot0_pull_down tests against DS12117 Tables 49-50; not a datasheet figure, so not D.
 H:bench:DRIVER_DROP_MILLIVOLTS	D				Reviewer, amendment 4: DS12117 Table 50 VOH drop in mV; a held fact, rule 1.
 H:bench:DRIVER_MICROAMPS	D				Reviewer, amendment 4: DS12117 Table 50 I/O current figure in uA; a held fact, rule 1.
 H:board:FLOOR_UM	V			-	Engine limit on board geometry; no ST meaning.
@@ -495,7 +495,7 @@ H:power-parts.json|power_parts:RawTvs.standoff_millivolts	V		other-vendor	-	non-
 H:power-parts.json|power_parts:RawVinStep.from_vout_millivolts	V		other-vendor	power_parts.rs:1024	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
 H:power-parts.json|power_parts:RawVinStep.vin_min	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
 H:power:BATTERY	V			-	Plumbing, field-name list or engine limit.
-H:power:BATTERY_NET	N			-	Reviewer: the VBAT net name over a generic battery-backup supply net; doubt cleared.
+H:power:BATTERY_NET	V			power.rs:82	Reviewer (re-read for its citation): the drawn board's battery-pack rail (AET-WO-4300d2 K10), a generic battery abbreviation, not the MCU's VBAT pin; generic in name and meaning.
 H:power_parts:F	V			-	Plumbing, field-name list or engine limit.
 H:power_parts:MAX_VALUE	V			-	Plumbing, field-name list or engine limit.
 H:power_parts:POWER_PARTS_JSON	V			-	Plumbing, field-name list or engine limit.

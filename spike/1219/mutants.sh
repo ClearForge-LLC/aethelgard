@@ -35,10 +35,18 @@ EOF
 kill "M2 file key not in source" "FILE KEY NOT IN SOURCE" --src "$S/src" --dump "$D" --out "$S/o2"
 # M3: one entry left unclassed.
 mkdir -p "$S/m3/out"; cp "$here/out/inventory.json" "$S/m3/out/"
-grep -v -P "^lib:McuWire.bor_level\t" "$here/classes.tsv" > "$S/m3/classes.tsv"
+grep -v -P "^lib:McuWire.bor_level\t" "$here/classes.tsv" > "$S/m3/classes.tsv"; cp "$here/citations.tsv" "$S/m3/"
 kill "M3 unclassed entry" "UNCLASSED K lib:McuWire.bor_level" --dump "$D" --out "$S/m3/out"
 # M4: a second chip named in a reason.
-mkdir -p "$S/m4/out"
+mkdir -p "$S/m4/out"; cp "$here/citations.tsv" "$S/m4/"
 sed 's/^\(lib:McuWire.part\t[^\t]*\t[^\t]*\t[^\t]*\t[^\t]*\t\)/\1unlike the RP2350, /' "$here/classes.tsv" > "$S/m4/classes.tsv"
 kill "M4 second-chip fact in a reason" "A SECOND-CHIP FACT IN A REASON: lib:McuWire.part" --dump "$D" --out "$S/m4/out"
+# M5: a held ST fact loses its resolved citation.
+mkdir -p "$S/m5/out"; cp "$here/classes.tsv" "$S/m5/"
+grep -v -P "^H:lib:MAX_BOR_LEVEL\t" "$here/citations.tsv" > "$S/m5/citations.tsv"
+kill "M5 held data with no page" "HELD DATA WITH NO PAGE (RULES §3, WO §1.2): H:lib:MAX_BOR_LEVEL" --dump "$D" --out "$S/m5/out"
+# M6: a page-less row citation of a held table is left unresolved.
+mkdir -p "$S/m6/out"; cp "$here/classes.tsv" "$S/m6/"
+grep -v -P "^row\|power-parts.json\|MURATA_GCM188R71H104KA57\|Rated Value table, capacitance\t" "$here/citations.tsv" > "$S/m6/citations.tsv"
+kill "M6 page-less row unresolved" "A PAGE-LESS ROW CITATION NOT IN citations.tsv: row|power-parts.json|MURATA_GCM188R71H104KA57" --dump "$D" --out "$S/m6/out"
 exit $survived

@@ -60,6 +60,10 @@ Written 2026-11-22.
 
 **Reproduce:** `bash spike/1219/run.sh && bash spike/1219/mutants.sh`, then `python3 -I spike/1219/datecheck.py .` and `python3 -I spike/1219/lookups.py .`.
 
+6. **Document and page for held data** (`citations.tsv`). Every held entry's `cites` in `LIST.md` names a document and a page, or a stated locator for a source that has no pages. The join refuses a D, S or N source item without one, and the reader refuses a page-less table-row citation that `citations.tsv` does not resolve (mutants M5, M6).
+   - **ST pages** were read from the held PyMuPDF texts of DS12117 Rev 10 and RM0433 Rev 9 (`pagefind.py`).
+   - **Other vendors' pages** were read with `pdftext.py`, a minimal PDF text reader written here because Furnace has no extractor. Its positive control is DS12117: all 357 pages, and every probe term on exactly the held text's pages.
+
 ## 1. The list (§1.2) and the reader (§1.3)
 
 - **The list:** `spike/1219/LIST.md`, one table per unit. Each entry cites its `file:line`; each key and column also cites where its value set is held or checked. Enum values are listed under their key, with every value no committed specification uses marked.
@@ -80,7 +84,7 @@ From `spike/1219/COUNT.md`:
 |---|---|---|---|---|---|---|
 | K, specification keys | 291 | 8 | 13 | 0 | 3 | 312 |
 | R, refusal kinds | 248 | 11 | 33 | 0 | 7 | 292 |
-| H, held tables (4) and source items (170) | 102 | 6 | 33 | 33 | 2 | 174 |
+| H, held tables (4) and source items (170) | 104 | 5 | 33 | 32 | 2 | 174 |
 | H columns, the three data files and the pin table | 369 | 12 | 9 | 0 | 1 | 390 |
 | T, solved topology and other output types (not counted toward acceptance) | 163 | 34 | 68 | 0 | 20 | 265 |
 
@@ -147,7 +151,11 @@ Every N and S cell reads "not held". The search and its positive control are in 
   - M1: a key planted in the dump;
   - M2: a serde field renamed in a source copy;
   - M3: an entry left unclassed;
-  - M4: "RP2350" written into a reason.
+  - M4: "RP2350" written into a reason;
+  - M5: a held ST fact stripped of its page;
+  - M6: a page-less row citation left unresolved.
+
+  M3 and M4 first "survived" after M5 and M6 were added. Their scratch directories had no `citations.tsv`, so the reader refused before the join ran. They now copy it in.
 
   **The first run of M1 and M2 "failed" for the wrong reason.** `--repo .` gave relative paths, so no specification matched the dump's absolute keys, and the reader refused with "only 0 specifications". The reader now resolves `--repo`. The first `mutants.sh` also reported all four surviving, because `pipefail` turned the reader's exit 1 into a grep failure. Both were fixed and rerun before the counts above were read.
 
@@ -156,8 +164,11 @@ Every N and S cell reads "not held". The search and its positive control are in 
   - It moved **no K key out of V.** Over all its entries it moved 3 out of V, all flagged: `R:InvalidIdentifier` N?, `R:PowerPartsTableInvalid` S?, and the `RawSupport.pins` column N?.
   - Lens 1's enum-typed V keys that lens 2 did not see (20) I read myself. All are generic: orientation, layer role, PWM idle, dielectric codes, UART parity and roles.
   - **The 103 V source items had been classed by a script, so I read them myself.** I took the V items whose citation names an ST document (7) and the uncited rest:
-    - one moved: `electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS`, the 2.7 V boundary of DS12117's 8 mA VOL row, is D by amendment 4;
+    - one moved: `electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS`, the 2.7 V boundary of DS12117's 8 mA VOL row (p. 139), is D by amendment 4;
     - the other six ST-citing items stay V: citation strings (tie-break f), SPI mode 0 (a standard), and a schema version.
+  - **Reading for pages moved two of my own overrides back to V:**
+    - `bench:BOOT0_PULL_DOWN_OHMS` is the emitter's chosen 10 kΩ, judged against DS12117, not a datasheet figure;
+    - `power:BATTERY_NET` "VBAT" is the board's battery-pack rail, not the MCU's VBAT pin.
 - **The one real miss is instance names.** `i2c_buses[].peripheral` was N? in lens 1 and S in lens 2, and lens 2 was right.
   - `solve.rs:1034` sends `I2C1`–`3` to `I2C123SEL`/pclk1 and `I2C4` to `I2C4SEL`/pclk4.
   - `spi_buses[].peripheral` (`solve.rs:962`) and `serial_ports[].peripheral` (`serial.rs:201`, `vos.rs:291`) do the same by instance number.
@@ -231,29 +242,22 @@ Every N and S cell reads "not held". The search and its positive control are in 
 - **D1 · The serde dump links `aethelgard-ir` in a scratch workspace.** It is `~/.cache/aet-1219/dump`, with its own `[workspace]`, built from `spike/1219/dump.rs`. The CLI has no command that prints the parsed specification, and a JSON walk alone cannot see what serde writes back. Nothing under `spike/` is a crate.
 - **D2 · "Every committed specification" is 34, not `versions.rs`'s 30.** The 4 extra are `crates/aethelgard-cli/tests/fixtures/solve/*.json`, at version 27, and they add no new key. `current_specifications()` does not read that subdirectory. Whether it should is a one-line row for a later work order; it is not changed here.
 - **D3 · Amendments 1–4** (RULES §6). Ruling or reversing any of them changes counts as follows:
-  - 1 and 4: H only;
+  - 1 and 4: H only (H now V 104, N 5, S 33, D 32 after the citation re-read);
   - 3: 4 K keys (the I2C, SPI and serial `peripheral` keys and `foreign_clock.usarts`), 7 T fields and 2 R kinds.
-- **F1 · Held ST facts with no page.** Every source item classed D, S or N was checked for a page; `LIST.md`'s H table has a `cites` column.
-  - **Pages found:** 42 by the extractor. The bench, `RCC_D2CCIP1R` and `vos:LIMITS` items were also found to cite through a group comment or a named constant.
-  - **Document, but table or section only:**
-    - `MAX_BOR_LEVEL`, `OFFSETS`, `TIMERS`, `TOLERANCE` (RM0433);
-    - `I2C_AF_MIN_NS` (DS12117 Table 94);
-    - `I2C_LIMITS` (RM0433 Table 390's note).
-  - **No citation at all:**
-    - `serial:PERIPHERALS` and `LPUART`;
-    - `solve:RESERVED_PINS`;
-    - the net names `NRST`, `BOOT0`, `OSC_IN`, `VBAT` and `DEBUG_NETS`;
-    - `vos`'s two condition labels;
-    - `speeds:LOADS_PICOFARADS` and `BANDS_MILLIVOLTS`: their values are the held `output-speeds.json`'s, which cites pp. 245–246, so these are copies.
-    - `MODELLED_ADCS` and `H1_SYS_HZ`: each cites a work order, not a document.
-    - `RESERVED_REFERENCES` and `OBSERVER_RULE`: engine names, which cite Renode's platform.
-  - **The held data files:**
-    - `power-parts.json`: 163 row citations, 129 name a page;
-    - `parts.json`: 62 row citations, 30 name a page, most of the rest citing ArduPilot or Renode source files;
-    - `output-speeds.json`: 2 of 2;
-    - the pin table: none, since its rows cite a repository, commit and sha256.
+- **F1 · Document and page for held data: resolved here, with one finding for the table owners.** The source cites no page for 26 held items and 63 distinct table-row citations, so I resolved each from a held document. `citations.tsv` gives the document, the page and how each was found.
+  - **The 26 source items** are now all cited. 22 are cited to DS12117 Rev 10 or RM0433 Rev 9 pages, for example:
+    - `MAX_BOR_LEVEL`: RM0433 p. 214;
+    - `serial:PERIPHERALS`: DS12117 p. 23;
+    - `solve:RESERVED_PINS`: DS12117 pp. 65, 80–81;
+    - `motor:OFFSETS`: RM0433 p. 497.
 
-  A backlog row, not this work order's to fix.
+    The others are engine names or work-order facts with a stated non-paginated locator: `RESERVED_REFERENCES` (Renode's pinned platform files), `OBSERVER_RULE` (`AET-WO-4300a`), `MODELLED_ADCS` (`AET-WO-1211` §4), and `BATTERY_NET` (now V, not held data).
+  - **The 63 page-less row citations:**
+    - those in the ST-relevant rows cite non-paginated sources by exact locator: ST's pin data by pin, and ArduPilot and ChibiOS code by line at a pinned commit;
+    - the other vendors' datasheets (Bosch BME280, TDK ICM-20948, TI TMP117, Winbond W25Q64JV, six Murata sheets) are now cited to PDF pages;
+    - the DRV8833 and DRV8876 rows cite the whole datasheet as the row's document of record, and their values cite their own pages.
+  - **Page numbering:** PDF page indices. They equal the printed pages in the ST documents; the Winbond PDF runs one ahead.
+  - **The finding (backlog, not this work order's fix):** the source and the tables should carry these pages themselves. The rule already demands a cited page; the guard here (M5, M6) checks it only inside this spike.
 - **F2 · Out of scope, one line each, not audited:**
   - `aethelgard-svd-hal::pin_table` knows `STM32H753ZITx` alone;
   - `aethelgard-hwdef` refuses any ArduPilot series but `STM32H7xx` (`lib.rs:411`);
@@ -269,8 +273,8 @@ Every N and S cell reads "not held". The search and its positive control are in 
 
 - **Gates not run.** The work order grants it: no crate, specification, `fab/`, workflow or `ci/` file changes, so `cargo fmt`, `clippy` and `test` are not run. `git diff --stat 8225ebd1 -- . ':!spike/1219' ':!docs/work-orders/AET-WO-1219.FEEDBACK.md'` is empty. No package dispatch.
 - **What did run:**
-  - `run.sh`: the reader, the dump and the join;
-  - `mutants.sh`: 4 of 4 killed;
+  - `run.sh`: the reader, the dump and the join, with the citation guard;
+  - `mutants.sh`: 6 of 6 killed;
   - `datecheck.py`: 0 mis-dated.
 - **Scratch:** `~/.cache/aet-1219`, 89 MB, most of it the dump's target directory. Removed after the PR.
 - **Reduction pass (diff): −16 net · 1 duplicate removed · 6 dead paths removed · 0 protected kept · 0 findings below.** Counted from the removed and added lines of each edit.
@@ -279,3 +283,4 @@ Every N and S cell reads "not held". The search and its positive control are in 
   - Two indirections were inlined, `member_offset` and the `getattr` alias set-up.
   - `version_of_path` is one `max`, and its docstring now says what it does: the longest prefix wins, and the later row on a tie.
   - The proof: `inventory.json`, `LIST.md` and `COUNT.md` were byte-identical by sha256 before and after each removal, and all four mutants stay killed.
+  - The citation work came after the pass. It adds `pdftext.py`, `pagefind.py` and one guard. I put the four questions to them: they state no fact twice and leave nothing unused.

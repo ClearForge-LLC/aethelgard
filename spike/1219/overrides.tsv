@@ -1,5 +1,5 @@
 id	class	flag	tags	value_at	reason
-H:bench:BOOT0_PULL_DOWN_OHMS	D				Reviewer, amendment 4: one ST-pin figure in ohms; a second vendor supplies its own value (rule 1 before rule 3).
+H:bench:BOOT0_PULL_DOWN_OHMS	V			bench.rs:39	Reviewer (re-read for its citation): the 10 kOhm the emitter draws, an engine design value that judge_boot0_pull_down tests against DS12117 Tables 49-50; not a datasheet figure, so not D.
 H:bench:BOOT0_LEAKAGE_NANOAMPS	D				Reviewer, amendment 4: DS12117 BOOT0 leakage figure in nA; a held fact, rule 1.
 H:bench:DRIVER_MICROAMPS	D				Reviewer, amendment 4: DS12117 Table 50 I/O current figure in uA; a held fact, rule 1.
 H:bench:DRIVER_DROP_MILLIVOLTS	D				Reviewer, amendment 4: DS12117 Table 50 VOH drop in mV; a held fact, rule 1.
@@ -24,7 +24,7 @@ H:lib:RESERVED_REFERENCES	D			-	Reviewer: rows of reference names (the Renode ST
 H:speeds:LOADS_PICOFARADS	D			-	Reviewer: the DS12117 output-speed table's load axis in pF, generic units; doubt cleared.
 H:speeds:BANDS_MILLIVOLTS	D			-	Reviewer: the DS12117 output-speed table's VDD bands in mV, generic units; doubt cleared.
 H:vos:LIMITS	S			-	Reviewer, §3: each row is [Option<u64>; 4], one column per VOS scale 0-3 (vos.rs:89); the columns are ST's VOS enumeration, so the table is S.
-H:power:BATTERY_NET	N			-	Reviewer: the VBAT net name over a generic battery-backup supply net; doubt cleared.
+H:power:BATTERY_NET	V			power.rs:82	Reviewer (re-read for its citation): the drawn board's battery-pack rail (AET-WO-4300d2 K10), a generic battery abbreviation, not the MCU's VBAT pin; generic in name and meaning.
 H:vos:BUS_LIMITS_REV_V	S	?		-	Reviewer: a verdict condition naming ST silicon revision V's Table 111 limits; the meaning (ST revision-scoped limits) is ST's. Could be N.
 H:vos:VOS_LIMIT_AT_BOUNDARY	S	?		-	Reviewer: a verdict condition about a VOS scale limit; the VOS value set is ST's. Could be N.
 R:InvalidIdentifier	N	?		lib.rs:3036	Reviewer (lenses V / S?): one clause hard-codes the observer shape p<a-k><0-15>obs, ST port naming over a neutral concept (tie-break b by analogy); the rest is generic. Could be V.
