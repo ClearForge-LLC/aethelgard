@@ -1,0 +1,114 @@
+[
+ {
+  "mutant": "judged ignores the lead",
+  "result": "killed"
+ },
+ {
+  "mutant": "the limit admits equality as a refusal",
+  "result": "killed"
+ },
+ {
+  "mutant": "step 25 not called",
+  "result": "killed"
+ },
+ {
+  "mutant": "a rail with no regulator is exempt",
+  "result": "killed"
+ },
+ {
+  "mutant": "the battery is exempt",
+  "result": "killed"
+ },
+ {
+  "mutant": "downstream ignores connectors",
+  "result": "killed"
+ },
+ {
+  "mutant": "downstream guards the rail alone, not the rails between",
+  "result": "killed"
+ },
+ {
+  "mutant": "an upstream PG grants the exemption",
+  "result": "killed"
+ },
+ {
+  "mutant": "an EN/PG-gated rail ignores off-board ends",
+  "result": "killed"
+ },
+ {
+  "mutant": "an EN/PG gate ignores an off-board end on its EN net (F1)",
+  "result": "killed"
+ },
+ {
+  "mutant": "a test point is no off-board end (F3)",
+  "result": "killed"
+ },
+ {
+  "mutant": "a control pin judged by the rail it makes (F2)",
+  "result": "killed"
+ },
+ {
+  "mutant": "two supplies: only the first is judged",
+  "result": "killed"
+ },
+ {
+  "mutant": "two supplies: exempt if any is exempt",
+  "result": "killed"
+ },
+ {
+  "mutant": "a pull on mcu.supply is listed",
+  "result": "killed"
+ },
+ {
+  "mutant": "BOOT0 takes any-other-pin's limit",
+  "result": "killed"
+ },
+ {
+  "mutant": "a held pin takes Table 13's family",
+  "result": "killed"
+ },
+ {
+  "mutant": "an unplaced signal takes the most, not the least",
+  "result": "killed"
+ },
+ {
+  "mutant": "the current output at R2's nominal",
+  "result": "killed"
+ },
+ {
+  "mutant": "the basis is always a maximum",
+  "result": "killed"
+ },
+ {
+  "mutant": "a connector pin on any net is a path",
+  "result": "killed"
+ },
+ {
+  "mutant": "a test point on any net is a path",
+  "result": "killed"
+ },
+ {
+  "mutant": "a foreign clock is not listed",
+  "result": "killed"
+ },
+ {
+  "mutant": "Table 10's families unchecked against Table 13's",
+  "result": "killed"
+ },
+ {
+  "mutant": "an unknown basis reads as a maximum",
+  "result": "killed"
+ },
+ {
+  "mutant": "a stated path gets a twin-limit row",
+  "result": "killed"
+ },
+ {
+  "mutant": "an unbounded row counted as judged",
+  "result": "killed"
+ },
+ {
+  "mutant": "no unbounded row is written",
+  "result": "killed"
+ }
+]

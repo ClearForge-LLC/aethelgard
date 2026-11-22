@@ -39,3 +39,47 @@ So once the four U2 rows are classified by kind, the two walks agree on every D1
   - No committed board wires an EN to a PG.
   - No stated committed path lands on BOOT0. Sentinel-03's and the Sentinel-01 boards' BOOT0 reach only connectors and test points, which are unbounded.
 - **Unbounded paths:** every connector pin, test point and foreign clock, 222 in all, on 33 boards (P2.5 holds). None is in `validate`'s output.
+
+## M4. After the fixture edit (R2 1.07 kΩ, specification 25)
+
+`walker_dump.rs` at `00a024f9` (`out/walker-post/`, `out/compare-post.txt`):
+- **No board is refused by step 25.** D1 validates at 3330 mV. D2 and `invalid-zero-domain` keep their kinds.
+- Against walk 1's record, D1's IPROPI figure is the only row that moves: 4665 → 3330 mV.
+
+## M5. R2 at the fixture's own tolerance (D3)
+
+- CRCW0603_F_K: 1 % + 100 ppm/K × 65 K (D1's −20 to 85 °C from its 20 °C reference) + 2 % drift, 36 500 ppm. 1070 Ω is therefore at most 1109.06 Ω, which the engine's `band` rounds up to **1110 Ω**.
+- At the held 3 mA that is **3330 mV**. P3.1 predicted 3328 mV, which is walk 1's float figure (adversarial A5). The engine's whole-ohm ceiling is 2 mV higher, the safe direction.
+- At the 3.5 A peak on the typical 1000 µA/A ratio it is 3885 mV, **on the typical ratio only** (no AERR is stated above 2 A).
+- A2: the 1.9 A full scale is 1995 µA × 1110 Ω = 2214 mV, against VREF's minimum of 3135 mV.
+
+## M6. The null sweep (§2)
+
+`out/sweep-result.txt`: `spike/1211d/measure/sweep.sh` was run twice, with `c9d4096b`'s binary on its tree and the branch's binary on the branch. Each branch output had its specification's sha256 put back (54 files carried one); `same.sh` then compared them:
+- **identical: 280 files** over 34 specifications;
+- exit codes 86 × 0 and 16 × 2 on both.
+
+D1 is identical too: the solved topology names the device on a transfer, not R2's ohms (P4.1 holds more strongly than predicted).
+
+## M7. Mutants (§1.5)
+
+`mutants.py` at `7f221410` (`out/mutants.json`): **28 of 28 killed**, one per guard this work order adds, each against its suites.
+- **The first run counted 18 as "did not compile".** The copy excluded `spike/`, which a pin-device test `include_str!`s. The harness now counts a build failure apart from a kill, and the copy includes `spike/`.
+- 4 anchors went stale after the adversarial fixes and were moved.
+
+## Predictions beside results
+
+| # | prediction | measured | holds |
+|---|---|---|---|
+| P1.1–P1.3 | 34 boards; walk 1 byte-identical; `lean` 1 / 34 | as predicted | **holds** |
+| P1.4 | F7: the four U2 rows are no source by kind | as predicted | **holds** |
+| P2.1 | path for path on 34 boards | 225 / 225 | **holds** |
+| P2.2–P2.3 | D1 alone refused, 4665 > 4000 mV, named recommended-operating; D2 and `invalid-zero-domain` keep their kinds | as predicted | **holds** |
+| P2.4 | exempt: only Sentinel-02's `VDD_1V8`; no committed EN–PG wire; no stated path on BOOT0 | `VDD_1V8` is downstream, but no path is on it, so every one of the 225 leads | **holds** |
+| P2.5 | unbounded paths on 33 boards, none in `validate`'s output | 222 paths on 33 boards | **holds** |
+| P3.1 | 3328 mV | **3330 mV** (the engine rounds the ohm up first) | **2 mV low** |
+| P3.2–P3.3 | the peak 3882 mV; A2 holds | 3885 mV at the engine's 1110 Ω; A2 2214 < 3135 mV | **holds** (3 mV, the same rounding) |
+| P3.4 | tests outside `aethelgard-ir` follow from the topology | none moved | **holds** |
+| P4.1 | every other specification identical except its sha lines; D1 moves only by R2 | all 34 identical, D1 included | **holds, more strongly** |
+| P4.2 | the package needs a dispatch | its sha lines and the verdict's `twin_limits` move | **holds** (awaiting the dispatch) |
+| P4.3 | the solved version does not move | 17 | **holds** |
