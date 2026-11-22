@@ -5,7 +5,9 @@
 //! generator's, the twin's, hwdef's and pincheck's are in their own crates;
 //! the schematic emitter's is here because `aethelgard-eda` holds no pin
 //! table or solver to build its input. `AET-WO-1211b` lifts both at
-//! `generate`; `simulate` refuses both until `AET-WO-1211c`.
+//! `generate`, and `AET-WO-1211c` at `simulate`: what of a pin device the
+//! twin cannot run is refused by its plan (`aethelgard-twin`'s `pins`), and
+//! an idle high only where no settled window remains.
 
 use aethelgard_cli::generate::{GenerateError, generable, simulable};
 use aethelgard_ir::motor::{Idle, Level};
@@ -51,22 +53,19 @@ fn with_pin_device() -> (Specification, SolvedTopology, aethelgard_ir::PinTable)
 }
 
 #[test]
-fn a_pin_device_is_generated_and_refused_at_simulate_by_reference_and_part() {
+fn a_pin_device_is_generated_and_simulable() {
     let (_, t, _) = solved();
     simulable(&t).unwrap();
     let (_, t, _) = with_pin_device();
     generable(&t).unwrap();
-    let err = simulable(&t).unwrap_err();
-    assert!(matches!(err, GenerateError::PinDeviceNotSimulated { .. }));
-    assert_eq!(
-        (err.kind(), err.id(), err.internal()),
-        ("PinDeviceNotSimulated", Some("U9"), false)
-    );
-    assert!(err.to_string().contains("WAKE_SWITCH"), "{err}");
+    simulable(&t).unwrap();
 }
 
+/// An idle high is simulated (`AET-WO-1211c`, Q10): judged from one period
+/// after its timer's `CEN`. It is refused by name only where two of its
+/// periods exceed the boot, so no settled window would remain.
 #[test]
-fn a_motor_output_that_idles_high_is_generated_and_refused_at_simulate() {
+fn a_motor_output_that_idles_high_is_refused_at_simulate_only_without_a_window() {
     let mut t: SolvedTopology = serde_json::from_str(include_str!(
         "../../aethelgard-svd-hal/tests/ui/motors-pwm/topology.json"
     ))
@@ -85,6 +84,16 @@ fn a_motor_output_that_idles_high_is_generated_and_refused_at_simulate() {
         .unwrap();
     t.validate().unwrap();
     generable(&t).unwrap();
+    // 400 Hz: two periods are 5 ms of the boot's 100 ms.
+    simulable(&t).unwrap();
+    // 19 Hz: two periods are 105 ms.
+    t.motor_outputs
+        .get_mut(&net)
+        .unwrap()
+        .pwm
+        .as_mut()
+        .unwrap()
+        .rate_hz = 19;
     let err = simulable(&t).unwrap_err();
     assert!(matches!(err, GenerateError::IdleHighNotSimulated { .. }));
     assert_eq!(
@@ -93,10 +102,11 @@ fn a_motor_output_that_idles_high_is_generated_and_refused_at_simulate() {
     );
 }
 
-/// D1 (`AET-WO-1211a`'s fixture) generates its board crate and no Renode
-/// platform: the twin does not model a pin device until `AET-WO-1211c`.
+/// D1 (`AET-WO-1211a`'s fixture) generates its board crate and its Renode
+/// platform (`AET-WO-1211c`; until it, no platform), and no `kicad/`: its
+/// board is not drawn.
 #[test]
-fn d1_generates_a_board_crate_and_no_platform() {
+fn d1_generates_a_board_crate_and_its_platform() {
     let bytes = std::fs::read(format!(
         "{}/../aethelgard-ir/tests/fixtures/d1-drv8876.json",
         env!("CARGO_MANIFEST_DIR")
@@ -107,8 +117,9 @@ fn d1_generates_a_board_crate_and_no_platform() {
     let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
     let files = aethelgard_cli::generate::tree(&spec, &t, &table).unwrap();
     assert!(files.contains_key("board/src/board.rs"));
-    assert!(
-        files.keys().all(|k| !k.ends_with(".repl")),
+    assert_eq!(
+        files.keys().filter(|k| k.ends_with(".repl")).count(),
+        1,
         "{:?}",
         files.keys()
     );

@@ -42,4 +42,13 @@ for base in ["d2g", "d1"]:
     put(f"sc/{base}-rx-open.json", {"schema_version": 3, "name": "rx-open", "base": f"../{base}.json",
          "expect": "fail", "expect_findings": ["serial_echo_missing"], "overrides": [{"serial_rx_open": "CMD"}]})
     put(f"sc/{base}-droop-bor3.json", dict(bor, base=f"../{base}.json"))
+# The build's runs (AET-WO-1211c §1.2-1.4), on D1: a held nFAULT, a set IPROPI, a hold on an output.
+for name, sv, exp, fx_, ov in [
+    ("nfault-held-low", 5, "fail", ["pin_device_input_asserted"], [{"pin_held": {"net": "DRV_NFAULT", "level": "low"}}]),
+    ("nfault-held-high", 5, "pass", [], [{"pin_held": {"net": "DRV_NFAULT", "level": "high"}}]),
+    ("ipropi-full-scale", 5, "pass", [], [{"analog_value": {"net": "DRV_IPROPI", "millivolts": 2850}}]),
+    ("nsleep-held", 5, "fail", ["pin_device_input_asserted"], [{"pin_held": {"net": "DRV_NSLEEP", "level": "high"}}]),
+]:
+    put(f"sc/d1-{name}.json", {"schema_version": sv, "name": name, "base": "../d1.json",
+         "expect": exp, "expect_findings": fx_, "overrides": ov})
 print("written", sorted(os.listdir(OUT)), sorted(os.listdir(os.path.join(OUT, "sc"))))

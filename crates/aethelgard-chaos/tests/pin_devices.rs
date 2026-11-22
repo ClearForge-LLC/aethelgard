@@ -862,6 +862,8 @@ fn motor_records() -> (Record, Record, Record) {
             arr: 2499,
             ccr: 1000,
             pwm: Some((400, 1000, 2000)),
+            idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+            resolution_ps: Some(1_000_000),
         },
         Record::MotorTimingCheck {
             label: "M1".into(),

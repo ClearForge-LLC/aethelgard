@@ -53,6 +53,8 @@ fn solved_ccr(label: &str, pin: &str, channel: u8, ccr: u32) -> Record {
         arr: 2499,
         ccr,
         pwm: Some((400, 1000, 2000)),
+        idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+        resolution_ps: Some(1_000_000),
     }
 }
 
@@ -369,10 +371,12 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 2499,
                 ccr: 1000,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
-            "a solved motor output's protocol is unknown, or its PWM timing is not present exactly for PWM",
+            "a solved motor output's protocol is unknown, or its PWM timing, idle or tick is not present exactly for PWM",
             Record::MotorOutputSolved {
                 label: "M1".into(),
                 timer: "TIM1".into(),
@@ -384,10 +388,12 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 106,
                 ccr: 40,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
-            "a solved motor output's PSC, ARR or CCR is outside the timer (CCR from 1 to ARR - 1)",
+            "a solved motor output's CCR is not its idle's: 0 for low, ARR + 1 for high, else 1 to ARR - 1",
             Record::MotorOutputSolved {
                 label: "M1".into(),
                 timer: "TIM1".into(),
@@ -399,6 +405,8 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 2499,
                 ccr: 2499,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
@@ -422,6 +430,48 @@ fn the_field_rules_hold_on_write_and_read() {
         assert_eq!(r.check(), Err(why), "{r:?}");
     }
     assert!(solved("M1", "PA8", 1).check().is_ok());
+    // `AET-WO-1211c`: kind 24's idle and tick (trace 18). An idle level is
+    // CCR 0 (low) or ARR + 1 (high); a pulse is inside the period; a DShot
+    // output carries neither, and a PWM output both.
+    use aethelgard_chaos::record::MotorIdle;
+    let with = |idle: Option<MotorIdle>, ccr: u32, resolution_ps: Option<u64>| {
+        let mut r = solved("M1", "PA8", 1);
+        if let Record::MotorOutputSolved {
+            idle: i,
+            ccr: c,
+            resolution_ps: t,
+            ..
+        } = &mut r
+        {
+            *i = idle;
+            *c = ccr;
+            *t = resolution_ps;
+        }
+        r
+    };
+    let ccr_why = "a solved motor output's CCR is not its idle's: 0 for low, ARR + 1 for high, else 1 to ARR - 1";
+    let shape_why = "a solved motor output's protocol is unknown, or its PWM timing, idle or tick is not present exactly for PWM";
+    let tick = Some(1_000_000);
+    assert_eq!(with(Some(MotorIdle::Low), 0, tick).check(), Ok(()));
+    assert_eq!(with(Some(MotorIdle::High), 2500, tick).check(), Ok(()));
+    assert_eq!(with(Some(MotorIdle::Low), 1000, tick).check(), Err(ccr_why));
+    assert_eq!(
+        with(Some(MotorIdle::High), 2499, tick).check(),
+        Err(ccr_why)
+    );
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 0, tick).check(),
+        Err(ccr_why)
+    );
+    assert_eq!(with(None, 1000, tick).check(), Err(shape_why));
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 1000, None).check(),
+        Err(shape_why)
+    );
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 1000, Some(0)).check(),
+        Err(shape_why)
+    );
     assert!(witness("M1", "gpioPortA.pa8obs", "batched").check().is_ok());
 }
 
@@ -704,6 +754,8 @@ fn dshot_run(
         arr: 106,
         ccr: 40,
         pwm: None,
+        idle: None,
+        resolution_ps: None,
     };
     r[5] = Record::MotorTimingCheck {
         label: "M2".into(),

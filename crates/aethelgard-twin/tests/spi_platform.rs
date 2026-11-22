@@ -403,11 +403,11 @@ fn an_i2c_model_on_spi_reaches_the_kept_guard_through_spi_wiring() {
     );
 }
 
-/// `AET-WO-1211a`: the twin models no pin device, so the platform emitter and
-/// the boot judge refuse a topology with one, by the device's reference and
-/// part.
+/// `AET-WO-1211c`: the platform emitter and the boot judge take a topology
+/// with a pin device (until `1211c` they refused it, `PinDeviceNotSimulated`),
+/// and the image holds a declared input in input mode.
 #[test]
-fn a_topology_with_a_pin_device_is_refused_as_not_simulated() {
+fn a_topology_with_a_pin_device_is_emitted_and_its_input_imaged() {
     use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
     let mut t = reference();
     t.pin_devices.insert(
@@ -428,17 +428,21 @@ fn a_topology_with_a_pin_device_is_refused_as_not_simulated() {
     );
     t.pin_speeds.insert("WAKE".to_owned(), 0);
     t.validate().unwrap();
-    let errors = [
-        platform::emit(&t).unwrap_err(),
-        platform::emit_faulted(&t, &set(&[]), &set(&[])).unwrap_err(),
-        boot::expected(&t).map(|_| ()).unwrap_err(),
-    ];
-    for err in errors {
-        assert!(
-            matches!(&err, TwinError::PinDeviceNotSimulated { reference, part }
-                if reference == "U9" && part == "WAKE_SWITCH"),
-            "{err}"
-        );
-        assert_eq!(err.kind(), "PinDeviceNotSimulated");
-    }
+    // AET-WO-1211c: the platform and the image take a pin device; what of
+    // one the twin cannot run is the plan's to refuse (`pins::plan`).
+    assert_eq!(
+        platform::emit(&t).unwrap(),
+        platform::emit_faulted(&t, &set(&[]), &set(&[])).unwrap()
+    );
+    let image = boot::expected(&t).unwrap();
+    let moder = image
+        .registers
+        .iter()
+        .find(|r| r.name == "GPIOB.MODER")
+        .expect("PB5's port is configured");
+    // PB5 an input: `MODER` 00 (RM0433 Rev 9 §11.4.1), held in the image.
+    assert_eq!(
+        (moder.mask >> 10 & 0b11, moder.value >> 10 & 0b11),
+        (0b11, 0b00)
+    );
 }

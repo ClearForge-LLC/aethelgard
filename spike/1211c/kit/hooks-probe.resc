@@ -1,0 +1,19 @@
+# H-probe (added during the build, not predicted): D1's firmware on djn.repl, as d1-stock.resc, with
+# watchpoint hooks instead of the access log: GPIOA BSRR (0x58020018) and MODER (0x58020000) writes, and
+# ADC3 DR (0x58026040) reads. Question: does a Read hook's `value` carry the value read?
+emulation SetSeed 1
+emulation SetGlobalQuantum "0.000100000"
+mach create
+machine LoadPlatformDescription @/cache/m/djn.repl
+sysbus LoadELF @/cache/m/d1/fw.elf
+cpu VectorTableOffset 0x08000000
+sysbus AddWatchpointHook 0x58020018 DoubleWord Write "self.Log(LogLevel.Warning, 'AETHELGARD-PROBE BSRR %x %d' % (value, cpu.ExecutedInstructions))"
+sysbus AddWatchpointHook 0x58020000 DoubleWord Write "b = self.ReadDoubleWord(0x58020000); self.Log(LogLevel.Warning, 'AETHELGARD-PROBE MODER %x %x %d' % (value, b, cpu.ExecutedInstructions))"
+sysbus AddWatchpointHook 0x58026040 DoubleWord Read "self.Log(LogLevel.Warning, 'AETHELGARD-PROBE DR %x %d' % (value, cpu.ExecutedInstructions))"
+adc3 SetVoltage 1500000 5
+gpioPortA OnGPIO 11 true
+emulation RunFor "0.100"
+echo "IDR, DR"
+sysbus ReadDoubleWord 0x58020010
+sysbus ReadDoubleWord 0x58026040
+echo "PROBE-END"

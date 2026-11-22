@@ -44,6 +44,8 @@ struct Prepared {
     /// What its verdict does not claim (`AET-WO-2304b` §1.7, §1.11).
     conditions: Vec<String>,
     run_id: [u8; 16],
+    /// What the twin drives and reads of the pin devices (`AET-WO-1211c`).
+    pins: aethelgard_twin::pins::Pins,
 }
 
 /// A battery sag, judged statically and solved by the deck, ready to archive.
@@ -212,6 +214,10 @@ pub(crate) fn apply_overrides(
             // (`resolve_battery_sag`), nor a rail out of band: its consumers'
             // absences are the overrides listed beside it (`rendered`).
             Override::BatterySag(_) | Override::RailOutOfBand { .. } => {}
+            // Nor does a held input or a set ADC value (`AET-WO-1211c`): the
+            // twin drives them (`aethelgard_twin::pins::plan`, which
+            // [`effective`] runs, refusing a net no pin device declares).
+            Override::PinHeld { .. } | Override::AnalogValue { .. } => {}
         }
     }
     spec.validate().map_err(|e| {
@@ -251,6 +257,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         specification_sha256,
         topology,
         chain,
+        pins,
     } = effective(&scenario, &base)?;
     let sag = match &chain {
         Some(s) => Some(solve_battery_sag(s, &scenario.name)?),
@@ -287,6 +294,7 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         sag,
         conditions,
         run_id,
+        pins,
     })
 }
 
@@ -500,6 +508,9 @@ pub(crate) struct Effective {
     pub topology: SolvedTopology,
     /// A battery sag the static checks admitted (`AET-WO-2304b` §1.6).
     pub chain: Option<SagStatic>,
+    /// What the twin drives and reads of the pin devices, with the
+    /// scenario's holds and values (`AET-WO-1211c`).
+    pub pins: aethelgard_twin::pins::Pins,
 }
 
 /// Apply `scenario`'s overrides to its base's bytes, then serialize, hash
@@ -580,12 +591,38 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
         Some(sag) => Some(resolve_battery_sag(sag, &spec).map_err(scenario_refusal)?),
         None => None,
     };
+    // A held input and a set ADC value (`AET-WO-1211c`): only a pin device's
+    // declared input may be held (`PinHeldIsOutput` for any net the MCU
+    // drives, `1211` §4 G4), and only its ADC input set, as the twin's own
+    // plan refuses them.
+    let overrides = aethelgard_twin::pins::Overrides {
+        held: scenario
+            .pins_held()
+            .into_iter()
+            .map(|(n, l)| (n.to_owned(), l == aethelgard_chaos::record::Level::High))
+            .collect(),
+        millivolts: scenario
+            .analog_values()
+            .into_iter()
+            .map(|(n, mv)| (n.to_owned(), mv))
+            .collect(),
+    };
+    let pins = aethelgard_twin::pins::plan(&spec, &topology, &overrides).map_err(|e| {
+        let s = crate::twin_stop(e);
+        refuse(
+            s.kind,
+            s.id.as_deref(),
+            format!("scenario `{}`: {}", scenario.name, s.message),
+            s.code,
+        )
+    })?;
     Ok(Effective {
         spec,
         held,
         specification_sha256,
         topology,
         chain,
+        pins,
     })
 }
 
@@ -1081,6 +1118,7 @@ fn run_one(
             open: open(&p.scenario.overrides),
             rail: p.rail,
             foreign: false,
+            pins: p.pins.clone(),
         }),
     )
     .map_err(stop)?;
@@ -1121,6 +1159,7 @@ fn run_one(
     records.extend(spi_buses);
     records.extend(motors);
     records.extend(serial);
+    records.extend(pin_declared(&p.pins));
     let mut boot = records_of(&verdict).map_err(internal)?;
     // Kind 31 sits with the declared rail, after the analog records and the
     // bus faults, before the boot's (`check_run`'s rank 6).
@@ -1314,6 +1353,38 @@ pub(crate) fn solved_spi(t: &SolvedTopology) -> Result<Vec<Record>, aethelgard_t
         .collect())
 }
 
+/// Kinds 33 and 35 (`AET-WO-1211c`): each pin device's GPIO signal and ADC
+/// input as the twin drives it, before the boot; none for a board without.
+fn pin_declared(pins: &aethelgard_twin::pins::Pins) -> Vec<Record> {
+    let outputs = pins.outputs.iter().map(|o| Record::PinGpioDeclared {
+        net: o.net.clone(),
+        pin: o.pin.clone(),
+        output: true,
+        level: u8::from(o.high),
+        active: None,
+        held: false,
+    });
+    let inputs = pins.inputs.iter().map(|i| Record::PinGpioDeclared {
+        net: i.net.clone(),
+        pin: i.pin.clone(),
+        output: false,
+        level: u8::from(i.high),
+        active: Some(u8::from(i.active_high)),
+        held: i.held,
+    });
+    let analog = pins.analog.iter().map(|a| Record::PinAdcDeclared {
+        net: a.net.clone(),
+        pin: a.pin.clone(),
+        peripheral: a.peripheral.clone(),
+        channel: a.channel,
+        bits: a.bits,
+        microvolts: a.microvolts,
+        held: a.held,
+        code: a.code,
+    });
+    outputs.chain(inputs).chain(analog).collect()
+}
+
 /// Kinds 24 and 25, one of each per motor output, from the solved topology
 /// alone (`AET-WO-4300a`): the output as solved, and the static check for
 /// silicon the judge reports, by the same function (`motor::check_silicon`).
@@ -1339,6 +1410,18 @@ pub(crate) fn solved_motors(t: &SolvedTopology) -> Vec<Record> {
                 .pwm
                 .as_ref()
                 .map(|p| (p.rate_hz, p.pulse_min_us, p.pulse_max_us)),
+            idle: m.pwm.as_ref().map(|p| match p.idle {
+                aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::Low) => {
+                    aethelgard_chaos::record::MotorIdle::Low
+                }
+                aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::High) => {
+                    aethelgard_chaos::record::MotorIdle::High
+                }
+                aethelgard_ir::motor::Idle::PulseUs(us) => {
+                    aethelgard_chaos::record::MotorIdle::PulseUs(us)
+                }
+            }),
+            resolution_ps: m.pwm.as_ref().map(|p| p.resolution_ps),
         });
         let s = aethelgard_ir::motor::check_silicon(&t.clock, timer, m);
         checks.push(Record::MotorTimingCheck {
@@ -1854,6 +1937,46 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
             edges_before,
             edges_after,
             cen_rises,
+        });
+    }
+    // Kinds 37, 34 and 36 (`AET-WO-1211c`): each output at a static level,
+    // each pin device's GPIO signal and ADC input, once Renode has run.
+    for m in &boot.motor {
+        let Some(l) = &m.level else { continue };
+        let (Some(status), Some(rises_after), Some(falls_after)) =
+            (l.status, l.rises_after, l.falls_after)
+        else {
+            continue;
+        };
+        out.push(Record::MotorLevelWitness {
+            label: m.label.clone(),
+            level: u8::from(l.idle == "high"),
+            settle_ns: l.settle_ns,
+            rises_after,
+            falls_after,
+            end_level: l.end_level.map(|e| u8::from(e == "high")),
+            status: status.to_owned(),
+        });
+    }
+    for g in &boot.gpio {
+        let Some(status) = g.status else { continue };
+        out.push(Record::PinGpioWitness {
+            net: g.net.clone(),
+            status: status.to_owned(),
+            bsrr: g.bsrr.as_deref().map(hex_u32).transpose()?,
+            ordered: g.ordered,
+            level: g.read.map(|r| u8::from(r == "high")),
+        });
+    }
+    for a in &boot.adc {
+        let (Some(status), Some(reads)) = (a.status, a.reads) else {
+            continue;
+        };
+        out.push(Record::PinAdcWitness {
+            net: a.net.clone(),
+            status: status.to_owned(),
+            reads,
+            code: a.observed,
         });
     }
     // Kind 30, each judge's stop (`AET-WO-2302` D2).

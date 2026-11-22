@@ -3135,6 +3135,8 @@ fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
             arr,
             ccr,
             pwm,
+            idle,
+            resolution_ps,
             ..
         },
         Record::MotorTimingCheck {
@@ -3168,16 +3170,31 @@ fn silicon_check(m: &Record, check: &Record) -> Option<bool> {
             let n = 1_000_000_000_000 / rate;
             (period_ok && high_ok, n, n * 3 / 8)
         }
-        (None, Some((rate, lo, hi))) => {
+        // As `aethelgard_ir::motor::check_silicon` judges it since
+        // `AET-WO-1211a`: the declared tick exactly, and the declared idle
+        // (CCR 0 for low, ARR + 1 for high, else the pulse), from kind 24's
+        // own fields (trace 18).
+        (None, Some((rate, _, hi))) => {
+            let (Some(idle), Some(resolution_ps)) = (idle, resolution_ps) else {
+                return Some(false);
+            };
             let rate = u128::from(*rate);
             let period_ok =
                 rate > 0 && (2 * arr1 * psc1 * rate).abs_diff(2 * kernel) <= psc1 * rate;
-            let high_ok = ccr * psc1 * 1_000_000 == u128::from(*lo) * kernel;
+            let tick_ok = psc1 * 1_000_000_000_000 == u128::from(*resolution_ps) * kernel;
+            let (high_ok, nominal_high) = match idle {
+                record::MotorIdle::Low => (ccr == 0, 0),
+                record::MotorIdle::High => (ccr == arr1, 1_000_000_000_000 / rate.max(1)),
+                record::MotorIdle::PulseUs(us) => (
+                    ccr * psc1 * 1_000_000 == u128::from(*us) * kernel,
+                    u128::from(*us) * 1_000_000,
+                ),
+            };
             let max_ok = u128::from(*hi) * kernel < arr1 * psc1 * 1_000_000;
             (
-                period_ok && high_ok && max_ok,
+                period_ok && tick_ok && high_ok && max_ok,
                 1_000_000_000_000 / rate.max(1),
-                u128::from(*lo) * 1_000_000,
+                nominal_high,
             )
         }
         _ => return Some(false),

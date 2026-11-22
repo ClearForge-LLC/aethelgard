@@ -56,6 +56,15 @@ pub fn adc_code(microvolts: u64, bits: u8) -> u32 {
     u32::try_from(code).unwrap_or(u32::MAX)
 }
 
+/// A PWM output's declared idle as kind 24 carries it (`AET-WO-1211c`, from
+/// `pwm.idle`, `AET-WO-1211a`): a static level, or a pulse in µs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MotorIdle {
+    Low,
+    High,
+    PulseUs(u32),
+}
+
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
 pub const MOTOR_PROTOCOLS: [&str; 3] = ["pwm", "dshot300", "dshot600"];
@@ -626,7 +635,10 @@ pub enum Record {
     /// (`AET-WO-4300a`): its label (its net), timer and channel, pin and
     /// alternate function, protocol, the solved `PSC`, `ARR` and `CCR`, and
     /// for PWM its declared rate and pulse range in µs. Kinds 25 and 26 join
-    /// to it. Archived beside kinds 15 and 23, before the boot.
+    /// to it. Archived beside kinds 15 and 23, before the boot. Since trace
+    /// 18 (`AET-WO-1211c`), for PWM also its declared idle and tick
+    /// (`pwm.idle`, `pwm.resolution_ps`, `AET-WO-1211a`), which kind 25's
+    /// check has judged since then: replay re-judges kind 25 from them.
     MotorOutputSolved {
         label: String,
         timer: String,
@@ -638,6 +650,9 @@ pub enum Record {
         arr: u32,
         ccr: u32,
         pwm: Option<(u32, u32, u32)>,
+        /// Present exactly for PWM, as `pwm` is.
+        idle: Option<MotorIdle>,
+        resolution_ps: Option<u64>,
     },
     /// Kind 25: the static check for silicon of one motor output (`4300`
     /// D3): its timer's kernel clock from the solved clock, the period and
@@ -1625,6 +1640,8 @@ impl Record {
                 arr,
                 ccr,
                 pwm,
+                idle,
+                resolution_ps,
             } => vec![
                 t(label),
                 t(timer),
@@ -1642,6 +1659,18 @@ impl Record {
                         })
                         .collect(),
                 ),
+                Value::Array(
+                    idle.iter()
+                        .map(|i| {
+                            Value::Array(match i {
+                                MotorIdle::Low => vec![u(0)],
+                                MotorIdle::High => vec![u(1)],
+                                MotorIdle::PulseUs(us) => vec![u(2), u((*us).into())],
+                            })
+                        })
+                        .collect(),
+                ),
+                Value::Array(resolution_ps.iter().map(|ps| u(*ps)).collect()),
             ],
             Self::MotorTimingCheck {
                 label,
@@ -2164,6 +2193,26 @@ impl Record {
                         g.end()?;
                         Some(v)
                     }
+                    _ => return None,
+                },
+                idle: match f.array()? {
+                    [] => None,
+                    [Value::Array(i)] => {
+                        let mut g = Fields(i.iter());
+                        let v = match g.uint()? {
+                            0 => MotorIdle::Low,
+                            1 => MotorIdle::High,
+                            2 => MotorIdle::PulseUs(g.u32()?),
+                            _ => return None,
+                        };
+                        g.end()?;
+                        Some(v)
+                    }
+                    _ => return None,
+                },
+                resolution_ps: match f.array()? {
+                    [] => None,
+                    [Value::Uint(ps)] => Some(*ps),
                     _ => return None,
                 },
             },
@@ -2727,6 +2776,8 @@ impl Record {
                 arr,
                 ccr,
                 pwm,
+                idle,
+                resolution_ps,
             } => {
                 let timer_ok = timer
                     .strip_prefix("TIM")
@@ -2737,13 +2788,25 @@ impl Record {
                     Err("a solved motor output's channel is not 1 to 4 or its AF above 15")
                 } else if !MOTOR_PROTOCOLS.contains(&protocol.as_str())
                     || pwm.is_some() != (protocol == "pwm")
+                    || idle.is_some() != (protocol == "pwm")
+                    || resolution_ps.is_some() != (protocol == "pwm")
+                    || *resolution_ps == Some(0)
                 {
                     Err(
-                        "a solved motor output's protocol is unknown, or its PWM timing is not present exactly for PWM",
+                        "a solved motor output's protocol is unknown, or its PWM timing, idle or tick is not present exactly for PWM",
                     )
-                } else if *psc > 0xFFFF || *arr == 0 || *arr > 0xFFFF || *ccr == 0 || ccr >= arr {
+                } else if *psc > 0xFFFF || *arr == 0 || *arr > 0xFFFF {
+                    Err("a solved motor output's PSC or ARR is outside the timer")
+                } else if !match idle {
+                    // An idle level is CCR 0 (low) or ARR + 1 (high), RM0433
+                    // Rev 9 p. 1558 (`AET-WO-1211a`); every other word is
+                    // inside the period.
+                    Some(MotorIdle::Low) => *ccr == 0,
+                    Some(MotorIdle::High) => u64::from(*ccr) == u64::from(*arr) + 1,
+                    Some(MotorIdle::PulseUs(_)) | None => *ccr != 0 && ccr < arr,
+                } {
                     Err(
-                        "a solved motor output's PSC, ARR or CCR is outside the timer (CCR from 1 to ARR - 1)",
+                        "a solved motor output's CCR is not its idle's: 0 for low, ARR + 1 for high, else 1 to ARR - 1",
                     )
                 } else {
                     Ok(())

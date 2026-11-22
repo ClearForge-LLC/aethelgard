@@ -388,6 +388,10 @@ pub struct BootPlan<'a> {
     /// [`aethelgard_twin::hse::judge_clock`]. `None` for a board with no HSE
     /// and for a foreign firmware.
     pub clock: Option<&'a aethelgard_twin::hse::ClockRule>,
+    /// What the twin drives and reads of the specification's pin devices
+    /// (`AET-WO-1211c`, [`aethelgard_twin::pins`]); empty for a board with
+    /// none, whose commands are then exactly what they were before.
+    pub pins: &'a aethelgard_twin::pins::Pins,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -674,6 +678,19 @@ impl BootPlan<'_> {
                 ));
             }
         }
+        // A pin device's inputs' `IDR` and ADC inputs' `DR` (`AET-WO-1211c`).
+        for (k, i) in self.pins.inputs.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", i.idr_at),
+                Read::Idr(k),
+            ));
+        }
+        for (k, a) in self.pins.analog.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", a.dr_at),
+                Read::Dr(k),
+            ));
+        }
         reads
     }
 
@@ -845,6 +862,9 @@ impl BootPlan<'_> {
         for (k, r) in self.resets.iter().enumerate() {
             at(&mut c, r.asserted_ns);
             c.extend(self.assert_reset());
+            // A pin device's inputs and ADC values again, which the reset
+            // returns to the model's own (`AET-WO-1211c`).
+            c.extend(crate::pinwitness::stimuli(self.pins));
             let Some(release) = r.released_ns else { break };
             at(&mut c, release);
             if k == last {
@@ -919,6 +939,8 @@ impl BootPlan<'_> {
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
         c.extend(self.stimuli());
+        c.extend(crate::pinwitness::stimuli(self.pins));
+        c.extend(crate::pinwitness::hooks(self.pins));
         c.extend(
             self.timer_hooks()
                 .iter()
@@ -957,6 +979,10 @@ enum Read {
     Record(usize, usize),
     /// Unmodelled device `.0`'s identity record (`AET-WO-4241`), as `Record`.
     Unwitnessable(usize, usize),
+    /// A pin device's input `.0`'s `IDR` word (`AET-WO-1211c`).
+    Idr(usize),
+    /// A pin device's ADC input `.0`'s `DR` word (`AET-WO-1211c`).
+    Dr(usize),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -1031,6 +1057,13 @@ pub struct Observed {
     pub timers: Vec<TimerWitness>,
     /// Each port's injection (`AET-WO-2302` D4).
     pub injections: Vec<PortInjection>,
+    /// A pin device's GPIO signals, outputs then inputs, and its ADC inputs,
+    /// as the twin showed them (`AET-WO-1211c`); empty for a board with none.
+    pub gpio: Vec<crate::pinwitness::GpioWitness>,
+    pub adc: Vec<crate::pinwitness::AdcWitness>,
+    /// Each motor output whose idle is a static level (`AET-WO-1211c`), in
+    /// the specification's order; empty for a board with none.
+    pub levels: Vec<LevelWitness>,
 }
 
 /// What an unmodelled device's identity read left (`AET-WO-4241`): its
@@ -1358,6 +1391,10 @@ pub struct Motor {
     pub arr: u32,
     pub ccr: u32,
     pub silicon: aethelgard_ir::motor::SiliconTiming,
+    /// A PWM output whose `pwm.idle` is a static level (`AET-WO-1211c`):
+    /// `Some(true)` for high. Its edges are judged by [`witness_level`], not
+    /// by a period; `None` for every other output.
+    pub idle_high: Option<bool>,
 }
 
 /// Every motor output of `topology`, in the specification's order.
@@ -1370,6 +1407,12 @@ pub fn motors(
         .zip(topology.motor_outputs_in_order())
         .map(|(observer, (_, m, _))| Motor {
             silicon: aethelgard_ir::motor::check_silicon(&topology.clock, observer.timer, m),
+            idle_high: match m.pwm.as_ref().map(|p| p.idle) {
+                Some(aethelgard_ir::motor::Idle::Level(l)) => {
+                    Some(l == aethelgard_ir::motor::Level::High)
+                }
+                _ => None,
+            },
             observer,
             psc: m.psc,
             arr: m.arr,
@@ -1941,6 +1984,99 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
     w
 }
 
+/// What an output held at a static level showed (`AET-WO-1211c`, kind 37):
+/// its declared idle, the instant from which it must be still, the edges
+/// after it, and the observer's level at the window's end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelWitness {
+    pub label: String,
+    pub high: bool,
+    pub settle_ns: Option<u64>,
+    pub rises_after: u64,
+    pub falls_after: u64,
+    pub end_level: Option<bool>,
+    /// One of [`aethelgard_chaos::record::LEVEL_STATUSES`].
+    pub status: &'static str,
+}
+
+/// Judges an output at a static level (`AET-WO-1211` Q10, ruled; `1211` §4
+/// T1–T2, H1–H2): from its timer's `CEN` anchor (low), or one period and one
+/// quantum after it (high: Renode holds the output low until the first
+/// update event, and an edge's stamp is its quantum's), no edge to the
+/// window's end, and the observer's level there the declared one. The
+/// observer starts low (`Miscellaneous.LED`). The first period of an idle
+/// high, and every instant before `CEN`, are never witnessed (O1–O2): a
+/// silicon-only reason in the ledger.
+pub fn witness_level(
+    m: &Motor,
+    high: bool,
+    edges: Option<&[(u64, bool)]>,
+    anchor_ns: Option<u64>,
+    end_ns: u64,
+) -> LevelWitness {
+    let mut w = LevelWitness {
+        label: m.observer.label.clone(),
+        high,
+        settle_ns: None,
+        rises_after: 0,
+        falls_after: 0,
+        end_level: None,
+        status: "unreadable",
+    };
+    let Some(edges) = edges else {
+        return w;
+    };
+    let inside: Vec<&(u64, bool)> = edges.iter().filter(|e| e.0 <= end_ns).collect();
+    w.end_level = Some(inside.last().is_some_and(|e| e.1));
+    let Some(anchor) = anchor_ns else {
+        w.status = "unanchored";
+        return w;
+    };
+    let settle = anchor
+        + if high {
+            m.observer.period_ns + aethelgard_twin::boot::QUANTUM_NS
+        } else {
+            0
+        };
+    w.settle_ns = Some(settle);
+    w.rises_after = inside.iter().filter(|e| e.0 > settle && e.1).count() as u64;
+    w.falls_after = inside.iter().filter(|e| e.0 > settle && !e.1).count() as u64;
+    w.status = if w.rises_after == 0 && w.falls_after == 0 && w.end_level == Some(high) {
+        "witnessed"
+    } else {
+        "mismatch"
+    };
+    w
+}
+
+/// A level witness's finding, once the boot reached its fixed point.
+fn level_findings_of(m: &Motor, w: &LevelWitness) -> Option<Finding> {
+    (w.status != "witnessed").then(|| {
+        Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_LEVEL_FINDING,
+            format!(
+                "{}: declared idle {}, {}",
+                motor_who(&m.observer),
+                if w.high { "high" } else { "low" },
+                match (w.status, w.settle_ns) {
+                    ("unreadable", _) => "Renode's log could not be read whole, so its edges were not".to_owned(),
+                    ("unanchored", _) | (_, None) => "and its timer's CEN rise was never observed, so no instant was settled from".to_owned(),
+                    (_, Some(settle)) => format!(
+                        "from {settle} ns it made {} rises and {} falls and ended {}",
+                        w.rises_after,
+                        w.falls_after,
+                        match w.end_level {
+                            Some(true) => "high",
+                            Some(false) => "low",
+                            None => "unread",
+                        }
+                    ),
+                }
+            ),
+        )
+    })
+}
+
 fn motor_who(o: &aethelgard_twin::timer::Observer) -> String {
     format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin)
 }
@@ -2020,6 +2156,9 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
             ),
         )),
         "unanchored" => {}
+        // An output at a static level is judged by its level witness
+        // (`AET-WO-1211c`, [`level_findings_of`]).
+        "level" => {}
         "stopped" => out.push(Finding::plain(
             aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
             format!(
@@ -2502,14 +2641,38 @@ pub fn judge_boot(
                 let edges = (out.dropped_log_lines == 0)
                     .then(|| observer_edges(&m.observer.source, &last_boot));
                 let timer = timers.iter().find(|t| t.timer == m.observer.timer);
-                witness_motor_in(m, edges, timer, plan.virtual_ns)
+                let mut w = witness_motor_in(m, edges, timer, plan.virtual_ns);
+                // An output at a static level is judged by its kind 37
+                // (`AET-WO-1211c`); its kind 26 says so.
+                if m.idle_high.is_some() {
+                    w.status = "level";
+                }
+                w
             })
             .collect(),
+        levels: plan
+            .motors
+            .iter()
+            .filter_map(|m| {
+                let high = m.idle_high?;
+                let edges = (out.dropped_log_lines == 0)
+                    .then(|| observer_edges(&m.observer.source, &last_boot))
+                    .flatten();
+                let timer = timers.iter().find(|t| t.timer == m.observer.timer);
+                let anchor = timer.and_then(|t| t.anchor.map(|a| a.2));
+                let end = timer.and_then(|t| t.end_ns).unwrap_or(plan.virtual_ns);
+                Some(witness_level(m, high, edges.as_deref(), anchor, end))
+            })
+            .collect(),
+        gpio: Vec::new(),
+        adc: Vec::new(),
         boot_word_ns: boot_word_hook.map(|(_, ns)| ns),
         register_expected: plan.image.registers.iter().map(|r| r.value).collect(),
         timers: timers.clone(),
         injections: injections.clone(),
     };
+    let mut idr = vec![None; plan.pins.inputs.len()];
+    let mut dr = vec![None; plan.pins.analog.len()];
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
         let word = || u32::try_from(v).map_err(|_| untrusted(format!("`{cmd}` read {v:#x}")));
@@ -2527,6 +2690,8 @@ pub fn judge_boot(
                 let r = &mut observed.records[i].1;
                 *r = (*r << 32) | u64::from(word()?);
             }
+            Read::Idr(k) => idr[k] = Some(word()?),
+            Read::Dr(k) => dr[k] = Some(word()?),
             Read::Unwitnessable(j, 0) => observed.unmodelled[j].record.0 = word()?,
             Read::Unwitnessable(j, _) => {
                 let r = &mut observed.unmodelled[j].record.1;
@@ -2534,6 +2699,13 @@ pub fn judge_boot(
             }
         }
     }
+    // A pin device's witnesses (`AET-WO-1211c`): outputs then inputs, and
+    // the ADC inputs; none for a board with no pin device.
+    observed.gpio = crate::pinwitness::outputs(plan.pins, hooks.as_deref());
+    observed
+        .gpio
+        .extend(crate::pinwitness::inputs(plan.pins, &idr));
+    observed.adc = crate::pinwitness::analog(plan.pins, hooks.as_deref(), &dr);
     // Each boot's accesses on the logged peripherals, in log order: the
     // first boot, then one per release (`AET-WO-4300b` adversarial F1–F4).
     let starts = std::iter::once(0).chain(releases.iter().map(|&r| r + 1));
@@ -2855,6 +3027,18 @@ pub fn judge_boot(
         for (m, w) in plan.motors.iter().zip(&observed.motors) {
             findings.extend(witness_findings_of(m, w));
         }
+        // An output at a static level, and a pin device's signals
+        // (`AET-WO-1211c`), read once the boot reached its fixed point.
+        for w in &observed.levels {
+            if let Some(m) = plan.motors.iter().find(|m| m.observer.label == w.label) {
+                findings.extend(level_findings_of(m, w));
+            }
+        }
+        findings.extend(crate::pinwitness::findings(
+            plan.pins,
+            &observed.gpio,
+            &observed.adc,
+        ));
         if hooks.is_some() {
             let last_device = checks
                 .iter()
@@ -4308,8 +4492,17 @@ mod tests {
             capture: None,
             pwr: None,
             clock: None,
+            pins: &NO_PINS,
         }
     }
+
+    /// A board with no pin device (`AET-WO-1211c`).
+    static NO_PINS: aethelgard_twin::pins::Pins = aethelgard_twin::pins::Pins {
+        devices: Vec::new(),
+        outputs: Vec::new(),
+        inputs: Vec::new(),
+        analog: Vec::new(),
+    };
 
     /// `AET-WO-4400g` §1.6, `INV-07` residue (a)(3): under a declared clock
     /// the DWT keeps the stock file's 250 MHz (a condition the foreign
@@ -4440,6 +4633,7 @@ mod tests {
                     ccr: 1000,
                 },
             ),
+            idle_high: None,
         }
     }
 
@@ -5591,6 +5785,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5738,6 +5933,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5921,6 +6117,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -6062,6 +6259,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -7482,6 +7680,9 @@ mod tests {
             register_expected: Vec::new(),
             timers: Vec::new(),
             injections: Vec::new(),
+            gpio: Vec::new(),
+            adc: Vec::new(),
+            levels: Vec::new(),
         };
         witness_findings(checks, &observed)
     }

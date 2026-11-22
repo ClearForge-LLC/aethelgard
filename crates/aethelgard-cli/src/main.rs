@@ -18,6 +18,7 @@ mod kani;
 mod kicad;
 mod mcp;
 mod pinout;
+mod pinwitness;
 mod propose;
 mod renode;
 mod run;
@@ -501,10 +502,15 @@ fn main() -> ExitCode {
             foreign,
         } => match (firmware, spec, for_time.or(foreign)) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
-                let topology = match solved(&spec) {
-                    Ok((_, topology, _)) => topology,
+                let (parsed, topology) = match solved(&spec) {
+                    Ok((parsed, topology, _)) => (parsed, topology),
                     Err(code) => return code,
                 };
+                let pins =
+                    match aethelgard_twin::pins::plan(&parsed, &topology, &Default::default()) {
+                        Ok(p) => p,
+                        Err(e) => return stopped(twin_stop(e)),
+                    };
                 simulate(
                     &platform,
                     Some(Boot {
@@ -517,6 +523,7 @@ fn main() -> ExitCode {
                         open: Default::default(),
                         rail: None,
                         foreign: foreign.is_some(),
+                        pins,
                     }),
                 )
             }
@@ -1367,6 +1374,9 @@ struct Boot {
     rail: Option<analog::Rail>,
     /// `simulate --foreign` (`AET-WO-4400e` D3): judged by the foreign judge.
     foreign: bool,
+    /// What the twin drives and reads of the specification's pin devices,
+    /// with the scenario's holds and values (`AET-WO-1211c`).
+    pins: aethelgard_twin::pins::Pins,
 }
 
 /// A boot ready to run: every input copied and checked, every expectation
@@ -1411,6 +1421,8 @@ struct Ready {
     /// The generated firmware's HSE bring-up rule (`AET-WO-4240b` §1.6);
     /// `None` for a board with no HSE and for a foreign firmware.
     clock: Option<aethelgard_twin::hse::ClockRule>,
+    /// What the twin drives and reads of the pin devices (`AET-WO-1211c`).
+    pins: aethelgard_twin::pins::Pins,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1590,6 +1602,7 @@ fn ready(
             flash,
             pwr,
             clock,
+            pins: boot.pins,
         },
     ))
 }
@@ -1944,6 +1957,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 capture,
                 pwr: r.pwr.as_ref(),
                 clock: r.clock.as_ref(),
+                pins: &r.pins,
             })
     };
     let resets = droop
@@ -2457,7 +2471,46 @@ fn boot_report(
             .motors
             .iter()
             .enumerate()
-            .map(|(i, m)| verdict::MotorReport::new(m, observed.map(|o| &o.motors[i])))
+            .map(|(i, m)| {
+                let mut report = verdict::MotorReport::new(m, observed.map(|o| &o.motors[i]));
+                report.level = m.idle_high.map(|high| {
+                    let w = observed
+                        .and_then(|o| o.levels.iter().find(|w| w.label == m.observer.label));
+                    verdict::LevelReport {
+                        idle: level_name(high),
+                        settle_ns: w.and_then(|w| w.settle_ns),
+                        rises_after: w.map(|w| w.rises_after),
+                        falls_after: w.map(|w| w.falls_after),
+                        end_level: w.and_then(|w| w.end_level).map(level_name),
+                        status: w.map(|w| w.status),
+                    }
+                });
+                report
+            })
+            .collect(),
+        gpio: gpio_reports(&r.pins, observed),
+        adc: r
+            .pins
+            .analog
+            .iter()
+            .enumerate()
+            .map(|(k, a)| {
+                let w = observed.and_then(|o| o.adc.get(k));
+                verdict::AdcReport {
+                    net: a.net.clone(),
+                    pin: a.pin.clone(),
+                    peripheral: a.peripheral.clone(),
+                    channel: a.channel,
+                    bits: a.bits,
+                    microvolts: a.microvolts,
+                    held: a.held,
+                    expected: a.code,
+                    status: w.map(|w| w.status),
+                    reads: w.map(|w| w.reads),
+                    observed: w.and_then(|w| w.code),
+                    residual: verdict::ADC_RESIDUAL,
+                }
+            })
             .collect(),
         serial: plan
             .serial
@@ -2516,6 +2569,58 @@ fn boot_report(
             .collect(),
         executable: plan.executable.to_vec(),
     }
+}
+
+fn level_name(high: bool) -> &'static str {
+    if high { "high" } else { "low" }
+}
+
+/// A pin device's GPIO signals, outputs then inputs, as the plan and the
+/// witnesses give them (`AET-WO-1211c`).
+fn gpio_reports(
+    pins: &aethelgard_twin::pins::Pins,
+    observed: Option<&renode::Observed>,
+) -> Vec<verdict::GpioReport> {
+    let outputs = pins.outputs.iter().map(|o| {
+        (
+            o.net.as_str(),
+            o.pin.as_str(),
+            "output",
+            o.high,
+            None,
+            false,
+        )
+    });
+    let inputs = pins.inputs.iter().map(|i| {
+        (
+            i.net.as_str(),
+            i.pin.as_str(),
+            "input",
+            i.high,
+            Some(level_name(i.active_high)),
+            i.held,
+        )
+    });
+    outputs
+        .chain(inputs)
+        .enumerate()
+        .map(|(k, (net, pin, direction, high, active, held))| {
+            let w = observed.and_then(|o| o.gpio.get(k));
+            verdict::GpioReport {
+                net: net.to_owned(),
+                pin: pin.to_owned(),
+                direction,
+                level: level_name(high),
+                active,
+                held,
+                status: w.map(|w| w.status),
+                bsrr: w.and_then(|w| w.bsrr).map(verdict::word),
+                ordered: w.and_then(|w| w.ordered),
+                read: w.and_then(|w| w.level).map(|l| level_name(l == 1)),
+                residual: verdict::GPIO_RESIDUAL,
+            }
+        })
+        .collect()
 }
 
 /// The boot's unmodelled identity reads (`AET-WO-4241`), or `None` when the

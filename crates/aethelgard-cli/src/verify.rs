@@ -903,6 +903,9 @@ fn stress(
         // A rail out of band is detected by its consumers' mechanism: E3 for
         // serial ports, E2 for SPI devices, its subjects theirs
         // (`AET-WO-2304b` §1.10). A rail the checks refuse stresses nothing.
+        // PROVISIONAL (AET-WO-1211c, replaced in the verify phase): covers
+        // nothing.
+        Override::PinHeld { .. } | Override::AnalogValue { .. } => Some((None, None)),
         Override::RailOutOfBand { domain } => {
             let r = crate::campaign::rendered(spec, domain).ok()?;
             let (kinds, rule, subjects) = if r.devices.is_empty() {
