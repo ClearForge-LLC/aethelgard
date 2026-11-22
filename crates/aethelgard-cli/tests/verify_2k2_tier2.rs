@@ -454,7 +454,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "the JLCPCB BOM labels U4"
     );
     assert!(
-        text("FAB-NOTES.md").contains(&format!("\n## Parts with a note\n"))
+        text("FAB-NOTES.md").contains("\n## Parts with a note\n")
             && text("FAB-NOTES.md").ends_with(&format!("- U4 (W25Q64JVSSIQ): {standin}\n")),
         "FAB-NOTES lists U4 last"
     );
