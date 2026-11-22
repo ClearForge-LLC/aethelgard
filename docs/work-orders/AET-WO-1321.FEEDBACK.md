@@ -37,6 +37,7 @@
     - in the middle: BMP582;
     - last: TMP116.
   - Its control is two bus rows with their entries in the other order, accepted.
+  - One more assert holds the forward count to the table given: BME280 against `("BME280", 2)` is refused. Without it, a check that read the global `DECOUPLERS` would pass every test (R4).
 - **(2), `schematic_power.rs` and `schematic_arms.rs`:**
   - `two_pin` is `pub(super)` and takes `note: Option<String>`.
   - `capacitor`, `resistor` and the buck's inductor pass `None`, as it was fixed before.
@@ -83,7 +84,10 @@
 - **One finding, CONFIRMED and fixed:** the first bad entry named `"DRV8876"`, but the pin row's part is `"DRV8876PWPR"`.
   - The entry had no row of any kind, so the test never exercised the pin-row exclusion.
   - Mutant R2 (pin rows count as bus rows) survived, found both by `mutants.sh` and by the reviewer.
-  - Fixed at `d514f7a0` with `DRV8876.part`. R1–R3 and N1 are all killed now.
+  - Fixed at `d514f7a0` with `DRV8876.part`.
+- **A second gap, from the close-out review:** no test gave the forward check a table other than `DECOUPLERS`, so R4 (the forward count reads `DECOUPLERS`) would have survived. The assert was added at `0bad145d`.
+- **Mutants at the head `0bad145d`:** R1–R4 and N1 are all killed (`spike/1321/mutants.sh`).
+- **`1320`'s kit, re-run unedited at the head,** because `refused()` and `at_compile_time!` changed: K1–K5 and W1–W5 are all still killed, each by its own test.
 - **The message `1319`'s hazard table names, which has moved (`1320` F3, item 5).**
   - `1319` FEEDBACK §5 says `check()` refuses "an own net named twice" (`an_own_net_capacitor_names_its_own_pin`).
   - Since `1320` D3 that line is gone. Its `Own`/`Own` table is refused by **"one own-net name on two pins of a row"**, the general own-name line, and the test expects that message.
@@ -96,14 +100,15 @@
 
 ## 7. Gates, fence, reduction pass
 
-- **Gates at `1fc5ecd6`** (the code is `d514f7a0`'s; the later commits are the kit and docs):
+- **Gates at `1fc5ecd6`** (the code is `d514f7a0`'s, as measured in §2):
   - `cargo fmt --all -- --check`: clean;
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
   - `cargo test --workspace` (target in the repository, as CI builds it; `TMPDIR` unset): **2760 passed, 0 failed**, 160 `test result: ok` lines.
+- **At the head `0bad145d`:** the one later code change is the R4 assert. It is inside `#[cfg(test)]` (`git diff -U0 d514f7a0 0bad145d -- crates` touches only line 1888, in `mod tests` from line 1393), so no emitted byte can move. fmt and clippy are clean, and `cargo test -p aethelgard-eda` gives 227 passed, 0 failed. The tests that read `docs/` (`readme_status`, `strict_fence`, `board_names`, `workspace_shape`) pass with this file in place.
 - **CI:** see the PR's checks. READY is posted only on green. `TIER2_MIN` is unchanged.
 
 - **Fence:** `crates/aethelgard-eda/src/schematic_arms.rs` and `schematic_power.rs`, `spike/1319/harness/mutants.sh` (line 10), `spike/1321/` and this file.
-- **Reduction pass (diff): +62 net in `crates/` (+97 −35) · 1 duplicate removed · 1 dead path removed · 1 protected kept · 2 findings above.**
+- **Reduction pass (diff): +68 net in `crates/` (+103 −35) · 1 duplicate removed · 1 dead path removed · 1 protected kept · 2 findings above.**
   - **Removed:** `declared_bulk`'s copy of `two_pin`'s `Part` push (the work order's item 2), and its `Some(row)`, which always matched.
   - **Protected:** `DECOUPLERS`, labelled `belt-and-suspenders:`.
   - **Proof:** after the fold, the bytes are identical and N1 is killed.

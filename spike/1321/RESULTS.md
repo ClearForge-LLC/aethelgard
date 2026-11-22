@@ -25,6 +25,8 @@ Measured 2026-11-22 on `main` `a41a8a8d` (base) and the branch at `d514f7a0` (th
   - At `9dad9223`, **R2 survived.** `FIRST` named `"DRV8876"`, but the pin row's part is `"DRV8876PWPR"`. The entry had no row of any kind, so the "a pin row is not a bus row" case never ran.
   - The fresh reviewer found it on its own; its report was CONFIRMED by planting.
   - Fixed at `d514f7a0` (`DRV8876.part`); R2 is killed now.
+  - **R4** (the forward count reads `DECOUPLERS`, not the table given) was added at close-out, when the review found no test gave the forward check another table. It is killed by one assert added at `0bad145d`, inside `#[cfg(test)]`.
+  - At the head `0bad145d`: R1–R4 and N1 are all killed. `1320`'s kit, run unedited, still kills K1–K5 and W1–W5.
 
 ## (2) The fold
 
@@ -50,4 +52,4 @@ As predicted (M). Since `1320`, M2 no longer tests the harness's bytes; the comp
   - `d1319 identical: 84 cases, 331 files`;
   - `bulk.sh`: `ceramic identical: emit exit 0, 3 files, the note in 1`; `electrolytic identical: …` the same.
 - **R2.** See FEEDBACK §7.
-- **R3, hit.** `crates/`: +97 −35, net **+62**.
+- **R3, hit.** `crates/`: +103 −35, net **+68**.
