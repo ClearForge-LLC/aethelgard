@@ -7,7 +7,9 @@
 //!   `board/firmware/`, from `aethelgard_svd_hal::board::generate_with` with
 //!   the twin's model table as `answers`;
 //! - `board/<project>.repl`, the Renode platform from
-//!   `aethelgard_twin::platform::emit`.
+//!   `aethelgard_twin::platform::emit`, except for a topology with a pin
+//!   device, which the twin does not model until `AET-WO-1211c`
+//!   (`AET-WO-1211b`).
 //!
 //! `board/` is what `boards/<project>/` holds. The output is a function of
 //! the specification, its solved topology, the pin table and the twin's model
@@ -42,12 +44,12 @@ pub enum GenerateError {
         tree: String,
     },
     /// The topology holds a pin device ([`generable`], `AET-WO-1211a`).
-    PinDeviceNotGenerated {
+    PinDeviceNotSimulated {
         reference: String,
         part: String,
     },
     /// A motor output idles high ([`generable`], `AET-WO-1211a`).
-    IdleHighNotGenerated {
+    IdleHighNotSimulated {
         net: String,
     },
 }
@@ -71,13 +73,10 @@ pub enum GenerateError {
 /// `d2ppre1`, `d2ppre2`, `d3ppre`), `timpre` off, at VOS Scale 2. Any other
 /// HSE tree is refused, the refusal naming it.
 ///
-/// `PinDeviceNotGenerated` (`AET-WO-1211a`): a topology with a pin device
-/// holds gpio inputs and ADC inputs no generator, simulation or board writes
-/// or models until its own work order; each is refused by the device's
-/// reference and part. `IdleHighNotGenerated` (`AET-WO-1211a`): a motor
-/// output whose `pwm.idle` is `Idle::Level(High)` implies a pull-up
-/// (`silicon::implied_pupd`), and the generator's own motor pull is the
-/// pull-down until `AET-WO-1211b`.
+/// A pin device and a motor output that idles high are generated
+/// (`AET-WO-1211b`); [`simulable`] refuses both for `simulate`, and the
+/// schematic emitter refuses a pin device by its own name
+/// (`PinDeviceNotDrawn`, until `AET-WO-1211d`).
 pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
     if topology.core_supply == aethelgard_ir::vos::CoreSupplyMode::Bypass {
         return Err(GenerateError::CoreSupplyNotGenerated);
@@ -105,8 +104,20 @@ pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
             ),
         });
     }
+    Ok(())
+}
+
+/// What `simulate` (and so `verify` and `campaign`) refuses beyond
+/// [`generable`] (`AET-WO-1211b`), until `AET-WO-1211c` gives the twin the
+/// pins: `PinDeviceNotSimulated`, a topology with a pin device, whose GPIO
+/// and ADC inputs the twin neither drives nor reads, by the device's
+/// reference and part; and `IdleHighNotSimulated`, a motor output whose
+/// `pwm.idle` is a high level, which Renode 1.17.0 holds low for a period and
+/// whose static level no witness reads (`1211` §4 H2, Q10).
+pub fn simulable(topology: &SolvedTopology) -> Result<(), GenerateError> {
+    generable(topology)?;
     if let Some((reference, d)) = topology.pin_devices.iter().next() {
-        return Err(GenerateError::PinDeviceNotGenerated {
+        return Err(GenerateError::PinDeviceNotSimulated {
             reference: reference.clone(),
             part: d.part.clone(),
         });
@@ -120,7 +131,7 @@ pub fn generable(topology: &SolvedTopology) -> Result<(), GenerateError> {
         )
     };
     if let Some((net, _)) = topology.motor_outputs.iter().find(|(_, m)| high(m)) {
-        return Err(GenerateError::IdleHighNotGenerated { net: net.clone() });
+        return Err(GenerateError::IdleHighNotSimulated { net: net.clone() });
     }
     Ok(())
 }
@@ -138,13 +149,13 @@ impl std::fmt::Display for GenerateError {
                 f,
                 "mcu.hse is declared and the board solves to the HSE tree {tree}, which is not H1 (PLL1 at 64 MHz, every prescaler 1, timpre off, VOS Scale 2), the only HSE tree the generator writes (AET-WO-4240b); validate and solve accept it, generate, emit and simulate do not"
             ),
-            Self::PinDeviceNotGenerated { reference, part } => write!(
+            Self::PinDeviceNotSimulated { reference, part } => write!(
                 f,
-                "`{reference}` ({part}) is a pin device: the board, firmware and twin this engine generates drive and read none of its pins (AET-WO-1211a); validate and solve accept it, generate, emit and simulate do not"
+                "`{reference}` ({part}) is a pin device: the twin drives and reads none of its pins until AET-WO-1211c; validate, solve and generate accept it, simulate does not"
             ),
-            Self::IdleHighNotGenerated { net } => write!(
+            Self::IdleHighNotSimulated { net } => write!(
                 f,
-                "motor output `{net}` idles high: the generator's motor pull is the pull-down until AET-WO-1211b (AET-WO-1211a); validate and solve accept it, generate, emit and simulate do not"
+                "motor output `{net}` idles high: the twin holds it low for a period and no witness reads a static level until AET-WO-1211c (AET-WO-1211 Q10); validate, solve and generate accept it, simulate does not"
             ),
         }
     }
@@ -158,16 +169,16 @@ impl GenerateError {
             Self::Twin(e) => e.kind(),
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
             Self::HseNotGenerated { .. } => "HseNotGenerated",
-            Self::PinDeviceNotGenerated { .. } => "PinDeviceNotGenerated",
-            Self::IdleHighNotGenerated { .. } => "IdleHighNotGenerated",
+            Self::PinDeviceNotSimulated { .. } => "PinDeviceNotSimulated",
+            Self::IdleHighNotSimulated { .. } => "IdleHighNotSimulated",
         }
     }
 
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::Emit(e) => e.id(),
-            Self::PinDeviceNotGenerated { reference, .. } => Some(reference),
-            Self::IdleHighNotGenerated { net } => Some(net),
+            Self::PinDeviceNotSimulated { reference, .. } => Some(reference),
+            Self::IdleHighNotSimulated { net } => Some(net),
             Self::Board(_)
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
@@ -189,8 +200,8 @@ impl GenerateError {
             | Self::Twin(_)
             | Self::CoreSupplyNotGenerated
             | Self::HseNotGenerated { .. }
-            | Self::PinDeviceNotGenerated { .. }
-            | Self::IdleHighNotGenerated { .. } => false,
+            | Self::PinDeviceNotSimulated { .. }
+            | Self::IdleHighNotSimulated { .. } => false,
         }
     }
 }
@@ -224,7 +235,14 @@ pub fn tree(
     let board =
         aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
             .map_err(GenerateError::Board)?;
-    let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
+    // The twin's platform, except for a topology with a pin device, which the
+    // twin does not model until `AET-WO-1211c` (`simulate` refuses it).
+    let platform = topology
+        .pin_devices
+        .is_empty()
+        .then(|| aethelgard_twin::platform::emit(topology))
+        .transpose()
+        .map_err(GenerateError::Twin)?;
 
     let mut files = BTreeMap::new();
     if let Some(e) = emission {
@@ -239,7 +257,9 @@ pub fn tree(
     for (path, text) in board {
         files.insert(format!("{BOARD_DIR}/{path}"), text);
     }
-    files.insert(format!("{BOARD_DIR}/{project}.repl"), platform);
+    if let Some(platform) = platform {
+        files.insert(format!("{BOARD_DIR}/{project}.repl"), platform);
+    }
     Ok(files)
 }
 
