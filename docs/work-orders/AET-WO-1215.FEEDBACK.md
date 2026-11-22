@@ -161,12 +161,13 @@ Every bump's work order is the one README §`Specification` names, in order. **(
 - **A solved-version change.** Not a row (§2); `changes` is `&[]` for a `SolvedTopology`.
 - **A message that suggests a value.** It names paths, kinds, versions and work orders only. A test refuses `null`, `true`, `false`, `pulse_us":`, `1,000,000`, `= ` and `e.g.` in version 1's message.
 - **Not a number.** A `schema_version` that is not a `u32` is refused as before, by the CLI's pre-parse falling through to `SchemaViolation`. No change.
-- **Bytes.** `out/differential-compare.txt`: 70 (file, command) lines over the 35 committed specifications. The 4 that differ are the two version-1 files in `docs/work-orders/AET-WO-1200.repro/`, through `validate` and `solve`, which now list rows 2–23. Every current-version file's bytes are unchanged, and so are versions 0 and 24 on every entry point. **No file that validates today stops validating.**
+- **Bytes.** `out/differential-compare.txt`: 70 (file, command) lines over the 35 committed specifications. The 4 that differ are the two version-1 files in `docs/work-orders/AET-WO-1200.repro/`, through `validate` and `solve`, which now list rows 2–23. Every current-version file's bytes are unchanged, and so are versions 0 and 24 on every entry point. The comparison was repeated against main `7fc81640`'s own binary, built alone, against this branch at `040f61cd` with that main merged: the same 4 lines, and nothing else (`out/differential-main-7fc81640.txt`, `out/differential-branch-040f61cd.txt`). **No file that validates today stops validating.**
 
 ## 8. Gates, mutants, reduction
 
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace --no-fail-fast`: run in a 32 G capped scope on the head before the reduction, it gave 156 binaries, 2,624 passed and 0 failed. The final run is on the READY head (§9). `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
+- `cargo test --workspace --no-fail-fast`, in a 32 G capped scope: 156 binaries, 2,624 passed and 0 failed before the reduction. On `040f61cd` (main `7fc81640` merged): 157 binaries, 2,636 passed, 0 failed.
+- CI: green on every check at `35bcdda4`. The READY commit follows green on the last push. `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
 - **Mutants** (`spike/1215/mutants.sh` → `out/mutants.txt`): 12 of 12 killed.
   - M1: drop row 22. M2 and M2b: swap rows 21/22 and 2/3.
   - M3: version 0 lists every row. M4: an older file lists its own row.
