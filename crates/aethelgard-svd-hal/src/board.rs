@@ -30,10 +30,13 @@ use aethelgard_ir::vos::{self, CoreSupplyMode};
 use aethelgard_ir::{
     IrValidationError, PinTable, RESERVED_PINS, SolvedI2cTiming, SolvedSpiController,
     SolvedTopology, SpiKernel,
+    motor::Level,
+    pin_devices::{Direction, McuPull},
 };
 
 use crate::cmsis::{self, RegisterError, RegisterFacts};
 
+mod adc;
 mod firmware;
 mod ledger;
 
@@ -143,12 +146,61 @@ pub enum BoardError {
         us: u64,
         hz: u64,
     },
-    /// `AET-WO-1211a`: the board emits no pin of a pin device (a GPIO input,
-    /// a wake line, an ADC input) until a work order builds it.
+    /// `AET-WO-1211b`: an ADC input on a peripheral or channel this
+    /// generator does not bring up (ADC2 is never solved unpinned, `1211` Q8).
     #[error(
-        "`{reference}` ({part}) is a pin device: this engine emits no board that drives or reads its pins (AET-WO-1211a)"
+        "ADC input `{net}` is on {peripheral}: the generator brings up ADC1 and ADC3 inputs INP0-INP19 only (AET-WO-1211b)"
     )]
-    PinDeviceNotGenerated { reference: String, part: String },
+    AdcNotGenerated { net: String, peripheral: String },
+    /// `AET-WO-1211b`: a pin device's ADC input on an HSE board, whose
+    /// bring-up proof is written for the reset clock (a merge of `AET-WO-4240b`
+    /// and this work order; no fixture has both).
+    #[error(
+        "ADC input `{net}` on an HSE board: the ADC bring-up and its proof are written for the reset clock (AET-WO-1211b)"
+    )]
+    AdcOnHseNotGenerated { net: String },
+    /// `AET-WO-1211b` S1: the solved topology carries no resolution for a
+    /// device ADC input, and none is substituted (`INV-06`).
+    #[error(
+        "ADC input `{net}`: the solved topology carries no declared resolution, and the generator substitutes none (AET-WO-1211b S1, INV-06)"
+    )]
+    AdcResolutionNotSolved { net: String },
+    /// `AET-WO-1211b`: no `ADC_CFGR.RES` code means `bits` on both silicon
+    /// revisions (RM0433 Rev 9 p. 1013: 8 bits is `100` on Y, `111` on V).
+    #[error(
+        "ADC input `{net}` declares {bits} bits, which no ADC_CFGR.RES code means on both silicon revisions Y and V (RM0433 Rev 9 p. 1013); the revision is not known"
+    )]
+    AdcResolutionNotCommon { net: String, bits: u8 },
+    /// `AET-WO-1211b`: one ADC converts at one resolution (`ADC_CFGR.RES`).
+    #[error(
+        "the inputs of {peripheral} declare different resolutions; one ADC converts at one (ADC_CFGR.RES)"
+    )]
+    AdcResolutionsDiffer { peripheral: String },
+    /// `AET-WO-1211b`: the bring-up's sequence is `SQ1`-`SQ4` (`ADC_SQR1`).
+    #[error(
+        "{peripheral} has {inputs} inputs; the bring-up converts at most four, the sequence ADC_SQR1 holds"
+    )]
+    AdcSequenceTooLong { peripheral: String, inputs: usize },
+    /// `AET-WO-1211b` (`1211` §2.5, Q3): a bridge's static idle, as the
+    /// generator would leave it, is no non-driving row of its part's mode
+    /// (`aethelgard_ir::pin_parts`), or cannot be read as one.
+    #[error("bridge `{bridge}` of `{reference}`: {detail}")]
+    BridgeIdleNotSafe {
+        reference: String,
+        bridge: String,
+        detail: String,
+    },
+    /// `AET-WO-1211b`: a bridge whose enable must follow inputs on two
+    /// timers (its own two, or two bridges' sharing the enable), each its own
+    /// part of the schedule proof, whose order no one part could prove.
+    #[error(
+        "bridge `{bridge}` of `{reference}`: its enable follows inputs on more than one timer, so no one proof part holds its order"
+    )]
+    BridgeAcrossParts { reference: String, bridge: String },
+    /// `AET-WO-1211b` (`INV-06`): the bring-up wakes a part whose row states
+    /// no `t_wake`.
+    #[error("`{reference}` ({part}) is woken at bring-up, and its row states no t_wake to wait")]
+    WakeTimeUnstated { reference: String, part: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -185,7 +237,15 @@ impl BoardError {
             Self::VosRuleFails { .. } => "VosRuleFails",
             Self::CoreSupplyNotGenerated => "CoreSupplyNotGenerated",
             Self::HsePollsOverflow { .. } => "HsePollsOverflow",
-            Self::PinDeviceNotGenerated { .. } => "PinDeviceNotGenerated",
+            Self::AdcNotGenerated { .. } => "AdcNotGenerated",
+            Self::AdcOnHseNotGenerated { .. } => "AdcOnHseNotGenerated",
+            Self::AdcResolutionNotSolved { .. } => "AdcResolutionNotSolved",
+            Self::AdcResolutionNotCommon { .. } => "AdcResolutionNotCommon",
+            Self::AdcResolutionsDiffer { .. } => "AdcResolutionsDiffer",
+            Self::AdcSequenceTooLong { .. } => "AdcSequenceTooLong",
+            Self::BridgeIdleNotSafe { .. } => "BridgeIdleNotSafe",
+            Self::BridgeAcrossParts { .. } => "BridgeAcrossParts",
+            Self::WakeTimeUnstated { .. } => "WakeTimeUnstated",
             Self::Register(e) => e.kind(),
         }
     }
@@ -876,11 +936,18 @@ enum Role {
     TimCh4,
     UsartTx,
     UsartRx,
+    /// A pin device's GPIO input (`AET-WO-1211b`): `MODER` `00`, its declared
+    /// pull.
+    Input,
+    /// A solved ADC input's pin (`AET-WO-1211b`): `MODER` `11`, no pull.
+    Analog,
 }
 
 /// MODER values (RM0433 §11.4.1).
+const MODE_INPUT: u32 = 0b00;
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
+const MODE_ANALOG: u32 = 0b11;
 
 /// `PUPDR` `10`, pull-down (RM0433 Rev 9 §11.4.4, p. 542), on every motor
 /// output: from reset until `start_outputs` the pin is first analog, then an
@@ -889,6 +956,39 @@ const MODE_AF: u32 = 0b10;
 /// `AET-WO-4230`). The generator's own copy; the oracle takes the rule's,
 /// `aethelgard_ir::silicon::motor_output_pupd`.
 const MOTOR_PULL: u32 = 0b10;
+
+/// `PUPDR` `01`, pull-up (RM0433 Rev 9 §11.4.4, p. 542), on a motor output
+/// whose declared idle is `{"level": "high"}` (`AET-WO-1211b`; `1211` Q9 as
+/// ruled: the pad's pull follows the idle, so it never fights it before
+/// `start_outputs`). The generator's own copy; the oracle takes the rule's,
+/// `aethelgard_ir::silicon::implied_pupd`.
+const MOTOR_PULL_HIGH: u32 = 0b01;
+
+/// The generator's `PUPDR` field for a motor output: [`MOTOR_PULL_HIGH`] for
+/// an idle `high`, else [`MOTOR_PULL`] (a low or pulsed idle, and DShot).
+///
+/// belt-and-suspenders: `aethelgard_ir::silicon::idle_pupd` is the rule's
+/// copy, which the oracle and the ledger take; the generator keeps its own so
+/// a slip in either is caught by the other (`INV-07`).
+fn motor_pull(m: &aethelgard_ir::SolvedMotorOutput) -> u32 {
+    match m.pwm.as_ref().map(|p| p.idle) {
+        Some(motor::Idle::Level(motor::Level::High)) => MOTOR_PULL_HIGH,
+        _ => MOTOR_PULL,
+    }
+}
+
+/// The generator's `PUPDR` field for a GPIO input's declared MCU pull
+/// (RM0433 Rev 9 §11.4.4, p. 542: `01` up, `10` down, `00` none).
+///
+/// belt-and-suspenders: `aethelgard_ir::silicon::implied_pupd` is the
+/// oracle's copy (`INV-07`).
+fn input_pull(pull: Option<McuPull>) -> u32 {
+    match pull {
+        Some(McuPull::Up) => 0b01,
+        Some(McuPull::Down) => 0b10,
+        Some(McuPull::None) | None => 0b00,
+    }
+}
 
 /// A port's `PUPDR` at reset (RM0433 Rev 9 §11.4.4, p. 542): `0x6400_0000`
 /// in port A (PA13 pull-up, PA14 pull-down, PA15 pull-up) and `0x0000_0100`
@@ -922,6 +1022,8 @@ impl Role {
             Self::TimCh4 => "CH4",
             Self::UsartTx => "TX",
             Self::UsartRx => "RX",
+            Self::Input => "IN",
+            Self::Analog => "ANALOG",
         }
     }
 
@@ -950,6 +1052,8 @@ impl Role {
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => (MODE_AF, 0, MOTOR_PULL),
             Self::UsartTx | Self::UsartRx => (MODE_AF, 0, 0b00),
             Self::Output => (MODE_OUTPUT, 0, 0b00),
+            Self::Input => (MODE_INPUT, 0, 0b00),
+            Self::Analog => (MODE_ANALOG, 0, 0b00),
         }
     }
 
@@ -965,7 +1069,15 @@ impl Role {
             Self::Output => Some(SOFTWARE_DRIVEN),
             Self::TimCh1 | Self::TimCh2 | Self::TimCh3 | Self::TimCh4 => Some(MOTOR_OUTPUT),
             Self::UsartTx | Self::UsartRx => Some(SERIAL_LINE),
+            Self::Input => Some(GPIO_INPUT),
+            Self::Analog => Some(ANALOG_INPUT),
         }
+    }
+
+    /// A pin the firmware configures by `MODER` alone, with no alternate
+    /// function and no output level: a GPIO input or an analog pin.
+    fn mode_only(self) -> bool {
+        matches!(self, Self::Input | Self::Analog)
     }
 }
 
@@ -980,6 +1092,12 @@ pub const MOTOR_OUTPUT: &str = "motor output (a timer channel): it leaves the bo
 /// its declared baud and leaves the board at a connector, so the speed check
 /// (`AET-WO-4300c` D4) has no load for it, and it takes the slowest speed.
 pub const SERIAL_LINE: &str = "serial line (a USART TX or RX): peripheral-driven at its declared baud; it leaves the board, so the check has no off-board load for it";
+/// A pin device's GPIO input and a solved ADC input's pin (`AET-WO-1211b`;
+/// `1211` §2.7 (b), (c): the speed check judges nothing on either, and says
+/// so). Neither `OSPEEDR` is written: the MCU drives neither pin.
+pub const GPIO_INPUT: &str =
+    "GPIO input (a pin device's signal): the MCU drives nothing on it, so no edge rate applies";
+pub const ANALOG_INPUT: &str = "analog input (an ADC channel, MODER 11): the output buffer is disconnected (RM0433 Rev 9 p. 539), so no edge rate applies";
 
 /// What the output speed check found for one generated pin.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1106,13 +1224,29 @@ struct PinPlan {
     /// `OSPEEDR`, from the output speed check.
     speed: u32,
     check: SpeedCheck,
+    /// `PUPDR`: the role's pull ([`Role::policy`]), except a motor output's,
+    /// which follows its idle ([`motor_pull`]), and a GPIO input's, its
+    /// declared pull ([`input_pull`]) (`AET-WO-1211b`).
+    pull: u32,
+    /// A GPIO output's declared initial level, which its `BSRR` write sets
+    /// before `MODER` (`AET-WO-1211b`); `None` for every other role.
+    initial: Option<Level>,
 }
 
 impl PinPlan {
     /// (mode, output type, speed, pull).
     fn policy(&self) -> (u32, u32, u32, u32) {
-        let (mode, otype, pupd) = self.role.policy();
-        (mode, otype, self.speed, pupd)
+        let (mode, otype, _) = self.role.policy();
+        (mode, otype, self.speed, self.pull)
+    }
+
+    /// The `BSRR` bit a GPIO output's configure writes: its set bit for an
+    /// initial `high`, its reset bit for `low` (RM0433 Rev 9 §11.4.7).
+    fn level_bit(&self, pf: &PinFacts) -> u32 {
+        match self.initial {
+            Some(Level::Low) => 1u32 << pf.br,
+            _ => 1u32 << pf.bs,
+        }
     }
 }
 
@@ -1217,10 +1351,278 @@ struct Plan {
     /// `solve`; `AET-WO-4240v` D-1): `Ldo`, since [`Plan::new`] refuses
     /// `Bypass`.
     core_supply: CoreSupplyMode,
+    /// The proof oracle's own reading of the topology (`INV-07`,
+    /// `AET-WO-1211b`), apart from the pin plans: each solved pin's `PUPDR`
+    /// field by the rule (`aethelgard_ir::silicon::implied_pupd`), and each
+    /// GPIO output's declared level, as `solved.gpio` states it.
+    oracle_pupd: BTreeMap<String, u32>,
+    oracle_levels: BTreeMap<String, Level>,
+    /// Each timer channel's `CCRk` as the oracle derives it (`AET-WO-1211b`),
+    /// by (timer, channel): a PWM output's declared idle ([`oracle_idle_word`]),
+    /// a DShot output's solved word (its zero-bit duty, judged by
+    /// `motor::check_silicon`).
+    oracle_ccr: BTreeMap<(u32, u32), u32>,
+    /// Each ADC a pin device's input is solved onto (`AET-WO-1211b`), its
+    /// inputs and resolution. Empty without one, so every other board's text
+    /// is unchanged.
+    adcs: BTreeMap<String, adc::AdcPlan>,
+    /// Each pin device's bridge with an enable (`AET-WO-1211b`): the enable
+    /// is configured after every input is at its idle, and woken only after.
+    bridges: Vec<BridgePlan>,
+    /// The proof oracle's own reading of each bridge with an enable
+    /// (`INV-07`; the adversarial pass's F3, F4): from the topology and the
+    /// part's row, never from [`bridge_plans`].
+    oracle_bridges: Vec<OracleBridge>,
+    /// The proof oracle's own reading of each ADC (`adc::oracle_of`).
+    oracle_adcs: BTreeMap<String, adc::OracleAdc>,
     /// The HSE tree (`AET-WO-4240b`), `None` on a board that runs on the HSI.
     hse: Option<HsePlan>,
     /// The topology's clock, for the oracle only (its budgets, `aethelgard_ir`).
     ir_clock: aethelgard_ir::motor::SolvedClock,
+}
+
+/// One bridge as the oracle reads it.
+#[derive(Debug, Clone)]
+struct OracleBridge {
+    /// `U2`'s `M1`.
+    name: String,
+    enable: String,
+    /// Each input: a timer channel (timer, channel) or a GPIO output's pin.
+    inputs: Vec<Result<(u32, u32), String>>,
+    /// The row's non-driving, non-forbidden states as (enable, input 0,
+    /// input 1), `None` for an input the row leaves free.
+    safe: Vec<(Level, Option<Level>, Option<Level>)>,
+}
+
+/// The oracle's bridges (`AET-WO-1211b`): each bridge, its inputs read from
+/// `assignments` and `gpio`, and its mode's non-driving rows from the part's
+/// row (`aethelgard_ir::pin_parts`, the datasheet's truth table), looked up
+/// by part and mode.
+///
+/// belt-and-suspenders: this restates what [`bridge_plans`] reads on
+/// purpose; the proof's expectations must not come from the plan the
+/// generator orders the firmware by (`INV-07`).
+fn oracle_bridges(solved: &SolvedTopology) -> Result<Vec<OracleBridge>, BoardError> {
+    let table = aethelgard_ir::parts::table().map_err(BoardError::InvalidTopology)?;
+    let mut out = Vec::new();
+    for (reference, d) in &solved.pin_devices {
+        for (id, b) in &d.bridges {
+            let refuse = |detail: &str| BoardError::BridgeIdleNotSafe {
+                reference: reference.clone(),
+                bridge: id.clone(),
+                detail: format!("the oracle cannot read it: {detail}"),
+            };
+            let Some(e) = &b.enable else {
+                return Err(refuse("no enable"));
+            };
+            let mode = table
+                .pin_part(&d.part)
+                .and_then(|row| row.mode(&b.mode))
+                .ok_or_else(|| refuse("no row or mode"))?;
+            let enable = solved
+                .gpio
+                .get(&e.net)
+                .map(|g| g.pin.clone())
+                .ok_or_else(|| refuse("the enable is no GPIO"))?;
+            let inputs = b
+                .inputs
+                .iter()
+                .map(|net| {
+                    match solved
+                        .assignments
+                        .get(net)
+                        .and_then(|a| motor::timer_channel(&a.signal))
+                    {
+                        Some(tk) => Ok(Ok(tk)),
+                        None => solved
+                            .gpio
+                            .get(net)
+                            .map(|g| Err(g.pin.clone()))
+                            .ok_or_else(|| refuse("an input is neither")),
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            let safe = mode
+                .states
+                .iter()
+                .filter(|st| !st.drives && !mode.forbidden.contains(&st.name))
+                .map(|st| (st.enable, st.inputs[0], st.inputs[1]))
+                .collect();
+            out.push(OracleBridge {
+                name: format!("`{reference}`'s `{id}`"),
+                enable,
+                inputs,
+                safe,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// One bridge's enable and what it must follow (`AET-WO-1211b`; `1211`
+/// §2.7 (a)).
+#[derive(Debug, Clone)]
+struct BridgePlan {
+    reference: String,
+    id: String,
+    /// The timer its timer-channel inputs are on (at most one, else
+    /// `BridgeAcrossParts`), whose `CEN` the enable follows.
+    timer: Option<u32>,
+    /// The pins of its GPIO-output inputs.
+    gpio_inputs: Vec<String>,
+    /// The enable's pin.
+    enable: String,
+    /// The part's `t_wake`, µs, when the enable's declared level wakes it.
+    wake_us: Option<u32>,
+}
+
+/// What an enable pin's configure must follow, over every bridge it enables:
+/// the timer (at most one) and the GPIO inputs, and the longest wake.
+#[derive(Debug, Clone, Default)]
+struct EnableAfter {
+    timer: Option<u32>,
+    gpio_inputs: Vec<String>,
+    wake_us: Option<u32>,
+}
+
+impl Plan {
+    /// What `pin` must follow, if it is some bridge's enable.
+    fn enable_after(&self, pin: &str) -> Option<EnableAfter> {
+        let mut out: Option<EnableAfter> = None;
+        for b in self.bridges.iter().filter(|b| b.enable == pin) {
+            let e = out.get_or_insert_with(EnableAfter::default);
+            e.timer = e.timer.or(b.timer);
+            e.gpio_inputs.extend(b.gpio_inputs.iter().cloned());
+            e.wake_us = e.wake_us.max(b.wake_us);
+        }
+        out
+    }
+}
+
+/// The bridges of `solved` with an enable, each judged at its idle against
+/// its part's row (`aethelgard_ir::pin_parts`, the datasheet's truth table,
+/// looked up by part and mode; `AET-WO-1211b` S1). The tuple is read from the
+/// topology's declared levels, never from the plan's words: an input on a
+/// timer at its PWM idle level (CCR 0 holds OCxREF low, ARR + 1 high, RM0433
+/// Rev 9 p. 1558), an input on a GPIO at its initial level, and the enable at
+/// its initial level. A tuple that is no row, or a driving row, is refused.
+fn bridge_plans(solved: &SolvedTopology) -> Result<Vec<BridgePlan>, BoardError> {
+    let mut out = Vec::new();
+    for (reference, d) in &solved.pin_devices {
+        for (id, b) in &d.bridges {
+            let refuse = |detail: String| BoardError::BridgeIdleNotSafe {
+                reference: reference.clone(),
+                bridge: id.clone(),
+                detail,
+            };
+            // A bridge with no enable has no idle to judge it by (validate
+            // refuses it, `DevicePinUnbound`; the adversarial pass's F7).
+            let Some(e) = &b.enable else {
+                return Err(refuse("it has no enable, so its idle is unjudged".into()));
+            };
+            let row = aethelgard_ir::parts::table()
+                .map_err(BoardError::InvalidTopology)?
+                .pin_part(&d.part)
+                .ok_or_else(|| refuse(format!("`{}` has no busless row", d.part)))?;
+            let mode = row
+                .mode(&b.mode)
+                .ok_or_else(|| refuse(format!("`{}` has no mode `{}`", d.part, b.mode)))?;
+            let mut timers = BTreeSet::new();
+            let mut gpio_inputs = Vec::new();
+            let mut levels = [Level::Low; 2];
+            if b.inputs.len() != 2 {
+                return Err(refuse("a bridge has two inputs".into()));
+            }
+            for (k, net) in b.inputs.iter().enumerate() {
+                if let Some(m) = solved.motor_outputs.get(net) {
+                    levels[k] = match m.pwm.as_ref().map(|p| p.idle) {
+                        Some(motor::Idle::Level(l)) => l,
+                        _ => return Err(refuse(format!("input `{net}` does not idle at a level"))),
+                    };
+                    let (n, _) = solved
+                        .assignments
+                        .get(net)
+                        .and_then(|a| motor::timer_channel(&a.signal))
+                        .ok_or_else(|| refuse(format!("input `{net}` has no timer channel")))?;
+                    timers.insert(n);
+                } else if let Some(g) = solved.gpio.get(net) {
+                    levels[k] = g
+                        .initial
+                        .ok_or_else(|| refuse(format!("input `{net}` is not an output")))?;
+                    gpio_inputs.push(g.pin.clone());
+                } else {
+                    return Err(refuse(format!(
+                        "input `{net}` is neither a motor output nor a GPIO"
+                    )));
+                }
+            }
+            let g = solved
+                .gpio
+                .get(&e.net)
+                .filter(|g| g.direction == Direction::Output)
+                .ok_or_else(|| refuse(format!("enable `{}` is not a GPIO output", e.net)))?;
+            let initial = g
+                .initial
+                .ok_or_else(|| refuse(format!("enable `{}` states no initial level", e.net)))?;
+            let state = mode.state(initial, levels).ok_or_else(|| {
+                refuse(format!(
+                    "its idle (enable {}, inputs {} {}) is no row of `{}` mode `{}` ({}, {})",
+                    initial.name(),
+                    levels[0].name(),
+                    levels[1].name(),
+                    d.part,
+                    b.mode,
+                    row.document,
+                    mode.page
+                ))
+            })?;
+            if state.drives || mode.forbidden.contains(&state.name) {
+                return Err(refuse(format!(
+                    "its idle is `{}` of `{}` mode `{}`, a driving or forbidden row ({}, {})",
+                    state.name, d.part, b.mode, row.document, mode.page
+                )));
+            }
+            if timers.len() > 1 {
+                return Err(BoardError::BridgeAcrossParts {
+                    reference: reference.clone(),
+                    bridge: id.clone(),
+                });
+            }
+            let wake_us = if initial == e.active {
+                Some(row.t_wake_max_us.as_ref().map(|t| t.value).ok_or_else(|| {
+                    BoardError::WakeTimeUnstated {
+                        reference: reference.clone(),
+                        part: d.part.clone(),
+                    }
+                })?)
+            } else {
+                None
+            };
+            out.push(BridgePlan {
+                reference: reference.clone(),
+                id: id.clone(),
+                timer: timers.first().copied(),
+                gpio_inputs,
+                enable: g.pin.clone(),
+                wake_us,
+            });
+        }
+    }
+    // An enable shared by bridges follows all of them: still one timer's part.
+    for b in &out {
+        let timers: BTreeSet<u32> = out
+            .iter()
+            .filter(|o| o.enable == b.enable)
+            .filter_map(|o| o.timer)
+            .collect();
+        if timers.len() > 1 {
+            return Err(BoardError::BridgeAcrossParts {
+                reference: b.reference.clone(),
+                bridge: b.id.clone(),
+            });
+        }
+    }
+    Ok(out)
 }
 
 /// An HSE board's bring-up (`AET-WO-4240b`): the solved words, copied
@@ -1316,6 +1718,7 @@ impl Plan {
         !self.timers.is_empty()
             || !self.serials.is_empty()
             || !self.peripherals.is_empty()
+            || !self.adcs.is_empty()
             || self.hse.is_some()
     }
 
@@ -1430,14 +1833,6 @@ impl Plan {
         if solved.core_supply == CoreSupplyMode::Bypass {
             return Err(BoardError::CoreSupplyNotGenerated);
         }
-        // Every gpio entry read below is a chip select only because a
-        // topology with a pin device is refused here (`AET-WO-1211a`).
-        if let Some((reference, d)) = solved.pin_devices.iter().next() {
-            return Err(BoardError::PinDeviceNotGenerated {
-                reference: reference.clone(),
-                part: d.part.clone(),
-            });
-        }
         let speeds_table = speeds::table().map_err(BoardError::SpeedTable)?;
         if speeds_table.mcu != table.part {
             return Err(BoardError::SpeedTableMismatch {
@@ -1450,6 +1845,7 @@ impl Plan {
             .values()
             .map(|a| &a.pin)
             .chain(solved.gpio.values().map(|g| &g.pin))
+            .chain(solved.adc_inputs.values().map(|a| &a.pin))
             .find(|p| RESERVED_PINS.contains(&p.as_str()));
         if let Some(pin) = reserved {
             return Err(BoardError::ReservedPin { pin: pin.clone() });
@@ -1483,7 +1879,8 @@ impl Plan {
             // the TX or RX net of the one port on it, on its own signal.
             let serial = serial_nets.get(net.as_str()).copied();
             // The pin's role, and its peripheral's kind unless it is a timer's
-            // or a USART's.
+            // or a USART's; a motor output's pull follows its idle.
+            let mut pull = None;
             let (role, kind) = if let Some((peripheral, role)) = serial {
                 let s = serials
                     .get_mut(peripheral)
@@ -1516,6 +1913,7 @@ impl Plan {
                 if t.channels.insert(k, (a.pin.clone(), m.ccr)).is_some() {
                     return Err(mismatch());
                 }
+                pull = Some(motor_pull(m));
                 (role, None)
             } else {
                 let kind = peripheral_kind(&a.peripheral)?;
@@ -1544,6 +1942,8 @@ impl Plan {
                 net: net.clone(),
                 speed,
                 check,
+                pull: pull.unwrap_or(role.policy().2),
+                initial: None,
             };
             pins.insert(a.pin.clone(), plan);
             if let Some(kind) = kind {
@@ -1556,22 +1956,39 @@ impl Plan {
                     .push(a.pin.clone());
             }
         }
-        for (net, g) in &solved.gpio {
-            let pin = &g.pin;
+        // The GPIO signals (`AET-WO-1211b`): an output at its declared level
+        // (a chip select's is `high`), an input with its declared pull; and
+        // each pin device's ADC input's pin, analog. `SolvedTopology::validate`
+        // gives every output an `initial` and every input a `pull`. A
+        // `power.sense` input is solved into `adc_inputs` too (`AET-WO-1211a`)
+        // but no firmware has read it, and none does here: generating it would
+        // move every sensed board's bytes, which this work order forbids.
+        let gpio = solved.gpio.iter().map(|(net, g)| {
+            let (role, pull) = match g.direction {
+                Direction::Output => (Role::Output, 0b00),
+                Direction::Input => (Role::Input, input_pull(g.pull)),
+            };
+            (net, &g.pin, role, pull, g.initial)
+        });
+        let analog =
+            device_adc_inputs(solved).map(|(net, a)| (net, &a.pin, Role::Analog, 0b00, None));
+        for (net, pin, role, pull, initial) in gpio.chain(analog) {
             let (port, index) = split_pin(pin)?;
             if !table.pins.contains_key(pin) {
                 return Err(BoardError::UnknownPin { pin: pin.clone() });
             }
-            let (speed, check) = choose_speed(speeds_table, solved, pin, net, Role::Output)?;
+            let (speed, check) = choose_speed(speeds_table, solved, pin, net, role)?;
             let plan = PinPlan {
                 port,
                 index,
-                role: Role::Output,
+                role,
                 af: 0,
                 peripheral: None,
                 net: net.clone(),
                 speed,
                 check,
+                pull,
+                initial,
             };
             pins.insert(pin.clone(), plan);
         }
@@ -1656,6 +2073,28 @@ impl Plan {
             }
         }
         let ports = pins.values().map(|p| p.port).collect();
+        let oracle_pupd = pins
+            .iter()
+            .map(|(pin, p)| (pin.clone(), silicon::implied_pupd(solved, &p.net)))
+            .collect();
+        let mut oracle_ccr = BTreeMap::new();
+        for (net, m) in &solved.motor_outputs {
+            let channel = solved
+                .assignments
+                .get(net)
+                .and_then(|a| motor::timer_channel(&a.signal));
+            if let Some((n, k)) = channel {
+                let word = match &m.pwm {
+                    Some(p) => oracle_idle_word(p, m.arr).ok_or_else(|| {
+                        BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
+                            id: net.clone(),
+                        })
+                    })?,
+                    None => m.ccr,
+                };
+                oracle_ccr.insert((n, k), word);
+            }
+        }
         Ok(Plan {
             crate_name: crate_name.into(),
             specification_sha256: solved.specification_sha256.clone(),
@@ -1687,6 +2126,25 @@ impl Plan {
             i2c,
             core_hz: u64::from(solved.clock.sysclk_hz) / u64::from(solved.clock.d1cpre.max(1)),
             core_supply: solved.core_supply,
+            oracle_pupd,
+            oracle_ccr,
+            adcs: {
+                let adcs = adc::of(solved)?;
+                if let (Some(p), Some(_)) = (adcs.values().next(), &solved.clock.hse) {
+                    return Err(BoardError::AdcOnHseNotGenerated {
+                        net: p.inputs[0].net.clone(),
+                    });
+                }
+                adcs
+            },
+            bridges: bridge_plans(solved)?,
+            oracle_bridges: oracle_bridges(solved)?,
+            oracle_adcs: adc::oracle_of(solved),
+            oracle_levels: solved
+                .gpio
+                .values()
+                .filter_map(|g| Some((g.pin.clone(), g.initial?)))
+                .collect(),
             hse: solved
                 .clock
                 .hse
@@ -1696,6 +2154,18 @@ impl Plan {
             ir_clock: solved.clock.clone(),
         })
     }
+}
+
+/// The ADC inputs the generator brings up (`AET-WO-1211b`): every solved ADC
+/// input but a `power.sense` net's.
+fn device_adc_inputs(
+    solved: &SolvedTopology,
+) -> impl Iterator<Item = (&String, &aethelgard_ir::pin_devices::SolvedAdcInput)> {
+    let sense: BTreeSet<&String> = solved.power.iter().flat_map(|p| p.sense.keys()).collect();
+    solved
+        .adc_inputs
+        .iter()
+        .filter(move |(net, _)| !sense.contains(net))
 }
 
 fn peripheral_kind(name: &str) -> Result<Kind, BoardError> {
@@ -2016,6 +2486,8 @@ struct Facts {
     /// then `usart` is `None`.
     serials: BTreeMap<String, SerialFacts>,
     usart: Option<UsartFacts>,
+    /// Each planned ADC's facts (`AET-WO-1211b`).
+    adcs: BTreeMap<String, adc::AdcFacts>,
     /// `None` unless the board has a timer or a serial port.
     clock: Option<ClockFacts>,
     /// The kernel-clock select writes, empty without an SPI peripheral.
@@ -2537,6 +3009,11 @@ impl Facts {
             }
             usart = Some(usart_facts(f)?);
         }
+        let adcs = plan
+            .adcs
+            .keys()
+            .map(|name| Ok((name.clone(), adc::facts(f, &rcc, name)?)))
+            .collect::<Result<BTreeMap<_, _>, BoardError>>()?;
         let clock = if plan.needs_clock() {
             Some(clock_facts(plan, f, &rcc)?)
         } else {
@@ -2571,6 +3048,7 @@ impl Facts {
             tim,
             serials,
             usart,
+            adcs,
             clock,
         })
     }
@@ -2600,12 +3078,18 @@ fn method(p: &PinPlan) -> String {
             periph.to_ascii_lowercase(),
             p.role.signal().to_ascii_lowercase()
         ),
-        None => "into_output".to_owned(),
+        None => match p.role {
+            Role::Input => "into_input".to_owned(),
+            Role::Analog => "into_analog".to_owned(),
+            _ => "into_output".to_owned(),
+        },
     }
 }
 fn pin_state(p: &PinPlan) -> String {
     match p.role {
         Role::Output => "Output".to_owned(),
+        Role::Input => "Input".to_owned(),
+        Role::Analog => "Analog".to_owned(),
         _ => format!("AlternateFunction<{}>", p.af),
     }
 }
@@ -2730,6 +3214,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
     for name in plan.serials.keys() {
         let _ = writeln!(w, "    {},", type_name(name));
     }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "    {},\n    {},",
+            adc::block(name),
+            adc::common_block(name)
+        );
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -2820,6 +3312,16 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             sf.base
         );
     }
+    for (name, af) in &facts.adcs {
+        let _ = writeln!(
+            w,
+            "            Block::{} => {:#010x},\n            Block::{} => {:#010x},",
+            adc::block(name),
+            af.base,
+            adc::common_block(name),
+            af.common_base
+        );
+    }
     let _ = writeln!(
         w,
         "        }}\n    \
@@ -2865,6 +3367,26 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              pub struct Running;\n\
              \n",
         );
+    }
+    // A pin device's inputs and the ADC inputs' pins (`AET-WO-1211b`), only
+    // where the topology has one, so every other board's text is unchanged.
+    for (role, text) in [
+        (
+            Role::Input,
+            "/// A GPIO input (`AET-WO-1211b`): `MODER` `00`, its declared pull.\n\
+             pub struct Input;\n\
+             \n",
+        ),
+        (
+            Role::Analog,
+            "/// An ADC input's pin (`AET-WO-1211b`): `MODER` `11`, no pull.\n\
+             pub struct Analog;\n\
+             \n",
+        ),
+    ] {
+        if plan.pins.values().any(|p| p.role == role) {
+            w.push_str(text);
+        }
     }
     w.push_str(
         "/// The core at VOS Scale 2 on the declared supply configuration (`AET-WO-4240v`\n\
@@ -3024,9 +3546,30 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
         let (mode, _, ospeed, _) = p.policy();
         let [mw, _, sw, _, aw] = g.widths;
         let block = port_type(p.port);
-        let what = match &p.peripheral {
-            Some(periph) => format!("`{periph}_{}` on AF{}", p.role.signal(), p.af),
-            None => "a GPIO output".to_owned(),
+        let what = match (&p.peripheral, p.role) {
+            (Some(periph), _) => format!("`{periph}_{}` on AF{}", p.role.signal(), p.af),
+            (None, Role::Input) => "a GPIO input".to_owned(),
+            (None, Role::Analog) => "an ADC input, analog".to_owned(),
+            (None, _) => "a GPIO output".to_owned(),
+        };
+        // A bridge's enable (`AET-WO-1211b`): configured only once its bridge's
+        // inputs sit at their idle, each a parameter it cannot exist without.
+        let (after, after_doc) = match plan.enable_after(pin) {
+            Some(e) => {
+                let mut params = String::new();
+                if let Some(n) = e.timer {
+                    let _ = write!(params, ", _cen: &Tim{n}<Running>");
+                }
+                for g in &e.gpio_inputs {
+                    let _ = write!(params, ", _{}: &{g}<Output>", pin_field(g));
+                }
+                (
+                    params,
+                    "\n    /// A bridge's enable: only after its inputs are at their idle, a timer's\n    \
+                     /// after its `CEN` (`AET-WO-1211b`; `1211` §2.7 (a)).",
+                )
+            }
+            None => (String::new(), ""),
         };
         let _ = writeln!(
             w,
@@ -3035,8 +3578,8 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                  _mode: PhantomData<M>,\n\
              }}\n\
              \n\
-             impl {pin}<Unconfigured> {{\n    \
-                 pub fn {method}<R: Registers>(self, r: &mut R) -> {pin}<{state}> {{",
+             impl {pin}<Unconfigured> {{{after_doc}\n    \
+                 pub fn {method}<R: Registers>(self, r: &mut R{after}) -> {pin}<{state}> {{",
             net = p.net,
             method = method(p),
             state = pin_state(p),
@@ -3054,15 +3597,22 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 "        r.modify(TOKEN, Block::{block}, {reg:#04x}, |v| {body});"
             );
         };
-        field(w, g.ospeedr, pf.ospeedr, sw, ospeed);
+        // A GPIO input and an analog pin take their mode alone: the MCU drives
+        // neither, and the port's `PUPDR` holds an input's pull (`AET-WO-1211b`).
+        if !p.role.mode_only() {
+            field(w, g.ospeedr, pf.ospeedr, sw, ospeed);
+        }
         if p.role == Role::Output {
+            // Its declared level before `MODER` (`AET-WO-1211b`; RM0433 Rev 9
+            // p. 534: the value written to ODR is output once the pin is an
+            // output).
             let _ = writeln!(
                 w,
                 "        r.write(TOKEN, Block::{block}, {:#04x}, {:#010x});",
                 g.bsrr,
-                1u32 << pf.bs
+                p.level_bit(pf)
             );
-        } else {
+        } else if !p.role.mode_only() {
             field(w, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
         }
         field(w, g.moder, pf.moder, mw, mode);
@@ -3332,6 +3882,12 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             emit_usart(w, name, sp, plan, u);
         }
     }
+    if !plan.adcs.is_empty() {
+        adc::emit_shared(w);
+        for (name, p) in &plan.adcs {
+            adc::emit(w, name, p, &facts.adcs[name], &|pin| pin.to_owned());
+        }
+    }
     // On an HSE board every start takes the solved clock (`AET-WO-4240b`).
     if plan.hse.is_some() {
         let starts = w.split_off(mark);
@@ -3389,6 +3945,15 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
                 name.to_ascii_lowercase(),
                 type_name(name),
                 &sf.gate,
+                None,
+                false,
+            )
+        }))
+        .chain(facts.adcs.iter().map(|(name, af)| {
+            (
+                name.to_ascii_lowercase(),
+                adc::block(name),
+                &af.gate,
                 None,
                 false,
             )
@@ -3510,6 +4075,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             type_name(name)
         );
     }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "    pub {}: {}<Gated>,",
+            name.to_ascii_lowercase(),
+            adc::block(name)
+        );
+    }
     let _ = writeln!(
         w,
         "}}\n\
@@ -3558,6 +4131,14 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
             "            {}: {} {{ _state: PhantomData }},",
             name.to_ascii_lowercase(),
             type_name(name)
+        );
+    }
+    for name in plan.adcs.keys() {
+        let _ = writeln!(
+            w,
+            "            {}: {} {{ _state: PhantomData }},",
+            name.to_ascii_lowercase(),
+            adc::block(name)
         );
     }
     let _ = writeln!(w, "        }})\n    }}\n}}");
@@ -3983,13 +4564,21 @@ fn count_word(n: usize) -> String {
 /// belt-and-suspenders: this restates `emit_timer_start`'s values and order on
 /// purpose. The oracle must not read back what the crate under proof does
 /// (`INV-07`), so a slip in one copy is caught by the other.
-fn timer_oracle(n: u32, t: &TimerPlan, tf: &TimFacts) -> Vec<(String, u32, u32)> {
+///
+/// Each `CCRk` is the oracle's own idle word (`AET-WO-1211b`), not the
+/// plan's: [`Plan::oracle_ccr`].
+fn timer_oracle(plan: &Plan, n: u32, tf: &TimFacts) -> Vec<(String, u32, u32)> {
+    let t = &plan.timers[&n];
     let mut out = vec![
         ("PSC".to_owned(), tf.psc, t.psc),
         ("ARR".to_owned(), tf.arr, t.arr),
     ];
-    for (k, (_, ccr)) in &t.channels {
-        out.push((format!("CCR{k}"), tf.ccr[(k - 1) as usize], *ccr));
+    for k in t.channels.keys() {
+        out.push((
+            format!("CCR{k}"),
+            tf.ccr[(k - 1) as usize],
+            plan.oracle_ccr[&(n, *k)],
+        ));
     }
     for (m, channels) in [(1u32, [1u32, 2]), (2, [3, 4])] {
         let mut value = 0;
@@ -4192,10 +4781,11 @@ fn port_pupdr(plan: &Plan, facts: &Facts, port: char) -> u32 {
 
 /// The oracle's whole `PUPDR` of `port` (`AET-WO-4230` R5), from neither
 /// [`Role::policy`] nor [`port_pupdr`]: `PUPDRn` is bits `2n+1:2n` (RM0433
-/// Rev 9 §11.4.4, p. 542). A pin of a timer, a motor output, takes the
-/// independent rule's pull (`aethelgard_ir::silicon::motor_output_pupd`, the
-/// architect's ruling on Q-G); every other solved pin none, `00`; every other
-/// pin of the port its reset value.
+/// Rev 9 §11.4.4, p. 542). Each solved pin takes the rule's pull
+/// (`aethelgard_ir::silicon::implied_pupd`): a motor output's follows its
+/// idle (the architect's ruling on Q-G; `1211` Q9), a GPIO input's is its
+/// declared pull (`AET-WO-1211b`), every other solved pin none, `00`; every
+/// other pin of the port its reset value.
 ///
 /// belt-and-suspenders: the reset words restate [`pupdr_reset`]'s on purpose,
 /// read again from the page; the oracle must not take what the crate under
@@ -4207,20 +4797,102 @@ fn oracle_pupdr(plan: &Plan, port: char) -> u32 {
         _ => 0,
     };
     plan.pins
-        .values()
-        .filter(|p| p.port == port)
-        .fold(reset, |word, p| {
-            let motor = p
-                .peripheral
-                .as_deref()
-                .is_some_and(|n| n.starts_with("TIM"));
-            let pull = if motor {
-                silicon::motor_output_pupd()
-            } else {
-                0
-            };
+        .iter()
+        .filter(|(_, p)| p.port == port)
+        .fold(reset, |word, (pin, p)| {
+            let pull = plan.oracle_pupd[pin];
             (word & !(0b11 << (2 * p.index))) | (pull << (2 * p.index))
         })
+}
+
+/// The image's condition before any write to a bridge's enable
+/// (`AET-WO-1211b`; `1211` §2.7 (a)): its timer's `CR1.CEN` set (the inputs
+/// hold their idle words from there, RM0433 Rev 9 p. 1558), and each GPIO
+/// input already an output. From the header's positions, never from the
+/// typestate the enable's method takes; `None` for any other pin.
+fn oracle_enable_ready(plan: &Plan, facts: &Facts, pin: &str) -> Option<String> {
+    let bridges: Vec<&OracleBridge> = plan
+        .oracle_bridges
+        .iter()
+        .filter(|b| b.enable == pin)
+        .collect();
+    if bridges.is_empty() {
+        return None;
+    }
+    let timers: BTreeSet<u32> = bridges
+        .iter()
+        .flat_map(|b| {
+            b.inputs
+                .iter()
+                .filter_map(|i| i.as_ref().ok().map(|(n, _)| *n))
+        })
+        .collect();
+    let gpio_inputs: BTreeSet<&String> = bridges
+        .iter()
+        .flat_map(|b| b.inputs.iter().filter_map(|i| i.as_ref().err()))
+        .collect();
+    let g = &facts.gpio;
+    let mut terms = Vec::new();
+    if let Some(tf) = &facts.tim {
+        for n in &timers {
+            terms.push(format!(
+                "self.tim{n}[{}] & {:#010x} != 0",
+                tf.cr1 / 4,
+                1u32 << tf.cen
+            ));
+        }
+    }
+    for input in gpio_inputs {
+        let pf = &facts.pins[input];
+        let p = &plan.pins[input];
+        terms.push(format!(
+            "self.{}[{}] & {:#010x} == {:#010x}",
+            port_field(p.port),
+            g.moder / 4,
+            oracle_mask(g.widths[0], pf.moder),
+            MODE_OUTPUT << pf.moder
+        ));
+    }
+    Some(terms.join(" && "))
+}
+
+/// The `BSRR` bit the oracle expects a GPIO output's configure to leave
+/// (`AET-WO-1211b`): its declared level's, the set bit for `high` and the
+/// reset bit for `low` (RM0433 Rev 9 §11.4.7), read from the oracle's own
+/// copy of `solved.gpio`.
+///
+/// belt-and-suspenders: this restates [`PinPlan::level_bit`] on purpose; the
+/// oracle must not take what the crate under proof writes (`INV-07`).
+fn oracle_level_bit(plan: &Plan, pf: &PinFacts, pin: &str) -> u32 {
+    match plan.oracle_levels.get(pin) {
+        Some(Level::Low) => 1u32 << pf.br,
+        Some(Level::High) => 1u32 << pf.bs,
+        None => 0,
+    }
+}
+
+/// A PWM output's `CCR` from its declared idle and its period's `ARR`
+/// (`AET-WO-1211b`; `1211` §2.4, RM0433 Rev 9 p. 1558): `0` for `low` (OCxREF
+/// held at 0), `ARR + 1` for `high` (a compare value above the auto-reload
+/// holds OCxREF at 1), and the idle pulse in ticks, `pulse_us` × 10^6 /
+/// `resolution_ps`, otherwise; `None` for a pulse off the tick, which the
+/// solver refuses.
+///
+/// belt-and-suspenders: this restates `aethelgard_ir::motor::solve_timing`'s
+/// idle on purpose; the proof's expected word must not be the topology's
+/// copy the generator writes (`INV-07`).
+fn oracle_idle_word(p: &motor::PwmTiming, arr: u32) -> Option<u32> {
+    match p.idle {
+        motor::Idle::Level(Level::Low) => Some(0),
+        motor::Idle::Level(Level::High) => arr.checked_add(1),
+        motor::Idle::PulseUs(us) => {
+            let ps = u64::from(us) * 1_000_000;
+            let res = p.resolution_ps;
+            (res != 0 && ps % res == 0)
+                .then(|| u32::try_from(ps / res).ok())
+                .flatten()
+        }
+    }
 }
 
 /// A field's mask, as the oracle computes it.
@@ -4441,7 +5113,15 @@ fn parts(plan: &Plan) -> Vec<Scope> {
         out.push(part);
     }
     for (n, t) in &plan.timers {
-        let pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
+        let mut pins: BTreeSet<String> = t.channels.values().map(|(p, _)| p.clone()).collect();
+        // A bridge's enable on this timer's channels, whose order this part
+        // proves (`AET-WO-1211b`).
+        // Its GPIO inputs too, ruled allowed (`1211` Q7): the enable follows
+        // both in one part (the adversarial pass's F2).
+        for b in plan.bridges.iter().filter(|b| b.timer == Some(*n)) {
+            pins.insert(b.enable.clone());
+            pins.extend(b.gpio_inputs.iter().cloned());
+        }
         owned.extend(pins.iter().cloned());
         let mut part = Scope::unit(plan, format!("tim{n}"), pins);
         part.timers.insert(*n);
@@ -4504,10 +5184,13 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
             let pf = &facts.pins[pin];
             let t = port_type(p.port);
             add(t.clone(), g.moder, oracle_mask(mw, pf.moder));
-            add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
-            if p.role == Role::Output {
+            if p.role.mode_only() {
+                // A GPIO input or an analog pin: its mode alone.
+            } else if p.role == Role::Output {
+                add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
                 level(&mut add, pin);
             } else {
+                add(t.clone(), g.ospeedr, oracle_mask(sw, pf.ospeedr));
                 add(t, g.afr[pf.afr_index as usize], oracle_mask(aw, pf.afr));
             }
         }
@@ -4551,7 +5234,7 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
         }
         Action::TimerStart(n) => {
             if let Some(tf) = &facts.tim {
-                for (_, offset, _) in timer_oracle(*n, &plan.timers[n], tf) {
+                for (_, offset, _) in timer_oracle(plan, *n, tf) {
                     add(format!("Tim{n}"), offset, !0);
                 }
             }
@@ -5443,6 +6126,19 @@ fn emit_schedule(
                 type_name(name)
             );
         }
+        // An ADC's blocks (`AET-WO-1211b`): its bring-up is proved on its own
+        // spy (`adcN_bring_up_is_in_order_and_bounded`).
+        for name in plan.adcs.keys() {
+            for b in [adc::block(name), adc::common_block(name)] {
+                let _ = writeln!(
+                    w,
+                    "            Block::{b} => {{\n                \
+                         kani::assert(false, \"{name} was accessed through the harness image\");\n                \
+                         &mut self.rcc\n            \
+                     }}"
+                );
+            }
+        }
     }
     let _ = writeln!(
         w,
@@ -5466,6 +6162,14 @@ fn emit_schedule(
     if !partial {
         for name in plan.serials.keys() {
             let _ = writeln!(w, "            Block::{} => {{}}", type_name(name));
+        }
+        for name in plan.adcs.keys() {
+            let _ = writeln!(
+                w,
+                "            Block::{} => {{}}\n            Block::{} => {{}}",
+                adc::block(name),
+                adc::common_block(name)
+            );
         }
     }
     for (variant, _, _, gate) in &blocks {
@@ -5805,10 +6509,25 @@ fn emit_schedule(
             pupdr = g.pupdr,
             pull = oracle_pupdr(plan, *port),
         );
+        // A bridge's enable is written only after its inputs' idle
+        // (`AET-WO-1211b`).
+        let mut enable_rules = String::new();
+        for (pin, _) in &own {
+            if let Some(cond) = oracle_enable_ready(plan, facts, pin) {
+                let pf = &facts.pins[*pin];
+                let _ = write!(
+                    enable_rules,
+                    "\n            if value & {bits:#010x} != 0 {{\n                \
+                         kani::assert({cond}, \"{pin}, a bridge's enable, written before its inputs sat at their idle\");\n            \
+                     }}",
+                    bits = (1u32 << pf.bs) | (1u32 << pf.br),
+                );
+            }
+        }
         let _ = writeln!(
             w,
             "        if block == Block::{t} && offset == {bsrr:#04x} {{\n            \
-                 kani::assert({rule}, \"{t} BSRR write touches a pin {owner}\");\n            \
+                 kani::assert({rule}, \"{t} BSRR write touches a pin {owner}\");{enable_rules}\n            \
                  // The level it leaves: a set bit wins over a reset bit (RM0433 §11.4.7).\n            \
                  {level}\n        \
              }}\n        \
@@ -5826,31 +6545,36 @@ fn emit_schedule(
             let (mode, _, ospeed, _) = p.policy();
             let mmask = oracle_mask(mw, pf.moder);
             let ot = 1u32 << p.index;
-            let mut ready = vec![
-                format!(
-                    "self.{field}[{}] & {ot:#010x} == {:#010x}",
-                    g.otyper / 4,
-                    oracle_otyper(plan, *port) & ot
-                ),
-                format!(
+            let mut ready = vec![format!(
+                "self.{field}[{}] & {ot:#010x} == {:#010x}",
+                g.otyper / 4,
+                oracle_otyper(plan, *port) & ot
+            )];
+            if !p.role.mode_only() {
+                ready.push(format!(
                     "self.{field}[{}] & {:#010x} == {:#010x}",
                     g.ospeedr / 4,
                     oracle_mask(sw, pf.ospeedr),
                     ospeed << pf.ospeedr
-                ),
-                format!(
-                    "self.{field}[{}] & {:#010x} == {:#010x}",
-                    g.pupdr / 4,
-                    oracle_mask(pw, pf.pupdr),
-                    oracle_pupdr(plan, *port) & oracle_mask(pw, pf.pupdr)
-                ),
-            ];
+                ));
+            }
+            ready.push(format!(
+                "self.{field}[{}] & {:#010x} == {:#010x}",
+                g.pupdr / 4,
+                oracle_mask(pw, pf.pupdr),
+                oracle_pupdr(plan, *port) & oracle_mask(pw, pf.pupdr)
+            ));
             if p.role == Role::Output {
+                // The declared level's word, the oracle's own (`AET-WO-1211b`).
                 ready.push(format!(
                     "self.{field}[{}] == {:#010x}",
                     g.bsrr / 4,
-                    1u32 << pf.bs
+                    oracle_level_bit(plan, pf, pin)
                 ));
+                // A bridge's enable: after its inputs' idle (`AET-WO-1211b`).
+                ready.extend(oracle_enable_ready(plan, facts, pin));
+            } else if p.role.mode_only() {
+                // A GPIO input or an analog pin: no alternate function.
             } else {
                 let afr = g.afr[pf.afr_index as usize] / 4;
                 ready.push(format!(
@@ -5977,8 +6701,10 @@ fn emit_schedule(
             let (mode, _, ospeed, _) = p.policy();
             let fields = |acc: &mut BTreeMap<u32, (u32, u32)>| {
                 expect_field(acc, g.moder, pf.moder, mw, mode);
-                expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
-                if p.role != Role::Output {
+                if !p.role.mode_only() {
+                    expect_field(acc, g.ospeedr, pf.ospeedr, sw, ospeed);
+                }
+                if p.role != Role::Output && !p.role.mode_only() {
                     expect_field(acc, g.afr[pf.afr_index as usize], pf.afr, aw, p.af);
                 }
             };
@@ -6044,6 +6770,17 @@ fn emit_schedule(
                     let _ = writeln!(
                         w,
                         "    kani::assert(after.{field}[{i}] & {bit:#010x} != 0, \"{pin}, a chip select, is not high once its bus started\");"
+                    );
+                } else if scope.pins.contains(*pin) {
+                    // A pin device's output (`AET-WO-1211b`): at its declared
+                    // level, the oracle's own copy of `solved.gpio`.
+                    let want = match plan.oracle_levels.get(*pin) {
+                        Some(Level::High) => bit,
+                        _ => 0,
+                    };
+                    let _ = writeln!(
+                        w,
+                        "    kani::assert(after.{field}[{i}] & {bit:#010x} == {want:#010x}, \"{pin} is not at its declared initial level\");"
                     );
                 }
             }
@@ -6208,8 +6945,8 @@ fn emit_schedule(
     // Each timer: every register its start writes holds the solved value, and
     // every other word is unchanged.
     if let Some(tf) = &facts.tim {
-        for (n, t) in plan.timers.iter().filter(|(n, _)| scope.timers.contains(n)) {
-            let writes = timer_oracle(*n, t, tf);
+        for n in plan.timers.keys().filter(|n| scope.timers.contains(n)) {
+            let writes = timer_oracle(plan, *n, tf);
             for (name, offset, value) in &writes {
                 let _ = writeln!(
                     w,
@@ -6227,6 +6964,7 @@ fn emit_schedule(
             }
         }
     }
+    emit_bridge_idle(w, plan, facts, scope);
     let _ = writeln!(w, "}}\n");
 
     // The scheduler.
@@ -6336,6 +7074,11 @@ fn emit_schedule(
             w,
             "    let mut tim{n} = Some(board.tim{n});\n    let mut tim{n}_clocked = None;\n    let mut tim{n}_done = false;"
         );
+        // A bridge's timer keeps its `Running` token for the enable
+        // (`AET-WO-1211b`).
+        if plan.bridges.iter().any(|b| b.timer == Some(*n)) {
+            let _ = writeln!(w, "    let mut tim{n}_running = None;");
+        }
     }
     let rely_step = if part.is_some() {
         "\n        img.rely();"
@@ -6410,19 +7153,41 @@ fn emit_schedule(
     for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
         debug_assert_eq!(acts[a], Action::Pin(pin.clone()));
         let f = pin_field(pin);
+        // A bridge's enable waits for its inputs' idle, and takes them
+        // (`AET-WO-1211b`).
+        let (ready, args) = match plan.enable_after(pin) {
+            Some(e) => {
+                let mut ready = String::new();
+                let mut args = String::new();
+                if let Some(n) = e.timer {
+                    let _ = write!(ready, " && tim{n}_running.is_some()");
+                    let _ = write!(args, ", tim{n}_running.as_ref().unwrap()");
+                }
+                for g in &e.gpio_inputs {
+                    let gf = pin_field(g);
+                    let _ = write!(ready, " && {gf}_done.is_some()");
+                    let _ = write!(args, ", {gf}_done.as_ref().unwrap()");
+                }
+                (ready, args)
+            }
+            None => (String::new(), String::new()),
+        };
         let _ = writeln!(
             w,
             "            {a} => {{\n                \
-                 kani::assume({f}.is_some());"
+                 kani::assume({f}.is_some(){ready});"
         );
         running(w, a);
         let _ = writeln!(
             w,
-            "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img);",
+            "                let {mutable}pin = {f}.take().unwrap().{m}(&mut img{args});",
             m = method(p),
-            mutable = if p.role == Role::Output { "mut " } else { "" },
+            mutable = if plan.is_select(pin) { "mut " } else { "" },
         );
-        if p.role == Role::Output {
+        // A chip select is driven both ways before its bus takes it; a pin
+        // device's output is left at its declared level, which the final
+        // state holds (`AET-WO-1211b`).
+        if plan.is_select(pin) {
             let pf = &facts.pins[pin];
             let port = port_field(p.port);
             let _ = writeln!(
@@ -6655,16 +7420,26 @@ fn emit_schedule(
             ready = ready.concat(),
         );
         running(w, a);
+        let keep = if plan.bridges.iter().any(|b| b.timer == Some(*n)) {
+            format!("tim{n}_running = Some(running);\n                ")
+        } else {
+            String::new()
+        };
         let _ = writeln!(
             w,
-            "                let _running = tim{n}_clocked\n                    \
+            "                let {bind} = tim{n}_clocked\n                    \
                      .take()\n                    \
                      .unwrap()\n                    \
                      .start_outputs(&mut img, clock.as_ref().unwrap(){args});\n                \
-                 kani::cover!(true, \"TIM{n} started\");\n                \
+                 {keep}kani::cover!(true, \"TIM{n} started\");\n                \
                  tim{n}_done = true;\n            \
              }}",
             args = args.concat(),
+            bind = if keep.is_empty() {
+                "_running"
+            } else {
+                "running"
+            },
         );
         a += 1;
     }
@@ -6692,7 +7467,7 @@ fn emit_schedule(
     }
     // A chip select is configured before its bus starts, which takes it.
     for (pin, p) in plan.pins.iter().filter(|(n, _)| scope.pins.contains(*n)) {
-        if p.role == Role::Output && !plan.is_select(pin) {
+        if (p.role == Role::Output && !plan.is_select(pin)) || p.role == Role::Input {
             let f = pin_field(pin);
             let _ = writeln!(
                 w,
@@ -6710,6 +7485,72 @@ fn emit_schedule(
          }}",
         timingr_args.concat()
     );
+}
+
+/// Each bridge whose enable this scope holds (`AET-WO-1211b`; `1211` §2.5,
+/// Q3; §2.7 (e) Kani): its idle as the final image leaves it is a
+/// non-driving row of its part's truth table. Each input's level is read
+/// from the image as silicon would hold it, a timer channel's in PWM mode 1
+/// by its `CCR` against `ARR` (0 holds OCxREF at 0, above `ARR` at 1, RM0433
+/// Rev 9 p. 1558; anything between is a pulse, 2, which no row holds), a
+/// GPIO's and the enable's by `ODR`; the rows are the oracle's
+/// ([`oracle_bridges`]), never the generator's judgement.
+fn emit_bridge_idle(w: &mut String, plan: &Plan, facts: &Facts, scope: &Scope) {
+    let g = &facts.gpio;
+    let level = |pin: &str| {
+        let p = &plan.pins[pin];
+        format!(
+            "((after.{}[{}] >> {}) & 1) as u8",
+            port_field(p.port),
+            g.odr / 4,
+            facts.pins[pin].bs
+        )
+    };
+    let bit = |l: Option<Level>| match l {
+        Some(Level::Low) => "0",
+        Some(Level::High) => "1",
+        None => "_",
+    };
+    for b in plan
+        .oracle_bridges
+        .iter()
+        .filter(|b| scope.pins.contains(&b.enable))
+    {
+        let mut inputs = Vec::new();
+        for i in &b.inputs {
+            match (i, &facts.tim) {
+                (Ok((n, k)), Some(tf)) => inputs.push(format!(
+                    "{{\n        let c = after.tim{n}[{c}];\n        if c == 0 {{\n            0u8\n        }} else if c > after.tim{n}[{a}] {{\n            1\n        }} else {{\n            2\n        }}\n    }}",
+                    c = tf.ccr[(*k - 1) as usize] / 4,
+                    a = tf.arr / 4,
+                )),
+                (Err(pin), _) => inputs.push(level(pin)),
+                (Ok(_), None) => inputs.push("2u8".to_owned()),
+            }
+        }
+        let rows: Vec<String> = b
+            .safe
+            .iter()
+            .map(|(e, i0, i1)| format!("({}, {}, {})", bit(Some(*e)), bit(*i0), bit(*i1)))
+            .collect();
+        let rule = if rows.is_empty() {
+            "false".to_owned()
+        } else {
+            format!("matches!((en, i0, i1), {})", rows.join(" | "))
+        };
+        let _ = writeln!(
+            w,
+            "    // {name}'s idle: a non-driving row of its part's truth table.\n    \
+             let en = {en};\n    \
+             let i0 = {i0};\n    \
+             let i1 = {i1};\n    \
+             kani::assert({rule}, \"{name} idles in a driving or unlisted state of its truth table\");",
+            name = b.name,
+            en = level(&b.enable),
+            i0 = inputs.first().cloned().unwrap_or_else(|| "2u8".into()),
+            i1 = inputs.get(1).cloned().unwrap_or_else(|| "2u8".into()),
+        );
+    }
 }
 
 /// The proofs of the motor outputs (`AET-WO-4300a` §1.3), when the topology
@@ -6820,7 +7661,7 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
     );
     for (n, t) in &plan.timers {
         let Some(tf) = &facts.tim else { break };
-        let writes = timer_oracle(*n, t, tf);
+        let writes = timer_oracle(plan, *n, tf);
         let count = writes.len();
         let pins: Vec<&String> = t.channels.values().map(|(p, _)| p).collect();
         let setup = harness_setup(plan, &pins);
@@ -6892,6 +7733,28 @@ fn emit_timer_proofs(w: &mut String, plan: &Plan, facts: &Facts) {
         for (name, sp) in &plan.serials {
             emit_usart_proof(w, name, sp, plan, facts, u);
         }
+    }
+    // Each ADC's bring-up on its own spy (`AET-WO-1211b`), from its analog
+    // pins, its clock and the reset clock's token.
+    for (name, p) in &plan.adcs {
+        let pins: Vec<&String> = p.inputs.iter().map(|i| &i.pin).collect();
+        let f = name.to_ascii_lowercase();
+        let setup = format!(
+            "    let mut img = Image {{\n{}    \
+             let clock = rcc.reset_clock(&mut img, &scale2);\n    \
+             kani::assume(clock.is_ok());\n    \
+             let clock = clock.unwrap();\n    \
+             let {f} = rcc.enable_{f}(&mut img, board.{f}, scale2);\n",
+            harness_setup(plan, &pins)
+        );
+        // The oracle's own reading. An ADC it does not see is proved against
+        // no input, so its proof fails: it fails closed.
+        let none = adc::OracleAdc {
+            channels: Vec::new(),
+            bits: 0,
+        };
+        let oracle = plan.oracle_adcs.get(name).unwrap_or(&none);
+        adc::emit_proof(w, name, p, oracle, &facts.adcs[name], &setup);
     }
 }
 
@@ -9108,16 +9971,21 @@ mod tests {
         assert!(generate("b", &solved(), &table()).is_ok());
     }
 
-    /// `AET-WO-1211a`: the board emits no pin of a pin device, so `generate`
-    /// refuses a topology with one by the device's reference and part.
+    /// `AET-WO-1211b`: a pin device's input is generated: `MODER` `00` alone
+    /// (no speed, no alternate function), and its declared pull in the port's
+    /// whole `PUPDR`, which the oracle takes from `silicon::implied_pupd`; an
+    /// output declared `low` (PB8) is written by its `BSRR` reset bit before
+    /// `MODER`.
     #[test]
-    fn a_pin_device_is_refused_as_not_generated() {
+    fn a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level() {
+        use aethelgard_ir::motor::Level;
         use aethelgard_ir::pin_devices::{Direction, McuPull, SolvedGpio, SolvedPinDevice};
         let mut s = solved();
         s.pin_devices.insert(
             "U9".into(),
             SolvedPinDevice {
                 part: "WAKE_SWITCH".into(),
+                bridges: Default::default(),
             },
         );
         s.gpio.insert(
@@ -9129,17 +9997,49 @@ mod tests {
                 pull: Some(McuPull::Up),
             },
         );
+        s.gpio
+            .insert("SLEEP".into(), SolvedGpio::output("PB8", Level::Low));
         s.pin_speeds.insert("WAKE".into(), 0);
+        s.pin_speeds.insert("SLEEP".into(), 0);
         s.validate().unwrap();
-        let e = generate("b", &s, &table()).unwrap_err();
-        assert_eq!(
-            e,
-            BoardError::PinDeviceNotGenerated {
-                reference: "U9".into(),
-                part: "WAKE_SWITCH".into()
-            }
+        let files = generate("b", &s, &table()).unwrap();
+        let lib = &files["src/board.rs"];
+        let input = block(
+            lib,
+            "    pub fn into_input<R: Registers>(self, r: &mut R) -> PB5<Input> {",
         );
-        assert_eq!(e.kind(), "PinDeviceNotGenerated");
+        assert_eq!(
+            input.lines().filter(|l| l.contains("r.modify")).count(),
+            1,
+            "{input}"
+        );
+        assert!(
+            input.contains("Block::GpioB, 0x00, |v| v & !0x00000c00"),
+            "{input}"
+        );
+        let output = block(
+            lib,
+            "    pub fn into_output<R: Registers>(self, r: &mut R) -> PB8<Output> {",
+        );
+        let reset = output.find("0x18, 0x01000000").expect("BR8");
+        let moder = output.find("Block::GpioB, 0x00,").expect("MODER");
+        assert!(reset < moder, "{output}");
+        // PB4's reset pull-up, PB5's declared pull-up; every other field 0.
+        let pupdr = 0x0000_0100 | (0b01 << 10);
+        assert!(
+            lib.contains(&format!(
+                "r.write(TOKEN, Block::GpioB, 0x0c, {pupdr:#010x});"
+            )),
+            "the generator's PUPDR"
+        );
+        let proofs = &files["src/proofs.rs"];
+        assert!(
+            proofs.contains(&format!(
+                "value == {pupdr:#010x}, \"GpioB PUPDR is not the solved word, whole\""
+            )),
+            "the oracle's PUPDR"
+        );
+        assert!(proofs.contains("PB8 is not at its declared initial level"));
         assert!(generate("b", &solved(), &table()).is_ok());
     }
 
