@@ -85,33 +85,37 @@ pub(super) struct AdcPlan {
     pub bits: u8,
 }
 
-/// The common block of an ADC, as the header names its instance.
-fn common(adc: &str) -> &'static str {
-    if adc == "ADC3" {
-        "ADC3_COMMON"
-    } else {
-        "ADC12_COMMON"
-    }
+/// Each ADC this generator brings up, with the names its other parts take:
+/// (ADC, the header's common instance, its RCC gate (ADC1 and ADC2 share
+/// `ADC12EN`), its block variant, its common block's variant).
+const NAMES: [(&str, &str, &str, &str, &str); 2] = [
+    ("ADC1", "ADC12_COMMON", "ADC12", "Adc1", "Adc12Common"),
+    ("ADC3", "ADC3_COMMON", "ADC3", "Adc3", "Adc3Common"),
+];
+
+/// `adc`'s row of [`NAMES`]; [`plan`] admits no other ADC.
+fn names(adc: &str) -> (&'static str, &'static str, &'static str, &'static str) {
+    let (_, common, gate, block, common_block) = NAMES
+        .iter()
+        .find(|n| n.0 == adc)
+        .copied()
+        .expect("plan admits ADC1 and ADC3 only");
+    (common, gate, block, common_block)
 }
 
-/// The RCC gate's name: ADC1 and ADC2 share `ADC12EN`.
-fn gate_name(adc: &str) -> &'static str {
-    if adc == "ADC3" { "ADC3" } else { "ADC12" }
+/// The header's common instance (`ADC12_COMMON`).
+pub(super) fn common(adc: &str) -> &'static str {
+    names(adc).0
 }
 
 /// The block's variant in the board crate.
 pub(super) fn block(adc: &str) -> String {
-    if adc == "ADC3" { "Adc3" } else { "Adc1" }.to_owned()
+    names(adc).2.to_owned()
 }
 
 /// The common block's variant.
 pub(super) fn common_block(adc: &str) -> String {
-    if adc == "ADC3" {
-        "Adc3Common"
-    } else {
-        "Adc12Common"
-    }
-    .to_owned()
+    names(adc).3.to_owned()
 }
 
 /// The generator's `RES` code for `bits`, the code both revisions share
@@ -135,7 +139,7 @@ pub(super) fn plan<'a>(
 ) -> Result<BTreeMap<String, AdcPlan>, BoardError> {
     let mut out: BTreeMap<String, AdcPlan> = BTreeMap::new();
     for (net, a) in inputs {
-        if !matches!(a.peripheral.as_str(), "ADC1" | "ADC3") {
+        if !NAMES.iter().any(|n| n.0 == a.peripheral) {
             return Err(BoardError::AdcNotGenerated {
                 net: net.clone(),
                 peripheral: a.peripheral.clone(),
@@ -264,7 +268,7 @@ pub(super) fn facts(
     Ok(AdcFacts {
         base: f.base(adc)?,
         common_base: f.base(common(adc))?,
-        gate: gate(f, rcc, gate_name(adc))?,
+        gate: gate(f, rcc, names(adc).1)?,
         isr: a.offset("ISR", 0)?,
         cr: a.offset("CR", 0)?,
         cfgr: a.offset("CFGR", 0)?,

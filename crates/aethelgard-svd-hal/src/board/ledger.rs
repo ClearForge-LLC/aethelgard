@@ -471,7 +471,7 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
     // read-modify-write of the command bits alone (RM0433 Rev 9 pp. 931-932).
     for (name, p) in &plan.adcs {
         let a = &facts.adcs[name];
-        let common = format!("{name}_COMMON").replace("ADC1_", "ADC12_");
+        let common = super::adc::common(name);
         for (on_common, offset, value, _) in super::adc::writes(p, a) {
             let reg = if on_common {
                 "CCR"
@@ -488,11 +488,7 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             } else {
                 "SQR1"
             };
-            let instance = if on_common {
-                common.as_str()
-            } else {
-                name.as_str()
-            };
+            let instance = if on_common { common } else { name.as_str() };
             add(
                 "ADC",
                 instance,

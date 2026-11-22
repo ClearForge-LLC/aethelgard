@@ -941,6 +941,10 @@ const MOTOR_PULL_HIGH: u32 = 0b01;
 
 /// The generator's `PUPDR` field for a motor output: [`MOTOR_PULL_HIGH`] for
 /// an idle `high`, else [`MOTOR_PULL`] (a low or pulsed idle, and DShot).
+///
+/// belt-and-suspenders: `aethelgard_ir::silicon::idle_pupd` is the rule's
+/// copy, which the oracle and the ledger take; the generator keeps its own so
+/// a slip in either is caught by the other (`INV-07`).
 fn motor_pull(m: &aethelgard_ir::SolvedMotorOutput) -> u32 {
     match m.pwm.as_ref().map(|p| p.idle) {
         Some(motor::Idle::Level(motor::Level::High)) => MOTOR_PULL_HIGH,
@@ -950,6 +954,9 @@ fn motor_pull(m: &aethelgard_ir::SolvedMotorOutput) -> u32 {
 
 /// The generator's `PUPDR` field for a GPIO input's declared MCU pull
 /// (RM0433 Rev 9 §11.4.4, p. 542: `01` up, `10` down, `00` none).
+///
+/// belt-and-suspenders: `aethelgard_ir::silicon::implied_pupd` is the
+/// oracle's copy (`INV-07`).
 fn input_pull(pull: Option<McuPull>) -> u32 {
     match pull {
         Some(McuPull::Up) => 0b01,
