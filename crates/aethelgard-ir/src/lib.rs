@@ -1928,6 +1928,15 @@ pub enum IrValidationError {
     )]
     ConsoleBaudNotRoundTrip { id: String, baud: u32, mapped: u32 },
     #[error(
+        "serial port `{id}` ({role}) at {baud} baud: ArduPilot holds SERIAL1_BAUD to SERIAL9_BAUD as their define stands (AP_SerialManager.cpp:199) and opens a {role} port at map_baudrate of it (:473, :490; AP_SerialManager.h:151-153), which reads a value of 2000 or less as a listed code or kbaud, here {mapped} (:737-770, Copter-4.7.2); declare a baud above 2000 (AET-WO-1214)"
+    )]
+    SerialBaudReadAsKbaud {
+        id: String,
+        role: &'static str,
+        baud: u32,
+        mapped: u32,
+    },
+    #[error(
         "net constraint on `{id}`, a serial port's TX or RX: no check reads it, so it cannot be held (the line leaves the board at a connector, and its load is off-board)"
     )]
     UnjudgedSerialConstraint { id: String },
@@ -2454,6 +2463,7 @@ impl IrValidationError {
             Self::PeerDeviationBelowCited { .. } => "PeerDeviationBelowCited",
             Self::PeerDeviationNotCited { .. } => "PeerDeviationNotCited",
             Self::ConsoleBaudNotRoundTrip { .. } => "ConsoleBaudNotRoundTrip",
+            Self::SerialBaudReadAsKbaud { .. } => "SerialBaudReadAsKbaud",
             Self::UnjudgedSerialConstraint { .. } => "UnjudgedSerialConstraint",
             Self::SerialPortMismatch { .. } => "SerialPortMismatch",
             Self::SpiControllerMismatch { .. } => "SpiControllerMismatch",
@@ -2651,6 +2661,7 @@ impl IrValidationError {
             | Self::PeerDeviationBelowCited { id, .. }
             | Self::PeerDeviationNotCited { id, .. }
             | Self::ConsoleBaudNotRoundTrip { id, .. }
+            | Self::SerialBaudReadAsKbaud { id, .. }
             | Self::UnjudgedSerialConstraint { id }
             | Self::SerialPortMismatch { id }
             | Self::SpiControllerMismatch { id }

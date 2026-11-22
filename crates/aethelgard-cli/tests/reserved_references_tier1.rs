@@ -577,11 +577,13 @@ fn aet_1208_pins() -> [PinnedOn; 4] {
         (
             "serial-brr",
             SPEC,
-            // A `mavlink` port, since 300 baud on the console is refused
-            // first, and by name, at step 13c (`ConsoleBaudNotRoundTrip`,
-            // `AET-WO-1213`); 300 still reaches no BRR on any role.
+            // An `rc_sbus` port, since 300 baud is refused first, and by
+            // name, at step 13c on the console (`ConsoleBaudNotRoundTrip`,
+            // `AET-WO-1213`) and on a `mavlink` or `gps` port
+            // (`SerialBaudReadAsKbaud`, `AET-WO-1214`); 300 still reaches no
+            // BRR on any role.
             |s| {
-                s["serial_ports"][0]["role"] = "mavlink".into();
+                s["serial_ports"][0]["role"] = "rc_sbus".into();
                 s["serial_ports"][0]["framing"]["baud"] = 300.into();
             },
             r#"{"ok":false,"error":{"kind":"SerialBaudOutOfRange","id":"CONSOLE","claimants":["CONSOLE"],"message":"serial port `CONSOLE`: 300 baud needs a BRR outside 16 to 0xFFFF on a 64000000 Hz kernel clock (RM0433 Rev 9 §48.8.5, oversampling by 16)"}}"#,
