@@ -1,6 +1,6 @@
 # AET-WO-1319 — FEEDBACK: the device arms as rows
 
-**Branch:** `wo/aet-1319-arms-as-rows` from `main` `c1e444dd`; then merged `main` `e3aea224` (docs only) and `main` `7fc81640` (1211b, no eda file).
+**Branch:** `wo/aet-1319-arms-as-rows` from `main` `c1e444dd`; then merged `main` `e3aea224` (docs only), `main` `7fc81640` (1211b, no eda file) and `main` `171f2a60` (docs only).
 
 **The one edit outside the fence (ruled Q1 (a), 04:00Z):** `crates/aethelgard-cli/tests/strict_fence.rs`, one path string, `schematic_pin_device.rs` → `schematic_arms.rs`. Its role is unchanged (`Other`).
 
@@ -10,7 +10,7 @@
 
 Written 2026-11-22.
 
-**Status: READY on green CI.** **The answer, in five lines:**
+**Status: READY** (CI green on `59c86352`; the READY commit adds this file's CI line and `main` `171f2a60`'s docs). **The answer, in five lines:**
 - **One table, `ARMS`, and one interpreter, `arm()`, in `aethelgard-eda` now draw all eight device parts.** These are the six bus devices (BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P) and both pin devices (DRV8876PWPR, DRV8833PWPR). The hand-written arms and `device()` are deleted.
 - **Nothing moved, measured against base `c1e444dd`, and again at the merged head against `main` `7fc81640`:**
   - all 33 committed specifications (274 files: exit codes, printed JSON, every emitted file);
@@ -153,7 +153,8 @@ In `spike/1319/RESULTS.md`. Two missed:
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
   - `cargo test --workspace --no-fail-fast`: 2632 passed, 0 failed.
 - **The same head against a base rebuilt at `7fc81640`:** sweep identical (274 files), d4diff identical (277 cases), d1319 identical (84 cases).
-- **CI:** see the PR.
+- **CI: green on `59c86352`** (PR #310): run 44984851368, 33 checks pass, 3 skipped by the workflow, tier-2 202/202 (floor 201, `TIER2_MIN` unchanged), mergeable.
+- **The READY commit:** this line, plus `main` `171f2a60` merged (docs only). Nothing is pushed after it.
 - **Fence:** `crates/aethelgard-eda/src/{schematic.rs, schematic_arms.rs}`, `spike/1319/`, and this file. Outside it, only `strict_fence.rs`'s one path string (ruled Q1 (a)). Nothing in the IR, the generator, the twin, the specifications, the workflows, `ci/` or `aethelgard-kicad-lib`.
 - **Reduction pass (diff): −8 net · 1 duplicate removed (a second pin-number lookup per required passive's end) · 1 dead test removed (`the_table_passes_its_own_check`) · 0 protected kept · 2 findings** (F1, F2).
   - A fresh reviewer proposed three cuts. One was taken. One, folding the pin-device fields into `Context`, was measured here before: +5 after rustfmt, so it was dropped. The last, inlining `draws`, is a rename.
