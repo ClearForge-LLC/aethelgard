@@ -10761,7 +10761,7 @@
    "member": "",
    "json": "crates/aethelgard-ir/data/parts.json",
    "at": "crates/aethelgard-ir/src/parts.rs:675",
-   "cites": "62 row citations, 30 name a page; documents: ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp, ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp, ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp, ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp, Bosch Sensortec BME280 product page, Bosch Sensortec BMP581 product page, Bosch Sensortec BST-BME280-DS001-24, Bosch Sensortec BST-BMP581-DS004-13, Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567, TDK InvenSense DS-000177 ICP-10111, TDK InvenSense DS-000189 ICM-20948, TDK InvenSense DS-000347 ICM-42688-P, TDK InvenSense ICM-20948 product page, TDK InvenSense ICM-42688-P product page, TDK InvenSense ICP-10111 product page, TI SLVSAR1E DRV8833, TI SLVSDS7B DRV8876, Texas Instruments SNOSD82D TMP117, Texas Instruments TMP117 product page, Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv, Winbond W25Q64JV; its 32 page-less row citations each resolved in citations.tsv"
+   "cites": "62 row citations, 30 name a page; documents: ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP280.cpp, ArduPilot Copter-4.7.2, libraries/AP_Baro/AP_Baro_BMP581.cpp, ArduPilot Copter-4.7.2, libraries/AP_InertialSensor/AP_InertialSensor_Invensensev3.cpp, ArduPilot Copter-4.7.2, libraries/AP_Logger/AP_Logger_Flash_JEDEC.cpp, Bosch Sensortec BME280 product page, Bosch Sensortec BMP581 product page, Bosch Sensortec BST-BME280-DS001-24, Bosch Sensortec BST-BMP581-DS004-13, Renode 1.17.0 ICP_101xx.cs (renode-infrastructure 066a7f13), with ArduPilot AP_Baro_ICP101XX.cpp at fb773567, TDK InvenSense DS-000177 ICP-10111, TDK InvenSense DS-000189 ICM-20948, TDK InvenSense DS-000347 ICM-42688-P, TDK InvenSense ICM-20948 product page, TDK InvenSense ICM-42688-P product page, TDK InvenSense ICP-10111 product page, TI SLVSAR1E DRV8833, TI SLVSDS7B DRV8876, Texas Instruments SNOSD82D TMP117, Texas Instruments TMP117 product page, Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv, Winbond W25Q64JV; its 32 page-less row citations each resolved to a page in citations.tsv"
   },
   {
    "unit": "H",
@@ -10770,7 +10770,7 @@
    "member": "",
    "json": "crates/aethelgard-ir/data/power-parts.json",
    "at": "crates/aethelgard-ir/src/power_parts.rs:899",
-   "cites": "163 row citations, 129 name a page; documents: ABM8AIG, AN2834, AP_CHIBIOS_HWDEF, AP_SPIDEVICE, AP_STM32H753XX, AP_STM32H7_MCUCONF, CHIBIOS_HAL_LLD_TYPE1, DS12117, KEMET_C1003_C0G, MURATA_GCM188R71H104KA57, MURATA_GCM188R71H224KA64, MURATA_GCM32EC71H106KA03, MURATA_GCM32EC71H106KA03_DCBIAS, MURATA_GRM188R71C105KA12, MURATA_GRM32ER61C226KE20, MURATA_GRM32ER71A226KE20, NICHICON_UCZ, RM0433, SBVS320D, SCES935A, SNVSAN3F, ST_PIN_DATA_H753ZI, VISHAY_20035, VISHAY_28758, VISHAY_34123; its 31 page-less row citations each resolved in citations.tsv"
+   "cites": "163 row citations, 129 name a page; documents: ABM8AIG, AN2834, AP_CHIBIOS_HWDEF, AP_SPIDEVICE, AP_STM32H753XX, AP_STM32H7_MCUCONF, CHIBIOS_HAL_LLD_TYPE1, DS12117, KEMET_C1003_C0G, MURATA_GCM188R71H104KA57, MURATA_GCM188R71H224KA64, MURATA_GCM32EC71H106KA03, MURATA_GCM32EC71H106KA03_DCBIAS, MURATA_GRM188R71C105KA12, MURATA_GRM32ER61C226KE20, MURATA_GRM32ER71A226KE20, NICHICON_UCZ, RM0433, SBVS320D, SCES935A, SNVSAN3F, ST_PIN_DATA_H753ZI, VISHAY_20035, VISHAY_28758, VISHAY_34123; its 31 page-less row citations each resolved to a page in citations.tsv"
   },
   {
    "unit": "H",
@@ -11349,7 +11349,7 @@
    "json": "&[&str]",
    "at": "crates/aethelgard-ir/src/lib.rs:2864",
    "value": "&[ \"adc3\", \"as\", \"bdma\", \"cpu\", \"crc\", \"crypto\", \"dma1\", \"dma2\", \"dma2d\", \"dmamux1\", \"dtcm\", \"dwt\", \"empty\", \"ethernet\", \"exti\", \"false\", \"fdcan1\", \"fdcan2\", \"fmc\", \"hsem\", \"i2c1\", \"i2c2\", \"i2c3\", \"i2c4\", \"init\", \"itcm\", \"local\", \"lptimer1\", \"lptimer2\", \"lptimer3\", \"lptimer4\", \"lptimer5\", \"lpuart1\",\u2026",
-   "cites": "Renode 1.17.0 platform files pinned by the twin, not paginated: the names the pinned .repl files declare, asserted by aethelgard-twin/tests/reserved_names.rs"
+   "cites": "STMicroelectronics RM0433 Rev 9 (sha256 672a9433\u2026, ~/.cache/aet-1211/ds/rm0433-rev9.pdf), pp. 133\u2013135 (Table 8: the peripheral instance names Renode lower-cases, e.g. EXTI, SPI6, DMA1, USART1, FDCAN1); the list itself is read from Renode 1.17.0's pinned stm32h753/stm32h743/stm32h7.repl (lib.rs:2852)"
   },
   {
    "unit": "H",
@@ -11369,7 +11369,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/lib.rs:3027",
    "value": "\"a device reference may not be a motor output's observer name, `p`, a port letter `a` to `k`, a pin number 0 to 15, then `obs` (`pa8obs`), in any case: the Renode platform declares one on each motor output's pin (`AET-WO-4300a`)\"",
-   "cites": "AET-WO-4300a (Renode observer names), not paginated: a work order (markdown); the port letters and pin numbers it spans are DS12117 pp. 64\u201388"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), pp. 64\u201388 (pin/ball definitions: ports A to K, pins 0 to 15); the rule is AET-WO-4300a's"
   },
   {
    "unit": "H",
@@ -11779,7 +11779,7 @@
    "json": "[&str; 2]",
    "at": "crates/aethelgard-ir/src/pin_devices.rs:2119",
    "value": "[\"ADC1\", \"ADC3\"]",
-   "cites": "AET-WO-1211 \u00a74 A6 (Renode models ADC1 and ADC3), not paginated: a work order (markdown)"
+   "cites": "STMicroelectronics DS12117 Rev 10 (sha256 607b9ead\u2026, ~/.cache/aet-1211/ds/ds12117-rev10.pdf), p. 23 (ADC1, ADC2 and ADC3); that Renode models ADC1 and ADC3 is AET-WO-1211 \u00a74 A6"
   },
   {
    "unit": "H",
@@ -11809,7 +11809,7 @@
    "json": "&str",
    "at": "crates/aethelgard-ir/src/power.rs:82",
    "value": "\"VBAT\"",
-   "cites": "none: an engine net name for the battery rail, not held data"
+   "cites": "none: classed V, an engine net name for the battery rail, not held data (V)"
   },
   {
    "unit": "H",
@@ -12488,7 +12488,7 @@
    "member": "",
    "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)",
    "at": "crates/aethelgard-ir/src/lib.rs:1397",
-   "cites": "no page cited: rows are built from a vendored source, cited by repository, commit and sha256 (PinSource)"
+   "cites": "STMicroelectronics DS12117 Rev 10, pp. 64\u201388 (pin/ball definitions: positions and ADC inputs) and pp. 89\u2013100 (alternate-function tables, AF0 to AF15); the rows themselves are built from ST's pin data XML vendored in aethelgard-svd-hal (repository, commit and sha256 in PinSource)"
   }
  ],
  "H_columns": [

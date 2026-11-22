@@ -49,4 +49,17 @@ kill "M5 held data with no page" "HELD DATA WITH NO PAGE (RULES §3, WO §1.2): 
 mkdir -p "$S/m6/out"; cp "$here/classes.tsv" "$S/m6/"
 grep -v -P "^row\|power-parts.json\|MURATA_GCM188R71H104KA57\|Rated Value table, capacitance\t" "$here/citations.tsv" > "$S/m6/citations.tsv"
 kill "M6 page-less row unresolved" "A PAGE-LESS ROW CITATION NOT IN citations.tsv: row|power-parts.json|MURATA_GCM188R71H104KA57" --dump "$D" --out "$S/m6/out"
+# M7: a row citation resolved by a locator alone, with no page.
+mkdir -p "$S/m7/out"; cp "$here/classes.tsv" "$S/m7/"
+python3 -I - "$here/citations.tsv" "$S/m7/citations.tsv" <<'EOF2'
+import sys
+out = []
+for l in open(sys.argv[1]):
+    f = l.rstrip("\n").split("\t")
+    if f[0].startswith("row|power-parts.json|AP_SPIDEVICE|"):
+        f[2] = "not paginated: lines 259-276"
+    out.append("\t".join(f))
+open(sys.argv[2], "w").write("\n".join(out) + "\n")
+EOF2
+kill "M7 row resolved with no page" "A ROW CITATION RESOLVED WITH NO PAGE: row|power-parts.json|AP_SPIDEVICE" --dump "$D" --out "$S/m7/out"
 exit $survived

@@ -60,7 +60,7 @@ Written 2026-11-22.
 
 **Reproduce:** `bash spike/1219/run.sh && bash spike/1219/mutants.sh`, then `python3 -I spike/1219/datecheck.py .` and `python3 -I spike/1219/lookups.py .`.
 
-6. **Document and page for held data** (`citations.tsv`). Every held entry's `cites` in `LIST.md` names a document and a page, or a stated locator for a source that has no pages. The join refuses a D, S or N source item without one, and the reader refuses a page-less table-row citation that `citations.tsv` does not resolve (mutants M5, M6).
+6. **Document and page for held data** (`citations.tsv`). Every held D, S or N entry's `cites` in `LIST.md` names a document and a page; a locator (pin, code line, commit) stands beside a page, never in place of one. The join refuses a D, S or N source item without one, and the reader refuses a page-less table-row citation that `citations.tsv` does not resolve to a page (mutants M5–M7).
    - **ST pages** were read from the held PyMuPDF texts of DS12117 Rev 10 and RM0433 Rev 9 (`pagefind.py`).
    - **Other vendors' pages** were read with `pdftext.py`, a minimal PDF text reader written here because Furnace has no extractor. Its positive control is DS12117: all 357 pages, and every probe term on exactly the held text's pages.
 
@@ -153,7 +153,8 @@ Every N and S cell reads "not held". The search and its positive control are in 
   - M3: an entry left unclassed;
   - M4: "RP2350" written into a reason;
   - M5: a held ST fact stripped of its page;
-  - M6: a page-less row citation left unresolved.
+  - M6: a page-less row citation left unresolved;
+  - M7: a row citation resolved by a locator with no page.
 
   M3 and M4 first "survived" after M5 and M6 were added. Their scratch directories had no `citations.tsv`, so the reader refused before the join ran. They now copy it in.
 
@@ -244,20 +245,39 @@ Every N and S cell reads "not held". The search and its positive control are in 
 - **D3 · Amendments 1–4** (RULES §6). Ruling or reversing any of them changes counts as follows:
   - 1 and 4: H only (H now V 104, N 5, S 33, D 32 after the citation re-read);
   - 3: 4 K keys (the I2C, SPI and serial `peripheral` keys and `foreign_clock.usarts`), 7 T fields and 2 R kinds.
-- **F1 · Document and page for held data: resolved here, with one finding for the table owners.** The source cites no page for 26 held items and 63 distinct table-row citations, so I resolved each from a held document. `citations.tsv` gives the document, the page and how each was found.
-  - **The 26 source items** are now all cited. 22 are cited to DS12117 Rev 10 or RM0433 Rev 9 pages, for example:
+- **F1 · Document and page for held data: every held D, S or N entry and every table-row citation now names a page.** The source cites no page for 26 held items and 63 distinct table-row citations, so I resolved each from a held document. `citations.tsv` gives the document, the page and how each was found. The join refuses a D, S or N source item without a page, and the reader refuses a table-row citation resolved without one (mutants M5–M7).
+  - **The 26 source items** are cited to DS12117 Rev 10 or RM0433 Rev 9 pages, for example:
     - `MAX_BOR_LEVEL`: RM0433 p. 214;
     - `serial:PERIPHERALS`: DS12117 p. 23;
     - `solve:RESERVED_PINS`: DS12117 pp. 65, 80–81;
-    - `motor:OFFSETS`: RM0433 p. 497.
+    - `motor:OFFSETS`: RM0433 p. 497;
+    - `RESERVED_REFERENCES`: RM0433 pp. 133–135;
+    - `OBSERVER_RULE`: DS12117 pp. 64–88;
+    - `MODELLED_ADCS`: DS12117 p. 23.
 
-    The others are engine names or work-order facts with a stated non-paginated locator: `RESERVED_REFERENCES` (Renode's pinned platform files), `OBSERVER_RULE` (`AET-WO-4300a`), `MODELLED_ADCS` (`AET-WO-1211` §4), and `BATTERY_NET` (now V, not held data).
-  - **The 63 page-less row citations:**
-    - those in the ST-relevant rows cite non-paginated sources by exact locator: ST's pin data by pin, and ArduPilot and ChibiOS code by line at a pinned commit;
-    - the other vendors' datasheets (Bosch BME280, TDK ICM-20948, TI TMP117, Winbond W25Q64JV, six Murata sheets) are now cited to PDF pages;
-    - the DRV8833 and DRV8876 rows cite the whole datasheet as the row's document of record, and their values cite their own pages.
+    The one exception is `BATTERY_NET`, now V and not held data.
+  - **The pin table** is cited to DS12117 pp. 64–88 (pin/ball definitions) and pp. 89–100 (AF tables). Its rows are built from ST's pin data XML.
+  - **The 63 row citations:**
+    - **ST's pin data XML** (by pin) → DS12117 pp. 64–88, 80 (PA13) and 81 (PA14).
+    - **ArduPilot and ChibiOS code** (by line at a pinned commit) → the RM0433 or DS12117 page stating the same fact:
+      - SPI123SEL and SPI45SEL, p. 413;
+      - SPI6SEL, p. 418;
+      - PLLSRC, p. 398;
+      - HSI at 64 MHz, p. 341;
+      - MBR, p. 2218;
+      - the AF tables, pp. 89–100.
+    - **Sensor drivers** → their datasheets:
+      - BME280 pp. 26–27;
+      - BMP581 p. 51, the table's own paged citation, since that PDF is encrypted;
+      - ICM-42688-P pp. 88 and 37;
+      - W25Q64JV p. 22;
+      - ICP-10111 p. 15.
+    - **Other vendors' datasheets** (Bosch, TDK, TI, Winbond, Murata) → PDF pages.
+    - **The DRV8833 and DRV8876** → their whole page range, as the row's document of record.
+    - **The held one-page captures** (five product pages, the Winbond CSV, the Murata DC-bias chart) → "p. 1 of 1".
   - **Page numbering:** PDF page indices. They equal the printed pages in the ST documents; the Winbond PDF runs one ahead.
-  - **The finding (backlog, not this work order's fix):** the source and the tables should carry these pages themselves. The rule already demands a cited page; the guard here (M5, M6) checks it only inside this spike.
+  - **Sources not found on the box:** the Renode `ICP_101xx.cs`, ArduPilot's `AP_Logger_Flash_JEDEC.cpp` and ChibiOS's `hal_lld`. Their rows are cited by the datasheet or RM0433 page that states the same fact.
+  - **The finding (backlog):** the source and the tables should carry these pages themselves. The guard here checks them only inside this spike.
 - **F2 · Out of scope, one line each, not audited:**
   - `aethelgard-svd-hal::pin_table` knows `STM32H753ZITx` alone;
   - `aethelgard-hwdef` refuses any ArduPilot series but `STM32H7xx` (`lib.rs:411`);
@@ -274,7 +294,7 @@ Every N and S cell reads "not held". The search and its positive control are in 
 - **Gates not run.** The work order grants it: no crate, specification, `fab/`, workflow or `ci/` file changes, so `cargo fmt`, `clippy` and `test` are not run. `git diff --stat 8225ebd1 -- . ':!spike/1219' ':!docs/work-orders/AET-WO-1219.FEEDBACK.md'` is empty. No package dispatch.
 - **What did run:**
   - `run.sh`: the reader, the dump and the join, with the citation guard;
-  - `mutants.sh`: 6 of 6 killed;
+  - `mutants.sh`: 7 of 7 killed;
   - `datecheck.py`: 0 mis-dated.
 - **Scratch:** `~/.cache/aet-1219`, 89 MB, most of it the dump's target directory. Removed after the PR.
 - **Reduction pass (diff): −16 net · 1 duplicate removed · 6 dead paths removed · 0 protected kept · 0 findings below.** Counted from the removed and added lines of each edit.

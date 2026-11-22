@@ -1096,7 +1096,7 @@ def main():
         e["id"] = "H:pin-table|" + e["id"]
         H_cols.append(e)
     H.append({"unit": "H", "id": "H:pin-table", "type_name": "PinTable", "member": "", "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)", "at": pt["file"] + ":%d" % pt["line"],
-              "cites": "no page cited: rows are built from a vendored source, cited by repository, commit and sha256 (PinSource)"})
+              "cites": "STMicroelectronics DS12117 Rev 10, pp. 64–88 (pin/ball definitions: positions and ADC inputs) and pp. 89–100 (alternate-function tables, AF0 to AF15); the rows themselves are built from ST's pin data XML vendored in aethelgard-svd-hal (repository, commit and sha256 in PinSource)"})
 
     # Citations resolved by hand from held documents (citations.tsv): every
     # page-less held fact gets a document and a page, or a stated locator for
@@ -1128,8 +1128,11 @@ def main():
         unresolved = sorted(r for r in rows_unpaged if r not in cit)
         for r in unresolved:
             fail.append("A PAGE-LESS ROW CITATION NOT IN citations.tsv: " + r)
+        for r in sorted(rows_unpaged & set(cit)):
+            if not PAGE.search(cit[r][2]):
+                fail.append("A ROW CITATION RESOLVED WITH NO PAGE: " + r)
         if rows_unpaged:
-            h["cites"] += "; its %d page-less row citations each resolved in citations.tsv" % len(rows_unpaged)
+            h["cites"] += "; its %d page-less row citations each resolved to a page in citations.tsv" % len(rows_unpaged)
 
     # T: the solved topology, from its Serialize derive (what solve prints),
     # then every other serde type no walk reached, each as its own root.
@@ -1227,7 +1230,7 @@ def join(inv, cls_path, here):
                 fail.append("D is for a held table or source item only (rule 1): %s" % e["id"])
             e.update(r)
             e["rp2350"] = NOT_HELD if r["class"] in ("N", "S") else ""
-    LOCATED = re.compile(r"\bpp?\.\s*\d|not paginated|whole document|not held data")
+    LOCATED = re.compile(r"\bpp?\.\s*\d")  # a page, never a locator alone
     for e in inv["H"]:
         if e["id"].count(":") == 2 and rows.get(e["id"], {}).get("class") in ("D", "S", "N") and not LOCATED.search(e.get("cites", "")):
             fail.append("HELD DATA WITH NO PAGE (RULES §3, WO §1.2): %s: %s" % (e["id"], e.get("cites")))
