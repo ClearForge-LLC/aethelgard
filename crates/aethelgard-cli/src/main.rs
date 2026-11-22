@@ -506,11 +506,14 @@ fn main() -> ExitCode {
                     Ok((parsed, topology, _)) => (parsed, topology),
                     Err(code) => return code,
                 };
-                let pins =
-                    match aethelgard_twin::pins::plan(&parsed, &topology, &Default::default()) {
-                        Ok(p) => p,
-                        Err(e) => return stopped(twin_stop(e)),
-                    };
+                let pins = match aethelgard_twin::pins::plan(
+                    &pinwitness::declared(&parsed),
+                    &topology,
+                    &Default::default(),
+                ) {
+                    Ok(p) => p,
+                    Err(e) => return stopped(twin_stop(e)),
+                };
                 simulate(
                     &platform,
                     Some(Boot {

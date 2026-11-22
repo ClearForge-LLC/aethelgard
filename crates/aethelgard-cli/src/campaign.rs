@@ -607,15 +607,17 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
             .map(|(n, mv)| (n.to_owned(), mv))
             .collect(),
     };
-    let pins = aethelgard_twin::pins::plan(&spec, &topology, &overrides).map_err(|e| {
-        let s = crate::twin_stop(e);
-        refuse(
-            s.kind,
-            s.id.as_deref(),
-            format!("scenario `{}`: {}", scenario.name, s.message),
-            s.code,
-        )
-    })?;
+    let pins =
+        aethelgard_twin::pins::plan(&crate::pinwitness::declared(&spec), &topology, &overrides)
+            .map_err(|e| {
+                let s = crate::twin_stop(e);
+                refuse(
+                    s.kind,
+                    s.id.as_deref(),
+                    format!("scenario `{}`: {}", scenario.name, s.message),
+                    s.code,
+                )
+            })?;
     Ok(Effective {
         spec,
         held,

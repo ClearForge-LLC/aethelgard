@@ -26,12 +26,16 @@
 //!
 //! What the twin cannot run is refused by name, `PinDeviceNotSimulated`,
 //! with what it cannot run.
+//!
+//! The twin reads the solved topology alone (`RUL-16`): the facts of a pin
+//! device the topology does not carry (an input's active level and the level
+//! its pull holds it at, an ADC input's idle value) come in as [`Declared`],
+//! which the CLI reads from the specification.
 
 use std::collections::BTreeMap;
 
+use aethelgard_ir::SolvedTopology;
 use aethelgard_ir::motor::Level;
-use aethelgard_ir::pin_devices::{Direction, McuPull, PinDevice, Transfer};
-use aethelgard_ir::{SolvedTopology, Specification};
 use aethelgard_svd_hal::cmsis;
 
 use crate::platform::STOCK;
@@ -126,6 +130,43 @@ impl Pins {
     }
 }
 
+/// A pin device's facts the solved topology does not carry, read from the
+/// specification by the CLI (`RUL-16`), in the specification's order.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Declared {
+    pub devices: Vec<DeclaredDevice>,
+}
+
+/// One pin device: its reference and part, its signals and ADC inputs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredDevice {
+    pub reference: String,
+    pub part: String,
+    pub signals: Vec<DeclaredSignal>,
+    pub analog: Vec<DeclaredAnalog>,
+}
+
+/// One GPIO signal: an output, or an input with its declared active level
+/// (`None` when it declares none) and the level its declared pull holds it at
+/// when nothing drives it (`None` when the specification states none: a pull
+/// of `none` and no resistor, or two that disagree).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredSignal {
+    pub net: String,
+    pub output: bool,
+    pub active_high: Option<bool>,
+    pub pulled_high: Option<bool>,
+}
+
+/// One ADC input: its declared resolution, and its value at the device's
+/// idle in µV, or why the specification states none.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeclaredAnalog {
+    pub net: String,
+    pub bits: u8,
+    pub idle_microvolts: Result<u64, String>,
+}
+
 /// What a scenario drives instead of the declared idle: each held input's
 /// level (true for high), and each set ADC input's millivolts, by net.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -134,7 +175,7 @@ pub struct Overrides {
     pub millivolts: BTreeMap<String, u32>,
 }
 
-fn not_simulated(d: &PinDevice, why: String) -> TwinError {
+fn not_simulated(d: &DeclaredDevice, why: String) -> TwinError {
     TwinError::PinDeviceNotSimulated {
         reference: d.reference.clone(),
         part: d.part.clone(),
@@ -142,31 +183,13 @@ fn not_simulated(d: &PinDevice, why: String) -> TwinError {
     }
 }
 
-/// The level a declared input's pull holds it at when nothing drives it:
-/// the MCU's pull, or the resistor's, high to a domain and low to `GND`.
-/// `None` when the specification states none (a pull of `none` and no
-/// resistor), or states two that disagree.
-fn pulled(s: &aethelgard_ir::pin_devices::GpioSignal) -> Option<bool> {
-    let pull = s.pull.as_ref()?;
-    let mcu = match pull.mcu {
-        Some(McuPull::Up) => Some(true),
-        Some(McuPull::Down) => Some(false),
-        Some(McuPull::None) | None => None,
-    };
-    let resistor = pull.resistor.as_ref().map(|r| r.to != "GND");
-    match (mcu, resistor) {
-        (Some(a), Some(b)) if a != b => None,
-        (a, b) => a.or(b),
-    }
-}
-
-/// The plan for `spec`'s pin devices on `topology`, with `overrides`
+/// The plan for the `declared` pin devices on `topology`, with `overrides`
 /// applied. A held net that is not a declared input is refused
 /// `PinHeldIsOutput` when it is a declared output and `PinHeldUnknown`
 /// otherwise; a set net that is not a pin device's ADC input,
 /// `AnalogValueUnknown`.
 pub fn plan(
-    spec: &Specification,
+    declared: &Declared,
     topology: &SolvedTopology,
     overrides: &Overrides,
 ) -> Result<Pins, TwinError> {
@@ -174,7 +197,7 @@ pub fn plan(
     let gpio = f.layout("GPIO")?;
     let adc = f.layout("ADC")?;
     let mut out = Pins::default();
-    for d in spec.declared_pin_devices() {
+    for d in &declared.devices {
         out.devices.push((d.reference.clone(), d.part.clone()));
         for s in &d.signals {
             let solved = topology.gpio.get(&s.net).ok_or_else(|| {
@@ -182,8 +205,8 @@ pub fn plan(
             })?;
             let (port, bit) = split_pin(&solved.pin)?;
             let base = f.base(&format!("GPIO{port}"))?;
-            match s.direction {
-                Direction::Output => {
+            match s.output {
+                true => {
                     let high = match solved.initial {
                         Some(Level::High) => true,
                         Some(Level::Low) => false,
@@ -203,21 +226,14 @@ pub fn plan(
                         moder_at: base + gpio.offset("MODER", 0)?,
                     });
                 }
-                Direction::Input => {
-                    let active_high = match s.active {
-                        Some(Level::High) => true,
-                        Some(Level::Low) => false,
-                        None => {
-                            return Err(not_simulated(
-                                d,
-                                format!("its input `{}` declares no active level", s.net),
-                            ));
-                        }
-                    };
+                false => {
+                    let active_high = s.active_high.ok_or_else(|| {
+                        not_simulated(d, format!("its input `{}` declares no active level", s.net))
+                    })?;
                     let (high, held) = match overrides.held.get(&s.net) {
                         Some(&h) => (h, true),
                         None => (
-                            pulled(s).ok_or_else(|| {
+                            s.pulled_high.ok_or_else(|| {
                                 not_simulated(
                                     d,
                                     format!(
@@ -284,7 +300,7 @@ pub fn plan(
                         ),
                     )
                 })?;
-            let bits = solved.bits.unwrap_or(a.adc_resolution_bits);
+            let bits = solved.bits.unwrap_or(a.bits);
             if bits != MEASURED_BITS {
                 return Err(not_simulated(
                     d,
@@ -296,18 +312,12 @@ pub fn plan(
             }
             let (microvolts, held) = match overrides.millivolts.get(&a.net) {
                 Some(&mv) => (u64::from(mv) * 1000, true),
-                // A current output at a bridge's non-driving idle carries no
-                // load current, so it reads 0 V (the bridge's idle is held
-                // to a non-driving row at generate, `BridgeIdleNotSafe`).
-                None => match (&a.transfer, d.bridges.is_empty()) {
-                    (Transfer::CurrentOutput(_), false) => (0, false),
-                    (Transfer::CurrentOutput(_), true) => {
+                None => match &a.idle_microvolts {
+                    Ok(uv) => (*uv, false),
+                    Err(why) => {
                         return Err(not_simulated(
                             d,
-                            format!(
-                                "its ADC input `{}` is a current output on a device with no bridge, so no idle states its load current and the twin has no value to set it to",
-                                a.net
-                            ),
+                            format!("its ADC input `{}` states no idle value: {why}", a.net),
                         ));
                     }
                 },

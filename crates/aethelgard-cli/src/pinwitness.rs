@@ -26,10 +26,70 @@ use aethelgard_chaos::campaign::{
     ADC_MISMATCH_FINDING, ADC_UNWITNESSED_FINDING, GPIO_INPUT_ASSERTED_FINDING,
     GPIO_MISMATCH_FINDING, GPIO_UNWITNESSED_FINDING,
 };
-use aethelgard_twin::pins::Pins;
+use aethelgard_twin::pins::{Declared, DeclaredAnalog, DeclaredDevice, DeclaredSignal, Pins};
 
 use crate::anchor::Hook;
 use crate::verdict::Finding;
+
+/// A pin device's facts the solved topology does not carry, from `spec`
+/// (`RUL-16`: the twin reads the topology alone): each input's active level
+/// and the level its declared pull holds it at (the MCU's pull, or the
+/// resistor's, high to a domain and low to `GND`; none when it states none,
+/// or two that disagree), and each ADC input's idle value: a current output
+/// at a bridge's non-driving idle carries no load current, so it reads 0 V
+/// (the bridge's idle is held to a non-driving row at generate,
+/// `BridgeIdleNotSafe`); any other has none the specification states.
+pub fn declared(spec: &aethelgard_ir::Specification) -> Declared {
+    use aethelgard_ir::motor::Level;
+    use aethelgard_ir::pin_devices::{Direction, McuPull, Transfer};
+    let pulled = |s: &aethelgard_ir::pin_devices::GpioSignal| -> Option<bool> {
+        let pull = s.pull.as_ref()?;
+        let mcu = match pull.mcu {
+            Some(McuPull::Up) => Some(true),
+            Some(McuPull::Down) => Some(false),
+            Some(McuPull::None) | None => None,
+        };
+        let resistor = pull.resistor.as_ref().map(|r| r.to != aethelgard_ir::GND);
+        match (mcu, resistor) {
+            (Some(a), Some(b)) if a != b => None,
+            (a, b) => a.or(b),
+        }
+    };
+    Declared {
+        devices: spec
+            .declared_pin_devices()
+            .iter()
+            .map(|d| DeclaredDevice {
+                reference: d.reference.clone(),
+                part: d.part.clone(),
+                signals: d
+                    .signals
+                    .iter()
+                    .map(|s| DeclaredSignal {
+                        net: s.net.clone(),
+                        output: s.direction == Direction::Output,
+                        active_high: s.active.map(|l| l == Level::High),
+                        pulled_high: pulled(s),
+                    })
+                    .collect(),
+                analog: d
+                    .analog
+                    .iter()
+                    .map(|a| DeclaredAnalog {
+                        net: a.net.clone(),
+                        bits: a.adc_resolution_bits,
+                        idle_microvolts: match (&a.transfer, d.bridges.is_empty()) {
+                            (Transfer::CurrentOutput(_), false) => Ok(0),
+                            (Transfer::CurrentOutput(_), true) => Err(
+                                "it is a current output on a device with no bridge, so no idle states its load current".to_owned(),
+                            ),
+                        },
+                    })
+                    .collect(),
+            })
+            .collect(),
+    }
+}
 
 /// The stimuli, in the plan's order: inputs, then ADC inputs.
 pub fn stimuli(pins: &Pins) -> Vec<String> {
@@ -284,4 +344,96 @@ pub fn findings(pins: &Pins, gpio: &[GpioWitness], adc: &[AdcWitness]) -> Vec<Fi
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn d1() -> Value {
+        let path = format!(
+            "{}/../aethelgard-ir/tests/fixtures/d1-drv8876.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    fn of(v: Value) -> Declared {
+        declared(&serde_json::from_value(v).unwrap())
+    }
+
+    /// D1 as declared: nSLEEP an output; nFAULT active low, R3 to `VDD_3V3`
+    /// holding it high; IPROPI a current output of a device with a bridge,
+    /// so 0 V at its idle.
+    #[test]
+    fn d1_is_read_as_declared() {
+        let d = of(d1());
+        let [u2] = d.devices.as_slice() else { panic!() };
+        assert_eq!(
+            (u2.reference.as_str(), u2.part.as_str()),
+            ("U2", "DRV8876PWPR")
+        );
+        let facts: Vec<_> = u2
+            .signals
+            .iter()
+            .map(|s| (s.net.as_str(), s.output, s.active_high, s.pulled_high))
+            .collect();
+        assert_eq!(
+            facts,
+            [
+                ("DRV_NSLEEP", true, None, None),
+                ("DRV_NFAULT", false, Some(false), Some(true))
+            ]
+        );
+        assert_eq!(
+            (
+                u2.analog[0].net.as_str(),
+                u2.analog[0].bits,
+                u2.analog[0].idle_microvolts.clone()
+            ),
+            ("DRV_IPROPI", 12, Ok(0))
+        );
+    }
+
+    /// A pull's level: the MCU's (up high, down low), a resistor's (to a
+    /// domain high, to `GND` low), none when neither states one, and none
+    /// when the two disagree.
+    #[test]
+    fn a_pull_s_level_is_the_one_the_specification_states() {
+        let with = |pull: Value| {
+            let mut v = d1();
+            v["pin_devices"][0]["signals"][1]["pull"] = pull;
+            of(v).devices[0].signals[1].pulled_high
+        };
+        let r =
+            |to: &str| json!({"reference": "R3", "part": "CRCW0603_F_K", "ohms": 10000, "to": to});
+        assert_eq!(with(json!({"mcu": "up", "source": "s"})), Some(true));
+        assert_eq!(with(json!({"mcu": "down", "source": "s"})), Some(false));
+        assert_eq!(with(json!({"mcu": "none", "source": "s"})), None);
+        assert_eq!(
+            with(json!({"resistor": r("GND"), "source": "s"})),
+            Some(false)
+        );
+        assert_eq!(
+            with(json!({"resistor": r("VDD_3V3"), "source": "s"})),
+            Some(true)
+        );
+        assert_eq!(
+            with(json!({"mcu": "down", "resistor": r("VDD_3V3"), "source": "s"})),
+            None
+        );
+        assert_eq!(
+            with(json!({"mcu": "up", "resistor": r("VDD_3V3"), "source": "s"})),
+            Some(true)
+        );
+    }
+
+    /// A current output on a device with no bridge states no idle value.
+    #[test]
+    fn a_current_output_with_no_bridge_has_no_idle_value() {
+        let mut v = d1();
+        v["pin_devices"][0]["bridges"] = json!([]);
+        assert!(of(v).devices[0].analog[0].idle_microvolts.is_err());
+    }
 }

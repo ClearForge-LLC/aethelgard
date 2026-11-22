@@ -885,9 +885,6 @@ enum Target {
     /// The battery (`AET-WO-2304b` §1.10): a variant of its own, so no
     /// domain id can collide with it.
     Battery,
-    /// A pin device's input, by net (`AET-WO-1211c`): reached by `pin_held`
-    /// at its active level, detected by the input's gate.
-    Gpio(String),
     /// A pin device's ADC input, by net (`AET-WO-1211c`): reached by an
     /// `analog_value` other than its idle's, which the run must survive.
     Analog(String),
@@ -901,7 +898,6 @@ impl Target {
             Self::Serial(l) => format!("serial port `{l}`"),
             Self::Rail(r) => format!("rail `{r}`"),
             Self::Battery => "rail `battery`".to_owned(),
-            Self::Gpio(n) => format!("input `{n}`"),
             Self::Analog(n) => format!("ADC input `{n}`"),
         }
     }
@@ -936,8 +932,6 @@ const ABSENT: &[&str] = &[
     "spi_transaction_unwitnessed",
 ];
 const OPEN: &[&str] = &["serial_echo_missing"];
-/// A held input at its active level (`AET-WO-1211c`): its gate's finding.
-const HELD_INPUT: &[&str] = &[aethelgard_chaos::campaign::GPIO_INPUT_ASSERTED_FINDING];
 
 /// What one scenario seeds, judged against the specification.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -1082,35 +1076,28 @@ fn stress(
         // serial ports, E2 for SPI devices, its subjects theirs
         // (`AET-WO-2304b` §1.10). A rail the checks refuse stresses nothing.
         // A held input (`AET-WO-1211c`): at the level its pull holds it, it
-        // changes nothing; at its active level, it is the device reporting
-        // itself asserted, detected by the input's gate (rule E4); at the
-        // other, it only eases. Judged from the twin's own plan, which
-        // `effective` refused any other net by.
+        // changes nothing; at the other it changes the run but reaches no
+        // target (D5, ruled: no generated firmware path reads an input, so
+        // its gate would read back the twin's own stimulus, `INV-07`).
         Override::PinHeld { net, level } => {
-            let plan = aethelgard_twin::pins::plan(spec, topology, &Default::default()).ok()?;
+            let plan = aethelgard_twin::pins::plan(
+                &crate::pinwitness::declared(spec),
+                topology,
+                &Default::default(),
+            )
+            .ok()?;
             let i = plan.inputs.iter().find(|i| &i.net == net)?;
-            let high = *level == aethelgard_chaos::record::Level::High;
-            if high == i.high {
-                return None;
-            }
-            Some(if high == i.active_high {
-                (
-                    Some(Target::Gpio(net.clone())),
-                    Some(Mechanism {
-                        kinds: HELD_INPUT,
-                        rule: "E4",
-                        subjects: [format!("input:{net}")].into(),
-                        required: Default::default(),
-                    }),
-                )
-            } else {
-                (None, None)
-            })
+            (i.high != (*level == aethelgard_chaos::record::Level::High)).then_some((None, None))
         }
         // A set ADC value other than the idle's stresses its input: the run
         // must convert and read it (`AET-WO-1211c`).
         Override::AnalogValue { net, millivolts } => {
-            let plan = aethelgard_twin::pins::plan(spec, topology, &Default::default()).ok()?;
+            let plan = aethelgard_twin::pins::plan(
+                &crate::pinwitness::declared(spec),
+                topology,
+                &Default::default(),
+            )
+            .ok()?;
             let a = plan.analog.iter().find(|a| &a.net == net)?;
             (u64::from(*millivolts) * 1000 != a.microvolts)
                 .then(|| (Some(Target::Analog(net.clone())), None))
@@ -1340,22 +1327,31 @@ fn coverage(
             c.unmet.push(target.name());
         }
     }
-    // A pin device's inputs and ADC inputs (`AET-WO-1211c`), in the
+    // A pin device's ADC inputs and inputs (`AET-WO-1211c`), in the
     // specification's order, from the twin's plan; a plan the twin refuses
-    // leaves `simulate` to refuse the board, and covers nothing here.
-    if let Ok(plan) = aethelgard_twin::pins::plan(spec, topology, &Default::default()) {
-        for target in plan
-            .inputs
-            .iter()
-            .map(|i| Target::Gpio(i.net.clone()))
-            .chain(plan.analog.iter().map(|a| Target::Analog(a.net.clone())))
-        {
+    // leaves `simulate` to refuse the board, and covers nothing here. An
+    // input is no target (D5, ruled): no generated firmware path reads it,
+    // so a held input's gate would read back the twin's own stimulus
+    // (`INV-07`); it is named, as a bus no device uses (ruled (c)).
+    if let Ok(plan) = aethelgard_twin::pins::plan(
+        &crate::pinwitness::declared(spec),
+        topology,
+        &Default::default(),
+    ) {
+        for a in &plan.analog {
+            let target = Target::Analog(a.net.clone());
             if !covered.contains(&target) {
                 c.unmet.push(target.name());
             }
         }
+        for i in &plan.inputs {
+            c.no_device.push(format!(
+                "input `{}` (no generated firmware path reads it, so a held input's gate would read back the twin's own stimulus, INV-07; a target when firmware responds to it)",
+                i.net
+            ));
+        }
     }
-    // PROPOSED (AET-WO-1211c D2, asked): a bridge no fault kind reaches is
+    // A bridge (D2, ruled): no fault kind reaches its outputs, so it is
     // named, never met, and does not block, as a bus no device uses.
     for (reference, d) in &topology.pin_devices {
         for id in d.bridges.keys() {
@@ -1369,7 +1365,7 @@ fn coverage(
         if covered.contains(&target) {
             continue;
         }
-        // PROPOSED (AET-WO-1211c D1, the stop's lean (ii)): a motor rail.
+        // A motor rail (D1, ruled (ii)): named, never met, never blocking.
         if let Some(why) = motor_rail(spec, &v.id) {
             c.no_device.push(format!("{} ({why})", target.name()));
             continue;
@@ -1405,7 +1401,7 @@ fn coverage(
 }
 
 /// Why `domain` is a motor rail no fault can reach (`AET-WO-1211c` D1,
-/// proposed): a pin device's supply pin is on it, and nothing else consumes
+/// ruled (ii)): a pin device's supply pin is on it, and nothing else consumes
 /// it but connector pins: no serial port, SPI or I2C device, I2C bus or
 /// regulator, and no regulator outputs it, no load is on it, and it is not
 /// the MCU's supply. Computed from the specification alone, never declared.
@@ -3336,12 +3332,13 @@ mod tests {
         .unwrap()
     }
 
-    /// A held nFAULT seeds its input by its gate's finding and rule E4 at
-    /// its active level (low), and changes nothing at its pull's level
-    /// (high, R3 to VDD_3V3); a set IPROPI other than its idle's 0 V is a
-    /// tolerable stress of its ADC input, and 0 mV changes nothing.
+    /// A held nFAULT seeds no target at its active level (low): D5, ruled, no
+    /// firmware reads it, so its gate would read back the twin's own
+    /// stimulus. It changes nothing at its pull's level (high, R3 to
+    /// VDD_3V3). A set IPROPI other than its idle's 0 V is a tolerable stress
+    /// of its ADC input, and 0 mV changes nothing.
     #[test]
-    fn a_held_input_and_a_set_adc_value_seed_their_own_targets() {
+    fn a_held_input_seeds_nothing_and_a_set_adc_value_its_input() {
         let (spec, t) = solved(D1);
         let held = |level: &str, pass: bool, f: &[&str]| {
             classify(
@@ -3354,14 +3351,10 @@ mod tests {
                 ),
             )
         };
-        match held("low", false, &["pin_device_input_asserted"]) {
-            Seeded::Detect(Target::Gpio(n), m) => {
-                assert_eq!(n, "DRV_NFAULT");
-                assert_eq!((m.kinds, m.rule), (HELD_INPUT, "E4"));
-                assert_eq!(m.subjects, ["input:DRV_NFAULT".to_owned()].into());
-            }
-            other => panic!("{other:?}"),
-        }
+        assert_eq!(
+            held("low", false, &["pin_device_input_asserted"]),
+            Seeded::Other
+        );
         assert_eq!(held("high", true, &[]), Seeded::Baseline);
         // Held low and expected to pass: never a fault to survive.
         assert_eq!(
@@ -3386,11 +3379,11 @@ mod tests {
         assert_eq!(set(0), Seeded::Baseline);
     }
 
-    /// D1's coverage: its input and its ADC input are targets, unmet until a
-    /// fault covers each; its motor rail and its bridge are named and never
-    /// block (D1, D2 as proposed); the rest is as every board's.
+    /// D1's coverage: its ADC input is a target, unmet until a fault covers
+    /// it; its input, its bridge and its motor rail are named and never
+    /// block (D5, D2, D1, ruled); the rest is as every board's.
     #[test]
-    fn a_pin_device_s_inputs_are_targets_and_its_motor_rail_and_bridge_are_named() {
+    fn a_pin_device_s_adc_input_is_a_target_and_its_input_bridge_and_motor_rail_are_named() {
         let (spec, t) = solved(D1);
         let base = || classify(&spec, &t, &v5(true, &[], json!([])));
         let c = coverage(&spec, &t, &[base()], None);
@@ -3398,23 +3391,21 @@ mod tests {
             c.unmet,
             [
                 "serial port `CMD`",
-                "input `DRV_NFAULT`",
                 "ADC input `DRV_IPROPI`",
                 "rail `VDD_3V3`"
             ]
         );
-        assert_eq!(c.no_device.len(), 2, "{:?}", c.no_device);
-        assert!(
-            c.no_device[0].starts_with("bridge `M1` of `U2`"),
-            "{:?}",
-            c.no_device
-        );
-        assert!(
-            c.no_device[1]
-                .starts_with("rail `VMOTOR` (it supplies only pin devices' supply pins (U2.VM)"),
-            "{:?}",
-            c.no_device
-        );
+        assert_eq!(c.no_device.len(), 3, "{:?}", c.no_device);
+        for (k, start) in [
+            "input `DRV_NFAULT` (no generated firmware path reads it",
+            "bridge `M1` of `U2`",
+            "rail `VMOTOR` (it supplies only pin devices' supply pins (U2.VM)",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(c.no_device[k].starts_with(start), "{:?}", c.no_device);
+        }
         let held = classify(
             &spec,
             &t,
@@ -3435,12 +3426,9 @@ mod tests {
         );
         let c = coverage(&spec, &t, &[base(), held.clone(), set.clone()], None);
         assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
-        // Without a baseline a detected fault covers nothing (ruled (a)).
+        // A survived value covers its input with no baseline too (ruled (a)).
         let c = coverage(&spec, &t, &[held, set], None);
-        assert_eq!(
-            c.unmet,
-            ["serial port `CMD`", "input `DRV_NFAULT`", "rail `VDD_3V3`"]
-        );
+        assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
     }
 
     /// The motor rail's predicate catches a pin device's supply alone: none
