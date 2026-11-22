@@ -1146,7 +1146,7 @@ mod tests {
             .map(|[r, _, n]| format!("{r}:{n}"))
             .collect();
         assert_eq!(refs, ["C2:a", "C10:b"]);
-        assert_eq!(noted(format!("{BOM_HEAD}").as_bytes()), Ok(Vec::new()));
+        assert_eq!(noted(BOM_HEAD.as_bytes()), Ok(Vec::new()));
         assert!(noted(b"Reference,Value\r\n").is_err());
     }
 
