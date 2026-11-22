@@ -208,7 +208,8 @@ fn a_fab_out_another_uid_could_write_is_refused() {
 #[test]
 fn a_tree_that_differs_writes_no_package_and_says_so() {
     let tree = scratch("against-empty");
-    fs::create_dir_all(&tree).unwrap();
+    // `AET-WO-2308` L4: an empty directory in the tree is named too.
+    fs::create_dir_all(tree.join("stray")).unwrap();
     let out = scratch("against-out");
     let (code, v) = run(&[
         "verify",
@@ -227,6 +228,15 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     ]);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["against"], "differs");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "against_extra"
+                && f["message"] == "stray/ is in the directory but is not generated"),
+        "{v}"
+    );
     assert_eq!(v["fab"]["status"], "not_written");
     assert!(!out.exists());
     let (code, v) = run(&[

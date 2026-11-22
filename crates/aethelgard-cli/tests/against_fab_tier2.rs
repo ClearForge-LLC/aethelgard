@@ -92,8 +92,9 @@ fn verify_against_fab_finds_the_package_it_wrote_identical() {
     );
 }
 
-/// §1.3 and §3: one changed byte in every file of a package, and one extra
-/// file, fail `--against-fab` with exit 1, naming each.
+/// §1.3 and §3: one changed byte in every file of a package, one extra
+/// file and one empty directory (`AET-WO-2308` L4), fail `--against-fab`
+/// with exit 1, naming each.
 #[test]
 fn verify_against_fab_names_every_changed_and_extra_file() {
     let (p, a) = package_copy(
@@ -106,6 +107,7 @@ fn verify_against_fab_names_every_changed_and_extra_file() {
         fs::write(a.join(name), changed).unwrap();
     }
     fs::write(a.join("extra.gbr"), "").unwrap();
+    fs::create_dir_all(a.join("empty")).unwrap();
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let (code, out) = fab_verify(&a, "--against-fab");
     let w = one(&out);
@@ -139,14 +141,15 @@ fn verify_against_fab_names_every_changed_and_extra_file() {
         .map(|n| ("against_differs".to_owned(), n.clone()))
         .collect();
     want.push(("against_extra".to_owned(), "extra.gbr".to_owned()));
+    want.push(("against_extra".to_owned(), "empty/".to_owned()));
     want.sort();
     assert_eq!(
         found, want,
-        "every changed file is against_differs and the extra one against_extra, each named"
+        "every changed file is against_differs, the extra file and the empty directory against_extra, each named"
     );
     assert_eq!(
         found.len(),
-        18,
-        "seventeen changed files and one extra are eighteen differences"
+        19,
+        "seventeen changed files, one extra and one empty directory are nineteen differences"
     );
 }

@@ -214,6 +214,15 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
                 "each prove gate proves the generated harness: {g}"
             );
         }
+        // `AET-WO-2308` L3: the campaign gate names the Renode build its
+        // runs' archives record, the one the twin is pinned to.
+        if g["gate"] == "campaign" {
+            assert_eq!(
+                g["tool_version"],
+                aethelgard_twin::platform::RENODE_BUILD,
+                "the campaign names its runs' Renode build: {g}"
+            );
+        }
         // `AET-WO-1305`: extract is bound to the generated board, and runs no
         // tool, so it has no uid boundary to report (null, never a value).
         if g["gate"] == "extract" {
