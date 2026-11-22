@@ -540,9 +540,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `pin_devices` (`AET-WO-1211a`: absent when none is declared), version 15
 /// the HSE tree's `flash_acr`, its declaration's start-up bound and the SPI
 /// kernels `pll1_q` and `pclk` (`AET-WO-4240b` Q2, Q3, Q6, renumbered from
-/// 14 by the same rule); an older file is refused, never defaulted
-/// (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 15;
+/// 14 by the same rule), version 16 an ADC input's `bits` and a pin device's
+/// `bridges` (`AET-WO-1211b` S1, ruled: the declared mode, inputs and enable;
+/// every datasheet value is the part's row, looked up by part and mode); an
+/// older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 16;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds

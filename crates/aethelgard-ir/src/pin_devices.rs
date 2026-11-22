@@ -287,21 +287,89 @@ impl SolvedGpio {
 }
 
 /// One solved ADC input: its pin, the peripheral chosen, and the channel
-/// (`INPm`).
+/// (`INPm`). `bits` is a pin device input's declared `adc_resolution_bits`
+/// (`AET-WO-1211b` S1, ruled 2026-11-20); a `power.sense` input carries none
+/// until the sense is generated.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedAdcInput {
     pub pin: String,
     pub peripheral: String,
     pub channel: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bits: Option<u8>,
 }
 
-/// A pin device as the topology carries it: its part. Every crate but the
-/// IR refuses a topology with one, by name, until its work order lands.
+/// A pin device as the topology carries it: its part, and each bridge it
+/// drives (`AET-WO-1211b` S1, ruled 2026-11-20). Everything a datasheet
+/// states (the mode's truth table, `t_wake`) is the part's row
+/// (`aethelgard_ir::pin_parts`), looked up by part and mode; the topology
+/// holds no copy of it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedPinDevice {
     pub part: String,
+    pub bridges: BTreeMap<String, SolvedBridge>,
+}
+
+/// One bridge of a pin device: its strapped mode, its two inputs' nets in
+/// the order of the row's channel (`pin_parts::BridgeChannel::inputs`), a
+/// motor output's label or an output signal's net, and the device's enable
+/// signal, if the row names one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedBridge {
+    pub mode: String,
+    pub inputs: Vec<String>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    pub enable: Option<SolvedEnable>,
+}
+
+/// A bridge's enable: the output signal's net and the level that enables
+/// the part (the row's `enable_input` `active`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedEnable {
+    pub net: String,
+    pub active: Level,
+}
+
+/// The bridges of `d` as `solve` writes them: each in the row's channel
+/// order, with the row's enable bound to this device's output signal on it.
+/// `validate` has held every bridge to a channel of its mode and the enable
+/// to an output signal (step 24).
+pub(crate) fn solved_bridges(d: &PinDevice) -> BTreeMap<String, SolvedBridge> {
+    let Some(row) = crate::parts::table().ok().and_then(|t| t.pin_part(&d.part)) else {
+        return BTreeMap::new();
+    };
+    let enable = row.enable.as_deref().and_then(|pin| {
+        let active = match &row.pins.get(pin)?.kind {
+            crate::pin_parts::PinKind::EnableInput { active } => *active,
+            _ => return None,
+        };
+        let s = d.signals.iter().find(|s| s.device_pin == pin)?;
+        Some(SolvedEnable {
+            net: s.net.clone(),
+            active,
+        })
+    });
+    d.bridges
+        .iter()
+        .filter_map(|b| {
+            let channel = row.mode(&b.mode)?.channels.iter().find(|c| {
+                c.inputs.iter().all(|i| b.inputs.contains_key(i))
+                    && c.inputs.len() == b.inputs.len()
+            })?;
+            Some((
+                b.id.clone(),
+                SolvedBridge {
+                    mode: b.mode.clone(),
+                    inputs: channel.inputs.iter().map(|i| b.inputs[i].clone()).collect(),
+                    enable: enable.clone(),
+                },
+            ))
+        })
+        .collect()
 }
 
 crate::object_only!(
@@ -318,7 +386,9 @@ crate::object_only!(
     SourcedValue,
     SolvedGpio,
     SolvedAdcInput,
-    SolvedPinDevice
+    SolvedPinDevice,
+    SolvedBridge,
+    SolvedEnable
 );
 
 // ---------------------------------------------------------------- refusals
@@ -2006,6 +2076,7 @@ pub(crate) fn place<'t>(
                     pin: name.to_owned(),
                     peripheral,
                     channel,
+                    bits: Some(a.adc_resolution_bits),
                 },
             );
         }

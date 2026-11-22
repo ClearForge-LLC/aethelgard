@@ -195,7 +195,7 @@ Step 2 walks the identifiers in this order: `project_name`; `mcu.part`, `mcu.sup
 ## `SolvedTopology`
 
 What the solver derives (`RUL-16`):
-- `schema_version` (15; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
+- `schema_version` (16; an older file is refused as `UnsupportedSchemaVersion`, whether or not it has the keys a later version added);
 - `specification_sha256` (64 lowercase hex digits);
 - `assignments`, a `BTreeMap` keyed by net, holding every bus signal on an alternate function, each value a `PinAssignment` (`pin`, `peripheral`, `signal`, `alternate_function`);
 - `gpio` (version 14, `AET-WO-1211a`), a `BTreeMap` keyed by net, holding every net on a plain GPIO: `{pin, direction, initial}` for an output (`initial` `low` or `high`, the level written before `MODER`) and `{pin, direction, pull}` for an input (`pull` the MCU's own, `up`, `down` or `none`). Each SPI device's `cs` is an output at `high`; a pin device's signals are the rest. With no pin device, `validate` refuses any entry but a `high` output (`PinDeviceUndeclared`), so a reader that refuses a pin device reads every entry as a chip select;
