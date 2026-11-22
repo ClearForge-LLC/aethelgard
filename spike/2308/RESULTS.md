@@ -23,7 +23,8 @@ Every run on Furnace, 2026-11-22. The base is `c9d4096b`. Evidence is in `~/.cac
 | `.bom.csv` (emit's) | the note column, for a symbol stand-in and a bulk's source; **nothing for a twin stand-in** (the emitter is fenced) | as emitted |
 | `-jlcpcb-bom.csv` | a fifth column, `Note`. The sample has four (`Sample-BOM_JLCSMT.xlsx`, read cell by cell). JLCPCB's KiCad page calls a five-column BOM "aligned with the sample" [read], so that an upload tolerates `Note` is [inferred] | (a) |
 | `FAB-NOTES.md` | any text | (a): a section listing every noted part |
-| `-pos.csv`, `-jlcpcb-cpl.csv` | KiCad's file is unedited, and the CPL has no value column | named by reference in the FAB-NOTES section |
+| `-pos.csv` (KiCad's, unedited) | it prints each part's value (`Val`) and can carry no note (adversarial F1) | the FAB-NOTES section is its label, naming the part by reference |
+| `-jlcpcb-cpl.csv` | no value column: reference only | — |
 | Gerbers, drill, ELF | no part values | — |
 
 **Ruled 08:58Z (Q1–Q4):**

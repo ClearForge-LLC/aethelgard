@@ -42,6 +42,8 @@ MUTANTS = [
      "            .unwrap_or_default();", BIN + ["--", "the_campaign_names_the_renode"]),
     ("M9-against-walk", f"{CLI}/tree.rs", "            && entries == 0\n",
      "            && entries == usize::MAX\n", BIN + ["--", "tree::tests"]),
+    ("M17-against-top", f"{CLI}/tree.rs", "            && !rel.is_empty()\n", "",
+     BIN + ["--", "tree::tests"]),
     ("M10-against-callsite", f"{CLI}/verify.rs", "tree::against(dir, &files, &[&format!(\"{BOARD_DIR}/target\")])",
      "tree::diff(dir, &files, &[&format!(\"{BOARD_DIR}/target\")])",
      ["-p", "aethelgard-cli", "--test", "fab_tier1", "--", "a_tree_that_differs"]),

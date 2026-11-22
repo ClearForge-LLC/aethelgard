@@ -381,6 +381,17 @@ mod tests {
     /// not read; and `diff` (`prove`'s provenance) still reports none.
     #[test]
     fn against_reports_an_empty_directory_and_diff_does_not() {
+        // An empty directory compared whole is every file missing, never
+        // itself an extra.
+        let empty = scratch("empty-top");
+        fs::create_dir_all(&empty).unwrap();
+        assert!(
+            against(&empty, &files(), &[])
+                .unwrap()
+                .iter()
+                .all(|d| matches!(d, Difference::Missing(_)))
+        );
+        fs::remove_dir_all(&empty).unwrap();
         let dir = scratch("empty-dirs");
         write(&dir, &files()).unwrap();
         assert_eq!(against(&dir, &files(), &[]).unwrap(), []);

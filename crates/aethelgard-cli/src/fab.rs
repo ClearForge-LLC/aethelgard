@@ -366,8 +366,9 @@ fn notes(
 /// The notes' last section (`AET-WO-2308` (1)): every part of the emitter's
 /// BOM that carries a note, by reference, so no stand-in reaches a person
 /// reading the package unlabelled. The BOM and the JLCPCB BOM carry the same
-/// note on the part's line; KiCad's placement file and the JLCPCB one name
-/// the part by reference only. None for a board with no noted part, so its
+/// note on the part's line; the JLCPCB placement file names the part by
+/// reference only, and KiCad's, unedited, prints its value with no note, so
+/// this section is its label. None for a board with no noted part, so its
 /// notes keep their bytes.
 fn noted(project: &str, bom: &[u8]) -> Result<String, Stop> {
     let parts = aethelgard_eda::fab::noted(bom)
@@ -381,8 +382,10 @@ fn noted(project: &str, bom: &[u8]) -> Result<String, Stop> {
 
 Each part below is not what its value alone says: a symbol stands in for the
 ordered part, or no datasheet states its value. Read the note before ordering.
-`{project}.bom.csv` and `{project}-jlcpcb-bom.csv` carry it on the part's line;
-`{project}-pos.csv` and `{project}-jlcpcb-cpl.csv` name the part by reference only.
+`{project}.bom.csv` and `{project}-jlcpcb-bom.csv` carry it on the part's line.
+`{project}-jlcpcb-cpl.csv` names the part by reference only. `{project}-pos.csv` is
+KiCad's placement file, unedited: it prints the part's value with no note, and
+this section is its label.
 
 "
     );
@@ -787,6 +790,10 @@ mod tests {
         ] {
             assert!(text.contains(file), "{file}");
         }
+        assert!(
+            text.contains("`p-pos.csv` is\nKiCad's placement file, unedited: it prints the part's value with no note"),
+            "{text}"
+        );
         assert!(!text.contains("R1"), "{text}");
         assert_eq!(noted("p", format!("{head}{r1}").as_bytes()).unwrap(), "");
         assert!(noted("p", b"Reference,Value\r\n").is_err());
