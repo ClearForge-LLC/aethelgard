@@ -1,0 +1,15 @@
+{
+  "as-held": {
+    "note": "VMOTOR (J5.3) and VDD_3V3 (J3.1) are two bench supplies; no held page orders them",
+    "steps": [
+      {"rails": ["VMOTOR", "VDD_3V3"], "source": "two connectors, two external supplies (connectors J3, J5); no held document orders them"}
+    ]
+  },
+  "bench-procedure": {
+    "note": "3V3 first by an operator procedure, VMOTOR after: IPROPI is then judged with the MCU powered (A1), not here",
+    "steps": [
+      {"rails": ["VDD_3V3"], "source": "bench procedure (declared, not a part's page): the logic supply on J3 is switched on first"},
+      {"rails": ["VMOTOR"], "source": "bench procedure: VMOTOR on J5 after VDD_3V3 is in range, and off before it"}
+    ]
+  }
+}

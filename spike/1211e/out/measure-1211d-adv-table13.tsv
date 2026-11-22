@@ -1,0 +1,44 @@
+file	kind	where	net	pin	structure	to	pull_max_mV	tolerated_mV	verdict
+1211d-adv/aout1_ain2.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_cmdtx.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_gnd2.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_gnd.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_mbout1.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_on_swd2.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_on_swd_conn.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_swdio.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_vdd.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout1_vmotor.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/aout_same.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/base.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_base.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_base.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_base.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_imode_20k.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_imode_20k.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_imode_20k.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_imode_high.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_imode_high.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_imode_high.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_inin.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_inin.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_inin.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_nfault_vmotor.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VMOTOR	12600	3435	EXCEEDS-ANY
+1211d-adv/d1_nfault_vmotor.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_nfault_vmotor.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_pull_gnd.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	GND	0	3435	ok
+1211d-adv/d1_pull_gnd.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VDD_3V3 min 3135 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~2016 mA vs fs 1900 mA	ok
+1211d-adv/d1_pull_gnd.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_vref_gnd.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_vref_gnd.json	trip	pin_devices[0].straps.VREF	VREF	-	-	GND	0	-	REFUSED (chops at 0)
+1211d-adv/d1_vref_gnd.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d1_vref_low.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/d1_vref_low.json	trip	pin_devices[0].analog.IPROPI	DRV_IPROPI	-	-	VREF=VREF_LOW min 475 mV	V_IPROPI at fs 3102225 uV (R_hi 1555, out 1995 uA)	trip at typ A ~305 mA vs fs 1900 mA	REFUSED (chops below full scale)
+1211d-adv/d1_vref_low.json	bulk	pin_devices[0]	U2	-	-	VM=VMOTOR	-	-	REFUSED (bulk required)
+1211d-adv/d2_pull_gnd.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	GND	0	3435	ok
+1211d-adv/nfault_to_vmotor.json	pin-device-resistor	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VMOTOR	6300	3435	EXCEEDS-ANY
+1211d-adv/nsleep_vmotor.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/two_devices.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/two_devices.json	pin-device-mcu-pull	pin_devices[1].signals[1]	DRV3_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/vint_domain.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)
+1211d-adv/vm_3v3.json	pin-device-mcu-pull	pin_devices[0].signals[1]	DRV_NFAULT	(solver)	-	VDD_3V3	3465	-	ok (same rail as mcu.supply)

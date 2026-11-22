@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"DroopNotMcuSupply","id":"VMOTOR","message":"scenario `droop-vmotor`: the droop is on `VMOTOR`, not the MCU's supply `VDD_3V3`"}}

@@ -581,6 +581,8 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
             direction: aethelgard_ir::pin_devices::Direction::Input,
             initial: None,
             pull: Some(aethelgard_ir::pin_devices::McuPull::Up),
+            active: Some(aethelgard_ir::motor::Level::Low),
+            pulled: Some(aethelgard_ir::motor::Level::High),
         },
     );
     bad.pin_speeds.insert("DRV_NFAULT".into(), 0);
@@ -590,6 +592,7 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
         aethelgard_ir::pin_devices::SolvedPinDevice {
             part: "DRV8876PWPR".into(),
             bridges: Default::default(),
+            supplies: Default::default(),
         },
     );
     bad.validate().unwrap();
@@ -626,8 +629,17 @@ fn the_4600_driver_s_pair_as_a_bridge_is_refused_pulsed() {
                      "inputs": {"EN/IN1": "HB_IN1", "PH/IN2": "HB_IN2"},
                      "outputs": {"OUT1": "HB_OUT1", "OUT2": "HB_OUT2"}}],
         "part_limits": {"input_pwm_max_hz": null},
+        "bulk": {"reference": "C9", "part": "GCM32EC71H106KA03",
+                 "source": "a test stand-in, not a design (AET-WO-1211e)"},
         "temperature_celsius": null
     }]);
+    // IPROPI terminated as D1 terminates it (`TripSenseUnbound`, ruled D-A2).
+    let mut ipropi = d1()["pin_devices"][0]["analog"][0].clone();
+    ipropi["net"] = json!("HB_IPROPI");
+    ipropi["transfer"]["current_output"]["resistor"]["reference"] = json!("R90");
+    ipropi["transfer"]["current_output"]["reservoir"]["reference"] = json!("C90");
+    device(&mut v)["analog"] = json!([ipropi]);
+    device(&mut v)["temperature_celsius"] = d1()["pin_devices"][0]["temperature_celsius"].clone();
     let e = refused(&v);
     assert_eq!(e.kind(), "BridgeIdlePulsed", "{e}");
     assert!(e.to_string().contains("HB_IN1"), "{e}");
@@ -788,4 +800,371 @@ fn a_pull_up_past_the_vol_test_current_is_named_as_such() {
     let e = refused(&v);
     assert_eq!(e.kind(), "PullOverDrive", "{e}");
     assert!(e.to_string().contains("not a rated IOD"), "{e}");
+}
+
+// ---------------------------------------------------------------- AET-WO-1211e
+
+/// D2 declared, nFAULT pulled by a declared 10 kΩ to `to` on `pin`, with
+/// D1's temperature (a resistor is judged over one). A domain other than
+/// D2's own is added at `nominal` mV and `tol` ‰.
+fn d2_pulled(to: &str, nominal: u32, tol: u32, pin: Value) -> Value {
+    let mut v = d2_declared();
+    if to != "VDD_3V3" && to != "VMOTOR" {
+        v["voltage_domains"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id": to, "nominal_millivolts": nominal, "tolerance_permille": tol}));
+    }
+    let s = &mut device(&mut v)["signals"][1];
+    assert_eq!(s["device_pin"], "nFAULT");
+    s["pin"] = pin;
+    s["pull"] = json!({
+        "resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 10000, "to": to},
+        "source": "AET-WO-1211e test: a declared pull-up"
+    });
+    device(&mut v)["temperature_celsius"] = d1()["pin_devices"][0]["temperature_celsius"].clone();
+    v
+}
+
+fn assert_refused_at(v: &Value, want: &str, path: &str, says: &str) {
+    let e = refused(v);
+    assert_eq!((e.kind(), e.path()), (want, Some(path)), "{e}");
+    assert!(e.to_string().contains(says), "`{says}` not in: {e}");
+}
+
+const NFAULT_PULL: &str = "pin_devices[0].signals[1].pull";
+
+/// A1: `1211d`'s board, D2's nFAULT by 10 kΩ to a 6.0 V ±5 % `VMOTOR`, puts
+/// up to 6.3 V on the pin, above what any pin takes in operation (DS12117
+/// Rev 10 Table 13 p. 105: FT below 5.5 V). Unpinned, the solver may place
+/// it anywhere; on PA1, as `1211d`'s solve did, its FT_ha structure and the
+/// table are named.
+#[test]
+fn a_pull_to_the_motor_domain_is_refused_pinned_or_not() {
+    assert_refused_at(
+        &d2_pulled("VMOTOR", 0, 0, Value::Null),
+        "PullAboveMcuTolerance",
+        NFAULT_PULL,
+        "the solver may place it",
+    );
+    assert_refused_at(
+        &d2_pulled("VMOTOR", 0, 0, json!("PA1")),
+        "PullAboveMcuTolerance",
+        NFAULT_PULL,
+        "`PA1` is FT_ha (ST DS12117",
+    );
+    assert!(
+        kind(&d2_pulled("VMOTOR", 0, 0, json!("PA1"))).contains("p. 105, Table 13"),
+        "the refusal names Table 13"
+    );
+}
+
+/// The same pull to the MCU's own 3.3 V passes, pinned or not, even on a TT
+/// pin: on the same rail VIN never exceeds VDD. So does the MCU's own
+/// pull-up (D2 as committed).
+#[test]
+fn the_same_pull_to_the_mcu_s_supply_validates() {
+    for pin in [Value::Null, json!("PA1"), json!("PA4")] {
+        spec(&d2_pulled("VDD_3V3", 0, 0, pin)).validate().unwrap();
+    }
+    spec(&d2_declared()).validate().unwrap();
+}
+
+/// A TT pin takes VDD + 0.3 V: 5 V ±5 % on PA4 (TT_a, Table 8 p. 69) is
+/// refused, and so is a second 3.3 V ±5 % rail (3465 mV, above 3135 + 300),
+/// unpinned or on PA4; the same rail on PA1 (FT) validates, and so does 5 V.
+#[test]
+fn a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not() {
+    assert_refused_at(
+        &d2_pulled("VDD_5V", 5000, 50, json!("PA4")),
+        "PullAboveMcuTolerance",
+        NFAULT_PULL,
+        "`PA4` is TT_a",
+    );
+    for pin in [Value::Null, json!("PA4")] {
+        assert_eq!(
+            refused(&d2_pulled("VDD_3V3B", 3300, 50, pin)).kind(),
+            "PullAboveMcuTolerance"
+        );
+    }
+    spec(&d2_pulled("VDD_3V3B", 3300, 50, json!("PA1")))
+        .validate()
+        .unwrap();
+    spec(&d2_pulled("VDD_5V", 5000, 50, json!("PA1")))
+        .validate()
+        .unwrap();
+}
+
+/// At or below VDD's minimum + 0.3 V (3435 mV), the least any held structure
+/// takes, an unpinned pull passes; 1 mV above, it is refused.
+#[test]
+fn an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt() {
+    // 3367 mV +2 % is 3434.34, up to 3435; 3368 is 3435.36, up to 3436.
+    spec(&d2_pulled("VDD_3V4", 3367, 20, Value::Null))
+        .validate()
+        .unwrap();
+    assert_refused_at(
+        &d2_pulled("VDD_3V4", 3368, 20, Value::Null),
+        "PullAboveMcuTolerance",
+        NFAULT_PULL,
+        "up to 3436 mV, above 3435 mV",
+    );
+}
+
+/// An FT pin takes less than 5.5 V: up to 5499 mV passes, 5500 is refused.
+#[test]
+fn an_ft_pin_is_judged_below_5v5_to_the_millivolt() {
+    // 5444 mV +1 % is 5498.44, up to 5499; 5445 is 5499.45, up to 5500.
+    spec(&d2_pulled("VDD_5V5", 5444, 10, json!("PA1")))
+        .validate()
+        .unwrap();
+    assert_refused_at(
+        &d2_pulled("VDD_5V5", 5445, 10, json!("PA1")),
+        "PullAboveMcuTolerance",
+        NFAULT_PULL,
+        "takes 5499 mV",
+    );
+}
+
+/// FT takes `Min(VDD + 3.6 V, 5.5 V)`, least at VDD's minimum: with the MCU
+/// at 1.9 V ±5 % (1805 to 1995 mV) an FT pin takes 5405 mV, and a pull up to
+/// 5454 mV is refused, though it is under 5499 mV, what VDD's maximum gives.
+#[test]
+fn ft_takes_its_supply_at_the_minimum() {
+    let mut v = d2_pulled("VDD_5V4", 5400, 10, json!("PA1"));
+    v["voltage_domains"][0]["nominal_millivolts"] = json!(1900);
+    v["mcu"]["bor_level"] = json!(0);
+    // nFAULT first: at 1.9 V the MCU drives no input of the part high
+    // (`LogicLevelIncompatible`), which this pull is judged before.
+    device(&mut v)["signals"].as_array_mut().unwrap().swap(0, 1);
+    let e = refused(&v);
+    assert_eq!(e.kind(), "PullAboveMcuTolerance", "{e}");
+    assert!(
+        e.to_string()
+            .contains("takes 5405 mV in operation with `VDD_3V3` at its minimum of 1805 mV"),
+        "{e}"
+    );
+}
+
+/// A pin holding an internal pull from reset to the first write (PB4 up,
+/// PA14 down; RM0433 Rev 9 p. 542) takes no pull above VDD + 0.3 V (Table
+/// 13 note 3): 3876 mV is refused there, and PB5, FT with none, takes it.
+#[test]
+fn a_reset_pulled_pin_above_vdd_plus_0v3_is_refused() {
+    for pin in ["PB4", "PA14"] {
+        assert_refused_at(
+            &d2_pulled("VDD_3V8", 3800, 20, json!(pin)),
+            "PullAboveMcuTolerance",
+            NFAULT_PULL,
+            "note 3",
+        );
+    }
+    spec(&d2_pulled("VDD_3V8", 3800, 20, json!("PB5")))
+        .validate()
+        .unwrap();
+}
+
+/// A hand pin with no held structure (PI0 is no LQFP144 pin) is refused
+/// above the floor, and no structure is assumed; on the MCU's own rail it is
+/// left to `solve`.
+#[test]
+fn a_pin_with_no_held_structure_is_refused_above_the_floor() {
+    assert_refused_at(
+        &d2_pulled("VDD_5V", 5000, 50, json!("PI0")),
+        "McuPinStructureUnheld",
+        "pin_devices[0].signals[1].pin",
+        "no structure is assumed",
+    );
+    spec(&d2_pulled("VDD_3V3", 0, 0, json!("PI0")))
+        .validate()
+        .unwrap();
+}
+
+/// A2: a DRV8876 whose IPROPI no analog input terminates is refused, even
+/// with a VREF that would pass (SLVSDS7B pp. 12-13: IPROPI to ground through
+/// R_IPROPI, or tied to GND; ruled D-A2).
+#[test]
+fn a_trip_sense_no_analog_input_terminates_is_refused() {
+    let mut v = d1();
+    device(&mut v)["analog"] = json!([]);
+    assert_refused_at(&v, "TripSenseUnbound", "pin_devices[0].analog", "`IPROPI`");
+}
+
+/// D1 with VREF on a domain of its own: `vref` mV at `tol` ‰.
+fn d1_vref(nominal: u32, tol: u32) -> Value {
+    let mut v = d1();
+    v["voltage_domains"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "VREF_D", "nominal_millivolts": nominal, "tolerance_permille": tol}));
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "VREF_D"});
+    v
+}
+
+/// A2: VREF on `GND` chops at no current (SLVSDS7B p. 13, Eq. 3).
+#[test]
+fn vref_on_ground_is_refused() {
+    let mut v = d1();
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "GND"});
+    assert_refused_at(
+        &v,
+        "TripReferenceGrounded",
+        "pin_devices[0].straps.VREF",
+        "chop at no current",
+    );
+}
+
+/// A2: at D1's 1.9 A full scale IPROPI reaches up to 3,102,225 µV (1995 µA
+/// at AERR's 5 %, R2 at most 1555 Ω). A 0.5 V VREF trips near 0.3 A; a
+/// 3.3 V ±1 % one (3267 mV at least) passes; 3.15 V ±2 % (3087 to 3213 mV)
+/// straddles it and is refused at its minimum.
+#[test]
+fn a_vref_below_the_full_scale_is_refused_and_one_above_it_passes() {
+    assert_refused_at(
+        &d1_vref(500, 50),
+        "TripBelowFullScale",
+        "pin_devices[0].straps.VREF",
+        "up to 3102225 uV across at most 1555 ohms, above `VREF_D`'s minimum of 475 mV",
+    );
+    spec(&d1_vref(3300, 10)).validate().unwrap();
+    assert_refused_at(
+        &d1_vref(3150, 20),
+        "TripBelowFullScale",
+        "pin_devices[0].straps.VREF",
+        "minimum of 3087 mV",
+    );
+}
+
+/// A2 to the microvolt: R2 at 1543 Ω is at most 1600 Ω, so 1995 µA makes
+/// exactly 3,192,000 µV. A VREF whose minimum is 3192 mV passes (it chops at
+/// the full scale, not below it); 3191 mV is refused. The MCU sits at 3.4 V
+/// so VREF+ (3230 mV at least) holds the ADC's own reading.
+#[test]
+fn a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused() {
+    let at = |nominal: u32| {
+        let mut v = d1_vref(nominal, 50);
+        v["voltage_domains"][0]["nominal_millivolts"] = json!(3400);
+        device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(1543);
+        v
+    };
+    spec(&at(3360)).validate().unwrap();
+    assert_refused_at(
+        &at(3359),
+        "TripBelowFullScale",
+        "pin_devices[0].straps.VREF",
+        "up to 3192000 uV",
+    );
+}
+
+/// `bulk`: D1 without it is refused (CVM2 has no stated value, SLVSDS7B
+/// p. 10 Table 1, §9.1 p. 31); with the fixture's stand-in it validates.
+#[test]
+fn d1_without_bulk_is_refused_and_with_it_validates() {
+    let mut v = d1();
+    device(&mut v)["bulk"] = Value::Null;
+    assert_refused_at(
+        &v,
+        "BulkUndeclared",
+        "pin_devices[0].bulk",
+        "`VM`'s bulk capacitor",
+    );
+    spec(&d1()).validate().unwrap();
+}
+
+/// A `bulk` on the DRV8833, whose sheet states its VM capacitor, is refused.
+#[test]
+fn bulk_on_a_drv8833_is_refused() {
+    let mut v = d2_declared();
+    device(&mut v)["bulk"] = d1()["pin_devices"][0]["bulk"].clone();
+    assert_refused_at(&v, "BulkNotAllowed", "pin_devices[0].bulk", "DRV8833PWPR");
+}
+
+/// A `bulk` rated at or below the VM domain's maximum is refused: 10 V
+/// against 12.6 V, and 16 V against exactly 16000 mV; 15999 mV passes.
+#[test]
+fn a_bulk_rated_at_or_below_the_domain_is_refused() {
+    let mut v = d1();
+    device(&mut v)["bulk"]["part"] = json!("GRM32ER71A226KE20");
+    assert_refused_at(
+        &v,
+        "BulkUnderRated",
+        "pin_devices[0].bulk.part",
+        "rated 10000 mV",
+    );
+    // 15238 mV +5 % is 15999.9, up to 16000; 15237 is 15998.85, up to 15999.
+    let vm = |nominal: u32| {
+        let mut v = d1();
+        device(&mut v)["bulk"]["part"] = json!("GRM188R71C105KA12");
+        v["voltage_domains"][1]["nominal_millivolts"] = json!(nominal);
+        assert_eq!(v["voltage_domains"][1]["id"], "VMOTOR");
+        v
+    };
+    assert_refused_at(
+        &vm(15238),
+        "BulkUnderRated",
+        "pin_devices[0].bulk.part",
+        "not above `VMOTOR`'s maximum of 16000 mV",
+    );
+    spec(&vm(15237)).validate().unwrap();
+}
+
+/// A `bulk` part that is no capacitor row, a reference another part has,
+/// and a malformed reference or source are each refused by name.
+#[test]
+fn a_bulk_s_part_reference_and_source_are_judged() {
+    let mut v = d1();
+    device(&mut v)["bulk"]["part"] = json!("CRCW0603_F_K");
+    assert_refused_at(
+        &v,
+        "PowerPartUnknown",
+        "pin_devices[0].bulk.part",
+        "not a capacitor or bulk_capacitor row",
+    );
+    // An electrolytic row is a bulk: the Nichicon 47 uF, 50 V.
+    let mut v = d1();
+    device(&mut v)["bulk"]["part"] = json!("UCZ1H470MCL1GS");
+    spec(&v).validate().unwrap();
+    let mut v = d1();
+    device(&mut v)["bulk"]["reference"] = json!("C1");
+    assert_eq!(refused(&v).kind(), "DuplicateReference");
+    let mut v = d1();
+    device(&mut v)["bulk"]["reference"] = json!("C 2");
+    assert_eq!(refused(&v).path(), Some("pin_devices[0].bulk.reference"));
+    let mut v = d1();
+    device(&mut v)["bulk"]["source"] = json!(" padded");
+    assert_eq!(
+        (refused(&v).kind(), refused(&v).path()),
+        ("InvalidSource", Some("pin_devices[0].bulk.source"))
+    );
+}
+
+/// `bulk` is a required key: a device without it does not parse.
+#[test]
+fn bulk_is_a_required_key() {
+    let mut v = d2_declared();
+    device(&mut v).as_object_mut().unwrap().remove("bulk");
+    let e = serde_json::from_value::<Specification>(v).unwrap_err();
+    assert!(e.to_string().contains("bulk"), "{e}");
+}
+
+/// A pin part's `trip` names a strap_analog reference and a current_output
+/// sense, and its `bulk_unstated` a supply pin (`AET-WO-1211e`); a row
+/// naming any other is refused by name.
+#[test]
+fn a_trip_or_bulk_row_on_the_wrong_pin_is_refused() {
+    for (field, pin, says) in [
+        ("/trip/reference", "IMODE", "`trip`"),
+        ("/trip/sense", "nFAULT", "`trip`"),
+        ("/bulk_unstated/supply", "VCP", "`bulk_unstated`"),
+    ] {
+        let mut doc: Value = serde_json::from_str(PARTS_JSON).unwrap();
+        let rows = doc["pin_parts"].as_array_mut().unwrap();
+        let row = rows
+            .iter_mut()
+            .find(|r| r["part"] == "DRV8876PWPR")
+            .unwrap();
+        *row.pointer_mut(field).unwrap() = json!(pin);
+        let e = parse_parts(&doc.to_string()).unwrap_err();
+        assert!(e.to_string().contains(says), "{field}: {e}");
+    }
 }

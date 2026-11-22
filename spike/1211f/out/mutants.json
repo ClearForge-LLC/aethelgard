@@ -1,0 +1,122 @@
+[
+ {
+  "mutant": "M1 answers: any pin",
+  "verdict": "killed",
+  "failing": []
+ },
+ {
+  "mutant": "M2 answers: any second end",
+  "verdict": "killed",
+  "failing": []
+ },
+ {
+  "mutant": "M3 the lift never answers",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M4 reference emitter-numbered",
+  "verdict": "build-break",
+  "failing": []
+ },
+ {
+  "mutant": "M5 capacitance",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M6 rating",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M7 footprint",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M8 symbol",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm"
+  ]
+ },
+ {
+  "mutant": "M9 ends swapped",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M10 no note",
+  "verdict": "killed",
+  "failing": [
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M11 note without the source",
+  "verdict": "killed",
+  "failing": [
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M12 not anchored",
+  "verdict": "killed",
+  "failing": [
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M13 drawn not recorded",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M14 dropped bulk not refused",
+  "verdict": "killed",
+  "failing": [
+   "a_bulk_on_a_row_that_states_its_value_is_refused_before_eda"
+  ]
+ },
+ {
+  "mutant": "M15 electrolytic row refused",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm"
+  ]
+ },
+ {
+  "mutant": "M16 bulk reference not claimed",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ },
+ {
+  "mutant": "M17 BOM note dropped",
+  "verdict": "killed",
+  "failing": [
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ }
+]

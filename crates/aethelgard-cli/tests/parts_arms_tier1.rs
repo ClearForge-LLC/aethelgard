@@ -11,8 +11,8 @@
 //! - an arm's part removed from the table: its list entry has no row;
 //! - an arm added for a row, its list not updated: the row draws, unlisted.
 //!
-//! An arm written for a part neither the table nor the list holds is the
-//! source scan's in `schematic.rs` (`the_arms_are_the_known_parts`).
+//! An arm written for a part neither the table nor the list holds is
+//! refused by `schematic_arms.rs`'s rows-against-`KNOWN_PARTS` test.
 
 mod common;
 

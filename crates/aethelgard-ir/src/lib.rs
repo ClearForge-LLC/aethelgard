@@ -119,9 +119,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// bring-up's `HSERDY` bound with its source, which no default supplies; a
 /// `null` HSE carries neither, so a committed specification moved by its
 /// version line alone.
+/// Version 24 requires `bulk` on every pin device (`AET-WO-1211e`, renumbered
+/// from 23 by the same rule, merging after `4240b`): `null`, or the bulk
+/// capacitor on the supply its part's row leaves unstated; a committed
+/// specification moved by its version line alone.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 23;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 24;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -541,9 +545,12 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// kernels `pll1_q` and `pclk` (`AET-WO-4240b` Q2, Q3, Q6, renumbered from
 /// 14 by the same rule), version 16 an ADC input's `bits` and a pin device's
 /// `bridges` (`AET-WO-1211b` S1, ruled: the declared mode, inputs and enable;
-/// every datasheet value is the part's row, looked up by part and mode); an
-/// older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 16;
+/// every datasheet value is the part's row, looked up by part and mode),
+/// version 17 an input's `active` and `pulled`, a pin device's ADC input's
+/// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
+/// twin and `verify` read the solved topology alone, `RUL-16`); an older
+/// file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 17;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds

@@ -661,6 +661,7 @@ fn a_pin_device_is_refused_as_not_judged() {
         SolvedPinDevice {
             part: "WAKE_SWITCH".into(),
             bridges: Default::default(),
+            supplies: Default::default(),
         },
     );
     t.gpio.insert(
@@ -670,6 +671,8 @@ fn a_pin_device_is_refused_as_not_judged() {
             direction: Direction::Input,
             initial: None,
             pull: Some(McuPull::Up),
+            active: Some(aethelgard_ir::motor::Level::Low),
+            pulled: Some(aethelgard_ir::motor::Level::High),
         },
     );
     t.pin_speeds.insert("WAKE".into(), 0);
@@ -696,6 +699,8 @@ fn an_input_gpio_entry_is_refused_as_not_judged() {
             direction: Direction::Input,
             initial: None,
             pull: Some(McuPull::Up),
+            active: Some(aethelgard_ir::motor::Level::Low),
+            pulled: Some(aethelgard_ir::motor::Level::High),
         },
     );
     let config = elf::read(&Elf::default().bytes()).unwrap();

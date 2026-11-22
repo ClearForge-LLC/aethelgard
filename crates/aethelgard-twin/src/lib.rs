@@ -40,6 +40,7 @@ pub mod analog;
 pub mod boot;
 pub mod hse;
 pub mod model;
+pub mod pins;
 pub mod platform;
 pub mod serial;
 pub mod timer;
@@ -55,7 +56,7 @@ pub enum TwinError {
     #[error("pin `{pin}` is not a GPIO pin name (`P[A-K]` and 0 to 15)")]
     InvalidPin { pin: String },
     #[error(
-        "peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels, USARTn or UARTn of a serial port)"
+        "peripheral `{peripheral}` has no Renode model here (I2Cn, SPIn, TIMn with channels, USARTn or UARTn of a serial port, ADC1 or ADC3 of a pin device)"
     )]
     UnsupportedPeripheral { peripheral: String },
     #[error(
@@ -120,12 +121,21 @@ pub enum TwinError {
     },
     #[error("a model of our own is not pinned (AET-WO-4220 D6): {why}")]
     ModelUnpinned { why: String },
-    /// `AET-WO-1211a`: the twin models no pin device (its GPIO input, its
-    /// ADC input) until a work order builds it.
+    /// `AET-WO-1211c`: a pin device the twin cannot run, and what of it
+    /// (`pins`); every other pin device runs, witnessed on the MCU's side.
+    #[error("`{signal}`, a pin device's signal, is one the twin cannot run: {why}")]
+    PinDeviceNotSimulated { signal: String, why: String },
+    /// A scenario holds a net the twin must never drive: a declared output,
+    /// or any pin a peripheral drives (`AET-WO-1211` §4 G4: Renode's drive
+    /// overwrites `ODR`, with no contention).
     #[error(
-        "`{reference}` ({part}) is a pin device; the twin models none of its pins (AET-WO-1211a)"
+        "`{net}` is not a pin device's declared input: holding it would overwrite what the MCU drives on it, which Renode models as no contention (AET-WO-1211 §4 G4)"
     )]
-    PinDeviceNotSimulated { reference: String, part: String },
+    PinHeldIsOutput { net: String },
+    #[error("`{net}` is no signal the specification declares, so no pin is held")]
+    PinHeldUnknown { net: String },
+    #[error("`{net}` is not a pin device's ADC input, so no channel is set")]
+    AnalogValueUnknown { net: String },
     #[error(transparent)]
     Register(#[from] RegisterError),
 }
@@ -151,22 +161,11 @@ impl TwinError {
             Self::NoTimerRoute { .. } => "NoTimerRoute",
             Self::InvertedRoute { .. } => "InvertedRoute",
             Self::PinDeviceNotSimulated { .. } => "PinDeviceNotSimulated",
+            Self::PinHeldIsOutput { .. } => "PinHeldIsOutput",
+            Self::PinHeldUnknown { .. } => "PinHeldUnknown",
+            Self::AnalogValueUnknown { .. } => "AnalogValueUnknown",
             Self::Register(e) => e.kind(),
         }
-    }
-}
-
-/// Refuses a topology with a pin device (`AET-WO-1211a`). Every gpio entry
-/// the twin reads after this is a chip select.
-pub(crate) fn refuse_pin_devices(
-    topology: &aethelgard_ir::SolvedTopology,
-) -> Result<(), TwinError> {
-    match topology.pin_devices.iter().next() {
-        Some((reference, d)) => Err(TwinError::PinDeviceNotSimulated {
-            reference: reference.clone(),
-            part: d.part.clone(),
-        }),
-        None => Ok(()),
     }
 }
 
@@ -181,6 +180,8 @@ pub(crate) enum Kind {
     /// A USART or UART a serial port may use (`AET-WO-4300b`,
     /// `aethelgard_ir::serial::PERIPHERALS`).
     Serial,
+    /// ADC1 or ADC3, a pin device's input's (`AET-WO-1211c`, [`pins::ADCS`]).
+    Adc,
 }
 
 pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
@@ -206,6 +207,8 @@ pub(crate) fn kind(peripheral: &str) -> Result<Kind, TwinError> {
         Ok(Kind::Timer)
     } else if aethelgard_ir::serial::PERIPHERALS.contains(&peripheral) {
         Ok(Kind::Serial)
+    } else if pins::ADCS.iter().any(|(p, _)| *p == peripheral) {
+        Ok(Kind::Adc)
     } else {
         Err(TwinError::UnsupportedPeripheral {
             peripheral: peripheral.to_owned(),

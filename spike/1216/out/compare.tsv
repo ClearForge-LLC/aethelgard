@@ -1,0 +1,389 @@
+board	side	net	class	detail	matched
+connectors	drawn	EXT_MISO	connector	J2.4 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+connectors	drawn	EXT_MOSI	connector	J2.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+connectors	drawn	EXT_SCK	connector	J2.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+connectors	drawn	SWDIO	connector	J3.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+connectors	drawn	SWCLK	connector	J3.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+connectors	drawn	I2C_SCL	connector	J1.2 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+connectors	drawn	I2C_SDA	connector	J1.3 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+connectors	spec	I2C_SCL	connector	J1.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+connectors	spec	I2C_SDA	connector	J1.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+connectors	spec	EXT_SCK	connector	J2.2 SM06B-GHS-TB; the connector also carries VDD_5V	yes
+connectors	spec	EXT_MOSI	connector	J2.3 SM06B-GHS-TB; the connector also carries VDD_5V	yes
+connectors	spec	EXT_MISO	connector	J2.4 SM06B-GHS-TB; the connector also carries VDD_5V	yes
+connectors	spec	SWDIO	connector	J3.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+connectors	spec	SWCLK	connector	J3.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d1-24-i2c	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d1-24-i2c	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d1-24-i2c	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d1-24-i2c	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d3-24-i2c-12-spi	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d3-24-i2c-12-spi	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d3-24-i2c-12-spi	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d3-24-i2c-12-spi	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+driver-judges-nothing	drawn	SERVO1	connector	J4.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	SERVO2	connector	J4.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	CMD_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	HB_IN1	connector	J4.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	HB_IN2	connector	J4.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	CMD_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+driver-judges-nothing	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+driver-judges-nothing	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+driver-judges-nothing	spec	CMD_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+driver-judges-nothing	spec	CMD_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+driver-judges-nothing	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+driver-judges-nothing	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+driver-judges-nothing	spec	HB_IN1	connector	J4.1 SM06B-GHS-TB; carries no rail	yes
+driver-judges-nothing	spec	HB_IN2	connector	J4.2 SM06B-GHS-TB; carries no rail	yes
+driver-judges-nothing	spec	SERVO1	connector	J4.3 SM06B-GHS-TB; carries no rail	yes
+driver-judges-nothing	spec	SERVO2	connector	J4.4 SM06B-GHS-TB; carries no rail	yes
+four-layer-power	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+four-layer-power	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+four-layer-power	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+four-layer-power	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+four-layer	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+four-layer	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+four-layer	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+four-layer	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+hse-crystal-16	drawn	MOTOR3	connector	J3.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+hse-crystal-16	drawn	MOTOR4	connector	J3.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+hse-crystal-16	drawn	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+hse-crystal-16	drawn	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+hse-crystal-16	drawn	CRSF_TX	connector	J5.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+hse-crystal-16	drawn	CRSF_RX	connector	J5.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+hse-crystal-16	drawn	MOTOR1	connector	J3.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+hse-crystal-16	drawn	MOTOR2	connector	J3.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+hse-crystal-16	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+hse-crystal-16	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+hse-crystal-16	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+hse-crystal-16	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+hse-crystal-16	spec	MOTOR1	connector	J3.1 SM06B-GHS-TB; carries no rail	yes
+hse-crystal-16	spec	MOTOR2	connector	J3.2 SM06B-GHS-TB; carries no rail	yes
+hse-crystal-16	spec	MOTOR3	connector	J3.3 SM06B-GHS-TB; carries no rail	yes
+hse-crystal-16	spec	MOTOR4	connector	J3.4 SM06B-GHS-TB; carries no rail	yes
+hse-crystal-16	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+logger-4600	drawn	READOUT_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+logger-4600	drawn	READOUT_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+logger-4600	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+logger-4600	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+logger-4600	spec	READOUT_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+logger-4600	spec	READOUT_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+logger-4600	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+logger-4600	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+motors-dshot600	drawn	MOTOR1	connector	J1.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-dshot600	drawn	MOTOR2	connector	J1.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-dshot600	drawn	MOTOR3	connector	J1.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-dshot600	drawn	MOTOR4	connector	J1.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-dshot600	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+motors-dshot600	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+motors-dshot600	spec	MOTOR1	connector	J1.1 SM06B-GHS-TB; carries no rail	yes
+motors-dshot600	spec	MOTOR2	connector	J1.2 SM06B-GHS-TB; carries no rail	yes
+motors-dshot600	spec	MOTOR3	connector	J1.3 SM06B-GHS-TB; carries no rail	yes
+motors-dshot600	spec	MOTOR4	connector	J1.4 SM06B-GHS-TB; carries no rail	yes
+motors-dshot600	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+motors-dshot600	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+motors-pwm	drawn	MOTOR1	connector	J1.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-pwm	drawn	MOTOR2	connector	J1.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-pwm	drawn	MOTOR3	connector	J1.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-pwm	drawn	MOTOR4	connector	J1.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+motors-pwm	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+motors-pwm	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+motors-pwm	spec	MOTOR1	connector	J1.1 SM06B-GHS-TB; carries no rail	yes
+motors-pwm	spec	MOTOR2	connector	J1.2 SM06B-GHS-TB; carries no rail	yes
+motors-pwm	spec	MOTOR3	connector	J1.3 SM06B-GHS-TB; carries no rail	yes
+motors-pwm	spec	MOTOR4	connector	J1.4 SM06B-GHS-TB; carries no rail	yes
+motors-pwm	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+motors-pwm	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+pair-standin	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+pair-standin	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+pair-standin	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+pair-standin	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-bench	drawn	NRST	connector	J2.3 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-bench	drawn	NRST	test_point	TP11.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	FLASH_CS	test_point	TP6.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	SPI_SCK	test_point	TP3.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	SPI_MISO	test_point	TP5.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	SPI_MOSI	test_point	TP4.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-bench	drawn	CONSOLE_TX	test_point	TP7.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-bench	drawn	CONSOLE_RX	test_point	TP8.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-bench	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-bench	drawn	I2C_SCL	test_point	TP2.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	I2C_SDA	test_point	TP1.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	drawn	BOOT0	connector	J2.2 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-bench	drawn	BOOT0	test_point	TP12.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-bench	spec	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-bench	spec	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-bench	spec	BOOT0	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-bench	spec	NRST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-bench	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-bench	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-bench	spec	I2C_SDA	test_point	TP1	yes
+sentinel-01-bench	spec	I2C_SCL	test_point	TP2	yes
+sentinel-01-bench	spec	SPI_SCK	test_point	TP3	yes
+sentinel-01-bench	spec	SPI_MOSI	test_point	TP4	yes
+sentinel-01-bench	spec	SPI_MISO	test_point	TP5	yes
+sentinel-01-bench	spec	FLASH_CS	test_point	TP6	yes
+sentinel-01-bench	spec	CONSOLE_TX	test_point	TP7	yes
+sentinel-01-bench	spec	CONSOLE_RX	test_point	TP8	yes
+sentinel-01-bench	spec	NRST	test_point	TP11	yes
+sentinel-01-bench	spec	BOOT0	test_point	TP12	yes
+sentinel-01-ext-bmp581	drawn	NRST	connector	J2.3 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	NRST	test_point	TP3.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	FLASH_CS	test_point	TP7.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	SPI_SCK	test_point	TP10.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	SPI_MISO	test_point	TP8.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	SPI_MOSI	test_point	TP9.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	EXT_SCL	connector	J4.2 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	EXT_SCL	test_point	TP11.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	EXT_SDA	connector	J4.3 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	EXT_SDA	test_point	TP12.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	CONSOLE_TX	test_point	TP6.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	CONSOLE_RX	test_point	TP5.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	I2C_SCL	test_point	TP13.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	I2C_SDA	test_point	TP14.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	drawn	BOOT0	connector	J2.2 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-ext-bmp581	drawn	BOOT0	test_point	TP2.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01-ext-bmp581	spec	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-ext-bmp581	spec	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-ext-bmp581	spec	BOOT0	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	NRST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	EXT_SCL	connector	J4.2 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	EXT_SDA	connector	J4.3 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-ext-bmp581	spec	BOOT0	test_point	TP2	yes
+sentinel-01-ext-bmp581	spec	NRST	test_point	TP3	yes
+sentinel-01-ext-bmp581	spec	CONSOLE_RX	test_point	TP5	yes
+sentinel-01-ext-bmp581	spec	CONSOLE_TX	test_point	TP6	yes
+sentinel-01-ext-bmp581	spec	FLASH_CS	test_point	TP7	yes
+sentinel-01-ext-bmp581	spec	SPI_MISO	test_point	TP8	yes
+sentinel-01-ext-bmp581	spec	SPI_MOSI	test_point	TP9	yes
+sentinel-01-ext-bmp581	spec	SPI_SCK	test_point	TP10	yes
+sentinel-01-ext-bmp581	spec	EXT_SCL	test_point	TP11	yes
+sentinel-01-ext-bmp581	spec	EXT_SDA	test_point	TP12	yes
+sentinel-01-ext-bmp581	spec	I2C_SCL	test_point	TP13	yes
+sentinel-01-ext-bmp581	spec	I2C_SDA	test_point	TP14	yes
+sentinel-01-minimal	drawn	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-minimal	drawn	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01-minimal	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-minimal	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01-minimal	spec	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-minimal	spec	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+sentinel-01-minimal	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01-minimal	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	drawn	NRST	connector	J2.3 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	NRST	test_point	TP3.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	FLASH_CS	test_point	TP7.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	SPI_SCK	test_point	TP10.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	SPI_MISO	test_point	TP8.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	SPI_MOSI	test_point	TP9.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	EXT_SCL	connector	J4.2 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	EXT_SCL	test_point	TP11.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	EXT_SDA	connector	J4.3 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	EXT_SDA	test_point	TP12.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01	drawn	CONSOLE_TX	test_point	TP6.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-01	drawn	CONSOLE_RX	test_point	TP5.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	I2C_SCL	test_point	TP13.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	I2C_SDA	test_point	TP14.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	drawn	BOOT0	connector	J2.2 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-01	drawn	BOOT0	test_point	TP2.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-01	spec	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+sentinel-01	spec	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+sentinel-01	spec	BOOT0	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	NRST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	EXT_SCL	connector	J4.2 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	EXT_SDA	connector	J4.3 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-01	spec	BOOT0	test_point	TP2	yes
+sentinel-01	spec	NRST	test_point	TP3	yes
+sentinel-01	spec	CONSOLE_RX	test_point	TP5	yes
+sentinel-01	spec	CONSOLE_TX	test_point	TP6	yes
+sentinel-01	spec	FLASH_CS	test_point	TP7	yes
+sentinel-01	spec	SPI_MISO	test_point	TP8	yes
+sentinel-01	spec	SPI_MOSI	test_point	TP9	yes
+sentinel-01	spec	SPI_SCK	test_point	TP10	yes
+sentinel-01	spec	EXT_SCL	test_point	TP11	yes
+sentinel-01	spec	EXT_SDA	test_point	TP12	yes
+sentinel-01	spec	I2C_SCL	test_point	TP13	yes
+sentinel-01	spec	I2C_SDA	test_point	TP14	yes
+sentinel-02-bench	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-bench	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-bench	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-bench	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-own	drawn	CONSOLE_TX	connector	J2.2 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-own	drawn	CONSOLE_RX	connector	J2.3 SM04B-GHS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-own	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-own	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-own	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-own	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-own	spec	CONSOLE_TX	connector	J2.2 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-own	spec	CONSOLE_RX	connector	J2.3 SM04B-GHS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-power	drawn	VBAT_SENSE	resistor	R50.2 100k CRCW0603_F_K rails=VBAT hop=- flag=yes:VBAT	yes
+sentinel-02-power	drawn	IMU_CS	ic	U13.4 TXU0304PW rails=GND,VDD_1V8,VDD_3V3 hop=- flag=yes:VDD_1V8	yes
+sentinel-02-power	drawn	IMU_MISO	ic	U13.5 TXU0304PW rails=GND,VDD_1V8,VDD_3V3 hop=- flag=yes:VDD_1V8	yes
+sentinel-02-power	drawn	IMU_MOSI	ic	U13.3 TXU0304PW rails=GND,VDD_1V8,VDD_3V3 hop=- flag=yes:VDD_1V8	yes
+sentinel-02-power	drawn	IMU_SCK	ic	U13.2 TXU0304PW rails=GND,VDD_1V8,VDD_3V3 hop=- flag=yes:VDD_1V8	yes
+sentinel-02-power	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-power	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-power	spec	VBAT_SENSE	battery_divider	power.sense[0] R50/R51 100000/10000 ohm, each +/-3.65 %	yes
+sentinel-02-power	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-power	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-shaped	drawn	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	CRSF_TX	connector	J5.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	CRSF_RX	connector	J5.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	MOTOR1	connector	J3.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	MOTOR2	connector	J3.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	MOTOR3	connector	J3.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	MOTOR4	connector	J3.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-shaped	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-02-shaped	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-shaped	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-02-shaped	spec	MOTOR1	connector	J3.1 SM06B-GHS-TB; carries no rail	yes
+sentinel-02-shaped	spec	MOTOR2	connector	J3.2 SM06B-GHS-TB; carries no rail	yes
+sentinel-02-shaped	spec	MOTOR3	connector	J3.3 SM06B-GHS-TB; carries no rail	yes
+sentinel-02-shaped	spec	MOTOR4	connector	J3.4 SM06B-GHS-TB; carries no rail	yes
+sentinel-02-shaped	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	drawn	VBAT_SENSE	resistor	R50.2 100k CRCW0603_F_K rails=VBAT hop=- flag=yes:VBAT	yes
+sentinel-03	drawn	NRST	connector	J2.3 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-03	drawn	NRST	test_point	TP25.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	FLASH_CS	test_point	TP11.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	CRSF_TX	connector	J6.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	CRSF_TX	test_point	TP15.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	CRSF_RX	connector	J6.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	CRSF_RX	test_point	TP16.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MOTOR1	connector	J5.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	MOTOR1	test_point	TP19.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MOTOR2	connector	J5.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	MOTOR2	test_point	TP20.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MOTOR3	connector	J5.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	MOTOR3	test_point	TP21.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MOTOR4	connector	J5.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	MOTOR4	test_point	TP22.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	EXT_SCL	connector	J8.2 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	EXT_SCL	test_point	TP4.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	EXT_SDA	connector	J8.3 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	EXT_SDA	test_point	TP3.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	CONSOLE_TX	test_point	TP13.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+sentinel-03	drawn	CONSOLE_RX	test_point	TP14.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-03	drawn	SWDIO	test_point	TP26.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-03	drawn	SWCLK	test_point	TP27.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MAVLINK_TX	connector	J7.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	MAVLINK_TX	test_point	TP17.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	MAVLINK_RX	connector	J7.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+sentinel-03	drawn	MAVLINK_RX	test_point	TP18.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	I2C_SCL	test_point	TP2.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	I2C_SDA	test_point	TP1.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	drawn	BOOT0	connector	J2.2 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+sentinel-03	drawn	BOOT0	test_point	TP24.1 TestPoint rails=- hop=- flag=probe	yes
+sentinel-03	spec	VBAT_SENSE	battery_divider	power.sense[0] R50/R51 100000/10000 ohm, each +/-3.65 %	yes
+sentinel-03	spec	CONSOLE_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+sentinel-03	spec	CONSOLE_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+sentinel-03	spec	BOOT0	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-03	spec	NRST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-03	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-03	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+sentinel-03	spec	MOTOR1	connector	J5.1 SM06B-GHS-TB; carries no rail	yes
+sentinel-03	spec	MOTOR2	connector	J5.2 SM06B-GHS-TB; carries no rail	yes
+sentinel-03	spec	MOTOR3	connector	J5.3 SM06B-GHS-TB; carries no rail	yes
+sentinel-03	spec	MOTOR4	connector	J5.4 SM06B-GHS-TB; carries no rail	yes
+sentinel-03	spec	CRSF_TX	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	CRSF_RX	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	MAVLINK_TX	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	MAVLINK_RX	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	EXT_SCL	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+sentinel-03	spec	EXT_SDA	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+sentinel-03	spec	I2C_SDA	test_point	TP1	yes
+sentinel-03	spec	I2C_SCL	test_point	TP2	yes
+sentinel-03	spec	EXT_SDA	test_point	TP3	yes
+sentinel-03	spec	EXT_SCL	test_point	TP4	yes
+sentinel-03	spec	FLASH_CS	test_point	TP11	yes
+sentinel-03	spec	CONSOLE_TX	test_point	TP13	yes
+sentinel-03	spec	CONSOLE_RX	test_point	TP14	yes
+sentinel-03	spec	CRSF_TX	test_point	TP15	yes
+sentinel-03	spec	CRSF_RX	test_point	TP16	yes
+sentinel-03	spec	MAVLINK_TX	test_point	TP17	yes
+sentinel-03	spec	MAVLINK_RX	test_point	TP18	yes
+sentinel-03	spec	MOTOR1	test_point	TP19	yes
+sentinel-03	spec	MOTOR2	test_point	TP20	yes
+sentinel-03	spec	MOTOR3	test_point	TP21	yes
+sentinel-03	spec	MOTOR4	test_point	TP22	yes
+sentinel-03	spec	BOOT0	test_point	TP24	yes
+sentinel-03	spec	NRST	test_point	TP25	yes
+sentinel-03	spec	SWDIO	test_point	TP26	yes
+sentinel-03	spec	SWCLK	test_point	TP27	yes
+serial-dshot-9600	drawn	CONSOLE_TX	connector	J2.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	CONSOLE_RX	connector	J2.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	MOTOR1	connector	J1.1 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	MOTOR2	connector	J1.2 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	MOTOR3	connector	J1.3 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	MOTOR4	connector	J1.4 SM06B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-dshot-9600	drawn	SWDIO	connector	J3.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+serial-dshot-9600	drawn	SWCLK	connector	J3.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+serial-dshot-9600	spec	MOTOR1	connector	J1.1 SM06B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	MOTOR2	connector	J1.2 SM06B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	MOTOR3	connector	J1.3 SM06B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	MOTOR4	connector	J1.4 SM06B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	CONSOLE_TX	connector	J2.1 SM04B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	CONSOLE_RX	connector	J2.2 SM04B-GHS-TB; carries no rail	yes
+serial-dshot-9600	spec	SWDIO	connector	J3.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+serial-dshot-9600	spec	SWCLK	connector	J3.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+serial-four	drawn	SBUS_TX	connector	J4.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-four	drawn	SBUS_RX	connector	J4.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+serial-four	drawn	GPS_TX	connector	J2.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	GPS_RX	connector	J2.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	CRSF_TX	connector	J3.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	CRSF_RX	connector	J3.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	MAVLINK_TX	connector	J1.2 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	MAVLINK_RX	connector	J1.3 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	SWDIO	connector	J5.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+serial-four	drawn	SWCLK	connector	J5.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+serial-four	drawn	I2C_SCL	connector	J2.4 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	drawn	I2C_SDA	connector	J2.5 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
+serial-four	spec	MAVLINK_TX	connector	J1.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	MAVLINK_RX	connector	J1.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	GPS_TX	connector	J2.2 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	GPS_RX	connector	J2.3 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	I2C_SCL	connector	J2.4 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	I2C_SDA	connector	J2.5 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	CRSF_TX	connector	J3.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	CRSF_RX	connector	J3.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	SBUS_TX	connector	J4.1 SM04B-GHS-TB; carries no rail	yes
+serial-four	spec	SBUS_RX	connector	J4.2 SM04B-GHS-TB; carries no rail	yes
+serial-four	spec	SWDIO	connector	J5.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+serial-four	spec	SWCLK	connector	J5.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+solve-stress	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+solve-stress	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+solve-stress	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+solve-stress	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+spi-only	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+spi-only	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+spi-only	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+spi-only	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+two-bme	drawn	SWDIO	connector	J1.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+two-bme	drawn	SWCLK	connector	J1.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+two-bme	spec	SWDIO	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+two-bme	spec	SWCLK	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes

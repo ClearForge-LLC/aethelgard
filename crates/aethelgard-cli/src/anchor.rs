@@ -32,6 +32,15 @@
 //! queue, so the next port's pacing is not tested in such a run (F1's lost
 //! test, never a false pass); its echo is still judged.
 //!
+//! A pin device (`AET-WO-1211c`) adds two hooks, each logging and acting on
+//! nothing:
+//! - each declared output's port's `BSRR` and `MODER`: every write logged
+//!   with the word before it, so the judge decides the output's level write
+//!   and its order before `MODER` makes it an output (`1211` §4 G1);
+//! - each ADC input's `DR`: every read logged, so the judge sees the
+//!   firmware read it. A `Read` hook's `value` is 0, never the word read
+//!   (measured, `1211c` H-probe), so the code is read back after the run.
+//!
 //! Every action is checked stale first (F5): it acts only when the core's
 //! executed instructions are exactly its anchor's plus its delay's, and
 //! otherwise logs that it did nothing. A rendered reset restarts the count,
@@ -110,6 +119,17 @@ pub enum Hook {
         value: u32,
         count: u64,
     },
+    /// `GPIO <address> <value> <before> <count>`: every `DoubleWord` write
+    /// of a declared output's port's `BSRR` or `MODER` (`AET-WO-1211c`).
+    Gpio {
+        address: u32,
+        value: u32,
+        before: u32,
+        count: u64,
+    },
+    /// `DR <input> <count>`: every `DoubleWord` read of an ADC input's data
+    /// register, by the input's index in the plan (`AET-WO-1211c`).
+    Dr { input: usize, count: u64 },
     /// `STALE STOP <timer> <anchor> <count>` or `STALE INJECT <port> <byte>
     /// <anchor> <count>`: an action whose count was not its anchor's plus
     /// its delay's, which did nothing.
@@ -148,6 +168,8 @@ impl Hook {
             | Self::Inject { count, .. }
             | Self::Tdr { count, .. }
             | Self::Step { count, .. }
+            | Self::Gpio { count, .. }
+            | Self::Dr { count, .. }
             | Self::Stale { count, .. } => *count,
         }
     }
@@ -247,6 +269,20 @@ pub fn parse(body: &str) -> Option<Option<Hook>> {
             Some(Hook::Step {
                 check: index(k)?,
                 value: hex(v)?,
+                count: dec(c)?,
+            })
+        })(),
+        ["GPIO", at, v, b, c] => (|| {
+            Some(Hook::Gpio {
+                address: hex(at)?,
+                value: hex(v)?,
+                before: hex(b)?,
+                count: dec(c)?,
+            })
+        })(),
+        ["DR", k, c] => (|| {
+            Some(Hook::Dr {
+                input: index(k)?,
                 count: dec(c)?,
             })
         })(),
@@ -438,6 +474,27 @@ pub fn step_hook(check: usize, status_at: u32) -> String {
         &format!(
             "self.Log(LogLevel.Warning, '{PREFIX_TAG}STEP {check} %x %d' % (value, cpu.ExecutedInstructions))"
         ),
+    )
+}
+
+/// The hook on a declared output's port register, `BSRR` or `MODER`
+/// (`AET-WO-1211c`): each `DoubleWord` write logged with the word before it.
+/// A narrower store, or one at another offset, fires no hook, and the
+/// output fails closed as unwitnessed.
+pub fn gpio_hook(address: u32) -> String {
+    hook(
+        address,
+        &format!(
+            "b = self.ReadDoubleWord({address:#x}); self.Log(LogLevel.Warning, '{PREFIX_TAG}GPIO %x %x %x %d' % ({address:#x}, value, b, cpu.ExecutedInstructions))"
+        ),
+    )
+}
+
+/// The hook on an ADC input's data register (`AET-WO-1211c`): each
+/// `DoubleWord` read logged by the input's index.
+pub fn dr_hook(input: usize, address: u32) -> String {
+    format!(
+        "sysbus AddWatchpointHook {address:#010x} DoubleWord Read \"self.Log(LogLevel.Warning, '{PREFIX_TAG}DR {input} %d' % (cpu.ExecutedInstructions))\""
     )
 }
 

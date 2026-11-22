@@ -50,34 +50,41 @@ fn the_last_row_is_the_version_literal_and_none_is_skipped() {
 }
 
 #[test]
-fn a_version_20_file_lists_21_22_and_23_with_their_work_orders() {
+fn a_version_20_file_lists_21_to_24_with_their_work_orders() {
     let e = refused(20);
     assert_eq!(e.kind(), "UnsupportedSchemaVersion");
     assert_eq!(e.id(), None);
     let c = changes(&e);
-    assert_eq!(versions_of(c), [21, 22, 23]);
+    assert_eq!(versions_of(c), [21, 22, 23, 24]);
     assert_eq!(
         c.iter().map(|c| c.work_order).collect::<Vec<_>>(),
-        ["AET-WO-1210", "AET-WO-1211a", "AET-WO-4240b"]
+        [
+            "AET-WO-1210",
+            "AET-WO-1211a",
+            "AET-WO-4240b",
+            "AET-WO-1211e"
+        ]
     );
     let m = e.to_string();
-    assert!(m.starts_with("schema_version is 20, not 23; "), "{m}");
+    assert!(m.starts_with("schema_version is 20, not 24; "), "{m}");
     for (v, wo) in [
         (21, "AET-WO-1210"),
         (22, "AET-WO-1211a"),
         (23, "AET-WO-4240b"),
+        (24, "AET-WO-1211e"),
     ] {
         assert!(m.contains(&format!(" {v} ({wo})")), "{m}");
     }
     assert!(m.contains("motor_outputs[].pwm.idle"), "{m}");
     assert!(m.contains("mcu.hse.crystal.startup_max_us"), "{m}");
+    assert!(m.contains("pin_devices[].bulk"), "{m}");
     assert!(!m.contains(" 20 ("), "{m}");
 }
 
 #[test]
-fn a_version_1_file_lists_2_to_23() {
+fn a_version_1_file_lists_2_to_24() {
     let c = changes(&refused(1));
-    assert_eq!(versions_of(c), (2..=23).collect::<Vec<_>>());
+    assert_eq!(versions_of(c), (2..=24).collect::<Vec<_>>());
     assert_eq!(c, CHANGES);
 }
 
@@ -86,7 +93,7 @@ fn a_newer_file_and_version_0_name_the_current_version_only() {
     for v in [SPECIFICATION_SCHEMA_VERSION + 1, 0, u32::MAX] {
         let e = refused(v);
         assert!(changes(&e).is_empty(), "{v}");
-        assert_eq!(e.to_string(), format!("schema_version is {v}, not 23"));
+        assert_eq!(e.to_string(), format!("schema_version is {v}, not 24"));
     }
 }
 

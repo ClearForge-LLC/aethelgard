@@ -341,8 +341,11 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 #[test]
 fn an_unknown_version_is_refused() {
     // [magic, version, ...] -> the version byte is the one right after the
-    // magic text. The trace's version is 15 since AET-WO-2304b added kind 31
-    // and the overrides' tags 6 and 7 (14 since AET-WO-4400g made kind
+    // magic text. The trace's version is 18 since AET-WO-1211c added kinds 33
+    // to 37 and the overrides' tags 8 and 9 (17 since AET-WO-2305 added kind
+    // 32, 16 since AET-WO-3305 narrowed kind 13's `absent`, 15 since
+    // AET-WO-2304b added kind 31
+    // and the overrides' tags 6 and 7, 14 since AET-WO-4400g made kind
     // 26's period the realized ns at kind 25's kernel clock, 13 since
     // AET-WO-2302 gave kinds 26 and 29 their windows and added kind 30, 12 since AET-WO-4230 added the
     // brown-out word, 11 since AET-WO-4300b added kinds 27

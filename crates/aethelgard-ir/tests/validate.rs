@@ -193,7 +193,8 @@ fn refuses_unsupported_schema_version() {
         20,
         21,
         22,
-        24,
+        23,
+        25,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -1332,8 +1333,10 @@ fn solved_refuses_version_and_hash() {
     // `adc_inputs` and a PWM output's `idle` (`AET-WO-1211a`), 14 the file
     // before `AET-WO-4240b`'s HSE tree (`flash_acr`, the start-up bound), 15
     // the file before an ADC input's `bits` and a pin device's `bridges`
-    // (`AET-WO-1211b`), 17 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17] {
+    // (`AET-WO-1211b`), 16 the file before an input's `active` and `pulled`,
+    // an ADC input's `transfer` and a pin device's `supplies`
+    // (`AET-WO-1211c` D7), 18 one this build does not know.
+    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3715,7 +3718,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             E::UnsupportedSchemaVersion {
                 changes: _,
                 version: 12,
-                expected: 23
+                expected: 24
             }
         ),
         "{e}"

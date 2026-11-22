@@ -1,0 +1,346 @@
+[
+ {
+  "id": "A1.1 a pull to another rail judged as mcu.supply's",
+  "status": "killed",
+  "by": [
+   "a_pin_with_no_held_structure_is_refused_above_the_floor",
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not"
+  ]
+ },
+ {
+  "id": "A1.2 the same-rail exemption dropped",
+  "status": "killed",
+  "by": [
+   "a_bulk_rated_at_or_below_the_domain_is_refused",
+   "a_limit_the_row_states_declared_again_is_refused",
+   "a_channel_input_outside_a_bridge_is_refused",
+   "a_mode_its_strap_does_not_select_is_refused"
+  ]
+ },
+ {
+  "id": "A1.3 the floor passes everything",
+  "status": "killed",
+  "by": [
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "a_pin_with_no_held_structure_is_refused_above_the_floor",
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not"
+  ]
+ },
+ {
+  "id": "A1.4 the floor's edge",
+  "status": "killed",
+  "by": [
+   "an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.5 an unpinned pull judged on an FT pin",
+  "status": "killed",
+  "by": [
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not",
+   "an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.6 a reset-pulled pin",
+  "status": "killed",
+  "by": [
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused"
+  ]
+ },
+ {
+  "id": "A1.7 PA14's reset pull-down",
+  "status": "killed",
+  "by": [
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused"
+  ]
+ },
+ {
+  "id": "A1.8 note 3's threshold raised",
+  "status": "killed",
+  "by": [
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused"
+  ]
+ },
+ {
+  "id": "A1.9 the structure's limit",
+  "status": "killed",
+  "by": [
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not",
+   "an_ft_pin_is_judged_below_5v5_to_the_millivolt",
+   "ft_takes_its_supply_at_the_minimum"
+  ]
+ },
+ {
+  "id": "A1.10 the limit's edge",
+  "status": "killed",
+  "by": [
+   "an_ft_pin_is_judged_below_5v5_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.11 VDD at its maximum",
+  "status": "killed",
+  "by": [
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not",
+   "ft_takes_its_supply_at_the_minimum",
+   "an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.12 the pull at its domain's minimum",
+  "status": "killed",
+  "by": [
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not",
+   "an_ft_pin_is_judged_below_5v5_to_the_millivolt",
+   "ft_takes_its_supply_at_the_minimum",
+   "an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.13 no supply term",
+  "status": "killed",
+  "by": [
+   "a_pin_with_no_held_structure_is_refused_above_the_floor",
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not",
+   "ft_takes_its_supply_at_the_minimum"
+  ]
+ },
+ {
+  "id": "A1.14 no cap",
+  "status": "killed",
+  "by": [
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "an_ft_pin_is_judged_below_5v5_to_the_millivolt"
+  ]
+ },
+ {
+  "id": "A1.15 every structure read as FT",
+  "status": "killed",
+  "by": [
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not"
+  ]
+ },
+ {
+  "id": "A1.16 an unheld pin assumed FT",
+  "status": "killed",
+  "by": [
+   "a_pin_with_no_held_structure_is_refused_above_the_floor"
+  ]
+ },
+ {
+  "id": "A1.17 the resistor pull not judged",
+  "status": "killed",
+  "by": [
+   "a_pin_with_no_held_structure_is_refused_above_the_floor",
+   "a_reset_pulled_pin_above_vdd_plus_0v3_is_refused",
+   "a_pull_to_the_motor_domain_is_refused_pinned_or_not",
+   "a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not"
+  ]
+ },
+ {
+  "id": "A2.1 VREF on GND",
+  "status": "killed",
+  "by": [
+   "vref_on_ground_is_refused"
+  ]
+ },
+ {
+  "id": "A2.2 a sense no input terminates",
+  "status": "killed",
+  "by": [
+   "a_trip_sense_no_analog_input_terminates_is_refused"
+  ]
+ },
+ {
+  "id": "A2.3 the trip below full scale",
+  "status": "killed",
+  "by": [
+   "a_vref_below_the_full_scale_is_refused_and_one_above_it_passes",
+   "a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused"
+  ]
+ },
+ {
+  "id": "A2.4 the trip's edge",
+  "status": "killed",
+  "by": [
+   "a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused"
+  ]
+ },
+ {
+  "id": "A2.5 VREF at its maximum",
+  "status": "killed",
+  "by": [
+   "a_vref_below_the_full_scale_is_refused_and_one_above_it_passes",
+   "a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused"
+  ]
+ },
+ {
+  "id": "A2.6 the sense pin filter",
+  "status": "killed",
+  "by": [
+   "a_vref_below_the_full_scale_is_refused_and_one_above_it_passes",
+   "a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused"
+  ]
+ },
+ {
+  "id": "A2.7 the trip not judged",
+  "status": "killed",
+  "by": [
+   "a_trip_sense_no_analog_input_terminates_is_refused",
+   "a_vref_below_the_full_scale_is_refused_and_one_above_it_passes",
+   "a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused",
+   "vref_on_ground_is_refused"
+  ]
+ },
+ {
+  "id": "B.1 a bulk the row does not admit",
+  "status": "killed",
+  "by": [
+   "bulk_on_a_drv8833_is_refused"
+  ]
+ },
+ {
+  "id": "B.2 a bulk left undeclared",
+  "status": "killed",
+  "by": [
+   "d1_without_bulk_is_refused_and_with_it_validates"
+  ]
+ },
+ {
+  "id": "B.3 the rating",
+  "status": "killed",
+  "by": [
+   "a_bulk_rated_at_or_below_the_domain_is_refused"
+  ]
+ },
+ {
+  "id": "B.4 the rating's edge",
+  "status": "killed",
+  "by": [
+   "a_bulk_rated_at_or_below_the_domain_is_refused"
+  ]
+ },
+ {
+  "id": "B.5 the domain at its minimum",
+  "status": "killed",
+  "by": [
+   "a_bulk_rated_at_or_below_the_domain_is_refused"
+  ]
+ },
+ {
+  "id": "B.6 any row a capacitor",
+  "status": "killed",
+  "by": [
+   "a_bulk_rated_at_or_below_the_domain_is_refused",
+   "a_bulk_s_part_reference_and_source_are_judged"
+  ]
+ },
+ {
+  "id": "B.7 an electrolytic refused",
+  "status": "killed",
+  "by": [
+   "a_bulk_s_part_reference_and_source_are_judged"
+  ]
+ },
+ {
+  "id": "B.8 bulk not judged",
+  "status": "killed",
+  "by": [
+   "a_bulk_s_part_reference_and_source_are_judged",
+   "a_bulk_rated_at_or_below_the_domain_is_refused",
+   "d1_without_bulk_is_refused_and_with_it_validates",
+   "bulk_on_a_drv8833_is_refused"
+  ]
+ },
+ {
+  "id": "B.9 bulk's reference not counted",
+  "status": "killed",
+  "by": [
+   "a_bulk_s_part_reference_and_source_are_judged"
+  ]
+ },
+ {
+  "id": "B.10 bulk's source not checked",
+  "status": "killed",
+  "by": [
+   "a_bulk_s_part_reference_and_source_are_judged"
+  ]
+ },
+ {
+  "id": "P.1 a family twice",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.2 a lower-case family",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.3 a family with no term",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.4 a term of zero",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.5 a pin not canonical",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.6 a structure of no held family",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.7 page 0",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.8 no pins",
+  "status": "killed",
+  "by": [
+   "a_malformed_io_row_is_refused"
+  ]
+ },
+ {
+  "id": "P.9 a trip on the wrong pins",
+  "status": "killed",
+  "by": [
+   "a_trip_or_bulk_row_on_the_wrong_pin_is_refused"
+  ]
+ },
+ {
+  "id": "P.10 a bulk_unstated on no supply",
+  "status": "killed",
+  "by": [
+   "a_trip_or_bulk_row_on_the_wrong_pin_is_refused"
+  ]
+ }
+]

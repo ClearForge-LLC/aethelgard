@@ -48,8 +48,14 @@ pub const VERSION: u64 = 1;
 /// 13's `absent` holds the addresses found absent during its own step, no
 /// longer during the whole run. 17 since `AET-WO-2305`: kind 32 holds a
 /// droop's recovery bound, read from the same boot undisturbed, and kind 19
-/// probes at it, no longer at a fixed 100 µs.
-pub const TRACE_VERSION: u64 = 17;
+/// probes at it, no longer at a fixed 100 µs. 18 since `AET-WO-1211c`: the
+/// twin runs a pin device (its GPIO and ADC inputs, and a motor output held
+/// at a static level): kinds 33 and 35 declare a GPIO signal and an ADC
+/// input before the boot, kinds 34 and 36 witness them after it, kind 37
+/// witnesses a motor output held at a static level (its kind 26's status is
+/// then `level`), and a scenario's overrides take tags 8 (`pin_held`) and 9
+/// (`analog_value`).
+pub const TRACE_VERSION: u64 = 18;
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.

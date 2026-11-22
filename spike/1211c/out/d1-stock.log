@@ -1,0 +1,164 @@
+Renode v1.17.0
+  build: 1.17.0+20260907gitf1dd1b4af.aet1605
+  build type: Release
+  runtime: .NET 8.0.12
+[04:03:34.4812] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) include @/repo/spike/1211c/kit/d1-stock.resc;  quit
+[04:03:34.5061] [INFO] Including script(s): /repo/spike/1211c/kit/d1-stock.resc
+[04:03:34.6530] [INFO] System bus created.
+[04:03:35.9491] [INFO] Pseudorandom Number Generator was created with seed: 1
+[04:03:36.1037] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
+[04:03:36.1057] [INFO] sysbus: Loading block of 2176 bytes length at 0x8000040.
+[04:03:36.1058] [INFO] sysbus: Loading block of 52 bytes length at 0x80008C0.
+[04:03:36.1058] [INFO] sysbus: Loading block of 8 bytes length at 0x20000000.
+[04:03:36.1058] [INFO] sysbus: Loading block of 4 bytes length at 0x80008F4.
+M4 GPIOA IDR at t=0 (PA11 held low)
+0x00000000
+[04:03:36.8228] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:36.8403] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
+[04:03:36.8492] [INFO] machine-0: Machine started.
+[04:03:36.9311] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x0
+[04:03:36.9312] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x4 (OutputType), value 0x0
+[04:03:36.9312] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0xC (PullUpPullDown), value 0x640A0002
+[04:03:36.9330] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x8 (OutputSpeed), returned 0x0
+[04:03:36.9361] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x8 (OutputSpeed), value 0x0
+[04:03:36.9363] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x20 (AlternateFunctionLow), returned 0x0
+[04:03:36.9363] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x20 (AlternateFunctionLow), value 0x1
+[04:03:36.9364] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x0
+[04:03:36.9364] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x2
+[04:03:36.9366] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x8 (OutputSpeed), returned 0x0
+[04:03:36.9366] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x8 (OutputSpeed), value 0x0
+[04:03:36.9366] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x24 (AlternateFunctionHigh), returned 0x0
+[04:03:36.9366] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x700
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x2
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x200002
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x200002
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x200002
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x8 (OutputSpeed), returned 0x0
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x8 (OutputSpeed), value 0x0
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x24 (AlternateFunctionHigh), returned 0x700
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x701
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x200002
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x220002
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x8 (OutputSpeed), returned 0x0
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x8 (OutputSpeed), value 0x0
+[04:03:36.9367] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x24 (AlternateFunctionHigh), returned 0x701
+[04:03:36.9368] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x24 (AlternateFunctionHigh), value 0x711
+[04:03:36.9368] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x220002
+[04:03:36.9368] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x2A0002
+[04:03:36.9387] [WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [29] when writing value 0x2000000C. Tags: RESERVED (0x1).
+[04:03:36.9389] [WARNING] usart1: Unhandled write to offset 0x0. Unhandled bits: [29] when writing value 0x2000000D. Tags: RESERVED (0x1).
+[04:03:36.9425] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x308 (CommonConfiguration), value 0x30000
+[04:03:36.9426] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x0
+[04:03:36.9427] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x10000100
+[04:03:36.9427] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x1000
+[04:03:36.9427] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x1000 (649)
+[04:03:36.9514] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0xC (Configuration1), value 0x80000008
+[04:03:36.9517] [WARNING] adc3: Unhandled write to offset 0xC. Unhandled bits: [31] when writing value 0x80000008. Tags: JQDIS (0x1).
+[04:03:36.9517] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x1C (ChannelPreselection), value 0x20
+[04:03:36.9517] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x14 (SamplingTime), value 0x38000
+[04:03:36.9517] [WARNING] adc3: Unhandled write to offset 0x14. Unhandled bits: [15-17] when writing value 0x38000. Tags: SMP5 (0x7).
+[04:03:36.9517] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x30 (RegularSequence1), value 0x140
+[04:03:36.9517] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x10010100
+[04:03:36.9518] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x90010100
+[04:03:36.9518] [WARNING] adc3: Unhandled write to offset 0x8. Unhandled bits: [31] when writing value 0x90010100. Tags: ADCAL (0x1).
+[04:03:36.9518] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x8 (Control), returned 0x1FC10100
+[04:03:36.9518] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x0 (InterruptAndStatus), value 0x1
+[04:03:36.9526] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x8 (Control), returned 0x1FC10100
+[04:03:36.9526] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x1FC10101
+[04:03:36.9526] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x1001
+[04:03:36.9526] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x8 (Control), returned 0x1FC10101
+[04:03:36.9526] [INFO] adc3: [cpu: 0x80008BC] WriteUInt32 to 0x8 (Control), value 0x1FC10104
+[04:03:36.9604] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x100F
+[04:03:36.9605] [INFO] adc3: [cpu: 0x80008A6] ReadUInt32 from 0x40 (DataRegister), returned 0x745
+[04:03:36.9605] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x28 (Prescaler), value 0x0
+[04:03:36.9607] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x2C (AutoReload), value 0xC7F
+[04:03:36.9611] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x34 (CaptureOrCompare1), value 0x0
+[04:03:36.9652] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x38 (CaptureOrCompare2), value 0x0
+[04:03:36.9654] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x18 (CaptureOrCompareMode1), value 0x6868
+[04:03:36.9669] [WARNING] timer1: Unhandled write to offset 0x18. Unhandled bits: [3, 11] when writing value 0x6868. Tags: Output compare 1 preload enable (OC1PE) (0x1), Output compare 2 preload enable (OC2PE) (0x1).
+[04:03:36.9669] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x1C (CaptureOrCompareMode2), value 0x0
+[04:03:36.9669] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x20 (CaptureOrCompareEnable), value 0x11
+[04:03:36.9672] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x44 (BreakAndDeadTime), value 0x8000
+[04:03:36.9672] [WARNING] timer1: Unhandled write to offset 0x44. Unhandled bits: [15] when writing value 0x8000. Tags: Main Output Enable (MOE) (0x1).
+[04:03:36.9672] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x14 (EventGeneration), value 0x1
+[04:03:36.9675] [INFO] timer1: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Control1), value 0x81
+[04:03:36.9730] [WARNING] timer2: Unhandled write to offset 0x18. Unhandled bits: [3] when writing value 0x68. Tags: Output compare 1 preload enable (OC1PE) (0x1).
+[04:03:36.9735] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x8 (OutputSpeed), returned 0x0
+[04:03:36.9735] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x8 (OutputSpeed), value 0x0
+[04:03:36.9735] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x18 (BitSet), value 0x20000
+[04:03:36.9736] [INFO] gpioPortA: [cpu: 0x80008A6] ReadUInt32 from 0x0 (Mode), returned 0x2A0002
+[04:03:36.9736] [INFO] gpioPortA: [cpu: 0x80008BC] WriteUInt32 to 0x0 (Mode), value 0x2A0006
+M4d GPIOA IDR at 10 ms, then 7 more instants 7 us apart (PA8 bit 8, PA9 bit 9, PA11 bit 11)
+0x00000000
+[04:03:37.5263] [INFO] machine-0: Machine paused.
+[04:03:37.5278] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5411] [INFO] machine-0: Machine resumed.
+0x00000000
+[04:03:37.5442] [INFO] machine-0: Machine paused.
+[04:03:37.5448] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5451] [INFO] machine-0: Machine resumed.
+[04:03:37.5491] [INFO] machine-0: Machine paused.
+0x00000000
+0x00000000
+0x00000000
+[04:03:37.5494] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5496] [INFO] machine-0: Machine resumed.
+[04:03:37.5497] [INFO] machine-0: Machine paused.
+[04:03:37.5498] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5500] [INFO] machine-0: Machine resumed.
+[04:03:37.5531] [INFO] machine-0: Machine paused.
+[04:03:37.5534] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5537] [INFO] machine-0: Machine resumed.
+0x00000000
+[04:03:37.5571] [INFO] machine-0: Machine paused.
+[04:03:37.5573] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5576] [INFO] machine-0: Machine resumed.
+[04:03:37.5612] [INFO] machine-0: Machine paused.
+0x00000000
+[04:03:37.5615] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:37.5618] [INFO] machine-0: Machine resumed.
+[04:03:41.8332] [INFO] machine-0: Machine paused.
+M4a boot word candidates: 0x20000000 (DTCM), 0x24000000 (AXI SRAM)
+0x2100B007
+0x00000000
+M4c GPIOA MODER, PUPDR, ODR, IDR
+0x002A0006
+0x640A0002
+0x00000000
+[04:03:41.8408] [INFO] gpioPortA: ReadUInt32 from 0x0 (Mode), returned 0x2A0006
+[04:03:41.8415] [INFO] gpioPortA: ReadUInt32 from 0xC (PullUpPullDown), returned 0x640A0002
+[04:03:41.8420] [INFO] gpioPortA: ReadUInt32 from 0x14 (OutputData), returned 0x0
+0x00000000
+M4e ADC3 CR, ISR, CFGR, PCSEL, SQR1, DR
+0x1FC10101
+0x0000100B
+[04:03:41.8434] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:03:41.8439] [INFO] adc3: ReadUInt32 from 0x8 (Control), returned 0x1FC10101
+[04:03:41.8441] [INFO] adc3: ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x100B
+0x00000008
+0x00000020
+0x00000140
+[04:03:41.8474] [INFO] adc3: ReadUInt32 from 0xC (Configuration1), returned 0x8
+[04:03:41.8479] [INFO] adc3: ReadUInt32 from 0x1C (ChannelPreselection), returned 0x20
+[04:03:41.8481] [INFO] adc3: ReadUInt32 from 0x30 (RegularSequence1), returned 0x140
+0x00000745
+[04:03:41.8506] [INFO] adc3: ReadUInt32 from 0x40 (DataRegister), returned 0x745
+M4d TIM1 CR1, CCR1, CCR2, ARR, PSC
+0x00000081
+0x00000000
+0x00000000
+0x00000C7F
+0x00000000
+cpu PC
+[04:03:41.8532] [INFO] timer1: ReadUInt32 from 0x0 (Control1), returned 0x81
+[04:03:41.8536] [INFO] timer1: ReadUInt32 from 0x34 (CaptureOrCompare1), returned 0x0
+[04:03:41.8539] [INFO] timer1: ReadUInt32 from 0x38 (CaptureOrCompare2), returned 0x0
+[04:03:41.8542] [INFO] timer1: ReadUInt32 from 0x2C (AutoReload), returned 0xC7F
+[04:03:41.8545] [INFO] timer1: ReadUInt32 from 0x28 (Prescaler), returned 0x0
+0x8000868
+M4-END
+Renode is quitting
+exit 0

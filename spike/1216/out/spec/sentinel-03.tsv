@@ -1,0 +1,37 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+VBAT_SENSE	PF3	FT_ha	battery_divider	power.sense[0] R50/R51 100000/10000 ohm, each +/-3.65 %	battery	yes: the tree's root	2536	9091	battery 6 x 4350 mV; CRCW0603_F_K/CRCW0603_F_K rows (tolerance + TCR + drift)	-
+CONSOLE_TX	PA9	FT_u	connector	J1.1 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+CONSOLE_RX	PA10	FT_u	connector	J1.2 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+BOOT0	BOOT0	B	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+NRST	NRST	RST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWDIO	PA13	FT	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR1	PE9	TT_ha	connector	J5.1 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR2	PE11	FT_ha	connector	J5.2 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR3	PE13	FT_h	connector	J5.3 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR4	PE14	FT_h	connector	J5.4 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+CRSF_TX	PA2	FT_a	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+CRSF_RX	PA3	FT_ha	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+MAVLINK_TX	PC10	FT_ha	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+MAVLINK_RX	PC11	FT_h	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+EXT_SCL	PB10	FT_f	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+EXT_SDA	PB11	FT_f	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+I2C_SDA	PB7	FT_fa	test_point	TP1	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+I2C_SCL	PB6	FT_f	test_point	TP2	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+EXT_SDA	PB11	FT_f	test_point	TP3	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+EXT_SCL	PB10	FT_f	test_point	TP4	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+FLASH_CS	PA0	FT_a	test_point	TP11	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CONSOLE_TX	PA9	FT_u	test_point	TP13	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CONSOLE_RX	PA10	FT_u	test_point	TP14	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CRSF_TX	PA2	FT_a	test_point	TP15	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CRSF_RX	PA3	FT_ha	test_point	TP16	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MAVLINK_TX	PC10	FT_ha	test_point	TP17	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MAVLINK_RX	PC11	FT_h	test_point	TP18	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MOTOR1	PE9	TT_ha	test_point	TP19	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MOTOR2	PE11	FT_ha	test_point	TP20	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MOTOR3	PE13	FT_h	test_point	TP21	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+MOTOR4	PE14	FT_h	test_point	TP22	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+BOOT0	BOOT0	B	test_point	TP24	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+NRST	NRST	RST	test_point	TP25	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+SWDIO	PA13	FT	test_point	TP26	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+SWCLK	PA14	FT	test_point	TP27	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-

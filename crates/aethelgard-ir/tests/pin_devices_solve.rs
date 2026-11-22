@@ -80,6 +80,9 @@ fn adc(pin: &str, peripheral: &str, channel: &str) -> SolvedAdcInput {
         channel: channel.into(),
         // Every call is D1's input, declared at 12 bits (`AET-WO-1211b` S1).
         bits: Some(12),
+        transfer: Some(aethelgard_ir::pin_devices::SolvedTransfer::CurrentOutput {
+            device: "U2".into(),
+        }),
     }
 }
 
@@ -116,9 +119,16 @@ fn the_device_s_input_then_signals_come_after_every_other_pin() {
             direction: Direction::Input,
             initial: None,
             pull: Some(McuPull::None),
+            // `AET-WO-1211c` D7: active low, and R3 to VDD_3V3 holds it high.
+            active: Some(Level::Low),
+            pulled: Some(Level::High),
         }
     );
     assert_eq!(s.pin_devices["U2"].part, "DRV8876PWPR");
+    assert_eq!(
+        s.pin_devices["U2"].supplies,
+        [("VM".to_owned(), "VMOTOR".to_owned())].into()
+    );
     assert_eq!(s.pin_speeds["DRV_NFAULT"], 0);
 }
 

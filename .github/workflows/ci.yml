@@ -484,9 +484,9 @@ jobs:
       # 200 (AET-WO-4241, at its merge of main 472d2d84, which held 199): one
       # tier-2 test in twin_tier2.rs,
       # the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions.
-      # 202 (AET-WO-1606, on main 122378c7, which held 201): one tier-2 test,
-      # board_tier2.rs build_names_the_rustc_cargo_ran.
-      TIER2_MIN: "202"
+      # 203 (AET-WO-1606, at its merge of main c9d4096b, which held 202): one
+      # tier-2 test, board_tier2.rs build_names_the_rustc_cargo_ran.
+      TIER2_MIN: "203"
     steps:
       # A required check: it reports the routing (AET-WO-1911 §1.1). Green on a docs-only pull request
       # only when the route job succeeded, said docs, and the build and every shard were skipped.

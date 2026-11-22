@@ -1,0 +1,61 @@
+# M4: D1's own generated firmware (/cache/m/d1/fw.elf, from today.sh) on the twin's platform for 4600's motor driver
+# (/cache/m/djn.repl: the same MCU, clock, TIM1 on PA8/PA9 and TIM2 on PA0/PA1 with observers, the PWR
+# model; D1 itself has no .repl until 1211c). As the twin's boot plan: seed, quantum, the ELF, the vector table at flash.
+# Before the run: 1.5 V on ADC3 INP5 (PF3, DRV_IPROPI) and PA11 (nFAULT) driven low. GPIOA, ADC3 and
+# TIM1 accesses are logged, so the order of PA1's BSRR and MODER writes is read from the log.
+emulation SetSeed 1
+emulation SetGlobalQuantum "0.000100000"
+mach create
+machine LoadPlatformDescription @/cache/m/djn.repl
+sysbus LoadELF @/cache/m/d1/fw.elf
+cpu VectorTableOffset 0x08000000
+sysbus LogPeripheralAccess sysbus.gpioPortA true
+sysbus LogPeripheralAccess sysbus.adc3 true
+sysbus LogPeripheralAccess sysbus.timer1 true
+logLevel -1 gpioPortA.pa8obs
+logLevel -1 gpioPortA.pa9obs
+logLevel -1 gpioPortA.pa1obs
+adc3 SetVoltage 1500000 5
+gpioPortA OnGPIO 11 false
+echo "M4 GPIOA IDR at t=0 (PA11 held low)"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.010"
+echo "M4d GPIOA IDR at 10 ms, then 7 more instants 7 us apart (PA8 bit 8, PA9 bit 9, PA11 bit 11)"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.000007"
+sysbus ReadDoubleWord 0x58020010
+emulation RunFor "0.089951"
+echo "M4a boot word candidates: 0x20000000 (DTCM), 0x24000000 (AXI SRAM)"
+sysbus ReadDoubleWord 0x20000000
+sysbus ReadDoubleWord 0x24000000
+echo "M4c GPIOA MODER, PUPDR, ODR, IDR"
+sysbus ReadDoubleWord 0x58020000
+sysbus ReadDoubleWord 0x5802000C
+sysbus ReadDoubleWord 0x58020014
+sysbus ReadDoubleWord 0x58020010
+echo "M4e ADC3 CR, ISR, CFGR, PCSEL, SQR1, DR"
+sysbus ReadDoubleWord 0x58026008
+sysbus ReadDoubleWord 0x58026000
+sysbus ReadDoubleWord 0x5802600C
+sysbus ReadDoubleWord 0x5802601C
+sysbus ReadDoubleWord 0x58026030
+sysbus ReadDoubleWord 0x58026040
+echo "M4d TIM1 CR1, CCR1, CCR2, ARR, PSC"
+sysbus ReadDoubleWord 0x40010000
+sysbus ReadDoubleWord 0x40010034
+sysbus ReadDoubleWord 0x40010038
+sysbus ReadDoubleWord 0x4001002C
+sysbus ReadDoubleWord 0x40010028
+echo "cpu PC"
+cpu PC
+echo "M4-END"

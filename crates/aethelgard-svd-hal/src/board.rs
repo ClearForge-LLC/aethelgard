@@ -9986,6 +9986,7 @@ mod tests {
             SolvedPinDevice {
                 part: "WAKE_SWITCH".into(),
                 bridges: Default::default(),
+                supplies: Default::default(),
             },
         );
         s.gpio.insert(
@@ -9995,6 +9996,8 @@ mod tests {
                 direction: Direction::Input,
                 initial: None,
                 pull: Some(McuPull::Up),
+                active: Some(aethelgard_ir::motor::Level::Low),
+                pulled: Some(aethelgard_ir::motor::Level::High),
             },
         );
         s.gpio

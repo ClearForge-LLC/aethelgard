@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"PinDeviceNotSimulated","id":null,"message":"`U2` (DRV8833PWPR) is a pin device: the twin drives and reads none of its pins until AET-WO-1211c; validate, solve and generate accept it, simulate does not"}}

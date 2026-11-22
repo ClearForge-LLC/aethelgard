@@ -53,6 +53,8 @@ fn solved_ccr(label: &str, pin: &str, channel: u8, ccr: u32) -> Record {
         arr: 2499,
         ccr,
         pwm: Some((400, 1000, 2000)),
+        idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+        resolution_ps: Some(1_000_000),
     }
 }
 
@@ -369,10 +371,12 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 2499,
                 ccr: 1000,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
-            "a solved motor output's protocol is unknown, or its PWM timing is not present exactly for PWM",
+            "a solved motor output's protocol is unknown, or its PWM timing, idle or tick is not present exactly for PWM",
             Record::MotorOutputSolved {
                 label: "M1".into(),
                 timer: "TIM1".into(),
@@ -384,10 +388,12 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 106,
                 ccr: 40,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
-            "a solved motor output's PSC, ARR or CCR is outside the timer (CCR from 1 to ARR - 1)",
+            "a solved motor output's CCR is not its idle's: 0 for low, ARR + 1 for high, else 1 to ARR - 1",
             Record::MotorOutputSolved {
                 label: "M1".into(),
                 timer: "TIM1".into(),
@@ -399,6 +405,8 @@ fn the_field_rules_hold_on_write_and_read() {
                 arr: 2499,
                 ccr: 2499,
                 pwm: Some((400, 1000, 2000)),
+                idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                resolution_ps: Some(1_000_000),
             },
         ),
         (
@@ -422,6 +430,48 @@ fn the_field_rules_hold_on_write_and_read() {
         assert_eq!(r.check(), Err(why), "{r:?}");
     }
     assert!(solved("M1", "PA8", 1).check().is_ok());
+    // `AET-WO-1211c`: kind 24's idle and tick (trace 18). An idle level is
+    // CCR 0 (low) or ARR + 1 (high); a pulse is inside the period; a DShot
+    // output carries neither, and a PWM output both.
+    use aethelgard_chaos::record::MotorIdle;
+    let with = |idle: Option<MotorIdle>, ccr: u32, resolution_ps: Option<u64>| {
+        let mut r = solved("M1", "PA8", 1);
+        if let Record::MotorOutputSolved {
+            idle: i,
+            ccr: c,
+            resolution_ps: t,
+            ..
+        } = &mut r
+        {
+            *i = idle;
+            *c = ccr;
+            *t = resolution_ps;
+        }
+        r
+    };
+    let ccr_why = "a solved motor output's CCR is not its idle's: 0 for low, ARR + 1 for high, else 1 to ARR - 1";
+    let shape_why = "a solved motor output's protocol is unknown, or its PWM timing, idle or tick is not present exactly for PWM";
+    let tick = Some(1_000_000);
+    assert_eq!(with(Some(MotorIdle::Low), 0, tick).check(), Ok(()));
+    assert_eq!(with(Some(MotorIdle::High), 2500, tick).check(), Ok(()));
+    assert_eq!(with(Some(MotorIdle::Low), 1000, tick).check(), Err(ccr_why));
+    assert_eq!(
+        with(Some(MotorIdle::High), 2499, tick).check(),
+        Err(ccr_why)
+    );
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 0, tick).check(),
+        Err(ccr_why)
+    );
+    assert_eq!(with(None, 1000, tick).check(), Err(shape_why));
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 1000, None).check(),
+        Err(shape_why)
+    );
+    assert_eq!(
+        with(Some(MotorIdle::PulseUs(1000)), 1000, Some(0)).check(),
+        Err(shape_why)
+    );
     assert!(witness("M1", "gpioPortA.pa8obs", "batched").check().is_ok());
 }
 
@@ -704,6 +754,8 @@ fn dshot_run(
         arr: 106,
         ccr: 40,
         pwm: None,
+        idle: None,
+        resolution_ps: None,
     };
     r[5] = Record::MotorTimingCheck {
         label: "M2".into(),
@@ -1289,4 +1341,50 @@ fn replay_refuses_each_window_and_stop_join_by_its_own_message() {
     assert_eq!(named(1, "error"), Ok(true));
     assert_eq!(named(2, "error"), Err(ORDER));
     assert_eq!(named(1, "info"), Err(ORDER));
+}
+
+/// `AET-WO-1211c` (trace 18): kind 24 carries the declared idle and tick, and
+/// replay re-judges kind 25 as `check_silicon` has since `AET-WO-1211a`: an
+/// output idling low at CCR 0 holds with a high time of 0, one idling high
+/// at ARR + 1 holds with a high time of the whole period, and a kind 25
+/// whose figures are not its idle's is refused.
+#[test]
+fn replay_re_derives_the_static_check_from_the_declared_idle() {
+    use aethelgard_chaos::record::MotorIdle;
+    let at_idle = |idle: MotorIdle, ccr: u32, high_ps: u64| {
+        let mut r = run("witnessed", true, true, vec![]);
+        if let Record::MotorOutputSolved {
+            idle: i, ccr: c, ..
+        } = &mut r[3]
+        {
+            *i = Some(idle);
+            *c = ccr;
+        }
+        if let Record::MotorTimingCheck {
+            high_ps: h,
+            nominal_high_ps: n,
+            ..
+        } = &mut r[5]
+        {
+            *h = high_ps;
+            *n = high_ps;
+        }
+        r
+    };
+    let judged = |r: &[Record]| {
+        let solved = r[3].clone();
+        let check = r[5].clone();
+        // The joins of kinds 24 and 25 alone: the witness of M2 is the
+        // pulse's, which a level output does not have, so only the static
+        // check's refusal is read here.
+        check_run(r)
+            .err()
+            .filter(|e| *e == CHECK_REFUSED)
+            .map(|_| (solved, check))
+    };
+    assert!(judged(&at_idle(MotorIdle::Low, 0, 0)).is_none());
+    assert!(judged(&at_idle(MotorIdle::High, 2500, 2_500_000_000)).is_none());
+    assert!(judged(&at_idle(MotorIdle::Low, 0, 1)).is_some());
+    assert!(judged(&at_idle(MotorIdle::High, 2500, 0)).is_some());
+    assert!(judged(&at_idle(MotorIdle::PulseUs(1000), 1000, 0)).is_some());
 }

@@ -1250,3 +1250,206 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
     let v: Value = serde_json::from_str(&replayed[0].1).unwrap();
     assert_eq!(v["state_sequence_hash"], run["state_sequence_hash"], "{v}");
 }
+
+/// `AET-WO-1211c` §2: D1 (`AET-WO-1211a`'s DRV8876 fixture) simulates, every
+/// witness of its pin device named: nSLEEP's BSRR write before MODER, nFAULT
+/// read at the level its pull holds it, IPROPI's code at 0 V, and the
+/// bridge's two inputs still at their idle low. Then its campaign: the
+/// baseline passes, nFAULT held low fails by `pin_device_input_asserted`,
+/// IPROPI at 2850 mV passes with the 12-bit code, each run replays to its
+/// hash, and a hold on nSLEEP is refused `PinHeldIsOutput` before any run.
+#[test]
+fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
+    let dir = scratch("d1-1211c");
+    let spec = dir.join("d1.json");
+    fs::copy(
+        root().join("crates/aethelgard-ir/tests/fixtures/d1-drv8876.json"),
+        &spec,
+    )
+    .unwrap();
+    let s = |p: &Path| p.to_str().unwrap().to_owned();
+    let tree = dir.join("gen");
+    let (code, out) = aethelgard(&["generate", "--spec", &s(&spec), "--out", &s(&tree)]);
+    assert_eq!(code, Some(0), "{out}");
+    let elf = dir.join("fw.elf");
+    let (code, out) = aethelgard(&[
+        "build",
+        "--crate",
+        &s(&tree.join("board")),
+        "--out",
+        &s(&elf),
+    ]);
+    assert_eq!(code, Some(0), "{out}");
+    let repl = tree.join("board/drv8876-ph-en.repl");
+    let (code, out) = aethelgard(&[
+        "simulate",
+        "--platform",
+        &s(&repl),
+        "--firmware",
+        &s(&elf),
+        "--spec",
+        &s(&spec),
+        "--for",
+        "100ms",
+    ]);
+    let v = lines(&out).pop().unwrap();
+    assert_eq!(
+        (code, v["verdict"].as_str()),
+        (Some(0), Some("pass")),
+        "{v}"
+    );
+    let gpio: Vec<(&str, &str, Option<&str>, Option<&str>)> = v["boot"]["gpio"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|g| {
+            (
+                g["net"].as_str().unwrap(),
+                g["status"].as_str().unwrap(),
+                g["bsrr"].as_str(),
+                g["read"].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        gpio,
+        [
+            ("DRV_NSLEEP", "witnessed", Some("0x00020000"), None),
+            ("DRV_NFAULT", "witnessed", None, Some("high"))
+        ],
+        "{v}"
+    );
+    let adc = &v["boot"]["adc"][0];
+    assert_eq!(
+        (
+            adc["status"].as_str(),
+            adc["expected"].as_u64(),
+            adc["observed"].as_u64(),
+            adc["reads"].as_u64()
+        ),
+        (Some("witnessed"), Some(0), Some(0), Some(1)),
+        "{v}"
+    );
+    for label in ["DRV_EN", "DRV_PH"] {
+        let m = v["boot"]["motor"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|m| m["label"] == label)
+            .unwrap();
+        assert_eq!(
+            (m["twin"]["status"].as_str(), m["level"]["status"].as_str()),
+            (Some("level"), Some("witnessed")),
+            "{m}"
+        );
+    }
+    let scenario = |name: &str, version: u32, expect: &str, findings: Value, overrides: Value| {
+        let path = dir.join(format!("{name}.json"));
+        fs::write(
+            &path,
+            serde_json::json!({"schema_version": version, "name": name, "base": "d1.json",
+                "expect": expect, "expect_findings": findings, "overrides": overrides})
+            .to_string(),
+        )
+        .unwrap();
+        s(&path)
+    };
+    let files = [
+        scenario(
+            "baseline",
+            1,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([]),
+        ),
+        scenario(
+            "nfault-held-low",
+            5,
+            "fail",
+            serde_json::json!(["pin_device_input_asserted"]),
+            serde_json::json!([{"pin_held": {"net": "DRV_NFAULT", "level": "low"}}]),
+        ),
+        scenario(
+            "ipropi-2850",
+            5,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([{"analog_value": {"net": "DRV_IPROPI", "millivolts": 2850}}]),
+        ),
+    ];
+    let archive = dir.join("archive");
+    let mut args = vec!["campaign", "--scenarios"];
+    args.extend(files.iter().map(String::as_str));
+    let (elf_s, archive_s) = (s(&elf), s(&archive));
+    args.extend(["--firmware", &elf_s, "--archive", &archive_s]);
+    let (code, out) = aethelgard(&args);
+    assert_eq!(code, Some(0), "{out}");
+    let runs = lines(&out);
+    for (name, verdict, findings) in [
+        ("baseline", "pass", serde_json::json!([])),
+        (
+            "nfault-held-low",
+            "fail",
+            serde_json::json!(["pin_device_input_asserted"]),
+        ),
+        ("ipropi-2850", "pass", serde_json::json!([])),
+    ] {
+        let l = line(&runs, name);
+        assert_eq!(
+            (l["verdict"].as_str(), l["matched"].as_bool()),
+            (Some(verdict), Some(true)),
+            "{l}"
+        );
+        assert_eq!(l["findings"], findings, "{l}");
+        let (code, replayed) = aethelgard(&["replay", "--archive", l["run"].as_str().unwrap()]);
+        let r = lines(&replayed).pop().unwrap();
+        assert_eq!(code, Some(0), "{r}");
+        assert_eq!(r["state_sequence_hash"], l["state_sequence_hash"], "{r}");
+    }
+    // The set value's code, archived (kind 35) and witnessed (kind 36).
+    let set = records(&run_dir(line(&runs, "ipropi-2850")));
+    assert!(
+        set.iter().any(|r| matches!(
+            r,
+            Record::PinAdcDeclared {
+                code: 3537,
+                held: true,
+                ..
+            }
+        )),
+        "{set:?}"
+    );
+    assert!(
+        set.iter().any(|r| matches!(
+            r,
+            Record::PinAdcWitness {
+                code: Some(3537),
+                ..
+            }
+        )),
+        "{set:?}"
+    );
+    let held = scenario(
+        "nsleep-held",
+        5,
+        "fail",
+        serde_json::json!(["pin_device_input_asserted"]),
+        serde_json::json!([{"pin_held": {"net": "DRV_NSLEEP", "level": "high"}}]),
+    );
+    let (code, out) = aethelgard(&[
+        "campaign",
+        "--scenarios",
+        &held,
+        "--firmware",
+        &elf_s,
+        "--archive",
+        &archive_s,
+    ]);
+    let v = lines(&out).pop().unwrap();
+    assert_eq!(
+        (code, v["error"]["kind"].as_str()),
+        (Some(2), Some("PinHeldIsOutput")),
+        "{v}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}

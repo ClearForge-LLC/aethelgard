@@ -1,0 +1,22 @@
+d1	validate	0	None 
+d1	solve	0	None 
+d1	generate	0	None 
+repl: 0
+d1	build	0	pass 
+elf d1 057207929d82c0f1f54c5d5e502839bd329d5c3f53389b3cb04b774300270545
+d1	simulate	2	PinDeviceNotSimulated 
+d2	validate	2	PartLimitUndeclared U2
+d2	solve	2	PartLimitUndeclared U2
+d2	generate	2	PartLimitUndeclared U2
+d2	simulate	2	PartLimitUndeclared U2
+d2g	validate	0	None 
+d2g	solve	0	None 
+d2g	generate	0	None 
+repl: 0
+d2g	build	0	pass 
+elf d2g 3cef8f18ade6ad8bac1f58c602d5e3e53e7e4f0b8b2035fe98ca083b7e9fa34e
+d2g	simulate	2	PinDeviceNotSimulated 
+d1	verify	2	DrawsNoBoard drv8876-ph-en
+d2g	verify-fab-out	3	CampaignCoverageShort 
+d2g	campaign:droop-vmotor	2	SchemaViolation 
+d2g	campaign:vmotor-out-of-band	2	ExpectContradiction vmotor-out-of-band

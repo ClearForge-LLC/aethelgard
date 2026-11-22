@@ -1,0 +1,17 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+CONSOLE_TX	PA9	FT_u	connector	J1.1 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+CONSOLE_RX	PA10	FT_u	connector	J1.2 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+BOOT0	BOOT0	B	connector	J2.2 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+NRST	NRST	RST	connector	J2.3 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWDIO	PA13	FT	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+I2C_SDA	PB7	FT_fa	test_point	TP1	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+I2C_SCL	PB6	FT_f	test_point	TP2	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+SPI_SCK	PA5	TT_ha	test_point	TP3	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+SPI_MOSI	PA7	TT_a	test_point	TP4	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+SPI_MISO	PA6	FT_a	test_point	TP5	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+FLASH_CS	PA0	FT_a	test_point	TP6	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CONSOLE_TX	PA9	FT_u	test_point	TP7	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+CONSOLE_RX	PA10	FT_u	test_point	TP8	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+NRST	NRST	RST	test_point	TP11	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
+BOOT0	BOOT0	B	test_point	TP12	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-

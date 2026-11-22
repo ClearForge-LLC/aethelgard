@@ -127,8 +127,21 @@ use sha2::{Digest, Sha256};
 /// device): with version 15 put back, the reference's output hashes to
 /// `c6b03832…ebec` and the stress fixture's to `757acade…d99d`, the old
 /// digests, exactly (measured).
-const REFERENCE_DIGEST: &str = "d5ff8d99978aef89d1d2baf51dc39b8d63a414992ffb2972398d0bbfbcd3019b";
-const STRESS_DIGEST: &str = "efd09e0f8870953d82505f37c8078d701bceb2342a4c29f13aa4179df964929b";
+/// Moved by `AET-WO-1211e` (specification 24, solved 16 unchanged), which
+/// moved only the specification's sha256: with `5e840088…a943` put back, the
+/// reference's output hashes to `d5ff8d99…019b`, and with the stress
+/// fixture's old sha256 its to `efd09e0f…929b`, the old digests, exactly
+/// (measured).
+/// Moved by `AET-WO-1211c` D7 (solved 17, specification 24 unchanged), which
+/// moved only `schema_version` (neither fixture has a pin device): with
+/// version 16 put back, each hashes to `1211e`'s digest exactly, which the
+/// test holds.
+const REFERENCE_DIGEST: &str = "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
+const STRESS_DIGEST: &str = "3a9d6f4ea98ce9ba1365b017b24c78f8d11ce11f86652fc6044c7fe8aa907222";
+/// `1211e`'s digests, solved version 16.
+const REFERENCE_DIGEST_16: &str =
+    "a6e65e992d1ec3fd7f790db23f950b5e9530bf0cb7b810c536101fdca4ed4801";
+const STRESS_DIGEST_16: &str = "67a9d96141b67d34f23419f86f5f2a42c76ff2877eb6b211576e2b6e2f354766";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -251,14 +264,16 @@ fn gate_clause_2_a_pin_set_twice_names_both_claimants_and_emits_nothing_else() {
 
 #[test]
 fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
-    for (file, digest) in [
-        (reference(), REFERENCE_DIGEST),
-        (fixture("stress"), STRESS_DIGEST),
+    for (file, digest, digest_16) in [
+        (reference(), REFERENCE_DIGEST, REFERENCE_DIGEST_16),
+        (fixture("stress"), STRESS_DIGEST, STRESS_DIGEST_16),
     ] {
         let (_, a) = solved(&file);
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
+        let back = a.replacen("{\"schema_version\":17,", "{\"schema_version\":16,", 1);
+        assert_eq!(hex(back.as_bytes()), digest_16, "{}", file.display());
     }
 }
 

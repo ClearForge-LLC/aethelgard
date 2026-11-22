@@ -1,0 +1,89 @@
+spec crates_aethelgard-cli_tests_fixtures_connectors: identical
+spec crates_aethelgard-cli_tests_fixtures_d1-24-i2c: identical
+spec crates_aethelgard-cli_tests_fixtures_d3-24-i2c-12-spi: identical
+spec crates_aethelgard-cli_tests_fixtures_driver-judges-nothing: identical
+spec crates_aethelgard-cli_tests_fixtures_four-layer: identical
+spec crates_aethelgard-cli_tests_fixtures_four-layer-power: identical
+spec crates_aethelgard-cli_tests_fixtures_hse-crystal-16: identical
+spec crates_aethelgard-cli_tests_fixtures_hse-external-8: identical
+spec crates_aethelgard-cli_tests_fixtures_imu-baro-1v8: identical
+spec crates_aethelgard-cli_tests_fixtures_logger-4600: identical
+spec crates_aethelgard-cli_tests_fixtures_motors-dshot600: identical
+spec crates_aethelgard-cli_tests_fixtures_motors-pwm: identical
+spec crates_aethelgard-cli_tests_fixtures_pair-standin: identical
+spec crates_aethelgard-cli_tests_fixtures_sentinel-01-bench: identical
+spec crates_aethelgard-cli_tests_fixtures_sentinel-02-own: identical
+spec crates_aethelgard-cli_tests_fixtures_sentinel-02-shaped: identical
+spec crates_aethelgard-cli_tests_fixtures_sentinel-03: identical
+spec crates_aethelgard-cli_tests_fixtures_serial-dshot-9600: identical
+spec crates_aethelgard-cli_tests_fixtures_serial-four: identical
+spec crates_aethelgard-cli_tests_fixtures_solve_infeasible-shared: identical
+spec crates_aethelgard-cli_tests_fixtures_solve_pigeonhole-spi: identical
+spec crates_aethelgard-cli_tests_fixtures_solve_stress: identical
+spec crates_aethelgard-cli_tests_fixtures_solve_thrash-pins: identical
+spec crates_aethelgard-cli_tests_fixtures_spi-only: identical
+spec crates_aethelgard-cli_tests_fixtures_two-bme: identical
+spec crates_aethelgard-ir_tests_fixtures_d1-drv8876: solve.json differs beyond its version line; tree.sha256 differs; simulate.json differs; generate.json differs
+spec crates_aethelgard-ir_tests_fixtures_d2-drv8833: identical
+spec crates_aethelgard-ir_tests_fixtures_sentinel-02-power: identical
+spec examples_invalid-zero-domain: identical
+spec examples_sentinel-01: identical
+spec examples_sentinel-01-ext-bmp581: identical
+spec examples_sentinel-01-minimal: identical
+spec examples_sentinel-02-bench: identical
+spec examples_sentinel-02-bench-hse8: identical
+scenario crates_aethelgard-cli_tests_fixtures_bor-recovery_ext-bmp581-droop-bor3: identical
+scenario crates_aethelgard-cli_tests_fixtures_bor-recovery_logger-droop-bor3: identical
+scenario crates_aethelgard-cli_tests_fixtures_bor-recovery_s02-shaped-droop: identical (kind 24 gains idle and tick on 4)
+scenario crates_aethelgard-cli_tests_fixtures_four-layer-3k3: identical
+scenario crates_aethelgard-cli_tests_fixtures_four-layer-droop: identical
+scenario crates_aethelgard-cli_tests_fixtures_four-layer-pullup: identical
+scenario crates_aethelgard-cli_tests_fixtures_four-layer-spi-absent: identical
+scenario crates_aethelgard-cli_tests_fixtures_sentinel-02-own-base: identical
+scenario crates_aethelgard-cli_tests_fixtures_spi-absent-u4-one-kind: identical
+scenario crates_aethelgard-cli_tests_fixtures_spi-only-droop-bor3: identical
+scenario crates_aethelgard-cli_tests_fixtures_two-bme-collide: identical
+scenario crates_aethelgard-cli_tests_fixtures_two-bme-held-low-sda: identical
+scenario crates_aethelgard-cli_tests_fixtures_two-bme-i2c-timeout: identical
+scenario scenarios_motors_dshot600: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_motors_dshot600-droop: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-01-bench_droop-bor3: identical
+scenario scenarios_sentinel-01-bench_pullup-2k2: identical
+scenario scenarios_sentinel-01-bench_pullup-3k3: identical
+scenario scenarios_sentinel-01-bench_serial-rx-open-console: identical
+scenario scenarios_sentinel-01-bench_spi-absent-u4: identical
+scenario scenarios_sentinel-01_droop-bor3: identical
+scenario scenarios_sentinel-01_droop-tolerated: identical
+scenario scenarios_sentinel-01_pullup-2k2: identical
+scenario scenarios_sentinel-01_pullup-47k: identical
+scenario scenarios_sentinel-01_seeded_cap-220p-2k2: identical
+scenario scenarios_sentinel-01_seeded_cap-390p-sda-2k2: identical
+scenario scenarios_sentinel-01_seeded_held-low-scl: identical
+scenario scenarios_sentinel-01_seeded_held-low-sda: identical
+scenario scenarios_sentinel-01_seeded_motors-pwm: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-01_seeded_pullup-100k: identical
+scenario scenarios_sentinel-01_seeded_pullup-10k: identical
+scenario scenarios_sentinel-01_seeded_pullup-3k3: identical
+scenario scenarios_sentinel-01_seeded_pullup-3k9: identical
+scenario scenarios_sentinel-01_seeded_pullup-4k7: identical
+scenario scenarios_sentinel-01_seeded_serial-rx-dead: identical
+scenario scenarios_sentinel-01_seeded_serial-rx-open-console: identical
+scenario scenarios_sentinel-01_seeded_spi-absent-u4: identical
+scenario scenarios_sentinel-02-power_baseline: identical
+scenario scenarios_sentinel-02-power_battery-sag-tolerated: identical
+scenario scenarios_sentinel-02-power_vdd1v8-out-of-band: identical
+scenario scenarios_sentinel-03_baseline: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_battery-sag-tolerated: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_droop-bor3: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_droop-tolerated: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_held-low-sda: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_serial-rx-open-console: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_serial-rx-open-crsf: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_serial-rx-open-mavlink: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_spi-absent-u4: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_spi-absent-u5: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_sentinel-03_vdd5v-out-of-band: identical (kind 24 gains idle and tick on 4)
+scenario scenarios_serial_serial-four: identical
+scenario scenarios_serial_serial-four-open-crsf: identical
+scenario scenarios_serial_serial-four-open-mavlink: identical
+differences: 1

@@ -1,0 +1,31 @@
+W1 output: BSRR after MODER passes	killed
+W2 output: the other level's bit allowed	killed
+W3 input: judged against active, not the driven level	killed
+W5 level: idle high settles at the anchor	killed
+W6 level: edges after settling ignored	killed
+W7 stimuli not re-applied after a reset	killed
+W8 image: an input imaged as an output	killed
+F1 pin_held's level byte swapped on decode	killed
+F2 analog_value's bound one high	killed
+F3 replay: an asserted input needs no finding	killed
+F4 replay: kind 25's idle-high high time	killed
+G1 per-item gate counts the input once	killed
+G2 an asserted input passes the gate	killed
+G3 a bridge passes on one witnessed input	killed
+R1 PinHeldIsOutput named Unknown	killed
+R2 an unmeasured resolution runs	killed
+R3 IdleHighNotSimulated never fires	killed
+R4 the motor rail ignores a declared load	killed
+R5 an input is an unmet target again (D5)	killed
+R6 a hold at the pull's level changes the run	killed
+R7 ledger: a pin device's BSRR silicon-only again	killed
+A1 replay: a level witness's idle unjoined (F1)	killed
+A2 replay: settled instant unjoined (F1)	killed
+A3 replay: edges past the idle unjoined (F1)	killed
+A4 replay: a pin device's pin not its own (F5)	killed
+A5 replay: an ADC mismatch at the declared code (F6)	killed
+A6 output: an ODR write before MODER ignored (F2)	killed
+A8 ADC: no conversion needed (F3)	killed
+A9 gpio gate: an input judged again (F4)	killed
+A11 level: a short window passes (F9)	killed
+A12 a refused hold is a baseline (F10)	killed
