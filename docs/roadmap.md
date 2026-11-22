@@ -617,6 +617,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - The generated `hwdef.dat` builds unmodified ArduPilot, and the pinout check passes.
 - The fabricated board passes the bring-up firmware's checks, ArduPilot arms with the props off, and the board flies the prototype tethered, then free, indoors (Scotty, 2026-11-15). Every disagreement with the twin is recorded.
 - An independent review has run on the gate commit, and its adopted findings are folded in (§6, ruled by Scotty 2026-11-15).
+- **Not covered, by name:** signal integrity, power integrity under dynamic load, EMC, and manufacturing and assembly tolerance beyond the declared fabrication tolerances. Passing these gates does not claim them, and a disagreement on them at the bench is a scar (`docs/reviews/2026-11-21-grok.response.md` §2.6).
 - **Aethelgard is general, not Sentinel's.** A second board specification that is not a flight controller (a sensor logger or a small motor driver, written then) passes every gate with no engine change (Scotty, 2026-11-15).
   - **"Passes every gate" means** (adopted 2026-11-19: the architect's proposal from `4600` D1, which Scotty accepted as ruled):
     - `verify --scenarios … --fab-out` writes a fabrication package. A passing `verify` without scenarios runs no campaign, so it is not `INV-03`.
@@ -1052,6 +1053,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | `declared_bulk` repeats `schematic_power::two_pin`'s row push (its `note` is fixed to `None`); the IPROPI guard's text (`schematic_arms.rs:1358`) is stale after `1217`'s GND tie | `1211f` F3, `1217` Q1 | F3: **done, `AET-WO-1321` (PR #328)**; the IPROPI guard text (`schematic_arms.rs:1358`): the next work order that touches eda's arms |
 | `check pinout` ignores `topology.mcu`, so a renamed MCU escapes the analog-pad check; `power.rs`'s sense reservoir is still judged against VDDA's minimum (the pin-device one was fixed); `NoInstance`'s wording; an unneeded reservoir is never looked up | `1217` R2–R5 | **`AET-WO-1218`** |
 | `1319`'s harness mutant M2 now fails to compile under `1320`'s count check, so the harness no longer measures that case by bytes; a `DECOUPLERS` entry stated twice for one part is not refused | `1321` F1, F2 | the next work order that touches eda's arms |
+| A machine-readable silicon-delta ledger: each bench sheet's prediction, source, label and measured value as JSONL rows, the first scar as row one; the twin side's ledger hash recorded, never trusted (`INV-07`) | the Grok review 2026-11-21, §2 and suggestion 3 | after the first Sentinel-02 bench |
+| An STM32-coupling audit: every vendor-specific name in the IR (alternate-function numbers, register names, pin structures) listed and quantified, with no abstraction built | the Grok review 2026-11-21, §5 | before the P4 baseline |
 | A `validate` refusal, or a key, added without a bump is a bump, or the work order says why not (C1: eight optional keys at version 16; refusals under unchanged versions, `1214`'s `SerialBaudReadAsKbaud` at 23 among them) | `1215` D4 | every IR work order; the architect checks it at review |
 | DS11853's current revision is unconfirmed: only Rev 8 (3-Feb-2022) is held, from a mirror, for the ST-LINK `MCO`'s ±80,000 ppm | `4240d` F1 | the architect, when st.com is readable, before the bench result is recorded |
 | The ledger classes every field of the bring-up's whole `RCC_CR` and `RCC_CFGR` words (`HSION`, PLL2/PLL3, `CFGR`'s other fields) as `independent-rule` through the twin's `clock_rule`, which is `aethelgard_twin`'s, not the IR's | `4240d` F5 | **done, `AET-WO-2308` (PR #321)** |
@@ -1265,6 +1268,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-22 | §5, §7.1 | `AET-WO-1216b` (#320) merged; the `1211e` F1/F5 row closed | #320's review |
 | 2026-11-22 | §5, §7.1 | `AET-WO-2308` (#321) merged and its six rows closed; `1217` ruled; `AET-WO-1321` written and given `1320` F1–F3, `1211f` F3; rows from `2308` F1, F3, F8 | #321's review; the 2026-11-22 rulings |
 | 2026-11-22 | §5, §7.1 | `AET-WO-1217` (#327) and `1321` (#328) merged and their rows closed; rows from `1217` R2–R6 and `1321` F1–F2; `AET-WO-1218` written and given `1216b` F1, `1217` R2–R6 | #327's and #328's reviews |
+| 2026-11-22 | §5 (P4 exit gate), §7.1 | SI/PI/EMC/tolerance named as not covered by P4's gates; rows for the silicon-delta ledger and the STM32-coupling audit | `docs/reviews/2026-11-21-grok.response.md`; Scotty, 2026-11-22 |
 
 ## 9. Provenance
 
