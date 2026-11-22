@@ -63,6 +63,11 @@ cargo_run private "$O/w/private/crate" RUSTUP_HOME=$RH
 cargo_run alt "$O/w/alt/crate" RUSTUP_HOME=$RH RUSTUP_TOOLCHAIN=alt
 cargo_run ancestor "$O/anc/tmp/crate" RUSTUP_HOME=$RH
 
+# build asks `cargo --version` with the same CARGO_TARGET_DIR before it builds: does that write a record?
+T=$O/version-only-target; rm -rf "$T"
+( cd "$O/w/default/crate/firmware" && env -i PATH=$P CARGO_TARGET_DIR="$T" RUSTUP_HOME=/opt/rustup cargo --version > /dev/null )
+echo "cargo --version alone: .rustc_info.json $( [ -e "$T/.rustc_info.json" ] && echo written || echo 'not written' ); target dir $( [ -d "$T" ] && echo exists || echo absent )"
+
 echo "== the CLI's build (sandboxed): $CLI"
 cli_run() { # name, env...
   local n=$1; shift

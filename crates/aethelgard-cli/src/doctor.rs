@@ -24,7 +24,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::run::{self, SandboxReport, Stop};
 use crate::{EXIT_FAIL, Scratch, analog, firmware, kicad};
@@ -446,23 +445,15 @@ fn identity(out: &run::Output) -> Result<(String, String), Stop> {
     }
     let (named, rest) = analog::identified(&stdout)?;
     let said = rest.lines().next().unwrap_or_default().escape_debug();
-    let ngspice = match (code, named.ngspice) {
-        (0, Some(ngspice)) if rest.is_empty() => ngspice,
-        _ => {
-            return Err(Stop::unusable(
-                analog::BRIDGE,
-                format!(
-                    "its --version exited {code}, not 0 with its identity naming ngspice and nothing else; it said: {said}"
-                ),
-            ));
-        }
-    };
-    let first = stdout.lines().next().unwrap_or_default();
-    serde_json::from_str::<Value>(first)
-        .ok()
-        .and_then(|v| v.get("version").and_then(Value::as_str).map(str::to_owned))
-        .map(|version| (version, ngspice))
-        .ok_or_else(|| Stop::unusable(analog::BRIDGE, "its identity names no version".to_owned()))
+    match (code, named.ngspice) {
+        (0, Some(ngspice)) if rest.is_empty() => Ok((named.version, ngspice)),
+        _ => Err(Stop::unusable(
+            analog::BRIDGE,
+            format!(
+                "its --version exited {code}, not 0 with its identity naming ngspice and nothing else; it said: {said}"
+            ),
+        )),
+    }
 }
 
 /// `cargo --version`, with `build`'s variables and grants.

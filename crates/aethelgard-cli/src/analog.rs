@@ -76,6 +76,8 @@ pub const BRIDGE_SOURCE_SHA256: &str =
 /// The bridge's identity, as [`identified`] accepted it.
 #[derive(Debug, PartialEq)]
 pub struct Identity {
+    /// The bridge's version.
+    pub version: String,
     /// The digest of the sources it was built from, for the archive's header
     /// (`AET-WO-2205` §1.1).
     pub source_sha256: String,
@@ -140,12 +142,12 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
             ))
         })?;
     let field = |k: &str| o.get(k).and_then(Value::as_str);
-    if field("bridge") != Some(BRIDGE) || field("version").is_none() {
+    let (Some(BRIDGE), Some(version)) = (field("bridge"), field("version")) else {
         return Err(mismatch(format!(
             "it does not name itself: `{}`",
             first.escape_debug()
         )));
-    }
+    };
     let source_sha256 = match field("source_sha256") {
         Some(named) if named == want => named.to_owned(),
         named => {
@@ -155,6 +157,8 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
             )));
         }
     };
+    // belt-and-suspenders: the bridge parses and pins its banner (`solver::pinned`); the CLI holds
+    // the line it reports to the same form, since it cannot link the bridge's parser.
     let ngspice = match (field("ngspice"), field("ngspice_banner")) {
         (None, None) if o.len() == BARE.len() => None,
         (Some(release), Some(banner))
@@ -171,6 +175,7 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
     };
     Ok((
         Identity {
+            version: version.to_owned(),
             source_sha256,
             ngspice,
         },
@@ -1232,6 +1237,7 @@ mod tests {
             identified(&format!("{ok}\nrest\n")).unwrap(),
             (
                 Identity {
+                    version: "0.1.0".to_owned(),
                     source_sha256: me.to_owned(),
                     ngspice: None
                 },
@@ -1245,10 +1251,14 @@ mod tests {
         assert_eq!(
             identified(&format!("{loaded}\nrest\n")).unwrap().0,
             Identity {
+                version: "0.1.0".to_owned(),
                 source_sha256: me.to_owned(),
                 ngspice: Some("44.2".to_owned())
             }
         );
+        // A run that answered must have named its ngspice; nothing stands in.
+        let bare = identified(&format!("{ok}\n")).unwrap().0;
+        assert_eq!(bare.ran().unwrap_err().kind, "ToolError");
         let refused = [
             // Another release, its banner agreeing or not.
             loaded.replace("44.2", "45.0"),
