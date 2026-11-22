@@ -220,9 +220,18 @@ out, as read on 2026-11-17 from:
 They are made from `sentinel-01-bench.bom.csv` and `sentinel-01-bench-pos.csv` and add nothing
 to them:
 
-- The BOM has one row per kind of part, grouped by value and footprint.
-  `Comment` is the value, `Designator` every reference of the kind, and
+- The BOM has one row per kind of part, grouped by value, footprint and
+  note. `Comment` is the value, `Designator` every reference of the kind, and
   `Footprint` the KiCad footprint's name without its library.
+- **`Note` is `sentinel-01-bench.bom.csv`'s note on the part, and a fifth column:
+  JLCPCB's sample has four.** That JLCPCB's upload accepts it is inferred, not
+  shown: its KiCad page calls a five-column BOM (with `Quantity`) aligned with
+  the sample. A part whose symbol stands in for the ordered part, or whose
+  value its datasheet does not state, carries one, and never shares a row
+  with a part that does not. Such parts, if any, are also listed in the
+  section "Parts with a note", which ends these notes; if an upload refuses
+  the column, delete it, and that section carries the same label. With no
+  such part, the column is empty on every row and there is no such section.
 - **`JLCPCB Part #（optional）` is empty for every part.** No input of this
   engine names a fabricator's part number, so none is written. Choose each
   part in JLCPCB's library before ordering. A passive's value alone (`100n`)
@@ -237,3 +246,14 @@ to them:
 - Test pads are in neither file: nothing is placed on them.
 - A part on the bottom side is never written: JLCPCB's pages state no
   bottom-side convention, so `verify --fab-out` refuses such a board by name.
+
+## Parts with a note
+
+Each part below is not what its value alone says: a symbol stands in for the
+ordered part, or no datasheet states its value. Read the note before ordering.
+`sentinel-01-bench.bom.csv` and `sentinel-01-bench-jlcpcb-bom.csv` carry it on the part's line.
+`sentinel-01-bench-jlcpcb-cpl.csv` names the part by reference only. `sentinel-01-bench-pos.csv` is
+KiCad's placement file, unedited: it prints the part's value with no note, and
+this section is its label.
+
+- U4 (W25Q64JVSSIQ): symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)

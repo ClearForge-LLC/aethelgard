@@ -136,11 +136,34 @@ impl Difference {
 /// byte-identical. A directory named in `skip` (relative, such as
 /// `board/target`) is not read, as a crate's `target/` is not part of it.
 /// Symlinks are never followed: one is a difference. More than
-/// [`MAX_CRATE_FILES`] entries is refused, never truncated.
+/// [`MAX_CRATE_FILES`] entries is refused, never truncated. An empty
+/// directory holds no file and is not reported; [`against`] reports it.
 pub fn diff<T: AsRef<[u8]>>(
     dir: &Path,
     files: &BTreeMap<String, T>,
     skip: &[&str],
+) -> Result<Vec<Difference>, Stop> {
+    walk(dir, files, skip, false)
+}
+
+/// [`diff`], and also every empty directory under `dir` that no file of
+/// `files` lives under, as [`Difference::Extra`] of its path with a trailing
+/// `/` (`AET-WO-2308` L4, `AET-WO-3301` F14): `verify --against` and
+/// `--against-fab` compare a directory, not only its files, and a generated
+/// tree has no empty directory.
+pub fn against<T: AsRef<[u8]>>(
+    dir: &Path,
+    files: &BTreeMap<String, T>,
+    skip: &[&str],
+) -> Result<Vec<Difference>, Stop> {
+    walk(dir, files, skip, true)
+}
+
+fn walk<T: AsRef<[u8]>>(
+    dir: &Path,
+    files: &BTreeMap<String, T>,
+    skip: &[&str],
+    empty_dirs: bool,
 ) -> Result<Vec<Difference>, Stop> {
     let mut seen = BTreeSet::new();
     let mut out = Vec::new();
@@ -149,8 +172,10 @@ pub fn diff<T: AsRef<[u8]>>(
         |p: &Path, e: std::io::Error| Stop::unreadable(format!("cannot read {}: {e}", p.display()));
     let mut count = 0usize;
     while let Some((path, rel)) = stack.pop() {
+        let mut entries = 0usize;
         for entry in fs::read_dir(&path).map_err(|e| unreadable(&path, e))? {
             let entry = entry.map_err(|e| unreadable(&path, e))?;
+            entries += 1;
             count += 1;
             if count > MAX_CRATE_FILES {
                 return Err(Stop::too_large(format!(
@@ -182,6 +207,14 @@ pub fn diff<T: AsRef<[u8]>>(
                 }
                 Some(_) => {}
             }
+        }
+        let under = format!("{rel}/");
+        if empty_dirs
+            && entries == 0
+            && !rel.is_empty()
+            && !files.keys().any(|p| p.starts_with(&under))
+        {
+            out.push(Difference::Extra(under));
         }
     }
     out.extend(
@@ -338,6 +371,45 @@ mod tests {
             diff(&dir, &files(), &[])
                 .unwrap()
                 .contains(&Difference::Extra("target/x/y".to_owned()))
+        );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// `AET-WO-2308` L4: `against` reports an empty directory that no
+    /// generated file lives under, at any depth, with a trailing `/`; one
+    /// whose generated files are missing reports only them; a skipped one is
+    /// not read; and `diff` (`prove`'s provenance) still reports none.
+    #[test]
+    fn against_reports_an_empty_directory_and_diff_does_not() {
+        // An empty directory compared whole is every file missing, never
+        // itself an extra.
+        let empty = scratch("empty-top");
+        fs::create_dir_all(&empty).unwrap();
+        assert!(
+            against(&empty, &files(), &[])
+                .unwrap()
+                .iter()
+                .all(|d| matches!(d, Difference::Missing(_)))
+        );
+        fs::remove_dir_all(&empty).unwrap();
+        let dir = scratch("empty-dirs");
+        write(&dir, &files()).unwrap();
+        assert_eq!(against(&dir, &files(), &[]).unwrap(), []);
+        fs::create_dir_all(dir.join("extra/deeper")).unwrap();
+        fs::create_dir_all(dir.join("firmware/empty")).unwrap();
+        fs::create_dir_all(dir.join("target/empty")).unwrap();
+        fs::remove_file(dir.join("firmware/src/main.rs")).unwrap();
+        assert_eq!(
+            against(&dir, &files(), &["target"]).unwrap(),
+            [
+                Difference::Missing("firmware/src/main.rs".to_owned()),
+                Difference::Extra("extra/deeper/".to_owned()),
+                Difference::Extra("firmware/empty/".to_owned()),
+            ]
+        );
+        assert_eq!(
+            diff(&dir, &files(), &["target"]).unwrap(),
+            [Difference::Missing("firmware/src/main.rs".to_owned())]
         );
         fs::remove_dir_all(&dir).unwrap();
     }

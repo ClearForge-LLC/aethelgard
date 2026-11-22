@@ -1,0 +1,104 @@
+# AET-WO-2308 — results, beside `PREDICTIONS.md`
+
+Every run on Furnace, 2026-11-22. The base is `c9d4096b`. Evidence is in `~/.cache/aet-2308/`.
+
+## R0. Baselines (before any change)
+
+- **Package:** `fab/sentinel-01-bench/` hashed file by file (`baseline/fab-SHA256SUMS`, 20 files).
+- **The sweep:** `spike/1211d/measure/sweep.sh`, run with the base release CLI (`target-base`), over 34 specifications (`baseline/sweep`).
+- **Stand-ins in every base `emit`:**
+  - 23 of the 34 boards carry a BOM note.
+  - The only note is W25Q's symbol stand-in, on 41 rows.
+  - No committed board draws a twin stand-in with a board, except `crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json` (U5, ICM20948; see R2).
+- **A twin stand-in reaches emit's BOM with an empty note.** `imu-baro-1v8.json` drawn, with one ICM20948 and declared pin capacitances, emits `U5,ICM-20948,Sensor_Motion:InvenSense_QFN-24_3x3mm_P0.4mm,Sensor_Motion:ICM-20948,` (`standin/out`).
+- **D1 (the drawn bulk, `spike/1211f/d1-drawn.json`) under the base `verify --fab-out`,** with one baseline scenario:
+  - It passes validate, solve, the ledger and the harness check.
+  - It stops at `CampaignCoverageShort` (serial port `CMD`, ADC input `DRV_IPROPI`, rail `VDD_3V3`).
+  - So the hazard is one set of scenarios away (`d1reach/`).
+
+## R1. Row 1: the shapes measured
+
+| File in the package | Can carry a label? | Shape |
+|---|---|---|
+| `.bom.csv` (emit's) | the note column, for a symbol stand-in and a bulk's source; **nothing for a twin stand-in** (the emitter is fenced) | as emitted |
+| `-jlcpcb-bom.csv` | a fifth column, `Note`. The sample has four (`Sample-BOM_JLCSMT.xlsx`, read cell by cell). JLCPCB's KiCad page calls a five-column BOM "aligned with the sample" [read], so that an upload tolerates `Note` is [inferred] | (a) |
+| `FAB-NOTES.md` | any text | (a): a section listing every noted part |
+| `-pos.csv` (KiCad's, unedited) | it prints each part's value (`Val`) and can carry no note (adversarial F1) | the FAB-NOTES section is its label, naming the part by reference |
+| `-jlcpcb-cpl.csv` | no value column: reference only | — |
+| Gerbers, drill, ELF | no part values | — |
+
+**Ruled 08:58Z (Q1–Q4):**
+- (a) for symbol stand-ins and a bulk's source;
+- (b) `StandInInFabPackage` for a twin stand-in;
+- the sheet (`.kicad_sch`, from the fenced generator) is a FEEDBACK row.
+
+## R2. Q1's condition: (b) refuses no committed package (run, not read)
+
+- **The bench package:**
+  - The spec is `examples/sentinel-01.json`, with ci.yml's five `bench-package` scenarios, `--fab-out`, the branch binary and an empty `PATH`.
+  - Every pre-gate check passes. The run stops at `ToolMissing kicad-cli`, exit 4.
+- **`sentinel-02-power.json`** with its three scenarios and `--fab-out`:
+  - Base refuses it as `CampaignCoverageShort` (exit 3).
+  - No package of it exists, and no test or workflow runs a fab flag on it, except `battery_sag_tier1`'s coverage test.
+  - The stand-in check is therefore placed **after** the coverage check, so this board's verdict is byte-identical to base.
+
+## R6. Row 6: what judges each field (read at source, then tested)
+
+- `twin/src/hse.rs` `judge_clock` compares each whole `CR`, `PLLCKSELR` and `CFGR` word written against RM0433's reset value with the header's bits set. It never uses the generator's word. So every field of those words is held, but by a rule in `aethelgard_twin`, which is not `RUL-20` (1).
+- Renode's `STM32H7_RCC.cs` is the copy whose L185 and L186 match the ledger's existing citations (sha256 `7f10d491…`).
+
+| Field | Renode | Class |
+|---|---|---|
+| HSION | L137 stored, L147 HSIRDY reads it | observed |
+| HSIDIV | L148 stored, L1546 divides hsi_ck | observed |
+| CSION | L160, L169 | observed |
+| HSI48ON | L172, L173 | observed |
+| PLL2ON | L199, L200 | observed |
+| PLL3ON | L201, L202 | observed |
+| TIMPRE | L231 stored, L1490–1494 the timers' multiplier | observed |
+| HSIKERON, CSIKERON, D1CKRDY, D2CKRDY | L146, L170, L174, L175 tags | ignored-by-model |
+| STOPWUCK, STOPKERWUCK, RTCPRE, HRTIMSEL, MCO1PRE, MCO1, MCO2PRE, MCO2 | L227–230, L233–236 tags | ignored-by-model |
+| HSIRDY, HSIDIVF, CSIRDY, HSI48RDY, HSERDY, PLL1RDY, PLL2RDY, PLL3RDY, SWS | read-only (L147, L158, L169, L173, L185, L197, L200, L202, L226): the written bit is dropped | ignored-by-model |
+| PLLSRC_CSI, PLLSRC_HSE | PLLSRC's bits (L267) | independent-rule, by `aethelgard_ir::clock::judge_tree` |
+
+- The base table has 28 `independent-rule` rows whose judge names no `aethelgard_ir` rule: exactly these. The branch has none (`every_independent_rule_row_is_judged_by_an_ir_rule`).
+- Ruled 08:58Z (Q5) as built.
+
+## R3. The bench package, base against branch, both built and run in the image
+
+Both trees were built in the pinned tools image as CI's bench-package job builds them (the CLI and the bridge side by side, `spike/2308/kit/bench.sh` through `ci-img.sh`). Each then ran the job's `verify` with `--fab-out`. Both passed: base rc 0 in 194 s, branch rc 0 in 187 s.
+
+- **Base, local, against the committed package:** 16 of 17 files byte-identical. `MANIFEST.json` differs only in `verdict_sha256`, because the verdict names each gate's sandbox and this is not CI's runner.
+- **Branch against base, both local:** exactly 3 of 17 files move.
+  - `sentinel-01-bench-jlcpcb-bom.csv`: all 14 lines, by the `Note` column. U4's line ends `,,"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)"`, and every other line ends `,,`.
+  - `FAB-NOTES.md`: the JLCPCB section's grouping sentence and its new `Note` bullet; then the new section "Parts with a note", one line for U4.
+  - `MANIFEST.json`: those two files' hashes and `verdict_sha256`.
+- **The verdicts differ in one field only:** the campaign gate's `tool_version`, `null` → `1.17.0+20260907gitf1dd1b4af.aet1605` (L3). The ledger, every other gate and every other key are identical; the bench is not an HSE board.
+- So no committed verdict or package moves beyond rows 1 and 2's named lines. The package waits on a write dispatch (AWAITING-PACKAGE).
+
+## R4. Fab paths, base against branch, every committed board that rows 1 and 6 can touch
+
+`spike/2308/kit/fab-paths.sh`: `verify --fab-out` with an empty `PATH`, the base release CLI against the branch's.
+
+| Specification | Both print |
+|---|---|
+| hse-crystal-16 | `CampaignCoverageShort`, exit 3 (`VDD_1V8` has no consumer a judge observes) |
+| hse-external-8 | `DrawsNoBoard`, exit 2 |
+| sentinel-02-bench-hse8 | `DrawsNoBoard`, exit 2 |
+| sentinel-02-power (U5 ICM20948) | `CampaignCoverageShort`, exit 3 |
+| sentinel-01 (bench) | `ToolMissing kicad-cli`, exit 4: every pre-gate check passed |
+
+All 5 lines are byte-identical, base against branch.
+
+## R5. The sweep
+
+`spike/1211d/measure/sweep.sh` with the branch release CLI, judged by `same.sh` against R0's: **identical, 34 specifications, 280 files.**
+
+## R6. Re-measured after 1216b (`main` 22a1b3c0, specification 25)
+
+The branch at `55553a1f` was built in the image (the CLI and the bridge) and ran the bench-package `verify` with `--fab-out`: rc 0, 193 s. Against the committed package, which is 1216b's:
+- **exactly 3 of 17 files differ**: `FAB-NOTES.md`, `sentinel-01-bench-jlcpcb-bom.csv` and `MANIFEST.json`;
+- `MANIFEST.json` differs in those two files' hashes and in `verdict_sha256` (L3, and the local sandbox);
+- `FAB-NOTES.md` differs only by this work order's lines: the JLCPCB grouping sentence, its `Note` bullet, and "Parts with a note".
+
+Specification 25's bytes are already in the committed package.
