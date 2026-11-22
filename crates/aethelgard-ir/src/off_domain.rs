@@ -143,11 +143,9 @@ pub const FOREIGN_CLOCK_NET: &str = "OSC_IN";
 /// Step 25: the first judged path above its limit at VDD = 0, in
 /// [`paths`]' order, refused by `OffDomainAboveLimit`.
 pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
-    let all = paths(spec)?;
-    if !all.iter().any(Path::judged) {
-        return Ok(());
-    }
-    for p in all.iter().filter(|p| p.judged()) {
+    // The MCU row is read only for a judged path: a board with none needs
+    // no Table 10 figure.
+    for p in paths(spec)?.iter().filter(|p| p.judged()) {
         let (
             Lead::Leads(why),
             Bound::Stated {
@@ -218,7 +216,7 @@ fn mcu_io(spec: &Specification) -> Result<&'static crate::power_parts::McuIo, Ir
 /// classes are listed above and in document order within each. A path whose
 /// every rail is `mcu.supply` is not a path and is not listed.
 pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
-    let w = Walk::new(spec)?;
+    let w = Walk::new(spec);
     let mut out = Vec::new();
     // belt-and-suspenders: step 5a puts every I2C bus on `mcu.supply`, so no
     // pull-up is off the domain today; the class is listed so a later bus
@@ -242,7 +240,7 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
             let et = w.resistor_ppm(&s.top.part)?;
             let eb = w.resistor_ppm(&s.bottom.part)?;
             let mv = ceil_div(power::sense_max_microvolts(bmax, s, et, eb), 1000);
-            out.push(w.path(
+            out.extend(w.path(
                 &s.net,
                 Class::BatteryDivider,
                 format!(
@@ -511,7 +509,7 @@ struct Walk<'s> {
 }
 
 impl<'s> Walk<'s> {
-    fn new(spec: &'s Specification) -> Result<Self, IrValidationError> {
+    fn new(spec: &'s Specification) -> Self {
         let domains: BTreeSet<&str> = spec.voltage_domains.iter().map(|d| d.id.as_str()).collect();
         let mut mcu_nets: BTreeSet<&str> = crate::names::spelled_nets(spec)
             .into_iter()
@@ -579,14 +577,14 @@ impl<'s> Walk<'s> {
                 .entry(t.net.as_str())
                 .or_insert_with(|| format!("test point `{}`", t.reference));
         }
-        Ok(Self {
+        Self {
             spec,
             supply: &spec.mcu.supply,
             mcu_nets,
             sources,
             off_board,
             pins,
-        })
+        }
     }
 
     fn is_rail(&self, net: &str) -> bool {
@@ -717,24 +715,21 @@ impl<'s> Walk<'s> {
         rails: Vec<String>,
         pin: Option<String>,
         bound: Bound,
-    ) -> Path {
-        let lead = self
-            .lead(&rails)
-            .unwrap_or_else(|| Lead::After(format!("on `{}`", self.supply)));
-        Path {
+    ) -> Option<Path> {
+        Some(Path {
+            lead: self.lead(&rails)?,
             net: net.to_owned(),
             class,
             source,
             at,
             rails,
             pin: pin.or_else(|| self.declared_pin(net)),
-            lead,
             bound,
-        }
+        })
     }
 
     /// A pull or line to `rail`'s maximum; nothing when `rail` is
-    /// `mcu.supply`.
+    /// `mcu.supply` ([`Self::path`]).
     #[allow(clippy::too_many_arguments)]
     fn push_rail(
         &self,
@@ -746,15 +741,12 @@ impl<'s> Walk<'s> {
         rail: &str,
         pin: Option<String>,
     ) {
-        if rail == self.supply {
-            return;
-        }
         // belt-and-suspenders: step 5 refuses a pull or bus on an undeclared
         // domain, before step 25 reads it.
         let Some(d) = self.spec.voltage_domains.iter().find(|d| d.id == rail) else {
             return;
         };
-        out.push(self.path(
+        out.extend(self.path(
             net,
             class,
             source,

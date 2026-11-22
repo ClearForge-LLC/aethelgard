@@ -1,0 +1,2 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+#validate	ZeroNominalVoltage: voltage domain `VDD_3V3` has nominal_millivolts 0

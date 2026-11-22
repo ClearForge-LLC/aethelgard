@@ -1,0 +1,13 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[0].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[0].pins[4]
+MOTOR1	connector	off-board	yes: an off-board end	not stated	-	-	connectors[2].pins[0]
+MOTOR2	connector	off-board	yes: an off-board end	not stated	-	-	connectors[2].pins[1]
+MOTOR3	connector	off-board	yes: an off-board end	not stated	-	PA0	connectors[2].pins[2]
+MOTOR4	connector	off-board	yes: an off-board end	not stated	-	PA1	connectors[2].pins[3]
+MAVLINK_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[1]
+MAVLINK_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[2]
+CRSF_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[4].pins[1]
+CRSF_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[4].pins[2]
+OSC_IN	foreign_clock	off-board	yes: an off-board end	not stated	-	PH0	mcu.hse.external
+#validate	ok
