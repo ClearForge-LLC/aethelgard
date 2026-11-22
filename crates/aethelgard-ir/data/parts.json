@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "parts": [
     {
       "part": "BME280",
@@ -1510,7 +1510,16 @@
           "forbidden": [],
           "page": "p. 11, Table 4 (PWM control); both inputs high is brake; internal dead time, p. 11"
         }
-      ]
+      ],
+      "trip": {
+        "reference": "VREF",
+        "sense": "IPROPI",
+        "page": "p. 13, 7.3.3.2: ITRIP x AIPROPI = VVREF / RIPROPI (Eq. 3), chopping in every IMODE state (Table 6); regulation is off only with IPROPI on GND and VREF above GND"
+      },
+      "bulk_unstated": {
+        "supply": "VM",
+        "page": "p. 3 (VM: sufficient bulk capacitance rated for VM); p. 10, Table 1, CVM2 'Bulk Capacitance, VM-rated', no value; 9.1 p. 31: system level testing sizes it"
+      }
     }
   ]
 }

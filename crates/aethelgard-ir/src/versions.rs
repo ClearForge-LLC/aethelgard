@@ -250,6 +250,20 @@ pub const CHANGES: &[VersionChange] = &[
         &[],
         &["SpiSpeedBelowKernelRange", "SerialBaudReadAsKbaud"],
     ),
+    row(
+        24,
+        "AET-WO-1211e",
+        &["pin_devices[].bulk"],
+        &[],
+        &[],
+        &[
+            "PullAboveMcuTolerance",
+            "McuPinStructureUnheld",
+            "TripReferenceGrounded",
+            "TripSenseUnbound",
+            "TripBelowFullScale",
+        ],
+    ),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

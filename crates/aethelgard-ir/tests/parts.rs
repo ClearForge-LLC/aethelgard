@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/parts.json`. It moves only with the file, on purpose.
-const PARTS_SHA256: &str = "8d2df0a2dcfe521251f3766dec59483058cebc75f36f2883ef2e19fb9dafeed2";
+const PARTS_SHA256: &str = "c121b692beba4e989df7a4de1a92f9bc3f8d2a2002ddc6f78c727d3c02800931";
 
 fn embedded() -> Value {
     serde_json::from_str(PARTS_JSON).unwrap()
@@ -215,8 +215,8 @@ fn refuses_an_unknown_key_at_top_level() {
 }
 
 #[test]
-fn refuses_schema_version_2_to_10_and_12() {
-    for version in [2, 3, 4, 5, 6, 7, 8, 9, 10, 12] {
+fn refuses_schema_version_2_to_11_and_13() {
+    for version in [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 13] {
         let mut doc = embedded();
         doc["schema_version"] = version.into();
         let err = parse_parts(&doc.to_string()).unwrap_err();
@@ -503,7 +503,7 @@ fn a_key_twice_a_missing_renode_a_case_twin_or_no_parts_is_refused() {
     let err = parse_parts(&doc.to_string()).unwrap_err();
     assert_refused(&err, Some("bme280"), "twice");
     // No parts at all.
-    let err = parse_parts(r#"{"schema_version": 11, "parts": [], "pin_parts": []}"#).unwrap_err();
+    let err = parse_parts(r#"{"schema_version": 12, "parts": [], "pin_parts": []}"#).unwrap_err();
     assert_refused(&err, None, "`parts` is empty");
 }
 

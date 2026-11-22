@@ -229,18 +229,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// by its shape alone (the judge's `BrownOut` gained `clock_acr`, `None` on
 /// this board; with `, clock_acr: None` taken out of its text it is
 /// `221f6b59…6d70` exactly, measured).
+/// Moved in `AET-WO-1211e` (specification 24, after `4240b`'s 23): the three
+/// texts by their specification sha line alone (with the specification-23
+/// sha put back each hashes to the digest before, `517228e5…1834`,
+/// `58e5cb8d…56c6` and `23c7b018…929f`, measured); the boot image did not
+/// move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "517228e50c40b1a9b42c70a41be0aeeb7deb912302f5311ee1524f316b6f1834",
+        "df6f75183729ab57db952ea1f47c006c9b742499c293e7252a5aee3ef348b40c",
     ),
     (
         "platform",
-        "58e5cb8d806aee28a9c0e0ca12f8dc5300472cf268420ac43a76df1fe36c56c6",
+        "3f6da88022151a5170882e2340d04e8764c5d0f9edad7dcf35396af1d9f2f3b3",
     ),
     (
         "platform faulted",
-        "23c7b018d9610768e67517390f4e6b11aaeba5dd3ef8bd5b5d9c93fe4e3d929f",
+        "062ef22fdf800dfc4cfce2547b917858416377cd35b6d330c43068e96d5636a7",
     ),
     (
         "boot image",

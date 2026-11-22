@@ -70,8 +70,10 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// (`AET-WO-4400e`). Version 11 adds `pin_parts`, the busless rows a
 /// specification's `pin_devices` bind (`AET-WO-1211a`, `1211` Q6):
 /// `bus: "none"` and `identity: null`, each pin's kind, pull and levels,
-/// and each strapped mode's truth table ([`crate::pin_parts`]).
-pub const PARTS_SCHEMA_VERSION: u32 = 11;
+/// and each strapped mode's truth table ([`crate::pin_parts`]). Version 12
+/// adds a pin part's `trip` and `bulk_unstated` (`AET-WO-1211e`), each
+/// absent where the part has none.
+pub const PARTS_SCHEMA_VERSION: u32 = 12;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

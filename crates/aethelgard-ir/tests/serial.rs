@@ -1572,7 +1572,7 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
 fn a_version_9_specification_is_refused() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 23);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 24);
     let mut v = spec_json(vec![port("C", None, None, None)]);
     v["schema_version"] = json!(9);
     let e = refused(v.clone());
@@ -1582,7 +1582,7 @@ fn a_version_9_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 9,
-                expected: 23
+                expected: 24
             }
         ),
         "{e}"
@@ -1612,7 +1612,7 @@ fn a_version_10_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 10,
-                expected: 23
+                expected: 24
             }
         ),
         "{e}"
@@ -1640,7 +1640,7 @@ fn a_version_11_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 11,
-                expected: 23
+                expected: 24
             }
         ),
         "{e}"
