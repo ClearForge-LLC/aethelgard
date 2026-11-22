@@ -63,3 +63,33 @@ Every run on Furnace, 2026-11-22. The base is `c9d4096b`. Evidence is in `~/.cac
 
 - The base table has 28 `independent-rule` rows whose judge names no `aethelgard_ir` rule: exactly these. The branch has none (`every_independent_rule_row_is_judged_by_an_ir_rule`).
 - Ruled 08:58Z (Q5) as built.
+
+## R3. The bench package, base against branch, both built and run in the image
+
+Both trees were built in the pinned tools image as CI's bench-package job builds them (the CLI and the bridge side by side, `spike/2308/kit/bench.sh` through `ci-img.sh`). Each then ran the job's `verify` with `--fab-out`. Both passed: base rc 0 in 194 s, branch rc 0 in 187 s.
+
+- **Base, local, against the committed package:** 16 of 17 files byte-identical. `MANIFEST.json` differs only in `verdict_sha256`, because the verdict names each gate's sandbox and this is not CI's runner.
+- **Branch against base, both local:** exactly 3 of 17 files move.
+  - `sentinel-01-bench-jlcpcb-bom.csv`: all 14 lines, by the `Note` column. U4's line ends `,,"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)"`, and every other line ends `,,`.
+  - `FAB-NOTES.md`: the JLCPCB section's grouping sentence and its new `Note` bullet; then the new section "Parts with a note", one line for U4.
+  - `MANIFEST.json`: those two files' hashes and `verdict_sha256`.
+- **The verdicts differ in one field only:** the campaign gate's `tool_version`, `null` → `1.17.0+20260907gitf1dd1b4af.aet1605` (L3). The ledger, every other gate and every other key are identical; the bench is not an HSE board.
+- So no committed verdict or package moves beyond rows 1 and 2's named lines. The package waits on a write dispatch (AWAITING-PACKAGE).
+
+## R4. Fab paths, base against branch, every committed board that rows 1 and 6 can touch
+
+`spike/2308/kit/fab-paths.sh`: `verify --fab-out` with an empty `PATH`, the base release CLI against the branch's.
+
+| Specification | Both print |
+|---|---|
+| hse-crystal-16 | `CampaignCoverageShort`, exit 3 (`VDD_1V8` has no consumer a judge observes) |
+| hse-external-8 | `DrawsNoBoard`, exit 2 |
+| sentinel-02-bench-hse8 | `DrawsNoBoard`, exit 2 |
+| sentinel-02-power (U5 ICM20948) | `CampaignCoverageShort`, exit 3 |
+| sentinel-01 (bench) | `ToolMissing kicad-cli`, exit 4: every pre-gate check passed |
+
+All 5 lines are byte-identical, base against branch.
+
+## R5. The sweep
+
+`spike/1211d/measure/sweep.sh` with the branch release CLI, judged by `same.sh` against R0's: **identical, 34 specifications, 280 files.**

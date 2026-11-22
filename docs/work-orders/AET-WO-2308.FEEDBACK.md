@@ -1,6 +1,6 @@
 # AET-WO-2308 — FEEDBACK: verify's backlog
 
-**Branch:** `wo/aet-2308-verify-backlog` from `main` `c9d4096b`; `main` `c79b9820` merged in (docs only). **Builder:** Claude (Opus 5.5 orchestrating), with one fresh Opus subagent for the targeted adversarial pass. Its report was checked at source before use. Written 2026-11-22.
+**Branch:** `wo/aet-2308-verify-backlog` from `main` `c9d4096b`; `main` `c79b9820` (docs) and `f46c3c42` (`1606`) merged in. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh Opus subagent for the targeted adversarial pass. Its report was checked at source before use. Written 2026-11-22.
 
 **Status:** see §7. **The answer, in six lines:**
 - **No stand-in reaches a fab file unlabelled.**
@@ -15,7 +15,7 @@
   - The sweep is identical: 34 specifications, 280 files.
   - Every committed specification's fab-path verdict is byte-identical, base against branch (5 of 5, run).
   - The bench package moves in exactly 3 of its 17 files, by rows 1 and 2, every line named in §2.
-  - **Mutants: 19 of 19 killed** (16 tier 1 and 3 tier 2; §4).
+  - **Mutants: 20 of 20 killed** (17 tier 1 and 3 tier 2; §4).
 
 ## 0. How it was made
 
@@ -64,12 +64,12 @@
 
 | Prediction | Result |
 |---|---|
-| P1.1 the bench `-jlcpcb-bom.csv` moves on all 14 lines; U4 carries the note | **holds** (diff in RESULTS R3) |
+| P1.1 the bench `-jlcpcb-bom.csv` moves on all 14 lines; U4 carries the note | **holds** (RESULTS R3) |
 | P1.2 FAB-NOTES moves by the new section and the JLCPCB sentences; MANIFEST by those hashes and the verdict line | **holds** (R3) |
 | P1.3 no other package file moves | **holds**: 14 of 17 byte-identical to the committed package |
 | P1.4 the sweep is identical | **holds**: 34 specifications, 280 files |
 | P2.1 the campaign version equals `simulate`'s `Renode v1.17.0` | **missed on form**: it is the archive's build string, `1.17.0+20260907gitf1dd1b4af.aet1605`, the twin's `RENODE_BUILD`. `simulate`'s entry reports `--version`'s line. Both name the same Renode |
-| P2.2 MANIFEST's verdict line moves by L3 | see R3 |
+| P2.2 MANIFEST's verdict line moves by L3 | **holds**: base and branch verdicts differ only by the campaign gate's `tool_version` (R3) |
 | P3, P4, P5 | **hold** (tests, and their mutants killed) |
 | P6 7 / 19 / 2 | **holds** |
 | P6.1 no HSE packaging verdict moves | **holds, run:** `fab-paths.sh`, 5 of 5 lines byte-identical |
@@ -120,6 +120,25 @@ One per guard this work order adds or changes, each run against the suite it liv
 - **F5 · The declared bulk's note is shown only on a synthetic BOM.** D1 stops at `CampaignCoverageShort` (R0), so no committed board takes a bulk through `verify --fab-out`. The label path is the same code that carries U4's note in the bench package.
 - **F6 · `sentinel-02-power` and `hse-crystal-16` can never be packaged:** each has a rail "no consumer a judge observes" (VDD_5V, VDD_1V8). So the stand-in refusal and the new ledger classes are not reachable on any committed board's fab path today. They are shown on the drawn 1.8 V fixture and in unit tests. This is `2304b`'s condition, unchanged.
 
+- **F7 · Two weight rows are Furnace estimates** (AET-WO-2302's rule): `fab_tier1`'s stand-in test, at 2.600, and the LP2 unit test, at 1.400. Replace them at the next refit. No tier-2 test was added: the new tier-2 assertions run inside existing `verify_2k2_tier2` and `against_fab_tier2` runs, so `TIER2_MIN` is unchanged.
+
 ## 6. Gates, fence, reduction pass
 
+- **Gates** on the merged tree (after `f46c3c42`):
+  - `cargo fmt --all -- --check`: clean.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean; also with `--features aethelgard-cli/with-tools`.
+  - `cargo test --workspace --no-fail-fast`, target in the repository as CI builds it: see §7.
+- **Before `1606` was merged** (code head `1b833307`): the host test was **2736 passed, 0 failed** (159 binaries). In the image, CI's layout: `verify_2k2_tier2` 2/2 and `against_fab_tier2` 2/2, the new assertions included.
+- **Fence:**
+  - `crates/aethelgard-cli`: `verify.rs`, `fab.rs`, `ledger.rs`, `tree.rs` (`verify`'s comparator), and tests.
+  - `crates/aethelgard-eda/src/fab.rs`: the JLCPCB note column, its `noted` reader and its notes sentence.
+  - `ci/test-weights.tsv`: two rows and their comment.
+  - `spike/2308/`, and this file.
+  - No IR, generator, twin, chaos or workflow change.
+- **Reduction pass (diff): −16 net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 0 findings below.** The duplicate: `the_hse_bring_up_rows_are_classed` re-pinned 8 of the 28 rows that the new invariant test pins with class, source and note. Its loop was removed. `tree::diff` and `against` share one walk, not two.
+
 ## 7. State
+
+- One PR, unmerged; the architect merges.
+- **The bench package moves by rows 1 and 2** (R3). It waits on a `bench-package` write dispatch, in the queue after `1606` and `1216b`. Until then, CI's `--against-fab` step on the committed package differs, as R3 predicts. The dispatch's artifact will be committed unchanged, and then READY is the last push.
+- Title and body: `~/.cache/aet-2308/pr-title-body.md`.
