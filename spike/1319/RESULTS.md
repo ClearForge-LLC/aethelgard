@@ -25,7 +25,7 @@ The predictions were committed first, at `65910b18`. Base: `main` `c1e444dd`. Ki
 | P1 | sweep identical | **identical** |
 | P2 | both harnesses identical | **identical** |
 | P3 | no feature beyond what exists | **held**. The pin-device features moved verbatim (`pin_pins` is the old `device()` body). Two new things are row data, not features: the bus kind as `Wiring`, and the stand-in. |
-| P4 | net +60 to +200 lines in `crates/` | **+672: +479 code, +193 tests. Missed** (below) |
+| P4 | net +60 to +200 lines in `crates/` | **+669: +476 code, +193 tests** (after the reduction pass). **Missed** (below) |
 | P5 | `parts_arms_tier1` passes; `TIER2_MIN` 201 | passes (2/2); `TIER2_MIN` untouched |
 | M1 | W25Q `WP`/`HOLD` swap moves W25Q cases and committed specs | **killed:** 23 specifications (69 files); d4diff 73 cases; d1319 2 cases |
 | M2 | BMP581's second decoupler moves BMP581 cases and `sentinel-01-ext-bmp581` | **killed:** 7 specifications (28 files, `sentinel-01-ext-bmp581` among them); d4diff 35 cases |
@@ -33,19 +33,19 @@ The predictions were committed first, at `65910b18`. Base: `main` `c1e444dd`. Ki
 
 ## Line count (§1.3)
 
-`git diff --numstat c1e444dd HEAD -- crates`: +1074 / −402.
+`git diff --numstat c1e444dd HEAD -- crates` at the READY code head: +1071 / −402.
 
 | | before | after | net |
 |---|---|---|---|
 | `schematic.rs` code | 2312 | 2159 | −153 |
 | `schematic.rs` tests | 382 | 350 | −32 (the source scan replaced) |
-| `schematic_pin_device.rs` code | 575 | 1207 | +632 |
+| `schematic_pin_device.rs` code | 575 | 1204 | +629 |
 | `schematic_pin_device.rs` tests | 0 | 225 | +225 |
 
-What the +479 of code is, against the patch's +108:
+What the +476 of code is, against the patch's +108:
 - **the six bus rows:** 148 lines, against the patch's 131 (doc comments kept);
 - **the compile-time table check, `check()`:** 137 lines (`const fn`, so `while` loops). The patch had none; it is what refuses the four hazards when the table is built;
-- **`arm()`:** 203 lines, one interpreter for both kinds. Each passive's ends are resolved before the part is pushed, and a pin device's declared resistors are drawn after it, both as before. Each kind mismatch the table check already excludes is refused `Internal`;
+- **`arm()`:** 200 lines, one interpreter for both kinds. Each passive's ends are resolved before the part is pushed, and a pin device's declared resistors are drawn after it, both as before. Each kind mismatch the table check already excludes is refused `Internal`;
 - **plumbing:** the bus devices' `bus_pins` (45), `on_bus`/`pin_arm`/`draws` and the `Declared`/`Context` types.
 
 The pin-device arms change the patch's figure in two ways. They are already table-shaped, so their rows cost little (+10 lines of wrapping). Folding their interpreter into the bus devices' costs the `Context` split and the per-kind match arms.
