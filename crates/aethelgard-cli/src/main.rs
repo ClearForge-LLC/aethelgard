@@ -2476,11 +2476,11 @@ fn boot_report(
                     let w = observed
                         .and_then(|o| o.levels.iter().find(|w| w.label == m.observer.label));
                     verdict::LevelReport {
-                        idle: level_name(high),
+                        idle: verdict::level_name(high),
                         settle_ns: w.and_then(|w| w.settle_ns),
                         rises_after: w.map(|w| w.rises_after),
                         falls_after: w.map(|w| w.falls_after),
-                        end_level: w.and_then(|w| w.end_level).map(level_name),
+                        end_level: w.and_then(|w| w.end_level).map(verdict::level_name),
                         status: w.map(|w| w.status),
                     }
                 });
@@ -2570,10 +2570,6 @@ fn boot_report(
     }
 }
 
-fn level_name(high: bool) -> &'static str {
-    if high { "high" } else { "low" }
-}
-
 /// A pin device's GPIO signals, outputs then inputs, as the plan and the
 /// witnesses give them (`AET-WO-1211c`).
 fn gpio_reports(
@@ -2596,7 +2592,7 @@ fn gpio_reports(
             i.pin.as_str(),
             "input",
             i.high,
-            Some(level_name(i.active_high)),
+            Some(verdict::level_name(i.active_high)),
             i.held,
         )
     });
@@ -2609,13 +2605,13 @@ fn gpio_reports(
                 net: net.to_owned(),
                 pin: pin.to_owned(),
                 direction,
-                level: level_name(high),
+                level: verdict::level_name(high),
                 active,
                 held,
                 status: w.map(|w| w.status),
                 bsrr: w.and_then(|w| w.bsrr).map(verdict::word),
                 ordered: w.and_then(|w| w.ordered),
-                read: w.and_then(|w| w.level).map(|l| level_name(l == 1)),
+                read: w.and_then(|w| w.level).map(|l| verdict::level_name(l == 1)),
                 residual: verdict::GPIO_RESIDUAL,
             }
         })

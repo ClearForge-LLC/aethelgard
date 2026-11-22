@@ -418,6 +418,11 @@ pub struct LevelReport {
     pub status: Option<&'static str>,
 }
 
+/// A level's name in a verdict and a finding (`AET-WO-1211c`).
+pub fn level_name(high: bool) -> &'static str {
+    if high { "high" } else { "low" }
+}
+
 /// What the twin cannot show of a pin device's GPIO signal (`AET-WO-1211`
 /// §4 G1, G2, G4): the verdict states it on every entry.
 pub const GPIO_RESIDUAL: &str = "the twin witnesses an output's level only as its BSRR write before MODER, never as a pad level (G1); it drives an input at a level the specification states and reads it back, and never sees a pull (G2) or the device (device_unmodelled)";

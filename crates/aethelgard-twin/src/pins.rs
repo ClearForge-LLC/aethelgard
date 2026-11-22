@@ -51,6 +51,14 @@ pub const MEASURED_BITS: u8 = 12;
 /// `1211` §4).
 pub const ADCS: [(&str, &str); 2] = [("ADC1", "adcM1S2"), ("ADC3", "adc3")];
 
+/// An ADC input's channel number, `INP5` as 5: `INP0` to `INP19`, the
+/// channels an H7 ADC has; `None` for any other name.
+pub fn channel(name: &str) -> Option<u8> {
+    name.strip_prefix("INP")
+        .and_then(|n| n.parse().ok())
+        .filter(|&n| n <= 19)
+}
+
 /// A pin device's output signal: its declared initial level, and the
 /// registers whose writes show it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,21 +128,13 @@ pub struct Analog {
     pub cr_at: u32,
 }
 
-/// Everything the twin drives and reads of the specification's pin devices,
-/// in the specification's order. Empty for a specification with none.
+/// Everything the twin drives and reads of the topology's pin devices, in
+/// net order. Empty (`Pins::default()`) for a topology with none.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Pins {
-    /// Each pin device, `(reference, part)`: none is modelled.
-    pub devices: Vec<(String, String)>,
     pub outputs: Vec<Output>,
     pub inputs: Vec<Input>,
     pub analog: Vec<Analog>,
-}
-
-impl Pins {
-    pub fn is_empty(&self) -> bool {
-        self.devices.is_empty()
-    }
 }
 
 /// What a scenario drives instead of the declared idle: each held input's
@@ -163,14 +163,7 @@ pub fn plan(topology: &SolvedTopology, overrides: &Overrides) -> Result<Pins, Tw
     let f = cmsis::register_facts()?;
     let gpio = f.layout("GPIO")?;
     let adc = f.layout("ADC")?;
-    let mut out = Pins {
-        devices: topology
-            .pin_devices
-            .iter()
-            .map(|(r, d)| (r.clone(), d.part.clone()))
-            .collect(),
-        ..Pins::default()
-    };
+    let mut out = Pins::default();
     let selects: std::collections::BTreeSet<&str> = topology
         .spi_devices
         .values()
@@ -256,17 +249,12 @@ pub fn plan(topology: &SolvedTopology, overrides: &Overrides) -> Result<Pins, Tw
                     ),
                 )
             })?;
-        let channel: u8 = a
-            .channel
-            .strip_prefix("INP")
-            .and_then(|n| n.parse().ok())
-            .filter(|&n| n <= 19)
-            .ok_or_else(|| {
-                not_simulated(
-                    net,
-                    format!("it is on channel `{}`, not INP0 to INP19", a.channel),
-                )
-            })?;
+        let channel = channel(&a.channel).ok_or_else(|| {
+            not_simulated(
+                net,
+                format!("it is on channel `{}`, not INP0 to INP19", a.channel),
+            )
+        })?;
         let bits = a
             .bits
             .ok_or_else(|| not_simulated(net, "it has no solved resolution".into()))?;

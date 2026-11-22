@@ -143,13 +143,6 @@ enum Expect {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
-enum LevelName {
-    Low,
-    High,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "lowercase")]
 enum LineName {
     Sda,
     Scl,
@@ -196,7 +189,7 @@ struct RawOverride {
 #[serde(deny_unknown_fields, remote = "Self")]
 struct RawPinHeld {
     net: String,
-    level: LevelName,
+    level: Level,
 }
 
 /// `{"net": ..., "millivolts": n}`, nothing else (`AET-WO-1211c`).
@@ -565,10 +558,7 @@ fn pin_held_from(v: serde_json::Value) -> Result<Override, ScenarioError> {
     }
     Ok(Override::PinHeld {
         net: raw.net,
-        level: match raw.level {
-            LevelName::Low => Level::Low,
-            LevelName::High => Level::High,
-        },
+        level: raw.level,
     })
 }
 

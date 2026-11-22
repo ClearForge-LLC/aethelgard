@@ -33,7 +33,6 @@ fn plan(o: &Overrides) -> Result<pins::Pins, aethelgard_twin::TwinError> {
 #[test]
 fn d1_s_plan_is_its_solved_topology() {
     let p = plan(&Overrides::default()).unwrap();
-    assert_eq!(p.devices, [("U2".to_owned(), "DRV8876PWPR".to_owned())]);
     let [o] = p.outputs.as_slice() else { panic!() };
     assert_eq!(
         (o.net.as_str(), o.pin.as_str(), o.high),
@@ -168,5 +167,8 @@ fn a_board_without_a_pin_device_has_an_empty_plan() {
     let v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
     let t = solved(&v);
     assert!(!t.gpio.is_empty(), "the board's flash chip select");
-    assert!(pins::plan(&t, &Overrides::default()).unwrap().is_empty());
+    assert_eq!(
+        pins::plan(&t, &Overrides::default()).unwrap(),
+        pins::Pins::default()
+    );
 }

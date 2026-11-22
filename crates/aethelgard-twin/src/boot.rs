@@ -1081,11 +1081,8 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             "ADC1" => "ADC12".to_owned(),
             p => p.to_owned(),
         });
-        let channel = a
-            .channel
-            .strip_prefix("INP")
-            .and_then(|n| n.parse::<u32>().ok())
-            .filter(|&n| n <= 19)
+        let channel = crate::pins::channel(&a.channel)
+            .map(u32::from)
             .ok_or_else(|| TwinError::UnsupportedPeripheral {
                 peripheral: format!("{} {}", a.peripheral, a.channel),
             })?;

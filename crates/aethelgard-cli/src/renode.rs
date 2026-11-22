@@ -2060,7 +2060,7 @@ fn level_findings_of(m: &Motor, w: &LevelWitness) -> Option<Finding> {
             format!(
                 "{}: declared idle {}, {}",
                 motor_who(&m.observer),
-                if w.high { "high" } else { "low" },
+                crate::verdict::level_name(w.high),
                 match (w.status, w.settle_ns) {
                     ("unreadable", _) => "Renode's log could not be read whole, so its edges were not".to_owned(),
                     ("unanchored", _) | (_, None) => "and its timer's CEN rise was never observed, so no instant was settled from".to_owned(),
@@ -2068,11 +2068,7 @@ fn level_findings_of(m: &Motor, w: &LevelWitness) -> Option<Finding> {
                         "from {settle} ns it made {} rises and {} falls and ended {}",
                         w.rises_after,
                         w.falls_after,
-                        match w.end_level {
-                            Some(true) => "high",
-                            Some(false) => "low",
-                            None => "unread",
-                        }
+                        w.end_level.map_or("unread", crate::verdict::level_name)
                     ),
                 }
             ),
@@ -4501,7 +4497,6 @@ mod tests {
 
     /// A board with no pin device (`AET-WO-1211c`).
     static NO_PINS: aethelgard_twin::pins::Pins = aethelgard_twin::pins::Pins {
-        devices: Vec::new(),
         outputs: Vec::new(),
         inputs: Vec::new(),
         analog: Vec::new(),
@@ -4967,7 +4962,6 @@ mod tests {
     fn a_pin_device_s_stimuli_hooks_and_reads_are_in_the_boot() {
         let image = image();
         let pins = aethelgard_twin::pins::Pins {
-            devices: vec![("U2".into(), "DRV8876PWPR".into())],
             outputs: vec![aethelgard_twin::pins::Output {
                 net: "DRV_NSLEEP".into(),
                 pin: "PA1".into(),

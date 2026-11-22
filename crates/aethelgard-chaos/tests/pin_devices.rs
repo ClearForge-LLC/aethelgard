@@ -62,8 +62,6 @@ fn version_5_admits_both_overrides_and_exposes_them() {
     .unwrap();
     assert_eq!(s.pins_held(), [("BTN", Level::High), ("SW", Level::Low)]);
     assert_eq!(s.analog_values(), [("VSENSE", 1500)]);
-    assert_eq!(Level::High.as_str(), "high");
-    assert_eq!(Level::Low.as_str(), "low");
     // Neither is a version-4 scenario's old override.
     assert_eq!(parse(&file(5, json!([]))).unwrap().pins_held(), []);
     // Another override of the same file is kept beside them.

@@ -259,7 +259,7 @@ pub fn findings(pins: &Pins, gpio: &[GpioWitness], adc: &[AdcWitness]) -> Vec<Fi
                             "{}: the input on {} reads its declared active level ({}), {}: the device reports itself asserted",
                             i.net,
                             i.pin,
-                            if i.active_high { "high" } else { "low" },
+                            crate::verdict::level_name(i.active_high),
                             if i.held {
                                 "as the scenario holds it"
                             } else {

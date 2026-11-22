@@ -19,20 +19,12 @@ pub const LAST_KIND: u64 = 37;
 
 /// A pin's level, as the `pin_held` override and kinds 33 and 34 name it
 /// (`AET-WO-1211c`). Chaos-owned: this crate reads no IR type (`RUL-16`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// A scenario file names it `low` or `high`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
     Low,
     High,
-}
-
-impl Level {
-    /// The name a scenario file gives it.
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Low => "low",
-            Self::High => "high",
-        }
-    }
 }
 
 /// The highest voltage an `analog_value` override may set, in mV
