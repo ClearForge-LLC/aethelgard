@@ -76,7 +76,7 @@ Predictions committed before any run: `spike/2307/PREDICTIONS.md`, `939593d3`. H
 | A9 | An entry covering more fields than the rows that need it | None: every field of all 43 Sentinel-03 entries is a ledger row of that register and class, and is either a missing row or the held entry's own (test, and `covers_only_ledger_rows` in three tests). A completed entry's held fields are ledger rows because `stale` refuses first (`verify.rs`, the `stale` call precedes `acknowledge`) |
 | A10 | The probe's own binary | The first run of this script used `target/debug/aethelgard` as `mutants.sh` had left it, built with the copy-judge mutant. The probe's last line caught it ("non-empty reasons 43, each the held entry's: False"). `mutants.sh` now rebuilds after restoring the source, and the runs above are on the restored build |
 
-The refusal on Sentinel-03 is 12,443 bytes.
+The refusal on Sentinel-03 is 12,446 bytes.
 
 ## 5. Mutants (§1.3)
 
@@ -92,11 +92,11 @@ Run twice: before the reduction pass, and after it changed `ledger_tier1`.
 
 ## 6. Gates
 
-On the merged head `94394f68` (this branch with `main` `349c75f5` merged in; the merge brought docs only, including this work order, byte-identical to `~/.cache/aet-2307-wo.md`) [measured, log `~/.cache/aet-2307/gates-merged.log`]:
+On the merged head `c9454881`: this branch with `main` `ddfa64d6` merged in (4240b, specification 23 / solved 15; before that `349c75f5`, whose docs carry this work order, byte-identical to `~/.cache/aet-2307-wo.md`). 4240b touched `ledger.rs`, `verify.rs` and the Sentinel-03 fixture. The merge was clean, and Sentinel-03's counts did not move (280 / 35 / 43 / 6 / 313). The measurement, the differential (baseline rebuilt from `ddfa64d6` by `git archive`), the adversarial pass and the mutants were each re-run on this head [measured, log `~/.cache/aet-2307/gates-merged2.log`]:
 
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- `cargo test --workspace`: **2564 passed, 0 failed, 0 ignored**, 151 test binaries. Every refusal test of the workspace is among them.
+- `cargo test --workspace`: **2594 passed, 0 failed, 0 ignored**, 153 test binaries (2564 / 151 on the earlier merge of `349c75f5`). Every refusal test of the workspace is among them.
 - The tests must run with the in-repo `target/`. With `CARGO_TARGET_DIR` outside the repository, `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` fails as `BaseOutsideRoot`, because its scratch sits under the target directory. That is environmental, and CI uses the in-repo target.
 
 - **Reduction pass (diff):** −12 lines net in tests · 1 duplicate removed (my `every_pair_unwritten` grouping re-derived what `every_row_acknowledged` in the same file already does; the test now sorts and empties that helper's output) · 0 dead paths · 0 protected kept · 1 finding (F4). Done inline: the production diff is about 50 lines. Mutants re-run after it, all killed.
@@ -117,3 +117,7 @@ On the merged head `94394f68` (this branch with `main` `349c75f5` merged in; the
 - **F4 · reduction finding, outside the fence · the reason rule's wording has a second home.** The message spells the rule ("1 to 200 bytes of printable ASCII with no space at either end"), with the 200 from `MAX_SOURCE`. `board::source`'s `InvalidSource` message spells it in the IR. Two texts for one rule. A shared `const` description in `aethelgard-ir` would make it one, but that crate is outside this fence.
 - **F5 · prediction missed · completed entries.** Predicted about 20, measured 6. Pairs were predicted 40 (35–45) and measured 43, inside the range.
 - **F6 · the README's reference count was stale** (164 rows / 27 entries; the pinned figures are 168 / 30). Corrected in the row this work order edits.
+
+## 8. CI
+
+CI-PENDING
