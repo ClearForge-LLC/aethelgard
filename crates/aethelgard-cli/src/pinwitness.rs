@@ -154,11 +154,12 @@ pub struct AdcWitness {
 
 /// Each output's witness from the judged boot's hook lines, in order; `None`
 /// when the log could not be read whole. Its level is the one the pin holds
-/// when `MODER` first makes it an output: every `BSRR` word touching the pin
-/// before that write must carry the declared level's bit alone, at least one
-/// must, and no `ODR` write may come before it (adversarial F2: a second
-/// word, or an `ODR` write, would set another level). `bsrr` is the last such
-/// word before `MODER` (or the first after, when none came before).
+/// when `MODER` first makes it an output, and nothing drives it before that
+/// (analog mode, RM0433 Rev 9 p. 539): the last `BSRR` word touching the pin
+/// before that write must carry the declared level's bit alone, and no `ODR`
+/// write may come before it (adversarial F2: a later word, or an `ODR` write,
+/// would set another level). `bsrr` is that word (or the first after
+/// `MODER`, when none came before).
 pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWitness> {
     pins.outputs
         .iter()
@@ -203,11 +204,11 @@ pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWit
                 w.status = "unwitnessed";
                 return w;
             };
-            let before: Vec<u32> = words.iter().filter(|x| x.0 < m).map(|x| x.1).collect();
+            let last = words.iter().rev().find(|x| x.0 < m).map(|x| x.1);
             let odr = hooks.iter().any(|(i, h, _)| {
                 matches!(h, Hook::Gpio { address, .. } if *address == o.odr_at) && *i < m
             });
-            match before.last() {
+            match last {
                 None => {
                     w.bsrr = words.first().map(|x| x.1);
                     w.ordered = w.bsrr.map(|_| false);
@@ -217,11 +218,11 @@ pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWit
                         "unwitnessed"
                     };
                 }
-                Some(&last) => {
+                Some(last) => {
                     w.bsrr = Some(last);
                     w.ordered = Some(true);
-                    let alone = |word: &u32| word & o.bsrr_bit() != 0 && word & o.bsrr_other() == 0;
-                    w.status = if before.iter().all(alone) && !odr {
+                    let alone = last & o.bsrr_bit() != 0 && last & o.bsrr_other() == 0;
+                    w.status = if alone && !odr {
                         "witnessed"
                     } else {
                         "mismatch"
@@ -565,6 +566,16 @@ mod tests {
                 gpio(3, MODER, 4, 0)
             ]),
             "mismatch"
+        );
+        // The other level first, the declared one last before MODER: the
+        // pin holds the declared level when it becomes an output.
+        assert_eq!(
+            status(&[
+                gpio(1, BSRR, 1 << 1, 0),
+                gpio(2, BSRR, 1 << 17, 0),
+                gpio(3, MODER, 4, 0)
+            ]),
+            "witnessed"
         );
         // Two words carrying the declared level alone: witnessed, the last.
         let w = outputs(
