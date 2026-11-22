@@ -49,5 +49,5 @@ As predicted (M). Since `1320`, M2 no longer tests the harness's bytes; the comp
   - `d4diff identical: 277 cases, 926 files`;
   - `d1319 identical: 84 cases, 331 files`;
   - `bulk.sh`: `ceramic identical: emit exit 0, 3 files, the note in 1`; `electrolytic identical: …` the same.
-- **R2.** See FEEDBACK §6.
+- **R2.** See FEEDBACK §7.
 - **R3, hit.** `crates/`: +97 −35, net **+62**.

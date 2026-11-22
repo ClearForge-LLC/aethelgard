@@ -1885,5 +1885,11 @@ mod tests {
         assert_eq!(R_MIDDLE, WHY, "middle");
         assert_eq!(R_LAST, WHY, "last");
         assert_eq!(R_REVERSED, Ok(()), "the entries in the other order");
+        // The forward count is the table given, not DECOUPLERS.
+        const TWO: Result<(), &str> = check(&[BME280], &[("BME280", 2)]);
+        assert_eq!(
+            TWO,
+            Err("a bus row whose decoupler count is not its part's")
+        );
     }
 }
