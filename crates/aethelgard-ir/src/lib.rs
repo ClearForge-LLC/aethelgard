@@ -1622,6 +1622,13 @@ pub enum IrValidationError {
     NetAssignedTwice { id: String },
     #[error("pin `{id}` is assigned to more than one net")]
     DuplicatePin { id: String },
+    /// `SolvedTopology::validate` (`AET-WO-1217` F4): a digital assignment
+    /// on a pin whose pad takes only an analog input; `solve`'s
+    /// `AnalogPadPin`, so a topology edited after `solve` is refused too.
+    #[error(
+        "net `{net}` is a digital signal on pin `{id}`, whose pad takes only an analog input (the MCU row's `io.analog_pads`)"
+    )]
+    AnalogPadPin { id: String, net: String },
     #[error("analog_lines names `{id}`, which is no solved I2C line")]
     AnalogLineNotI2c { id: String },
     #[error("solved I2C line `{id}` has no entry in analog_lines")]
@@ -2433,6 +2440,7 @@ impl IrValidationError {
             Self::InvalidCeiling { .. } => "InvalidCeiling",
             Self::NetAssignedTwice { .. } => "NetAssignedTwice",
             Self::DuplicatePin { .. } => "DuplicatePin",
+            Self::AnalogPadPin { .. } => "AnalogPadPin",
             Self::AnalogLineNotI2c { .. } => "AnalogLineNotI2c",
             Self::MissingAnalogLine { .. } => "MissingAnalogLine",
             Self::AnalogBusMismatch { .. } => "AnalogBusMismatch",
@@ -2646,6 +2654,7 @@ impl IrValidationError {
             | Self::InvalidCeiling { id }
             | Self::NetAssignedTwice { id }
             | Self::DuplicatePin { id }
+            | Self::AnalogPadPin { id, .. }
             | Self::AnalogLineNotI2c { id }
             | Self::MissingAnalogLine { id }
             | Self::AnalogBusMismatch { id }
@@ -4403,6 +4412,20 @@ impl SolvedTopology {
         for pin in all {
             if !pins.insert(pin.as_str()) {
                 return Err(E::DuplicatePin { id: pin.clone() });
+            }
+        }
+        let pads = solve::analog_pads(&self.mcu)?;
+        let digital = self
+            .assignments
+            .iter()
+            .map(|(net, a)| (net, &a.pin))
+            .chain(self.gpio.iter().map(|(net, g)| (net, &g.pin)));
+        for (net, pin) in digital {
+            if pads.contains(&pin.as_str()) {
+                return Err(E::AnalogPadPin {
+                    id: pin.clone(),
+                    net: net.clone(),
+                });
             }
         }
         self.validate_analog_lines()?;

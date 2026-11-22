@@ -35,8 +35,10 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// added the `crystal` kind (`AET-WO-4240a` §1.3). Version 6 gave the MCU
 /// row `io`, each I/O pin's structure and the input each structure takes in
 /// operation (`AET-WO-1211e` A1). Version 7 gave `io` its absolute maximum
-/// ratings, DS12117 Table 10 (`AET-WO-1216b`).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 7;
+/// ratings, DS12117 Table 10 (`AET-WO-1216b`). Version 8 gave it
+/// `analog_pads`, the pins whose pad takes only an analog input
+/// (`AET-WO-1217` F4).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 8;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -456,6 +458,17 @@ pub struct McuIo {
     /// pin takes at any supply, read at VDD = 0 by `validate`'s step 25
     /// (`AET-WO-1216b`).
     pub absolute_maximum: IoAbsoluteMaximum,
+    /// The pins whose pad takes only an analog input (DS12117 Table 8's type
+    /// `ANA`): the solver offers them to no digital claimant and refuses one
+    /// by hand (`AET-WO-1217` F4).
+    pub analog_pads: AnalogPads,
+}
+
+/// Pins of [`McuIo::pins`] whose pad is analog only, and where that is read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AnalogPads {
+    pub pins: BTreeSet<String>,
+    pub at: At,
 }
 
 /// Table 10's input limits: each structure family's, the BOOT0 pin's and
@@ -1170,6 +1183,14 @@ struct RawMcuIo {
     families: Vec<RawIoFamily>,
     pulls_off_above_supply_millivolts: RawLimit,
     absolute_maximum: RawIoAbsoluteMaximum,
+    analog_pads: RawAnalogPads,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawAnalogPads {
+    pins: Vec<String>,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -2283,6 +2304,18 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
     if pins.is_empty() {
         return Err("`kind.mcu.io.pins` is empty".to_owned());
     }
+    let mut pads = BTreeSet::new();
+    for pin in m.analog_pads.pins {
+        if !pins.contains_key(&pin) || !pads.insert(pin.clone()) {
+            return Err(format!(
+                "`kind.mcu.io.analog_pads.pins` names `{pin}`, which is not a held pin of `kind.mcu.io.pins`, or names it twice"
+            ));
+        }
+    }
+    let analog_pads = AnalogPads {
+        pins: pads,
+        at: r.at(m.analog_pads.at, "kind.mcu.io.analog_pads.at")?,
+    };
     Ok(McuIo {
         pins,
         families,
@@ -2291,6 +2324,7 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
             "kind.mcu.io.pulls_off_above_supply_millivolts",
         )?,
         absolute_maximum,
+        analog_pads,
     })
 }
 

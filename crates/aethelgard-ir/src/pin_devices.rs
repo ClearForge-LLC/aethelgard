@@ -2113,6 +2113,7 @@ pub(crate) fn place<'t>(
     spec: &Specification,
     table: &'t crate::PinTable,
     reserved: &[&str],
+    pads: &[&str],
     used: &mut BTreeMap<&'t str, String>,
     gpio: &mut BTreeMap<String, SolvedGpio>,
     adc: &mut BTreeMap<String, SolvedAdcInput>,
@@ -2227,6 +2228,7 @@ pub(crate) fn place<'t>(
                     .map(String::as_str)
                     .find(|p| {
                         !reserved.contains(p)
+                            && !pads.contains(p)
                             && !used.contains_key(p)
                             && !(s.direction == Direction::Output && MCU_RESET_PULL_UPS.contains(p))
                     })

@@ -34,6 +34,21 @@ pub fn reserved_pins(hse: Option<&crate::clock::Hse>) -> Vec<&'static str> {
     pins
 }
 
+/// The pins `solve` offers no digital claimant and refuses as a digital
+/// hand pin (`AET-WO-1217` F4): the MCU row's `io.analog_pads`. An ADC input
+/// may take one. A part with no power-parts row has no pin table either
+/// (`aethelgard-svd-hal` holds only parts with a row); only a test's own
+/// table reaches that case, and its pins are offered as its table gives them.
+pub(crate) fn analog_pads(part: &str) -> Result<Vec<&'static str>, IrValidationError> {
+    let table = crate::power_parts::table()?;
+    Ok(match table.get(part).map(|r| &r.kind) {
+        Some(crate::power_parts::Kind::Mcu(m)) => {
+            m.io.analog_pads.pins.iter().map(String::as_str).collect()
+        }
+        _ => Vec::new(),
+    })
+}
+
 /// The values [`solve`] may try, across the whole solve including the
 /// minimal-set searches, before refusing with [`SolveError::BudgetExceeded`].
 pub const NODE_LIMIT: u64 = 10_000_000;
@@ -59,6 +74,10 @@ pub enum SolveError {
     UnknownPin { pin: String, claimant: String },
     #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
     ReservedPin { pin: String, claimant: String },
+    #[error(
+        "`{claimant}` names pin `{pin}`, whose pad takes only an analog input (the MCU row's `io.analog_pads`: DS12117 Table 8 types it `ANA`, and a Px_C pin sinks at most 1 mA); a digital signal goes on another pin"
+    )]
+    AnalogPadPin { pin: String, claimant: String },
     #[error(
         "`{claimant}` names peripheral `{peripheral}`, which the pin table does not offer for this bus kind"
     )]
@@ -220,6 +239,7 @@ impl SolveError {
             Self::PartMismatch { .. } => "PartMismatch",
             Self::UnknownPin { .. } => "UnknownPin",
             Self::ReservedPin { .. } => "ReservedPin",
+            Self::AnalogPadPin { .. } => "AnalogPadPin",
             Self::UnknownPeripheral { .. } => "UnknownPeripheral",
             Self::PinClaimedTwice { .. } => "PinClaimedTwice",
             Self::PeripheralClaimedTwice { .. } => "PeripheralClaimedTwice",
@@ -259,6 +279,7 @@ impl SolveError {
             Self::PartMismatch { spec, .. } => Some(spec),
             Self::UnknownPin { pin, .. }
             | Self::ReservedPin { pin, .. }
+            | Self::AnalogPadPin { pin, .. }
             | Self::PinClaimedTwice { pin, .. } => Some(pin),
             Self::UnknownPeripheral { peripheral, .. }
             | Self::PeripheralClaimedTwice { peripheral, .. } => Some(peripheral),
@@ -295,6 +316,7 @@ impl SolveError {
             Self::PartMismatch { .. } => Vec::new(),
             Self::UnknownPin { claimant, .. }
             | Self::ReservedPin { claimant, .. }
+            | Self::AnalogPadPin { claimant, .. }
             | Self::UnknownPeripheral { claimant, .. }
             | Self::NoFreePin { claimant } => vec![claimant.clone()],
             Self::PinClaimedTwice { first, second, .. }
@@ -368,6 +390,7 @@ fn solve_inner(
 ) -> Result<SolvedTopology, SolveError> {
     spec.validate().map_err(SolveError::InvalidSpecification)?;
     let reserved = reserved_pins(spec.mcu.hse.as_ref());
+    let pads = analog_pads(&spec.mcu.part).map_err(SolveError::InvalidSpecification)?;
     let mut out = SolvedTopology {
         schema_version: crate::SOLVED_SCHEMA_VERSION,
         specification_sha256: specification_sha256.to_owned(),
@@ -524,11 +547,9 @@ fn solve_inner(
         let pin = match cs.hand {
             Some(pin) => pin,
             None => {
-                let free = table
-                    .pins
-                    .keys()
-                    .map(String::as_str)
-                    .find(|p| !reserved.contains(p) && !search.used.contains_key(p));
+                let free = table.pins.keys().map(String::as_str).find(|p| {
+                    !reserved.contains(p) && !pads.contains(p) && !search.used.contains_key(p)
+                });
                 let Some(pin) = free else {
                     return Err(SolveError::NoFreePin {
                         claimant: cs.path.clone(),
@@ -619,6 +640,7 @@ fn solve_inner(
         spec,
         table,
         &reserved,
+        &pads,
         &mut search.used,
         &mut out.gpio,
         &mut out.adc_inputs,
@@ -1497,34 +1519,44 @@ impl<'s, 't> Model<'s, 't> {
     /// peripherals (unknown, claimed twice), then each bus alone.
     fn new(spec: &'s Specification, table: &'t PinTable) -> Result<Self, SolveError> {
         let reserved = reserved_pins(spec.mcu.hse.as_ref());
+        let pads = analog_pads(&spec.mcu.part).map_err(SolveError::InvalidSpecification)?;
         let mut claimed: BTreeMap<&'t str, String> = BTreeMap::new();
-        let mut hand = |signal: &Signal, path: &str| -> Result<Option<&'t str>, SolveError> {
-            let Some(written) = signal.pin.as_deref() else {
-                return Ok(None);
+        // `digital`: every claimant but an ADC input, which an analog pad
+        // takes (`AET-WO-1217` F4).
+        let mut hand =
+            |signal: &Signal, path: &str, digital: bool| -> Result<Option<&'t str>, SolveError> {
+                let Some(written) = signal.pin.as_deref() else {
+                    return Ok(None);
+                };
+                let claimant = path.to_owned();
+                let Some((key, _)) = table.pins.get_key_value(written) else {
+                    return Err(SolveError::UnknownPin {
+                        pin: written.to_owned(),
+                        claimant,
+                    });
+                };
+                let key = key.as_str();
+                if reserved.contains(&key) {
+                    return Err(SolveError::ReservedPin {
+                        pin: key.to_owned(),
+                        claimant,
+                    });
+                }
+                if digital && pads.contains(&key) {
+                    return Err(SolveError::AnalogPadPin {
+                        pin: key.to_owned(),
+                        claimant,
+                    });
+                }
+                if let Some(first) = claimed.insert(key, claimant.clone()) {
+                    return Err(SolveError::PinClaimedTwice {
+                        pin: key.to_owned(),
+                        first,
+                        second: claimant,
+                    });
+                }
+                Ok(Some(key))
             };
-            let claimant = path.to_owned();
-            let Some((key, _)) = table.pins.get_key_value(written) else {
-                return Err(SolveError::UnknownPin {
-                    pin: written.to_owned(),
-                    claimant,
-                });
-            };
-            let key = key.as_str();
-            if reserved.contains(&key) {
-                return Err(SolveError::ReservedPin {
-                    pin: key.to_owned(),
-                    claimant,
-                });
-            }
-            if let Some(first) = claimed.insert(key, claimant.clone()) {
-                return Err(SolveError::PinClaimedTwice {
-                    pin: key.to_owned(),
-                    first,
-                    second: claimant,
-                });
-            }
-            Ok(Some(key))
-        };
         let mut sig = |name: &'static str,
                        signal: &'s Signal,
                        path: String|
@@ -1532,7 +1564,7 @@ impl<'s, 't> Model<'s, 't> {
             Ok(Sig {
                 name,
                 net: &signal.net,
-                hand: hand(signal, &path)?,
+                hand: hand(signal, &path, true)?,
                 path,
             })
         };
@@ -1578,7 +1610,7 @@ impl<'s, 't> Model<'s, 't> {
             };
             motors.push(Motor {
                 label: &m.label,
-                hand: hand(&pin, &path)?,
+                hand: hand(&pin, &path, true)?,
                 path,
                 protocol: m.protocol,
                 pwm: m.pwm.as_ref(),
@@ -1598,13 +1630,13 @@ impl<'s, 't> Model<'s, 't> {
                 tx: Sig {
                     name: "TX",
                     net: &p.tx.net,
-                    hand: hand(&p.tx, &tx_path)?,
+                    hand: hand(&p.tx, &tx_path, true)?,
                     path: tx_path,
                 },
                 rx: Sig {
                     name: "RX",
                     net: &p.rx.net,
-                    hand: hand(&p.rx, &rx_path)?,
+                    hand: hand(&p.rx, &rx_path, true)?,
                     path: rx_path,
                 },
                 path,
@@ -1613,7 +1645,7 @@ impl<'s, 't> Model<'s, 't> {
         let mut channels: Vec<Channel<'t>> = table
             .pins
             .iter()
-            .filter(|(pin, _)| !reserved.contains(&pin.as_str()))
+            .filter(|(pin, _)| !reserved.contains(&pin.as_str()) && !pads.contains(&pin.as_str()))
             .flat_map(|(pin, p)| {
                 p.alternate_functions.iter().filter_map(move |(name, af)| {
                     motor::timer_channel(name).map(|(n, k)| (n, k, pin.as_str(), *af))
@@ -1635,22 +1667,32 @@ impl<'s, 't> Model<'s, 't> {
         // name; the device's signals and ADC inputs are placed after it.
         let mut device_hands = Vec::new();
         for (i, d) in spec.declared_pin_devices().iter().enumerate() {
-            let held =
-                d.signals
-                    .iter()
-                    .enumerate()
-                    .map(|(k, s)| (&s.net, &s.pin, format!("pin_devices[{i}].signals[{k}]")))
-                    .chain(
-                        d.analog.iter().enumerate().map(|(k, a)| {
-                            (&a.net, &a.pin, format!("pin_devices[{i}].analog[{k}]"))
-                        }),
-                    );
-            for (net, pin, path) in held {
+            let held = d
+                .signals
+                .iter()
+                .enumerate()
+                .map(|(k, s)| {
+                    (
+                        &s.net,
+                        &s.pin,
+                        format!("pin_devices[{i}].signals[{k}]"),
+                        true,
+                    )
+                })
+                .chain(d.analog.iter().enumerate().map(|(k, a)| {
+                    (
+                        &a.net,
+                        &a.pin,
+                        format!("pin_devices[{i}].analog[{k}]"),
+                        false,
+                    )
+                }));
+            for (net, pin, path, digital) in held {
                 let signal = Signal {
                     net: net.clone(),
                     pin: pin.clone(),
                 };
-                if let Some(key) = hand(&signal, &path)? {
+                if let Some(key) = hand(&signal, &path, digital)? {
                     device_hands.push((key, path));
                 }
             }
@@ -1676,7 +1718,9 @@ impl<'s, 't> Model<'s, 't> {
                     let pins = table
                         .pins
                         .iter()
-                        .filter(|(pin, _)| !reserved.contains(&pin.as_str()))
+                        .filter(|(pin, _)| {
+                            !reserved.contains(&pin.as_str()) && !pads.contains(&pin.as_str())
+                        })
                         .filter_map(|(pin, p)| {
                             p.alternate_functions
                                 .get(&wanted)
