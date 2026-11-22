@@ -296,7 +296,7 @@ The full table is in `RESULTS.md` §5. 13 of 18 hold, and one is incomplete. The
 
 ## 8. Gates, fence, reduction pass
 
-- **Gates not run.** This branch is spike-only: no crate, specification, `fab/`, workflow or `ci/` file changes, and the WO says the gates are not run on it. `git diff --stat origin/main` lists only `spike/4300h/` and this file.
+- **Gates not run.** This branch is spike-only: no crate, specification, `fab/`, workflow or `ci/` file changes, and the WO says the gates are not run on it. `git diff --stat` against the merge base `f46c3c42` lists only `spike/4300h/` and this file (85 files).
 - **Fence:** `spike/4300h/` and this FEEDBACK only.
 - **Reduction pass (diff):** −5 net · 2 duplicates removed · 0 dead paths removed · 0 protected kept · 1 finding below.
   - **The duplicates:**
