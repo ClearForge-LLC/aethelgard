@@ -127,7 +127,7 @@ One per guard this work order adds or changes, each run against the suite it liv
 - **Gates** on the merged tree (after `f46c3c42`):
   - `cargo fmt --all -- --check`: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean; also with `--features aethelgard-cli/with-tools`.
-  - `cargo test --workspace --no-fail-fast`, target in the repository as CI builds it: see §7.
+  - `cargo test --workspace --no-fail-fast`, target in the repository as CI builds it: **2737 passed, 0 failed** (159 binaries) at `ef14522b`.
 - **Before `1606` was merged** (code head `1b833307`): the host test was **2736 passed, 0 failed** (159 binaries). In the image, CI's layout: `verify_2k2_tier2` 2/2 and `against_fab_tier2` 2/2, the new assertions included.
 - **Fence:**
   - `crates/aethelgard-cli`: `verify.rs`, `fab.rs`, `ledger.rs`, `tree.rs` (`verify`'s comparator), and tests.
