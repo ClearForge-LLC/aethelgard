@@ -1,7 +1,7 @@
 # AET-WO-1215 FEEDBACK — an older specification is refused with every change it lacks
 
 **Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f`, `c1e444dd`, `e3aea224` and `7fc81640` merged (specification 23, solved 16). **Branch:** `wo/aet-1215-version-changes`, PR #303.
-**State:** BUILT to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z; D6's text corrected at 04:00Z, §6).
+**State:** READY, built to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z; D6's text corrected at 04:00Z, §6).
 **Gates:** §8.
 
 ## 1. What was measured, and how (`spike/1215/`)
@@ -167,7 +167,7 @@ Every bump's work order is the one README §`Specification` names, in order. **(
 
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `cargo test --workspace --no-fail-fast`, in a 32 G capped scope: 156 binaries, 2,624 passed and 0 failed before the reduction. On `040f61cd` (main `7fc81640` merged): 157 binaries, 2,636 passed, 0 failed.
-- CI: green on every check at `35bcdda4`. The READY commit follows green on the last push. `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
+- CI: green on every check at `35bcdda4`, then at `c1a423c8` (main `7fc81640` merged): `ci` run 44984150468, `engine-image` 44984150477 and `ardupilot-image` 44984150463 all succeeded, 33 checks pass and 3 are skipped by design. **READY** at the commit that records this line. Nothing is pushed after it. `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
 - **Mutants** (`spike/1215/mutants.sh` → `out/mutants.txt`): 12 of 12 killed.
   - M1: drop row 22. M2 and M2b: swap rows 21/22 and 2/3.
   - M3: version 0 lists every row. M4: an older file lists its own row.
