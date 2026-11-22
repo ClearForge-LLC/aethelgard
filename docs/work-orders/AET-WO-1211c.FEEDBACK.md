@@ -51,9 +51,11 @@ Predictions `spike/1211c/PREDICTIONS.md`, committed (`4254de68`) before any run;
 
 ## 4. Mutants (§1.5)
 
-`spike/1211c/mutants/mutants.py`, one mutant per witness, fault kind, gate and refusal, each alone in a scratch export of HEAD: **22 of 22 killed** (`spike/1211c/out/mutants.txt`). Two survived the first run and were acted on:
+`spike/1211c/mutants/mutants.py`, one mutant per witness, fault kind, gate and refusal, each alone in a scratch export of HEAD: **32 of 32 killed** at `23e5431f` (`spike/1211c/out/mutants.txt`): 21 on the build's guards and 11 on the adversarial pass's fixes. Acted on along the way:
 - **R4** (the motor rail ignoring a sourced domain) survived: no fixture reached the clause. Its regulator-output half is not in D1's ruled words (a regulated VMOTOR still feeds only pins nothing observes) and was cut; its load half is now tested on a constructed specification and killed.
 - **R6** (a held input stressing as a target) was equivalent: `classify` treats every `pin_held` as intolerable and never reads its target. Replaced by a mutant on the hold's comparison with the pull's level, killed.
+- **A7** (judging only the last `BSRR` word before `MODER`) survived F2's first fix, which judged every word: the pad is undriven until `MODER` (RM0433 Rev 9 p. 539), so only the last word before it decides the level. The rule became the last word, and A7 went.
+- **W4** (no firmware read needed) became equivalent once F3 required a read after `ADSTART`; the redundant check and W4 were cut.
 
 ## 5. Adversarial pass (full)
 
