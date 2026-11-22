@@ -3918,6 +3918,7 @@ mod tests {
         for runs in [
             vec![run(1), run(3)],
             vec![run(2), run(4)],
+            vec![run(4)],
             Vec::new(),
             vec![run(9)],
         ] {

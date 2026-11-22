@@ -2979,22 +2979,8 @@ mod tests {
             let e = classify(&TABLE, family, register, field, access, field).unwrap();
             assert_eq!(e.class, class, "{family}.{register}.{field}");
         }
-        // The other fields of each whole word, written at reset or read-only
-        // (the generator lists every field it writes), each by what judges it
-        // (`AET-WO-2308` (6); every one in the test below).
-        for (register, field, class) in [
-            ("CR", "HSION", Class::Observed),
-            ("CR", "HSIKERON", Class::IgnoredByModel),
-            ("CR", "PLL2ON", Class::Observed),
-            ("CR", "HSERDY", Class::IgnoredByModel),
-            ("PLLCKSELR", "PLLSRC_HSE", Class::IndependentRule),
-            ("CFGR", "SWS", Class::IgnoredByModel),
-            ("CFGR", "MCO2PRE", Class::IgnoredByModel),
-            ("CFGR", "MCO1", Class::IgnoredByModel),
-        ] {
-            let e = classify(&TABLE, "RCC", register, field, W, field).unwrap();
-            assert_eq!(e.class, class, "RCC.{register}.{field}");
-        }
+        // The other fields of each whole word: every one, by what judges it,
+        // in `every_independent_rule_row_is_judged_by_an_ir_rule`.
         assert!(classify(&TABLE, "RCC", "CR", "HSEEXT", W, "h").is_err());
     }
 
