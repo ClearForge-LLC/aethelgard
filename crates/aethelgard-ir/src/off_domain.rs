@@ -16,13 +16,17 @@
 //! judged by A1 alone with the MCU powered (`AET-WO-1211e`), only by drawn
 //! wiring, never by a declaration (`INV-07`):
 //! - its regulator chain passes through `mcu.supply` (it is downstream), and
-//!   no connector carries a rail of that chain below `mcu.supply`; or
+//!   no off-board end names a rail of that chain below `mcu.supply`; or
 //! - its regulator's `EN` is wired to the `PG` of a regulator whose output is
-//!   `mcu.supply` or downstream of it, and no connector carries the rail.
+//!   `mcu.supply` or downstream of it, and no off-board end names the rail or
+//!   that `EN` net.
 //!
-//! A rail a connector carries can be fed from off the board, so it is never
-//! exempt (`1216` F8). The battery and a rail no drawn regulator outputs
-//! always lead. A device with two supplies is judged when either leads.
+//! An off-board end is a connector pin or a test point. What it names can be
+//! driven from off the board, so it is never exempt (`1216` F8; the test
+//! point and the gate net from this work order's adversarial pass). The
+//! battery and a rail no drawn regulator outputs always lead. A device with
+//! two supplies is judged when either leads; a control pin by its part's
+//! own supplies.
 //!
 //! **The limit** is DS12117 Rev 10 Table 10's absolute maximum at VDD = 0
 //! (the MCU row's `io.absolute_maximum`): 4.0 V on every pin but `BOOT0`,
@@ -300,7 +304,7 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
                 (
                     format!("power.regulators[{i}]"),
                     &r.reference,
-                    &r.output,
+                    vec![r.input.clone()],
                     &r.controls,
                 )
             })
@@ -308,11 +312,13 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
                 (
                     format!("power.crossings[{i}]"),
                     &c.reference,
-                    &c.b_domain,
+                    vec![c.a_domain.clone(), c.b_domain.clone()],
                     &c.controls,
                 )
             }));
-        for (at, reference, rail, controls) in owners {
+        // A control pin is powered from its part's own supplies: a
+        // regulator's input, a translator's two sides (adversarial F2).
+        for (at, reference, rails, controls) in owners {
             for (k, c) in controls.iter().enumerate() {
                 let Some(wire) = c
                     .wire
@@ -321,13 +327,13 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
                 else {
                     continue;
                 };
-                if let Some(lead) = w.lead(std::slice::from_ref(rail)) {
+                if let Some(lead) = w.lead(&rails) {
                     out.push(Path {
                         net: wire.net.clone(),
                         class: Class::ControlWire,
                         source: format!("`{reference}`'s {} pin, wired to the net", c.pin),
                         at: format!("{at}.controls[{k}].wire"),
-                        rails: vec![rail.clone()],
+                        rails: rails.clone(),
                         pin: w.declared_pin(&wire.net),
                         lead,
                         bound: Bound::Unbounded(format!(
@@ -342,7 +348,8 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
     let table = crate::parts::table()?;
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         let device = format!("pin_devices[{i}]");
-        // Validated by step 24: every part is a busless row.
+        // belt-and-suspenders: step 24 refuses a pin device whose part is no
+        // busless row, before step 25 reads it.
         let Some(row) = table.pin_part(&d.part) else {
             continue;
         };
@@ -497,8 +504,9 @@ struct Walk<'s> {
     mcu_nets: BTreeSet<&'s str>,
     /// Each regulator by its output.
     sources: BTreeMap<&'s str, &'s power::Regulator>,
-    /// Each rail any connector pin carries, with the first connector.
-    carried: BTreeMap<&'s str, &'s str>,
+    /// Each net a connector pin or a test point names, with the first one:
+    /// an off-board end can drive it.
+    off_board: BTreeMap<&'s str, String>,
     pins: BTreeMap<&'s str, &'s str>,
 }
 
@@ -558,20 +566,25 @@ impl<'s> Walk<'s> {
             .flat_map(|p| &p.regulators)
             .map(|r| (r.output.as_str(), r))
             .collect();
-        let mut carried = BTreeMap::new();
+        let mut off_board = BTreeMap::new();
         for c in spec.declared_connectors() {
             for n in c.pins.iter().filter_map(|p| p.net.as_deref()) {
-                if domains.contains(n) || n == BATTERY_NET {
-                    carried.entry(n).or_insert(c.reference.as_str());
-                }
+                off_board
+                    .entry(n)
+                    .or_insert_with(|| format!("connector `{}`", c.reference));
             }
+        }
+        for t in spec.declared_test_points() {
+            off_board
+                .entry(t.net.as_str())
+                .or_insert_with(|| format!("test point `{}`", t.reference));
         }
         Ok(Self {
             spec,
             supply: &spec.mcu.supply,
             mcu_nets,
             sources,
-            carried,
+            off_board,
             pins,
         })
     }
@@ -624,18 +637,20 @@ impl<'s> Walk<'s> {
             ));
         };
         let chain = self.chain(rail);
-        let on_connector = |rails: &[&str]| {
-            rails
-                .iter()
-                .find_map(|r| self.carried.get(r).map(|c| (*r, *c)))
-                .map(|(r, c)| {
+        // A rail or a gate net an off-board end names can be driven from off
+        // the board, so the tree's order does not hold for it (`1216` F8;
+        // a test point as a connector, adversarial F3).
+        let off_board = |nets: &[&str]| {
+            nets.iter()
+                .find_map(|n| self.off_board.get(n).map(|e| (*n, e)))
+                .map(|(n, e)| {
                     Lead::Leads(format!(
-                        "connector `{c}` carries `{r}`, which can be fed from off the board, so the tree's order does not hold for it"
+                        "{e} carries `{n}`, which can be driven from off the board, so the tree's order does not hold for it"
                     ))
                 })
         };
         if let Some(at) = chain.iter().position(|r| *r == supply) {
-            return on_connector(&chain[..at]).unwrap_or_else(|| {
+            return off_board(&chain[..at]).unwrap_or_else(|| {
                 Lead::After(format!(
                     "`{rail}` is downstream of `{supply}` ({})",
                     chain.join(" <- ")
@@ -661,7 +676,7 @@ impl<'s> Walk<'s> {
                 .map(|w| (r.reference.as_str(), w.net.as_str()))
         });
         match gated {
-            Some((by, net)) => on_connector(&[rail]).unwrap_or_else(|| {
+            Some((by, net)) => off_board(&[rail, net]).unwrap_or_else(|| {
                 Lead::After(format!(
                     "`{}`'s EN is wired to `{net}`, `{by}`'s PG on `{supply}`'s chain",
                     reg.reference
@@ -734,6 +749,8 @@ impl<'s> Walk<'s> {
         if rail == self.supply {
             return;
         }
+        // belt-and-suspenders: step 5 refuses a pull or bus on an undeclared
+        // domain, before step 25 reads it.
         let Some(d) = self.spec.voltage_domains.iter().find(|d| d.id == rail) else {
             return;
         };

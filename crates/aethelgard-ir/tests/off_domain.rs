@@ -108,8 +108,11 @@ fn d1_s_r2_of_1k07_clears_4v0_on_the_held_figure_and_at_the_typical_peak() {
     let p = &of(&v, Class::PinDeviceCurrentOutput)[0];
     assert_eq!(mv(p), 3330);
     spec(&v).validate().unwrap();
-    let r_hi = 1110;
-    assert!(3500 * r_hi / 1000 < 4000, "the typical-ratio peak");
+    // The held figure is 3000 uA x R2 at its highest: R2 is 1110 ohm.
+    let r_hi = mv(p) * 1000 / 3000;
+    assert_eq!(r_hi, 1110);
+    assert_eq!((3500 * r_hi + 999) / 1000, 3885, "the typical-ratio peak");
+    assert!(3885 < limit_at_zero(&spec(&v), None).unwrap().0);
 }
 
 /// 4.0 V to the millivolt: R2 at 1286 Ω is at most 1333 Ω (3999 mV) and
@@ -172,7 +175,11 @@ fn a_pin_device_pull_to_a_leading_rail_is_judged() {
     // At the limit is admitted (Table 11 note 3, D4): 3960 mV + 1 % is
     // exactly 4000 mV.
     let mut v = at("VDD_4V0", 3960);
-    v["voltage_domains"].as_array_mut().unwrap().last_mut().unwrap()["tolerance_permille"] = json!(10);
+    v["voltage_domains"]
+        .as_array_mut()
+        .unwrap()
+        .last_mut()
+        .unwrap()["tolerance_permille"] = json!(10);
     assert_eq!(mv(&of(&v, Class::PinDevicePull)[0]), 4000);
     spec(&v).validate().unwrap();
 }
@@ -221,11 +228,21 @@ fn a_control_wire_on_an_mcu_net_is_unbounded() {
     v["power"]["regulators"][0]["controls"][1] =
         json!({"pin": "PG", "strap": null, "wire": {"net": "VBAT_SENSE", "role": "pg"}});
     let p = &of(&v, Class::ControlWire)[0];
+    // The control pin is powered from its part's input, the battery, not
+    // from the rail it makes (adversarial F2).
     assert_eq!(
         (p.net.as_str(), p.rails.as_slice()),
-        ("VBAT_SENSE", ["VDD_5V".to_owned()].as_slice())
+        ("VBAT_SENSE", ["battery".to_owned()].as_slice())
     );
-    assert!(matches!(p.bound, Bound::Unbounded(_)) && !p.judged());
+    assert!(leads(p) && matches!(p.bound, Bound::Unbounded(_)) && !p.judged());
+    // So `mcu.supply`'s own regulator's control is listed too.
+    let mut v = s02();
+    v["power"]["regulators"][1]["controls"][0] =
+        json!({"pin": "EN", "strap": null, "wire": {"net": "VBAT_SENSE", "role": "en"}});
+    assert_eq!(
+        of(&v, Class::ControlWire)[0].at,
+        "power.regulators[1].controls[0].wire"
+    );
 }
 
 /// Connectors, test points and a foreign clock are off-board ends: listed,
@@ -265,6 +282,14 @@ fn downstream_is_exempt_unless_a_connector_carries_the_rail() {
     let p = &of(&carried, Class::I2cPull)[0];
     assert!(leads(p), "{p:?}");
     assert!(matches!(&p.lead, Lead::Leads(w) if w.contains("connector `J2` carries `VDD_1V8`")));
+    // A test point is an off-board end as a connector is (adversarial F3).
+    let mut probed = v.clone();
+    probed["test_points"] = json!([{"net": "VDD_1V8", "reference": "TP1"}]);
+    let p = &of(&probed, Class::I2cPull)[0];
+    assert!(
+        matches!(&p.lead, Lead::Leads(w) if w.contains("test point `TP1` carries `VDD_1V8`")),
+        "{p:?}"
+    );
 }
 
 /// A rail two regulators below `mcu.supply` (`VDD_1V2` from `VDD_1V8` from
@@ -312,6 +337,15 @@ fn only_a_pg_at_or_below_the_supply_orders_a_sibling() {
     let mut carried = v.clone();
     carried["connectors"][0]["pins"][1]["net"] = json!("VDD_5V");
     assert!(leads(&of(&carried, Class::I2cPull)[0]));
+    // An off-board end on the gate net itself can raise EN with `VDD_3V3`
+    // down, so the gate orders nothing (adversarial F1).
+    let mut gate = v.clone();
+    gate["test_points"] = json!([{"net": "PG_3V3", "reference": "TP1"}]);
+    let p = &of(&gate, Class::I2cPull)[0];
+    assert!(
+        matches!(&p.lead, Lead::Leads(w) if w.contains("test point `TP1` carries `PG_3V3`")),
+        "{p:?}"
+    );
     // Now feed 3V3 from 5 V (U10 is mcu.supply's parent) and gate a third
     // buck, U15 to `VDD_5VB`, by U10's PG: that orders nothing.
     let mut v = s02();
