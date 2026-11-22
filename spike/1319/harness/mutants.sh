@@ -7,7 +7,7 @@
 set -uo pipefail
 src=$1 scratch=$2 base=$3 repo=$4
 here=$(cd "$(dirname "$0")" && pwd)
-file=crates/aethelgard-eda/src/schematic_pin_device.rs
+file=crates/aethelgard-eda/src/schematic_arms.rs
 for m in M1 M2 M3; do
   rm -rf "$scratch/mut-src"; mkdir -p "$scratch/mut-src"
   cp -a "$src/." "$scratch/mut-src/"
