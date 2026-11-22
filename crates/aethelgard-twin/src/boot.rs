@@ -70,6 +70,54 @@ pub fn pwr_boot_word(word: u32) -> Option<(&'static str, &'static str)> {
     }
 }
 
+// belt-and-suspenders: the generator holds its own copies of these five
+// (`aethelgard-svd-hal` `board/firmware.rs`), for the reason above
+// (`AET-WO-4240b`, the PM's contract).
+/// What a firmware writes to the boot word, then parks, when `RCC_CR.HSERDY`
+/// did not rise within its bound (`AET-WO-4240b`).
+pub const BOOT_HSE_NOT_READY: u32 = 0x2100_B0F4;
+/// The same, when `RCC_CR.PLL1RDY` did not rise within its bound.
+pub const BOOT_PLL1_NOT_LOCKED: u32 = 0x2100_B0F5;
+/// The same, when `RCC_CFGR.SWS` did not read PLL1 within its bound.
+pub const BOOT_SW_NOT_TAKEN: u32 = 0x2100_B0F6;
+/// What the clock security system's NMI handler writes before it parks.
+pub const BOOT_HSE_CSS_FAULT: u32 = 0x2100_B0F7;
+/// The same as [`BOOT_HSE_NOT_READY`], when `FLASH_ACR` read back
+/// `LATENCY` or `WRHIGHFREQ` other than the word written.
+pub const BOOT_FLASH_ACR_NOT_TAKEN: u32 = 0x2100_B0F8;
+
+/// The name a failed boot carries when its word 0 is one of the HSE words
+/// (`AET-WO-4240b`), with what the firmware found; `None` for any other
+/// word. The twin's RCC reads each ready bit as its ON bit, has no clock
+/// security system, and its flash controller stores `FLASH_ACR`
+/// ([`crate::hse::HSE_RESIDUAL`]), so a generated firmware that names one in
+/// the twin has a fault of its own.
+pub fn hse_boot_word(word: u32) -> Option<(&'static str, &'static str)> {
+    match word {
+        BOOT_HSE_NOT_READY => Some((
+            "boot_hse_not_ready",
+            "RCC_CR.HSERDY did not rise within the firmware's bound",
+        )),
+        BOOT_PLL1_NOT_LOCKED => Some((
+            "boot_pll1_not_locked",
+            "RCC_CR.PLL1RDY did not rise within the firmware's bound",
+        )),
+        BOOT_SW_NOT_TAKEN => Some((
+            "boot_sw_not_taken",
+            "RCC_CFGR.SWS did not read PLL1 within the firmware's bound",
+        )),
+        BOOT_HSE_CSS_FAULT => Some((
+            "boot_hse_css_fault",
+            "the clock security system's NMI ran: the HSE failed",
+        )),
+        BOOT_FLASH_ACR_NOT_TAKEN => Some((
+            "boot_flash_acr_not_taken",
+            "FLASH_ACR read back LATENCY or WRHIGHFREQ other than the word written",
+        )),
+        _ => None,
+    }
+}
+
 /// The seed every boot gives `emulation SetSeed`, so the platform's random
 /// initial values are the same in every run (spike F15).
 pub const SEED: u32 = 2100;
@@ -248,6 +296,11 @@ pub struct BrownOut {
     pub optsr_prg: u32,
     /// `FLASH_OPTCR_OPTSTART`.
     pub optstart: u32,
+    /// On an HSE board, `FLASH_ACR`'s offset: its accesses are
+    /// [`crate::hse::judge_clock`]'s (`AET-WO-4240b`), and
+    /// [`Self::judge_accesses`] leaves them to it. `None` on every other
+    /// board.
+    pub clock_acr: Option<u32>,
 }
 
 /// How the boot record's brown-out word reads against the declared level.
@@ -340,7 +393,10 @@ impl BrownOut {
         for (k, boot) in boots.iter().enumerate() {
             let mut reads = 0usize;
             let mut returned = 0u64;
-            for a in boot.iter().filter(|a| a.source == FLASH_RENODE) {
+            for a in boot
+                .iter()
+                .filter(|a| a.source == FLASH_RENODE && self.clock_acr != Some(a.offset & !3))
+            {
                 if a.write {
                     note(format!(
                         "the firmware wrote the flash controller ({} bits at {:#X}, value {:#X})",
@@ -402,6 +458,10 @@ pub fn brown_out(topology: &SolvedTopology) -> Result<BrownOut, TwinError> {
         optsr_cur: flash.offset("OPTSR_CUR", 0)?,
         optsr_prg: flash.offset("OPTSR_PRG", 0)?,
         optstart: 1 << f.position("FLASH_OPTCR_OPTSTART_Pos")?,
+        clock_acr: match topology.clock.hse {
+            Some(_) => Some(flash.offset("ACR", 0)?),
+            None => None,
+        },
     })
 }
 /// SysTick's Control and Status Register (ARMv7-M Architecture Reference
@@ -1036,6 +1096,25 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
             "PWR.CSR1.ACTVOSRDY".to_owned(),
             "PWR.D3CR.VOSRDY".to_owned(),
         ]);
+    }
+    // What the twin's RCC cannot show of the HSE bring-up (`AET-WO-4240b`,
+    // [`crate::hse::HSE_RESIDUAL`]): the two ready bits read their ON bits at
+    // once, `HSEBYP` and `PLLCFGR` are tags, `CSSHSEON` has no clock security
+    // system behind it, and the SPI kernel selects are tags that read 0.
+    if topology.clock.hse.is_some() {
+        unobservable.extend(
+            [
+                "RCC.CR.HSERDY",
+                "RCC.CR.PLL1RDY",
+                "RCC.CR.HSEBYP",
+                "RCC.CR.CSSHSEON",
+                "RCC.PLLCFGR",
+                "RCC.D2CCIP1R.SPI123SEL",
+                "RCC.D2CCIP1R.SPI45SEL",
+                "RCC.D3CCIPR.SPI6SEL",
+            ]
+            .map(str::to_owned),
+        );
     }
     unobservable.sort();
     unobservable.dedup();

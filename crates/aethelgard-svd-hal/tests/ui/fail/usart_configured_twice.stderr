@@ -12,7 +12,7 @@ error[E0599]: no method named `configure` found for struct `Usart1<Enabled<()>>`
 note: there's an earlier shadowed binding `usart1` of type `Usart1<Clocked>` that has method `configure` available
   --> tests/ui/fail/usart_configured_twice.rs:19:9
    |
-19 |     let usart1 = rcc.enable_usart1(&mut r, board.usart1);
+19 |     let usart1 = rcc.enable_usart1(&mut r, board.usart1, scale2);
    |         ^^^^^^ `usart1` of type `Usart1<Clocked>` that has method `configure` defined earlier here
 ...
 23 |     let usart1 = usart1.configure(&mut r, &clock, tx, rx);

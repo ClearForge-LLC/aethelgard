@@ -222,22 +222,29 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `main.rs` and the two platforms are `a95a1bb6…f918`, `bb101271…ebdb` and
 /// `26e266be…4fca` exactly, the digests before (measured); the boot image
 /// did not move.
+/// Moved in `AET-WO-4240b` (specification 23, after `1211a`'s 22): the three
+/// texts by their specification sha line, `firmware/src/main.rs` also by
+/// `4240v` F2 alone (ruled Q2: every `enable_*` call passes the `Scale2`
+/// token; every null board's ELF is unchanged, measured), and the boot image
+/// by its shape alone (the judge's `BrownOut` gained `clock_acr`, `None` on
+/// this board; with `, clock_acr: None` taken out of its text it is
+/// `221f6b59…6d70` exactly, measured).
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "424d86d2cc6a61aefe9fbc9a0e46ce334a5dd1ad08d8ca6749015d5647acd26d",
+        "517228e50c40b1a9b42c70a41be0aeeb7deb912302f5311ee1524f316b6f1834",
     ),
     (
         "platform",
-        "04e619a040e2064f91cf67fe0410777ef2e3cc1e7f45b383aeed6694dd072b71",
+        "58e5cb8d806aee28a9c0e0ca12f8dc5300472cf268420ac43a76df1fe36c56c6",
     ),
     (
         "platform faulted",
-        "d25e8a419f16be0f2238b577fce9feb577f66f5499d1c24cf1342b9e29389394",
+        "23c7b018d9610768e67517390f4e6b11aaeba5dd3ef8bd5b5d9c93fe4e3d929f",
     ),
     (
         "boot image",
-        "221f6b5975901f30fb5dd12e0ccdad3ad7fc4d8626745923b33e356fb2976d70",
+        "5b33b4cebaf567a3df3744db6402b12a4532486fce46e1cafc360de7c33450ce",
     ),
 ];
 
