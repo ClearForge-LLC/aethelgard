@@ -104,15 +104,19 @@ pub fn stimuli(pins: &Pins) -> Vec<String> {
     inputs.chain(analog).collect()
 }
 
-/// The hooks: each output's port's `BSRR` and `MODER`, once per address, then
-/// each ADC input's `DR`.
+/// The hooks: each output's port's `BSRR`, `MODER` and `ODR` writes, once
+/// per address, then each ADC input's `CR` writes (its `ADSTART`) and `DR`
+/// reads.
 pub fn hooks(pins: &Pins) -> Vec<String> {
     let mut at: Vec<u32> = Vec::new();
-    for o in &pins.outputs {
-        for a in [o.bsrr_at, o.moder_at] {
-            if !at.contains(&a) {
-                at.push(a);
-            }
+    for a in pins
+        .outputs
+        .iter()
+        .flat_map(|o| [o.bsrr_at, o.moder_at, o.odr_at])
+        .chain(pins.analog.iter().map(|a| a.cr_at))
+    {
+        if !at.contains(&a) {
+            at.push(a);
         }
     }
     at.into_iter()
@@ -149,7 +153,12 @@ pub struct AdcWitness {
 }
 
 /// Each output's witness from the judged boot's hook lines, in order; `None`
-/// when the log could not be read whole.
+/// when the log could not be read whole. Its level is the one the pin holds
+/// when `MODER` first makes it an output: every `BSRR` word touching the pin
+/// before that write must carry the declared level's bit alone, at least one
+/// must, and no `ODR` write may come before it (adversarial F2: a second
+/// word, or an `ODR` write, would set another level). `bsrr` is the last such
+/// word before `MODER` (or the first after, when none came before).
 pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWitness> {
     pins.outputs
         .iter()
@@ -167,14 +176,6 @@ pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWit
             };
             let touches = o.bsrr_bit() | o.bsrr_other();
             let field = |word: u32| (word >> (2 * o.bit)) & 0b11;
-            let bsrr = hooks.iter().find_map(|(i, h, _)| match h {
-                Hook::Gpio { address, value, .. }
-                    if *address == o.bsrr_at && value & touches != 0 =>
-                {
-                    Some((*i, *value))
-                }
-                _ => None,
-            });
             let moder = hooks.iter().find_map(|(i, h, _)| match h {
                 Hook::Gpio {
                     address,
@@ -186,18 +187,47 @@ pub fn outputs(pins: &Pins, hooks: Option<&[(usize, Hook, u64)]>) -> Vec<GpioWit
                 }
                 _ => None,
             });
-            w.bsrr = bsrr.map(|b| b.1);
-            w.status = match (bsrr, moder) {
-                (Some((b, word)), Some(m)) => {
-                    w.ordered = Some(b < m);
-                    if b < m && word & o.bsrr_bit() != 0 && word & o.bsrr_other() == 0 {
+            let words: Vec<(usize, u32)> = hooks
+                .iter()
+                .filter_map(|(i, h, _)| match h {
+                    Hook::Gpio { address, value, .. }
+                        if *address == o.bsrr_at && value & touches != 0 =>
+                    {
+                        Some((*i, *value))
+                    }
+                    _ => None,
+                })
+                .collect();
+            let Some(m) = moder else {
+                w.bsrr = words.first().map(|x| x.1);
+                w.status = "unwitnessed";
+                return w;
+            };
+            let before: Vec<u32> = words.iter().filter(|x| x.0 < m).map(|x| x.1).collect();
+            let odr = hooks.iter().any(|(i, h, _)| {
+                matches!(h, Hook::Gpio { address, .. } if *address == o.odr_at) && *i < m
+            });
+            match before.last() {
+                None => {
+                    w.bsrr = words.first().map(|x| x.1);
+                    w.ordered = w.bsrr.map(|_| false);
+                    w.status = if w.bsrr.is_some() {
+                        "mismatch"
+                    } else {
+                        "unwitnessed"
+                    };
+                }
+                Some(&last) => {
+                    w.bsrr = Some(last);
+                    w.ordered = Some(true);
+                    let alone = |word: &u32| word & o.bsrr_bit() != 0 && word & o.bsrr_other() == 0;
+                    w.status = if before.iter().all(alone) && !odr {
                         "witnessed"
                     } else {
                         "mismatch"
-                    }
+                    };
                 }
-                _ => "unwitnessed",
-            };
+            }
             w
         })
         .collect()
@@ -227,32 +257,45 @@ pub fn inputs(pins: &Pins, idr: &[Option<u32>]) -> Vec<GpioWitness> {
         .collect()
 }
 
-/// Each ADC input's witness: the firmware's `DR` reads the hooks showed, and
-/// the word `DR` held after the run.
+/// Each ADC input's witness: a conversion started (`ADSTART` written to its
+/// ADC's `CR`) before the firmware's first `DR` read, that read, and the code
+/// `DR` holds after the run, which must be the plan's (adversarial F3: at the
+/// idle's 0 V the code is also `DR`'s reset value, so the read and the code
+/// alone would pass a firmware that never converts).
 pub fn analog(
     pins: &Pins,
     hooks: Option<&[(usize, Hook, u64)]>,
     dr: &[Option<u32>],
 ) -> Vec<AdcWitness> {
+    // `ADSTART`, `ADC_CR` bit 2 (RM0433 Rev 9 §25.6.3).
+    const ADSTART: u32 = 1 << 2;
     pins.analog
         .iter()
         .zip(dr)
         .enumerate()
         .map(|(k, (a, word))| {
-            let reads = hooks.map_or(0, |h| {
+            let reads: Vec<usize> = hooks.map_or_else(Vec::new, |h| {
                 h.iter()
                     .filter(|(_, x, _)| matches!(x, Hook::Dr { input, .. } if *input == k))
-                    .count() as u64
+                    .map(|(i, _, _)| *i)
+                    .collect()
             });
-            let (status, code) = match (reads, word) {
-                (0, _) | (_, None) => ("unwitnessed", None),
-                (_, Some(c)) if *c == a.code => ("witnessed", Some(*c)),
-                (_, Some(c)) => ("mismatch", Some(*c)),
+            let started = hooks.is_some_and(|h| {
+                h.iter().any(|(i, x, _)| {
+                    matches!(x, Hook::Gpio { address, value, .. }
+                        if *address == a.cr_at && value & ADSTART != 0)
+                        && reads.first().is_some_and(|r| i < r)
+                })
+            });
+            let (status, code) = match (reads.is_empty(), started, word) {
+                (true, _, _) | (_, false, _) | (_, _, None) => ("unwitnessed", None),
+                (false, true, Some(c)) if *c == a.code => ("witnessed", Some(*c)),
+                (false, true, Some(c)) => ("mismatch", Some(*c)),
             };
             AdcWitness {
                 net: a.net.clone(),
                 status,
-                reads,
+                reads: reads.len() as u64,
                 code,
             }
         })
@@ -337,7 +380,7 @@ pub fn findings(pins: &Pins, gpio: &[GpioWitness], adc: &[AdcWitness]) -> Vec<Fi
             _ => out.push(Finding::plain(
                 ADC_UNWITNESSED_FINDING,
                 format!(
-                    "{}: the firmware read its ADC's DR {} times in the boot the judge reads",
+                    "{}: the firmware read its ADC's DR {} times in the boot the judge reads, with no conversion started (ADSTART) before the first, or no DR word after the run",
                     w.net, w.reads
                 ),
             )),
@@ -448,6 +491,8 @@ mod tests {
 
     const BSRR: u32 = 0x5802_0018;
     const MODER: u32 = 0x5802_0000;
+    const ODR: u32 = 0x5802_0014;
+    const ADC3_CR: u32 = 0x5802_6008;
 
     fn gpio(i: usize, address: u32, value: u32, before: u32) -> (usize, Hook, u64) {
         (
@@ -503,6 +548,37 @@ mod tests {
             "unwitnessed"
         );
         assert_eq!(outputs(&p, None)[0].status, "unreadable");
+        // Adversarial F2: a second word setting the other level before MODER,
+        // or an ODR write before it, sets another level: not witnessed.
+        assert_eq!(
+            status(&[
+                gpio(1, BSRR, 1 << 17, 0),
+                gpio(2, BSRR, 1 << 1, 0),
+                gpio(3, MODER, 4, 0)
+            ]),
+            "mismatch"
+        );
+        assert_eq!(
+            status(&[
+                gpio(1, BSRR, 1 << 17, 0),
+                gpio(2, ODR, 2, 0),
+                gpio(3, MODER, 4, 0)
+            ]),
+            "mismatch"
+        );
+        // Two words carrying the declared level alone: witnessed, the last.
+        let w = outputs(
+            &p,
+            Some(&[
+                gpio(1, BSRR, 1 << 17, 0),
+                gpio(2, BSRR, 1 << 17, 0),
+                gpio(3, MODER, 4, 0),
+            ]),
+        );
+        assert_eq!(
+            (w[0].status, w[0].bsrr, w[0].ordered),
+            ("witnessed", Some(1 << 17), Some(true))
+        );
     }
 
     /// nFAULT (PA11, driven high): IDR bit 11 high is witnessed and passes;
@@ -524,25 +600,42 @@ mod tests {
         assert_eq!(f[0].kind, GPIO_INPUT_ASSERTED_FINDING);
     }
 
-    /// IPROPI (code 0 at idle): read by the firmware and holding its code is
-    /// witnessed; another code is a mismatch; never read, or no word, is
-    /// unwitnessed, whatever DR holds.
+    /// IPROPI (code 0 at idle): a conversion started (ADSTART) before the
+    /// firmware's read, and DR holding the code, is witnessed; another code
+    /// is a mismatch; no read, no conversion started before it (adversarial
+    /// F3: DR's reset value is the idle's code), or no word, is unwitnessed.
     #[test]
-    fn an_adc_input_needs_the_firmware_s_read_and_its_code() {
+    fn an_adc_input_needs_a_conversion_the_firmware_s_read_and_its_code() {
         let p = plan();
-        let read = [(0, Hook::Dr { input: 0, count: 9 }, 0)];
-        assert_eq!(analog(&p, Some(&read), &[Some(0)])[0].status, "witnessed");
-        assert_eq!(analog(&p, Some(&read), &[Some(7)])[0].status, "mismatch");
-        assert_eq!(analog(&p, Some(&[]), &[Some(0)])[0].status, "unwitnessed");
-        assert_eq!(analog(&p, Some(&read), &[None])[0].status, "unwitnessed");
+        let start = gpio(0, ADC3_CR, 0x1FC1_0105, 0x1FC1_0101);
+        let read = (1, Hook::Dr { input: 0, count: 9 }, 0);
+        let seen = [start.clone(), read.clone()];
+        assert_eq!(analog(&p, Some(&seen), &[Some(0)])[0].status, "witnessed");
+        assert_eq!(analog(&p, Some(&seen), &[Some(7)])[0].status, "mismatch");
+        assert_eq!(analog(&p, Some(&seen), &[None])[0].status, "unwitnessed");
+        // The read alone, or before the conversion starts: unwitnessed.
+        assert_eq!(
+            analog(&p, Some(&[read.clone()]), &[Some(0)])[0].status,
+            "unwitnessed"
+        );
+        let late = [
+            (0, Hook::Dr { input: 0, count: 9 }, 0),
+            gpio(1, ADC3_CR, 0x1FC1_0105, 0),
+        ];
+        assert_eq!(analog(&p, Some(&late), &[Some(0)])[0].status, "unwitnessed");
+        assert_eq!(
+            analog(&p, Some(&[start.clone()]), &[Some(0)])[0].status,
+            "unwitnessed"
+        );
         assert_eq!(analog(&p, None, &[Some(0)])[0].status, "unwitnessed");
-        let other = [(0, Hook::Dr { input: 1, count: 9 }, 0)];
+        let other = [start, (1, Hook::Dr { input: 1, count: 9 }, 0)];
         assert_eq!(analog(&p, Some(&other), &[Some(0)])[0].reads, 0);
     }
 
     /// The stimuli drive each input at its plan's level and set each ADC
     /// input to its plan's value, in the measured monitor forms; the hooks
-    /// watch nSLEEP's port's BSRR and MODER once each, and IPROPI's DR.
+    /// watch nSLEEP's port's BSRR, MODER and ODR once each, and IPROPI's
+    /// ADC's CR and DR.
     #[test]
     fn the_stimuli_and_hooks_are_the_measured_commands() {
         let p = plan();
@@ -551,9 +644,16 @@ mod tests {
             ["gpioPortA OnGPIO 11 true", "adc3 SetVoltage 0 5"]
         );
         let h = hooks(&p);
-        assert_eq!(h.len(), 3, "{h:?}");
-        assert!(h[0].starts_with("sysbus AddWatchpointHook 0x58020018 DoubleWord Write"));
-        assert!(h[1].starts_with("sysbus AddWatchpointHook 0x58020000 DoubleWord Write"));
-        assert!(h[2].starts_with("sysbus AddWatchpointHook 0x58026040 DoubleWord Read"));
+        assert_eq!(h.len(), 5, "{h:?}");
+        for (k, at) in ["0x58020018", "0x58020000", "0x58020014", "0x58026008"]
+            .into_iter()
+            .enumerate()
+        {
+            assert!(
+                h[k].starts_with(&format!("sysbus AddWatchpointHook {at} DoubleWord Write")),
+                "{h:?}"
+            );
+        }
+        assert!(h[4].starts_with("sysbus AddWatchpointHook 0x58026040 DoubleWord Read"));
     }
 }

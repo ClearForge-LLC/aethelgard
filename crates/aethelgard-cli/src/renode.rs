@@ -2041,7 +2041,10 @@ pub fn witness_level(
     w.settle_ns = Some(settle);
     w.rises_after = inside.iter().filter(|e| e.0 > settle && e.1).count() as u64;
     w.falls_after = inside.iter().filter(|e| e.0 > settle && !e.1).count() as u64;
-    w.status = if w.rises_after == 0 && w.falls_after == 0 && w.end_level == Some(high) {
+    // The window must hold a period after the settled instant (adversarial
+    // F9): a shorter one could pass a PWM that has not shown an edge yet.
+    let window = settle.saturating_add(m.observer.period_ns) <= end_ns;
+    w.status = if window && w.rises_after == 0 && w.falls_after == 0 && w.end_level == Some(high) {
         "witnessed"
     } else {
         "mismatch"
@@ -4677,6 +4680,9 @@ mod tests {
             w(false, &[(end + 1, true)], Some(anchor)).status,
             "witnessed"
         );
+        // A window holding less than one period after settling (F9).
+        let near = witness_level(&m, false, Some(&[]), Some(end - p + 1), end);
+        assert_eq!(near.status, "mismatch");
     }
 
     /// Edges as the probes measured them (`pwm400-63`): each the exact time
@@ -4969,6 +4975,7 @@ mod tests {
                 high: false,
                 bsrr_at: 0x5802_0018,
                 moder_at: 0x5802_0000,
+                odr_at: 0x5802_0014,
             }],
             inputs: vec![aethelgard_twin::pins::Input {
                 net: "DRV_NFAULT".into(),
@@ -4991,6 +4998,7 @@ mod tests {
                 held: false,
                 code: 0,
                 dr_at: 0x5802_6040,
+                cr_at: 0x5802_6008,
             }],
         };
         let resets = [power::Reset {
@@ -5006,7 +5014,7 @@ mod tests {
         assert_eq!(c.matches("adc3 SetVoltage 0 5").count(), 2, "{c}");
         let after_reset = c.find("machine Reset").unwrap();
         assert!(c[after_reset..].contains("gpioPortA OnGPIO 11 true"));
-        assert_eq!(c.matches("AETHELGARD-GPIO").count(), 2, "{c}");
+        assert_eq!(c.matches("AETHELGARD-GPIO").count(), 4, "{c}");
         assert_eq!(c.matches("AETHELGARD-DR").count(), 1, "{c}");
         assert!(c.contains("sysbus ReadDoubleWord 0x58020010"));
         assert!(c.contains("sysbus ReadDoubleWord 0x58026040"));

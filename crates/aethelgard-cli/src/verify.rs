@@ -649,14 +649,24 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
         .into_iter()
         .flatten()
         .map(|g| {
-            let asserted =
-                g["direction"] == "input" && g["read"].is_string() && g["read"] == g["active"];
+            // An input is named, never judged (D5, ruled; adversarial F4):
+            // no firmware path reads it, so its read-back is the twin's own
+            // stimulus. An input read at its active level still fails the
+            // gate, by its finding.
+            if g["direction"] == "input" {
+                return serde_json::json!({
+                    "net": g["net"],
+                    "direction": "input",
+                    "status": g["status"],
+                    "verdict": "not_judged",
+                    "reason": INPUT_NOT_JUDGED,
+                });
+            }
             serde_json::json!({
                 "net": g["net"],
                 "direction": g["direction"],
                 "status": g["status"],
-                "asserted": asserted,
-                "verdict": if ok(g) && !asserted { "pass" } else { "fail" },
+                "verdict": if ok(g) { "pass" } else { "fail" },
             })
         })
         .collect();
@@ -735,12 +745,20 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
         gate: name,
         harness: None,
         scenario: None,
-        verdict: if items.iter().all(|i| i["verdict"] == "pass") {
+        verdict: if items.iter().all(|i| i["verdict"] != "fail")
+            && findings.iter().all(|f| f["severity"] != "error")
+        {
             "pass"
         } else {
             "fail"
         },
-        scope: Some(Scope::of(items.len() as u64, NOTHING_LISTED)),
+        scope: Some(Scope::of(
+            items
+                .iter()
+                .filter(|i| i["verdict"] != "not_judged")
+                .count() as u64,
+            INPUT_NOT_JUDGED,
+        )),
         exit_code: Some(sim.code),
         tool_version: v["tool"]["version"].as_str().map(str::to_owned),
         uid_boundary: Some(v["sandbox"]["uid_boundary"] == true),
@@ -755,6 +773,9 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
     })
     .collect()
 }
+
+/// Why a pin device's input is never a judged item (D5, ruled).
+const INPUT_NOT_JUDGED: &str = "no generated firmware path reads a pin device's input, so its read-back is the twin's own stimulus (INV-07; D5, ruled)";
 
 /// One bridge of a pin device, as the per-item gate judges it: its id, its
 /// inputs' nets (motor outputs or GPIO outputs) and its enable's net.
@@ -1090,8 +1111,15 @@ fn stress(
                 topology,
                 &Default::default(),
             )
-            .ok()?;
-            let i = plan.inputs.iter().find(|i| &i.net == net)?;
+            .ok();
+            // A hold the twin's plan refuses (an output, an unknown net) is
+            // no baseline: the campaign refuses its run (adversarial F10).
+            let Some(i) = plan
+                .as_ref()
+                .and_then(|p| p.inputs.iter().find(|i| &i.net == net))
+            else {
+                return Some((None, None));
+            };
             (i.high != (*level == aethelgard_chaos::record::Level::High)).then_some((None, None))
         }
         // A set ADC value other than the idle's stresses its input: the run
@@ -1102,8 +1130,13 @@ fn stress(
                 topology,
                 &Default::default(),
             )
-            .ok()?;
-            let a = plan.analog.iter().find(|a| &a.net == net)?;
+            .ok();
+            let Some(a) = plan
+                .as_ref()
+                .and_then(|p| p.analog.iter().find(|a| &a.net == net))
+            else {
+                return Some((None, None));
+            };
             (u64::from(*millivolts) * 1000 != a.microvolts)
                 .then(|| (Some(Target::Analog(net.clone())), None))
         }
@@ -3371,6 +3404,19 @@ mod tests {
             Seeded::Other
         );
         assert_eq!(held("high", true, &[]), Seeded::Baseline);
+        // A hold or a value the twin refuses is no baseline (adversarial
+        // F10): the campaign refuses its run.
+        for o in [
+            json!({"pin_held": {"net": "DRV_NSLEEP", "level": "high"}}),
+            json!({"pin_held": {"net": "NOPE", "level": "low"}}),
+            json!({"analog_value": {"net": "NOPE", "millivolts": 1}}),
+        ] {
+            assert_ne!(
+                classify(&spec, &t, &v5(true, &[], json!([o.clone()]))),
+                Seeded::Baseline,
+                "{o}"
+            );
+        }
         // Held low and expected to pass: never a fault to survive.
         assert_eq!(
             held("low", true, &[]),
@@ -3554,12 +3600,32 @@ mod tests {
         assert_eq!(
             summary,
             [
-                ("gpio", "pass", 2),
+                ("gpio", "pass", 1),
                 ("adc", "pass", 1),
                 ("bridge", "pass", 1)
             ]
         );
-        // nFAULT read at its active level fails its own item, and the gate.
+        // nFAULT is named, never judged (D5; adversarial F4).
+        let items = gates[0].items.as_ref().unwrap();
+        assert_eq!(items[1]["verdict"], "not_judged");
+        assert!(items[1]["reason"].as_str().unwrap().contains("INV-07"));
+        // A gate whose only GPIO signal is an input judged nothing, and says
+        // why (2306).
+        let only = pin_gates(
+            &sim_line(
+                json!([gpio[1].clone()]),
+                adc.clone(),
+                motor.clone(),
+                json!([]),
+            ),
+            &[],
+        );
+        let scope = serde_json::to_value(only[0].scope.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            (scope["judged"].clone(), scope["nothing_in_scope"].clone()),
+            (json!(0), json!(true))
+        );
+        // nFAULT read at its active level fails the gate, by its finding.
         let mut asserted = gpio.clone();
         asserted[1]["read"] = json!("low");
         let f = json!([{"kind": "pin_device_input_asserted", "severity": "error", "message": "m"},
@@ -3569,7 +3635,7 @@ mod tests {
         let items = gates[0].items.as_ref().unwrap();
         assert_eq!(
             (items[0]["verdict"].clone(), items[1]["verdict"].clone()),
-            (json!("pass"), json!("fail"))
+            (json!("pass"), json!("not_judged"))
         );
         assert_eq!(gates[0].findings.len(), 1, "its own kinds only");
         // A bridge input's level unwitnessed fails the bridge.

@@ -62,6 +62,9 @@ pub struct Output {
     pub high: bool,
     pub bsrr_at: u32,
     pub moder_at: u32,
+    /// `ODR`: a write of it before `MODER` sets the pin's level too, which
+    /// the witness refuses to pass (adversarial F2).
+    pub odr_at: u32,
 }
 
 impl Output {
@@ -111,6 +114,10 @@ pub struct Analog {
     pub held: bool,
     pub code: u32,
     pub dr_at: u32,
+    /// `CR`: the conversion is witnessed by its `ADSTART` write before the
+    /// firmware's `DR` read, so a code equal to `DR`'s reset value is never
+    /// passed on the read alone (adversarial F3).
+    pub cr_at: u32,
 }
 
 /// Everything the twin drives and reads of the specification's pin devices,
@@ -205,6 +212,18 @@ pub fn plan(
             })?;
             let (port, bit) = split_pin(&solved.pin)?;
             let base = f.base(&format!("GPIO{port}"))?;
+            // The declared direction is the solved one (adversarial F7).
+            if s.output != (solved.direction == aethelgard_ir::pin_devices::Direction::Output) {
+                return Err(not_simulated(
+                    d,
+                    format!(
+                        "its signal `{}` is declared an {} and solved an {}",
+                        s.net,
+                        if s.output { "output" } else { "input" },
+                        if s.output { "input" } else { "output" }
+                    ),
+                ));
+            }
             match s.output {
                 true => {
                     let high = match solved.initial {
@@ -224,6 +243,7 @@ pub fn plan(
                         high,
                         bsrr_at: base + gpio.offset("BSRR", 0)?,
                         moder_at: base + gpio.offset("MODER", 0)?,
+                        odr_at: base + gpio.offset("ODR", 0)?,
                     });
                 }
                 false => {
@@ -300,7 +320,20 @@ pub fn plan(
                         ),
                     )
                 })?;
-            let bits = solved.bits.unwrap_or(a.bits);
+            // The solved resolution, which must be the declared one: no
+            // fallback (adversarial F7).
+            let bits = match solved.bits {
+                Some(b) if b == a.bits => b,
+                other => {
+                    return Err(not_simulated(
+                        d,
+                        format!(
+                            "its ADC input `{}` is solved at {other:?} bits and declared at {}",
+                            a.net, a.bits
+                        ),
+                    ));
+                }
+            };
             if bits != MEASURED_BITS {
                 return Err(not_simulated(
                     d,
@@ -347,6 +380,7 @@ pub fn plan(
                 held,
                 code: aethelgard_chaos::record::adc_code(microvolts, bits),
                 dr_at: base + adc.offset("DR", 0)?,
+                cr_at: base + adc.offset("CR", 0)?,
             });
         }
     }

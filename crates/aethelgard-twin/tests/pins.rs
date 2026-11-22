@@ -71,7 +71,10 @@ fn d1_s_plan_is_its_declaration() {
         ("DRV_NSLEEP", "PA1", false)
     );
     assert_eq!((o.bsrr_bit(), o.bsrr_other()), (1 << 17, 1 << 1));
-    assert_eq!((o.bsrr_at, o.moder_at), (0x5802_0018, 0x5802_0000));
+    assert_eq!(
+        (o.bsrr_at, o.moder_at, o.odr_at),
+        (0x5802_0018, 0x5802_0000, 0x5802_0014)
+    );
     let [i] = p.inputs.as_slice() else { panic!() };
     assert_eq!(
         (
@@ -97,7 +100,7 @@ fn d1_s_plan_is_its_declaration() {
         ),
         ("ADC3", "adc3", 5, 12, 0, 0)
     );
-    assert_eq!(a.dr_at, 0x5802_6040);
+    assert_eq!((a.dr_at, a.cr_at), (0x5802_6040, 0x5802_6008));
 }
 
 /// A scenario's hold and value replace the declared idle's, marked held.
@@ -160,7 +163,27 @@ fn what_the_twin_cannot_run_is_refused_by_name() {
     };
     let mut bits = t.clone();
     bits.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = Some(16);
-    refused(&declared(), &bits, "16 bits");
+    let mut d16 = declared();
+    d16.devices[0].analog[0].bits = 16;
+    refused(&d16, &bits, "16 bits");
+    // Declared and solved facts that disagree (adversarial F7).
+    refused(
+        &declared(),
+        &bits,
+        "solved at Some(16) bits and declared at 12",
+    );
+    let mut none = t.clone();
+    none.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = None;
+    refused(&declared(), &none, "solved at None bits");
+    let mut d = declared();
+    d.devices[0].signals[0].output = false;
+    d.devices[0].signals[0].active_high = Some(true);
+    d.devices[0].signals[0].pulled_high = Some(false);
+    refused(
+        &d,
+        &t,
+        "`DRV_NSLEEP` is declared an input and solved an output",
+    );
     let mut adc2 = t.clone();
     adc2.adc_inputs.get_mut("DRV_IPROPI").unwrap().peripheral = "ADC2".into();
     refused(&declared(), &adc2, "ADC2, which Renode does not model");
