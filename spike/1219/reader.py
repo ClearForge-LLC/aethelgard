@@ -452,6 +452,8 @@ class Schema:
     def node(self, t, from_file, stack=()):
         kind = t[0]
         if kind == "prim":
+            if t[1] == "Value":
+                UNRESOLVED.add((self.unit, "Value", from_file))
             return {"k": "prim", "t": t[1]}
         if kind == "opt":
             return {"k": "opt", "of": self.node(t[1], from_file, stack)}
@@ -463,8 +465,11 @@ class Schema:
             return {"k": "tuple", "of": [self.node(x, from_file, stack) for x in t[1]]}
         item = self.crate.resolve(t[1], from_file)
         if item is None:
+            UNRESOLVED.add((self.unit, t[1], from_file))
             return {"k": "prim", "t": t[1], "unresolved": True}
+        REACHED.add((item["file"], item["name"]))
         item = wire(self.crate, item)
+        REACHED.add((item["file"], item["name"]))
         key = (item["file"], item["name"])
         if key in stack:
             return {"k": "ref", "item": item}
@@ -849,11 +854,31 @@ TABLE_ROOTS = [
 READ_ONLY_PATHS = {"mcu.hse_hz"}
 
 
+REACHED = set()
+UNRESOLVED = set()
+
+# A type the walk cannot see into, and why that hides no key.
+EXPLAINED_UNRESOLVED = {
+    ("Hc", "serde_json::value::RawValue", "crates/aethelgard-ir/src/parts.rs"):
+        "parts.json `parts[]`/`pin_parts[]`: each row is parsed on its own as RawPart / RawPinPart (parts.rs:1582, :1604), walked here as their own roots",
+    ("Hc", "serde_json::value::RawValue", "crates/aethelgard-ir/src/power_parts.rs"):
+        "power-parts.json `parts[]`: each row is parsed on its own as RawRow (power_parts.rs:2491), walked here as its own root",
+    ("Hc", "Value", "crates/aethelgard-ir/src/pin_parts.rs"):
+        "RawPinPart.identity: any value but null is refused (pin_parts.rs:432), so no key lives under it",
+}
+
+# Serde types read only as another type's wire form, and so in no unit of
+# their own: SolvedWire and GpioWire are SolvedTopology's read side
+# (lib.rs:1241); T walks its Serialize derive, the form `solve` prints.
+WIRE_ONLY = {("crates/aethelgard-ir/src/lib.rs", "SolvedWire"), ("crates/aethelgard-ir/src/lib.rs", "GpioWire")}
+
+
 def committed_specs(repo):
-    files = []
-    for d in ["examples", "crates/aethelgard-cli/tests/fixtures", "crates/aethelgard-ir/tests/fixtures"]:
-        files += sorted((repo / d).glob("*.json"))
-    return files
+    """Every tracked JSON file (git ls-files), the WO's "every committed
+    specification"; the caller keeps those with an `mcu` object."""
+    import subprocess
+    out = subprocess.run(["git", "-C", str(repo), "ls-files", "*.json"], check=True, capture_output=True, text=True).stdout
+    return [repo / x for x in out.split()]
 
 
 def main():
@@ -886,18 +911,16 @@ def main():
     for p in committed_specs(repo):
         try:
             v = json.loads(p.read_text())
-        except ValueError:
-            skipped_files.append((str(p.relative_to(repo)), "not JSON"))
-            continue
+        except (ValueError, UnicodeDecodeError):
+            continue  # not a specification: not JSON text
         rel = str(p.relative_to(repo))
         is_spec = isinstance(v, dict) and isinstance(v.get("mcu"), dict)
         if not is_spec:
-            skipped_files.append((rel, "no mcu object: not a specification"))
-            continue
+            continue  # not a specification: no `mcu` object
         d = dump.get(str(p))
         ver = v.get("schema_version")
         if ver != cur:
-            skipped_files.append((rel, "schema_version %s, not %d (an older file; its keys are walked as data only if current)" % (ver, cur)))
+            skipped_files.append((rel, "schema_version %s, not %d: serde refuses an older file by its version, so it is not walked" % (ver, cur)))
             continue
         if d is None or "dump" not in d:
             skipped_files.append((rel, "serde refuses it: %s" % (d or {}).get("error")))
@@ -1023,10 +1046,46 @@ def main():
                 }
             )
 
-    # T: the solved topology, from its Serialize derive (what solve prints).
+    # H: the pin table's schema (lib.rs PinTable). Its rows are built outside
+    # this crate (aethelgard-svd-hal::pin_table, from a vendored source), so
+    # its columns are walked with no data.
+    pt = crate.get("PinTable", "lib.rs")
+    ptsch = Schema(crate, pt, "Hc")
+    REACHED.add((pt["file"], "PinTable"))
+    walk_schema(ptsch, {"k": "item", "item": pt, "stack": ((pt["file"], "PinTable"),)}, "", None)
+    for e in ptsch.entries.values():
+        e["table"] = "H:pin-table"
+        e["in_files"] = None
+        e["id"] = "H:pin-table|" + e["id"]
+        H_cols.append(e)
+    H.append({"unit": "H", "id": "H:pin-table", "type_name": "PinTable", "member": "", "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)", "at": pt["file"] + ":%d" % pt["line"]})
+
+    # T: the solved topology, from its Serialize derive (what solve prints),
+    # then every other serde type no walk reached, each as its own root.
     st = crate.get("SolvedTopology", "lib.rs")
+    REACHED.add((st["file"], "SolvedTopology"))
     T = Schema(crate, st, "T")
     walk_schema(T, {"k": "item", "item": st, "stack": ((st["file"], "SolvedTopology"),)}, "", None)
+    REACHED.add((spec_item["file"], "Specification"))
+    REACHED.update(WIRE_ONLY)
+    for root, f, key in [r for _, _, rr in TABLE_ROOTS for r in rr]:
+        REACHED.add((crate.get(root, f)["file"], root))
+    orphans = []
+    while True:
+        more = [i for i in crate.items
+                if not i["cfg_test"] and ({"Serialize", "Deserialize"} & set(i["derives"]))
+                and (i["file"], i["name"]) not in REACHED]
+        if not more:
+            break
+        for i in more:
+            REACHED.add((i["file"], i["name"]))
+            orphans.append({"type": i["name"], "at": "%s:%d" % (i["file"], i["line"]), "derives": i["derives"]})
+            if "Deserialize" in i["derives"] and "Serialize" not in i["derives"]:
+                fail.append("A DESERIALIZE TYPE NO WALK REACHES: %s %s:%d" % (i["name"], i["file"], i["line"]))
+            walk_schema(T, {"k": "item", "item": i, "stack": ((i["file"], i["name"]),)}, i["name"], None)
+    for u in sorted(UNRESOLVED):
+        if u not in EXPLAINED_UNRESOLVED:
+            fail.append("UNRESOLVED TYPE (its keys would be invisible): unit %s, %s from %s" % u)
 
     inv = {
         "current_version": cur,
@@ -1039,6 +1098,8 @@ def main():
         "H": H,
         "H_columns": H_cols,
         "T": list(T.entries.values()),
+        "T_roots_beyond_solved_topology": orphans,
+        "unresolved_explained": [dict(zip(("unit", "type", "from"), u), why=EXPLAINED_UNRESOLVED[u]) for u in sorted(UNRESOLVED) if u in EXPLAINED_UNRESOLVED],
         "K_unseen_in_files": [e["id"] for e in unseen_k],
         "K_unused_variants": unused_variants,
         "version_rows": rows,
@@ -1053,6 +1114,123 @@ def main():
             print("  " + x)
         sys.exit(1)
     print("reader: every data key is a source key")
+    cls = pathlib.Path(a.out).parent / "classes.tsv"
+    if cls.exists():
+        join(inv, cls, pathlib.Path(a.out).parent)
+
+
+# ----------------------------------------------------------------- join --
+
+CLASSES = {"V", "N", "S", "D"}
+NOT_HELD = "not held"
+
+
+def join(inv, cls_path, here):
+    """Every entry classed exactly once, by RULES.md; LIST.md and COUNT.md."""
+    rows, fail = {}, []
+    for n, line in enumerate(cls_path.read_text().splitlines()[1:], 2):
+        if not line.strip():
+            continue
+        f = line.split("\t")
+        if len(f) != 6:
+            fail.append("classes.tsv:%d: %d columns, not 6" % (n, len(f)))
+            continue
+        i, c, flag, tags, at, why = f
+        if i in rows:
+            fail.append("classes.tsv:%d: %s classed twice" % (n, i))
+        if c not in CLASSES or flag not in ("", "?"):
+            fail.append("classes.tsv:%d: class %r flag %r" % (n, c, flag))
+        rows[i] = {"class": c, "flag": flag, "tags": tags, "value_at": at, "why": why}
+    units = [("K", inv["K"]), ("R", inv["R"]), ("H", inv["H"]), ("Hc", inv["H_columns"]), ("T", inv["T"])]
+    ids = set()
+    for u, es in units:
+        for e in es:
+            ids.add(e["id"])
+            r = rows.get(e["id"])
+            if r is None:
+                fail.append("UNCLASSED %s %s" % (u, e["id"]))
+                continue
+            if r["class"] == "D" and u not in ("H",):
+                fail.append("D is for a held table or source item only (rule 1): %s" % e["id"])
+            e.update(r)
+            e["rp2350"] = NOT_HELD if r["class"] in ("N", "S") else ""
+    for i in sorted(set(rows) - ids):
+        fail.append("CLASSED BUT NO SUCH ENTRY: %s" % i)
+    # No second-chip fact in any reason (RULES §2: judged from ST's side alone).
+    for i, r in rows.items():
+        if re.search(r"(?i)rp2[0-9]{3}|raspberry|pico\b|esp32|nrf5|atsam|kinetis|i\.mx|lpc[0-9]|gd32|ch32", r["why"]):
+            fail.append("A SECOND-CHIP FACT IN A REASON: %s: %s" % (i, r["why"]))
+    if fail:
+        print("JOIN FAIL")
+        for x in fail:
+            print("  " + x)
+        sys.exit(1)
+    write_list(inv, units, here)
+    write_count(inv, units, here)
+    print("join: %d entries classed; LIST.md and COUNT.md written" % len(ids))
+
+
+def md(x):
+    return str(x).replace("|", "\\|").replace("\n", " ")
+
+
+def write_list(inv, units, here):
+    o = ["# AET-WO-1219 — the list", "",
+         "Generated by `reader.py` from `out/inventory.json` and `classes.tsv`; do not edit. Classes by `RULES.md`. "
+         "`at` is where the entry is defined; `value at` is where its value set is held or checked. "
+         "The RP2350 column is filled for every N and S entry; no RP2350 datasheet is held (FEEDBACK §RP2350), so every cell is \"not held\".", ""]
+    heads = {
+        "K": ("K — specification keys (%d)", ["id", "paths", "v", "class", "tags", "at", "value at", "why", "RP2350"]),
+        "R": ("R — refusal kinds (%d)", ["kind", "class", "tags", "at", "why", "RP2350"]),
+        "H": ("H — held tables and source items (%d)", ["id", "class", "tags", "at", "why", "RP2350"]),
+        "Hc": ("H columns — the held data files' and the pin table's columns (%d)", ["id", "paths", "class", "tags", "at", "value at", "why", "RP2350"]),
+        "T": ("T — solved topology and other output types, not counted toward acceptance (%d)", ["id", "paths", "class", "tags", "at", "why", "RP2350"]),
+    }
+    for u, es in units:
+        title, cols = heads[u]
+        o += ["## " + title % len(es), "", "| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+        for e in es:
+            cell = {
+                "id": "`%s`" % e["id"], "kind": "`%s`" % e["json"],
+                "paths": "<br>".join("`%s`" % p for p in e.get("paths", [])[:4]) + (" …" if len(e.get("paths", [])) > 4 else ""),
+                "v": e.get("version", ""), "class": e["class"] + e["flag"], "tags": e["tags"],
+                "at": "`%s`" % e["at"], "value at": e["value_at"], "why": e["why"], "RP2350": e["rp2350"],
+            }
+            o.append("| " + " | ".join(md(cell[c]) for c in cols) + " |")
+            if u == "K" and e.get("variants"):
+                vs = ", ".join("`%s`%s" % (v, "" if i["used"] else " (unused)") for v, i in e["variants"].items())
+                o.append("| ↳ values | %s |%s" % (md(vs), " |" * (len(cols) - 2)))
+        o.append("")
+    (here / "LIST.md").write_text("\n".join(o) + "\n")
+
+
+def write_count(inv, units, here):
+    o = ["# AET-WO-1219 — the count", "", "Generated by `reader.py`; do not edit.", ""]
+    o += ["## Per class", "", "| unit | V | N | S | D | flagged ? | total |", "|---|---|---|---|---|---|---|"]
+    for u, es in units:
+        c = collections.Counter(e["class"] for e in es)
+        q = sum(1 for e in es if e["flag"])
+        o.append("| %s | %d | %d | %d | %d | %d | %d |" % (u, c["V"], c["N"], c["S"], c["D"], q, len(es)))
+    o += ["", "## K per version", "",
+          "The version that introduced each key: the latest `versions::CHANGES` row naming the key's path or a prefix of it; a key no row names is version 1. "
+          "A renamed key takes its rename's version. A key with several paths takes its earliest.", "",
+          "| version | work order | V | N | S | total |", "|---|---|---|---|---|---|"]
+    byv = collections.defaultdict(list)
+    for e in inv["K"]:
+        byv[(e["version"], e["version_wo"])].append(e)
+    for (v, wo), es in sorted(byv.items()):
+        c = collections.Counter(e["class"] for e in es)
+        o.append("| %d | %s | %d | %d | %d | %d |" % (v, wo, c["V"], c["N"], c["S"], len(es)))
+    o += ["", "## R per version", "",
+          "A refusal kind a `versions::CHANGES` row lists under `rules` takes that row's version; every other kind is \"no row\" (a row lists only kinds that judge content an older file could already hold).", "",
+          "| version | V | N | S | total |", "|---|---|---|---|---|"]
+    byr = collections.defaultdict(list)
+    for e in inv["R"]:
+        byr[e.get("rule_row") or 0].append(e)
+    for v, es in sorted(byr.items()):
+        c = collections.Counter(e["class"] for e in es)
+        o.append("| %s | %d | %d | %d | %d |" % (v or "no row", c["V"], c["N"], c["S"], len(es)))
+    (here / "COUNT.md").write_text("\n".join(o) + "\n")
 
 
 if __name__ == "__main__":

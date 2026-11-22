@@ -24,10 +24,7 @@ TOML
 cp "$repo/Cargo.lock" "$scratch/dump/Cargo.lock"
 nice -n 10 cargo build -q --release --offline --manifest-path "$scratch/dump/Cargo.toml" \
   --target-dir "$scratch/target"
-# Every JSON file in the three directories versions.rs reads (`current_specifications`).
-files=()
-for d in examples crates/aethelgard-cli/tests/fixtures crates/aethelgard-ir/tests/fixtures; do
-  for f in "$repo/$d"/*.json; do files+=("$f"); done
-done
+# Every tracked JSON file (the reader keeps those with an `mcu` object).
+mapfile -t files < <(git -C "$repo" ls-files '*.json' | sed "s|^|$repo/|")
 "$scratch/target/release/aet-1219-dump" "${files[@]}" > "$scratch/dump.jsonl"
 python3 -I "$here/reader.py" --repo "$repo" --dump "$scratch/dump.jsonl" --out "$here/out" "$@"

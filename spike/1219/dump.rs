@@ -7,7 +7,10 @@ use std::io::Write;
 fn main() {
     let mut out = std::io::stdout().lock();
     for path in std::env::args().skip(1) {
-        let text = std::fs::read_to_string(&path).expect("read");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            writeln!(out, "{}", serde_json::json!({"file": path, "error": "not UTF-8"})).expect("write");
+            continue;
+        };
         let line = match serde_json::from_str::<aethelgard_ir::Specification>(&text) {
             Ok(s) => serde_json::json!({"file": path, "dump": s}),
             Err(e) => serde_json::json!({"file": path, "error": e.to_string()}),

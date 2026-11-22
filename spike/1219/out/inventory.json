@@ -1,12 +1,6 @@
 {
  "current_version": 27,
  "spec_files": [
-  "examples/invalid-zero-domain.json",
-  "examples/sentinel-01-ext-bmp581.json",
-  "examples/sentinel-01-minimal.json",
-  "examples/sentinel-01.json",
-  "examples/sentinel-02-bench-hse8.json",
-  "examples/sentinel-02-bench.json",
   "crates/aethelgard-cli/tests/fixtures/connectors.json",
   "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json",
   "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json",
@@ -26,52 +20,126 @@
   "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
   "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
   "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+  "crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json",
+  "crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json",
+  "crates/aethelgard-cli/tests/fixtures/solve/stress.json",
+  "crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json",
   "crates/aethelgard-cli/tests/fixtures/spi-only.json",
   "crates/aethelgard-cli/tests/fixtures/two-bme.json",
   "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
   "crates/aethelgard-ir/tests/fixtures/d2-drv8833.json",
-  "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json"
+  "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
+  "examples/invalid-zero-domain.json",
+  "examples/sentinel-01-ext-bmp581.json",
+  "examples/sentinel-01-minimal.json",
+  "examples/sentinel-01.json",
+  "examples/sentinel-02-bench-hse8.json",
+  "examples/sentinel-02-bench.json"
  ],
  "skipped_files": [
   [
-   "crates/aethelgard-cli/tests/fixtures/four-layer-3k3.json",
-   "no mcu object: not a specification"
+   "docs/work-orders/AET-WO-1200.repro/core-infeasible.json",
+   "schema_version 1, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/four-layer-droop.json",
-   "no mcu object: not a specification"
+   "docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json",
+   "schema_version 1, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json",
-   "no mcu object: not a specification"
+   "spike/1211/fixtures/d1-drv8876.json",
+   "schema_version 22-or-23, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/four-layer-spi-absent.json",
-   "no mcu object: not a specification"
+   "spike/1211/fixtures/d2-drv8833.json",
+   "schema_version 22-or-23, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json",
-   "no mcu object: not a specification"
+   "spike/1211d/adv/d1_vref_gnd.json",
+   "schema_version 23, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/spi-absent-u4-one-kind.json",
-   "no mcu object: not a specification"
+   "spike/1211d/adv/d1_vref_low.json",
+   "schema_version 23, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/spi-only-droop-bor3.json",
-   "no mcu object: not a specification"
+   "spike/1211d/adv/nfault_to_vmotor.json",
+   "schema_version 23, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/two-bme-collide.json",
-   "no mcu object: not a specification"
+   "spike/1211f/d1-drawn.json",
+   "schema_version 24, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/two-bme-held-low-sda.json",
-   "no mcu object: not a specification"
+   "spike/1215/in/v0.json",
+   "schema_version 0, not 27: serde refuses an older file by its version, so it is not walked"
   ],
   [
-   "crates/aethelgard-cli/tests/fixtures/two-bme-i2c-timeout.json",
-   "no mcu object: not a specification"
+   "spike/1215/in/v1-sentinel-01.json",
+   "schema_version 1, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/1215/in/v20-sentinel-01.json",
+   "schema_version 20, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/1215/in/v24-newer.json",
+   "schema_version 24, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/1314b/logger-spi-only-cap-tol.json",
+   "schema_version 17, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/1314b/logger-spi-only-cap.json",
+   "schema_version 17, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/3306/spec/bme-bmp.json",
+   "schema_version 19, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4241/spec/sentinel-01-minimal-no-u3.json",
+   "schema_version 19, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/driver-idle-zero.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/driver-tree.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/driver.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-1s-u50.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-1s.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-i2c-only.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-offboard.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-spi-only-cap.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger-spi-only.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
+  ],
+  [
+   "spike/4600/logger.json",
+   "schema_version 16, not 27: serde refuses an older file by its version, so it is not walked"
   ]
  ],
  "K": [
@@ -90,8 +158,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -111,8 +179,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -132,8 +200,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -153,8 +221,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -174,8 +242,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -219,7 +287,7 @@
    },
    "aliases": [],
    "in_files": 3,
-   "in_dump": 30,
+   "in_dump": 34,
    "version": 20,
    "version_wo": "AET-WO-4240a",
    "version_by": "mcu.hse"
@@ -558,7 +626,7 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
+   "in_files": 31,
    "in_dump": 0,
    "version": 6,
    "version_wo": "AET-WO-4300a",
@@ -579,8 +647,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 7,
    "version_wo": "AET-WO-4300d",
    "version_by": "mcu.bor_level"
@@ -600,8 +668,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 19,
    "version_wo": "AET-WO-4240v",
    "version_by": "mcu.core_supply"
@@ -640,6 +708,10 @@
       "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
       "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
       "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/stress.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json",
       "crates/aethelgard-cli/tests/fixtures/spi-only.json",
       "crates/aethelgard-cli/tests/fixtures/two-bme.json",
       "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
@@ -663,8 +735,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 19,
    "version_wo": "AET-WO-4240v",
    "version_by": "mcu.core_supply"
@@ -684,8 +756,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 19,
    "version_wo": "AET-WO-4240v",
    "version_by": "mcu.core_supply"
@@ -709,8 +781,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 11,
    "version_wo": "AET-WO-4300g",
    "version_by": "mcu.supply_source"
@@ -730,8 +802,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 11,
    "version_wo": "AET-WO-4300g",
    "version_by": "mcu.supply_source"
@@ -751,8 +823,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 11,
    "version_wo": "AET-WO-4300g",
    "version_by": "mcu.supply_source"
@@ -859,8 +931,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -893,8 +965,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -1046,8 +1118,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1067,8 +1139,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1088,8 +1160,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1109,8 +1181,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1130,8 +1202,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1151,8 +1223,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1176,8 +1248,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1197,8 +1269,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1218,8 +1290,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1239,8 +1311,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1260,8 +1332,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1288,8 +1360,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1320,8 +1392,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1341,8 +1413,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1362,8 +1434,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1383,8 +1455,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1408,8 +1480,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1429,8 +1501,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1450,8 +1522,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1471,8 +1543,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1492,8 +1564,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1513,8 +1585,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1534,8 +1606,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1555,8 +1627,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1576,8 +1648,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1597,8 +1669,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1618,8 +1690,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1639,8 +1711,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1664,8 +1736,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 29,
+   "in_dump": 29,
    "version": 13,
    "version_wo": "AET-WO-4220b",
    "version_by": "i2c_devices[].pin_capacitance"
@@ -1773,8 +1845,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1794,8 +1866,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1815,8 +1887,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1836,8 +1908,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1857,8 +1929,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1878,8 +1950,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -1903,8 +1975,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 30,
+   "in_dump": 30,
    "version": 13,
    "version_wo": "AET-WO-4220b",
    "version_by": "spi_devices[].pin_capacitance"
@@ -2067,8 +2139,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2088,8 +2160,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2109,8 +2181,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2134,8 +2206,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2155,8 +2227,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2176,8 +2248,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2201,8 +2273,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2226,8 +2298,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 29,
-   "in_dump": 29,
+   "in_files": 33,
+   "in_dump": 33,
    "version": 4,
    "version_wo": "AET-WO-4300f",
    "version_by": "connectors"
@@ -2289,8 +2361,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -2310,8 +2382,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -2331,8 +2403,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -2352,8 +2424,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -2377,8 +2449,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 27,
-   "in_dump": 27,
+   "in_files": 31,
+   "in_dump": 31,
    "version": 1,
    "version_wo": "v1",
    "version_by": null
@@ -2398,8 +2470,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2419,8 +2491,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2440,8 +2512,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2461,8 +2533,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2501,6 +2573,10 @@
       "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
       "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
       "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/stress.json",
+      "crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json",
       "crates/aethelgard-cli/tests/fixtures/spi-only.json",
       "crates/aethelgard-cli/tests/fixtures/two-bme.json",
       "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
@@ -2530,8 +2606,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2555,8 +2631,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2576,8 +2652,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2597,8 +2673,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2618,8 +2694,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2639,8 +2715,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2660,8 +2736,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2681,8 +2757,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2702,8 +2778,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2723,8 +2799,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2744,8 +2820,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2765,8 +2841,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2817,8 +2893,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -2838,8 +2914,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3169,8 +3245,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3190,8 +3266,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3211,8 +3287,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3232,8 +3308,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3253,8 +3329,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 2,
    "version_wo": "AET-WO-4100",
    "version_by": "board"
@@ -3431,8 +3507,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 5,
    "version_wo": "AET-WO-1308",
    "version_by": "net_classes"
@@ -3582,8 +3658,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 5,
    "version_wo": "AET-WO-1308",
    "version_by": "diff_pairs"
@@ -3687,8 +3763,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 6,
    "version_wo": "AET-WO-4300a",
    "version_by": "motor_outputs"
@@ -4023,8 +4099,8 @@
     ]
    },
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 7,
    "version_wo": "AET-WO-4300d",
    "version_by": "power"
@@ -5880,8 +5956,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 8,
    "version_wo": "AET-WO-4210",
    "version_by": "accept_lifecycle"
@@ -5901,8 +5977,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 25,
-   "in_dump": 25,
+   "in_files": 28,
+   "in_dump": 28,
    "version": 8,
    "version_wo": "AET-WO-4210",
    "version_by": "accept_lifecycle"
@@ -5922,8 +5998,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 25,
-   "in_dump": 25,
+   "in_files": 28,
+   "in_dump": 28,
    "version": 8,
    "version_wo": "AET-WO-4210",
    "version_by": "accept_lifecycle"
@@ -5943,8 +6019,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 25,
-   "in_dump": 25,
+   "in_files": 28,
+   "in_dump": 28,
    "version": 8,
    "version_wo": "AET-WO-4210",
    "version_by": "accept_lifecycle"
@@ -5964,8 +6040,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 9,
    "version_wo": "AET-WO-4300b",
    "version_by": "serial_ports"
@@ -6429,8 +6505,8 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": [],
-   "in_files": 30,
-   "in_dump": 30,
+   "in_files": 34,
+   "in_dump": 34,
    "version": 12,
    "version_wo": "AET-WO-4230",
    "version_by": "acknowledge_unwitnessed"
@@ -12231,6 +12307,14 @@
    "json": "u32",
    "at": "crates/aethelgard-ir/src/vos.rs:665",
    "value": "0b10 << 14"
+  },
+  {
+   "unit": "H",
+   "id": "H:pin-table",
+   "type_name": "PinTable",
+   "member": "",
+   "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)",
+   "at": "crates/aethelgard-ir/src/lib.rs:1397"
   }
  ],
  "H_columns": [
@@ -20185,6 +20269,190 @@
    "aliases": [],
    "table": "H:output-speeds.json",
    "in_files": 1
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinTable.part",
+   "type_name": "PinTable",
+   "member": "part",
+   "json": "part",
+   "at": "crates/aethelgard-ir/src/lib.rs:1398",
+   "paths": [
+    "part"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinTable.package",
+   "type_name": "PinTable",
+   "member": "package",
+   "json": "package",
+   "at": "crates/aethelgard-ir/src/lib.rs:1399",
+   "paths": [
+    "package"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinTable.source",
+   "type_name": "PinTable",
+   "member": "source",
+   "json": "source",
+   "at": "crates/aethelgard-ir/src/lib.rs:1400",
+   "paths": [
+    "source"
+   ],
+   "variants": {},
+   "rust_type": "PinSource",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinSource.repository",
+   "type_name": "PinSource",
+   "member": "repository",
+   "json": "repository",
+   "at": "crates/aethelgard-ir/src/lib.rs:1424",
+   "paths": [
+    "source.repository"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinSource.commit",
+   "type_name": "PinSource",
+   "member": "commit",
+   "json": "commit",
+   "at": "crates/aethelgard-ir/src/lib.rs:1425",
+   "paths": [
+    "source.commit"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinSource.files",
+   "type_name": "PinSource",
+   "member": "files",
+   "json": "files",
+   "at": "crates/aethelgard-ir/src/lib.rs:1426",
+   "paths": [
+    "source.files"
+   ],
+   "variants": {},
+   "rust_type": "BTreeMap<String, String>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:PinTable.pins",
+   "type_name": "PinTable",
+   "member": "pins",
+   "json": "pins",
+   "at": "crates/aethelgard-ir/src/lib.rs:1402",
+   "paths": [
+    "pins"
+   ],
+   "variants": {},
+   "rust_type": "BTreeMap<String, Pin>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:Pin.position",
+   "type_name": "Pin",
+   "member": "position",
+   "json": "position",
+   "at": "crates/aethelgard-ir/src/lib.rs:1408",
+   "paths": [
+    "pins.*.position"
+   ],
+   "variants": {},
+   "rust_type": "u16",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:Pin.alternate_functions",
+   "type_name": "Pin",
+   "member": "alternate_functions",
+   "json": "alternate_functions",
+   "at": "crates/aethelgard-ir/src/lib.rs:1410",
+   "paths": [
+    "pins.*.alternate_functions"
+   ],
+   "variants": {},
+   "rust_type": "BTreeMap<String, u8>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
+  },
+  {
+   "unit": "Hc",
+   "id": "H:pin-table|lib:Pin.adc_channels",
+   "type_name": "Pin",
+   "member": "adc_channels",
+   "json": "adc_channels",
+   "at": "crates/aethelgard-ir/src/lib.rs:1418",
+   "paths": [
+    "pins.*.adc_channels"
+   ],
+   "variants": {},
+   "rust_type": "BTreeSet<String>",
+   "optional_on_wire": false,
+   "serde": {
+    "skip_serializing_if": [
+     "BTreeSet::is_empty"
+    ]
+   },
+   "aliases": [],
+   "table": "H:pin-table",
+   "in_files": null
   }
  ],
  "T": [
@@ -23332,6 +23600,2423 @@
    "optional_on_wire": false,
    "serde": {},
    "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:GmCrit.nano_amps_per_volt",
+   "type_name": "GmCrit",
+   "member": "nano_amps_per_volt",
+   "json": "nano_amps_per_volt",
+   "at": "crates/aethelgard-ir/src/clock.rs:379",
+   "paths": [
+    "GmCrit.nano_amps_per_volt",
+    "TreeVerdict.gm_crit.nano_amps_per_volt"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:GmCrit.holds",
+   "type_name": "GmCrit",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/clock.rs:381",
+   "paths": [
+    "GmCrit.holds",
+    "TreeVerdict.gm_crit.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:GmCrit.an2867_margin_hundredths_uncited",
+   "type_name": "GmCrit",
+   "member": "an2867_margin_hundredths_uncited",
+   "json": "an2867_margin_hundredths_uncited",
+   "at": "crates/aethelgard-ir/src/clock.rs:385",
+   "paths": [
+    "GmCrit.an2867_margin_hundredths_uncited",
+    "TreeVerdict.gm_crit.an2867_margin_hundredths_uncited"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.reference_hz",
+   "type_name": "TreeVerdict",
+   "member": "reference_hz",
+   "json": "reference_hz",
+   "at": "crates/aethelgard-ir/src/clock.rs:580",
+   "paths": [
+    "TreeVerdict.reference_hz"
+   ],
+   "variants": {},
+   "rust_type": "(u64, u64)",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.range_hz",
+   "type_name": "TreeVerdict",
+   "member": "range_hz",
+   "json": "range_hz",
+   "at": "crates/aethelgard-ir/src/clock.rs:581",
+   "paths": [
+    "TreeVerdict.range_hz"
+   ],
+   "variants": {},
+   "rust_type": "(u64, u64)",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.vco_hz",
+   "type_name": "TreeVerdict",
+   "member": "vco_hz",
+   "json": "vco_hz",
+   "at": "crates/aethelgard-ir/src/clock.rs:583",
+   "paths": [
+    "TreeVerdict.vco_hz"
+   ],
+   "variants": {},
+   "rust_type": "(u64, u64)",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.pll1_p_hz",
+   "type_name": "TreeVerdict",
+   "member": "pll1_p_hz",
+   "json": "pll1_p_hz",
+   "at": "crates/aethelgard-ir/src/clock.rs:584",
+   "paths": [
+    "TreeVerdict.pll1_p_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.pll1_q_hz",
+   "type_name": "TreeVerdict",
+   "member": "pll1_q_hz",
+   "json": "pll1_q_hz",
+   "at": "crates/aethelgard-ir/src/clock.rs:586",
+   "paths": [
+    "TreeVerdict.pll1_q_hz"
+   ],
+   "variants": {},
+   "rust_type": "Option<u64>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "clock:TreeVerdict.gm_crit",
+   "type_name": "TreeVerdict",
+   "member": "gm_crit",
+   "json": "gm_crit",
+   "at": "crates/aethelgard-ir/src/clock.rs:588",
+   "paths": [
+    "TreeVerdict.gm_crit"
+   ],
+   "variants": {},
+   "rust_type": "Option<GmCrit>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.kernel_hz",
+   "type_name": "SiliconTiming",
+   "member": "kernel_hz",
+   "json": "kernel_hz",
+   "at": "crates/aethelgard-ir/src/motor.rs:908",
+   "paths": [
+    "SiliconTiming.kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.period_ps",
+   "type_name": "SiliconTiming",
+   "member": "period_ps",
+   "json": "period_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:913",
+   "paths": [
+    "SiliconTiming.period_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.high_ps",
+   "type_name": "SiliconTiming",
+   "member": "high_ps",
+   "json": "high_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:915",
+   "paths": [
+    "SiliconTiming.high_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.period_slowest_ps",
+   "type_name": "SiliconTiming",
+   "member": "period_slowest_ps",
+   "json": "period_slowest_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:920",
+   "paths": [
+    "SiliconTiming.period_slowest_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.period_fastest_ps",
+   "type_name": "SiliconTiming",
+   "member": "period_fastest_ps",
+   "json": "period_fastest_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:921",
+   "paths": [
+    "SiliconTiming.period_fastest_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.high_slowest_ps",
+   "type_name": "SiliconTiming",
+   "member": "high_slowest_ps",
+   "json": "high_slowest_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:922",
+   "paths": [
+    "SiliconTiming.high_slowest_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.high_fastest_ps",
+   "type_name": "SiliconTiming",
+   "member": "high_fastest_ps",
+   "json": "high_fastest_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:923",
+   "paths": [
+    "SiliconTiming.high_fastest_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.nominal_period_ps",
+   "type_name": "SiliconTiming",
+   "member": "nominal_period_ps",
+   "json": "nominal_period_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:925",
+   "paths": [
+    "SiliconTiming.nominal_period_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.nominal_high_ps",
+   "type_name": "SiliconTiming",
+   "member": "nominal_high_ps",
+   "json": "nominal_high_ps",
+   "at": "crates/aethelgard-ir/src/motor.rs:928",
+   "paths": [
+    "SiliconTiming.nominal_high_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "motor:SiliconTiming.holds",
+   "type_name": "SiliconTiming",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/motor.rs:937",
+   "paths": [
+    "SiliconTiming.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:ToleranceRow.table",
+   "type_name": "ToleranceRow",
+   "member": "table",
+   "json": "table",
+   "at": "crates/aethelgard-ir/src/serial.rs:236",
+   "paths": [
+    "ToleranceRow.table",
+    "SiliconFraming.tolerance.table"
+   ],
+   "variants": {},
+   "rust_type": "&'static str",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:ToleranceRow.m_bits",
+   "type_name": "ToleranceRow",
+   "member": "m_bits",
+   "json": "m_bits",
+   "at": "crates/aethelgard-ir/src/serial.rs:238",
+   "paths": [
+    "ToleranceRow.m_bits",
+    "SiliconFraming.tolerance.m_bits"
+   ],
+   "variants": {},
+   "rust_type": "u8",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:ToleranceRow.tolerance_ppm",
+   "type_name": "ToleranceRow",
+   "member": "tolerance_ppm",
+   "json": "tolerance_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:239",
+   "paths": [
+    "ToleranceRow.tolerance_ppm",
+    "SiliconFraming.tolerance.tolerance_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.kernel_hz",
+   "type_name": "SiliconFraming",
+   "member": "kernel_hz",
+   "json": "kernel_hz",
+   "at": "crates/aethelgard-ir/src/serial.rs:367",
+   "paths": [
+    "SiliconFraming.kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.brr",
+   "type_name": "SiliconFraming",
+   "member": "brr",
+   "json": "brr",
+   "at": "crates/aethelgard-ir/src/serial.rs:368",
+   "paths": [
+    "SiliconFraming.brr"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.actual_millibaud",
+   "type_name": "SiliconFraming",
+   "member": "actual_millibaud",
+   "json": "actual_millibaud",
+   "at": "crates/aethelgard-ir/src/serial.rs:369",
+   "paths": [
+    "SiliconFraming.actual_millibaud"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.error_ppm",
+   "type_name": "SiliconFraming",
+   "member": "error_ppm",
+   "json": "error_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:370",
+   "paths": [
+    "SiliconFraming.error_ppm"
+   ],
+   "variants": {},
+   "rust_type": "i64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.quantization_ppm",
+   "type_name": "SiliconFraming",
+   "member": "quantization_ppm",
+   "json": "quantization_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:372",
+   "paths": [
+    "SiliconFraming.quantization_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.hsi_ppm",
+   "type_name": "SiliconFraming",
+   "member": "hsi_ppm",
+   "json": "hsi_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:379",
+   "paths": [
+    "SiliconFraming.hsi_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.receiver_ppm",
+   "type_name": "SiliconFraming",
+   "member": "receiver_ppm",
+   "json": "receiver_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:385",
+   "paths": [
+    "SiliconFraming.receiver_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.peer_deviation_ppm",
+   "type_name": "SiliconFraming",
+   "member": "peer_deviation_ppm",
+   "json": "peer_deviation_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:387",
+   "paths": [
+    "SiliconFraming.peer_deviation_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.worst_case_ppm",
+   "type_name": "SiliconFraming",
+   "member": "worst_case_ppm",
+   "json": "worst_case_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:389",
+   "paths": [
+    "SiliconFraming.worst_case_ppm"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.tolerance",
+   "type_name": "SiliconFraming",
+   "member": "tolerance",
+   "json": "tolerance",
+   "at": "crates/aethelgard-ir/src/serial.rs:391",
+   "paths": [
+    "SiliconFraming.tolerance"
+   ],
+   "variants": {},
+   "rust_type": "Option<ToleranceRow>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.margin_ppm",
+   "type_name": "SiliconFraming",
+   "member": "margin_ppm",
+   "json": "margin_ppm",
+   "at": "crates/aethelgard-ir/src/serial.rs:394",
+   "paths": [
+    "SiliconFraming.margin_ppm"
+   ],
+   "variants": {},
+   "rust_type": "Option<i64>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "serial:SiliconFraming.holds",
+   "type_name": "SiliconFraming",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/serial.rs:399",
+   "paths": [
+    "SiliconFraming.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.peripheral",
+   "type_name": "SpiFinding",
+   "member": "peripheral",
+   "json": "peripheral",
+   "at": "crates/aethelgard-ir/src/silicon.rs:205",
+   "paths": [
+    "SpiFinding.peripheral"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.kernel",
+   "type_name": "SpiFinding",
+   "member": "kernel",
+   "json": "kernel",
+   "at": "crates/aethelgard-ir/src/silicon.rs:206",
+   "paths": [
+    "SpiFinding.kernel"
+   ],
+   "variants": {
+    "per_ck": {
+     "rust": "SpiKernel::PerCk",
+     "at": "crates/aethelgard-ir/src/lib.rs:689",
+     "used": []
+    },
+    "hsi_ker_ck": {
+     "rust": "SpiKernel::HsiKerCk",
+     "at": "crates/aethelgard-ir/src/lib.rs:690",
+     "used": []
+    },
+    "pll1_q": {
+     "rust": "SpiKernel::Pll1Q",
+     "at": "crates/aethelgard-ir/src/lib.rs:691",
+     "used": []
+    },
+    "pclk": {
+     "rust": "SpiKernel::Pclk",
+     "at": "crates/aethelgard-ir/src/lib.rs:692",
+     "used": []
+    }
+   },
+   "rust_type": "SpiKernel",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.kernel_hz",
+   "type_name": "SpiFinding",
+   "member": "kernel_hz",
+   "json": "kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:208",
+   "paths": [
+    "SpiFinding.kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.fast_kernel_hz",
+   "type_name": "SpiFinding",
+   "member": "fast_kernel_hz",
+   "json": "fast_kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:210",
+   "paths": [
+    "SpiFinding.fast_kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.declared_hz",
+   "type_name": "SpiFinding",
+   "member": "declared_hz",
+   "json": "declared_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:211",
+   "paths": [
+    "SpiFinding.declared_hz"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.mbr",
+   "type_name": "SpiFinding",
+   "member": "mbr",
+   "json": "mbr",
+   "at": "crates/aethelgard-ir/src/silicon.rs:212",
+   "paths": [
+    "SpiFinding.mbr"
+   ],
+   "variants": {},
+   "rust_type": "u8",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.achieved_hz",
+   "type_name": "SpiFinding",
+   "member": "achieved_hz",
+   "json": "achieved_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:213",
+   "paths": [
+    "SpiFinding.achieved_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.achieved_max_hz",
+   "type_name": "SpiFinding",
+   "member": "achieved_max_hz",
+   "json": "achieved_max_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:214",
+   "paths": [
+    "SpiFinding.achieved_max_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.kernel_ok",
+   "type_name": "SpiFinding",
+   "member": "kernel_ok",
+   "json": "kernel_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:217",
+   "paths": [
+    "SpiFinding.kernel_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.mbr_ok",
+   "type_name": "SpiFinding",
+   "member": "mbr_ok",
+   "json": "mbr_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:220",
+   "paths": [
+    "SpiFinding.mbr_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.achieved_ok",
+   "type_name": "SpiFinding",
+   "member": "achieved_ok",
+   "json": "achieved_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:223",
+   "paths": [
+    "SpiFinding.achieved_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiFinding.holds",
+   "type_name": "SpiFinding",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/silicon.rs:224",
+   "paths": [
+    "SpiFinding.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.cr1_idle",
+   "type_name": "SpiWords",
+   "member": "cr1_idle",
+   "json": "cr1_idle",
+   "at": "crates/aethelgard-ir/src/silicon.rs:299",
+   "paths": [
+    "SpiWords.cr1_idle"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.cr1_enable",
+   "type_name": "SpiWords",
+   "member": "cr1_enable",
+   "json": "cr1_enable",
+   "at": "crates/aethelgard-ir/src/silicon.rs:301",
+   "paths": [
+    "SpiWords.cr1_enable"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.cr1_start",
+   "type_name": "SpiWords",
+   "member": "cr1_start",
+   "json": "cr1_start",
+   "at": "crates/aethelgard-ir/src/silicon.rs:303",
+   "paths": [
+    "SpiWords.cr1_start"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.cfg1",
+   "type_name": "SpiWords",
+   "member": "cfg1",
+   "json": "cfg1",
+   "at": "crates/aethelgard-ir/src/silicon.rs:305",
+   "paths": [
+    "SpiWords.cfg1"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.cfg2",
+   "type_name": "SpiWords",
+   "member": "cfg2",
+   "json": "cfg2",
+   "at": "crates/aethelgard-ir/src/silicon.rs:307",
+   "paths": [
+    "SpiWords.cfg2"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:SpiWords.kernel_select",
+   "type_name": "SpiWords",
+   "member": "kernel_select",
+   "json": "kernel_select",
+   "at": "crates/aethelgard-ir/src/silicon.rs:311",
+   "paths": [
+    "SpiWords.kernel_select"
+   ],
+   "variants": {},
+   "rust_type": "(u32, u32)",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.mode",
+   "type_name": "I2cLimits",
+   "member": "mode",
+   "json": "mode",
+   "at": "crates/aethelgard-ir/src/silicon.rs:381",
+   "paths": [
+    "I2cLimits.mode"
+   ],
+   "variants": {},
+   "rust_type": "&'static str",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.scl_hz",
+   "type_name": "I2cLimits",
+   "member": "scl_hz",
+   "json": "scl_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:382",
+   "paths": [
+    "I2cLimits.scl_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.t_low_ns",
+   "type_name": "I2cLimits",
+   "member": "t_low_ns",
+   "json": "t_low_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:383",
+   "paths": [
+    "I2cLimits.t_low_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.t_high_ns",
+   "type_name": "I2cLimits",
+   "member": "t_high_ns",
+   "json": "t_high_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:384",
+   "paths": [
+    "I2cLimits.t_high_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.tr_max_ns",
+   "type_name": "I2cLimits",
+   "member": "tr_max_ns",
+   "json": "tr_max_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:385",
+   "paths": [
+    "I2cLimits.tr_max_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.tf_max_ns",
+   "type_name": "I2cLimits",
+   "member": "tf_max_ns",
+   "json": "tf_max_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:386",
+   "paths": [
+    "I2cLimits.tf_max_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.t_su_dat_ns",
+   "type_name": "I2cLimits",
+   "member": "t_su_dat_ns",
+   "json": "t_su_dat_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:387",
+   "paths": [
+    "I2cLimits.t_su_dat_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.t_hd_dat_min_ns",
+   "type_name": "I2cLimits",
+   "member": "t_hd_dat_min_ns",
+   "json": "t_hd_dat_min_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:388",
+   "paths": [
+    "I2cLimits.t_hd_dat_min_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.t_vd_dat_max_ns",
+   "type_name": "I2cLimits",
+   "member": "t_vd_dat_max_ns",
+   "json": "t_vd_dat_max_ns",
+   "at": "crates/aethelgard-ir/src/silicon.rs:389",
+   "paths": [
+    "I2cLimits.t_vd_dat_max_ns"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cLimits.kernel_min_hz",
+   "type_name": "I2cLimits",
+   "member": "kernel_min_hz",
+   "json": "kernel_min_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:390",
+   "paths": [
+    "I2cLimits.kernel_min_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.presc",
+   "type_name": "Timingr",
+   "member": "presc",
+   "json": "presc",
+   "at": "crates/aethelgard-ir/src/silicon.rs:467",
+   "paths": [
+    "Timingr.presc",
+    "TimingFinding.fields.presc",
+    "I2cFinding.timingr[].fields.presc"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.scldel",
+   "type_name": "Timingr",
+   "member": "scldel",
+   "json": "scldel",
+   "at": "crates/aethelgard-ir/src/silicon.rs:468",
+   "paths": [
+    "Timingr.scldel",
+    "TimingFinding.fields.scldel",
+    "I2cFinding.timingr[].fields.scldel"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.sdadel",
+   "type_name": "Timingr",
+   "member": "sdadel",
+   "json": "sdadel",
+   "at": "crates/aethelgard-ir/src/silicon.rs:469",
+   "paths": [
+    "Timingr.sdadel",
+    "TimingFinding.fields.sdadel",
+    "I2cFinding.timingr[].fields.sdadel"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.sclh",
+   "type_name": "Timingr",
+   "member": "sclh",
+   "json": "sclh",
+   "at": "crates/aethelgard-ir/src/silicon.rs:470",
+   "paths": [
+    "Timingr.sclh",
+    "TimingFinding.fields.sclh",
+    "I2cFinding.timingr[].fields.sclh"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.scll",
+   "type_name": "Timingr",
+   "member": "scll",
+   "json": "scll",
+   "at": "crates/aethelgard-ir/src/silicon.rs:471",
+   "paths": [
+    "Timingr.scll",
+    "TimingFinding.fields.scll",
+    "I2cFinding.timingr[].fields.scll"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:Timingr.reserved",
+   "type_name": "Timingr",
+   "member": "reserved",
+   "json": "reserved",
+   "at": "crates/aethelgard-ir/src/silicon.rs:473",
+   "paths": [
+    "Timingr.reserved",
+    "TimingFinding.fields.reserved",
+    "I2cFinding.timingr[].fields.reserved"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.t_low",
+   "type_name": "I2cConstraints",
+   "member": "t_low",
+   "json": "t_low",
+   "at": "crates/aethelgard-ir/src/silicon.rs:493",
+   "paths": [
+    "I2cConstraints.t_low",
+    "TimingFinding.constraints.t_low",
+    "I2cFinding.timingr[].constraints.t_low"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.t_high",
+   "type_name": "I2cConstraints",
+   "member": "t_high",
+   "json": "t_high",
+   "at": "crates/aethelgard-ir/src/silicon.rs:495",
+   "paths": [
+    "I2cConstraints.t_high",
+    "TimingFinding.constraints.t_high",
+    "I2cFinding.timingr[].constraints.t_high"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.scl_frequency",
+   "type_name": "I2cConstraints",
+   "member": "scl_frequency",
+   "json": "scl_frequency",
+   "at": "crates/aethelgard-ir/src/silicon.rs:498",
+   "paths": [
+    "I2cConstraints.scl_frequency",
+    "TimingFinding.constraints.scl_frequency",
+    "I2cFinding.timingr[].constraints.scl_frequency"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.data_setup",
+   "type_name": "I2cConstraints",
+   "member": "data_setup",
+   "json": "data_setup",
+   "at": "crates/aethelgard-ir/src/silicon.rs:500",
+   "paths": [
+    "I2cConstraints.data_setup",
+    "TimingFinding.constraints.data_setup",
+    "I2cFinding.timingr[].constraints.data_setup"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.data_hold",
+   "type_name": "I2cConstraints",
+   "member": "data_hold",
+   "json": "data_hold",
+   "at": "crates/aethelgard-ir/src/silicon.rs:503",
+   "paths": [
+    "I2cConstraints.data_hold",
+    "TimingFinding.constraints.data_hold",
+    "I2cFinding.timingr[].constraints.data_hold"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cConstraints.kernel_minimum",
+   "type_name": "I2cConstraints",
+   "member": "kernel_minimum",
+   "json": "kernel_minimum",
+   "at": "crates/aethelgard-ir/src/silicon.rs:505",
+   "paths": [
+    "I2cConstraints.kernel_minimum",
+    "TimingFinding.constraints.kernel_minimum",
+    "I2cFinding.timingr[].constraints.kernel_minimum"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.mode",
+   "type_name": "TimingFinding",
+   "member": "mode",
+   "json": "mode",
+   "at": "crates/aethelgard-ir/src/silicon.rs:522",
+   "paths": [
+    "TimingFinding.mode",
+    "I2cFinding.timingr[].mode"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.timingr",
+   "type_name": "TimingFinding",
+   "member": "timingr",
+   "json": "timingr",
+   "at": "crates/aethelgard-ir/src/silicon.rs:523",
+   "paths": [
+    "TimingFinding.timingr",
+    "I2cFinding.timingr[].timingr"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.fields",
+   "type_name": "TimingFinding",
+   "member": "fields",
+   "json": "fields",
+   "at": "crates/aethelgard-ir/src/silicon.rs:524",
+   "paths": [
+    "TimingFinding.fields",
+    "I2cFinding.timingr[].fields"
+   ],
+   "variants": {},
+   "rust_type": "Timingr",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.fast_kernel_hz",
+   "type_name": "TimingFinding",
+   "member": "fast_kernel_hz",
+   "json": "fast_kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:525",
+   "paths": [
+    "TimingFinding.fast_kernel_hz",
+    "I2cFinding.timingr[].fast_kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.slow_kernel_hz",
+   "type_name": "TimingFinding",
+   "member": "slow_kernel_hz",
+   "json": "slow_kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:526",
+   "paths": [
+    "TimingFinding.slow_kernel_hz",
+    "I2cFinding.timingr[].slow_kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.t_low_ps",
+   "type_name": "TimingFinding",
+   "member": "t_low_ps",
+   "json": "t_low_ps",
+   "at": "crates/aethelgard-ir/src/silicon.rs:529",
+   "paths": [
+    "TimingFinding.t_low_ps",
+    "I2cFinding.timingr[].t_low_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.t_low_min_ps",
+   "type_name": "TimingFinding",
+   "member": "t_low_min_ps",
+   "json": "t_low_min_ps",
+   "at": "crates/aethelgard-ir/src/silicon.rs:530",
+   "paths": [
+    "TimingFinding.t_low_min_ps",
+    "I2cFinding.timingr[].t_low_min_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.t_high_ps",
+   "type_name": "TimingFinding",
+   "member": "t_high_ps",
+   "json": "t_high_ps",
+   "at": "crates/aethelgard-ir/src/silicon.rs:531",
+   "paths": [
+    "TimingFinding.t_high_ps",
+    "I2cFinding.timingr[].t_high_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.t_high_min_ps",
+   "type_name": "TimingFinding",
+   "member": "t_high_min_ps",
+   "json": "t_high_min_ps",
+   "at": "crates/aethelgard-ir/src/silicon.rs:532",
+   "paths": [
+    "TimingFinding.t_high_min_ps",
+    "I2cFinding.timingr[].t_high_min_ps"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.scl_max_hz",
+   "type_name": "TimingFinding",
+   "member": "scl_max_hz",
+   "json": "scl_max_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:535",
+   "paths": [
+    "TimingFinding.scl_max_hz",
+    "I2cFinding.timingr[].scl_max_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.scl_mode_hz",
+   "type_name": "TimingFinding",
+   "member": "scl_mode_hz",
+   "json": "scl_mode_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:536",
+   "paths": [
+    "TimingFinding.scl_mode_hz",
+    "I2cFinding.timingr[].scl_mode_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.constraints",
+   "type_name": "TimingFinding",
+   "member": "constraints",
+   "json": "constraints",
+   "at": "crates/aethelgard-ir/src/silicon.rs:537",
+   "paths": [
+    "TimingFinding.constraints",
+    "I2cFinding.timingr[].constraints"
+   ],
+   "variants": {},
+   "rust_type": "I2cConstraints",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.data_valid",
+   "type_name": "TimingFinding",
+   "member": "data_valid",
+   "json": "data_valid",
+   "at": "crates/aethelgard-ir/src/silicon.rs:544",
+   "paths": [
+    "TimingFinding.data_valid",
+    "I2cFinding.timingr[].data_valid"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.tight",
+   "type_name": "TimingFinding",
+   "member": "tight",
+   "json": "tight",
+   "at": "crates/aethelgard-ir/src/silicon.rs:547",
+   "paths": [
+    "TimingFinding.tight",
+    "I2cFinding.timingr[].tight"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.presc_least",
+   "type_name": "TimingFinding",
+   "member": "presc_least",
+   "json": "presc_least",
+   "at": "crates/aethelgard-ir/src/silicon.rs:549",
+   "paths": [
+    "TimingFinding.presc_least",
+    "I2cFinding.timingr[].presc_least"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.reserved_zero",
+   "type_name": "TimingFinding",
+   "member": "reserved_zero",
+   "json": "reserved_zero",
+   "at": "crates/aethelgard-ir/src/silicon.rs:551",
+   "paths": [
+    "TimingFinding.reserved_zero",
+    "I2cFinding.timingr[].reserved_zero"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:TimingFinding.holds",
+   "type_name": "TimingFinding",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/silicon.rs:552",
+   "paths": [
+    "TimingFinding.holds",
+    "I2cFinding.timingr[].holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.peripheral",
+   "type_name": "I2cFinding",
+   "member": "peripheral",
+   "json": "peripheral",
+   "at": "crates/aethelgard-ir/src/silicon.rs:684",
+   "paths": [
+    "I2cFinding.peripheral"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.kernel_ok",
+   "type_name": "I2cFinding",
+   "member": "kernel_ok",
+   "json": "kernel_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:686",
+   "paths": [
+    "I2cFinding.kernel_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.cr1_ok",
+   "type_name": "I2cFinding",
+   "member": "cr1_ok",
+   "json": "cr1_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:688",
+   "paths": [
+    "I2cFinding.cr1_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.modes_ok",
+   "type_name": "I2cFinding",
+   "member": "modes_ok",
+   "json": "modes_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:690",
+   "paths": [
+    "I2cFinding.modes_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.timingr",
+   "type_name": "I2cFinding",
+   "member": "timingr",
+   "json": "timingr",
+   "at": "crates/aethelgard-ir/src/silicon.rs:692",
+   "paths": [
+    "I2cFinding.timingr"
+   ],
+   "variants": {},
+   "rust_type": "Vec<TimingFinding>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:I2cFinding.holds",
+   "type_name": "I2cFinding",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/silicon.rs:693",
+   "paths": [
+    "I2cFinding.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.kernel_hz",
+   "type_name": "BrrFinding",
+   "member": "kernel_hz",
+   "json": "kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:762",
+   "paths": [
+    "BrrFinding.kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.topology_kernel_hz",
+   "type_name": "BrrFinding",
+   "member": "topology_kernel_hz",
+   "json": "topology_kernel_hz",
+   "at": "crates/aethelgard-ir/src/silicon.rs:764",
+   "paths": [
+    "BrrFinding.topology_kernel_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.kernel_ok",
+   "type_name": "BrrFinding",
+   "member": "kernel_ok",
+   "json": "kernel_ok",
+   "at": "crates/aethelgard-ir/src/silicon.rs:766",
+   "paths": [
+    "BrrFinding.kernel_ok"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.baud",
+   "type_name": "BrrFinding",
+   "member": "baud",
+   "json": "baud",
+   "at": "crates/aethelgard-ir/src/silicon.rs:767",
+   "paths": [
+    "BrrFinding.baud"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.brr",
+   "type_name": "BrrFinding",
+   "member": "brr",
+   "json": "brr",
+   "at": "crates/aethelgard-ir/src/silicon.rs:768",
+   "paths": [
+    "BrrFinding.brr"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.residue",
+   "type_name": "BrrFinding",
+   "member": "residue",
+   "json": "residue",
+   "at": "crates/aethelgard-ir/src/silicon.rs:771",
+   "paths": [
+    "BrrFinding.residue"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.nearest",
+   "type_name": "BrrFinding",
+   "member": "nearest",
+   "json": "nearest",
+   "at": "crates/aethelgard-ir/src/silicon.rs:774",
+   "paths": [
+    "BrrFinding.nearest"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.in_range",
+   "type_name": "BrrFinding",
+   "member": "in_range",
+   "json": "in_range",
+   "at": "crates/aethelgard-ir/src/silicon.rs:776",
+   "paths": [
+    "BrrFinding.in_range"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "silicon:BrrFinding.holds",
+   "type_name": "BrrFinding",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/silicon.rs:777",
+   "paths": [
+    "BrrFinding.holds"
+   ],
+   "variants": {},
+   "rust_type": "bool",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:Replacement.path",
+   "type_name": "Replacement",
+   "member": "path",
+   "json": "path",
+   "at": "crates/aethelgard-ir/src/versions.rs:30",
+   "paths": [
+    "Replacement.path",
+    "VersionChange.replaced[].path"
+   ],
+   "variants": {},
+   "rust_type": "&'static str",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:Replacement.by",
+   "type_name": "Replacement",
+   "member": "by",
+   "json": "by",
+   "at": "crates/aethelgard-ir/src/versions.rs:31",
+   "paths": [
+    "Replacement.by",
+    "VersionChange.replaced[].by"
+   ],
+   "variants": {},
+   "rust_type": "&'static str",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.version",
+   "type_name": "VersionChange",
+   "member": "version",
+   "json": "version",
+   "at": "crates/aethelgard-ir/src/versions.rs:37",
+   "paths": [
+    "VersionChange.version"
+   ],
+   "variants": {},
+   "rust_type": "u32",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.work_order",
+   "type_name": "VersionChange",
+   "member": "work_order",
+   "json": "work_order",
+   "at": "crates/aethelgard-ir/src/versions.rs:39",
+   "paths": [
+    "VersionChange.work_order"
+   ],
+   "variants": {},
+   "rust_type": "&'static str",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.requires",
+   "type_name": "VersionChange",
+   "member": "requires",
+   "json": "requires",
+   "at": "crates/aethelgard-ir/src/versions.rs:41",
+   "paths": [
+    "VersionChange.requires"
+   ],
+   "variants": {},
+   "rust_type": "&'static [&'static str]",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.optional",
+   "type_name": "VersionChange",
+   "member": "optional",
+   "json": "optional",
+   "at": "crates/aethelgard-ir/src/versions.rs:43",
+   "paths": [
+    "VersionChange.optional"
+   ],
+   "variants": {},
+   "rust_type": "&'static [&'static str]",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.replaced",
+   "type_name": "VersionChange",
+   "member": "replaced",
+   "json": "replaced",
+   "at": "crates/aethelgard-ir/src/versions.rs:45",
+   "paths": [
+    "VersionChange.replaced"
+   ],
+   "variants": {},
+   "rust_type": "&'static [Replacement]",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.removed",
+   "type_name": "VersionChange",
+   "member": "removed",
+   "json": "removed",
+   "at": "crates/aethelgard-ir/src/versions.rs:47",
+   "paths": [
+    "VersionChange.removed"
+   ],
+   "variants": {},
+   "rust_type": "&'static [&'static str]",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "versions:VersionChange.rules",
+   "type_name": "VersionChange",
+   "member": "rules",
+   "json": "rules",
+   "at": "crates/aethelgard-ir/src/versions.rs:50",
+   "paths": [
+    "VersionChange.rules"
+   ],
+   "variants": {},
+   "rust_type": "&'static [&'static str]",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.clock",
+   "type_name": "Judged",
+   "member": "clock",
+   "json": "clock",
+   "at": "crates/aethelgard-ir/src/vos.rs:175",
+   "paths": [
+    "Judged.clock",
+    "ForeignVerdict.clocks[].clock"
+   ],
+   "variants": {},
+   "rust_type": "String",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.family",
+   "type_name": "Judged",
+   "member": "family",
+   "json": "family",
+   "at": "crates/aethelgard-ir/src/vos.rs:176",
+   "paths": [
+    "Judged.family",
+    "ForeignVerdict.clocks[].family"
+   ],
+   "variants": {
+    "cpu": {
+     "rust": "Family::Cpu",
+     "at": "crates/aethelgard-ir/src/vos.rs:67",
+     "used": []
+    },
+    "hclk": {
+     "rust": "Family::Hclk",
+     "at": "crates/aethelgard-ir/src/vos.rs:69",
+     "used": []
+    },
+    "pclk": {
+     "rust": "Family::Pclk",
+     "at": "crates/aethelgard-ir/src/vos.rs:71",
+     "used": []
+    },
+    "tim": {
+     "rust": "Family::Tim",
+     "at": "crates/aethelgard-ir/src/vos.rs:73",
+     "used": []
+    },
+    "spi123": {
+     "rust": "Family::Spi123",
+     "at": "crates/aethelgard-ir/src/vos.rs:74",
+     "used": []
+    },
+    "spi45": {
+     "rust": "Family::Spi45",
+     "at": "crates/aethelgard-ir/src/vos.rs:75",
+     "used": []
+    },
+    "spi6": {
+     "rust": "Family::Spi6",
+     "at": "crates/aethelgard-ir/src/vos.rs:76",
+     "used": []
+    },
+    "i2c123": {
+     "rust": "Family::I2c123",
+     "at": "crates/aethelgard-ir/src/vos.rs:77",
+     "used": []
+    },
+    "i2c4": {
+     "rust": "Family::I2c4",
+     "at": "crates/aethelgard-ir/src/vos.rs:78",
+     "used": []
+    },
+    "usart16": {
+     "rust": "Family::Usart16",
+     "at": "crates/aethelgard-ir/src/vos.rs:79",
+     "used": []
+    },
+    "usart234578": {
+     "rust": "Family::Usart234578",
+     "at": "crates/aethelgard-ir/src/vos.rs:80",
+     "used": []
+    },
+    "lpuart1": {
+     "rust": "Family::Lpuart1",
+     "at": "crates/aethelgard-ir/src/vos.rs:81",
+     "used": []
+    }
+   },
+   "rust_type": "Family",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.nominal_hz",
+   "type_name": "Judged",
+   "member": "nominal_hz",
+   "json": "nominal_hz",
+   "at": "crates/aethelgard-ir/src/vos.rs:177",
+   "paths": [
+    "Judged.nominal_hz",
+    "ForeignVerdict.clocks[].nominal_hz"
+   ],
+   "variants": {},
+   "rust_type": "u64",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.fastest_hz",
+   "type_name": "Judged",
+   "member": "fastest_hz",
+   "json": "fastest_hz",
+   "at": "crates/aethelgard-ir/src/vos.rs:179",
+   "paths": [
+    "Judged.fastest_hz",
+    "ForeignVerdict.clocks[].fastest_hz"
+   ],
+   "variants": {},
+   "rust_type": "Option<u64>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.limit_hz",
+   "type_name": "Judged",
+   "member": "limit_hz",
+   "json": "limit_hz",
+   "at": "crates/aethelgard-ir/src/vos.rs:181",
+   "paths": [
+    "Judged.limit_hz",
+    "ForeignVerdict.clocks[].limit_hz"
+   ],
+   "variants": {},
+   "rust_type": "Option<u64>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.cite",
+   "type_name": "Judged",
+   "member": "cite",
+   "json": "cite",
+   "at": "crates/aethelgard-ir/src/vos.rs:182",
+   "paths": [
+    "Judged.cite",
+    "ForeignVerdict.clocks[].cite"
+   ],
+   "variants": {},
+   "rust_type": "Option<&'static str>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:Judged.holds",
+   "type_name": "Judged",
+   "member": "holds",
+   "json": "holds",
+   "at": "crates/aethelgard-ir/src/vos.rs:184",
+   "paths": [
+    "Judged.holds",
+    "ForeignVerdict.clocks[].holds"
+   ],
+   "variants": {},
+   "rust_type": "Option<bool>",
+   "optional_on_wire": true,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:ForeignVerdict.vos",
+   "type_name": "ForeignVerdict",
+   "member": "vos",
+   "json": "vos",
+   "at": "crates/aethelgard-ir/src/vos.rs:555",
+   "paths": [
+    "ForeignVerdict.vos"
+   ],
+   "variants": {
+    "scale0": {
+     "rust": "Vos::Scale0",
+     "at": "crates/aethelgard-ir/src/vos.rs:36",
+     "used": []
+    },
+    "scale1": {
+     "rust": "Vos::Scale1",
+     "at": "crates/aethelgard-ir/src/vos.rs:37",
+     "used": []
+    },
+    "scale2": {
+     "rust": "Vos::Scale2",
+     "at": "crates/aethelgard-ir/src/vos.rs:38",
+     "used": []
+    },
+    "scale3": {
+     "rust": "Vos::Scale3",
+     "at": "crates/aethelgard-ir/src/vos.rs:39",
+     "used": []
+    }
+   },
+   "rust_type": "Vos",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:ForeignVerdict.clocks",
+   "type_name": "ForeignVerdict",
+   "member": "clocks",
+   "json": "clocks",
+   "at": "crates/aethelgard-ir/src/vos.rs:556",
+   "paths": [
+    "ForeignVerdict.clocks"
+   ],
+   "variants": {},
+   "rust_type": "Vec<Judged>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:ForeignVerdict.not_judged",
+   "type_name": "ForeignVerdict",
+   "member": "not_judged",
+   "json": "not_judged",
+   "at": "crates/aethelgard-ir/src/vos.rs:558",
+   "paths": [
+    "ForeignVerdict.not_judged"
+   ],
+   "variants": {},
+   "rust_type": "Vec<String>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  },
+  {
+   "unit": "T",
+   "id": "vos:ForeignVerdict.conditions",
+   "type_name": "ForeignVerdict",
+   "member": "conditions",
+   "json": "conditions",
+   "at": "crates/aethelgard-ir/src/vos.rs:561",
+   "paths": [
+    "ForeignVerdict.conditions"
+   ],
+   "variants": {},
+   "rust_type": "Vec<String>",
+   "optional_on_wire": false,
+   "serde": {},
+   "aliases": []
+  }
+ ],
+ "T_roots_beyond_solved_topology": [
+  {
+   "type": "GmCrit",
+   "at": "crates/aethelgard-ir/src/clock.rs:376",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "TreeVerdict",
+   "at": "crates/aethelgard-ir/src/clock.rs:578",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "UnwitnessedClass",
+   "at": "crates/aethelgard-ir/src/lib.rs:259",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "Ord",
+    "PartialEq",
+    "PartialOrd",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "SiliconTiming",
+   "at": "crates/aethelgard-ir/src/motor.rs:907",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "ToleranceRow",
+   "at": "crates/aethelgard-ir/src/serial.rs:235",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "SiliconFraming",
+   "at": "crates/aethelgard-ir/src/serial.rs:366",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "SpiFinding",
+   "at": "crates/aethelgard-ir/src/silicon.rs:204",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "SpiWords",
+   "at": "crates/aethelgard-ir/src/silicon.rs:296",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "I2cLimits",
+   "at": "crates/aethelgard-ir/src/silicon.rs:380",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "Timingr",
+   "at": "crates/aethelgard-ir/src/silicon.rs:466",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "I2cConstraints",
+   "at": "crates/aethelgard-ir/src/silicon.rs:491",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "TimingFinding",
+   "at": "crates/aethelgard-ir/src/silicon.rs:521",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "I2cFinding",
+   "at": "crates/aethelgard-ir/src/silicon.rs:683",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "BrrFinding",
+   "at": "crates/aethelgard-ir/src/silicon.rs:759",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "Replacement",
+   "at": "crates/aethelgard-ir/src/versions.rs:29",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "VersionChange",
+   "at": "crates/aethelgard-ir/src/versions.rs:36",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "Family",
+   "at": "crates/aethelgard-ir/src/vos.rs:65",
+   "derives": [
+    "Clone",
+    "Copy",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "Judged",
+   "at": "crates/aethelgard-ir/src/vos.rs:174",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  },
+  {
+   "type": "ForeignVerdict",
+   "at": "crates/aethelgard-ir/src/vos.rs:553",
+   "derives": [
+    "Clone",
+    "Debug",
+    "Eq",
+    "PartialEq",
+    "Serialize"
+   ]
+  }
+ ],
+ "unresolved_explained": [
+  {
+   "unit": "Hc",
+   "type": "Value",
+   "from": "crates/aethelgard-ir/src/pin_parts.rs",
+   "why": "RawPinPart.identity: any value but null is refused (pin_parts.rs:432), so no key lives under it"
+  },
+  {
+   "unit": "Hc",
+   "type": "serde_json::value::RawValue",
+   "from": "crates/aethelgard-ir/src/parts.rs",
+   "why": "parts.json `parts[]`/`pin_parts[]`: each row is parsed on its own as RawPart / RawPinPart (parts.rs:1582, :1604), walked here as their own roots"
+  },
+  {
+   "unit": "Hc",
+   "type": "serde_json::value::RawValue",
+   "from": "crates/aethelgard-ir/src/power_parts.rs",
+   "why": "power-parts.json `parts[]`: each row is parsed on its own as RawRow (power_parts.rs:2491), walked here as its own root"
   }
  ],
  "K_unseen_in_files": [
