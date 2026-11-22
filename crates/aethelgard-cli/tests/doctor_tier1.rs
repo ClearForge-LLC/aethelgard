@@ -25,9 +25,9 @@ const BLOCKED_BY_SCRATCH: [&str; 8] = [
     "verify",
 ];
 
-/// The bridge with no request: its identity, its usage, exit 2.
-const USAGE_BRIDGE: &str =
-    "#!/bin/sh\necho 'usage: aethelgard-bridge <request.json>' >&2\nexit 2\n";
+/// The bridge's `--version`: its identity naming the library's banner, exit 0
+/// (`AET-WO-1606`); anything else is its usage, exit 2.
+const VERSION_BRIDGE: &str = "#!/bin/sh\n[ \"$*\" = --version ] || exit 2\n";
 
 /// A copy of the binary, with `bridge` as the stub beside it when given.
 fn cli(bridge: Option<&'static str>, identified: bool) -> PathBuf {
@@ -169,7 +169,7 @@ fn assert_sandbox(sandbox: &Value, dirs: &[PathBuf]) {
 
 #[test]
 fn everything_present_is_exit_0_with_each_version_and_the_sandbox() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[]);
     let tmp = private_tmp("doctor-all");
     let (code, v) = doctor(&cli, &tb, &tmp.0);
@@ -196,6 +196,7 @@ fn everything_present_is_exit_0_with_each_version_and_the_sandbox() {
     let bridge = tool(&v, "aethelgard-bridge");
     assert_eq!(bridge["version"], "0.1.0", "{v}");
     assert_eq!(bridge["ngspice_loaded"], true, "{v}");
+    assert_eq!(bridge["ngspice"], "44.2", "{v}");
     for t in v["tools"].as_array().unwrap() {
         assert!(t["path"].is_string(), "{t}");
         assert!(t["sandbox"].is_object(), "{t}");
@@ -220,7 +221,7 @@ fn everything_present_is_exit_0_with_each_version_and_the_sandbox() {
 
 #[test]
 fn a_missing_tool_is_named_with_the_subcommands_it_blocks() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[("renode", None)]);
     let tmp = private_tmp("doctor-renode");
     let (code, v) = doctor(&cli, &tb, &tmp.0);
@@ -245,7 +246,7 @@ fn a_missing_tool_is_named_with_the_subcommands_it_blocks() {
 
 #[test]
 fn cargo_missing_is_named_once_for_build_and_prove() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[("cargo", None)]);
     let tmp = private_tmp("doctor-cargo");
     let (code, v) = doctor(&cli, &tb, &tmp.0);
@@ -264,7 +265,7 @@ fn cargo_missing_is_named_once_for_build_and_prove() {
 
 #[test]
 fn a_missing_variable_is_named_as_the_subcommand_names_it() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[]);
     fs::remove_dir(tb.homes.0.join("kani")).unwrap();
     let tmp = private_tmp("doctor-kani-home");
@@ -278,7 +279,7 @@ fn a_missing_variable_is_named_as_the_subcommand_names_it() {
 
 #[test]
 fn a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[
         ("kicad-cli", Some("#!/bin/sh\necho 10.0.8\n")),
         ("renode", Some("#!/bin/sh\necho 'Renode v1.16.0'\n")),
@@ -326,7 +327,7 @@ fn a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it() {
 
 #[test]
 fn a_tool_that_will_not_say_its_version_is_unusable() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[("kicad-cli", Some("#!/bin/sh\nexit 3\n"))]);
     let tmp = private_tmp("doctor-silent");
     let (code, v) = doctor(&cli, &tb, &tmp.0);
@@ -341,7 +342,7 @@ fn a_tool_that_will_not_say_its_version_is_unusable() {
 
 #[test]
 fn an_unsafe_scratch_blocks_every_tool_subcommand_and_nothing_is_probed() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     // A stub that leaves a mark if anything runs it.
     let marks = Scratch::new("doctor-marks");
     let ran = marks.0.join("ran");
@@ -364,7 +365,7 @@ fn an_unsafe_scratch_blocks_every_tool_subcommand_and_nothing_is_probed() {
 
 #[test]
 fn a_sandbox_layer_that_cannot_be_installed_is_reported_never_assumed() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let tb = toolbox(&[]);
     let tmp = private_tmp("doctor-descriptor");
     // bash opens fd 3 without close-on-exec and becomes the CLI: every
@@ -389,7 +390,7 @@ fn a_sandbox_layer_that_cannot_be_installed_is_reported_never_assumed() {
 
 #[test]
 fn the_probe_runs_confined() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     // Outside every grant: the stub prints it as its version if it can.
     let secret = Scratch::new("doctor-secret");
     let file = secret.0.join("secret");
@@ -457,16 +458,40 @@ fn a_bridge_the_loader_cannot_start_names_what_it_said() {
     assert!(message.contains("libngspice.so.0"), "{message}");
 }
 
+/// `AET-WO-1606`: a `--version` that names no ngspice is reported, exit 1,
+/// with what it said: a library the bridge refused, a bridge that exits 0
+/// without starting one, or one that says more.
 #[test]
-fn a_bridge_that_runs_without_a_request_is_not_the_bridge() {
+fn a_bridge_whose_version_names_no_ngspice_is_unusable() {
     let tb = toolbox(&[]);
     let tmp = private_tmp("doctor-bridge-0");
-    let (code, v) = doctor(&cli(Some("#!/bin/sh\nexit 0\n"), true), &tb, &tmp.0);
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(
-        missing(&v),
-        [("ToolUnusable".into(), "aethelgard-bridge".into())]
+    let bare = common::bare_bridge_identity();
+    let refused: &'static str = Box::leak(
+        format!(
+            "#!/bin/sh\necho '{bare}'\necho '{{\"error\":\"ngspice_unusable\",\"message\":\"the library printed 0 banner lines, not one\"}}'\nexit 3\n"
+        )
+        .into_boxed_str(),
     );
+    let silent: &'static str =
+        Box::leak(format!("#!/bin/sh\necho '{bare}'\nexit 0\n").into_boxed_str());
+    let more: &'static str = "#!/bin/sh\necho more\nexit 0\n";
+    for (stub, identified, said) in [
+        (refused, false, "0 banner lines"),
+        (silent, false, "exited 0"),
+        (more, true, "more"),
+    ] {
+        let (code, v) = doctor(&cli(Some(stub), identified), &tb, &tmp.0);
+        assert_eq!(code, Some(1), "{v}");
+        assert_eq!(
+            missing(&v),
+            [("ToolUnusable".into(), "aethelgard-bridge".into())]
+        );
+        let message = v["missing"][0]["message"].as_str().unwrap();
+        assert!(message.contains(said), "{message}");
+        let bridge = tool(&v, "aethelgard-bridge");
+        assert!(bridge.get("ngspice").is_none(), "{v}");
+        assert!(bridge.get("ngspice_loaded").is_none(), "{v}");
+    }
 }
 
 #[test]
@@ -482,7 +507,7 @@ fn doctor_takes_no_argument() {
 /// nothing one tool leaves in its `HOME` reaches the next probe.
 #[test]
 fn each_probe_has_a_scratch_of_its_own() {
-    let cli = cli(Some(USAGE_BRIDGE), true);
+    let cli = cli(Some(VERSION_BRIDGE), true);
     let renode = format!(
         "#!/bin/sh\nif [ -e \"$HOME/planted\" ]; then echo LEAKED; else echo 'Renode v1.17.0'; echo 'build: {}'; fi\n",
         aethelgard_twin::platform::RENODE_BUILD

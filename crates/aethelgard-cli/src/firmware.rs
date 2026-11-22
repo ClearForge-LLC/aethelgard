@@ -5,6 +5,8 @@
 //! crate at `..`, so the copy must hold both. Cargo runs as `prove` runs it,
 //! on a copy, in the sandbox, with an empty environment but for `RUSTUP_HOME`,
 //! `PATH`, `CARGO_TARGET_DIR` and, when the caller set it, `RUSTUP_TOOLCHAIN`.
+//! The verdict names cargo's version and the rustc cargo ran, as cargo
+//! recorded it in the target directory (`AET-WO-1606`).
 //!
 //! **Path independence (`AET-WO-3200` F11), for the generated crate.** Cargo
 //! hashes a path dependency's absolute path into every symbol name, so the
@@ -549,6 +551,65 @@ pub(crate) fn read_beneath(target: &Path, file: &Path, cap: u64) -> std::io::Res
     Ok(bytes)
 }
 
+/// More than any `.rustc_info.json` cargo writes (about 4 KiB, measured).
+const RUSTC_INFO_CAP: u64 = 1 << 20;
+
+/// The compiler cargo ran (`AET-WO-1606`): the one `-vV` answer in the
+/// `.rustc_info.json` cargo writes into its target directory when it asks
+/// its own compiler. The target is this run's, fresh, so the record is this
+/// run's. A second `rustc -vV` is not a witness: a compiler cargo was told to
+/// use, by configuration the CLI does not see, can differ from the one that
+/// probe resolves (measured, `spike/1606` P4). No record, or one that does
+/// not read so, is refused; nothing is asked twice.
+fn rustc_ran(target: &Path) -> Result<verdict::RustcReport, Stop> {
+    let unread = |why: String| {
+        Stop::tool_error(
+            "cargo",
+            format!("cargo's record of the compiler it ran, {why}"),
+        )
+    };
+    let bytes = read_beneath(target, &target.join(".rustc_info.json"), RUSTC_INFO_CAP)
+        .map_err(|e| unread(format!("`.rustc_info.json`, cannot be read: {e}")))?;
+    if bytes.len() as u64 > RUSTC_INFO_CAP {
+        return Err(unread(format!("is over {RUSTC_INFO_CAP} bytes")));
+    }
+    rustc_info(&bytes).map_err(unread)
+}
+
+/// The release and commit of the one successful `-vV` answer in a
+/// `.rustc_info.json`'s `outputs`.
+fn rustc_info(bytes: &[u8]) -> Result<verdict::RustcReport, String> {
+    let v: serde_json::Value =
+        serde_json::from_slice(bytes).map_err(|e| format!("is not JSON: {e}"))?;
+    let outputs = v
+        .get("outputs")
+        .and_then(serde_json::Value::as_object)
+        .ok_or("has no `outputs`")?;
+    let answers: Vec<&str> = outputs
+        .values()
+        .filter(|o| o.get("success") == Some(&serde_json::Value::Bool(true)))
+        .filter_map(|o| o.get("stdout").and_then(serde_json::Value::as_str))
+        .filter(|out| out.starts_with("rustc ") && out.lines().any(|l| l.starts_with("release: ")))
+        .collect();
+    let [answer] = answers.as_slice() else {
+        return Err(format!("holds {} -vV answers, not one", answers.len()));
+    };
+    let field = |key: &str| {
+        let values: Vec<&str> = answer.lines().filter_map(|l| l.strip_prefix(key)).collect();
+        match values.as_slice() {
+            [one] if !one.is_empty() && !one.contains(char::is_whitespace) => Ok((*one).to_owned()),
+            _ => Err(format!(
+                "names no single `{key}` in `{}`",
+                answer.escape_debug()
+            )),
+        }
+    };
+    Ok(verdict::RustcReport {
+        release: field("release: ")?,
+        commit_hash: field("commit-hash: ")?,
+    })
+}
+
 /// The one executable cargo reports, which must be a regular file beneath
 /// `target`, and its bytes.
 fn artifact(m: &Messages, target: &Path) -> Result<(PathBuf, Vec<u8>), Stop> {
@@ -691,6 +752,8 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
             ));
         }
     };
+    // A build that finished, passed or failed, asked its compiler first.
+    let rustc = rustc_ran(&target)?;
     let mut v = verdict::Verdict::new(
         "build",
         &input,
@@ -700,6 +763,7 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
         ran.sandbox,
         findings,
     );
+    v.tool.rustc = Some(rustc);
     if let Some(built) = elf {
         let sha256 = deliver(&built, out)?;
         let path = fs::canonicalize(out).unwrap_or_else(|_| out.to_path_buf());
@@ -714,6 +778,49 @@ pub fn build(crate_dir: &Path, out: &Path) -> Result<verdict::Verdict, Stop> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-1606`: the compiler is the one `-vV` answer cargo recorded,
+    /// read whole, and anything else is refused rather than asked again.
+    #[test]
+    fn the_rustc_is_the_one_vv_answer_cargo_recorded() {
+        let vv = "rustc 1.99.1 (58cf8f9c3 2026-10-13)\nbinary: rustc\ncommit-hash: 58cf8f9c35b355199727627d07ae34a4e2846d67\ncommit-date: 2026-10-13\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\nLLVM version: 23.1.1\n";
+        let print = "___\nlib___.rlib\n/opt/rustup/toolchains/1.99.1-x86_64-unknown-linux-gnu\n";
+        let entry = |stdout: &str, success: bool| serde_json::json!({"success": success, "status": "", "code": 0, "stdout": stdout, "stderr": ""});
+        let info = |entries: Vec<serde_json::Value>| {
+            let outputs: serde_json::Map<String, serde_json::Value> = entries
+                .into_iter()
+                .enumerate()
+                .map(|(i, e)| (i.to_string(), e))
+                .collect();
+            serde_json::json!({"rustc_fingerprint": 1, "outputs": outputs}).to_string()
+        };
+        assert_eq!(
+            rustc_info(info(vec![entry(print, true), entry(vv, true)]).as_bytes()),
+            Ok(verdict::RustcReport {
+                release: "1.99.1".to_owned(),
+                commit_hash: "58cf8f9c35b355199727627d07ae34a4e2846d67".to_owned(),
+            })
+        );
+        let refused = [
+            "not json".to_owned(),
+            r#"{"rustc_fingerprint":1}"#.to_owned(),
+            info(vec![entry(print, true)]),
+            info(vec![entry(vv, false)]),
+            info(vec![
+                entry(vv, true),
+                entry(&vv.replace("1.99.1", "1.98.0"), true),
+            ]),
+            info(vec![entry(&vv.replace("commit-hash: ", "commit: "), true)]),
+            info(vec![entry(
+                &vv.replace("release: 1.99.1", "release: "),
+                true,
+            )]),
+            info(vec![entry(&format!("{vv}release: 1.98.0\n"), true)]),
+        ];
+        for r in refused {
+            assert!(rustc_info(r.as_bytes()).is_err(), "accepted: {r}");
+        }
+    }
 
     /// Adversarial B5: a unit built from a manifest outside the copy, a
     /// source read from outside it (spelled absolute or through `..`), and a

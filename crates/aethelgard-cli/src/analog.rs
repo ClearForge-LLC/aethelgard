@@ -71,15 +71,40 @@ impl Pass {
 /// its own package; a test recomputes it from the bridge's files on disk, so
 /// an edit to the bridge fails the build's tests until this is updated with it.
 pub const BRIDGE_SOURCE_SHA256: &str =
-    "5bdc40e4cac43a6aceba8c1fb30f22b78f2b86be77d4dd75df2b32c37c92636e";
+    "2e95092a66cd337a764c741b2c88f950056684fd14a128126a23f50bf249cc2f";
+
+/// The bridge's identity, as [`identified`] accepted it.
+#[derive(Debug, PartialEq)]
+pub struct Identity {
+    /// The digest of the sources it was built from, for the archive's header
+    /// (`AET-WO-2205` §1.1).
+    pub source_sha256: String,
+    /// The ngspice release its library's banner named, in a run that started
+    /// the library and accepted it (`AET-WO-1606`); none otherwise.
+    pub ngspice: Option<String>,
+}
+
+impl Identity {
+    /// The ngspice a run that answered must have named: a bridge whose
+    /// identity names none started no library, so its answers are refused.
+    fn ran(&self) -> Result<String, run::Stop> {
+        self.ngspice.clone().ok_or_else(|| {
+            run::Stop::tool_error(
+                BRIDGE,
+                "it answered, but its identity names no ngspice".to_owned(),
+            )
+        })
+    }
+}
 
 /// The bridge's first line (`AET-WO-2200` F15): its name, version and the
 /// digest of the sources it was built from, which must be the ones this CLI
-/// was built with. A stale bridge, one from another tree, or one that says
+/// was built with, and, when it started libngspice, the banner the library
+/// printed and the release read from it, which must be [`NGSPICE`]
+/// (`AET-WO-1606`). A stale bridge, one from another tree, or one that says
 /// anything else first is refused (`BridgeMismatch`, exit 4) before any of
-/// its answer is read; the digest as the bridge named it, for the archive's
-/// header (`AET-WO-2205` §1.1), and the rest of its stdout are returned.
-pub fn identified(stdout: &str) -> Result<(String, &str), run::Stop> {
+/// its answer is read; the identity and the rest of its stdout are returned.
+pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
     let (first, rest) = stdout.split_once('\n').unwrap_or((stdout, ""));
     let mismatch = |message: String| run::Stop {
         code: crate::EXIT_TOOL_UNAVAILABLE,
@@ -94,12 +119,26 @@ pub fn identified(stdout: &str) -> Result<(String, &str), run::Stop> {
             first.escape_debug()
         ))
     })?;
-    let o = v.as_object().filter(|o| o.len() == 3).ok_or_else(|| {
-        mismatch(format!(
-            "its identity is not three fields: `{}`",
-            first.escape_debug()
-        ))
-    })?;
+    const BARE: [&str; 3] = ["bridge", "source_sha256", "version"];
+    const LOADED: [&str; 5] = [
+        "bridge",
+        "ngspice",
+        "ngspice_banner",
+        "source_sha256",
+        "version",
+    ];
+    let o = v
+        .as_object()
+        .filter(|o| {
+            let keys: Vec<&str> = o.keys().map(String::as_str).collect();
+            keys == BARE || keys == LOADED
+        })
+        .ok_or_else(|| {
+            mismatch(format!(
+                "its identity is not its three fields, or five with ngspice: `{}`",
+                first.escape_debug()
+            ))
+        })?;
     let field = |k: &str| o.get(k).and_then(Value::as_str);
     if field("bridge") != Some(BRIDGE) || field("version").is_none() {
         return Err(mismatch(format!(
@@ -107,13 +146,36 @@ pub fn identified(stdout: &str) -> Result<(String, &str), run::Stop> {
             first.escape_debug()
         )));
     }
-    match field("source_sha256") {
-        Some(named) if named == want => Ok((named.to_owned(), rest)),
-        named => Err(mismatch(format!(
-            "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
-            named.unwrap_or("(none)")
-        ))),
-    }
+    let source_sha256 = match field("source_sha256") {
+        Some(named) if named == want => named.to_owned(),
+        named => {
+            return Err(mismatch(format!(
+                "it was built from sources {}, not the {want} this CLI was built with: rebuild it",
+                named.unwrap_or("(none)")
+            )));
+        }
+    };
+    let ngspice = match (field("ngspice"), field("ngspice_banner")) {
+        (None, None) if o.len() == BARE.len() => None,
+        (Some(release), Some(banner))
+            if release == NGSPICE && banner == format!("** ngspice-{release} shared library") =>
+        {
+            Some(release.to_owned())
+        }
+        _ => {
+            return Err(mismatch(format!(
+                "its identity does not name the ngspice {NGSPICE} its banner says: `{}`",
+                first.escape_debug()
+            )));
+        }
+    };
+    Ok((
+        Identity {
+            source_sha256,
+            ngspice,
+        },
+        rest,
+    ))
 }
 
 /// The bridge beside this executable, or `BridgeUnavailable` (exit 4).
@@ -210,7 +272,13 @@ fn measure(
     status: &Path,
 ) -> Result<Pass, run::Stop> {
     if decks.is_empty() {
-        return Ok(judge(decks, &[], declared));
+        return Ok(Pass {
+            analog: Vec::new(),
+            faults: Vec::new(),
+            findings: Vec::new(),
+            sandbox: None,
+            tools: Vec::new(),
+        });
     }
     let tool = bridge()?;
     fs::DirBuilder::new()
@@ -244,11 +312,15 @@ fn measure(
             ),
         ));
     }
-    let (measured, ngspice) =
-        answers(decks, stdout).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
-    let mut pass = judge(decks, &measured, declared);
+    let ngspice = identity.ran()?;
+    let measured =
+        answers(decks, stdout, &ngspice).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
+    let mut pass = judge(decks, &measured, declared, &ngspice);
     pass.sandbox = Some(out.sandbox);
-    pass.tools = vec![(BRIDGE, identity), (campaign::NGSPICE, ngspice)];
+    pass.tools = vec![
+        (BRIDGE, identity.source_sha256),
+        (campaign::NGSPICE, ngspice),
+    ];
     Ok(pass)
 }
 
@@ -324,15 +396,13 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    let (crossings, minimum_microvolts) = rail_answer(stdout, &levels).map_err(fail)?;
-    let mut tools = vec![(BRIDGE, identity)];
-    // Every crossing line named `NGSPICE` or was refused: the first says it.
-    if let Some(first) = stdout.lines().next().filter(|_| !crossings.is_empty()) {
-        let named = serde_json::from_str::<Value>(first)
-            .ok()
-            .and_then(|v| v.get("ngspice").and_then(Value::as_str).map(str::to_owned))
-            .ok_or_else(|| fail(format!("`{first}` names no ngspice")))?;
-        tools.push((campaign::NGSPICE, named));
+    let ngspice = identity.ran()?;
+    let (crossings, minimum_microvolts) = rail_answer(stdout, &levels, &ngspice).map_err(fail)?;
+    let mut tools = vec![(BRIDGE, identity.source_sha256)];
+    // Every crossing line named the identity's ngspice or was refused; a rail
+    // that crossed nothing named none.
+    if !crossings.is_empty() {
+        tools.push((campaign::NGSPICE, ngspice));
     }
     Ok(Solved {
         crossings,
@@ -437,20 +507,26 @@ pub fn chain(
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    let (minimum_microvolts, crossings) = chain_answer(stdout, chain).map_err(fail)?;
+    let ngspice = identity.ran()?;
+    let (minimum_microvolts, crossings) = chain_answer(stdout, chain, &ngspice).map_err(fail)?;
     Ok(ChainSolved {
         minimum_microvolts,
         crossings,
         sandbox: out.sandbox,
-        tools: vec![(BRIDGE, identity), (campaign::NGSPICE, NGSPICE.to_owned())],
+        tools: vec![
+            (BRIDGE, identity.source_sha256),
+            (campaign::NGSPICE, ngspice),
+        ],
     })
 }
 
 /// The bridge's chain answer: one line, every field the mode writes and no
-/// other, its sinks the request's in its order, named by the pinned ngspice.
+/// other, its sinks the request's in its order, named by the ngspice its
+/// identity named.
 fn chain_answer(
     stdout: &str,
     chain: &aethelgard_chaos::battery::SagChain,
+    ngspice: &str,
 ) -> Result<(u64, Vec<SinkCrossing>), String> {
     let lines: Vec<&str> = stdout.lines().collect();
     let [line] = lines.as_slice() else {
@@ -476,7 +552,7 @@ fn chain_answer(
     let keys: Vec<&str> = o.keys().map(String::as_str).collect();
     if keys != FIELDS
         || o["chain"] != "solved"
-        || o["ngspice"] != NGSPICE
+        || o["ngspice"] != ngspice
         || [
             "accepted_points",
             "final_microvolts",
@@ -519,8 +595,13 @@ fn chain_answer(
 }
 
 /// The bridge's rail answer: crossing lines in time order, each of a
-/// requested level at its requested value, then one closing line.
-fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>, u64), String> {
+/// requested level at its requested value and naming `ngspice`, then one
+/// closing line.
+fn rail_answer(
+    stdout: &str,
+    levels: &[(String, u64)],
+    ngspice: &str,
+) -> Result<(Vec<Crossing>, u64), String> {
     let lines: Vec<&str> = stdout.lines().collect();
     let Some((last, crossing_lines)) = lines.split_last() else {
         return Err("the rail answer is empty".to_owned());
@@ -551,7 +632,7 @@ fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>,
         let falling = o.get("falling").and_then(Value::as_bool);
         let ok = o.len() == 6
             && text("method") == Some("interpolated")
-            && text("ngspice") == Some(NGSPICE)
+            && text("ngspice") == Some(ngspice)
             && levels.iter().any(|(n, v)| n == level && Some(*v) == uv);
         let (true, Some(microvolts), Some(at_ps), Some(falling)) = (ok, uv, at_ps, falling) else {
             return Err(format!("`{l}` is not a crossing of a requested level"));
@@ -897,11 +978,9 @@ enum Answer {
 }
 
 /// One answer per deck, in the request's order, each exactly one of the
-/// bridge's three documented lines; anything else is refused.
-/// Each line's answer, and the ngspice they name: one, since each is refused
-/// unless it names [`NGSPICE`], which the bridge checks against the
-/// library's own banner.
-fn answers(decks: &[Deck], stdout: &str) -> Result<(Vec<Answer>, String), String> {
+/// bridge's three documented lines, naming `ngspice`, the release its
+/// identity read from the library's banner; anything else is refused.
+fn answers(decks: &[Deck], stdout: &str, ngspice: &str) -> Result<Vec<Answer>, String> {
     let lines: Vec<&str> = stdout.lines().collect();
     if lines.len() != decks.len() {
         return Err(format!(
@@ -910,27 +989,23 @@ fn answers(decks: &[Deck], stdout: &str) -> Result<(Vec<Answer>, String), String
             decks.len()
         ));
     }
-    let mut ngspice = None;
-    let answers = decks
+    decks
         .iter()
         .zip(lines)
         .map(|(deck, line)| {
             let v: Value =
                 serde_json::from_str(line).map_err(|e| format!("`{line}` is not JSON: {e}"))?;
-            let a = answer(deck, &v)
-                .ok_or_else(|| format!("`{line}` is not an answer for `{}`", deck.net))?;
-            ngspice = v.get("ngspice").and_then(Value::as_str).map(str::to_owned);
-            Ok(a)
+            answer(deck, &v, ngspice)
+                .ok_or_else(|| format!("`{line}` is not an answer for `{}`", deck.net))
         })
-        .collect::<Result<_, String>>()?;
-    Ok((answers, ngspice.ok_or("no answer named its ngspice")?))
+        .collect()
 }
 
-fn answer(deck: &Deck, v: &Value) -> Option<Answer> {
+fn answer(deck: &Deck, v: &Value, ngspice: &str) -> Option<Answer> {
     let o = v.as_object()?;
     let ours = o.get("net").and_then(Value::as_str) == Some(deck.net.as_str())
         && o.get("method").and_then(Value::as_str) == Some("interpolated")
-        && o.get("ngspice").and_then(Value::as_str) == Some(NGSPICE);
+        && o.get("ngspice").and_then(Value::as_str) == Some(ngspice);
     let value = |key: &str| o.get(key).and_then(Value::as_f64).filter(|x| x.is_finite());
     let positive = |key: &str| value(key).filter(|x| *x > 0.0);
     let answer = match o.len() {
@@ -950,7 +1025,12 @@ const STUCK_HIGH: &str = "analog.line_stuck_high";
 
 /// `declared` holds each deck's bus: [`pass`] refuses a deck whose bus has
 /// no declared speed before the bridge runs.
-fn judge(decks: &[Deck], answers: &[Answer], declared: &BTreeMap<String, u32>) -> Pass {
+fn judge(
+    decks: &[Deck],
+    answers: &[Answer],
+    declared: &BTreeMap<String, u32>,
+    ngspice: &str,
+) -> Pass {
     let mut analog_records = Vec::new();
     let mut findings = Vec::new();
     let mut faulted: Vec<(String, Vec<String>, Vec<&'static str>)> = Vec::new();
@@ -968,7 +1048,7 @@ fn judge(decks: &[Deck], answers: &[Answer], declared: &BTreeMap<String, u32>) -
             ceiling_ns: ceiling,
             exceeds: false,
             method: "interpolated",
-            ngspice: NGSPICE,
+            ngspice: ngspice.to_owned(),
             deck_hz: analog::DECK_HZ,
             declared_hz: declared[bus],
         };
@@ -1150,9 +1230,34 @@ mod tests {
             format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{me}","version":"0.1.0"}}"#);
         assert_eq!(
             identified(&format!("{ok}\nrest\n")).unwrap(),
-            (me.to_owned(), "rest\n")
+            (
+                Identity {
+                    source_sha256: me.to_owned(),
+                    ngspice: None
+                },
+                "rest\n"
+            )
+        );
+        // `AET-WO-1606`: a run that started the library names its banner.
+        let loaded = format!(
+            r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","source_sha256":"{me}","version":"0.1.0"}}"#
+        );
+        assert_eq!(
+            identified(&format!("{loaded}\nrest\n")).unwrap().0,
+            Identity {
+                source_sha256: me.to_owned(),
+                ngspice: Some("44.2".to_owned())
+            }
         );
         let refused = [
+            // Another release, its banner agreeing or not.
+            loaded.replace("44.2", "45.0"),
+            loaded.replace(r#""ngspice":"44.2""#, r#""ngspice":"45.0""#),
+            loaded.replace("-44.2 shared", "-45.0 shared"),
+            loaded.replace(" shared library", " shared library (debug)"),
+            // A release without its banner, or a banner without its release.
+            loaded.replace(r#""ngspice":"44.2","#, ""),
+            loaded.replace(r#""ngspice_banner":"** ngspice-44.2 shared library","#, ""),
             String::new(),
             "rest".to_owned(),
             ok.replace(me, &"0".repeat(64)),
@@ -1188,7 +1293,9 @@ mod tests {
             end.to_owned(),
         ]
         .join("\n");
-        let (crossings, min) = rail_answer(&good, &levels).unwrap();
+        let (crossings, min) = rail_answer(&good, &levels, "44.2").unwrap();
+        // Every crossing names the ngspice the identity named, not a constant.
+        assert!(rail_answer(&good, &levels, "44.3").is_err());
         assert_eq!((crossings.len(), min), (2, 2_350_000));
         let refused = [
             String::new(),
@@ -1223,7 +1330,7 @@ mod tests {
             .join("\n"),
         ];
         for r in refused {
-            assert!(rail_answer(&r, &levels).is_err(), "accepted: {r}");
+            assert!(rail_answer(&r, &levels, "44.2").is_err(), "accepted: {r}");
         }
     }
 
@@ -1250,19 +1357,18 @@ mod tests {
         let d = decks();
         let good = format!("{}\n{}\n", line("I2C_SCL", "1.5"), line("I2C_SDA", "2.5"));
         assert_eq!(
-            answers(&d, &good).unwrap(),
-            (
-                vec![Answer::Rise(1.5), Answer::Rise(2.5)],
-                "44.2".to_owned()
-            )
+            answers(&d, &good, "44.2").unwrap(),
+            [Answer::Rise(1.5), Answer::Rise(2.5)]
         );
+        // Each answer names the ngspice the identity named, not a constant.
+        assert!(answers(&d, &good, "44.3").is_err());
         let other = format!(
             "{}\n{}\n",
             r#"{"complete":false,"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns_lower_bound":13298.0}"#,
             r#"{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","volts_at_release":1.65}"#
         );
         assert_eq!(
-            answers(&d, &other).unwrap().0,
+            answers(&d, &other, "44.2").unwrap(),
             [Answer::Incomplete(13298.0), Answer::StuckHigh(1.65)]
         );
         let incomplete = |extra: &str| {
@@ -1323,7 +1429,10 @@ mod tests {
             ),
         ];
         for (i, out) in refused.iter().enumerate() {
-            assert!(answers(&d, out).is_err(), "case {i} was accepted: {out}");
+            assert!(
+                answers(&d, out, "44.2").is_err(),
+                "case {i} was accepted: {out}"
+            );
         }
     }
 
@@ -1331,7 +1440,7 @@ mod tests {
     fn a_line_past_its_ceiling_faults_its_bus_once() {
         let d = decks();
         let rises = |a: f64, b: f64| [Answer::Rise(a), Answer::Rise(b)];
-        let pass = judge(&d, &rises(3982.3, 186.4), &speeds());
+        let pass = judge(&d, &rises(3982.3, 186.4), &speeds(), "44.2");
         assert_eq!(pass.analog.len(), 2);
         // The deck's 400 kHz window, beside the bus's declared 100 kHz (`AET-WO-2205` §1.3).
         for r in &pass.analog {
@@ -1341,11 +1450,11 @@ mod tests {
         assert_eq!(pass.faulted(), BTreeSet::from(["SENSORS".to_owned()]));
         assert_eq!(pass.faults[0].nets, ["I2C_SCL"]);
         assert_eq!(pass.findings.len(), 1);
-        let pass = judge(&d, &rises(3982.3, 3982.3), &speeds());
+        let pass = judge(&d, &rises(3982.3, 3982.3), &speeds(), "44.2");
         assert_eq!((pass.faults.len(), pass.findings.len()), (1, 2));
         assert_eq!(pass.faults[0].nets, ["I2C_SCL", "I2C_SDA"]);
         // At the ceiling exactly is not past it.
-        let pass = judge(&d, &rises(300.0, 186.4), &speeds());
+        let pass = judge(&d, &rises(300.0, 186.4), &speeds(), "44.2");
         assert!(pass.faults.is_empty() && pass.findings.is_empty());
         assert_eq!(pass.analog[0].rise_30_70_ns, Some(300.0));
     }
@@ -1359,6 +1468,7 @@ mod tests {
             &d,
             &[Answer::Incomplete(13298.0), Answer::Rise(186.4)],
             &speeds(),
+            "44.2",
         );
         let r = &pass.analog[0];
         assert_eq!(
@@ -1381,8 +1491,11 @@ mod tests {
             &d,
             &[Answer::StuckHigh(1.65), Answer::Rise(3982.3)],
             &speeds(),
+            "45.0",
         );
         let r = &pass.analog[0];
+        // `AET-WO-1606`: the record names the ngspice the bridge named.
+        assert_eq!(r.ngspice, "45.0");
         assert_eq!(
             (r.kind, r.complete, r.exceeds),
             ("analog.line_stuck_high", false, false)
