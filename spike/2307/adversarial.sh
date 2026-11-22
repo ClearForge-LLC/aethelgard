@@ -52,12 +52,12 @@ for f in "$S"/*.json; do
   r=$("$A" validate --file "$f"); rc=$?
   printf '%s\texit %s\t%s\n' "$n" "$rc" "$(python3 -I -c 'import json,sys; v=json.loads(sys.argv[1]); e=v.get("error") or {}; print(e.get("kind","ok"), e.get("path") or "", (e.get("message") or "")[:120])' "$r")"
 done | sort | tee spike/2307/out/adversarial.txt
-# The refusal's size on Sentinel-03, and every reason it prints that is not "" is the held entry's.
+# The refusal's size on Sentinel-03, and that it prints no reason but "" (F1 as ruled).
 python3 -I - "$SEN" "$S/refusal.json" <<'PY' | tee -a spike/2307/out/adversarial.txt
 import json, sys
 spec, v = json.load(open(sys.argv[1])), json.load(open(sys.argv[2]))
-held = {(a["register"], a["class"]): a["reason"] for a in spec["acknowledge_unwitnessed"]}
+held = {(a["register"], a["class"]) for a in spec["acknowledge_unwitnessed"]}
 e = v["error"]["entries"]
-print(f"refusal bytes {len(open(sys.argv[2]).read())}; entries {len(e)}; non-empty reasons {sum(1 for a in e if a['reason'])}, each the held entry's: {all(a['reason'] == held.get((a['register'], a['class'])) for a in e if a['reason'])}")
+print(f"refusal bytes {len(open(sys.argv[2]).read())}; entries {len(e)}, {sum(1 for a in e if (a['register'], a['class']) in held)} completing a held entry; non-empty reasons {sum(1 for a in e if a['reason'])} (want 0)")
 PY
 rm -rf "$S"

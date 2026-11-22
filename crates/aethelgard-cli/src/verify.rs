@@ -1484,7 +1484,7 @@ pub fn verify(
                         kind: "UnwitnessedFieldNotAcknowledged".to_owned(),
                         id: Some(first.clone()),
                         message: format!(
-                            "no package: {} unwitnessed ledger row(s) no `acknowledge_unwitnessed` entry names for its register and class: {}. `entries` holds the {} entry(ies) they need, one per register and class with exactly the fields to cover: each replaces any entry for its register and class (at most one entry per register and class), and an entry the specification already held keeps its `reason`, which then covers the added fields too. Write each empty `reason`: 1 to {} bytes of printable ASCII with no space at either end; `validate` refuses an empty one (`InvalidSource`)",
+                            "no package: {} unwitnessed ledger row(s) no `acknowledge_unwitnessed` entry names for its register and class: {}. `entries` holds the {} entry(ies) they need, one per register and class with exactly the fields to cover: each replaces any entry for its register and class (at most one entry per register and class), and an entry the specification already held comes back with its fields completed and its `reason` emptied, to be written for the whole set. Write each `reason`: 1 to {} bytes of printable ASCII with no space at either end; `validate` refuses an empty one (`InvalidSource`)",
                             unacknowledged.len(),
                             unacknowledged.join(", "),
                             entries.len(),

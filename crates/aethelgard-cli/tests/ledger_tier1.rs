@@ -885,12 +885,15 @@ fn pasted_entries_pass_once_written_and_are_refused_unwritten() {
     assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
 }
 
-/// §1.3: an entry the specification holds that misses fields is reported as
-/// that entry completed, its reason kept; it replaces the held one and the
-/// result passes. Pasted beside the held one instead, `validate` refuses the
-/// pair (`UnwitnessedAcknowledgedTwice`).
+/// §1.3 and the architect's ruling on F1: an entry the specification holds
+/// that misses fields is reported completed, every held field kept and its
+/// reason "", since a reason written for some fields cannot vouch for fields
+/// it never saw. Pasted in place, `validate` refuses it until the reason is
+/// written again (`InvalidSource`), and then the result passes. Pasted beside
+/// the held one instead, its reason written, `validate` refuses the pair
+/// (`UnwitnessedAcknowledgedTwice`).
 #[test]
-fn a_partial_entry_is_reported_completed_with_its_reason_kept() {
+fn a_partial_entry_is_reported_completed_with_its_reason_emptied() {
     let written = reference_spec();
     let held = |register: &str| {
         written
@@ -921,18 +924,30 @@ fn a_partial_entry_is_reported_completed_with_its_reason_kept() {
         a.reason = reason.to_owned();
         a
     };
-    let completed = sorted(moder.clone(), &moder.reason);
+    assert!(!moder.reason.is_empty());
+    let completed = sorted(moder.clone(), "");
     assert_eq!(entries, [completed.clone(), sorted(otyper, "")]);
+    assert!(
+        spec.acknowledge_unwitnessed[at]
+            .fields
+            .iter()
+            .all(|f| completed.fields.contains(f)),
+        "every held field kept"
+    );
     covers_only_ledger_rows(&l, &entries);
 
     let mut beside = spec.clone();
-    beside.acknowledge_unwitnessed.push(completed.clone());
+    let mut written_beside = completed.clone();
+    written_beside.reason = "a test's reason".into();
+    beside.acknowledge_unwitnessed.push(written_beside);
     assert_eq!(
         beside.validate().unwrap_err().kind(),
         "UnwitnessedAcknowledgedTwice"
     );
 
     spec.acknowledge_unwitnessed[at] = completed;
+    assert_eq!(spec.validate().unwrap_err().kind(), "InvalidSource");
+    spec.acknowledge_unwitnessed[at].reason = "a test's reason for every field".into();
     let mut new = entries[1].clone();
     new.reason = "a test's reason".into();
     spec.acknowledge_unwitnessed.push(new);
@@ -943,7 +958,8 @@ fn a_partial_entry_is_reported_completed_with_its_reason_kept() {
 
 /// §1.1, §1.3 on Sentinel-03 (measured in `spike/2307/`): its 280
 /// unacknowledged rows across 35 registers need 43 entries, 6 completing an
-/// entry it holds (reason kept) and 37 new (reason ""), 313 fields in all.
+/// entry it holds (its fields kept) and 37 new, every reason "", 313 fields
+/// in all.
 /// No entry's reason is ever a ledger row's `judge` text, and none covers a
 /// row outside its register and class.
 #[test]
@@ -955,7 +971,13 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
     let missing = ledger::acknowledge(&mut l, &spec);
     let entries = ledger::missing_entries(&l, &spec);
     let registers: std::collections::BTreeSet<_> = entries.iter().map(|a| &a.register).collect();
-    let held: Vec<_> = entries.iter().filter(|a| !a.reason.is_empty()).collect();
+    let held: Vec<_> = entries
+        .iter()
+        .filter(|a| {
+            spec.unwitnessed_acknowledgement(&a.register, a.class_kind().unwrap())
+                .is_some()
+        })
+        .collect();
     assert_eq!(
         (missing.len(), registers.len(), entries.len(), held.len()),
         (280, 35, 43, 6)
@@ -966,8 +988,13 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
         let mine = spec
             .unwitnessed_acknowledgement(&a.register, class)
             .unwrap();
-        assert_eq!(a.reason, mine.reason, "{}", a.register);
+        assert!(
+            mine.fields.iter().all(|f| a.fields.contains(f)),
+            "{}",
+            a.register
+        );
     }
+    assert!(entries.iter().all(|a| a.reason.is_empty()));
     for a in &entries {
         for r in &l.rows {
             assert_ne!(a.reason, r.judge, "{} carries {}'s judge", a.register, r.id);

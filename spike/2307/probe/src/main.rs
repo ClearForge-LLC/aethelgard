@@ -2,7 +2,8 @@
 // the ledger alone and not from the refusal's code. Reads the specification, solves it, builds the
 // ledger, marks it with `ledger::acknowledge`, then groups every row left unacknowledged by
 // (register, class). A group whose (register, class) the specification already acknowledges is
-// that entry with the missing fields added and its reason kept; any other has reason "".
+// that entry with the missing fields added. Every reason is "" (the architect's ruling on F1: a
+// reason written for some fields cannot vouch for fields it never saw).
 // Usage: probe2307 <spec.json>  -> one JSON object on stdout.
 use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
@@ -31,15 +32,11 @@ fn main() {
                 .iter()
                 .find(|a| &a.register == register && a.class == *class);
             let mut all = fields.clone();
-            let reason = match existing {
-                Some(a) => {
-                    completed += 1;
-                    all.extend(a.fields.iter().cloned());
-                    a.reason.clone()
-                }
-                None => String::new(),
-            };
-            serde_json::json!({"register": register, "class": class, "fields": all, "reason": reason})
+            if let Some(a) = existing {
+                completed += 1;
+                all.extend(a.fields.iter().cloned());
+            }
+            serde_json::json!({"register": register, "class": class, "fields": all, "reason": ""})
         })
         .collect();
     let out = serde_json::json!({

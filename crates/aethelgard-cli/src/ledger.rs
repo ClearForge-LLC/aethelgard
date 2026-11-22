@@ -2053,9 +2053,10 @@ pub fn acknowledge(ledger: &mut Ledger, spec: &Specification) -> Vec<String> {
 /// has marked (`AET-WO-2307`): one per register and class with a row left
 /// unacknowledged, sorted by register, then class. Its fields are those rows'
 /// fields, sorted, each once. Where `spec` already has the entry for that
-/// register and class, it is that entry completed: its fields added and its
-/// reason kept. Otherwise its reason is empty, which `validate` refuses
-/// (`InvalidSource`), so a pasted entry cannot pass before a person writes it.
+/// register and class, its fields are added: a reason written for some
+/// fields cannot vouch for fields it never saw (the architect's ruling on F1).
+/// Every reason is empty, which `validate` refuses (`InvalidSource`), so a
+/// pasted entry cannot pass before a person writes it.
 /// Every field is a ledger row of its register and class once [`stale`] has
 /// found nothing in `spec`.
 pub fn missing_entries(ledger: &Ledger, spec: &Specification) -> Vec<UnwitnessedAcknowledgement> {
@@ -2082,7 +2083,7 @@ pub fn missing_entries(ledger: &Ledger, spec: &Specification) -> Vec<Unwitnessed
                 register: register.to_owned(),
                 class: class.name().to_owned(),
                 fields: fields.into_iter().map(str::to_owned).collect(),
-                reason: held.map(|a| a.reason.clone()).unwrap_or_default(),
+                reason: String::new(),
             }
         })
         .collect()

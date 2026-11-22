@@ -504,8 +504,8 @@ fn reference() -> Value {
 /// (`GPIOA.MODER`'s `MODER0`, which is what a field the generator newly
 /// writes in an acknowledged register looks like to the check).
 /// `AET-WO-2307`: `error.entries` holds the two entries the specification
-/// lacks, `GPIOA.MODER` completed with its reason kept and `GPIOB.OTYPER`
-/// with reason "", fields sorted; the message states the reason rule.
+/// lacks, `GPIOA.MODER` completed and `GPIOB.OTYPER` new, each with reason
+/// "" (F1 as ruled) and its fields sorted; the message states the reason rule.
 #[test]
 fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one() {
     let mut spec = reference();
@@ -524,6 +524,7 @@ fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_on
         a
     };
     let mut want = Value::Array(vec![held("GPIOA.MODER"), held("GPIOB.OTYPER")]);
+    want[0]["reason"] = "".into();
     want[1]["reason"] = "".into();
     let entries = spec["acknowledge_unwitnessed"].as_array_mut().unwrap();
     entries.retain(|a| a["register"] != "GPIOB.OTYPER");
