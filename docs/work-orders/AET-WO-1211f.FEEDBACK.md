@@ -109,7 +109,15 @@ One mutant per new line of the arm, each killed by a failing test and none by a 
 
 ## 7. Gates, fence, reduction pass
 
-- **Gates:** filled in at READY.
+- **Gates at `70bed14b`** (the code head; nothing in `crates/` changed after it):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace --no-fail-fast` (target in the repository, as CI builds it): **2673 passed, 0 failed**, 157 test binaries.
+- **CI on `70bed14b` (PR #316): green.**
+  - Runs: 44998447085 (`ci`), 44998447053 (`engine-image`) and 44998447100 (`ardupilot-image`).
+  - 33 checks pass and 3 are skipped by the workflow; none failed.
+  - Tier 2 was 202 of 202 against a floor of 201. `TIER2_MIN` is unchanged and no weight row was added.
+- **The READY commit** adds the rulings (§3), this gates section, and `main` `a58a9c67` (docs only: the WO, 1216's WO, roadmap rows). Nothing is pushed after it.
 - **Fence:**
   - `crates/aethelgard-eda/src/{schematic_arms.rs, schematic.rs}`;
   - `crates/aethelgard-cli/tests/parts_arms_tier1.rs` (one doc sentence);
