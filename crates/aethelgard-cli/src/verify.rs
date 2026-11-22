@@ -1407,9 +1407,8 @@ fn coverage(
 
 /// Why `domain` is a motor rail no fault can reach (`AET-WO-1211c` D1,
 /// ruled (ii)): a pin device's supply pin is on it, and nothing else consumes
-/// it but connector pins: no serial port, SPI or I2C device, I2C bus or
-/// regulator, and no regulator outputs it, no load is on it, and it is not
-/// the MCU's supply. Computed from the specification alone, never declared.
+/// it but connector pins: no serial port, SPI or I2C device, I2C bus,
+/// regulator or declared load, and it is not the MCU's supply.
 /// `None` for every other domain.
 fn motor_rail(spec: &aethelgard_ir::Specification, domain: &str) -> Option<String> {
     if domain == spec.mcu.supply {
@@ -1429,17 +1428,17 @@ fn motor_rail(spec: &aethelgard_ir::Specification, domain: &str) -> Option<Strin
         return None;
     }
     let r = aethelgard_ir::power::rail_consumers(spec, domain);
-    let sourced = spec.power.iter().any(|p| {
-        p.regulators.iter().any(|g| g.output == domain)
-            || p.loads.iter().any(|l| l.domain == domain)
-    });
+    let loaded = spec
+        .power
+        .iter()
+        .any(|p| p.loads.iter().any(|l| l.domain == domain));
     (r.serial_rx.is_empty()
         && r.tx_only.is_empty()
         && r.spi_devices.is_empty()
         && r.i2c_devices.is_empty()
         && r.i2c_buses.is_empty()
         && r.regulators.is_empty()
-        && !sourced)
+        && !loaded)
         .then(|| {
             format!(
                 "it supplies only pin devices' supply pins ({}), and the twin models no pin device (device_unmodelled): no fault on it reaches anything the twin observes; judged on the bench",
@@ -3491,6 +3490,29 @@ mod tests {
         assert!(motor_rail(&spec, "VMOTOR").is_some());
         spec.mcu.supply = "VMOTOR".into();
         assert!(motor_rail(&spec, "VMOTOR").is_none(), "the MCU's supply");
+        // A declared load on it is a consumer: no motor rail.
+        let read = |path: &str| -> Value {
+            serde_json::from_slice(
+                &std::fs::read(
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../..")
+                        .join(path),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let mut v = read(D1);
+        v["power"] =
+            read("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json")["power"].clone();
+        let unloaded: aethelgard_ir::Specification = serde_json::from_value(v.clone()).unwrap();
+        assert!(
+            motor_rail(&unloaded, "VMOTOR").is_some(),
+            "no load on it yet"
+        );
+        v["power"]["loads"][0]["domain"] = json!("VMOTOR");
+        let loaded: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        assert!(motor_rail(&loaded, "VMOTOR").is_none(), "a load on it");
     }
 
     fn sim_line(gpio: Value, adc: Value, motor: Value, findings: Value) -> Ran {
