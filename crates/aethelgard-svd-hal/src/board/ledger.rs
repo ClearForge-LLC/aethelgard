@@ -201,6 +201,46 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
         p.d3cr,
         whole(p.d3cr_scale2()),
     );
+    // An HSE board's bring-up (`AET-WO-4240b`), in its order: each `RCC_CR`
+    // word, the three PLL words, `FLASH_ACR`, then `RCC_CFGR`, every one whole.
+    if let (Some(h), Some(hf)) = (&plan.hse, &facts.hse) {
+        let cr = hf.cr_words(h.bypass);
+        let (last, first) = cr.split_last().expect("at least three words");
+        for (_, word) in first {
+            add("RCC", "RCC", "CR", "RCC_CR", hf.cr, whole(*word));
+        }
+        for (name, offset, word) in [
+            ("PLLCKSELR", hf.pllckselr, h.pllckselr),
+            ("PLLCFGR", hf.pllcfgr, h.pllcfgr),
+            ("PLL1DIVR", hf.pll1divr, h.pll1divr),
+        ] {
+            add(
+                "RCC",
+                "RCC",
+                name,
+                &format!("RCC_{name}"),
+                offset,
+                whole(word),
+            );
+        }
+        add("RCC", "RCC", "CR", "RCC_CR", hf.cr, whole(last.1));
+        add(
+            "FLASH",
+            "FLASH",
+            "ACR",
+            "FLASH_ACR",
+            hf.acr,
+            whole(h.flash_acr),
+        );
+        add(
+            "RCC",
+            "RCC",
+            "CFGR",
+            "RCC_CFGR",
+            hf.cfgr,
+            whole(hf.cfgr_word()),
+        );
+    }
     // The kernel-clock selection, then each clock gate (a read-modify-write
     // of its one bit).
     for s in &facts.kernel_selects {
@@ -636,24 +676,35 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
     let mut out = Vec::new();
     let pwr = f.layout("PWR")?;
     let flash = f.layout("FLASH")?;
-    for (family, register, offset, field, value) in [
+    let rcc = f.layout("RCC")?;
+    // An HSE board writes `FLASH_ACR` (its written rows), and polls `HSERDY`
+    // and `PLL1RDY` until each reads 1 (`AET-WO-4240b`). `SWS`, polled until
+    // it reads `011`, has no row of its own: `RCC.CFGR.SWS@reset` is the reset
+    // clock's read of it at 0, and one id cannot hold both.
+    let mut rows = vec![
         ("PWR", "CSR1", pwr.offset("CSR1", 0)?, "ACTVOSRDY", 1),
         ("PWR", "D3CR", pwr.offset("D3CR", 0)?, "VOSRDY", 1),
-        (
+    ];
+    if plan.hse.is_some() {
+        rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "HSERDY", 1));
+        rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 1));
+    } else {
+        rows.push((
             "FLASH",
             "ACR",
             flash.offset("ACR", 0)?,
             "LATENCY",
             FLASH_ACR_LATENCY_RESET,
-        ),
-        (
+        ));
+        rows.push((
             "FLASH",
             "ACR",
             flash.offset("ACR", 0)?,
             "WRHIGHFREQ",
             FLASH_ACR_WRHIGHFREQ_RESET,
-        ),
-    ] {
+        ));
+    }
+    for (family, register, offset, field, value) in rows {
         let (pos, width) = f.field(&format!("{family}_{register}_{field}"))?;
         out.push(FieldUse {
             family: family.into(),

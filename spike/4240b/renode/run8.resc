@@ -1,0 +1,49 @@
+using sysbus
+mach create "run8"
+machine LoadPlatformDescription @/cache/m/renode/rcc_8.repl
+logLevel 0
+echo "RESET CR"
+sysbus ReadDoubleWord 0x58024400
+echo "nvic.Frequency at reset"
+nvic Frequency
+sysbus WriteDoubleWord 0x58024400 0x00040001
+echo "CR after HSEBYP"
+sysbus ReadDoubleWord 0x58024400
+sysbus WriteDoubleWord 0x58024400 0x00050001
+echo "CR after HSEON (expect HSERDY bit17)"
+sysbus ReadDoubleWord 0x58024400
+sysbus WriteDoubleWord 0x58024400 0x000D0001
+echo "CR after HSECSSON"
+sysbus ReadDoubleWord 0x58024400
+sysbus WriteDoubleWord 0x58024428 0x00000052
+sysbus WriteDoubleWord 0x5802442C 0x00030002
+sysbus WriteDoubleWord 0x58024430 0x0103069F
+echo "PLLCKSELR PLLCFGR PLL1DIVR readback"
+sysbus ReadDoubleWord 0x58024428
+sysbus ReadDoubleWord 0x5802442C
+sysbus ReadDoubleWord 0x58024430
+sysbus WriteDoubleWord 0x58024450 0x00000012
+sysbus WriteDoubleWord 0x58024458 0x00000003
+echo "D2CCIP1R D3CCIPR readback after writing nonzero"
+sysbus ReadDoubleWord 0x58024450
+sysbus ReadDoubleWord 0x58024458
+echo "nvic.Frequency before PLL1ON/SW"
+nvic Frequency
+sysbus WriteDoubleWord 0x58024400 0x010D0001
+echo "CR after PLL1ON (expect PLL1RDY bit25)"
+sysbus ReadDoubleWord 0x58024400
+sysbus WriteDoubleWord 0x58024410 0x00000001
+echo "CFGR after SW=CSI (probe: sys_ck must move off HSI 64 MHz), nvic.Frequency next"
+nvic Frequency
+sysbus WriteDoubleWord 0x58024410 0x00000003
+echo "CFGR after SW=PLL1 (expect 0x1B)"
+sysbus ReadDoubleWord 0x58024410
+echo "FINAL nvic.Frequency (systick = sys_ck/D1CPRE)"
+nvic Frequency
+echo "nvic.Divider"
+nvic Divider
+echo "timer2.Frequency"
+timer2 Frequency
+echo "timer5.Frequency"
+timer5 Frequency
+quit

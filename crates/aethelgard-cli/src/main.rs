@@ -1408,6 +1408,9 @@ struct Ready {
     /// The generated firmware's PWR rule (`AET-WO-4240v` §1.6); `None` for a
     /// foreign firmware, which is never given it.
     pwr: Option<aethelgard_twin::serial::PwrRule>,
+    /// The generated firmware's HSE bring-up rule (`AET-WO-4240b` §1.6);
+    /// `None` for a board with no HSE and for a foreign firmware.
+    clock: Option<aethelgard_twin::hse::ClockRule>,
 }
 
 /// The topology asks for what the twin cannot lower (exit 2), or the
@@ -1524,6 +1527,10 @@ fn ready(
     };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let pwr = pwr_of(boot.foreign, &boot.topology)?;
+    let clock = match boot.foreign {
+        true => None,
+        false => aethelgard_twin::hse::clock_rule(&boot.topology).map_err(twin_stop)?,
+    };
     let motors = match boot.foreign {
         true => Vec::new(),
         false => renode::motors(&boot.topology).map_err(twin_stop)?,
@@ -1582,6 +1589,7 @@ fn ready(
             foreign,
             flash,
             pwr,
+            clock,
         },
     ))
 }
@@ -1935,6 +1943,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 serial: &r.serial,
                 capture,
                 pwr: r.pwr.as_ref(),
+                clock: r.clock.as_ref(),
             })
     };
     let resets = droop
@@ -1955,7 +1964,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         Some(base) if resets.iter().any(|r| r.released_ns.is_some()) => {
             let commands = base.commands();
             let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
-            let out = analog::boot(&invocation(args, "status-undisturbed"), &tool.path)?;
+            let out = analog::boot(
+                &invocation(args, "status-undisturbed"),
+                &tool.path,
+                base.log_filter(),
+            )?;
             Some(renode::undisturbed_boot_word_ns(&out)?)
         }
         _ => None,
@@ -2001,11 +2014,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // A boot's log is read through the filter, so a flood reaches a verdict;
     // a droop's boot is the bridge's, which owns Renode as its child.
     let out = match (&plan, &droop) {
-        (Some(_), Some(_)) => analog::boot(&run, &tool.path)?,
+        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter())?,
         (Some(_), None) if foreign.is_some() => {
             run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::foreign::FOREIGN_LOG_FILTER)?
         }
-        (Some(_), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::LOG_FILTER)?,
+        (Some(plan), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, plan.log_filter())?,
         (None, _) => run.run()?,
     };
     // The foreign judge's report (`AET-WO-4400e`): its firmware, its
@@ -2495,6 +2508,11 @@ fn boot_report(
                     .is_some()
                     .then_some(aethelgard_twin::serial::PWR_RESIDUAL),
             )
+            .chain(
+                r.clock
+                    .is_some()
+                    .then_some(aethelgard_twin::hse::HSE_RESIDUAL),
+            )
             .collect(),
         executable: plan.executable.to_vec(),
     }
@@ -2717,20 +2735,25 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
     // `emit`, `simulate` and `verify` refuse it as `CoreSupplyNotGenerated`
     // before any ledger is read. So no package, and no ledger, can rest on its
     // acknowledgements, and they are left unjudged here (adversarial pass A1).
-    // The same holds for a declared HSE (`HseNotGenerated`, `AET-WO-4240a`).
-    if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass
-        || spec.mcu.hse.is_some()
-    {
+    // The same holds for a declared HSE whose tree is not H1
+    // (`HseNotGenerated`, `AET-WO-4240b`); an H1 board's are judged.
+    if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass {
         return Ok(());
     }
     let built = aethelgard_svd_hal::pin_table(&spec.mcu.part)
         .map_err(|e| e.to_string())
         .and_then(|table| {
             let topology = aethelgard_ir::solve(spec, &table, sha256).map_err(|e| e.to_string())?;
-            ledger::build(&topology, &table).map_err(|e| e.message())
+            if aethelgard_cli::generate::generable(&topology).is_err() {
+                return Ok(None);
+            }
+            ledger::build(&topology, &table)
+                .map(Some)
+                .map_err(|e| e.message())
         });
     match built {
-        Ok(l) => match ledger::stale(&l, spec) {
+        Ok(None) => Ok(()),
+        Ok(Some(l)) => match ledger::stale(&l, spec) {
             None => Ok(()),
             Some(s) => Err(
                 Refusal::new(ledger::Stale::KIND, Some(&s.register), s.message())

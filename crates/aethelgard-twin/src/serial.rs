@@ -432,6 +432,32 @@ pub fn is_unjudged_access(body: &str) -> bool {
     })
 }
 
+/// [`is_unjudged_access`] for a generated board with an HSE (`AET-WO-4240b`
+/// §1.6): the same, but a read of the RCC's `CR` or `CFGR` word, at any
+/// width, is kept, because [`crate::hse::judge_clock`] requires the
+/// bring-up's `HSERDY`, `PLL1RDY` and `SWS` reads. Every other board's log
+/// is filtered by [`is_unjudged_access`] alone, so its kept lines do not
+/// move.
+pub fn is_unjudged_access_hse(body: &str) -> bool {
+    is_unjudged_access(body)
+        && !access(body).is_some_and(|a| {
+            !a.write
+                && a.source == RCC_RENODE
+                && rcc_polled_offsets().is_some_and(|o| o.contains(&(a.offset & !3)))
+        })
+}
+
+/// The RCC's `CR` and `CFGR` offsets, from the header, read once; `None` if
+/// the header cannot be read (then no RCC read is kept).
+fn rcc_polled_offsets() -> Option<[u32; 2]> {
+    static OFFSETS: std::sync::OnceLock<Option<[u32; 2]>> = std::sync::OnceLock::new();
+    *OFFSETS.get_or_init(|| {
+        let f = cmsis::register_facts().ok()?;
+        let r = f.layout("RCC").ok()?;
+        Some([r.offset("CR", 0).ok()?, r.offset("CFGR", 0).ok()?])
+    })
+}
+
 /// `PWR_CR3`'s offset, from the header, read once; `None` if the header
 /// cannot be read (then no PWR read is discarded).
 fn pwr_cr3_offset() -> Option<u32> {
@@ -1136,6 +1162,12 @@ pub struct RccRule {
     /// Each solved SPI controller's clock gate, with the offset of the
     /// select register that must be written before it is set.
     pub spi_gates: Vec<(Gate, u32)>,
+    /// On an HSE board (`AET-WO-4240b` §1.6), the offsets whose writes
+    /// [`crate::hse::judge_clock`] judges once per boot: the clock registers
+    /// and the kernel select registers ([`crate::hse::owned_offsets`]), with
+    /// [`Self::selects`] and [`Self::spi_gates`] empty, since no select is
+    /// written there. Empty on every other board.
+    pub clock_owned: Vec<u32>,
 }
 
 /// The RCC rule of a port on `peripheral` (its USART) with `pins`, on
@@ -1180,6 +1212,16 @@ pub fn rcc_rule(
         .collect::<Result<_, TwinError>>()?;
     let mut selects: Vec<(u32, u32)> = Vec::new();
     let mut spi_gates = Vec::new();
+    if let Some(clock) = crate::hse::clock_rule(topology)? {
+        return Ok(RccRule {
+            registers,
+            enables,
+            gates,
+            selects,
+            spi_gates,
+            clock_owned: crate::hse::owned_offsets(&clock),
+        });
+    }
     for p in topology.spi_controllers.keys() {
         let words =
             aethelgard_ir::silicon::spi_words(&topology.spi_controllers, p).ok_or_else(|| {
@@ -1198,6 +1240,7 @@ pub fn rcc_rule(
         gates,
         selects,
         spi_gates,
+        clock_owned: Vec::new(),
     })
 }
 
@@ -1243,6 +1286,9 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
                     width_name(a.bits),
                     a.offset
                 ));
+                continue;
+            }
+            if rule.clock_owned.contains(&a.offset) {
                 continue;
             }
             if let Some(i) = rule.selects.iter().position(|s| s.0 == a.offset) {
@@ -1508,7 +1554,7 @@ pub fn judge_pwr(rule: &PwrRule, boots: &[Vec<Access>]) -> Vec<String> {
 
 /// How Renode names an access of `bits` bits: `Byte`, `UInt16`, `UInt32`,
 /// `UInt64`.
-fn width_name(bits: u8) -> &'static str {
+pub(crate) fn width_name(bits: u8) -> &'static str {
     match bits {
         8 => "Byte",
         16 => "UInt16",

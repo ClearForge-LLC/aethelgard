@@ -5,8 +5,9 @@ use sentinel_01_board::Board;
 fn main() {
     let mut r = unsafe { Mmio::new() };
     let board = Board::take().unwrap();
+    let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
-    let mut bus = rcc.enable_i2c1(&mut r, board.i2c1);
+    let mut bus = rcc.enable_i2c1(&mut r, board.i2c1, scale2);
     let mut back = [0u8; 1];
     let _ = bus.transfer(&mut r, 0x76, &[0xd0], &mut back);
 }
