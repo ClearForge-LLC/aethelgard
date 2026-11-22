@@ -1,0 +1,7 @@
+{
+ "ok": true,
+ "verdict": "pass",
+ "check": "erc",
+ "findings": [],
+ "input_sha256": "e7ce81ebde5325864010fd483e19dddd98760530edef3ea64ff364d69c8c184c"
+}

@@ -1,0 +1,68 @@
+crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	$.serial_ports[0]	mavlink	57600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	$.serial_ports[1]	rc_crsf	420000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/hse-external-8.json	$.serial_ports[0]	mavlink	57600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/hse-external-8.json	$.serial_ports[1]	rc_crsf	420000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/logger-4600.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	$.serial_ports[0]	mavlink	57600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	$.serial_ports[1]	rc_crsf	420000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-03.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-03.json	$.serial_ports[1]	rc_crsf	420000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/sentinel-03.json	$.serial_ports[2]	mavlink	57600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json	$.serial_ports[0]	console	9600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/serial-four.json	$.serial_ports[0]	mavlink	57600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/serial-four.json	$.serial_ports[1]	gps	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/serial-four.json	$.serial_ports[2]	rc_crsf	420000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-cli/tests/fixtures/serial-four.json	$.serial_ports[3]	rc_sbus	100000	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-hwdef/tests/fixtures/sentinel-01.topology.json	$.serial_ports.CONSOLE	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-hwdef/tests/fixtures/sentinel-02.topology.json	$.serial_ports.CONSOLE	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-hwdef/tests/fixtures/serial-dshot-9600.topology.json	$.serial_ports.CONSOLE	console	9600	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-ir/tests/fixtures/d1-drv8876.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+crates/aethelgard-ir/tests/fixtures/d2-drv8833.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+examples/sentinel-01-ext-bmp581.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+examples/sentinel-01-minimal.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+examples/sentinel-01.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/1211/fixtures/d1-drv8876.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/1211/fixtures/d2-drv8833.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/1314b/logger-spi-only-cap-tol.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/1314b/logger-spi-only-cap.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4241/spec/sentinel-01-minimal-no-u3.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/driver-idle-zero.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/driver-tree.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/driver.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-1s-u50.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-1s.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-i2c-only.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-offboard.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-spi-only-cap.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger-spi-only.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/logger.json	$.serial_ports[0]	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/driver-tree/solve.json	$.serial_ports.CMD	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/driver.stage1/solve.json	$.serial_ports.CMD	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/logger-i2c-only/solve.json	$.serial_ports.READOUT	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/logger-offboard/solve.json	$.serial_ports.READOUT	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/logger-spi-only-cap/solve.json	$.serial_ports.READOUT	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/logger-spi-only/solve.json	$.serial_ports.READOUT	console	115200	0_BAUD:ok n_BAUD:ok
+spike/4600/out/logger.stage1/solve.json	$.serial_ports.READOUT	console	115200	0_BAUD:ok n_BAUD:ok
+# files 595, unread (not JSON) 13, ports 48
+# console ports 36, console bauds [9600, 115200], refused 0
+# role console: bauds [115200, 9600]
+# role gps: bauds [115200]
+# role mavlink: bauds [57600]
+# role rc_crsf: bauds [420000]
+# role rc_sbus: bauds [100000]
+# unread container/fixtures/gcc-source/not-json/manifest.json: JSONDecodeError
+# unread container/fixtures/gcc-source/not-utf8/manifest.json: UnicodeDecodeError
+# unread container/fixtures/gcc-source/nul-in-string/manifest.json: JSONDecodeError
+# unread spike/2303/out/campaigns/s02-baseline.campaign.json: JSONDecodeError
+# unread spike/2303/out/campaigns/s02-droop.campaign.json: JSONDecodeError
+# unread spike/4600/out/driver.stage1/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger-i2c-only/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger-offboard/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger-spi-only-cap/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger-spi-only/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger-spi-only/prove-every_valid_sequence.json: JSONDecodeError
+# unread spike/4600/out/logger.stage1/campaign.json: JSONDecodeError
+# unread spike/4600/out/logger.stage1/prove-every_valid_sequence.json: JSONDecodeError
