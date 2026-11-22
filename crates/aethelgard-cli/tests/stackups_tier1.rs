@@ -89,6 +89,91 @@ fn a_version_one_specification_is_refused_by_name() {
     fs::remove_dir_all(&dir).unwrap();
 }
 
+/// `AET-WO-1215`: an older specification's refusal lists every version
+/// change it lacks in `error.entries`, one row each with its work order and
+/// paths, from every command that prints the refusal body; a newer one, and
+/// version 0, are refused as before, with no `entries` key at all.
+#[test]
+fn an_older_specification_lists_every_change_it_lacks() {
+    let dir = scratch("entries");
+    for (version, rows) in [
+        (20, vec![21, 22, 23, 24]),
+        (1, (2..=24).collect()),
+        (aethelgard_ir::SPECIFICATION_SCHEMA_VERSION + 1, vec![]),
+        (0, vec![]),
+    ] {
+        let mut v = load(SPEC);
+        v["schema_version"] = json!(version);
+        let path = write_spec(&dir, &format!("v{version}.json"), &v);
+        for args in [
+            vec!["validate", "--file", &path],
+            vec!["solve", "--file", &path],
+            vec!["emit", "--file", &path, "--out", "/nonexistent-aet-1215"],
+            vec!["verify", "--spec", &path],
+        ] {
+            let (code, r) = run(&args);
+            assert_eq!(code, 2, "{args:?}: {r}");
+            let e = &r["error"];
+            assert_eq!(e["kind"], "UnsupportedSchemaVersion", "{args:?}: {r}");
+            assert_eq!(e["id"], Value::Null);
+            if rows.is_empty() {
+                assert_eq!(
+                    *e,
+                    json!({"kind": "UnsupportedSchemaVersion", "id": null,
+                           "message": format!("schema_version is {version}, not 24")}),
+                    "{args:?}"
+                );
+                continue;
+            }
+            let entries = e["entries"].as_array().unwrap();
+            let got: Vec<u64> = entries
+                .iter()
+                .map(|x| x["version"].as_u64().unwrap())
+                .collect();
+            assert_eq!(
+                got,
+                rows.iter().map(|&n| n as u64).collect::<Vec<_>>(),
+                "{args:?}"
+            );
+            for x in entries {
+                let keys: Vec<&str> = x.as_object().unwrap().keys().map(String::as_str).collect();
+                assert_eq!(
+                    keys,
+                    [
+                        "optional",
+                        "removed",
+                        "replaced",
+                        "requires",
+                        "rules",
+                        "version",
+                        "work_order"
+                    ],
+                    "{x}"
+                );
+            }
+            if version == 20 {
+                assert_eq!(entries[0]["work_order"], "AET-WO-1210");
+                assert_eq!(entries[0]["optional"], json!(["board.drawn"]));
+                assert_eq!(entries[2]["work_order"], "AET-WO-4240b");
+            }
+            if version == 1 {
+                assert_eq!(
+                    entries[18]["replaced"],
+                    json!([{"path": "mcu.hse_hz", "by": "mcu.hse"}])
+                );
+            }
+            assert!(
+                e["message"]
+                    .as_str()
+                    .unwrap()
+                    .starts_with(&format!("schema_version is {version}, not 24; ")),
+                "{e}"
+            );
+        }
+    }
+    fs::remove_dir_all(&dir).unwrap();
+}
+
 /// The four-layer fixture (OSH Park's published stackup, ruled D2) is the
 /// board it declares: KiCad's inner layers, a GND plane on In1.Cu and the
 /// domain's plane on In2.Cu, both unfilled, no B.Cu zone, through vias, the

@@ -187,7 +187,9 @@ fn a_version_14_file_is_refused_by_its_version_before_its_shape() {
         "{verdict}"
     );
     assert_eq!(
-        verdict["error"]["message"], "schema_version is 14, not 24",
+        verdict["error"]["message"],
+        // Every change version 14 lacks, listed (`AET-WO-1215`).
+        aethelgard_ir::versions::unsupported(14).to_string(),
         "{verdict}"
     );
     let _ = std::fs::remove_dir_all(&dir);

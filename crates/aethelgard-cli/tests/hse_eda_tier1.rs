@@ -382,7 +382,9 @@ fn no_committed_specification_without_a_crystal_draws_one() {
                     continue;
                 };
                 // `AET-WO-4240b`'s two HSE fixtures (`hse-crystal-16`,
-                // `hse-external-8`) are judged by their own tests; every
+                // `hse-external-8`) and `AET-WO-4240d`'s bypass bench
+                // (`examples/sentinel-02-bench-hse8.json`, an external clock,
+                // `board.drawn: false`) are judged by their own runs; every
                 // other committed specification declares none.
                 if spec.mcu.hse.is_some() {
                     hse += 1;
@@ -415,7 +417,10 @@ fn no_committed_specification_without_a_crystal_draws_one() {
         }
     }
     assert!(checked >= 20, "{checked}");
-    assert_eq!(hse, 2, "only AET-WO-4240b's two HSE fixtures declare one");
+    assert_eq!(
+        hse, 3,
+        "only AET-WO-4240b's two HSE fixtures and AET-WO-4240d's bypass bench declare one"
+    );
 }
 
 // ---- the support gate's step 7 ----

@@ -3714,6 +3714,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
         matches!(
             e,
             E::UnsupportedSchemaVersion {
+                changes: _,
                 version: 12,
                 expected: 24
             }
