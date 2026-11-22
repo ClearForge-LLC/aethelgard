@@ -1,0 +1,7 @@
+{
+  "as-held": {
+    "steps": [
+      {"rails": ["VMOTOR", "VDD_3V3"], "source": "two connectors, two external supplies (connectors J3, J5); no held document orders them"}
+    ]
+  }
+}

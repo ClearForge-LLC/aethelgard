@@ -1,0 +1,9 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+VBAT_SENSE	PF3	FT_ha	battery_divider	power.sense[0] R50/R51 100000/10000 ohm, each +/-3.65 %	battery	yes: the tree's root	2536	9091	battery 6 x 4350 mV; CRCW0603_F_K/CRCW0603_F_K rows (tolerance + TCR + drift)	-
+IMU_CS	PA1	FT_ha	crossing_a_side	power.crossings[0] U13 A side (VCCA; the B side is VDD_1V8)	VDD_3V3	no: mcu.supply	<=VDD	0	power.crossings[0].a_domain	-
+IMU_MISO	PB14	FT_u	crossing_a_side	power.crossings[0] U13 A side (VCCA; the B side is VDD_1V8)	VDD_3V3	no: mcu.supply	<=VDD	0	power.crossings[0].a_domain	-
+IMU_MOSI	PB15	FT_u	crossing_a_side	power.crossings[0] U13 A side (VCCA; the B side is VDD_1V8)	VDD_3V3	no: mcu.supply	<=VDD	0	power.crossings[0].a_domain	-
+IMU_SCK	PA12	FT_u	crossing_a_side	power.crossings[0] U13 A side (VCCA; the B side is VDD_1V8)	VDD_3V3	no: mcu.supply	<=VDD	0	power.crossings[0].a_domain	-
+IMU_CS	PA1	FT_ha	crossing_cs_pull	power.crossings[0].cs_pull_up R40 100000 ohm	VDD_3V3	no: mcu.supply	<=VDD	100000	power.crossings[0].cs_pull_up, on the A side	-
+SWDIO	PA13	FT	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-

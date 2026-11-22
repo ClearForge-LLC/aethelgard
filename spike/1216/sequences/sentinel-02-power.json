@@ -1,0 +1,9 @@
+{
+  "as-held": {
+    "steps": [
+      {"rails": ["battery"], "source": "the tree's root"},
+      {"rails": ["VDD_5V", "VDD_3V3"], "source": "SNVSAN3F p. 13 and p. 5 (EN to VIN), p. 8 tSS 2.9/4/6 ms; no page orders two parts"},
+      {"rails": ["VDD_1V8"], "source": "U12 TLV75518P's input is VDD_3V3; SBVS320D p. 4 5.1 VOUT <= VIN + 0.3 V, p. 6 VUVLO rising 1.21/1.3/1.44 V, p. 12 6.3.1 120 ohm pull-down below UVLO"}
+    ]
+  }
+}

@@ -1,0 +1,9 @@
+25	NRST	RST	/NRST	C19	capacitor	1	100n	GND	-	capacitor	no
+34	PA0	FT_a	/SERVO1	J4	connector	3	SM06B-GHS-TB	GND	-	connector	off-board
+35	PA1	FT_ha	/SERVO2	J4	connector	4	SM06B-GHS-TB	GND	-	connector	off-board
+75	PB14	FT_u	/CMD_TX	J1	connector	1	SM04B-GHS-TB	GND	-	connector	off-board
+100	PA8	FT_fha	/HB_IN1	J4	connector	1	SM06B-GHS-TB	GND	-	connector	off-board
+101	PA9	FT_u	/HB_IN2	J4	connector	2	SM06B-GHS-TB	GND	-	connector	off-board
+102	PA10	FT_u	/CMD_RX	J1	connector	2	SM04B-GHS-TB	GND	-	connector	off-board
+105	PA13	FT	/SWDIO	J2	connector	4	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
+109	PA14	FT	/SWCLK	J2	connector	5	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board

@@ -1,0 +1,11 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+SWDIO	PA13	FT	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR1	PA8	FT_fha	connector	J3.1 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR2	PA9	FT_u	connector	J3.2 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR3	PA0	FT_a	connector	J3.3 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MOTOR4	PA1	FT_ha	connector	J3.4 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+MAVLINK_TX	PA2	FT_a	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+MAVLINK_RX	PA3	FT_ha	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+CRSF_TX	PB10	FT_f	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+CRSF_RX	PB11	FT_f	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V

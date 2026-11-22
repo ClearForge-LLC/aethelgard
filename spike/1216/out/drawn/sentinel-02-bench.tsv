@@ -1,0 +1,11 @@
+25	NRST	RST	/NRST	C19	capacitor	1	100n	GND	-	capacitor	no
+41	PA5	TT_ha	/IMU_SCK	U5	ic	13	ICM-42688-P	GND,VDD_3V3	-	ic	no
+42	PA6	FT_a	/IMU_MISO	U5	ic	1	ICM-42688-P	GND,VDD_3V3	-	ic	no
+85	PD14	FT_h	/IMU_CS	U5	ic	12	ICM-42688-P	GND,VDD_3V3	-	ic	no
+105	PA13	FT	/SWDIO	J1	connector	4	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
+109	PA14	FT	/SWCLK	J1	connector	5	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
+135	PB5	FT	/IMU_MOSI	U5	ic	14	ICM-42688-P	GND,VDD_3V3	-	ic	no
+136	PB6	FT_f	/I2C_SCL	R2	resistor	2	2k2	VDD_3V3	-	resistor	no
+136	PB6	FT_f	/I2C_SCL	U7	ic	2	BMP581	GND,VDD_3V3	-	ic	no
+137	PB7	FT_fa	/I2C_SDA	R1	resistor	2	2k2	VDD_3V3	-	resistor	no
+137	PB7	FT_fa	/I2C_SDA	U7	ic	4	BMP581	GND,VDD_3V3	-	ic	no
