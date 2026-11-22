@@ -139,8 +139,13 @@ use sha2::{Digest, Sha256};
 /// moved only the specification's sha256: with each file's specification-24
 /// sha256 put back, each hashes to `1211c`'s digest exactly, which the test
 /// holds.
-const REFERENCE_DIGEST: &str = "e531bf8a6c8324326e354f89051e61f09f55b963e6eb9243092aeeb3f7b0bb6d";
-const STRESS_DIGEST: &str = "15a566105c0d291f3386b88f8414a766cbbdb7a3eb2cd65072e66259e4d099e3";
+/// Moved by `AET-WO-1217` (specification 26, solved 17 unchanged), which
+/// moved only the specification's sha256: with `a38ef8ce…73b0` put back, the
+/// reference's output hashes to `e531bf8a…bb6d`, and with `6a418102…6eff`
+/// the stress fixture's to `15a56610…99e3`, `1216b`'s digests, exactly
+/// (measured).
+const REFERENCE_DIGEST: &str = "99959e47a9bdff4689227ae81e51653ca1316773258edc6e8facd3819910d0cb";
+const STRESS_DIGEST: &str = "3643d9cc976dc2e32ee66c5b083d3dee4145acb4f9a0ad7c28c252687c008b37";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";

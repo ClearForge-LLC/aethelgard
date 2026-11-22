@@ -59,7 +59,7 @@ aethelgard solve --file <path>
 Reads one `Specification` from the file, under the same 16 MiB cap and with the same exit `2` and `3` refusals as `validate`, and validates it. It then loads the pin table for `mcu.part` (exit `2`, `UnknownPart`, `id` the part, for any part but `STM32H753ZITx`), solves (`aethelgard_ir::solve`), and prints the `SolvedTopology` as one JSON line, exit `0`. `specification_sha256` is the sha256 of the file's bytes as read, so reformatting the file changes the hash and nothing else. It writes no file.
 
 ```json
-{"schema_version":17,"specification_sha256":"a38ef8ce…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
+{"schema_version":17,"specification_sha256":"cd0171f4…","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},…},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{…},"i2c_devices":{…},"spi_devices":{}}
 ```
 
 A specification the solver cannot realize is exit `2`. The refusal envelope adds `claimants`, an array naming who is in conflict:

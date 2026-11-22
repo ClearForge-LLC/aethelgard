@@ -1254,6 +1254,10 @@ fn ipropi_tied_and_read_is_bound_twice() {
     let e = refused(&v);
     assert_eq!(e.kind(), "DevicePinBoundTwice", "{e}");
     assert_eq!(e.path(), Some("pin_devices[0].analog[0]"));
+    // Before any ADC rule reads it: a full scale above VDDA as well is still
+    // the pin bound twice.
+    device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(2000);
+    assert_kind(&v, "DevicePinBoundTwice");
 }
 
 /// F2: only a tie to `GND` is admitted, and only on the pin the row's trip

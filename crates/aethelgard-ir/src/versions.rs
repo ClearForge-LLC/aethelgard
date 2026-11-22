@@ -265,6 +265,7 @@ pub const CHANGES: &[VersionChange] = &[
         ],
     ),
     row(25, "AET-WO-1216b", &[], &[], &[], &["OffDomainAboveLimit"]),
+    row(26, "AET-WO-1217", &[], &[], &[], &["AnalogPadPin"]),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

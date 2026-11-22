@@ -24,6 +24,14 @@
 //! A row's `bulk_unstated` makes `bulk` required, and every other row refuses
 //! one (`BulkUndeclared`, `BulkNotAllowed`, `BulkUnderRated`).
 //!
+//! `AET-WO-1217`: the trip's sense tied to `GND` (`straps.<sense>`) turns the
+//! trip off, with the reference still refused on `GND` (F2); the trip is
+//! judged before the ADC inputs, so a device both refuse is named by its
+//! trip (F9); a reservoir is rated for VDDA's maximum (F8); and the MCU's row
+//! is looked up once, at `mcu.part`, before any device (F10). Per device the
+//! order is supplies, straps, signals, trip, ADC inputs, bridges, the bound
+//! inputs, part limits, then bulk.
+//!
 //! The solver places each signal like an SPI chip select and each ADC input
 //! on an ADC1 or ADC3 channel ([`place`]); every other crate refuses a
 //! topology that carries a pin device, by name, until its work order lands.
