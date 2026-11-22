@@ -1,6 +1,6 @@
 # AET-WO-1211d — FEEDBACK: pin devices drawn (DRV8876PWPR, DRV8833PWPR)
 
-**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs), then `adb8f61a` (4240c, 1213), then `349c75f5` (docs only) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
+**Branch:** `wo/aet-1211d-pin-devices-eda` from `main` `25203c58`; `main` `69c77c96` (docs), then `adb8f61a` (4240c, 1213), then `349c75f5` (docs only), then `ddfa64d6` (4240b: specification 23 / solved 15; #300, #301 docs) merged. **Builder:** Claude (Opus 5.5 orchestrating). Four subagents, each report checked at source before use:
 - an Opus subagent authored the DRV8876 symbol and footprint;
 - a Sonnet subagent ran the D4 spike;
 - a fresh Opus reviewer ran the adversarial pass;
@@ -11,7 +11,7 @@ Written 2026-11-20.
 **Status: READY.** **The answer, in six lines:**
 - **D2 (DRV8833) is drawn and passes ERC, DRC (`--spec`, with parity), `check support` and `extract` in the image, every findings list empty** (the amended acceptance, ruled S1). It is the committed D2 with every bridge input on a GPIO output, as ruled 18:45Z.
 - **D1 (DRV8876) is refused `PassiveValueUnstated` for CVM2 alone** (ruled S1: SLVSDS7B states no bulk value). It is drawn up to that refusal. In a scratch copy with CVM2 stubbed, its authored symbol and footprint pass ERC, DRC with parity, and support.
-- **No existing KiCad byte moved:** the 31 committed specifications, branch against `main` `25203c58`, are byte-identical at every point measured (259 files).
+- **No existing KiCad byte moved:** every committed specification is byte-identical, branch against `main`, at every point measured (31 specifications and 259 files against `25203c58` and `adb8f61a`; 33 and 274 against `ddfa64d6` at READY).
 - **Symbols and footprints:**
   - DRV8833: our own symbol (Q3: AISEN and BISEN `passive`), on KiCad 10.0.7's PWP0016C footprint vendored byte for byte;
   - DRV8876: our own symbol and PWP0016A footprint, every pin and pad cited and held to a table in a test.
@@ -36,7 +36,8 @@ Written 2026-11-20.
 | after vendoring (`76e8cafe`) | identical, 259 files |
 | after the arm (`89b08ec9`) | identical, 259 files |
 | after Q3 (`1a7bcf29`) | identical, 259 files |
-| at READY (`main` merged) | identical, 259 files (§8) |
+| `main` `adb8f61a` merged (`fbaaf3b7`) | identical, 259 files |
+| at READY: `main` `ddfa64d6` merged (`001a4183`), base rebuilt at `ddfa64d6` | identical, **274 files on 33 specifications** (§8) |
 
 N1–N3 hold:
 - no committed specification declares a pin device on a board it draws;
@@ -181,9 +182,10 @@ A fresh Opus reviewer attacked `99ada513`, then `1a7bcf29` (evidence `~/.cache/a
 ## 8. Gates, fence, reduction pass
 
 - **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean.
-- **`cargo test --workspace`** at `HEAD` (`main` `adb8f61a` merged, in-tree target, as CI builds it): **2,579 passed, 0 failed** (153 test binaries; `fbaaf3b7`, after which only docs and spike files changed).
+- **`cargo test --workspace`** (in-tree target, as CI builds it): **2,609 passed, 0 failed** (155 test binaries) at `001a4183`, with `main` `ddfa64d6` merged; only docs changed after it. Before that merge: 2,579 passed, 0 failed at `fbaaf3b7`.
   - The run before it (at `7b8d2c5d`) failed one test: `solved_devices::the_eda_reader_is_exactly_the_schematic` (`RUL-16`: `schematic.rs` and `support.rs` are eda's only readers of declared devices and connectors). The arm now takes the pin devices and the connector nets from `schematic.rs`, as the power tree does (`fbaaf3b7`).
-- **The READY point, all at `fbaaf3b7`:**
+- **After `main` `ddfa64d6` (`001a4183`):** the null sweep (33 specifications, 274 files) is identical; D2's four judges pass with findings `[]`; D1-stub's ERC, DRC and support pass; the three `spike/1211d/adv` boards are renumbered to 23 and still validate (their only change). `main` moved nothing of eda's, kicad-lib's or `names.rs`; the D1/D2 fixtures moved by their version line.
+- **The earlier READY point, all at `fbaaf3b7`:**
   - the null sweep against `main` `adb8f61a`: identical, 259 files;
   - D2's four judges in the image: pass, findings `[]`;
   - D1-stub's ERC, DRC and support: pass;

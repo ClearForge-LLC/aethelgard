@@ -12,7 +12,8 @@ Predictions: `PREDICTIONS.md` (commit `661ff706`, before any run). Base: `main` 
 | after vendoring (`76e8cafe`) | branch | **identical: 259 files** |
 | after the arm (`89b08ec9`) | branch | **identical: 259 files** |
 | D4's table and interpreter (spike only, `d4/`) | experiment | **identical: 259 files** |
-| READY, `main` `adb8f61a` merged (`fbaaf3b7`), against a base built at `adb8f61a` | branch | **identical: 259 files** |
+| `main` `adb8f61a` merged (`fbaaf3b7`), against a base built at `adb8f61a` | branch | **identical: 259 files** |
+| READY, `main` `ddfa64d6` merged (`001a4183`, specification 23), against a base built at `ddfa64d6` | branch | **identical: 274 files (33 specifications)** |
 
 N1, N2 and N3 hold: no committed specification reaches either arm, and `validate`'s output, which `own_nets` feeds, is unchanged on all 31.
 
@@ -23,7 +24,7 @@ N1, N2 and N3 hold: no committed specification reaches either arm, and `validate
 | judge | before Q3 (KiCad's `Driver_Motor:DRV8833PWP`) | after Q3 (`Aethelgard_Driver:DRV8833PWP`) |
 |---|---|---|
 | `validate` | ok | ok |
-| `check erc` | fail: 2 `pin_to_pin` warnings (AISEN and BISEN, `bidirectional`, on GND's flag) | **pass**, findings `[]` (re-run at `fbaaf3b7`: all four pass) |
+| `check erc` | fail: 2 `pin_to_pin` warnings (AISEN and BISEN, `bidirectional`, on GND's flag) | **pass**, findings `[]` (re-run at `fbaaf3b7` and at `001a4183`: all four pass) |
 | `check drc --spec --schematic` (parity) | pass | **pass**, findings `[]` |
 | `check support` | pass | **pass** |
 | `extract` | pass | **pass** |
