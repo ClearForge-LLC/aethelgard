@@ -3,14 +3,14 @@
 **Branch:** `wo/aet-1216b-off-domain-paths` from `main` `c9d4096b` (main's docs `c79b9820` merged in).
 **Builder:** Claude (Opus 5.5 orchestrating). One Opus adversarial reviewer was given the code and §5, not my conclusions; its report was checked at source before use. Written 2026-11-22.
 
-**Status: READY on the code; AWAITING-PACKAGE.** Specification 25 moves `fab/sentinel-01-bench/package`'s sha lines, and the new `twin_limits` rows move its verdict. The package needs a `write=true` dispatch (§9).
+**Status: READY.** D1 and D2 were accepted at 10:36Z. The package is the architect's `write=true` dispatch on `10cee311`, committed byte for byte (§9). Specification 25 moved its sha lines, and the new `twin_limits` rows moved its verdict.
 
 **The answer, in five lines:**
 - **Step 25 is built in `aethelgard-ir` (`off_domain.rs`).** It walks every path onto an MCU net from off `mcu.supply`, by `1216`'s walk-1 classes. Each path whose rail can lead is judged against DS12117 Rev 10 Table 10 at VDD = 0: 4.0 V, and 9.0 V on BOOT0. The limits are data on the MCU row (`power-parts` 7, `io.absolute_maximum`).
 - **The walker equals walk 1 on all 34 committed boards, path for path: 225 / 225.** Before the fixture edit it refuses D1 alone, `OffDomainAboveLimit` on `DRV_IPROPI`, 4665 > 4000 mV. The message names the 3 mA as a recommended operating condition, not a maximum (D5). After R2 became 1.07 kΩ, nothing is refused (3330 mV).
 - **An unbounded path is named and never passed.** It is one `OFFDOMAIN` row in `verify`'s `twin_limits`: silicon-only, never acknowledged, never counted as judged. 222 such paths are on 33 boards. No `validate` byte moves (D2).
 - **Every committed specification validates, solves and emits byte-identically except its sha.** The null sweep covers 34 specifications and 280 files; D1 is identical too, because the solved topology does not carry R2's ohms. Specification 25 adds `CHANGES` row 25 (`OffDomainAboveLimit`).
-- **The adversarial pass found one real gap, now fixed and tested.** An EN/PG gate granted the exemption even when an off-board end named the EN net. Two further rulings are asked of you (D1, D2 below).
+- **The adversarial pass found one real gap, now fixed and tested.** An EN/PG gate granted the exemption even when an off-board end named the EN net. **The consequence (D1, accepted): on today's drawn boards, (b)'s exemption cannot hold, so the rule in force is (c1).** Every path from a rail other than `mcu.supply` is judged at VDD = 0 unless the rail is downstream of `mcu.supply`. That is conservative and true.
 
 ## 0. How it was made
 
@@ -131,19 +131,19 @@ These are not judged:
 - **A connector's drive bound:** a connectors work order, `1216` D2's row.
 - **IPROPI's real maximum and clamp:** `1216` D5's row.
 
-## 7. Decisions for the architect, and rows
+## 7. Decisions (ruled 2026-11-22T10:36Z), and rows
 
 **Decisions:**
-- **D1 · A gate net an off-board end names grants nothing (A1, applied).**
+- **D1 · A gate net an off-board end names grants nothing (A1). Accepted.**
   - With it, (b)'s EN/PG exemption can never hold on a drawn board today: the emitter draws a control wire only to a net a connector or test point ends (`schematic.rs:1607`, `schematic_power.rs:582`). It can hold only on a twin stand-in, and no committed board has one.
-  - **Lean: keep it.** An EN a peer can drive is not an order the tree enforces. The day a pull on a control net can be declared (`1216` F2), the gate net no longer needs an off-board end.
-- **D2 · A test point voids an exemption as a connector does (A3, applied).**
+  - **So on today's drawn boards (b)'s EN/PG exemption cannot hold, and the rule in force is (c1):** a rail is exempt only when it is downstream of `mcu.supply` and no off-board end names it or a rail between. That is conservative and true.
+  - An EN a peer can drive is not an order the tree enforces. Once a pull on a control net can be declared (`1216` F2), the gate net no longer needs an off-board end and the EN/PG route can hold.
+- **D2 · A test point voids an exemption as a connector does (A3). Accepted:** a probe can back-feed it.
   - The ruling named connectors. The walker already treats a test point as an off-board end, and a bench probe can back-feed a rail.
   - It affects no committed board.
-  - **Lean: keep it.** It is one line to revert if you rule connectors only.
 
 **Rows for §7.1:**
-- **F1 · Pre-existing: pin devices and test points cannot be combined** (A4): `TestPointReferenceTaken` on any test point beside a pin device. **Proposed row:** "`bench::validate` takes the test points' references by name, not by position in `names::references`."
+- **F1 · Pre-existing: pin devices and test points cannot be combined** (A4): `TestPointReferenceTaken` on any test point beside a pin device. **§7.1 row, as ruled:** "`bench::validate` takes the test points' references by name, not by position in `names::references`."
 - **F2 · Walk 1 and the engine round R2 differently** (A5). The engine's whole-ohm ceiling is the safe direction. **Proposed row:** none; the spike's float is the record.
 - **F3 · D1's reservoir C1 is no longer needed at 12 bits.** R2 is at most 1110 Ω, under RAIN's 1150 Ω. It still validates, as a declared extra. **Proposed row:** "D1's fixture drops C1 or keeps it with a reason, when a work order next edits it."
 - **F4 · `1216` D5's row stands:** hold IPROPI's stated maximum and the clamp's figure when TI states them. Until then the refusal rests on a recommended-operating figure, and says so.
@@ -154,7 +154,7 @@ These are not judged:
 - **Gates** (Furnace, target in the repository, at `7f221410` plus this file):
   - `cargo fmt --all -- --check` passes.
   - `cargo clippy --workspace --all-targets -- -D warnings` passes.
-  - `cargo test --workspace`: 160 binaries, **2744 passed and 1 failed**. The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: the committed package binds the specification-24 sha, and it waits on the dispatch (§9).
+  - `cargo test --workspace`: 160 binaries, **2744 passed and 1 failed**. The failure was `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, the old package's binding. It passes on the dispatch's package (§9).
   - CI is the confirmation.
 - **Fence:**
   - `crates/aethelgard-ir`: the walker, the limits data, `output_max_basis`, the refusal, versions, the README and tests;
@@ -182,8 +182,7 @@ These are not judged:
 
 ## 9. The package
 
-`fab/sentinel-01-bench/package` must be re-written by a `write=true` dispatch. Two things move it:
-- the specification's sha, in `FAB-NOTES.md` and `MANIFEST.json`, as in `1211e`;
-- the verdict's `twin_limits`, which gains 20 `OFFDOMAIN` rows for `examples/sentinel-01.json`.
-
-`bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit` fails until then, by the sha alone. The queue is 1606, then 2308. I commit the dispatch's package byte for byte when it is run.
+`fab/sentinel-01-bench/package` is the artifact of the architect's `write=true` dispatch, **run 45012815694** on `10cee311`, committed byte for byte. Its 17 files equal the artifact's (`diff -rq`).
+- Only `FAB-NOTES.md` and `MANIFEST.json` moved, each by its sha lines alone: the specification's sha, the topology's (which embeds it), the verdict's (whose `twin_limits` gained the 20 `OFFDOMAIN` rows), and FAB-NOTES' own hash.
+- The ELF, every Gerber, the drill, the BOMs and the placement are byte-identical.
+- `bench_board_tier1` passes on it.
