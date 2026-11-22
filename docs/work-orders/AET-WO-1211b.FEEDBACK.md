@@ -1,8 +1,8 @@
 # AET-WO-1211b — FEEDBACK: pin devices generated (idle words, GPIO and ADC bring-up, bridge enables after `CEN`, Kani's oracles, the ledger's classes)
 
-**Branch:** `wo/aet-1211b-pin-devices-gen` from `main` `25203c58`; `main` merged at `349c75f5` (4240c, 1213). **Builder:** Claude (Opus 5.5 orchestrating; one Opus reader for the ADC contract, one Opus adversarial reviewer, each report checked at source before use). Written 2026-11-20.
+**Branch:** `wo/aet-1211b-pin-devices-gen` from `main` `25203c58`; `main` merged at `349c75f5` (4240c, 1213), then at `ddfa64d6` (4240b, solved 15), then renumbered to solved 16. **Builder:** Claude (Opus 5.5 orchestrating; one Opus reader for the ADC contract, one Opus adversarial reviewer, each report checked at source before use). Written 2026-11-20.
 
-**Status: built; waits on 4240b's merge for solved version 16 and the package dispatch.** **The answer, in six lines:**
+**Status: built, merged with `main` `ddfa64d6`, solved 16; waits on the package dispatch (write=true).** **The answer, in six lines:**
 - **D1 generates, builds and proves.** Every harness of its board crate proves in the tools image (10; the slowest `every_valid_sequence_tim1`, 48 s, which now holds the bridge's enable; ADC3's bring-up 4 s); its ELF builds. A tier-2 test runs it in CI. D2 stays refused at validate (`PartLimitUndeclared`).
 - **No existing byte moves.** All 25 committed specifications that generate on `main` generate byte-identical trees, against a baseline re-taken at each `main` merge (§1).
 - **The generator writes:** a GPIO output's declared level before `MODER`; an input's declared pull; a motor pad's pull from its idle (Q9); a pin device's ADC1/ADC3 inputs enabled, calibrated and converted once (§2.3); a bridge's enable after its timer's `CEN`, taking `&Tim<Running>`, with the row's `t_wake` waited only when its declared level wakes the part (§2.4). `PSC` and the idle `CCR` were already the solved words (1211a); the proof's expected `CCR` now comes from the declared idle (`oracle_idle_word`).
@@ -23,10 +23,14 @@
 |---|---|---|---|---|
 | `main` `25203c58`, image (`kit/sweep.sh`) | 31 | 25 generate and build; 5 refused before generate; D1 refused `PinDeviceNotGenerated` | baseline | baseline (`base-rows-25203c58.tsv`) |
 | branch after each generator commit, host (`kit/gen-diff.sh`) | 31 | 25 + D1 | **25/25 identical** at every commit | — |
-| branch at `3132793a` (`main` `349c75f5` merged), host, against a baseline re-taken with `349c75f5`'s binary | 31 | 25 + D1 | **25/25 identical** | (at READY) |
+| branch at `3132793a` (`main` `349c75f5` merged), host, against a baseline re-taken with `349c75f5`'s binary | 31 | 25 + D1 | **25/25 identical** | — |
+| branch at `2f0f3496` (`main` `ddfa64d6` merged, solved 16), host, against `ddfa64d6`'s binary | 33 | 27 + D1 | **27/27 identical** | — |
+| the same two heads in the image (`kit/sweep.sh`, generate and build) | 33 | 27 + D1 | — | **27/27 ELFs identical**; D1 builds (`05720792…`) |
 
 - **The first build moved two trees** (B1's premise was wrong, `PREDICTIONS.md`'s correction): `sentinel-03.json` and `sentinel-02-power.json` carry a `power.sense` input in `adc_inputs`, and the generator configured its pin. It now brings up a pin device's inputs only (S3, as ruled).
-- **No stored topology moved** beyond the new fields: the only topology literal with a pin device is hwdef's test, which gains `"bridges": {}`; no committed specification byte moved.
+- **No stored topology moved** beyond the new fields and the version line: the only topology literal with a pin device is hwdef's test, which gains `"bridges": {}`; the renumber (`spike/4240a/kit/renumber.py . 23 23 15 16`) moved 5 stored topologies' version lines and 4 Rust pins; no committed specification byte moved.
+- **The solved bump's pins, by measurement:** `solve_cli`'s two digests, which with version 15 put back hash to `main`'s exactly; the refused-version list (15 is now the file before `bits` and `bridges`); both READMEs' version lines. No generated file and no ELF moved: none carries the solved version.
+- **A merge defect, found by the image sweep:** after `ddfa64d6`, every RCC enable takes 4240b's `Scale2` token, and the ADC's did not (D1's firmware failed to build; fixed in `2f0f3496`, D1 builds and proves again). The host suites cannot see it (they do not compile the firmware); the tier-2 test does.
 
 ## 2. What was built (§1.2–§1.4)
 
@@ -122,8 +126,14 @@ Held: byte stability over 63 JSON files (25 identical, 37 refused on both, D1 al
 
 ## 8. Gates, fence, reduction pass
 
-(final numbers at READY)
+- **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean (at `2f0f3496`'s parent; no lint since).
+- **`cargo test --workspace`** (host, in-tree target, `main` `ddfa64d6` merged): **2,597 passed, 5 failed**; four were the solved bump's pins, fixed and green in `2f0f3496` (`solve_cli` 18/18, `readme_versions`, `validate` 129/129); the fifth, `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, waits on the package (§9). svd-hal 133/133 and the CLI's pin-device and ledger suites green after the last fix.
+- **Kani at `2f0f3496`** (image, one harness at a time): D1's 10 harnesses pass, the slowest 42 s; the PH-as-GPIO variant's 10 and the 4-input ADC's bring-up pass (before the merge, `3132793a`).
+- **`TIER2_MIN`:** 200 → 201 (one tier-2 test, `board_tier2::d1_s_pin_device_generates_builds_and_proves`, 96.19 s in the image; its weight row an estimate × 2.8, kept beside 1913's refit).
+- **Fence:** `crates/aethelgard-svd-hal`; `crates/aethelgard-cli/src` (generate, ledger, simulate's gate); `crates/aethelgard-ir/src` for S1's fields as ruled (`pin_devices.rs`, `solve.rs`, `lib.rs`'s version) and the one oracle helper `silicon::implied_pupd`; tests and stored topology fixtures (version lines, hwdef's literal); `ci/test-weights.tsv` (one row) and `TIER2_MIN`; `spike/1211b/`; this file. **Edges, flagged:** `crates/aethelgard-cli/README.md` (the refusal sentence, made true) and `crates/aethelgard-ir/README.md` (the solved version line).
+- **Reduction pass (diff):** −11 net · 1 duplicate removed (the ADC's names: four functions and a string-built ledger copy, now one table) · 0 dead paths removed · 7 protected kept (labelled `belt-and-suspenders:`: `oracle_level_bit`, `oracle_idle_word`, `oracle_bridges`, `adc::oracle_of`, `adc::oracle_res`, `adc::oracle`, and the generator's `motor_pull`/`input_pull`, labelled in this pass) · 1 finding: `bridge_plans` and `oracle_bridges` read one bridge twice on purpose (`INV-07`), which is why both exist.
+- **Scratch:** `~/.cache/aet-1211b` 9.8 GiB after freeing 12.4 GiB (bus 2026-11-22); evidence kept (`adv-scratch`, logs, baselines).
 
 ## 9. The package
 
-(after 4240b's merge: solved 16 moves `topology_sha256`; the architect's write=true dispatch)
+The solved bump moves `MANIFEST.json`'s `topology_sha256` (and with it `verdict_sha256`): queued for the architect's write=true dispatch after 4240b's; then committed byte for byte. No ELF or board file is predicted to move.
