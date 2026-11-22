@@ -1,0 +1,19 @@
+error[E0308]: mismatched types
+  --> tests/ui/fail/pwr_enable_without_scale2.rs:20:52
+   |
+20 |     let _a = rcc.enable_gpioa(&mut r, board.gpioa, unchecked);
+   |                  ------------                      ^^^^^^^^^ expected `Scale2`, found `Result<Scale2, PwrFault>`
+   |                  |
+   |                  arguments to this method are incorrect
+   |
+   = note: expected struct `Scale2`
+                found enum `Result<Scale2, PwrFault>`
+note: method defined here
+  --> tests/ui/fail/../motors-pwm/board.rs
+   |
+   |     pub fn enable_gpioa<R: Registers>(&mut self, r: &mut R, _gated: GpioA<Gated>, _scale2: Scale2) -> GpioA<Clocked> {
+   |            ^^^^^^^^^^^^                                                           ---------------
+help: consider using `Result::expect` to unwrap the `Result<Scale2, PwrFault>` value, panicking if the value is a `Result::Err`
+   |
+20 |     let _a = rcc.enable_gpioa(&mut r, board.gpioa, unchecked.expect("REASON"));
+   |                                                             +++++++++++++++++

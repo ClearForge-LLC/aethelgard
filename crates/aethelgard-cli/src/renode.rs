@@ -254,6 +254,30 @@ fn unjudged_access_line(line: &str) -> bool {
     log_body(line).is_some_and(aethelgard_twin::serial::is_unjudged_access)
 }
 
+/// [`LOG_FILTER`] for a generated HSE board (`AET-WO-4240b` §1.6): it keeps
+/// the RCC's reads of `CR` and `CFGR`, which the clock rule judges
+/// ([`aethelgard_twin::serial::is_unjudged_access_hse`]). Every other boot is
+/// read through [`LOG_FILTER`], so its kept lines do not move.
+pub const LOG_FILTER_HSE: LogFilter = LogFilter {
+    discard: unjudged_access_line_hse,
+    ..LOG_FILTER
+};
+
+fn unjudged_access_line_hse(line: &str) -> bool {
+    log_body(line).is_some_and(aethelgard_twin::serial::is_unjudged_access_hse)
+}
+
+impl BootPlan<'_> {
+    /// The filter this boot's log is read through: [`LOG_FILTER_HSE`] with
+    /// the HSE rule, else [`LOG_FILTER`].
+    pub fn log_filter(&self) -> LogFilter {
+        match self.clock {
+            Some(_) => LOG_FILTER_HSE,
+            None => LOG_FILTER,
+        }
+    }
+}
+
 /// A log line without Renode's timestamp (`[00:00:00.019999000] `), which
 /// is the run's own clock and so never belongs in a finding's text
 /// (`INV-04`, `AET-WO-2301` F10, `AET-WO-4300a`).
@@ -358,6 +382,12 @@ pub struct BootPlan<'a> {
     /// [`aethelgard_twin::serial::judge_pwr`]. `None` for a foreign firmware,
     /// which is never given it.
     pub pwr: Option<&'a aethelgard_twin::serial::PwrRule>,
+    /// The generated firmware's HSE bring-up rule (`AET-WO-4240b` §1.6): with
+    /// it, the boot's log is read through [`LOG_FILTER_HSE`] and the RCC's,
+    /// the flash controller's and the PWR's accesses are judged by
+    /// [`aethelgard_twin::hse::judge_clock`]. `None` for a board with no HSE
+    /// and for a foreign firmware.
+    pub clock: Option<&'a aethelgard_twin::hse::ClockRule>,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -950,6 +980,12 @@ pub struct Observed {
     /// `AET-WO-4240v` §1.6), empty when nothing; `None` when the log could not
     /// be read whole, or for a boot given no PWR rule.
     pub pwr_access: Option<Vec<String>>,
+    /// What the RCC's, the flash controller's and the PWR's access log of
+    /// each boot shows that the generated HSE bring-up never does
+    /// ([`aethelgard_twin::hse::judge_clock`], `AET-WO-4240b` §1.6), empty
+    /// when nothing; `None` when the log could not be read whole, or for a
+    /// boot given no HSE rule.
+    pub clock_access: Option<Vec<String>>,
     /// Each ELF self-loop's two halfwords as the machine held them after the
     /// run: a firmware can rewrite its flash in Renode (adversarial A1).
     pub loops: Vec<[u32; 2]>,
@@ -2448,6 +2484,7 @@ pub fn judge_boot(
         brown_out: 0,
         flash_access: None,
         pwr_access: None,
+        clock_access: None,
         loops: vec![[0, 0]; plan.self_loops.len()],
         registers: vec![0; plan.image.registers.len()],
         records: vec![(0, 0); checks.len()],
@@ -2510,23 +2547,37 @@ pub fn judge_boot(
     } else {
         None
     };
-    // The flash controller's accesses, each boot's, but for the line
-    // Renode answers the judge's own command with (C1 m2).
-    observed.flash_access = (out.dropped_log_lines == 0)
-        .then(|| {
-            let flash: Vec<Vec<&str>> = boots
-                .iter()
-                .map(|b| {
-                    b.iter()
-                        .copied()
-                        .filter(|l| log_body(l) != Some(FLASH_LOG_ON))
-                        .collect()
-                })
-                .collect();
-            access_boots(&flash, &[aethelgard_twin::boot::FLASH_RENODE])
+    // Each boot's lines but the one Renode answers the judge's own command
+    // with (C1 m2), for every judge of the flash controller's accesses.
+    let flash: Vec<Vec<&str>> = boots
+        .iter()
+        .map(|b| {
+            b.iter()
+                .copied()
+                .filter(|l| log_body(l) != Some(FLASH_LOG_ON))
+                .collect()
         })
+        .collect();
+    observed.flash_access = (out.dropped_log_lines == 0)
+        .then(|| access_boots(&flash, &[aethelgard_twin::boot::FLASH_RENODE]))
         .flatten()
         .map(|b| plan.image.brown_out.judge_accesses(&b, observed.brown_out));
+    // The HSE bring-up's RCC and FLASH_ACR accesses (`AET-WO-4240b` §1.6),
+    // in log order with the PWR's, whose D3CR write they follow.
+    observed.clock_access = plan
+        .clock
+        .filter(|_| out.dropped_log_lines == 0)
+        .and_then(|rule| {
+            access_boots(
+                &flash,
+                &[
+                    aethelgard_twin::serial::PWR_RENODE,
+                    aethelgard_twin::serial::RCC_RENODE,
+                    aethelgard_twin::boot::FLASH_RENODE,
+                ],
+            )
+            .map(|b| aethelgard_twin::hse::judge_clock(rule, &b))
+        });
     // The PWR's writes against the generated bring-up's (`AET-WO-4240v`
     // §1.6), with the RCC's, whose enable writes they must precede.
     observed.pwr_access = plan
@@ -2639,7 +2690,8 @@ pub fn judge_boot(
         ));
     }
     // A PWR boot word (`AET-WO-4240v` §1.4) is named in the finding: the
-    // firmware parked on a fault of its supply or voltage scale.
+    // firmware parked on a fault of its supply or voltage scale; so is an
+    // HSE one (`AET-WO-4240b`), on a fault of its clock.
     if !booted {
         findings.push(Finding::plain(
             aethelgard_chaos::campaign::BOOT_WORD_FINDING,
@@ -2649,6 +2701,7 @@ pub fn judge_boot(
                 observed.boot_word,
                 aethelgard_twin::boot::BOOT_MAGIC,
                 aethelgard_twin::boot::pwr_boot_word(observed.boot_word)
+                    .or_else(|| aethelgard_twin::boot::hse_boot_word(observed.boot_word))
                     .map(|(name, why)| format!(": {name}, {why}"))
                     .unwrap_or_default()
             ),
@@ -2776,6 +2829,9 @@ pub fn judge_boot(
         ));
         if plan.pwr.is_some() {
             findings.extend(pwr_findings(observed.pwr_access.as_deref()));
+        }
+        if plan.clock.is_some() {
+            findings.extend(clock_findings(observed.clock_access.as_deref()));
         }
     }
     // The identity reads. A record is only meaningful once the firmware has
@@ -3519,6 +3575,25 @@ pub fn pwr_findings(pwr: Option<&[String]>) -> Option<Finding> {
 /// The kind of [`pwr_findings`]'s finding.
 pub const PWR_ACCESS_FINDING: &str = "pwr_access";
 
+/// The finding of the generated HSE bring-up's RCC and `FLASH_ACR`
+/// accesses (`AET-WO-4240b` §1.6), once the boot word is set: each departure
+/// the rule names, in one finding; or, when the log could not be read whole,
+/// that the sequence is unwitnessed.
+pub fn clock_findings(clock: Option<&[String]>) -> Option<Finding> {
+    match clock {
+        Some([]) => None,
+        Some(notes) => Some(Finding::plain(CLOCK_ACCESS_FINDING, notes.join("; "))),
+        None => Some(Finding::plain(
+            CLOCK_ACCESS_FINDING,
+            "the RCC's, the flash controller's and the PWR's access log could not be read whole, so the HSE bring-up's words and reads are unwitnessed"
+                .to_owned(),
+        )),
+    }
+}
+
+/// The kind of [`clock_findings`]'s finding.
+pub const CLOCK_ACCESS_FINDING: &str = "clock_access";
+
 /// Each boot's accesses on `sources` ([`aethelgard_twin::serial::access`]),
 /// in log order, each write a logged source's model says it ignored
 /// ([`aethelgard_twin::serial::refused_by`]) marked refused; `None` when a
@@ -4164,7 +4239,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":14,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
+            r#"{"schema_version":15,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -4232,6 +4307,7 @@ mod tests {
             serial: &[],
             capture: None,
             pwr: None,
+            clock: None,
         }
     }
 
@@ -4511,7 +4587,7 @@ mod tests {
         serde_json::from_str(CONSOLE_TOPOLOGY).unwrap()
     }
 
-    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":14,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
+    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":15,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
     /// The console's expectations for a firmware whose sha256 is all `0x11`.
     fn console() -> Vec<Serial> {
@@ -5745,6 +5821,207 @@ mod tests {
                     && m.ends_with("reads 0x00000000, not 0x2100b007")),
             "{failing:?}"
         );
+    }
+
+    /// The HSE rule of the 16 MHz crystal fixture (`AET-WO-4240b`).
+    fn hse_rule() -> aethelgard_twin::hse::ClockRule {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/hse-crystal-16.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        aethelgard_twin::hse::clock_rule(&topology)
+            .unwrap()
+            .unwrap()
+    }
+
+    /// `AET-WO-4240b` §1.6: only a boot given the HSE rule reads its log
+    /// through the filter that keeps the RCC's `CR` and `CFGR` reads; every
+    /// other boot's filter is `LOG_FILTER`, unchanged.
+    #[test]
+    fn only_an_hse_boot_keeps_the_rcc_s_polled_reads() {
+        let image = image();
+        let rule = hse_rule();
+        let null = plan(&image, &[]);
+        let hse = BootPlan {
+            clock: Some(&rule),
+            ..plan(&image, &[])
+        };
+        let cr = at(
+            0,
+            "[INFO] rcc: [cpu: 0x8000108] ReadUInt32 from 0x0 (ClockControl), returned 0x30025",
+        );
+        let cfgr = at(
+            0,
+            "[INFO] rcc: [cpu: 0x8000108] ReadUInt32 from 0x10 (ClockConfiguration), returned 0x1B",
+        );
+        let other = at(
+            0,
+            "[INFO] rcc: [cpu: 0x8000108] ReadUInt32 from 0xE0 (AHB4Clock), returned 0x3",
+        );
+        for line in [&cr, &cfgr] {
+            assert!((null.log_filter().discard)(line), "{line}");
+            assert!(!(hse.log_filter().discard)(line), "{line}");
+        }
+        assert!((null.log_filter().discard)(&other) && (hse.log_filter().discard)(&other));
+        assert_eq!(hse.log_filter().budget, LOG_FILTER.budget);
+        assert_eq!(hse.log_filter().keep, LOG_FILTER.keep);
+    }
+
+    /// `AET-WO-4240b` §1.6, through `judge_boot` whole: the contract's HSE
+    /// bring-up as Renode logs it (the reads' values measured,
+    /// `spike/4240b/renode/results.md`) passes; a departure is
+    /// `clock_access`, once the boot word is set; a log not read whole fails
+    /// closed; an HSE boot word is named in `boot_word_missing`.
+    #[test]
+    fn judge_boot_holds_the_hse_bring_up_to_the_clock_rule() {
+        let mut image = image();
+        // The image is a null board's; on an HSE board FLASH_ACR is the clock
+        // rule's, as `boot::brown_out` sets it.
+        image.brown_out.clock_acr = Some(0);
+        let rule = hse_rule();
+        let loops = [0x0800_0010u64];
+        let executable = [(0x0800_0000u64, 0x0801_0000u64)];
+        let p = BootPlan {
+            self_loops: &loops,
+            executable: &executable,
+            pwr: Some(&PWR),
+            clock: Some(&rule),
+            ..plan(&image, &[])
+        };
+        let flash = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0";
+        let judge = |log: &[&str], word: u32, dropped: u64| {
+            let mut text = format!("{flash}\n");
+            for l in log {
+                text.push_str(&at(0, l));
+                text.push('\n');
+            }
+            text.push_str(&at(10_000, "[NOISY] i2c1.u2: Write D0"));
+            text.push('\n');
+            text.push_str(&at(10_000, "[NOISY] i2c1.u2: Read 60"));
+            text.push('\n');
+            text.push_str(&at(
+                30_750,
+                &format!("[WARNING] sysbus: AETHELGARD-BOOTWORD {word:x} 0 3075\n"),
+            ));
+            text.push_str("AETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(word),
+                    Read::Instructions => 10_000_000,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = output(text.into_bytes(), dropped);
+            let (f, _, o) = judge_boot(0, &out, &p, &Captured::default()).unwrap();
+            let failing: Vec<(String, String)> = f
+                .iter()
+                .filter(|f| f.severity != "info")
+                .map(|f| (f.kind.clone(), f.message.clone()))
+                .collect();
+            (failing, o.unwrap())
+        };
+        let good = [
+            "[INFO] pwr: [cpu: 0x800000A] ReadUInt32 from 0xC (unknown), returned 0x46",
+            "[INFO] pwr: [cpu: 0x8000014] WriteUInt32 to 0xC (unknown), value 0x42",
+            "[INFO] pwr: [cpu: 0x8000016] ReadUInt32 from 0xC (unknown), returned 0x42",
+            "[INFO] pwr: [cpu: 0x8000020] ReadUInt32 from 0x4 (unknown), returned 0x6000",
+            "[INFO] pwr: [cpu: 0x800002A] WriteUInt32 to 0x18 (unknown), value 0x8000",
+            "[INFO] pwr: [cpu: 0x800002C] ReadUInt32 from 0x18 (unknown), returned 0xA000",
+            "[INFO] rcc: [cpu: 0x8000100] ReadUInt32 from 0x0 (ClockControl), returned 0x25",
+            "[INFO] rcc: [cpu: 0x8000104] WriteUInt32 to 0x0 (ClockControl), value 0x10001",
+            "[INFO] rcc: [cpu: 0x8000108] ReadUInt32 from 0x0 (ClockControl), returned 0x30025",
+            "[INFO] rcc: [cpu: 0x800010C] WriteUInt32 to 0x0 (ClockControl), value 0x90001",
+            "[INFO] rcc: [cpu: 0x8000110] WriteUInt32 to 0x28 (PLLClockSource), value 0x52",
+            "[INFO] rcc: [cpu: 0x8000114] WriteUInt32 to 0x2C (PLLConfiguration), value 0x30004",
+            "[WARNING] rcc: Unhandled write to offset 0x2C. Unhandled bits: [2, 18-24] when writing value 0x30004. Tags: PLL1GRE (0x1)",
+            "[INFO] rcc: [cpu: 0x8000118] WriteUInt32 to 0x30 (PLL1Dividers), value 0x103064F",
+            "[INFO] rcc: [cpu: 0x800011C] WriteUInt32 to 0x0 (ClockControl), value 0x1090001",
+            "[INFO] rcc: [cpu: 0x8000120] ReadUInt32 from 0x0 (ClockControl), returned 0x30B0025",
+            "[INFO] flashController: [cpu: 0x8000124] WriteUInt32 to 0x0 (AccessControl), value 0x11",
+            "[INFO] flashController: [cpu: 0x8000128] ReadUInt32 from 0x0 (AccessControl), returned 0x11",
+            "[INFO] rcc: [cpu: 0x800012C] WriteUInt32 to 0x10 (ClockConfiguration), value 0x3",
+            "[INFO] rcc: [cpu: 0x8000130] ReadUInt32 from 0x10 (ClockConfiguration), returned 0x1B",
+            "[INFO] rcc: [cpu: 0x8000710] WriteUInt32 to 0xE0 (AHB4Clock), value 0x3",
+        ];
+        let magic = aethelgard_twin::boot::BOOT_MAGIC;
+        let (failing, o) = judge(&good, magic, 0);
+        assert!(failing.is_empty(), "{failing:?}");
+        assert_eq!(o.clock_access, Some(Vec::new()));
+        assert_eq!(o.pwr_access, Some(Vec::new()));
+        // The mutants: SW before the PLL1RDY read, and SPI123SEL written 100.
+        let mut bad = good.to_vec();
+        bad.swap(15, 18);
+        bad.insert(
+            20,
+            "[INFO] rcc: [cpu: 0x8000700] WriteUInt32 to 0x50 (D2KernelClock1), value 0x4000",
+        );
+        let (failing, _) = judge(&bad, magic, 0);
+        assert_eq!(
+            failing,
+            [(
+                CLOCK_ACCESS_FINDING.to_owned(),
+                "RCC.CFGR 0x3 (SW = PLL1) written before a read of RCC.CR showed PLL1RDY 1 after PLL1ON; RCC.CFGR 0x3 (SW = PLL1) written before FLASH_ACR was written and read back; FLASH_ACR written after RCC.CFGR 0x3 (SW = PLL1); FLASH_ACR written before a read of RCC.CR showed PLL1RDY 1; FLASH_ACR read after RCC.CFGR 0x3 (SW = PLL1); RCC.D2CCIP1R 0x4000 written (SPI123SEL 100 away from reset): on an HSE board every kernel select stays at reset, the topology's SPI kernels being pll1_q and pclk, code 000".to_owned()
+            )]
+        );
+        // Not read whole: unwitnessed, by name.
+        let (failing, o) = judge(&good, magic, 1);
+        assert_eq!(o.clock_access, None);
+        assert!(
+            failing
+                .iter()
+                .any(|(k, m)| k == CLOCK_ACCESS_FINDING && m.contains("could not be read whole")),
+            "{failing:?}"
+        );
+        // An HSE boot word: the boot failed, by its name, and the clock's
+        // accesses are not judged before the boot word.
+        for (word, name) in [
+            (
+                aethelgard_twin::boot::BOOT_HSE_NOT_READY,
+                "boot_hse_not_ready",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_PLL1_NOT_LOCKED,
+                "boot_pll1_not_locked",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_SW_NOT_TAKEN,
+                "boot_sw_not_taken",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_HSE_CSS_FAULT,
+                "boot_hse_css_fault",
+            ),
+            (
+                aethelgard_twin::boot::BOOT_FLASH_ACR_NOT_TAKEN,
+                "boot_flash_acr_not_taken",
+            ),
+        ] {
+            let (failing, _) = judge(&good[..9], word, 0);
+            let missing: Vec<&(String, String)> = failing
+                .iter()
+                .filter(|(k, _)| k == aethelgard_chaos::campaign::BOOT_WORD_FINDING)
+                .collect();
+            assert_eq!(missing.len(), 1, "{failing:?}");
+            assert!(missing[0].1.contains(&format!(": {name}, ")), "{failing:?}");
+            assert!(
+                failing.iter().all(|(k, _)| k != CLOCK_ACCESS_FINDING),
+                "{failing:?}"
+            );
+        }
     }
 
     /// `AET-WO-2302` D4, through `judge_boot` whole: the two serial findings
@@ -7191,6 +7468,7 @@ mod tests {
             brown_out: 0,
             flash_access: None,
             pwr_access: None,
+            clock_access: None,
             loops: Vec::new(),
             registers: Vec::new(),
             records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
