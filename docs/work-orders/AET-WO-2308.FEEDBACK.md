@@ -13,7 +13,7 @@
 - **F16:** both `BindingMismatch` guards have a tier-1 killing test. **Row 6:** 28 rows are reclassed as ruled: 7 `observed`, 19 `ignored-by-model`, and 2 `independent-rule` by `judge_tree`. No `independent-rule` row now names a judge outside `aethelgard_ir`.
 - **Bytes:**
   - The sweep is identical: 34 specifications, 280 files.
-  - Every committed specification's fab-path verdict is byte-identical, base against branch (5 of 5, run).
+  - The fab-path verdict is byte-identical, base against branch, on each committed specification rows 1 and 6 can reach (run): the three HSE specifications, `sentinel-02-power` (the one committed board drawing a twin stand-in) and the bench's `sentinel-01`, 5 of 5 (RESULTS R4). The sweep covers all 34 for validate, solve and emit.
   - The bench package moves in exactly 3 of its 17 files, by rows 1 and 2, every line named in §2.
   - **Mutants: 20 of 20 killed** (17 tier 1 and 3 tier 2; §4).
 
@@ -39,7 +39,7 @@
   - `jlcpcb_notes` says the column is a fifth one, that JLCPCB's tolerance of it is inferred (Q2), and what to do if an upload refuses it.
 - **`crates/aethelgard-cli/src/fab.rs`:**
   - `derive` appends `noted()`: "Parts with a note", one line per part, `- U4 (W25Q64JVSSIQ): <note>`.
-  - The section names the two files that carry the note on the part's line, and the two (`-pos.csv`, `-jlcpcb-cpl.csv`) that name the part by reference only (Q4).
+  - The section names the two files that carry the note on the part's line. It says that `-jlcpcb-cpl.csv` names the part by reference only, and that `-pos.csv`, KiCad's unedited file, prints its value with no note, so the section is its label (Q4, as corrected by adversarial F1).
   - A board with no noted part adds no byte.
 - **`crates/aethelgard-cli/src/verify.rs`:**
   - `stand_ins()` lists each drawn part the parts table holds `stand_in` (ICM20948, ICP10111). Under a fab flag, `StandInInFabPackage` refuses it by reference, exit 2.
@@ -120,6 +120,7 @@ One per guard this work order adds or changes, each run against the suite it liv
 - **F5 · The declared bulk's note is shown only on a synthetic BOM.** D1 stops at `CampaignCoverageShort` (R0), so no committed board takes a bulk through `verify --fab-out`. The label path is the same code that carries U4's note in the bench package.
 - **F6 · `sentinel-02-power` and `hse-crystal-16` can never be packaged:** each has a rail "no consumer a judge observes" (VDD_5V, VDD_1V8). So the stand-in refusal and the new ledger classes are not reachable on any committed board's fab path today. They are shown on the drawn 1.8 V fixture and in unit tests. This is `2304b`'s condition, unchanged.
 
+- **F8 · `fab/sentinel-01-bench/ORDER.md` L81 describes the JLCPCB BOM as four columns** ("Comment, Designator, Footprint, JLCPCB part number left blank"), and the package now has a fifth, `Note`. ORDER.md is outside this fence, so it is not edited here. It is where Scotty reads at the upload, so F1's confirmation belongs there too. **Proposed row:** "ORDER.md §3 names the `Note` column and points to FAB-NOTES' 'Parts with a note' before the upload. Owner: the package's docs."
 - **F7 · Two weight rows are Furnace estimates** (AET-WO-2302's rule): `fab_tier1`'s stand-in test, at 2.600, and the LP2 unit test, at 1.400. Replace them at the next refit. No tier-2 test was added: the new tier-2 assertions run inside existing `verify_2k2_tier2` and `against_fab_tier2` runs, so `TIER2_MIN` is unchanged.
 
 ## 6. Gates, fence, reduction pass

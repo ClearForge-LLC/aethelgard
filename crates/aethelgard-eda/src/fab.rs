@@ -1015,10 +1015,12 @@ to them:
 - **`Note` is `{project}.bom.csv`'s note on the part, and a fifth column:
   JLCPCB's sample has four.** That JLCPCB's upload accepts it is inferred, not
   shown: its KiCad page calls a five-column BOM (with `Quantity`) aligned with
-  the sample. If an upload refuses the column, delete it; the section on
-  parts with a note, below, carries the same label. A part whose symbol
-  stands in for the ordered part, or whose value its datasheet does not
-  state, carries one, and never shares a row with a part that does not.
+  the sample. A part whose symbol stands in for the ordered part, or whose
+  value its datasheet does not state, carries one, and never shares a row
+  with a part that does not. Such parts, if any, are also listed in the
+  section \"Parts with a note\", which ends these notes; if an upload refuses
+  the column, delete it, and that section carries the same label. With no
+  such part, the column is empty on every row and there is no such section.
 - **`JLCPCB Part #（optional）` is empty for every part.** No input of this
   engine names a fabricator's part number, so none is written. Choose each
   part in JLCPCB's library before ordering. A passive's value alone (`100n`)
@@ -1206,7 +1208,8 @@ mod tests {
             "is empty for every part",
             "`Note` is `p.bom.csv`'s note on the part, and a fifth column",
             "is inferred, not\n  shown",
-            "the section on\n  parts with a note, below",
+            "if an upload refuses\n  the column, delete it, and that section carries the same label",
+            "With no\n  such part, the column is empty on every row",
             "in KiCad's frame",
             "by eye",
             "bottom side",
