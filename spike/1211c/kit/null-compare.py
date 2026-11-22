@@ -20,6 +20,18 @@ def norm(text, root):
         if isinstance(v, dict):
             v.pop("memory", None)
     return lines
+def topology_hash_cut(x):
+    """generate's report with its `topology_sha256` cut: under --versions it
+    moves with the solved version line alone, which solve.json's own
+    comparison (version line normalised) holds."""
+    if isinstance(x, list):
+        for v in x:
+            if isinstance(v, dict): v.pop("topology_sha256", None)
+    return x
+def kind6(records):
+    """Kind 6 (the solved topology's hash beside the specification's) cut to its
+    specification hash, for the same reason."""
+    return [r[:3] if isinstance(r, list) and r and r[0] == 6 else r for r in records]
 def kind24(records):
     """Kind 24 without the two fields trace 18 appends (its idle and tick): (records, how many had them)."""
     out, n = [], 0
@@ -48,6 +60,8 @@ for kind in ["spec", "scenario"]:
             for f in ["tree.sha256", "simulate.json", "generate.json"]:
                 x = norm(open(os.path.join(a, f)).read(), a_root) if os.path.exists(os.path.join(a, f)) else None
                 y = norm(open(os.path.join(b, f)).read(), b_root) if os.path.exists(os.path.join(b, f)) else None
+                if f == "generate.json" and "--versions" in sys.argv:
+                    x, y = topology_hash_cut(x), topology_hash_cut(y)
                 if x != y: out.append(f"{f} differs")
         else:
             la, lb = lines(os.path.join(a, "campaign.jsonl")), lines(os.path.join(b, "campaign.jsonl"))
@@ -63,6 +77,7 @@ for kind in ["spec", "scenario"]:
                         ra = records(os.path.join(a, "archive", x["run_id"], "trace.cbor"))
                         rb = records(os.path.join(b, "archive", y["run_id"], "trace.cbor"))
                         if "--versions" in sys.argv:
+                            ra, rb = kind6(ra), kind6(rb)
                             (ra, na), (rb, nb) = kind24(ra), kind24(rb)
                             if nb and not na: notes.append(f"kind 24 gains idle and tick on {nb}")
                         if ra != rb:
