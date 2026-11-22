@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1217-pin-device-ir-backlog`, from `main` `22a1b3c0`; merged in: `857525ad` (docs) and `a41a8a8d` (2308). **Builder:** Claude (Opus 5.5 orchestrating, with one Opus adversarial reviewer in its own worktree, given the code and §5, not my conclusions). Each finding was checked at source before use. Written 2026-11-22.
 
-**Status: AWAITING-PACKAGE.** The bump moves `fab/sentinel-01-bench/package`'s sha lines, so `bench_board_tier1` fails until the write=true dispatch is committed (§9).
+**Status: READY.** The package is committed from dispatch run 45031882690, byte for byte (§9).
 
 **The answer, in five lines:**
 - **F2:** `straps.IPROPI: {"tie": "GND"}` is admitted only on the pin the row's `trip.sense` names, and it turns the trip off. VREF on `GND`, or on a domain whose minimum is 0 mV, is still refused. A tie plus an ADC input on the pin is `DevicePinBoundTwice`.
@@ -161,7 +161,7 @@ The table is `spike/1217/RESULTS.md` §2. The predictions file says "solved 16";
   - **Proposed row:** "`NoInstance`/`NoSerialPeripheral` name a pin withheld as an analog pad."
 - **R5 · A8, from before this work order: an unneeded reservoir is never looked up.** When R is under RAIN, `analog()` never reads the reservoir's part. A part `NOPE`, or a resistor row, validates, and `emit` then refuses it (`PowerNotDrawable`). That is an `INV-06` gap, identical at main.
   - **Proposed row:** "a declared reservoir is a capacitor row whether or not RAIN needs it."
-- **R6 · A9, a defect from before this work order (since `1211a`): no test point validates on a board with a pin device.**
+- **R6 · A9, a defect from before this work order (since `1211a`): no test point validates on a board with a pin device.** This is the defect `1216b` F1 already reported. The architect ruled at 14:18Z that it stays that one §7.1 row, and it is listed here only as re-found.
   - **The cause:** `bench.rs` step 15a assumes `names::references` lists the test points last, but `names.rs:125` chains the pin devices' references after them. Every test point then collides with itself: `TestPointReferenceTaken`, "test point `TP1` takes a reference that `TP1` already holds".
   - **The evidence:** probe `a2-tp-TP1.json`, identical on main's binary (re-run here). No committed board has both.
   - **Proposed row:** "step 15a's reference split does not depend on `names::references`' order (test points beside pin devices)." It is outside this fence (bench, names), and it is a one-line order fix.
@@ -197,4 +197,11 @@ The table is `spike/1217/RESULTS.md` §2. The predictions file says "solved 16";
 
 ## 9. The package
 
-`fab/sentinel-01-bench/package` moves by its sha lines (the specification's, and what embeds it) and waits for the architect's write=true dispatch. On the dispatch I commit its artifact byte for byte, then push the READY commit.
+`fab/sentinel-01-bench/package` is the `bench-package` artifact of the architect's write=true dispatch, **run 45031882690** on `034be766`, committed byte for byte.
+- **The prediction holds:** the package is `examples/sentinel-01.json`'s, and only `FAB-NOTES.md` and `MANIFEST.json` moved, each by its sha lines alone:
+  - the specification's sha;
+  - the topology's sha, which embeds it;
+  - the verdict's sha;
+  - FAB-NOTES' own hash in `MANIFEST.json`.
+- The ELF, every Gerber, the drill, the BOMs, the CPL and the placement are byte-identical, and the file set is unchanged.
+- `bench_board_tier1` passes on it. It was the gate's one failure before this commit.
