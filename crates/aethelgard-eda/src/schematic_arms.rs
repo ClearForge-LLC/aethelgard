@@ -1646,16 +1646,38 @@ mod tests {
     #[test]
     fn two_unstated_passives_on_one_pin_are_refused() {
         // DRV8876's CVM2 (VM to GND, no value) twice; with its CVCP (VCP to
-        // VM) unstated; and beside DRV8833's CVINT (VINT to GND) unstated.
+        // VM) unstated, meeting at each pair of ends; beside DRV8833's CVINT (VINT to
+        // GND) unstated; and beside its own CVM1, stated, as in the row.
+        const CVM1: Passive = DRV8876.passives[0];
         const CVM2: Passive = DRV8876.passives[3];
         const CVCP: Passive = unstated(DRV8876.passives[1]);
         const CVINT: Passive = unstated(DRV8833.passives[2]);
+        // CVCP moved to CPH: it meets CVCP only at their second ends, VM.
+        const CPH_TO_VM: Passive = match CVCP {
+            Passive::Required(r) => Passive::Required(Required {
+                one: End::Pin("CPH"),
+                ..r
+            }),
+            _ => panic!(),
+        };
         const TWICE: Arm = Arm {
             passives: &[CVM2, CVM2],
             ..DRV8876
         };
         const SHARED: Arm = Arm {
             passives: &[CVM2, CVCP],
+            ..DRV8876
+        };
+        const SHARED_TWO: Arm = Arm {
+            passives: &[CVCP, CVM2],
+            ..DRV8876
+        };
+        const SHARED_BOTH_TWO: Arm = Arm {
+            passives: &[CVCP, CPH_TO_VM],
+            ..DRV8876
+        };
+        const STATED: Arm = Arm {
+            passives: &[CVM2, CVM1],
             ..DRV8876
         };
         const APART: Arm = Arm {
@@ -1665,6 +1687,17 @@ mod tests {
         const WHY: Result<(), &str> = Err("two unstated passives on one pin");
         assert_eq!(at_compile_time!(TWICE), WHY);
         assert_eq!(at_compile_time!(SHARED), WHY, "VCP to VM shares VM");
+        assert_eq!(
+            at_compile_time!(SHARED_TWO),
+            WHY,
+            "VM, the first's second end"
+        );
+        assert_eq!(
+            at_compile_time!(SHARED_BOTH_TWO),
+            WHY,
+            "VM, both second ends"
+        );
+        assert_eq!(at_compile_time!(STATED), Ok(()), "CVM1 states its value");
         assert_eq!(at_compile_time!(APART), Ok(()), "VM and VINT are two pins");
     }
 
@@ -1711,7 +1744,8 @@ mod tests {
 
     /// `1319` F3: one own-net name on two pins of a row, which `emit` would
     /// refuse as `ReservedName`, blaming the specification: ICM20948's VDD
-    /// strapped as REGOUT, and W25Q64JVxIQ's HOLD strapped as WP.
+    /// strapped as REGOUT, W25Q64JVxIQ's HOLD strapped as WP, and BME280's
+    /// VDDIO pin 2, five pins after its SDO address strap, strapped as SDO.
     #[test]
     fn one_own_net_name_on_two_pins_is_refused() {
         const STRAP_AND_OWN: Arm = Arm {
@@ -1742,13 +1776,28 @@ mod tests {
             ]),
             ..W25Q64JVXIQ
         };
+        const ADDR_AND_STRAP: Arm = Arm {
+            wiring: Wiring::I2c(&[
+                ("5", Addr(Some("SDO"), &[Gnd, Rail])),
+                ("1", Gnd),
+                ("7", Gnd),
+                ("6", Rail),
+                ("8", Rail),
+                ("2", Role::Strap("SDO")),
+                ("3", Sda),
+                ("4", Scl),
+            ]),
+            ..BME280
+        };
         const WHY: Result<(), &str> = Err("one own-net name on two pins of a row");
         assert_eq!(at_compile_time!(STRAP_AND_OWN), WHY);
         assert_eq!(at_compile_time!(TWO_STRAPS), WHY);
+        assert_eq!(at_compile_time!(ADDR_AND_STRAP), WHY);
     }
 
     /// `1319` F3: a pin listed twice in a row: ICM42688P's VDDIO (8) listed
-    /// as a second VDD (5).
+    /// as a second VDD (5), and its RESV (9) as a second GND (6), two rows
+    /// apart.
     #[test]
     fn a_pin_listed_twice_is_refused() {
         const BAD: Arm = Arm {
@@ -1765,6 +1814,22 @@ mod tests {
             ]),
             ..ICM42688P
         };
-        assert_eq!(at_compile_time!(BAD), Err("a pin listed twice in one row"));
+        const APART: Arm = Arm {
+            wiring: Wiring::Spi(&[
+                ("5", Rail),
+                ("8", Rail),
+                ("6", Gnd),
+                ("7", Gnd),
+                ("6", Gnd),
+                ("12", Cs),
+                ("13", Sck),
+                ("14", Mosi),
+                ("1", Miso),
+            ]),
+            ..ICM42688P
+        };
+        const WHY: Result<(), &str> = Err("a pin listed twice in one row");
+        assert_eq!(at_compile_time!(BAD), WHY);
+        assert_eq!(at_compile_time!(APART), WHY);
     }
 }
