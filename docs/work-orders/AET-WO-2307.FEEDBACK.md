@@ -120,4 +120,7 @@ On the merged head `c9454881`: this branch with `main` `ddfa64d6` merged in (424
 
 ## 8. CI
 
-CI-PENDING
+- PR #305, head `b8940d50` (`main` `7c1f369f` merged in: docs only over the gated `c9454881`). CI run `44974136823` and its image runs `44974136802` and `44974136850`: **green**, 33 pass and 3 skipped by the workflow (`publish`, `quickstart`).
+  - Tier 2: **201 passed, floor 201** (`TIER2_MIN` 201 from `main`; this work order moves it neither way).
+  - 12 tools shards, the slowest 19 min (shard 11).
+- This FEEDBACK line is the READY commit. Nothing else is pushed after it, and its own CI run is the one READY names.
