@@ -15,7 +15,7 @@
 ## 0. How it was made
 
 - **Predictions first:** `spike/1211f/PREDICTIONS.md`, committed at `2b50a201` before any run. The results beside them are in `spike/1211f/RESULTS.md`.
-- **Bus:** Q1–Q4 were posted at the start (`~/.cache/aet-bus/architect.md`, "from 1211f"). Built to the leans; rulings are in §3.
+- **Bus:** Q1–Q4 were posted at the start (`~/.cache/aet-bus/architect.md`, "from 1211f"). Built to the leans; **Q1–Q3 were ruled to them at 07:35Z** (`~/.cache/aet-bus/1211f.md`), and G1 was accepted as F1.
 - **Kit (`spike/1211f/kit/`):**
   - `d1-drawn.py` writes `spike/1211f/d1-drawn.json`, the D1 fixture without `board.drawn`, as `d1_drawn()` builds it.
   - `img.sh` and `judge.sh` run the four judges in the image (1211d's kit, re-pointed).
@@ -63,9 +63,9 @@
 
 | # | what | status |
 |---|---|---|
-| Q1 | **"Its source in the BOM and FAB-NOTES.md as other cited passives are" has no precedent** (measured, RESULTS M4). No declared passive's `source` and no arm `cite` reaches any emitted file. The only BOM note on any board is W25Q's stand-in. FAB-NOTES lists no parts and is written only by `verify --fab-out`, outside the fence. **Built to the lean:** the bulk's BOM `Note`, `CVM2 declared, <row document> states no value: <bulk.source>`. The source is verbatim, so D1's "stand-in, not a design" goes wherever the source is printed. No FAB-NOTES and no schematic change | lean, asked on the bus |
-| Q2 | §1.2 against §7: one interpreter case on the existing `None` slot, no row field | lean, asked |
-| Q3 | the tests in `cli/tests/pin_devices_drawn_tier1.rs`, outside the named fence. It holds the D1-drawn test that had to change | lean, asked |
+| Q1 | **"Its source in the BOM and FAB-NOTES.md as other cited passives are" has no precedent** (measured, RESULTS M4). No declared passive's `source` and no arm `cite` reaches any emitted file. The only BOM note on any board is W25Q's stand-in. FAB-NOTES lists no parts and is written only by `verify --fab-out`, outside the fence. **Built to the lean:** the bulk's BOM `Note`, `CVM2 declared, <row document> states no value: <bulk.source>`. The source is verbatim, so D1's "stand-in, not a design" goes wherever the source is printed. No FAB-NOTES and no schematic change | **ruled (07:35Z): the BOM note only.** No precedent reaches FAB-NOTES today, and `fab.rs` is outside the fence |
+| Q2 | §1.2 against §7: one interpreter case on the existing `None` slot, no row field | **ruled (07:35Z): §1.2, not a §7 stop.** Filled only from `bulk`, only for the row's `bulk_unstated` supply pin; named in §1 with its reason |
+| Q3 | the tests in `cli/tests/pin_devices_drawn_tier1.rs`, outside the named fence. It holds the D1-drawn test that had to change | **ruled (07:35Z): inside the fence**, for exactly those tests |
 | Q4 | the CLI sweep is identical, D1 included; `TIER2_MIN` and the weight rows do not move | measured |
 
 ## 4. Adversarial pass (§5)
@@ -101,6 +101,7 @@ One mutant per new line of the arm, each killed by a failing test and none by a 
   - **It may become reachable when `1211c` (#313) merges,** which moves that refusal into the twin's plan.
   - W25Q's stand-in note is dropped the same way already.
   - **Proposed row:** "before a pin-device board can be packaged, the JLCPCB BOM or FAB-NOTES carries each part's note (a stand-in's, a declared bulk's source), or a package with a stand-in is refused. Owner: the fab package, after 1211c."
+  - **Ruled (07:35Z): accepted as a real hazard.** It becomes a §7.1 row owned by the verify backlog work order after 1211c, which must land before any board with a stand-in writes a fab package.
 - **F2 · N2: `check()` allows two `value: None` passives on one supply pin to GND.** One `bulk` would answer both, and the sheet writer's duplicate-reference check would refuse it with a misleading kind. No row has two today. **Proposed row:** "`check()`: at most one `value: None` passive per pin row." It is not built, because the scope test sends a further round on a working safeguard to the backlog.
 - **F3 · N3: the declared bulk's value is `10u 50V MPN`; the power tree's declared capacitors are `10u MPN`.** The WO asks for the value and rating to come from the row, so the rating is printed. `declared_bulk` repeats `schematic_power::two_pin`'s row push, because that helper's `note` is fixed to `None`. Folding them would touch the power tree's call sites.
 - **F4 · N4 (validate, outside the fence):** `bulk` has no capacitance floor; an 18 pF C0G or a 100 nF validates. This is `1211e` F6, standing.
@@ -112,7 +113,7 @@ One mutant per new line of the arm, each killed by a failing test and none by a 
 - **Fence:**
   - `crates/aethelgard-eda/src/{schematic_arms.rs, schematic.rs}`;
   - `crates/aethelgard-cli/tests/parts_arms_tier1.rs` (one doc sentence);
-  - `crates/aethelgard-cli/tests/pin_devices_drawn_tier1.rs` (Q3);
+  - `crates/aethelgard-cli/tests/pin_devices_drawn_tier1.rs` (inside the fence by the Q3 ruling);
   - `spike/1211f/`;
   - this file.
 
