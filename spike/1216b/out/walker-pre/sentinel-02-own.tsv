@@ -1,0 +1,6 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[0].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[0].pins[4]
+CONSOLE_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[1]
+CONSOLE_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[2]
+#validate	ok

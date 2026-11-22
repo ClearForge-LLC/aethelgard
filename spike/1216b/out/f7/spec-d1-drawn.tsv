@@ -1,0 +1,7 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+DRV_IPROPI	PF3	FT_ha	pin_device_current_output	U2.IPROPI into R2 1500 ohm: 3000 uA (row output_max_ua) x 1555 ohm, if the driver drives	VMOTOR	yes: no power tree, no order	4665	1555	TI SLVSDS7B DRV8876 p. 3; A_IPROPI typ 1000 uA/A (typical only), AERR stated for 5.5 V <= VVM <= 37 V only, p. 6; IIPROPI max 3 mA, p. 4	-
+CMD_TX	PB14	FT_u	connector	J1.1 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+CMD_RX	PA10	FT_u	connector	J1.2 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWDIO	PA13	FT	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SERVO1	PA0	FT_a	connector	J4.1 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-

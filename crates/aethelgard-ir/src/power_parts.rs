@@ -34,8 +34,9 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6). Version 5
 /// added the `crystal` kind (`AET-WO-4240a` §1.3). Version 6 gave the MCU
 /// row `io`, each I/O pin's structure and the input each structure takes in
-/// operation (`AET-WO-1211e` A1).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 6;
+/// operation (`AET-WO-1211e` A1). Version 7 gave `io` its absolute maximum
+/// ratings, DS12117 Table 10 (`AET-WO-1216b`).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 7;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -451,6 +452,20 @@ pub struct McuIo {
     pub families: Vec<IoFamily>,
     /// Above the supply plus this, the internal pulls must be off.
     pub pulls_off_above_supply: Limit,
+    /// The absolute maximum ratings (DS12117 Table 10), the stress limits a
+    /// pin takes at any supply, read at VDD = 0 by `validate`'s step 25
+    /// (`AET-WO-1216b`).
+    pub absolute_maximum: IoAbsoluteMaximum,
+}
+
+/// Table 10's input limits: each structure family's, the BOOT0 pin's and
+/// every other pin's (`NRST` among them).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IoAbsoluteMaximum {
+    /// Each family of [`McuIo::families`], once, in the same order.
+    pub families: Vec<IoFamily>,
+    pub boot0: Limit,
+    pub other: Limit,
 }
 
 /// What one structure family takes: the lesser of the pin's supply plus
@@ -485,6 +500,40 @@ impl McuIo {
     fn family(&self, structure: &str) -> Option<&IoFamily> {
         let name = structure.split('_').next().unwrap_or(structure);
         self.families.iter().find(|f| f.family == name)
+    }
+
+    /// The most `pin` takes by Table 10 with its supply at `supply_mv`, and
+    /// where that is stated: `BOOT0`'s row, `NRST` by Table 10's "any other
+    /// pin", and a held pin by its structure's family. With no pin (a signal
+    /// the solver places) or a pin with no held structure, the least of every
+    /// row, since it may be any of them; nothing is assumed.
+    pub fn absolute_maximum(&self, pin: Option<&str>, supply_mv: i64) -> (i64, &At) {
+        let a = &self.absolute_maximum;
+        let family = |structure: &str| {
+            let name = structure.split('_').next().unwrap_or(structure);
+            a.families.iter().find(|f| f.family == name)
+        };
+        match pin {
+            Some(crate::BOOT0) => (a.boot0.value, &a.boot0.at),
+            Some(crate::NRST) => (a.other.value, &a.other.at),
+            Some(p) => match self.pins.get(p).and_then(|(s, _)| family(s)) {
+                Some(f) => (f.limit(supply_mv), &f.at),
+                None => self.least_absolute_maximum(supply_mv),
+            },
+            None => self.least_absolute_maximum(supply_mv),
+        }
+    }
+
+    fn least_absolute_maximum(&self, supply_mv: i64) -> (i64, &At) {
+        let a = &self.absolute_maximum;
+        // The first of equal limits, so a structure's row is cited before
+        // "any other pin".
+        a.families
+            .iter()
+            .map(|f| (f.limit(supply_mv), &f.at))
+            .chain([(a.other.value, &a.other.at)])
+            .min_by_key(|(v, _)| *v)
+            .unwrap_or((a.other.value, &a.other.at))
     }
 }
 
@@ -1120,6 +1169,15 @@ struct RawMcuIo {
     pins_at: RawAt,
     families: Vec<RawIoFamily>,
     pulls_off_above_supply_millivolts: RawLimit,
+    absolute_maximum: RawIoAbsoluteMaximum,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIoAbsoluteMaximum {
+    families: Vec<RawIoFamily>,
+    boot0_max_millivolts: RawLimit,
+    other_max_millivolts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -2172,26 +2230,32 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
 /// a structure of a held family, cited on its page; each family once, its
 /// limit above zero.
 fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
-    let mut families: Vec<IoFamily> = Vec::with_capacity(m.families.len());
-    for f in m.families {
-        let at = format!("kind.mcu.io.families.{}", f.family);
-        if f.family.is_empty()
-            || !f.family.bytes().all(|b| b.is_ascii_uppercase())
-            || families.iter().any(|g| g.family == f.family)
-        {
-            return Err(format!("`{at}` is not an upper-case family named once"));
-        }
-        let terms = [f.above_supply_millivolts, f.max_millivolts];
-        if terms.iter().all(Option::is_none) || terms.iter().flatten().any(|v| *v <= 0) {
-            return Err(format!("`{at}` states neither term, or one not above zero"));
-        }
-        families.push(IoFamily {
-            above_supply_mv: f.above_supply_millivolts,
-            max_mv: f.max_millivolts,
-            at: r.at(f.at, &format!("{at}.at"))?,
-            family: f.family,
-        });
+    let families = io_families(m.families, "kind.mcu.io.families", r)?;
+    let a = m.absolute_maximum;
+    let stress = io_families(a.families, "kind.mcu.io.absolute_maximum.families", r)?;
+    // Table 10 rates every structure Table 13 does: a pin judged in
+    // operation is judged at stress by the same family.
+    if stress
+        .iter()
+        .map(|f| &f.family)
+        .ne(families.iter().map(|f| &f.family))
+    {
+        return Err(
+            "`kind.mcu.io.absolute_maximum.families` does not name `kind.mcu.io.families`' families, in order"
+                .to_owned(),
+        );
     }
+    let absolute_maximum = IoAbsoluteMaximum {
+        families: stress,
+        boot0: r.positive(
+            a.boot0_max_millivolts,
+            "kind.mcu.io.absolute_maximum.boot0_max_millivolts",
+        )?,
+        other: r.positive(
+            a.other_max_millivolts,
+            "kind.mcu.io.absolute_maximum.other_max_millivolts",
+        )?,
+    };
     let base = r.at(m.pins_at, "kind.mcu.io.pins_at")?;
     let mut pins = BTreeMap::new();
     for (name, p) in m.pins {
@@ -2226,7 +2290,37 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
             m.pulls_off_above_supply_millivolts,
             "kind.mcu.io.pulls_off_above_supply_millivolts",
         )?,
+        absolute_maximum,
     })
+}
+
+/// Each family once, upper case, with at least one term, each above zero.
+fn io_families(
+    raw: Vec<RawIoFamily>,
+    path: &str,
+    r: &mut Reader<'_>,
+) -> Result<Vec<IoFamily>, String> {
+    let mut families: Vec<IoFamily> = Vec::with_capacity(raw.len());
+    for f in raw {
+        let at = format!("{path}.{}", f.family);
+        if f.family.is_empty()
+            || !f.family.bytes().all(|b| b.is_ascii_uppercase())
+            || families.iter().any(|g| g.family == f.family)
+        {
+            return Err(format!("`{at}` is not an upper-case family named once"));
+        }
+        let terms = [f.above_supply_millivolts, f.max_millivolts];
+        if terms.iter().all(Option::is_none) || terms.iter().flatten().any(|v| *v <= 0) {
+            return Err(format!("`{at}` states neither term, or one not above zero"));
+        }
+        families.push(IoFamily {
+            above_supply_mv: f.above_supply_millivolts,
+            max_mv: f.max_millivolts,
+            at: r.at(f.at, &format!("{at}.at"))?,
+            family: f.family,
+        });
+    }
+    Ok(families)
 }
 
 fn row(raw: RawRow, r: &mut Reader<'_>) -> Result<Row, String> {

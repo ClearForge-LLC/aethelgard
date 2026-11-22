@@ -2127,10 +2127,7 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         let eb = ctx.error_ppm(&s.bottom)?;
         let mm = 1_000_000i128;
         let (rt, rb) = (i128::from(s.top.ohms), i128::from(s.bottom.ohms));
-        // The largest ratio: the bottom high, the top low.
-        let num = rb * (mm + eb);
-        let den = num + rt * (mm - et);
-        let full_uv = div_ceil(i128::from(bmax) * 1000 * num, den);
+        let full_uv = sense_max_microvolts(bmax, s, et, eb);
         ctx.note(format!(
             "{}: VREF+ is taken as VDDA on the MCU's supply `{}`; the specification declares no separate reference",
             s.net, ctx.spec.mcu.supply
@@ -2220,6 +2217,21 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         ));
     }
     Ok(())
+}
+
+/// The battery's `battery_max_mv` through `s` at its largest ratio, µV: the
+/// bottom resistor high and the top low, each by its worst error in ppm
+/// (step 11's full scale, and `validate`'s step 25 at VDD = 0).
+pub(crate) fn sense_max_microvolts(battery_max_mv: u64, s: &Sense, et: i128, eb: i128) -> i128 {
+    let mm = 1_000_000i128;
+    let num = i128::from(s.bottom.ohms) * (mm + eb);
+    let den = num + i128::from(s.top.ohms) * (mm - et);
+    div_ceil(i128::from(battery_max_mv) * 1000 * num, den)
+}
+
+/// The battery's maximum, mV: its most cells at their maximum.
+pub(crate) fn battery_max_millivolts(b: &Battery) -> u64 {
+    battery_range(b).1
 }
 
 /// The reservoir capacitance AN2834's rule needs at `bits`, pF.

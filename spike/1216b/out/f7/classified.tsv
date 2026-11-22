@@ -1,0 +1,6 @@
+net	pad	device_pin	kind	verdict
+DRV_IPROPI	U2.6	IPROPI	current_output	path
+DRV_NSLEEP	U2.3	nSLEEP	enable_input	not a source
+DRV_EN	U2.1	EN/IN1	logic_input	not a source
+DRV_PH	U2.2	PH/IN2	logic_input	not a source
+DRV_NFAULT	U2.4	nFAULT	open_drain_output	not a source

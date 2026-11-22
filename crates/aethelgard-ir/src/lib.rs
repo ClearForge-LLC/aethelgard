@@ -20,6 +20,7 @@ pub mod ds009;
 pub mod electrical;
 pub mod motor;
 pub mod names;
+pub mod off_domain;
 pub mod orientation;
 pub mod parts;
 pub mod pin_devices;
@@ -2332,6 +2333,17 @@ pub enum IrValidationError {
     /// refusal's.
     #[error("{0}")]
     PinDevice(pin_devices::PinDeviceRefusal),
+    /// Step 25 (`AET-WO-1216b`): a path from a rail that can lead
+    /// `mcu.supply` holds an MCU pin above DS12117 Table 10's limit at
+    /// VDD = 0 ([`off_domain`]).
+    #[error("{message}")]
+    OffDomainAboveLimit {
+        net: String,
+        path: String,
+        millivolts: i64,
+        limit_millivolts: i64,
+        message: String,
+    },
     /// Step 13b and step 21 (`AET-WO-1211a`): a PWM output's idle or tick;
     /// the kind is the inner refusal's.
     #[error("{0}")]
@@ -2544,6 +2556,7 @@ impl IrValidationError {
             Self::MotorTiming { .. } => "MotorTiming",
             Self::Pwm(r) => r.kind(),
             Self::PinDevice(r) => r.kind(),
+            Self::OffDomainAboveLimit { .. } => "OffDomainAboveLimit",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
         }
@@ -2733,6 +2746,7 @@ impl IrValidationError {
             Self::MotorTiming { output, .. } => Some(output),
             Self::Pwm(r) => Some(r.output()),
             Self::PinDevice(r) => Some(&r.id),
+            Self::OffDomainAboveLimit { net, .. } => Some(net),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
             }
@@ -2769,7 +2783,8 @@ impl IrValidationError {
             | Self::LoadNamesNoPart { path, .. }
             | Self::LoadNamesCountedPart { path, .. }
             | Self::UnboundedPinCapacitance { path, .. }
-            | Self::PartNotDrawable { path, .. } => Some(path),
+            | Self::PartNotDrawable { path, .. }
+            | Self::OffDomainAboveLimit { path, .. } => Some(path),
             _ => None,
         }
     }
@@ -3121,7 +3136,9 @@ impl Specification {
         // 23 (`AET-WO-1210`, `AET-WO-1209` §1.1): a drawn board only
         drawn::pin_capacitance(self, table)?;
         // 24 (`AET-WO-1211a`): each pin device
-        pin_devices::validate(self)
+        pin_devices::validate(self)?;
+        // 25 (`AET-WO-1216b`): each path from off `mcu.supply` at VDD = 0
+        off_domain::validate(self)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset

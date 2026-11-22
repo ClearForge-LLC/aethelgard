@@ -1,0 +1,9 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+I2C_SCL	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[1]
+I2C_SDA	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[2]
+EXT_SCK	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[1]
+EXT_MOSI	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[2]
+EXT_MISO	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[3]
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[2].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[2].pins[4]
+#validate	ok

@@ -42,6 +42,9 @@ pub enum PinKind {
     CurrentOutput {
         ua_per_a_typical: u32,
         output_max_ua: u32,
+        /// Whether the sheet prints `output_max_ua` as a maximum or only as
+        /// a recommended operating condition (`AET-WO-1216b`, `1216` D5).
+        output_max_basis: Basis,
         error_band: Vec<ErrorBand>,
         /// The supply pin, and its range in mV, the error bands are stated
         /// for (SLVSDS7B p. 6: 5.5 V <= VVM <= 37 V): outside it no error is
@@ -91,6 +94,24 @@ impl PinKind {
 pub struct StrapLevels {
     pub high_min_mv: Option<u32>,
     pub resistors: Vec<(u32, u32)>,
+}
+
+/// What kind of figure a held bound is (`1216` D5): a printed maximum, or a
+/// recommended operating condition, which bounds intended use and is not a
+/// rating. A check that judges by one names which.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Basis {
+    Maximum,
+    RecommendedOperating,
+}
+
+impl Basis {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Maximum => "maximum",
+            Self::RecommendedOperating => "recommended_operating",
+        }
+    }
 }
 
 /// One error band of a current output: over `load_ma` (inclusive), a
@@ -346,6 +367,8 @@ struct RawPin {
     #[serde(default)]
     output_max_ua: Option<u32>,
     #[serde(default)]
+    output_max_basis: Option<String>,
+    #[serde(default)]
     error_band: Option<Vec<RawBand>>,
     #[serde(default)]
     error_band_supply_pin: Option<String>,
@@ -593,6 +616,7 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
 const CURRENT_OUTPUT_FIELDS: &[&str] = &[
     "ua_per_a_typical",
     "output_max_ua",
+    "output_max_basis",
     "error_band",
     "error_band_supply_pin",
     "error_band_supply_mv",
@@ -611,6 +635,7 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
         ("pull_up_max_mv", p.pull_up_max_mv.is_some()),
         ("ua_per_a_typical", p.ua_per_a_typical.is_some()),
         ("output_max_ua", p.output_max_ua.is_some()),
+        ("output_max_basis", p.output_max_basis.is_some()),
         ("error_band", p.error_band.is_some()),
         ("error_band_supply_pin", p.error_band_supply_pin.is_some()),
         ("error_band_supply_mv", p.error_band_supply_mv.is_some()),
@@ -694,6 +719,15 @@ fn row_pin(p: RawPin) -> Result<RowPin, String> {
             PinKind::CurrentOutput {
                 ua_per_a_typical: p.ua_per_a_typical.expect("required"),
                 output_max_ua: p.output_max_ua.expect("required"),
+                output_max_basis: match p.output_max_basis.as_deref().expect("required") {
+                    "maximum" => Basis::Maximum,
+                    "recommended_operating" => Basis::RecommendedOperating,
+                    other => {
+                        return Err(format!(
+                            "`output_max_basis` is `{other}`, not `maximum` or `recommended_operating`"
+                        ));
+                    }
+                },
                 error_band,
                 band_supply: (
                     p.error_band_supply_pin.expect("required"),
