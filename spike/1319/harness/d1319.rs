@@ -55,8 +55,10 @@ struct Case {
     donor: Option<Value>,
     renames: Vec<(String, String)>,
 }
-fn c(name: &str, case: Value) -> Case {
-    Case { name: name.into(), case, donor: None, renames: vec![] }
+/// `case`, drawn against `donor`'s solved topology when its own solve
+/// refuses (the IR refuses most of these before any drawing).
+fn c(name: &str, donor: Value, case: Value) -> Case {
+    Case { name: name.into(), case, donor: Some(donor), renames: vec![] }
 }
 /// `case` is `donor` with `from` spelled `to` everywhere.
 fn r(name: &str, donor: Value, from: &str, to: &str) -> Case {
@@ -69,62 +71,62 @@ fn r(name: &str, donor: Value, from: &str, to: &str) -> Case {
 }
 
 fn cases() -> Vec<Case> {
-    let mut out = vec![c("d2", d2()), c("d1", d1())];
+    let mut out = vec![c("d2", d2(), d2()), c("d1", d1(), d1())];
     // 1. D2's straps: a tie to each rail, a resistor, one left out.
     for tie in ["VDD_3V3", "VMOTOR", "GND"] {
         let mut v = d2();
         v["pin_devices"][0]["straps"]["AISEN"] = json!({"tie": tie});
-        out.push(c(&format!("d2-aisen-tie-{tie}"), v));
+        out.push(c(&format!("d2-aisen-tie-{tie}"), d2(), v));
     }
     let mut v = d2();
     v["pin_devices"][0]["straps"]["AISEN"] = json!({"resistor": res("R9", 200)});
-    out.push(c("d2-aisen-resistor", v.clone()));
+    out.push(c("d2-aisen-resistor", d2(), v.clone()));
     v["pin_devices"][0]["straps"]["BISEN"] = json!({"resistor": res("R8", 200)});
-    out.push(c("d2-both-isen-resistor", v));
+    out.push(c("d2-both-isen-resistor", d2(), v));
     let mut v = d2();
     v["pin_devices"][0]["straps"].as_object_mut().unwrap().remove("BISEN");
-    out.push(c("d2-bisen-missing", v));
+    out.push(c("d2-bisen-missing", d2(), v));
     // 2. nFAULT: a declared resistor pull, the MCU's pull, left out.
     let mut v = d2();
     v["pin_devices"][0]["signals"][1]["pull"] = json!({"resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3"}, "source": "1319 harness"});
-    out.push(c("d2-nfault-resistor", v));
+    out.push(c("d2-nfault-resistor", d2(), v));
     let mut v = d2();
     v["pin_devices"][0]["signals"].as_array_mut().unwrap().remove(1);
-    out.push(c("d2-nfault-undeclared", v));
+    out.push(c("d2-nfault-undeclared", d2(), v));
     let mut v = d1();
     v["pin_devices"][0]["signals"].as_array_mut().unwrap().remove(1);
-    out.push(c("d1-nfault-undeclared", v));
+    out.push(c("d1-nfault-undeclared", d1(), v));
     // 3. D1's IPROPI: no reservoir, undeclared; its straps moved.
     let mut v = d1();
     v["pin_devices"][0]["analog"][0]["transfer"]["current_output"]["reservoir"] = Value::Null;
-    out.push(c("d1-no-reservoir", v));
+    out.push(c("d1-no-reservoir", d1(), v));
     let mut v = d1();
     v["pin_devices"][0]["analog"] = json!([]);
-    out.push(c("d1-ipropi-undeclared", v));
+    out.push(c("d1-ipropi-undeclared", d1(), v));
     let mut v = d1();
     v["pin_devices"][0]["straps"]["IMODE"] = json!({"resistor": res("R9", 20000)});
-    out.push(c("d1-imode-resistor", v));
+    out.push(c("d1-imode-resistor", d1(), v));
     let mut v = d1();
     v["pin_devices"][0]["straps"]["VREF"] = json!({"tie": "GND"});
-    out.push(c("d1-vref-gnd", v));
+    out.push(c("d1-vref-gnd", d1(), v));
     let mut v = d1();
     v["pin_devices"][0]["straps"].as_object_mut().unwrap().remove("PMODE");
-    out.push(c("d1-pmode-missing", v));
+    out.push(c("d1-pmode-missing", d1(), v));
     // 4. Bridge outputs: on GND, on VMOTOR, on a domain, on no connector.
     for (tag, net) in [("gnd", "GND"), ("vm", "VMOTOR"), ("3v3", "VDD_3V3"), ("loose", "MA_LOOSE")] {
         let mut v = d2();
         v["pin_devices"][0]["bridges"][0]["outputs"]["AOUT1"] = json!(net);
-        out.push(c(&format!("d2-aout1-{tag}"), v));
+        out.push(c(&format!("d2-aout1-{tag}"), d2(), v));
     }
     let mut v = d1();
     v["pin_devices"][0]["bridges"][0]["outputs"]["OUT2"] = json!("M1_LOOSE");
-    out.push(c("d1-out2-loose", v));
+    out.push(c("d1-out2-loose", d1(), v));
     // 5. The VM rating's arithmetic: other VM domains.
     for (mv, tol) in [(7400, 37), (5000, 0), (12000, 100), (3300, 50), (10800, 125)] {
         let mut v = d2();
         v["voltage_domains"][1]["nominal_millivolts"] = json!(mv);
         v["voltage_domains"][1]["tolerance_permille"] = json!(tol);
-        out.push(c(&format!("d2-vm-{mv}-{tol}"), v));
+        out.push(c(&format!("d2-vm-{mv}-{tol}"), d2(), v));
     }
     // 6. References that collide with the emitter's numbering, or differ in case.
     for re in ["U1", "U3", "R1", "C1", "C2", "u2", "J1", "J9"] {
@@ -160,22 +162,22 @@ fn cases() -> Vec<Case> {
     let mut j8 = v["connectors"][5].clone();
     j8 = rename(&rename(&rename(&j8, "J6", "J8"), "MB_OUT1", "MB_OUT1_B"), "MB_OUT2", "MB_OUT2_B");
     v["connectors"].as_array_mut().unwrap().extend([j7, j8]);
-    out.push(c("d2-two", v.clone()));
+    out.push(c("d2-two", d2(), v.clone()));
     let mut w = v.clone();
     w["pin_devices"].as_array_mut().unwrap().reverse();
-    out.push(c("d2-two-reversed", w));
+    out.push(c("d2-two-reversed", d2(), w));
     // 9. Pin devices beside bus devices: Sentinel-01's buses and devices on D2.
     let m = load("examples/sentinel-01-minimal.json");
-    let mut v = d2();
-    for k in ["i2c_buses", "spi_buses", "i2c_devices", "spi_devices"] {
+    let mut v = rename(&d2(), "U2", "U9");
+    for k in ["i2c_buses", "spi_buses", "i2c_devices", "spi_devices", "net_constraints"] {
         v[k] = m[k].clone();
     }
     v["accept_lifecycle"] = m["accept_lifecycle"].clone();
-    out.push(c("d2-with-bus-devices", v.clone()));
+    out.push(c("d2-with-bus-devices", d2(), v.clone()));
     let mut w = v.clone();
     w["i2c_devices"] = json!([{"reference": "U3", "part": "BME280", "supply": "VDD_3V3", "bus": m["i2c_buses"][0]["id"], "address": 0x77, "pin_capacitance": null},
         {"reference": "U5", "part": "TMP117", "supply": "VDD_3V3", "bus": m["i2c_buses"][0]["id"], "address": 0x4B, "pin_capacitance": null}]);
-    out.push(c("d2-with-bus-devices-2", w));
+    out.push(c("d2-with-bus-devices-2", d2(), w));
     // 10. Kind crossing: a bus part as a pin device, a pin part (or a near
     // spelling) as a pin device, each drawn on D2's solved topology.
     for p in ["BME280", "W25Q64JVxIQ", "ICP10111", "drv8833pwpr", "DRV8833", "DRV8876PWPR", "FOO"] {
@@ -246,19 +248,23 @@ fn d1319() {
                 continue;
             }
         };
-        match Drawing::of(&spec, &solved, &pins) {
+        let drawn = match Drawing::of(&spec, &solved, &pins) {
             Ok(dr) => {
                 writeln!(s, "draw: Ok").unwrap();
                 writeln!(s, "drawn: {:?}", dr.drawn()).unwrap();
                 writeln!(s, "nets: {:?}", dr.drawn_nets()).unwrap();
                 writeln!(s, "anchored: {:?}", dr.anchored()).unwrap();
                 std::fs::write(d.join("parts.dump"), dr.dump()).unwrap();
+                true
             }
-            Err(e) => writeln!(s, "draw: Err {} | {e:?} | {e}", e.kind()).unwrap(),
-        }
-        // Emitted whenever the drawing's own solve passed: validate refuses
-        // nothing a pin device's drawing reaches that the library does not.
-        if own.is_ok() && k.renames.is_empty() {
+            Err(e) => {
+                writeln!(s, "draw: Err {} | {e:?} | {e}", e.kind()).unwrap();
+                false
+            }
+        };
+        // Emitted whenever the drawing passed, on whichever topology it was
+        // drawn against: the bytes of the board and the sheet, not only the parts.
+        if drawn {
             match schematic::emit(&spec, &solved, &pins) {
                 Ok(em) => {
                     writeln!(s, "emit: Ok ladder {:?} notes {:?}", em.ladder, em.notes).unwrap();
