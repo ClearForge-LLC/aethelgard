@@ -66,7 +66,7 @@ leaves behind; it must not orphan a committed run).
     | 2 | interrupt | `line` ≤ 1023 |
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
-    | 5–30 | a campaign record | see "Campaign records" |
+    | 5–37 | a campaign record | see "Campaign records" |
 
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
@@ -108,7 +108,12 @@ Version 17 (`AET-WO-2305`) added kind 32, a droop's recovery bound read from
 the same boot run first with no reset, and moved kind 19's probe from a fixed
 100 µs to the release, its nudge and that bound; the golden trace's bytes
 changed in the version byte only. Version 18 (`AET-WO-1211c`) runs a pin
-device in the twin. An older trace is refused by name
+device in the twin: kinds 33 and 35 declare each of its GPIO and ADC
+signals before the boot, kinds 34 and 36 witness them after it, kind 37
+witnesses a motor output held at a static level (its kind 26 then says
+`level`), and a scenario's overrides take tags 8 (`pin_held`) and 9
+(`analog_value`); the golden trace's bytes changed in the version byte
+only. An older trace is refused by name
 (`event::TRACE_VERSION`), never read under version 18's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
@@ -198,7 +203,7 @@ before writing its own, so a crash between the two never orphans the run
 
 ## Campaign records
 
-Kinds 5 to 30 (`src/record.rs`) are the records `aethelgard campaign` archives
+Kinds 5 to 37 (`src/record.rs`) are the records `aethelgard campaign` archives
 for one scenario's run, in the order of "The run rules" below. Every field is an unsigned or negative
 integer, a byte string, a text string, or an array of them: no float, no map.
 A flag is 0 or 1. An optional value is an array of zero or one element. A
@@ -207,7 +212,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 
 | kind | record | payload |
 |---|---|---|
-| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps, bor_level]` (a droop), `[4, reference]` (an absent SPI device) or `[5, port]` (an open serial RX line, `AET-WO-2302` D5) |
+| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps, bor_level]` (a droop), `[4, reference]` (an absent SPI device) `[5, port]` (an open serial RX line, `AET-WO-2302` D5), `[6, series_milliohms, start_ns]` (a battery sag) or `[7, domain]` (a rail out of band), both `AET-WO-2304b`; since trace 18 (`AET-WO-1211c`) `[8, net, level]` (a GPIO input held, `level` 0 low or 1 high) or `[9, net, millivolts]` (an ADC input driven, 0 to `ANALOG_MAX_MILLIVOLTS` = 3300) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
 | 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
@@ -233,10 +238,16 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
 | 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
 | 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32: exactly kind 11's registers of the timer, in its order, each at its address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's is cleared by the stop), `cr1_after?` |
+| 31 | a battery sag's declared chain (`AET-WO-2304b`) | `series_milliohms`, `start_ns` (the sag), `v_open_microvolts`, `healthy_milliohms`, `[[name, input_milliwatts, shutdown_millivolts, regulation_millivolts]…]` (each battery-fed sink), `capacitance_picofarads`, `static_microvolts`, `solved_minimum_microvolts`, `binding` (the sink whose floor binds); re-judged by `battery::check_battery_sag` |
 | 32 | a droop's recovery bound (`AET-WO-2305`) | `boot_word_ns?` (the instant the same boot, run first with no reset, wrote its boot word, counted from 0; absent when it wrote none or its log was not read whole), `margin_ns` (exactly `power::RECOVERY_MARGIN_NS`, one quantum), `bound_ns?` (exactly `boot_word_ns` + `margin_ns`, absent with it): archived before the boot beside kind 16, once exactly when the droop releases a reset |
+| 33 | a pin device's GPIO signal, declared (`AET-WO-1211c`) | `net`, `pin` (a solved pin), `output`, `level` (0 or 1), `active?` (0 or 1), `held`. An output: `level` is its declared initial level, `active` absent, `held` 0. An input: `level` is the level the twin drives it at this run, `active` its declared active level, `held` 1 exactly when a `pin_held` override set `level` (else it is the declared pull's) |
+| 34 | a GPIO signal's twin witness | `net`, `status` (`witnessed`, `mismatch`, `unwitnessed`, `unreadable`: `GPIO_STATUSES`), `bsrr?`, `ordered?`, `level?`. An output's: `bsrr` the first `BSRR` word the firmware wrote touching the pin's set or reset bit, `ordered` whether it came before the first `MODER` write making the pin an output, `level` absent. An input's: `level` the pin's `IDR` bit at the boot's end, the others absent. `unreadable` holds none of them |
+| 35 | a pin device's ADC input, declared (`AET-WO-1211c`) | `net`, `pin`, `peripheral` (`ADC1` or `ADC3`), `channel` (0 to 19), `bits` (exactly 12, the one resolution measured in the twin), `microvolts` (at most `ANALOG_MAX_MILLIVOLTS` × 1000), `held` (an `analog_value` override set it), `code` (exactly `record::adc_code(microvolts, bits)`: round-half-up of `microvolts` × (2^`bits` − 1) / 3,300,000 in integers, the conversion Renode's model applies) |
+| 36 | an ADC input's twin witness | `net`, `status` (`witnessed`, `mismatch`, `unwitnessed`: `ADC_STATUSES`), `reads` (the firmware's `DR` reads of that ADC the judge saw), `code?` (the one matched to this input; absent exactly when `unwitnessed`, and present only from a read) |
+| 37 | a motor output held at a static level, witnessed (`AET-WO-1211c`) | `label`, `level` (the declared idle level), `settle_ns?` (its timer's `CEN` anchor plus one period: an idle-high output reads low until the first update event; absent with no anchor), `rises_after`, `falls_after` (edges after `settle_ns`), `end_level?` (the observer's level at the window's end), `status` (`witnessed`, `mismatch`, `unanchored`, `unreadable`: `LEVEL_STATUSES`). `witnessed` exactly when `settle_ns` is present, no edge fell after it and `end_level` is `level`; `unanchored` has no `settle_ns`; `unreadable` no `end_level` |
 
-Kinds 5 to 9, 15, 16, 20, 23, 24, 25 and 27 are at virtual time 0, decided
-before the boot (`Record::before_boot`); 17 to 19 at their own time
+Kinds 5 to 9, 15, 16, 20, 23, 24, 25, 27, 31, 32, 33 and 35 are at virtual
+time 0, decided before the boot (`Record::before_boot`); 17 to 19 at their own time
 (`Record::timestamp`); the rest at the boot's end. Kind 15 is written from
 the solved topology alone (`i2c_devices`, `assignments`, `analog_lines`),
 never from the firmware or the specification; `ceiling_ps` is per line because
@@ -268,6 +279,17 @@ apart from anything generated (`INV-07`):
   else: `RailOutOfBandRefused`).
   A version-1 file reads as it always did. `name` is 1 to 64 bytes of
   `0x21`–`0x7E`.
+- Version 5 (`AET-WO-1211c`) also admits the pin device's overrides:
+  `{pin_held: {net, level}}` (`level` is `"low"` or `"high"` and nothing else)
+  holds a GPIO input at that level for the run, and `{analog_value: {net,
+  millivolts}}` drives an ADC input at that voltage, an integer from 0 to
+  `ANALOG_MAX_MILLIVOLTS` (3300, the twin's ADC reference: Renode 1.17.0's
+  `stm32h7.repl` gives `adcM1S2` and `adc3` `referenceVoltage: 3.3`,
+  `AET-WO-1211` §4); outside it is a `SchemaViolation` naming the bound. Each
+  object's keys are closed, and each override is refused beside any other
+  top-level key. At versions 1 to 4 each is refused with a message naming
+  `schema_version 5`. Two of one kind on one net are a `DuplicateOverride`.
+  `Scenario::pins_held` and `Scenario::analog_values` list them.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),
   `{net, max_capacitance_femtofarads}` (a `u64`), or `{bus, line_held_low}`
   (`"sda"` or `"scl"`); in version 2 or 3, `{droop: {domain, floor_millivolts,
@@ -277,7 +299,9 @@ apart from anything generated (`INV-07`):
   Every id is 1 to 64 bytes of `0x21`–`0x7E`. Two overrides of one thing
   (one bus's pull-up, one net, one line, one device, one port), or two
   droops, are refused (`DuplicateOverride`); at most 32 overrides and 16
-  expected kinds, so the scenario's record fits the event bound.
+  expected kinds, so the scenario's record fits the event bound. A
+  `pin_held` or `analog_value` is checked against the run's records, not the
+  specification, by replay (below).
 - `expect_counts` (version 2 or 3) is an object of finding kinds to counts,
   at most 16, a kind named twice refused.
 - `expect` is `pass` or `fail`. A failing scenario names the finding kinds it
@@ -333,7 +357,8 @@ or 17 exist (`campaign::tools_of`). Then
 refuses:
 
 - records out of the order: the scenario, its expected counts (20), the
-  topology, the solved buses (kind 15), the analog records (7 and 8), the bus
+  topology, the solved buses (kind 15) with the solved motor outputs, serial
+  ports and pin device signals (24, 25, 27, 33, 35), the analog records (7 and 8), the bus
   faults (9), the declared rail (16), the droop's crossings, resets and
   observations (17 to 19) in time order, the boot (10), the registers (11),
   the identity reads (12), the witnesses (13) and the verdict; or a run
@@ -405,6 +430,34 @@ refuses:
   the last device step's witness, or no boot word seen by its hook),
   `serial_wire_past_run` when the first port took no frame, and
   `serial_injection_out_of_order` (the logged `TDR` bytes);
+- a pin device's records that do not join (`AET-WO-1211c`): a kind 33 or 35
+  declared twice for one net; a kind 34 or 36 naming no declaration of its
+  net, or two for one net; once the boot word is set, a declaration with no
+  witness (before it, witnesses are optional); a kind 34 not shaped as its
+  signal's direction (an output's has no `level`, an input's no `bsrr` or
+  `ordered`); a kind 34 `witnessed` whose output did not write, before its
+  `MODER` write (`ordered`), a first `BSRR` word carrying exactly its
+  declared level's bit for the pin (bit n for high, n + 16 for low) and not
+  the other, or whose input's `level` is not its declared one; a kind 36
+  `witnessed` whose `code` is not kind 35's; a `pin_held` naming no kind 33,
+  or one that is an output (`PinHeldIsOutput`), or one not `held` at the
+  override's level; a held kind 33 with no `pin_held`; an `analog_value`
+  naming no kind 35 `held` at its millivolts × 1000, or a held kind 35 with
+  no `analog_value`; one net named by two overrides of a kind; a kind 26
+  with status `level` with no kind 37 of its label, or a kind 37 with no kind
+  26 of its label with that status (`level` relaxes only what kind 26's
+  counts must be: its timing, grain, quantum and window still bind it);
+- a verdict whose pin device findings the records do not give, once the boot
+  word is set, and any before it, each an error and each exactly:
+  `pin_device_input_asserted` once per kind 34 input `witnessed` whose
+  `level` is its kind 33's `active`; `gpio_unwitnessed` once per kind 34
+  `unwitnessed` or `unreadable`; `gpio_mismatch` once per `mismatch`;
+  `adc_read_unwitnessed` and `adc_value_mismatch` once per kind 36
+  `unwitnessed` and `mismatch`; and, with the motor findings,
+  `motor_level_mismatch` once per kind 37 not `witnessed`. Kinds 34, 36 and
+  37 rank with the motor witnesses (kind 26), after the SPI witnesses and
+  before the judge's stop, in any order among them; kinds 33 and 35 rank
+  with kinds 24 and 27;
 - a motor witness `stopped` whose edges are not continuous on the model's
   sequence (`campaign::witness_continuous`: its last rise `rises - 1`
   periods after its first within its span, its falls as many as its rises

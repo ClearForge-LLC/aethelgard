@@ -1,8 +1,9 @@
-//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 32, one per
+//! A campaign run's records (`AET-WO-2300`): event kinds 5 to 37, one per
 //! record `aethelgard campaign` archives (kind 15 since `AET-WO-3100`; 16 to
 //! 20, a declared supply droop, since `AET-WO-2301`; 31, a declared battery
 //! sag, since `AET-WO-2304b`; 32, a droop's recovery bound, since
-//! `AET-WO-2305`). Every field is an integer, a byte
+//! `AET-WO-2305`; 33 to 37, a pin device's GPIO and ADC inputs and a motor
+//! output held at a static level, since `AET-WO-1211c`). Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -12,9 +13,48 @@ use crate::event::{name_ok, text_ok};
 
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
-/// The last campaign kind (32, a droop's recovery bound, since
-/// `AET-WO-2305`).
-pub const LAST_KIND: u64 = 32;
+/// The last campaign kind (37, a motor output's static-level witness, since
+/// `AET-WO-1211c`).
+pub const LAST_KIND: u64 = 37;
+
+/// A pin's level, as the `pin_held` override and kinds 33 and 34 name it
+/// (`AET-WO-1211c`). Chaos-owned: this crate reads no IR type (`RUL-16`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Level {
+    Low,
+    High,
+}
+
+impl Level {
+    /// The name a scenario file gives it.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::High => "high",
+        }
+    }
+}
+
+/// The highest voltage an `analog_value` override may set, in mV
+/// (`AET-WO-1211c`): the twin's ADC reference. Renode 1.17.0's
+/// `stm32h7.repl` gives `adcM1S2` and `adc3` `referenceVoltage: 3.3`
+/// (`AET-WO-1211` §4).
+pub const ANALOG_MAX_MILLIVOLTS: u32 = 3300;
+
+/// The code the twin's ADC reads for `microvolts` at `bits` of resolution
+/// (`AET-WO-1211c`): round-half-up of `microvolts` × (2^`bits` − 1) /
+/// [`ANALOG_MAX_MILLIVOLTS`]·1000, in integers (no floats, `RUL-06`). The
+/// conversion Renode's model applies (`STM32_ADC_Common.cs` L451-460,
+/// `AET-WO-1211` §4: 1.65 V reads 0x8000 and 0.825 V 0x4000 at 16 bits;
+/// measured, 1.5 V reads 0x745 = 1861 at 12 bits, `spike/1211c/RESULTS.md`
+/// P4e). Only 12 bits is measured; `bits` above 32 are computed as 32 and a
+/// code past `u32` saturates, so no input panics.
+pub fn adc_code(microvolts: u64, bits: u8) -> u32 {
+    let full_scale = u128::from(ANALOG_MAX_MILLIVOLTS) * 1000;
+    let top = (1u128 << u32::from(bits.min(32))) - 1;
+    let code = (u128::from(microvolts) * top * 2 + full_scale) / (2 * full_scale);
+    u32::try_from(code).unwrap_or(u32::MAX)
+}
 
 /// The protocols a motor output may declare (`AET-WO-4300a`), as kind 24
 /// names them.
@@ -45,8 +85,10 @@ pub fn realized_ns(ticks: u64, kernel_hz: u64) -> Option<u64> {
 /// were the model's sequence with an edge off the grid; were, on the grid
 /// alone; showed fewer than two rises; could not be read whole; did not fit
 /// the sequence; shared stamps; stopped more than a period before the
-/// window's end; or were logged with no anchor observed (`AET-WO-2302`).
-pub const MOTOR_STATUSES: [&str; 8] = [
+/// window's end; were logged with no anchor observed (`AET-WO-2302`); or, an
+/// output whose idle is a static level, were judged by its kind 37 instead
+/// (`level`, `AET-WO-1211c`).
+pub const MOTOR_STATUSES: [&str; 9] = [
     "witnessed",
     "static_only",
     "unwitnessed",
@@ -55,7 +97,23 @@ pub const MOTOR_STATUSES: [&str; 8] = [
     "batched",
     "stopped",
     "unanchored",
+    "level",
 ];
+
+/// What kind 34's `status` may say (`AET-WO-1211c`): the firmware's GPIO
+/// access was what the declaration says; was not; was never seen; or the
+/// access log could not be read whole.
+pub const GPIO_STATUSES: [&str; 4] = ["witnessed", "mismatch", "unwitnessed", "unreadable"];
+
+/// What kind 36's `status` may say (`AET-WO-1211c`): the firmware read the
+/// code the declared value gives; read another; or read the ADC's data
+/// register not at all.
+pub const ADC_STATUSES: [&str; 3] = ["witnessed", "mismatch", "unwitnessed"];
+
+/// What kind 37's `status` may say (`AET-WO-1211c`): a motor output held at
+/// a static level stayed at it after its timer settled; did not; had no
+/// timer anchor to settle from; or its observer could not be read.
+pub const LEVEL_STATUSES: [&str; 4] = ["witnessed", "mismatch", "unanchored", "unreadable"];
 
 /// The roles a serial port may declare (`AET-WO-4300b`), as kind 27 names
 /// them.
@@ -222,6 +280,14 @@ pub enum Override {
     /// beside it (`AET-WO-2304b` §1.7, K1). A modelling assumption, named in
     /// every verdict that uses it. Scenario version 4.
     RailOutOfBand { domain: String },
+    /// `[8, net, level]`, `level` 0 for low and 1 for high: a pin device's
+    /// GPIO input held at that level for the whole run, in place of its
+    /// declared pull's (`AET-WO-1211c`). Scenario version 5.
+    PinHeld { net: String, level: Level },
+    /// `[9, net, millivolts]`: a pin device's ADC input held at that voltage,
+    /// from 0 to [`ANALOG_MAX_MILLIVOLTS`] (`AET-WO-1211c`). Scenario
+    /// version 5.
+    AnalogValue { net: String, millivolts: u32 },
 }
 
 /// A declared battery sag (`AET-WO-2304b` §1.6): the whole path R under the
@@ -737,6 +803,79 @@ pub enum Record {
         margin_ns: u64,
         bound_ns: Option<u64>,
     },
+    /// Kind 33: one GPIO signal of a pin device, as the twin declares it
+    /// before the boot (`AET-WO-1211c`, virtual time 0): its net and pin.
+    /// An output: `level` its declared initial level, `active` absent,
+    /// `held` false. An input: `level` the level the twin drives it at for
+    /// this run, `active` its declared active level, and `held` whether a
+    /// `pin_held` override set `level` (otherwise it is the declared pull's).
+    /// Kind 34 joins to it by net.
+    PinGpioDeclared {
+        net: String,
+        pin: String,
+        output: bool,
+        level: u8,
+        active: Option<u8>,
+        held: bool,
+    },
+    /// Kind 34: one GPIO signal's twin witness, after the boot
+    /// (`AET-WO-1211c`), `status` one of [`GPIO_STATUSES`]. For an output,
+    /// `bsrr` is the first `BSRR` word the firmware wrote that touches the
+    /// pin's set or reset bit and `ordered` whether it came before the first
+    /// `MODER` write making the pin an output; `level` is absent. For an
+    /// input, `level` is the pin's `IDR` bit read at the boot's end; `bsrr`
+    /// and `ordered` are absent. Whether the signal is an output or an input
+    /// is its kind 33's.
+    PinGpioWitness {
+        net: String,
+        status: String,
+        bsrr: Option<u32>,
+        ordered: Option<bool>,
+        level: Option<u8>,
+    },
+    /// Kind 35: one ADC input of a pin device, as the twin declares it
+    /// before the boot (`AET-WO-1211c`, virtual time 0): its net and pin,
+    /// the ADC (`ADC1` or `ADC3`) and channel, the resolution in bits (12,
+    /// the only one measured in the twin), the voltage it is driven at in
+    /// µV, whether an `analog_value` override set it, and the `code` that
+    /// voltage reads as, [`adc_code`]. Kind 36 joins to it by net.
+    PinAdcDeclared {
+        net: String,
+        pin: String,
+        peripheral: String,
+        channel: u8,
+        bits: u8,
+        microvolts: u64,
+        held: bool,
+        code: u32,
+    },
+    /// Kind 36: one ADC input's twin witness, after the boot
+    /// (`AET-WO-1211c`), `status` one of [`ADC_STATUSES`]: how many `DR`
+    /// reads of that ADC the judge saw, and the `code` it matched to this
+    /// input (absent exactly when `unwitnessed`).
+    PinAdcWitness {
+        net: String,
+        status: String,
+        reads: u64,
+        code: Option<u32>,
+    },
+    /// Kind 37: a motor output whose idle is a static level, judged after
+    /// the boot beside its kind 26 (`AET-WO-1211c`; the kind 26 says
+    /// `level`): `level` the declared idle level; `settle_ns` its timer's
+    /// `CEN` anchor plus one period (`AET-WO-1211` Q10: an idle-high output
+    /// reads low until the first update event), absent with no anchor; the
+    /// edges seen after `settle_ns`; `end_level` the observer's level at the
+    /// window's end (absent when unread); and `status`, one of
+    /// [`LEVEL_STATUSES`].
+    MotorLevelWitness {
+        label: String,
+        level: u8,
+        settle_ns: Option<u64>,
+        rises_after: u64,
+        falls_after: u64,
+        end_level: Option<u8>,
+        status: String,
+    },
 }
 
 /// The most registers kind 30 reads back: a timer's solved registers
@@ -908,6 +1047,21 @@ impl<'a> Fields<'a> {
             _ => None,
         }
     }
+    fn opt_u8(&mut self) -> Option<Option<u8>> {
+        match self.opt()? {
+            None => Some(None),
+            Some(n) => u8::try_from(n).ok().map(Some),
+        }
+    }
+    /// An array of zero or one flag, `0` or `1` and nothing else.
+    fn opt_flag(&mut self) -> Option<Option<bool>> {
+        match self.opt()? {
+            None => Some(None),
+            Some(0) => Some(Some(false)),
+            Some(1) => Some(Some(true)),
+            Some(_) => None,
+        }
+    }
     fn opt_u32(&mut self) -> Option<Option<u32>> {
         match self.opt()? {
             None => Some(None),
@@ -1004,6 +1158,15 @@ fn override_value(o: &Override) -> Value {
         Override::SerialRxOpen { port } => vec![u(5), t(port)],
         Override::BatterySag(b) => vec![u(6), u(b.series_milliohms.into()), u(b.start_ns)],
         Override::RailOutOfBand { domain } => vec![u(7), t(domain)],
+        Override::PinHeld { net, level } => vec![
+            u(8),
+            t(net),
+            u(match level {
+                Level::Low => 0,
+                Level::High => 1,
+            }),
+        ],
+        Override::AnalogValue { net, millivolts } => vec![u(9), t(net), u((*millivolts).into())],
     })
 }
 
@@ -1067,6 +1230,18 @@ fn override_from(v: &Value) -> Option<Override> {
             start_ns: f.uint()?,
         }),
         7 => Override::RailOutOfBand { domain: f.text()? },
+        8 => Override::PinHeld {
+            net: f.text()?,
+            level: match f.uint()? {
+                0 => Level::Low,
+                1 => Level::High,
+                _ => return None,
+            },
+        },
+        9 => Override::AnalogValue {
+            net: f.text()?,
+            millivolts: f.u32()?,
+        },
         _ => return None,
     };
     f.end()?;
@@ -1115,6 +1290,11 @@ impl Record {
                 Self::JudgeStop { .. } => 25,
                 Self::BatterySagDeclared { .. } => 26,
                 Self::RecoveryBound { .. } => 27,
+                Self::PinGpioDeclared { .. } => 28,
+                Self::PinGpioWitness { .. } => 29,
+                Self::PinAdcDeclared { .. } => 30,
+                Self::PinAdcWitness { .. } => 31,
+                Self::MotorLevelWitness { .. } => 32,
             }
     }
 
@@ -1149,6 +1329,8 @@ impl Record {
                 | Self::RailDeclared { .. }
                 | Self::BatterySagDeclared { .. }
                 | Self::RecoveryBound { .. }
+                | Self::PinGpioDeclared { .. }
+                | Self::PinAdcDeclared { .. }
                 | Self::ExpectedCounts { .. }
         )
     }
@@ -1638,6 +1820,76 @@ impl Record {
                 margin_ns,
                 bound_ns,
             } => vec![opt(*boot_word_ns), u(*margin_ns), opt(*bound_ns)],
+            Self::PinGpioDeclared {
+                net,
+                pin,
+                output,
+                level,
+                active,
+                held,
+            } => vec![
+                t(net),
+                t(pin),
+                flag(*output),
+                u((*level).into()),
+                opt(active.map(u64::from)),
+                flag(*held),
+            ],
+            Self::PinGpioWitness {
+                net,
+                status,
+                bsrr,
+                ordered,
+                level,
+            } => vec![
+                t(net),
+                t(status),
+                opt(bsrr.map(u64::from)),
+                opt(ordered.map(u64::from)),
+                opt(level.map(u64::from)),
+            ],
+            Self::PinAdcDeclared {
+                net,
+                pin,
+                peripheral,
+                channel,
+                bits,
+                microvolts,
+                held,
+                code,
+            } => vec![
+                t(net),
+                t(pin),
+                t(peripheral),
+                u((*channel).into()),
+                u((*bits).into()),
+                u(*microvolts),
+                flag(*held),
+                u((*code).into()),
+            ],
+            Self::PinAdcWitness {
+                net,
+                status,
+                reads,
+                code,
+            } => vec![t(net), t(status), u(*reads), opt(code.map(u64::from))],
+            Self::MotorLevelWitness {
+                label,
+                level,
+                settle_ns,
+                rises_after,
+                falls_after,
+                end_level,
+                status,
+            } => vec![
+                t(label),
+                u((*level).into()),
+                opt(*settle_ns),
+                u(*rises_after),
+                u(*falls_after),
+                opt(end_level.map(u64::from)),
+                t(status),
+            ],
             Self::BatterySagDeclared {
                 sag,
                 v_open_microvolts,
@@ -2028,6 +2280,46 @@ impl Record {
                 margin_ns: f.uint()?,
                 bound_ns: f.opt()?,
             },
+            33 => Self::PinGpioDeclared {
+                net: f.text()?,
+                pin: f.text()?,
+                output: f.flag()?,
+                level: f.u8()?,
+                active: f.opt_u8()?,
+                held: f.flag()?,
+            },
+            34 => Self::PinGpioWitness {
+                net: f.text()?,
+                status: f.text()?,
+                bsrr: f.opt_u32()?,
+                ordered: f.opt_flag()?,
+                level: f.opt_u8()?,
+            },
+            35 => Self::PinAdcDeclared {
+                net: f.text()?,
+                pin: f.text()?,
+                peripheral: f.text()?,
+                channel: f.u8()?,
+                bits: f.u8()?,
+                microvolts: f.uint()?,
+                held: f.flag()?,
+                code: f.u32()?,
+            },
+            36 => Self::PinAdcWitness {
+                net: f.text()?,
+                status: f.text()?,
+                reads: f.uint()?,
+                code: f.opt_u32()?,
+            },
+            37 => Self::MotorLevelWitness {
+                label: f.text()?,
+                level: f.u8()?,
+                settle_ns: f.opt()?,
+                rises_after: f.uint()?,
+                falls_after: f.uint()?,
+                end_level: f.opt_u8()?,
+                status: f.text()?,
+            },
             31 => {
                 let sag = BatterySag {
                     series_milliohms: f.u32()?,
@@ -2099,9 +2391,17 @@ impl Record {
                     Override::SerialRxOpen { port } => name_ok(port),
                     Override::BatterySag(_) => true,
                     Override::RailOutOfBand { domain } => name_ok(domain),
+                    Override::PinHeld { net, .. } => name_ok(net),
+                    Override::AnalogValue { net, .. } => name_ok(net),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");
+                }
+                if overrides.iter().any(|o| {
+                    matches!(o, Override::AnalogValue { millivolts, .. }
+                        if *millivolts > ANALOG_MAX_MILLIVOLTS)
+                }) {
+                    return Err("an analog_value override is above the ADC's 3300 mV reference");
                 }
                 Ok(())
             }
@@ -2625,6 +2925,127 @@ impl Record {
                     Err(
                         "a recovery bound is not its undisturbed boot word's instant plus the margin",
                     )
+                } else {
+                    Ok(())
+                }
+            }
+            // The shape of each pin-device record alone (`AET-WO-1211c`); the
+            // joins to each other and to the scenario are
+            // `campaign::check_pin_device_records`.
+            Self::PinGpioDeclared {
+                net,
+                pin,
+                output,
+                level,
+                active,
+                held,
+            } => {
+                if !name_ok(net) || split_pin(pin).is_none() {
+                    Err("a declared GPIO signal's net or pin is malformed")
+                } else if *level > 1 || active.is_some_and(|a| a > 1) {
+                    Err("a declared GPIO signal's level or active level is not 0 or 1")
+                } else if *output && (active.is_some() || *held) {
+                    Err("a declared GPIO output has an active level or is held")
+                } else if !*output && active.is_none() {
+                    Err("a declared GPIO input has no active level")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::PinGpioWitness {
+                net,
+                status,
+                bsrr,
+                ordered,
+                level,
+            } => {
+                if !name_ok(net) {
+                    Err("a GPIO witness's net is malformed")
+                } else if !GPIO_STATUSES.contains(&status.as_str()) {
+                    Err("a GPIO witness's status is not one the judge gives")
+                } else if level.is_some_and(|l| l > 1) {
+                    Err("a GPIO witness's level is not 0 or 1")
+                } else if level.is_some() && (bsrr.is_some() || ordered.is_some()) {
+                    Err("a GPIO witness holds both an output's fields and an input's")
+                } else if status == "unreadable"
+                    && (bsrr.is_some() || ordered.is_some() || level.is_some())
+                {
+                    Err("an unreadable GPIO witness holds a reading")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::PinAdcDeclared {
+                net,
+                pin,
+                peripheral,
+                channel,
+                bits,
+                microvolts,
+                code,
+                ..
+            } => {
+                if !name_ok(net) || split_pin(pin).is_none() {
+                    Err("a declared ADC input's net or pin is malformed")
+                } else if peripheral != "ADC1" && peripheral != "ADC3" {
+                    Err("a declared ADC input's peripheral is not ADC1 or ADC3")
+                } else if *channel > 19 {
+                    Err("a declared ADC input's channel is above 19")
+                } else if *bits != 12 {
+                    Err("a declared ADC input's resolution is not 12 bits")
+                } else if *microvolts > u64::from(ANALOG_MAX_MILLIVOLTS) * 1000 {
+                    Err("a declared ADC input's voltage is above the ADC's 3300 mV reference")
+                } else if *code != adc_code(*microvolts, *bits) {
+                    Err("a declared ADC input's code is not the one its voltage reads as")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::PinAdcWitness {
+                net,
+                status,
+                reads,
+                code,
+            } => {
+                if !name_ok(net) {
+                    Err("an ADC witness's net is malformed")
+                } else if !ADC_STATUSES.contains(&status.as_str()) {
+                    Err("an ADC witness's status is not one the judge gives")
+                } else if code.is_none() != (status == "unwitnessed") {
+                    Err("an ADC witness has a code exactly when it is not unwitnessed")
+                } else if code.is_some() && *reads == 0 {
+                    Err("an ADC witness matched a code from no read")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::MotorLevelWitness {
+                label,
+                level,
+                settle_ns,
+                rises_after,
+                falls_after,
+                end_level,
+                status,
+            } => {
+                let holds = settle_ns.is_some()
+                    && *rises_after == 0
+                    && *falls_after == 0
+                    && *end_level == Some(*level);
+                if !name_ok(label) {
+                    Err("a level witness's label is malformed")
+                } else if *level > 1 || end_level.is_some_and(|l| l > 1) {
+                    Err("a level witness's level or end level is not 0 or 1")
+                } else if !LEVEL_STATUSES.contains(&status.as_str()) {
+                    Err("a level witness's status is not one the judge gives")
+                } else if (status == "witnessed") != holds {
+                    Err(
+                        "a level witness is witnessed exactly when it settled, saw no edge after and ended at its level",
+                    )
+                } else if status == "unanchored" && settle_ns.is_some() {
+                    Err("an unanchored level witness has a settle time")
+                } else if status == "unreadable" && end_level.is_some() {
+                    Err("an unreadable level witness has an end level")
                 } else {
                     Ok(())
                 }

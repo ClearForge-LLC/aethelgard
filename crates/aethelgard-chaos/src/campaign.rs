@@ -19,8 +19,8 @@ use sha2::{Digest, Sha256};
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
-    self, BatterySag, BusLine, Droop, Line, Override, Reading, Record, SERIAL_FRAME_LEN,
-    SerialCapture, SerialFraming, realized_ns, split_pin, step_index,
+    self, ANALOG_MAX_MILLIVOLTS, BatterySag, BusLine, Droop, Level, Line, Override, Reading,
+    Record, SERIAL_FRAME_LEN, SerialCapture, SerialFraming, realized_ns, split_pin, step_index,
 };
 use crate::replay::State;
 
@@ -29,8 +29,9 @@ use crate::replay::State;
 /// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
 /// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override; 4,
 /// since `AET-WO-2304b`, which also admits `battery_sag` and
-/// `rail_out_of_band`; and 5, since `AET-WO-1211c`, for a pin device's
-/// overrides. A file may use only what its version admits.
+/// `rail_out_of_band`; and 5, since `AET-WO-1211c`, which also admits a pin
+/// device's overrides, `pin_held` and `analog_value`. A file may use only
+/// what its version admits.
 pub const SCENARIO_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
@@ -142,6 +143,13 @@ enum Expect {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
+enum LevelName {
+    Low,
+    High,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
 enum LineName {
     Sda,
     Scl,
@@ -176,6 +184,27 @@ struct RawOverride {
     battery_sag: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     rail_out_of_band: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    pin_held: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    analog_value: Option<serde_json::Value>,
+}
+
+/// `{"net": ..., "level": "low" | "high"}`, nothing else
+/// (`AET-WO-1211c`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+struct RawPinHeld {
+    net: String,
+    level: LevelName,
+}
+
+/// `{"net": ..., "millivolts": n}`, nothing else (`AET-WO-1211c`).
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+struct RawAnalogValue {
+    net: String,
+    millivolts: u64,
 }
 
 #[derive(Deserialize)]
@@ -260,7 +289,14 @@ macro_rules! object_only {
     )*};
 }
 
-object_only!(RawOverride, RawScenario, RawDroop, RawBatterySag);
+object_only!(
+    RawOverride,
+    RawScenario,
+    RawDroop,
+    RawBatterySag,
+    RawPinHeld,
+    RawAnalogValue
+);
 
 /// One scenario file, parsed and checked.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -310,7 +346,38 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
         serial_rx_open,
         battery_sag,
         rail_out_of_band,
+        pin_held,
+        analog_value,
     } = raw;
+    // The pin device's overrides (`AET-WO-1211c`) are read first, and each
+    // is refused beside any other key: none of the branches below knows
+    // them, so one left to them would be dropped unread.
+    let old_keys = bus.is_some()
+        || net.is_some()
+        || pull_up_ohms.is_some()
+        || max_capacitance_femtofarads.is_some()
+        || line_held_low.is_some()
+        || droop.is_some()
+        || spi_device_absent.is_some()
+        || serial_rx_open.is_some()
+        || battery_sag.is_some()
+        || rail_out_of_band.is_some();
+    if let Some(p) = pin_held {
+        if old_keys || analog_value.is_some() {
+            return Err(schema(
+                "a pin_held override is exactly {pin_held: {net, level}}".to_owned(),
+            ));
+        }
+        return pin_held_from(p);
+    }
+    if let Some(a) = analog_value {
+        if old_keys {
+            return Err(schema(
+                "an analog_value override is exactly {analog_value: {net, millivolts}}".to_owned(),
+            ));
+        }
+        return analog_value_from(a);
+    }
     let alone = |key: &str, others: bool| {
         if others {
             Err(schema(format!(
@@ -404,7 +471,7 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent}, {serial_rx_open}, {battery_sag} or {rail_out_of_band}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent}, {serial_rx_open}, {battery_sag}, {rail_out_of_band}, {pin_held} or {analog_value}"
                 .to_owned(),
         )),
     }
@@ -485,6 +552,45 @@ fn battery_sag_from(v: serde_json::Value) -> Result<BatterySag, ScenarioError> {
         series_milliohms: u32::try_from(raw.series_milliohms).expect("bounded above"),
         start_ns: raw.start_ns,
     })
+}
+
+fn pin_held_from(v: serde_json::Value) -> Result<Override, ScenarioError> {
+    let raw: RawPinHeld =
+        serde_json::from_value(v).map_err(|e| schema(format!("pin_held: {e}")))?;
+    if !name_ok(&raw.net) {
+        return Err(schema(format!(
+            "pin_held net `{}` is not 1 to 64 printable ASCII bytes",
+            raw.net.escape_debug()
+        )));
+    }
+    Ok(Override::PinHeld {
+        net: raw.net,
+        level: match raw.level {
+            LevelName::Low => Level::Low,
+            LevelName::High => Level::High,
+        },
+    })
+}
+
+fn analog_value_from(v: serde_json::Value) -> Result<Override, ScenarioError> {
+    let raw: RawAnalogValue =
+        serde_json::from_value(v).map_err(|e| schema(format!("analog_value: {e}")))?;
+    if !name_ok(&raw.net) {
+        return Err(schema(format!(
+            "analog_value net `{}` is not 1 to 64 printable ASCII bytes",
+            raw.net.escape_debug()
+        )));
+    }
+    match u32::try_from(raw.millivolts) {
+        Ok(millivolts) if millivolts <= ANALOG_MAX_MILLIVOLTS => Ok(Override::AnalogValue {
+            net: raw.net,
+            millivolts,
+        }),
+        _ => Err(schema(format!(
+            "analog_value `millivolts` is not from 0 to {ANALOG_MAX_MILLIVOLTS}: {}",
+            raw.millivolts
+        ))),
+    }
 }
 
 /// The rail's time constant R·C in ns, rounded up.
@@ -635,6 +741,8 @@ fn target(o: &Override) -> (u8, &str) {
         // One battery sag per scenario; refused as combined before this.
         Override::BatterySag(_) => (7, ""),
         Override::RailOutOfBand { domain } => (8, domain),
+        Override::PinHeld { net, .. } => (9, net),
+        Override::AnalogValue { net, .. } => (10, net),
     }
 }
 
@@ -741,6 +849,14 @@ impl Scenario {
                 "a battery sag and a rail out of band need schema_version 4".to_owned(),
             ));
         }
+        let v5_only = overrides
+            .iter()
+            .any(|o| matches!(o, Override::PinHeld { .. } | Override::AnalogValue { .. }));
+        if v5_only && raw.schema_version < 5 {
+            return Err(schema(
+                "a pin_held or analog_value override needs schema_version 5".to_owned(),
+            ));
+        }
         // §1.6: two sags, or a sag with a droop, interact in ways the chain
         // does not model.
         let droops = overrides
@@ -807,6 +923,30 @@ impl Scenario {
         })
     }
 
+    /// The nets the scenario holds at a level, in the file's order
+    /// (`AET-WO-1211c`).
+    pub fn pins_held(&self) -> Vec<(&str, Level)> {
+        self.overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::PinHeld { net, level } => Some((net.as_str(), *level)),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// The nets the scenario drives at a voltage, in mV, in the file's order
+    /// (`AET-WO-1211c`).
+    pub fn analog_values(&self) -> Vec<(&str, u32)> {
+        self.overrides
+            .iter()
+            .filter_map(|o| match o {
+                Override::AnalogValue { net, millivolts } => Some((net.as_str(), *millivolts)),
+                _ => None,
+            })
+            .collect()
+    }
+
     /// The scenario's droop, if it declares one.
     pub fn droop(&self) -> Option<&Droop> {
         self.overrides.iter().find_map(|o| match o {
@@ -871,7 +1011,10 @@ pub struct RunSummary {
 /// 29 in that order), and the verdict, last and once. The solved motor
 /// outputs (kind 24) and their static checks (kind 25) sit with the solved
 /// buses (`AET-WO-4300a`), and so do the solved serial ports (kind 27,
-/// `AET-WO-4300b`).
+/// `AET-WO-4300b`) and a pin device's declared GPIO and ADC signals (kinds
+/// 33 and 35, `AET-WO-1211c`). Its witnesses (kinds 34 and 36) and a level
+/// output's (kind 37) sit with the motor witnesses (kind 26), in any order
+/// among them.
 pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     fn rank(r: &Record) -> u8 {
         match r {
@@ -882,7 +1025,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             | Record::SpiBusSolved { .. }
             | Record::MotorOutputSolved { .. }
             | Record::MotorTimingCheck { .. }
-            | Record::SerialPortSolved { .. } => 3,
+            | Record::SerialPortSolved { .. }
+            | Record::PinGpioDeclared { .. }
+            | Record::PinAdcDeclared { .. } => 3,
             Record::RiseComputed { .. } | Record::LineStuckHigh { .. } => 4,
             Record::BusFault { .. } => 5,
             Record::RailDeclared { .. }
@@ -897,7 +1042,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::I2cWitness { .. } => 11,
             Record::SpiCheck { .. } => 12,
             Record::SpiWitness { .. } => 13,
-            Record::MotorWitness { .. } => 14,
+            Record::MotorWitness { .. }
+            | Record::PinGpioWitness { .. }
+            | Record::PinAdcWitness { .. }
+            | Record::MotorLevelWitness { .. } => 14,
             Record::JudgeStop { .. } => 15,
             Record::SerialFramingCheck { .. } => 16,
             Record::SerialWitness { .. } => 17,
@@ -1174,11 +1322,16 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
                     "mismatch" | "batched" | "stopped" => Some(MOTOR_MISMATCH_FINDING),
                     "static_only" => Some(MOTOR_STATIC_ONLY_FINDING),
                     "unanchored" => Some(MOTOR_ANCHOR_UNOBSERVED_FINDING),
+                    // Judged by its kind 37 instead (`AET-WO-1211c`).
+                    "level" => None,
                     _ => None,
                 };
                 if let Some(kind) = kind {
                     *motor_needed.entry(kind).or_default() += 1;
                 }
+            }
+            Record::MotorLevelWitness { status, .. } if booted && status != "witnessed" => {
+                *motor_needed.entry(MOTOR_LEVEL_FINDING).or_default() += 1;
             }
             _ => {}
         }
@@ -1263,6 +1416,16 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         }
     }
     check_battery_sag_records(records, overrides)?;
+    // The pin devices (`AET-WO-1211c`): the joins first, then the verdict's
+    // GPIO and ADC findings, each exactly its records' count and an error.
+    let pins = check_pin_device_records(records, overrides, booted)?;
+    for kind in PIN_DEVICE_FINDINGS {
+        if any_severity(kind) != pins.get(kind).copied().unwrap_or(0)
+            || count(kind) != any_severity(kind)
+        {
+            return Err("the verdict's GPIO and ADC findings do not match the pin device records");
+        }
+    }
     let droop_counts = check_droop_records(records, overrides)?;
     for (kind, want) in droop_counts {
         if any_severity(kind) != want {
@@ -1716,6 +1879,217 @@ fn check_battery_sag_records(
     Ok(())
 }
 
+/// A pin device's records (`AET-WO-1211c`), joined to each other, to kind 26
+/// and to the scenario's overrides, and the GPIO and ADC findings they give
+/// (`PIN_DEVICE_FINDINGS`; the motor level finding is counted with the motor
+/// findings). Every signal is declared once, by net, and every witness joins
+/// one declaration: a witness is shaped as its signal's direction, and,
+/// `witnessed`, is what the declaration says, so a verdict cannot call a
+/// forged read a match. Once `booted`, every declared signal has its witness.
+/// Each `pin_held` names an input kind 33 holding the override's level, and
+/// each `analog_value` an ADC kind 35 holding its voltage; each held
+/// declaration has its override, so a held level is never invented nor an
+/// override dropped. A kind 26 with status `level` has exactly one kind 37
+/// and each kind 37 its kind 26.
+fn check_pin_device_records(
+    records: &[Record],
+    overrides: &[Override],
+    booted: bool,
+) -> Result<BTreeMap<&'static str, u64>, &'static str> {
+    let mut gpio: BTreeMap<&str, &Record> = BTreeMap::new();
+    let mut adc: BTreeMap<&str, &Record> = BTreeMap::new();
+    for r in records {
+        match r {
+            Record::PinGpioDeclared { net, .. } if gpio.insert(net, r).is_some() => {
+                return Err("a GPIO signal is declared twice");
+            }
+            Record::PinAdcDeclared { net, .. } if adc.insert(net, r).is_some() => {
+                return Err("an ADC input is declared twice");
+            }
+            _ => {}
+        }
+    }
+    let mut out: BTreeMap<&'static str, u64> = BTreeMap::new();
+    let mut gpio_witnessed: BTreeSet<&str> = BTreeSet::new();
+    let mut adc_witnessed: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        match r {
+            Record::PinGpioWitness {
+                net,
+                status,
+                bsrr,
+                ordered,
+                level,
+            } => {
+                let Some(Record::PinGpioDeclared {
+                    pin,
+                    output,
+                    level: declared,
+                    active,
+                    ..
+                }) = gpio.get(net.as_str()).copied()
+                else {
+                    return Err("a GPIO witness names no declared GPIO signal");
+                };
+                if !gpio_witnessed.insert(net) {
+                    return Err("a GPIO signal has two witnesses");
+                }
+                let shaped = if *output {
+                    level.is_none()
+                } else {
+                    bsrr.is_none() && ordered.is_none()
+                };
+                if !shaped {
+                    return Err("a GPIO witness is not shaped as its signal's direction");
+                }
+                if status == "witnessed" {
+                    let fits = if *output {
+                        let bit = split_pin(pin).map(|(_, n)| u32::from(n));
+                        let mask = bit.and_then(|n| match declared {
+                            1 => Some((1u32 << n, 1u32 << (n + 16))),
+                            0 => Some((1u32 << (n + 16), 1u32 << n)),
+                            _ => None,
+                        });
+                        *ordered == Some(true)
+                            && mask
+                                .zip(*bsrr)
+                                .is_some_and(|((set, other), w)| w & set != 0 && w & other == 0)
+                    } else {
+                        level.is_some_and(|l| l == *declared)
+                    };
+                    if !fits {
+                        return Err(
+                            "a witnessed GPIO signal is not what its declaration says: an output's first BSRR word before its MODER write setting its declared level, an input's level its declared one",
+                        );
+                    }
+                }
+                if booted {
+                    let kind = match status.as_str() {
+                        "unwitnessed" | "unreadable" => Some(GPIO_UNWITNESSED_FINDING),
+                        "mismatch" => Some(GPIO_MISMATCH_FINDING),
+                        "witnessed" if !*output && *level == *active => {
+                            Some(GPIO_INPUT_ASSERTED_FINDING)
+                        }
+                        _ => None,
+                    };
+                    if let Some(kind) = kind {
+                        *out.entry(kind).or_default() += 1;
+                    }
+                }
+            }
+            Record::PinAdcWitness {
+                net, status, code, ..
+            } => {
+                let Some(Record::PinAdcDeclared { code: declared, .. }) =
+                    adc.get(net.as_str()).copied()
+                else {
+                    return Err("an ADC witness names no declared ADC input");
+                };
+                if !adc_witnessed.insert(net) {
+                    return Err("an ADC input has two witnesses");
+                }
+                if status == "witnessed" && *code != Some(*declared) {
+                    return Err(
+                        "a witnessed ADC input's code is not the one its declaration gives",
+                    );
+                }
+                if booted {
+                    let kind = match status.as_str() {
+                        "unwitnessed" => Some(ADC_UNWITNESSED_FINDING),
+                        "mismatch" => Some(ADC_MISMATCH_FINDING),
+                        _ => None,
+                    };
+                    if let Some(kind) = kind {
+                        *out.entry(kind).or_default() += 1;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    if booted && (gpio_witnessed.len() != gpio.len() || adc_witnessed.len() != adc.len()) {
+        return Err(
+            "a declared GPIO signal or ADC input has no witness, though the boot word is set",
+        );
+    }
+    // The overrides against the declarations they set.
+    let mut held_nets: BTreeSet<&str> = BTreeSet::new();
+    let mut analog_nets: BTreeSet<&str> = BTreeSet::new();
+    for o in overrides {
+        match o {
+            Override::PinHeld { net, level } => {
+                if !held_nets.insert(net) {
+                    return Err("a scenario holds one net twice");
+                }
+                match gpio.get(net.as_str()).copied() {
+                    None => return Err("a pin_held override names no declared GPIO signal"),
+                    Some(Record::PinGpioDeclared { output: true, .. }) => {
+                        return Err("PinHeldIsOutput: a pin_held override names a GPIO output");
+                    }
+                    Some(Record::PinGpioDeclared { level: l, held, .. })
+                        if !*held || *l != u8::from(*level == Level::High) =>
+                    {
+                        return Err(
+                            "a pin_held override is not held at its level by its signal's declaration",
+                        );
+                    }
+                    Some(_) => {}
+                }
+            }
+            Override::AnalogValue { net, millivolts } => {
+                if !analog_nets.insert(net) {
+                    return Err("a scenario sets one analog net twice");
+                }
+                match adc.get(net.as_str()).copied() {
+                    Some(Record::PinAdcDeclared {
+                        held: true,
+                        microvolts,
+                        ..
+                    }) if *microvolts == u64::from(*millivolts) * 1000 => {}
+                    _ => {
+                        return Err(
+                            "an analog_value override names no ADC input held at its voltage",
+                        );
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    for r in gpio.values() {
+        if matches!(r, Record::PinGpioDeclared { net, held: true, .. } if !held_nets.contains(net.as_str()))
+        {
+            return Err("a held GPIO signal has no pin_held override");
+        }
+    }
+    for r in adc.values() {
+        if matches!(r, Record::PinAdcDeclared { net, held: true, .. } if !analog_nets.contains(net.as_str()))
+        {
+            return Err("a held ADC input has no analog_value override");
+        }
+    }
+    // Kind 26's `level` and kind 37 are each other's, by label.
+    let judged: BTreeSet<&str> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::MotorWitness { label, status, .. } if status == "level" => Some(label.as_str()),
+            _ => None,
+        })
+        .collect();
+    let mut levelled: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        if let Record::MotorLevelWitness { label, .. } = r
+            && (!judged.contains(label.as_str()) || !levelled.insert(label))
+        {
+            return Err("a level witness names no kind 26 judged by level, or one twice");
+        }
+    }
+    if levelled != judged {
+        return Err("a motor witness judged by level has no level witness");
+    }
+    Ok(out)
+}
+
 /// The refusal of a rail out of band (`AET-WO-2304b` §1.7), one kind with a
 /// message per clause.
 pub const RAIL_REFUSED: &str = "RailOutOfBandRefused";
@@ -1762,6 +2136,34 @@ pub const MOTOR_UNWITNESSED_FINDING: &str = "motor_output_unwitnessed";
 pub const MOTOR_MISMATCH_FINDING: &str = "motor_timing_mismatch";
 /// `info`: the witness fit the model's sequence with every edge on the grid.
 pub const MOTOR_STATIC_ONLY_FINDING: &str = "motor_witness_static_only";
+
+/// A motor output held at a static level (`AET-WO-1211c`, kind 37) that did
+/// not stay at it once its timer settled: one per kind 37 whose status is
+/// not `witnessed`, once the boot word is set.
+pub const MOTOR_LEVEL_FINDING: &str = "motor_level_mismatch";
+
+/// The pin devices' findings the boot judge gives (`AET-WO-1211c`), each
+/// once the boot word is set: an input the firmware's `IDR` read at its
+/// active level (kind 34, `witnessed`, the level equal to kind 33's
+/// `active`); a GPIO signal unwitnessed or unreadable, or witnessed not as
+/// declared; an ADC input unread, or read as another code (kind 36).
+pub const GPIO_INPUT_ASSERTED_FINDING: &str = "pin_device_input_asserted";
+pub const GPIO_UNWITNESSED_FINDING: &str = "gpio_unwitnessed";
+pub const GPIO_MISMATCH_FINDING: &str = "gpio_mismatch";
+pub const ADC_UNWITNESSED_FINDING: &str = "adc_read_unwitnessed";
+pub const ADC_MISMATCH_FINDING: &str = "adc_value_mismatch";
+
+/// Every GPIO and ADC finding kind the records explain exactly, each an
+/// error. Apart from [`BOOTED_READ_FINDINGS`], whose refusal speaks of
+/// identity reads: these are counted from their records, so a boot word not
+/// set is a count of 0 here.
+const PIN_DEVICE_FINDINGS: [&str; 5] = [
+    GPIO_INPUT_ASSERTED_FINDING,
+    GPIO_UNWITNESSED_FINDING,
+    GPIO_MISMATCH_FINDING,
+    ADC_UNWITNESSED_FINDING,
+    ADC_MISMATCH_FINDING,
+];
 
 /// The anchors' findings the boot judge gives (`AET-WO-2302`, ruled (a-i)):
 /// each motor timer's window anchors at its first `CEN` rise in the boot
@@ -2377,7 +2779,7 @@ pub fn check_serial_frames(firmware: &[u8; 32], records: &[Record]) -> Result<()
 /// `motor_anchor_out_of_order` is bounded apart ([`anchor_order_bounds`]):
 /// its cases other than an anchor after the boot word are the order of the
 /// boot's log lines, which no record carries.
-const MOTOR_FINDINGS: [&str; 11] = [
+const MOTOR_FINDINGS: [&str; 12] = [
     MOTOR_STATIC_FINDING,
     MOTOR_UNWITNESSED_FINDING,
     MOTOR_MISMATCH_FINDING,
@@ -2389,6 +2791,7 @@ const MOTOR_FINDINGS: [&str; 11] = [
     MOTOR_ANCHOR_REPEATED_FINDING,
     MOTOR_EDGE_BEFORE_FINDING,
     MOTOR_EDGE_AFTER_FINDING,
+    MOTOR_LEVEL_FINDING,
 ];
 
 /// The anchors' findings kinds 26 and 30 carry (`AET-WO-2302` adversarial
@@ -2867,6 +3270,9 @@ fn witness_consistent(m: &Record, kernel_hz: u64, w: &Record) -> bool {
         }
         // An unreadable log, or edges off the model's sequence.
         "mismatch" => none || *rises >= 2,
+        // Judged by its kind 37, whatever its counts (`AET-WO-1211c`); the
+        // timing and window above still bind it.
+        "level" => true,
         _ => false,
     }
 }
