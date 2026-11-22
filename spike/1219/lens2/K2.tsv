@@ -1,0 +1,196 @@
+id	class	flag	tags	value_at	reason
+lib:Specification.schema_version	V			lib.rs:3637	The specification format's version, checked equal to SPECIFICATION_SCHEMA_VERSION; engine plumbing.
+lib:Specification.project_name	V			lib.rs:4006	Project identifier under RUL-14's Project rule (lower case, digits, hyphen, no Windows reserved name).
+lib:McuWire.part	V			solve.rs:440	MCU part name, matched against the pin table's part and the power-parts mcu row (held tables, tie-break c); identifier rule at lib.rs:4009. No part literal in source.
+lib:McuWire.supply	V			lib.rs:3709	A declared voltage domain id the MCU is supplied from.
+lib:McuWire.hse	N			clock.rs:81	HSE is ST's name (RM0433 §8.5.2, RCC_CR.HSEBYP) for the high-speed external clock; variants crystal/external are generic clock sources.
+clock:HseCrystal.part	V			clock.rs:353	A crystal row of the power parts table (held table, tie-break c).
+clock:HseCrystal.pull_ppm	V			clock.rs:481	Crystal pulling in ppm per side, at least 1; generic units.
+clock:CelsiusRange.min	V			clock.rs:517	Board operating temperature minimum in degrees C, inside the crystal row's range.
+clock:CelsiusRange.max	V			clock.rs:517	Board operating temperature maximum in degrees C, inside the crystal row's range.
+clock:HseCrystal.life_hours	V			clock.rs:526	Service life in hours, at most the crystal row's aging span; nonzero at clock.rs:484.
+clock:HseCrystal.startup_max_us	V			clock.rs:424	Oscillator start-up wait bound in microseconds (the bring-up's HSERDY wait); nonzero. Neutral key in an HSE container (tie-break g).
+clock:HseCrystal.startup_source	V			clock.rs:429	Citation text for the start-up bound (tie-break f).
+clock:HseExternal.hz_num	V			clock.rs:451	External clock frequency numerator in Hz; range 4-50 MHz is DS12117 Table 31 held as const EXTERNAL_HZ (classed as H). Neutral key (tie-break g).
+clock:HseExternal.hz_den	V			clock.rs:442	Denominator of the exact frequency fraction; nonzero.
+clock:HseExternal.ppm	V			clock.rs:452	Frequency deviation in ppm per side, nonzero.
+clock:HseExternal.source	V			clock.rs:450	Citation text for the ppm figure (tie-break f).
+clock:HseExternal.startup_max_us	V			clock.rs:424	Oscillator start-up wait bound in microseconds; nonzero.
+clock:HseExternal.startup_source	V			clock.rs:429	Citation text for the start-up bound (tie-break f).
+lib:McuWire.hse_hz	N			lib.rs:1051	Version-19 spelling of the HSE frequency in Hz; only 0 (none) is admitted. HSE is ST's name; the meaning is a frequency.
+lib:McuWire.bor_level	S			lib.rs:3646	RM0433 BOR_LEV option-byte brown-out level, 0 (factory default) to 3 (MAX_BOR_LEVEL, lib.rs:416): an ST enumeration.
+lib:McuWire.core_supply	S			-	The core supply configuration of RM0433 Rev 9 Table 34 / §6.8.4 (PWR_CR3 LDOEN, BYPASS); container classed by its meaning, as foreign_clock.vos is.
+lib:CoreSupply.mode	S			vos.rs:673	RM0433 Rev 9 Table 34 supply-configuration rows ldo and bypass, written as PWR_CR3 LDOEN/BYPASS: an ST enumeration.
+lib:CoreSupply.source	V			lib.rs:3652	Citation text for the mode (tie-break f).
+lib:SupplySource.connector	V			connectors.rs:519	A declared connector's reference.
+lib:SupplySource.pin	V			connectors.rs:532	A connector pin number, matched against that connector's declared pins; not an MCU pin.
+lib:McuWire.reset_switch	V			bench.rs:127	Whether a reset push-button is drawn; bool.
+lib:McuWire.foreign_clock	V			-	Clock frequencies a foreign firmware programs; neutral container. Its usarts and vos keys are S and the APB timer keys N (tie-break g).
+motor:ForeignClock.apb1_timers_hz	S	?		-	APB1 timers kernel clock, Hz; which timers sit on APB1 is RM0433 Table 8 only (motor.rs:664). Doubt: N if read like HSE, an ST-named clock.
+board:Sourced.value	V			lib.rs:1191	A sourced figure in generic units (Hz, um, permille, degrees C); zero and range checks per path (lib.rs:1191, board.rs bounded).
+board:Sourced.source	V			lib.rs:3659	Citation text (tie-break f).
+motor:ForeignClock.apb2_timers_hz	S	?		-	APB2 timers kernel clock, Hz; which timers sit on APB2 is RM0433 Table 8 only (motor.rs:664). Doubt: N if read like HSE, an ST-named clock.
+motor:ForeignClock.usarts	S			lib.rs:1197	Keys must equal serial::PERIPHERALS exactly (USART1..UART8, source list) and split by RCC_D2CCIP2R USART16SEL / USART234578SEL mux (RM0433 §8.7.21, lib.rs:1210).
+motor:ForeignClock.vos	S			-	The core voltage scale with its source: RM0433 Rev 9 §6.6.2 VOS (struct SourcedVos).
+motor:SourcedVos.value	S			vos.rs:35	RM0433 Rev 9 §6.6.2 voltage scales scale0 to scale3 (PWR_D3CR.VOS): an ST enumeration.
+motor:SourcedVos.source	V			lib.rs:3661	Citation text (tie-break f).
+lib:VoltageDomain.id	V			lib.rs:4016	Rail identifier; unique with case folded (lib.rs:3688).
+lib:VoltageDomain.nominal_millivolts	V			lib.rs:3691	Nominal rail voltage in mV, nonzero.
+lib:VoltageDomain.tolerance_permille	V			lib.rs:3694	Rail tolerance, 1 to 500 permille.
+lib:I2cBus.id	V			lib.rs:4020	Bus identifier.
+lib:I2cBus.peripheral	S			solve.rs:1034	I2C instance. Admitted from pin-table AF names (solve.rs:1802), but i2c_kernel_hz maps I2C1-3 / I2C4 to I2C123SEL/I2C4SEL, pclk1/pclk4 (RM0433 §8.7.21-22): amendment 3.
+lib:I2cBus.speed_hz	V		std	lib.rs:3774	I2C Standard-mode, Fast-mode, Fast-mode Plus speeds 100k/400k/1M Hz (I2C_SPEEDS_HZ).
+lib:I2cBus.pull_up_ohms	V		std	lib.rs:3780	Pull-up resistance in ohms; nonzero and at least the I2C sink-current floor (lib.rs:3210, electrical.rs).
+lib:I2cBus.domain	V			lib.rs:3711	A declared voltage domain id.
+lib:Signal.net	V			lib.rs:3083	Net name, a plain identifier, unique with case folded in step 11.
+lib:Signal.pin	N			solve.rs:1536	MCU pin by hand in ST's PB9 form; only matched as a pin-table key (get_key_value) and reserved/pad lists. Grepped strip_prefix('P'), b'A', EXTI, port: no parsing for meaning (tie-break b).
+lib:SpiBus.id	V			lib.rs:4028	Bus identifier.
+lib:SpiBus.peripheral	S			solve.rs:962	SPI instance. Admitted from pin-table AF names (solve.rs:1802), but spi_kernel maps SPI1-3/SPI4-5/SPI6 to SPI123SEL/SPI45SEL/SPI6SEL kernel muxes (RM0433 §8.7.20-22): amendment 3.
+lib:SpiBus.speed_hz	V			lib.rs:3785	SPI clock in Hz, nonzero.
+lib:SpiBus.domain	V			lib.rs:3714	A declared voltage domain id.
+lib:I2cDevice.reference	V			lib.rs:4037	Reference designator under RUL-14's Reference rule.
+lib:I2cDevice.part	V			lib.rs:3354	A parts-table row (held table, tie-break c).
+lib:I2cDevice.supply	V			lib.rs:3717	A declared voltage domain id.
+lib:I2cDevice.bus	V			lib.rs:3802	A declared I2C bus id.
+lib:I2cDevice.address	V		std	lib.rs:3818	7-bit I2C address 0x08 to 0x77 (the I2C standard's reserved ranges excluded); also one of the part's strap addresses (lib.rs:4235).
+lib:DeclaredPinCapacitance.femtofarads	V			lib.rs:3511	Pin capacitance in fF, 1 to MAX_PIN_FEMTOFARADS and at least the I2C Ci on an I2C device.
+lib:DeclaredPinCapacitance.condition	V			lib.rs:3071	Condition text under which the bound holds (source rule).
+lib:DeclaredPinCapacitance.source	V			lib.rs:3075	Citation text (tie-break f).
+lib:SpiDevice.reference	V			lib.rs:4047	Reference designator under RUL-14's Reference rule.
+lib:SpiDevice.part	V			lib.rs:3354	A parts-table row (held table, tie-break c).
+lib:SpiDevice.supply	V			lib.rs:3720	A declared voltage domain id.
+lib:SpiDevice.bus	V			lib.rs:3809	A declared SPI bus id.
+connectors:Connector.reference	V			connectors.rs:443	Reference designator; U/R/C plus digits refused (connectors.rs:330).
+connectors:Connector.part	V			connectors.rs:336	A row of connectors::PARTS (held source table, tie-break c).
+connectors:Connector.standard	V		std	ds009.rs:186	A DS-009 (Dronecode connector standard) port row name, or null; judged by ds009::judge.
+connectors:ConnectorPin.pin	V			connectors.rs:342	Connector pin number, 1 to the part's pin count.
+connectors:ConnectorPin.net	V			connectors.rs:450	Net name, or null for a no-connect.
+connectors:OffBoard.capacitance_femtofarads	V			connectors.rs:389	Off-board capacitance in fF, 1 to MAX_OFFBOARD_FEMTOFARADS.
+connectors:OffBoard.source	V			connectors.rs:452	Citation text (tie-break f).
+lib:NetConstraint.net_name	V			lib.rs:3887	A declared net or domain, once.
+lib:NetConstraint.max_capacitance_femtofarads	V			lib.rs:3893	Capacitance bound in fF, nonzero.
+lib:NetConstraint.max_rise_time_nanoseconds	V			lib.rs:3896	Rise-time bound in ns, nonzero.
+lib:NetConstraint.impedance_ohms	V			lib.rs:3899	Impedance in ohms or null, nonzero.
+board:Board.copper_layers	V			board.rs:294	Copper layer count, 2 or 4 (LAYER_COUNTS).
+board:CopperLayer.name	V			board.rs:305	KiCad's copper layer names F.Cu, In1.Cu, In2.Cu, B.Cu in order: EDA tool vocabulary, not ST.
+board:CopperLayer.net	V			board.rs:345	A plane's net: GND or a declared domain.
+board:FinishedThickness.nominal	V			board.rs:387	Finished board thickness in um, between min and max.
+board:FinishedThickness.min	V			board.rs:382	Finished thickness minimum in um, above 0.
+board:FinishedThickness.max	V			board.rs:382	Finished thickness maximum in um, at most 10000.
+board:FinishedThickness.source	V			board.rs:420	Citation text (tie-break f).
+board:Dielectric.between	V			board.rs:368	The two KiCad copper layer names it separates, upper first.
+board:Dielectric.min_thickness_um	V			board.rs:375	Dielectric thickness minimum in um, bounded.
+board:Dielectric.source	V			board.rs:422	Citation text (tie-break f).
+board:Dielectric.max_thickness_um	V			board.rs:515	Dielectric thickness maximum in um, at least the minimum.
+board:DesignRules.clearance_um	V			board.rs:528	Copper clearance in um.
+board:DesignRules.track_width_um	V			board.rs:529	Track width in um.
+board:DesignRules.via_drill_um	V			board.rs:541	Via drill in um.
+board:DesignRules.via_diameter_um	V			board.rs:543	Via diameter in um.
+board:OutlineBound.width	V			board.rs:558	Outline width bound in um, 1 to MAX_OUTLINE_UM.
+board:OutlineBound.height	V			board.rs:559	Outline height bound in um, 1 to MAX_OUTLINE_UM.
+board:Board.drawn	V			drawn.rs:22	Whether a board is drawn from the specification; bool.
+classes:NetClass.name	V			classes.rs:131	Class name identifier, unique across classes and pairs.
+classes:NetClass.track_width_um	V			classes.rs:142	Track width in um, between the floor and MAX_THICKNESS_UM.
+classes:ClassVia.diameter_um	V			classes.rs:153	Via diameter in um.
+classes:ClassVia.drill_um	V			classes.rs:145	Via drill in um, at least the rules' drill.
+classes:NetClass.nets	V			classes.rs:138	Declared nets or domains of the class.
+classes:DiffPair.name	V			classes.rs:173	Pair name identifier.
+classes:DiffPair.nets	V			classes.rs:177	Exactly two distinct declared nets, positive then negative.
+classes:DiffPair.gap_um	V			classes.rs:202	Pair gap in um, at least the rules' clearance.
+classes:DiffPair.width_um	V			classes.rs:201	Pair track width in um.
+motor:MotorOutput.label	V			lib.rs:4063	The output's name and its net's, a plain identifier.
+motor:MotorOutput.pin	N			solve.rs:1536	MCU pin by hand in ST's PB9 form; the motor's hand pin goes through the same table-key match (solve.rs:1617). No port/number parsing found (tie-break b).
+motor:PwmTiming.rate_hz	V			lib.rs:4096	PWM rate in Hz, above 0, longest pulse inside the period.
+motor:PwmTiming.pulse_min_us	V			lib.rs:4107	Shortest command pulse in us, at least 1 and below the maximum.
+motor:PwmTiming.pulse_max_us	V			lib.rs:4114	Longest command pulse in us, inside the period.
+motor:PwmTiming.resolution_ps	V			solve.rs:1208	Picoseconds per timer tick, statable in units; the 1 to 65,536 cycle bound is the 16-bit prescaler (RM0433), a derived limit, not ST vocabulary.
+motor:NoEsc.source	V			lib.rs:4066	Citation text for an output with no ESC (tie-break f).
+power:Temperature.min	V			power.rs:664	Board temperature minimum in degrees C, -273 to 500.
+power:Temperature.max	V			power.rs:664	Board temperature maximum in degrees C, -273 to 500.
+power:Temperature.source	V			power.rs:660	Citation text (tie-break f).
+power:Derating.ratio_max_permille	V			power.rs:713	Working-to-rated voltage ratio in permille, 1 to 1000.
+power:Derating.retained_permille	V			power.rs:713	Retained capacitance share in permille, 1 to 1000, at most 500 for class-2 ceramics (power.rs:703).
+power:Derating.source	V			power.rs:675	Citation text (tie-break f).
+power:PowerIn.reference	V			power.rs:724	Reference designator of the power-in connector.
+power:PowerIn.part	V			power.rs:1622	A row of connectors::POWER_IN (held source table).
+power:HotPlug.reference	V			power.rs:763	Reference designator.
+power:HotPlug.part	V			power.rs:764	A parts row (held table).
+power:Battery.chemistry	V			power.rs:727	A battery chemistry label, text by the source rule; not judged.
+power:Cells.min	V			power.rs:745	Least cell count, 1 to max.
+power:Cells.max	V			power.rs:745	Most cell count, at most 24.
+power:SourcedValue.value	V			power.rs:755	A sourced figure in generic units (cell mV, mOhm, cm2, mW), range-checked per path.
+power:SourcedValue.source	V			power.rs:729	Citation text (tie-break f).
+power:Regulator.reference	V			power.rs:808	Reference designator.
+power:Regulator.part	V			power.rs:809	A power-parts row (held table).
+power:Regulator.input	V			power.rs:811	battery or a declared domain id.
+power:Regulator.output	V			power.rs:813	A declared domain id.
+power:Resistor.reference	V			power.rs:784	Reference designator.
+power:Resistor.part	V			power.rs:785	A resistor row (held table).
+power:Resistor.ohms	V			power.rs:786	Resistance in ohms, nonzero.
+power:External.reference	V			power.rs:793	Reference designator.
+power:External.part	V			power.rs:794	A power-parts row (held table).
+power:Control.pin	V			power.rs:2856	A control pin of the regulator or translator row (such as EN), from that part's row; not an MCU pin.
+power:Wire.net	V			power.rs:777	Net name.
+power:Wire.role	V			power.rs:778	Free text stating the wire's role (source rule).
+power:Load.domain	V			power.rs:844	A declared domain id.
+power:Load.milliamps	V			power.rs:855	Load current in mA, nonzero.
+power:Load.source	V			power.rs:845	Citation text (tie-break f).
+power:Load.reference	V			power.rs:847	Reference designator of the part this load is.
+power:Sense.net	V			power.rs:904	A new net name, not a rail or signal.
+power:Reservoir.reference	V			power.rs:916	Reference designator.
+power:Reservoir.part	V			power.rs:917	A capacitor row (held table).
+power:Sense.adc_resolution_bits	V			power.rs:2153	ADC resolution in bits, matched against the MCU row's rain_max_ohms bits (held table).
+power:Crossing.reference	V			power.rs:923	Reference designator.
+power:Crossing.part	V			power.rs:924	A translator row (held table).
+power:Crossing.bus	V			power.rs:925	A declared SPI bus id.
+power:Crossing.a_domain	V			power.rs:926	A declared domain id, the MCU side.
+power:Crossing.b_domain	V			power.rs:927	A declared domain id, the device side.
+power:DropLimit.domain	V			power.rs:864	A declared domain id, once.
+power:DropLimit.max_millivolts	V			power.rs:866	Supply plus ground drop in mV, 1 to 100000.
+power:DropLimit.source	V			power.rs:865	Citation text (tie-break f).
+lib:LifecycleAcceptance.part	V			lib.rs:3588	A parts-table part with eol or nrnd lifecycle.
+lib:LifecycleAcceptance.status	V			lib.rs:3597	eol or nrnd, as the parts table cites the part's lifecycle; generic vendor lifecycle terms.
+lib:LifecycleAcceptance.statement	V			lib.rs:3565	Printable statement of why, 1 to 512 bytes.
+serial:SerialPort.label	V			lib.rs:4071	Port name, unique with case folded.
+serial:SerialPort.peripheral	S			serial.rs:694	One of PERIPHERALS (USART1-3, UART4-5, USART6, UART7-8) hard-coded; kernel_hz picks USART16SEL or USART234578SEL by name (serial.rs:202, RM0433 §8.7.21): amendment 3.
+serial:Framing.baud	V		std	serial.rs:799	UART baud rate, nonzero. Statable in baud; solve later bounds it by the BRR range (RM0433), which is a derived limit, not the key's value set.
+serial:Framing.data_bits	V		std	serial.rs:802	UART data bits 7 to 9, statable as a UART word length; the USART_CR1.M mapping (serial.rs:96) is derived from it, not its value set.
+serial:Framing.stop_bits	V		std	serial.rs:816	UART stop bits 1 or 2, statable as UART framing; USART_CR2.STOP encoding (serial.rs:109) is derived, not the value set.
+serial:Framing.inverted	V			serial.rs:512	Whether both lines are inverted; bool.
+serial:Negotiated.source	V			serial.rs:566	Citation text for a negotiated baud (tie-break f).
+serial:SerialPort.peer_deviation_ppm	V			serial.rs:790	Remote transmitter's baud deviation in ppm; at least the cited CRSF spread on rc_crsf.
+lib:Specification.acknowledge_unwitnessed	V			-	List of acknowledgements of unwitnessed ledger rows: an engine concept. Its register and fields keys are S (tie-break g).
+lib:UnwitnessedAcknowledgement.register	S			lib.rs:3958	An ST register as the ledger names it (SPI1.CFG1, FLASH.OPTSR_CUR); shape check lib.rs:290; the CLI matches it to the register ledger. ST register name.
+lib:UnwitnessedAcknowledgement.class	V			lib.rs:259	UnwitnessedClass: the engine's ledger classes ignored-by-model, same-source, silicon-only.
+lib:UnwitnessedAcknowledgement.fields	S			lib.rs:3967	ST register bit-field names of that register (ledger rows); IR checks non-empty and no repeat, the CLI matches the ledger.
+lib:UnwitnessedAcknowledgement.reason	V			lib.rs:3981	Reason text (source rule).
+bench:TestPoint.net	V			bench.rs:159	A nameable declared net.
+bench:TestPoint.reference	V			bench.rs:166	Reference designator, not the emitter's numbering.
+pin_devices:PinDevice.reference	V			pin_devices.rs:628	Reference designator.
+pin_devices:PinDevice.part	V			pin_devices.rs:750	A busless parts row (held table, tie-break c).
+pin_devices:PinDevice.supplies	V			pin_devices.rs:955	Keys: the device row's supply pins; values: declared domain ids.
+pin_devices:PinDevice.straps	V			pin_devices.rs:113	Strap enum tie or resistor; keys are the device row's strap pins (pin_devices.rs:997).
+pin_devices:GpioSignal.device_pin	V			pin_devices.rs:1119	A pin of the device's parts row (the driver IC's pin name).
+pin_devices:GpioSignal.net	V			pin_devices.rs:643	Net name.
+pin_devices:GpioSignal.pin	N			pin_devices.rs:2253	MCU pin by hand in ST's PB9 form; matched as a pin-table key only (tie-break b).
+pin_devices:PullResistor.reference	V			pin_devices.rs:647	Reference designator.
+pin_devices:PullResistor.part	V			pin_devices.rs:1999	A resistor row (held table), read for its tolerance.
+pin_devices:PullResistor.ohms	V			pin_devices.rs:1201	Resistance in ohms, judged against the device row's thresholds.
+pin_devices:PullResistor.to	V			pin_devices.rs:1195	A declared domain id.
+pin_devices:SignalPull.source	V			pin_devices.rs:653	Citation text (tie-break f).
+pin_devices:AnalogInput.device_pin	V			pin_devices.rs:1387	A pin of the device's parts row.
+pin_devices:AnalogInput.net	V			pin_devices.rs:658	Net name.
+pin_devices:AnalogInput.pin	N			pin_devices.rs:2172	MCU pin by hand in ST's PB9 form; matched as a pin-table key only (tie-break b).
+pin_devices:AnalogInput.channel	V			-	An ADC channel by hand, or null; neutral container. Its peripheral and input keys are N (tie-break g).
+pin_devices:AdcChannel.peripheral	N			pin_devices.rs:2167	ST ADC instance (ADC3), matched as peripheral_input against the pin table's adc_channels; ADC2 avoided only for the twin. No number-derived meaning (amendment 3).
+pin_devices:AdcChannel.input	N			pin_devices.rs:2167	ST ADC input label INPm, matched only against the pin table's adc_channels; grepped INP/channel parsing, none (amendment 3 by analogy).
+pin_devices:AnalogInput.adc_resolution_bits	V			pin_devices.rs:1317	ADC resolution in bits, matched against the MCU row's rain_max_ohms bits (held table).
+pin_devices:Bridge.id	V			pin_devices.rs:679	Bridge identifier.
+pin_devices:Bridge.mode	V			pin_devices.rs:1712	One of the driver row's named modes (held table).
+pin_devices:Bridge.inputs	V			pin_devices.rs:1749	Keys: the row's bridge input pins; values: motor output labels or nets.
+pin_devices:Bridge.outputs	V			pin_devices.rs:1749	Keys: the row's bridge output pins; values: nets.
+pin_devices:SourcedValue.value	V			pin_devices.rs:1918	A part limit the row does not state, input_pwm_max_hz in Hz.
+pin_devices:SourcedValue.source	V			pin_devices.rs:690	Citation text (tie-break f).
+pin_devices:Bulk.reference	V			pin_devices.rs:695	Reference designator.
+pin_devices:Bulk.part	V			pin_devices.rs:1667	A capacitor or bulk_capacitor row of the power parts table.
+pin_devices:Bulk.source	V			pin_devices.rs:699	Citation text (tie-break f).

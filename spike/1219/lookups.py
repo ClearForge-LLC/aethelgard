@@ -4,6 +4,7 @@ string literal in ST's vocabulary, one line each: where, how many, samples.
 Comments are stripped first, so a citation in a doc comment does not count;
 a literal inside an error message does (it is printed to the user)."""
 import collections, pathlib, re, sys
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from reader import strip_comments, line_of  # noqa: E402
 

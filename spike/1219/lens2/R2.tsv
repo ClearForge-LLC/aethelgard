@@ -1,0 +1,293 @@
+id	class	flag	tags	value_at	reason
+R:UnsupportedSchemaVersion	V			lib.rs:4305	Specification schema version differs from the engine's; repository plumbing, no ST concept.
+R:UnsupportedLayerCount	V			board.rs:295	Copper layer count must be 2 or 4 (engine's LAYER_COUNTS); PCB fabrication, no ST concept.
+R:LayerTable	V			board.rs:299	Layer table shape and KiCad copper layer names; PCB/KiCad plumbing.
+R:LayerRole	V			board.rs:316	Signal or plane role per copper layer; generic PCB stackup rule.
+R:PlaneNet	V			board.rs:346	A plane's net must be GND or a declared voltage domain; generic PCB.
+R:PlaneLayout	V			board.rs:349	One plane per net, GND plane at 4 layers; generic PCB stackup.
+R:DielectricTable	V			board.rs:361	One dielectric between each adjacent copper pair, in order; generic PCB stackup.
+R:FinishedThickness	V			board.rs:383	Finished board thickness bounds and ordering in um; generic PCB fabrication.
+R:StackupValue	V			board.rs:404	Stackup values (permittivity, copper, temperature, fab tolerances) in generic units and ranges.
+R:InvalidSource	V			board.rs:601	A source citation string must be 1 to 200 printable ASCII bytes; plumbing.
+R:RuleBelowFloor	V			board.rs:532	Clearance or track width below the engine's floor in um; generic PCB rule.
+R:OutlineBound	V			board.rs:562	Board outline bound from 1 um to the engine maximum; generic PCB.
+R:UnsupportedViaRule	V			board.rs:549	Via drill and diameter must equal the engine's one via size; generic PCB.
+R:ClassBelowMinimum	V			classes.rs:112	Net class width, drill or gap below board rules; generic PCB design rule.
+R:ClassAboveMaximum	V			classes.rs:120	Net class dimension above engine maximum in um; generic PCB.
+R:ViaRingUnderRules	V			classes.rs:162	Net class via annular ring under the board rules' ring; generic PCB.
+R:ThermalViasZero	V			thermal.rs:71	Thermal via array field is zero; generic PCB thermal-via geometry.
+R:ThermalViasUnsourced	V			thermal.rs:86	Thermal via field lacks a source citation; plumbing.
+R:ThermalViaRingUnderRules	V			thermal.rs:100	Thermal via ring under the board's via ring; generic PCB.
+R:ThermalViaPitch	V			thermal.rs:109	Thermal via pitch below drill plus hole gap; generic PCB fabrication.
+R:ThermalViaLayers	V			thermal.rs:120	Thermal via layer list against the board's copper layers; generic PCB.
+R:DuplicateClassName	V			classes.rs:133	Net class or diff pair name repeated; naming plumbing.
+R:ClassNoNets	V			classes.rs:136	Net class names no nets; generic.
+R:ClassUnknownNet	V			classes.rs:240	Net class names an undeclared net; generic.
+R:ClassNetNotLiteral	V			classes.rs:233	Net name holds a quote or wildcard that KiCad DRC expressions misread; KiCad tool constraint, not ST.
+R:NetInTwoClasses	V			classes.rs:253	A net belongs to two classes; generic PCB design-rule bookkeeping.
+R:PairNets	V			classes.rs:178	Diff pair names exactly two distinct nets; generic.
+R:PairOnRail	V			classes.rs:191	Diff pair names a rail or GND; generic electronics.
+R:InvalidIdentifier	S	?		lib.rs:3052	Omnibus check_identifier: generic byte rules, plus references refused as Renode platform names or observer names p<a-k><0-15>obs (lib.rs:3036), an ST port/pin shape hard-coded.
+R:NoVoltageDomain	V			lib.rs:3672	voltage_domains is empty; generic.
+R:DuplicateDomainId	V			lib.rs:3682	Voltage domain id repeated (case folded for KiCad ERC); generic.
+R:ZeroNominalVoltage	V			lib.rs:3692	Voltage domain nominal millivolts is zero; generic units.
+R:ToleranceOutOfRange	V			lib.rs:3695	Voltage domain tolerance outside 1 to 500 permille; generic units.
+R:UnknownDomain	V			lib.rs:3706	Named voltage domain is not declared; also pin_devices.rs:859 and power.rs:803, same rule.
+R:SupplyMismatch	V			lib.rs:3725	Bus or device on a different domain from its bus or the MCU; generic.
+R:DuplicateBusId	V			lib.rs:3762	Bus id repeated; generic.
+R:UnsupportedI2cSpeed	V		std	lib.rs:3775	I2C speed must be 100k, 400k or 1M Hz (I2C_SPEEDS_HZ lib.rs:538), the I2C standard's modes.
+R:ZeroPullUp	V		std	lib.rs:3781	I2C pull-up resistance is zero; generic electronics.
+R:ZeroSpiSpeed	V		std	lib.rs:3786	SPI bus speed is zero Hz; generic.
+R:DuplicateReference	V			lib.rs:4139	Device reference repeated, case folded for KiCad ERC; also the emitter's duplicate at lib.rs:2162. Generic naming.
+R:UnknownBus	V			lib.rs:3803	Device names a bus not of its kind; generic.
+R:I2cAddressOutOfRange	V		std	lib.rs:3819	I2C address outside 0x08..=0x77, the I2C standard's 7-bit non-reserved range.
+R:DuplicateI2cAddress	V		std	lib.rs:3825	Two devices share an I2C address on one bus; I2C standard.
+R:DuplicateNetName	V			lib.rs:3864	Net declared by more than one signal, case folded; generic.
+R:NetShadowsDomain	V			lib.rs:3844	Signal net spells a voltage domain, GND or a debug net name; generic naming.
+R:DuplicateNetConstraint	V			lib.rs:3888	net_name repeated in net_constraints; generic.
+R:UnknownNet	V			lib.rs:3891	Net constraint names no declared net or domain; generic.
+R:ZeroCapacitance	V			lib.rs:3894	Net max capacitance is zero fF; generic units.
+R:ZeroRiseTime	V			lib.rs:3897	Net max rise time is zero ns; generic units.
+R:ZeroImpedance	V			lib.rs:3900	Net impedance is zero ohms; generic units.
+R:MalformedSpecificationHash	V			lib.rs:4313	specification_sha256 must be 64 lowercase hex digits; plumbing.
+R:AlternateFunctionOutOfRange	S			lib.rs:4399	Alternate function number above 15: ST's GPIO alternate-function numbering 0 to 15; the value set is ST's (no document cited at the check).
+R:InvalidCeiling	V		std	lib.rs:4407	I2C ceiling must be 100k, 400k or 1M Hz (I2C_SPEEDS_HZ), the I2C standard's modes.
+R:NetAssignedTwice	V			lib.rs:4411	Net in both assignments and gpio; topology bookkeeping.
+R:DuplicatePin	V			lib.rs:4423	One pin assigned to two nets; generic. Pin names come from the held pin table.
+R:AnalogPadPin	V			lib.rs:4434	Digital signal on a pad that takes only analog input; pad set read from the held MCU row io.analog_pads (tie-break c). Also solve.rs:1550.
+R:AnalogLineNotI2c	V		std	lib.rs:4963	analog_lines key is not a solved I2C line; is_i2c_line matches I2Cn_SDA/SCL names only (amendment 3 match), meaning generic.
+R:MissingAnalogLine	V		std	lib.rs:4997	Solved I2C line lacks an analog_lines entry; generic bookkeeping.
+R:AnalogBusMismatch	V			lib.rs:4989	Analog line bus and peripheral not one-to-one; generic bookkeeping.
+R:I2cDeviceIndex	V			lib.rs:4929	i2c_devices indices not exactly 0..n; plumbing.
+R:I2cDevicePeripheral	V			lib.rs:4923	Device's peripheral differs from the one its bus was solved to; matched, not parsed. Generic.
+R:SpiDeviceIndex	V			lib.rs:4841	spi_devices indices not exactly 0..n; plumbing.
+R:SpiDevicePeripheral	V			lib.rs:4830	SPI device not on a solved SPI peripheral; matches the name prefix SPI only (amendment 3), meaning generic.
+R:SpiDeviceSelect	V		std	lib.rs:4835	SPI chip-select net is not a solved GPIO; generic.
+R:ReferenceCollision	V			lib.rs:4155	Reference plus _memory collides with a Renode platform name (RESERVED_REFERENCES, a source list classed as H); simulator namespace, not ST rule.
+R:BorLevelOutOfRange	S			lib.rs:3647	mcu.bor_level must be 0 to 3 (MAX_BOR_LEVEL lib.rs:416): ST's brown-out reset level enumeration, RM0433 option bytes BOR_LEV (lib.rs:415).
+R:PowerPartsTableInvalid	S	?		power_parts.rs:2295	Held power parts table malformed; one clause hard-codes ST pin names P[A-K]0-15 and DS pin-structure families (FT_h, TT_a); most clauses are generic. Omnibus, most coupled clause.
+R:PartsTableInvalid	V		other-vendor	parts.rs:917	Held peripheral parts table malformed (addresses, SPI modes 0-3, identity reads, citations); rows are other vendors' parts, no ST value set.
+R:OutputSpeedTableInvalid	S			speeds.rs:279	Held output-speed table malformed: hard-codes OSPEEDR codes 00 to 11, DS12117 Table 149 VDD bands and loads, note-5 compensation cell.
+R:AmbiguousPartName	V		other-vendor	lib.rs:4185	Bare W25Q64JV name is ambiguous: its JEDEC identity depends on the ordering code; another vendor's part.
+R:PartNameCase	V			lib.rs:4199	Device part name differs in case from the parts table's name; exact-name plumbing.
+R:SupplyOutsidePart	V		other-vendor	lib.rs:3408	Device supply range outside its part's cited supply range in mV; generic electronics.
+R:IoOutsidePart	V		other-vendor	lib.rs:3469	Bus domain outside the part's cited I/O voltage range, no crossing; generic electronics.
+R:UnjudgedSpiConstraint	V		std	lib.rs:3316	Net constraint on SPI MISO or chip select that no check reads is refused; generic.
+R:LifecycleNotAccepted	V		other-vendor	lib.rs:3590	Part listed eol or nrnd by its vendor not acknowledged; generic lifecycle bookkeeping.
+R:LifecycleStatusMismatch	V		other-vendor	lib.rs:3598	Acknowledged lifecycle status differs from the cited one; generic.
+R:LifecycleAcceptedTwice	V			lib.rs:3562	accept_lifecycle names a part twice; plumbing.
+R:LifecycleStatementInvalid	V			lib.rs:3569	Lifecycle statement empty, over 512 bytes, or not printable ASCII; plumbing.
+R:LifecycleAcceptanceUnused	V			lib.rs:3614	Lifecycle acknowledgement for a part no device uses as eol or nrnd; plumbing.
+R:UnwitnessedRegisterMalformed	V			lib.rs:3959	Register name must be PERIPHERAL.REGISTER in upper case (register_name_ok); syntax only, the register set itself is checked against the ledger elsewhere.
+R:UnwitnessedClassUnknown	V			lib.rs:3962	Acknowledgement class not ignored-by-model, same-source or silicon-only (UnwitnessedClass lib.rs:259); engine's ledger classes.
+R:UnwitnessedFieldsEmpty	V			lib.rs:3968	Acknowledgement names no fields; plumbing.
+R:UnwitnessedFieldTwice	V			lib.rs:3975	Acknowledgement names a field twice; plumbing.
+R:UnwitnessedAcknowledgedTwice	V			lib.rs:3983	Two acknowledgements for one register and class; plumbing.
+R:PartOnWrongBus	V		other-vendor	lib.rs:4214	Part on a bus kind other than its row's (I2C vs SPI); generic.
+R:I2cAddressNotOffered	V		other-vendor,std	lib.rs:4238	Device I2C address not one its part's straps offer, cited; other vendor's datasheet.
+R:SpiClockAbovePart	V		other-vendor	lib.rs:4265	SPI bus clock above the part's cited maximum Hz; generic.
+R:SpiLineMismatch	V		std	lib.rs:4769	spi_lines disagree with solved SCK/MOSI signals; matches SPIn_SCK-style names only (amendment 3 match), bookkeeping.
+R:PinSpeedMismatch	S			lib.rs:4536	pin_speeds values must be 0 or 1: ST OSPEEDR output speed codes, 10 and 11 never selected (lib.rs:655, DS12117 Table 149).
+R:PinSpeedNotSolved	S			lib.rs:4558	Stored OSPEEDR speed differs from the one solve chooses from DS12117 Table 149 (speeds::OutputSpeeds::choose); ST speed grades.
+R:CeilingNotDerived	V		std	lib.rs:5018	Stored I2C ceiling differs from the mode its analog lines' rise time derives (UM10204 modes); bookkeeping on the I2C standard.
+R:SpeedBusMismatch	V			lib.rs:5060	i2c_speeds and i2c_ceilings name different buses; bookkeeping.
+R:BusTooFast	V		std	lib.rs:3198	I2C bus speed above its rise-time ceiling (electrical::ceiling_hz, UM10204 modes); I2C standard.
+R:PullUpBelowSinkFloor	V		std	lib.rs:3211	I2C pull-up below the floor its rail and mode set by UM10204 sink current; I2C standard.
+R:BusCapacitanceOverLimit	V		std	lib.rs:3223	I2C line capacitance over the mode's bus limit (UM10204); I2C standard.
+R:MotorTimingShape	V		std	lib.rs:4124	pwm object present exactly for PWM and null for DShot; motor protocol shape, published protocols.
+R:ZeroMotorRate	V			lib.rs:4097	Motor PWM rate_hz is zero; generic units.
+R:PulseRange	V			lib.rs:4108	PWM pulse minimum at least 1 us and below the maximum; generic units.
+R:PulseExceedsPeriod	V			lib.rs:4115	Longest PWM pulse does not fit its period at rate_hz; generic arithmetic.
+R:UnjudgedMotorConstraint	V			lib.rs:3321	Net constraint on a motor output no check reads is refused; generic.
+R:MotorOutputMismatch	S	?		lib.rs:4685	Omnibus: motor net is a TIMn_CHk assignment with PSC, ARR, CCR within 16-bit timer registers; ST timer register words. Most coupled clause taken.
+R:DuplicateSerialLabel	V			serial.rs:685	Serial port label repeated, case folded; plumbing.
+R:SerialPeripheralLpuart	S			serial.rs:689	Refuses LPUART1 because its enable bit is in RCC_APB4ENR and its baud generator differs (serial.rs:193); ST instance and RCC register.
+R:UnknownSerialPeripheral	S	?		serial.rs:695	Peripheral must be one of USART1..UART8 hard-coded in PERIPHERALS (serial.rs:188); a fixed set of ST instances. Amendment 3 would read N if only matched.
+R:SerialPeripheralTwice	V			serial.rs:701	Two serial ports name one peripheral; a peripheral carries one port, generic.
+R:SerialFramingShape	S	?		serial.rs:709	Word of 7 to 9 bits and 1 or 2 stop bits, bounded by RM0433 USART_CR1.M[1:0] and USART_CR2.STOP (serial.rs:813); generic framing terms over an ST register set.
+R:SerialFramingContradictsRole	V		std	serial.rs:728	An rc_crsf port's framing must be 8N1, non-inverted, a cited CRSF baud (serial.rs:500); CRSF protocol, not ST.
+R:SerialNegotiatedOffCrsf	V		std	serial.rs:560	negotiated baud only on an rc_crsf port (CRSF frame 0x70); CRSF protocol.
+R:SerialNegotiatedAtCitedBaud	V		std	serial.rs:573	negotiated declared at a cited CRSF baud; CRSF protocol.
+R:PeerDeviationBelowCited	V		std	serial.rs:737	rc_crsf peer deviation below the cited CRSF baud spread; CRSF protocol.
+R:PeerDeviationNotCited	V		std	serial.rs:745	Only an rc_crsf port's peer deviation may be called cited; CRSF and repository rule.
+R:ConsoleBaudNotRoundTrip	V			serial.rs:753	Console baud must round-trip ArduPilot's SERIAL0_BAUD map_baudrate; flight software behaviour, not ST.
+R:SerialBaudReadAsKbaud	V			serial.rs:760	Baud of 2000 or less read by ArduPilot map_baudrate as a code or kbaud; flight software, not ST.
+R:UnjudgedSerialConstraint	V			lib.rs:3332	Net constraint on a serial TX or RX no check reads is refused; generic.
+R:SerialPortMismatch	S	?		serial.rs:839	Omnibus: recomputes kernel clock from RCC_D2CCIP2R muxes (serial.rs:195) and BRR, requires USART1..UART8; ST clock mux and register. Rest generic.
+R:SpiControllerMismatch	S			lib.rs:4602	Solved SPI controller must match the RCC kernel mux selection (pll1_q/pclk) and MBR at most 7 with rate kernel/2^(MBR+1); ST MBR[2:0] divider field and RCC clock mux.
+R:I2cTimingMismatch	S			lib.rs:4617	Solved I2C controller's CR1 and TIMINGR words must equal solve's synthesis (RM0433 Rev 9 §47.4.9); ST I2C register words.
+R:TimerShared	S	?		lib.rs:4727	Outputs of one timer must share protocol, rate and stored PSC and ARR words; doubt: a shared counter is generic, but the compared values are ST timer register words.
+R:UnsupportedClock	S			lib.rs:4657	Solved clock must equal ST's reset RCC tree: HSI at 64 MHz, prescalers 1, TIMPRE 0 (SolvedClock::reset); ST clock tree state.
+R:VosLimitExceeded	S			lib.rs:4637	A clock exceeds its maximum at the VOS voltage scale (vos::judge_generated); VOS scales are an ST enumeration, limits from DS12117 and RM0433 Table 60 (vos.rs:1-24).
+R:FlashWaitStatesBelowTable	S			lib.rs:4646	FLASH_ACR LATENCY and WRHIGHFREQ below RM0433 Rev 9 Table 17's row for the VOS and AXI clock; ST register fields and table.
+R:ForeignClockZero	V			lib.rs:1192	A declared foreign kernel clock frequency is 0 Hz; generic units.
+R:ForeignClockUsarts	S	?		lib.rs:1201	foreign_clock.usarts must name exactly USART1..UART8 (serial::PERIPHERALS, serial.rs:188); a fixed set of ST instances in source. Amendment 3 would read N if only matched.
+R:ForeignClockMuxSplit	S			lib.rs:1217	USART1/USART6 and the other six share a kernel clock mux (RM0433 Rev 9 §8.7.21 USART16SEL, USART234578SEL); ST clock mux grouping hard-coded.
+R:UnknownConnectorPart	V			connectors.rs:336	Connector part not in the held connectors table; generic.
+R:ConnectorPinUnknown	V			connectors.rs:344	Connector pin number outside 1 to its part's pin count; generic.
+R:ConnectorPinRepeated	V			connectors.rs:351	Connector lists a pin twice; generic.
+R:ConnectorPinMissing	V			connectors.rs:361	Connector omits a signal pin; generic.
+R:ConnectorNetUnknown	V			connectors.rs:373	Connector pin names an undeclared net; generic.
+R:TestPointNetUnknown	V			bench.rs:160	Test point names no declared signal, domain, GND or debug net; generic.
+R:TestPointReferenceTaken	V			bench.rs:167	Test point reference already held by another part; generic naming.
+R:TestPointNetRepeated	V			bench.rs:184	Two test points on one net other than GND; generic.
+R:NoProgrammingPath	V		arch	connectors.rs:466	No connector carries SWDIO, SWCLK, GND and the MCU supply; Arm SWD debug port, not ST.
+R:SupplyHasNoSource	V			connectors.rs:497	MCU supply has no declared source (connector pin or regulator); generic.
+R:SupplyHasTwoSources	V			connectors.rs:511	MCU supply has both a connector source and a regulator; generic.
+R:ConnectorBudgetMissing	V		std	connectors.rs:398	Connector pin on an I2C or SPI line declares no off-board capacitance; generic electronics.
+R:ConnectorBudgetNotApplicable	V			connectors.rs:384	Off-board capacitance declared on a pin on no bus line; generic.
+R:ConnectorReferenceReserved	V			connectors.rs:334	Connector reference spelled like the emitter's U/R/C numbering; KiCad emitter plumbing.
+R:ConnectorBudgetTooLarge	V			connectors.rs:390	Off-board capacitance above MAX_OFFBOARD_FEMTOFARADS; generic units.
+R:UnknownConnectorStandard	V		std	ds009.rs:203	Connector names a port not in the DS-009 ports table; DS-009 Connector Standard (ds009.rs:39), not an ST document.
+R:ConnectorPartContradictsStandard	V		std	ds009.rs:208	Connector part's series or pin count differs from its DS-009 port; published standard.
+R:ConnectorSupplyContradictsStandard	V		std	ds009.rs:268	DS-009 supply pin's net is not the 5 V, 3.3 V or target-voltage domain the port names; published standard.
+R:ConnectorPinContradictsStandard	V		std	ds009.rs:276	DS-009 pin's net is not its role (ground, I2C, serial, may-float); published standard.
+R:ConnectorSerialRoleContradictsStandard	V		std	ds009.rs:257	Serial port on a DS-009 port has a role other than the port's serial role; published standard.
+R:SerialPortNotAtConnector	V			connectors.rs:426	Serial TX or RX net ends at no declared connector pin; generic.
+R:MissingBusConstraint	V		std	lib.rs:3292	I2C SDA or SCL has no net constraint, so no rise time bounds its speed; I2C standard.
+R:ReservedName	V			names.rs:290	Net, rail or reference spells a name the emitter uses for itself (#, unconnected-, own nets); KiCad emitter plumbing.
+R:InvalidDeviceName	S	?		names.rs:343	Device reference equals an MCU peripheral instance from peripheral_instances (names.rs:52): GPIOA-K, I2C1-4, SPI1-6, USARTs, TIMn hard-coded. Purpose is a Renode name clash; amendment 3 would read match-only.
+R:LoadNamesNoPart	V			names.rs:385	Power load names no part the board has; generic.
+R:LoadNamesCountedPart	V			names.rs:401	Power load names the MCU or a regulator already counted; generic power budgeting.
+R:UnknownPart	V			lib.rs:3355	Device part has no row in the held parts table (PartWithoutRow); generic. Also pin_devices.rs:764.
+R:UnboundedPinCapacitance	V			drawn.rs:37	Device on an MCU-driven SPI line has no cited or declared pin capacitance; generic electronics.
+R:PartNotDrawable	V			drawn.rs:79	Part has a table row but no emitter arm; emitter plumbing.
+R:ForwardUndeclared	V			lib.rs:3917	IMU orientation declared without board.forward; generic board frame.
+R:ImuAxesNotPerpendicular	V			lib.rs:3910	Declared IMU X and Z axes not at right angles; geometry.
+R:OrientationOnNonImu	V			lib.rs:3367	Orientation declared on a part whose ardupilot.kind is not imu; flight-software part kind, not ST.
+R:ImuAxesNotCited	V		other-vendor	lib.rs:3380	IMU row cites no axes or ardupilot.frame; other vendor's IMU datasheet and ArduPilot.
+R:RiseTimeTooSlow	V		std	lib.rs:3192	I2C rise time slower than every I2C mode (1000 ns at most); I2C standard.
+R:SupplyOutsideSpeedTable	S	?		lib.rs:3240	MCU supply outside DS12117 Table 149's 1620 to 3600 mV bands, so no OSPEEDR output speed can be chosen; band is mV but only bounds ST's speed-grade table. Also speeds.rs:153.
+R:MissingSpiConstraint	V		std	lib.rs:3249	SPI SCK or MOSI has no net constraint to choose an output speed by; requirement itself is generic.
+R:SpiModeNotDriven	V		other-vendor,std	lib.rs:4277	Part's cited SPI modes exclude mode 0, the one the firmware drives (CPOL 0, CPHA 0); SPI standard modes.
+R:PinCapacitanceOutOfRange	V			lib.rs:3513	Declared pin capacitance not 1 fF to the table maximum; generic units.
+R:PinCapacitanceBelowI2cCi	V		std	lib.rs:3520	Declared I2C pin capacitance below UM10204 Ci; I2C standard.
+R:PinCapacitanceAlreadyCited	V		other-vendor	lib.rs:3529	Pin capacitance declared for a part that cites a maximum; other vendor's datasheet.
+R:PinCapacitanceBelowTypical	V		other-vendor	lib.rs:3540	Declared pin capacitance below the part's cited typical; other vendor's datasheet.
+R:MotorTiming	S	?		solve.rs:1186	PWM or DShot period must be 3 to 65,536 ticks, the 16-bit ARR (motor.rs:858); doubt: a counter width statable generically, message names ARR.
+R:OffDomainAboveLimit	V			off_domain.rs:168	Unpowered-MCU pin held above its absolute maximum at VDD=0, limit read from the held MCU row (DS12117 Table 10, tie-break c); millivolts, generic.
+R:SerialBaudOutOfRange	S			solve.rs:769	Baud needs a BRR outside 16 to 0xFFFF at the kernel clock (RM0433 Rev 9 §48.8.5, oversampling 16); ST USART_BRR register range.
+R:SerialBaudTolerance	S			solve.rs:806	Worst-case baud error not below the receiver tolerance row selected by USART_CR1.M bits and HSI deviation (serial::TOLERANCE, RM0433); ST table keyed by register field.
+R:LoadAboveSpeedTable	S	?		speeds.rs:163	Declared load above DS12117 Table 149's heaviest row (50 pF), so no OSPEEDR grade can be chosen; figure in pF, doubt N.
+R:RateAbovePinSpeed	S			speeds.rs:205	Line rate above OSPEEDR 01's Fmax; 10 and 11 need the I/O compensation cell and are never selected (DS12117 Table 149); ST speed grades.
+R:RiseTimeBelowPinSpeed	S			speeds.rs:207	Declared rise time below OSPEEDR 01's maximum rise and fall time (DS12117 Table 149); ST speed grades.
+R:HsePartNotCrystal	N			clock.rs:355	External crystal part is not a crystal row of the power parts table; generic. HSE is ST's name for the external high-speed oscillator.
+R:HseDeclarationZero	N			clock.rs:425	A declared crystal or external-clock field is zero (INV-06); generic. Only the HSE name is ST's.
+R:HseFrequencyOutOfRange	N			clock.rs:466	External oscillator frequency outside DS12117's crystal or external-clock range in Hz (rule 3's test case); figures in Hz, name HSE.
+R:HseTemperatureOutsidePart	N			clock.rs:518	Board temperature range not inside the crystal's stated stability range; generic crystal electronics, HSE name.
+R:HseLifeBeyondAging	N			clock.rs:527	Service life beyond the hours the crystal's aging is stated for; generic, HSE name.
+R:HseGmCritExceeded	N			clock.rs:540	Crystal critical gain (AN2867 formula) over DS12117 Gm_crit_max 1.5 mA/V (clock.rs:348); oscillator figure in nA/V, generic, HSE name.
+R:HseBudgetUnbounded	N			clock.rs:567	Oscillator ppm budget side of 1,000,000 ppm or more; generic units, HSE name.
+R:HseLoadCapsUnfit	N			clock.rs:501	Crystal load caps differ or exceed CL in series (AN2867 §3.3); generic crystal electronics, HSE name.
+R:HseTreeUnreachable	S			solve.rs:845	No PLL1 setting reaches sys_ck 64 MHz with a reference strictly inside a PLL1RGE range (h1_words); ST RCC PLL1 register fields and ranges.
+R:PllReferenceNotInsideRange	S			clock.rs:680	PLL1 reference not strictly inside the PLL1RGE range its field selects (RM0433 Rev 9 §8.7.12 p. 402); ST register field and its range table.
+R:PllVcoSelectMismatch	S			clock.rs:688	PLL1VCOSEL inconsistent with PLL1RGE (RM0433 Rev 9 pp. 347, 402); ST RCC_PLLCFGR fields.
+R:PllVcoOutOfRange	S			clock.rs:710	VCO outside the range its PLL1VCOSEL value selects (DS12117 Tables 39/40); value set keyed by an ST register field.
+R:PllOutputDisabled	S			clock.rs:637	RCC_PLLCFGR.DIVP1EN is 0, disabling pll1_p_ck that sys_ck uses (RM0433 Rev 9 p. 401); ST register bit.
+R:PllWordsUndecodable	S			clock.rs:612	Solved RCC_PLLCKSELR/PLLCFGR/PLL1DIVR words fail decoding: PLLSRC, PLL1FRACEN, reserved bits, DIVR1, DIVM1 (RM0433 §8.7.11-13); ST registers.
+R:HseClockMismatch	S	?		clock.rs:611	Solved HSE clock disagrees with its declaration's budget or hse_hz (generic) or with what its RCC PLL words decode to at VOS Scale 2 (ST). Omnibus, most coupled clause.
+R:HseCopyNotSolved	S	?		lib.rs:4682	Topology's clock differs from re-solving its HSE declaration: the budget, the RCC PLL words (pllckselr, pllcfgr, pll1divr) or a clock field; most coupled clause ST registers.
+R:IdleSpelledTwice	V			lib.rs:4100	Idle pulse of 0 us or the whole period duplicates an idle level low or high; generic PWM duty. Message names CCR. Also motor.rs:805.
+R:ResolutionNotDerivable	S	?		motor.rs:855	PWM tick must be 1 to 65,536 timer-clock cycles so PSC derives it (motor.rs:853); doubt: a prescaler width statable generically.
+R:PulseNotOnTick	V			motor.rs:869	PWM pulse range not a whole number of ticks; generic arithmetic. Also solve.rs:1214.
+R:IdleNotOnTick	V			motor.rs:886	PWM idle pulse not a whole number of ticks; generic arithmetic.
+R:IdleExceedsPeriod	V			motor.rs:888	PWM idle pulse longer than the period; generic arithmetic.
+R:PartHasBus	V			pin_devices.rs:754	A part with a bus declared as a pin device; schema bookkeeping.
+R:PartWithoutBus	V			pin_devices.rs:819	A busless part declared as a bus device; schema bookkeeping.
+R:SupplyPinUndeclared	V		other-vendor	pin_devices.rs:983	A driver part's supply pin names no domain; generic.
+R:SupplyOutOfRange	V		other-vendor	pin_devices.rs:970	Domain voltage span outside the part's supply pin range, cited; generic electronics.
+R:StrapUndeclared	V		other-vendor	pin_devices.rs:1104	Part's strap pin not declared; generic.
+R:StrapLevelInvalid	V		other-vendor	pin_devices.rs:1002	Strap level not one the part's pin accepts, cited; generic.
+R:UnknownDevicePin	V			pin_devices.rs:874	Named pin is not a pin of the part's row; generic.
+R:DevicePinBoundTwice	V			pin_devices.rs:888	Device pin bound twice (or tied to GND and bound); generic.
+R:DevicePinUnbound	V			pin_devices.rs:939	Device input pin bound by no signal or bridge (INV-06); generic.
+R:SignalKindMismatch	V			pin_devices.rs:898	Signal direction does not match the device pin's kind; generic.
+R:SignalShape	V			pin_devices.rs:1120	GPIO signal fields inconsistent with its direction (initial, active, pull); generic schema shape.
+R:LogicLevelIncompatible	V			pin_devices.rs:1245	MCU VOH/VOL (DS12117 Table 50 figures in mV, MCU_IO_LEVELS) do not meet the part's VIH/VIL; generic logic levels.
+R:UnheldDuringReset	S	?		pin_devices.rs:1255	Device input unheld from reset (RM0433 p. 541), and at pin_devices.rs:2358 driven from MCU_RESET_PULL_UPS PA13, PA15, PB4 (pin_devices.rs:64); doubt: a const list only matched (tie-break b/c).
+R:OpenDrainUnpulled	V			pin_devices.rs:1186	Open-drain signal with no pull-up never reads high; generic electronics.
+R:PullOverDrive	V		other-vendor	pin_devices.rs:1280	Pull-up current exceeds what the part's pin sinks; generic electronics.
+R:PartLimitUndeclared	V		other-vendor	pin_devices.rs:1424	Part's error band or input PWM limit not stated for the condition; generic.
+R:PartLimitDeclaredTwice	V		other-vendor	pin_devices.rs:1921	Part limit declared although the row states it; generic.
+R:TemperatureUndeclared	V			pin_devices.rs:2016	No board temperature declared for a temperature-judged device; generic.
+R:TemperatureDeclaredTwice	V			pin_devices.rs:2007	Board temperature declared in two places; generic.
+R:PowerPartUnknown	V			pin_devices.rs:794	Named part is not a row of the power parts table of the needed kind (MCU, capacitor, resistor); generic. Also power.rs:392.
+R:AdcFullScaleExceeded	V			pin_devices.rs:1304	Sense voltage at full scale above VREF+ minimum (VDDA); generic ADC electronics.
+R:AdcOutputCurrentExceeded	V		other-vendor	pin_devices.rs:1461	Part's current output at full scale above its cited maximum; generic.
+R:AdcSourceImpedance	V			pin_devices.rs:1320	ADC source impedance above RAIN at the resolution with no reservoir; RAIN figures read from the held MCU row (tie-break c), generic ADC.
+R:BridgeModeUnknown	V		other-vendor	pin_devices.rs:1714	Bridge mode not one of the driver part's modes; another vendor's driver IC.
+R:BridgeModeStrapMismatch	V		other-vendor	pin_devices.rs:1733	Bridge mode needs a strap level the device is not strapped to; driver IC.
+R:BridgeChannelUnknown	V		other-vendor	pin_devices.rs:1753	Bridge inputs and outputs are no channel of the mode; driver IC.
+R:BridgeInputUnknown	V			pin_devices.rs:1813	Bridge input is neither a PWM motor output nor the device's output signal; generic.
+R:BridgeInputShared	V			pin_devices.rs:1779	One motor output drives two bridge inputs; generic.
+R:BridgeIdlePulsed	V			pin_devices.rs:1784	Bridge input idles at a pulse, visiting two truth-table rows; generic.
+R:BridgeIdleDrives	V		other-vendor	pin_devices.rs:1843	Bridge idle state drives the outputs per the driver's truth table; driver IC.
+R:BridgeForbiddenState	V		other-vendor	pin_devices.rs:1894	Bridge enters a forbidden state of the driver's truth table; driver IC.
+R:InputRateAbovePart	V		other-vendor	pin_devices.rs:1948	Motor PWM rate above the part's maximum input rate; generic.
+R:PinDeviceUndeclared	V			pin_devices.rs:2062	Topology GPIO or ADC input that only a pin device could own, with no pin device; bookkeeping.
+R:BridgeUndeclared	V		other-vendor	pin_devices.rs:923	A bridge channel input is taken by no declared bridge; generic.
+R:SenseAdcMismatch	V			pin_devices.rs:2073	power.sense input not held at the same pin in adc_inputs; bookkeeping.
+R:PullAboveMcuTolerance	S	?		pin_devices.rs:1507	Off-domain pull above the held I/O family limit (mV, generic), and above supply+0.3 V on MCU_RESET_PULL_UPS/DOWNS pins (pin_devices.rs:1519); doubt: const ST pin list only matched.
+R:McuPinStructureUnheld	S	?		pin_devices.rs:1528	MCU pin has no held I/O structure (DS12117 Table 8 FT/TT pin-structure codes); structures are read from the held table (tie-break c), so N by name is the doubt.
+R:TripReferenceGrounded	V		other-vendor	pin_devices.rs:1563	Driver trip reference tied to GND, so ITRIP is 0; driver IC datasheet.
+R:TripBelowFullScale	V		other-vendor	pin_devices.rs:1630	Driver chops below the declared full-scale current; driver IC datasheet.
+R:TripSenseUnbound	V		other-vendor	pin_devices.rs:1612	Trip sense pin terminated by no analog input; driver IC.
+R:BulkUndeclared	V		other-vendor	pin_devices.rs:1657	Part needs a bulk capacitor value and none is declared; driver IC.
+R:BulkNotAllowed	V		other-vendor	pin_devices.rs:1649	Bulk declared for a part that states its own supply capacitance; generic.
+R:BulkUnderRated	V			pin_devices.rs:1686	Bulk capacitor rated not above the domain maximum; generic electronics.
+R:BatterySideUnmodelled	V			power.rs:3193	Battery-fed regulator the chain cannot model (not a buck, no loss, no regulation input); generic power.
+R:PowerValueInvalid	V			power.rs:653	Declared power value outside the schema (zero, min above max, no table row for a resolution or BOR level); generic, row lookups in held tables.
+R:DomainWithoutSource	V			power.rs:966	No regulator outputs the domain; generic power tree.
+R:DomainWithTwoSources	V			power.rs:975	Two regulators output one domain; generic power tree.
+R:PowerLoop	V			power.rs:992	Regulator inputs form a loop; generic power tree.
+R:BatteryOutsideRegulatorInput	V		other-vendor	power.rs:1347	Battery range outside the regulator's cited input range; generic electronics.
+R:DomainOutsideConsumer	V			power.rs:1315	Domain range not inside a consumer's supply range; generic electronics.
+R:RegulatorOutsideDomain	V		other-vendor	power.rs:1053	Regulator output tolerance outside its domain; generic electronics.
+R:DropoutViolated	V		other-vendor	power.rs:1570	LDO input minimum below output plus dropout; generic electronics.
+R:BuckHeadroomViolated	V		other-vendor	power.rs:1540	Buck cannot reach its output at minimum input and maximum duty; generic electronics.
+R:OnTimeTooShort	V		other-vendor	power.rs:1555	Buck on-time below the part's minimum; generic electronics.
+R:RegulatorOverloaded	V		other-vendor	power.rs:1466	Regulator load above its rated current; generic.
+R:PowerInputOverloaded	V			power.rs:1646	Power input connector or LDO input current above its rating or unbounded; generic.
+R:JunctionTooHot	V		other-vendor	power.rs:1598	Regulator junction temperature above its maximum; generic thermal.
+R:BoardOutsidePartTemperature	V			power.rs:1686	Board temperature range outside a part's rated range; generic.
+R:ExternalPartMissing	V		other-vendor	power.rs:1032	Regulator role (feedback divider, inductor) has no part; generic.
+R:ExternalPartOutOfRange	V		other-vendor	power.rs:1040	External part outside its role's cited bounds (RFBT, inductance, saturation, rating, dielectric); generic electronics.
+R:SenseFullScaleExceeded	V			power.rs:2145	Battery sense divider output above VREF+ minimum; generic ADC electronics.
+R:SenseSourceImpedance	V			power.rs:2182	Sense divider source impedance above RAIN with no reservoir; RAIN read from the held MCU row, generic ADC.
+R:CrossingInvalid	V		other-vendor	power.rs:2268	Level-shifter crossing declaration invalid against its part row; generic.
+R:CrossingDomainMismatch	V			power.rs:2324	Crossing domains do not match its bus and device; generic.
+R:CrossingPullUp	V		other-vendor	power.rs:2340	Crossing CS pull-up above what the translator's pull-downs allow; generic electronics.
+R:CrossingTooFast	V		other-vendor	power.rs:2361	SPI rate through a crossing above its maximum data rate; generic.
+R:MisoRoundTripTooSlow	V		std	power.rs:2404	SCK out plus device delay plus MISO back plus MCU setup exceeds half a period; SPI timing, MCU setup read from the held row.
+R:OutputDelayMissing	V		other-vendor	power.rs:2376	Device behind a crossing has no output delay in the sensor table; generic.
+R:BatteryInputUndamped	V		other-vendor	power.rs:2524	Battery input lacks a cited bulk capacitor or clamp for hot-plug ring; generic power electronics.
+R:BuckJunctionOverLimit	V		other-vendor	power.rs:2657	Buck junction screen does not clear its limit; generic thermal.
+R:EffectiveCapacitanceBelowMinimum	V		other-vendor	power.rs:2043	Capacitor effective capacitance under DC bias at or below the role minimum; generic.
+R:SupplyFloorBelowBorRising	N			power.rs:2836	MCU supply minimum does not clear the brown-out rising threshold in mV, read from the held MCU row by bor_level (tie-break c); generic meaning, Bor name.
+R:ControlPinUnwired	V		other-vendor	power.rs:2908	Regulator control pin neither wired nor tied by an allowed strap; generic.
+R:DcBiasBeyondCurve	V		other-vendor	power.rs:2747	Ceramic capacitor works past its maker's DC-bias curve; another vendor's data.
+R:PartMismatch	V			solve.rs:441	Specification's MCU part differs from the pin table's part; plumbing.
+R:UnknownPin	V			solve.rs:1537	Named pin not in the held pin table; value set read from the table (tie-break c), generic rule.
+R:ReservedPin	S	?		solve.rs:1544	Pin reserved for SWD or oscillator, set hard-coded: RESERVED_PINS PA13, PA14, PC14, PC15 (solve.rs:21) plus PH0/PH1 for the HSE (solve.rs:31). Tie-break b would read N, names only matched.
+R:UnknownPeripheral	V			solve.rs:1804	Named peripheral not offered by the held pin table for the bus kind; instance set read from the table (tie-break c), match only.
+R:PinClaimedTwice	V			solve.rs:1556	One pin claimed by two claimants; generic.
+R:PeripheralClaimedTwice	V			solve.rs:1810	One peripheral claimed by two buses; generic.
+R:NoInstance	V			solve.rs:1868	No peripheral instance in the pin table can place the bus; solver search over held table, generic.
+R:Infeasible	V			solve.rs:2086	Buses cannot all be placed at once (minimal set); solver, generic.
+R:BudgetExceeded	V			solve.rs:2053	Solver search exceeded NODE_LIMIT; engine limit.
+R:NoFreePin	V			solve.rs:554	Claimant has no free pin left; generic.
+R:NoAdcPin	V			solve.rs:606	No free pin carries a single-ended ADC input; channel set from the held pin table, generic.
+R:AdcChannelNotOnPin	V			pin_devices.rs:2180	Pinned ADC pin carries no such channel per the held pin table; match only, generic.
+R:AdcUnmodelled	S			solve.rs:608	Free ADC pins carry only ADC2, which the twin does not model; code takes ADC1/ADC3 by instance number (choose_channel, MODELLED_ADCS). Amendment 3: meaning from the instance.
+R:BridgeSplitAcrossTimers	V			solve.rs:654	An IN/IN bridge's two inputs on two timers; one counter must time both, generic.
+R:NoTimerChannel	V			solve.rs:1897	No timer channel in the pin table can serve the motor output; generic solver.
+R:TimerRateConflict	V			solve.rs:1916	Two motor outputs forced onto one timer differ in rate; shared counter, generic.
+R:TimerResolutionConflict	V			solve.rs:1910	Two motor outputs forced onto one timer differ in tick; shared counter, generic.
+R:MotorsInfeasible	V			solve.rs:1940	Motor outputs cannot all be placed at once; solver, generic.
+R:SerialPinsSplit	V			solve.rs:1999	Fixed TX and RX pins are on no single USART or UART; a port's lines are one peripheral's, generic.
+R:NoSerialPeripheral	V			solve.rs:2011	No USART or UART in the pin table can serve the port; generic solver.
+R:SerialPortsInfeasible	V			solve.rs:2031	Serial ports cannot all be placed at once; solver, generic.
+R:SerialClock	S			solve.rs:722	Solved clock gives no kernel clock for the USART per RCC_D2CCIP2R reset mux selections (RM0433 Rev 9 §8.7.21, serial::kernel_hz); ST clock mux.
+R:SpiKernelClockUnavailable	S			solve.rs:1003	No SPI kernel clock: spi_kernel maps SPI1-3 and SPI4-6 to per_ck, hsi_ker_ck, pll1_q or pclk (RM0433 Rev 9 §8.7.19, §8.7.20, §8.7.22); ST clock mux by instance number.
+R:SpiSpeedBelowKernelRange	S			solve.rs:1010	Declared SPI speed below kernel at HSI's fastest divided by 256 (MBR 111, RM0433 Rev 9 §50.11.3); ST MBR[2:0] divider set.
+R:NoI2cTiming	S			solve.rs:1143	Kernel clock gives the I2C mode no TIMINGR (no PRESC fits; RM0433 Rev 9 §47.4.9); ST I2C_TIMINGR register fields.

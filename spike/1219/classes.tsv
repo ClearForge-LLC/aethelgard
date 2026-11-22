@@ -260,8 +260,8 @@ H:parts:RENODE_MODELS	V		other-vendor	-	Renode sensor/flash model names with bus
 H:parts:SETTLE_COVERS_MAXIMUM	V			-	Plumbing or engine limit on the parts table.
 H:parts:SETTLE_TWICE_TYPICAL	V			-	Plumbing or engine limit on the parts table.
 H:parts:TABLE	V			-	Plumbing or engine limit on the parts table.
-H:pin-table	S			-	RULES §3: S columns lib:Pin.alternate_functions, lib:Pin.adc_channels
-H:pin-table|lib:Pin.adc_channels	S			pin_devices.rs:2121	set of ADCn_INPm names split on underscore; ST ADC channel naming (INP vs INN legs) held in source
+H:pin-table	S			-	RULES §3: S columns lib:Pin.alternate_functions
+H:pin-table|lib:Pin.adc_channels	N			pin_devices.rs:2121	Reviewer (lenses S / N), tie-break b by analogy: ADCn_INPm is split only to match the instance against the held MODELLED_ADCS list; no meaning is derived from the numbers.
 H:pin-table|lib:Pin.alternate_functions	S			lib.rs:1410	signal name to alternate-function number (AF0..15), ST numbering, rule 2 example
 H:pin-table|lib:Pin.position	V			lib.rs:1408	package pin number, integer
 H:pin-table|lib:PinSource.commit	V			lib.rs:1425	neutral field, not ST
@@ -279,7 +279,7 @@ H:pin_devices:MCU_VOH_DROP_MV	D				Reviewer, amendment 4: DS12117 VOH drop in mV
 H:pin_devices:MCU_VOL_MAX_MV	D				Reviewer, amendment 4: DS12117 VOL max in mV; a held fact, rule 1.
 H:pin_devices:MODELLED_ADCS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
 H:pin_parts:CURRENT_OUTPUT_FIELDS	V			-	Plumbing, field-name list or engine limit.
-H:power-parts.json	S			-	RULES §3: S columns power_parts:RawMcu.bor_falling_max_millivolts, power_parts:RawMcu.bor_rising_max_millivolts, power_parts:RawMcuIo.pins, power_parts:RawIoPin.structure, power_parts:RawMcuIo.families, power_parts:RawIoFamily.family, power_parts:RawIoAbsoluteMaximum.families
+H:power-parts.json	S			-	RULES §3: S columns power_parts:RawMcu.bor_falling_max_millivolts, power_parts:RawMcu.bor_rising_max_millivolts, power_parts:RawIoPin.structure, power_parts:RawMcuIo.families, power_parts:RawIoFamily.family, power_parts:RawIoAbsoluteMaximum.families
 H:power-parts.json|power_parts:RawAnalogPads.at	V			power_parts.rs:1193	citation; tie-break f
 H:power-parts.json|power_parts:RawAnalogPads.pins	N			power_parts.rs:2307	list of pin names (PC2, PC3) only matched against io.pins; tie-break b N; ST Pxy_C pad concept
 H:power-parts.json|power_parts:RawAt.document	V			power_parts.rs:921	citation or its container (document/page/section/hash); tie-break f
@@ -405,7 +405,7 @@ H:power-parts.json|power_parts:RawMcuArduPilot.table_at	V			-	citation or its co
 H:power-parts.json|power_parts:RawMcuIo.absolute_maximum	V			-	container for absolute-maximum input limits; its own meaning neutral, its families key classed apart
 H:power-parts.json|power_parts:RawMcuIo.analog_pads	N			power_parts.rs:2307	container of pins with a direct analog pad (Px_C analog-switch pads, DS12117 Table 8 note 4 via SYSCFG); meaning statable as dedicated analog pads, ST names
 H:power-parts.json|power_parts:RawMcuIo.families	S			power_parts.rs:2335	list of ST I/O structure families FT and TT with their tolerances (DS12117 Table 13); value set is ST structure families
-H:power-parts.json|power_parts:RawMcuIo.pins	S			power_parts.rs:2282	map of pin to DS12117 Table 8 I/O structure (FT_a, TT_ha...); structure letters are ST-only; key checked canonical P[A-K]n only, matched not parsed for meaning
+H:power-parts.json|power_parts:RawMcuIo.pins	N			power_parts.rs:2283	Reviewer (lenses S / N), tie-break g: the map's own content is pin-name keys, shape-checked as P[A-K]0-15 and matched (tie-break b); the structure each maps to is S at RawIoPin.structure.
 H:power-parts.json|power_parts:RawMcuIo.pins_at	V			power_parts.rs:2284	citation; tie-break f
 H:power-parts.json|power_parts:RawMcuIo.pulls_off_above_supply_millivolts	V			power_parts.rs:2328	voltage in mV above supply at which internal pulls turn off, positive; neutral
 H:power-parts.json|power_parts:RawOwnNet.at	V			-	citation or its container (document/page/section/hash); tie-break f
@@ -443,7 +443,7 @@ H:power-parts.json|power_parts:RawStrap.to	V			power_parts.rs:1285	neutral MCU p
 H:power-parts.json|power_parts:RawSupport.capacitors	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
 H:power-parts.json|power_parts:RawSupport.grounds	V			power_parts.rs:1748	names of groups in pins, matched against table only
 H:power-parts.json|power_parts:RawSupport.own_nets	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
-H:power-parts.json|power_parts:RawSupport.pins	V			power_parts.rs:1720	map from free-text group name (16 chars max) to package positions; value set held in table, not source (tie-break c)
+H:power-parts.json|power_parts:RawSupport.pins	N	?		names.rs:189	Reviewer (lenses V / N?): keys are DS12117 pin-group names (VCAP, PDR_ON, BOOT0), and names.rs hard-codes VCAP to name nets; ST names over neutral groups (tie-break b). Could be V.
 H:power-parts.json|power_parts:RawSupport.pins_at	V			power_parts.rs:1241	citation; tie-break f
 H:power-parts.json|power_parts:RawSupport.powered	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
 H:power-parts.json|power_parts:RawSupport.straps	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
@@ -572,7 +572,7 @@ R:AlternateFunctionOutOfRange	S			lib.rs:4399	ST alternate-function numbering 0.
 R:AmbiguousPartName	V		other-vendor	lib.rs:4185	JEDEC id ambiguity of Winbond W25Q part ordering code; other vendor
 R:AnalogBusMismatch	V			lib.rs:4989	generic specification, solver or consistency check; no ST register, enumeration or document
 R:AnalogLineNotI2c	V			lib.rs:4963	generic specification, solver or consistency check; no ST register, enumeration or document
-R:AnalogPadPin	S			lib.rs:4434	ST analog-only pad (DS12117 Table 8 type ANA, Px_C pins): ST pin structure
+R:AnalogPadPin	V			solve.rs:1550	Reviewer (lenses S / V), tie-break c: the pad set is read from the held MCU row; the kind judges a digital signal on an analog-only pad, generic in name and meaning. The ST structure is counted at its column.
 R:BatteryInputUndamped	V			power.rs:2524	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:BatteryOutsideRegulatorInput	V			power.rs:1347	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:BatterySideUnmodelled	V			power.rs:3193	driver-IC / power-chain / placement check; generic electrical or solver rule
@@ -643,12 +643,12 @@ R:ExternalPartOutOfRange	V			power.rs:1040	driver-IC / power-chain / placement c
 R:FinishedThickness	V			board.rs:383	board stackup/class/via rule; generic PCB
 R:FlashWaitStatesBelowTable	S			lib.rs:4646	FLASH_ACR LATENCY/WRHIGHFREQ vs RM0433 Table 17 by VOS
 R:ForeignClockMuxSplit	S			lib.rs:1217	RM0433 §8.7.21 USART16SEL/USART234578SEL kernel clock mux
-R:ForeignClockUsarts	S	?		lib.rs:1201	must name each USART the platform carries (H7 set), once
+R:ForeignClockUsarts	V			lib.rs:1195	Reviewer, amendment 3 (both lenses S?, as above): the map's keys must equal the held PERIPHERALS list (D), only matched; the kind judges a missing or extra declared clock, generic.
 R:ForeignClockZero	V			lib.rs:1192	zero Hz foreign clock declaration; generic
 R:ForwardUndeclared	V			lib.rs:3917	generic specification, solver or consistency check; no ST register, enumeration or document
 R:HseBudgetUnbounded	N			clock.rs:567	ppm budget side 1,000,000 or more is no clock; generic, HSE name
-R:HseClockMismatch	N			clock.rs:611	solved HSE clock disagrees with its declaration; generic, HSE name
-R:HseCopyNotSolved	N			lib.rs:4682	topology clock is not what the HSE declaration solves to; generic, HSE name
+R:HseClockMismatch	S	?		clock.rs	Reviewer (lenses N / S?): one clause compares the RCC PLL words (PLLCKSELR, PLLCFGR, PLL1DIVR) the declaration decodes to, ST registers (rule 2); the other clauses are generic.
+R:HseCopyNotSolved	S	?		lib.rs:4682	Reviewer (lenses N / S?): as HseClockMismatch, the re-solve compares the RCC PLL words; most coupled clause (tie-break a).
 R:HseDeclarationZero	N			clock.rs:425	declared zero is no declaration; generic, HSE name
 R:HseFrequencyOutOfRange	N			clock.rs:466	crystal frequency range check; generic, HSE name (limits read from held table)
 R:HseGmCritExceeded	N			clock.rs:540	oscillator gain margin Gm_crit vs max (DS12117, AN2867 formula); generic margin, HSE name
@@ -664,14 +664,14 @@ R:I2cDevicePeripheral	V			lib.rs:4923	generic specification, solver or consisten
 R:I2cTimingMismatch	S			lib.rs:4617	I2C TIMINGR/CR1 as solved, RM0433 §47.4.9
 R:IdleExceedsPeriod	V			solve.rs:1233	PWM/DShot motor timing or timer placement; generic
 R:IdleNotOnTick	V			solve.rs:1220	PWM/DShot motor timing or timer placement; generic
-R:IdleSpelledTwice	N			lib.rs:4100	idle pulse equal to CCR has one spelling; generic PWM idle, ST CCR name
+R:IdleSpelledTwice	V			motor.rs:805	Reviewer (lenses N / V): rule 3 tests the kind string, which is generic; the CCR name is only in the message. Generic PWM idle rule.
 R:ImuAxesNotCited	V			lib.rs:3380	generic specification, solver or consistency check; no ST register, enumeration or document
 R:ImuAxesNotPerpendicular	V			lib.rs:3910	generic specification, solver or consistency check; no ST register, enumeration or document
 R:Infeasible	V			solve.rs:2086	generic specification, solver or consistency check; no ST register, enumeration or document
 R:InputRateAbovePart	V			pin_devices.rs:1948	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:InvalidCeiling	V		std	lib.rs:4407	generic specification, solver or consistency check; no ST register, enumeration or document
 R:InvalidDeviceName	V			names.rs:343	generic specification, solver or consistency check; no ST register, enumeration or document
-R:InvalidIdentifier	V			lib.rs:3052	generic specification, solver or consistency check; no ST register, enumeration or document
+R:InvalidIdentifier	N	?		lib.rs:3036	Reviewer (lenses V / S?): one clause hard-codes the observer shape p<a-k><0-15>obs, ST port naming over a neutral concept (tie-break b by analogy); the rest is generic. Could be V.
 R:InvalidSource	V			board.rs:601	board stackup/class/via rule; generic PCB
 R:IoOutsidePart	V			lib.rs:3469	generic specification, solver or consistency check; no ST register, enumeration or document
 R:JunctionTooHot	V			power.rs:1598	driver-IC / power-chain / placement check; generic electrical or solver rule
@@ -687,11 +687,11 @@ R:LoadNamesCountedPart	V			names.rs:401	generic specification, solver or consist
 R:LoadNamesNoPart	V			names.rs:385	generic specification, solver or consistency check; no ST register, enumeration or document
 R:LogicLevelIncompatible	V			pin_devices.rs:1245	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:MalformedSpecificationHash	V			lib.rs:4313	generic specification, solver or consistency check; no ST register, enumeration or document
-R:McuPinStructureUnheld	S			pin_devices.rs:1528	no held ST I/O structure (FT/TT) for pin, DS12117 Table 8
+R:McuPinStructureUnheld	N			-	Reviewer (lenses S / S?), tie-break c: the structure is read from the held table, so meaning is a missing row (generic); "pin structure" is DS12117's I/O-structure term, an ST name.
 R:MisoRoundTripTooSlow	V			power.rs:2404	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:MissingAnalogLine	V			lib.rs:4997	generic specification, solver or consistency check; no ST register, enumeration or document
 R:MissingBusConstraint	V			lib.rs:3292	generic specification, solver or consistency check; no ST register, enumeration or document
-R:MissingSpiConstraint	S	?		lib.rs:3249	needs a load to pick OSPEEDR output speed (AET-WO-4300c); rule itself reads generic, speed grade is ST
+R:MissingSpiConstraint	V			-	Reviewer (lenses S? / V): it judges a missing declared net constraint on SCK or MOSI, a generic requirement; that it feeds the OSPEEDR choice is the speed refusals' coupling, counted there.
 R:MotorOutputMismatch	S	?		lib.rs:4685	TIMn_CHk assignment, PSC/ARR/CCR within timer: ST timer naming and registers; meaning partly generic PWM
 R:MotorTiming	V			solve.rs:1186	PWM/DShot motor timing or timer placement; generic
 R:MotorTimingShape	V			lib.rs:4124	PWM/DShot motor timing or timer placement; generic
@@ -746,9 +746,9 @@ R:PllWordsUndecodable	S			clock.rs:612	solved RCC PLL register words do not deco
 R:PowerInputOverloaded	V			power.rs:1646	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:PowerLoop	V			power.rs:992	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:PowerPartUnknown	V			pin_devices.rs:794	driver-IC / power-chain / placement check; generic electrical or solver rule
-R:PowerPartsTableInvalid	V			power_parts.rs:2412	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PowerPartsTableInvalid	S	?		power_parts.rs:2412	Reviewer (lenses V / S?): the parser hard-codes the FT/TT structure families, an ST value set (rule 2), beside generic clauses; the most coupled clause decides (tie-break a).
 R:PowerValueInvalid	V			power.rs:653	driver-IC / power-chain / placement check; generic electrical or solver rule
-R:PullAboveMcuTolerance	S			pin_devices.rs:1507	pull voltage vs ST FT/TT pin structure tolerance, DS12117 Table 13 and RM0433 reset pulls
+R:PullAboveMcuTolerance	V			pin_devices.rs:1519	Reviewer (lenses S / S?), tie-break c: the limit is the held I/O family row's (FT/TT, counted at its column); a pull above the pin's tolerance is generic.
 R:PullOverDrive	V			pin_devices.rs:1280	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:PullUpBelowSinkFloor	V		std	lib.rs:3211	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:PulseExceedsPeriod	V			lib.rs:4115	PWM/DShot motor timing or timer placement; generic
@@ -769,7 +769,7 @@ R:SenseFullScaleExceeded	V			power.rs:2145	driver-IC / power-chain / placement c
 R:SenseSourceImpedance	V			power.rs:2182	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:SerialBaudOutOfRange	S			solve.rs:769	USART BRR range 16..0xFFFF at oversampling 16, RM0433 §48.8.5
 R:SerialBaudReadAsKbaud	V			serial.rs:760	ArduPilot baud mapping rule; not ST
-R:SerialBaudTolerance	N			solve.rs:806	baud error tolerance arithmetic generic; names HSI as clock source
+R:SerialBaudTolerance	V			serial.rs:249	Reviewer (lenses N / S), tie-break c: the receiver tolerance comes from the held TOLERANCE table (S, counted there); the kind string and its meaning, worst-case baud error, are generic.
 R:SerialClock	S			solve.rs:722	no kernel clock for USART from RCC_D2CCIP2R, RM0433 §8.7.21
 R:SerialFramingContradictsRole	V			serial.rs:728	generic specification, solver or consistency check; no ST register, enumeration or document
 R:SerialFramingShape	V			serial.rs:709	generic specification, solver or consistency check; no ST register, enumeration or document
@@ -816,13 +816,13 @@ R:ThermalViasUnsourced	V			thermal.rs:86	board stackup/class/via rule; generic P
 R:ThermalViasZero	V			thermal.rs:71	board stackup/class/via rule; generic PCB
 R:TimerRateConflict	V			solve.rs:1916	PWM/DShot motor timing or timer placement; generic
 R:TimerResolutionConflict	V			solve.rs:1910	PWM/DShot motor timing or timer placement; generic
-R:TimerShared	N			lib.rs:4727	outputs of one timer share counter (protocol, rate, PSC, ARR); generic, ST register names
+R:TimerShared	S	?		lib.rs:4629	Reviewer (lenses N / S?): it compares the solved PSC and ARR words, ST timer register contents (rule 2); a shared counter is generic, hence the flag.
 R:ToleranceOutOfRange	V			lib.rs:3695	generic specification, solver or consistency check; no ST register, enumeration or document
 R:TripBelowFullScale	V			pin_devices.rs:1630	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:TripReferenceGrounded	V			pin_devices.rs:1563	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:TripSenseUnbound	V			pin_devices.rs:1612	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:UnboundedPinCapacitance	V			drawn.rs:37	generic specification, solver or consistency check; no ST register, enumeration or document
-R:UnheldDuringReset	S			pin_devices.rs:1255	PA13/PA15/PB4 pulled from reset to first write, RM0433 p.542: ST reset pin state
+R:UnheldDuringReset	V			pin_devices.rs:2358	Reviewer (lenses S / S?), tie-break c: the reset-pulled pins come from the held MCU_RESET_PULL_UPS list (D, counted there); an input unheld during reset is generic in name and meaning.
 R:UnjudgedMotorConstraint	V			lib.rs:3321	PWM/DShot motor timing or timer placement; generic
 R:UnjudgedSerialConstraint	V			lib.rs:3332	generic specification, solver or consistency check; no ST register, enumeration or document
 R:UnjudgedSpiConstraint	V			lib.rs:3316	generic specification, solver or consistency check; no ST register, enumeration or document
@@ -835,7 +835,7 @@ R:UnknownNet	V			lib.rs:3891	driver-IC / power-chain / placement check; generic 
 R:UnknownPart	V			lib.rs:3355	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:UnknownPeripheral	V			solve.rs:1804	driver-IC / power-chain / placement check; generic electrical or solver rule
 R:UnknownPin	V			solve.rs:1537	pin not in held pin table; only matched against table (tie-break b)
-R:UnknownSerialPeripheral	S	?		serial.rs:695	value set USART1..UART8 hard-coded, the STM32H7 instance set; names also generic
+R:UnknownSerialPeripheral	V			serial.rs:188	Reviewer, amendment 3 (both lenses S?, which followed the R2 prompt's wording over amendment 3): the set is the held PERIPHERALS list (D); an unknown instance is generic.
 R:UnsupportedClock	S			lib.rs:4657	reset clock HSI 64 MHz, TIMPRE, prescalers: ST RCC reset state
 R:UnsupportedI2cSpeed	V		std	lib.rs:3775	generic specification, solver or consistency check; no ST register, enumeration or document
 R:UnsupportedLayerCount	V			board.rs:295	board stackup/class/via rule; generic PCB
@@ -961,7 +961,7 @@ lib:DeclaredPinCapacitance.femtofarads	V			none found	Generic electrical, geomet
 lib:DeclaredPinCapacitance.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:I2cBus.domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:I2cBus.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
-lib:I2cBus.peripheral	N	?		solve.rs:1801	Instance name (I2C1..) checked against held pin table; meaning is which controller instance; ST instance numbering. Could be V
+lib:I2cBus.peripheral	S			solve.rs:1034	Reviewer (lenses N? / S), amendment 3: i2c_kernel_hz sends I2C1-3 to I2C123SEL/pclk1 and I2C4 to I2C4SEL/pclk4 by instance number. The reviewer had read only silicon.rs:351, the judge's reset-only copy.
 lib:I2cBus.pull_up_ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:I2cBus.scl	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 lib:I2cBus.sda	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
@@ -977,11 +977,11 @@ lib:LifecycleAcceptance.statement	V			none found	Generic electrical, geometry, i
 lib:LifecycleAcceptance.status	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:McuWire.bor_level	S			lib.rs:416	0 to 3 = RM0433 BOR_LEV option-byte levels (MAX_BOR_LEVEL, RM0433); value set is ST enumeration
 lib:McuWire.core_supply	S			lib.rs:403	Core supply configuration: LDOEN/BYPASS rows of RM0433 Rev 9 Table 34 p.261
-lib:McuWire.foreign_clock	S	?		motor.rs:593	Container of RCC kernel clocks of a foreign firmware incl. VOS and ST USART/timer set; neutral-looking but carries ST-only members
+lib:McuWire.foreign_clock	V			-	Reviewer (lenses S? / V), tie-break g: the container is classed on its own meaning, the clocks a foreign firmware programs, generic; its S members are counted on their own.
 lib:McuWire.hse	N			clock.rs:83	Neutral meaning (crystal or external clock source); name HSE/HSEBYP is ST vocabulary (RM0433 §8.5.2). Variants crystal/external neutral
 lib:McuWire.hse_hz	N			lib.rs:1093	Frequency in Hz of the external oscillator, neutral; key name HSE is ST vocabulary (v19 legacy form, only 0 accepted)
 lib:McuWire.part	V			parts.rs/power_parts.rs table	Part string checked against held parts table (tie-break c); key name and meaning generic
-lib:McuWire.reset_switch	N			-	Push-button from reset line to ground, neutral; name rests on ST NRST pin
+lib:McuWire.reset_switch	V			-	Reviewer (lenses N / V): rule 3 tests the key's name, which is generic; a reset push-button is generic. The NRST net name is counted at H:lib:NRST.
 lib:McuWire.supply	V			none found	Domain id of the voltage_domains list; generic
 lib:McuWire.supply_source	V			none found	Connector and connector pin the supply enters by; generic
 lib:NetConstraint.impedance_ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
@@ -1009,7 +1009,7 @@ lib:SolvedI2cDevice.address	V		std	-	I2C device address.
 lib:SolvedI2cDevice.bus	V			-	Bus id, a key of i2c_ceilings.
 lib:SolvedI2cDevice.index	V			-	Position index in specification order.
 lib:SolvedI2cDevice.part	V			-	Part string looked up in held parts table; neutral name.
-lib:SolvedI2cDevice.peripheral	N			lib.rs:4353	ST name of controller (I2C1..I2C4) per doc comment; meaning is an I2C instance.
+lib:SolvedI2cDevice.peripheral	S			solve.rs:1034	Reviewer, amendment 3 (as lib:I2cBus.peripheral): the instance number selects I2C123SEL/pclk1 or I2C4SEL/pclk4.
 lib:SolvedI2cTiming.cr1	S			silicon.rs:361	I2C_CR1 register word (RM0433 47.9.1).
 lib:SolvedI2cTiming.kernel_hz	N			-	Kernel clock in Hz; name is ST kernel clock (i2c_ker_ck).
 lib:SolvedI2cTiming.timingr	S			silicon.rs:635	Map mode to I2C_TIMINGR register word (RM0433 47.9.5).
@@ -1032,7 +1032,7 @@ lib:SolvedSpiDevice.cs	V			-	Net of the chip select.
 lib:SolvedSpiDevice.index	V			-	Position index in specification order.
 lib:SolvedSpiDevice.orientation	V			orientation.rs:33	IMU orientation, neutral axes.
 lib:SolvedSpiDevice.part	V			-	Part string looked up in held parts table.
-lib:SolvedSpiDevice.peripheral	N			lib.rs:4363	ST name of controller (SPI1..SPI6) per doc comment; meaning is an SPI instance.
+lib:SolvedSpiDevice.peripheral	S			solve.rs:962	Reviewer, amendment 3 (as lib:SpiBus.peripheral): the instance number selects the kernel mux.
 lib:SolvedTopology.adc_inputs	V			-	Map net to SolvedAdcInput; container.
 lib:SolvedTopology.analog_lines	V			-	Map net to AnalogLine; container.
 lib:SolvedTopology.assignments	V			-	Map net to PinAssignment; unnamed net key, classed by value type; container only, fields classed apart.
@@ -1057,7 +1057,7 @@ lib:SolvedTopology.spi_controllers	V			-	Map peripheral to SolvedSpiController; 
 lib:SolvedTopology.spi_devices	V			-	Map reference to SolvedSpiDevice; container.
 lib:SolvedTopology.spi_lines	V			-	Map net to SpiLine; container.
 lib:Specification.accept_lifecycle	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
-lib:Specification.acknowledge_unwitnessed	S			lib.rs:222	List of acknowledgements of ST register fields the model does not witness
+lib:Specification.acknowledge_unwitnessed	V			-	Reviewer (lenses S / V), tie-break g: the container's own meaning, acknowledgements of unwitnessed ledger rows, is an engine concept; its register and fields keys are S on their own.
 lib:Specification.board	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:Specification.connectors	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:Specification.diff_pairs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
@@ -1080,7 +1080,7 @@ lib:SpiBus.domain	V			none found	Generic electrical, geometry, identifier or cit
 lib:SpiBus.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:SpiBus.miso	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 lib:SpiBus.mosi	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
-lib:SpiBus.peripheral	N	?		solve.rs:2244	Instance name (SPI1..) checked against held pin table; ST instance numbering. Could be V
+lib:SpiBus.peripheral	S			solve.rs:962	Reviewer (lenses N? / S), amendment 3: spi_kernel sends SPI1-3 and SPI4-6 to different kernel muxes by instance number.
 lib:SpiBus.sck	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 lib:SpiBus.speed_hz	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 lib:SpiDevice.bus	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
@@ -1105,9 +1105,9 @@ lib:UnwitnessedAcknowledgement.register	S			lib.rs:290	ST peripheral.register na
 lib:VoltageDomain.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:VoltageDomain.nominal_millivolts	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 lib:VoltageDomain.tolerance_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
-motor:ForeignClock.apb1_timers_hz	N			motor.rs:593	Frequency in Hz of APB1 timer clock; neutral quantity, name is RCC timer-clock vocabulary (RM0433 §8)
-motor:ForeignClock.apb2_timers_hz	N			motor.rs:594	Frequency in Hz of APB2 timer clock; neutral quantity, RCC naming
-motor:ForeignClock.usarts	S	?		lib.rs:1195	Map keys must equal serial::PERIPHERALS (ST USART/UART1-8 set, RM0433 D2CCIP2R mux groups); values are neutral Hz. Could be N
+motor:ForeignClock.apb1_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): Hz is generic, but which timers this clock feeds is RM0433 Table 8's bus partition, ST's structure; tie-break a. Could be N.
+motor:ForeignClock.apb2_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): as apb1_timers_hz.
+motor:ForeignClock.usarts	S			lib.rs:1210	Reviewer (lenses S? / S), amendment 3: the keys are split by the USART16SEL / USART234578SEL mux by instance number (RM0433 §8.7.21); meaning from the number.
 motor:ForeignClock.vos	S			vos.rs:35	Voltage scale declaration; value set is the RM0433 §6.6.2 VOS scales
 motor:MotorOutput.esc	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 motor:MotorOutput.label	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
@@ -1144,7 +1144,7 @@ motor:SolvedClock.timpre	S			motor.rs:340	RCC_CFGR.TIMPRE bit (RM0433 8.7.7), se
 motor:SolvedClock.vos	S			vos.rs:36	PWR_D3CR.VOS core voltage scale (RM0433 6.6.2); ST scale0-scale3 enumeration.
 motor:SolvedForeignClock.apb1_timers_hz	N			lib.rs:1184	Timer kernel clock on APB1 in Hz; APB timer clock tree is ST (RM0433 Fig 49).
 motor:SolvedForeignClock.apb2_timers_hz	N			lib.rs:1184	Timer kernel clock on APB2 in Hz; APB timer clock tree is ST.
-motor:SolvedForeignClock.usarts	N			lib.rs:1195	Map USART instance name to kernel Hz; keys ST USART1..UART8, mux groups ST.
+motor:SolvedForeignClock.usarts	S			lib.rs:1210	Reviewer, amendment 3 (as motor:ForeignClock.usarts): the keys split by USART16SEL / USART234578SEL.
 motor:SolvedForeignClock.vos	S			vos.rs:36	Declared PWR VOS scale; ST scale0-scale3.
 motor:SolvedMotorOutput.arr	S			lib.rs:4629	TIMx_ARR register value as the firmware writes it (RM0433 timer chapter).
 motor:SolvedMotorOutput.ccr	S			lib.rs:4629	TIMx_CCRk register value as the firmware writes it (RM0433 timer chapter).
@@ -1159,7 +1159,7 @@ orientation:Orientation.z	V			-	Generic electrical, geometry, identifier or cita
 pin_devices:AdcChannel.input	N			pin_devices.rs:662	ADC input by INPm name matched against held table; neutral meaning (input channel number), name is ST ADC INP vocabulary
 pin_devices:AdcChannel.peripheral	N	?		pin_devices.rs:661	ADC instance name (ADC3) matched against held pin table; ST instance naming
 pin_devices:AnalogInput.adc_resolution_bits	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
-pin_devices:AnalogInput.channel	N			pin_devices.rs:196	Hand-chosen ADC channel (instance and INPm input); neutral meaning, ST names
+pin_devices:AnalogInput.channel	V			-	Reviewer (lenses N / V), tie-break g: the container's own name and meaning, an ADC channel, are generic; its peripheral and input keys are N on their own.
 pin_devices:AnalogInput.device_pin	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 pin_devices:AnalogInput.full_scale	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 pin_devices:AnalogInput.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
@@ -1309,7 +1309,7 @@ serial:SerialPort.label	V			none found	Generic electrical, geometry, identifier 
 serial:SerialPort.negotiated	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
 serial:SerialPort.peer_deviation_ppm	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 serial:SerialPort.peer_deviation_source	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
-serial:SerialPort.peripheral	S	?		serial.rs:188	Hard-coded PERIPHERALS list USART1-3,UART4-5,USART6,UART7-8 with LPUART1 refused (RM0433 RCC_APB4ENR); ST instance set. Could be N
+serial:SerialPort.peripheral	S			serial.rs:201	Reviewer (lenses S? / S), amendment 3: kernel_hz takes D2PPRE2 for USART1/6 and D2PPRE1 for the rest, by instance number; vos.rs:291 the same split.
 serial:SerialPort.role	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 serial:SerialPort.rx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
 serial:SerialPort.tx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
@@ -1333,7 +1333,7 @@ serial:SolvedSerialPort.index	V			-	Position index in specification order.
 serial:SolvedSerialPort.kernel_hz	N			-	USART kernel clock in Hz; units neutral, name is ST kernel clock (RM0433 8.7.21).
 serial:SolvedSerialPort.negotiated	V		std	-	Optional negotiated-baud declaration; CRSF protocol.
 serial:SolvedSerialPort.peer_deviation_ppm	V			-	Peer clock deviation in ppm.
-serial:SolvedSerialPort.peripheral	N			serial.rs:188	USART1..UART8, ST instance names, value set serial::PERIPHERALS; USART vs UART split is ST naming.
+serial:SolvedSerialPort.peripheral	S			serial.rs:201	Reviewer, amendment 3 (as serial:SerialPort.peripheral): the instance number selects the APB prescaler and mux group.
 serial:SolvedSerialPort.role	V		std	serial.rs:31	console, mavlink, gps, rc_crsf, rc_sbus; protocol roles, not ST.
 serial:SolvedSerialPort.rx	V			-	Net name of receive line.
 serial:SolvedSerialPort.tx	V			-	Net name of transmit line.
@@ -1359,7 +1359,7 @@ silicon:I2cFinding.cr1_ok	S			silicon.rs:361	Verdict that I2C_CR1 equals the gen
 silicon:I2cFinding.holds	V			-	Overall verdict bool.
 silicon:I2cFinding.kernel_ok	N			-	Verdict on i2c kernel clock; meaning generic, name ST kernel.
 silicon:I2cFinding.modes_ok	V		std	silicon.rs:394	Verdict that modes are the three I2C modes.
-silicon:I2cFinding.peripheral	N			-	I2C instance name I2C1..I2C4; ST naming.
+silicon:I2cFinding.peripheral	N			silicon.rs:351	Reviewer, amendment 3: the judge's i2c_kernel_hz treats I2C1-4 alike (reset pclk), so the name is only matched here.
 silicon:I2cFinding.timingr	N			-	List of TimingFinding; name is ST register, content is verdicts.
 silicon:I2cLimits.kernel_min_hz	N			silicon.rs:394	Least i2c_ker_ck in Hz (DS12117 Table 93); units neutral, name is ST kernel clock.
 silicon:I2cLimits.mode	V		std	silicon.rs:394	I2C mode name Standard100k, Fast400k, FastPlus1M; UM10204 modes.
@@ -1382,7 +1382,7 @@ silicon:SpiFinding.kernel_hz	N			-	Kernel clock in Hz; ST name.
 silicon:SpiFinding.kernel_ok	S	?		silicon.rs:232	Verdict that kernel mux and clock equal what SPIxSEL gives at reset (RM0433 8.7.20).
 silicon:SpiFinding.mbr	S			silicon.rs:232	SPI_CFG1.MBR field (RM0433 50.11.3).
 silicon:SpiFinding.mbr_ok	S	?		silicon.rs:232	Verdict on MBR[2:0] range and divider (RM0433 50.11.3).
-silicon:SpiFinding.peripheral	N			-	SPI instance name SPI1..SPI6; ST instance naming.
+silicon:SpiFinding.peripheral	S			silicon.rs:147	Reviewer, amendment 3: SpiSelect::of maps the instance to its SPI123SEL/SPI45SEL/SPI6SEL select.
 silicon:SpiWords.cfg1	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
 silicon:SpiWords.cfg2	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
 silicon:SpiWords.cr1_enable	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).

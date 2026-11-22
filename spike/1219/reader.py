@@ -225,14 +225,10 @@ def take_attrs(chunk):
         s = t[close + 1 :]
 
 
-def member_offset(body, chunk, cursor):
-    return body.index(chunk, cursor)
-
-
 def parse_fields(clean, body, base):
     fields, cursor = [], 0
     for chunk in split_top(body):
-        off = member_offset(body, chunk, cursor)
+        off = body.index(chunk, cursor)
         cursor = off + len(chunk)
         attrs, rest = take_attrs(chunk)
         m = re.match(r"\s*(pub(\([^)]*\))?\s+)?(r#)?(\w+)\s*:\s*(.*)$", rest, re.S)
@@ -253,7 +249,7 @@ def parse_fields(clean, body, base):
 def parse_variants(clean, body, base):
     variants, cursor = [], 0
     for chunk in split_top(body):
-        off = member_offset(body, chunk, cursor)
+        off = body.index(chunk, cursor)
         cursor = off + len(chunk)
         attrs, rest = take_attrs(chunk)
         m = re.match(r"\s*(\w+)\s*(\{|\(|=|$)", rest, re.S)
@@ -320,15 +316,12 @@ class Crate:
     def __init__(self, src_dir):
         self.items = []
         self.uses = {}
+        self.aliases = {}
         for p in sorted(src_dir.glob("*.rs")):
             text = p.read_text()
             rel = "crates/aethelgard-ir/src/" + p.name
             self.items += parse_items(rel, text)
-            self.uses[rel] = dict(
-                (m.group(2), m.group(1))
-                for m in re.finditer(r"\buse\s+crate::(?:(\w+)::)?\{?[^;]*?\b(\w+)\b[^;]*;", text)
-                if m.group(1)
-            )
+            self.uses[rel] = {}
             # Every `use crate::mod::{A, B}` name, to its module.
             for m in re.finditer(r"\buse\s+crate::(\w+)::\{([^}]*)\}", text):
                 for n in re.findall(r"\b(\w+)\b", m.group(2)):
@@ -336,7 +329,6 @@ class Crate:
             for m in re.finditer(r"\buse\s+crate::(\w+)::(\w+)\s*;", text):
                 self.uses[rel][m.group(2)] = m.group(1)
             # Module aliases: `use crate::power_parts::{self as pp, ..}`, `use crate::x as y`.
-            self.aliases = getattr(self, "aliases", {})
             al = {}
             for m in re.finditer(r"\buse\s+crate::(\w+)::\{[^}]*\bself\s+as\s+(\w+)", text):
                 al[m.group(2)] = m.group(1)
@@ -424,8 +416,6 @@ class Schema:
         self.crate = crate
         self.unit = unit
         self.entries = collections.OrderedDict()  # id -> entry
-        self.flags = []
-        self.root = root
 
     def eid(self, item, member):
         return "%s:%s.%s" % (item["file"].split("/")[-1][:-3], item["name"], member)
@@ -823,16 +813,17 @@ def version_rows(src_dir):
 
 
 def version_of_path(path, rows):
-    """The version that introduced `path`: the latest row naming the path or
-    a prefix of it (a container a row added brings its keys), else 1."""
-    best = (1, "v1", None)
+    """The version that introduced `path`: the row naming the longest prefix
+    of it (a container a row added brings its keys; a rename's `by` counts),
+    the later row on a tie; else 1."""
     norm = path.replace(".*", "")
-    for r in rows:
-        for p in r["requires"] + r["optional"] + [y for _, y in r["replaced"]]:
-            if norm == p or norm.startswith(p + ".") or norm.startswith(p + "[]"):
-                if len(p) >= (len(best[2]) if best[2] else 0) and (best[2] is None or len(p) > len(best[2]) or r["version"] > best[0]):
-                    best = (r["version"], r["wo"], p)
-    return best
+    hits = [(len(p), r["version"], r["wo"], p) for r in rows
+            for p in r["requires"] + r["optional"] + [y for _, y in r["replaced"]]
+            if norm == p or norm.startswith(p + ".") or norm.startswith(p + "[]")]
+    if not hits:
+        return (1, "v1", None)
+    _, v, wo, p = max(hits)
+    return (v, wo, p)
 
 
 # ----------------------------------------------------------------- main --
