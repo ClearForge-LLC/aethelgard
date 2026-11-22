@@ -443,8 +443,8 @@ const fn same(a: &str, b: &str) -> bool {
     true
 }
 
-/// Each bus part's decoupler count, stated here once more than its row
-/// states it, so a row that drops or adds a decoupler is refused when the
+/// belt-and-suspenders: each bus part's decoupler count, stated here once
+/// more than its row states it (`AET-WO-1320` asks for the restatement), so a row that drops or adds a decoupler is refused when the
 /// crate compiles, not only by the byte sweep (`AET-WO-1320`): no other
 /// fact of the row predicts it.
 const DECOUPLERS: &[(&str, usize)] = &[
@@ -574,9 +574,6 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
                     }
                 }
                 Own(name) => {
-                    if !owns_once(pins, name) {
-                        return Err("an own net named twice in one row");
-                    }
                     let (mut closed, mut p) = (0, 0);
                     while p < row.passives.len() {
                         if let Passive::OwnCap(cap, _) = row.passives[p]
@@ -1417,7 +1414,7 @@ mod tests {
         }
     }
 
-    /// Each bus row's pins are its symbol's, each once.
+    /// Each bus row's pins are its symbol's (each once is [`check`]'s).
     #[test]
     fn each_bus_rows_pins_are_its_symbols() {
         let mut checked = 0;
@@ -1431,10 +1428,8 @@ mod tests {
                 .into_iter()
                 .map(|p| p.number)
                 .collect();
-            let mut seen = BTreeSet::new();
             for (pin, _) in pins {
                 assert!(numbers.iter().any(|n| n == pin), "{}: pin {pin}", a.part);
-                assert!(seen.insert(*pin), "{}: pin {pin} twice", a.part);
             }
             checked += 1;
         }
@@ -1555,7 +1550,7 @@ mod tests {
             wiring: Wiring::Spi(&[("10", Own("REGOUT")), ("11", Own("REGOUT"))]),
             ..ROW
         };
-        assert_eq!(refused(&[row]), "an own net named twice in one row");
+        assert_eq!(refused(&[row]), "one own-net name on two pins of a row");
     }
 
     /// `1211d` §4's hazard: the I2C 100 nF decoupler, drawn for every I2C
