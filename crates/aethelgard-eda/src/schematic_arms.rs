@@ -623,8 +623,8 @@ fn volts(mv: u64) -> String {
 
 /// The references the pin devices bring: each device's, then its declared
 /// passives' (a pull, a strap resistor, an analog output's resistor and
-/// reservoir, the bulk capacitor), claimed before any emitter-numbered one. `devices` is the
-/// specification's, which `schematic` reads for this module (`RUL-16`:
+/// reservoir, the bulk capacitor), claimed before any emitter-numbered one.
+/// `devices` is the specification's, which `schematic` reads for this module (`RUL-16`:
 /// `eda`'s one reader of declared devices, as for the power tree).
 pub(super) fn references(devices: &[PinDevice]) -> Vec<&String> {
     let mut out = Vec::new();
@@ -927,10 +927,8 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
                 },
             ) => {
                 let Some(value) = r.value else {
-                    // The one passive a declaration may answer: the parts
-                    // row's unstated bulk, its supply pin to GND, drawn from
-                    // the declared `bulk` (`AET-WO-1211f`). Any other, or
-                    // none declared, is refused by name.
+                    // Drawn from the declared `bulk` where it `answers` this
+                    // passive; otherwise refused by name.
                     let answered = match (pad_of, &d.bulk) {
                         (Some((_, _, parts_row)), Some(bulk)) => parts_row
                             .bulk_unstated
@@ -1505,7 +1503,6 @@ mod tests {
         assert_eq!(check(&[row]), Ok(()), "an SPI row's decouplers are its own");
     }
 
-    /// A pin device's passive on a bus row, and a bus device's on a pin row.
     /// `AET-WO-1211f`: a declared `bulk` answers only the unstated passive
     /// from the row's `bulk_unstated` supply pin to GND, never another.
     #[test]
@@ -1530,6 +1527,7 @@ mod tests {
         assert!(!answers(&r(End::Pin("VM"), End::Pin("VCP")), &u));
     }
 
+    /// A pin device's passive on a bus row, and a bus device's on a pin row.
     #[test]
     fn a_passive_of_the_other_kind_is_refused() {
         const MIXED: &[Passive] = &[Passive::Decouple("100n"), DRV8833.passives[0]];
