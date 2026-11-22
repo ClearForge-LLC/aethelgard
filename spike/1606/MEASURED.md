@@ -5,6 +5,9 @@ All runs are in the tools image `container/IMAGE`, under `~/bin/capped-run` (8 G
 - **Baseline:** `main` `122378c7`, exported with `git archive` and built in the image.
 - **Branch:** this branch's tree, built the same way.
 - **Shared inputs:** both trees share scenarios, specifications and fixtures, since this work order changes none of them.
+- **Which commit each output comes from:**
+  - The branch's differential, `doctor`, bridge-mode and P4 outputs (`out/compare.txt`, `out/head.txt`, `out/*-head*`) were regenerated at `00c8a9dd`, which is head after merging `main` `bf497733`, from the binaries the post-merge gates built.
+  - `out/bench-package.txt` and `out/adv.txt` come from the branch at `df1cdd4a`. The bridge's sources and digest are unchanged since then; later commits touched only the CLI's `doctor` and `identified` and the docs. The `write=true` dispatch is authoritative for the package.
 
 ## §7 stop 1: did not fire
 
@@ -14,14 +17,17 @@ The banner is read from the `SendChar` log that `ngSpice_Init` (vendored `shared
 
 - **P1.1 met.** `git grep 5bdc40e4` finds `crates/aethelgard-cli/src/analog.rs` and a FEEDBACK note (`docs/work-orders/AET-WO-2304b.FEEDBACK.md`, a prefix in prose).
   - `tests/common/mod.rs` recomputes the digest. `doctor_tier1` has no copy of its own; the work order's "doctor_tier1's copy" is `common`'s computed one.
-  - No golden, `fab/` package, example or fixture carries it. `fab/*/package/` holds no archive.
+  - No golden, example or fixture carries it, and `fab/*/package/` holds no archive.
+  - **Missed in part:** the digest reaches `fab/sentinel-01-bench/package/MANIFEST.json` indirectly, below at P1.3.
 - **P1.2 met.** The answer lines in `boot_tier1`, `campaign_tier1`, `workspace_shape`, `container/engine-smoke.sh` and the analog tests are unchanged, and every one still holds.
-- **P1.3 met.** `verify`'s `build` gate copies `build`'s `tool.version` alone (`verify.rs:603`), and `tool.version` stays cargo's line.
-  - The package gate (below) shows no `fab/` byte moves.
+- **P1.3 met for `build`'s version string, but its "no `fab/` byte moves" was MISSED.**
+  - Met: `verify`'s `build` gate copies `build`'s `tool.version` alone (`verify.rs:603`), and `tool.version` stays cargo's line, so that string moves nothing.
+  - Missed: `verify`'s verdict also carries each campaign run's `state_sequence_hash`, a hash over a trace that names the bridge digest. So `MANIFEST.json`'s `verdict_sha256` moves with the digest.
+  - Every other package byte is identical (`out/bench-package.txt`, taken with the branch's binaries at `df1cdd4a`; the dispatch is authoritative). That is §2's stop before READY.
 
 ## P2 — the bridge, by mode: as predicted
 
-From `out/bridge-main/` and `out/bridge-br/`; `<D>` stands for each tree's digest.
+From `out/bridge-main/` and `out/bridge-head/`; `<D>` stands for each tree's digest.
 
 | mode | main | branch |
 |---|---|---|
@@ -53,7 +59,7 @@ So every archived analog byte equals the baseline, except the bridge digest and 
 
 ## P4 — the rustc witness: (b), cargo's `.rustc_info.json`
 
-From `out/p4-main.txt` (with `main`'s `build`) and `out/p4-br.txt` (with the branch's).
+From `out/p4-main.txt` (with `main`'s `build`) and `out/head.txt` (with the branch's, at head).
 
 | case | `cargo --version` | (a) `rustc -vV`, same env and cwd | (b) `.rustc_info.json` | ELF |
 |---|---|---|---|---|
@@ -68,7 +74,7 @@ From `out/p4-main.txt` (with `main`'s `build`) and `out/p4-br.txt` (with the bra
 - **P4.2 met.** Nightly fails to build and is still named.
 - **P4.3 met.**
   - `cargo --version` and the ELF are identical, so `tool.version` cannot tell `alt` from 1.99.1, which is `3301` L1.
-  - (b), and so the branch's `tool.rustc`, names `alt`: `{"release":"1.99.1-alt","commit_hash":"a1a1…"}` (`out/build-alt-br.json`). `main`'s verdict says only `cargo 1.99.1` (`out/build-alt-main.json`).
+  - (b), and so the branch's `tool.rustc`, names `alt`: `{"release":"1.99.1-alt","commit_hash":"a1a1…"}` (`out/build-alt-head.json`). `main`'s verdict says only `cargo 1.99.1` (`out/build-alt-main.json`).
 - **P4.4 met for plain cargo, and closed in `build`:**
   - With plain cargo, cargo ran the ancestor's compiler: (b) names it and (a) does not. So (a) is not a witness.
   - `build` already refuses that configuration before cargo runs (`CargoConfigRefused`, `AET-WO-3301` F13), so inside `build` no case was found where (a) and (b) differ.
@@ -87,4 +93,5 @@ Both runs are in the pinned image, with `PATH` holding `/opt/cargo/bin` (`out/do
 
 ## P6 — tests
 
-Recorded in FEEDBACK, with the mutants.
+- **P6.1 missed:** the counted tier-2 test is `board_tier2::build_names_the_rustc_cargo_ran`. `--version` against the real library sits in the bridge suite (`edges.rs`), which `TIER2_RE` does not count. `TIER2_MIN` goes 201 → 202 all the same.
+- **P6.2 and P6.3 met:** the mutants `record-constant` and `pin-dropped` are killed (FEEDBACK §5).

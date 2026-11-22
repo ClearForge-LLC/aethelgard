@@ -17,9 +17,11 @@ Findings, in brief [measured]:
 - **Carriers:**
   - The digest is committed only in `analog.rs`, plus a prose prefix in `AET-WO-2304b.FEEDBACK.md`.
   - `tests/common/mod.rs` recomputes it. The work order's "`doctor_tier1`'s copy" is that computed one; `doctor_tier1` holds no literal.
-  - No golden, `fab/` package, example or fixture carries it.
+  - No golden, example or fixture carries it.
+  - It does reach `fab/sentinel-01-bench/package/MANIFEST.json`, though, through the campaign state hashes in `verify`'s verdict (§6). I predicted otherwise; the bench measurement found it.
   - `build`'s version string reaches `fab/` only through `verify`'s `build` gate (`tool_version`, read from `build`'s `tool.version`, `verify.rs:603`) inside each `MANIFEST.json`'s `verdict_sha256`.
   - So `tool.version` stays cargo's line, and the compiler is a new field.
+  - No tier-2 test pins a trace-derived hash as a literal: each compares two runs, or a recomputation (`grep` of `state_sequence_hash`, `verdict_sha256` and 64-hex literals over the tier-2 files).
 - **Baseline differential** (`out/compare.txt`):
   - **Setup:** `main` and this branch, built in the image, on `sentinel-01-minimal` (I2C solve, `--rail`, `--renode`) and `sentinel-03` (`--chain`).
   - **Byte-identical:** 36 of 52 files.
@@ -64,7 +66,9 @@ Findings, in brief [measured]:
     - It would also change the Renode boot's process (ngspice's init, its code models, under Renode's grants) for nothing it reports.
     - The usage path likewise stays bare.
   - **The alternative:** start the library in every mode and name it everywhere. That needs a droop-boot differential, and makes `--renode` fail on a library fault that does not concern it.
-  - **Cost:** the CLI accepts two identity shapes. It requires the five-field one exactly where it reports ngspice.
+  - **Cost:**
+    - The CLI accepts two identity shapes. It requires the five-field one exactly where it reports ngspice.
+    - The identity is no longer printed before the request is parsed. A bridge that crashed while parsing would now print no first line, and the CLI would report `BridgeMismatch` ("its first line is not its identity") rather than `ToolError`: exit 4 where it was 5. No answer is read either way.
 - **F2 · An identity that names a banner it did not read · adversarial · measured, §4.** Covered by "exactly one banner line".
 - **F3 · The rustc witness is cargo's own record · `firmware.rs` · measured (`spike/1606` P4).**
   - **The `alt` toolchain:** a private `RUSTUP_HOME` with a toolchain `alt` (1.99.1's files; its `rustc` a wrapper that answers `-vV` with another release and commit).
@@ -153,11 +157,13 @@ After the reduction pass, the five whose code it touched were run again, and all
 
 ## 6. Gates, the package, and CI
 
-- **Gates, in the pinned image in CI's layout** (the worktree read-write at `/repo`, `CARGO_TARGET_DIR=/repo/target/img`), on `4266f887` + `faaed30d` [measured, `~/.cache/aet-1606/gates-final.log`]:
+- **Gates, in the pinned image in CI's layout** (the worktree read-write at `/repo`, `CARGO_TARGET_DIR=/repo/target/img`), on `4266f887` + `faaed30d`, before the merge [measured, `~/.cache/aet-1606/gates-final.log`]:
   - `cargo fmt --all -- --check`, and the bridge's: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`, the same with `--features aethelgard-cli/with-tools`, and the bridge's: clean.
   - `cargo test --workspace` and the bridge's suite (its `tools` tests against the real libngspice): **2668 passed, 0 failed, 0 ignored.**
   - Tier 2, the tests this work order touches: `board_tier2` `build_*` (3, the new one included, 0.76 s together) and `campaign_tier2` (10): all pass.
+  - **After merging `main` `bf497733`** (`00c8a9dd`; `1215`, `4240d`, `1319`, no file of this work order's), in the same layout: fmt and the three clippies clean; workspace and bridge suites **2689 passed, 0 failed, 0 ignored** (`~/.cache/aet-1606/gates-merged.log`).
+  - The differential, `doctor` and P4 were run again with those binaries: same results (`spike/1606/out/compare.txt`, `head.txt`).
 - **A layout effect, not this work order.** The first test run, with the target outside `/repo`, failed one test: `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named`, `BaseOutsideRoot`, because its scenarios' base lay under `CARGO_TARGET_TMPDIR`. It passes in CI's layout (11/11).
 - **`TIER2_MIN` 201 → 202.**
   - The one tier-2 test added is `board_tier2::build_names_the_rustc_cargo_ran`.

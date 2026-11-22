@@ -1,7 +1,0 @@
-s01min campaign exit 0 wall 15s fw 74a731a8
-s03 campaign exit 0 wall 12s fw e4906886
-doctor exit 0
-bridge usage exit 2
-bridge --version exit 0
-bridge refused exit 2
-bridge --renode exit 0
