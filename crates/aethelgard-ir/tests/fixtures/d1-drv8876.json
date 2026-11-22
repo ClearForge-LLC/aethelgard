@@ -1,5 +1,5 @@
 {
-  "schema_version": 26,
+  "schema_version": 27,
   "project_name": "drv8876-ph-en",
   "mcu": {
     "part": "STM32H753ZITx",
