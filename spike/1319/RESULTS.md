@@ -9,7 +9,7 @@ The predictions were committed first, at `65910b18`. Base: `main` `c1e444dd`. Ki
 | **control:** the branch before the port (`65910b18`'s code = base) | base | sweep identical, 274 files; d4diff identical, 277 cases / 926 files; d1319 identical, 69 cases / 230 files |
 | **the port** (`c59ba5c5`) | base | sweep identical, **274 files on 33 specifications**; d4diff identical, **277 cases / 926 files**; d1319 identical, **69 cases / 230 files** |
 | **the port, d1319 with the reviewer's inputs** (84 cases) | base | identical, **84 cases / 270 files** |
-| **the READY head** | base | see the final table below |
+| **the merged head** (`a52be831`: `main` `7fc81640` merged, module renamed) | **base rebuilt at `7fc81640`** | sweep identical, 274 files on 33 specifications; d4diff identical, 277 cases / 926 files; d1319 identical, 84 cases / 270 files |
 
 - **The sweep:** every committed specification's `validate`, `solve` and `emit`, with exit codes, printed JSON (the output directory normalised by `same.sh`) and every emitted file.
 - **d4diff:** the 1211d reviewer's harness, copied unchanged. For each case it records validate, solve, the draw (kind and message, or the part dump), and `emit`'s three files.
@@ -39,8 +39,8 @@ The predictions were committed first, at `65910b18`. Base: `main` `c1e444dd`. Ki
 |---|---|---|---|
 | `schematic.rs` code | 2312 | 2159 | −153 |
 | `schematic.rs` tests | 382 | 350 | −32 (the source scan replaced) |
-| `schematic_pin_device.rs` code | 575 | 1204 | +629 |
-| `schematic_pin_device.rs` tests | 0 | 225 | +225 |
+| `schematic_arms.rs` (was `schematic_pin_device.rs`) code | 575 | 1204 | +629 |
+| `schematic_arms.rs` tests | 0 | 225 | +225 |
 
 What the +476 of code is, against the patch's +108:
 - **the six bus rows:** 148 lines, against the patch's 131 (doc comments kept);

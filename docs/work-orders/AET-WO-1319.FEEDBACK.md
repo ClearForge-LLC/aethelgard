@@ -1,6 +1,10 @@
 # AET-WO-1319 — FEEDBACK: the device arms as rows
 
-**Branch:** `wo/aet-1319-arms-as-rows` from `main` `c1e444dd`; `main` `e3aea224` merged (docs only). **Builder:** Claude (Opus 5.5 orchestrating). Two subagents, each report checked at source before use:
+**Branch:** `wo/aet-1319-arms-as-rows` from `main` `c1e444dd`; then merged `main` `e3aea224` (docs only) and `main` `7fc81640` (1211b, no eda file).
+
+**The one edit outside the fence (ruled Q1 (a), 04:00Z):** `crates/aethelgard-cli/tests/strict_fence.rs`, one path string, `schematic_pin_device.rs` → `schematic_arms.rs`. Its role is unchanged (`Other`).
+
+**Builder:** Claude (Opus 5.5 orchestrating). Two subagents, each report checked at source before use:
 - a fresh Opus reviewer ran the adversarial read;
 - a fresh reviewer ran the reduction pass.
 
@@ -8,7 +12,7 @@ Written 2026-11-22.
 
 **Status: READY on green CI.** **The answer, in five lines:**
 - **One table, `ARMS`, and one interpreter, `arm()`, in `aethelgard-eda` now draw all eight device parts.** These are the six bus devices (BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P) and both pin devices (DRV8876PWPR, DRV8833PWPR). The hand-written arms and `device()` are deleted.
-- **Nothing moved, measured against base `c1e444dd`:**
+- **Nothing moved, measured against base `c1e444dd`, and again at the merged head against `main` `7fc81640`:**
   - all 33 committed specifications (274 files: exit codes, printed JSON, every emitted file);
   - the 1211d harness (**277** cases, 926 files);
   - this work order's pin-device and kind-crossing harness (84 cases, 270 files);
@@ -26,11 +30,11 @@ Written 2026-11-22.
   - `mutants.sh` plants M1 to M3.
 - **Trees:** each tree is a `git archive` copy with the harnesses dropped in and a `Drawing::dump` shim (`{:#?}` of the parts). The shim is applied identically to both trees and never committed. Each run's log was checked to compile `aethelgard-eda` from its own tree, so a shared target dir could not reuse another tree's build.
 - **Control:** the branch before the port, measured against base, is identical, so the kit is deterministic.
-- **Bus:** Q1 (file layout) and my §7 reading were posted at the start (`~/.cache/aet-bus/architect.md`). No ruling had come by READY; I built my stated fallback (b), §2.
+- **Bus:** Q1 (file layout) and my §7 reading were posted at the start. Both were ruled at 04:00Z (`~/.cache/aet-bus/1319.md`): Q1 (a); the §7 reading accepted.
 
 ## 1. What was built
 
-- **`crates/aethelgard-eda/src/schematic_pin_device.rs`, now `mod arms`:**
+- **`crates/aethelgard-eda/src/schematic_arms.rs` (`mod arms`), renamed from `schematic_pin_device.rs` (ruled Q1 (a)):**
   - **`ARMS`:** eight rows in `KNOWN_PARTS`' order. Each row carries its part, its symbol and footprint, its `Wiring` (an I2C or SPI pin → role map, or a pin device's thermal pad and its `near` rule), its passives (decouplers, an own-net capacitor, or a pin device's required passives with value, rating, dielectric and page), and an optional stand-in (W25Q's ordering code and note).
   - **`check()`:** a `const fn`, evaluated over `ARMS` at compile time (`const _: () = match check(ARMS) …`).
   - **`arm()`:** the one interpreter. In order: the pins; each passive's ends; the part; a pin device's declared resistors and analog outputs; then the row's passives. For a bus device, the pins are `bus_pins`, row order, with straps and own nets claimed as each is reached. For a pin device they are `pin_pins`, the old `device()` body moved verbatim.
@@ -46,12 +50,29 @@ Written 2026-11-22.
 
 ## 2. Decisions
 
-- **D1, the layout (Q1, built as (b)).** `strict_fence.rs` (CLI tests, outside the fence) lists every file of eda's `src/` by role and fails on a new, renamed or deleted file.
-  - So the table and the interpreter live in the existing `schematic_pin_device.rs`, as `#[path = "schematic_pin_device.rs"] mod arms;`, with a comment saying why.
-  - The cost is a file whose name says pin devices while it holds every arm. **(a)** is a rename to `schematic_arms.rs` plus a one-line path edit in `strict_fence.rs`, if you want it.
-- **D2, the §7 reading.** The pin-device arms already needed what §4's eight do not list: the thermal pad, the VM-derived rating, a pin-to-pin passive, the anchor and its `near` rule, `PassiveValueUnstated`, and a pin map from the IR row plus the declaration.
-  - §1.2 says to fold them in, so I read them as existing features moved, not new ones.
-  - No part needed a feature it lacked before.
+- **D1, the layout (ruled Q1 (a)).** `strict_fence.rs` (CLI tests, outside the fence) lists every file of eda's `src/` by role and fails on a new, renamed or deleted file.
+  - The table, the interpreter and the pin-device walk are one module, renamed `schematic_arms.rs`.
+  - `strict_fence.rs`'s one path string moved with it; that is the single edit outside the fence.
+  - Until the ruling the branch carried (b), the old file name under `mod arms`.
+- **D2, the §7 reading (accepted, 04:00Z): what the rows need, beside `1211d` §4's eight.** §4's eight, all still interpreter features:
+  1. the address strap's choice;
+  2. a strap to the supply through a resistor;
+  3. an own net closed by a capacitor;
+  4. translator substitution;
+  5. a stand-in's value and note;
+  6. ordered passives;
+  7. pin order is draw order;
+  8. the bus kind.
+
+  The pin-device rows also need the following. Each is an existing feature moved, not a new one; §7 stays for a feature no part has today:
+  - the thermal pad, which the parts row lists unnumbered;
+  - the VM-derived rating (`>` the VM domain's maximum);
+  - a passive from pin to pin (CVCP, CFLY);
+  - the anchor and its `near` rule, anchored by the first pin end only;
+  - `PassiveValueUnstated` for a value the datasheet does not state, refused after every other part;
+  - the pin map from the IR's pin parts row plus the declaration: supplies, straps, signals and pulls, analog outputs, bridges, the passive pins' own nets, and the completeness refusal.
+
+  No part needed a feature it lacked before.
 - **D3, where the footprint lives.** A bus row now carries its footprint, as the work order asks, where it was read from the symbol. A test holds every row's footprint equal to its symbol's `Footprint`. For the pin rows, which were literals already, that is a new constraint; it holds.
 - **D4, the hazards as a `const` check, not run-time.** "Refused when the table is built" is read literally, so an address role on an SPI row is again a compile error, as it was before the table. The same `check()` runs over bad tables in the tests.
 
@@ -61,8 +82,8 @@ Written 2026-11-22.
 |---|---|
 | `schematic.rs` code (the arms, `device()`) | −153 |
 | `schematic.rs` tests (the source scan) | −32 |
-| `schematic_pin_device.rs` code | +629 |
-| `schematic_pin_device.rs` tests | +225 |
+| `schematic_arms.rs` code | +629 |
+| `schematic_arms.rs` tests | +225 |
 
 The patch's +108 was six rows and an interpreter with no checks. On top of that come:
 - the `const` table check (137 lines);
@@ -77,7 +98,7 @@ The pin-device rows themselves cost +10 (wrapping), because they were table-shap
   - It is not derived, by the fence, and is held to the rows by a test.
   - **Deriving it, or `KNOWN_PARTS`, would need the table in the IR** (a `parts.json` section for pin map, symbol and passives), because the IR cannot depend on eda. `KNOWN_PARTS` derived in `ARMS` order keeps its bytes. `device_nets` derived needs a row order for the own nets; the rows' order reproduces today's.
   - That is the schema-epoch decision the work order names.
-- **F2, a stale doc comment outside the fence.** `crates/aethelgard-cli/tests/parts_arms_tier1.rs` says an arm with no row "is the source scan's in `schematic.rs` (`the_arms_are_the_known_parts`)". The test keeps its name but is now in `schematic_pin_device.rs`, and it compares the table with the list; it no longer scans the source. One line, for whoever next touches that file.
+- **F2, a stale doc comment outside the fence.** `crates/aethelgard-cli/tests/parts_arms_tier1.rs` says an arm with no row "is the source scan's in `schematic.rs` (`the_arms_are_the_known_parts`)". The test keeps its name but is now in `schematic_arms.rs`, and it compares the table with the list; it no longer scans the source. One line, for whoever next touches that file.
 - **F3, what `check()` does not hold** (from the adversarial read; observations, not divergences):
   - an I2C row with no `Addr` (`validate` still refuses an unsupported address);
   - the count of a second, third or fourth decoupler (only the byte sweep holds those);
@@ -127,7 +148,12 @@ In `spike/1319/RESULTS.md`. Two missed:
 
 ## 8. Gates, fence, reduction pass
 
-- **Gates** at the READY code head: see the final line below.
-- **Fence:** `crates/aethelgard-eda/src/{schematic.rs, schematic_pin_device.rs}`, `spike/1319/`, and this file. Nothing in the IR, the generator, the twin, the specifications, the workflows, `ci/` or `aethelgard-kicad-lib`.
+- **Gates at `a52be831`** (the code head, `main` `7fc81640` merged):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace --no-fail-fast`: 2632 passed, 0 failed.
+- **The same head against a base rebuilt at `7fc81640`:** sweep identical (274 files), d4diff identical (277 cases), d1319 identical (84 cases).
+- **CI:** see the PR.
+- **Fence:** `crates/aethelgard-eda/src/{schematic.rs, schematic_arms.rs}`, `spike/1319/`, and this file. Outside it, only `strict_fence.rs`'s one path string (ruled Q1 (a)). Nothing in the IR, the generator, the twin, the specifications, the workflows, `ci/` or `aethelgard-kicad-lib`.
 - **Reduction pass (diff): −8 net · 1 duplicate removed (a second pin-number lookup per required passive's end) · 1 dead test removed (`the_table_passes_its_own_check`) · 0 protected kept · 2 findings** (F1, F2).
   - A fresh reviewer proposed three cuts. One was taken. One, folding the pin-device fields into `Context`, was measured here before: +5 after rustfmt, so it was dropped. The last, inlining `draws`, is a rename.
