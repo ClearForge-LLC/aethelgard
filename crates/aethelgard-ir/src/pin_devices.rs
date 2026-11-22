@@ -785,23 +785,17 @@ pub fn validate_against(
 /// has none, before any device is judged against it.
 fn mcu_row(spec: &Specification) -> Result<&'static crate::power_parts::Mcu, IrValidationError> {
     let part = &spec.mcu.part;
-    match crate::power_parts::table()?.get(part).map(|r| &r.kind) {
-        Some(crate::power_parts::Kind::Mcu(m)) => Ok(m),
-        Some(_) => Err(refuse(
-            K::PassivePartUnknown,
-            part.as_str(),
-            "mcu.part",
-            format!(
-                "`{part}`'s power-parts row is not an mcu row: a pin device is judged against the MCU's"
-            ),
-        )),
-        None => Err(refuse(
-            K::PassivePartUnknown,
-            part.as_str(),
-            "mcu.part",
-            format!("`{part}` has no power-parts row: a pin device is judged against the MCU's"),
-        )),
-    }
+    let why = match crate::power_parts::table()?.get(part).map(|r| &r.kind) {
+        Some(crate::power_parts::Kind::Mcu(m)) => return Ok(m),
+        Some(_) => "'s power-parts row is not an mcu row",
+        None => " has no power-parts row",
+    };
+    Err(refuse(
+        K::PassivePartUnknown,
+        part.as_str(),
+        "mcu.part",
+        format!("`{part}`{why}: a pin device is judged against the MCU's"),
+    ))
 }
 
 /// A reservoir capacitor at an ADC pin is rated for VDDA's maximum (the
