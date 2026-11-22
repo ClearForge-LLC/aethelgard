@@ -4,6 +4,7 @@
    keys - -
    kinds + (window) DielectricTable FinishedThickness InvalidSource LayerRole LayerTable PlaneLayout PlaneNet RuleBelowFloor StackupValue UnsupportedLayerCount UnsupportedViaRule
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Board.copper_layers Board.layers Board.rules Board.stackup CopperLayer.name CopperLayer.net CopperLayer.role DesignRules.clearance_um DesignRules.track_width_um DesignRules.via_diameter_um DesignRules.via_drill_um Dielectric.between Dielectric.min_thickness_um Dielectric.source FinishedThickness.max FinishedThickness.min FinishedThickness.nominal FinishedThickness.source Sourced.source Sourced.value Specification.board Stackup.copper_max_um Stackup.dielectrics Stackup.finished_thickness_um Stackup.relative_permittivity_max_permille
    fields - -
 ## version 3  50d7a6f2db  AET-WO-4300c: pin speeds a datasheet supports (Table 149 as data, SCK/MOSI at 00/01 from declared C), the part
@@ -12,6 +13,7 @@
    keys - -
    kinds + (window) AmbiguousPartName I2cAddressNotOffered MissingSpiConstraint OutputSpeedTableInvalid PartNameCase PartOnWrongBus PartsTableInvalid ReferenceCollision SpiClockAbovePart SpiDeviceIndex SpiDevicePeripheral SpiDeviceSelect SpiLineMismatch SupplyOutsidePart SupplyOutsideSpeedTable UnjudgedSpiConstraint
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) PartsTableInvalid ReferenceCollision SpiDeviceIndex SpiDevicePeripheral SpiDeviceSelect
    fields + RawCitations.pin_capacitance RawCitations.rev_v RawCitations.rev_y RawPart.pin_capacitance RawPinCapacitance.max_femtofarads RawRow.fmax_hz RawRow.load_picofarads RawRow.ospeedr RawRow.requires_compensation_cell RawRow.rise_fall_picoseconds RawRow.vdd_max_millivolts RawRow.vdd_min_millivolts RawTable.citations RawTable.definition RawTable.mcu RawTable.open_drain RawTable.rows RawTable.vbat_pins RawVbat.fmax_hz RawVbat.note RawVbat.pins SolvedTopology.spi_lines SolvedWire.spi_lines? SpiLine.bus SpiLine.capacitance_femtofarads SpiLine.rate_hz SpiLine.rise_time_ns SpiLine.signal SpiLine.vdd_min_millivolts
    fields - -
 ## version 4  eb19c640fc  AET-WO-4300f: off-board connectors (DS-009 JST-GH/SH), specification v4, bottom-edge placement, off-board capa
@@ -20,6 +22,7 @@
    keys - -
    kinds + (window) ConnectorBudgetMissing ConnectorBudgetNotApplicable ConnectorNetUnknown ConnectorPartContradictsStandard ConnectorPinContradictsStandard ConnectorPinMissing ConnectorPinRepeated ConnectorPinUnknown ConnectorSupplyContradictsStandard GND UnknownConnectorPart UnknownConnectorStandard
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Connector.part Connector.pins Connector.reference Connector.standard ConnectorPin.net ConnectorPin.offboard ConnectorPin.pin OffBoard.capacitance_femtofarads OffBoard.source Specification.connectors
    fields - -
 ## version 5  a20d3323d6  AET-WO-1308: router classes — per-net widths and vias, coupled pairs judged from copper, part rotation; specif
@@ -28,6 +31,7 @@
    keys - -
    kinds + (window) ClassAboveMaximum ClassBelowMinimum ClassNetNotLiteral ClassNoNets ClassUnknownNet DuplicateClassName NetInTwoClasses PairNets PairOnRail ViaRingUnderRules
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + ClassVia.diameter_um ClassVia.drill_um DiffPair.gap_um DiffPair.name DiffPair.nets DiffPair.width_um NetClass.name NetClass.nets NetClass.track_width_um NetClass.via Specification.diff_pairs Specification.net_classes
    fields - -
 ## version 6  7ca65e6e83  AET-WO-4300a: motor outputs — timer channels solved, generated and witnessed in virtual time (a 2 ms window fo
@@ -36,6 +40,7 @@
    keys - -
    kinds + (window) CrystalNotSupported MotorOutputMismatch MotorTiming MotorTimingShape MotorsInfeasible NoTimerChannel PulseExceedsPeriod PulseRange ThermalViaLayers ThermalViaPitch ThermalViaRingUnderRules ThermalViasUnsourced ThermalViasZero TimerRateConflict TimerShared UnjudgedMotorConstraint UnsupportedClock ZeroMotorRate
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) ThermalViaLayers ThermalViaPitch ThermalViaRingUnderRules ThermalViasUnsourced ThermalViasZero
    fields + Mcu.hse_hz MotorOutput.label MotorOutput.pin MotorOutput.protocol MotorOutput.pwm PwmTiming.pulse_max_us PwmTiming.pulse_min_us PwmTiming.rate_hz SolvedClock.d1cpre SolvedClock.d1ppre SolvedClock.d2ppre1 SolvedClock.d2ppre2 SolvedClock.d3ppre SolvedClock.hpre SolvedClock.hse_hz SolvedClock.source SolvedClock.sysclk_hz SolvedClock.timpre SolvedMotorOutput.arr SolvedMotorOutput.ccr SolvedMotorOutput.index SolvedMotorOutput.protocol SolvedMotorOutput.psc SolvedMotorOutput.pwm SolvedTopology.clock SolvedTopology.motor_outputs SolvedWire.clock? SolvedWire.motor_outputs? Specification.motor_outputs
    fields - -
 ## version 7  27e504ac7e  AET-WO-4300d slice A: power parts as cited data, specification 7 (power, mcu.bor_level), every ruled static ch
@@ -44,6 +49,7 @@
    keys - -
    kinds + (window) BatteryOutsideRegulatorInput BoardOutsidePartTemperature BorLevelOutOfRange BuckHeadroomViolated CrossingDomainMismatch CrossingInvalid CrossingPullUp CrossingTooFast DomainOutsideConsumer DomainWithTwoSources DomainWithoutSource DropoutViolated ExternalPartMissing ExternalPartOutOfRange JunctionTooHot MisoRoundTripTooSlow OnTimeTooShort OutputDelayMissing PowerInputOverloaded PowerLoop PowerPartUnknown PowerPartsTableInvalid PowerValueInvalid RegulatorOutsideDomain RegulatorOverloaded SenseFullScaleExceeded SenseSourceImpedance
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Battery.cell_max_millivolts Battery.cell_min_millivolts Battery.cells Battery.chemistry Cells.max Cells.min Conditions.board_temperature_celsius Consumer.floor_millivolts Consumer.name Crossing.a_domain Crossing.b_domain Crossing.bus Crossing.cs_pull_up Crossing.external Crossing.part Crossing.reference Divider.bottom Divider.top External.part External.reference External.role Load.domain Load.milliamps Load.source Mcu.bor_level? Pad.pad Pad.reference Power.battery Power.conditions Power.crossings Power.input Power.loads Power.regulators Power.sense PowerIn.part PowerIn.reference RawAt.document RawAt.section RawBuck.external RawBuck.fsw_hz RawBuck.high_side_limit_milliamps RawBuck.ifb_max_nanoamps RawBuck.inductor_min_coefficient RawBuck.iout_max_milliamps RawBuck.rds_high_max_milliohms RawBuck.rds_low_max_milliohms RawBuck.regulation_permille RawBuck.regulation_production_tested RawBuck.regulation_vin_min RawBuck.rfbt_max_ohms RawBuck.stated_at RawBuck.thermal_vias RawBuck.toff_min_max_ns RawBuck.ton_min_max_ns RawBuck.vfb_microvolts RawBuck.vin_millivolts RawCapacitor.dielectric RawCapacitor.rated_millivolts RawCapacitor.rated_picofarads RawChannel.direction RawChannel.input RawChannel.output RawDocument.pending RawDocument.revision RawDocument.sha256 RawDocument.title RawExternal.at RawExternal.dielectrics RawExternal.max_picofarads RawExternal.min_picofarads RawExternal.rated_at_least_working RawExternal.rated_min_millivolts RawExternal.rated_step RawExternal.role RawInductor.dcr_max_milliohms RawInductor.isat_definition RawInductor.isat_typical_milliamps RawInductor.nanohenries RawLdo.dropout_at_milliamps RawLdo.dropout_max_millivolts RawLdo.external RawLdo.ignd_max_microamps RawLdo.iout_max_milliamps RawLdo.junction_max_celsius RawLdo.theta_ja_condition RawLdo.theta_ja_decikelvin_per_watt RawLdo.vin_millivolts RawLdo.vout_condition RawLdo.vout_millivolts RawLimit.at RawLimit.value RawMcu.bor_falling_max_millivolts RawMcu.idd_condition RawMcu.idd_max_milliamps RawMcu.rain_max_ohms RawMcu.reservoir_rule RawMcu.spi_input_setup_min_ns RawMcu.spi_sck_low_shortfall_ns RawMcu.vdd_millivolts RawRain.bits RawRain.max_ohms RawRanged.at RawRanged.max RawRanged.min RawReservoirRule.adc_capacitance_femtofarads RawReservoirRule.at RawReservoirRule.extra_bits RawReservoirRule.statement RawResistor.drift_condition RawResistor.drift_ppm RawResistor.tcr_ppm_per_kelvin RawResistor.tcr_reference_celsius RawResistor.tolerance_ppm RawRow.footprint RawRow.kind RawRow.lifecycle RawRow.part RawRow.pins RawRow.symbol RawRow.temperature_celsius RawStep.from_nominal_millivolts RawStep.rated_min_millivolts RawTable.documents RawThermal.columns RawThermal.drill_um RawThermal.pad RawThermal.pitch_um RawThermal.ring_um RawThermal.rows RawThermal.sources RawThermalSources.count RawThermalSources.drill RawThermalSources.layers RawThermalSources.pitch RawThermalSources.ring RawTranslator.channels RawTranslator.external RawTranslator.pull_up_max_ohms RawTranslator.tmax_a_to_b_bps RawTranslator.tmax_b_to_a_bps RawTranslator.tpd_a_to_b_max_ns RawTranslator.tpd_b_to_a_max_ns RawTranslator.vcca_millivolts RawTranslator.vccb_millivolts RawVinStep.from_vout_millivolts RawVinStep.vin_min Regulator.external Regulator.feedback Regulator.input Regulator.output Regulator.part Regulator.reference Reservoir.part Reservoir.reference Resistor.ohms Resistor.part Resistor.reference Sense.adc_resolution_bits Sense.bottom Sense.net Sense.reservoir Sense.top SolvedDomain.consumers SolvedDomain.load_milliamps SolvedDomain.part SolvedDomain.regulator SolvedDomain.ret SolvedDomain.source SolvedDomain.vout_max_microvolts SolvedDomain.vout_min_microvolts SolvedPower.conditions SolvedPower.domains SolvedPower.input_fault_milliamps SolvedPower.input_steady_milliamps SolvedTopology.power SolvedWire.power? SourcedValue.source SourcedValue.value Specification.power Temperature.max Temperature.min Temperature.source
    fields - -
 ## version 8  10806528ce  AET-WO-4210 build: each device's bring-up a witnessed script (identity, configure, data), per-read SPI windows
@@ -52,6 +58,7 @@
    keys - -
    kinds + (window) IoOutsidePart LifecycleAcceptanceUnused LifecycleAcceptedTwice LifecycleNotAccepted LifecycleStatementInvalid LifecycleStatusMismatch
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + LifecycleAcceptance.part LifecycleAcceptance.statement LifecycleAcceptance.status RawChannel.lsb RawChannel.quantity RawChannel.signed RawChannel.stimulus RawChannel.unit RawChannel.zero RawCitations.configure RawCitations.data RawCitations.io RawCitations.lifecycle RawData.channels RawData.write RawIdentity.datasheet_value RawIdentity.mask RawPart.io_millivolts RawPart.lifecycle RawPart.script RawPart.stand_in RawScript.configure RawScript.data RawWrite.write Specification.accept_lifecycle
    fields - -
 ## version 9  25640c5563  AET-WO-4300b: serial links — USARTs solved, generated and witnessed by their bytes (an echo of a firmware-keye
@@ -60,6 +67,7 @@
    keys - -
    kinds + (window) ConnectorBudgetTooLarge ConnectorReferenceReserved DuplicateSerialLabel NoAdcPin NoSerialPeripheral SerialBaudOutOfRange SerialBaudTolerance SerialClock SerialFramingContradictsRole SerialFramingShape SerialNegotiatedAtCitedBaud SerialNegotiatedOffCrsf SerialPeripheralLpuart SerialPeripheralTwice SerialPinsSplit SerialPortMismatch SerialPortNotAtConnector SerialPortsInfeasible UnjudgedSerialConstraint UnknownSerialPeripheral
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) ConnectorBudgetTooLarge ConnectorReferenceReserved NoAdcPin
    fields + Framing.baud Framing.data_bits Framing.inverted Framing.parity Framing.stop_bits Negotiated.source SerialPort.framing SerialPort.label SerialPort.negotiated SerialPort.peripheral SerialPort.role SerialPort.rx SerialPort.tx SolvedSerialPort.actual_millibaud SolvedSerialPort.brr SolvedSerialPort.error_ppm SolvedSerialPort.framing SolvedSerialPort.index SolvedSerialPort.kernel_hz SolvedSerialPort.negotiated SolvedSerialPort.peripheral SolvedSerialPort.role SolvedSerialPort.rx SolvedSerialPort.tx SolvedTopology.serial_ports SolvedWire.serial_ports? Specification.serial_ports
    fields - -
 ## version 10  8030fa5c61  AET-WO-4300d3: power judgements — hot-plug, the buck's junction screen, DC bias (Murata's curve held), the ris
@@ -68,6 +76,7 @@
    keys - -
    kinds + (window) BatteryInputUndamped BuckJunctionOverLimit C0G ControlPinUnwired DcBiasBeyondCurve EffectiveCapacitanceBelowMinimum SupplyFloorBelowBorRising X5R X7R X7S
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Conditions.dc_bias_derating Control.pin Control.strap Control.wire Crossing.controls Derating.dielectrics Derating.ratio_max_permille Derating.retained_permille Derating.source HotPlug.part HotPlug.reference HotPlug.side Junction.copper_square_centimetres Junction.loss_milliwatts PowerIn.hot_plug RawBuck.controls RawBuck.input_damping_picofarads RawBuck.theta_ja RawBuck.vin_abs_max_millivolts RawBulk.esr_condition RawBulk.esr_max_milliohms RawBulk.rated_millivolts RawBulk.rated_picofarads RawCapacitor.dc_bias RawControl.at RawControl.pin RawControl.straps RawControl.wirable RawCurve.at RawCurve.points RawCurve.temperature_permille RawCurve.tolerance_permille RawCurvePoint.change_permille RawCurvePoint.millivolts RawEffective.at RawEffective.on_shortfall RawEffective.value RawExternal.effective_min_picofarads RawLdo.controls RawLdo.vin_abs_max_millivolts RawMcu.bor_rising_max_millivolts RawTheta.at RawTheta.board_copper_layers RawTheta.condition RawTheta.package RawTheta.points RawThetaPoint.decikelvin_per_watt RawThetaPoint.square_centimetres RawTranslator.controls RawTvs.clamp_condition RawTvs.clamp_max_millivolts RawTvs.standoff_millivolts Regulator.controls Regulator.junction Wire.net Wire.role
    fields - -
 ## version 11  4e821edbd2  AET-WO-4300g: the MCU's support network — drawn from DS12117 Figure 14 (13 per-pin capacitors), judged from Ki
@@ -76,6 +85,7 @@
    keys - -
    kinds + (window) NoProgrammingPath SupplyHasNoSource SupplyHasTwoSources
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Mcu.supply_source RawMcu.support RawOwnNet.at RawOwnNet.group RawPowered.at RawPowered.group RawPowered.max_millivolts RawPowered.min_millivolts RawStrap.at RawStrap.pin RawStrap.to RawSupport.capacitors RawSupport.grounds RawSupport.own_nets RawSupport.pins RawSupport.pins_at RawSupport.powered RawSupport.straps RawSupport.supply RawSupportCapacitor.at RawSupportCapacitor.bound_basis RawSupportCapacitor.bound_um RawSupportCapacitor.ground RawSupportCapacitor.owner RawSupportCapacitor.per_pin RawSupportCapacitor.picofarads RawSupportCapacitor.role RawSupportCapacitor.tolerance_permille SupplySource.connector SupplySource.pin
    fields - -
 ## version 12  1178ca85fc  AET-WO-4230: silicon facts judged independently — SPI kernel clock, MBR, SSM/SSI/AFCNTR; TIMINGR, BRR and the
@@ -84,6 +94,7 @@
    keys - -
    kinds + (window) I2cTimingMismatch InvalidDeviceName PeerDeviationBelowCited PeerDeviationNotCited ReservedName SpiControllerMismatch SpiKernelClockUnavailable SpiSpeedBelowKernelRange UnknownPart UnwitnessedAcknowledgedTwice UnwitnessedClassUnknown UnwitnessedFieldTwice UnwitnessedFieldsEmpty UnwitnessedRegisterMalformed
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) InvalidDeviceName ReservedName UnknownPart
    fields + RawCitations.start_up RawConfigure.start_up RawStartUp.condition RawStartUp.max_us RawStartUp.typ_us SerialPort.peer_deviation_ppm SerialPort.peer_deviation_source SolvedI2cTiming.cr1 SolvedI2cTiming.kernel_hz SolvedI2cTiming.timingr SolvedSerialPort.peer_deviation_ppm SolvedSpiController.achieved_hz SolvedSpiController.achieved_max_hz SolvedSpiController.declared_hz SolvedSpiController.kernel SolvedSpiController.kernel_hz SolvedSpiController.mbr SolvedTopology.bor_level SolvedTopology.i2c_timings SolvedTopology.spi_controllers SolvedWire.bor_level? SolvedWire.i2c_timings? SolvedWire.spi_controllers? Specification.acknowledge_unwitnessed UnwitnessedAcknowledgement.class UnwitnessedAcknowledgement.fields UnwitnessedAcknowledgement.reason UnwitnessedAcknowledgement.register
    fields - -
 ## version 13  70d1621d4e  AET-WO-4220b: our own symbols and footprints for the ICM-42688-P and BMP581, cited pin by pin, with their keep
@@ -92,6 +103,7 @@
    keys - -
    kinds + (window) PinCapacitanceAlreadyCited PinCapacitanceBelowI2cCi PinCapacitanceOutOfRange SpiModeNotDriven
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) SpiModeNotDriven
    fields + DeclaredPinCapacitance.condition DeclaredPinCapacitance.femtofarads DeclaredPinCapacitance.source I2cDevice.pin_capacitance PinCapacitance.declared SpiDevice.pin_capacitance
    fields - -
 ## version 14  9a37ae6e8c  AET-WO-1312 READY: bench access — test points on any declared net, BOOT0 on a connector through a judged 10k p
@@ -100,6 +112,7 @@
    keys - -
    kinds + (window) PinCapacitanceBelowTypical TestPointNetRepeated TestPointNetUnknown TestPointReferenceTaken
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) PinCapacitanceBelowTypical
    fields + Mcu.reset_switch? Specification.test_points? TestPoint.net TestPoint.reference
    fields - -
 ## version 15  f845b6fd30  AET-WO-1313 READY: board.max_outline_um (specification 15) — under a declared bound the placer puts the bucks
@@ -108,6 +121,7 @@
    keys - -
    kinds + (window) LoadAboveSpeedTable OutlineBound PinSpeedMismatch PinSpeedNotSolved RateAbovePinSpeed RiseTimeBelowPinSpeed
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) LoadAboveSpeedTable PinSpeedMismatch PinSpeedNotSolved RateAbovePinSpeed RiseTimeBelowPinSpeed
    fields + Board.max_outline_um? OutlineBound.height OutlineBound.width
    fields - -
 ## version 16  0829fe83a4  AET-WO-4400d: the IMU's orientation, declared once — specification 16 (board.forward, an IMU's {x, z}), solved
@@ -116,6 +130,7 @@
    keys - -
    kinds + (window) ForwardUndeclared ImuAxesNotCited ImuAxesNotPerpendicular OrientationOnNonImu
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Board.forward? Orientation.x Orientation.z RawArduPilot.frame RawAxes.at RawAxes.x_toward_pins RawAxes.y_toward_pins RawAxes.z RawFrame.at RawFrame.is RawPart.axes SolvedSpiDevice.orientation? SpiDevice.orientation?
    fields - -
 ## version 17  ee835bde54  AET-WO-4400g READY: the twin's clocks. Generated firmware at its solved clock (64 MHz, periods realized in who
@@ -124,6 +139,7 @@
    keys - -
    kinds + (window) ForeignClockMuxSplit ForeignClockUsarts ForeignClockZero
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + ForeignClock.apb1_timers_hz ForeignClock.apb2_timers_hz ForeignClock.usarts Mcu.foreign_clock? SolvedForeignClock.apb1_timers_hz SolvedForeignClock.apb2_timers_hz SolvedForeignClock.usarts SolvedTopology.foreign_clock SolvedWire.foreign_clock?
    fields - -
 ## version 18  36a494fdd1  AET-WO-2304b READY: the battery-sag chain solved once — PowerNotSimulated lifted; spec 18 (battery.series_mill
@@ -132,6 +148,7 @@
    keys - -
    kinds + (window) BatterySideUnmodelled
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Battery.series_milliohms MotorOutput.esc NoEsc.source
    fields - -
 ## version 19  943f711263  AET-WO-4240v: the generated firmware at VOS2 — mcu.core_supply declared (spec 19), PWR_CR3 written once and re
@@ -140,6 +157,7 @@
    keys - -
    kinds + (window) FlashWaitStatesBelowTable LoadNamesNoPart VosLimitExceeded
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) LoadNamesNoPart
    fields + CoreSupply.mode CoreSupply.source ForeignClock.vos Mcu.core_supply SolvedClock.vos SolvedForeignClock.vos SolvedTopology.core_supply SolvedWire.core_supply? SourcedVos.source SourcedVos.value
    fields - -
 ## version 20  14bb1e5b5e  AET-WO-4240a: mcu.hse (crystal | external | null, spec 20) with the ABM8AIG-16 row cited, one ppm budget per s
@@ -148,6 +166,7 @@
    keys - -
    kinds + (window) HseBudgetUnbounded HseClockMismatch HseDeclarationZero HseFrequencyOutOfRange HseGmCritExceeded HseLifeBeyondAging HseLoadCapsUnfit HsePartNotCrystal HseTemperatureOutsidePart HseTreeUnreachable LoadNamesCountedPart NoI2cTiming PllOutputDisabled PllReferenceNotInsideRange PllVcoOutOfRange PllVcoSelectMismatch PllWordsUndecodable
    kinds - (window) CrystalNotSupported
+   kinds + (window, by a commit other than the bump) LoadNamesCountedPart
    fields + CelsiusRange.max CelsiusRange.min HseCrystal.life_hours HseCrystal.load_caps_femtofarads HseCrystal.part HseCrystal.pull_ppm HseCrystal.temperature_celsius HseExternal.hz_den HseExternal.hz_num HseExternal.ppm HseExternal.source Mcu.hse McuWire.bor_level McuWire.core_supply McuWire.foreign_clock? McuWire.hse? McuWire.hse_hz? McuWire.part McuWire.reset_switch? McuWire.supply McuWire.supply_source RawCrystal.aging_hours RawCrystal.aging_ppm RawCrystal.c0_max_femtofarads RawCrystal.drive_level_max_microwatts RawCrystal.esr_max_milliohms RawCrystal.frequency_hz RawCrystal.load_femtofarads RawCrystal.stability_ppm RawCrystal.tolerance_ppm SolvedClock.hse? SolvedHse.declared SolvedHse.fast_ppm SolvedHse.pll1divr SolvedHse.pllcfgr SolvedHse.pllckselr SolvedHse.slow_ppm
    fields - Mcu.hse_hz
 ## version 21  63334d6903  AET-WO-1210: board.drawn (spec 21) declares a twin stand-in; validate applies 1209's rules 1 and 3 to every dr
@@ -156,6 +175,7 @@
    keys - -
    kinds + (window) PartNotDrawable UnboundedPinCapacitance
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + Board.drawn?
    fields - -
 ## version 22  25203c582d  AET-WO-1211a: pin_devices (GPIO, ADC, bridges), pwm.idle and pwm.resolution_ps in the IR and solver as ruled o
@@ -164,6 +184,7 @@
    keys - -
    kinds + (window) AdcChannelNotOnPin AdcFullScaleExceeded AdcOutputCurrentExceeded AdcSourceImpedance AdcUnmodelled BridgeChannelUnknown BridgeForbiddenState BridgeIdleDrives BridgeIdlePulsed BridgeInputShared BridgeInputUnknown BridgeModeStrapMismatch BridgeModeUnknown BridgeSplitAcrossTimers BridgeUndeclared DevicePinBoundTwice DevicePinUnbound IdleExceedsPeriod IdleNotOnTick IdleSpelledTwice InputRateAbovePart LogicLevelIncompatible OpenDrainUnpulled PartHasBus PartLimitDeclaredTwice PartLimitUndeclared PartWithoutBus PinDeviceUndeclared PullOverDrive PulseNotOnTick ResolutionNotDerivable SenseAdcMismatch SignalKindMismatch SignalShape StrapLevelInvalid StrapUndeclared SupplyOutOfRange SupplyPinUndeclared TemperatureDeclaredTwice TemperatureUndeclared TimerResolutionConflict UnheldDuringReset UnknownDevicePin
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) -
    fields + AdcChannel.input AdcChannel.peripheral AnalogInput.adc_resolution_bits AnalogInput.channel AnalogInput.device_pin AnalogInput.full_scale AnalogInput.net AnalogInput.pin AnalogInput.transfer Bridge.id Bridge.inputs Bridge.mode Bridge.outputs CurrentOutput.reservoir CurrentOutput.resistor GpioSignal.active? GpioSignal.device_pin GpioSignal.direction GpioSignal.initial? GpioSignal.net GpioSignal.pin GpioSignal.pull? PartLimits.input_pwm_max_hz PinDevice.analog PinDevice.bridges PinDevice.part PinDevice.part_limits PinDevice.reference PinDevice.signals PinDevice.straps PinDevice.supplies PinDevice.temperature_celsius PullResistor.ohms PullResistor.part PullResistor.reference PullResistor.to PwmTiming.idle PwmTiming.resolution_ps RawBand._condition RawBand.absolute_ua? RawBand.load_ma RawBand.percent? RawChannel.inputs RawChannel.outputs RawLevels.page RawLevels.vih_min_mv RawLevels.vil_max_mv RawLevels.vin_max_mv RawMode.channels RawMode.forbidden RawMode.name RawMode.page RawMode.states RawMode.strap_level RawPin.active? RawPin.error_band? RawPin.error_band_supply_mv? RawPin.error_band_supply_pin? RawPin.high_min_mv? RawPin.iod_max_ma? RawPin.kind RawPin.number RawPin.output_max_ua? RawPin.page RawPin.pull_down_ohms_typical? RawPin.pull_up_max_mv? RawPin.range_mv? RawPin.resistors? RawPin.ua_per_a_typical? RawPin.vih_min_mv? RawPin.vil_max_mv? RawPin.vol_max_mv? RawPin.vol_test_current_ma? RawPinPart.bus RawPinPart.enable RawPinPart.identity RawPinPart.input_pwm_max_hz? RawPinPart.logic_levels RawPinPart.mode_strap RawPinPart.modes RawPinPart.part RawPinPart.pins RawPinPart.source RawPinPart.t_wake_max_us? RawSource.document RawSource.revision RawSource.sha256 RawState.drives RawState.enable RawState.inputs RawState.name RawState.outputs RawStated.page RawStated.value RawTable.pin_parts SignalPull.mcu? SignalPull.resistor? SignalPull.source SolvedAdcInput.channel SolvedAdcInput.peripheral SolvedAdcInput.pin SolvedGpio.direction SolvedGpio.initial? SolvedGpio.pin SolvedGpio.pull? SolvedPinDevice.part SolvedTopology.adc_inputs SolvedTopology.pin_devices? SolvedWire.adc_inputs? SolvedWire.pin_devices? Specification.pin_devices?
    fields - -
 ## version 23  ddfa64d630  AET-WO-4240b: the crystal generated and simulated — H1's bring-up with bounded HSERDY/PLL1RDY/SWS waits haltin
@@ -172,5 +193,6 @@
    keys - -
    kinds + (window) ConsoleBaudNotRoundTrip HseCopyNotSolved
    kinds - (window) -
+   kinds + (window, by a commit other than the bump) ConsoleBaudNotRoundTrip
    fields + HseCrystal.startup_max_us HseCrystal.startup_source HseExternal.startup_max_us HseExternal.startup_source SolvedHse.flash_acr
    fields - -

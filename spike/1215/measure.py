@@ -5,7 +5,8 @@ For each commit that set `SPECIFICATION_SCHEMA_VERSION` to N (N = 2..current), a
             `mcu` object and a `schema_version`) at N in the commit, less those at N-1 in the parent
             (`[]` marks an array element), and the reverse;
   kinds   - refusal kind names (`=> "Name"` in crates/aethelgard-ir/src) added in the window from the
-            previous bump commit to this one, so a rule landed by a work order that did not bump is seen;
+            previous bump commit to this one, so a rule landed by a work order that did not bump is seen,
+            and of those the ones already present in the bump's parent (landed by another commit);
   fields  - Deserialize struct fields in crates/aethelgard-ir/src (`Struct.field`, `?` when the field
             carries a serde `default`), added or removed across the bump commit.
 Usage: python3 -I spike/1215/measure.py REPO > spike/1215/out/witnesses.txt
@@ -103,6 +104,8 @@ for n, c in rows:
     k1 = kinds(c)
     print('   kinds + (window)', ' '.join(sorted(k1 - k0)) or '-')
     print('   kinds - (window)', ' '.join(sorted(k0 - k1)) or '-')
+    kb = kinds(parent)
+    print('   kinds + (window, by a commit other than the bump)', ' '.join(sorted((kb - k0) & k1)) or '-')
     f0, f1 = fields(parent), fields(c)
     print('   fields +', ' '.join(sorted(f1 - f0)) or '-')
     print('   fields -', ' '.join(sorted(f0 - f1)) or '-')
