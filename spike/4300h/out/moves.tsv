@@ -1,0 +1,13 @@
+board	variant	validate	solve	emit	moved_in_solve	board_drawn
+sentinel-03	MOTOR1 pin null (the solver's own choice)	0	0	0	MOTOR1: PE9 TIM1_CH1 -> PA8 TIM1_CH1	segments 1298->1364, vias 337->337, pcb 58be1663ab3d->023e90639062
+sentinel-03	MOTOR1 on PA8 (TIM1_CH1, FT_fha; 3400 kept it free for MCO1)	0	0	0	MOTOR1: PE9 TIM1_CH1 -> PA8 TIM1_CH1	segments 1298->1364, vias 337->337, pcb 58be1663ab3d->023e90639062
+sentinel-03	MOTOR1 on PD12 (TIM4_CH1, FT_fh; motors split over TIM1 and TIM4)	0	0	0	MOTOR1: PE9 TIM1_CH1 -> PD12 TIM4_CH1	segments 1298->1322, vias 337->357, pcb 58be1663ab3d->7fc8287f277d
+sentinel-03	all four on TIM4, PD12-PD15 (every pin FT)	0	0	0	MOTOR1: PE9 TIM1_CH1 -> PD12 TIM4_CH1; MOTOR2: PE11 TIM1_CH2 -> PD13 TIM4_CH2; MOTOR3: PE13 TIM1_CH3 -> PD14 TIM4_CH3; MOTOR4: PE14 TIM1_CH4 -> PD15 TIM4_CH4	segments 1298->1460, vias 337->379, pcb 58be1663ab3d->7e52e86d80d1
+sentinel-03	all four motors null (the solver's free choice)	0	0	0	MOTOR1: PE9 TIM1_CH1 -> PA8 TIM1_CH1; MOTOR4: PE14 TIM1_CH4 -> PA11 TIM1_CH4	segments 1298->1300, vias 337->319, pcb 58be1663ab3d->ca280d7dd3e6
+sentinel-01	SPI_SCK on PB3, SPI_MOSI on PB5 (both FT)	2 UnwitnessedAcknowledgementStale	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PB5 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PB3 SPI1_SCK	segments 729->839, vias 136->155, pcb 401b9e1ebdd3->782ba211edc5
+sentinel-01-bench	SPI_SCK on PB3, SPI_MOSI on PB5 (both FT)	2 UnwitnessedAcknowledgementStale	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PB5 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PB3 SPI1_SCK	segments 679->638, vias 130->132, pcb dedcf49afaaf->cbc624c1a2ca
+sentinel-01-ext-bmp581	SPI_SCK on PB3, SPI_MOSI on PB5 (both FT)	0	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PB5 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PB3 SPI1_SCK	segments 824->829, vias 156->159, pcb d67e959cb6de->4e50c30400be
+sentinel-01	SPI_SCK on PG11, SPI_MOSI on PD7 (FT_h)	2 UnwitnessedAcknowledgementStale	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PD7 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PG11 SPI1_SCK	segments 729->777, vias 136->155, pcb 401b9e1ebdd3->cb6120774609
+sentinel-01-bench	SPI_SCK on PG11, SPI_MOSI on PD7 (FT_h)	2 UnwitnessedAcknowledgementStale	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PD7 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PG11 SPI1_SCK	segments 679->672, vias 130->134, pcb dedcf49afaaf->8a661dba6abe
+sentinel-01-ext-bmp581	SPI_SCK on PG11, SPI_MOSI on PD7 (FT_h)	0	0	0	SPI_MOSI: PA7 SPI1_MOSI -> PD7 SPI1_MOSI; SPI_SCK: PA5 SPI1_SCK -> PG11 SPI1_SCK	segments 824->830, vias 156->145, pcb d67e959cb6de->3810255849af
+sentinel-02-bench	IMU_SCK on PB3 (FT); MOSI stays PB5	0	0	0	IMU_SCK: PA5 SPI1_SCK -> PB3 SPI1_SCK	segments 459->470, vias 77->89, pcb 02b58a10a7d2->1d9ce4b1fdde

@@ -1,0 +1,57 @@
+end	end_net	hops	mcu_pad	pin	structure	class	detail
+J1.1	/CONSOLE_TX	-	101	PA9	FT_u	direct	/CONSOLE_TX
+J1.2	/CONSOLE_RX	-	102	PA10	FT_u	direct	/CONSOLE_RX
+J1.3	unconnected-(J1-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J1-Pin_3-Pad3)
+J1.4	GND	-	-	-	-	none	GND
+J1.MP	GND	-	-	-	-	none	GND
+J2.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J2.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J2.1	VDD_3V3	VDD_3V3-R3(10k)-/EXT_SDA	70	PB11	FT_f	via_rail	/EXT_SDA
+J2.1	VDD_3V3	VDD_3V3-R4(10k)-/EXT_SCL	69	PB10	FT_f	via_rail	/EXT_SCL
+J2.2	/BOOT0	-	138	BOOT0	B	direct	/BOOT0
+J2.3	/NRST	-	25	NRST	RST	direct	/NRST
+J2.4	/SWDIO	-	105	PA13	FT	direct	/SWDIO
+J2.5	/SWCLK	-	109	PA14	FT	direct	/SWCLK
+J2.6	GND	-	-	-	-	none	GND
+J2.MP	GND	-	-	-	-	none	GND
+J3.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J3.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J3.1	VDD_3V3	VDD_3V3-R3(10k)-/EXT_SDA	70	PB11	FT_f	via_rail	/EXT_SDA
+J3.1	VDD_3V3	VDD_3V3-R4(10k)-/EXT_SCL	69	PB10	FT_f	via_rail	/EXT_SCL
+J3.2	unconnected-(J3-Pin_2-Pad2)	-	-	-	-	none	unconnected-(J3-Pin_2-Pad2)
+J3.3	unconnected-(J3-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J3-Pin_3-Pad3)
+J3.4	GND	-	-	-	-	none	GND
+J3.MP	GND	-	-	-	-	none	GND
+J4.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J4.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J4.1	VDD_3V3	VDD_3V3-R3(10k)-/EXT_SDA	70	PB11	FT_f	via_rail	/EXT_SDA
+J4.1	VDD_3V3	VDD_3V3-R4(10k)-/EXT_SCL	69	PB10	FT_f	via_rail	/EXT_SCL
+J4.2	/EXT_SCL	-	69	PB10	FT_f	direct	/EXT_SCL
+J4.3	/EXT_SDA	-	70	PB11	FT_f	direct	/EXT_SDA
+J4.4	GND	-	-	-	-	none	GND
+J4.MP	GND	-	-	-	-	none	GND
+TP1.1	GND	-	-	-	-	none	GND
+TP10.1	/SPI_SCK	-	41	PA5	TT_ha	direct	/SPI_SCK
+TP10.1	/SPI_SCK	-	-	-	-	ic_bridge	U4 W25Q64JVSSIQ on /SPI_SCK; its other pads carry MCU nets /FLASH_CS,/SPI_MISO,/SPI_MOSI
+TP11.1	/EXT_SCL	-	69	PB10	FT_f	direct	/EXT_SCL
+TP12.1	/EXT_SDA	-	70	PB11	FT_f	direct	/EXT_SDA
+TP13.1	/I2C_SCL	-	136	PB6	FT_f	direct	/I2C_SCL
+TP13.1	/I2C_SCL	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+TP13.1	/I2C_SCL	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+TP14.1	/I2C_SDA	-	137	PB7	FT_fa	direct	/I2C_SDA
+TP14.1	/I2C_SDA	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+TP14.1	/I2C_SDA	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+TP2.1	/BOOT0	-	138	BOOT0	B	direct	/BOOT0
+TP3.1	/NRST	-	25	NRST	RST	direct	/NRST
+TP4.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+TP4.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+TP4.1	VDD_3V3	VDD_3V3-R3(10k)-/EXT_SDA	70	PB11	FT_f	via_rail	/EXT_SDA
+TP4.1	VDD_3V3	VDD_3V3-R4(10k)-/EXT_SCL	69	PB10	FT_f	via_rail	/EXT_SCL
+TP5.1	/CONSOLE_RX	-	102	PA10	FT_u	direct	/CONSOLE_RX
+TP6.1	/CONSOLE_TX	-	101	PA9	FT_u	direct	/CONSOLE_TX
+TP7.1	/FLASH_CS	-	34	PA0	FT_a	direct	/FLASH_CS
+TP7.1	/FLASH_CS	-	-	-	-	ic_bridge	U4 W25Q64JVSSIQ on /FLASH_CS; its other pads carry MCU nets /SPI_MISO,/SPI_MOSI,/SPI_SCK
+TP8.1	/SPI_MISO	-	42	PA6	FT_a	direct	/SPI_MISO
+TP8.1	/SPI_MISO	-	-	-	-	ic_bridge	U4 W25Q64JVSSIQ on /SPI_MISO; its other pads carry MCU nets /FLASH_CS,/SPI_MOSI,/SPI_SCK
+TP9.1	/SPI_MOSI	-	43	PA7	TT_a	direct	/SPI_MOSI
+TP9.1	/SPI_MOSI	-	-	-	-	ic_bridge	U4 W25Q64JVSSIQ on /SPI_MOSI; its other pads carry MCU nets /FLASH_CS,/SPI_MISO,/SPI_SCK

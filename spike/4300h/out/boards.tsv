@@ -1,0 +1,35 @@
+name	file	validate	solve	emit	note
+connectors	crates/aethelgard-cli/tests/fixtures/connectors.json	0	0	0	
+d1-24-i2c	crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json	0	0	0	
+d3-24-i2c-12-spi	crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json	0	0	0	
+driver-judges-nothing	crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json	0	0	0	
+four-layer-power	crates/aethelgard-cli/tests/fixtures/four-layer-power.json	0	0	0	
+four-layer	crates/aethelgard-cli/tests/fixtures/four-layer.json	0	0	0	
+hse-crystal-16	crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	0	0	0	
+hse-external-8	crates/aethelgard-cli/tests/fixtures/hse-external-8.json	0	0	2	 emit:DrawsNoBoard
+imu-baro-1v8	crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json	0	0	2	 emit:DrawsNoBoard
+logger-4600	crates/aethelgard-cli/tests/fixtures/logger-4600.json	0	0	0	
+motors-dshot600	crates/aethelgard-cli/tests/fixtures/motors-dshot600.json	0	0	0	
+motors-pwm	crates/aethelgard-cli/tests/fixtures/motors-pwm.json	0	0	0	
+pair-standin	crates/aethelgard-cli/tests/fixtures/pair-standin.json	0	0	0	
+sentinel-01-bench	crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json	0	0	0	
+sentinel-02-own	crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json	0	0	0	
+sentinel-02-shaped	crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	0	0	0	
+sentinel-03	crates/aethelgard-cli/tests/fixtures/sentinel-03.json	0	0	0	
+serial-dshot-9600	crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json	0	0	0	
+serial-four	crates/aethelgard-cli/tests/fixtures/serial-four.json	0	0	0	
+solve-infeasible-shared	crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json	0	2	skip	
+solve-pigeonhole-spi	crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json	0	2	skip	
+solve-stress	crates/aethelgard-cli/tests/fixtures/solve/stress.json	0	0	0	
+solve-thrash-pins	crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json	0	2	skip	
+spi-only	crates/aethelgard-cli/tests/fixtures/spi-only.json	0	0	0	
+two-bme	crates/aethelgard-cli/tests/fixtures/two-bme.json	0	0	0	
+d1-drv8876	crates/aethelgard-ir/tests/fixtures/d1-drv8876.json	0	0	2	 emit:DrawsNoBoard
+d2-drv8833	crates/aethelgard-ir/tests/fixtures/d2-drv8833.json	2	2	skip	PartLimitUndeclared
+sentinel-02-power	crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json	0	0	0	
+invalid-zero-domain	examples/invalid-zero-domain.json	2	2	skip	ZeroNominalVoltage
+sentinel-01-ext-bmp581	examples/sentinel-01-ext-bmp581.json	0	0	0	
+sentinel-01-minimal	examples/sentinel-01-minimal.json	0	0	0	
+sentinel-01	examples/sentinel-01.json	0	0	0	
+sentinel-02-bench-hse8	examples/sentinel-02-bench-hse8.json	0	0	2	 emit:DrawsNoBoard
+sentinel-02-bench	examples/sentinel-02-bench.json	0	0	0	

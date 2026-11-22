@@ -1,0 +1,31 @@
+end	end_net	hops	mcu_pad	pin	structure	class	detail
+J1.1	VDD_5V	-	-	-	-	no_mcu_pin	VDD_5V
+J1.2	/I2C_SCL	-	136	PB6	FT_f	direct	/I2C_SCL
+J1.2	/I2C_SCL	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+J1.2	/I2C_SCL	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+J1.3	/I2C_SDA	-	137	PB7	FT_fa	direct	/I2C_SDA
+J1.3	/I2C_SDA	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+J1.3	/I2C_SDA	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+J1.4	GND	-	-	-	-	none	GND
+J1.MP	GND	-	-	-	-	none	GND
+J2.1	VDD_5V	-	-	-	-	no_mcu_pin	VDD_5V
+J2.2	/EXT_SCK	-	104	PA12	FT_u	direct	/EXT_SCK
+J2.3	/EXT_MOSI	-	76	PB15	FT_u	direct	/EXT_MOSI
+J2.4	/EXT_MISO	-	75	PB14	FT_u	direct	/EXT_MISO
+J2.5	unconnected-(J2-Pin_5-Pad5)	-	-	-	-	none	unconnected-(J2-Pin_5-Pad5)
+J2.6	GND	-	-	-	-	none	GND
+J2.MP	GND	-	-	-	-	none	GND
+J3.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J3.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J3.2	unconnected-(J3-Pin_2-Pad2)	-	-	-	-	none	unconnected-(J3-Pin_2-Pad2)
+J3.3	unconnected-(J3-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J3-Pin_3-Pad3)
+J3.4	/SWDIO	-	105	PA13	FT	direct	/SWDIO
+J3.5	/SWCLK	-	109	PA14	FT	direct	/SWCLK
+J3.6	GND	-	-	-	-	none	GND
+J3.MP	GND	-	-	-	-	none	GND
+J4.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J4.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J4.2	unconnected-(J4-Pin_2-Pad2)	-	-	-	-	none	unconnected-(J4-Pin_2-Pad2)
+J4.3	unconnected-(J4-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J4-Pin_3-Pad3)
+J4.4	GND	-	-	-	-	none	GND
+J4.MP	GND	-	-	-	-	none	GND

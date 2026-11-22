@@ -1,0 +1,15 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	rails_on_end	far_end	source
+logger-4600	J1.1	connector	READOUT_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J1.2	connector	READOUT_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J1.3	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J1.4	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J2.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J2.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J2.6	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+logger-4600	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J3.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J3.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+logger-4600	J3.4	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null

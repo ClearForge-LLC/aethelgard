@@ -1,0 +1,21 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	rails_on_end	far_end	source
+driver-judges-nothing	J1.1	connector	CMD_TX	PB14	FT_u	USART1_TX AF4	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J1.2	connector	CMD_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J1.3	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J1.4	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J2.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J2.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J2.6	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+driver-judges-nothing	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J3.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J3.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J3.4	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+driver-judges-nothing	J4.1	connector	HB_IN1	PA8	FT_fha	TIM1_CH1 AF1	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+driver-judges-nothing	J4.2	connector	HB_IN2	PA9	FT_u	TIM1_CH2 AF1	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+driver-judges-nothing	J4.3	connector	SERVO1	PA0	FT_a	TIM2_CH1 AF1	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+driver-judges-nothing	J4.4	connector	SERVO2	PA1	FT_ha	TIM2_CH2 AF1	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+driver-judges-nothing	J4.5	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+driver-judges-nothing	J4.6	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null

@@ -1,0 +1,23 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	rails_on_end	far_end	source
+d1-drv8876	J1.1	connector	CMD_TX	PB14	FT_u	USART1_TX AF4	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J1.2	connector	CMD_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J1.3	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J1.4	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J2.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J2.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J2.6	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+d1-drv8876	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J3.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J3.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J3.4	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J4.1	connector	SERVO1	PA0	FT_a	TIM2_CH1 AF1	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J4.2	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J4.3	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J4.4	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J5.1	connector_other	M1_OUT1	-	-	other	-	-	-	VMOTOR	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J5.2	connector_other	M1_OUT2	-	-	other	-	-	-	VMOTOR	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J5.3	connector_other	VMOTOR	-	-	rail	-	-	-	VMOTOR	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+d1-drv8876	J5.4	connector_other	GND	-	-	GND	-	-	-	VMOTOR	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
