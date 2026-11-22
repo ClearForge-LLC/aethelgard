@@ -117,7 +117,7 @@
 
 ## 8. Gates, fence, reduction pass
 
-- **Gates (Furnace, target in the repository), at `a0bee897` plus the README's step-1 version line:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. `cargo test --workspace`: 160 binaries, 2783 passed, 1 failed. The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (§9). `readme_versions` failed once on the README's step-1 line (`schema_version` is 26) and passes after the fix.
+- **Gates (Furnace, target in the repository), at `a0bee897` plus the README's step-1 version line:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. `cargo test --workspace` at `a0bee897`: 160 binaries, 2782 passed, 2 failed; with `readme_versions` re-run after the fix below, 2783 and 1 (a whole run on the READY head will replace this count). The remaining failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (§9). `readme_versions` failed once on the README's step-1 line (`schema_version` is 26) and passes after the fix.
   - Before the bump, at `3eece126`: fmt and clippy pass, and `cargo test --workspace` gives 160 binaries, 2784 passed, 0 failed.
 - **The null sweep** (`out/null-sweep.json`): main's binary on main's tree against the branch's on the branch's.
   - 34 specifications. No exit code, `validate` output, `solve` output or emitted file moved; 232 generated files each moved by one sha line.
