@@ -572,16 +572,50 @@ fn every_connection_point_belongs_to_exactly_what_the_emitter_meant() {
     }
 }
 
+/// D1 (`aethelgard-ir`'s fixture) on a drawn board.
+fn d1_drawn() -> Value {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aethelgard-ir/tests/fixtures/d1-drv8876.json");
+    let mut v: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    v["board"].as_object_mut().unwrap().remove("drawn");
+    v
+}
+
 /// A pin ST's table and KiCad's symbol name differently (`PC2` and `PC2_C`,
-/// package pin 28) is drawn by its position, so it is not refused.
+/// package pin 28) is drawn by its position, so it is not refused. The pad
+/// takes only an analog input (`AET-WO-1217` F4), so the witness is D1's
+/// IPROPI read on it, on pad 28 of the board.
 #[test]
 fn a_solved_pin_is_drawn_by_its_package_position() {
     let d = Dir::new("pc2");
-    let mut spec = sentinel_spec();
-    spec["spi_buses"][0]["miso"]["pin"] = json!("PC2");
+    let mut spec = d1_drawn();
+    spec["pin_devices"][0]["analog"][0]["pin"] = json!("PC2");
     let r = json_line(&emit(&write_spec(&d, &spec), &d.0.join("o")), 0);
     let text = fs::read_to_string(r["schematic"]["path"].as_str().unwrap()).unwrap();
-    assert!(text.contains("(label \"SPI_MISO\""), "no SPI_MISO label");
+    assert!(
+        text.contains("(label \"DRV_IPROPI\""),
+        "no DRV_IPROPI label"
+    );
+    let board = fs::read_to_string(r["board"]["path"].as_str().unwrap()).unwrap();
+    let on_28 = board
+        .split("(pad ")
+        .skip(1)
+        .filter(|p| p.starts_with("\"28\""))
+        .any(|p| p.contains("(net \"/DRV_IPROPI\")"));
+    assert!(on_28, "no pad 28 on DRV_IPROPI");
+}
+
+/// `AET-WO-1217` F4: a digital signal pinned by hand on `PC2` (the `PC2_C`
+/// pad) is refused by name before anything is drawn.
+#[test]
+fn a_digital_signal_on_an_analog_pad_is_refused() {
+    let d = Dir::new("pc2-miso");
+    let mut spec = sentinel_spec();
+    spec["spi_buses"][0]["miso"]["pin"] = json!("PC2");
+    let r = json_line(&emit(&write_spec(&d, &spec), &d.0.join("o")), 2);
+    assert_eq!(r["error"]["kind"], "AnalogPadPin", "{r}");
+    assert_eq!(r["error"]["claimants"], json!(["spi_buses[0].miso"]), "{r}");
+    assert!(!d.0.join("o").exists(), "wrote output");
 }
 
 /// The twin's 1.8 V stand-in (`AET-WO-4210` D1), which declares

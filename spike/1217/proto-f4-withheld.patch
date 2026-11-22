@@ -1,0 +1,5 @@
+--- a/crates/aethelgard-ir/src/solve.rs
++++ b/crates/aethelgard-ir/src/solve.rs
+@@
+-pub const RESERVED_PINS: [&str; 4] = ["PA13", "PA14", "PC14", "PC15"];
++pub const RESERVED_PINS: [&str; 6] = ["PA13", "PA14", "PC14", "PC15", "PC2", "PC3"];

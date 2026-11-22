@@ -1,7 +1,7 @@
 {
   "project": "sentinel-01-bench",
-  "specification_sha256": "28797fa2447e733be5b3df2bdf436f436565fe7d5bc9f1122b93ba1def33e0d4",
-  "topology_sha256": "4e497a4d6fbe6edd0aa3e5c487c996856001034c9c3357da698eaab915d28b20",
+  "specification_sha256": "9ca0b2aa45c3253ce13ae484aa331928ef1f944386f8a4eb54f6e367d014ab34",
+  "topology_sha256": "6544b6ffe173cc8d4b0b89f243ec366e9ca5ebe88b0a3d2599e1cd663dd307ff",
   "scenarios": [
     {
       "scenario": "pullup-3k3",
@@ -45,9 +45,9 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "838cfd123b0a3bfac988550f3beec4f8ddcb4696f1b45212bdd428d60cddd6fd",
+  "verdict_sha256": "6194abf7f0e1762a399002ada90d355fa439a55eb2021547a96815b237034c1d",
   "files": {
-    "FAB-NOTES.md": "11ce0ce3c14dc8f0b13867ee4cb82a13c8ad4ab3f91d43f04e3b4fe0b16a864f",
+    "FAB-NOTES.md": "423aed01ecc6408d796a07fce31885765acfa024a515254a7dc82bc22f82efd4",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
     "sentinel-01-bench-B_Mask.gbs": "8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4",
     "sentinel-01-bench-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",

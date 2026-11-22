@@ -1,0 +1,11 @@
+f10-d1-other-mcu	PowerPartUnknown@pin_devices[0].mcu	PowerPartUnknown@pin_devices[0].mcu
+f10-minimal-other-mcu	UnwitnessedAcknowledgementStale@acknowledge_unwitnessed[0].fields	UnknownPart@None
+f2-ipropi-gnd-and-analog	SignalKindMismatch@pin_devices[0].straps.IPROPI	SignalKindMismatch@pin_devices[0].straps.IPROPI
+f2-ipropi-gnd	SignalKindMismatch@pin_devices[0].straps.IPROPI	SignalKindMismatch@pin_devices[0].straps.IPROPI
+f2-ipropi-gnd-vref-gnd	SignalKindMismatch@pin_devices[0].straps.IPROPI	SignalKindMismatch@pin_devices[0].straps.IPROPI
+f2-no-analog	TripSenseUnbound@pin_devices[0].analog	TripSenseUnbound@pin_devices[0].analog
+f9-no-reservoir	ok	ok
+f9-over-vdda	AdcFullScaleExceeded@pin_devices[0].analog[0].full_scale	AdcFullScaleExceeded@pin_devices[0].analog[0].full_scale
+f9-vref-gnd	TripReferenceGrounded@pin_devices[0].straps.VREF	TripReferenceGrounded@pin_devices[0].straps.VREF
+f9-vref-gnd-no-reservoir	TripReferenceGrounded@pin_devices[0].straps.VREF	TripReferenceGrounded@pin_devices[0].straps.VREF
+f9-vref-gnd-over-vdda	AdcFullScaleExceeded@pin_devices[0].analog[0].full_scale	AdcFullScaleExceeded@pin_devices[0].analog[0].full_scale

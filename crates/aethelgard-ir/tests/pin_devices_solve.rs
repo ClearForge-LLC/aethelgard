@@ -285,3 +285,138 @@ fn no_driven_input_sits_on_a_reset_pull_up() {
     signal(&mut v, 1)["pin"] = json!("PA15");
     solved(&v, &t).unwrap();
 }
+
+// ---------------------------------------------------------------- AET-WO-1217 F4
+
+/// D1 with Sentinel-01's SPI flash on its own bus, so a chip select is
+/// placed too.
+fn d1_with_flash() -> Value {
+    let mut v = d1();
+    let s01: Value =
+        serde_json::from_str(include_str!("../../../examples/sentinel-01.json")).unwrap();
+    for key in ["spi_buses", "spi_devices", "accept_lifecycle"] {
+        v[key] = s01[key].clone();
+    }
+    v["net_constraints"] = json!(
+        s01["net_constraints"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["net_name"].as_str().unwrap().starts_with("SPI_"))
+            .collect::<Vec<_>>()
+    );
+    v
+}
+
+/// `PC2` and `PC3` (the `PC2_C` and `PC3_C` pads, the MCU row's
+/// `io.analog_pads`) carrying a timer channel, an SPI line, a USART line and
+/// an ADC input each, first in every order the solver walks; SPI1 elsewhere.
+fn with_pads() -> PinTable {
+    table(&[
+        (
+            "PC2",
+            28,
+            &[("TIM1_CH1", 1), ("SPI1_MISO", 5), ("USART1_TX", 7)],
+            &["ADC3_INP0"],
+        ),
+        (
+            "PC3",
+            29,
+            &[("SPI1_MOSI", 5), ("USART1_RX", 7)],
+            &["ADC3_INP1"],
+        ),
+        ("PE2", 60, &[("SPI1_SCK", 5)], &[]),
+        ("PE5", 61, &[("SPI1_MISO", 5)], &[]),
+        ("PE6", 62, &[("SPI1_MOSI", 5)], &[]),
+    ])
+}
+
+/// F4: no digital claimant (a motor output, a bus line, a chip select, a
+/// device's GPIO) is offered an analog pad, and an ADC input still is.
+#[test]
+fn an_analog_pad_takes_an_adc_input_and_nothing_digital() {
+    let s = solved(&d1_with_flash(), &with_pads()).unwrap();
+    s.validate().unwrap();
+    for (net, pin) in s
+        .assignments
+        .iter()
+        .map(|(n, a)| (n, &a.pin))
+        .chain(s.gpio.iter().map(|(n, g)| (n, &g.pin)))
+    {
+        assert!(pin != "PC2" && pin != "PC3", "{net} on {pin}");
+    }
+    assert_eq!(s.adc_inputs["DRV_IPROPI"], adc("PC2", "ADC3", "INP0"));
+    assert_eq!(s.assignments["SPI_MISO"].pin, "PE5");
+    assert_eq!(s.assignments["DRV_EN"].pin, "PE9");
+}
+
+/// F4: a digital hand pin on an analog pad is refused by name, whoever
+/// names it; an ADC input pinned there is placed.
+#[test]
+fn a_digital_hand_pin_on_an_analog_pad_is_refused() {
+    let t = with_pads();
+    for (claimant, edit) in [
+        (
+            "pin_devices[0].signals[0]",
+            (|v: &mut Value| signal(v, 0)["pin"] = json!("PC2")) as fn(&mut Value),
+        ),
+        ("spi_buses[0].miso", |v: &mut Value| {
+            v["spi_buses"][0]["miso"]["pin"] = json!("PC2")
+        }),
+        ("spi_devices[0].cs", |v: &mut Value| {
+            v["spi_devices"][0]["cs"]["pin"] = json!("PC3")
+        }),
+        ("serial_ports[0].tx", |v: &mut Value| {
+            v["serial_ports"][0]["tx"]["pin"] = json!("PC2")
+        }),
+    ] {
+        let mut v = d1_with_flash();
+        edit(&mut v);
+        let e = solved(&v, &t).unwrap_err();
+        assert_eq!(e.kind(), "AnalogPadPin", "{claimant}: {e}");
+        assert_eq!(e.claimants(), [claimant.to_owned()], "{claimant}: {e}");
+    }
+    let mut v = d1_with_flash();
+    analog(&mut v)["pin"] = json!("PC3");
+    let s = solved(&v, &t).unwrap();
+    assert_eq!(s.adc_inputs["DRV_IPROPI"], adc("PC3", "ADC3", "INP1"));
+}
+
+/// F4: a topology moved onto an analog pad after `solve` is refused too.
+#[test]
+fn a_topology_with_a_digital_signal_on_an_analog_pad_is_refused() {
+    let mut s = solved(&d1_with_flash(), &with_pads()).unwrap();
+    s.gpio.get_mut("DRV_NSLEEP").unwrap().pin = "PC3".into();
+    let e = s.validate().unwrap_err();
+    assert_eq!(e.kind(), "AnalogPadPin", "{e}");
+    assert_eq!(e.id(), Some("PC3"), "{e}");
+}
+
+/// F4's data: the MCU row's `io.analog_pads` is Table 8's two `ANA` pins,
+/// cited; a pad that is not a held pin, or one named twice, is refused.
+#[test]
+fn the_analog_pads_are_table_8s_and_refused_malformed() {
+    use aethelgard_ir::power_parts::{Kind, POWER_PARTS_JSON, parse_power_parts, table};
+    let Some(Kind::Mcu(m)) = table().unwrap().get("STM32H753ZITx").map(|r| &r.kind) else {
+        panic!("the MCU row");
+    };
+    let pads: Vec<&str> = m.io.analog_pads.pins.iter().map(String::as_str).collect();
+    assert_eq!(pads, ["PC2", "PC3"]);
+    let cite = &m.io.analog_pads.at.section;
+    assert!(
+        cite.contains("Table 8") && cite.contains("ANA") && cite.contains("Table 11"),
+        "{cite}"
+    );
+    for bad in [json!(["PC2", "PC2"]), json!(["PC2", "PC2_C"])] {
+        let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
+        let row = t["parts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|p| p["part"] == "STM32H753ZITx")
+            .unwrap();
+        t["parts"][row]["kind"]["mcu"]["io"]["analog_pads"]["pins"] = bad.clone();
+        let e = parse_power_parts(&t.to_string()).unwrap_err().to_string();
+        assert!(e.contains("analog_pads"), "{bad}: {e}");
+    }
+}
