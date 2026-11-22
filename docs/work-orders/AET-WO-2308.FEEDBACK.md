@@ -74,16 +74,51 @@
 | P6 7 / 19 / 2 | **holds** |
 | P6.1 no HSE packaging verdict moves | **holds, run:** `fab-paths.sh`, 5 of 5 lines byte-identical |
 
-## 3. Adversarial pass (targeted, fresh subagent)
+## 3. Adversarial pass (targeted, fresh Opus subagent, briefed to falsify)
 
-(filled from the subagent's report, checked at source)
+It reviewed `007fd2f3` against the WO's three §5 targets. No blocker was found. Each finding was checked at source before use.
 
-## 4. Mutants: 19 of 19 killed
+| # | Target | Finding | Checked | Outcome |
+|---|---|---|---|---|
+| F1 | 1 | **FAB-NOTES said `-pos.csv` names parts "by reference only". It does not:** KiCad's unedited placement file has `Ref,Val,Package,…` and prints U4's value, `W25Q64JVSSIQ` (committed package, line 40). The Q4 lean, and so the ruling, carried the same error | confirmed on the committed file | **fixed** (`d8d2fc62`): the section says `-pos.csv` prints the value with no note, and calls itself that file's label. Reported on the bus (09:30Z); §5 F2 |
+| F2 | 2 | `tree::walk`'s `!rel.is_empty()` had no killing test: deleting it passes every test, and an empty compared directory would gain `Extra("/")` | confirmed by running | **fixed**: a test on an empty top directory; mutant M17 killed |
+| F3 | 2 | `conclude`'s code under a passing verdict with a fab flag is not tier 1 (`report.ok && fab_mode.is_none()` survives the LP2 test) | read | **accepted as stated**: a passing verdict with a fab flag runs `fab::derive` (KiCad). `verify_2k2_tier2`'s `--fab-out` run asserts exit 0, so tier 2 kills it. LP2 is the failing case, and that is tier 1 |
+| F4 | 2 | M9 had no recorded result, and T1–T3 had not run yet | confirmed | M9 rerun and killed; T1–T3 run (§4) |
+| — | 1 | Clean: every BOM note comes from `Part.note`, set only at `schematic_arms.rs` L888 and L1041; only ICM20948 and ICP10111 are `stand_in`, both bus devices, so `parts_in_order` covers them; no other caller of `derive` or `jlcpcb` (the MCP `verify` passes the same flags); test pads are never in the BOM; `csv_field` quoting holds, and no formula prefix can lead a note; no Gerber carries value text | read | — |
+| — | 3 | Clean: every changed row's cited line matches `STM32H7_RCC.cs` (sha256 `7f10d491…`); TIMPRE's L1490–1494 are live (reached from L1414 and L1420); `judge_tree` requires PLLSRC `10` (`clock.rs` L628) | confirmed | Notes: HSIDIVF (L158) is a writable flag whose value provider always reads 1, so "the written bit is dropped" holds for reads only, as the row says. The invariant test checks a cited line's prefix, not its number |
 
-One per guard this work order adds or changes, each against the suite it lives in (`spike/2308/kit/mutants.py`; records in `~/.cache/aet-2308/mut/`).
+## 4. Mutants
+
+One per guard this work order adds or changes, each run against the suite it lives in (`spike/2308/kit/mutants.py`; records in `~/.cache/aet-2308/mut/`). Tier 1 ran on a copy of the tree; tier 2 ran in the image on a copy laid out as CI lays it out.
+
+| Id | Guard | Killed by |
+|---|---|---|
+| M1 | the JLCPCB group key holds the note | eda `the_bom_groups_by_value_footprint_and_note…` |
+| M2 | the `Note` column is written | same |
+| M3 | `noted` filters empty notes | same, and `noted_lists_every_part…` |
+| M4 | the FAB-NOTES section for a noted BOM | cli `the_notes_list_every_part_the_bom_notes…` |
+| M5, M6 | `StandInInFabPackage`: its condition, its predicate | `fab_tier1` `a_drawn_twin_stand_in…` |
+| M7, M8 | `campaign_renode`: builds that disagree; a build not named | `the_campaign_names_the_renode_build…` |
+| M9, M17 | `against`: the empty-directory clause; an empty top directory | `against_reports_an_empty_directory…` |
+| M10 | the `--against` call site uses `against` | `fab_tier1` `a_tree_that_differs…` |
+| M11, M12 | `conclude`'s code ignores the fab mode (both directions) | `the_exit_code_is_the_verdicts…` |
+| M13, M14 | the ELF binding; the board binding | `a_swapped_elf_or_board…` |
+| M15, M16 | a field reclassed `independent-rule`; PLLSRC's judge moved off `judge_tree` | `every_independent_rule_row_is_judged_by_an_ir_rule` |
+| T1 | `derive` appends the section | `verify_2k2_tier2` `verify_fab_out…` |
+| T2 | the campaign gate's `tool_version` is set | `verify_2k2_tier2` `verify_binds…` |
+| T3 | the `--against-fab` call site uses `against` | `against_fab_tier2` `verify_against_fab_names_every…` |
+
 - **M8 first survived.** A run whose archive names no Renode build gave `""` under the mutant, and the test's only such case paired that run with one naming a build, so the disagreement check refused it anyway. A lone such run was added, and the mutant was then killed.
+- **M17 was added for adversarial F2.** It is killed.
 
 ## 5. Findings, not fixed here
+
+- **F1 · A §7.1 row for Scotty (the Q2 condition): the JLCPCB BOM's fifth column, `Note`, at the first real upload.** It departs from #199's sample (four columns, read cell by cell). That JLCPCB's upload tolerates it is [inferred], from its KiCad page calling a five-column BOM "aligned with" the sample. FAB-NOTES says so, and says to delete the column if an upload refuses it. The FAB-NOTES section carries the same label. **Proposed row:** "confirm at the first JLCPCB upload that the BOM's `Note` column is accepted, or ignored, and not mis-mapped; if it is refused, drop the column (`fab.rs` `JLCPCB_BOM_HEADER`) and keep the FAB-NOTES section. Owner: Scotty, at the first order."
+- **F2 · `-pos.csv` prints a noted part's value with no note** (adversarial F1, which corrects Q4's wording). It is KiCad's file. Only the Gerbers' two clock lines are ever edited (`RUL-03`), so its label is the FAB-NOTES section. A label inside it would be a ruling.
+- **F3 · The sheet (Q3, ruled: a row here).** Emit's `.kicad_sch` never prints `Part.note`, so a stand-in's note is not on the schematic. It is the fenced generator's file, and not in the package. **Proposed row:** "the sheet prints each part's note as a field. Owner: the emitter."
+- **F4 · `prove`'s provenance (`main.rs` L1275) still calls `tree::diff`.** An extra empty directory in a supplied crate leaves it `generated`. It is outside this fence and cannot change a build. Backlog, or accept.
+- **F5 · The declared bulk's note is shown only on a synthetic BOM.** D1 stops at `CampaignCoverageShort` (R0), so no committed board takes a bulk through `verify --fab-out`. The label path is the same code that carries U4's note in the bench package.
+- **F6 · `sentinel-02-power` and `hse-crystal-16` can never be packaged:** each has a rail "no consumer a judge observes" (VDD_5V, VDD_1V8). So the stand-in refusal and the new ledger classes are not reachable on any committed board's fab path today. They are shown on the drawn 1.8 V fixture and in unit tests. This is `2304b`'s condition, unchanged.
 
 ## 6. Gates, fence, reduction pass
 

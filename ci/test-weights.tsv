@@ -64,6 +64,7 @@
 # AET-WO-1912 refit (REFIT RULE 1, 2 and 5; WO §1): every row more than 25 % under its worst trustworthy sample, raised to it (37 rows) or added (10 rows of 0.5 s or more). Trustworthy is an alone time: the throwaway alone pass of run 44755810025 (head 1d583f6e, each name in its own invocation on one thread, after the shard's own tests), or a test that was the only one of its binary in a shard on the five green main runs 44747545277, 44747464266, 44735701946, 44735207864, 44732069104 (its binary's `finished in`). A lock or `ok`-less-`Running` time was a candidate only: board_tier2 and twin_tier2 hold their lock per call, not per test. Each row's source run and shard is in AET-WO-1912 FEEDBACK §2. No row was lowered.
 # AET-WO-1913 refit (REFIT RULE 1, 2; WO §1, and the architect's widening on the bus, 2026-11-20 18:09Z): every twin_tier2 and board_tier2 row set to its alone time, lowered (67) or raised (51), one unchanged: the worse of two alone samples on two runners, from the throwaway alone pass of run 44787324803 (head c9ac0298, each name in its own invocation on one thread, after the shard's own tests). This replaces the Furnace estimates and lock-time rows above for those two binaries. Every other row more than 25 % off its worst `solo` sample (the only test of its binary in a shard, over the five green main runs 44775091139, 44774672284, 44774205804, 44768742667, 44764528379 and the throwaway's normal pass) set to it (28 rows, against_fab_tier2's verify_against_fab_finds_the_package_it_wrote_identical 420.7 -> 585.18 among them). Each row's run and job is in AET-WO-1913 FEEDBACK §2.
 # AET-WO-1211b: board_tier2's d1_s_pin_device_generates_builds_and_proves is a Furnace estimate, not a run: 96.19 s in the pinned image on Furnace (libtest `finished in`: D1's build, three harnesses and one seeded proof), times 2.8 (AET-WO-1310's factor), 269.332; replace it at the next refit.
+# AET-WO-2308: fab_tier1's a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name and main.rs's verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode are Furnace estimates, not runs (AET-WO-2302's rule): the worst of three alone in the pinned image on Furnace, 2.147 s and 1.115 s, times 1.2, rounded up; replace them at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.61
@@ -277,6 +278,7 @@ tests/fab_tier1.rs	a_tree_that_differs_writes_no_package_and_says_so	4.500
 tests/fab_tier1.rs	an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one	3.770
 tests/fab_tier1.rs	an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched	5.200
 tests/fab_tier1.rs	the_acknowledged_reference_passes_the_check_before_any_gate	1.78
+tests/fab_tier1.rs	a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name	2.600
 tests/generate_tier1.rs	a_configuration_above_the_scratch_directory_is_refused_by_name	1.500
 tests/generate_tier1.rs	build_and_prove_refuse_what_cargo_would_run_before_any_tool	1.400
 tests/generate_tier1.rs	build_refuses_an_existing_output_a_dependency_and_a_crate_without_firmware	1.200
@@ -529,3 +531,4 @@ unittests src/main.rs	renode::tests::each_anchor_bound_fails_by_name	1.300
 unittests src/main.rs	renode::tests::every_run_for_runs_exactly_its_nanoseconds_in_renode	0.760
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.800
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	1.700
+unittests src/main.rs	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode	1.400
