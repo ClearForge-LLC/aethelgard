@@ -1,0 +1,10 @@
+[
+ {
+  "mutant": "M4 reference emitter-numbered",
+  "verdict": "killed",
+  "failing": [
+   "a_declared_electrolytic_bulk_is_drawn_positive_on_vm",
+   "d1_is_drawn_with_its_declared_bulk"
+  ]
+ }
+]

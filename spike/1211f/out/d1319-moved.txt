@@ -1,0 +1,17 @@
+d1
+d1-analog-unsolved
+d1-imode-resistor
+d1-nfault-undeclared
+d1-no-reservoir
+d1-own-DRV_IPROPI-U2_CPH
+d1-own-imode
+d1-own-M1_OUT1-U2_CPH
+d1-own-M1_OUT1-U2_VCP
+d1-own-M1_OUT2-U2_CPL
+d1-pull-R4
+d1-ref-C4
+d1-ref-R1
+d1-ref-U1
+d1-res-C2
+d1-res-R1
+d1-vref-gnd

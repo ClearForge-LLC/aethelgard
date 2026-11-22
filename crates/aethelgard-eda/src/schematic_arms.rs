@@ -25,7 +25,9 @@
 //!   passives the datasheet requires but the parts row does not hold
 //!   (`AET-WO-1211` Q6), each with its page. A passive whose value the
 //!   datasheet does not state is refused by name (`PassiveValueUnstated`),
-//!   never invented (ruled S1, 2026-11-20).
+//!   never invented (ruled S1, 2026-11-20), unless it is the bulk the parts
+//!   row leaves unstated (`bulk_unstated`) and the declaration's `bulk`
+//!   answers it (`AET-WO-1211f`): that part is drawn in its place.
 //!
 //! Every numbered pin of a pin device's parts row ends drawn on a net or a
 //! rail, or, for an open-drain output the declaration leaves out, on a
@@ -119,7 +121,7 @@ struct Required {
     /// The datasheet's designator, or a name for it where it gives none.
     name: &'static str,
     /// Its value as schematics write it; `None` where the datasheet states
-    /// none, which is refused.
+    /// none, which is refused unless the declared `bulk` answers it.
     value: Option<&'static str>,
     rating: Rating,
     /// The dielectric the datasheet names, if any.
@@ -621,8 +623,8 @@ fn volts(mv: u64) -> String {
 
 /// The references the pin devices bring: each device's, then its declared
 /// passives' (a pull, a strap resistor, an analog output's resistor and
-/// reservoir), claimed before any emitter-numbered one. `devices` is the
-/// specification's, which `schematic` reads for this module (`RUL-16`:
+/// reservoir, the bulk capacitor), claimed before any emitter-numbered one.
+/// `devices` is the specification's, which `schematic` reads for this module (`RUL-16`:
 /// `eda`'s one reader of declared devices, as for the power tree).
 pub(super) fn references(devices: &[PinDevice]) -> Vec<&String> {
     let mut out = Vec::new();
@@ -647,6 +649,9 @@ pub(super) fn references(devices: &[PinDevice]) -> Vec<&String> {
             if let Some(r) = &c.reservoir {
                 out.push(&r.reference);
             }
+        }
+        if let Some(bulk) = &d.bulk {
+            out.push(&bulk.reference);
         }
     }
     out
@@ -880,7 +885,7 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
         value,
         footprint: row.footprint.to_owned(),
         conns,
-        note: row.stand_in.map(|(_, note)| note),
+        note: row.stand_in.map(|(_, note)| note.to_owned()),
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
@@ -902,6 +907,7 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
     }
     // The row's passives, in its order; a pin device's each anchored to the
     // pins it joins.
+    let mut bulk_drawn = false;
     for (p, end) in row.passives.iter().zip(ends) {
         match (p, end, &context) {
             (Passive::Decouple(v), _, Context::Bus { supply }) => {
@@ -921,12 +927,28 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
                 },
             ) => {
                 let Some(value) = r.value else {
-                    return Err(EmitError::PassiveValueUnstated {
-                        reference: d.reference.clone(),
-                        part: d.part.clone(),
-                        passive: r.name.to_owned(),
-                        cite: r.cite.to_owned(),
-                    });
+                    // Drawn from the declared `bulk` where it `answers` this
+                    // passive; otherwise refused by name.
+                    let answered = match (pad_of, &d.bulk) {
+                        (Some((_, _, parts_row)), Some(bulk)) => parts_row
+                            .bulk_unstated
+                            .as_ref()
+                            .filter(|u| answers(r, u))
+                            .map(|_| (bulk, parts_row.document.as_str())),
+                        _ => None,
+                    };
+                    let Some((bulk, document)) = answered else {
+                        return Err(EmitError::PassiveValueUnstated {
+                            reference: d.reference.clone(),
+                            part: d.part.clone(),
+                            passive: r.name.to_owned(),
+                            cite: r.cite.to_owned(),
+                        });
+                    };
+                    declared_bulk(b, r.name, document, bulk, one, two)?;
+                    b.anchor_last(&d.reference, pads, Some((NEAR_NM, near)), false);
+                    bulk_drawn = true;
+                    continue;
                 };
                 let rating = match r.rating {
                     Rating::Volts(v) => v.to_owned(),
@@ -950,6 +972,80 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
             }
         }
     }
+    // belt-and-suspenders: `validate` refuses a `bulk` on a row that states
+    // its own (`BulkNotAllowed`); here a declared part is never dropped.
+    if let Context::Pins { device: d, .. } = &context
+        && d.bulk.is_some()
+        && !bulk_drawn
+    {
+        return Err(not_drawable(
+            d,
+            "its `bulk` answers no unstated passive of its row",
+        ));
+    }
+    Ok(())
+}
+
+/// Whether a declared `bulk` answers `r`: it is the bulk the parts row
+/// leaves unstated, from that supply pin to GND (`AET-WO-1211f`).
+fn answers(r: &Required, u: &aethelgard_ir::pin_parts::BulkUnstated) -> bool {
+    matches!((r.one, r.two), (End::Pin(p), End::Ground) if p == u.supply)
+}
+
+/// The declared bulk capacitor in `r`'s place (`AET-WO-1211f`): its
+/// reference from the declaration, its symbol, footprint, capacitance and
+/// rating from its power-parts row (a `capacitor` or `bulk_capacitor`, as
+/// `validate` admits: pin 1, a polarised row's positive, on `r`'s supply
+/// end), and its source, verbatim, in the BOM's note, since `document`
+/// states no value for `name`.
+fn declared_bulk(
+    b: &mut Builder<'_>,
+    name: &str,
+    document: &str,
+    bulk: &aethelgard_ir::pin_devices::Bulk,
+    one: Conn,
+    two: Conn,
+) -> Result<(), EmitError> {
+    use aethelgard_ir::power_parts::Kind;
+    let table =
+        aethelgard_ir::power_parts::table().map_err(|e| EmitError::Internal(e.to_string()))?;
+    let row = table.get(&bulk.part);
+    let (pf, mv) = match row.map(|x| &x.kind) {
+        Some(Kind::Capacitor(c)) => (&c.rated_picofarads, &c.rated_millivolts),
+        Some(Kind::BulkCapacitor(c)) => (&c.rated_picofarads, &c.rated_millivolts),
+        // belt-and-suspenders: `validate` refuses any other part
+        // (`PassivePartUnknown`) before any emitter runs.
+        _ => {
+            return Err(EmitError::PowerNotDrawable {
+                reference: bulk.reference.clone(),
+                why: format!(
+                    "`{}` is not a capacitor or bulk_capacitor row of the power parts table",
+                    bulk.part
+                ),
+            });
+        }
+    };
+    let (Some(row), Ok(pf), Ok(mv)) = (row, u64::try_from(pf.value), u64::try_from(mv.value))
+    else {
+        return Err(EmitError::Internal(format!(
+            "`{}`: a negative rating",
+            bulk.part
+        )));
+    };
+    b.parts.push(Part {
+        lib_id: row.symbol.as_str(),
+        reference: bulk.reference.clone(),
+        value: format!("{} {} {}", super::power::farads(pf), volts(mv), bulk.part),
+        footprint: row.footprint.clone(),
+        conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
+        note: Some(format!(
+            "{name} declared, {document} states no value: {}",
+            bulk.source
+        )),
+        owner: None,
+        offboard: BTreeMap::new(),
+        seat: None,
+    });
     Ok(())
 }
 
@@ -1405,6 +1501,30 @@ mod tests {
             ..W25Q64JVXIQ
         };
         assert_eq!(check(&[row]), Ok(()), "an SPI row's decouplers are its own");
+    }
+
+    /// `AET-WO-1211f`: a declared `bulk` answers only the unstated passive
+    /// from the row's `bulk_unstated` supply pin to GND, never another.
+    #[test]
+    fn a_bulk_answers_only_its_supply_to_ground() {
+        let u = aethelgard_ir::pin_parts::BulkUnstated {
+            supply: "VM".into(),
+            page: String::new(),
+        };
+        let r = |one, two| Required {
+            name: "C",
+            value: None,
+            rating: Rating::Vm,
+            dielectric: None,
+            one,
+            two,
+            cite: "",
+        };
+        assert!(answers(&r(End::Pin("VM"), End::Ground), &u));
+        assert!(!answers(&r(End::Ground, End::Pin("VM")), &u));
+        assert!(!answers(&r(End::Pin("VCP"), End::Pin("VM")), &u));
+        assert!(!answers(&r(End::Pin("VINT"), End::Ground), &u));
+        assert!(!answers(&r(End::Pin("VM"), End::Pin("VCP")), &u));
     }
 
     /// A pin device's passive on a bus row, and a bus device's on a pin row.
