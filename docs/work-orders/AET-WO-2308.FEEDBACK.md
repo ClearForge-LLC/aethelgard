@@ -20,7 +20,10 @@
 ## 0. How it was made
 
 - **Predictions first:** `spike/2308/PREDICTIONS.md`, committed at `fdc906e3` before any build. The results beside them are in `spike/2308/RESULTS.md`.
-- **Bus:** Q1–Q5 were posted at 08:47Z with leans. **They were ruled to the leans at 08:58Z, with two conditions**, both met (§2):
+- **Bus:** Q1–Q5 were posted at 08:47Z with leans. **At 10:36Z the architect ruled:**
+  - `-pos.csv` takes the lean: the FAB-NOTES section is its label, and KiCad's file is not edited;
+  - the stand-in check's placement is accepted;
+  - F1, F3 and F8 are §7.1 rows. **They were ruled to the leans at 08:58Z, with two conditions**, both met (§2):
   - Q1: (b) must refuse no committed package, shown by running.
   - Q5: no packaging verdict may move, shown by `verify --fab-out`.
 - **Kit (`spike/2308/kit/`):**
@@ -43,7 +46,7 @@
   - A board with no noted part adds no byte.
 - **`crates/aethelgard-cli/src/verify.rs`:**
   - `stand_ins()` lists each drawn part the parts table holds `stand_in` (ICM20948, ICP10111). Under a fab flag, `StandInInFabPackage` refuses it by reference, exit 2.
-  - That check sits **after** `CampaignCoverageShort` and before the acknowledgement check, so a board already refused for its campaign keeps that verdict (§2, R2). A vendored table that cannot be read is an internal error (exit 70), never an empty list.
+  - That check sits **after** `CampaignCoverageShort` and before the acknowledgement check, so a board already refused for its campaign keeps that verdict (§2, R2). It still refuses before any fab file is written, and every committed fab-path verdict stays byte-identical (R4). **Accepted by the architect, 10:36Z.** A vendored table that cannot be read is an internal error (exit 70), never an empty list.
   - L3: `campaign_renode()` replays each run's archive and returns the one Renode build they all name. Two builds, none, no run, or an archive that does not replay is a `ToolError`.
   - L4: both comparisons call `tree::against`.
   - LP2: the tail is `conclude(&mut report, fab_mode, &Tail) -> Result<u8, ExitCode>`. `verify` calls it and prints with the code it returns.
@@ -113,14 +116,14 @@ One per guard this work order adds or changes, each run against the suite it liv
 
 ## 5. Findings, not fixed here
 
-- **F1 · A §7.1 row for Scotty (the Q2 condition): the JLCPCB BOM's fifth column, `Note`, at the first real upload.** It departs from #199's sample (four columns, read cell by cell). That JLCPCB's upload tolerates it is [inferred], from its KiCad page calling a five-column BOM "aligned with" the sample. FAB-NOTES says so, and says to delete the column if an upload refuses it. The FAB-NOTES section carries the same label. **Proposed row:** "confirm at the first JLCPCB upload that the BOM's `Note` column is accepted, or ignored, and not mis-mapped; if it is refused, drop the column (`fab.rs` `JLCPCB_BOM_HEADER`) and keep the FAB-NOTES section. Owner: Scotty, at the first order."
-- **F2 · `-pos.csv` prints a noted part's value with no note** (adversarial F1, which corrects Q4's wording). It is KiCad's file. Only the Gerbers' two clock lines are ever edited (`RUL-03`), so its label is the FAB-NOTES section. A label inside it would be a ruling.
-- **F3 · The sheet (Q3, ruled: a row here).** Emit's `.kicad_sch` never prints `Part.note`, so a stand-in's note is not on the schematic. It is the fenced generator's file, and not in the package. **Proposed row:** "the sheet prints each part's note as a field. Owner: the emitter."
+- **F1 · §7.1 (ruled 10:36Z), for Scotty (the Q2 condition): the JLCPCB BOM's fifth column, `Note`, at the first real upload.** It departs from #199's sample (four columns, read cell by cell). That JLCPCB's upload tolerates it is [inferred], from its KiCad page calling a five-column BOM "aligned with" the sample. FAB-NOTES says so, and says to delete the column if an upload refuses it. The FAB-NOTES section carries the same label. **Proposed row:** "confirm at the first JLCPCB upload that the BOM's `Note` column is accepted, or ignored, and not mis-mapped; if it is refused, drop the column (`fab.rs` `JLCPCB_BOM_HEADER`) and keep the FAB-NOTES section. Owner: Scotty, at the first order."
+- **F2 · `-pos.csv` itself prints U4's value, `W25Q64JVSSIQ`, with no note** (adversarial F1, which corrects Q4's wording). It is KiCad's unedited file; only the Gerbers' two clock lines are ever edited (`RUL-03`). Ruled 10:36Z: the FAB-NOTES section is its label, and it says so.
+- **F3 · §7.1 (ruled 10:36Z): the sheet (Q3).** Emit's `.kicad_sch` never prints `Part.note`, so a stand-in's note is not on the schematic. It is the fenced generator's file, and not in the package. **Proposed row:** "the sheet prints each part's note as a field. Owner: the emitter."
 - **F4 · `prove`'s provenance (`main.rs` L1275) still calls `tree::diff`.** An extra empty directory in a supplied crate leaves it `generated`. It is outside this fence and cannot change a build. Backlog, or accept.
 - **F5 · The declared bulk's note is shown only on a synthetic BOM.** D1 stops at `CampaignCoverageShort` (R0), so no committed board takes a bulk through `verify --fab-out`. The label path is the same code that carries U4's note in the bench package.
 - **F6 · `sentinel-02-power` and `hse-crystal-16` can never be packaged:** each has a rail "no consumer a judge observes" (VDD_5V, VDD_1V8). So the stand-in refusal and the new ledger classes are not reachable on any committed board's fab path today. They are shown on the drawn 1.8 V fixture and in unit tests. This is `2304b`'s condition, unchanged.
 
-- **F8 · `fab/sentinel-01-bench/ORDER.md` L81 describes the JLCPCB BOM as four columns** ("Comment, Designator, Footprint, JLCPCB part number left blank"), and the package now has a fifth, `Note`. ORDER.md is outside this fence, so it is not edited here. It is where Scotty reads at the upload, so F1's confirmation belongs there too. **Proposed row:** "ORDER.md §3 names the `Note` column and points to FAB-NOTES' 'Parts with a note' before the upload. Owner: the package's docs."
+- **F8 · §7.1 (ruled 10:36Z): `fab/sentinel-01-bench/ORDER.md` L81 describes the JLCPCB BOM as four columns** ("Comment, Designator, Footprint, JLCPCB part number left blank"), and the package now has a fifth, `Note`. ORDER.md is outside this fence, so it is not edited here. It is where Scotty reads at the upload, so F1's confirmation belongs there too. **Proposed row:** "ORDER.md §3 names the `Note` column and points to FAB-NOTES' 'Parts with a note' before the upload. Owner: the package's docs."
 - **F7 · Two weight rows are Furnace estimates** (AET-WO-2302's rule): `fab_tier1`'s stand-in test, at 2.600, and the LP2 unit test, at 1.400. Replace them at the next refit. No tier-2 test was added: the new tier-2 assertions run inside existing `verify_2k2_tier2` and `against_fab_tier2` runs, so `TIER2_MIN` is unchanged.
 
 ## 6. Gates, fence, reduction pass
