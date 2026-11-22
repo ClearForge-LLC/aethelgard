@@ -772,6 +772,91 @@ fn silicon_derives_each_usart_s_kernel_itself_and_holds_the_topology_s_to_it() {
     );
 }
 
+/// `AET-WO-1211b` (`1211` §2.7 (b)): D1's nFAULT input (PA11, declared pull
+/// `none`) has its `PUPDR` field classed independent-rule by the declared
+/// pull, and the ledger refuses another value; its nSLEEP output's `BSRR`
+/// rows (PA1) name the declared initial level, not a chip select.
+#[test]
+fn a_pin_device_s_input_pull_and_output_level_are_named() {
+    let (t, table) = solve(
+        &fs::read(root().join("crates/aethelgard-ir/tests/fixtures/d1-drv8876.json")).unwrap(),
+    )
+    .unwrap();
+    let l = ledger::build(&t, &table).unwrap();
+    let pull = l
+        .rows
+        .iter()
+        .find(|r| r.id == "GPIOA.PUPDR.PUPD11")
+        .unwrap();
+    assert_eq!((pull.class, pull.value), (Class::IndependentRule, Some(0)));
+    assert!(pull.judge.contains("implied_pupd"), "{}", pull.judge);
+    assert!(pull.note.contains("DRV_NFAULT"), "{}", pull.note);
+    for field in ["BS1", "BR1"] {
+        let r = l
+            .rows
+            .iter()
+            .find(|r| r.register == "GPIOA.BSRR" && r.field == field)
+            .unwrap();
+        assert!(
+            r.note.contains("DRV_NSLEEP") && r.note.contains("`low`"),
+            "{}",
+            r.note
+        );
+    }
+    let mut fields = register_fields(&t, &table).unwrap();
+    let f = fields
+        .iter_mut()
+        .find(|f| f.id() == "GPIOA.PUPDR.PUPD11")
+        .unwrap();
+    f.value = Some(0b01);
+    let mut rows = ledger::register_rows(&fields, &ledger::TABLE).unwrap();
+    ledger::motor_pupd(&mut rows, &t).unwrap();
+    let err = ledger::gpio_rows(&mut rows, &t).unwrap_err();
+    assert_eq!(
+        (err.kind(), err.id()),
+        ("LedgerRuleDisagrees", Some("GPIOA.PUPDR.PUPD11"))
+    );
+    assert!(err.message().contains("implied_pupd"), "{}", err.message());
+}
+
+/// `AET-WO-1211b` (`1211` Q9): a motor output that idles high is pulled up,
+/// classed independent-rule by the idle's pull; the other outputs keep the
+/// pull-down's row, text for text.
+#[test]
+fn an_idle_high_motor_output_s_pull_up_is_the_rule_s() {
+    use aethelgard_ir::motor::{Idle, Level};
+    let (mut t, table) = fixture("motors-pwm");
+    let before = ledger::build(&t, &table).unwrap();
+    let net = t
+        .motor_outputs
+        .iter_mut()
+        .find(|(_, m)| m.pwm.is_some())
+        .map(|(net, m)| {
+            m.pwm.as_mut().unwrap().idle = Idle::Level(Level::High);
+            m.ccr = m.arr + 1;
+            net.clone()
+        })
+        .unwrap();
+    t.validate().unwrap();
+    let l = ledger::build(&t, &table).unwrap();
+    let pin = &t.assignments[&net].pin;
+    let id = format!("GPIO{}.PUPDR.PUPD{}", &pin[1..2], &pin[2..]);
+    let high = l.rows.iter().find(|r| r.id == id).unwrap();
+    assert_eq!(
+        (high.class, high.value),
+        (Class::IndependentRule, Some(0b01))
+    );
+    assert!(high.judge.contains("Q9"), "{}", high.judge);
+    for (a, b) in before.rows.iter().zip(&l.rows) {
+        if a.id != id && !a.id.contains(".CCR") {
+            assert_eq!(
+                (&a.id, &a.judge, &a.note, a.value),
+                (&b.id, &b.judge, &b.note, b.value)
+            );
+        }
+    }
+}
+
 // ------------------------------------------------- AET-WO-2307: the entries
 
 fn spec_of(path: &str) -> Specification {

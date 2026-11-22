@@ -190,11 +190,14 @@ pub enum LedgerError {
     Duplicate { id: String },
     /// A row an independent rule would class whose value is not the rule's:
     /// a motor-output pin's `PUPDR` field that is not
-    /// [`silicon::motor_output_pupd`] (`AET-WO-4230` R5).
+    /// [`silicon::motor_output_pupd`] (`AET-WO-4230` R5), or not the pull its
+    /// idle implies, or a GPIO input's that is not its declared pull
+    /// ([`silicon::implied_pupd`], `AET-WO-1211b`). `name` is the rule's.
     RuleDisagrees {
         id: String,
         value: Option<u32>,
         rule: u32,
+        name: &'static str,
     },
 }
 
@@ -229,8 +232,13 @@ impl LedgerError {
                 "the classification entry for `{id}` claims a model's behaviour without citing a measurement or a Renode source line, or names no judge"
             ),
             LedgerError::Duplicate { id } => format!("the ledger has two rows `{id}`"),
-            LedgerError::RuleDisagrees { id, value, rule } => format!(
-                "the generated firmware leaves `{id}` at {}, not the independent rule's {rule:#b} (aethelgard_ir::silicon::motor_output_pupd): the row cannot be classed independent-rule",
+            LedgerError::RuleDisagrees {
+                id,
+                value,
+                rule,
+                name,
+            } => format!(
+                "the generated firmware leaves `{id}` at {}, not the independent rule's {rule:#b} (aethelgard_ir::silicon::{name}): the row cannot be classed independent-rule",
                 value.map_or_else(|| "a run-time value".to_owned(), |v| format!("{v:#b}"))
             ),
         }
@@ -332,6 +340,10 @@ const I2C_CR1_RULE: &str = "aethelgard_ir::silicon::i2c_cr1, held by silicon::ch
 const TIMINGR_RULE: &str = "aethelgard_ir::silicon::check_timingr (through check_i2c), a decode and inequalities at HSI's worst case, which refuses generation when it fails; the proof's expected word is the topology's, which that rule held, for the mode aethelgard_ir::silicon::i2c_start_mode gives the declared speed where the schedule starts the bus (the adversarial pass's F3)";
 const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr, on the rule's own kernel clock (silicon::usart_kernel_hz: RM0433 Rev 9 §8.7.21, USART16SEL and USART234578SEL at reset 000, rcc_pclk2 and rcc_pclk1 from the solved clock's prescalers), which the topology's must equal (the adversarial pass's F1, never serial::kernel_hz); generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
 const MOTOR_PUPD_RULE: &str = "aethelgard_ir::silicon::motor_output_pupd (AET-WO-4230 R5; its source is the architect's ruling on PR #161, comment 6911424608, Q-G: pull-down `10` on every motor-output pin in the first GPIO init, whole word); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
+/// `AET-WO-1211b`: an idle `high` motor output's pull-up (`1211` Q9).
+const MOTOR_PUPD_HIGH_RULE: &str = "aethelgard_ir::silicon::implied_pupd (AET-WO-1211 Q9 as ruled: the pad's pull follows the idle, pull-up `01` for an idle `high`, so it never fights the idle before start_outputs); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
+/// `AET-WO-1211b`: a pin device's GPIO input's declared MCU pull.
+const INPUT_PUPD_RULE: &str = "aethelgard_ir::silicon::implied_pupd: the specification's declared MCU pull of the signal (pin_devices[].signals[].pull.mcu, validated against the part's row by aethelgard_ir::pin_devices); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
 const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own example: silicon's ARR + 1), a static finding that fails the twin's verdict (renode.rs static_motor_findings); the proof's expected word is the topology's, which that rule judged";
 
 /// Each RCC enable gate the generator can write (`GPIOA`–`GPIOK`, `I2C1`–`I2C4`,
@@ -339,7 +351,7 @@ const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own ex
 /// every timer of `aethelgard_ir::motor::TIMERS`), its register, the line of
 /// its flag in `STM32H7_RCC.cs`, and the measurement that shows the
 /// platform registers its peripheral with the RCC, if one is held.
-const GATES: [(&str, &str, u32, Option<&str>); 41] = [
+const GATES: [(&str, &str, u32, Option<&str>); 43] = [
     ("GPIOAEN", "AHB4ENR", 792, Some(GATE_REF)),
     ("GPIOBEN", "AHB4ENR", 795, Some(GATE_REF)),
     ("GPIOCEN", "AHB4ENR", 798, None),
@@ -381,6 +393,9 @@ const GATES: [(&str, &str, u32, Option<&str>); 41] = [
     ("SPI5EN", "APB2ENR", 983, Some(GATE_SPI)),
     ("SPI6EN", "APB4ENR", 1014, Some(GATE_SPI)),
     ("I2C4EN", "APB4ENR", 1018, None),
+    // `AET-WO-1211b`: ADC1 (ADC12EN) and ADC3.
+    ("ADC12EN", "AHB1ENR", 736, None),
+    ("ADC3EN", "AHB4ENR", 834, None),
 ];
 const GATE_REF: &str = "AET-WO-3302 bench sheet B2's Renode column (AHB4ENR 0x3, APB1LENR 0x00200000, APB2ENR 0x1000, read back after the reference's boot; USART1EN by AET-WO-4300b FEEDBACK P2.1's image): the bit reads back only for a peripheral the platform registers";
 const GATE_PORTS: &str =
@@ -1609,6 +1624,69 @@ fn table() -> Vec<Entry> {
             "written 0; no measurement or held source line shows the model's handling",
         ));
     }
+
+    // ---- ADC (`AET-WO-1211b`; `1211` §2.7 (c)): a pin device's ADC input's
+    // bring-up. `simulate` refuses a pin device until `AET-WO-1211c`, so the
+    // twin witnesses none of these fields: each is silicon-only, held only by
+    // the board crate's proof (`adcN_bring_up_is_in_order_and_bounded`, whose
+    // words are the oracle's, consistency) and the bench. `AET-WO-1211c`
+    // re-classes PCSEL and SQR1 once the twin runs them (`1211` §2.7 (c)).
+    let adc_judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the board crate's proof holds each word to its oracle, which is consistency, and only the bench reads the silicon";
+    for (register, fields) in [
+        (
+            "CR",
+            &[
+                "ADCAL",
+                "ADCALDIF",
+                "ADCALLIN",
+                "ADDIS",
+                "ADEN",
+                "ADSTART",
+                "ADSTP",
+                "ADVREGEN",
+                "BOOST",
+                "DEEPPWD",
+                "JADSTART",
+                "JADSTP",
+                "LINCALRDYW#",
+            ][..],
+        ),
+        (
+            "CFGR",
+            &[
+                "AUTDLY", "AWD1CH", "AWD1EN", "AWD1SGL", "CONT", "DISCEN", "DISCNUM", "DMNGT",
+                "EXTEN", "EXTSEL", "JAUTO", "JAWD1EN", "JDISCEN", "JQDIS", "JQM", "OVRMOD", "RES",
+            ][..],
+        ),
+        (
+            "ISR",
+            &[
+                "ADRDY", "AWD#", "EOC", "EOS", "EOSMP", "JEOC", "JEOS", "JQOVF", "LDORDY", "OVR",
+            ][..],
+        ),
+        ("PCSEL", &["PCSEL"][..]),
+        ("SMPR#", &["SMP#"][..]),
+        ("SQR#", &["L", "SQ#"][..]),
+        (
+            "CCR",
+            &[
+                "CKMODE", "DAMDF", "DELAY", "DUAL", "PRESC", "TSEN", "VBATEN", "VREFEN",
+            ][..],
+        ),
+    ] {
+        for field in fields {
+            t.push(e(
+                "ADC",
+                register,
+                field,
+                W,
+                Si,
+                adc_judge,
+                "",
+                "written by the ADC bring-up (RM0433 Rev 9 ch. 25; spike/1211b/adc-contract.md): ADEN and ADSTART read-modify-write with the other command bits 0, every other word whole",
+            ));
+        }
+    }
     t
 }
 
@@ -1899,6 +1977,7 @@ pub fn build(topology: &SolvedTopology, table: &PinTable) -> Result<Ledger, Ledg
         register_fields(topology, table).map_err(|e| LedgerError::Fields(e.to_string()))?;
     let mut rows = register_rows(&fields, &TABLE)?;
     motor_pupd(&mut rows, topology)?;
+    gpio_rows(&mut rows, topology)?;
     ledger_of(rows)
 }
 
@@ -1983,21 +2062,34 @@ fn identity_rows(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerErro
 /// is the assignment of the output's net (`RUL-16`), never a role the table
 /// cannot see.
 pub fn motor_pupd(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(), LedgerError> {
-    let rule = silicon::motor_output_pupd();
-    for net in topology.motor_outputs.keys() {
+    for (net, m) in &topology.motor_outputs {
+        // An idle `high` takes the pull-up (`AET-WO-1211b`, `1211` Q9); every
+        // other motor output the pull-down, its text unchanged.
+        let high = matches!(
+            m.pwm.as_ref().map(|p| p.idle),
+            Some(aethelgard_ir::motor::Idle::Level(
+                aethelgard_ir::motor::Level::High
+            ))
+        );
+        let (rule, name, judge) = if high {
+            (
+                silicon::implied_pupd(topology, net),
+                "implied_pupd",
+                MOTOR_PUPD_HIGH_RULE,
+            )
+        } else {
+            (
+                silicon::motor_output_pupd(),
+                "motor_output_pupd",
+                MOTOR_PUPD_RULE,
+            )
+        };
         let pin = topology
             .assignments
             .get(net)
             .map(|a| a.pin.as_str())
             .ok_or_else(|| LedgerError::Fields(format!("motor output `{net}` has no pin")))?;
-        let (port, index) = pin
-            .strip_prefix('P')
-            .and_then(|p| p.split_at_checked(1))
-            .filter(|(port, n)| {
-                port.bytes().all(|b| b.is_ascii_uppercase())
-                    && !n.is_empty()
-                    && n.bytes().all(|b| b.is_ascii_digit())
-            })
+        let (port, index) = port_index(pin)
             .ok_or_else(|| LedgerError::Fields(format!("motor output `{net}`'s pin `{pin}`")))?;
         let (register, field) = (format!("GPIO{port}.PUPDR"), format!("PUPD{index}"));
         let row = rows
@@ -2011,13 +2103,100 @@ pub fn motor_pupd(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(
                 id: row.id.clone(),
                 value: row.value,
                 rule,
+                name,
             });
         }
         row.class = Class::IndependentRule;
-        row.judge = MOTOR_PUPD_RULE.to_owned();
-        row.note = format!(
-            "motor output `{net}` on {pin}: pulled down from the first GPIO init until start_outputs, while the timer does not yet drive it; the table's class for any other pin's field is same-source (no pull is modelled)"
-        );
+        row.judge = judge.to_owned();
+        row.note = if high {
+            format!(
+                "motor output `{net}` on {pin}: pulled up from the first GPIO init until start_outputs, while the timer does not yet drive it, as its idle `high` (AET-WO-1211b); the table's class for any other pin's field is same-source (no pull is modelled)"
+            )
+        } else {
+            format!(
+                "motor output `{net}` on {pin}: pulled down from the first GPIO init until start_outputs, while the timer does not yet drive it; the table's class for any other pin's field is same-source (no pull is modelled)"
+            )
+        };
+    }
+    Ok(())
+}
+
+/// `pin` (`PA11`) as its port letter and index.
+fn port_index(pin: &str) -> Option<(&str, &str)> {
+    pin.strip_prefix('P')
+        .and_then(|p| p.split_at_checked(1))
+        .filter(|(port, n)| {
+            port.bytes().all(|b| b.is_ascii_uppercase())
+                && !n.is_empty()
+                && n.bytes().all(|b| b.is_ascii_digit())
+        })
+}
+
+/// `AET-WO-1211b` (`1211` §2.7 (b)): a pin device's GPIO input's `PUPDR`
+/// field is independent-rule, its declared pull ([`silicon::implied_pupd`]),
+/// or the ledger refuses (`LedgerRuleDisagrees`); and a pin device's GPIO
+/// output's `BSRR` rows name its declared initial level, which the bring-up
+/// writes before `MODER` (the table's `observed` text names a chip select's).
+/// A chip select's rows are unchanged.
+pub fn gpio_rows(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(), LedgerError> {
+    use aethelgard_ir::pin_devices::Direction;
+    let selects: std::collections::BTreeSet<&str> = topology
+        .spi_devices
+        .values()
+        .map(|d| d.cs.as_str())
+        .collect();
+    for (net, g) in &topology.gpio {
+        let pin = g.pin.as_str();
+        let (port, index) = port_index(pin)
+            .ok_or_else(|| LedgerError::Fields(format!("gpio `{net}`'s pin `{pin}`")))?;
+        match g.direction {
+            Direction::Input => {
+                let (register, field) = (format!("GPIO{port}.PUPDR"), format!("PUPD{index}"));
+                let rule = silicon::implied_pupd(topology, net);
+                let row = rows
+                    .iter_mut()
+                    .find(|r| r.access == "written" && r.register == register && r.field == field)
+                    .ok_or_else(|| LedgerError::Unclassified {
+                        id: format!("{register}.{field}"),
+                    })?;
+                if row.value != Some(rule) {
+                    return Err(LedgerError::RuleDisagrees {
+                        id: row.id.clone(),
+                        value: row.value,
+                        rule,
+                        name: "implied_pupd",
+                    });
+                }
+                row.class = Class::IndependentRule;
+                row.judge = INPUT_PUPD_RULE.to_owned();
+                row.note = format!(
+                    "pin device input `{net}` on {pin}: its declared MCU pull, written whole per port by `split` (AET-WO-1211b); the model stores the field and reacts to no pull (1211 §4 G2), so the rule alone judges it"
+                );
+            }
+            Direction::Output if !selects.contains(net.as_str()) => {
+                let level = match g.initial {
+                    Some(aethelgard_ir::motor::Level::Low) => "low",
+                    _ => "high",
+                };
+                let register = format!("GPIO{port}.BSRR");
+                for field in [format!("BS{index}"), format!("BR{index}")] {
+                    if let Some(row) = rows.iter_mut().find(|r| {
+                        r.access == "written" && r.register == register && r.field == field
+                    }) {
+                        // Nothing simulates a pin device until AET-WO-1211c
+                        // (`simulate` refuses it), so nothing observes the
+                        // level: silicon-only, as the ADC's rows (the
+                        // adversarial pass's F6).
+                        row.class = Class::SiliconOnly;
+                        row.judge = "none: the twin simulates no pin device until AET-WO-1211c (simulate refuses PinDeviceNotSimulated); the proof's ready clause takes the declared level's word (svd-hal board.rs oracle_level_bit), which is consistency, and only the bench reads the pad".to_owned();
+                        row.note = format!(
+                            "pin device output `{net}` on {pin}: its declared initial level `{level}`, written before MODER makes it an output (AET-WO-1211b; RM0433 Rev 9 p. 534)"
+                        );
+                    }
+                }
+            }
+            Direction::Output => {}
+        }
     }
     Ok(())
 }
