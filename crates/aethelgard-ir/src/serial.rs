@@ -646,7 +646,7 @@ pub fn console_mapped(baud: u32) -> Option<u32> {
 /// UART's rate itself (`AP_RCProtocol.cpp:326-352`), and the generator emits no
 /// baud define for it. The console has its own rule, [`console_mapped`]. A
 /// baud an `int32_t` cannot hold is no `SERIALn_BAUD` at all, and is left to
-/// step 21, which no BRR reaches it at.
+/// step 21: no BRR reaches it.
 fn read_as_kbaud(role: SerialRole, baud: u32) -> Option<u32> {
     match role {
         SerialRole::Mavlink | SerialRole::Gps => {}

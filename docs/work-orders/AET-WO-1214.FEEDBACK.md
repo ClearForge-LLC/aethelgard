@@ -1,8 +1,12 @@
 # AET-WO-1214 FEEDBACK — `validate` refuses a serial baud ArduPilot would read as kbaud; the generator's console guard kept and tested
 
-Builder: Claude (Opus 5.5), a fresh `1214` session, 2026-11-20 from ~19:40 UTC, resumed 2026-11-22 01:30 UTC after the weekly limit. Worktree `~/aethelgard-1214`, branch `wo/aet-1214-serial-kbaud` from `origin/main` `781ea3b5`. `main` `b1056def` (#300, which carries this work order) and `ddfa64d6` (4240b, #293) are merged in. The work order was read from `~/.cache/aet-1214-wo.md`, and it is byte-identical to `docs/work-orders/AET-WO-1214.md` as #300 holds it [measured, `diff`].
+Builder: Claude (Opus 5.5), a fresh `1214` session, 2026-11-20 (predictions committed 20:02Z, `916046dc`), resumed 2026-11-22 01:30 UTC after the weekly limit. Worktree `~/aethelgard-1214`, branch `wo/aet-1214-serial-kbaud` from `origin/main` `781ea3b5`. `main` `b1056def` (#300, which carries this work order) and `ddfa64d6` (4240b, #293) are merged in. The work order was read from `~/.cache/aet-1214-wo.md`, and it is byte-identical to `docs/work-orders/AET-WO-1214.md` as #300 holds it [measured, `diff`].
 
 Labels: **measured** (run here), **read** (read at source, file:line), **inferred** (reasoned, not run).
+
+**Two edges of the fence, stated first:**
+- one test row in `crates/aethelgard-cli/tests/reserved_references_tier1.rs` (`serial-brr`) moves from `mavlink` to `rc_sbus`. Without it the new rule refuses that row's 300 baud first. Not posted before the edit; Q1.
+- the hwdef test sits in `crates/aethelgard-hwdef/src/lib.rs`'s `#[cfg(test)]` module, since `generate` validates first and only the private `serial` reaches the guard. It changes no generator code; §2.
 
 ## 0. The source, read at the pinned tag
 
@@ -63,11 +67,15 @@ The predictions were committed before the run, in `spike/1214/PREDICTIONS.md` (`
     - The other 18 are refused alike by both binaries, for reasons unrelated to this work: `UnsupportedSchemaVersion` ×14, `SchemaViolation` ×2, `PartLimitUndeclared` ×1, `ZeroNominalVoltage` ×1.
     - None is `SerialBaudReadAsKbaud`.
     - (A first run passed each path as a positional argument and gave a usage error on all 49. It was discarded and re-run with `--file`.)
+  - **the real binary refuses** [measured]. `serial-four.json` with its `MAVLINK` port at 1200, piped into this branch's `aethelgard validate`, exits 2 with `{"kind":"SerialBaudReadAsKbaud","id":"MAVLINK",…}` and `mapped` 1200000 in the message. At 2001 it exits 0. The JSON shape (no `claimants`) is the same as `ConsoleBaudNotRoundTrip`'s.
+  - **Inline specifications in Rust tests** [measured, `grep`]: no `mavlink` or `gps` port at 2000 or less reaches `validate`. The only hits are this work order's own tests and the moved `serial-brr` row. One loop builds a `gps` `SolvedSerialPort` at 1200 (`campaign_tier1.rs:3191`) but never validates a topology, and it passed.
+  - **Tier 2 compiles to 0 tests locally** (it is gated to CI's image). Its evidence is CI's run on this PR's head.
+- **The package step** (CI's, run locally for `aethelgard-ir` and `aethelgard-hwdef`) [measured]: `cargo package --locked --no-verify` packs `tests/fixtures/serial-dshot-9600.topology.json` into the hwdef crate. CI's include-target check, run on the packaged `src/lib.rs`, finds the new `#[cfg(test)]` `include_str!` target in it.
 - **`TIER2_MIN` is unchanged.** No `ci/` file is touched, and no weight row was needed.
 
 ## 4. The adversarial pass, targeted (§5)
 
-- **A1. A baud source the rule misses: a role default** [read]. No role takes a default baud in the IR, because `framing.baud` is required (`INV-06`). ArduPilot's own defaults (`:51-155`) apply only to a port with no emitted define. The only such ports are RC ports, whose rate AP_RCProtocol sets. **Not a miss.**
+- **A1. A baud source the rule misses: a role default** [measured]. No role takes a default baud in the IR: a port with no `framing.baud` is refused as `SchemaViolation` (`missing field \`baud\``, exit 2, on `serial-four.json`). ArduPilot's own defaults (`:51-155`) apply only to a port with no emitted define. The only such ports are RC ports, whose rate AP_RCProtocol sets. **Not a miss.**
 - **A2. A protocol that sets its own rate: GPS** [read, a finding, not built]. ArduPilot begins a `gps` port at `map_baudrate(SERIALn_BAUD)` (`:490`), and AP_GPS's first probe is that rate (`AP_GPS.cpp:708`). After `GPS_BAUD_TIME_MS` it cycles through `_baudrates` (9600 … 460800, `:79`, `:710-714`), and the u-blox driver may move the module to another rate.
   - So the declared `gps` baud is where ArduPilot starts, not where it stays. Step 21's BRR and tolerance judge that first rate alone.
   - The rule still holds for `gps`: a baud of 2000 or less would make the first probe a different rate from the one declared. **F1 below.**
