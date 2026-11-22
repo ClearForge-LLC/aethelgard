@@ -27,6 +27,5 @@ A5 replay: an ADC mismatch at the declared code (F6)	killed
 A6 output: an ODR write before MODER ignored (F2)	killed
 A8 ADC: no conversion needed (F3)	killed
 A9 gpio gate: an input judged again (F4)	killed
-A10 plan: a declared direction unjoined (F7)	killed
 A11 level: a short window passes (F9)	killed
 A12 a refused hold is a baseline (F10)	killed

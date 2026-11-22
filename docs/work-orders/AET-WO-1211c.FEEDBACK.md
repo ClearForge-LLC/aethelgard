@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211c-pin-devices-twin` from `main` `7fc81640`; `main` merged at `3e2b33a7` (`171f2a60`, docs) and `b5dd68a9` (`122378c7`, 2307). **Builder:** Claude (Opus 5.5 orchestrating; three Sonnet readers mapping the twin, the chaos crate and `verify`, one Sonnet builder for the chaos crate's records and overrides, one Opus adversarial reviewer; each report checked at source before use). Written 2026-11-22.
 
-**Status:** D1–D7 ruled and built (§6). PR #313.
+**Status: AWAITING-PACKAGE.** D1–D7 ruled and built (§6); PR #313. Every gate passes but the bench package's binding test, which waits on the write=true dispatch the trace and solved bumps need (§8).
 
 ## 0. The answer
 
@@ -54,12 +54,12 @@ Predictions `spike/1211c/PREDICTIONS.md`, committed (`4254de68`) before any run;
 - **The null sweep** (`spike/1211c/kit/null-sweep.sh`, `null-compare.py`): every committed specification's `solve`, `generate` and `simulate --firmware` (100 ms), and every committed scenario's campaign, with `main`'s CLI and the branch's, in the tools image. The comparer cuts the run-to-run noise (the sweep's own paths, `memory.*`) and, with `--versions`, the fields the trace bump moves (`run_id`, `state_sequence_hash`, `trace_bytes`, the header's version byte), and kind 24's two new fields; `solve`'s bytes are compared with the solved version line normalised.
 - **Results:**
   - against `main` `7fc81640` at `adeb3acd` and against `122378c7` at `b5dd68a9`: of 33 specifications, only D1 differs (it simulates now); 55 of 55 campaigns identical but for the version fields, 15 on motor boards gaining kind 24's idle and tick (`spike/1211c/out/null-sweep-*.txt`);
-  - FINAL (D7's solved 17) against `main` `cc2cc923`: see the last row of this section, filled at READY.
+  - **final, D7's solved 17, against `main` `cc2cc923` at `d6ae4f5e`** (`spike/1211c/out/null-sweep-cc2cc923.txt`): of 34 specifications **only D1 differs**. Every other's `solve` bytes equal `main`'s but the version line (and the topology hash that line moves, in `generate`'s report and kind 6), so **the new fields appear only on a board that declares a pin device**; D2 is refused at `solve` on both. 54 of 54 campaigns are equal but the version fields; 15 on motor boards gain kind 24's idle and tick. The reduction pass after it (`a9a2be6c`) changes no output (its test and mutant rerun below).
 - **D2g's `verify`** (`spike/1211c/out/d2g_verify.json`): every gate passes but the campaign, which fails on the held-nFAULT run alone (D5: no rule counts it detected); `gpio` judges its five outputs and names nFAULT not judged, `bridge` judges two; with `--fab-out`, coverage is no longer short (VMOTOR, the bridges and nFAULT named), and the next precondition, `UnwitnessedFieldNotAcknowledged`, refuses: the 1211 fixtures declare no acknowledgements.
 
 ## 4. Mutants (§1.5)
 
-`spike/1211c/mutants/mutants.py`, one mutant per witness, fault kind, gate and refusal, each alone in a scratch export of HEAD: **32 of 32 killed** at `23e5431f` (`spike/1211c/out/mutants.txt`): 21 on the build's guards and 11 on the adversarial pass's fixes. Acted on along the way:
+`spike/1211c/mutants/mutants.py`, one mutant per witness, fault kind, gate and refusal, each alone in a scratch export of HEAD: **31 of 31 killed** at the final head `b4c3360a` (`spike/1211c/out/mutants.txt`; 32 of 32 at `23e5431f`, before D7 removed A10's guard, the declared-against-solved direction check, with its second source): 21 on the build's guards and 10 on the adversarial pass's fixes. Acted on along the way:
 - **R4** (the motor rail ignoring a sourced domain) survived: no fixture reached the clause. Its regulator-output half is not in D1's ruled words (a regulated VMOTOR still feeds only pins nothing observes) and was cut; its load half is now tested on a constructed specification and killed.
 - **R6** (a held input stressing as a target) was equivalent: `classify` treats every `pin_held` as intolerable and never reads its target. Replaced by a mutant on the hold's comparison with the pull's level, killed.
 - **A7** (judging only the last `BSRR` word before `MODER`) survived F2's first fix, which judged every word: the pad is undriven until `MODER` (RM0433 Rev 9 p. 539), so only the last word before it decides the level. The rule became the last word, and A7 went.
@@ -110,4 +110,13 @@ A fresh Opus reviewer attacked `e0c7fae3` in its own worktree (`~/worktrees/aeth
 
 ## 8. Gates, fence, reduction pass
 
-Filled at READY.
+- **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean (the RUL-16 fence included, after D7).
+- **`cargo test --workspace`** (host, in-repo target) at the reduction head `b4c3360a`: **2,690 passed, 1 failed**, `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (below); the same at `d6ae4f5e`, before the reduction.
+- **Tier 2:** `campaign_tier2::d1_s_pin_device_simulates_and_its_faults_run_and_replay` in the tools image, 11.5–14.4 s; `TIER2_MIN` 201 → 202; `campaign_tier2`'s block in `ci/colocate.tsv` 83 → 116 s (a Furnace estimate × 2.8, to be refitted).
+- **The package:** the trace bump moves `verdict_sha256`, and solved 17 moves `topology_sha256` (MANIFEST, FAB-NOTES): `fab/sentinel-01-bench/package` is to be re-derived by a write=true dispatch, behind 1211e, and committed byte for byte.
+- **Fence:**
+  - `crates/aethelgard-twin`, `crates/aethelgard-chaos` (with its README), `crates/aethelgard-cli`'s `simulate` (`renode.rs`, `anchor.rs`, `pinwitness.rs`, `main.rs`'s boot), campaign and `verify`, `generate.rs`'s `simulable` and the `.repl` (S2 lifted), the ledger's rows and reasons, and their tests;
+  - **D7's widening, as ruled:** the four fields in `aethelgard-ir`'s solved types, the solver lines that fill them, `validate_solved` for their shape, `SOLVED_SCHEMA_VERSION` 17, the IR README's version and `pin_devices` lines, 5 stored topologies' version lines (4240a's renumber script), `solve_cli`'s two digests, the CLI README's example line;
+  - **edges, named:** test literals of the three solved types in `svd-hal` (one test's expectation: `InvalidTopology` is now met before `AdcResolutionNotSolved`), `pincheck`, `hwdef` and `ir`'s tests gain the new fields; kind 24's two fields reach the `evolve` and `chaos` test literals; `ci/colocate.tsv` (one row) and `TIER2_MIN` in `.github/workflows/ci.yml`; `strict_fence.rs`'s module list (`pinwitness.rs`); `spike/1211c/`; this file.
+- **Reduction pass (diff):** −41 net (`a9a2be6c`, 41 in, 82 out) · 5 duplicates removed (the level-name match in four places, the ADC channel parse in two, `LevelName` beside `Level`, and earlier the output witness's every-word rule, A7, and the ADC's redundant read check, W4) · 3 dead paths removed (`Pins.devices` and `is_empty`, `Level::as_str`, the regulator-output clause of the motor rail, R4) · 0 protected kept · 1 finding: the ADC pair (`pins::ADCS`) restates two rows of `platform::STOCK`; kept as the twin's explicit allow-list of modelled ADCs. Reported, not removed: chaos re-derives the BSRR masks and the ADC facts the twin holds (RUL-16: chaos reads no twin type); `verify`'s finding-kind lists restate chaos's.
+- **Scratch:** `~/.cache/aet-1211c` (sweeps, binaries, the mutant tree, the adversarial kit); the worktrees `~/worktrees/aethelgard/1211c-adv` and `1211c-chaos` are mine to remove at merge.
