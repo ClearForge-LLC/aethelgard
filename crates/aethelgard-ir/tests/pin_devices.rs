@@ -88,6 +88,9 @@ fn d1_as_the_spike_wrote_it_is_refused_twice() {
     *device(&mut v)["analog"].get_mut(0).unwrap() = spike["pin_devices"][0]["analog"][0].clone();
     device(&mut v)["analog"][0]["channel"] = Value::Null;
     device(&mut v)["analog"][0]["transfer"]["current_output"]["reservoir"] = Value::Null;
+    // VREF on its own 3.5 V rail (at least 3412 mV), so the trip holds and
+    // the ADC rule is what refuses (A2 is judged first, `AET-WO-1217` F9).
+    with_vref_rail(&mut v);
     // 2 A: 2.1 mA at AERR's 5 %, through R2 at its highest, above 3135 mV;
     // at the typical gain alone (2 mA x 1500 ohms = 3.0 V) it would pass.
     let e = refused(&v);
@@ -97,6 +100,32 @@ fn d1_as_the_spike_wrote_it_is_refused_twice() {
     // (DS12117 Rev 10 Table 173 p. 273) and no reservoir is declared.
     device(&mut v)["analog"][0]["full_scale"] = json!({"milliamps": 1900});
     assert_kind(&v, "AdcSourceImpedance");
+}
+
+/// VREF tied to a 3.5 V ± 2.5 % rail of its own.
+fn with_vref_rail(v: &mut Value) {
+    v["voltage_domains"].as_array_mut().unwrap().push(json!({
+        "id": "VREF_3V5", "nominal_millivolts": 3500, "tolerance_permille": 25
+    }));
+    device(v)["straps"]["VREF"] = json!({"tie": "VREF_3V5"});
+}
+
+/// F9 (`AET-WO-1217`): A2 is judged before the ADC rule, so a device both
+/// refuse is named by its trip. With VREF on `GND` and a full scale above
+/// VDDA, the trip's kind is reported, not the ADC rule's; with VREF on the
+/// MCU's own rail, the trip below the full scale is.
+#[test]
+fn a_trip_is_named_before_the_adc_rule() {
+    let mut v = d1();
+    device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(2000);
+    assert_kind(&v, "TripBelowFullScale");
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "GND"});
+    assert_kind(&v, "TripReferenceGrounded");
+    // The ADC rule alone, with the trip met on its own rail: the same
+    // resistor is the ADC rule's.
+    with_vref_rail(&mut v);
+    device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(1600);
+    assert_kind(&v, "AdcFullScaleExceeded");
 }
 
 // ---------------------------------------------------------------- pwm.idle and resolution_ps
@@ -1180,4 +1209,92 @@ fn a_trip_or_bulk_row_on_the_wrong_pin_is_refused() {
         let e = parse_parts(&doc.to_string()).unwrap_err();
         assert!(e.to_string().contains(says), "{field}: {e}");
     }
+}
+
+// ---------------------------------------------------------------- AET-WO-1217
+
+/// D1 with IPROPI tied to `GND` and no ADC input on it: SLVSDS7B p. 13's
+/// way to turn current regulation off (F2).
+fn d1_ipropi_tied() -> Value {
+    let mut v = d1();
+    device(&mut v)["straps"]["IPROPI"] = json!({"tie": "GND"});
+    device(&mut v)["analog"] = json!([]);
+    v
+}
+
+/// F2: IPROPI on `GND` with VREF above it validates, and no trip is judged.
+#[test]
+fn ipropi_tied_to_gnd_with_vref_above_it_validates() {
+    spec(&d1_ipropi_tied()).validate().unwrap();
+    // No trip is judged: a full scale the trip could not meet is not read.
+    let mut v = d1_ipropi_tied();
+    v["voltage_domains"].as_array_mut().unwrap().push(json!({
+        "id": "VREF_LOW", "nominal_millivolts": 500, "tolerance_permille": 50
+    }));
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "VREF_LOW"});
+    spec(&v).validate().unwrap();
+}
+
+/// F2: with the tie, VREF on `GND` still chops at no current.
+#[test]
+fn ipropi_tied_to_gnd_with_vref_on_gnd_is_refused() {
+    let mut v = d1_ipropi_tied();
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "GND"});
+    let e = refused(&v);
+    assert_eq!(e.kind(), "TripReferenceGrounded", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].straps.VREF"));
+}
+
+/// F2: the tie leaves no current to read, so an ADC input on IPROPI as well
+/// is the pin bound twice.
+#[test]
+fn ipropi_tied_and_read_is_bound_twice() {
+    let mut v = d1();
+    device(&mut v)["straps"]["IPROPI"] = json!({"tie": "GND"});
+    let e = refused(&v);
+    assert_eq!(e.kind(), "DevicePinBoundTwice", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].analog[0]"));
+}
+
+/// F2: only a tie to `GND` is admitted, and only on the pin the row's trip
+/// senses: IPROPI tied to a rail, or on a row with no trip, stays refused.
+#[test]
+fn a_current_output_takes_only_the_trips_gnd_tie() {
+    let mut v = d1_ipropi_tied();
+    device(&mut v)["straps"]["IPROPI"] = json!({"tie": "VDD_3V3"});
+    let e = refused(&v);
+    assert_eq!(e.kind(), "SignalKindMismatch", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].straps.IPROPI"));
+
+    let mut doc: Value = serde_json::from_str(PARTS_JSON).unwrap();
+    let rows = doc["pin_parts"].as_array_mut().unwrap();
+    let row = rows
+        .iter_mut()
+        .find(|r| r["part"] == "DRV8876PWPR")
+        .unwrap();
+    row.as_object_mut().unwrap().remove("trip");
+    let table = parse_parts(&doc.to_string()).unwrap();
+    let e =
+        aethelgard_ir::pin_devices::validate_against(&spec(&d1_ipropi_tied()), &table).unwrap_err();
+    assert_eq!(e.kind(), "SignalKindMismatch", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].straps.IPROPI"));
+}
+
+/// F10: an MCU with no power-parts row is refused once, at `mcu.part`,
+/// naming the part, before any pin device is judged against it; a
+/// specification with no pin device is not refused here.
+#[test]
+fn an_unknown_mcu_is_refused_at_mcu_part() {
+    for part in ["STM32H743ZITx", "GRM32ER71A226KE20"] {
+        let mut v = d1();
+        v["mcu"]["part"] = json!(part);
+        let e = refused(&v);
+        assert_eq!(e.kind(), "PowerPartUnknown", "{part}: {e}");
+        assert_eq!(e.path(), Some("mcu.part"), "{part}: {e}");
+        assert_eq!(e.id(), Some(part), "{part}: {e}");
+    }
+    let mut v: Value =
+        serde_json::from_str(include_str!("../../../examples/sentinel-02-bench.json")).unwrap();
+    v["mcu"]["part"] = json!("STM32H743ZITx");
+    spec(&v).validate().unwrap();
 }

@@ -721,6 +721,10 @@ pub fn validate_against(
     spec: &Specification,
     table: &crate::parts::PartsTable,
 ) -> Result<(), IrValidationError> {
+    if spec.declared_pin_devices().is_empty() {
+        return Ok(());
+    }
+    let mcu = mcu_row(spec)?;
     // A pin device's net is no battery sense's (step 16 judges the sense
     // nets against every other signal but these).
     let sense: BTreeSet<String> = spec
@@ -757,6 +761,7 @@ pub fn validate_against(
         };
         Device {
             spec,
+            mcu,
             d,
             row,
             path,
@@ -765,6 +770,37 @@ pub fn validate_against(
         .check(&mut motor_inputs)?;
     }
     Ok(())
+}
+
+/// Step 24's head (`AET-WO-1217` F10, ruled narrow): with a pin device
+/// declared, the MCU's power-parts row, refused once at `mcu.part` when it
+/// has none, before any device is judged against it.
+fn mcu_row(spec: &Specification) -> Result<&'static crate::power_parts::Mcu, IrValidationError> {
+    let part = &spec.mcu.part;
+    match crate::power_parts::table()?.get(part).map(|r| &r.kind) {
+        Some(crate::power_parts::Kind::Mcu(m)) => Ok(m),
+        Some(_) => Err(refuse(
+            K::PassivePartUnknown,
+            part.as_str(),
+            "mcu.part",
+            format!(
+                "`{part}`'s power-parts row is not an mcu row: a pin device is judged against the MCU's"
+            ),
+        )),
+        None => Err(refuse(
+            K::PassivePartUnknown,
+            part.as_str(),
+            "mcu.part",
+            format!("`{part}` has no power-parts row: a pin device is judged against the MCU's"),
+        )),
+    }
+}
+
+/// A reservoir capacitor at an ADC pin is rated for VDDA's maximum (the
+/// domain's, rounded up): the pin can sit anywhere up to it (`AET-WO-1217`
+/// F8; `1211a` compared the minimum).
+fn reservoir_rated(rated_mv: i64, vdda: &VoltageDomain) -> bool {
+    rated_mv >= i64::from(crate::maximum_millivolts(vdda))
 }
 
 /// A bus device whose part is a busless row (`PartWithoutBus`), checked
@@ -787,6 +823,8 @@ pub(crate) fn part_without_bus(
 
 struct Device<'s> {
     spec: &'s Specification,
+    /// The MCU's power-parts row, looked up once for every device.
+    mcu: &'static crate::power_parts::Mcu,
     d: &'s PinDevice,
     row: &'s PinPart,
     path: String,
@@ -867,8 +905,10 @@ impl<'s> Device<'s> {
         self.supplies()?;
         let strap_levels = self.straps()?;
         self.signals()?;
-        self.analog()?;
+        // A2 before the ADC rule, so a device both refuse is named by its
+        // trip (`AET-WO-1217` F9).
         self.trip()?;
+        self.analog()?;
         let bridged = self.bridges(&strap_levels, motor_inputs)?;
         // Every input pin of a channel of the part's modes is a declared
         // bridge's: an input pair driven outside a bridge would have its
@@ -969,6 +1009,16 @@ impl<'s> Device<'s> {
                 }
                 // A current-sense return tied to ground: no current control.
                 (PinKind::SenseReturn, Strap::Tie(to)) if to == crate::GND => None,
+                // The trip's sense tied to ground: no current feedback, and
+                // with the reference above `GND` no regulation (`AET-WO-1217`
+                // F2; the row's `trip`, SLVSDS7B p. 13). `trip()` judges the
+                // reference.
+                (PinKind::CurrentOutput { .. }, Strap::Tie(to))
+                    if to == crate::GND
+                        && self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>
+                {
+                    None
+                }
                 (PinKind::SenseReturn, _) => {
                     return Err(invalid(format!(
                         "`{pin}` is a current-sense return: only a tie to `GND` (no current control) is judged; a sense resistor is not modelled"
@@ -1246,7 +1296,7 @@ impl<'s> Device<'s> {
                     ),
                 ));
             }
-            let m = self.mcu_row()?;
+            let m = self.mcu;
             // RAIN at the declared resolution, or the reservoir AN2834 needs.
             let Some((_, rain)) = m
                 .rain_max_ohms
@@ -1288,17 +1338,19 @@ impl<'s> Device<'s> {
                 };
                 let need = crate::power::reservoir_min_picofarads(m, a.adc_resolution_bits);
                 if i128::from(cap.rated_picofarads.value) < need
-                    || cap.rated_millivolts.value < i64::from(vref_min)
+                    || !reservoir_rated(cap.rated_millivolts.value, mcu)
                 {
                     return Err(self.err(
                         K::AdcSourceImpedance,
                         &format!("{at}.transfer.current_output.reservoir"),
                         format!(
-                            "the reservoir is {} pF rated {} mV; the rule needs {need} pF at {} bits ({}) rated at least {vref_min} mV",
+                            "the reservoir is {} pF rated {} mV; the rule needs {need} pF at {} bits ({}) rated at least {} mV, VDDA's maximum on `{}`",
                             cap.rated_picofarads.value,
                             cap.rated_millivolts.value,
                             a.adc_resolution_bits,
-                            pp.cite(&m.reservoir_rule.at)
+                            pp.cite(&m.reservoir_rule.at),
+                            crate::maximum_millivolts(mcu),
+                            mcu.id
                         ),
                     ));
                 }
@@ -1306,26 +1358,6 @@ impl<'s> Device<'s> {
             self.bind(&a.device_pin, Binding::Analog, &at)?;
         }
         Ok(())
-    }
-
-    /// The MCU's power-parts row.
-    fn mcu_row(&self) -> Result<&'static crate::power_parts::Mcu, IrValidationError> {
-        let pp = crate::power_parts::table()?;
-        let Some(row) = pp.get(&self.spec.mcu.part) else {
-            return Err(self.err(
-                K::PassivePartUnknown,
-                ".mcu",
-                format!("`{}` has no power-parts row", self.spec.mcu.part),
-            ));
-        };
-        let crate::power_parts::Kind::Mcu(m) = &row.kind else {
-            return Err(self.err(
-                K::PassivePartUnknown,
-                ".mcu",
-                "the MCU's row is not an mcu row",
-            ));
-        };
-        Ok(m)
     }
 
     /// An ADC input's voltage at its full scale, µV, at the error band's
@@ -1446,7 +1478,7 @@ impl<'s> Device<'s> {
         if to.id == mcu.id {
             return Ok(());
         }
-        let io = &self.mcu_row()?.io;
+        let io = &self.mcu.io;
         let pp = crate::power_parts::table()?;
         let vdd = i64::from(crate::minimum_millivolts(mcu));
         let v = i64::from(crate::maximum_millivolts(to));
@@ -1518,9 +1550,26 @@ impl<'s> Device<'s> {
                 ),
             ));
         }
+        // The sense tied to GND with the reference above it: regulation is
+        // off, so no trip is judged (`AET-WO-1217` F2). The tie leaves no
+        // current to feed back, so an ADC input on the pin is the pin bound
+        // twice.
+        if self.d.straps.contains_key(&t.sense) {
+            if let Some(k) = self.d.analog.iter().position(|a| a.device_pin == t.sense) {
+                return Err(self.err(
+                    K::DevicePinBoundTwice,
+                    &format!(".analog[{k}]"),
+                    format!(
+                        "device pin `{}` is bound twice: it is tied to `GND`, which turns its current feedback off ({}, {})",
+                        t.sense, self.row.document, t.page
+                    ),
+                ));
+            }
+            return Ok(());
+        }
         // The sense pin terminated by nothing is neither of the part's two
         // configurations (a resistor to ground, or a tie to GND that turns
-        // regulation off), and no specification can tie it (ruled D-A2).
+        // regulation off, `straps.<sense>`; ruled D-A2).
         if !self.d.analog.iter().any(|a| a.device_pin == t.sense) {
             return Err(self.err(
                 K::TripSenseUnbound,
@@ -1885,6 +1934,7 @@ pub(crate) fn resistor_high_ohms(
 ) -> Result<i128, IrValidationError> {
     let dev = Device {
         spec,
+        mcu: mcu_row(spec)?,
         d,
         row,
         path: path.to_owned(),
@@ -2299,4 +2349,33 @@ pub(crate) fn in_in_motor_pairs(spec: &Specification) -> Vec<(String, String, St
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// F8 (`AET-WO-1217`): the edge is VDDA's maximum, rounded up, not its
+    /// minimum. No held capacitor is rated under 10 V, so no specification
+    /// reaches the edge through the embedded table.
+    #[test]
+    fn a_reservoir_is_rated_for_vdda_at_its_maximum() {
+        let vdda = VoltageDomain {
+            id: "VDD_3V3".into(),
+            nominal_millivolts: 3300,
+            tolerance_permille: 50,
+        };
+        // 3135 to 3465 mV.
+        assert!(!reservoir_rated(3135, &vdda));
+        assert!(!reservoir_rated(3464, &vdda));
+        assert!(reservoir_rated(3465, &vdda));
+        let odd = VoltageDomain {
+            id: "VDD_ODD".into(),
+            nominal_millivolts: 3301,
+            tolerance_permille: 50,
+        };
+        // 3301 x 1.05 = 3466.05, rounded up to 3467.
+        assert!(!reservoir_rated(3466, &odd));
+        assert!(reservoir_rated(3467, &odd));
+    }
 }
