@@ -1,0 +1,9 @@
+d1-1000-CRCW0603_F_K	base=ok	after=PowerPartUnknown
+d1-1000-NOPE	base=ok	after=PowerPartUnknown
+d1-1070-CRCW0603_F_K	base=ok	after=PowerPartUnknown
+d1-1070-NOPE	base=ok	after=PowerPartUnknown
+d1-900-CRCW0603_F_K	base=ok	after=PowerPartUnknown
+d1-900-NOPE	base=ok	after=PowerPartUnknown
+power-under-rain-CRCW0603_F_K	base=ok	after=PowerPartUnknown
+power-under-rain-GCM188R71H104KA57	base=ok	after=ok
+power-under-rain-NOPE	base=PowerPartUnknown	after=PowerPartUnknown

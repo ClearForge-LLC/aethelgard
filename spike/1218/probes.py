@@ -51,3 +51,28 @@ for a in d1n["pin_devices"][0]["analog"]:
 probe("d1n-bare", d1n, None)
 probe("d1n-tp-RSENSE", d1n, [("GND", "RSENSE")])
 probe("d1n-tp-rsense", d1n, [("GND", "rsense")])
+# R5: a reservoir RAIN does not need, on D1 (R2 at 1070, 1000 and 900 ohms, each under RAIN at 12 bits)
+# and on the power tree's sense (sentinel-02-power, 10 k / 1 k): a part no row holds, a resistor row,
+# and (power) the held capacitor, which stays admitted.
+pw = json.load(open(f"{fx}/sentinel-02-power.json"))
+for part in ["NOPE", "CRCW0603_F_K", "GCM188R71H104KA57"]:
+    s = copy.deepcopy(pw)
+    sense = s["power"]["sense"][0]
+    sense["top"]["ohms"], sense["bottom"]["ohms"] = 10000, 1000
+    sense["reservoir"]["part"] = part
+    probe(f"r5-power-under-rain-{part}", s, None)
+for ohms in [1070, 1000, 900]:
+    for part in ["NOPE", "CRCW0603_F_K"]:
+        s = copy.deepcopy(d1)
+        c = s["pin_devices"][0]["analog"][0]["transfer"]["current_output"]
+        c["resistor"]["ohms"], c["reservoir"]["part"] = ohms, part
+        probe(f"r5-d1-{ohms}-{part}", s, None)
+# Adversarial (§5): readers that number around the declared references. The reset switch (numbered
+# `SW<n>` past every declared reference) beside a pin device and a test point on `NRST`; a test point
+# on a bridge output and on the motor supply.
+sw = copy.deepcopy(d2)
+sw["mcu"]["reset_switch"] = True
+probe("adv-d2-switch-bare", sw, None)
+probe("adv-d2-switch-tp-nrst", sw, [("NRST", "TP1")])
+probe("adv-d2-tp-maout1", d2, [("MA_OUT1", "TP1")])
+probe("adv-d2-tp-vmotor", d2, [("VMOTOR", "TP1")])
