@@ -1,0 +1,4 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+SWDIO	PA13	FT	connector	J1.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J1.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+HSE_IN	PH0	FT	foreign_clock	mcu.hse.external: DS11853 Rev 8 Table 42 p.130 via cdn.components.ru/media/PDF/1368336.pdf sha256 	off-board	yes: off-board	not stated	-	mcu.hse.external	-

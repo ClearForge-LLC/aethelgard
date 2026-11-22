@@ -1,0 +1,17 @@
+{
+  "as-held": {
+    "note": "the only order a held page supports: the battery first, then both bucks in one step, unordered",
+    "steps": [
+      {"rails": ["battery"], "source": "the tree's root: every regulator's input chain ends at the battery"},
+      {"rails": ["VDD_5V", "VDD_3V3"], "source": "SNVSAN3F p. 13 8.3.2 and p. 5: U10 and U11 EN strapped to VIN; p. 8 7.5 tSS 2.9/4/6 ms each; p. 15 8.3.5 UVLO 'about' 3.7 V, no limits; no page orders two parts"}
+    ]
+  },
+  "5v-after-3v3-unsourced": {
+    "note": "the order a designer would want, declared without a source: refused for the empty source",
+    "steps": [
+      {"rails": ["battery"], "source": "the tree's root"},
+      {"rails": ["VDD_3V3"], "source": "the tree: U11 from the battery"},
+      {"rails": ["VDD_5V"], "source": ""}
+    ]
+  }
+}

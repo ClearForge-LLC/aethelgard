@@ -1,0 +1,9 @@
+net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
+CMD_TX	PB14	FT_u	connector	J1.1 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+CMD_RX	PA10	FT_u	connector	J1.2 SM04B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWDIO	PA13	FT	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SWCLK	PA14	FT	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+HB_IN1	PA8	FT_fha	connector	J4.1 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+HB_IN2	PA9	FT_u	connector	J4.2 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SERVO1	PA0	FT_a	connector	J4.3 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
+SERVO2	PA1	FT_ha	connector	J4.4 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
