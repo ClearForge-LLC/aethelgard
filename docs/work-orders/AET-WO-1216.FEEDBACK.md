@@ -25,19 +25,20 @@ Every report was checked at source before use. Written 2026-11-22.
   | (c) with unbounded paths refused | 33 / 34 |
   | (b) EN/PG order | 10 (7 where the rail reaches a pin) |
   | (a) declared sequence | 10 (8 where a rail reaches a pin) |
+  | the lean, run | 1 / 34 (D1, on the held figure) |
 
   A hand sequence on the four boards refuses D1 alone.
 - **Lean: (c) where it can judge, with (b)'s order as the only exemption:**
   - every path from a rail the drawn tree does not place after `mcu.supply` is judged at VDD = 0 (Table 10: 4.0 V, BOOT0 9.0 V);
   - unbounded off-board ends are named, not refused.
 
-  It refuses D1 alone today. It needs no new field. It leaves the off-board ends and every dynamic case unjudged (§4).
+  Run as its own rule (`lean` in `judge.py`), it refuses D1 alone today: 1 / 34. That refusal rests on the engine's held 3 mA, a recommended-operating figure, not a stated maximum; read as "not stated", it refuses 0 (D5). It needs no new field. It leaves the off-board ends and every dynamic case unjudged (§4).
 
 ## 0. How it was made
 
 - Predictions were committed before any reader ran: `11d10be3`.
 - The readers and the options as rules (`judge.py`, `RULES.md`, four hand sequences) were committed before `judge.py` first ran: `b66d5d7b`.
-- The measurement: `d9cb8a7f`. The corrections after the adversarial pass, the reduction pass and this file follow it, in one commit.
+- The measurement: `d9cb8a7f`. The corrections after the adversarial pass, the reduction pass and this file: `4d5c0410`. The lean run as its own rule, and the read-through fixes: the commit after it.
 - **Readers:** in `spike/1216/`. They read the CLI's output of `main`'s crates (`solve` JSON, emitted `.kicad_pcb`), built from `9cb87b4c` into scratch. They do not link the crates (D6).
 - **Datasheets:** read in their held text. Every load-bearing row was then checked on the rendered page: DS12117 pp. 27, 103, 104, 136; SLVSDS7B p. 4; SNVSAN3F pp. 7, 8; SBVS320D p. 6. The PDFs' sha256 match `power-parts.json` `documents` and `parts.json` `pin_parts`.
 - **D1 bound reported on the bus at once:** the over-4.0 V figure went to the architect as soon as it was found (`~/.cache/aet-bus/architect.md`, 2026-11-22). It is not §7's immediate stop, because option (c) judges it.
@@ -193,9 +194,10 @@ The rules are in `spike/1216/judge.py`, written up in `RULES.md` and committed b
   - tests.
 - **It is the most conservative reading:** it judges a 5 V rail as if it always led.
 - **A worst that rests on an unstated fact:**
-  - (c) takes the held bound and assumes every unstated fact goes the unfavourable way: the driver driving, no clamp, nSLEEP anywhere.
-  - On D1 that refuses (c1 and c2 alike).
-  - It clears only by a remedy resting on a stated figure, such as R2 (D3), never by an unstated favourable behaviour.
+  - (c) takes the unstated behaviour as unfavourable (the driver driving, no clamp, nSLEEP anywhere) and judges the figure the engine holds for the output.
+  - **That figure is itself not a maximum:** D1's 3 mA is recommended operating (SLVSDS7B p. 4). The 3.5 A peak output gives 5442 mV, and no page states IPROPI's maximum (D5).
+  - On the held figure, D1 is refused (c1 and c2 alike). A change of R2 clears it on that figure only (D3).
+  - Read as "not stated", D1 has no bound: c1 names it (refuses 0) and c2 refuses it. No value of R2 clears it, because a resistor does not move a pin rating; only a newly held maximum, or c2, closes it.
   - Where no held bound exists at all (an off-board end), c1 names the path and c2 refuses it.
   - Fact 3, the window, is covered on D1 only because the bound is static: the held bound applies at any nSLEEP. (c) does not model the window itself.
 
@@ -207,9 +209,11 @@ The rules are in `spike/1216/judge.py`, written up in `RULES.md` and committed b
 - a path with no stated bound is named in `validate`'s output, not refused.
 
 **Reasons:**
-- **It never takes an unstated fact as favourable.** A worst that rests on one is judged at the held bound (D1: the three facts of §1.1). A path with no held bound is named, not passed silently.
+- **One rule for every path.** Unstated behaviour is taken as unfavourable, and a path is judged on the figure the engine holds for its source. Where it holds none, the path is named, not passed silently.
+  - IPROPI and the connectors get the same treatment. IPROPI has a held figure (the row's `output_max_ua`, cited to a recommended-operating page); a connector has none.
+  - The held figure is not a stated maximum. Whether a recommended-operating figure counts as a bound is D5, and the lean's single refusal turns on it.
 - **It needs no new field.** The exemption comes from drawn wiring, so the gate never trusts an order no part enforces. That is the risk (a) carries, and it is `INV-07`'s concern in another form.
-- **It is the most conservative reading wherever a bound is stated.** It refuses exactly the one committed path that exceeds 4.0 V on a figure the engine holds: D1's IPROPI.
+- **It is the most conservative reading wherever a figure is held.** It refuses exactly the one committed path that exceeds 4.0 V on a figure the engine holds: D1's IPROPI, 1 / 34, run as `lean`.
 - **(a) adds nothing over it on today's held parts.** The honest `as-held` sequences reproduce c1's single refusal, and a convenient order fails for want of a source.
 - **(b) refuses 7–10 fixtures for an order none of them needs.** Sentinel-02's racing 5V reaches no MCU pin, and the remedy on Sentinel-03 needs a schema addition (F2).
 - **c2 would refuse 33 of 34 boards today,** for a bound no specification can yet declare.
@@ -225,7 +229,7 @@ The rules are in `spike/1216/judge.py`, written up in `RULES.md` and committed b
 - **Table 13, by design:** 1211e's D-A1 judges with the MCU powered at Table 13's operating conditions (VDD 1.62–3.6 V). Table 13 states nothing below 1.62 V, so below 1 V the only stated limit is Table 10's absolute maximum. The lean uses an abs-max rating where A1 uses an operating one, and says so.
 - **Table 48 (functional susceptibility):** positive injection is 0 or NA everywhere. It concerns function, not damage, and the MCU is not running.
 - **Back-powering:** what a path's current does inside an unpowered MCU (through its I/O structure into VDD). Table 11 note 3 says no positive injection occurs below the maximum, so the voltage is the whole test the datasheet gives.
-- **IPROPI's real level:** no page states it in sleep or at the clamp. The lean judges the engine's held 3 mA bound.
+- **IPROPI's real level and its maximum:** no page states it in sleep, at the clamp, or at its maximum (the 3.5 A peak gives 5442 mV). The lean judges the engine's held 3 mA figure (D5).
 
 ## 5. Adversarial pass (§5, targeted)
 
@@ -280,13 +284,13 @@ The full table is in `RESULTS.md` §5:
   - **Alternatives:** (a) declared sequence; (b) refuse races; c2.
 - **D2 · Unbounded off-board ends.**
   - **Lean:** named, not refused.
-  - **Proposed row:** "a connector pin's off-board drive bound (`connectors[].pins[].offboard.drive_max_millivolts` with a source), judged at VDD = 0 like any other path; DS-009 states none (F5). Owner: a connectors WO."
+  - **Proposed row:** "a connector pin's off-board drive bound (`connectors[].pins[].offboard.drive_max_millivolts` with a source), judged at VDD = 0 like any other path; DS-009 prints only a nominal +3.3V (F5). Owner: a connectors WO."
 - **D3 · D1's fixture under the lean.** c1 refuses it (4665 > 4000 mV).
   - **Options:**
-    - (i) R2 1.27 kΩ E96: 3 mA × 1316 Ω = 3949 mV, under 4.0 V (on the held bound; at a 3.5 A peak it would be 4.6 V, D5). 1211e's A2 still holds: full scale 1995 µA × 1316 Ω = 2.63 V ≤ VREF min 3.135 V.
+    - (i) R2 1.27 kΩ E96: 3 mA × 1316 Ω = 3949 mV, under 4.0 V **on the held figure only**. At the 3.5 A peak (3.5 mA, typical ratio) it is 4.6 V, still over. Clearing the peak needs R2 ≤ 1.1 kΩ (3.5 mA × 1140 Ω = 3.99 V), and that still rests on the typical ratio, since no AERR is stated above 2 A. 1211e's A2 holds for either: full scale 1995 µA × 1316 Ω = 2.63 V ≤ VREF min 3.135 V.
     - (ii) Keep 1.5 kΩ and hold a stated clamp figure. TI states none.
     - (iii) Under (a), declare the bench procedure.
-  - **Lean:** (i).
+  - **Lean:** (i), if D5 is ruled "held figure". If D5 is ruled "not stated", no R2 clears D1 under c1's terms (it is then named, like a connector), and the remedy is a held IPROPI maximum or option (a)'s procedure.
   - **Sequencing:** 1211f is drawing D1's bulk now, so the fixture edit belongs to the build after 1211f merges.
 - **D4 · The limit's reading.**
   - Table 11 note 4 calls any VIN > VDD positive injection, and IINJ is +0. Note 3 says positive injection "does not occur for input voltages lower than the specified maximum value".
@@ -295,8 +299,10 @@ The full table is in `RESULTS.md` §5:
 - **D5 · A current output's bound.**
   - The engine holds DRV8876 `output_max_ua` 3000 from p. 4's recommended conditions; it is not a stated output limit. The 3.5 A peak output current gives 5442 mV.
   - Read as "not stated", c1 refuses **0** and D1 joins c2's unbounded paths (the adversarial pass's reading).
-  - **Lean:** judge the held bound and name it in the message as a recommended-operating figure, so the one committed over-4.0 V path is not passed by c1.
-  - If the ruling prefers "not stated", D3 still applies: the remedy is the same R2 change, judged against 5.75 V or a stated clamp.
+  - **The fork:**
+    - **Held figure.** c1 and the lean refuse 1 (D1). An R2 change clears it, on that figure only (D3 (i)).
+    - **Not stated.** c1 and the lean refuse 0. D1 is named like the off-board ends, and only c2 or a newly held IPROPI maximum closes it. No R2 value clears it.
+  - **Lean:** held figure, named in the message as a recommended-operating figure. The one committed path over 4.0 V on any figure the engine holds is then refused, not named.
 - **D6 · Readers read CLI output, not linked crates.**
   - §3 says "built against main's crates as a path dependency". The readers instead parse `solve` and `emit` output of a binary built from `main`'s crates, so `spike/1216/` carries no `Cargo.toml` that a workspace or CI sweep could pick up.
   - The walk-2 reader is independent of every crate by design: it reads only the drawn netlist.
@@ -322,7 +328,8 @@ The full table is in `RESULTS.md` §5:
 - **F8 · The rule weaknesses above,** for whichever option is ruled:
   - (b): the order must point from `mcu.supply`'s chain *downstream*;
   - (a): a sequence must name every rail once, with the battery first;
-  - every option: a device with two supplies is judged on each.
+  - every option: a device with two supplies is judged on each;
+  - every option: a connector that carries a rail can back-feed it from off-board, which defeats the "downstream of `mcu.supply`" exemption. No committed board does this: 6 connectors carry `VDD_5V` and none carries the battery, but the exemption should not hold for a rail any connector carries.
 
 ## 8. Gates, fence, reduction pass
 
@@ -335,4 +342,4 @@ The full table is in `RESULTS.md` §5:
   - **Dead path:** a loop in `spec.py`.
   - **Proof:** every output re-run and diffed against the pre-reduction copy. `out/spec`, `options.tsv`, `compare.tsv` and `summary.md` are identical; `boards.tsv` and `out/drawn` differ only by the name key and the dropped column.
   - **FEEDBACK §1** now cites `RESULTS.md` §1 instead of restating its table.
-- **Scratch:** `~/.cache/aet-1216`, holding the release target, emitted boards, renders and the held texts. It is removed at close except `facts.md` and `adversarial.md`, which are copied into `spike/1216/out/`.
+- **Scratch:** `~/.cache/aet-1216`. The release target and the solve and emit outputs are removed at close. The renders (`render/`, cited in `RESULTS.md` §3) and the held texts (`ds/`) are kept. `facts.md` and `adversarial.md` are copied into `spike/1216/out/`.

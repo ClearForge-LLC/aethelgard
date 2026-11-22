@@ -36,6 +36,9 @@ Options, each with its variants:
        mcu.supply's, judged at VDD = 0 (c1's test), and a step with an empty
        source refused (SequenceStepUnsourced).
 
+- lean: FEEDBACK §4's rule (added after the first run, at the adversarial
+       pass's close, so the lean's count is run and not inferred from c1's).
+
 usage: python3 -I judge.py <out/spec dir> <universe.sh output> <sequences dir> -> TSV on stdout
 """
 import csv
@@ -119,6 +122,13 @@ def b(spec, rows, variant):
     return out
 
 
+def lean(spec, rows):
+    """FEEDBACK §4: c1, with (b)'s derivation as the only exemption: a path whose
+    rail domains_status places after mcu.supply is not judged at VDD = 0."""
+    after = {d for d, st in domains_status(spec).items() if st == "after"}
+    return c1([r for r in rows if r["rail"] not in after])
+
+
 def a(spec, rows, variant, seq):
     if seq is not None:
         return a_sidecar(spec, rows, seq)
@@ -163,7 +173,7 @@ def main(spec_dir, boards, seq_dir):
         rows = list(csv.DictReader(open(os.path.join(spec_dir, n + ".tsv")), delimiter="\t"))
         seqf = os.path.join(seq_dir, n + ".json")
         res = {"c1": c1(rows), "c2": c2(rows), "b1": b(spec, rows, 1), "b2": b(spec, rows, 2),
-               "a1": a(spec, rows, 1, None), "a2": a(spec, rows, 2, None)}
+               "a1": a(spec, rows, 1, None), "a2": a(spec, rows, 2, None), "lean": lean(spec, rows)}
         if os.path.exists(seqf):
             for name, seq in json.load(open(seqf)).items():
                 res["a-sidecar:" + name] = a(spec, rows, 0, seq)

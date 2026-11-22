@@ -14,7 +14,7 @@ Run 2026-11-22 at `main` `9cb87b4c` plus this spike. The binary is `aethelgard` 
 | `judge.py`, `RULES.md`, `sequences/` | The options as rules (§4). |
 | `summary.py` | One line per board: `out/summary.md`. |
 
-Readers read the CLI's output of `main`'s crates (`solve` JSON, emitted `.kicad_pcb`). They do not link the crates, so nothing under `spike/1216/` has a `Cargo.toml` (FEEDBACK §7, D1).
+Readers read the CLI's output of `main`'s crates (`solve` JSON, emitted `.kicad_pcb`). They do not link the crates, so nothing under `spike/1216/` has a `Cargo.toml` (FEEDBACK §7, D6).
 
 ## 1. Every committed board's off-domain paths (§1.2)
 
@@ -64,7 +64,7 @@ Read from the specification JSON line by line, not from the readers:
     - J5 (motors 1–4, no rail; `esc: none`, no ESC fed through the board);
     - J6/J7 (CRSF, MAVLINK; **VDD_5V** on pin 1);
     - J8 (EXT I2C; **VDD_5V** on pin 1; its 10 k pulls are on 3V3);
-    - 19 test points on MCU nets.
+    - 19 test points on MCU nets (the JSON's 22 `test_points` less those on VDD_3V3, VDD_5V and GND).
   - **Not off-domain:** the I2C pulls (3V3), the flash and IMU (3V3).
   - **Agrees with both walks:** 36 rows.
 - **`sentinel-02-power.json`:**

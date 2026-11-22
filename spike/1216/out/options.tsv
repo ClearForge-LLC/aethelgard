@@ -5,102 +5,119 @@ connectors	b1	yes	SourceUndeclared: VDD_5V reaches EXT_MISO,EXT_MOSI,EXT_SCK,I2C
 connectors	b2	yes	SourceUndeclared: VDD_5V reaches EXT_MISO,EXT_MOSI,EXT_SCK,I2C_SCL,I2C_SDA
 connectors	a1	yes	SequenceUndeclared: VDD_5V
 connectors	a2	yes	SequenceUndeclared: VDD_5V
+connectors	lean	no	-
 d1-24-i2c	c1	no	-
 d1-24-i2c	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 d1-24-i2c	b1	no	-
 d1-24-i2c	b2	no	-
 d1-24-i2c	a1	no	-
 d1-24-i2c	a2	no	-
+d1-24-i2c	lean	no	-
 d3-24-i2c-12-spi	c1	no	-
 d3-24-i2c-12-spi	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 d3-24-i2c-12-spi	b1	no	-
 d3-24-i2c-12-spi	b2	no	-
 d3-24-i2c-12-spi	a1	no	-
 d3-24-i2c-12-spi	a2	no	-
+d3-24-i2c-12-spi	lean	no	-
 driver-judges-nothing	c1	no	-
 driver-judges-nothing	c2	yes	OffDomainUnbounded: CMD_TX@PB14 connector; OffDomainUnbounded: CMD_RX@PA10 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: HB_IN1@PA8 connector; OffDomainUnbounded: HB_IN2@PA9 connector; OffDomainUnbounded: SERVO1@PA0 connector; OffDomainUnbounded: SERVO2@PA1 connector
 driver-judges-nothing	b1	no	-
 driver-judges-nothing	b2	no	-
 driver-judges-nothing	a1	no	-
 driver-judges-nothing	a2	no	-
+driver-judges-nothing	lean	no	-
 four-layer-power	c1	no	-
 four-layer-power	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 four-layer-power	b1	no	-
 four-layer-power	b2	no	-
 four-layer-power	a1	no	-
 four-layer-power	a2	no	-
+four-layer-power	lean	no	-
 four-layer	c1	no	-
 four-layer	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 four-layer	b1	no	-
 four-layer	b2	no	-
 four-layer	a1	no	-
 four-layer	a2	no	-
+four-layer	lean	no	-
 hse-crystal-16	c1	no	-
 hse-crystal-16	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: MOTOR1@PA8 connector; OffDomainUnbounded: MOTOR2@PA9 connector; OffDomainUnbounded: MOTOR3@PA0 connector; OffDomainUnbounded: MOTOR4@PA1 connector; OffDomainUnbounded: MAVLINK_TX@PA2 connector; OffDomainUnbounded: MAVLINK_RX@PA3 connector; OffDomainUnbounded: CRSF_TX@PB10 connector; OffDomainUnbounded: CRSF_RX@PB11 connector
 hse-crystal-16	b1	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX; SourceUndeclared: VDD_1V8
 hse-crystal-16	b2	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX
 hse-crystal-16	a1	yes	SequenceUndeclared: VDD_5V,VDD_1V8
 hse-crystal-16	a2	yes	SequenceUndeclared: VDD_5V,VDD_1V8
+hse-crystal-16	lean	no	-
 hse-external-8	c1	no	-
 hse-external-8	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: MOTOR1@PA8 connector; OffDomainUnbounded: MOTOR2@PA9 connector; OffDomainUnbounded: MOTOR3@PA0 connector; OffDomainUnbounded: MOTOR4@PA1 connector; OffDomainUnbounded: MAVLINK_TX@PA2 connector; OffDomainUnbounded: MAVLINK_RX@PA3 connector; OffDomainUnbounded: CRSF_TX@PB10 connector; OffDomainUnbounded: CRSF_RX@PB11 connector; OffDomainUnbounded: HSE_IN@PH0 foreign_clock
 hse-external-8	b1	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX; SourceUndeclared: VDD_1V8
 hse-external-8	b2	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX
 hse-external-8	a1	yes	SequenceUndeclared: VDD_5V,VDD_1V8
 hse-external-8	a2	yes	SequenceUndeclared: VDD_5V,VDD_1V8
+hse-external-8	lean	no	-
 imu-baro-1v8	c1	no	-
 imu-baro-1v8	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 imu-baro-1v8	b1	no	-
 imu-baro-1v8	b2	no	-
 imu-baro-1v8	a1	no	-
 imu-baro-1v8	a2	no	-
+imu-baro-1v8	lean	no	-
 logger-4600	c1	no	-
 logger-4600	c2	yes	OffDomainUnbounded: READOUT_TX@PA9 connector; OffDomainUnbounded: READOUT_RX@PA10 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 logger-4600	b1	no	-
 logger-4600	b2	no	-
 logger-4600	a1	no	-
 logger-4600	a2	no	-
+logger-4600	lean	no	-
 motors-dshot600	c1	no	-
 motors-dshot600	c2	yes	OffDomainUnbounded: MOTOR1@PA8 connector; OffDomainUnbounded: MOTOR2@PA9 connector; OffDomainUnbounded: MOTOR3@PA10 connector; OffDomainUnbounded: MOTOR4@PA11 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 motors-dshot600	b1	no	-
 motors-dshot600	b2	no	-
 motors-dshot600	a1	no	-
 motors-dshot600	a2	no	-
+motors-dshot600	lean	no	-
 motors-pwm	c1	no	-
 motors-pwm	c2	yes	OffDomainUnbounded: MOTOR1@PA8 connector; OffDomainUnbounded: MOTOR2@PA9 connector; OffDomainUnbounded: MOTOR3@PA10 connector; OffDomainUnbounded: MOTOR4@PA11 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 motors-pwm	b1	no	-
 motors-pwm	b2	no	-
 motors-pwm	a1	no	-
 motors-pwm	a2	no	-
+motors-pwm	lean	no	-
 pair-standin	c1	no	-
 pair-standin	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 pair-standin	b1	no	-
 pair-standin	b2	no	-
 pair-standin	a1	no	-
 pair-standin	a2	no	-
+pair-standin	lean	no	-
 sentinel-01-bench	c1	no	-
 sentinel-01-bench	c2	yes	OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector; OffDomainUnbounded: BOOT0@BOOT0 connector; OffDomainUnbounded: NRST@NRST connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: I2C_SDA@PB7 test_point; OffDomainUnbounded: I2C_SCL@PB6 test_point; OffDomainUnbounded: SPI_SCK@PA5 test_point; OffDomainUnbounded: SPI_MOSI@PA7 test_point; OffDomainUnbounded: SPI_MISO@PA6 test_point; OffDomainUnbounded: FLASH_CS@PA0 test_point; OffDomainUnbounded: CONSOLE_TX@PA9 test_point; OffDomainUnbounded: CONSOLE_RX@PA10 test_point; OffDomainUnbounded: NRST@NRST test_point; OffDomainUnbounded: BOOT0@BOOT0 test_point
 sentinel-01-bench	b1	no	-
 sentinel-01-bench	b2	no	-
 sentinel-01-bench	a1	no	-
 sentinel-01-bench	a2	no	-
+sentinel-01-bench	lean	no	-
 sentinel-02-own	c1	no	-
 sentinel-02-own	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector
 sentinel-02-own	b1	yes	SourceUndeclared: VDD_5V; SourceUndeclared: VDD_1V8
 sentinel-02-own	b2	no	-
 sentinel-02-own	a1	yes	SequenceUndeclared: VDD_5V,VDD_1V8
 sentinel-02-own	a2	no	-
+sentinel-02-own	lean	no	-
 sentinel-02-shaped	c1	no	-
 sentinel-02-shaped	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: MOTOR1@PA8 connector; OffDomainUnbounded: MOTOR2@PA9 connector; OffDomainUnbounded: MOTOR3@PA10 connector; OffDomainUnbounded: MOTOR4@PA11 connector; OffDomainUnbounded: MAVLINK_TX@PA2 connector; OffDomainUnbounded: MAVLINK_RX@PA3 connector; OffDomainUnbounded: CRSF_TX@PB10 connector; OffDomainUnbounded: CRSF_RX@PB11 connector
 sentinel-02-shaped	b1	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX; SourceUndeclared: VDD_1V8
 sentinel-02-shaped	b2	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,MAVLINK_RX,MAVLINK_TX
 sentinel-02-shaped	a1	yes	SequenceUndeclared: VDD_5V,VDD_1V8
 sentinel-02-shaped	a2	yes	SequenceUndeclared: VDD_5V,VDD_1V8
+sentinel-02-shaped	lean	no	-
 sentinel-03	c1	no	-
 sentinel-03	c2	yes	OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector; OffDomainUnbounded: BOOT0@BOOT0 connector; OffDomainUnbounded: NRST@NRST connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: MOTOR1@PE9 connector; OffDomainUnbounded: MOTOR2@PE11 connector; OffDomainUnbounded: MOTOR3@PE13 connector; OffDomainUnbounded: MOTOR4@PE14 connector; OffDomainUnbounded: CRSF_TX@PA2 connector; OffDomainUnbounded: CRSF_RX@PA3 connector; OffDomainUnbounded: MAVLINK_TX@PC10 connector; OffDomainUnbounded: MAVLINK_RX@PC11 connector; OffDomainUnbounded: EXT_SCL@PB10 connector; OffDomainUnbounded: EXT_SDA@PB11 connector; OffDomainUnbounded: I2C_SDA@PB7 test_point; OffDomainUnbounded: I2C_SCL@PB6 test_point; OffDomainUnbounded: EXT_SDA@PB11 test_point; OffDomainUnbounded: EXT_SCL@PB10 test_point; OffDomainUnbounded: FLASH_CS@PA0 test_point; OffDomainUnbounded: CONSOLE_TX@PA9 test_point; OffDomainUnbounded: CONSOLE_RX@PA10 test_point; OffDomainUnbounded: CRSF_TX@PA2 test_point; OffDomainUnbounded: CRSF_RX@PA3 test_point; OffDomainUnbounded: MAVLINK_TX@PC10 test_point; OffDomainUnbounded: MAVLINK_RX@PC11 test_point; OffDomainUnbounded: MOTOR1@PE9 test_point; OffDomainUnbounded: MOTOR2@PE11 test_point; OffDomainUnbounded: MOTOR3@PE13 test_point; OffDomainUnbounded: MOTOR4@PE14 test_point; OffDomainUnbounded: BOOT0@BOOT0 test_point; OffDomainUnbounded: NRST@NRST test_point; OffDomainUnbounded: SWDIO@PA13 test_point; OffDomainUnbounded: SWCLK@PA14 test_point
 sentinel-03	b1	yes	RailsRace: VDD_5V reaches CRSF_RX,CRSF_TX,EXT_SCL,EXT_SDA,MAVLINK_RX,MAVLINK_TX
 sentinel-03	b2	yes	RailsRace: VDD_5V reaches CRSF_RX,CRSF_TX,EXT_SCL,EXT_SDA,MAVLINK_RX,MAVLINK_TX
 sentinel-03	a1	yes	SequenceUndeclared: VDD_5V,battery
 sentinel-03	a2	yes	SequenceUndeclared: VDD_5V,battery
+sentinel-03	lean	no	-
 sentinel-03	a-sidecar:as-held	no	-
 sentinel-03	a-sidecar:5v-after-3v3-unsourced	yes	SequenceStepUnsourced: steps[2]
 serial-dshot-9600	c1	no	-
@@ -109,54 +126,63 @@ serial-dshot-9600	b1	no	-
 serial-dshot-9600	b2	no	-
 serial-dshot-9600	a1	no	-
 serial-dshot-9600	a2	no	-
+serial-dshot-9600	lean	no	-
 serial-four	c1	no	-
 serial-four	c2	yes	OffDomainUnbounded: MAVLINK_TX@PA9 connector; OffDomainUnbounded: MAVLINK_RX@PA10 connector; OffDomainUnbounded: GPS_TX@PA2 connector; OffDomainUnbounded: GPS_RX@PA3 connector; OffDomainUnbounded: I2C_SCL@PB6 connector; OffDomainUnbounded: I2C_SDA@PB7 connector; OffDomainUnbounded: CRSF_TX@PB10 connector; OffDomainUnbounded: CRSF_RX@PB11 connector; OffDomainUnbounded: SBUS_TX@PA0 connector; OffDomainUnbounded: SBUS_RX@PA1 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 serial-four	b1	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,GPS_RX,GPS_TX,I2C_SCL,I2C_SDA,MAVLINK_RX,MAVLINK_TX
 serial-four	b2	yes	SourceUndeclared: VDD_5V reaches CRSF_RX,CRSF_TX,GPS_RX,GPS_TX,I2C_SCL,I2C_SDA,MAVLINK_RX,MAVLINK_TX
 serial-four	a1	yes	SequenceUndeclared: VDD_5V
 serial-four	a2	yes	SequenceUndeclared: VDD_5V
+serial-four	lean	no	-
 solve-infeasible-shared	c1	no	-
 solve-infeasible-shared	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 solve-infeasible-shared	b1	no	-
 solve-infeasible-shared	b2	no	-
 solve-infeasible-shared	a1	no	-
 solve-infeasible-shared	a2	no	-
+solve-infeasible-shared	lean	no	-
 solve-pigeonhole-spi	c1	no	-
 solve-pigeonhole-spi	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 solve-pigeonhole-spi	b1	no	-
 solve-pigeonhole-spi	b2	no	-
 solve-pigeonhole-spi	a1	no	-
 solve-pigeonhole-spi	a2	no	-
+solve-pigeonhole-spi	lean	no	-
 solve-stress	c1	no	-
 solve-stress	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 solve-stress	b1	no	-
 solve-stress	b2	no	-
 solve-stress	a1	no	-
 solve-stress	a2	no	-
+solve-stress	lean	no	-
 solve-thrash-pins	c1	no	-
 solve-thrash-pins	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 solve-thrash-pins	b1	no	-
 solve-thrash-pins	b2	no	-
 solve-thrash-pins	a1	no	-
 solve-thrash-pins	a2	no	-
+solve-thrash-pins	lean	no	-
 spi-only	c1	no	-
 spi-only	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 spi-only	b1	no	-
 spi-only	b2	no	-
 spi-only	a1	no	-
 spi-only	a2	no	-
+spi-only	lean	no	-
 two-bme	c1	no	-
 two-bme	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 two-bme	b1	no	-
 two-bme	b2	no	-
 two-bme	a1	no	-
 two-bme	a2	no	-
+two-bme	lean	no	-
 d1-drv8876	c1	yes	OffDomainAboveLimit: DRV_IPROPI@PF3 4665 mV > 4000 mV
 d1-drv8876	c2	yes	OffDomainAboveLimit: DRV_IPROPI@PF3 4665 mV > 4000 mV; OffDomainUnbounded: CMD_TX@PB14 connector; OffDomainUnbounded: CMD_RX@PA10 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: SERVO1@PA0 connector
 d1-drv8876	b1	yes	SourceUndeclared: VMOTOR reaches DRV_IPROPI
 d1-drv8876	b2	yes	SourceUndeclared: VMOTOR reaches DRV_IPROPI
 d1-drv8876	a1	yes	SequenceUndeclared: VMOTOR
 d1-drv8876	a2	yes	SequenceUndeclared: VMOTOR
+d1-drv8876	lean	yes	OffDomainAboveLimit: DRV_IPROPI@PF3 4665 mV > 4000 mV
 d1-drv8876	a-sidecar:as-held	yes	OffDomainAboveLimit: DRV_IPROPI@PF3 4665 mV > 4000 mV (led by VMOTOR)
 d1-drv8876	a-sidecar:bench-procedure	no	-
 d2-drv8833	c1	no	-
@@ -165,6 +191,7 @@ d2-drv8833	b1	yes	SourceUndeclared: VMOTOR
 d2-drv8833	b2	no	-
 d2-drv8833	a1	yes	SequenceUndeclared: VMOTOR
 d2-drv8833	a2	no	-
+d2-drv8833	lean	no	-
 d2-drv8833	a-sidecar:as-held	no	-
 sentinel-02-power	c1	no	-
 sentinel-02-power	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
@@ -172,6 +199,7 @@ sentinel-02-power	b1	yes	RailsRace: VDD_5V
 sentinel-02-power	b2	no	-
 sentinel-02-power	a1	yes	SequenceUndeclared: VDD_5V,VDD_1V8,battery
 sentinel-02-power	a2	yes	SequenceUndeclared: VDD_5V,VDD_1V8,battery
+sentinel-02-power	lean	no	-
 sentinel-02-power	a-sidecar:as-held	no	-
 invalid-zero-domain	c1	no	-
 invalid-zero-domain	c2	no	-
@@ -179,33 +207,39 @@ invalid-zero-domain	b1	no	-
 invalid-zero-domain	b2	no	-
 invalid-zero-domain	a1	no	-
 invalid-zero-domain	a2	no	-
+invalid-zero-domain	lean	no	-
 sentinel-01-ext-bmp581	c1	no	-
 sentinel-01-ext-bmp581	c2	yes	OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector; OffDomainUnbounded: BOOT0@BOOT0 connector; OffDomainUnbounded: NRST@NRST connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: EXT_SCL@PB10 connector; OffDomainUnbounded: EXT_SDA@PB11 connector; OffDomainUnbounded: BOOT0@BOOT0 test_point; OffDomainUnbounded: NRST@NRST test_point; OffDomainUnbounded: CONSOLE_RX@PA10 test_point; OffDomainUnbounded: CONSOLE_TX@PA9 test_point; OffDomainUnbounded: FLASH_CS@PA0 test_point; OffDomainUnbounded: SPI_MISO@PA6 test_point; OffDomainUnbounded: SPI_MOSI@PA7 test_point; OffDomainUnbounded: SPI_SCK@PA5 test_point; OffDomainUnbounded: EXT_SCL@PB10 test_point; OffDomainUnbounded: EXT_SDA@PB11 test_point; OffDomainUnbounded: I2C_SCL@PB6 test_point; OffDomainUnbounded: I2C_SDA@PB7 test_point
 sentinel-01-ext-bmp581	b1	no	-
 sentinel-01-ext-bmp581	b2	no	-
 sentinel-01-ext-bmp581	a1	no	-
 sentinel-01-ext-bmp581	a2	no	-
+sentinel-01-ext-bmp581	lean	no	-
 sentinel-01-minimal	c1	no	-
 sentinel-01-minimal	c2	yes	OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 sentinel-01-minimal	b1	no	-
 sentinel-01-minimal	b2	no	-
 sentinel-01-minimal	a1	no	-
 sentinel-01-minimal	a2	no	-
+sentinel-01-minimal	lean	no	-
 sentinel-01	c1	no	-
 sentinel-01	c2	yes	OffDomainUnbounded: CONSOLE_TX@PA9 connector; OffDomainUnbounded: CONSOLE_RX@PA10 connector; OffDomainUnbounded: BOOT0@BOOT0 connector; OffDomainUnbounded: NRST@NRST connector; OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: EXT_SCL@PB10 connector; OffDomainUnbounded: EXT_SDA@PB11 connector; OffDomainUnbounded: BOOT0@BOOT0 test_point; OffDomainUnbounded: NRST@NRST test_point; OffDomainUnbounded: CONSOLE_RX@PA10 test_point; OffDomainUnbounded: CONSOLE_TX@PA9 test_point; OffDomainUnbounded: FLASH_CS@PA0 test_point; OffDomainUnbounded: SPI_MISO@PA6 test_point; OffDomainUnbounded: SPI_MOSI@PA7 test_point; OffDomainUnbounded: SPI_SCK@PA5 test_point; OffDomainUnbounded: EXT_SCL@PB10 test_point; OffDomainUnbounded: EXT_SDA@PB11 test_point; OffDomainUnbounded: I2C_SCL@PB6 test_point; OffDomainUnbounded: I2C_SDA@PB7 test_point
 sentinel-01	b1	no	-
 sentinel-01	b2	no	-
 sentinel-01	a1	no	-
 sentinel-01	a2	no	-
+sentinel-01	lean	no	-
 sentinel-02-bench-hse8	c1	no	-
 sentinel-02-bench-hse8	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector; OffDomainUnbounded: HSE_IN@PH0 foreign_clock
 sentinel-02-bench-hse8	b1	no	-
 sentinel-02-bench-hse8	b2	no	-
 sentinel-02-bench-hse8	a1	no	-
 sentinel-02-bench-hse8	a2	no	-
+sentinel-02-bench-hse8	lean	no	-
 sentinel-02-bench	c1	no	-
 sentinel-02-bench	c2	yes	OffDomainUnbounded: SWDIO@PA13 connector; OffDomainUnbounded: SWCLK@PA14 connector
 sentinel-02-bench	b1	no	-
 sentinel-02-bench	b2	no	-
 sentinel-02-bench	a1	no	-
 sentinel-02-bench	a2	no	-
+sentinel-02-bench	lean	no	-
