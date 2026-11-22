@@ -164,8 +164,9 @@ After the reduction pass, the five whose code it touched were run again, and all
   - Tier 2, the tests this work order touches: `board_tier2` `build_*` (3, the new one included, 0.76 s together) and `campaign_tier2` (10): all pass.
   - **After merging `main` `bf497733`** (`00c8a9dd`; `1215`, `4240d`, `1319`, no file of this work order's), in the same layout: fmt and the three clippies clean; workspace and bridge suites **2689 passed, 0 failed, 0 ignored** (`~/.cache/aet-1606/gates-merged.log`).
   - The differential, `doctor` and P4 were run again with those binaries: same results (`spike/1606/out/compare.txt`, `head.txt`).
+  - **After merging `main` `c9d4096b`** (`1211c`, `1211f`, `1216`; the package queue's call), in the same layout: fmt and workspace clippy clean; the CLI unit tests, `doctor_tier1`, `campaign_tier1` and `boot_tier1` pass (202, 14, 61, 70). The differential against `c9d4096b` itself is the same as before: 36 identical, 6 traces by the digest alone, 8 derived, 2 by path; ELFs `74a731a8` and `e4906886` on both; `doctor` names 44.2 (`spike/1606/out/compare-c9d4096b.txt`, `runs-c9d4096b.txt`). `TIER2_MIN` 202 (`main`'s, after `1211c`) → **203**.
 - **A layout effect, not this work order.** The first test run, with the target outside `/repo`, failed one test: `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named`, `BaseOutsideRoot`, because its scenarios' base lay under `CARGO_TARGET_TMPDIR`. It passes in CI's layout (11/11).
-- **`TIER2_MIN` 201 → 202.**
+- **`TIER2_MIN` +1** (201 → 202 on `122378c7`; 202 → 203 after `main` `c9d4096b` raised it for `1211c`).
   - The one tier-2 test added is `board_tier2::build_names_the_rustc_cargo_ran`.
   - `edges.rs::version_names_the_banner_the_library_printed` is in the bridge suite, which `TIER2_RE` does not count.
   - The floor lives in `.github/workflows/ci.yml`, outside §3's fence: named, one line and its comment.
