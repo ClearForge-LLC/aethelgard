@@ -1,11 +1,11 @@
-as-printed_(reason_)	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+as-printed_(reason_)	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
 completed_pasted_beside_the_held_entry	exit 2	UnwitnessedAcknowledgedTwice  `acknowledge_unwitnessed` acknowledges register `GPIOA.AFRL` as `same-source` twice: one entry per register and class
 every_reason_the_same_string	exit 0	ok  
 every_reason_written,_each_its_own	exit 0	ok  
-reason_201_bytes	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
-reason_a_tab	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+reason_201_bytes	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+reason_a_tab	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
 reason_key_absent	exit 2	SchemaViolation  missing field `reason` at line 1 column 7236
-reason_non-ASCII	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
-reason_one_space	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
-reason_padded	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
-refusal bytes 12446; entries 43; non-empty reasons 6, each the held entry's: True
+reason_non-ASCII	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+reason_one_space	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+reason_padded	exit 2	InvalidSource acknowledge_unwitnessed[24].reason `acknowledge_unwitnessed[24].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
+refusal bytes 11496; entries 43, 6 completing a held entry; non-empty reasons 0 (want 0)
