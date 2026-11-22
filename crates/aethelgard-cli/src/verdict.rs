@@ -881,7 +881,18 @@ pub struct ToolReport {
     /// `build:` line (`AET-WO-4400g` §1.5), absent where none was named.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub build: Option<String>,
+    /// The compiler cargo ran, on `build`'s verdicts (`AET-WO-1606`); the
+    /// version above is cargo's own.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rustc: Option<RustcReport>,
     pub exit_code: i32,
+}
+
+/// A rustc's `-vV`, as cargo recorded it for the compiler it ran.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct RustcReport {
+    pub release: String,
+    pub commit_hash: String,
 }
 
 #[derive(Serialize)]
@@ -1075,6 +1086,7 @@ impl Verdict {
                 name: tool.name,
                 version,
                 build: None,
+                rustc: None,
                 exit_code: code,
             },
             sandbox,
@@ -1125,7 +1137,7 @@ pub struct AnalogRecord {
     pub ceiling_ns: u32,
     pub exceeds: bool,
     pub method: &'static str,
-    pub ngspice: &'static str,
+    pub ngspice: String,
     /// The deck's window: one byte at this bit rate, 400 kHz for every bus
     /// (`AET-WO-2205` §1.3, review A10.4).
     pub deck_hz: u32,

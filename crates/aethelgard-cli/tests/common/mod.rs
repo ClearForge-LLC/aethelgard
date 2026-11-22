@@ -302,10 +302,28 @@ pub mod stub;
 pub mod th;
 pub mod verify;
 
-/// The identity line the bridge built from this tree prints first
-/// (`AET-WO-2200` F15, `bridge/build.rs`): the same recipe, recomputed here
-/// from the files on disk, so a stub bridge can be the one the CLI expects.
+/// The identity line the bridge built from this tree prints first in a run
+/// that started the pinned libngspice (`AET-WO-2200` F15, `bridge/build.rs`,
+/// `AET-WO-1606`), so a stub bridge can be the one the CLI expects.
 pub fn bridge_identity() -> String {
+    format!(
+        r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","source_sha256":"{}","version":"0.1.0"}}"#,
+        bridge_digest()
+    )
+}
+
+/// The identity line of a run that started no library: a refusal, or
+/// `--renode`.
+pub fn bare_bridge_identity() -> String {
+    format!(
+        r#"{{"bridge":"aethelgard-bridge","source_sha256":"{}","version":"0.1.0"}}"#,
+        bridge_digest()
+    )
+}
+
+/// The digest of the bridge's sources: the recipe of `bridge/build.rs`,
+/// recomputed here from the files on disk.
+fn bridge_digest() -> String {
     use sha2::{Digest, Sha256};
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bridge");
     let mut files = vec![
@@ -327,8 +345,7 @@ pub fn bridge_identity() -> String {
         h.update((bytes.len() as u64).to_le_bytes());
         h.update(&bytes);
     }
-    let hex: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
-    format!(r#"{{"bridge":"aethelgard-bridge","source_sha256":"{hex}","version":"0.1.0"}}"#)
+    h.finalize().iter().map(|b| format!("{b:02x}")).collect()
 }
 
 /// A stub bridge's body with the identity line printed first, after its

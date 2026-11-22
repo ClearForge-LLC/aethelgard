@@ -1,0 +1,16 @@
+# main c9d4096b
+s01min campaign exit 0 wall 13s fw 74a731a8
+s03 campaign exit 0 wall 11s fw e4906886
+doctor exit 0
+bridge usage exit 2
+bridge --version exit 2
+bridge refused exit 2
+bridge --renode exit 0
+# branch after merging c9d4096b
+s01min campaign exit 0 wall 13s fw 74a731a8
+s03 campaign exit 0 wall 11s fw e4906886
+doctor exit 0
+bridge usage exit 2
+bridge --version exit 0
+bridge refused exit 2
+bridge --renode exit 0

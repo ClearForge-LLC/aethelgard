@@ -1,0 +1,2 @@
+{"bridge":"aethelgard-bridge","source_sha256":"5bdc40e4cac43a6aceba8c1fb30f22b78f2b86be77d4dd75df2b32c37c92636e","version":"0.1.0"}
+{"error":"request_refused","message":"cannot open the request: No such file or directory (os error 2)"}

@@ -1,0 +1,20 @@
+# AET-WO-1606: the bench package derived by main's CLI (122378c7) and by this branch's, in the pinned image on Furnace (verify --fab-out, 16 GiB cap)
+## diff -rq (every file of the package)
+Files fab-main/MANIFEST.json and fab-br/MANIFEST.json differ
+## diff of MANIFEST.json
+48c48
+<   "verdict_sha256": "8cff5039307e1b178e859098bf8d5cbd26172e7ee5b54dc4be02cc34d42ec946",
+---
+>   "verdict_sha256": "f0a82c4fe79e3dd3d7a908eac5cdce771b389573e29ae2964a12924b233618c9",
+## every field of verify's verdict that differs (main -> branch)
+.campaign[0].state_sequence_hash e40bd8bd47950a5f9061161fe7f7b9d46420be5fc6b7a94e85578ae94d6adfcf -> f6793a680599b1b3aaa3da0b7e174c6da2d828ff3746860b9402d34919b6bac6
+.campaign[1].state_sequence_hash f19e13e96513da31f56c6bfb287ed3030cb851cf238fb9140f8df83c3dc5948e -> 135577ff281c7212e1b9deb3ccb4e457c7a1385e8f2ab006253311077b8fb4ec
+.campaign[2].state_sequence_hash 9468dfbef41d8688840486377f40ba00b41999104524ba3c42fa4564c7587990 -> 1b8341ff9394cfa83251401efb0ed8ace712dc1189165c28a095aa5e0ae39971
+.campaign[3].state_sequence_hash 54fbaf018d6c9e8b064df3482aaebb27fe57358395d4fba6ee1af1b1a20f4a79 -> 1c04b5ae978179070b974da6c985bf0facf94a98e7daaa6eb3a00067e3a45734
+.campaign[4].state_sequence_hash ce06f589a1d41192f306bed589aa18b5b068c31988c06223a5011ed569f6cb45 -> 6cd519bf0ab6aa49841ed6b778281cc962bf641459c9099fb490cf3333e402eb
+.fab.files.MANIFEST.json fcf9c9419c915595a8457a1b1ddee34bab0a488581e5d81001fe283ea3c5b857 -> 7459d590b2200c7db40b25b8e4f13323100ebc476ab4d8cfc697da748f8d03c8
+## main's derived MANIFEST.json against the committed one (Furnace's environment; CI writes the committed package)
+48c48
+<   "verdict_sha256": "8cff5039307e1b178e859098bf8d5cbd26172e7ee5b54dc4be02cc34d42ec946",
+---
+>   "verdict_sha256": "c17419127b3d3cd3a75987210713da7efe1578fece26c241a6af09a8320dbdec",

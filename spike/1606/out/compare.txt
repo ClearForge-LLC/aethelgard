@@ -1,0 +1,7 @@
+s01min/build.json: branch adds tool.rustc = {"release": "1.99.1", "commit_hash": "58cf8f9c35b355199727627d07ae34a4e2846d67"}; main has None
+s01min/build.json: equal after the path substitution
+s03/build.json: branch adds tool.rustc = {"release": "1.99.1", "commit_hash": "58cf8f9c35b355199727627d07ae34a4e2846d67"}; main has None
+s03/build.json: equal after the path substitution
+s01min/campaign.jsonl: equal after each run's state hash, its manifest's, and the path
+s03/campaign.jsonl: equal after each run's state hash, its manifest's, and the path
+summary: {'identical': 36, 'digest only': 6, 'derived': 8, 'path only': 2} exit 0

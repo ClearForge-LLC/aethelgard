@@ -2,6 +2,15 @@
 //! "source_sha256":…,"version":…}`, and flushes it: `source_sha256` is the digest
 //! of the bridge's own source that `build.rs` computed (its header gives the
 //! recipe), so the CLI can refuse a bridge that is not the one it was built with.
+//! A mode that runs libngspice prints it once the library has started and its
+//! banner is the pinned one, with two more fields: `ngspice_banner`, the line
+//! the library printed, verbatim, and `ngspice`, the release read from it
+//! (`AET-WO-1606`). Every answer's `ngspice` is that release. A mode that
+//! runs no ngspice, or a run refused before the library was accepted, names
+//! none.
+//!
+//! `aethelgard-bridge --version` starts the library, prints the identity with
+//! its banner and exits 0; it runs no circuit.
 //!
 //! `aethelgard-bridge --rail <request.json>` solves one declared supply droop
 //! (see `rail`); `aethelgard-bridge --renode <executable> [args…]` runs
@@ -48,7 +57,7 @@ use std::process::ExitCode;
 use serde_json::{Value, json};
 
 use measure::Outcome;
-use solver::{CoSimulation, NGSPICE, Ngspice};
+use solver::{Banner, CoSimulation, Ngspice};
 
 /// The largest disagreement allowed between the two methods, in ns.
 const AGREEMENT_NS: f64 = 0.01;
@@ -63,33 +72,36 @@ fn rail_agreement_ns(seconds: f64) -> f64 {
     unit / 2.0 * 1e9 + AGREEMENT_NS
 }
 
-/// The first line of stdout in every mode.
-fn identity() -> String {
-    json!({
+/// The first line of stdout in every mode; `ngspice` is the banner of the
+/// library this run started and accepted, when it did.
+fn identity(ngspice: Option<&Banner>) -> String {
+    let mut v = json!({
         "bridge": "aethelgard-bridge",
         "source_sha256": env!("AETHELGARD_BRIDGE_SOURCE_SHA256"),
         "version": env!("CARGO_PKG_VERSION"),
-    })
-    .to_string()
+    });
+    if let Some(b) = ngspice {
+        let fields = v.as_object_mut().expect("an object");
+        fields.insert("ngspice".into(), json!(b.release));
+        fields.insert("ngspice_banner".into(), json!(b.line));
+    }
+    v.to_string()
 }
 
-const USAGE: &str = "usage: aethelgard-bridge <request.json> | --rail <request.json> | --renode <absolute executable> [args...]";
+const USAGE: &str = "usage: aethelgard-bridge <request.json> | --rail <request.json> | --renode <absolute executable> [args...] | --version";
 
 fn main() -> ExitCode {
-    if emit_text(&identity()).is_err() {
-        return ExitCode::from(3);
-    }
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     match args.first().and_then(|a| a.to_str()) {
         Some("--rail") => {
             let [_, path] = args.as_slice() else {
-                return fatal(2, "usage", USAGE);
+                return refuse(2, "usage", USAGE);
             };
             return run_rail(path);
         }
         Some("--chain") => {
             let [_, path] = args.as_slice() else {
-                return fatal(
+                return refuse(
                     2,
                     "usage",
                     "usage: aethelgard-bridge --chain <request.json>",
@@ -97,24 +109,35 @@ fn main() -> ExitCode {
             };
             return run_chain(path);
         }
-        Some("--renode") => return run_renode(&args[1..]),
+        Some("--renode") => {
+            if emit_text(&identity(None)).is_err() {
+                return ExitCode::from(3);
+            }
+            return run_renode(&args[1..]);
+        }
+        Some("--version") => {
+            let [_] = args.as_slice() else {
+                return refuse(2, "usage", USAGE);
+            };
+            return match started(Ok(())) {
+                Ok(((), _)) => ExitCode::SUCCESS,
+                Err(code) => code,
+            };
+        }
         _ => {}
     }
     let [path] = args.as_slice() else {
-        return fatal(2, "usage", USAGE);
+        return refuse(2, "usage", USAGE);
     };
-    let lines = match read(path).and_then(|b| request::parse(&b)) {
-        Ok(lines) => lines,
-        Err(e) => return fatal(2, "request_refused", &e),
-    };
-    let mut spice = match Ngspice::start() {
+    let (lines, mut spice) = match started(read(path).and_then(|b| request::parse(&b))) {
         Ok(s) => s,
-        Err(e) => return fatal(3, "ngspice_unusable", &e),
+        Err(code) => return code,
     };
+    let ngspice = spice.banner().release.clone();
     let mut all = true;
     for line in &lines {
         let record = match measure_line(&mut spice, line) {
-            Ok(outcome) => record(&line.net, outcome),
+            Ok(outcome) => record(&line.net, outcome, &ngspice),
             Err((kind, message)) => {
                 all = false;
                 json!({ "net": line.net, "error": kind, "message": message })
@@ -131,16 +154,24 @@ fn main() -> ExitCode {
     ExitCode::from(if all { 0 } else { 1 })
 }
 
+/// The parsed request and the started library, the identity printed with
+/// the library's banner; or, with the identity printed without one, the
+/// request's refusal (exit 2) or the library's (exit 3).
+fn started<T>(request: Result<T, String>) -> Result<(T, Ngspice), ExitCode> {
+    let request = request.map_err(|e| refuse(2, "request_refused", &e))?;
+    let spice = Ngspice::start().map_err(|e| refuse(3, "ngspice_unusable", &e))?;
+    if emit_text(&identity(Some(spice.banner()))).is_err() {
+        return Err(ExitCode::from(3));
+    }
+    Ok((request, spice))
+}
+
 /// A refusal of the request is exit 2, an unusable library 3, a failure of
 /// ngspice or of the agreement between the two methods 1.
 fn run_rail(path: &std::ffi::OsStr) -> ExitCode {
-    let rail = match read(path).and_then(|b| rail::parse(&b)) {
-        Ok(rail) => rail,
-        Err(e) => return fatal(2, "request_refused", &e),
-    };
-    let mut spice = match Ngspice::start() {
+    let (rail, mut spice) = match started(read(path).and_then(|b| rail::parse(&b))) {
         Ok(s) => s,
-        Err(e) => return fatal(3, "ngspice_unusable", &e),
+        Err(code) => return code,
     };
     let lines = match solve_rail(&mut spice, &rail) {
         Ok(lines) => lines,
@@ -164,6 +195,7 @@ fn solve_rail(
     rail: &rail::Rail,
 ) -> Result<Vec<Value>, (&'static str, String)> {
     let solver = |e: String| ("solver_failed", e);
+    let ngspice = spice.banner().release.clone();
     let span = rail.span_ns as f64 * 1e-9;
     spice.instantiate(&rail.deck()).map_err(solver)?;
     let step = spice.do_step(0.0, span).map_err(solver)?;
@@ -242,7 +274,7 @@ fn solve_rail(
                 "level": level.name,
                 "method": "interpolated",
                 "microvolts": level.microvolts,
-                "ngspice": NGSPICE,
+                "ngspice": ngspice,
             })
         })
         .collect();
@@ -263,13 +295,9 @@ const INITIAL_TOLERANCE_UV: f64 = 50.0;
 /// ngspice, of the operating point or of the agreement between the two
 /// methods 1.
 fn run_chain(path: &std::ffi::OsStr) -> ExitCode {
-    let chain = match read(path).and_then(|b| chain::parse(&b)) {
-        Ok(chain) => chain,
-        Err(e) => return fatal(2, "request_refused", &e),
-    };
-    let mut spice = match Ngspice::start() {
+    let (chain, mut spice) = match started(read(path).and_then(|b| chain::parse(&b))) {
         Ok(s) => s,
-        Err(e) => return fatal(3, "ngspice_unusable", &e),
+        Err(code) => return code,
     };
     let answer = match solve_chain(&mut spice, &chain) {
         Ok(answer) => answer,
@@ -374,7 +402,7 @@ fn solve_chain(spice: &mut Ngspice, chain: &chain::Chain) -> Result<Value, (&'st
         "initial_microvolts": (v[0] * 1e6).round() as i64,
         "minimum_at_ns": (time[at] * 1e9).round() as u64,
         "minimum_microvolts": (min * 1e6).round() as i64,
-        "ngspice": NGSPICE,
+        "ngspice": spice.banner().release,
         "sinks": sinks,
         "step_ns": chain.step_ns(),
     }))
@@ -424,8 +452,8 @@ fn read(path: &std::ffi::OsStr) -> Result<Vec<u8>, String> {
 }
 
 /// The line the CLI reads for one outcome; every time is in ns.
-fn record(net: &str, outcome: Outcome) -> Value {
-    let mut v = json!({ "net": net, "method": "interpolated", "ngspice": NGSPICE });
+fn record(net: &str, outcome: Outcome, ngspice: &str) -> Value {
+    let mut v = json!({ "net": net, "method": "interpolated", "ngspice": ngspice });
     let fields = v.as_object_mut().expect("an object");
     match outcome {
         Outcome::Complete { seconds, .. } => {
@@ -537,6 +565,15 @@ fn fatal(code: u8, kind: &str, message: &str) -> ExitCode {
     ExitCode::from(code)
 }
 
+/// A refusal before any library was accepted: the identity naming none, then
+/// the refusal.
+fn refuse(code: u8, kind: &str, message: &str) -> ExitCode {
+    if emit_text(&identity(None)).is_err() {
+        return ExitCode::from(3);
+    }
+    fatal(code, kind, message)
+}
+
 #[cfg(test)]
 mod tests {
     /// `AET-WO-2301` adversarial F3: `meas` prints 7 significant digits, so
@@ -584,7 +621,12 @@ mod tests {
     #[test]
     fn each_outcome_is_its_documented_line() {
         use super::{Outcome, record};
-        let text = |o| record("N", o).to_string();
+        let text = |o| record("N", o, "44.2").to_string();
+        // `AET-WO-1606`: the release is the one the banner named, not a constant.
+        assert_eq!(
+            record("N", Outcome::StuckHigh { volts: 1.65 }, "45.0").to_string(),
+            r#"{"method":"interpolated","net":"N","ngspice":"45.0","volts_at_release":1.65}"#
+        );
         assert_eq!(
             text(Outcome::Complete {
                 seconds: 1.5e-9,
@@ -607,7 +649,21 @@ mod tests {
 
     #[test]
     fn the_identity_line_is_the_documented_one() {
-        let line = super::identity();
+        let banner = super::Banner {
+            line: "** ngspice-45.0 shared library".to_owned(),
+            release: "45.0".to_owned(),
+        };
+        let loaded = super::identity(Some(&banner));
+        let bare = super::identity(None);
+        assert_eq!(
+            loaded.replacen(
+                r#""ngspice":"45.0","ngspice_banner":"** ngspice-45.0 shared library","#,
+                "",
+                1
+            ),
+            bare
+        );
+        let line = bare;
         let (head, rest) =
             line.split_at(r#"{"bridge":"aethelgard-bridge","source_sha256":""#.len());
         assert_eq!(head, r#"{"bridge":"aethelgard-bridge","source_sha256":""#);
