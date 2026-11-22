@@ -1,0 +1,40 @@
+v0	validate --file	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	validate <stdin	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	solve	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	emit	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	generate	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	extract	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	check drc	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	check support	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	check speeds	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v0	verify	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 0, not 23"}}
+v1-sentinel-01	validate --file	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	validate <stdin	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	solve	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	emit	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	generate	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	extract	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	check drc	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	check support	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	check speeds	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v1-sentinel-01	verify	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 1, not 23"}}
+v20-sentinel-01	validate --file	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	validate <stdin	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	solve	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	emit	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	generate	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	extract	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	check drc	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	check support	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	check speeds	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v20-sentinel-01	verify	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 20, not 23"}}
+v24-newer	validate --file	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	validate <stdin	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	solve	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	emit	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	generate	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	extract	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	check drc	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	check support	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	check speeds	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}
+v24-newer	verify	2	{"ok":false,"error":{"kind":"UnsupportedSchemaVersion","id":null,"message":"schema_version is 24, not 23"}}

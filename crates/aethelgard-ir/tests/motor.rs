@@ -885,6 +885,7 @@ fn a_version_16_file_is_refused_by_its_version() {
         assert_eq!(
             e,
             IrValidationError::UnsupportedSchemaVersion {
+                changes: aethelgard_ir::versions::lacked_by(16),
                 version: 16,
                 expected: 23
             }
