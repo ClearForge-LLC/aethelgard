@@ -660,6 +660,7 @@ fn a_pin_device_is_refused_as_not_judged() {
         "U9".into(),
         SolvedPinDevice {
             part: "WAKE_SWITCH".into(),
+            bridges: Default::default(),
         },
     );
     t.gpio.insert(

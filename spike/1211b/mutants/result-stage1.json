@@ -1,0 +1,135 @@
+[
+ {
+  "id": "WO2 the idle written after CEN",
+  "killed": true,
+  "by": [
+   "dshot600_starts_tim1_with_its_own_values_and_the_same_order --- FAILED",
+   "pwm_starts_tim1_with_exactly_the_solved_writes_in_order --- FAILED",
+   "the_ui_board_is_the_generated_one --- FAILED",
+   "---- dshot600_starts_tim1_with_its_own_values_and_the_same_order stdout ----",
+   "---- pwm_starts_tim1_with_exactly_the_solved_writes_in_order stdout ----",
+   "---- the_ui_board_is_the_generated_one stdout ----"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "WO1 a GPIO initial level dropped (always set)",
+  "killed": true,
+  "by": [
+   "board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level --- FAILED",
+   "---- board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level stdout ----",
+   "test result: FAILED. 66 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.58s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G1 the motor pull ignores an idle high",
+  "killed": true,
+  "by": [
+   "an_idle_high_output_is_written_arr_plus_one_and_pulled_up --- FAILED",
+   "---- an_idle_high_output_is_written_arr_plus_one_and_pulled_up stdout ----",
+   "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G2 an input's declared pull ignored",
+  "killed": true,
+  "by": [
+   "board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level --- FAILED",
+   "---- board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level stdout ----",
+   "test result: FAILED. 66 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.64s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G3 the oracle's input pull ignored",
+  "killed": true,
+  "by": [
+   "board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level --- FAILED",
+   "---- board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level stdout ----",
+   "test result: FAILED. 66 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.57s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G4 the oracle's idle-high word",
+  "killed": true,
+  "by": [
+   "an_idle_high_output_is_written_arr_plus_one_and_pulled_up --- FAILED",
+   "---- an_idle_high_output_is_written_arr_plus_one_and_pulled_up stdout ----",
+   "test result: FAILED. 12 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G5 an input takes a speed write",
+  "killed": true,
+  "by": [
+   "board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level --- FAILED",
+   "---- board::tests::a_pin_device_s_signals_are_generated_at_their_declared_pull_and_level stdout ----",
+   "test result: FAILED. 66 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.60s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G6 a power.sense input generated",
+  "killed": true,
+  "by": [
+   "a_power_sense_input_is_not_generated --- FAILED",
+   "---- a_power_sense_input_is_not_generated stdout ----",
+   "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.85s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G7 simulate takes a pin device",
+  "killed": true,
+  "by": [
+   "a_pin_device_is_generated_and_refused_at_simulate_by_reference_and_part --- FAILED",
+   "---- a_pin_device_is_generated_and_refused_at_simulate_by_reference_and_part stdout ----",
+   "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.19s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G8 simulate takes an idle high",
+  "killed": true,
+  "by": [
+   "a_motor_output_that_idles_high_is_generated_and_refused_at_simulate --- FAILED",
+   "---- a_motor_output_that_idles_high_is_generated_and_refused_at_simulate stdout ----",
+   "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.49s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G9 a .repl for a pin device",
+  "killed": true,
+  "by": [
+   "d1_generates_a_board_crate_and_no_platform --- FAILED",
+   "---- d1_generates_a_board_crate_and_no_platform stdout ----",
+   "test result: FAILED. 4 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 6.31s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G10 a declared input's pull not judged",
+  "killed": true,
+  "by": [
+   "a_pin_device_s_input_pull_and_output_level_are_named --- FAILED",
+   "---- a_pin_device_s_input_pull_and_output_level_are_named stdout ----",
+   "test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.59s"
+  ],
+  "tail": ""
+ },
+ {
+  "id": "G11 an idle-high pull judged as a pull-down",
+  "killed": true,
+  "by": [
+   "an_idle_high_motor_output_s_pull_up_is_the_rule_s --- FAILED",
+   "---- an_idle_high_motor_output_s_pull_up_is_the_rule_s stdout ----",
+   "test result: FAILED. 13 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 15.64s"
+  ],
+  "tail": ""
+ }
+]

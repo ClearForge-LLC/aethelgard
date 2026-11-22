@@ -589,6 +589,7 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
         "U2".into(),
         aethelgard_ir::pin_devices::SolvedPinDevice {
             part: "DRV8876PWPR".into(),
+            bridges: Default::default(),
         },
     );
     bad.validate().unwrap();
