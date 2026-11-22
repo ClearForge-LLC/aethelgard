@@ -13,8 +13,11 @@
       The generated SPI driver writes one byte to TXDR and waits for RXP before the next, so
       the TxFIFO empties at every byte and SCK stalls between bytes (RM0433 Rev 9 p. 2176). A
       frame's edges are therefore taken 8 at a time (one byte in mode 0), and the frequency is
-      7 * bytes * RATE / (the sum of each byte's first-to-eighth rising-edge span). The largest
-      gap between bytes, in samples, is printed for the record.
+      7 * bytes * RATE / (the sum of each byte's first-to-eighth rising-edge span). The longest
+      stall between bytes (the boundary's rise-to-rise interval less the median in-byte
+      interval), in samples, is printed for the record. No sck_hz is printed for a frame whose
+      edges are not whole bytes, whose bytes' 7 intervals differ by more than 2 samples (a
+      spurious or missed edge), or that is still open at the capture's end.
 
   python3 -I edges.py synth HZ HIGH PERIOD [--rate 24000000] [--samples 24000000] [--phase P]
       Samples an ideal square wave of HZ whose high phase is HIGH/PERIOD of a cycle at RATE,
@@ -64,21 +67,30 @@ def frames(path, bit, gate, rate):
             inside, rises = True, []
         elif not low and inside:
             inside = False
-            out.append(rises)
+            out.append((rises, True))
         if inside and prev == 0 and level == 1:
             rises.append(i)
         prev = level
+    if inside:
+        out.append((rises, False))
     total = 0
-    for n, r in enumerate(out):
+    for n, (r, closed) in enumerate(out):
         total += len(r)
-        whole = [r[k : k + 8] for k in range(0, len(r) - len(r) % 8, 8)]
-        span = sum(b[-1] - b[0] for b in whole)
-        gap = max((whole[k + 1][0] - whole[k][-1] for k in range(len(whole) - 1)), default=0)
         line = f"frame {n}: rising_edges {len(r)}"
-        if whole and span > 0:
-            line += f" bytes {len(whole)} sck_hz {7 * len(whole) * rate / span:.0f} max_gap_samples {gap}"
-        if len(r) % 8:
-            line += f" (not a whole number of bytes: {len(r) % 8} edges left over)"
+        whole = [r[k : k + 8] for k in range(0, len(r) - len(r) % 8, 8)]
+        steps = [[b[j + 1] - b[j] for j in range(7)] for b in whole]
+        aligned = all(max(s) - min(s) <= 2 for s in steps)
+        if not closed:
+            line += " UNTERMINATED (CS still low at the capture's end): no sck_hz"
+        elif len(r) % 8:
+            line += f" MISALIGNED ({len(r) % 8} edges over whole bytes): no sck_hz"
+        elif not aligned:
+            line += " MISALIGNED (a byte's 7 intervals differ by more than 2 samples): no sck_hz"
+        elif whole:
+            span = sum(b[-1] - b[0] for b in whole)
+            inner = sorted(x for s in steps for x in s)[len(steps) * 7 // 2]
+            stall = max((whole[k + 1][0] - whole[k][-1] - inner for k in range(len(whole) - 1)), default=0)
+            line += f" bytes {len(whole)} sck_hz {7 * len(whole) * rate / span:.0f} max_stall_samples {stall}"
         print(line)
     print(f"frames {len(out)} total_rising_edges {total}")
 

@@ -127,7 +127,10 @@ The source is an RC oscillator, the F723's HSI. So "8.000 MHz within the analyze
 
 **Look first: is CN12 fitted?** UM2407 Rev 6 §9.2 (p. 43) says the morpho headers CN11 and CN12 are "both soldered by default". MB1364's BOM (H753ZI, C-01 and E-01, row 106) says "CN11, CN12 … Not Fitted". The two disagree, so look at the board.
 - **If CN12 has pins:** the analyzer's GND goes to CN12 pin 20, and D0 to CN12 pin 23, which is `PA8` (UM2407 Table 22, p. 43).
-- **If it does not:** D0 goes by a hook clip on test point TP4 (`PA8`, UM2407 Table 12 p. 30), and GND on CN7 pin 8.
+- **If it does not:** D0 goes by a hand-held probe tip or pogo pin on test point TP4 (`PA8`, UM2407 Table 12 p. 30), and GND on CN7 pin 8 (UM2407 Table 18, p. 40).
+  - TP4 is a bare 1 mm pad (MB1364 `MCU_144_IOs`: "Test Point", mechanical, no BOM row), so a hook clip has nothing to hold.
+  - Keep the tip off every neighbouring pad.
+  - A slip loses the count: repeat that capture.
 - **If neither can be reached without solder, stop** (WO §7). `PA8` is on no other pin.
 
 **Probe.** Unplug the USB, then connect as above.
@@ -280,7 +283,7 @@ One read each, for example `$P read $C b32 0x58024400 1`. Compare **only the mas
 | `RCC_D2CCIP1R` | `0x58024450` | `0x00007000` | `0x00000000`: `SPI123SEL` 000, `pll1_q_ck` | ignored-by-model (a reset-row tag; the twin reads 0 whatever silicon holds). The kernel `check_spi` assumes is `pll1_q` (topology `spi_controllers.SPI1.kernel`). §8.7.20 pp. 413–414 | | | |
 | `FLASH_ACR` | `0x52002000` | `0x0000003f` | `0x00000011`: `LATENCY` 1, `WRHIGHFREQ` 01 | rule (`vos::flash_at_reset`, Table 17's VOS2 ]55;110] MHz row). Reset `0x37` (§4.9.1 p. 201) | | | |
 | `PWR_CR3` | `0x5802480c` | `0x00000007` | `0x00000002`: `LDOEN` 1, `BYPASS` 0, `SCUEN` 0 | rule (ledger `independent-rule` for `PWR.CR3`); `4240v` FEEDBACK §0.4 predicts the whole word `0x42`, inferred for bit 6. §6.8.4 p. 307 | | | |
-| `PWR_CSR1`: `ACTVOS` | `0x58024804` | `0x0000c000` | `0x00008000`: `ACTVOS` 10 | **inferred**: RM0433 says only that `ACTVOS` reflects "the last VOS value applied" and gives no encoding for it (p. 306; `4240v` F1, `4240b` P10, an open residue). The value assumes `VOS`'s own encoding. No ledger row; `4240v` §0.4 predicts the same | | | |
+| `PWR_CSR1`: `ACTVOS` | `0x58024804` | `0x0000c000` | `0x00008000`: `ACTVOS` 10 | **inferred**: RM0433 says only that `ACTVOS` reflects "the last VOS value applied" and gives no encoding for it (p. 306; `4240v` F1, `4240b` P10, an open residue). The value assumes `VOS`'s own encoding, which the reset values are consistent with: `PWR_CSR1` resets to `0x0000_4000` (p. 305), and `PWR_D3CR` to `0x0000_4000` with `VOS` 01 = Scale 3 (p. 310). No ledger row; `4240v` §0.4 predicts the same | | | |
 | `PWR_CSR1`: `ACTVOSRDY` | `0x58024804` | `0x00002000` | `0x00002000` | silicon-only (ledger: `PWR.CSR1.ACTVOSRDY`, polled) | | | |
 | `PWR_D3CR`: `VOS` | `0x58024818` | `0x0000c000` | `0x00008000`: Scale 2 | rule (ledger `independent-rule`, `PWR.D3CR.VOS`). §6.8.6 p. 310 | | | |
 | `PWR_D3CR`: `VOSRDY` | `0x58024818` | `0x00002000` | `0x00002000` | silicon-only (ledger: `PWR.D3CR.VOSRDY`, polled) | | | |
@@ -382,9 +385,10 @@ A C2 outside the ratio's band is a disagreement with `4240` §4's decode of the 
 
 **Wiring:** analyzer D2 on CN7 pin 10 (`PA5`, SCK) and D5 on CN7 pin 16 (`PD14`, CS), GND as before, exactly as `3304` B4's channel map. The ICM-42688-P is optional. With nothing wired, the master clocks the same frames (`3304` B2), so the SCK is the same.
 
-**Capture through a reset,** untriggered, as `3304` B5 (its reasons hold). Zero word 0 first, so B5's boot is read as its own:
+**Capture through a reset,** untriggered, as `3304` B5 (its reasons hold). After rewiring with the USB unplugged, the board has booted from power-on: **read and record word 0 first** (that boot's own evidence), then zero it, so B5's boot is read as its own:
 
 ```
+$P read  $C b32 0x20000000 1            # record: the power-on boot's word
 $P write $C b32 0x20000000 0
 sigrok-cli -d fx2lafw --config samplerate=24m --channels D0,D1,D2,D3,D4,D5 --time 4s -o hse8-spi.sr
 # second terminal, within ~1 s:
@@ -400,9 +404,9 @@ sigrok-cli -i hse8-spi.sr -P spi:clk=D2:mosi=D3:miso=D4:cs=D5:cpol=0:cpha=0 -A s
 |---|---|---|---|---|
 | CS-low frames and their SCK rising edges | 5 frames: 16, 16, 16, 16, 56 (120 in all) | generator: the frames `F5 00`, `4C C0`, `50 66`, `4E 03`, `9D` + 6 fill bytes, 8 clocks a byte. Twin: S1's MOSI witness | exact | |
 | MOSI, if D3 is on CN7 pin 14 (`PB5`) | `F5 00` / `4C C0` / `50 66` / `4E 03` / `9D 00 00 00 00 00 00` | twin (S1 witness, equal to `main`'s), as `3304` B5 | exact | |
-| SCK frequency within bytes, each frame (`edges.py frames`: 7 periods per byte, first to eighth rising edge, summed over the frame's bytes) | **equal to C1 (Hz) within 1.5 %** | rule: `silicon::check_spi` (`MBR` 4 on `pll1_q`) and `judge_tree` (`pll1_q` = 8 × F_HSE). The ratio of two exact dividers of one source | ±1 sample per byte span of 84 samples at 2 MHz: worst ±1.2 % on any frame, and C1's drift since B4 | |
+| SCK frequency within bytes, each frame (`edges.py frames`: 7 periods per byte, first to eighth rising edge, summed over the frame's bytes). A frame printed `MISALIGNED` or `UNTERMINATED` gets no rate: record it, and repeat the capture | **equal to C1 (Hz) within 1.5 %** | rule: `silicon::check_spi` (`MBR` 4 on `pll1_q`) and `judge_tree` (`pll1_q` = 8 × F_HSE). The ratio of two exact dividers of one source | ±1 sample per byte span of 84 samples at 2 MHz: worst ±1.2 % on any frame, and C1's drift since B4 | |
 | SCK frequency, absolute | **2.000 MHz** at exactly 8.000 MHz; 1.920 to 2.080 MHz inside B-1's gate; at most 2,160,000 Hz at the declaration's fastest | rule (`check_spi`: `achieved_hz` 2,000,000, `achieved_max_hz` 2,160,000 ≤ 4 MHz declared; topology `spi_controllers`) | as above | |
-| SCK stalls between bytes (`max_gap_samples`) | **not predicted**: the driver writes one byte to `TXDR` and waits for `RXP` before the next (`board.rs` `spi_frame`), so the TxFIFO empties at every byte and SCK stops there (RM0433 p. 2176: "the master … stops, waiting for additional data"). The gap is core and bus time, which no source here times. This is why the rate above is taken within bytes only | generator (the loop) | — | |
+| SCK stalls between bytes (`max_stall_samples`: the boundary's rise-to-rise interval less the median in-byte interval) | **not predicted**: the driver writes one byte to `TXDR` and waits for `RXP` before the next (`board.rs` `spi_frame`), so the TxFIFO empties at every byte and SCK stops there (RM0433 p. 2176: "the master … stops, waiting for additional data"). The gap is core and bus time, which no source here times. This is why the rate above is taken within bytes only | generator (the loop) | — | |
 | beside `3304`'s rate at the HSI clock | `3304` B6 predicts 2.000 MHz from the H7's own HSI (1.948 to 2.030 MHz). **Its bench has not run** (no `3304` result is held on `main` or the bus at this writing), so there is no measured rate to repeat. If both run in one session, record both; their ratio is the two RC oscillators' and is **not predicted** | repeat, when held; until then rule (`3304` B6) beside generator (`MBR` 4, unchanged) | — | 3304 SCK ____ |
 | SPI mode | `CPOL` 0, `CPHA` 0: SCK is low whenever CS is high | rule, as `3304` B6 | — | |
 
@@ -410,7 +414,7 @@ A frame before the first five can only be `PD14` floating during the reset, as i
 
 ## B6. Restore
 
-`$P write $C b32 0x20000000 0` (read it back as 0), then `$P reset $C`, wait 2 s, and read. The firmware boots again from a system reset (§8.4.2 p. 330), which returns every register written in B4 to its reset value before the firmware runs.
+Read and record word 0, then `$P write $C b32 0x20000000 0` (read it back as 0), then `$P reset $C`, wait 2 s, and read. The firmware boots again from a system reset (§8.4.2 p. 330), which returns every register written in B4 to its reset value before the firmware runs.
 
 | Read | Address | Mask | Predicted | Source | Bench |
 |---|---|---|---|---|---|

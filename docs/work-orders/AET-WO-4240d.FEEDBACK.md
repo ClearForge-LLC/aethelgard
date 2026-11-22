@@ -131,6 +131,16 @@ A fresh Opus subagent read the sheet at `59c008f1` against the primary PDFs, the
 | F8 | B4's preconditions had no whole-word `MODER`/`AFRH` reads in B3 | should-fix | **Fixed**: two rows |
 | N1–N10 | read-backs; `DBGMCU` not reset by a system reset; "no halt" unproven; "output disabled"; X1's 25 MHz ±50 ppm; `SH_REG`; `details.txt` case; a stop still restores; the pre-boot frame; the default after V3J7 inferred, and E normalised | nit | **All fixed** |
 
+**Round 2** (the same agent, given the diff `59c008f1..fdd518f3` only). Every new row, mask, address and label held except:
+
+| # | Finding | Severity | Done |
+|---|---|---|---|
+| R2-1 | `frames` chunked edges by 8 blindly: a spurious plus a missed edge in one frame printed −15.6 % unflagged; an open frame at the capture's end was dropped | should-fix | **Fixed**: no rate for a frame whose edges are not whole bytes, whose byte's 7 intervals differ by more than 2 samples, or that is unterminated; each named. Re-tested on clean, spurious, spurious-and-missed and open captures |
+| R2-2 | TP4 is a bare 1 mm pad (MB1364: "Test Point", mechanical), so a hook clip cannot hold | should-fix | **Fixed**: a probe tip or pogo pin, off neighbouring pads; a slip means a repeat. CN7 pin 8 confirmed GND (UM2407 Table 18 p. 40) |
+| R2-3 | The gap figure included one SCK period | nit | **Fixed**: `max_stall_samples`, the boundary less the median in-byte interval (8 on an 8-sample stall) |
+| R2-4 | B5's and B6's zeroing erased the power-on boot's word unread | nit | **Fixed**: read and record word 0 before zeroing |
+| R2-5 | `ACTVOS` 10's support: both reset values (`0x4000`) agree with `VOS`'s encoding | nit | **Added** to the row, still inferred |
+
 **Attacked and held:**
 - every write as the correct read-modify-write of its predicted read (`SW` always kept, `HSEBYP` only with `HSEON` 0, reserved bits 0);
 - `PA8` alone on TP4 and CN12-23;
