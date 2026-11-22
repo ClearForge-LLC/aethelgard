@@ -179,7 +179,9 @@ After the reduction pass, the five whose code it touched were run again, and all
   - **The work order predicted no package would move.** The measurement wins (architect, bus 2026-11-22 05:56Z).
   - **Plan ruled:** the PR is AWAITING-PACKAGE. The queue is `1211e`, `1211c`, then `1606`; the `write=true` dispatch comes when the architect calls it, and its package is committed byte for byte before READY.
   - `main`'s own Furnace-derived manifest also differs from the committed one, in `verdict_sha256`: the committed package is CI's (as `2305` saw).
-- **CI:** (pending).
+- **CI:**
+  - On `44a2e613`, the plan step refused every tier-2 shard for the missing weight row above.
+  - On `10c78731` (run `44994141844`): every check is green but `bench-package` (`MANIFEST.json` differs from the derived file, and nothing else, as measured). Tier 2: **203 passed, floor 202.**
 
 ## 7. Reduction pass
 
