@@ -190,6 +190,7 @@ A fresh Opus reviewer attacked `99ada513`, then `1a7bcf29` (evidence `~/.cache/a
   - D2's four judges in the image: pass, findings `[]`;
   - D1-stub's ERC, DRC and support: pass;
   - mutants: 11 of 12 killed.
+- **CI on `d4854142` (`main` `7c1f369f` merged): green.** Runs 44973879947 (`ci`: gates, cli, every tools shard, foreign, generated, bench-package, image, ardupilot), 44973879981 and 44973879979: 33 checks pass, 3 skipped (`publish`, `quickstart`, as on any PR), none failed. Before the `ddfa64d6` merge, `1b14e172` was green on run 44805095921.
 - **`TIER2_MIN`:** unchanged. No tier-2 test was added; the image runs are the spike's (`kit/`).
 - **Fence:**
   - `crates/aethelgard-eda`;
