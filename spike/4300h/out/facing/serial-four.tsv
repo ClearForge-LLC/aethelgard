@@ -1,0 +1,33 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+serial-four	J1.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J1.2	connector	MAVLINK_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J1.3	connector	MAVLINK_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J1.4	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J1.5	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J1.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J2.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J2.2	connector	GPS_TX	PA2	FT_a	USART2_TX AF7	solver	out	none	none	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J2.3	connector	GPS_RX	PA3	FT_ha	USART2_RX AF7	solver	in	none	none	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J2.4	connector	I2C_SCL	PB6	FT_f	I2C1_SCL AF4	solver	bidir_od	none	none	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+serial-four	J2.5	connector	I2C_SDA	PB7	FT_fa	I2C1_SDA AF4	solver	bidir_od	none	none	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+serial-four	J2.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 GPS: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.2	connector	CRSF_TX	PB10	FT_f	USART3_TX AF7	solver	out	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.3	connector	CRSF_RX	PB11	FT_f	USART3_RX AF7	solver	in	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.4	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.5	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J3.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+serial-four	J4.1	connector	SBUS_TX	PA0	FT_a	UART4_TX AF8	solver	out	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J4.2	connector	SBUS_RX	PA1	FT_ha	UART4_RX AF8	solver	in	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J4.3	connector_other	None	-	-	nc	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J4.4	connector_other	GND	-	-	GND	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J5.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J5.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J5.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J5.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J5.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J5.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+serial-four	J6.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J6.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J6.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+serial-four	J6.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null

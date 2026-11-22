@@ -1,0 +1,21 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+connectors	J1.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard null
+connectors	J1.2	connector	I2C_SCL	PB6	FT_f	I2C1_SCL AF4	solver	bidir_od	none	none	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+connectors	J1.3	connector	I2C_SDA	PB7	FT_fa	I2C1_SDA AF4	solver	bidir_od	none	none	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+connectors	J1.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard null
+connectors	J2.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+connectors	J2.2	connector	EXT_SCK	PA12	FT_u	SPI2_SCK AF5	solver	out	none	none	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+connectors	J2.3	connector	EXT_MOSI	PB15	FT_u	SPI2_MOSI AF5	solver	out	none	none	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+connectors	J2.4	connector	EXT_MISO	PB14	FT_u	SPI2_MISO AF5	solver	in	none	none	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+connectors	J2.5	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+connectors	J2.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+connectors	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J3.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J3.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J3.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J3.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J3.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+connectors	J4.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+connectors	J4.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+connectors	J4.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+connectors	J4.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null

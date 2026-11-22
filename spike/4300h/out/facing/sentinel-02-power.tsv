@@ -1,0 +1,8 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+sentinel-02-power	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J2.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J2.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J2.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-02-power	J1	power_input	VBAT_SENSE	PF3	FT_ha	ADC3_INP5	solver	in	none	none	battery	the pack, 6 x 4350 mV, through R50 100000 ohm (1216: 2536 mV on the pin)	power.input XT30PW-M; power.sense[0]

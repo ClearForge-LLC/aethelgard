@@ -1,0 +1,45 @@
+end	end_net	hops	mcu_pad	pin	structure	class	detail
+J1.1	VDD_5V	-	-	-	-	no_mcu_pin	VDD_5V
+J1.2	/MAVLINK_TX	-	101	PA9	FT_u	direct	/MAVLINK_TX
+J1.3	/MAVLINK_RX	-	102	PA10	FT_u	direct	/MAVLINK_RX
+J1.4	unconnected-(J1-Pin_4-Pad4)	-	-	-	-	none	unconnected-(J1-Pin_4-Pad4)
+J1.5	unconnected-(J1-Pin_5-Pad5)	-	-	-	-	none	unconnected-(J1-Pin_5-Pad5)
+J1.6	GND	-	-	-	-	none	GND
+J1.MP	GND	-	-	-	-	none	GND
+J2.1	VDD_5V	-	-	-	-	no_mcu_pin	VDD_5V
+J2.2	/GPS_TX	-	36	PA2	FT_a	direct	/GPS_TX
+J2.3	/GPS_RX	-	37	PA3	FT_ha	direct	/GPS_RX
+J2.4	/I2C_SCL	-	136	PB6	FT_f	direct	/I2C_SCL
+J2.4	/I2C_SCL	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+J2.4	/I2C_SCL	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SCL; its other pads carry MCU nets /I2C_SDA
+J2.5	/I2C_SDA	-	137	PB7	FT_fa	direct	/I2C_SDA
+J2.5	/I2C_SDA	-	-	-	-	ic_bridge	U2 BME280 on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+J2.5	/I2C_SDA	-	-	-	-	ic_bridge	U3 TMP117xxDRV on /I2C_SDA; its other pads carry MCU nets /I2C_SCL
+J2.6	GND	-	-	-	-	none	GND
+J2.MP	GND	-	-	-	-	none	GND
+J3.1	VDD_5V	-	-	-	-	no_mcu_pin	VDD_5V
+J3.2	/CRSF_TX	-	69	PB10	FT_f	direct	/CRSF_TX
+J3.3	/CRSF_RX	-	70	PB11	FT_f	direct	/CRSF_RX
+J3.4	unconnected-(J3-Pin_4-Pad4)	-	-	-	-	none	unconnected-(J3-Pin_4-Pad4)
+J3.5	unconnected-(J3-Pin_5-Pad5)	-	-	-	-	none	unconnected-(J3-Pin_5-Pad5)
+J3.6	GND	-	-	-	-	none	GND
+J3.MP	GND	-	-	-	-	none	GND
+J4.1	/SBUS_TX	-	34	PA0	FT_a	direct	/SBUS_TX
+J4.2	/SBUS_RX	-	35	PA1	FT_ha	direct	/SBUS_RX
+J4.3	unconnected-(J4-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J4-Pin_3-Pad3)
+J4.4	GND	-	-	-	-	none	GND
+J4.MP	GND	-	-	-	-	none	GND
+J5.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J5.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J5.2	unconnected-(J5-Pin_2-Pad2)	-	-	-	-	none	unconnected-(J5-Pin_2-Pad2)
+J5.3	unconnected-(J5-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J5-Pin_3-Pad3)
+J5.4	/SWDIO	-	105	PA13	FT	direct	/SWDIO
+J5.5	/SWCLK	-	109	PA14	FT	direct	/SWCLK
+J5.6	GND	-	-	-	-	none	GND
+J5.MP	GND	-	-	-	-	none	GND
+J6.1	VDD_3V3	VDD_3V3-R1(2k2)-/I2C_SDA	137	PB7	FT_fa	via_rail	/I2C_SDA
+J6.1	VDD_3V3	VDD_3V3-R2(2k2)-/I2C_SCL	136	PB6	FT_f	via_rail	/I2C_SCL
+J6.2	unconnected-(J6-Pin_2-Pad2)	-	-	-	-	none	unconnected-(J6-Pin_2-Pad2)
+J6.3	unconnected-(J6-Pin_3-Pad3)	-	-	-	-	none	unconnected-(J6-Pin_3-Pad3)
+J6.4	GND	-	-	-	-	none	GND
+J6.MP	GND	-	-	-	-	none	GND

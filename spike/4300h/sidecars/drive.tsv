@@ -1,0 +1,139 @@
+scenario	board	end	drive_max_millivolts	kind	source
+ds009-nominal	connectors	J1.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	connectors	J1.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	connectors	J1.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	connectors	J1.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-crystal-16	J4.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-crystal-16	J4.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-crystal-16	J4.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-crystal-16	J4.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-crystal-16	J5.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-crystal-16	J5.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-crystal-16	J5.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-crystal-16	J5.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-external-8	J4.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-external-8	J4.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-external-8	J4.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-external-8	J4.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-external-8	J5.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-external-8	J5.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	hse-external-8	J5.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	hse-external-8	J5.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-02-shaped	J4.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-02-shaped	J4.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-02-shaped	J4.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-02-shaped	J4.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-02-shaped	J5.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-02-shaped	J5.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-02-shaped	J5.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-02-shaped	J5.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J6.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J6.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J6.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J6.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J7.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J7.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J7.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J7.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J8.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J8.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	sentinel-03	J8.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	sentinel-03	J8.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J1.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J1.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J1.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J1.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J2.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J2.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J2.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J2.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J2.4	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J2.4	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J2.5	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J2.5	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J3.2	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J3.2	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+ds009-nominal	serial-four	J3.3	3300	nominal	DS-009 pp. 6-9, the Volt column: +3.3V for the signal pin, a nominal level with no maximum
+ds009-plus5	serial-four	J3.3	3465	hypothetical	DS-009 +3.3V read as +5 % (no held page states a tolerance)
+j5-5v-esc	sentinel-03	J5.1	5250	hypothetical	1216 F1: a 5 V-logic peer on J5, 5 V +5 % (no ESC is declared: esc none)
+j5-5v-esc	sentinel-03	J5.2	5250	hypothetical	1216 F1: a 5 V-logic peer on J5, 5 V +5 % (no ESC is declared: esc none)
+j5-5v-esc	sentinel-03	J5.3	5250	hypothetical	1216 F1: a 5 V-logic peer on J5, 5 V +5 % (no ESC is declared: esc none)
+j5-5v-esc	sentinel-03	J5.4	5250	hypothetical	1216 F1: a 5 V-logic peer on J5, 5 V +5 % (no ESC is declared: esc none)
+probe-vtref	connectors	J3.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	connectors	J3.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d1-24-i2c	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d1-24-i2c	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d1-drv8876	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d1-drv8876	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d2-drv8833	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d2-drv8833	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d3-24-i2c-12-spi	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	d3-24-i2c-12-spi	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	driver-judges-nothing	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	driver-judges-nothing	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	four-layer	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	four-layer	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	four-layer-power	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	four-layer-power	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	hse-crystal-16	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	hse-crystal-16	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	hse-external-8	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	hse-external-8	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	imu-baro-1v8	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	imu-baro-1v8	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	logger-4600	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	logger-4600	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	motors-dshot600	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	motors-dshot600	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	motors-pwm	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	motors-pwm	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	pair-standin	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	pair-standin	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01	J2.2	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01	J2.3	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-bench	J2.2	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-bench	J2.3	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-bench	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-bench	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-ext-bmp581	J2.2	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-ext-bmp581	J2.3	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-ext-bmp581	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-ext-bmp581	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-minimal	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-01-minimal	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-bench	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-bench	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-bench-hse8	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-bench-hse8	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-own	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-own	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-power	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-power	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-shaped	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-02-shaped	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-03	J2.2	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-03	J2.3	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-03	J2.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	sentinel-03	J2.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	serial-dshot-9600	J3.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	serial-dshot-9600	J3.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	serial-four	J5.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	serial-four	J5.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-infeasible-shared	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-infeasible-shared	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-pigeonhole-spi	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-pigeonhole-spi	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-stress	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-stress	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-thrash-pins	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	solve-thrash-pins	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	spi-only	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	spi-only	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	two-bme	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+probe-vtref	two-bme	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+j5-3v3-plus5	sentinel-03	J5.1	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.2	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.3	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.4	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)

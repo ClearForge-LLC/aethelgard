@@ -1,0 +1,57 @@
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+sentinel-03	J1.1	connector	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	hand PA9	out	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J1.2	connector	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	hand PA10	in	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J1.3	connector_other	None	-	-	nc	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J1.4	connector_other	GND	-	-	GND	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J2.2	connector	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J2.3	connector	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J2.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-03	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J3.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J3.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J3.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J5.1	connector	MOTOR1	PE9	TT_ha	TIM1_CH1 AF1	hand PE9	out	none	down	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J5.2	connector	MOTOR2	PE11	FT_ha	TIM1_CH2 AF1	hand PE11	out	none	down	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J5.3	connector	MOTOR3	PE13	FT_h	TIM1_CH3 AF1	hand PE13	out	none	down	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J5.4	connector	MOTOR4	PE14	FT_h	TIM1_CH4 AF1	hand PE14	out	none	down	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J5.5	connector_other	None	-	-	nc	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J5.6	connector_other	GND	-	-	GND	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.2	connector	CRSF_TX	PA2	FT_a	USART2_TX AF7	solver	out	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.3	connector	CRSF_RX	PA3	FT_ha	USART2_RX AF7	solver	in	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.4	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.5	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J6.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.2	connector	MAVLINK_TX	PC10	FT_ha	USART3_TX AF7	solver	out	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.3	connector	MAVLINK_RX	PC11	FT_h	USART3_RX AF7	solver	in	none	none	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.4	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.5	connector_other	None	-	-	nc	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J7.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 TELEM: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM06B-GHS-TB; offboard null
+sentinel-03	J8.1	connector_other	VDD_5V	-	-	rail	-	-	-	-	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	J8.2	connector	EXT_SCL	PB10	FT_f	I2C2_SCL AF4	solver	bidir_od	none	none	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+sentinel-03	J8.3	connector	EXT_SDA	PB11	FT_f	I2C2_SDA AF4	solver	bidir_od	none	none	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard 20000 fF (condition: a JST cable of at most 100 mm at 50 pF/m (5 pF), )
+sentinel-03	J8.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_5V	DS-009 I2C: DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	connectors[] SM04B-GHS-TB; offboard null
+sentinel-03	TP1	test_point	I2C_SDA	PB7	FT_fa	I2C1_SDA AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP2	test_point	I2C_SCL	PB6	FT_f	I2C1_SCL AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP3	test_point	EXT_SDA	PB11	FT_f	I2C2_SDA AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP4	test_point	EXT_SCL	PB10	FT_f	I2C2_SCL AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP11	test_point	FLASH_CS	PA0	FT_a	GPIO output	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP13	test_point	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	hand PA9	out	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP14	test_point	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	hand PA10	in	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP15	test_point	CRSF_TX	PA2	FT_a	USART2_TX AF7	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP16	test_point	CRSF_RX	PA3	FT_ha	USART2_RX AF7	solver	in	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP17	test_point	MAVLINK_TX	PC10	FT_ha	USART3_TX AF7	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP18	test_point	MAVLINK_RX	PC11	FT_h	USART3_RX AF7	solver	in	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP19	test_point	MOTOR1	PE9	TT_ha	TIM1_CH1 AF1	hand PE9	out	none	down	-	a probe, when attached	test_points[]
+sentinel-03	TP20	test_point	MOTOR2	PE11	FT_ha	TIM1_CH2 AF1	hand PE11	out	none	down	-	a probe, when attached	test_points[]
+sentinel-03	TP21	test_point	MOTOR3	PE13	FT_h	TIM1_CH3 AF1	hand PE13	out	none	down	-	a probe, when attached	test_points[]
+sentinel-03	TP22	test_point	MOTOR4	PE14	FT_h	TIM1_CH4 AF1	hand PE14	out	none	down	-	a probe, when attached	test_points[]
+sentinel-03	TP24	test_point	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP25	test_point	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-03	TP26	test_point	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	-	a probe, when attached	test_points[]
+sentinel-03	TP27	test_point	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	-	a probe, when attached	test_points[]
+sentinel-03	J4	power_input	VBAT_SENSE	PF3	FT_ha	ADC3_INP5	solver	in	none	none	battery	the pack, 6 x 4350 mV, through R50 100000 ohm (1216: 2536 mV on the pin)	power.input XT30PW-M; power.sense[0]
