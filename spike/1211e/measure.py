@@ -80,8 +80,6 @@ for f in sys.argv[3:]:
         dev = next((d for d in s.get("spi_devices", []) if d["bus"] == c["bus"]), None)
         if d and dev:
             row(f, "crossing-cs", f"power.crossings[{i}].cs_pull_up", dev["cs"]["net"], dev["cs"]["pin"], c["a_domain"], dmax(d), vdd_min)
-    for net, sense in (p.get("sense") or {}).items() if isinstance(p.get("sense"), dict) else []:
-        pass
     for i, sns in enumerate(p.get("sense", []) or []) if isinstance(p.get("sense"), list) else []:
         print(f"{f}\tsense\tpower.sense[{i}]\t{sns['net']}\t(solver)\t-\tdivider\t-\t-\tjudged-by-step-16")
     for i, dv in enumerate(s.get("pin_devices", []) or []):

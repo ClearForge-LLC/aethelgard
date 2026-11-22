@@ -118,7 +118,11 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// bring-up's `HSERDY` bound with its source, which no default supplies; a
 /// `null` HSE carries neither, so a committed specification moved by its
 /// version line alone.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 23;
+/// Version 24 requires `bulk` on every pin device (`AET-WO-1211e`, renumbered
+/// from 23 by the same rule, merging after `4240b`): `null`, or the bulk
+/// capacitor on the supply its part's row leaves unstated; a committed
+/// specification moved by its version line alone.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 24;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";

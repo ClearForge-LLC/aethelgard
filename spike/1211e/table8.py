@@ -18,7 +18,6 @@ TYPES = {"I/O", "I", "S", "ANA"}
 STRUCT = re.compile(r"^(FT\w*|TT\w*|B|RST|-)$")
 GPIO = re.compile(r"^P[A-K]\d{1,2}(_C)?\b")
 POS = re.compile(r"^(\d{1,3}|[A-Z]{1,2}\d{1,2}|-)(\(\d\))?$")
-ns = {"x": "http://dummy.com"}
 root = ET.parse(sys.argv[2]).getroot()
 xml = {}
 for p in root.iter():

@@ -155,7 +155,7 @@ fn an_explicit_null_is_refused_not_read_as_absent() {
 /// without the new keys, never read as today's board.
 #[test]
 fn a_version_15_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 23);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 24);
     let mut with = declared();
     with["schema_version"] = json!(15);
     let mut without = with.clone();
