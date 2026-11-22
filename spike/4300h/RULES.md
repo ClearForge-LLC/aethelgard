@@ -21,7 +21,7 @@
 - BOOT0 (`B`): 9.0 V.
 - `RST` (NRST): FT's formula by the same row, but Table 7 gives NRST an embedded weak pull-up and note 3 requires the pulls off above VDD + 0.3 V. It cannot be disabled, so it is **VDD + 0.3 V**.
 - **Note 3, for a pin holding an internal pull from reset** (PA13 up, PA14 down, PA15 up, PB4 up; RM0433 Rev 9 p. 542; A1's `MCU_RESET_PULL_UPS`/`_DOWNS`): VDD + 0.3 V whatever its structure.
-  - A pull the generated firmware enables is not in the solved topology. That case is not judged here, and the same is true of A1.
+  - A pull the generated firmware enables is not in the solved topology. That case is not judged here, and the same is true of A1. **Wrong: corrected below (adversarial F1).**
 
 **With VDD = 0:** DS12117 Rev 10 Table 10, p. 103, as `1216b` reads it: every pin **4.0 V**, BOOT0 **9.0 V**. An off-board end can always lead `mcu.supply` (`1216` walk 1, `can_lead` "yes: off-board"). The one exception is a bound declared to track `mcu.supply` (below).
 
@@ -64,3 +64,23 @@
 
 - **Per option:** the boards refused, the rows refused by kind, the boards moved, and the rows named (unbounded or unjudged), over the 34.
 - **A board refused by validate or solve today** (D2, `invalid-zero-domain`, three `solve/` fixtures) is judged on the rows walk 1 could read. A row whose pin is `unsolved` is named, not judged.
+
+## Corrections after the adversarial pass (2026-11-22, after `58d5825e`)
+
+The rules above ran as committed at `58d5825e`, and their numbers are kept in that commit. Three corrections, each checked at source, then re-run:
+
+- **Note 3 applies to the pulls the engine writes, not only the reset pulls** (adversarial F1, F8).
+  - The bullet above ("a pull the generated firmware enables is not in the solved topology") was wrong. `aethelgard-ir` `silicon::implied_pupd` derives every pin's pull from the solved topology:
+    - a motor output pulls down (`motor_output_pupd`, ruled on PR #161 Q-G), or pulls up for a declared idle level high;
+    - a GPIO input takes its declared pull.
+  - The generated Sentinel-03 crate writes GPIOE `PUPDR` = `0x28880000`, a pull-down on PE9, PE11, PE13 and PE14, read here first-hand.
+  - Walk 1 now carries it as `fw_pull`. A row with a reset pull or a `fw_pull` takes VDD + 0.3 V with VDD up, whatever its structure.
+  - **`judge.py` runs both branches of the fork this opens:**
+    - `internal`, the engine as it is;
+    - `external`, where a motor line's pull is an external resistor and the pin holds none.
+- **An unsolved row is named before any bound is looked up** (adversarial F10), as the last line above states. `judge.py` had refused D2's three unsolved rows under `required`.
+- **The battery input connector is an off-board end** (adversarial F2).
+  - Walk 1 lists `power.input` as `power_input` for each sense net it reaches through the divider's top resistor.
+  - Walk 2's `via_rail` rows from `VBAT` are reconciled with them.
+  - (a) and (b) see neither (`power.input` is not a `connectors[]` pin); `1216b` judges the path.
+- **A sidecar was added:** `j5-3v3-plus5`, 3465 mV on J5.1–J5.4, a 3.3 V-logic peer read as +5 % (hypothetical). It tests the pull fork directly.

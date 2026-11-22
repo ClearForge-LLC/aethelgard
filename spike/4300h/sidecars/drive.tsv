@@ -133,3 +133,7 @@ probe-vtref	spi-only	J1.4	mcu.supply	tracks	a debug probe whose drivers track VT
 probe-vtref	spi-only	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
 probe-vtref	two-bme	J1.4	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
 probe-vtref	two-bme	J1.5	mcu.supply	tracks	a debug probe whose drivers track VTref (the connector's mcu.supply pin): hypothetical, no probe datasheet is held
+j5-3v3-plus5	sentinel-03	J5.1	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.2	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.3	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)
+j5-3v3-plus5	sentinel-03	J5.4	3465	hypothetical	a 3.3 V-logic peer on J5 read as +5 % (no ESC is declared: esc none)

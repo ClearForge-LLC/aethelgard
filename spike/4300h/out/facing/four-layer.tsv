@@ -1,11 +1,11 @@
-board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	rails_on_end	far_end	source
-four-layer	J1.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J1.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J1.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J1.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J1.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J1.6	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-four-layer	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-four-layer	J2.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-four-layer	J2.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-four-layer	J2.4	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+four-layer	J1.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J1.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J1.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J1.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J1.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J1.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+four-layer	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+four-layer	J2.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+four-layer	J2.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+four-layer	J2.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null

@@ -18,8 +18,10 @@ The pass-through rule (RULES.md, committed before the first run):
 - a hop lands only on a signal net (a `/` name): a pull to a rail is not a
   series path, so the walk never continues into a rail from a signal net;
 - an end on a rail (a global name) is walked one way, through two-pad parts
-  into signal nets, and every MCU pad it reaches is `via_rail` (an on-board
-  domain's path, which A1 and `1216b` judge); the MCU's supply pads are not
+  into signal nets, and every MCU pad it reaches is `via_rail`: a domain's
+  pull (A1 judges it), or, from `VBAT`, the pack through the sense divider
+  (off-board, `1216b` judges it; compare.py reconciles it with walk 1's
+  `power_input`); the MCU's supply pads are not
   I/O and are not listed, and an IC on a rail is its supply, not a bridge.
 Every MCU I/O pad reached is one row; an end that reaches none is one row too.
 """

@@ -106,6 +106,7 @@ sentinel-03	J2.2	BOOT0	connector B	direct B	agree
 sentinel-03	J2.3	NRST	connector RST	direct RST	agree
 sentinel-03	J2.4	PA13	connector FT	direct FT	agree
 sentinel-03	J2.5	PA14	connector FT	direct FT	agree
+sentinel-03	J4	PF3	power_input FT_ha	via_rail FT_ha	agree (through a series part)
 sentinel-03	J5.1	PE9	connector TT_ha	direct TT_ha	agree
 sentinel-03	J5.2	PE11	connector FT_ha	direct FT_ha	agree
 sentinel-03	J5.3	PE13	connector FT_h	direct FT_h	agree
@@ -182,6 +183,7 @@ d2-drv8833	J1.2	unsolved	connector unheld	-	not drawn
 d2-drv8833	J2.4	PA13	connector FT	-	not drawn
 d2-drv8833	J2.5	PA14	connector FT	-	not drawn
 d2-drv8833	J4.1	unsolved	connector unheld	-	not drawn
+sentinel-02-power	J1	PF3	power_input FT_ha	via_rail FT_ha	agree (through a series part)
 sentinel-02-power	J2.4	PA13	connector FT	direct FT	agree
 sentinel-02-power	J2.5	PA14	connector FT	direct FT	agree
 sentinel-01-ext-bmp581	J1.1	PA9	connector FT_u	direct FT_u	agree

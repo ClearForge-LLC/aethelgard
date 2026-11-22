@@ -23,9 +23,9 @@
 | sentinel-02-bench-hse8 | 2 | 0 | 7 | 9 | PA5 TT_ha (CN7.10) |
 | sentinel-02-bench | 2 | 0 | 6 | 8 | PA5 TT_ha (CN7.10) |
 | sentinel-02-own | 4 | 0 | 0 | 4 | - |
-| sentinel-02-power | 2 | 0 | 0 | 2 | - |
+| sentinel-02-power | 2 | 0 | 0 | 3 | - |
 | sentinel-02-shaped | 10 | 0 | 0 | 10 | - |
-| sentinel-03 | 16 | 19 | 0 | 19 | BOOT0 B (J2.2); BOOT0 B (TP24); NRST RST (J2.3); NRST RST (TP25); PE9 TT_ha (J5.1); PE9 TT_ha (TP19) |
+| sentinel-03 | 16 | 19 | 0 | 20 | BOOT0 B (J2.2); BOOT0 B (TP24); NRST RST (J2.3); NRST RST (TP25); PE9 TT_ha (J5.1); PE9 TT_ha (TP19) |
 | serial-dshot-9600 | 8 | 0 | 0 | 8 | - |
 | serial-four | 12 | 0 | 0 | 12 | - |
 | solve-infeasible-shared | 2 | 0 | 0 | 2 | - |
@@ -34,4 +34,4 @@
 | solve-thrash-pins | 2 | 0 | 0 | 2 | - |
 | spi-only | 2 | 0 | 0 | 2 | - |
 | two-bme | 2 | 0 | 0 | 2 | - |
-| **total** | 167 | 53 | 14 | 200 | |
+| **total** | 167 | 53 | 14 | 202 | |

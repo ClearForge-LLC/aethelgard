@@ -1,25 +1,25 @@
-board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	rails_on_end	far_end	source
-sentinel-01-bench	J1.1	connector	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J1.2	connector	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J1.3	connector_other	None	-	-	nc	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J1.4	connector_other	GND	-	-	GND	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J2.2	connector	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J2.3	connector	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J2.6	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
-sentinel-01-bench	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J3.2	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J3.3	connector_other	None	-	-	nc	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	J3.4	connector_other	GND	-	-	GND	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
-sentinel-01-bench	TP1	test_point	I2C_SDA	PB7	FT_fa	I2C1_SDA AF4	solver	bidir_od	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP2	test_point	I2C_SCL	PB6	FT_f	I2C1_SCL AF4	solver	bidir_od	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP3	test_point	SPI_SCK	PA5	TT_ha	SPI1_SCK AF5	solver	out	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP4	test_point	SPI_MOSI	PA7	TT_a	SPI1_MOSI AF5	solver	out	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP5	test_point	SPI_MISO	PA6	FT_a	SPI1_MISO AF5	solver	in	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP6	test_point	FLASH_CS	PA0	FT_a	GPIO output	solver	out	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP7	test_point	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP8	test_point	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP11	test_point	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	-	a probe, when attached	test_points[]
-sentinel-01-bench	TP12	test_point	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	-	a probe, when attached	test_points[]
+board	end	class	net	pin	structure	signal	hand	mcu_dir	reset_pull	fw_pull	rails_on_end	far_end	source
+sentinel-01-bench	J1.1	connector	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J1.2	connector	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	none	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J1.3	connector_other	None	-	-	nc	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J1.4	connector_other	GND	-	-	GND	-	-	-	-	-	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J2.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J2.2	connector	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J2.3	connector	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J2.4	connector	SWDIO	PA13	FT	SWDIO (AF0 from reset)	fixed	bidir	up	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J2.5	connector	SWCLK	PA14	FT	SWCLK (AF0 from reset)	fixed	in	down	none	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J2.6	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM06B-SRSS-TB; offboard null
+sentinel-01-bench	J3.1	connector_other	VDD_3V3	-	-	rail	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J3.2	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J3.3	connector_other	None	-	-	nc	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	J3.4	connector_other	GND	-	-	GND	-	-	-	-	VDD_3V3	no standard; nothing declared about the far end	connectors[] SM04B-GHS-TB; offboard null
+sentinel-01-bench	TP1	test_point	I2C_SDA	PB7	FT_fa	I2C1_SDA AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP2	test_point	I2C_SCL	PB6	FT_f	I2C1_SCL AF4	solver	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP3	test_point	SPI_SCK	PA5	TT_ha	SPI1_SCK AF5	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP4	test_point	SPI_MOSI	PA7	TT_a	SPI1_MOSI AF5	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP5	test_point	SPI_MISO	PA6	FT_a	SPI1_MISO AF5	solver	in	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP6	test_point	FLASH_CS	PA0	FT_a	GPIO output	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP7	test_point	CONSOLE_TX	PA9	FT_u	USART1_TX AF7	solver	out	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP8	test_point	CONSOLE_RX	PA10	FT_u	USART1_RX AF7	solver	in	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP11	test_point	NRST	NRST	RST	NRST (RST, bidirectional, embedded weak pull-up)	fixed	bidir_od	none	none	-	a probe, when attached	test_points[]
+sentinel-01-bench	TP12	test_point	BOOT0	BOOT0	B	BOOT0 (B)	fixed	in	none	none	-	a probe, when attached	test_points[]

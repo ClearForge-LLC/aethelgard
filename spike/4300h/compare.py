@@ -25,7 +25,7 @@ def main(here, pp_path, text_path, visual_path):
         n = b["name"]
         w1 = {}
         for r in tsv(os.path.join(here, "out/facing", n + ".tsv")):
-            if r["class"] in ("connector", "test_point"):
+            if r["class"] in ("connector", "test_point", "power_input"):
                 w1[(r["end"], r["pin"])] = r
                 pins_seen.add(r["pin"])
         if b["emit"] != "0":
@@ -35,16 +35,20 @@ def main(here, pp_path, text_path, visual_path):
             continue
         w2 = {}
         for r in tsv(os.path.join(here, "out/inward", n + ".tsv")):
-            if r["class"] in ("direct", "series", "ic_bridge"):
+            # a VBAT end reaches its pins through the divider: walk 1's `power_input`, keyed by reference
+            vbat = r["class"] == "via_rail" and r["end_net"] == "VBAT"
+            if r["class"] in ("direct", "series", "ic_bridge") or vbat:
                 end = r["end"][:-2] if r["end"].startswith("TP") and r["end"].endswith(".1") else r["end"]
+                end = end.split(".")[0] if vbat else end
                 w2.setdefault((end, r["pin"]), []).append(r)
                 if r["pin"] != "-":
                     pins_seen.add(r["pin"])
         for k in sorted(set(w1) | set(w2)):
             a, z = w1.get(k), w2.get(k, [])
             zc = ",".join(sorted({r["class"] + " " + r["structure"] for r in z})) or "-"
-            if a and z and all(r["class"] == "direct" for r in z):
-                v = "agree" if all(r["structure"] == a["structure"] for r in z) else "structure differs"
+            if a and z and all(r["class"] != "ic_bridge" for r in z):
+                v = ("agree" if all(r["class"] == "direct" for r in z) else "agree (through a series part)") \
+                    if all(r["structure"] == a["structure"] for r in z) else "structure differs"
             elif z and all(r["class"] == "ic_bridge" for r in z):
                 v = "ic_bridge: walk 2 only, read by hand"
             elif a and not z:

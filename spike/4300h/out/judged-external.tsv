@@ -83,6 +83,34 @@ c-required	ds009-plus5	connectors	J2.3	EXT_MOSI	PB15	FT_u	refused OffBoardDriveU
 c-required	ds009-plus5	connectors	J2.4	EXT_MISO	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	connectors	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	connectors	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J1.2	I2C_SCL	PB6	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J1.3	I2C_SDA	PB7	FT_fa	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J2.2	EXT_SCK	PA12	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J2.3	EXT_MOSI	PB15	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J2.4	EXT_MISO	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	connectors	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	connectors	J1.2	I2C_SCL	PB6	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J1.3	I2C_SDA	PB7	FT_fa	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J2.2	EXT_SCK	PA12	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J2.3	EXT_MOSI	PB15	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J2.4	EXT_MISO	PB14	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J3.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	connectors	J3.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J1.2	I2C_SCL	PB6	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J1.3	I2C_SDA	PB7	FT_fa	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J2.2	EXT_SCK	PA12	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J2.3	EXT_MOSI	PB15	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J2.4	EXT_MISO	PB14	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J3.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	connectors	J3.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	connectors	J1.2	I2C_SCL	PB6	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J1.3	I2C_SDA	PB7	FT_fa	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J2.2	EXT_SCK	PA12	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J2.3	EXT_MOSI	PB15	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J2.4	EXT_MISO	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	connectors	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	connectors	J1.2	I2C_SCL	PB6	FT_f	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	connectors	J1.3	I2C_SDA	PB7	FT_fa	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	connectors	J2.2	EXT_SCK	PA12	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -163,6 +191,14 @@ c-declared	ds009-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	d1-24-i2c	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d1-24-i2c	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d1-24-i2c	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d1-24-i2c	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	d1-24-i2c	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -203,6 +239,14 @@ c-declared	ds009-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	named: no drive bound
 c-declared	ds009-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d3-24-i2c-12-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	d3-24-i2c-12-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -315,6 +359,38 @@ c-required	ds009-plus5	driver-judges-nothing	J4.1	HB_IN1	PA8	FT_fha	refused OffB
 c-required	ds009-plus5	driver-judges-nothing	J4.2	HB_IN2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	driver-judges-nothing	J4.3	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	driver-judges-nothing	J4.4	SERVO2	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J4.1	HB_IN1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J4.2	HB_IN2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J4.3	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	driver-judges-nothing	J4.4	SERVO2	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	driver-judges-nothing	J1.1	CMD_TX	PB14	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J1.2	CMD_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J4.1	HB_IN1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J4.2	HB_IN2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J4.3	SERVO1	PA0	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	driver-judges-nothing	J4.4	SERVO2	PA1	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J1.1	CMD_TX	PB14	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J1.2	CMD_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J4.1	HB_IN1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J4.2	HB_IN2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J4.3	SERVO1	PA0	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	driver-judges-nothing	J4.4	SERVO2	PA1	FT_ha	named: no drive bound	-
+c-required	j5-3v3-plus5	driver-judges-nothing	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J4.1	HB_IN1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J4.2	HB_IN2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J4.3	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	driver-judges-nothing	J4.4	SERVO2	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	driver-judges-nothing	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	driver-judges-nothing	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	driver-judges-nothing	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
@@ -403,6 +479,14 @@ c-declared	ds009-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	named: no drive bound
 c-declared	ds009-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	four-layer-power	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	four-layer-power	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	four-layer-power	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	four-layer-power	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	four-layer-power	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -443,6 +527,14 @@ c-declared	ds009-plus5	four-layer	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	four-layer	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	four-layer	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	four-layer	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	four-layer	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	four-layer	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	four-layer	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	four-layer	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	four-layer	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	four-layer	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	four-layer	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	four-layer	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	four-layer	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	four-layer	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	four-layer	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -579,6 +671,46 @@ c-required	ds009-plus5	hse-crystal-16	J4.2	MAVLINK_TX	PA2	FT_a	pass	3465 mV (hyp
 c-required	ds009-plus5	hse-crystal-16	J4.3	MAVLINK_RX	PA3	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	hse-crystal-16	J5.2	CRSF_TX	PB10	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	hse-crystal-16	J5.3	CRSF_RX	PB11	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-required	j5-3v3-plus5	hse-crystal-16	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J3.3	MOTOR3	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J3.4	MOTOR4	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-crystal-16	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	hse-crystal-16	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J3.3	MOTOR3	PA0	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J3.4	MOTOR4	PA1	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-crystal-16	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J3.3	MOTOR3	PA0	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J3.4	MOTOR4	PA1	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-crystal-16	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-required	j5-3v3-plus5	hse-crystal-16	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J3.3	MOTOR3	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J3.4	MOTOR4	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-crystal-16	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	hse-crystal-16	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	hse-crystal-16	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	hse-crystal-16	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
@@ -792,6 +924,50 @@ c-required	ds009-plus5	hse-external-8	J4.3	MAVLINK_RX	PA3	FT_ha	pass	3465 mV (hy
 c-required	ds009-plus5	hse-external-8	J5.2	CRSF_TX	PB10	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	hse-external-8	J5.3	CRSF_RX	PB11	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	hse-external-8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+b-required	j5-3v3-plus5	hse-external-8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J3.3	MOTOR3	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J3.4	MOTOR4	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	hse-external-8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+b-declared	j5-3v3-plus5	hse-external-8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J3.3	MOTOR3	PA0	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J3.4	MOTOR4	PA1	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	hse-external-8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+c-declared	j5-3v3-plus5	hse-external-8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J3.3	MOTOR3	PA0	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J3.4	MOTOR4	PA1	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	hse-external-8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+c-required	j5-3v3-plus5	hse-external-8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J3.3	MOTOR3	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J3.4	MOTOR4	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	hse-external-8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
 b-required	j5-5v-esc	hse-external-8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	hse-external-8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	hse-external-8	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
@@ -904,6 +1080,14 @@ c-declared	ds009-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	imu-baro-1v8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	imu-baro-1v8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	imu-baro-1v8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	imu-baro-1v8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	imu-baro-1v8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -968,6 +1152,22 @@ c-required	ds009-plus5	logger-4600	J1.1	READOUT_TX	PA9	FT_u	refused OffBoardDriv
 c-required	ds009-plus5	logger-4600	J1.2	READOUT_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	logger-4600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	logger-4600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	logger-4600	J1.1	READOUT_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	logger-4600	J1.2	READOUT_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	logger-4600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	logger-4600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	logger-4600	J1.1	READOUT_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	logger-4600	J1.2	READOUT_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	logger-4600	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	logger-4600	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	logger-4600	J1.1	READOUT_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	logger-4600	J1.2	READOUT_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	logger-4600	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	logger-4600	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	logger-4600	J1.1	READOUT_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	logger-4600	J1.2	READOUT_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	logger-4600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	logger-4600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	logger-4600	J1.1	READOUT_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	logger-4600	J1.2	READOUT_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	logger-4600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
@@ -1072,6 +1272,30 @@ c-required	ds009-plus5	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDri
 c-required	ds009-plus5	motors-dshot600	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	motors-dshot600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	motors-dshot600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-dshot600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	motors-dshot600	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-dshot600	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-dshot600	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-dshot600	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-dshot600	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-dshot600	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	motors-dshot600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-dshot600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-dshot600	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-dshot600	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-dshot600	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-dshot600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-dshot600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-dshot600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -1192,6 +1416,30 @@ c-required	ds009-plus5	motors-pwm	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUnd
 c-required	ds009-plus5	motors-pwm	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	motors-pwm	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	motors-pwm	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	motors-pwm	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	motors-pwm	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-pwm	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-pwm	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-pwm	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-pwm	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	motors-pwm	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	motors-pwm	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	motors-pwm	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-pwm	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-pwm	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-pwm	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-pwm	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	motors-pwm	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-pwm	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-pwm	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	motors-pwm	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -1264,6 +1512,14 @@ c-declared	ds009-plus5	pair-standin	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	pair-standin	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	pair-standin	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	pair-standin	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	pair-standin	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	pair-standin	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	pair-standin	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	pair-standin	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	pair-standin	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	pair-standin	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	pair-standin	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	pair-standin	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	pair-standin	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	pair-standin	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	pair-standin	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -1474,6 +1730,70 @@ c-required	ds009-plus5	sentinel-01-bench	TP7	CONSOLE_TX	PA9	FT_u	named: a test p
 c-required	ds009-plus5	sentinel-01-bench	TP8	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01-bench	TP11	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01-bench	TP12	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-bench	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP3	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP4	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP5	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP6	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP7	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP8	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP11	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-bench	TP12	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J2.3	NRST	NRST	RST	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP3	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP4	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP5	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP6	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP7	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP8	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP11	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-bench	TP12	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J2.3	NRST	NRST	RST	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP3	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP4	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP5	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP6	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP7	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP8	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP11	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-bench	TP12	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-bench	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP3	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP4	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP5	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP6	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP7	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP8	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP11	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-bench	TP12	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
 b-required	j5-5v-esc	sentinel-01-bench	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-bench	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-bench	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -1650,6 +1970,22 @@ c-required	ds009-plus5	sentinel-02-own	J1.4	SWDIO	PA13	FT	refused OffBoardDriveU
 c-required	ds009-plus5	sentinel-02-own	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-02-own	J2.3	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-own	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-own	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-own	J2.3	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	sentinel-02-own	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-own	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-own	J2.3	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-own	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-own	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-own	J2.3	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-required	j5-3v3-plus5	sentinel-02-own	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-own	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-own	J2.3	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-own	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-own	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-own	J2.2	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -1802,6 +2138,46 @@ c-required	ds009-plus5	sentinel-02-shaped	J4.2	MAVLINK_TX	PA2	FT_a	pass	3465 mV 
 c-required	ds009-plus5	sentinel-02-shaped	J4.3	MAVLINK_RX	PA3	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
 c-required	ds009-plus5	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-required	j5-3v3-plus5	sentinel-02-shaped	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J3.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J3.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J3.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J3.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J3.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J3.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J3.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J3.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J4.2	MAVLINK_TX	PA2	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J4.3	MAVLINK_RX	PA3	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-required	j5-3v3-plus5	sentinel-02-shaped	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J3.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J3.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J3.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J4.2	MAVLINK_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J4.3	MAVLINK_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-shaped	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-shaped	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-shaped	J3.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
@@ -1884,6 +2260,7 @@ c-required	probe-vtref	sentinel-02-shaped	J5.2	CRSF_TX	PB10	FT_f	refused OffBoar
 c-required	probe-vtref	sentinel-02-shaped	J5.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
 a	-	sentinel-03	J5.1	MOTOR1	PE9	TT_ha	refused OffBoardPinNotFt	hand PE9: no field states why
 a	-	sentinel-03	TP19	MOTOR1	PE9	TT_ha	refused OffBoardPinNotFt	hand PE9: no field states why
+a	-	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connector or test point (a sees none)	power_input
 b-required	none	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -1919,6 +2296,7 @@ b-required	none	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connec
 b-required	none	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-required	none	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-required	none	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	none	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	none	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 b-declared	none	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 b-declared	none	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -1954,6 +2332,7 @@ b-declared	none	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connec
 b-declared	none	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-declared	none	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-declared	none	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	none	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	none	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared	none	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared	none	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -1989,6 +2368,7 @@ c-declared	none	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connec
 c-declared	none	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared	none	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared	none	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	none	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	none	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	none	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	none	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2024,6 +2404,7 @@ c-required	none	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connec
 c-required	none	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	none	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-required	none	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	none	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	ds009-nominal	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-nominal	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-nominal	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2059,6 +2440,7 @@ b-required	ds009-nominal	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has 
 b-required	ds009-nominal	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-required	ds009-nominal	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-required	ds009-nominal	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	ds009-nominal	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	ds009-nominal	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 b-declared	ds009-nominal	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 b-declared	ds009-nominal	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2094,6 +2476,7 @@ b-declared	ds009-nominal	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has 
 b-declared	ds009-nominal	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-declared	ds009-nominal	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-declared	ds009-nominal	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	ds009-nominal	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	ds009-nominal	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared	ds009-nominal	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared	ds009-nominal	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2129,6 +2512,7 @@ c-declared	ds009-nominal	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has 
 c-declared	ds009-nominal	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared	ds009-nominal	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared	ds009-nominal	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	ds009-nominal	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	ds009-nominal	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-nominal	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-nominal	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2164,6 +2548,7 @@ c-required	ds009-nominal	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has 
 c-required	ds009-nominal	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-nominal	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-nominal	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	ds009-nominal	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	ds009-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2199,6 +2584,7 @@ b-required	ds009-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 b-required	ds009-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-required	ds009-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-required	ds009-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	ds009-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	ds009-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 b-declared	ds009-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 b-declared	ds009-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2234,6 +2620,7 @@ b-declared	ds009-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 b-declared	ds009-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-declared	ds009-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-declared	ds009-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	ds009-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	ds009-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared	ds009-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared	ds009-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2269,6 +2656,7 @@ c-declared	ds009-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 c-declared	ds009-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared	ds009-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared	ds009-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	ds009-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	ds009-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2304,6 +2692,151 @@ c-required	ds009-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 c-required	ds009-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	ds009-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+b-required	j5-3v3-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J5.1	MOTOR1	PE9	TT_ha	refused OffBoardDriveAboveTolerance	3465 mV (hypothetical) > 3435 mV, TT_ha at VDD 3135 mV (Table 13)
+b-required	j5-3v3-plus5	sentinel-03	J5.2	MOTOR2	PE11	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-required	j5-3v3-plus5	sentinel-03	J5.3	MOTOR3	PE13	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-required	j5-3v3-plus5	sentinel-03	J5.4	MOTOR4	PE14	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-required	j5-3v3-plus5	sentinel-03	J6.2	CRSF_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J6.3	CRSF_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J7.2	MAVLINK_TX	PC10	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J7.3	MAVLINK_RX	PC11	FT_h	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J8.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	J8.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-03	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP3	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP4	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP11	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP13	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP14	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP15	CRSF_TX	PA2	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP16	CRSF_RX	PA3	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP17	MAVLINK_TX	PC10	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP18	MAVLINK_RX	PC11	FT_h	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP19	MOTOR1	PE9	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP20	MOTOR2	PE11	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP21	MOTOR3	PE13	FT_h	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP22	MOTOR4	PE14	FT_h	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+b-declared	j5-3v3-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J2.3	NRST	NRST	RST	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J5.1	MOTOR1	PE9	TT_ha	refused OffBoardDriveAboveTolerance	3465 mV (hypothetical) > 3435 mV, TT_ha at VDD 3135 mV (Table 13)
+b-declared	j5-3v3-plus5	sentinel-03	J5.2	MOTOR2	PE11	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-declared	j5-3v3-plus5	sentinel-03	J5.3	MOTOR3	PE13	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-declared	j5-3v3-plus5	sentinel-03	J5.4	MOTOR4	PE14	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+b-declared	j5-3v3-plus5	sentinel-03	J6.2	CRSF_TX	PA2	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J6.3	CRSF_RX	PA3	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J7.2	MAVLINK_TX	PC10	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J7.3	MAVLINK_RX	PC11	FT_h	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J8.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J8.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP3	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP4	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP11	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP13	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP14	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP15	CRSF_TX	PA2	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP16	CRSF_RX	PA3	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP17	MAVLINK_TX	PC10	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP18	MAVLINK_RX	PC11	FT_h	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP19	MOTOR1	PE9	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP20	MOTOR2	PE11	FT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP21	MOTOR3	PE13	FT_h	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP22	MOTOR4	PE14	FT_h	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+c-declared	j5-3v3-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J2.3	NRST	NRST	RST	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J5.1	MOTOR1	PE9	TT_ha	refused OffBoardDriveAboveTolerance	3465 mV (hypothetical) > 3435 mV, TT_ha at VDD 3135 mV (Table 13)
+c-declared	j5-3v3-plus5	sentinel-03	J5.2	MOTOR2	PE11	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared	j5-3v3-plus5	sentinel-03	J5.3	MOTOR3	PE13	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared	j5-3v3-plus5	sentinel-03	J5.4	MOTOR4	PE14	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared	j5-3v3-plus5	sentinel-03	J6.2	CRSF_TX	PA2	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J6.3	CRSF_RX	PA3	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J7.2	MAVLINK_TX	PC10	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J7.3	MAVLINK_RX	PC11	FT_h	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J8.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J8.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP3	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP4	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP11	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP13	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP14	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP15	CRSF_TX	PA2	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP16	CRSF_RX	PA3	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP17	MAVLINK_TX	PC10	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP18	MAVLINK_RX	PC11	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP19	MOTOR1	PE9	TT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP20	MOTOR2	PE11	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP21	MOTOR3	PE13	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP22	MOTOR4	PE14	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+c-required	j5-3v3-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J5.1	MOTOR1	PE9	TT_ha	refused OffBoardDriveAboveTolerance	3465 mV (hypothetical) > 3435 mV, TT_ha at VDD 3135 mV (Table 13)
+c-required	j5-3v3-plus5	sentinel-03	J5.2	MOTOR2	PE11	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-required	j5-3v3-plus5	sentinel-03	J5.3	MOTOR3	PE13	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-required	j5-3v3-plus5	sentinel-03	J5.4	MOTOR4	PE14	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-required	j5-3v3-plus5	sentinel-03	J6.2	CRSF_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J6.3	CRSF_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J7.2	MAVLINK_TX	PC10	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J7.3	MAVLINK_RX	PC11	FT_h	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J8.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	J8.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-03	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP3	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP4	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP11	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP13	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP14	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP15	CRSF_TX	PA2	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP16	CRSF_RX	PA3	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP17	MAVLINK_TX	PC10	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP18	MAVLINK_RX	PC11	FT_h	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP19	MOTOR1	PE9	TT_ha	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP20	MOTOR2	PE11	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP21	MOTOR3	PE13	FT_h	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP22	MOTOR4	PE14	FT_h	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	j5-5v-esc	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2340,6 +2873,7 @@ b-required	j5-5v-esc	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no c
 b-required	j5-5v-esc	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-required	j5-5v-esc	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-required	j5-5v-esc	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	j5-5v-esc	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	j5-5v-esc	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 b-declared	j5-5v-esc	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 b-declared	j5-5v-esc	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2376,6 +2910,7 @@ b-declared	j5-5v-esc	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no c
 b-declared	j5-5v-esc	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-declared	j5-5v-esc	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-declared	j5-5v-esc	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-5v-esc	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	j5-5v-esc	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared	j5-5v-esc	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared	j5-5v-esc	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2412,6 +2947,7 @@ c-declared	j5-5v-esc	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no c
 c-declared	j5-5v-esc	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared	j5-5v-esc	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared	j5-5v-esc	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-5v-esc	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	j5-5v-esc	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	j5-5v-esc	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	j5-5v-esc	sentinel-03	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -2448,6 +2984,7 @@ c-required	j5-5v-esc	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no c
 c-required	j5-5v-esc	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	j5-5v-esc	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-required	j5-5v-esc	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-5v-esc	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	probe-vtref	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	probe-vtref	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	probe-vtref	sentinel-03	J2.2	BOOT0	BOOT0	B	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
@@ -2483,6 +3020,7 @@ b-required	probe-vtref	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 b-required	probe-vtref	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-required	probe-vtref	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-required	probe-vtref	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-required	probe-vtref	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	probe-vtref	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 b-declared	probe-vtref	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 b-declared	probe-vtref	sentinel-03	J2.2	BOOT0	BOOT0	B	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
@@ -2518,6 +3056,7 @@ b-declared	probe-vtref	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 b-declared	probe-vtref	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 b-declared	probe-vtref	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 b-declared	probe-vtref	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+b-declared	probe-vtref	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	probe-vtref	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared	probe-vtref	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared	probe-vtref	sentinel-03	J2.2	BOOT0	BOOT0	B	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
@@ -2553,6 +3092,7 @@ c-declared	probe-vtref	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 c-declared	probe-vtref	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared	probe-vtref	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared	probe-vtref	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	probe-vtref	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	probe-vtref	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	probe-vtref	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	probe-vtref	sentinel-03	J2.2	BOOT0	BOOT0	B	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
@@ -2588,6 +3128,7 @@ c-required	probe-vtref	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no
 c-required	probe-vtref	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-required	probe-vtref	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-required	probe-vtref	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-required	probe-vtref	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared(MOTOR1 on PA8)	none	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	none	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	none	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2623,6 +3164,7 @@ c-declared(MOTOR1 on PA8)	none	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test poin
 c-declared(MOTOR1 on PA8)	none	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	none	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	none	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	none	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2658,6 +3200,7 @@ c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	TP24	BOOT0	BOOT0	B	named: a 
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	ds009-nominal	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2693,6 +3236,43 @@ c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a te
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	ds009-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J2.3	NRST	NRST	RST	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J5.1	MOTOR1	PA8	FT_fha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J5.2	MOTOR2	PE11	FT_ha	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J5.3	MOTOR3	PE13	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J5.4	MOTOR4	PE14	FT_h	pass	3465 mV (hypothetical) <= 5499 mV up, 4000 mV at 0
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J6.2	CRSF_TX	PA2	FT_a	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J6.3	CRSF_RX	PA3	FT_ha	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J7.2	MAVLINK_TX	PC10	FT_ha	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J7.3	MAVLINK_RX	PC11	FT_h	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J8.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J8.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP1	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP2	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP3	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP4	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP11	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP13	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP14	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP15	CRSF_TX	PA2	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP16	CRSF_RX	PA3	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP17	MAVLINK_TX	PC10	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP18	MAVLINK_RX	PC11	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP19	MOTOR1	PA8	FT_fha	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP20	MOTOR2	PE11	FT_ha	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP21	MOTOR3	PE13	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP22	MOTOR4	PE14	FT_h	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-3v3-plus5	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
@@ -2728,6 +3308,7 @@ c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	TP24	BOOT0	BOOT0	B	named: a test
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	j5-5v-esc	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	J2.2	BOOT0	BOOT0	B	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
@@ -2763,6 +3344,7 @@ c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	TP24	BOOT0	BOOT0	B	named: a te
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	TP25	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	TP26	SWDIO	PA13	FT	named: a test point has no connectors[] pin to bound	-
 c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	TP27	SWCLK	PA14	FT	named: a test point has no connectors[] pin to bound	-
+c-declared(MOTOR1 on PA8)	probe-vtref	sentinel-03	J4	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	none	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -2859,6 +3441,38 @@ c-required	ds009-plus5	serial-dshot-9600	J2.1	CONSOLE_TX	PB14	FT_u	refused OffBo
 c-required	ds009-plus5	serial-dshot-9600	J2.2	CONSOLE_RX	PB15	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	serial-dshot-9600	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	serial-dshot-9600	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J2.1	CONSOLE_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J2.2	CONSOLE_RX	PB15	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-dshot-9600	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J2.1	CONSOLE_TX	PB14	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J2.2	CONSOLE_RX	PB15	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J3.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-dshot-9600	J3.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J1.4	MOTOR4	PA11	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J2.1	CONSOLE_TX	PB14	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J2.2	CONSOLE_RX	PB15	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J3.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-dshot-9600	J3.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J1.4	MOTOR4	PA11	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J2.1	CONSOLE_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J2.2	CONSOLE_RX	PB15	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J3.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-dshot-9600	J3.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-dshot-9600	J1.1	MOTOR1	PA8	FT_fha	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-dshot-9600	J1.2	MOTOR2	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-dshot-9600	J1.3	MOTOR3	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -3067,6 +3681,54 @@ c-required	ds009-plus5	serial-four	J4.1	SBUS_TX	PA0	FT_a	refused OffBoardDriveUn
 c-required	ds009-plus5	serial-four	J4.2	SBUS_RX	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	serial-four	J5.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	serial-four	J5.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J1.2	MAVLINK_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J1.3	MAVLINK_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J2.2	GPS_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J2.3	GPS_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J2.4	I2C_SCL	PB6	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J2.5	I2C_SDA	PB7	FT_fa	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J3.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J3.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J4.1	SBUS_TX	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J4.2	SBUS_RX	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J5.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	serial-four	J5.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	serial-four	J1.2	MAVLINK_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J1.3	MAVLINK_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J2.2	GPS_TX	PA2	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J2.3	GPS_RX	PA3	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J2.4	I2C_SCL	PB6	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J2.5	I2C_SDA	PB7	FT_fa	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J3.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J3.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J4.1	SBUS_TX	PA0	FT_a	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J4.2	SBUS_RX	PA1	FT_ha	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J5.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	serial-four	J5.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J1.2	MAVLINK_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J1.3	MAVLINK_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J2.2	GPS_TX	PA2	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J2.3	GPS_RX	PA3	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J2.4	I2C_SCL	PB6	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J2.5	I2C_SDA	PB7	FT_fa	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J3.2	CRSF_TX	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J3.3	CRSF_RX	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J4.1	SBUS_TX	PA0	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J4.2	SBUS_RX	PA1	FT_ha	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J5.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	serial-four	J5.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	serial-four	J1.2	MAVLINK_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J1.3	MAVLINK_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J2.2	GPS_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J2.3	GPS_RX	PA3	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J2.4	I2C_SCL	PB6	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J2.5	I2C_SDA	PB7	FT_fa	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J3.2	CRSF_TX	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J3.3	CRSF_RX	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J4.1	SBUS_TX	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J4.2	SBUS_RX	PA1	FT_ha	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J5.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	serial-four	J5.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-four	J1.2	MAVLINK_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-four	J1.3	MAVLINK_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	serial-four	J2.2	GPS_TX	PA2	FT_a	refused OffBoardDriveUndeclared	no drive bound
@@ -3187,6 +3849,14 @@ c-declared	ds009-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	named: no driv
 c-declared	ds009-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-infeasible-shared	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	solve-infeasible-shared	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3227,6 +3897,14 @@ c-declared	ds009-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	named: no drive b
 c-declared	ds009-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-pigeonhole-spi	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	solve-pigeonhole-spi	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3267,6 +3945,14 @@ c-declared	ds009-plus5	solve-stress	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	solve-stress	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	solve-stress	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	solve-stress	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-stress	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-stress	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	solve-stress	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	solve-stress	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-stress	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-stress	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	solve-stress	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	solve-stress	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-stress	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-stress	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	solve-stress	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3307,6 +3993,14 @@ c-declared	ds009-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	named: no drive boun
 c-declared	ds009-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	solve-thrash-pins	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	solve-thrash-pins	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-thrash-pins	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	solve-thrash-pins	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	solve-thrash-pins	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3347,6 +4041,14 @@ c-declared	ds009-plus5	spi-only	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	spi-only	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	spi-only	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	spi-only	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	spi-only	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	spi-only	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	spi-only	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	spi-only	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	spi-only	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	spi-only	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	spi-only	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	spi-only	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	spi-only	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	spi-only	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	spi-only	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3387,6 +4089,14 @@ c-declared	ds009-plus5	two-bme	J1.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	two-bme	J1.5	SWCLK	PA14	FT	named: no drive bound	-
 c-required	ds009-plus5	two-bme	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	two-bme	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	two-bme	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	two-bme	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	two-bme	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	two-bme	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	two-bme	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	two-bme	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	two-bme	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	two-bme	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	two-bme	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	two-bme	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-declared	j5-5v-esc	two-bme	J1.4	SWDIO	PA13	FT	named: no drive bound	-
@@ -3463,6 +4173,26 @@ c-required	ds009-plus5	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUnd
 c-required	ds009-plus5	d1-drv8876	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	d1-drv8876	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	d1-drv8876	J4.1	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-drv8876	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-drv8876	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-drv8876	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d1-drv8876	J4.1	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	d1-drv8876	J1.1	CMD_TX	PB14	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	d1-drv8876	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d1-drv8876	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d1-drv8876	J4.1	SERVO1	PA0	FT_a	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-drv8876	J1.1	CMD_TX	PB14	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-drv8876	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-drv8876	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d1-drv8876	J4.1	SERVO1	PA0	FT_a	named: no drive bound	-
+c-required	j5-3v3-plus5	d1-drv8876	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d1-drv8876	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d1-drv8876	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d1-drv8876	J4.1	SERVO1	PA0	FT_a	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d1-drv8876	J1.1	CMD_TX	PB14	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d1-drv8876	J1.2	CMD_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d1-drv8876	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
@@ -3506,146 +4236,199 @@ c-required	probe-vtref	d1-drv8876	J4.1	SERVO1	PA0	FT_a	refused OffBoardDriveUnde
 a	-	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	validate or solve refuses this board
 a	-	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	validate or solve refuses this board
 a	-	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	validate or solve refuses this board
-b-required	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+b-required	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-required	none	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-b-required	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-declared	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-b-declared	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-required	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-declared	none	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	none	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-b-declared	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-declared	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-c-declared	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-declared	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-declared	none	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	none	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-c-declared	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-required	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-c-required	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-declared	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	none	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	none	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-required	none	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	none	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-c-required	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-required	none	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-required	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-required	ds009-nominal	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-nominal	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-declared	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-b-declared	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-required	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-declared	ds009-nominal	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	ds009-nominal	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-b-declared	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-declared	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-c-declared	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-declared	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-declared	ds009-nominal	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-nominal	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-c-declared	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-required	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-c-required	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-declared	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	ds009-nominal	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	ds009-nominal	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-required	ds009-nominal	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-nominal	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-c-required	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-required	ds009-nominal	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-required	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-required	ds009-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-b-required	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-declared	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-b-declared	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-required	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-declared	ds009-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	ds009-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-b-declared	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-declared	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-c-declared	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-declared	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-declared	ds009-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-c-declared	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-required	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-c-required	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-declared	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	ds009-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	ds009-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-required	ds009-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-c-required	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-required	ds009-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-required	j5-3v3-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	j5-3v3-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
+b-required	j5-3v3-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	j5-3v3-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	j5-3v3-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
+b-declared	j5-3v3-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	j5-3v3-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	j5-3v3-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
+c-declared	j5-3v3-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	j5-3v3-plus5	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	j5-3v3-plus5	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
+c-required	j5-3v3-plus5	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-required	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-required	j5-5v-esc	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-b-required	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-declared	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-b-declared	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-required	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-declared	j5-5v-esc	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	j5-5v-esc	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-b-declared	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-declared	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-c-declared	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-declared	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-declared	j5-5v-esc	d2-drv8833	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	j5-5v-esc	d2-drv8833	J2.5	SWCLK	PA14	FT	named: no drive bound	-
-c-declared	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-required	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-c-required	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-declared	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	j5-5v-esc	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	j5-5v-esc	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-required	j5-5v-esc	d2-drv8833	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	j5-5v-esc	d2-drv8833	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
-c-required	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-required	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-5v-esc	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-required	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-required	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-required	probe-vtref	d2-drv8833	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 b-required	probe-vtref	d2-drv8833	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
-b-required	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-b-declared	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-b-declared	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-required	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+b-declared	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+b-declared	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 b-declared	probe-vtref	d2-drv8833	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 b-declared	probe-vtref	d2-drv8833	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
-b-declared	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-declared	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: no drive bound	-
-c-declared	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: no drive bound	-
+b-declared	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-declared	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-declared	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-declared	probe-vtref	d2-drv8833	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 c-declared	probe-vtref	d2-drv8833	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
-c-declared	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: no drive bound	-
-c-required	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
-c-required	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-declared	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+c-required	probe-vtref	d2-drv8833	J1.1	CMD_TX	unsolved	unheld	named: unsolved	-
+c-required	probe-vtref	d2-drv8833	J1.2	CMD_RX	unsolved	unheld	named: unsolved	-
 c-required	probe-vtref	d2-drv8833	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 c-required	probe-vtref	d2-drv8833	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
-c-required	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	refused OffBoardDriveUndeclared	no drive bound
+c-required	probe-vtref	d2-drv8833	J4.1	SERVO1	unsolved	unheld	named: unsolved	-
+a	-	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connector or test point (a sees none)	power_input
 b-required	none	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	none	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	none	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	none	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	none	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	none	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	none	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	none	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	none	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	none	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	none	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	none	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	ds009-nominal	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-nominal	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	ds009-nominal	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	ds009-nominal	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	ds009-nominal	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	ds009-nominal	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	ds009-nominal	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-nominal	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	ds009-nominal	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	ds009-nominal	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-nominal	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	ds009-nominal	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	ds009-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	ds009-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	ds009-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	ds009-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	ds009-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	ds009-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	ds009-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	ds009-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	ds009-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	ds009-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	ds009-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+b-required	j5-3v3-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+b-declared	j5-3v3-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+c-declared	j5-3v3-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
+c-required	j5-3v3-plus5	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	j5-5v-esc	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-5v-esc	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	j5-5v-esc	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 b-declared	j5-5v-esc	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-5v-esc	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	j5-5v-esc	sentinel-02-power	J2.4	SWDIO	PA13	FT	named: no drive bound	-
 c-declared	j5-5v-esc	sentinel-02-power	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-5v-esc	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	j5-5v-esc	sentinel-02-power	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	j5-5v-esc	sentinel-02-power	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-5v-esc	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-required	probe-vtref	sentinel-02-power	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 b-required	probe-vtref	sentinel-02-power	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
+b-required	probe-vtref	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 b-declared	probe-vtref	sentinel-02-power	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 b-declared	probe-vtref	sentinel-02-power	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
+b-declared	probe-vtref	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-declared	probe-vtref	sentinel-02-power	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 c-declared	probe-vtref	sentinel-02-power	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
+c-declared	probe-vtref	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 c-required	probe-vtref	sentinel-02-power	J2.4	SWDIO	PA13	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
 c-required	probe-vtref	sentinel-02-power	J2.5	SWCLK	PA14	FT	pass	tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0
+c-required	probe-vtref	sentinel-02-power	J1	VBAT_SENSE	PF3	FT_ha	named: not a connectors[] pin	power_input
 a	-	sentinel-01-ext-bmp581	TP9	SPI_MOSI	PB5	FT	moved to PB5	FT; segments 824->829, vias 156->159, pcb d67e959cb6de->4e50c30400be
 a	-	sentinel-01-ext-bmp581	TP10	SPI_SCK	PB3	FT	moved to PB3	FT; segments 824->829, vias 156->159, pcb d67e959cb6de->4e50c30400be
 b-required	none	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
@@ -3888,6 +4671,86 @@ c-required	ds009-plus5	sentinel-01-ext-bmp581	TP11	EXT_SCL	PB10	FT_f	named: a te
 c-required	ds009-plus5	sentinel-01-ext-bmp581	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01-ext-bmp581	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01-ext-bmp581	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP9	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP10	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.3	NRST	NRST	RST	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP9	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP10	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.3	NRST	NRST	RST	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP9	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP10	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01-ext-bmp581	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	J4.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP9	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP10	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01-ext-bmp581	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
 b-required	j5-5v-esc	sentinel-01-ext-bmp581	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-ext-bmp581	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-ext-bmp581	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -4096,6 +4959,22 @@ c-required	ds009-plus5	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	refused OffB
 c-required	ds009-plus5	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 c-required	ds009-plus5	sentinel-01-minimal	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01-minimal	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-declared	j5-3v3-plus5	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01-minimal	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01-minimal	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-required	j5-3v3-plus5	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01-minimal	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-minimal	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-minimal	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01-minimal	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
@@ -4370,6 +5249,86 @@ c-required	ds009-plus5	sentinel-01	TP11	EXT_SCL	PB10	FT_f	named: a test point ha
 c-required	ds009-plus5	sentinel-01	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
 c-required	ds009-plus5	sentinel-01	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J4.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	J4.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-01	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP9	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP10	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-required	j5-3v3-plus5	sentinel-01	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J2.3	NRST	NRST	RST	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J4.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	J4.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP9	SPI_MOSI	PA7	TT_a	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP10	SPI_SCK	PA5	TT_ha	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+b-declared	j5-3v3-plus5	sentinel-01	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J1.1	CONSOLE_TX	PA9	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J1.2	CONSOLE_RX	PA10	FT_u	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J2.2	BOOT0	BOOT0	B	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J2.3	NRST	NRST	RST	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J2.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J2.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J4.2	EXT_SCL	PB10	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	J4.3	EXT_SDA	PB11	FT_f	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP9	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP10	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-declared	j5-3v3-plus5	sentinel-01	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J2.3	NRST	NRST	RST	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J2.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J2.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J4.2	EXT_SCL	PB10	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	J4.3	EXT_SDA	PB11	FT_f	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-01	TP2	BOOT0	BOOT0	B	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP3	NRST	NRST	RST	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP5	CONSOLE_RX	PA10	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP6	CONSOLE_TX	PA9	FT_u	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP7	FLASH_CS	PA0	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP8	SPI_MISO	PA6	FT_a	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP9	SPI_MOSI	PB5	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP10	SPI_SCK	PB3	FT	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP11	EXT_SCL	PB10	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP12	EXT_SDA	PB11	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP13	I2C_SCL	PB6	FT_f	named: a test point has no connectors[] pin to bound	-
+c-required	j5-3v3-plus5	sentinel-01	TP14	I2C_SDA	PB7	FT_fa	named: a test point has no connectors[] pin to bound	-
 b-required	j5-5v-esc	sentinel-01	J1.1	CONSOLE_TX	PA9	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01	J1.2	CONSOLE_RX	PA10	FT_u	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-01	J2.2	BOOT0	BOOT0	B	refused OffBoardDriveUndeclared	no drive bound
@@ -4645,6 +5604,42 @@ c-required	ds009-plus5	sentinel-02-bench-hse8	CN7.12	IMU_MISO	PA6	FT_a	named: no
 c-required	ds009-plus5	sentinel-02-bench-hse8	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
 c-required	ds009-plus5	sentinel-02-bench-hse8	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
 c-required	ds009-plus5	sentinel-02-bench-hse8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench-hse8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench-hse8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench-hse8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench-hse8	mcu.hse.external	HSE_IN	PH0	FT	named: not a connectors[] pin	foreign_clock
 b-required	j5-5v-esc	sentinel-02-bench-hse8	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-bench-hse8	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-bench-hse8	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
@@ -4819,6 +5814,38 @@ c-required	ds009-plus5	sentinel-02-bench	CN7.10	IMU_SCK	PA5	TT_ha	named: not a c
 c-required	ds009-plus5	sentinel-02-bench	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
 c-required	ds009-plus5	sentinel-02-bench	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
 c-required	ds009-plus5	sentinel-02-bench	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-bench	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+b-required	j5-3v3-plus5	sentinel-02-bench	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+b-required	j5-3v3-plus5	sentinel-02-bench	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-bench	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+b-declared	j5-3v3-plus5	sentinel-02-bench	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	J1.4	SWDIO	PA13	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-bench	J1.5	SWCLK	PA14	FT	named: no drive bound	-
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+c-declared	j5-3v3-plus5	sentinel-02-bench	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-bench	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
+c-required	j5-3v3-plus5	sentinel-02-bench	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	CN10.16	I2C_SDA	PB7	FT_fa	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	CN7.10	IMU_SCK	PA5	TT_ha	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	CN7.12	IMU_MISO	PA6	FT_a	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	CN7.14	IMU_MOSI	PB5	FT	named: not a connectors[] pin	undeclared_offboard
+c-required	j5-3v3-plus5	sentinel-02-bench	CN7.16	IMU_CS	PD14	FT_h	named: not a connectors[] pin	undeclared_offboard
 b-required	j5-5v-esc	sentinel-02-bench	J1.4	SWDIO	PA13	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-bench	J1.5	SWCLK	PA14	FT	refused OffBoardDriveUndeclared	no drive bound
 b-required	j5-5v-esc	sentinel-02-bench	CN10.14	I2C_SCL	PB6	FT_f	named: not a connectors[] pin	undeclared_offboard

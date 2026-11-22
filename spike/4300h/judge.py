@@ -1,11 +1,13 @@
 """AET-WO-4300h: the options (a), (b), (c) as rules (RULES.md), run on walk 1's rows.
 
-usage: python3 -I judge.py <spike/4300h dir> <repo root> -> out/options.tsv, out/judged.tsv, stdout summary
+usage: python3 -I judge.py <spike/4300h dir> <repo root> <internal|external>
+       -> out/options-<branch>.tsv, out/judged-<branch>.tsv, stdout summary
+`internal`: the motor pulls as the engine writes them (PR #161 Q-G);
+`external`: the fork in which a motor line's pull is an external resistor, so
+the pin holds no internal pull after the first GPIO init.
 """
 import json
 import os
-
-RESET_PULL = {"PA13", "PA14", "PA15", "PB4"}  # RM0433 Rev 9 p. 542; A1's MCU_RESET_PULL_UPS/_DOWNS
 
 
 def tsv(path):
@@ -19,8 +21,9 @@ def vdd_min(spec):
     return d["nominal_millivolts"] * (1000 - min(d["tolerance_permille"], 1000)) // 1000
 
 
-def limit_up(structure, pin, vdd):
-    """Table 13 p. 105 with VDD at mcu.supply's minimum; None where no row is held."""
+def limit_up(structure, pulled, vdd):
+    """Table 13 p. 105 with VDD at mcu.supply's minimum; None where no row is held.
+    `pulled`: the pin holds an internal pull (note 3: VDD + 0.3 V)."""
     if structure.startswith("TT"):
         lim = vdd + 300
     elif structure.startswith("FT"):
@@ -31,7 +34,7 @@ def limit_up(structure, pin, vdd):
         return vdd + 300  # embedded pull-up, note 3
     else:
         return None
-    return min(lim, vdd + 300) if pin in RESET_PULL else lim
+    return min(lim, vdd + 300) if pulled else lim
 
 
 def limit_zero(structure):
@@ -39,16 +42,12 @@ def limit_zero(structure):
     return 9000 if structure == "B" else 4000
 
 
-def main(here, root):
+def main(here, root, branch):
     boards = tsv(os.path.join(here, "out/boards.tsv"))
     alts = tsv(os.path.join(here, "out/alts.tsv"))
     moves = tsv(os.path.join(here, "out/moves.tsv"))
     drive = tsv(os.path.join(here, "sidecars/drive.tsv"))
-    io = {}
-    for p in json.load(open(os.path.join(root, "crates/aethelgard-ir/data/power-parts.json")))["parts"]:
-        if p.get("kind", {}).get("mcu"):
-            io = p["kind"]["mcu"]["io"]["pins"]
-    st = lambda pin: io.get(pin, {}).get("structure", "unheld")
+    pa8 = next(a["cand_structure"] for a in alts if a["candidate"] == "PA8")
     scenarios = ["none"] + sorted({d["scenario"] for d in drive})
     judged = [["option", "scenario", "board", "end", "net", "pin", "structure", "verdict", "detail"]]
     tally = {}
@@ -117,6 +116,9 @@ def main(here, root):
             if r["class"] != "connector":
                 note(opt, sc, b, r, "named: not a connectors[] pin", r["class"])
                 continue
+            if r["pin"] == "unsolved" or vdd is None:  # adversarial F10: named before any bound
+                note(opt, sc, b, r, "named: unsolved", "-")
+                continue
             d = bound.get((b, r["end"]))
             if not d:
                 if required:
@@ -131,13 +133,15 @@ def main(here, root):
                 note(opt, sc, b, r, "pass", "tracks mcu.supply: same-rail, as A1's exemption; 0 V at VDD = 0")
                 continue
             v = int(d["drive_max_millivolts"])
-            up, zero = limit_up(r["structure"], r["pin"], vdd), limit_zero(r["structure"])
+            fw = r["fw_pull"] != "none" and not (branch == "external" and r["signal"].startswith("TIM"))
+            pulled = r["reset_pull"] != "none" or fw
+            up, zero = limit_up(r["structure"], pulled, vdd), limit_zero(r["structure"])
             why = f"{v} mV ({d['kind']})"
             if up is None:
                 note(opt, sc, b, r, "named: no held structure", why)
             elif v > up:
                 note(opt, sc, b, r, "refused OffBoardDriveAboveTolerance",
-                     f"{why} > {up} mV, {r['structure']} at VDD {vdd} mV (Table 13)")
+                     f"{why} > {up} mV, {r['structure']}{' with an internal pull (note 3)' if pulled else ''} at VDD {vdd} mV (Table 13)")
             if v > zero:
                 note(opt, sc, b, r, "refused OffBoardDriveAboveLimitUnpowered", f"{why} > {zero} mV at VDD = 0 (Table 10)")
             if up is not None and v <= up and v <= zero:
@@ -159,7 +163,7 @@ def main(here, root):
             option_b("c-declared", b, moved, spec, sc, False)
             option_b("c-required", b, moved, spec, sc, True)
         if b == "sentinel-03":  # the ruling's build: MOTOR1 on PA8
-            after = [dict(r, pin="PA8", structure=st("PA8"), hand="hand PA8") if r["net"] == "MOTOR1" else r
+            after = [dict(r, pin="PA8", structure=pa8, hand="hand PA8") if r["net"] == "MOTOR1" else r
                      for r in rows]
             for sc in scenarios:
                 option_b("c-declared(MOTOR1 on PA8)", b, after, spec, sc, False)
@@ -172,10 +176,10 @@ def main(here, root):
                 t["moved"] |= a["moved"]
                 for k, v in a["kinds"].items():
                     t["kinds"][k] = t["kinds"].get(k, 0) + v
-    with open(os.path.join(here, "out/judged.tsv"), "w") as f:
+    with open(os.path.join(here, f"out/judged-{branch}.tsv"), "w") as f:
         for r in judged:
             f.write("\t".join(r) + "\n")
-    with open(os.path.join(here, "out/options.tsv"), "w") as f:
+    with open(os.path.join(here, f"out/options-{branch}.tsv"), "w") as f:
         f.write("option\tscenario\tboards_refused\tboards_moved\trows_refused_by_kind\trows_named\trefused\n")
         for (opt, sc), t in sorted(tally.items()):
             line = "\t".join([opt, sc, str(len(t["refused"])), str(len(t["moved"])),
@@ -187,4 +191,4 @@ def main(here, root):
 
 if __name__ == "__main__":
     import sys
-    main(sys.argv[1], sys.argv[2])
+    main(sys.argv[1], sys.argv[2], sys.argv[3])

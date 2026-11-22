@@ -9,7 +9,16 @@ GND or a net no MCU pin carries as `connector_other` (so no pin is silently
 dropped). A test point on an MCU net is `test_point`. Two further classes are
 not `connectors[]` or `test_points[]` at all, and no option of the work order
 sees them: `undeclared_offboard` (a sidecar row: the bench's header wiring) and
-`foreign_clock` (`mcu.hse.external` onto PH0).
+`foreign_clock` (`mcu.hse.external` onto PH0). `power_input` (the battery
+connector `power.input` draws, adversarial F2) is listed for each sense net it
+reaches through a divider's top resistor. A test point on a rail or GND is not
+listed (walk 2 lists it).
+
+`fw_pull` is the internal pull the solved topology implies after the first GPIO
+init, by `aethelgard-ir` `silicon::implied_pupd`'s definition (adversarial F1):
+a motor output pulls down, or up for a declared idle level high; a GPIO input
+takes its declared pull; every other pin none. `reset_pull` is the pull from
+reset to that write (RM0433 Rev 9 p. 542).
 
 The structure is DS12117 Rev 10 Table 8's, as `power-parts.json` holds it
 (`kind.mcu.io.pins`, `1211e`); NRST is `RST` and BOOT0 is `B` (Table 8 rows
@@ -20,7 +29,7 @@ import json
 import sys
 
 HEADER = ["board", "end", "class", "net", "pin", "structure", "signal", "hand", "mcu_dir",
-          "reset_pull", "rails_on_end", "far_end", "source"]
+          "reset_pull", "fw_pull", "rails_on_end", "far_end", "source"]
 
 # RM0433 Rev 9 p. 542: GPIOA_PUPDR resets to 0x6400 0000 (PA15 up, PA14 down,
 # PA13 up), GPIOB_PUPDR to 0x0000 0100 (PB4 up); every other pin resets with
@@ -87,8 +96,14 @@ def main(spec_path, solve_path, pp_path, undeclared_path, board):
         declared(x["net"], None)
 
     # the solved pin and signal of every MCU net
-    pin_of, sig_of, dir_of = {}, {}, {}
+    pin_of, sig_of, dir_of, pull_of = {}, {}, {}, {}
     if t:
+        for k, m in t.get("motor_outputs", {}).items():
+            idle = ((m.get("pwm") or {}).get("idle") or {})
+            pull_of[k] = "up" if isinstance(idle, dict) and idle.get("level") == "high" else "down"
+        for k, g in t.get("gpio", {}).items():
+            if g["direction"] == "input" and g.get("pull") in ("up", "down"):
+                pull_of[k] = g["pull"]
         for k, v in t.get("assignments", {}).items():
             pin_of[k], sig_of[k] = v["pin"], f"{v['signal']} AF{v['alternate_function']}"
             dir_of[k] = direction(v["signal"])
@@ -120,7 +135,7 @@ def main(spec_path, solve_path, pp_path, undeclared_path, board):
         hd = "fixed" if net in dict((f[0], 1) for f in FIXED) and net not in hand else (
             f"hand {h}" if h else ("solver" if net in hand else "-"))
         rows.append([board, end, cls, net, pin, structure(pin) if pin != "-" else "-", sig_of.get(net, "-"), hd,
-                     dir_of.get(net, "-"), RESET_PULL.get(pin, "none"), rails, far, src])
+                     dir_of.get(net, "-"), RESET_PULL.get(pin, "none"), pull_of.get(net, "none"), rails, far, src])
 
     for c in s.get("connectors", []) or []:
         rails = sorted({p["net"] for p in c["pins"] if p["net"] in doms or p["net"] == "VBAT"})
@@ -137,11 +152,19 @@ def main(spec_path, solve_path, pp_path, undeclared_path, board):
                 add(end, "connector", net, ",".join(rails) or "-", far, src)
             else:
                 what = "nc" if net is None else ("GND" if net == "GND" else ("rail" if net in rails else "other"))
-                rows.append([board, end, "connector_other", str(net), "-", "-", what, "-", "-", "-",
+                rows.append([board, end, "connector_other", str(net), "-", "-", what, "-", "-", "-", "-",
                              ",".join(rails) or "-", far, src])
     for tp in s.get("test_points", []) or []:
         if tp["net"] in pin_of:
             add(tp["reference"], "test_point", tp["net"], "-", "a probe, when attached", "test_points[]")
+    pin_input = (s.get("power") or {}).get("input")
+    if pin_input:
+        b = s["power"]["battery"]
+        for i, x in enumerate(s["power"].get("sense", [])):
+            add(pin_input["reference"], "power_input", x["net"], "battery",
+                f"the pack, {b['cells']['max']} x {b['cell_max_millivolts']['value']} mV, through "
+                f"{x['top']['reference']} {x['top']['ohms']} ohm (1216: 2536 mV on the pin)",
+                f"power.input {pin_input['part']}; power.sense[{i}]")
     for line in open(undeclared_path):
         f = line.rstrip("\n").split("\t")
         if f[0] == board:
