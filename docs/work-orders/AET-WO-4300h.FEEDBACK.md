@@ -8,7 +8,13 @@
 **First, the finding that changes the work order's premise (adversarial F1, confirmed first-hand):**
 - **Every motor output carries an internal pull-down once the firmware's first GPIO init has run.** It is written by both generators, by the ruling on PR #161 Q-G (`silicon::motor_output_pupd`). The generated Sentinel-03 crate writes GPIOE `PUPDR` = `0x28880000`, a pull-down on PE9, PE11, PE13 and PE14, and never clears it.
 - **DS12117 Table 13 note 3** (p. 105): above VDD + 0.3 V "the internal Pull-up and Pull-Down resistors must be disabled". So **with the firmware running, every motor pin takes 3435 mV, whether FT or TT.**
-- **Moving MOTOR1 from PE9 (TT) to PA8 (FT) changes its powered limit only from reset to that first write.** `1216` F1's row ("connector-facing signals on FT pins") does not protect J5 while the pull stays internal.
+- **Moving MOTOR1 from PE9 (TT) to PA8 (FT) therefore changes its powered limit only while no pull is written:**
+  - from reset to the first GPIO init;
+  - a blank board before its first flash;
+  - NRST held by a probe;
+  - BOOT0 high (whether the ROM bootloader writes a pull is not stated).
+
+  With the generated firmware running, `1216` F1's row ("connector-facing signals on FT pins") does not protect J5 while the pull stays internal.
 
 **The answer, in six lines:**
 - **Every off-board end on the 34 committed boards is listed:** 236 rows on 33 boards (`spike/4300h/out/facing/`, `out/summary.md`). The two walks agree on 192 of 192 rows on the 25 drawn boards.
@@ -35,11 +41,10 @@
   | the same peer, pull external | PE9 alone; **0 after the PA8 re-pin** | — |
 
 - **Lean:**
-  - **The pull policy comes first (D0):** move the motor pull-down to an external resistor.
-  - **Then (a) at connectors,** with MOTOR1 re-pinned to PA8.
-  - **If the pull stays internal:** no re-pin is worth its cost now, and J5 is answered by (b) when its peer is declared.
+  - **(a) at connectors,** with MOTOR1 re-pinned to PA8, whichever way D0 goes. It costs one pin on a board with no `fab/` output. It buys FT in every unpulled state, which includes bring-up: a blank board, and NRST held by a probe.
+  - **D0, the motor pull:** move it to an external resistor, so that FT also holds with the firmware running. The cheap alternative is to clear the pull at `start_outputs`.
   - **Test points:** named, not moved (D2).
-  - **(b):** deferred to the first work order that declares a peer with a held page.
+  - **(b):** deferred to the first work order that declares a peer with a held page. Under the internal pull, it is the only option that judges J5 in operation.
 
 ## 0. How it was made
 
@@ -90,7 +95,7 @@ Its one home is `spike/4300h/RESULTS.md` §1: the run, the reconciliation, the n
 - **Whole-set moves:** no other timer has four free FT channels off `3400`'s kept-free pins.
   - TIM3 and TIM8 need PC9 (MCO2) for CH4.
   - TIM12, TIM13 and TIM14 are free to the solver. Whether DShot's DMA can run on them is unverified (adversarial F7).
-- **Under either pull, the moved pins stay internally pulled while the pull is internal:** GPIOA `PUPDR` holds PA8's pull-down, and GPIOD holds the four TIM4 pins' (the reviewer's generated variants).
+- **The moved pins are pulled like PE9 under the internal pull:** generated from the moved copies, GPIOA `PUPDR` holds PA8's pull-down, and GPIOD the four TIM4 pins' (the reviewer's generated variants).
 - **What a Sentinel-03 re-pin moves:** its fixture, and the tier-2 tests and scenarios that read it. It has no committed `fab/` or `boards/` output.
 
 **PA5/PA7 on the `sentinel-01` family (SPI1):**
@@ -114,9 +119,21 @@ The rules are in `spike/4300h/RULES.md` and `judge.py`. They were committed befo
 
 ### D0 first: the motor-pull fork (PR #161 Q-G)
 
+The motor pin's state decides its powered limit:
+- **unpulled:** its structure decides (FT 5499 mV, TT 3435 mV);
+- **pulled:** 3435 mV either way.
+
+The pin is unpulled from reset to the first GPIO init, which includes a blank board before its first flash, NRST held by a probe, and BOOT0 high (no held page states whether the ROM bootloader writes a pull). Table 7: "all I/Os are set as floating inputs during and after reset"; RM0433 p. 542 resets PORTE's `PUPDR` to 0. In every such state, the `external` columns below are also the `internal` branch's limits.
+
 - **`internal` (the engine as it is):**
-  - every motor line is held to 3435 mV powered, on any pin;
-  - the pull holds the line low only from the first GPIO init. From reset to then, the pin floats (Table 7: "all I/Os are set as floating inputs during and after reset"; RM0433 p. 542 resets PORTE's `PUPDR` to 0).
+  - every motor line is held to 3435 mV from the first GPIO init on, on any pin;
+  - the pull holds the line low only from that init.
+- **`cleared` (the pull written at init, cleared at `start_outputs`; firmware only):**
+  - from `start_outputs` on, the timer drives the line push-pull and no pull is held, so FT holds in operation;
+  - the init-to-`start_outputs` span stays at 3435 mV;
+  - nothing holds the line before init, as today.
+  - **Cost:** the generator's `start_outputs` writes `PUPDR`, plus the oracle and goldens that read it. The ArduPilot hwdef keeps `PULLDOWN` unless it changes too. Q-G is narrowed, not reversed.
+  - Not run here: no `judge.py` branch, because its limits in operation equal `external`'s.
 - **`external` (a declared resistor instead, no internal pull):**
   - an FT motor pin takes 5499 mV powered;
   - the line is held low from power-up, not from the first init;
@@ -134,7 +151,7 @@ The rules are in `spike/4300h/RULES.md` and `judge.py`. They were committed befo
 - **Moves 3 / 34**, the `sentinel-01` family's test points to PB3/PB5. All three solve; two need their acknowledgement re-written, and the third moves a fabrication package.
 - **Restricted to connectors:** refuses the same 1 and moves **0**.
 - **What it buys:**
-  - **`internal`:** nothing on J5 with the firmware running. A 3.3 V +5 % peer declared on J5 is refused on all four pins with MOTOR1 on PE9 or on PA8. It buys only the reset-to-init window on MOTOR1, and the powered limit of the floating test points if they move.
+  - **`internal`:** nothing on J5 with the firmware running. A 3.3 V +5 % peer declared on J5 is refused on all four pins with MOTOR1 on PE9 or on PA8. It buys FT on MOTOR1 in every unpulled state (blank board, NRST held, reset to init), and the powered limit of the floating test points if they move.
   - **`external`:** the powered case on J5 for any peer up to 5.5 V. The same 3.3 V +5 % peer is refused on PE9 alone, and on nothing after the PA8 re-pin.
 - **What it cannot judge:**
   - anything at VDD = 0, where FT and TT are equal;
@@ -184,21 +201,24 @@ The rules are in `spike/4300h/RULES.md` and `judge.py`. They were committed befo
 
 ## 4. The lean
 
-**Lean: D0 `external` first; then (a) at connectors with no escape field, and MOTOR1 re-pinned to PA8; test points named, not moved; (b) deferred to the first work order that declares a peer with a held page. If D0 stays `internal`: no re-pin now, and J5 is answered by (b) when its peer is declared.**
+**Lean: (a) at connectors with no escape field, and MOTOR1 re-pinned to PA8, whichever way D0 goes; D0 `external` (`cleared` as the cheap alternative); test points named, not moved; (b) deferred to the first work order that declares a peer with a held page.**
 
 **Reasons:**
-- **D0 `external`:** it is the only branch in which a pin's structure protects J5 with the firmware running, which is what `1216` F1's row asks for.
-  - It also does what Q-G's pull-down was for, holding the motor line low, from power-up instead of from the first GPIO init.
-  - It costs a cross-cutting build (§3 D0), and it reverses a ruling. Under `internal`, a "3.3 V" peer at +5 % is already over the pin on paper.
-- **(a) at connectors, given `external`:**
+- **(a) at connectors, under any pull:**
   - It changes the one named defect and needs no new field.
-  - The 3.3 V +5 % peer then clears on PA8. A 5 V peer clears powered, and only hardware clears it unpowered.
+  - The re-pin costs one pin on a board with no `fab/` or `boards/` output.
+  - It gives MOTOR1 FT in every unpulled state, and those include bring-up: a blank board, and NRST held by a probe.
+  - Under `external` or `cleared`, it also gives FT in operation. The 3.3 V +5 % peer then clears on PA8, and a 5 V peer clears powered. Only hardware clears a 5 V peer unpowered.
+- **D0 `external`:** it is the only branch in which FT holds at every moment from power-up.
+  - It also does what Q-G's pull-down was for, holding the motor line low, from power-up instead of from the first GPIO init.
+  - It costs a cross-cutting build (§3 D0), and it reverses a ruling.
+  - **`cleared`** gets FT in operation for a firmware change alone. It leaves the init-to-`start_outputs` span at 3435 mV, and nothing holds the line before init.
+  - **Under `internal`,** a "3.3 V" peer at +5 % is over a pulled pin on paper, and J5 in operation is answered only by (b).
 - **No escape field:** no committed board needs one.
 - **PA8 over TIM4:**
   - **PA8** moves one pin: same timer, channel, AF, timing and DMA. It is the solver's own choice everywhere else.
   - **TIM4** moves four pins and the timer.
   - **PA8's price** is MCO1's only pin, which `3400` reserved for E5. MCO2 on PC9 (still free) can output HSE. If E5 needs MCO1 itself (HSI, LSE, HSI48, `pll1_q_ck`), take TIM4 (D3).
-- **Given `internal`, (a) is not worth a re-pin now.** It would refuse Sentinel-03 for a move that changes its powered limit only before the first GPIO init. The J5 question is the peer's level, which only (b) judges.
 - **Test points named, not moved:**
   - a test point's far end is the operator's instrument, and each TT pin found is an MCU output;
   - moving them costs two acknowledgements, two generated crates and the `sentinel-01-bench` fabrication package.
@@ -212,11 +232,11 @@ The rules are in `spike/4300h/RULES.md` and `judge.py`. They were committed befo
 - the battery input under (a)/(b) (`1216b` judges it);
 - NRST and BOOT0;
 - D2's unsolved pins (F5);
-- the reset-to-init window under `internal`.
+- J5 in operation under `internal` (only a declared bound, (b), judges it).
 
 ## 5. Adversarial pass (§5, targeted)
 
-**The reviewer:** an Opus agent given the code, the WO and §5, not my conclusions. Its report and probes are in `~/.cache/aet-4300h/adv/`. Nothing in the worktree was touched.
+**The reviewer:** an Opus agent given the code, the WO and §5, not my conclusions. Its report is `spike/4300h/out/adversarial.md`, and its amended judge's counts are `out/adversarial-options-both.tsv`. Its probes stay in `~/.cache/aet-4300h/adv/`. Nothing in the worktree was touched.
 
 **Reproduction:** `judge.py` and `moves.py` reproduced byte for byte.
 
@@ -262,9 +282,10 @@ The full table is in `RESULTS.md` §5. 13 of 18 hold, and one is incomplete. The
 **Decisions:**
 - **D0 · The motor-line pull** (PR #161 Q-G).
   - **Lean:** an external, declared resistor; no internal pull.
-  - **Alternative:** keep the internal pull-down. J5 is then a ≤ 3435 mV header, powered, on any pin.
+  - **Alternative:** cleared at `start_outputs` (firmware only; the init-to-start span stays at 3435 mV).
+  - **Alternative:** keep the internal pull-down. J5 is then a ≤ 3435 mV header, in operation, on any pin.
 - **D1 · The option.**
-  - **Lean:** given D0 `external`, (a) at connectors; given `internal`, (b) at the work order that declares J5's peer.
+  - **Lean:** (a) at connectors under any D0. Under `internal`, J5 in operation also needs (b) at the work order that declares its peer.
   - **Alternatives:** (a) with test points; (c); b-declared now.
 - **D2 · Test points under (a).**
   - **Lean:** named, not moved.
@@ -304,7 +325,7 @@ The full table is in `RESULTS.md` §5. 13 of 18 hold, and one is incomplete. The
     - `judge.py`'s own `power-parts.json` loader, now PA8's structure from `alts.tsv`.
   - **Prose:** FEEDBACK §1 now cites `RESULTS.md` §1 instead of restating its table.
   - **The proof:** the cuts went in with the F1/F10 corrections, so no pre-cut baseline of the corrected rule exists. Instead:
-    - the corrected `judge.py`'s refusals and moves (columns 1–5 of `options-internal.tsv`, less the new `j5-3v3-plus5` sidecar) equal the reviewer's independently amended judge (`adv/kit/both/options-both.tsv`) line for line;
+    - the corrected `judge.py`'s refusals and moves (columns 1–5 of `options-internal.tsv`, less the new `j5-3v3-plus5` sidecar) equal the reviewer's independently amended judge (`out/adversarial-options-both.tsv`) line for line;
     - a full re-run reproduces every output (`diff -r` empty);
     - `pyflakes` finds nothing unused.
   - **The finding (kept):** the four reset-pull pins are in `facing.py` and `alts.py` both. `alts.py` judges candidate pins walk 1 never lists, so it cannot read them from walk 1.

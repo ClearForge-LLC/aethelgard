@@ -126,7 +126,7 @@ The readers read the CLI's output. Nothing under `spike/4300h/` has a `Cargo.tom
 **With VDD = 0** (Table 10 p. 103): **4.0 V on FT and TT alike**, BOOT0 9.0 V. Note 4 there requires pulls off above 4 V.
 
 So:
-- **A motor output takes 3435 mV with firmware running, whatever its structure.** PE9 → PA8 changes its powered limit only from reset to the first GPIO init.
+- **A motor output takes 3435 mV with firmware running, whatever its structure.** PE9 → PA8 changes its powered limit only while no pull is written: from reset to the first GPIO init, a blank board, NRST held by a probe, and BOOT0 high (whether the ROM bootloader writes a pull is not stated). In those states, the `external` branch's limits are the ones that hold.
 - **A "3.3 V" peer at +5 % (3465 mV) is over 3435 mV by 30 mV** on a TT pin, or on any pulled pin.
 - **An unpulled FT pin takes a 5 V peer powered.** Every pin is over its limit with a 5 V peer unpowered.
 - **Moving a pin from TT to FT changes nothing at VDD = 0.**
