@@ -63,6 +63,7 @@
 # AET-WO-2306: board_tier2's verify_names_what_judged_nothing_on_the_motor_driver is a Furnace estimate, not a run: 73.14 s in the pinned image on Furnace (libtest `finished in`, one verify of the motor driver with its droop), times 2.8 (AET-WO-1310's factor), 204.792; replace it at the next refit.
 # AET-WO-1912 refit (REFIT RULE 1, 2 and 5; WO §1): every row more than 25 % under its worst trustworthy sample, raised to it (37 rows) or added (10 rows of 0.5 s or more). Trustworthy is an alone time: the throwaway alone pass of run 44755810025 (head 1d583f6e, each name in its own invocation on one thread, after the shard's own tests), or a test that was the only one of its binary in a shard on the five green main runs 44747545277, 44747464266, 44735701946, 44735207864, 44732069104 (its binary's `finished in`). A lock or `ok`-less-`Running` time was a candidate only: board_tier2 and twin_tier2 hold their lock per call, not per test. Each row's source run and shard is in AET-WO-1912 FEEDBACK §2. No row was lowered.
 # AET-WO-1913 refit (REFIT RULE 1, 2; WO §1, and the architect's widening on the bus, 2026-11-20 18:09Z): every twin_tier2 and board_tier2 row set to its alone time, lowered (67) or raised (51), one unchanged: the worse of two alone samples on two runners, from the throwaway alone pass of run 44787324803 (head c9ac0298, each name in its own invocation on one thread, after the shard's own tests). This replaces the Furnace estimates and lock-time rows above for those two binaries. Every other row more than 25 % off its worst `solo` sample (the only test of its binary in a shard, over the five green main runs 44775091139, 44774672284, 44774205804, 44768742667, 44764528379 and the throwaway's normal pass) set to it (28 rows, against_fab_tier2's verify_against_fab_finds_the_package_it_wrote_identical 420.7 -> 585.18 among them). Each row's run and job is in AET-WO-1913 FEEDBACK §2.
+# AET-WO-1211b: board_tier2's d1_s_pin_device_generates_builds_and_proves is a Furnace estimate, not a run: 96.19 s in the pinned image on Furnace (libtest `finished in`: D1's build, three harnesses and one seeded proof), times 2.8 (AET-WO-1310's factor), 269.332; replace it at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.61
@@ -110,6 +111,7 @@ tests/board_tier2.rs	a_wrong_alternate_function_fails	29.11
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.58
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	0.72
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.37
+tests/board_tier2.rs	d1_s_pin_device_generates_builds_and_proves	269.332
 tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	139.76
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	270.81
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	42.99

@@ -419,3 +419,60 @@ fn motor_pins_are_pulled_down_from_the_first_port_init() {
         );
     }
 }
+
+/// `AET-WO-1211b` (`1211` §2.4, Q9): a PWM output declared `idle: high` is
+/// written `CCR` = `ARR + 1` (OCxREF held at 1, RM0433 Rev 9 p. 1558) and
+/// pulled up, in the generator and in the oracle, whose word comes from the
+/// declared idle; the other outputs keep their pulled-down pulse.
+#[test]
+fn an_idle_high_output_is_written_arr_plus_one_and_pulled_up() {
+    use aethelgard_ir::motor::{Idle, Level};
+    let (mut solved, table) = fixture("motors-pwm");
+    let (net, arr) = solved
+        .motor_outputs
+        .iter_mut()
+        .find(|(_, m)| m.pwm.is_some())
+        .map(|(net, m)| {
+            m.pwm.as_mut().unwrap().idle = Idle::Level(Level::High);
+            m.ccr = m.arr + 1;
+            (net.clone(), m.arr)
+        })
+        .unwrap();
+    solved.validate().unwrap();
+    let pin = solved.assignments[&net].pin.clone();
+    let (n, k) = aethelgard_ir::motor::timer_channel(&solved.assignments[&net].signal).unwrap();
+    let files = generate_with("motors-board", &solved, &table, &answers).unwrap();
+    let lib = &files["src/board.rs"];
+    let proofs = &files["src/proofs.rs"];
+    let word = format!("{:#010x}); // CCR{k}", arr + 1);
+    assert!(lib.contains(&word), "the generator's CCR{k} for {net}");
+    assert!(
+        proofs.contains(&format!("{:#010x}", arr + 1))
+            && proofs.contains(&format!("\"TIM{n} CCR{k} is not the solved value\"")),
+        "the oracle's CCR{k}"
+    );
+    // The port's whole PUPDR: this pin's field `01`, the others' `10`.
+    let index: u32 = pin[2..].parse().unwrap();
+    let port = &pin[1..2];
+    let pupdr = solved
+        .motor_outputs
+        .keys()
+        .map(|o| &solved.assignments[o].pin)
+        .filter(|p| &p[1..2] == port)
+        .fold(if port == "A" { 0x6400_0000u32 } else { 0 }, |w, p| {
+            let i: u32 = p[2..].parse().unwrap();
+            let pull = if i == index { 0b01 } else { 0b10 };
+            (w & !(0b11 << (2 * i))) | (pull << (2 * i))
+        });
+    let pupdr = format!("{pupdr:#010x}");
+    assert!(
+        lib.contains(&format!(", 0x0c, {pupdr});")),
+        "the generator's PUPDR {pupdr}"
+    );
+    assert!(
+        proofs.contains(&format!(
+            "value == {pupdr}, \"Gpio{port} PUPDR is not the solved word, whole\""
+        )),
+        "the oracle's PUPDR {pupdr}"
+    );
+}

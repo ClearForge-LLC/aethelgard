@@ -1885,3 +1885,61 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         "{v}"
     );
 }
+
+/// `AET-WO-1211b` §1.4: D1 (`AET-WO-1211a`'s DRV8876 fixture: PH/EN on TIM1,
+/// nSLEEP, nFAULT, IPROPI on ADC3) generates, its firmware builds, and the
+/// harnesses of what this work order adds prove: TIM1's part (the bridge's
+/// inputs and its enable after `CEN`), the GPIO part (nFAULT's pull), and
+/// ADC3's bring-up. Then the enable written before TIM1's `CEN` (a seeded
+/// `BSRR` set of PA1, waking nSLEEP, in TIM1's start) fails the image's rule:
+/// the oracle's, not the typestate's.
+#[test]
+fn d1_s_pin_device_generates_builds_and_proves() {
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aethelgard-ir/tests/fixtures/d1-drv8876.json");
+    let (_, files) = generated(&spec, "drv8876-ph-en-board");
+    let dir = std::env::temp_dir().join(format!("aet-1211b-d1-{}", std::process::id()));
+    write_files(&dir, &files);
+    let elf = dir.join("fw.elf");
+    let (v, _) = build(&dir, &elf);
+    assert_eq!(v["verdict"], "pass", "{v}");
+    for harness in [
+        "proofs::every_valid_sequence_tim1",
+        "proofs::every_valid_sequence_gpio",
+        "proofs::adc3_bring_up_is_in_order_and_bounded",
+    ] {
+        let v = prove(harness, &dir, harness, 0);
+        assert_eq!(v["verdict"], "pass", "{v}");
+    }
+    let lib = dir.join("src/board.rs");
+    let text = fs::read_to_string(&lib).unwrap();
+    let cen = "        r.write(TOKEN, Block::Tim1, 0x00, 0x00000081); // CR1";
+    assert_eq!(text.matches(cen).count(), 1);
+    fs::write(
+        &lib,
+        text.replacen(
+            cen,
+            &format!("        r.write(TOKEN, Block::GpioA, 0x18, 0x00000002);\n{cen}"),
+            1,
+        ),
+    )
+    .unwrap();
+    let v = prove(
+        "d1 enable before CEN",
+        &dir,
+        "proofs::every_valid_sequence_tim1",
+        1,
+    );
+    fs::remove_dir_all(&dir).unwrap();
+    assert_eq!(v["verdict"], "fail");
+    let messages: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["message"].as_str().unwrap())
+        .collect();
+    assert!(
+        messages.contains(&"PA1, a bridge's enable, written before its inputs sat at their idle"),
+        "{messages:?}"
+    );
+}

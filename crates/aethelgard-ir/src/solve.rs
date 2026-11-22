@@ -399,6 +399,7 @@ fn solve_inner(
                     d.reference.clone(),
                     crate::pin_devices::SolvedPinDevice {
                         part: d.part.clone(),
+                        bridges: crate::pin_devices::solved_bridges(d),
                     },
                 )
             })
@@ -595,6 +596,7 @@ fn solve_inner(
                     pin: name.to_owned(),
                     peripheral,
                     channel,
+                    bits: None,
                 },
             );
             search.used.insert(name, format!("power.sense {}", s.net));

@@ -78,6 +78,8 @@ fn adc(pin: &str, peripheral: &str, channel: &str) -> SolvedAdcInput {
         pin: pin.into(),
         peripheral: peripheral.into(),
         channel: channel.into(),
+        // Every call is D1's input, declared at 12 bits (`AET-WO-1211b` S1).
+        bits: Some(12),
     }
 }
 
