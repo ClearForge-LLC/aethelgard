@@ -79,7 +79,7 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 17. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 18. `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
@@ -107,8 +107,9 @@ the golden trace's bytes changed in the version byte only. Version 16
 Version 17 (`AET-WO-2305`) added kind 32, a droop's recovery bound read from
 the same boot run first with no reset, and moved kind 19's probe from a fixed
 100 µs to the release, its nudge and that bound; the golden trace's bytes
-changed in the version byte only. An older trace is refused by name
-(`event::TRACE_VERSION`), never read under version 17's rules. The mirror record
+changed in the version byte only. Version 18 (`AET-WO-1211c`) runs a pin
+device in the twin. An older trace is refused by name
+(`event::TRACE_VERSION`), never read under version 18's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -256,7 +257,7 @@ apart from anything generated (`INV-07`):
 
 - Every key is required (but `expect_counts`) and no other is allowed, at
   either level; a duplicate key, a positional array or `null` in a key an
-  override does not use is refused. `schema_version` is 1 to 4, and a file
+  override does not use is refused. `schema_version` is 1 to 5, and a file
   may use only what its version admits (`SchemaViolation` otherwise): version
   2 (`AET-WO-2301`, `AET-WO-4200`) admits `droop`, `spi_device_absent` and
   `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`;

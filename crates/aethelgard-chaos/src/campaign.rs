@@ -27,9 +27,11 @@ use crate::replay::State;
 /// The scenario format versions read: 1 (static scenarios, unchanged); 2,
 /// since `AET-WO-2301`, which admits the `droop` override and `expect_counts`,
 /// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
-/// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override. A
-/// file may use only what its version admits.
-pub const SCENARIO_VERSIONS: [u32; 4] = [1, 2, 3, 4];
+/// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override; 4,
+/// since `AET-WO-2304b`, which also admits `battery_sag` and
+/// `rail_out_of_band`; and 5, since `AET-WO-1211c`, for a pin device's
+/// overrides. A file may use only what its version admits.
+pub const SCENARIO_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
 pub const MAX_OVERRIDES: usize = 32;
