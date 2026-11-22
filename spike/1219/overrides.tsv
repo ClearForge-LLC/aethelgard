@@ -60,3 +60,5 @@ serial:SolvedSerialPort.peripheral	S			serial.rs:201	Reviewer, amendment 3 (as s
 silicon:SpiFinding.peripheral	S			silicon.rs:147	Reviewer, amendment 3: SpiSelect::of maps the instance to its SPI123SEL/SPI45SEL/SPI6SEL select.
 silicon:I2cFinding.peripheral	N			silicon.rs:351	Reviewer, amendment 3: the judge's i2c_kernel_hz treats I2C1-4 alike (reset pclk), so the name is only matched here.
 motor:SolvedForeignClock.usarts	S			lib.rs:1210	Reviewer, amendment 3 (as motor:ForeignClock.usarts): the keys split by USART16SEL / USART234578SEL.
+H:electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS	D			-	Reviewer, amendment 4: the 2.7 V boundary of DS12117's 8 mA VOL row (electrical.rs:53), a held ST figure; lens 1 had it as a UM10204 limit.
+lib:PinAssignment.peripheral	S	?		solve.rs:962	Reviewer, amendment 3, for consistency with its siblings: the value set holds SPI, I2C and USART instances whose numbers select a kernel mux or APB domain; TIMn and others only match. Could be N.

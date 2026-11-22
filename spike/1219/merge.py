@@ -47,7 +47,12 @@ for u in ["K2", "R2", "Hc2"]:
     lens2.update(read(here / "lens2" / (u + ".tsv")))
 over = read(here / "overrides.tsv")
 
+# Where the lenses agree on class and flag, lens 2's row is the one kept:
+# it read each value check, lens 1's rows were partly written by heuristic.
 final = dict(lens1)
+for i, r2 in lens2.items():
+    if (lens1[i][1], lens1[i][2]) == (r2[1], r2[2]):
+        final[i] = r2
 final.update(over)
 
 # Table-level H rows from their columns (RULES §3).

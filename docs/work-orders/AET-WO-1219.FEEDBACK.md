@@ -5,7 +5,11 @@
 - five Sonnet first-lens classifiers, one per unit;
 - two Opus blind second lenses, which were not shown the first lens's answers.
 
-Every worker report was checked at source before use (§6). Written 2026-11-22.
+Every S and N entry, every disagreement between the lenses and every entry lens 2 saw was checked at source before use (§4). What was not:
+- **T** (output types) and the **non-MCU table columns** are single-lens. Lens 1 classed them, and I spot-checked them only.
+- **The H source items** were re-read by me: every non-V item, and every V item whose citation names an ST document.
+
+Written 2026-11-22.
 
 **Status: STOPPED at §7 (after §1.4).** No crate, specification, `fab/`, workflow or `ci/` file changes. The only changes are `spike/1219/` and this file.
 
@@ -14,14 +18,14 @@ Every worker report was checked at source before use (§6). Written 2026-11-22.
 - **The specification itself is barely coupled.** K: **V 291 · N 8 · S 13.** R: **V 248 · N 11 · S 33.**
 - **The depth is in held data and code, not in the schema:**
   - H source items: S 33 of 174;
-  - T output fields: S 67 of 265;
+  - T output fields: S 68 of 265;
   - three of the four held tables are S (`power-parts.json`, `output-speeds.json`, the pin table);
-  - 37 solver and judge functions hold ST facts in literals.
+  - 37 solver and judge functions carry ST vocabulary in string literals: lookup arms and error messages.
 - **The 13 S keys:**
   - under `mcu`: `bor_level`, `core_supply` and `.mode`, `foreign_clock.vos` and `.vos.value`, `foreign_clock.usarts`, and the APB1/APB2 timer clocks;
   - outside it: the I2C, SPI and serial `peripheral` keys, and `acknowledge_unwitnessed[].register` and `.fields`.
 - **The RP2350 column is "not held" in every one of its 227 cells** (every N and S entry, in all five units). No RP2350 datasheet is on the box (§3), and nothing was fetched.
-- **Lean: no S key must change before the epoch.** One schedule question goes to Scotty: whether `mcu`'s ST-only keys move under a part-family tag at the epoch (§5).
+- **Lean: no S key or S refusal kind must change for the engine as it stands.** If the epoch is meant to admit a second vendor without a bump, two keys must change at it: `mcu.bor_level` and `mcu.core_supply`. Both are required in every specification and hold ST value sets. Which of the two applies is Scotty's schedule question (§5).
 
 ## 0. How it was made
 
@@ -76,9 +80,9 @@ From `spike/1219/COUNT.md`:
 |---|---|---|---|---|---|---|
 | K, specification keys | 291 | 8 | 13 | 0 | 3 | 312 |
 | R, refusal kinds | 248 | 11 | 33 | 0 | 7 | 292 |
-| H, held tables (4) and source items (170) | 103 | 6 | 33 | 32 | 2 | 174 |
+| H, held tables (4) and source items (170) | 102 | 6 | 33 | 33 | 2 | 174 |
 | H columns, the three data files and the pin table | 369 | 12 | 9 | 0 | 1 | 390 |
-| T, solved topology and other output types (not counted toward acceptance) | 163 | 35 | 67 | 0 | 19 | 265 |
+| T, solved topology and other output types (not counted toward acceptance) | 163 | 34 | 68 | 0 | 20 | 265 |
 
 - **The four held tables:**
   - `power-parts.json` is **S** for the MCU row's BOR levels and FT/TT structures;
@@ -87,8 +91,9 @@ From `spike/1219/COUNT.md`:
   - `parts.json` is **D**.
 - **Per version.** `COUNT.md` has the K and R tables. Method: a key takes the version of the latest `versions::CHANGES` row naming the longest prefix of its path, a rename's `by` included; a key no row names is version 1.
   - **Checked against every committed versioned file** (`datecheck.py`). No key appears in a file older than its version, and each of the 44 version-1 keys appears in a committed version-1 file. Version 0 is set aside; it never existed.
+  - **The check is one-directional.** It catches a key dated too late, never one dated too early: the committed files sample only versions 1, 16, 17, 19, 20, 23, 24 and 27.
   - **The 13 S keys:** versions 1 (2), 7, 9, 12 (2), 17 (3) and 19 (4). Versions 18 to 27 introduced 4 of them.
-- **The 37 functions** that hold ST facts in literals (amendment 2) are in `out/lookups.md`. They are listed, not classed.
+- **The 37 functions** that carry ST vocabulary in string literals (amendment 2; lookup arms and error messages alike) are in `out/lookups.md`. They are listed, not classed.
   - `is_observer_name` (`lib.rs:3031`) parses a port letter and pin number without a string literal, so the grep misses it. It belongs on that list.
 
 ## 3. The RP2350 column (§7: no datasheet held)
@@ -137,6 +142,7 @@ Every N and S cell reads "not held". The search and its positive control are in 
   - `unique_keys` and `unique_keys_some` refuse duplicate keys.
 
   `CURRENT_OUTPUT_FIELDS` (`pin_parts.rs:616`) guards fields that `RawPin` also declares.
+- **Refusal kinds on the data side.** All 113 kind strings that `crates/aethelgard-ir/tests` assert are R entries. The 11 that only CLI tests assert, and that are not in R, are the CLI's and EDA's own kinds (`ToolMissing`, `SchemaViolation`, …), out of scope.
 - **Mutants of this spike's own guards** (`mutants.sh`), one each, every one killed by its own message:
   - M1: a key planted in the dump;
   - M2: a serde field renamed in a source copy;
@@ -149,6 +155,9 @@ Every N and S cell reads "not held". The search and its positive control are in 
 - **What lens 2 checked.** It re-read, blind, every primitive-typed K key lens 1 had put in V (170), and it grepped each value check.
   - It moved **no K key out of V.** Over all its entries it moved 3 out of V, all flagged: `R:InvalidIdentifier` N?, `R:PowerPartsTableInvalid` S?, and the `RawSupport.pins` column N?.
   - Lens 1's enum-typed V keys that lens 2 did not see (20) I read myself. All are generic: orientation, layer role, PWM idle, dielectric codes, UART parity and roles.
+  - **The 103 V source items had been classed by a script, so I read them myself.** I took the V items whose citation names an ST document (7) and the uncited rest:
+    - one moved: `electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS`, the 2.7 V boundary of DS12117's 8 mA VOL row, is D by amendment 4;
+    - the other six ST-citing items stay V: citation strings (tie-break f), SPI mode 0 (a standard), and a schema version.
 - **The one real miss is instance names.** `i2c_buses[].peripheral` was N? in lens 1 and S in lens 2, and lens 2 was right.
   - `solve.rs:1034` sends `I2C1`–`3` to `I2C123SEL`/pclk1 and `I2C4` to `I2C4SEL`/pclk4.
   - `spi_buses[].peripheral` (`solve.rs:962`) and `serial_ports[].peripheral` (`serial.rs:201`, `vos.rs:291`) do the same by instance number.
@@ -170,40 +179,36 @@ Every N and S cell reads "not held". The search and its positive control are in 
 
 ## 5. The lean
 
-**Lean: no S key must change before the epoch.** The specification's ST coupling is shallow. Its depth sits where a second vendor costs no specification bump:
-- held tables, whose schemas carry their own version;
-- register constants;
-- solver and judge code.
+**Lean.** No S key and no S refusal kind must change for the engine as it stands. If the epoch is meant to admit a second vendor without a bump, two keys must change at it: `mcu.bor_level` and `mcu.core_supply` (with `.mode`). Which of the two holds is a schedule question for Scotty, not a measurement.
 
-### Why nothing has to change
+### Why most of the coupling costs nothing at the epoch
 
-- **The S keys under `mcu`** (8):
-  - `bor_level`;
-  - `core_supply`, `.mode`;
-  - `foreign_clock.vos`, `.vos.value`, `.usarts`;
-  - the APB1/APB2 timer clocks.
+- **The depth lives outside the specification's shape.** It sits in:
+  - the held tables (S 3 of 4), whose schemas carry their own version;
+  - the register constants (S 33 source items);
+  - the solver and judge code (37 functions).
 
-  `mcu` is already the part's own block. A second part is admitted additively: an enum gains a variant, or `mcu.part` selects a different reading. No key an existing file holds is renamed. The engine must then refuse an ST key under a non-ST part. That refusal is a bump (`1215` D4), so it belongs with the second vendor's own bump.
+  A second vendor adds rows or code there, not specification keys.
 - **The S keys outside `mcu`** (5):
   - `i2c_buses[].peripheral`, `spi_buses[].peripheral`, `serial_ports[].peripheral`;
   - `acknowledge_unwitnessed[].register` and `.fields`.
 
-  All are strings whose values come from part data or the twin's ledger. A second vendor adds values, not keys. The instance-to-clock mapping is code (`solve.rs:962`, `:1034`; `serial.rs:201`), not schema.
-- **The N keys:** `hse`, `hse_hz`, `P<port><n>` pin values, ADC `peripheral`/`input`. Renaming any of them costs the same bump before the epoch as after, for a vocabulary no held document can replace. Leave them.
+  These are strings whose values come from part data or the twin's ledger. A second vendor adds values, not keys. The instance-to-clock mapping is code (`solve.rs:962`, `:1034`; `serial.rs:201`).
+- **`mcu.foreign_clock` and its 5 S members** sit under a key that is optional (`board::present`), in 1 of 34 files. A second vendor need never write it.
+- **The 33 S refusal kinds** (PLL, VOS, OSPEEDR, TIMINGR, BRR, AF, BOR, kernel muxes) are ST rules. They need not change, because a second vendor's part would not trigger them; it brings kinds of its own, added with its own bump (`1215` D4).
+- **The 11 N kinds** (eight `Hse*`, `SupplyFloorBelowBorRising`, `McuPinStructureUnheld`, `InvalidIdentifier`) and **the 8 N keys** (`hse`, `hse_hz`, `P<port><n>` pin values, ADC `peripheral`/`input`) are renames at most. A kind string is wire contract (`versions::CHANGES[].rules`, the CLI envelope), so a rename costs the same before the epoch as after, for a vocabulary no held document can replace. Leave them.
 
-### The question for Scotty (a schedule question, not a measurement)
+### The two keys the ruling turns on
 
-**Does `mcu`'s ST-only content move under a part-family tag at the epoch?** For example `mcu.family.stm32h7 { bor_level, core_supply, foreign_clock }`, the externally tagged form `mcu.hse` already uses.
+`mcu.bor_level` (`u8`, 0–3 by `MAX_BOR_LEVEL`, ST's `BOR_LEV` option-byte levels) and `mcu.core_supply` (`.mode` `ldo`/`bypass`, the rows of RM0433 Table 34) are **required in every specification**: `McuWire` gives them no default, and both are in 34 of 34 files.
 
-- **For.** A second vendor then adds a sibling tag, additive under the epoch's rule. And from ST's side alone, none of the three is a quantity in units, so a second vendor's equivalent, if any, would need a different type, which is a bump after the epoch:
-  - `bor_level: u8` holds ST's four `BOR_LEV` option-byte levels;
-  - `core_supply.mode` holds RM0433 Table 34's rows;
-  - `vos` holds ST's four scales.
+- **A second vendor's file would have to write both.** To stop that, a bump must make them conditional on the part. Under the epoch's own rule, an optional key is allowed only when leaving it out makes the engine stricter, so that conditional is a schema change, not an addition.
+- **Neither is a quantity in units.** So a second vendor's brown-out or core supply could not be written in the same type without overloading its meaning. That argument is made from ST's side alone; no RP2350 fact is needed.
+- **The externally tagged form `mcu.hse` already uses would carry them.** For example `mcu.family.stm32h7 { bor_level, core_supply }`. A second vendor then adds a sibling tag, additively. `foreign_clock` could move with them or stay where it is, since it is optional.
 - **Against:**
-  - it renames 8 keys;
-  - every committed specification moves: `bor_level` and `core_supply` are in 34 of 34;
-  - the tag is designed with no second chip held, which is the speculation the work order itself warns against.
-- **What decides it:** whether a second vendor is due before the next bump that cannot be avoided. Tagging at the epoch is cheaper than after it only in that case.
+  - every committed specification moves (34 files);
+  - the tag is designed with no second chip held, the speculation the work order warns against.
+- **What decides it:** if a second vendor is due before the next bump that cannot be avoided, tag the two at the epoch; otherwise leave them, and the second vendor's bump tags them.
 
 ## 6. Predictions beside results
 
@@ -218,7 +223,7 @@ Every N and S cell reads "not held". The search and its positive control are in 
 | P7 | S in `mcu`, clock tree, VOS, speed grades, pin structure, AF | yes, in held data and code. Not predicted: instance names (amendment 3) and the unwitnessed-ledger register names | partial |
 | P8 | over half of the S keys from versions 18–27 | 4 of 13 | miss |
 | P9 | 15–40 unwritten keys; at least one unused value | 16; 28 | hit |
-| P10 | 1–4 S keys must change | 0, plus one schedule question | miss |
+| P10 | 1–4 S keys must change | 0 for the engine as it stands, or 2 (`bor_level`, `core_supply`) if the epoch must admit a second vendor without a bump | partial |
 | P11 | RP2350 all "not held" | all "not held" | known in advance |
 
 ## 7. Decisions and findings for the architect
@@ -227,7 +232,7 @@ Every N and S cell reads "not held". The search and its positive control are in 
 - **D2 · "Every committed specification" is 34, not `versions.rs`'s 30.** The 4 extra are `crates/aethelgard-cli/tests/fixtures/solve/*.json`, at version 27, and they add no new key. `current_specifications()` does not read that subdirectory. Whether it should is a one-line row for a later work order; it is not changed here.
 - **D3 · Amendments 1–4** (RULES §6). Ruling or reversing any of them changes counts as follows:
   - 1 and 4: H only;
-  - 3: 4 K keys (the I2C, SPI and serial `peripheral` keys and `foreign_clock.usarts`), 6 T fields and 2 R kinds.
+  - 3: 4 K keys (the I2C, SPI and serial `peripheral` keys and `foreign_clock.usarts`), 7 T fields and 2 R kinds.
 - **F1 · Held ST facts with no page.** Every source item classed D, S or N was checked for a page; `LIST.md`'s H table has a `cites` column.
   - **Pages found:** 42 by the extractor. The bench, `RCC_D2CCIP1R` and `vos:LIMITS` items were also found to cite through a group comment or a named constant.
   - **Document, but table or section only:**
