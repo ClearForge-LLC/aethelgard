@@ -1,0 +1,12 @@
+M1 drop row 22	killed
+M2 swap rows 21 and 22	killed
+M2b swap rows 2 and 3	killed
+M3 version 0 lists every row	killed
+M4 an older file lists its own row too	killed
+M5 the message lists no row	killed
+M6 a newer file carries entries: []	killed
+M7 the CLI omits entries	killed
+M8 row 18's esc made optional	killed
+M9 row 20 loses its replacement	killed
+M10 a rule the prose does not name	killed
+M11 a path the schema lacks	killed

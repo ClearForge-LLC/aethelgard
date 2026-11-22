@@ -491,6 +491,7 @@ fn a_version_14_file_is_refused_by_its_version() {
             matches!(
                 e,
                 IrValidationError::UnsupportedSchemaVersion {
+                    changes: _,
                     version: 14,
                     expected: 23
                 }

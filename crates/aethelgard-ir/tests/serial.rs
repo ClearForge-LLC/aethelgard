@@ -1580,6 +1580,7 @@ fn a_version_9_specification_is_refused() {
         matches!(
             e,
             IrValidationError::UnsupportedSchemaVersion {
+                changes: _,
                 version: 9,
                 expected: 23
             }
@@ -1609,6 +1610,7 @@ fn a_version_10_specification_is_refused() {
         matches!(
             e,
             IrValidationError::UnsupportedSchemaVersion {
+                changes: _,
                 version: 10,
                 expected: 23
             }
@@ -1636,6 +1638,7 @@ fn a_version_11_specification_is_refused() {
         matches!(
             e,
             IrValidationError::UnsupportedSchemaVersion {
+                changes: _,
                 version: 11,
                 expected: 23
             }

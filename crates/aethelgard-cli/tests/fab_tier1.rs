@@ -568,6 +568,38 @@ fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_on
     }
 }
 
+/// `AET-WO-1215` beside `AET-WO-2307`: the two refusals that carry
+/// `error.entries` print it in one shape, from one command: the same keys in
+/// `error`, and `entries` a non-empty array of objects, each refusal's own
+/// element (D7 as ruled).
+#[test]
+fn both_refusals_with_entries_print_one_shape() {
+    let mut unacknowledged = reference();
+    unacknowledged["acknowledge_unwitnessed"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|a| a["register"] != "GPIOB.OTYPER");
+    let mut older = reference();
+    older["schema_version"] = 20.into();
+    let shape = |v: &Value| {
+        let e = v["error"].as_object().unwrap();
+        let entries = e["entries"].as_array().unwrap();
+        assert!(
+            !entries.is_empty() && entries.iter().all(Value::is_object),
+            "{v}"
+        );
+        e.keys().cloned().collect::<Vec<_>>()
+    };
+    let (code, a, _) = rebased_verify("shape-ack", &unacknowledged, "--fab-out");
+    assert_eq!(code, Some(2), "{a}");
+    assert_eq!(a["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{a}");
+    let (code, b, _) = rebased_verify("shape-version", &older, "--fab-out");
+    assert_eq!(code, Some(2), "{b}");
+    assert_eq!(b["error"]["kind"], "UnsupportedSchemaVersion", "{b}");
+    assert_eq!(shape(&a), ["entries", "id", "kind", "message"]);
+    assert_eq!(shape(&a), shape(&b));
+}
+
 /// R1, a new field in an acknowledged register: the reference with the
 /// 4-layer fixture's acknowledgements, which are the reference's board
 /// without its console port. Every entry is current (none stale), but the
