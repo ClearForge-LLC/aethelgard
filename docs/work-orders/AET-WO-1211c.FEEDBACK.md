@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211c-pin-devices-twin` from `main` `7fc81640`; `main` merged at `3e2b33a7` (`171f2a60`, docs), `b5dd68a9` (`122378c7`, 2307), `48fda6f4` (`cc2cc923`, 4240d and 1319), `ca5a8556` (`bf497733`, 1215) and `494ba793` (`9cb87b4c`, 1211e: specification 24; solved stays 17). **Builder:** Claude (Opus 5.5 orchestrating; three Sonnet readers mapping the twin, the chaos crate and `verify`, one Sonnet builder for the chaos crate's records and overrides, one Opus adversarial reviewer; each report checked at source before use). Written 2026-11-22.
 
-**Status: AWAITING-PACKAGE.** D1–D7 ruled and built (§6); PR #313. Every gate passes but the bench package's binding test, which waits on the write=true dispatch the trace and solved bumps need (§8).
+**Status: READY.** D1–D7 ruled and built (§6); PR #313. The bench package is the write=true dispatch's (run 44998592890 on `da539e3d`), byte for byte (§8).
 
 ## 0. The answer
 
@@ -113,7 +113,7 @@ A fresh Opus reviewer attacked `e0c7fae3` in its own worktree (`~/worktrees/aeth
 - **`cargo fmt --all -- --check`:** clean. **`cargo clippy --workspace --all-targets -- -D warnings`:** clean (the RUL-16 fence included, after D7).
 - **`cargo test --workspace`** (host, in-repo target) at `494ba793` (`main` `9cb87b4c` merged): **2,723 passed, 1 failed** (2,690 and the same 1 at the reduction head `b4c3360a`), `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (below); the same at `d6ae4f5e`, before the reduction.
 - **Tier 2:** `campaign_tier2::d1_s_pin_device_simulates_and_its_faults_run_and_replay` in the tools image, 11.5–14.4 s; `TIER2_MIN` 201 → 202; `campaign_tier2`'s block in `ci/colocate.tsv` 83 → 116 s (a Furnace estimate × 2.8, to be refitted).
-- **The package:** the trace bump moves `verdict_sha256`, and solved 17 moves `topology_sha256` (MANIFEST, FAB-NOTES): `fab/sentinel-01-bench/package` is to be re-derived by a write=true dispatch, behind 1211e, and committed byte for byte.
+- **The package:** the trace bump moves `verdict_sha256`, and solved 17 moves `topology_sha256`. `fab/sentinel-01-bench/package` is the `bench-package` artifact of the write=true dispatch run 44998592890 on `da539e3d`, byte for byte: only `MANIFEST.json`'s `topology_sha256` and `verdict_sha256` lines moved, every other file identical; `bench_board_tier1` passes 2/2 with it.
 - **Fence:**
   - `crates/aethelgard-twin`, `crates/aethelgard-chaos` (with its README), `crates/aethelgard-cli`'s `simulate` (`renode.rs`, `anchor.rs`, `pinwitness.rs`, `main.rs`'s boot), campaign and `verify`, `generate.rs`'s `simulable` and the `.repl` (S2 lifted), the ledger's rows and reasons, and their tests;
   - **D7's widening, as ruled:** the four fields in `aethelgard-ir`'s solved types, the solver lines that fill them, `validate_solved` for their shape, `SOLVED_SCHEMA_VERSION` 17, the IR README's version and `pin_devices` lines, 5 stored topologies' version lines (4240a's renumber script), `solve_cli`'s two digests, the CLI README's example line;
