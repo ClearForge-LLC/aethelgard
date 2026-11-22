@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-2308-verify-backlog` from `main` `c9d4096b`; `main` `c79b9820` (docs) and `f46c3c42` (`1606`) merged in. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh Opus subagent for the targeted adversarial pass. Its report was checked at source before use. Written 2026-11-22.
 
-**Status:** see §7. **The answer, in six lines:**
+**Status: READY** (§7). **The answer, in six lines:**
 - **No stand-in reaches a fab file unlabelled.**
   - (a) A symbol stand-in, and a declared bulk's source, are carried into the JLCPCB BOM's new fifth column, `Note`, and into a FAB-NOTES section, "Parts with a note".
   - (b) A drawn twin stand-in refuses both fab flags by name (`StandInInFabPackage`, exit 2).
@@ -143,6 +143,10 @@ One per guard this work order adds or changes, each run against the suite it liv
 
 ## 7. State
 
-- One PR, unmerged; the architect merges.
-- **The bench package moves by rows 1 and 2** (R3), re-measured after 1216b (R6): the same 3 of 17 files. It waits on a `bench-package` write dispatch, in the queue after `1606` and `1216b`. Until then, CI's `--against-fab` step on the committed package differs, as R3 predicts. The dispatch's artifact will be committed unchanged, and then READY is the last push.
+- **READY.** One PR, #321, unmerged; the architect merges. Tokens revoked after each use (HTTP 204).
+- **The bench package is dispatch run 45021836032's artifact** (`write=true` at `8ea17e39`, 12:24Z), committed byte for byte (`sha256sum -c` against the artifact).
+  - Against 1216b's package, exactly 3 of 17 files move: `FAB-NOTES.md` (2308's lines only), `sentinel-01-bench-jlcpcb-bom.csv` and `MANIFEST.json` (those two hashes and `verdict_sha256`).
+  - Against this builder's own run in the image (R6), only `MANIFEST.json` differs: its verdict line names CI's sandbox.
+  - `bench_board_tier1` binds it (2/2).
+- CI before the package: all green but `bench-package` (expected). The READY head's CI judges the committed package.
 - Title and body: `~/.cache/aet-2308/pr-title-body.md`.
