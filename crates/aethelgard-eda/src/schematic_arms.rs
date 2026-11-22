@@ -935,9 +935,7 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
                         (Some((_, _, parts_row)), Some(bulk)) => parts_row
                             .bulk_unstated
                             .as_ref()
-                            .filter(|u| {
-                                matches!((r.one, r.two), (End::Pin(p), End::Ground) if p == u.supply)
-                            })
+                            .filter(|u| answers(r, u))
                             .map(|_| (bulk, parts_row.document.as_str())),
                         _ => None,
                     };
@@ -988,6 +986,12 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
         ));
     }
     Ok(())
+}
+
+/// Whether a declared `bulk` answers `r`: it is the bulk the parts row
+/// leaves unstated, from that supply pin to GND (`AET-WO-1211f`).
+fn answers(r: &Required, u: &aethelgard_ir::pin_parts::BulkUnstated) -> bool {
+    matches!((r.one, r.two), (End::Pin(p), End::Ground) if p == u.supply)
 }
 
 /// The declared bulk capacitor in `r`'s place (`AET-WO-1211f`): its
@@ -1502,6 +1506,30 @@ mod tests {
     }
 
     /// A pin device's passive on a bus row, and a bus device's on a pin row.
+    /// `AET-WO-1211f`: a declared `bulk` answers only the unstated passive
+    /// from the row's `bulk_unstated` supply pin to GND, never another.
+    #[test]
+    fn a_bulk_answers_only_its_supply_to_ground() {
+        let u = aethelgard_ir::pin_parts::BulkUnstated {
+            supply: "VM".into(),
+            page: String::new(),
+        };
+        let r = |one, two| Required {
+            name: "C",
+            value: None,
+            rating: Rating::Vm,
+            dielectric: None,
+            one,
+            two,
+            cite: "",
+        };
+        assert!(answers(&r(End::Pin("VM"), End::Ground), &u));
+        assert!(!answers(&r(End::Ground, End::Pin("VM")), &u));
+        assert!(!answers(&r(End::Pin("VCP"), End::Pin("VM")), &u));
+        assert!(!answers(&r(End::Pin("VINT"), End::Ground), &u));
+        assert!(!answers(&r(End::Pin("VM"), End::Pin("VCP")), &u));
+    }
+
     #[test]
     fn a_passive_of_the_other_kind_is_refused() {
         const MIXED: &[Passive] = &[Passive::Decouple("100n"), DRV8833.passives[0]];
