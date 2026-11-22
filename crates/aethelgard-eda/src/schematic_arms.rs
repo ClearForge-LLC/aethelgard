@@ -1866,11 +1866,12 @@ mod tests {
     }
 
     /// `1320` F2: a [`DECOUPLERS`] entry for a part with no bus row, first
-    /// (DRV8876, whose row is a pin device's), in the middle (BMP582) and
-    /// last (TMP116). Entries in an order other than the rows' are accepted.
+    /// (DRV8876PWPR, whose row, in the table, is a pin device's), in the
+    /// middle (BMP582) and last (TMP116). Entries in an order other than the
+    /// rows' are accepted.
     #[test]
     fn a_decoupler_entry_with_no_bus_row_is_refused() {
-        const FIRST: &[(&str, usize)] = &[("DRV8876", 0), ("BME280", 1), ("BMP581", 2)];
+        const FIRST: &[(&str, usize)] = &[(DRV8876.part, 0), ("BME280", 1), ("BMP581", 2)];
         const MIDDLE: &[(&str, usize)] = &[("BME280", 1), ("BMP582", 2), ("BMP581", 2)];
         const LAST: &[(&str, usize)] = &[("BME280", 1), ("BMP581", 2), ("TMP116", 1)];
         const REVERSED: &[(&str, usize)] = &[("BMP581", 2), ("BME280", 1)];
