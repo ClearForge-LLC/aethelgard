@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1218-ir-defects`, from `main` `2ccd2450`; merged in: `c16da411` (docs only). **Builder:** Claude (Opus 5.5), single-threaded: the diff is small and touches gate logic. Written 2026-11-22.
 
-**Status: AWAITING-PACKAGE.** Specification 27 moves `fab/sentinel-01-bench/package`'s sha lines, so the package waits for the architect's `write=true` dispatch (§9).
+**Status: READY.** The package is committed from dispatch run 45045208580, byte for byte (§9).
 
 **The answer, in five lines:**
 - **(1)** A test point beside a pin device validates, solves and emits. Its references are stable: two emits are byte-identical, and they are the bare board's references plus the test point's. Step 15a judges each test point against every other reference by construction (`names::references_but_test_points`), not by slicing the end of `names::references`, which lists the pin devices last.
@@ -117,7 +117,8 @@
 
 ## 8. Gates, fence, reduction pass
 
-- **Gates (Furnace, target in the repository), at `a0bee897` plus the README's step-1 version line:** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. `cargo test --workspace` at `a0bee897`: 160 binaries, 2782 passed, 2 failed; with `readme_versions` re-run after the fix below, 2783 and 1 (a whole run on the READY head will replace this count). The remaining failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (§9). `readme_versions` failed once on the README's step-1 line (`schema_version` is 26) and passes after the fix.
+- **Gates (Furnace, target in the repository), on the READY tree (the package of run 45045208580 committed; main `c16da411` merged):** `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. `cargo test --workspace`, one whole run, gives 160 binaries, 2784 passed, 0 failed.
+  - At `a0bee897`, before the package, the count was 2782 passed and 2 failed. One failure was the package test. The other was `readme_versions`, on the IR README's step-1 line, which the next commit fixed.
   - Before the bump, at `3eece126`: fmt and clippy pass, and `cargo test --workspace` gives 160 binaries, 2784 passed, 0 failed.
 - **The null sweep** (`out/null-sweep.json`): main's binary on main's tree against the branch's on the branch's.
   - 34 specifications. No exit code, `validate` output, `solve` output or emitted file moved; 232 generated files each moved by one sha line.
@@ -143,4 +144,7 @@
 
 ## 9. The package
 
-Waits for the architect's `write=true` dispatch on the pushed head. The predicted move is `FAB-NOTES.md` and `MANIFEST.json`, by their sha lines alone, as in 1217.
+`fab/sentinel-01-bench/package` is the `bench-package` artifact of the architect's write=true dispatch, **run 45045208580** on `4481e7c3`, committed byte for byte.
+- The artifact holds the same 17 files.
+- Only `FAB-NOTES.md` and `MANIFEST.json` moved, each by sha lines alone (masked, the lines pair; 0 other lines), as predicted.
+- `bench_board_tier1` passes with it.
