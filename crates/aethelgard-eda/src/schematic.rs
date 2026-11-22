@@ -28,9 +28,8 @@ use crate::sexpr::{self, Sx, mm};
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_hse.rs"]
 mod hse;
-// The device arms, one table and one interpreter (`AET-WO-1319`), in the
-// file `AET-WO-1211d` named for the pin devices.
-#[path = "schematic_pin_device.rs"]
+// The device arms, one table and one interpreter (`AET-WO-1319`).
+#[path = "schematic_arms.rs"]
 mod arms;
 #[path = "schematic_power.rs"]
 mod power;

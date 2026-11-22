@@ -1,7 +1,6 @@
 //! The device arms (`AET-WO-1319`): one table, [`ARMS`], with a row for each
 //! device part the emitter draws, and one interpreter, [`arm`], that draws
-//! any of them. The file keeps its `AET-WO-1211d` name because `strict_fence`
-//! gives each file of `src/` a role by its path.
+//! any of them.
 //!
 //! A row carries its part, its bus or none, its symbol and footprint, the
 //! pin → role map, the passives it requires (each with its value, and for a
