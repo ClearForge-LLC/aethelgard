@@ -857,61 +857,179 @@ fn table() -> Vec<Entry> {
     // Every other field of the whole words the bring-up writes (`RCC_CR`,
     // `RCC_PLLCKSELR`, `RCC_CFGR`): written at its reset value, or a
     // read-only bit the write cannot move (RM0433 Rev 9 §8.7.2 p. 383, §8.7.7
-    // p. 393, §8.7.11 p. 399). The twin's clock rule judges each whole word as
-    // written; `PLLSRC` is the header's two overlapping masks.
-    for (register, field, what) in [
-        ("CR", "HSION", "HSI on, its reset 1"),
-        ("CR", "HSIKERON", "reset 0"),
-        ("CR", "HSIRDY", "read-only"),
-        ("CR", "HSIDIV", "reset 00 (÷1), which ResetClock read first"),
-        ("CR", "HSIDIVF", "read-only"),
-        ("CR", "CSION", "reset 0"),
-        ("CR", "CSIRDY", "read-only"),
-        ("CR", "CSIKERON", "reset 0"),
-        ("CR", "HSI48ON", "reset 0"),
-        ("CR", "HSI48RDY", "read-only"),
-        ("CR", "D1CKRDY", "read-only"),
-        ("CR", "D2CKRDY", "read-only"),
-        ("CR", "HSERDY", "read-only"),
-        ("CR", "PLL1RDY", "read-only"),
-        ("CR", "PLL2ON", "reset 0, PLL2 unused"),
-        ("CR", "PLL2RDY", "read-only"),
-        ("CR", "PLL3ON", "reset 0, PLL3 unused"),
-        ("CR", "PLL3RDY", "read-only"),
+    // p. 393, §8.7.11 p. 399). The twin's clock rule holds each whole word as
+    // written, but it is `aethelgard_twin`'s, not an `aethelgard-ir` rule, so
+    // it makes no row `independent-rule` (`AET-WO-2308` (6), `AET-WO-4240d`
+    // F5). Each row takes the weakest class that is true of it (the
+    // architect's ruling on Q5): `observed` where Renode stores the field
+    // and acts on it, `ignored-by-model` where Renode drops the written bit
+    // (a tag, or a read-only field), and `PLLSRC`'s two bits (the header's
+    // overlapping masks) the topology's word that `judge_tree` holds.
+    let word = "a field of the whole word the HSE bring-up writes";
+    let held = "the twin's clock rule (aethelgard_twin::hse::judge_clock) holds the whole word as written, a twin-side rule, not an aethelgard-ir one (RUL-20 (1))";
+    let dropped =
+        |line: &str, how: &str| format!("{RCC_CS} L{line} ({how}): the written bit is dropped");
+    for (register, field, class, source, what) in [
         (
-            "PLLCKSELR",
-            "PLLSRC_CSI",
-            "PLLSRC's low bit, 0: PLLSRC 10 is the HSE",
+            "CR",
+            "HSION",
+            Obs,
+            format!("{RCC_CS} L137 (stored), L147 (HSIRDY reads HSION)"),
+            "HSI on, its reset 1",
+        ),
+        ("CR", "HSIKERON", Ign, dropped("146", "a tag"), "reset 0"),
+        (
+            "CR",
+            "HSIRDY",
+            Ign,
+            dropped("147", "read-only"),
+            "read-only",
         ),
         (
-            "PLLCKSELR",
-            "PLLSRC_HSE",
-            "PLLSRC's high bit, 1: PLLSRC 10 is the HSE",
+            "CR",
+            "HSIDIV",
+            Obs,
+            format!("{RCC_CS} L148 (stored), L1546 (hsi_ck divided by it)"),
+            "reset 00 (÷1), which ResetClock read first",
+        ),
+        (
+            "CR",
+            "HSIDIVF",
+            Ign,
+            dropped("158", "read-only, reads 1"),
+            "read-only",
+        ),
+        (
+            "CR",
+            "CSION",
+            Obs,
+            format!("{RCC_CS} L160 (stored), L169 (CSIRDY reads CSION)"),
+            "reset 0",
+        ),
+        (
+            "CR",
+            "CSIRDY",
+            Ign,
+            dropped("169", "read-only"),
+            "read-only",
+        ),
+        ("CR", "CSIKERON", Ign, dropped("170", "a tag"), "reset 0"),
+        (
+            "CR",
+            "HSI48ON",
+            Obs,
+            format!("{RCC_CS} L172 (stored), L173 (HSI48RDY reads HSI48ON)"),
+            "reset 0",
+        ),
+        (
+            "CR",
+            "HSI48RDY",
+            Ign,
+            dropped("173", "read-only"),
+            "read-only",
+        ),
+        ("CR", "D1CKRDY", Ign, dropped("174", "a tag"), "read-only"),
+        ("CR", "D2CKRDY", Ign, dropped("175", "a tag"), "read-only"),
+        (
+            "CR",
+            "HSERDY",
+            Ign,
+            dropped("185", "read-only"),
+            "read-only",
+        ),
+        (
+            "CR",
+            "PLL1RDY",
+            Ign,
+            dropped("197", "read-only"),
+            "read-only",
+        ),
+        (
+            "CR",
+            "PLL2ON",
+            Obs,
+            format!("{RCC_CS} L199 (stored), L200 (PLL2RDY reads PLL2ON)"),
+            "reset 0, PLL2 unused",
+        ),
+        (
+            "CR",
+            "PLL2RDY",
+            Ign,
+            dropped("200", "read-only"),
+            "read-only",
+        ),
+        (
+            "CR",
+            "PLL3ON",
+            Obs,
+            format!("{RCC_CS} L201 (stored), L202 (PLL3RDY reads PLL3ON)"),
+            "reset 0, PLL3 unused",
+        ),
+        (
+            "CR",
+            "PLL3RDY",
+            Ign,
+            dropped("202", "read-only"),
+            "read-only",
         ),
         (
             "CFGR",
             "SWS",
+            Ign,
+            dropped("226", "read-only, SW's value"),
             "read-only; read back after SW by the clock rule",
         ),
-        ("CFGR", "STOPWUCK", "reset 0"),
-        ("CFGR", "STOPKERWUCK", "reset 0"),
-        ("CFGR", "RTCPRE", "reset 0"),
-        ("CFGR", "HRTIMSEL", "reset 0"),
-        ("CFGR", "TIMPRE", "reset 0, as the solved clock's timpre"),
-        ("CFGR", "MCO#PRE", "reset 0"),
-        ("CFGR", "MCO#", "reset 0"),
+        ("CFGR", "STOPWUCK", Ign, dropped("227", "a tag"), "reset 0"),
+        (
+            "CFGR",
+            "STOPKERWUCK",
+            Ign,
+            dropped("228", "a tag"),
+            "reset 0",
+        ),
+        ("CFGR", "RTCPRE", Ign, dropped("229", "a tag"), "reset 0"),
+        ("CFGR", "HRTIMSEL", Ign, dropped("230", "a tag"), "reset 0"),
+        (
+            "CFGR",
+            "TIMPRE",
+            Obs,
+            format!("{RCC_CS} L231 (stored), L1490–1494 (the timers' clock multiplier)"),
+            "reset 0, as the solved clock's timpre",
+        ),
+        (
+            "CFGR",
+            "MCO#PRE",
+            Ign,
+            dropped("233, L235", "tags"),
+            "reset 0",
+        ),
+        ("CFGR", "MCO#", Ign, dropped("234, L236", "tags"), "reset 0"),
     ] {
+        let judge = format!("{held}; the model: {source}");
         t.push(e(
             "RCC",
             register,
             field,
             W,
+            class,
+            &judge,
+            &source,
+            &format!("{word}, {what}; {held} (RM0433 Rev 9 pp. 383, 393, 399)"),
+        ));
+    }
+    for (field, what) in [
+        ("PLLSRC_CSI", "PLLSRC's low bit, 0: PLLSRC 10 is the HSE"),
+        ("PLLSRC_HSE", "PLLSRC's high bit, 1: PLLSRC 10 is the HSE"),
+    ] {
+        t.push(e(
+            "RCC",
+            "PLLCKSELR",
+            field,
+            W,
             Rule,
-            clock_rule,
-            "",
-            &format!(
-                "a field of the whole word the HSE bring-up writes, {what}; the twin's clock rule judges the word as written (RM0433 Rev 9 pp. 383, 393, 399)"
-            ),
+            pll_rule,
+            &pll_stored,
+            &format!("{word}, {what}: PLLSRC's bits, the topology's whole word (clock.hse); also observed: {pll_stored}"),
         ));
     }
     let acr_source = format!(
@@ -2861,20 +2979,21 @@ mod tests {
             let e = classify(&TABLE, family, register, field, access, field).unwrap();
             assert_eq!(e.class, class, "{family}.{register}.{field}");
         }
-        // The other fields of each whole word, written at reset or read-only,
-        // are the clock rule's (the generator lists every field it writes).
-        for (register, field) in [
-            ("CR", "HSION"),
-            ("CR", "HSIKERON"),
-            ("CR", "PLL2ON"),
-            ("CR", "HSERDY"),
-            ("PLLCKSELR", "PLLSRC_HSE"),
-            ("CFGR", "SWS"),
-            ("CFGR", "MCO2PRE"),
-            ("CFGR", "MCO1"),
+        // The other fields of each whole word, written at reset or read-only
+        // (the generator lists every field it writes), each by what judges it
+        // (`AET-WO-2308` (6); every one in the test below).
+        for (register, field, class) in [
+            ("CR", "HSION", Class::Observed),
+            ("CR", "HSIKERON", Class::IgnoredByModel),
+            ("CR", "PLL2ON", Class::Observed),
+            ("CR", "HSERDY", Class::IgnoredByModel),
+            ("PLLCKSELR", "PLLSRC_HSE", Class::IndependentRule),
+            ("CFGR", "SWS", Class::IgnoredByModel),
+            ("CFGR", "MCO2PRE", Class::IgnoredByModel),
+            ("CFGR", "MCO1", Class::IgnoredByModel),
         ] {
             let e = classify(&TABLE, "RCC", register, field, W, field).unwrap();
-            assert_eq!(e.class, Class::IndependentRule, "RCC.{register}.{field}");
+            assert_eq!(e.class, class, "RCC.{register}.{field}");
         }
         assert!(classify(&TABLE, "RCC", "CR", "HSEEXT", W, "h").is_err());
     }
@@ -2901,5 +3020,88 @@ mod tests {
             ledger_of(vec![row.clone(), row]).unwrap_err(),
             LedgerError::Duplicate { id: "X.Y.Z".into() }
         );
+    }
+
+    /// `AET-WO-2308` (6), `AET-WO-4240d` F5: `independent-rule` is
+    /// `RUL-20` (1), a rule in `aethelgard-ir`, so every such row's judge
+    /// names one; the twin's clock rule, `aethelgard_twin`'s, makes no row
+    /// `independent-rule`. The HSE bring-up's other whole-word fields are
+    /// each `observed` with the Renode lines that store and act on it, or
+    /// `ignored-by-model` with the line that drops it, and every one names
+    /// the twin's clock rule; `PLLSRC`'s two bits are `judge_tree`'s.
+    #[test]
+    fn every_independent_rule_row_is_judged_by_an_ir_rule() {
+        let named: Vec<String> = TABLE
+            .iter()
+            .filter(|e| e.class == Class::IndependentRule && !e.judge.contains("aethelgard_ir::"))
+            .map(|e| format!("{}.{}.{}", e.family, e.register, e.field))
+            .collect();
+        assert_eq!(named, Vec::<String>::new());
+        let row = |register: &str, field: &str| {
+            classify(&TABLE, "RCC", register, field, FieldAccess::Written, field)
+                .unwrap_or_else(|_| panic!("RCC.{register}.{field}"))
+        };
+        let observed = [
+            ("CR", "HSION"),
+            ("CR", "HSIDIV"),
+            ("CR", "CSION"),
+            ("CR", "HSI48ON"),
+            ("CR", "PLL2ON"),
+            ("CR", "PLL3ON"),
+            ("CFGR", "TIMPRE"),
+        ];
+        let ignored = [
+            ("CR", "HSIKERON"),
+            ("CR", "HSIRDY"),
+            ("CR", "HSIDIVF"),
+            ("CR", "CSIRDY"),
+            ("CR", "CSIKERON"),
+            ("CR", "HSI48RDY"),
+            ("CR", "D1CKRDY"),
+            ("CR", "D2CKRDY"),
+            ("CR", "HSERDY"),
+            ("CR", "PLL1RDY"),
+            ("CR", "PLL2RDY"),
+            ("CR", "PLL3RDY"),
+            ("CFGR", "SWS"),
+            ("CFGR", "STOPWUCK"),
+            ("CFGR", "STOPKERWUCK"),
+            ("CFGR", "RTCPRE"),
+            ("CFGR", "HRTIMSEL"),
+            ("CFGR", "MCO1PRE"),
+            ("CFGR", "MCO2PRE"),
+            ("CFGR", "MCO1"),
+            ("CFGR", "MCO2"),
+        ];
+        for (class, fields) in [
+            (Class::Observed, &observed[..]),
+            (Class::IgnoredByModel, &ignored[..]),
+        ] {
+            for &(register, field) in fields {
+                let e = row(register, field);
+                assert_eq!(e.access, FieldAccess::Written, "RCC.{register}.{field}");
+                assert_eq!(e.class, class, "RCC.{register}.{field}");
+                assert!(
+                    e.source.starts_with("STM32H7_RCC.cs L"),
+                    "RCC.{register}.{field}: {}",
+                    e.source
+                );
+                assert!(
+                    e.note.contains("aethelgard_twin::hse::judge_clock")
+                        && e.note.contains("not an aethelgard-ir one"),
+                    "RCC.{register}.{field}: {}",
+                    e.note
+                );
+            }
+        }
+        for field in ["PLLSRC_CSI", "PLLSRC_HSE"] {
+            let e = row("PLLCKSELR", field);
+            assert_eq!(e.class, Class::IndependentRule, "{field}");
+            assert!(
+                e.judge.starts_with("aethelgard_ir::clock::judge_tree"),
+                "{field}: {}",
+                e.judge
+            );
+        }
     }
 }

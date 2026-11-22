@@ -1319,4 +1319,64 @@ mod tests {
         );
         assert_eq!(four.len(), LAYERS.len() + 2);
     }
+
+    /// `AET-WO-2308` F16 (`AET-WO-3300` F16): what a swap in `verify`'s
+    /// scratch between the gates and the export leaves `derive`, one binding
+    /// at a time with the other true. An ELF whose bytes are not the hash the
+    /// gates were bound to is refused, `BindingMismatch` naming the firmware,
+    /// before any copy; a board whose copy is not the generated hash is
+    /// refused, naming the board, before KiCad is looked for. Neither needs a
+    /// tool: with either guard gone, `derive` reads on and fails otherwise.
+    #[test]
+    fn a_swapped_elf_or_board_is_refused_by_its_own_binding() {
+        let dir = std::env::temp_dir().join(format!("aet-2308-f16-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (elf, board) = (dir.join("firmware.elf"), dir.join("board.kicad_pcb"));
+        std::fs::write(&elf, b"the ELF the gates ran").unwrap();
+        std::fs::write(&board, b"the board the gates judged").unwrap();
+        let (elf_sha, board_sha) = (
+            tree::sha256(b"the ELF the gates ran"),
+            tree::sha256(b"the board the gates judged"),
+        );
+        let swapped = tree::sha256(b"another");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
+        let bound = |elf_sha256: &str, board_sha256: &str| {
+            let e = derive(&Bound {
+                project: "p",
+                spec: &spec,
+                specification_sha256: "",
+                board: &board,
+                board_sha256,
+                elf: &elf,
+                elf_sha256,
+                bom: b"",
+                conditions: &[],
+                lifecycle: &[],
+                support: &[],
+                campaign: &[],
+            });
+            e.err().expect("a swapped binding is refused")
+        };
+        let e = bound(&swapped, &board_sha);
+        assert_eq!((e.kind, e.id.as_deref()), ("BindingMismatch", Some("fab")));
+        assert!(
+            e.message
+                .starts_with("the firmware read for the package has sha256")
+                && e.message.contains(&swapped),
+            "{}",
+            e.message
+        );
+        let e = bound(&elf_sha, &swapped);
+        assert_eq!((e.kind, e.id.as_deref()), ("BindingMismatch", Some("fab")));
+        assert!(
+            e.message
+                .starts_with("the board copied for export has sha256")
+                && e.message.contains(&swapped),
+            "{}",
+            e.message
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }
