@@ -239,6 +239,7 @@ fn an_older_file_is_refused_by_its_version() {
             assert_eq!(
                 refusal(&v),
                 E::UnsupportedSchemaVersion {
+                    changes: aethelgard_ir::versions::lacked_by(version),
                     version,
                     expected: 23
                 }

@@ -326,9 +326,28 @@ struct RefusalBody {
     #[serde(skip_serializing_if = "Option::is_none")]
     claimants: Option<Box<[String]>>,
     /// The JSON path of the refused field (`InvalidIdentifier` only); absent otherwise.
+    /// Boxed, as `entries` is a version, to keep the refusal within clippy's error size.
     #[serde(skip_serializing_if = "Option::is_none")]
-    path: Option<String>,
+    path: Option<Box<str>>,
     message: String,
+    /// Every version change an older specification lacks, in order
+    /// (`UnsupportedSchemaVersion` only, `AET-WO-1215`): one row of
+    /// `aethelgard_ir::versions::CHANGES` each, paths only. Absent otherwise,
+    /// and for a newer version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Lacking>,
+}
+
+/// A specification's version, serialized as the rows of
+/// `aethelgard_ir::versions::CHANGES` it lacks; a version, not the slice, so
+/// the refusal stays within clippy's error size.
+#[derive(Clone, Copy)]
+struct Lacking(u32);
+
+impl Serialize for Lacking {
+    fn serialize<S: serde::Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        aethelgard_ir::versions::lacked_by(self.0).serialize(s)
+    }
 }
 
 impl Refusal {
@@ -341,12 +360,20 @@ impl Refusal {
                 claimants: None,
                 path: None,
                 message,
+                entries: None,
             },
         }
     }
 
     fn at(mut self, path: Option<&str>) -> Self {
-        self.error.path = path.map(str::to_owned);
+        self.error.path = path.map(Box::from);
+        self
+    }
+
+    /// `entries` for a specification of `version`, when it lacks a row.
+    fn lacking(mut self, version: u32) -> Self {
+        self.error.entries =
+            (!aethelgard_ir::versions::lacked_by(version).is_empty()).then_some(Lacking(version));
         self
     }
 
@@ -2903,12 +2930,10 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
     if let Ok(Version { schema_version }) = serde_json::from_slice::<Version>(input)
         && schema_version != aethelgard_ir::SPECIFICATION_SCHEMA_VERSION
     {
-        let err = aethelgard_ir::IrValidationError::UnsupportedSchemaVersion {
-            version: schema_version,
-            expected: aethelgard_ir::SPECIFICATION_SCHEMA_VERSION,
-        };
+        // Every change it lacks, listed (`AET-WO-1215`); nothing is filled.
+        let err = aethelgard_ir::versions::unsupported(schema_version);
         return Err((
-            Refusal::new(err.kind(), err.id(), err.to_string()),
+            Refusal::new(err.kind(), err.id(), err.to_string()).lacking(schema_version),
             EXIT_INVALID_SPEC,
         ));
     }

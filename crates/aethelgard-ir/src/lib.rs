@@ -31,6 +31,7 @@ pub mod silicon;
 mod solve;
 pub mod speeds;
 pub mod thermal;
+pub mod versions;
 pub mod vos;
 
 pub use motor::{MotorOutput, MotorProtocol, PwmTiming, SolvedClock, SolvedMotorOutput};
@@ -118,6 +119,8 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// bring-up's `HSERDY` bound with its source, which no default supplies; a
 /// `null` HSE carries neither, so a committed specification moved by its
 /// version line alone.
+/// Each version's changes are a row of [`versions::CHANGES`], which a bump
+/// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
 pub const SPECIFICATION_SCHEMA_VERSION: u32 = 23;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
@@ -1441,8 +1444,18 @@ fn ccr_shaped(m: &SolvedMotorOutput) -> bool {
 /// One variant per refusal. Each names what `id()` returns, or nothing.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum IrValidationError {
-    #[error("schema_version is {version}, not {expected}")]
-    UnsupportedSchemaVersion { version: u32, expected: u32 },
+    /// `changes` is every row of [`versions::CHANGES`] an older
+    /// specification lacks (`AET-WO-1215`, [`versions::unsupported`]); empty
+    /// for a newer one, for version 0, and for a `SolvedTopology`.
+    #[error(
+        "schema_version is {version}, not {expected}{}",
+        versions::Lacking(changes)
+    )]
+    UnsupportedSchemaVersion {
+        version: u32,
+        expected: u32,
+        changes: &'static [versions::VersionChange],
+    },
     #[error("board.copper_layers is {value}; this engine builds 2 or 4 copper layers")]
     UnsupportedLayerCount { value: u8 },
     #[error("`{path}`: {rule}")]
@@ -3583,10 +3596,7 @@ impl Specification {
 
         // 1
         if self.schema_version != SPECIFICATION_SCHEMA_VERSION {
-            return Err(E::UnsupportedSchemaVersion {
-                version: self.schema_version,
-                expected: SPECIFICATION_SCHEMA_VERSION,
-            });
+            return Err(versions::unsupported(self.schema_version));
         }
         // 2
         self.identifiers()?;
@@ -4256,6 +4266,7 @@ impl SolvedTopology {
             return Err(E::UnsupportedSchemaVersion {
                 version: self.schema_version,
                 expected: SOLVED_SCHEMA_VERSION,
+                changes: &[],
             });
         }
         let hash = self.specification_sha256.as_bytes();
