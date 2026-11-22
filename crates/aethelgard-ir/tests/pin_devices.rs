@@ -1269,6 +1269,7 @@ fn a_current_output_takes_only_the_trips_gnd_tie() {
     let e = refused(&v);
     assert_eq!(e.kind(), "SignalKindMismatch", "{e}");
     assert_eq!(e.path(), Some("pin_devices[0].straps.IPROPI"));
+    assert!(e.to_string().contains("only a tie to `GND`"), "{e}");
 
     let mut doc: Value = serde_json::from_str(PARTS_JSON).unwrap();
     let rows = doc["pin_parts"].as_array_mut().unwrap();
@@ -1301,4 +1302,34 @@ fn an_unknown_mcu_is_refused_at_mcu_part() {
         serde_json::from_str(include_str!("../../../examples/sentinel-02-bench.json")).unwrap();
     v["mcu"]["part"] = json!("STM32H743ZITx");
     spec(&v).validate().unwrap();
+}
+
+/// Adversarial A1 (`AET-WO-1217`): with the tie, VREF must be above `GND` at
+/// its minimum; a domain that reaches 0 mV is the reference on `GND`.
+#[test]
+fn ipropi_tied_with_vref_reaching_0_mv_is_refused() {
+    let mut v = d1_ipropi_tied();
+    v["voltage_domains"].as_array_mut().unwrap().push(json!({
+        "id": "VREF_1MV", "nominal_millivolts": 1, "tolerance_permille": 500
+    }));
+    device(&mut v)["straps"]["VREF"] = json!({"tie": "VREF_1MV"});
+    let e = refused(&v);
+    assert_eq!(e.kind(), "TripReferenceGrounded", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].straps.VREF"));
+    v["voltage_domains"][2]["nominal_millivolts"] = json!(2);
+    spec(&v).validate().unwrap();
+}
+
+/// Adversarial A4 (`AET-WO-1217`): with the trip judged first, an ADC entry
+/// on the wrong pin is still refused by its own kind, not as the sense left
+/// unterminated.
+#[test]
+fn a_misplaced_adc_entry_is_named_by_its_own_kind() {
+    let mut v = d1();
+    device(&mut v)["analog"][0]["device_pin"] = json!("ipropi");
+    assert_kind(&v, "UnknownDevicePin");
+    device(&mut v)["analog"][0]["device_pin"] = json!("nFAULT");
+    let e = refused(&v);
+    assert_eq!(e.kind(), "SignalKindMismatch", "{e}");
+    assert_eq!(e.path(), Some("pin_devices[0].analog[0]"));
 }

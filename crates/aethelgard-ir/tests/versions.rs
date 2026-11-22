@@ -83,7 +83,10 @@ fn a_version_20_file_lists_21_to_26_with_their_work_orders() {
     assert!(m.contains("mcu.hse.crystal.startup_max_us"), "{m}");
     assert!(m.contains("pin_devices[].bulk"), "{m}");
     assert!(m.contains("refuses by [OffDomainAboveLimit]"), "{m}");
-    assert!(m.contains("refuses by [AnalogPadPin]"), "{m}");
+    assert!(
+        m.contains("refuses by [AnalogPadPin, PowerPartUnknown]"),
+        "{m}"
+    );
     assert!(!m.contains(" 20 ("), "{m}");
 }
 

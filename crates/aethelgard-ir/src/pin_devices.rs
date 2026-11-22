@@ -1021,6 +1021,16 @@ impl<'s> Device<'s> {
                 {
                     None
                 }
+                (PinKind::CurrentOutput { .. }, _)
+                    if self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>
+                {
+                    return Err(self.kind_mismatch(
+                        pin,
+                        &p.kind,
+                        "it takes only a tie to `GND`, which turns current regulation off (SLVSDS7B p. 13)",
+                        &at,
+                    ));
+                }
                 (PinKind::SenseReturn, _) => {
                     return Err(invalid(format!(
                         "`{pin}` is a current-sense return: only a tie to `GND` (no current control) is judged; a sense resistor is not modelled"
@@ -1567,12 +1577,31 @@ impl<'s> Device<'s> {
                     ),
                 ));
             }
+            // "VREF above GND" at its lowest: a domain whose minimum is 0 mV
+            // can sit at GND (adversarial A1).
+            let v = self.domain(to, &at)?;
+            if crate::minimum_millivolts(v) == 0 {
+                return Err(self.err(
+                    K::TripReferenceGrounded,
+                    &at,
+                    format!(
+                        "`{}` is on `{to}`, whose minimum is 0 mV: with `{}` tied to `GND`, regulation is off only with `{}` above `GND` ({}, {})",
+                        t.reference, t.sense, t.reference, self.row.document, t.page
+                    ),
+                ));
+            }
             return Ok(());
         }
         // The sense pin terminated by nothing is neither of the part's two
         // configurations (a resistor to ground, or a tie to GND that turns
         // regulation off, `straps.<sense>`; ruled D-A2).
         if !self.d.analog.iter().any(|a| a.device_pin == t.sense) {
+            // An entry on another pin (a misspelt or wrong-kind `device_pin`)
+            // is refused by its own kind, not reported as no entry
+            // (adversarial A4).
+            for (k, a) in self.d.analog.iter().enumerate() {
+                self.full_scale_uv(a, &format!(".analog[{k}]"))?;
+            }
             return Err(self.err(
                 K::TripSenseUnbound,
                 ".analog",

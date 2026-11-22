@@ -125,9 +125,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// capacitor on the supply its part's row leaves unstated; a committed
 /// specification moved by its version line alone.
 /// Version 26 adds no key (`AET-WO-1217`, ruled 2026-11-22): a row's trip
-/// sense may be tied to `GND`, and `solve` refuses a digital hand pin on an
-/// analog pad (`AnalogPadPin`); a committed specification moved by its
-/// version line alone.
+/// sense may be tied to `GND`, `solve` refuses a digital hand pin on an
+/// analog pad (`AnalogPadPin`), and a pin device beside an MCU with no row is
+/// refused at `mcu.part` (`PowerPartUnknown`); a committed specification
+/// moved by its version line alone.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
 pub const SPECIFICATION_SCHEMA_VERSION: u32 = 26;
