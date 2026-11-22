@@ -1,8 +1,8 @@
-# AET-WO-1215 FEEDBACK — STOPPED at §1.1 (§7: the README prose and the code disagree about a version)
+# AET-WO-1215 FEEDBACK — an older specification is refused with every change it lacks
 
-**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6` (specification 23, solved 15). **Branch:** `wo/aet-1215-version-changes`.
-**State:** the measurement is complete and committed (`spike/1215/`). §7's stop condition fired on three contradictions (C1–C3 below). The build is written and compiles, but it is parked on a local branch, not pushed, because forks D1–D8 decide its `rules` column and its prose test. One ruling on D1–D8 unblocks all of it.
-**Gates:** this push is spike-only. It touches nothing under `crates/` and no workflow. The CLAUDE.md gates are not run on it. They run on the build after the ruling.
+**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f` and `c1e444dd` merged (specification 23, solved 15). **Branch:** `wo/aet-1215-version-changes`, PR #303.
+**State:** BUILT to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z), with one question still open on D6 (§6).
+**Gates:** §8.
 
 ## 1. What was measured, and how (`spike/1215/`)
 
@@ -116,13 +116,72 @@ Every bump's work order is the one README §`Specification` names, in order. **(
   - **Lean (b):** the message lists the rows compactly and does not mention `error.entries`. `cli/README.md` names the two commands that carry the message only, as claimants already are.
   - (a): `Stop` carries the field.
 
-## 5. The build, parked
+## 5. The build, as ruled
 
-The build is on the local branch `wip/aet-1215-build` (`85dbd358`), not pushed. It holds:
-- `aethelgard_ir::versions` with `CHANGES` (rows 2–15 drafted to D2 (a)), `lacked_by(v)` and `unsupported(v)`, the only constructor at the two specification sites;
-- `UnsupportedSchemaVersion { version, expected, changes }`, with `changes: &[]` for a `SolvedTopology`;
-- the CLI's `RefusalBody.entries`;
-- the seven IR tests that match the variant, with `changes: _` put first so the line `expected: 23` keeps the renumber kit's `expected: N$` form;
-- `tests/versions.rs`: the last row against the literal, rows contiguous, 20 → 21/22/23, 1 → 2–23, and 24, 0 and `u32::MAX` refused with no rows. Each path is checked against serde on every committed version-23 specification: a required path removed gives `missing field`, an optional one probed gives no `unknown field`, and a replaced one gives `unknown field`, except D5. Each rule must be a kind the crate returns, and each row is held to its README paragraph (D3).
+- **`aethelgard_ir::versions`** (`src/versions.rs`) holds the table and the functions around it.
+  - `CHANGES` has one row per version from 2 to 23, as in §2, with `rules` per D2 (a). Row 23 also names `SerialBaudReadAsKbaud`, as ruled: `1214` added it at version 23, a rule on an existing key. It also names `SpiSpeedBelowKernelRange`, tightened for an HSE board.
+  - `lacked_by(v)` returns every row after `v`, and nothing for 0. A current or newer version lacks none.
+  - `unsupported(v)` is the one constructor, used at both specification sites (`validate`'s step 1 and the CLI's pre-parse).
+  - `UnsupportedSchemaVersion` gains `changes`. It is `&[]` for a `SolvedTopology`, so a solved file never lists specification rows.
+- **The message** appends the rows compactly for an older file, for example `schema_version is 20, not 23; it lacks 3 version change(s), each named by path, and nothing is filled: 21 (AET-WO-1210) optional [board.drawn], refuses by [UnboundedPinCapacitance, PartNotDrawable]; 22 (AET-WO-1211a) requires [...], optional [pin_devices]; 23 (AET-WO-4240b) requires [...], refuses by [...]`. A newer file and version 0 keep today's bytes exactly.
+- **The CLI** adds `error.entries` (D7): one `{version, work_order, requires, optional, replaced: [{path, by}], removed, rules}` per row, absent otherwise.
+  - Measured on every entry point (`out/entrypoints-after.txt`): `validate` (file and stdin), `solve`, `emit`, `generate`, `extract`, `check speeds` and `verify` print it.
+  - `check drc --spec` and `check support` print the message only (D8 (b), `cli/README.md`).
+  - To stay within clippy's `result_large_err`, `entries` holds the version (`Lacking(u32)`, serialized as its rows) and `path` became `Option<Box<str>>`. Neither changes a byte of the output.
+- **The README** carries D1 and D3.
+  - C1: the eight optional keys of version 16 join the "Every key is required, but" list.
+  - C2: `BOOT0` joins rule 11.
+  - C3: `mcu.hse` is "a required key, for which `hse_hz: 0` alone still stands".
+  - Every listed rule is named in its version's sentence.
+  - The closing sentence states the listing, the path notation, and "a row names paths, never a value".
+- **Tests.** `crates/aethelgard-ir/tests/versions.rs` (11):
+  - the last row is the literal, and the rows run 2..=literal with none skipped;
+  - version 20 lists 21, 22 and 23 with their work orders;
+  - version 1 lists 2 to 23;
+  - the next version, 0 and `u32::MAX` name the current version only, with today's message;
+  - every older version lacks exactly the rows after it;
+  - the message suggests no value.
+  - The schema is tested by serde on all 33 committed version-23 specifications. Each required path, removed wherever it is present, gives `missing field`. Each optional path parses when absent and, given a wrong value, gives no `unknown field`. Each replaced path gives `unknown field`, except `mcu.hse_hz`, which is pinned by name (D5).
+  - Every rule is a kind the crate returns (`=> "Kind"`), and every row's paths and kinds are named in its README sentence.
+  - `stackups_tier1.rs` gains `an_older_specification_lists_every_change_it_lacks`: `validate`, `solve`, `emit` and `verify` at versions 20, 1, 24 and 0.
+  - Two existing CLI tests pinned an older version's exact message (`bench_tier1.rs` v13, `outline_tier1.rs` v14). They now compare it to `versions::unsupported(N)`. Seven IR tests put `changes: _` (or `lacked_by(v)`) first in the variant, so `expected: 23` stays the line the renumber kit rewrites.
+- **The next bump** (`1211e`, 24) writes row 24, and the last-row test fails until it does. It also edits by hand the literal lists the WO asks for (`[21, 22, 23]`, `2..=23`) and the `not 23; ` prefixes, which the kit does not rewrite. The kit gains nothing.
 
-After the ruling: rows 16–23, then gates, the differential against `out/differential-before.txt`, mutants (drop a row, swap two rows), the adversarial pass, the reduction pass, and READY.
+## 6. Open: D6's wording
+
+- The ruling reads "Version 0 and version 1 are refused as today, with no rows". My lean was version 0 alone, and WO §1.3 requires "a version-1 file lists 2 to 23".
+- Built to the WO: version 1 lists 2 to 23, and version 0 lists none. I asked on the bus (2026-11-22).
+- If version 1 is meant to have no rows too, it is one guard in `lacked_by` and two tests.
+
+## 7. Adversarial pass (targeted, §5)
+
+- **A renumbered work order.** Every row's work order is its final number on main (§2), and a test finds `Version N (`WO`` in the README for each row.
+- **A key made optional.** The serde test removes every required path from every committed specification that holds it, and must see `missing field`. A key later relaxed, or a row classed wrongly (mutant M8), fails it.
+- **A rule added without a key.** Version 3 is such a row, and so are the rules of 6, 8, 11, 12, 14 and 21. A rule landed under an unchanged version is no row (D4, the §7.1 row below).
+- **A solved-version change.** Not a row (§2); `changes` is `&[]` for a `SolvedTopology`.
+- **A message that suggests a value.** It names paths, kinds, versions and work orders only. A test refuses `null`, `true`, `false`, `pulse_us":`, `1,000,000`, `= ` and `e.g.` in version 1's message.
+- **Not a number.** A `schema_version` that is not a `u32` is refused as before, by the CLI's pre-parse falling through to `SchemaViolation`. No change.
+- **Bytes.** `out/differential-compare.txt`: 70 (file, command) lines over the 35 committed specifications. The 4 that differ are the two version-1 files in `docs/work-orders/AET-WO-1200.repro/`, through `validate` and `solve`, which now list rows 2–23. Every current-version file's bytes are unchanged, and so are versions 0 and 24 on every entry point. **No file that validates today stops validating.**
+
+## 8. Gates, mutants, reduction
+
+- `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- `cargo test --workspace --no-fail-fast`: run in a 32 G capped scope on the head before the reduction, it gave 156 binaries, 2,624 passed and 0 failed. The final run is on the READY head (§9). `TIER2_MIN` is unchanged, and no `ci/` row is needed: no new test binary, and nothing reads a docs-only path.
+- **Mutants** (`spike/1215/mutants.sh` → `out/mutants.txt`): 12 of 12 killed.
+  - M1: drop row 22. M2 and M2b: swap rows 21/22 and 2/3.
+  - M3: version 0 lists every row. M4: an older file lists its own row.
+  - M5: the message lists no row. M6: a newer file carries `entries: []`. M7: the CLI omits `entries`.
+  - M8: a required path made optional. M9: row 20 loses its replacement.
+  - M10: a rule its prose does not name. M11: a path the schema lacks.
+  - Each is killed by a failing test (M1 checked by hand: 4 tests fail, and it compiles).
+- **Reduction pass (diff):** −6 net, 0 duplicates removed, 2 dead paths removed (the message's unreachable "version line only" branch, and `lacked_by`'s `>= current` guard, which `partition_point` already covers; M3 still dies on the remaining `== 0` guard), 1 protected kept, 1 finding below.
+  - Protected: the table beside the README prose, which is one fact in two forms held equal by a test.
+  - Finding (outside the fence's intent): the doc comment above `SPECIFICATION_SCHEMA_VERSION` (`lib.rs`) is a third prose copy of every version. It is already stale (`lib.rs:138` "version 15"; `hse_hz` "the version-19 key"). One home, the README, citing it would remove ~70 lines.
+
+## 9. For the architect
+
+- **The §7.1 row (D4), for the roadmap, which I do not edit:** "A `validate` refusal, or a key, added without a bump is a bump, or the work order says why not." Evidence:
+  - C1: eight optional keys at version 16 (`1303b` `acae53f7`, `1314` `565b32c5`);
+  - §3's refusals under unchanged versions (`2b436729`, `2fda6e13`, `fff49a49`, `adb8f61a`, and `1214`'s `SerialBaudReadAsKbaud` at 23).
+- **D6**, §6.
+- **The `lib.rs` doc comment**, §8's finding.

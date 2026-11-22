@@ -1,0 +1,12 @@
+# differential-before (ddfa64d6 base binary) vs differential-after (this branch, main c1e444dd merged): 70 (file, command) lines each
+# lines that differ: 4, all version-1 files, whose refusal now lists rows 2-23; every other line, every current-version file among them, is byte-identical
+57,60c57,60
+< docs/work-orders/AET-WO-1200.repro/core-infeasible.json	validate	2	2f6cf27ff8bbe767
+< docs/work-orders/AET-WO-1200.repro/core-infeasible.json	solve	2	2f6cf27ff8bbe767
+< docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	validate	2	2f6cf27ff8bbe767
+< docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	solve	2	2f6cf27ff8bbe767
+---
+> docs/work-orders/AET-WO-1200.repro/core-infeasible.json	validate	2	159093fde9ec16e4
+> docs/work-orders/AET-WO-1200.repro/core-infeasible.json	solve	2	159093fde9ec16e4
+> docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	validate	2	159093fde9ec16e4
+> docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	solve	2	159093fde9ec16e4
