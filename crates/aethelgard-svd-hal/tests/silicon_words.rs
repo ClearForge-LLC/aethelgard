@@ -162,9 +162,19 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
                     assert_ne!(word & 1 << 12, 0, "{name} {p}: SPE without SSI");
                 }
             }
+            // An HSE board writes no select: each stays at reset, which the
+            // rule's word is (`AET-WO-4240b`, `4240` D6).
             let (offset, word) = w.kernel_select;
             let line = format!("r.write(TOKEN, Block::Rcc, {offset:#05x}, {word:#010x});");
-            assert!(board.contains(&line), "{name} {p} select: `{line}`");
+            if t.clock.hse.is_some() {
+                assert_eq!(word, 0, "{name} {p}: the rule's select is not at reset");
+                assert!(
+                    !board.contains(&line),
+                    "{name} {p} select written: `{line}`"
+                );
+            } else {
+                assert!(board.contains(&line), "{name} {p} select: `{line}`");
+            }
             checked.0 += 1;
         }
         for (p, timing) in &t.i2c_timings {
@@ -203,7 +213,7 @@ fn every_fixture_s_controllers_are_written_the_rule_s_words() {
                     "{name} {p} {mode}: admitted with another word"
                 );
                 assert!(
-                    silicon::check_timingr(timing.kernel_hz, mode, word)
+                    silicon::check_timingr_on(t.clock.budget(), timing.kernel_hz, mode, word)
                         .unwrap()
                         .holds
                 );

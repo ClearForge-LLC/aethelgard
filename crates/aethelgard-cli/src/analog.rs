@@ -580,8 +580,13 @@ fn rail_answer(stdout: &str, levels: &[(String, u64)]) -> Result<(Vec<Crossing>,
 /// The boot of a droop scenario: the bridge owns Renode as its child
 /// (`--renode`, ruled D1), with Renode's own arguments, environment and
 /// grants; Renode's output is the bridge's after its identity line, read
-/// through [`crate::renode::LOG_FILTER`].
-pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run::Stop> {
+/// through `filter`, the boot's own ([`crate::renode::LOG_FILTER`], or
+/// [`crate::renode::LOG_FILTER_HSE`] on an HSE board).
+pub fn boot(
+    inv: &run::Invocation<'_>,
+    renode: &Path,
+    filter: run::LogFilter,
+) -> Result<run::Output, run::Stop> {
     let tool = bridge()?;
     let mut args: Vec<std::ffi::OsString> = vec!["--renode".into(), renode.as_os_str().into()];
     args.extend(inv.args.iter().cloned());
@@ -597,7 +602,7 @@ pub fn boot(inv: &run::Invocation<'_>, renode: &Path) -> Result<run::Output, run
         read_only,
         read_write: inv.read_write.clone(),
     }
-    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, crate::renode::LOG_FILTER)?;
+    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, filter)?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let rest = identified(&text)?.1.as_bytes().to_vec();
     out.stdout = rest;
@@ -1224,7 +1229,7 @@ mod tests {
 
     fn decks() -> Vec<Deck> {
         let topology: SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":14,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
+            r#"{"schema_version":15,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":47000,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         analog::decks(&topology).unwrap()
