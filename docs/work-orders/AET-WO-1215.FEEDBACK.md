@@ -1,6 +1,6 @@
 # AET-WO-1215 FEEDBACK — an older specification is refused with every change it lacks
 
-**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f`, `c1e444dd`, `e3aea224` and `7fc81640` merged (specification 23, solved 16). **Branch:** `wo/aet-1215-version-changes`, PR #303.
+**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f`, `c1e444dd`, `e3aea224`, `7fc81640` and `122378c7` (2307) merged (specification 23, solved 16). **Branch:** `wo/aet-1215-version-changes`, PR #303.
 **State:** READY, built to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z; D6's text corrected at 04:00Z, §6).
 **Gates:** §8.
 
@@ -145,6 +145,7 @@ Every bump's work order is the one README §`Specification` names, in order. **(
   - Every rule is a kind the crate returns (`=> "Kind"`).
   - `readme_versions.rs` gains the prose test: every row's work order, paths and kinds are named in its README sentence. It lives there because that target already reads the crate's `README.md` through `readme()`, so `ci/docs-tests.tsv` (the route job's inventory of literals naming a docs-only name) is unchanged. A second `"/README.md"` literal in a new target failed the route job on the first push (run 44981417341), and `ci/` is outside the fence.
   - `stackups_tier1.rs` gains `an_older_specification_lists_every_change_it_lacks`: `validate`, `solve`, `emit` and `verify` at versions 20, 1, 24 and 0.
+  - `fab_tier1.rs` gains `both_refusals_with_entries_print_one_shape` (after 2307 merged, as the architect asked at 05:00Z). `verify --fab-out` refuses an unacknowledged ledger row and a version-20 file. Both `error` objects have exactly `entries`, `id`, `kind` and `message`, and each `entries` is a non-empty array of objects, with each refusal's own element (D7).
   - Two existing CLI tests pinned an older version's exact message (`bench_tier1.rs` v13, `outline_tier1.rs` v14). They now compare it to `versions::unsupported(N)`. Seven IR tests put `changes: _` (or `lacked_by(v)`) first in the variant, so `expected: 23` stays the line the renumber kit rewrites.
 - **The next bump** (`1211e`, 24) writes row 24, and the last-row test fails until it does. It also edits by hand the literal lists the WO asks for (`[21, 22, 23]`, `2..=23`) and the `not 23; ` prefixes, which the kit does not rewrite. The kit gains nothing.
 
@@ -161,13 +162,13 @@ Every bump's work order is the one README §`Specification` names, in order. **(
 - **A solved-version change.** Not a row (§2); `changes` is `&[]` for a `SolvedTopology`.
 - **A message that suggests a value.** It names paths, kinds, versions and work orders only. A test refuses `null`, `true`, `false`, `pulse_us":`, `1,000,000`, `= ` and `e.g.` in version 1's message.
 - **Not a number.** A `schema_version` that is not a `u32` is refused as before, by the CLI's pre-parse falling through to `SchemaViolation`. No change.
-- **Bytes.** `out/differential-compare.txt`: 70 (file, command) lines over the 35 committed specifications. The 4 that differ are the two version-1 files in `docs/work-orders/AET-WO-1200.repro/`, through `validate` and `solve`, which now list rows 2–23. Every current-version file's bytes are unchanged, and so are versions 0 and 24 on every entry point. The comparison was repeated against main `7fc81640`'s own binary, built alone, against this branch at `040f61cd` with that main merged: the same 4 lines, and nothing else (`out/differential-main-7fc81640.txt`, `out/differential-branch-040f61cd.txt`). **No file that validates today stops validating.**
+- **Bytes.** `out/differential-compare.txt`: 70 (file, command) lines over the 35 committed specifications. The 4 that differ are the two version-1 files in `docs/work-orders/AET-WO-1200.repro/`, through `validate` and `solve`, which now list rows 2–23. Every current-version file's bytes are unchanged, and so are versions 0 and 24 on every entry point. The comparison was repeated against main `122378c7`'s own binary, built alone, and this branch at `021e374a` with that main merged: the same 4 lines, and nothing else (`out/differential-main-122378c7.txt`, `out/differential-branch-021e374a.txt`). **No file that validates today stops validating.**
 
 ## 8. Gates, mutants, reduction
 
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace --no-fail-fast`, in a 32 G capped scope: 156 binaries, 2,624 passed and 0 failed before the reduction. On `040f61cd` (main `7fc81640` merged): 157 binaries, 2,636 passed, 0 failed.
-- CI: green on every check at `35bcdda4`, then at `c1a423c8` (main `7fc81640` merged): `ci` run 44984150468, `engine-image` 44984150477 and `ardupilot-image` 44984150463 all succeeded, 33 checks pass and 3 are skipped by design. **READY** at the commit that records this line. Nothing is pushed after it. `TIER2_MIN` is unchanged, and nothing in `ci/` changes. `bash ci/route.sh check ci/docs-tests.tsv` passes locally.
+- `cargo test --workspace --no-fail-fast`, in a 32 G capped scope: 156 binaries, 2,624 passed and 0 failed before the reduction. On `021e374a` (main `122378c7` merged): 157 binaries, 2,641 passed, 0 failed.
+- CI: green on every check at `35bcdda4` and at `c1a423c8` (`ci` run 44984150468). After 2307 merged, `122378c7` was merged in, and this head was pushed once. **READY** is this commit, and it waits for green CI on its own SHA, which the bus note names. Nothing is pushed after it.
 - **Mutants** (`spike/1215/mutants.sh` → `out/mutants.txt`): 12 of 12 killed.
   - M1: drop row 22. M2 and M2b: swap rows 21/22 and 2/3.
   - M3: version 0 lists every row. M4: an older file lists its own row.

@@ -11,7 +11,8 @@
 > docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	validate	2	159093fde9ec16e4
 > docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json	solve	2	159093fde9ec16e4
 
-# main 7fc81640's binary (built alone) vs this branch at 040f61cd (main merged): 70 lines each; differ: 4, the same two version-1 files; every other line byte-identical
+
+# main 122378c7's binary (built alone) vs this branch at 021e374a (that main merged): 70 lines each; differ: 4, the same two version-1 files; every other line byte-identical
 57,60c57,60
 < docs/work-orders/AET-WO-1200.repro/core-infeasible.json	validate	2	2f6cf27ff8bbe767
 < docs/work-orders/AET-WO-1200.repro/core-infeasible.json	solve	2	2f6cf27ff8bbe767
