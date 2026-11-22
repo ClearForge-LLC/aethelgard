@@ -7,7 +7,7 @@
 - **A2:** the DRV8876 is refused with VREF on GND, with an IPROPI no analog input terminates, or with a trip below its declared full scale.
 - **`bulk`:** required where the part leaves its value unstated (the DRV8876's VM). It is specification **24**, after 4240b's 23.
 - **No committed specification or fixture is refused.** Measured first, then re-measured on the final rule over 65 files. The null sweep shows 33 files, with no emitted byte moved.
-- **Mutants: 44 of 44 killed.** The committed bench package waits on a write=true dispatch (§9).
+- **Mutants: 44 of 44 killed.** The bench package is committed from dispatch 44986875477, moved by its sha lines alone (§9).
 
 ## 0. How it was made
 
