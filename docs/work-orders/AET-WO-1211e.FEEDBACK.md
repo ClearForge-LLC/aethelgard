@@ -1,6 +1,6 @@
 # AET-WO-1211e — FEEDBACK: pin devices validated against the MCU and the part (A1, A2, `bulk`)
 
-**Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. Merged in on 2026-11-22: `main` `ddfa64d6` (4240b, specification 23 / solved 15), `c1e444dd` (1211d, 1214) and `7fc81640` (1211b, solved 16). **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
+**Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. Merged in on 2026-11-22: `main` `ddfa64d6` (4240b, specification 23 / solved 15), `c1e444dd` (1211d, 1214), `7fc81640` (1211b, solved 16), `122378c7` (2307) and `bf497733` (1215, 1319, 4240d). **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
 
 **Status: READY** (the package is committed from dispatch 44986875477, §9). **The answer, in five lines:**
 - **A1:** a declared pull is judged against what the MCU pin takes in operation (DS12117 Rev 10 Table 13, p. 105), with VDD at `mcu.supply`'s minimum and a pull to `mcu.supply` itself exempt. Both of the WO's choices (Table 10, VDD at its maximum) were corrected by ruling.
@@ -63,7 +63,7 @@ Predictions were committed before any run (`76e09a95`, `spike/1211e/PREDICTIONS.
 - **Kind names** (§1.3):
   - A1: `PullAboveMcuTolerance`, `McuPinStructureUnheld`;
   - A2: `TripReferenceGrounded`, `TripSenseUnbound`, `TripBelowFullScale`.
-- **Specification 23** (§1.4), by `spike/4240a/kit/renumber.py . 22 23 14 14`. The solved topology is unchanged at 14.
+- **Specification 24** (§1.4), by `spike/4240a/kit/renumber.py . 22 23 14 14`. The solved topology is unchanged at 14.
 
 ## 3. Rulings and corrections
 
@@ -147,13 +147,14 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 - **F11 · Environment, by inference:** `cargo test --workspace` with `CARGO_TARGET_DIR` outside the repository fails `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`. Its `connectors.json` base is under the target dir's `tmp`, outside the working directory. It failed the same way before this work order touched any CLI file (the first workspace run, at `e4d0f877`). CI keeps the target in the repository and is the confirmation. **Proposed row:** "the test's scratch under the repository, not `CARGO_TARGET_DIR`."
 - **F12 · `fab/sentinel-01-bench/BENCH-EXT-BMP581.md`** cites `examples/sentinel-01-ext-bmp581.json`'s sha256 at specification 23. It is 3403's bench record, written before the bench and never edited (its own rule), and no test binds it. It is left as written; the specification's bytes moved by their version line alone.
 - **F13 · 1211d's eda guard on an undeclared IPROPI** (`PinDeviceNotDrawable`, `aethelgard-eda`) is now behind `validate`'s `TripSenseUnbound`. A specification no longer reaches it through `validate`. 1211d's test `an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused` now asserts `TripSenseUnbound` at validate, which is the same intent at the earlier stage, resolved at the merge of `c1e444dd` as the architect asked. Whether eda keeps its guard, labelled `belt-and-suspenders:`, is eda's owner's call: that is outside this fence. **Proposed row:** "eda's IPROPI guard labelled or removed."
+- **F14 · `versions::CHANGES` row 24** (1215, merged as `bf497733`) is written: it requires `pin_devices[].bulk` and lists the rules `PullAboveMcuTolerance`, `McuPinStructureUnheld`, `TripReferenceGrounded`, `TripSenseUnbound` and `TripBelowFullScale`. The bulk kinds are not listed, because they judge only the new key. 1215's literals moved to 24 (`[21, 22, 23, 24]`, `2..=24`, `not 24; `). `spike/1215/in/v24-newer.json` is 1215's spike record, named for a version that was newer when it was written and is now current. Nothing reads it, so it is left as written.
 
 ## 8. Gates, fence, reduction pass
 
 - **Gates:**
   - `cargo fmt --all -- --check` passes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at `76d6db67`.
-  - `cargo test --workspace` (Furnace, target outside the repository, at `76d6db67`, after the package and the merge of `122378c7`, 2026-11-22): 156 binaries, 2647 passed and 1 failed: `fab_tier1`, which is F11.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at `0d349342`.
+  - `cargo test --workspace` (Furnace, target outside the repository, at `0d349342`, after the package and the merge of `bf497733`, 2026-11-22): 157 binaries, 2668 passed and 1 failed: `fab_tier1`, which is F11.
     - Before the merges, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
     - Before that merge, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
 - **The null sweep** (§2): main's binary on main's tree against the branch's on the branch's. 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. Taken twice:
