@@ -277,11 +277,13 @@ fn each_fab_flag_requires_scenarios() {
 /// `AET-WO-2308` (1), shape (b): a twin stand-in drawn on a board (the
 /// 1.8 V fixture drawn, with its one drawable stand-in, U5's ICM20948) is
 /// refused by each fab flag by name, exit 2, before any gate and before
-/// anything is written: the emitter's BOM carries no label for it. Without a
-/// fab flag the same specification is not refused for it. The fixture's
-/// ICP-10111 has no symbol and its second ICM20948 does not route, so both
-/// are dropped; every device declares a pin capacitance (the parts table
-/// cites none for these). The one scenario is a baseline.
+/// anything is written: the emitter's BOM carries no label for it. It comes
+/// after the campaign's coverage check (a board refused for its campaign
+/// keeps that verdict), so four scenarios cover the board's bus, SPI device
+/// and rail; they are read before any gate, never run. Without a fab flag
+/// the same specification is not refused for it. The fixture's ICP-10111 has
+/// no symbol and its second ICM20948 does not route, so both are dropped;
+/// every device declares a pin capacitance (the parts table cites none).
 #[test]
 fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
     let fixture = root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
@@ -312,13 +314,47 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
     let dir = scratch("standin");
     fs::create_dir_all(&dir).unwrap();
     fs::write(dir.join("spec.json"), spec.to_string()).unwrap();
-    fs::write(
-        dir.join("baseline.json"),
-        serde_json::json!({"schema_version": 1, "name": "baseline", "base": "spec.json",
-            "expect": "pass", "expect_findings": [], "overrides": []})
-        .to_string(),
-    )
-    .unwrap();
+    let droop = serde_json::json!({"droop": {"domain": "VDD_1V8", "floor_millivolts": 1650,
+        "start_ns": 1_000_000, "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}});
+    for (name, version, expect, findings, overrides) in [
+        (
+            "baseline",
+            1,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([]),
+        ),
+        (
+            "pullup",
+            1,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([{"bus": "SENSORS", "pull_up_ohms": 3300}]),
+        ),
+        (
+            "absent",
+            2,
+            "fail",
+            serde_json::json!(["spi_identity_mismatch", "spi_transaction_unwitnessed"]),
+            serde_json::json!([{"spi_device_absent": "U5"}]),
+        ),
+        (
+            "droop",
+            2,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([droop]),
+        ),
+    ] {
+        let mut v = serde_json::json!({"schema_version": version, "name": name, "base": "spec.json",
+            "expect": expect, "expect_findings": findings, "overrides": overrides});
+        if name == "droop" {
+            v["expect_counts"] = serde_json::json!({"brownout_reset": 0,
+                "brownout_unrecovered": 0, "rail_below_tolerance": 1});
+        }
+        fs::write(dir.join(format!("{name}.json")), v.to_string()).unwrap();
+    }
     let verify = |extra: &[&str]| {
         let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
             .args([
@@ -327,6 +363,9 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
                 "spec.json",
                 "--scenarios",
                 "baseline.json",
+                "pullup.json",
+                "absent.json",
+                "droop.json",
             ])
             .args(extra)
             .current_dir(&dir)

@@ -995,21 +995,28 @@ mod tests {
         let (b, c) = (String::from_utf8(b).unwrap(), String::from_utf8(c).unwrap());
         let b: Vec<&str> = b.strip_suffix("\r\n").unwrap().split("\r\n").collect();
         let c: Vec<&str> = c.strip_suffix("\r\n").unwrap().split("\r\n").collect();
+        // `AET-WO-2308` (1): the sample's four columns, then `Note`.
         assert_eq!(
             b[0],
-            "Comment,Designator,Footprint,JLCPCB Part #（optional）"
+            "Comment,Designator,Footprint,JLCPCB Part #（optional）,Note"
         );
         assert_eq!(c[0], "Designator,Mid X,Mid Y,Layer,Rotation");
         // 13 kinds of part over 39 references (FEEDBACK §4, measured).
         assert_eq!(b.len(), 1 + 13);
         assert_eq!(
             b[1],
-            "100n,\"C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C13,C15,C19,C20,C21,C22\",C_0402_1005Metric,"
+            "100n,\"C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C13,C15,C19,C20,C21,C22\",C_0402_1005Metric,,"
         );
+        // No part number is written; only U4, whose symbol stands in for
+        // the ordered part, carries a note.
         for row in &b[1..] {
-            assert!(row.ends_with(','), "a part number was written: {row}");
+            assert!(
+                row.ends_with(",,") || row.starts_with("W25Q64JVSSIQ,"),
+                "a part number or a note was written: {row}"
+            );
         }
-        assert!(b.contains(&"TMP117xxDRV,\"U3\",WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,"));
+        assert!(b.contains(&"TMP117xxDRV,\"U3\",WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,,"));
+        assert!(b.contains(&"W25Q64JVSSIQ,\"U4\",SOIC-8_5.3x5.3mm_P1.27mm,,\"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)\""));
         // Every placement row, one for one, in KiCad's order.
         let kicad = aethelgard_eda::fab::placement(pos).unwrap();
         assert_eq!(c.len(), 1 + kicad.len());

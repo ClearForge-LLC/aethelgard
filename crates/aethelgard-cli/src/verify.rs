@@ -323,7 +323,8 @@ fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
 /// `stand_in`, there to exercise the twin and never for a purchase
 /// (`aethelgard_ir::parts`, `AET-WO-4210` D1). The emitter's BOM gives it no
 /// note and the banner names only its lifecycle, so `verify --fab-out` and
-/// `--against-fab` refuse it. A table that cannot be read refuses too.
+/// `--against-fab` refuse it. A vendored table that cannot be read is an
+/// internal error, never an empty list.
 fn stand_ins(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<(String, String)>, String> {
     let table = aethelgard_ir::parts::table()
         .map_err(|e| format!("the parts table, read for twin stand-ins: {e}"))?;
@@ -1764,24 +1765,6 @@ pub fn verify(
     // A harness the plan leaves out is refused by name before any gate runs
     // (`AET-WO-3303` §1.1); the other preconditions are judged on the gates.
     if fab_mode.is_some() {
-        // A twin stand-in drawn on the board is refused by name first
-        // (`AET-WO-2308` (1), shape (b)): no package file can label it.
-        let drawn = match stand_ins(&topology) {
-            Ok(d) => d,
-            Err(m) => return refuse("ToolError", Some("aethelgard"), m, EXIT_INTERNAL),
-        };
-        if let Some((reference, _)) = drawn.first() {
-            let named: Vec<String> = drawn.iter().map(|(r, p)| format!("{r} ({p})")).collect();
-            return refuse(
-                "StandInInFabPackage",
-                Some(reference),
-                format!(
-                    "no package: {} is a twin stand-in (`stand_in` in the parts table), there to exercise the twin and never for a purchase, and the emitter's BOM carries no label for it: draw the part the board is for, or run `verify` without a fab flag",
-                    named.join(", ")
-                ),
-                EXIT_INVALID_SPEC,
-            );
-        }
         let left_out = unplanned(&board, harnesses.len());
         if let Some(m) = left_out {
             return refuse(
@@ -1807,6 +1790,28 @@ pub fn verify(
                     short.unmet.join(", ")
                 ),
                 EXIT_UNREADABLE,
+            );
+        }
+        // A twin stand-in drawn on the board is refused by name (`AET-WO-2308`
+        // (1), shape (b)): no package file can label it. After the coverage
+        // check, so a board refused for its campaign keeps that verdict.
+        let drawn = match stand_ins(&topology) {
+            Ok(d) => d,
+            Err(m) => {
+                crate::diagnose(&m);
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        if let Some((reference, _)) = drawn.first() {
+            let named: Vec<String> = drawn.iter().map(|(r, p)| format!("{r} ({p})")).collect();
+            return refuse(
+                "StandInInFabPackage",
+                Some(reference),
+                format!(
+                    "no package: {} is a twin stand-in (`stand_in` in the parts table), there to exercise the twin and never for a purchase, and the emitter's BOM carries no label for it: draw the part the board is for, or run `verify` without a fab flag",
+                    named.join(", ")
+                ),
+                EXIT_INVALID_SPEC,
             );
         }
         // Every unwitnessed ledger row acknowledged by name (`AET-WO-4230`
@@ -3863,5 +3868,61 @@ mod tests {
         let mut report = fresh(vec![gate("pass")]);
         assert_eq!(conclude(&mut report, None, &tail).ok(), Some(0));
         std::fs::remove_dir_all(&scratch).unwrap();
+    }
+
+    /// `AET-WO-2308` L3: the campaign gate's version is the Renode build its
+    /// runs' archives name, read back by replay. Two runs naming one build
+    /// give it; two builds, a run naming none, no run, and a run with no
+    /// archive are each a `ToolError`, never a choice or a gap.
+    #[test]
+    fn the_campaign_names_the_renode_build_every_run_archive_names() {
+        let dir = std::env::temp_dir().join(format!("aet-2308-l3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let renode = aethelgard_chaos::campaign::RENODE;
+        let run = |n: u8| Run {
+            scenario: format!("s{n}"),
+            verdict: "pass".to_owned(),
+            expect: "pass".to_owned(),
+            matched: true,
+            findings: Value::Null,
+            run_id: hex([n; 16]),
+            state_sequence_hash: String::new(),
+            battery_sag: Value::Null,
+            observation_witness: Value::Null,
+            conditions: Vec::new(),
+        };
+        for (n, tools) in [
+            (1, vec![("aethelgard", "0.2.0"), (renode, "build-a")]),
+            (2, vec![(renode, "build-a")]),
+            (3, vec![(renode, "build-b")]),
+            (4, vec![("aethelgard", "0.2.0")]),
+        ] {
+            let header = aethelgard_chaos::Header {
+                run_id: [n; 16],
+                artifacts: Vec::new(),
+                tools: tools
+                    .iter()
+                    .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                    .collect(),
+            };
+            aethelgard_chaos::TraceWriter::create(&dir.join(hex([n; 16])), &header)
+                .unwrap()
+                .commit()
+                .unwrap();
+        }
+        assert_eq!(
+            campaign_renode(&dir, &[run(1), run(2)]).ok(),
+            Some("build-a".to_owned())
+        );
+        for runs in [
+            vec![run(1), run(3)],
+            vec![run(2), run(4)],
+            Vec::new(),
+            vec![run(9)],
+        ] {
+            assert!(campaign_renode(&dir, &runs).is_err(), "refused");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
