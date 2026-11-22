@@ -438,6 +438,26 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         package["sentinel-01-jlcpcb-cpl.csv"],
         jlcpcb_cpl.into_bytes()
     );
+    // `AET-WO-2308` (1): U4's symbol stands in for the W25Q64JVSSIQ, and the
+    // stand-in is labelled wherever the package lists the part by value: the
+    // BOM, the JLCPCB BOM's `Note` and FAB-NOTES' parts with a note.
+    let standin = "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)";
+    let text = |name: &str| String::from_utf8(package[name].clone()).unwrap();
+    assert!(
+        text("sentinel-01.bom.csv").contains(&format!("U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"{standin}\"\r\n")),
+        "the BOM labels U4"
+    );
+    assert!(
+        text("sentinel-01-jlcpcb-bom.csv").contains(&format!(
+            "W25Q64JVSSIQ,\"U4\",SOIC-8_5.3x5.3mm_P1.27mm,,\"{standin}\"\r\n"
+        )),
+        "the JLCPCB BOM labels U4"
+    );
+    assert!(
+        text("FAB-NOTES.md").contains(&format!("\n## Parts with a note\n"))
+            && text("FAB-NOTES.md").ends_with(&format!("- U4 (W25Q64JVSSIQ): {standin}\n")),
+        "FAB-NOTES lists U4 last"
+    );
     // The manifest: every other file, and the verdict without its `fab` key,
     // which is the line the same call prints without `--fab-out`.
     let manifest: Value = serde_json::from_slice(&package["MANIFEST.json"]).unwrap();
