@@ -1,6 +1,6 @@
 # AET-WO-1211e — FEEDBACK: pin devices validated against the MCU and the part (A1, A2, `bulk`)
 
-**Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. `main` `ddfa64d6` (4240b, specification 23 / solved 15) was merged on 2026-11-22. **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
+**Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. Merged in on 2026-11-22: `main` `ddfa64d6` (4240b, specification 23 / solved 15), `c1e444dd` (1211d, 1214) and `7fc81640` (1211b, solved 16). **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
 
 **Status: AWAITING-PACKAGE** (the bench package needs a write=true dispatch, §9; everything else is done). **The answer, in five lines:**
 - **A1:** a declared pull is judged against what the MCU pin takes in operation (DS12117 Rev 10 Table 13, p. 105), with VDD at `mcu.supply`'s minimum and a pull to `mcu.supply` itself exempt. Both of the WO's choices (Table 10, VDD at its maximum) were corrected by ruling.
@@ -152,15 +152,18 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 
 - **Gates:**
   - `cargo fmt --all -- --check` passes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at the merge of `c1e444dd`.
-  - `cargo test --workspace` (Furnace, target outside the repository, at the merge of `c1e444dd`, 2026-11-22): 155 binaries, 2630 passed and 2 failed. Both failures are expected.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at `80cd4db6`.
+  - `cargo test --workspace` (Furnace, target outside the repository, at `80cd4db6`, the merge of `7fc81640`, 2026-11-22): 156 binaries, 2642 passed and 2 failed. Both failures are expected.
     - `bench_board_tier1` waits on the package (§9).
     - `fab_tier1` is F11.
+    - Before the merges, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
     - Before that merge, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
-- **The null sweep** (§2): main's binary on main's tree (`ddfa64d6`) against the branch's on the branch's (`out/sweep-result.json`). 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. The 27 generated trees each move 8 files by one sha line (216).
+- **The null sweep** (§2): main's binary on main's tree against the branch's on the branch's. 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. Taken twice:
+  - against `ddfa64d6` (`out/sweep-result.json`): 216 generated files, each moved by one sha line;
+  - against `7fc81640`, after 1211b, from `80cd4db6` (`out/sweep-result-7fc81640.json`): 223 generated files, each moved by one sha line.
 - **Goldens moved by the bump:**
   - 26 files by their sha256 line alone (`boards/sentinel-01*`, the svd-hal UI boards and topology, the hwdef fixtures). `boards/sentinel-01` and `boards/sentinel-01-bench` each equal, file for file, what the branch's `generate` writes for their specifications (`diff -r` against the null sweep's trees). The svd-hal and hwdef goldens are regenerated and compared by their own tests;
-  - `solve_cli`'s two digests and `order_2203`'s three text digests, each shown equal to main's with the old sha put back (measured, and recorded at each constant; `order_2203`'s boot image did not move);
+  - `solve_cli`'s two digests (re-taken again on main's solved 16 at the merge of `7fc81640`) and `order_2203`'s three text digests, each shown equal to main's with the old sha put back (measured, and recorded at each constant; `order_2203`'s boot image did not move);
   - the cli README's example line.
 - **Fence:** `crates/aethelgard-ir` (rules, data, schema, README, tests); the version literal and the files `renumber.py` touches; the sha-bearing goldens; `spike/1211e/`; this file. Nothing in `aethelgard-eda`, the generator, the twin, chaos, workflows or `ci/` changed.
 - **Reduction pass (diff): −37 lines removed** (the 34-line copy of the sweep script, 2 dead lines in `measure.py`, 1 in `table8.py`; the MCU-pull call became a 2-line comment saying why there is none).
