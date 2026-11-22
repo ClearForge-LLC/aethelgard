@@ -800,8 +800,9 @@ fn mcu_row(spec: &Specification) -> Result<&'static crate::power_parts::Mcu, IrV
 
 /// A reservoir capacitor at an ADC pin is rated for VDDA's maximum (the
 /// domain's, rounded up): the pin can sit anywhere up to it (`AET-WO-1217`
-/// F8; `1211a` compared the minimum).
-fn reservoir_rated(rated_mv: i64, vdda: &VoltageDomain) -> bool {
+/// F8; `1211a` compared the minimum). The power tree's battery sense reads
+/// it too (`AET-WO-1218`).
+pub(crate) fn reservoir_rated(rated_mv: i64, vdda: &VoltageDomain) -> bool {
     rated_mv >= i64::from(crate::maximum_millivolts(vdda))
 }
 
@@ -1324,19 +1325,12 @@ impl<'s> Device<'s> {
                     ),
                 ));
             };
-            if r_hi > i128::from(rain.value) {
-                let Some(res) = &c.reservoir else {
-                    return Err(self.err(
-                        K::AdcSourceImpedance,
-                        &format!("{at}.transfer"),
-                        format!(
-                            "the source is up to {r_hi} ohms, above RAIN's {} ohms at {} bits ({}), and no reservoir capacitor is declared",
-                            rain.value, a.adc_resolution_bits, pp.cite(&rain.at)
-                        ),
-                    ));
-                };
-                let cap = match pp.get(&res.part).map(|r| &r.kind) {
-                    Some(crate::power_parts::Kind::Capacitor(cap)) => cap,
+            // A declared reservoir is a capacitor row whether or not RAIN
+            // needs it (`AET-WO-1218`, `1217` R5): `emit` draws it either way.
+            let reservoir = match &c.reservoir {
+                None => None,
+                Some(res) => match pp.get(&res.part).map(|r| &r.kind) {
+                    Some(crate::power_parts::Kind::Capacitor(cap)) => Some(cap),
                     _ => {
                         return Err(self.err(
                             K::PassivePartUnknown,
@@ -1347,6 +1341,18 @@ impl<'s> Device<'s> {
                             ),
                         ));
                     }
+                },
+            };
+            if r_hi > i128::from(rain.value) {
+                let Some(cap) = reservoir else {
+                    return Err(self.err(
+                        K::AdcSourceImpedance,
+                        &format!("{at}.transfer"),
+                        format!(
+                            "the source is up to {r_hi} ohms, above RAIN's {} ohms at {} bits ({}), and no reservoir capacitor is declared",
+                            rain.value, a.adc_resolution_bits, pp.cite(&rain.at)
+                        ),
+                    ));
                 };
                 let need = crate::power::reservoir_min_picofarads(m, a.adc_resolution_bits);
                 if i128::from(cap.rated_picofarads.value) < need

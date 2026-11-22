@@ -123,3 +123,30 @@ fn every_exit_code_of_check_pinout() {
     assert_eq!(code, 2, "{line}");
     assert!(line.contains(r#""kind":"SchemaViolation""#), "{line}");
 }
+
+/// `AET-WO-1218` (`1217` R2): the reference topology with `FLASH_CS` moved
+/// to `PC2`, whose pad takes only an analog input. On the H753 `validate`
+/// refuses it (`AnalogPadPin`); with `mcu` renamed, the pads `validate`
+/// reads are no row's, and the check refuses the topology by its part.
+#[test]
+fn a_pad_claim_is_refused_whatever_the_topology_calls_its_mcu() {
+    let d = dir("pad-mcu");
+    let mut t: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(TOPOLOGY).unwrap()).unwrap();
+    t["gpio"]["FLASH_CS"]["pin"] = "PC2".into();
+    for (mcu, kind) in [
+        ("STM32H753ZITx", "AnalogPadPin"),
+        ("STM32H743ZITx", "PartMismatch"),
+        ("stm32h753zitx", "PartMismatch"),
+    ] {
+        t["mcu"] = mcu.into();
+        let path = d.join(format!("{mcu}.json"));
+        fs::write(&path, serde_json::to_vec(&t).unwrap()).unwrap();
+        let (code, line) = run(&d, &Elf::default(), None, path.to_str().unwrap(), ALLOW);
+        assert_eq!(code, 2, "{mcu}: {line}");
+        assert!(
+            line.contains(&format!(r#""kind":"{kind}""#)),
+            "{mcu}: {line}"
+        );
+    }
+}

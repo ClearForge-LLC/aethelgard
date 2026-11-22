@@ -149,11 +149,11 @@ fn emitter_prefix(key: &str) -> bool {
 /// carries two (`AET-WO-3402` §1.1).
 pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
     let nameable = crate::connectors::nameable(spec);
-    // Every other reference: `names::references` lists the test points last.
-    let all = crate::names::references(spec);
-    let others = &all[..all.len() - spec.declared_test_points().len()];
-    let mut by_key: BTreeMap<String, &str> =
-        others.iter().map(|r| (reference_key(r), *r)).collect();
+    // Every other reference, pin devices' included (`AET-WO-1218`).
+    let mut by_key: BTreeMap<String, &str> = crate::names::references_but_test_points(spec)
+        .into_iter()
+        .map(|r| (reference_key(r), r))
+        .collect();
     let mut nets: BTreeMap<&str, &str> = BTreeMap::new();
     for t in spec.declared_test_points() {
         if !nameable.contains(t.net.as_str()) {

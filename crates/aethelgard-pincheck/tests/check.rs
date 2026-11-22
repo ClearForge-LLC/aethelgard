@@ -710,3 +710,20 @@ fn an_input_gpio_entry_is_refused_as_not_judged() {
         ("GpioNotJudged", Some("WAKE"))
     );
 }
+
+/// `AET-WO-1218` (`1217` R2): a topology naming an MCU other than the pin
+/// table's, exactly, is refused before any finding: another part, and the
+/// table's own part in another case, which names no power-parts row either.
+#[test]
+fn a_topology_naming_another_mcu_is_refused() {
+    let config = elf::read(&Elf::default().bytes()).unwrap();
+    for mcu in ["STM32H743ZITx", "stm32h753zitx"] {
+        let mut t = topology();
+        t.mcu = mcu.into();
+        let err = judge(&t, &lqfp_like(), &config, None, &allow()).unwrap_err();
+        assert_eq!(
+            (err.kind(), err.id().as_deref()),
+            ("PartMismatch", Some(mcu))
+        );
+    }
+}

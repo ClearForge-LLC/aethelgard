@@ -165,6 +165,11 @@ pub enum Refusal {
     Allow { kind: &'static str, message: String },
     #[error("the pin table is for {part}; the check knows only {PART}")]
     UnsupportedPart { part: String },
+    /// `AET-WO-1218` (`1217` R2): the topology names an MCU other than the
+    /// pin table's, exactly. `SolvedTopology::validate` takes the analog
+    /// pads from `topology.mcu`, so a renamed MCU would drop them unseen.
+    #[error("the topology is for `{topology}`; the pin table is for `{table}`")]
+    PartMismatch { topology: String, table: String },
     #[error("the topology's {net} is on `{pin}`, which is not a pin P[A-K]0-15")]
     InvalidPin { net: String, pin: String },
     /// A valid topology holds a speed for every pin; one that does not was
@@ -205,6 +210,7 @@ impl Refusal {
             Self::Conditional { .. } => "HwdefConditionalUnsupported",
             Self::DecodesDisagree { .. } => "DecodesDisagree",
             Self::UnsupportedPart { .. } => "UnsupportedPart",
+            Self::PartMismatch { .. } => "PartMismatch",
             Self::InvalidPin { .. } => "InvalidPin",
             Self::NoPinSpeed { .. } => "NoPinSpeed",
             Self::GpioNotJudged { .. } => "GpioNotJudged",
@@ -219,6 +225,7 @@ impl Refusal {
             Self::InvalidPin { net, .. } | Self::NoPinSpeed { net } => Some(net.clone()),
             Self::GpioNotJudged { id, .. } => Some(id.clone()),
             Self::UnsupportedPart { part } => Some(part.clone()),
+            Self::PartMismatch { topology, .. } => Some(topology.clone()),
             Self::Elf { .. } | Self::Allow { .. } => None,
         }
     }
@@ -377,6 +384,12 @@ pub fn judge(
     if package.part != PART {
         return Err(Refusal::UnsupportedPart {
             part: package.part.clone(),
+        });
+    }
+    if topology.mcu != package.part {
+        return Err(Refusal::PartMismatch {
+            topology: topology.mcu.clone(),
+            table: package.part.clone(),
         });
     }
     refuse_unjudged_gpio(topology)?;

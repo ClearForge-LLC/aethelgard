@@ -1,0 +1,11 @@
+0
+Files d1-bare/board/drv8876-ph-en.repl and d1-tp-gnd/board/drv8876-ph-en.repl differ
+Files d1-bare/board/firmware/.cargo/config.toml and d1-tp-gnd/board/firmware/.cargo/config.toml differ
+Files d1-bare/board/firmware/Cargo.toml and d1-tp-gnd/board/firmware/Cargo.toml differ
+Files d1-bare/board/firmware/link.x and d1-tp-gnd/board/firmware/link.x differ
+Files d1-bare/board/firmware/src/main.rs and d1-tp-gnd/board/firmware/src/main.rs differ
+Files d1-bare/board/src/board.rs and d1-tp-gnd/board/src/board.rs differ
+Files d1-bare/board/src/lib.rs and d1-tp-gnd/board/src/lib.rs differ
+Files d1-bare/board/src/proofs.rs and d1-tp-gnd/board/src/proofs.rs differ
+Files d1-bare/kicad/drv8876-ph-en.kicad_pcb and d1-tp-gnd/kicad/drv8876-ph-en.kicad_pcb differ
+Files d1-bare/kicad/drv8876-ph-en.kicad_sch and d1-tp-gnd/kicad/drv8876-ph-en.kicad_sch differ

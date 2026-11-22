@@ -448,6 +448,42 @@ fn a_bus_no_instance_can_serve_says_why_for_each_instance() {
     );
 }
 
+/// `AET-WO-1218` (`1217` R4): `basic()` and [`table`] on the H753, whose
+/// row withholds `PC2` and `PC3` as analog pads, with `SPI2_MISO` also on
+/// `PC2` and `SPI2_MOSI` only on `PC3`. A refusal names the withheld pad
+/// beside the pins it offers.
+#[test]
+fn a_bus_refusal_names_a_pin_withheld_as_an_analog_pad() {
+    const H753: &str = "STM32H753ZITx";
+    let mut t = table();
+    t.part = H753.into();
+    let mut pc2 = t.pins["PB14"].clone();
+    pc2.position = 900;
+    t.pins.insert("PC2".into(), pc2);
+    let mut s = basic();
+    s.mcu.part = H753.into();
+    s.spi_buses[0].peripheral = Some("SPI2".into());
+    devs(&mut s).spi[0].cs.pin = Some("PB14".into());
+    let note = "withheld as an analog pad (the MCU row's `io.analog_pads`)";
+    assert_eq!(
+        solve(&s, &t, HASH).expect_err("refused").to_string(),
+        format!(
+            "no instance can serve bus `S`: SPI2: every pin for `SPI2_MISO` is held by hand \
+             (`PB14` by `spi_devices[0].cs`); `PC2` {note}"
+        )
+    );
+    let mut pc3 = t.pins.remove("PB15").unwrap();
+    pc3.position = 901;
+    t.pins.insert("PC3".into(), pc3);
+    devs(&mut s).spi[0].cs.pin = None;
+    assert_eq!(
+        solve(&s, &t, HASH).expect_err("refused").to_string(),
+        format!(
+            "no instance can serve bus `S`: SPI2: the table has no unreserved pin for `SPI2_MOSI`; `PC3` {note}"
+        )
+    );
+}
+
 #[test]
 fn infeasible_names_a_minimal_set_of_buses() {
     // SPI1 and SPI3 share PA5, PA6 and PA7 here, so the buses forced onto

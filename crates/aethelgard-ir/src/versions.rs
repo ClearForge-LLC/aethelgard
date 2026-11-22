@@ -273,6 +273,7 @@ pub const CHANGES: &[VersionChange] = &[
         &[],
         &["AnalogPadPin", "PowerPartUnknown"],
     ),
+    row(27, "AET-WO-1218", &[], &[], &[], &["PowerPartUnknown"]),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version
