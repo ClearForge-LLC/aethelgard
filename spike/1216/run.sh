@@ -5,9 +5,8 @@ set -uo pipefail
 AE=$1; W=$2
 here=$(cd "$(dirname "$0")" && pwd); root=$(git -C "$here" rev-parse --show-toplevel)
 mkdir -p "$here/out/drawn" "$W/solve" "$W/emit"
-printf 'file\tvalidate\tsolve\temit\tdrawn_rows\tnote\n' > "$here/out/boards.tsv"
-bash "$here/universe.sh" | while read -r f; do
-  n=$(basename "$f" .json); d=$(basename "$(dirname "$f")"); [ "$d" = solve ] && n="solve-$n"
+printf 'name\tfile\tvalidate\tsolve\temit\tdrawn_rows\tnote\n' > "$here/out/boards.tsv"
+bash "$here/universe.sh" | while IFS=$'\t' read -r n f; do
   v=$("$AE" validate --file "$root/$f" 2>&1); vrc=$?
   s=$("$AE" solve --file "$root/$f" 2>/dev/null); src=$?; [ $src -eq 0 ] && printf '%s' "$s" > "$W/solve/$n.json"
   note=""
@@ -25,5 +24,5 @@ bash "$here/universe.sh" | while read -r f; do
       note="$note emit:$(printf '%s' "$e" | python3 -I -c 'import json,sys; e=json.load(sys.stdin).get("error",{}); print(e.get("kind","?"))' 2>/dev/null)"
     fi
   fi
-  printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$f" "$vrc" "$src" "$erc" "$rows" "$note" >> "$here/out/boards.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$f" "$vrc" "$src" "$erc" "$rows" "$note" >> "$here/out/boards.tsv"
 done

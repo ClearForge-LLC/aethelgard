@@ -36,7 +36,7 @@ Options, each with its variants:
        mcu.supply's, judged at VDD = 0 (c1's test), and a step with an empty
        source refused (SequenceStepUnsourced).
 
-usage: python3 -I judge.py <out/spec dir> <boards list file> <sequences dir> -> TSV on stdout
+usage: python3 -I judge.py <out/spec dir> <universe.sh output> <sequences dir> -> TSV on stdout
 """
 import csv
 import json
@@ -158,10 +158,7 @@ def a_sidecar(spec, rows, seq):
 def main(spec_dir, boards, seq_dir):
     root = os.popen("git rev-parse --show-toplevel").read().strip()
     print("\t".join(["board", "option", "refused", "refusals"]))
-    for f in [l.strip() for l in open(boards) if l.strip()]:
-        n = os.path.basename(f)[:-5]
-        if os.path.basename(os.path.dirname(f)) == "solve":
-            n = "solve-" + n
+    for n, f in (l.rstrip("\n").split("\t") for l in open(boards) if l.strip()):
         spec = json.load(open(os.path.join(root, f)))
         rows = list(csv.DictReader(open(os.path.join(spec_dir, n + ".tsv")), delimiter="\t"))
         seqf = os.path.join(seq_dir, n + ".json")

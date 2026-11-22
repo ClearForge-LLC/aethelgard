@@ -1,35 +1,35 @@
-25	NRST	RST	/NRST	C19	capacitor	1	100n	GND	-	capacitor	no
-25	NRST	RST	/NRST	J2	connector	3	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
-25	NRST	RST	/NRST	SW1	switch	1	PTS810 SJM 250 SMTR LFS	GND	-	switch	no
-25	NRST	RST	/NRST	TP3	test_point	1	TestPoint	-	-	test_point	probe
-34	PA0	FT_a	/FLASH_CS	TP7	test_point	1	TestPoint	-	-	test_point	probe
-34	PA0	FT_a	/FLASH_CS	U4	ic	1	W25Q64JVSSIQ	GND,VDD_3V3	-	ic	no
-41	PA5	TT_ha	/SPI_SCK	TP10	test_point	1	TestPoint	-	-	test_point	probe
-41	PA5	TT_ha	/SPI_SCK	U4	ic	6	W25Q64JVSSIQ	GND,VDD_3V3	-	ic	no
-42	PA6	FT_a	/SPI_MISO	TP8	test_point	1	TestPoint	-	-	test_point	probe
-42	PA6	FT_a	/SPI_MISO	U4	ic	2	W25Q64JVSSIQ	GND,VDD_3V3	-	ic	no
-43	PA7	TT_a	/SPI_MOSI	TP9	test_point	1	TestPoint	-	-	test_point	probe
-43	PA7	TT_a	/SPI_MOSI	U4	ic	5	W25Q64JVSSIQ	GND,VDD_3V3	-	ic	no
-69	PB10	FT_f	/EXT_SCL	J4	connector	2	SM04B-GHS-TB	GND,VDD_3V3	-	connector	off-board
-69	PB10	FT_f	/EXT_SCL	R4	resistor	2	10k	VDD_3V3	-	resistor	no
-69	PB10	FT_f	/EXT_SCL	TP11	test_point	1	TestPoint	-	-	test_point	probe
-70	PB11	FT_f	/EXT_SDA	J4	connector	3	SM04B-GHS-TB	GND,VDD_3V3	-	connector	off-board
-70	PB11	FT_f	/EXT_SDA	R3	resistor	2	10k	VDD_3V3	-	resistor	no
-70	PB11	FT_f	/EXT_SDA	TP12	test_point	1	TestPoint	-	-	test_point	probe
-101	PA9	FT_u	/CONSOLE_TX	J1	connector	1	SM04B-GHS-TB	GND	-	connector	off-board
-101	PA9	FT_u	/CONSOLE_TX	TP6	test_point	1	TestPoint	-	-	test_point	probe
-102	PA10	FT_u	/CONSOLE_RX	J1	connector	2	SM04B-GHS-TB	GND	-	connector	off-board
-102	PA10	FT_u	/CONSOLE_RX	TP5	test_point	1	TestPoint	-	-	test_point	probe
-105	PA13	FT	/SWDIO	J2	connector	4	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
-109	PA14	FT	/SWCLK	J2	connector	5	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
-136	PB6	FT_f	/I2C_SCL	R2	resistor	2	2k2	VDD_3V3	-	resistor	no
-136	PB6	FT_f	/I2C_SCL	TP13	test_point	1	TestPoint	-	-	test_point	probe
-136	PB6	FT_f	/I2C_SCL	U2	ic	4	BME280	GND,VDD_3V3	-	ic	no
-136	PB6	FT_f	/I2C_SCL	U3	ic	1	TMP117xxDRV	GND,VDD_3V3	-	ic	no
-137	PB7	FT_fa	/I2C_SDA	R1	resistor	2	2k2	VDD_3V3	-	resistor	no
-137	PB7	FT_fa	/I2C_SDA	TP14	test_point	1	TestPoint	-	-	test_point	probe
-137	PB7	FT_fa	/I2C_SDA	U2	ic	3	BME280	GND,VDD_3V3	-	ic	no
-137	PB7	FT_fa	/I2C_SDA	U3	ic	6	TMP117xxDRV	GND,VDD_3V3	-	ic	no
-138	BOOT0	B	/BOOT0	J2	connector	2	SM06B-SRSS-TB	GND,VDD_3V3	-	connector	off-board
-138	BOOT0	B	/BOOT0	R8	resistor	1	10k	GND	-	resistor	no
-138	BOOT0	B	/BOOT0	TP2	test_point	1	TestPoint	-	-	test_point	probe
+25	NRST	RST	/NRST	C19	capacitor	1	100n	GND	-	no
+25	NRST	RST	/NRST	J2	connector	3	SM06B-SRSS-TB	GND,VDD_3V3	-	off-board
+25	NRST	RST	/NRST	SW1	switch	1	PTS810 SJM 250 SMTR LFS	GND	-	no
+25	NRST	RST	/NRST	TP3	test_point	1	TestPoint	-	-	probe
+34	PA0	FT_a	/FLASH_CS	TP7	test_point	1	TestPoint	-	-	probe
+34	PA0	FT_a	/FLASH_CS	U4	ic	1	W25Q64JVSSIQ	GND,VDD_3V3	-	no
+41	PA5	TT_ha	/SPI_SCK	TP10	test_point	1	TestPoint	-	-	probe
+41	PA5	TT_ha	/SPI_SCK	U4	ic	6	W25Q64JVSSIQ	GND,VDD_3V3	-	no
+42	PA6	FT_a	/SPI_MISO	TP8	test_point	1	TestPoint	-	-	probe
+42	PA6	FT_a	/SPI_MISO	U4	ic	2	W25Q64JVSSIQ	GND,VDD_3V3	-	no
+43	PA7	TT_a	/SPI_MOSI	TP9	test_point	1	TestPoint	-	-	probe
+43	PA7	TT_a	/SPI_MOSI	U4	ic	5	W25Q64JVSSIQ	GND,VDD_3V3	-	no
+69	PB10	FT_f	/EXT_SCL	J4	connector	2	SM04B-GHS-TB	GND,VDD_3V3	-	off-board
+69	PB10	FT_f	/EXT_SCL	R4	resistor	2	10k	VDD_3V3	-	no
+69	PB10	FT_f	/EXT_SCL	TP11	test_point	1	TestPoint	-	-	probe
+70	PB11	FT_f	/EXT_SDA	J4	connector	3	SM04B-GHS-TB	GND,VDD_3V3	-	off-board
+70	PB11	FT_f	/EXT_SDA	R3	resistor	2	10k	VDD_3V3	-	no
+70	PB11	FT_f	/EXT_SDA	TP12	test_point	1	TestPoint	-	-	probe
+101	PA9	FT_u	/CONSOLE_TX	J1	connector	1	SM04B-GHS-TB	GND	-	off-board
+101	PA9	FT_u	/CONSOLE_TX	TP6	test_point	1	TestPoint	-	-	probe
+102	PA10	FT_u	/CONSOLE_RX	J1	connector	2	SM04B-GHS-TB	GND	-	off-board
+102	PA10	FT_u	/CONSOLE_RX	TP5	test_point	1	TestPoint	-	-	probe
+105	PA13	FT	/SWDIO	J2	connector	4	SM06B-SRSS-TB	GND,VDD_3V3	-	off-board
+109	PA14	FT	/SWCLK	J2	connector	5	SM06B-SRSS-TB	GND,VDD_3V3	-	off-board
+136	PB6	FT_f	/I2C_SCL	R2	resistor	2	2k2	VDD_3V3	-	no
+136	PB6	FT_f	/I2C_SCL	TP13	test_point	1	TestPoint	-	-	probe
+136	PB6	FT_f	/I2C_SCL	U2	ic	4	BME280	GND,VDD_3V3	-	no
+136	PB6	FT_f	/I2C_SCL	U3	ic	1	TMP117xxDRV	GND,VDD_3V3	-	no
+137	PB7	FT_fa	/I2C_SDA	R1	resistor	2	2k2	VDD_3V3	-	no
+137	PB7	FT_fa	/I2C_SDA	TP14	test_point	1	TestPoint	-	-	probe
+137	PB7	FT_fa	/I2C_SDA	U2	ic	3	BME280	GND,VDD_3V3	-	no
+137	PB7	FT_fa	/I2C_SDA	U3	ic	6	TMP117xxDRV	GND,VDD_3V3	-	no
+138	BOOT0	B	/BOOT0	J2	connector	2	SM06B-SRSS-TB	GND,VDD_3V3	-	off-board
+138	BOOT0	B	/BOOT0	R8	resistor	1	10k	GND	-	no
+138	BOOT0	B	/BOOT0	TP2	test_point	1	TestPoint	-	-	probe

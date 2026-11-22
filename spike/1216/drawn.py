@@ -6,7 +6,7 @@ other pad on that net and, through two-terminal parts, the net on their far
 side, so a path the specification reader misses shows up here.
 
 usage: python3 -I drawn.py <board.kicad_pcb> <table8-visual.tsv> <mcu.supply net>  -> TSV on stdout
-columns: pad pin structure net peer class peer_pad value rails hop2 class off_domain
+columns: pad pin structure net peer class peer_pad value rails hop2 off_domain
 """
 import re
 import sys
@@ -56,7 +56,7 @@ def main(pcb, visual, supply_net):
             peers = [(r, p) for r, p in bynet.get(n, []) if r != mref]
             for r, p in peers or [("-", "-")]:
                 if r == "-":
-                    print("\t".join([pad, name, struct, n, "-", "-", "-", "-", "-", "-", "unloaded", "no"]))
+                    print("\t".join([pad, name, struct, n, "-", "unloaded", "-", "-", "-", "-", "no"]))
                     continue
                 kind = re.match(r"[A-Z]+", r).group(0)
                 fn = far(r, p)
@@ -81,7 +81,7 @@ def main(pcb, visual, supply_net):
                     flag = ("yes:" + "|".join(off)) if off else ("hop" if hop else "no")
                 else:
                     cls, flag = kind, ("yes:" + "|".join(off)) if off else "no"
-                print("\t".join([pad, name, struct, n, r, cls, p, parts[r][2], ",".join(rails) or "-", ";".join(hop) or "-", cls, flag]))
+                print("\t".join([pad, name, struct, n, r, cls, p, parts[r][2], ",".join(rails) or "-", ";".join(hop) or "-", flag]))
 
 if __name__ == "__main__":
     main(sys.argv[1], sys.argv[2], sys.argv[3])

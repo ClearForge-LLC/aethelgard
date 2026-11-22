@@ -16,7 +16,9 @@ The worst voltage is open-circuit, at the source's maximum:
   at tolerance + TCR x the board's widest excursion from the TCR reference
   + drift (the same composition 1211e used for the trip);
 - a pull: the domain's maximum through the pull (open circuit: the pin's
-  own leakage is the only load, so the pin sees the rail).
+  own leakage is the only load, so the pin sees the rail);
+- a current output: the part row's maximum output current into the
+  resistor at its worst over the device's declared temperature range.
 Series ohms is the Thevenin resistance the source drives the pin through
 (for F5's injected current), "0" for a push-pull output, "-" where unknown.
 """
@@ -118,9 +120,9 @@ def main(spec_path, solve_path, pp_path, parts_path):
             return b["cells"]["max"] * b["cell_max_millivolts"]["value"]
         return dom_max(doms[rail])
 
-    def res_err_ppm(part):
+    def res_err_ppm(part, temps=None):
         r = pp[part]["kind"]["resistor"]
-        temps = (power or {}).get("conditions", {}).get("board_temperature_celsius")
+        temps = temps or (power or {}).get("conditions", {}).get("board_temperature_celsius")
         lo, hi = (temps["min"], temps["max"]) if temps else (-40, 125)
         dt = max(abs(hi - r["tcr_reference_celsius"]), abs(lo - r["tcr_reference_celsius"]))
         return r["tolerance_ppm"]["value"] + r["tcr_ppm_per_kelvin"]["value"] * dt + r["drift_ppm"]["value"]
@@ -145,8 +147,6 @@ def main(spec_path, solve_path, pp_path, parts_path):
     # 2. devices on a bus, powered from another domain (push-pull MISO, open-drain I2C)
     for i, d in enumerate(s.get("spi_devices", [])):
         if d["supply"] != supply and not any(c["bus"] == d["bus"] for c in (power or {}).get("crossings", [])):
-            for n, sig in ((x, y) for x, y in t["spi_lines"].items()) if t else []:
-                pass
             miso = [k for k, v in (t or {}).get("assignments", {}).items() if v["signal"].endswith("MISO")]
             add(",".join(miso) or "MISO", "spi_device_output", f"spi_devices[{i}] {d['reference']}", d["supply"],
                 worst_rail(d["supply"]), 0, f"spi_devices[{i}].supply")
@@ -202,7 +202,8 @@ def main(spec_path, solve_path, pp_path, parts_path):
             p = row.get("pins", {}).get(a["device_pin"], {})
             if p.get("kind") == "current_output":
                 tr = a["transfer"]["current_output"]["resistor"]
-                rmax = tr["ohms"] * (1 + res_err_ppm(tr["part"]) / 1e6) if tr["part"] in pp else tr["ohms"]
+                rmax = tr["ohms"] * (1 + res_err_ppm(tr["part"], d.get("temperature_celsius")) / 1e6) \
+                    if tr["part"] in pp else tr["ohms"]
                 w = math.ceil(p["output_max_ua"] * rmax / 1000)
                 add(a["net"], "pin_device_current_output",
                     f"{d['reference']}.{a['device_pin']} into {tr['reference']} {tr['ohms']} ohm: "
@@ -211,12 +212,15 @@ def main(spec_path, solve_path, pp_path, parts_path):
                     f"{row['source']['document']} {p['page']}")
     # 5. connectors and test points: the far end is off-board
     for c in s.get("connectors", []) or []:
-        rails = sorted({p["net"] for p in c["pins"] if p["net"] in doms or p["net"] in ("VBAT",)})
+        rails = sorted({"battery" if p["net"] == "VBAT" else p["net"] for p in c["pins"]
+                        if p["net"] in doms or p["net"] == "VBAT"})
+        ds009 = "; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum" \
+            if (c.get("standard") or "").startswith("DS-009") else ""
         for p in c["pins"]:
             if p["net"] in mcu_nets:
                 add(p["net"], "connector", f"{c['reference']}.{p['pin']} {c['part']}"
                     + (f" ({c['standard']})" if c.get("standard") else "")
-                    + (f"; the connector also carries {','.join(rails)}" if rails else "; carries no rail"),
+                    + (f"; the connector also carries {','.join(rails)}" if rails else "; carries no rail") + ds009,
                     "off-board", "not stated", "-", "connectors[]: no off-board voltage is declared",
                     ",".join(r for r in rails if r != supply) or "-")
     for tp in s.get("test_points", []) or []:
@@ -229,12 +233,6 @@ def main(spec_path, solve_path, pp_path, parts_path):
         pin_of["HSE_IN"] = "PH0"
         add("HSE_IN", "foreign_clock", "mcu.hse.external: " + hse["external"]["source"][:80], "off-board",
             "not stated", "-", "mcu.hse.external")
-    # 7. ESCs on motor outputs (fed from the pack)
-    for m in s.get("motor_outputs", []) or []:
-        esc = m.get("esc")
-        if esc:
-            add(m["label"], "esc", "motor_outputs esc: " + json.dumps(esc)[:90], "off-board", "not stated", "-",
-                "motor_outputs[].esc")
     print("\t".join(HEADER))
     for r in rows:
         print("\t".join(r))

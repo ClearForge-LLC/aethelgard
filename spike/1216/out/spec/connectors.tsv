@@ -1,6 +1,6 @@
 net	pin	structure	class	source	rail	can_lead	worst_mv	series_ohms	cite	powered_by
-I2C_SCL	PB6	FT_f	connector	J1.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-I2C_SDA	PB7	FT_fa	connector	J1.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+I2C_SCL	PB6	FT_f	connector	J1.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+I2C_SDA	PB7	FT_fa	connector	J1.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
 EXT_SCK	PA12	FT_u	connector	J2.2 SM06B-GHS-TB; the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
 EXT_MOSI	PB15	FT_u	connector	J2.3 SM06B-GHS-TB; the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
 EXT_MISO	PB14	FT_u	connector	J2.4 SM06B-GHS-TB; the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V

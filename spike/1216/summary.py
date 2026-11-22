@@ -2,8 +2,7 @@
 usage: python3 -I summary.py out/spec out/boards.tsv -> markdown table on stdout"""
 import csv, os, sys
 from collections import Counter
-boards = {os.path.basename(r["file"])[:-5] if "/solve/" not in r["file"] else "solve-" + os.path.basename(r["file"])[:-5]: r
-          for r in csv.DictReader(open(sys.argv[2]), delimiter="\t")}
+boards = {r["name"]: r for r in csv.DictReader(open(sys.argv[2]), delimiter="\t")}
 print("| board | validate / solve / emit | paths | by class | stated (worst at VDD < 1 V, pin, source) |")
 print("|---|---|---|---|---|")
 for n in sorted(boards):

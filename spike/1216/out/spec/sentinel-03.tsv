@@ -10,12 +10,12 @@ MOTOR1	PE9	TT_ha	connector	J5.1 SM06B-GHS-TB; carries no rail	off-board	yes: off
 MOTOR2	PE11	FT_ha	connector	J5.2 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
 MOTOR3	PE13	FT_h	connector	J5.3 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
 MOTOR4	PE14	FT_h	connector	J5.4 SM06B-GHS-TB; carries no rail	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	-
-CRSF_TX	PA2	FT_a	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-CRSF_RX	PA3	FT_ha	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-MAVLINK_TX	PC10	FT_ha	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-MAVLINK_RX	PC11	FT_h	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-EXT_SCL	PB10	FT_f	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
-EXT_SDA	PB11	FT_f	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+CRSF_TX	PA2	FT_a	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+CRSF_RX	PA3	FT_ha	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+MAVLINK_TX	PC10	FT_ha	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+MAVLINK_RX	PC11	FT_h	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+EXT_SCL	PB10	FT_f	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
+EXT_SDA	PB11	FT_f	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-009 pp. 6-9 prints +3.3V for the signal, a nominal level with no maximum	off-board	yes: off-board	not stated	-	connectors[]: no off-board voltage is declared	VDD_5V
 I2C_SDA	PB7	FT_fa	test_point	TP1	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
 I2C_SCL	PB6	FT_f	test_point	TP2	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
 EXT_SDA	PB11	FT_f	test_point	TP3	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
@@ -35,7 +35,3 @@ BOOT0	BOOT0	B	test_point	TP24	off-board	yes: off-board	not stated	-	test_points[
 NRST	NRST	RST	test_point	TP25	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
 SWDIO	PA13	FT	test_point	TP26	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
 SWCLK	PA14	FT	test_point	TP27	off-board	yes: off-board	not stated	-	test_points[]: a probe, when attached	-
-MOTOR1	PE9	TT_ha	esc	motor_outputs esc: {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ES	off-board	yes: off-board	not stated	-	motor_outputs[].esc	-
-MOTOR2	PE11	FT_ha	esc	motor_outputs esc: {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ES	off-board	yes: off-board	not stated	-	motor_outputs[].esc	-
-MOTOR3	PE13	FT_h	esc	motor_outputs esc: {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ES	off-board	yes: off-board	not stated	-	motor_outputs[].esc	-
-MOTOR4	PE14	FT_h	esc	motor_outputs esc: {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ES	off-board	yes: off-board	not stated	-	motor_outputs[].esc	-

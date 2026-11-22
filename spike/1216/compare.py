@@ -24,8 +24,8 @@ def main(spec_dir, drawn_dir):
         drawn = [r.rstrip("\n").split("\t") for r in open(os.path.join(drawn_dir, f))]
         snet = lambda net: net.lstrip("/")
         for r in drawn:
-            pad, pin, struct, net, ref, cls, ppad, val, rails, hop, _, flag = r
-            if flag == "no" or flag == "unloaded":
+            pad, pin, struct, net, ref, cls, ppad, val, rails, hop, flag = r
+            if flag == "no":
                 continue
             want = DRAWN_TO_SPEC.get(cls, set())
             ok = any(s["net"] == snet(net) and s["class"] in want for s in spec)

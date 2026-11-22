@@ -4,8 +4,7 @@
 set -uo pipefail
 W=$1; here=$(cd "$(dirname "$0")" && pwd); root=$(git -C "$here" rev-parse --show-toplevel)
 mkdir -p "$here/out/spec"
-bash "$here/universe.sh" | while read -r f; do
-  n=$(basename "$f" .json); d=$(basename "$(dirname "$f")"); [ "$d" = solve ] && n="solve-$n"
+bash "$here/universe.sh" | while IFS=$'\t' read -r n f; do
   sj="$W/solve/$n.json"; [ -f "$sj" ] || sj=-
   python3 -I "$here/spec.py" "$root/$f" "$sj" "$root/crates/aethelgard-ir/data/power-parts.json" \
     "$root/crates/aethelgard-ir/data/parts.json" > "$here/out/spec/$n.tsv" || echo "FAILED $f"

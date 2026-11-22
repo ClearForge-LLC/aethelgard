@@ -6,8 +6,8 @@ connectors	drawn	SWDIO	connector	J3.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag
 connectors	drawn	SWCLK	connector	J3.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
 connectors	drawn	I2C_SCL	connector	J1.2 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
 connectors	drawn	I2C_SDA	connector	J1.3 SM04B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
-connectors	spec	I2C_SCL	connector	J1.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	yes
-connectors	spec	I2C_SDA	connector	J1.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	yes
+connectors	spec	I2C_SCL	connector	J1.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+connectors	spec	I2C_SDA	connector	J1.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
 connectors	spec	EXT_SCK	connector	J2.2 SM06B-GHS-TB; the connector also carries VDD_5V	yes
 connectors	spec	EXT_MOSI	connector	J2.3 SM06B-GHS-TB; the connector also carries VDD_5V	yes
 connectors	spec	EXT_MISO	connector	J2.4 SM06B-GHS-TB; the connector also carries VDD_5V	yes
@@ -61,10 +61,10 @@ hse-crystal-16	spec	MOTOR1	connector	J3.1 SM06B-GHS-TB; carries no rail	yes
 hse-crystal-16	spec	MOTOR2	connector	J3.2 SM06B-GHS-TB; carries no rail	yes
 hse-crystal-16	spec	MOTOR3	connector	J3.3 SM06B-GHS-TB; carries no rail	yes
 hse-crystal-16	spec	MOTOR4	connector	J3.4 SM06B-GHS-TB; carries no rail	yes
-hse-crystal-16	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-hse-crystal-16	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-hse-crystal-16	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-hse-crystal-16	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
+hse-crystal-16	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+hse-crystal-16	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
 logger-4600	drawn	READOUT_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
 logger-4600	drawn	READOUT_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
 logger-4600	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
@@ -259,10 +259,10 @@ sentinel-02-shaped	spec	MOTOR1	connector	J3.1 SM06B-GHS-TB; carries no rail	yes
 sentinel-02-shaped	spec	MOTOR2	connector	J3.2 SM06B-GHS-TB; carries no rail	yes
 sentinel-02-shaped	spec	MOTOR3	connector	J3.3 SM06B-GHS-TB; carries no rail	yes
 sentinel-02-shaped	spec	MOTOR4	connector	J3.4 SM06B-GHS-TB; carries no rail	yes
-sentinel-02-shaped	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-02-shaped	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-02-shaped	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-02-shaped	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
+sentinel-02-shaped	spec	MAVLINK_TX	connector	J4.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	MAVLINK_RX	connector	J4.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	CRSF_TX	connector	J5.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-02-shaped	spec	CRSF_RX	connector	J5.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
 sentinel-03	drawn	VBAT_SENSE	resistor	R50.2 100k CRCW0603_F_K rails=VBAT hop=- flag=yes:VBAT	yes
 sentinel-03	drawn	NRST	connector	J2.3 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
 sentinel-03	drawn	NRST	test_point	TP25.1 TestPoint rails=- hop=- flag=probe	yes
@@ -310,12 +310,12 @@ sentinel-03	spec	MOTOR1	connector	J5.1 SM06B-GHS-TB; carries no rail	yes
 sentinel-03	spec	MOTOR2	connector	J5.2 SM06B-GHS-TB; carries no rail	yes
 sentinel-03	spec	MOTOR3	connector	J5.3 SM06B-GHS-TB; carries no rail	yes
 sentinel-03	spec	MOTOR4	connector	J5.4 SM06B-GHS-TB; carries no rail	yes
-sentinel-03	spec	CRSF_TX	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-03	spec	CRSF_RX	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-03	spec	MAVLINK_TX	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-03	spec	MAVLINK_RX	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-sentinel-03	spec	EXT_SCL	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	yes
-sentinel-03	spec	EXT_SDA	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V	yes
+sentinel-03	spec	CRSF_TX	connector	J6.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	CRSF_RX	connector	J6.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	MAVLINK_TX	connector	J7.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	MAVLINK_RX	connector	J7.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+sentinel-03	spec	EXT_SCL	connector	J8.2 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
+sentinel-03	spec	EXT_SDA	connector	J8.3 SM04B-GHS-TB (DS-009 I2C); the connector also carries VDD_5V; DS-	yes
 sentinel-03	spec	I2C_SDA	test_point	TP1	yes
 sentinel-03	spec	I2C_SCL	test_point	TP2	yes
 sentinel-03	spec	EXT_SDA	test_point	TP3	yes
@@ -363,14 +363,14 @@ serial-four	drawn	SWDIO	connector	J5.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- fla
 serial-four	drawn	SWCLK	connector	J5.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
 serial-four	drawn	I2C_SCL	connector	J2.4 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
 serial-four	drawn	I2C_SDA	connector	J2.5 SM06B-GHS-TB rails=GND,VDD_5V hop=- flag=off-board	yes
-serial-four	spec	MAVLINK_TX	connector	J1.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-serial-four	spec	MAVLINK_RX	connector	J1.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-serial-four	spec	GPS_TX	connector	J2.2 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V	yes
-serial-four	spec	GPS_RX	connector	J2.3 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V	yes
-serial-four	spec	I2C_SCL	connector	J2.4 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V	yes
-serial-four	spec	I2C_SDA	connector	J2.5 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V	yes
-serial-four	spec	CRSF_TX	connector	J3.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
-serial-four	spec	CRSF_RX	connector	J3.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V	yes
+serial-four	spec	MAVLINK_TX	connector	J1.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	MAVLINK_RX	connector	J1.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	GPS_TX	connector	J2.2 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	GPS_RX	connector	J2.3 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	I2C_SCL	connector	J2.4 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	I2C_SDA	connector	J2.5 SM06B-GHS-TB (DS-009 GPS); the connector also carries VDD_5V; DS-	yes
+serial-four	spec	CRSF_TX	connector	J3.2 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
+serial-four	spec	CRSF_RX	connector	J3.3 SM06B-GHS-TB (DS-009 TELEM); the connector also carries VDD_5V; D	yes
 serial-four	spec	SBUS_TX	connector	J4.1 SM04B-GHS-TB; carries no rail	yes
 serial-four	spec	SBUS_RX	connector	J4.2 SM04B-GHS-TB; carries no rail	yes
 serial-four	spec	SWDIO	connector	J5.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
