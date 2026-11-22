@@ -124,3 +124,7 @@ Harness: `~/.cache/aet-1214/mut/run.py`. Each mutant is applied to a backup copy
 - **Q1, outside the fence.** `crates/aethelgard-cli/tests/reserved_references_tier1.rs` (`serial-brr`) changes one role, `mavlink` to `rc_sbus`, and its comment. Without that change the new rule refuses that row's 300 baud first, and the CLI test fails. `1213` made the same kind of change in the same row.
 - **Q2, the `i32::MAX` boundary.** Above `i32::MAX` the rule does not fire, and step 21 refuses the baud. The alternative was to refuse it at 13c with an invented `mapped`. Is leaving it to step 21 the ruling you want?
 - **Q3, the deviation in §2.** The hwdef test also covers `SerialBaud`. Keep it, or cut it to `ConsoleBaud` alone?
+
+## 8. READY
+
+**READY, 2026-11-22.** PR #304 at `086809f4` (`main` `7c1f369f` merged in): every CI check is green (run 44973990259; tier 2 201 passed at floor 201; `TIER2_MIN` unchanged). The token was revoked after the PR opened (HTTP 204). The architect merges, and this commit is the last push.
