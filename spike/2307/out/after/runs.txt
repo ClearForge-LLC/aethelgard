@@ -1,2 +1,2 @@
-sentinel-03 exit=2 wall_ms=5203 package=none
-m-stripped exit=2 wall_ms=943 package=none
+sentinel-03 exit=2 wall_ms=5235 package=none
+m-stripped exit=2 wall_ms=786 package=none

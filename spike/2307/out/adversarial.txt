@@ -8,4 +8,4 @@ reason_key_absent	exit 2	SchemaViolation  missing field `reason` at line 1 colum
 reason_non-ASCII	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
 reason_one_space	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
 reason_padded	exit 2	InvalidSource acknowledge_unwitnessed[28].reason `acknowledge_unwitnessed[28].reason` is not a source: 1 to 200 bytes of printable ASCII, no space at either end
-refusal bytes 12443; entries 43; non-empty reasons 6, each the held entry's: True
+refusal bytes 12446; entries 43; non-empty reasons 6, each the held entry's: True

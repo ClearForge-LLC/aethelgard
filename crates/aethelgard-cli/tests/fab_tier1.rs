@@ -555,7 +555,7 @@ fn an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_on
         );
         assert_eq!(v["error"]["entries"], want, "{flag}");
         assert!(
-            m.contains("`entries` holds the 2 entries")
+            m.contains("`entries` holds the 2 entry(ies)")
                 && m.ends_with("1 to 200 bytes of printable ASCII with no space at either end; `validate` refuses an empty one (`InvalidSource`)"),
             "{m}"
         );

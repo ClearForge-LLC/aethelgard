@@ -20,7 +20,7 @@ The repository `README.md`'s `## Quickstart` runs `emit`, `check erc`, `check dr
 
 A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
 
-`--help` and `--version` exit `0` and are the only output that is not JSON. `message` is for humans and its wording is not part of the contract; `ok`, `kind`, `id` and the verdict fields are.
+`--help` and `--version` exit `0` and are the only output that is not JSON. `message` is for humans and its wording is not part of the contract; `ok`, `kind`, `id`, the optional `error` keys named below (`claimants`, `path`, and `entries` on `verify`'s `UnwitnessedFieldNotAcknowledged`) and the verdict fields are.
 
 ## `validate`
 

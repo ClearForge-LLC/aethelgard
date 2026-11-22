@@ -33,7 +33,7 @@ Predictions committed before any run: `spike/2307/PREDICTIONS.md`, `939593d3`. H
   - `RefusalBody` gains `entries`, skipped when absent. Only this kind sets it.
   - The message is the old message with the rule appended: the count of entries, that each replaces any held entry for its register and class, that a held entry keeps its reason (which then covers the added fields), and the reason rule. The rule reads "1 to 200 bytes of printable ASCII with no space at either end", with 200 taken from `aethelgard_ir::board::MAX_SOURCE`, and says that `validate` refuses an empty reason (`InvalidSource`).
   - The row ids stay in the message: the README says it "names every one", and two tests read them.
-- **How `validate` and the stale check treat the result** (§0's ask) [measured, §4]:
+- **How `validate` and the stale check treat the result** (the work order's "What this is" box asks it) [measured, §4]:
   - A new entry pasted with `""` is refused (`InvalidSource`).
   - With its reason written, the stale check passes it: every field is a ledger row of that register and class. That holds because `stale` runs before `acknowledge` in `verify` (`verify.rs`, the `stale` call precedes `acknowledge`), so a held entry's fields are already ledger rows.
   - A completed entry pasted in place of the held one passes. Pasted beside it, it is refused as `UnwitnessedAcknowledgedTwice`.
@@ -56,7 +56,7 @@ Predictions committed before any run: `spike/2307/PREDICTIONS.md`, `939593d3`. H
   - **All 16 are byte-identical, stdout and exit.**
   - The control, `UnwitnessedFieldNotAcknowledged`, differs, as it must.
   - Every refusal test in the workspace ran in the gate run (§6).
-- **Gates and CI:** §6. **`TIER2_MIN` does not move:** every new or changed test is tier 1, and no tier-2 test was added or removed. Sentinel-03's refusal test is tier 1 (`battery_sag_tier1`).
+- **Gates:** §6; CI: §8. **`TIER2_MIN` does not move:** every new or changed test is tier 1, and no tier-2 test was added or removed. Sentinel-03's refusal test is tier 1 (`battery_sag_tier1`).
   - No weight row was added. The new tests take seconds, and an unweighted test gets `DEFAULT_WEIGHT` (`ci/shard.sh`); CI refuses only an unweighted test past 60 s.
 
 ## 4. The adversarial pass, targeted (§5)
