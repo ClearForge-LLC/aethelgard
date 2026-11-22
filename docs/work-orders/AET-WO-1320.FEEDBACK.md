@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1320-arms-check` from `main` `f46c3c42`. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh subagent for the adversarial read. Its report was checked by planting its mutants. Written 2026-11-22.
 
-**Status: READY** (see §6 for CI). **The answer, in five lines:**
+**Status: READY** (see §6 for CI). D1 and D2 were accepted at 10:36Z; D3, a fold the reduction pass made, is for your ruling. **The answer, in five lines:**
 - **Five new lines in `check()`** (`crates/aethelgard-eda/src/schematic_arms.rs`). Each refuses a bad table when the crate compiles:
   1. two unstated passives on one pin;
   2. an I2C row with no address strap;
@@ -36,7 +36,7 @@
   - `one_own_net_name_on_two_pins_is_refused`
   - `a_pin_listed_twice_is_refused`
 
-  Each bad table differs from a real row in one respect. Each test also carries a control the check must accept where a weaker check would pass by luck:
+  Each bus-row bad table is a real row with one change. The pin-device tables are short passive lists over DRV8876's or DRV8833's row: CVM2 twice, or CVM2 beside one other passive. Each test also carries a control the check must accept where a weaker check would pass by luck:
   - unstated passives on two different pins;
   - an unstated passive beside a stated one on its pin, as DRV8876's own row has.
 
@@ -64,11 +64,19 @@
   - Two unstated passives on different pins stay allowed. The bulk answers one, and the other is refused at run time by name as `PassiveValueUnstated`, as today.
   - The per-row reading would refuse that pair too. Today's table passes all three readings.
 
+- **D3, a fold the reduction pass made (not asked by the WO; for your ruling).**
+  - **Removed:** `1319`'s line in `check()`'s `Own` branch, "an own net named twice in one row". The new own-name line refuses every table it did, and more.
+  - **Moved:** `1319`'s `an_own_net_capacitor_names_its_own_pin` now expects "one own-net name on two pins of a row" for its `Own`/`Own` table.
+  - **Revert:** three lines back in, and one expected message.
+  - The WO asked for five new lines; this also deletes an old one, so it is named here and in the READY note.
+
 ## 4. Adversarial pass (§5), targeted
 
 - **A check that refuses a row in today's table: none.** The `const` assertion over `ARMS` compiles with all five checks.
   - The fresh reviewer also read the logic for faults today's data hides: off-by-one starts, the first-match lookup, `share_a_pin`'s pairs, Ground ends. It found none.
-- **A check whose test passes with the check deleted: none.** K1–K5 each delete one check (its `return Err` becomes `()`) in a copy. Each is killed by that check's own test, and only by it.
+- **A check whose test passes with the check deleted: none.** K1–K5 each delete one check (its `return Err` becomes `()`) in a copy. Each is killed by that check's own test.
+  - At the build commit, each was killed by its own test only.
+  - Since the reduction (D3), K4 is also killed by `1319`'s `an_own_net_capacitor_names_its_own_pin`, whose `Own`/`Own` table the new line now refuses.
 - **The reviewer's weakening mutants** (it ran 20; five survived the first tests, each CONFIRMED by planting). All five are killed now (`mutants.txt`):
   - **W1, W2:** `share_a_pin` without the `a.two`–`b.one`, or the `a.two`–`b.two`, term. The first tests only met at `a.one`. Added: CVCP then CVM2, which meet at the first's second end; and CVCP beside a copy of CVCP moved to CPH, which meet only at both second ends. A `[CVCP, CVCP]` table did not kill W2: its first ends meet too, a mistake caught by the mutant.
   - **W3:** the pairwise loop compares adjacent pins only. Every bad table had adjacent duplicates. Added: a pin and a name, each two or more rows apart.
@@ -84,17 +92,19 @@
 - **F2, `DECOUPLERS` has no reverse check.** An entry for a part with no row goes unnoticed.
   - Harmless: an extra entry refuses nothing and draws nothing.
   - A line of `check()` would hold it if wanted. By the scope test it is backlog.
-- **F3, `1319` FEEDBACK §5's hazard table** says `check()` refuses "an own net named twice" in its own line. Since the reduction pass, the same table is refused by the general own-name line (`one own-net name on two pins of a row`). The record stands; the message moved.
+- **F3, `1319` FEEDBACK §5's hazard table** says `check()` refuses "an own net named twice" in its own line. Since D3 the same table is refused by the general own-name line. The record stands; the message moved.
 
 ## 6. Gates, fence, reduction pass
 
-- **Gates:** `cargo fmt --all -- --check` passes, and `cargo clippy --workspace --all-targets -- -D warnings` passes. `cargo test --workspace` passes (159 test binaries, at `f3cc1b2f`).
+- **Gates:** `cargo fmt --all -- --check` passes, and `cargo clippy --workspace --all-targets -- -D warnings` passes. `cargo test --workspace` passes: 159 `test result: ok` lines, doc-tests included.
+  - The gates ran at `f3cc1b2f`. The later commits are docs only: this record, and `main` `b1fbc851` merged in. `git diff f3cc1b2f HEAD -- crates Cargo.toml Cargo.lock ci .github` is empty.
+  - The three tests that read `docs/` (`readme_status`, `strict_fence`, `board_names`) were re-run at the merged head and pass.
   - A first run with the target dir under `~/.cache` failed one CLI test, `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named`, with `BaseOutsideRoot`. The test writes its scratch inside the target dir, and that dir was outside the repo.
   - That failure was environmental. Re-run with the target dir in the repository, as CI builds.
 - **CI:** see the PR's checks; READY is posted only on green. `TIER2_MIN` is unchanged.
 - **Fence:** only `crates/aethelgard-eda/src/schematic_arms.rs` (`check()`, its helpers, its tests), `spike/1320/` and this file.
 - **Reduction pass (diff): −5 net · 2 duplicates removed · 0 dead paths removed · 1 protected kept · 1 finding (F3).**
-  - **Removed:** `1319`'s `Own` branch line "an own net named twice in one row". The new own-name line now holds it: `1319`'s `Own`/`Own` table is refused there, and its test's expected message changed with it.
+  - **Removed:** `1319`'s `Own` branch line "an own net named twice in one row" (D3, for your ruling).
   - **Removed:** the `seen` set in `each_bus_rows_pins_are_its_symbols`. A pin listed twice is now a compile error over `ARMS`.
   - **Protected:** `DECOUPLERS`, labelled `belt-and-suspenders:` (D1).
   - **Proof:** after the removals, the arm tests stay green and K1–K5 and W1–W5 are all still killed.

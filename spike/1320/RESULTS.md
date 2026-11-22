@@ -15,7 +15,7 @@ Kit:
 | C1 | all five checks can be written in the `const fn` on stable | all five written; §7's first stop did not fire | yes |
 | C2 | today's `ARMS` passes all five; no row touched | the crate compiles; no row's text changed | yes |
 | C3 | every existing bad-table test passes unmodified | yes, at the build commit `a10b8e72`. The reduction pass later changed one expected message (FEEDBACK §6) | yes |
-| C4 | each check is refused at compile time by its own test, and each deletion mutant is killed by it | K1–K5 killed, each by its own test only (at `a10b8e72`, and again after the adversarial and reduction passes) | yes |
+| C4 | each check is refused at compile time by its own test, and each deletion mutant is killed by it | K1–K5 killed, each by its own test: by it alone at `a10b8e72`. After the reduction (FEEDBACK D3), K4 is also killed by `an_own_net_capacitor_names_its_own_pin` | yes |
 | C5 | the decoupler count is stated per part inside `check()`; no `Arm` field | `DECOUPLERS`, six rows; an unnamed bus part is refused | yes |
 | R1 | sweep, d4diff and d1319 identical, branch against base | identical at `a10b8e72` and at the final head (below) | yes |
 | R2 | `cargo test --workspace` passes; `TIER2_MIN` unchanged | passes (in-repo target; FEEDBACK §6); unchanged | yes |
