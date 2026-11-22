@@ -9,8 +9,12 @@
 
   python3 -I edges.py frames FILE --bit N --gate G [--rate 24000000]
       The rising edges on bit N inside each window where bit G is low (an SPI frame: SCK on
-      N, CS on G), one line per frame: its rising edges, and the SCK frequency from its first
-      to its last rising edge, (edges - 1) * RATE / (last - first) Hz.
+      N, CS on G), one line per frame: its rising edges, and the SCK frequency **within bytes**.
+      The generated SPI driver writes one byte to TXDR and waits for RXP before the next, so
+      the TxFIFO empties at every byte and SCK stalls between bytes (RM0433 Rev 9 p. 2176). A
+      frame's edges are therefore taken 8 at a time (one byte in mode 0), and the frequency is
+      7 * bytes * RATE / (the sum of each byte's first-to-eighth rising-edge span). The largest
+      gap between bytes, in samples, is printed for the record.
 
   python3 -I edges.py synth HZ HIGH PERIOD [--rate 24000000] [--samples 24000000] [--phase P]
       Samples an ideal square wave of HZ whose high phase is HIGH/PERIOD of a cycle at RATE,
@@ -52,24 +56,31 @@ def count(path, bit):
 
 def frames(path, bit, gate, rate):
     data = open(path, "rb").read()
-    out, inside, prev, edges, first, last = [], False, None, 0, None, None
+    out, inside, prev, rises = [], False, None, []
     for i, byte in enumerate(data):
         low = not (byte >> gate) & 1
         level = (byte >> bit) & 1
         if low and not inside:
-            inside, edges, first, last = True, 0, None, None
+            inside, rises = True, []
         elif not low and inside:
             inside = False
-            out.append((edges, first, last))
+            out.append(rises)
         if inside and prev == 0 and level == 1:
-            edges += 1
-            first = i if first is None else first
-            last = i
+            rises.append(i)
         prev = level
-    for n, (e, a, b) in enumerate(out):
-        hz = (e - 1) * rate / (b - a) if e > 1 and b > a else None
-        print(f"frame {n}: rising_edges {e} sck_hz {hz:.0f}" if hz else f"frame {n}: rising_edges {e}")
-    print(f"frames {len(out)} total_rising_edges {sum(e for e, _, _ in out)}")
+    total = 0
+    for n, r in enumerate(out):
+        total += len(r)
+        whole = [r[k : k + 8] for k in range(0, len(r) - len(r) % 8, 8)]
+        span = sum(b[-1] - b[0] for b in whole)
+        gap = max((whole[k + 1][0] - whole[k][-1] for k in range(len(whole) - 1)), default=0)
+        line = f"frame {n}: rising_edges {len(r)}"
+        if whole and span > 0:
+            line += f" bytes {len(whole)} sck_hz {7 * len(whole) * rate / span:.0f} max_gap_samples {gap}"
+        if len(r) % 8:
+            line += f" (not a whole number of bytes: {len(r) % 8} edges left over)"
+        print(line)
+    print(f"frames {len(out)} total_rising_edges {total}")
 
 
 def synth(hz, high, period, rate, n, phase):
