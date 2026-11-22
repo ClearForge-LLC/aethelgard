@@ -834,26 +834,23 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
                 Some((net, gnd.clone(), Vec::new()))
             }
             (Passive::Required(r), Some((d, pad, parts_row))) => {
-                let at = |name: &str| -> Result<Conn, EmitError> {
-                    let n = number(d, pad, parts_row, name)?;
-                    conns
-                        .get(&n)
-                        .cloned()
-                        .ok_or_else(|| not_drawable(d, format!("`{name}` is not drawn")))
-                };
                 let mut pads = Vec::new();
                 let mut end = |e: End, own: &str| -> Result<Conn, EmitError> {
                     match e {
                         End::Ground => Ok(gnd.clone()),
                         End::Pin(name) => {
+                            let n = number(d, pad, parts_row, name)?;
                             // Anchored by its first pin end only: CFLY
                             // anchored to both CPH and CPL (adjacent pins,
                             // 0.65 mm apart) left `U2_CPH` unroutable
                             // (measured on D1, `spike/1211d/RESULTS.md`).
                             if pads.is_empty() {
-                                pads.push((own.to_owned(), number(d, pad, parts_row, name)?));
+                                pads.push((own.to_owned(), n.clone()));
                             }
-                            at(name)
+                            conns
+                                .get(&n)
+                                .cloned()
+                                .ok_or_else(|| not_drawable(d, format!("`{name}` is not drawn")))
                         }
                     }
                 };
