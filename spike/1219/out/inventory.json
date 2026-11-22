@@ -21280,100 +21280,6 @@
   },
   {
    "unit": "T",
-   "id": "orientation:Orientation.x",
-   "type_name": "Orientation",
-   "member": "x",
-   "json": "x",
-   "at": "crates/aethelgard-ir/src/orientation.rs:72",
-   "paths": [
-    "spi_devices.*.orientation.x"
-   ],
-   "variants": {
-    "forward": {
-     "rust": "Toward::Forward",
-     "at": "crates/aethelgard-ir/src/orientation.rs:34",
-     "used": []
-    },
-    "aft": {
-     "rust": "Toward::Aft",
-     "at": "crates/aethelgard-ir/src/orientation.rs:35",
-     "used": []
-    },
-    "right": {
-     "rust": "Toward::Right",
-     "at": "crates/aethelgard-ir/src/orientation.rs:36",
-     "used": []
-    },
-    "left": {
-     "rust": "Toward::Left",
-     "at": "crates/aethelgard-ir/src/orientation.rs:37",
-     "used": []
-    },
-    "up": {
-     "rust": "Toward::Up",
-     "at": "crates/aethelgard-ir/src/orientation.rs:38",
-     "used": []
-    },
-    "down": {
-     "rust": "Toward::Down",
-     "at": "crates/aethelgard-ir/src/orientation.rs:39",
-     "used": []
-    }
-   },
-   "rust_type": "Toward",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "orientation:Orientation.z",
-   "type_name": "Orientation",
-   "member": "z",
-   "json": "z",
-   "at": "crates/aethelgard-ir/src/orientation.rs:73",
-   "paths": [
-    "spi_devices.*.orientation.z"
-   ],
-   "variants": {
-    "forward": {
-     "rust": "Toward::Forward",
-     "at": "crates/aethelgard-ir/src/orientation.rs:34",
-     "used": []
-    },
-    "aft": {
-     "rust": "Toward::Aft",
-     "at": "crates/aethelgard-ir/src/orientation.rs:35",
-     "used": []
-    },
-    "right": {
-     "rust": "Toward::Right",
-     "at": "crates/aethelgard-ir/src/orientation.rs:36",
-     "used": []
-    },
-    "left": {
-     "rust": "Toward::Left",
-     "at": "crates/aethelgard-ir/src/orientation.rs:37",
-     "used": []
-    },
-    "up": {
-     "rust": "Toward::Up",
-     "at": "crates/aethelgard-ir/src/orientation.rs:38",
-     "used": []
-    },
-    "down": {
-     "rust": "Toward::Down",
-     "at": "crates/aethelgard-ir/src/orientation.rs:39",
-     "used": []
-    }
-   },
-   "rust_type": "Toward",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
    "id": "lib:SolvedTopology.spi_lines",
    "type_name": "SolvedTopology",
    "member": "spi_lines",
@@ -21756,246 +21662,6 @@
   },
   {
    "unit": "T",
-   "id": "clock:HseCrystal.part",
-   "type_name": "HseCrystal",
-   "member": "part",
-   "json": "part",
-   "at": "crates/aethelgard-ir/src/clock.rs:95",
-   "paths": [
-    "clock.hse.declared.crystal.part"
-   ],
-   "variants": {},
-   "rust_type": "String",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.load_caps_femtofarads",
-   "type_name": "HseCrystal",
-   "member": "load_caps_femtofarads",
-   "json": "load_caps_femtofarads",
-   "at": "crates/aethelgard-ir/src/clock.rs:100",
-   "paths": [
-    "clock.hse.declared.crystal.load_caps_femtofarads"
-   ],
-   "variants": {},
-   "rust_type": "[u64; 2]",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.pull_ppm",
-   "type_name": "HseCrystal",
-   "member": "pull_ppm",
-   "json": "pull_ppm",
-   "at": "crates/aethelgard-ir/src/clock.rs:104",
-   "paths": [
-    "clock.hse.declared.crystal.pull_ppm"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.temperature_celsius",
-   "type_name": "HseCrystal",
-   "member": "temperature_celsius",
-   "json": "temperature_celsius",
-   "at": "crates/aethelgard-ir/src/clock.rs:107",
-   "paths": [
-    "clock.hse.declared.crystal.temperature_celsius"
-   ],
-   "variants": {},
-   "rust_type": "CelsiusRange",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:CelsiusRange.min",
-   "type_name": "CelsiusRange",
-   "member": "min",
-   "json": "min",
-   "at": "crates/aethelgard-ir/src/clock.rs:167",
-   "paths": [
-    "clock.hse.declared.crystal.temperature_celsius.min"
-   ],
-   "variants": {},
-   "rust_type": "i32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:CelsiusRange.max",
-   "type_name": "CelsiusRange",
-   "member": "max",
-   "json": "max",
-   "at": "crates/aethelgard-ir/src/clock.rs:168",
-   "paths": [
-    "clock.hse.declared.crystal.temperature_celsius.max"
-   ],
-   "variants": {},
-   "rust_type": "i32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.life_hours",
-   "type_name": "HseCrystal",
-   "member": "life_hours",
-   "json": "life_hours",
-   "at": "crates/aethelgard-ir/src/clock.rs:110",
-   "paths": [
-    "clock.hse.declared.crystal.life_hours"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.startup_max_us",
-   "type_name": "HseCrystal",
-   "member": "startup_max_us",
-   "json": "startup_max_us",
-   "at": "crates/aethelgard-ir/src/clock.rs:112",
-   "paths": [
-    "clock.hse.declared.crystal.startup_max_us"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseCrystal.startup_source",
-   "type_name": "HseCrystal",
-   "member": "startup_source",
-   "json": "startup_source",
-   "at": "crates/aethelgard-ir/src/clock.rs:114",
-   "paths": [
-    "clock.hse.declared.crystal.startup_source"
-   ],
-   "variants": {},
-   "rust_type": "String",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.hz_num",
-   "type_name": "HseExternal",
-   "member": "hz_num",
-   "json": "hz_num",
-   "at": "crates/aethelgard-ir/src/clock.rs:123",
-   "paths": [
-    "clock.hse.declared.external.hz_num"
-   ],
-   "variants": {},
-   "rust_type": "u64",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.hz_den",
-   "type_name": "HseExternal",
-   "member": "hz_den",
-   "json": "hz_den",
-   "at": "crates/aethelgard-ir/src/clock.rs:124",
-   "paths": [
-    "clock.hse.declared.external.hz_den"
-   ],
-   "variants": {},
-   "rust_type": "u64",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.ppm",
-   "type_name": "HseExternal",
-   "member": "ppm",
-   "json": "ppm",
-   "at": "crates/aethelgard-ir/src/clock.rs:126",
-   "paths": [
-    "clock.hse.declared.external.ppm"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.source",
-   "type_name": "HseExternal",
-   "member": "source",
-   "json": "source",
-   "at": "crates/aethelgard-ir/src/clock.rs:131",
-   "paths": [
-    "clock.hse.declared.external.source"
-   ],
-   "variants": {},
-   "rust_type": "String",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.startup_max_us",
-   "type_name": "HseExternal",
-   "member": "startup_max_us",
-   "json": "startup_max_us",
-   "at": "crates/aethelgard-ir/src/clock.rs:133",
-   "paths": [
-    "clock.hse.declared.external.startup_max_us"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "clock:HseExternal.startup_source",
-   "type_name": "HseExternal",
-   "member": "startup_source",
-   "json": "startup_source",
-   "at": "crates/aethelgard-ir/src/clock.rs:135",
-   "paths": [
-    "clock.hse.declared.external.startup_source"
-   ],
-   "variants": {},
-   "rust_type": "String",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
    "id": "clock:SolvedHse.fast_ppm",
    "type_name": "SolvedHse",
    "member": "fast_ppm",
@@ -22176,107 +21842,6 @@
      "Option::deserialize"
     ]
    },
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "motor:PwmTiming.rate_hz",
-   "type_name": "PwmTiming",
-   "member": "rate_hz",
-   "json": "rate_hz",
-   "at": "crates/aethelgard-ir/src/motor.rs:76",
-   "paths": [
-    "motor_outputs.*.pwm.rate_hz"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "motor:PwmTiming.pulse_min_us",
-   "type_name": "PwmTiming",
-   "member": "pulse_min_us",
-   "json": "pulse_min_us",
-   "at": "crates/aethelgard-ir/src/motor.rs:77",
-   "paths": [
-    "motor_outputs.*.pwm.pulse_min_us"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "motor:PwmTiming.pulse_max_us",
-   "type_name": "PwmTiming",
-   "member": "pulse_max_us",
-   "json": "pulse_max_us",
-   "at": "crates/aethelgard-ir/src/motor.rs:78",
-   "paths": [
-    "motor_outputs.*.pwm.pulse_max_us"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "motor:PwmTiming.idle",
-   "type_name": "PwmTiming",
-   "member": "idle",
-   "json": "idle",
-   "at": "crates/aethelgard-ir/src/motor.rs:79",
-   "paths": [
-    "motor_outputs.*.pwm.idle"
-   ],
-   "variants": {
-    "level": {
-     "rust": "Idle::Level",
-     "at": "crates/aethelgard-ir/src/motor.rs:116",
-     "used": []
-    },
-    "low": {
-     "rust": "Level::Low",
-     "at": "crates/aethelgard-ir/src/motor.rs:95",
-     "used": []
-    },
-    "high": {
-     "rust": "Level::High",
-     "at": "crates/aethelgard-ir/src/motor.rs:96",
-     "used": []
-    },
-    "pulse_us": {
-     "rust": "Idle::PulseUs",
-     "at": "crates/aethelgard-ir/src/motor.rs:117",
-     "used": []
-    }
-   },
-   "rust_type": "Idle",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "motor:PwmTiming.resolution_ps",
-   "type_name": "PwmTiming",
-   "member": "resolution_ps",
-   "json": "resolution_ps",
-   "at": "crates/aethelgard-ir/src/motor.rs:84",
-   "paths": [
-    "motor_outputs.*.pwm.resolution_ps"
-   ],
-   "variants": {},
-   "rust_type": "u64",
-   "optional_on_wire": false,
-   "serde": {},
    "aliases": []
   },
   {
@@ -22825,102 +22390,6 @@
   },
   {
    "unit": "T",
-   "id": "serial:Framing.baud",
-   "type_name": "Framing",
-   "member": "baud",
-   "json": "baud",
-   "at": "crates/aethelgard-ir/src/serial.rs:75",
-   "paths": [
-    "serial_ports.*.framing.baud"
-   ],
-   "variants": {},
-   "rust_type": "u32",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "serial:Framing.data_bits",
-   "type_name": "Framing",
-   "member": "data_bits",
-   "json": "data_bits",
-   "at": "crates/aethelgard-ir/src/serial.rs:78",
-   "paths": [
-    "serial_ports.*.framing.data_bits"
-   ],
-   "variants": {},
-   "rust_type": "u8",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "serial:Framing.parity",
-   "type_name": "Framing",
-   "member": "parity",
-   "json": "parity",
-   "at": "crates/aethelgard-ir/src/serial.rs:79",
-   "paths": [
-    "serial_ports.*.framing.parity"
-   ],
-   "variants": {
-    "none": {
-     "rust": "Parity::None",
-     "at": "crates/aethelgard-ir/src/serial.rs:56",
-     "used": []
-    },
-    "even": {
-     "rust": "Parity::Even",
-     "at": "crates/aethelgard-ir/src/serial.rs:57",
-     "used": []
-    },
-    "odd": {
-     "rust": "Parity::Odd",
-     "at": "crates/aethelgard-ir/src/serial.rs:58",
-     "used": []
-    }
-   },
-   "rust_type": "Parity",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "serial:Framing.stop_bits",
-   "type_name": "Framing",
-   "member": "stop_bits",
-   "json": "stop_bits",
-   "at": "crates/aethelgard-ir/src/serial.rs:81",
-   "paths": [
-    "serial_ports.*.framing.stop_bits"
-   ],
-   "variants": {},
-   "rust_type": "u8",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "serial:Framing.inverted",
-   "type_name": "Framing",
-   "member": "inverted",
-   "json": "inverted",
-   "at": "crates/aethelgard-ir/src/serial.rs:83",
-   "paths": [
-    "serial_ports.*.framing.inverted"
-   ],
-   "variants": {},
-   "rust_type": "bool",
-   "optional_on_wire": false,
-   "serde": {},
-   "aliases": []
-  },
-  {
-   "unit": "T",
    "id": "serial:SolvedSerialPort.negotiated",
    "type_name": "SolvedSerialPort",
    "member": "negotiated",
@@ -22937,22 +22406,6 @@
      "Option::deserialize"
     ]
    },
-   "aliases": []
-  },
-  {
-   "unit": "T",
-   "id": "serial:Negotiated.source",
-   "type_name": "Negotiated",
-   "member": "source",
-   "json": "source",
-   "at": "crates/aethelgard-ir/src/serial.rs:182",
-   "paths": [
-    "serial_ports.*.negotiated.source"
-   ],
-   "variants": {},
-   "rust_type": "String",
-   "optional_on_wire": false,
-   "serde": {},
    "aliases": []
   },
   {
@@ -25776,6 +25229,36 @@
    "serde": {},
    "aliases": []
   }
+ ],
+ "T_shared_with_K": [
+  "orientation:Orientation.x",
+  "orientation:Orientation.z",
+  "clock:HseCrystal.part",
+  "clock:HseCrystal.load_caps_femtofarads",
+  "clock:HseCrystal.pull_ppm",
+  "clock:HseCrystal.temperature_celsius",
+  "clock:CelsiusRange.min",
+  "clock:CelsiusRange.max",
+  "clock:HseCrystal.life_hours",
+  "clock:HseCrystal.startup_max_us",
+  "clock:HseCrystal.startup_source",
+  "clock:HseExternal.hz_num",
+  "clock:HseExternal.hz_den",
+  "clock:HseExternal.ppm",
+  "clock:HseExternal.source",
+  "clock:HseExternal.startup_max_us",
+  "clock:HseExternal.startup_source",
+  "motor:PwmTiming.rate_hz",
+  "motor:PwmTiming.pulse_min_us",
+  "motor:PwmTiming.pulse_max_us",
+  "motor:PwmTiming.idle",
+  "motor:PwmTiming.resolution_ps",
+  "serial:Framing.baud",
+  "serial:Framing.data_bits",
+  "serial:Framing.parity",
+  "serial:Framing.stop_bits",
+  "serial:Framing.inverted",
+  "serial:Negotiated.source"
  ],
  "T_roots_beyond_solved_topology": [
   {

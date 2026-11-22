@@ -886,9 +886,10 @@ def main():
     ap.add_argument("--repo", required=True)
     ap.add_argument("--dump", required=True)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--src", help="the IR's src/ (default: the repository's); a mutant copy for the reader's own mutation test")
     a = ap.parse_args()
     repo = pathlib.Path(a.repo)
-    src = repo / "crates/aethelgard-ir/src"
+    src = pathlib.Path(a.src) if a.src else repo / "crates/aethelgard-ir/src"
     out = pathlib.Path(a.out)
     out.mkdir(exist_ok=True)
     crate = Crate(src)
@@ -1097,7 +1098,9 @@ def main():
         "R_literal_arms_not_refusals": extra_lits,
         "H": H,
         "H_columns": H_cols,
-        "T": list(T.entries.values()),
+        # RULES §1: T is what the specification does not reach.
+        "T": [e for e in T.entries.values() if e["id"] not in K.entries],
+        "T_shared_with_K": [e for e in T.entries if e in K.entries],
         "T_roots_beyond_solved_topology": orphans,
         "unresolved_explained": [dict(zip(("unit", "type", "from"), u), why=EXPLAINED_UNRESOLVED[u]) for u in sorted(UNRESOLVED) if u in EXPLAINED_UNRESOLVED],
         "K_unseen_in_files": [e["id"] for e in unseen_k],
@@ -1106,7 +1109,7 @@ def main():
     }
     (out / "inventory.json").write_text(json.dumps(inv, indent=1, sort_keys=False) + "\n")
     print("current version %d; %d committed current specifications; %d files set aside" % (cur, len(spec_files), len(skipped_files)))
-    print("K %d  R %d  H %d (data files 3, columns %d; source items %d)  T %d" % (len(K.entries), len(R), len(H), len(H_cols), len(H) - 3, len(T.entries)))
+    print("K %d  R %d  H %d (data files 3 + pin table, columns %d; source items %d)  T %d" % (len(K.entries), len(R), len(H), len(H_cols), len(H) - 4, len(inv["T"])))
     print("K paths seen in files %d, in dump %d; K entries no file writes: %d; enum values no file uses: %d" % (len(file_paths), len(dump_paths), len(unseen_k), len(unused_variants)))
     if fail:
         print("FAIL")

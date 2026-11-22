@@ -1,0 +1,313 @@
+id	class	flag	tags	value_at	reason
+lib:Specification.schema_version	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.project_name	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.mcu	V			-	Container; generic name
+lib:McuWire.part	V			parts.rs/power_parts.rs table	Part string checked against held parts table (tie-break c); key name and meaning generic
+lib:McuWire.supply	V			none found	Domain id of the voltage_domains list; generic
+lib:McuWire.hse	N			clock.rs:83	Neutral meaning (crystal or external clock source); name HSE/HSEBYP is ST vocabulary (RM0433 §8.5.2). Variants crystal/external neutral
+clock:HseCrystal.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+clock:HseCrystal.load_caps_femtofarads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.pull_ppm	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.temperature_celsius	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:CelsiusRange.min	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:CelsiusRange.max	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.life_hours	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.startup_max_us	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.startup_source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.hz_num	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.hz_den	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.ppm	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.startup_max_us	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.startup_source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:McuWire.hse_hz	N			lib.rs:1093	Frequency in Hz of the external oscillator, neutral; key name HSE is ST vocabulary (v19 legacy form, only 0 accepted)
+lib:McuWire.bor_level	S			lib.rs:416	0 to 3 = RM0433 BOR_LEV option-byte levels (MAX_BOR_LEVEL, RM0433); value set is ST enumeration
+lib:McuWire.core_supply	S			lib.rs:403	Core supply configuration: LDOEN/BYPASS rows of RM0433 Rev 9 Table 34 p.261
+lib:CoreSupply.mode	S			vos.rs:673	ldo/bypass = RM0433 Table 34 legal LDOEN/BYPASS combinations (p.261, p.308)
+lib:CoreSupply.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:McuWire.supply_source	V			none found	Connector and connector pin the supply enters by; generic
+lib:SupplySource.connector	V			none found	Connector and connector pin the supply enters by; generic
+lib:SupplySource.pin	V			none found	Connector and connector pin the supply enters by; generic
+lib:McuWire.reset_switch	N			-	Push-button from reset line to ground, neutral; name rests on ST NRST pin
+lib:McuWire.foreign_clock	S	?		motor.rs:593	Container of RCC kernel clocks of a foreign firmware incl. VOS and ST USART/timer set; neutral-looking but carries ST-only members
+motor:ForeignClock.apb1_timers_hz	N			motor.rs:593	Frequency in Hz of APB1 timer clock; neutral quantity, name is RCC timer-clock vocabulary (RM0433 §8)
+board:Sourced.value	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Sourced.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:ForeignClock.apb2_timers_hz	N			motor.rs:594	Frequency in Hz of APB2 timer clock; neutral quantity, RCC naming
+motor:ForeignClock.usarts	S	?		lib.rs:1195	Map keys must equal serial::PERIPHERALS (ST USART/UART1-8 set, RM0433 D2CCIP2R mux groups); values are neutral Hz. Could be N
+motor:ForeignClock.vos	S			vos.rs:35	Voltage scale declaration; value set is the RM0433 §6.6.2 VOS scales
+motor:SourcedVos.value	S			vos.rs:35	Vos enum scale0-scale3, RM0433 Rev 9 §6.6.2 voltage scaling
+motor:SourcedVos.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.voltage_domains	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:VoltageDomain.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:VoltageDomain.nominal_millivolts	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:VoltageDomain.tolerance_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.i2c_buses	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:I2cBus.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cBus.peripheral	N	?		solve.rs:1801	Instance name (I2C1..) checked against held pin table; meaning is which controller instance; ST instance numbering. Could be V
+lib:I2cBus.speed_hz	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:I2cBus.pull_up_ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cBus.domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cBus.sda	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Signal.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Signal.pin	N			lib.rs:3084	MCU pin name in P<port><n> form, only identifier-checked then matched against held pin table; code does not parse port or number
+lib:I2cBus.scl	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Specification.spi_buses	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiBus.peripheral	N	?		solve.rs:2244	Instance name (SPI1..) checked against held pin table; ST instance numbering. Could be V
+lib:SpiBus.speed_hz	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiBus.sck	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.mosi	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.miso	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Specification.i2c_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cDevice.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cDevice.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+lib:I2cDevice.supply	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cDevice.bus	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cDevice.address	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:I2cDevice.pin_capacitance	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:PinCapacitance.declared	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:DeclaredPinCapacitance.femtofarads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:DeclaredPinCapacitance.condition	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:DeclaredPinCapacitance.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.spi_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+lib:SpiDevice.supply	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.bus	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.cs	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.pin_capacitance	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.orientation	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+orientation:Orientation.x	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+orientation:Orientation.z	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.connectors	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:Connector.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:Connector.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+connectors:Connector.standard	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+connectors:Connector.pins	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:ConnectorPin.pin	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:ConnectorPin.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:ConnectorPin.offboard	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:OffBoard.capacitance_femtofarads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:OffBoard.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.net_constraints	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:NetConstraint.net_name	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:NetConstraint.max_capacitance_femtofarads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:NetConstraint.max_rise_time_nanoseconds	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:NetConstraint.impedance_ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.board	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.copper_layers	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.layers	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:CopperLayer.name	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:CopperLayer.role	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:CopperLayer.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.stackup	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.finished_thickness_um	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FinishedThickness.nominal	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FinishedThickness.min	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FinishedThickness.max	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FinishedThickness.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.dielectrics	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Dielectric.between	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Dielectric.min_thickness_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Dielectric.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Dielectric.max_thickness_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.copper_max_um	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.relative_permittivity_max_permille	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.outer_copper_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.plane_copper_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.plating_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.copper_temperature_max_c	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.fab_tolerances	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.hole_position_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.hole_size_plus_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.hole_size_minus_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.track_width_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.via_ring_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.rules	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:DesignRules.clearance_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:DesignRules.track_width_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:DesignRules.via_drill_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:DesignRules.via_diameter_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.max_outline_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:OutlineBound.width	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:OutlineBound.height	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.forward	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.drawn	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.net_classes	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:NetClass.name	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:NetClass.track_width_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:NetClass.via	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:ClassVia.diameter_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:ClassVia.drill_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:NetClass.nets	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.diff_pairs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:DiffPair.name	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:DiffPair.nets	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:DiffPair.gap_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:DiffPair.width_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.motor_outputs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:MotorOutput.label	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:MotorOutput.pin	N			lib.rs:4064	MCU pin name in P<port><n> form, only identifier-checked then matched against held pin table; code does not parse port or number
+motor:MotorOutput.protocol	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+motor:MotorOutput.pwm	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.rate_hz	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.pulse_min_us	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.pulse_max_us	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.idle	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.resolution_ps	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:MotorOutput.esc	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:NoEsc.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.power	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.conditions	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Conditions.board_temperature_celsius	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Temperature.min	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Temperature.max	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Temperature.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Conditions.dc_bias_derating	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Derating.dielectrics	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+power:Derating.ratio_max_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Derating.retained_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Derating.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.input	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:PowerIn.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:PowerIn.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:PowerIn.hot_plug	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:HotPlug.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:HotPlug.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:HotPlug.side	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.battery	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.chemistry	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.cells	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Cells.min	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Cells.max	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.cell_min_millivolts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:SourcedValue.value	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:SourcedValue.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.cell_max_millivolts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.series_milliohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.regulators	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:Regulator.input	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.output	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.feedback	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Divider.top	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Resistor.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Resistor.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:Resistor.ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Divider.bottom	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.external	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:External.role	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:External.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:External.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:Regulator.junction	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Junction.copper_square_centimetres	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Junction.loss_milliwatts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.controls	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Control.pin	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Control.strap	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Control.wire	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Wire.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Wire.role	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.loads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Load.domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Load.milliamps	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Load.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Load.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.sense	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.top	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.bottom	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.reservoir	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Reservoir.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Reservoir.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:Sense.adc_resolution_bits	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.crossings	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+power:Crossing.bus	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.a_domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.b_domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.cs_pull_up	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.external	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.controls	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.drop_limits	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:DropLimit.domain	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:DropLimit.max_millivolts	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:DropLimit.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.accept_lifecycle	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:LifecycleAcceptance.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+lib:LifecycleAcceptance.status	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:LifecycleAcceptance.statement	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.serial_ports	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:SerialPort.label	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:SerialPort.peripheral	S	?		serial.rs:188	Hard-coded PERIPHERALS list USART1-3,UART4-5,USART6,UART7-8 with LPUART1 refused (RM0433 RCC_APB4ENR); ST instance set. Could be N
+serial:SerialPort.tx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.rx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.role	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.framing	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:Framing.baud	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:Framing.data_bits	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:Framing.parity	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:Framing.stop_bits	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:Framing.inverted	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.negotiated	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:Negotiated.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:SerialPort.peer_deviation_ppm	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.peer_deviation_source	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Specification.acknowledge_unwitnessed	S			lib.rs:222	List of acknowledgements of ST register fields the model does not witness
+lib:UnwitnessedAcknowledgement.register	S			lib.rs:290	ST peripheral.register name (SPI1.CFG1, FLASH.OPTSR_CUR) checked against ledger built from RM0433 registers
+lib:UnwitnessedAcknowledgement.class	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:UnwitnessedAcknowledgement.fields	S			lib.rs:244	ST register bit-field names judged against the pin-table ledger (UnwitnessedAcknowledgementStale)
+lib:UnwitnessedAcknowledgement.reason	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.test_points	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+bench:TestPoint.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+bench:TestPoint.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.pin_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+pin_devices:PinDevice.supplies	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.straps	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.signals	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.device_pin	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.pin	N			lib.rs:4064	MCU pin name in P<port><n> form, only identifier-checked then matched against held pin table; code does not parse port or number
+pin_devices:GpioSignal.direction	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.initial	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.active	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.pull	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SignalPull.mcu	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SignalPull.resistor	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PullResistor.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PullResistor.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+pin_devices:PullResistor.ohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PullResistor.to	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SignalPull.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.analog	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.device_pin	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.net	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.pin	N			lib.rs:4064	MCU pin name in P<port><n> form, only identifier-checked then matched against held pin table; code does not parse port or number
+pin_devices:AnalogInput.channel	N			pin_devices.rs:196	Hand-chosen ADC channel (instance and INPm input); neutral meaning, ST names
+pin_devices:AdcChannel.peripheral	N	?		pin_devices.rs:661	ADC instance name (ADC3) matched against held pin table; ST instance naming
+pin_devices:AdcChannel.input	N			pin_devices.rs:662	ADC input by INPm name matched against held table; neutral meaning (input channel number), name is ST ADC INP vocabulary
+pin_devices:AnalogInput.transfer	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:CurrentOutput.resistor	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:CurrentOutput.reservoir	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.full_scale	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.adc_resolution_bits	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.bridges	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bridge.id	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bridge.mode	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bridge.inputs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bridge.outputs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.part_limits	V		other-vendor	-	Part-table row key; other-vendor or generic part
+pin_devices:PartLimits.input_pwm_max_hz	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SourcedValue.value	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SourcedValue.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.bulk	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bulk.reference	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bulk.part	V		other-vendor	none found	Part-table row key; other-vendor or generic part
+pin_devices:Bulk.source	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.temperature_celsius	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST

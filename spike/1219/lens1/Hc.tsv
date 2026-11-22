@@ -1,0 +1,391 @@
+id	class	flag	tags	value_at	reason
+H:parts.json|parts:RawTable.schema_version	V		other-vendor	parts.rs:676	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawTable.parts	V		other-vendor	parts.rs:680	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawTable.pin_parts	V		other-vendor	parts.rs:682	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.part	V		other-vendor	parts.rs:688	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.lifecycle	V		other-vendor	parts.rs:689	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.stand_in	V		other-vendor	parts.rs:690	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.bus	V		other-vendor,std	parts.rs:811	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawI2c.addresses	V		other-vendor,std	parts.rs:819	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSpi.modes	V		other-vendor,std	parts.rs:825	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSpi.max_clock_hz	V		other-vendor,std	parts.rs:826	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.identity	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.write	V		other-vendor,std	parts.rs:832	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.read	V		other-vendor,std	parts.rs:833	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.value	V		other-vendor,std	parts.rs:834	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.mask	V		other-vendor,std	parts.rs:837	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.datasheet_value	V		other-vendor,std	parts.rs:838	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.supply_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSupply.min	V		other-vendor	parts.rs:844	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSupply.max	V		other-vendor	parts.rs:845	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.io_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.pin_capacitance	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPinCapacitance.max_femtofarads	V		other-vendor	parts.rs:854	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPinCapacitance.typical_femtofarads	V		other-vendor	parts.rs:856	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.spi_output_delay_max_ns	V		other-vendor	parts.rs:701	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.renode	V		other-vendor	parts.rs:705	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.script	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawScript.configure	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawConfigure.writes	V		other-vendor	parts.rs:770	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawConfigure.settle_us	V		other-vendor	parts.rs:773	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawConfigure.start_up	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.max_us	V		other-vendor	parts.rs:782	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.typ_us	V		other-vendor	parts.rs:785	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.condition	V		other-vendor	parts.rs:786	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawScript.data	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawData.write	V		other-vendor	parts.rs:792	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawData.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.quantity	V		other-vendor	parts.rs:799	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.unit	V		other-vendor	parts.rs:800	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.stimulus	V		other-vendor	parts.rs:801	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.zero	V		other-vendor	parts.rs:802	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.lsb	V		other-vendor	parts.rs:803	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.signed	V		other-vendor	parts.rs:804	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.bytes	V		other-vendor	parts.rs:805	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.order	V		other-vendor	parts.rs:806	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.reads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawRead.write	V		other-vendor	parts.rs:756	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawRead.read	V		other-vendor	parts.rs:757	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.citations	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.bus	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.document	V			parts.rs:889	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.revision	V			parts.rs:890	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.section	V			parts.rs:891	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.sha256	V			parts.rs:892	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.pending	V			parts.rs:893	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.identity	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.supply	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.io	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.pin_capacitance	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.spi_output_delay	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.lifecycle	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.configure	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.start_up	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.data	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.reads	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawPart.ardupilot	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.kind	V		other-vendor	parts.rs:740	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.driver	V		other-vendor	parts.rs:742	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.spidev	V		other-vendor	parts.rs:744	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.id	V		other-vendor	parts.rs:745	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawArduPilot.frame	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawFrame.is	V		other-vendor	parts.rs:733	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawFrame.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawPart.axes	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.x_toward_pins	V		other-vendor	parts.rs:724	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.y_toward_pins	V		other-vendor	parts.rs:725	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.z	V		other-vendor	parts.rs:726	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.part	V		other-vendor	pin_parts.rs:280	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.bus	V		other-vendor	pin_parts.rs:281	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.identity	V		other-vendor	pin_parts.rs:283	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.source	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawSource.document	V		other-vendor	pin_parts.rs:321	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawSource.revision	V		other-vendor	pin_parts.rs:322	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawSource.sha256	V		other-vendor	pin_parts.rs:323	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.logic_levels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.vil_max_mv	V		other-vendor	pin_parts.rs:329	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.vih_min_mv	V		other-vendor	pin_parts.rs:330	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.vin_max_mv	V		other-vendor	pin_parts.rs:331	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.page	V		other-vendor	pin_parts.rs:332	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.t_wake_max_us	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawStated.value	V		other-vendor	pin_parts.rs:338	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawStated.page	V		other-vendor	pin_parts.rs:339	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.input_pwm_max_hz	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.enable	V		other-vendor	pin_parts.rs:291	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.mode_strap	V		other-vendor	pin_parts.rs:293	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.pins	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.number	V		other-vendor	pin_parts.rs:346	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.kind	V		other-vendor	pin_parts.rs:347	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.page	V		other-vendor	pin_parts.rs:348	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPin.active	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.pull_down_ohms_typical	V		other-vendor	pin_parts.rs:352	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vil_max_mv	V		other-vendor	pin_parts.rs:354	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vih_min_mv	V		other-vendor	pin_parts.rs:356	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vol_max_mv	V		other-vendor	pin_parts.rs:358	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vol_test_current_ma	V		other-vendor	pin_parts.rs:360	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.iod_max_ma	V		other-vendor	pin_parts.rs:362	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.pull_up_max_mv	V		other-vendor	pin_parts.rs:364	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.ua_per_a_typical	V		other-vendor	pin_parts.rs:366	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.output_max_ua	V		other-vendor	pin_parts.rs:368	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.output_max_basis	V		other-vendor	pin_parts.rs:370	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.load_ma	V		other-vendor	pin_parts.rs:388	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.percent	V		other-vendor	pin_parts.rs:390	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.absolute_ua	V		other-vendor	pin_parts.rs:392	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand._condition	V		other-vendor	pin_parts.rs:394	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band_supply_pin	V		other-vendor	pin_parts.rs:374	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band_supply_mv	V		other-vendor	pin_parts.rs:376	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.range_mv	V		other-vendor	pin_parts.rs:378	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.high_min_mv	V		other-vendor	pin_parts.rs:380	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.resistors	V		other-vendor	pin_parts.rs:382	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.modes	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.name	V		other-vendor	pin_parts.rs:400	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.strap_level	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawChannel.inputs	V		other-vendor	pin_parts.rs:412	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawChannel.outputs	V		other-vendor	pin_parts.rs:413	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.states	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.name	V		other-vendor	pin_parts.rs:419	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.enable	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.inputs	V		other-vendor	pin_parts.rs:421	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.outputs	V		other-vendor	pin_parts.rs:422	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.drives	V		other-vendor	pin_parts.rs:423	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.forbidden	V		other-vendor	pin_parts.rs:405	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.page	V		other-vendor	pin_parts.rs:406	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.trip	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawTrip.reference	V		other-vendor	pin_parts.rs:306	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawTrip.sense	V		other-vendor	pin_parts.rs:307	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawTrip.page	V		other-vendor	pin_parts.rs:308	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.bulk_unstated	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBulkUnstated.supply	V		other-vendor	pin_parts.rs:314	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBulkUnstated.page	V		other-vendor	pin_parts.rs:315	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawTable.schema_version	V			power_parts.rs:900	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawTable.documents	V			-	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawDocument.title	V			power_parts.rs:912	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawDocument.revision	V			power_parts.rs:913	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawDocument.sha256	V			power_parts.rs:914	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawDocument.pending	V			power_parts.rs:915	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawTable.parts	V			power_parts.rs:906	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.part	V			power_parts.rs:943	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.lifecycle	V			power_parts.rs:84	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.symbol	V			power_parts.rs:945	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.footprint	V			power_parts.rs:946	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.pins	V			power_parts.rs:948	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.temperature_celsius	V			-	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRanged.min	V			power_parts.rs:935	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawRanged.max	V			power_parts.rs:936	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawRanged.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawAt.document	V			power_parts.rs:921	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawAt.section	V			power_parts.rs:922	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawRow.kind	V			power_parts.rs:955	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawBuck.vin_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.vin_abs_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLimit.value	V			power_parts.rs:928	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawLimit.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.input_damping_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.vfb_microvolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.ifb_max_nanoamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_production_tested	V		other-vendor	power_parts.rs:977	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_vin_min	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawVinStep.from_vout_millivolts	V		other-vendor	power_parts.rs:1024	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawVinStep.vin_min	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.fsw_hz	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.ton_min_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.toff_min_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rds_high_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rds_low_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.high_side_limit_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.iout_max_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rfbt_max_ohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.inductor_min_coefficient	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.stated_at	V		other-vendor	power_parts.rs:988	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.role	V		other-vendor	power_parts.rs:735	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.min_picofarads	V		other-vendor	power_parts.rs:1311	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.max_picofarads	V		other-vendor	power_parts.rs:1313	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.effective_min_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawEffective.value	V		other-vendor	power_parts.rs:1328	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawEffective.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawEffective.on_shortfall	V		other-vendor	power_parts.rs:808	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.rated_min_millivolts	V		other-vendor	power_parts.rs:1317	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.rated_step	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawStep.from_nominal_millivolts	V		other-vendor	power_parts.rs:1336	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawStep.rated_min_millivolts	V		other-vendor	power_parts.rs:1337	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.rated_at_least_working	V		other-vendor	power_parts.rs:1320	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.dielectrics	V		std	power_parts.rs:299	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.theta_ja	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.package	V		other-vendor	power_parts.rs:998	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.board_copper_layers	V		other-vendor	power_parts.rs:999	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.condition	V		other-vendor	power_parts.rs:1000	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.points	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThetaPoint.square_centimetres	V		other-vendor	power_parts.rs:1008	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThetaPoint.decikelvin_per_watt	V		other-vendor	power_parts.rs:1009	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.pin	V		other-vendor	power_parts.rs:1015	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.straps	V		other-vendor	power_parts.rs:164	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.wirable	V		other-vendor	power_parts.rs:1017	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.thermal_vias	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.pad	V		other-vendor	power_parts.rs:1343	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.columns	V		other-vendor	power_parts.rs:1344	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.rows	V		other-vendor	power_parts.rs:1345	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.pitch_um	V		other-vendor	power_parts.rs:1346	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.drill_um	V		other-vendor	power_parts.rs:1347	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.ring_um	V		other-vendor	power_parts.rs:1348	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.sources	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.count	V		other-vendor	power_parts.rs:1355	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.pitch	V		other-vendor	power_parts.rs:1356	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.drill	V		other-vendor	power_parts.rs:1357	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.ring	V		other-vendor	power_parts.rs:1358	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.layers	V		other-vendor	power_parts.rs:1359	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vin_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vin_abs_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vout_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vout_condition	V		other-vendor	power_parts.rs:1034	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.dropout_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.dropout_at_milliamps	V		other-vendor	power_parts.rs:1036	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.iout_max_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.ignd_max_microamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.theta_ja_decikelvin_per_watt	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.theta_ja_condition	V		other-vendor	power_parts.rs:1040	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.junction_max_celsius	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.vcca_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.vccb_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tpd_a_to_b_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tpd_b_to_a_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tmax_a_to_b_bps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tmax_b_to_a_bps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.pull_up_max_ohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.input	V		other-vendor	power_parts.rs:1049	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.output	V		other-vendor	power_parts.rs:1050	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.direction	V		other-vendor	power_parts.rs:233	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tolerance_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tcr_ppm_per_kelvin	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tcr_reference_celsius	V		other-vendor	power_parts.rs:1074	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.drift_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.drift_condition	V		other-vendor	power_parts.rs:1076	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.rated_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.rated_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.dielectric	V		std	power_parts.rs:299	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.dc_bias	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurve.points	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurvePoint.millivolts	V		other-vendor	power_parts.rs:1115	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurvePoint.change_permille	V		other-vendor	power_parts.rs:1116	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurve.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawCurve.tolerance_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurve.temperature_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.tolerance	V		other-vendor	power_parts.rs:1098	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.nanohenries	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.isat_typical_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.isat_definition	V		other-vendor	power_parts.rs:1155	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.dcr_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawMcu.vdd_millivolts	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.idd_max_milliamps	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.idd_condition	V			power_parts.rs:1164	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.bor_falling_max_millivolts	S			power_parts.rs:2157	exactly four levels VBOR0 to VBOR3, rising order: ST option-byte BOR levels (DS12117 Table 115)
+H:power-parts.json|power_parts:RawMcu.bor_rising_max_millivolts	S			power_parts.rs:2174	exactly four levels VBOR0 to VBOR3, each at or above falling: ST option-byte BOR levels (DS12117 Table 115)
+H:power-parts.json|power_parts:RawMcu.rain_max_ohms	N			power_parts.rs:2191	max ADC source resistance per resolution in ohms; meaning generic, RAIN is the ST/DS12117 Table 173 name
+H:power-parts.json|power_parts:RawRain.bits	V			power_parts.rs:2196	ADC resolution in bits, 6 to 16; unit-stated range
+H:power-parts.json|power_parts:RawRain.max_ohms	V			power_parts.rs:2202	source resistance limit in ohms, positive; neutral
+H:power-parts.json|power_parts:RawMcu.reservoir_rule	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawReservoirRule.statement	V			power_parts.rs:1299	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawReservoirRule.extra_bits	V			power_parts.rs:1300	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawReservoirRule.adc_capacitance_femtofarads	V			power_parts.rs:1301	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawReservoirRule.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcu.spi_input_setup_min_ns	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.spi_sck_low_shortfall_ns	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.support	V			-	container for power-pin groups, caps, straps; group names free text from the table (tie-break c)
+H:power-parts.json|power_parts:RawSupport.pins	V			power_parts.rs:1720	map from free-text group name (16 chars max) to package positions; value set held in table, not source (tie-break c)
+H:power-parts.json|power_parts:RawSupport.pins_at	V			power_parts.rs:1241	citation; tie-break f
+H:power-parts.json|power_parts:RawSupport.supply	V			power_parts.rs:1747	name of a group in pins; checked against table only
+H:power-parts.json|power_parts:RawSupport.grounds	V			power_parts.rs:1748	names of groups in pins, matched against table only
+H:power-parts.json|power_parts:RawSupport.powered	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawPowered.group	V			power_parts.rs:1253	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawPowered.min_millivolts	V			power_parts.rs:1254	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawPowered.max_millivolts	V			power_parts.rs:1255	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawPowered.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawSupport.own_nets	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawOwnNet.group	V			power_parts.rs:1262	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawOwnNet.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawSupport.capacitors	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.role	N			power_parts.rs:626	role enum vdd_bypass..vcap, reset; meanings generic (bypass, bulk, core-regulator output cap); only vcap name is ST vocabulary (VCAP pin)
+H:power-parts.json|power_parts:RawSupportCapacitor.owner	V			power_parts.rs:1270	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.per_pin	V			power_parts.rs:1271	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.ground	V			power_parts.rs:1272	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.picofarads	V			power_parts.rs:1273	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.tolerance_permille	V			power_parts.rs:1274	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_um	V			power_parts.rs:1276	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_basis	V			power_parts.rs:1277	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawSupportCapacitor.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawSupport.straps	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawStrap.pin	V			power_parts.rs:1284	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawStrap.to	V			power_parts.rs:1285	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawStrap.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcu.flash_kilobytes	V			-	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.ardupilot	V			-	container of ArduPilot-side MCU identifiers; neutral, contained keys classed apart
+H:power-parts.json|power_parts:RawMcuArduPilot.series	V			power_parts.rs:1371	ArduPilot/ChibiOS series identifier, only 1-32 alphanumerics checked; value set held in table (tie-break c), name neutral
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu	V			power_parts.rs:1371	ArduPilot MCU type identifier, 1-32 alphanumerics; value set from table (tie-break c)
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu_at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcuArduPilot.table_at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_hz	V			power_parts.rs:1395	external oscillator frequency in Hz, 0 for none; unit-stated
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_kernel_hz	N			power_parts.rs:1379	SPI kernel clock Hz keyed by exactly SPI1 to SPI6; meaning generic, key set is the H7 instance names (SPI kernel clock, RM0433 ker_ck)
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_divider_at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawMcu.io	V			-	container for the I/O pin electrical rows; neutral meaning, contained S keys classed apart (tie-break g)
+H:power-parts.json|power_parts:RawMcuIo.pins	S			power_parts.rs:2282	map of pin to DS12117 Table 8 I/O structure (FT_a, TT_ha...); structure letters are ST-only; key checked canonical P[A-K]n only, matched not parsed for meaning
+H:power-parts.json|power_parts:RawIoPin.structure	S			power_parts.rs:2292	ST pin-structure code (FT, FT_a, TT_ha, ... DS12117 Table 8); rule 2 example
+H:power-parts.json|power_parts:RawIoPin.page	V			power_parts.rs:2293	citation page number, nonzero; tie-break f
+H:power-parts.json|power_parts:RawMcuIo.pins_at	V			power_parts.rs:2284	citation; tie-break f
+H:power-parts.json|power_parts:RawMcuIo.families	S			power_parts.rs:2335	list of ST I/O structure families FT and TT with their tolerances (DS12117 Table 13); value set is ST structure families
+H:power-parts.json|power_parts:RawIoFamily.family	S			power_parts.rs:2342	ST I/O structure family letters FT/TT (prefix of the pin structure); ST structure letter, rule 2
+H:power-parts.json|power_parts:RawIoFamily.above_supply_millivolts	V			power_parts.rs:2346	input tolerance above supply in mV, a positive number; unit-stated, no ST naming (tie-break g, container keyed by ST family classed apart)
+H:power-parts.json|power_parts:RawIoFamily.max_millivolts	V			power_parts.rs:2346	absolute input limit in mV, positive; neutral number (tie-break g)
+H:power-parts.json|power_parts:RawIoFamily.at	V			power_parts.rs:2349	citation (document, section); tie-break f
+H:power-parts.json|power_parts:RawMcuIo.pulls_off_above_supply_millivolts	V			power_parts.rs:2328	voltage in mV above supply at which internal pulls turn off, positive; neutral
+H:power-parts.json|power_parts:RawMcuIo.absolute_maximum	V			-	container for absolute-maximum input limits; its own meaning neutral, its families key classed apart
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.families	S			power_parts.rs:2260	list that must name the same ST I/O families FT/TT as io.families, in order; value set is ST structure families
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.boot0_max_millivolts	N			power_parts.rs:2271	neutral meaning (max voltage on the boot-select pin, mV, positive); only the BOOT0 name is ST vocabulary
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.other_max_millivolts	V			power_parts.rs:2275	max voltage on any other pin, mV, positive; neutral
+H:power-parts.json|power_parts:RawMcuIo.analog_pads	N			power_parts.rs:2307	container of pins with a direct analog pad (Px_C analog-switch pads, DS12117 Table 8 note 4 via SYSCFG); meaning statable as dedicated analog pads, ST names
+H:power-parts.json|power_parts:RawAnalogPads.pins	N			power_parts.rs:2307	list of pin names (PC2, PC3) only matched against io.pins; tie-break b N; ST Pxy_C pad concept
+H:power-parts.json|power_parts:RawAnalogPads.at	V			power_parts.rs:1193	citation; tie-break f
+H:power-parts.json|power_parts:RawBulk.rated_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.rated_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.esr_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.esr_condition	V		other-vendor	power_parts.rs:1125	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.standoff_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.clamp_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.clamp_condition	V		other-vendor	power_parts.rs:1133	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.frequency_hz	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.load_femtofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.tolerance_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.stability_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.aging_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.aging_hours	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.esr_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.c0_max_femtofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.drive_level_max_microwatts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:output-speeds.json|speeds:RawTable.schema_version	V			speeds.rs:218	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.mcu	V			speeds.rs:219	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.citations	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawCitations.rev_v	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.document	V			parts.rs:889	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.revision	V			parts.rs:890	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.section	V			parts.rs:891	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.sha256	V			parts.rs:892	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.pending	V			parts.rs:893	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawCitations.rev_y	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawTable.definition	V			speeds.rs:221	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.vbat_pins	N			speeds.rs:347	container for pins limited in VBAT mode; meaning statable (pins on backup supply limited to a frequency), VBAT-mode name is ST
+H:output-speeds.json|speeds:RawVbat.pins	N			speeds.rs:351	pin names only matched as identifiers; VBAT-supplied GPIO set (DS12117 note 2), tie-break b N
+H:output-speeds.json|speeds:RawVbat.fmax_hz	V			speeds.rs:238	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawVbat.note	V			speeds.rs:239	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.open_drain	V			speeds.rs:223	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.rows	V			-	list of grade rows; neutral container, its S/columns classed apart
+H:output-speeds.json|speeds:RawRow.ospeedr	S			speeds.rs:272	OSPEEDR speed grade 00/01/10/11, the ST GPIO output-speed register field (rule 2 example)
+H:output-speeds.json|speeds:RawRow.vdd_min_millivolts	V			speeds.rs:246	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.vdd_max_millivolts	V			speeds.rs:247	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.load_picofarads	V			speeds.rs:248	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.fmax_hz	V			speeds.rs:249	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.rise_fall_picoseconds	V			speeds.rs:250	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.requires_compensation_cell	S			speeds.rs:310	bool checked equal to ospeedr>=2: the ST I/O compensation cell of the OSPEEDR high grades
+H:pin-table|lib:PinTable.part	V			lib.rs:1398	part identifier string
+H:pin-table|lib:PinTable.package	V			lib.rs:1399	package name string
+H:pin-table|lib:PinTable.source	V			-	citation or its container (document/page/section/hash); tie-break f
+H:pin-table|lib:PinSource.repository	V			lib.rs:1424	neutral field, not ST
+H:pin-table|lib:PinSource.commit	V			lib.rs:1425	neutral field, not ST
+H:pin-table|lib:PinSource.files	V			lib.rs:1426	neutral field, not ST
+H:pin-table|lib:PinTable.pins	N			lib.rs:1433	map keyed by canonical pin name (PB8), checked only as plain identifier, matched against table; tie-break b N
+H:pin-table|lib:Pin.position	V			lib.rs:1408	package pin number, integer
+H:pin-table|lib:Pin.alternate_functions	S			lib.rs:1410	signal name to alternate-function number (AF0..15), ST numbering, rule 2 example
+H:pin-table|lib:Pin.adc_channels	S			pin_devices.rs:2121	set of ADCn_INPm names split on underscore; ST ADC channel naming (INP vs INN legs) held in source

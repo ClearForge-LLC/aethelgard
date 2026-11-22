@@ -1,0 +1,29 @@
+id	class	flag	tags	value_at	reason
+H:bench:BOOT0_PULL_DOWN_OHMS	D				Reviewer, amendment 4: one ST-pin figure in ohms; a second vendor supplies its own value (rule 1 before rule 3).
+H:bench:BOOT0_LEAKAGE_NANOAMPS	D				Reviewer, amendment 4: DS12117 BOOT0 leakage figure in nA; a held fact, rule 1.
+H:bench:DRIVER_MICROAMPS	D				Reviewer, amendment 4: DS12117 Table 50 I/O current figure in uA; a held fact, rule 1.
+H:bench:DRIVER_DROP_MILLIVOLTS	D				Reviewer, amendment 4: DS12117 Table 50 VOH drop in mV; a held fact, rule 1.
+H:clock:HSI	D				Reviewer, amendment 4: the HSI accuracy budget in ppm from DS12117; a held fact under an ST name, rule 1.
+H:clock:CRYSTAL_HZ	D				Reviewer, amendment 4: DS12117 Table 33 HSE crystal range in Hz; a held fact, rule 1.
+H:clock:EXTERNAL_HZ	D				Reviewer, amendment 4: DS12117 Table 31 external clock range in Hz; a held fact, rule 1.
+H:clock:GM_CRIT_MAX_NANO_AMPS_PER_VOLT	D				Reviewer, amendment 4: DS12117 Table 33 Gm_crit_max in nA/V; a held fact, rule 1.
+H:pin_devices:MCU_VOL_MAX_MV	D				Reviewer, amendment 4: DS12117 VOL max in mV; a held fact, rule 1.
+H:pin_devices:MCU_VOH_DROP_MV	D				Reviewer, amendment 4: DS12117 VOH drop in mV; a held fact, rule 1.
+H:pin_devices:MCU_RPU_MIN_OHMS	D				Reviewer, amendment 4: DS12117 RPU minimum in ohms; a held fact, rule 1.
+H:silicon:RESET_HSI_KER_HZ	D				Reviewer, amendment 4: RM0433 reset kernel-clock frequency in Hz; a held fact, rule 1.
+H:silicon:RESET_PCLK_HZ	D				Reviewer, amendment 4: RM0433 reset PCLK frequency in Hz; a held fact, rule 1.
+H:silicon:T_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns; a held fact, rule 1.
+H:silicon:T_AF_MAX_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF maximum in ns; a held fact, rule 1.
+H:solve:I2C_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns (the solver's copy); a held fact, rule 1.
+H:silicon:SYNC_MIN_CYCLES	D				Reviewer, amendment 4: RM0433 §47.4.9 tSYNC minimum in kernel cycles; a held fact, rule 1.
+H:solve:H1_SYS_HZ	D				Reviewer, amendment 4: the 64 MHz HSI-derived sys_ck of the H1 bring-up; one row of ST clock fact, rule 1.
+H:serial:TOLERANCE	S			-	Reviewer, amendment 4 / §3: m_bits is the USART_CR1.M[1:0] field value (serial.rs:237), an S column, so the table is S.
+H:silicon:I2C_LIMITS	D			-	Reviewer: every column is a generic I2C quantity in Hz or ns (silicon.rs:380), kernel_min_hz included; rows of RM0433 Tables 388/390; doubt cleared.
+H:solve:I2C_MODES	D			-	Reviewer: the solver's copy of the same generic columns (solve.rs:1054); doubt cleared.
+H:lib:RESERVED_REFERENCES	D			-	Reviewer: rows of reference names (the Renode STM32H7 platform's peripheral names); a second vendor adds rows; doubt cleared.
+H:speeds:LOADS_PICOFARADS	D			-	Reviewer: the DS12117 output-speed table's load axis in pF, generic units; doubt cleared.
+H:speeds:BANDS_MILLIVOLTS	D			-	Reviewer: the DS12117 output-speed table's VDD bands in mV, generic units; doubt cleared.
+H:vos:LIMITS	S			-	Reviewer, §3: each row is [Option<u64>; 4], one column per VOS scale 0-3 (vos.rs:89); the columns are ST's VOS enumeration, so the table is S.
+H:power:BATTERY_NET	N			-	Reviewer: the VBAT net name over a generic battery-backup supply net; doubt cleared.
+H:vos:BUS_LIMITS_REV_V	S	?		-	Reviewer: a verdict condition naming ST silicon revision V's Table 111 limits; the meaning (ST revision-scoped limits) is ST's. Could be N.
+H:vos:VOS_LIMIT_AT_BOUNDARY	S	?		-	Reviewer: a verdict condition about a VOS scale limit; the VOS value set is ST's. Could be N.

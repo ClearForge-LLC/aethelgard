@@ -1,0 +1,171 @@
+id	class	flag	tags	value_at	reason
+H:bench:BOOT0_PULL_DOWN_OHMS	N			-	Generic resistance in ohms; name carries ST's BOOT0 pin vocabulary.
+H:bench:BOOT0_LEAKAGE_NANOAMPS	N			-	Generic leakage current in nA; BOOT0 is ST pin vocabulary.
+H:bench:DRIVER_MICROAMPS	N	?		-	Generic current/voltage; value is DS12117 Table 50 IIO/VOH but name is not ST vocabulary; unsure N or V.
+H:bench:DRIVER_DROP_MILLIVOLTS	N	?		-	Generic current/voltage; value is DS12117 Table 50 IIO/VOH but name is not ST vocabulary; unsure N or V.
+H:board:FLOOR_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:VIA_DRILL_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:VIA_DIAMETER_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_THICKNESS_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_PERMITTIVITY_PERMILLE	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_SOURCE	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_OUTLINE_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:LAYER_COUNTS	V			-	Engine limit on board geometry; no ST meaning.
+H:clock:HSI	N			-	HSI accuracy budget in ppm, a generic quantity; HSI is ST vocabulary (DS12117).
+H:clock:CRYSTAL_HZ	N			-	HSE oscillator frequency range in Hz with DS12117 Table 33 citation; HSE is ST name, quantity generic.
+H:clock:EXTERNAL_HZ	N			-	External user clock range in Hz, DS12117 Table 31; generic quantity, ST document-sourced limit.
+H:clock:GM_CRIT_MAX_NANO_AMPS_PER_VOLT	N			-	Oscillator critical gm in nA/V, DS12117 Table 33 Gm_crit_max; generic units, ST term.
+H:connectors:JST_GH	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_GH_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_SH	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_SH_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:PARTS	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30_TABLE	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30_TABLE_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M_V12	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M_V12_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M30_2025	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M30_2025_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:POWER_IN	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:MAX_OFFBOARD_FEMTOFARADS	V			-	Engine limit on off-board capacitance.
+H:ds009:DOCUMENT	V			-	Citation of the project's own connector standard DS-009.
+H:ds009:SHA256	V			-	Citation of the project's own connector standard DS-009.
+H:ds009:PORTS	V			-	DS-009 connector port table, the project's own standard; no ST content.
+H:electrical:VOL_MILLIVOLTS	V		std	-	I2C bus limit from UM10204.
+H:electrical:LOW_RAIL_MILLIVOLTS	V		std	-	I2C bus limit from UM10204.
+H:electrical:LOW_RAIL_SINK_MICROAMPS	V		std	-	I2C bus limit from UM10204.
+H:electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS	V		std	-	I2C bus limit from UM10204.
+H:electrical:I2C_PIN_CI_FEMTOFARADS	V		std	-	I2C bus limit from UM10204.
+H:lib:SPECIFICATION_SCHEMA_VERSION	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:GND	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:SWDIO	V		arch	-	Net name of the Arm SWD debug port signals.
+H:lib:SWCLK	V		arch	-	Net name of the Arm SWD debug port signals.
+H:lib:NRST	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:BOOT0	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:DEBUG_NETS	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:MAX_LIFECYCLE_STATEMENT	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:ALL	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:MAX_BOR_LEVEL	S			-	Highest BOR_LEV option-byte level (RM0433), 0 to 3; value set is ST's option-byte enumeration.
+H:lib:I2C_SPEEDS_HZ	V		std	-	I2C speed grades / SPI signal names are standards.
+H:lib:SOLVED_SCHEMA_VERSION	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:DRIVEN_SPI_SIGNALS	V		std	-	I2C speed grades / SPI signal names are standards.
+H:lib:REFUSED_IN_IDENTIFIERS	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:PROJECT_MAX	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:BASE_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:PROJECT_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:REFERENCE_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:RESERVED_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:RESERVED_REFERENCES	D	?		-	List of reserved device references, mostly the Renode STM32H7 platform's peripheral instance names (dma1, fdcan1, exti); rows would be added for another chip.
+H:lib:WINDOWS_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:OBSERVER_RULE	N			-	Rule text for the observer name pa8obs built from a P<port><n> pin form; ST port naming vocabulary, generic meaning.
+H:lib:MEMORY_SUFFIX	V			-	Plumbing: schema version, naming rule or engine limit.
+H:motor:DSHOT_BIT_TICKS	V		std	-	DShot bit timing standard.
+H:motor:DSHOT_ZERO_TICKS	V		std	-	DShot bit timing standard.
+H:motor:OFFSETS	S			-	RCC register names and offsets, RM0433 §8.7; ST registers.
+H:motor:TIMERS	D			-	List of STM32H753 timers with capture/compare channels, RM0433 Table 8; a second vendor adds rows.
+H:motor:PS_PER_S	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:names:UNCONNECTED	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:names:BUCK_NETS	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:names:WINDOWS_RESERVED	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:off_domain:BATTERY	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:off_domain:FOREIGN_CLOCK_NET	N			-	Net name for a foreign clock path; OSC_IN is ST pin-group vocabulary.
+H:parts:PARTS_JSON	V			-	Plumbing or engine limit on the parts table.
+H:parts:PARTS_SCHEMA_VERSION	V			-	Plumbing or engine limit on the parts table.
+H:parts:RENODE_MODELS	V		other-vendor	-	Renode sensor/flash model names with buses; other vendors' parts.
+H:parts:MAX_STEP_WRITE	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_DATA_BYTES	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_CONFIGURE	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SETTLE_US	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SPI_CLOCK_HZ	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SUPPLY_MILLIVOLTS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_PIN_FEMTOFARADS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SPI_OUTPUT_DELAY_NS	V			-	Plumbing or engine limit on the parts table.
+H:parts:JEDEC_READ	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:JEDEC_WIDTH	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:FLASH_CAPACITY_CODES	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:BARE_W25Q64JV	V		other-vendor	-	Winbond part name; other vendor.
+H:parts:DRIVEN_SPI_MODE	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:QUANTITIES	V			-	Plumbing or engine limit on the parts table.
+H:parts:SETTLE_TWICE_TYPICAL	V			-	Plumbing or engine limit on the parts table.
+H:parts:SETTLE_COVERS_MAXIMUM	V			-	Plumbing or engine limit on the parts table.
+H:parts:CONFIGURE_STEPS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_READS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_READ_BYTES	V			-	Plumbing or engine limit on the parts table.
+H:parts:TABLE	V			-	Plumbing or engine limit on the parts table.
+H:pin_devices:MCU_VOL_MAX_MV	N	?		-	Generic voltage/resistance from DS12117 Tables 49/50; name not ST vocabulary but value is ST's datasheet figure; unsure N or V.
+H:pin_devices:MCU_VOH_DROP_MV	N	?		-	Generic voltage/resistance from DS12117 Tables 49/50; name not ST vocabulary but value is ST's datasheet figure; unsure N or V.
+H:pin_devices:MCU_IO_LEVELS	V			-	Citation string of DS12117 Table 50; tie-break f.
+H:pin_devices:MCU_RESET_PULL_UPS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_devices:MCU_RESET_PULL_DOWNS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_devices:MCU_RPU_MIN_OHMS	N	?		-	Generic voltage/resistance from DS12117 Tables 49/50; name not ST vocabulary but value is ST's datasheet figure; unsure N or V.
+H:pin_devices:MODELLED_ADCS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_parts:CURRENT_OUTPUT_FIELDS	V			-	Plumbing, field-name list or engine limit.
+H:power:BATTERY	V			-	Plumbing, field-name list or engine limit.
+H:power:BATTERY_NET	N	?		-	Battery net name; VBAT is ST pin vocabulary, meaning generic.
+H:power_parts:POWER_PARTS_JSON	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:POWER_PARTS_SCHEMA_VERSION	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:MAX_VALUE	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:F	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:TABLE	V			-	Plumbing, field-name list or engine limit.
+H:serial:PERIPHERALS	D			-	ST USART/UART/LPUART instance names; a second vendor adds rows.
+H:serial:LPUART	D			-	ST USART/UART/LPUART instance names; a second vendor adds rows.
+H:serial:TOLERANCE_SOURCE	V			-	Citation string (RM0433 §48.5.8); tie-break f.
+H:serial:TOLERANCE	D	?		-	Rows of RM0433 Tables 406/407 (M bits, ppm tolerance); generic columns but m_bits is an ST USART field.
+H:serial:CRSF_MIN_BAUD	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_SOURCE	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_ELRS_SOURCE	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_BAUDS	V		std	-	CRSF protocol baud rates and citations.
+H:silicon:RESET_HSI_KER_HZ	N			-	Frequency in Hz after reset (RM0433 §8.7); generic quantity, HSI/PCLK are ST clock-tree names.
+H:silicon:RESET_PCLK_HZ	N			-	Frequency in Hz after reset (RM0433 §8.7); generic quantity, HSI/PCLK are ST clock-tree names.
+H:silicon:RESET_CKPERSEL	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RCC_D2CCIP1R_OFFSET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RCC_D3CCIPR_OFFSET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_SPE	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_CSTART	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_SSI	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_MBR_SHIFT	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_CRCSIZE_RESET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_DSIZE_8BIT	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_AFCNTR	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_SSM	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_MASTER	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:I2C_LIMITS	D	?		-	Rows of I2C mode timing limits with ST kernel-clock minima (RM0433 Tables 388/390); generic columns; kernel_min column is ST's.
+H:silicon:T_AF_MIN_NS	N	?		-	I2C analog-filter delay in ns, DS12117 Table 94; generic quantity, ST datasheet term tAF.
+H:silicon:T_AF_MAX_NS	N	?		-	I2C analog-filter delay in ns, DS12117 Table 94; generic quantity, ST datasheet term tAF.
+H:silicon:SYNC_MIN_CYCLES	N			-	Minimum i2c_ker_ck periods of tSYNC, RM0433 §47.4.9; generic count, ST kernel-clock term.
+H:silicon:NS_PER_S	V			-	Unit constant or solver engine limit.
+H:silicon:PS_PER_S	V			-	Unit constant or solver engine limit.
+H:silicon:BRR_MIN	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:BRR_MAX	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:PUPDR_PULL_DOWN	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:PUPDR_PULL_UP	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:solve:RESERVED_PINS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:solve:NODE_LIMIT	V			-	Unit constant or solver engine limit.
+H:solve:ROWS	S			-	Flash wait-state rows keyed to ST FLASH_ACR LATENCY/WRHIGHFREQ field values (RM0433 Table 17, VOS scale).
+H:solve:H1_SYS_HZ	N			-	64 MHz sys_ck frequency of the H1 bring-up (4240 D1); generic Hz, ST HSI-derived.
+H:solve:RANGES	D			-	PLL input-frequency ranges (RM0433 §8.7.11 PLLRGE rows); generic columns, a second vendor adds rows.
+H:solve:I2C_CR1	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:solve:I2C_MODES	D	?		-	Rows of I2C mode timing limits with ST kernel-clock minima (RM0433 Tables 388/390); generic columns; kernel_min column is ST's.
+H:solve:I2C_AF_MIN_NS	N	?		-	I2C analog-filter delay in ns, DS12117 Table 94; generic quantity, ST datasheet term tAF.
+H:solve:MOTORS	V			-	Unit constant or solver engine limit.
+H:solve:SERIAL	V			-	Unit constant or solver engine limit.
+H:speeds:OUTPUT_SPEEDS_JSON	V			-	Plumbing, engine limit or version log.
+H:speeds:OUTPUT_SPEEDS_SCHEMA_VERSION	V			-	Plumbing, engine limit or version log.
+H:speeds:LOADS_PICOFARADS	D	?		-	Axes (loads, VDD bands) of the DS12117 output-speed table in generic units; a second vendor changes values, not shape.
+H:speeds:BANDS_MILLIVOLTS	D	?		-	Axes (loads, VDD bands) of the DS12117 output-speed table in generic units; a second vendor changes values, not shape.
+H:speeds:MAX_FMAX_HZ	V			-	Plumbing, engine limit or version log.
+H:speeds:MAX_RISE_FALL_PS	V			-	Plumbing, engine limit or version log.
+H:speeds:TABLE	V			-	Plumbing, engine limit or version log.
+H:thermal:HOLE_GAP_UM	V			-	Plumbing, engine limit or version log.
+H:versions:CHANGES	V			-	Plumbing, engine limit or version log.
+H:vos:BUS_LIMITS_REV_V	N			-	Condition names for verdicts; VOS and silicon revision V are ST vocabulary.
+H:vos:VOS_LIMIT_AT_BOUNDARY	N			-	Condition names for verdicts; VOS and silicon revision V are ST vocabulary.
+H:vos:DS12117_TABLE_111	V			-	Citation string; tie-break f.
+H:vos:RM0433_TABLE_60	V			-	Citation string; tie-break f.
+H:vos:LIMITS	D	?		-	Per-family maximum frequencies at VOS0..3, DS12117 Table 111; generic columns, rows of ST facts.
+H:vos:FLASH_ACR_RESET	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:TABLE_17	S			-	Flash wait-state rows keyed to ST FLASH_ACR LATENCY/WRHIGHFREQ field values (RM0433 Table 17, VOS scale).
+H:vos:CR3_SUPPLY_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:CR3_SUPPLY_CONFIG_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:D3CR_VOS_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:D3CR_VOS_SCALE2	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
