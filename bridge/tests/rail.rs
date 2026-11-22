@@ -8,13 +8,27 @@ use serde_json::Value;
 
 const BRIDGE: &str = env!("CARGO_BIN_EXE_aethelgard-bridge");
 
-fn identity_ok(line: &str) {
+/// The identity line; `loaded` when the run started the library and
+/// accepted it, so the identity names its banner (`AET-WO-1606`).
+fn identity_ok(line: &str, loaded: bool) {
     let v: Value = serde_json::from_str(line).unwrap();
     assert_eq!(v["bridge"], "aethelgard-bridge");
     assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(v["source_sha256"].as_str().unwrap().len(), 64);
-    assert_eq!(v.as_object().unwrap().len(), 3);
-    assert!(line.starts_with(r#"{"bridge":"aethelgard-bridge","source_sha256":""#));
+    if loaded {
+        assert_eq!(v.as_object().unwrap().len(), 5, "{line}");
+        assert_eq!(v["ngspice"], "44.2", "{line}");
+        assert_eq!(
+            v["ngspice_banner"], "** ngspice-44.2 shared library",
+            "{line}"
+        );
+        assert!(
+            line.starts_with(r#"{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"#)
+        );
+    } else {
+        assert_eq!(v.as_object().unwrap().len(), 3, "{line}");
+        assert!(line.starts_with(r#"{"bridge":"aethelgard-bridge","source_sha256":""#));
+    }
 }
 
 fn scratch(name: &str) -> std::path::PathBuf {
@@ -47,7 +61,7 @@ fn a_droop_crosses_each_level_where_the_spike_measured() {
         String::from_utf8_lossy(&out.stderr)
     );
     let mut lines = stdout.lines();
-    identity_ok(lines.next().unwrap());
+    identity_ok(lines.next().unwrap(), true);
     let rows: Vec<Value> = lines.map(|l| serde_json::from_str(l).unwrap()).collect();
     assert_eq!(rows.len(), 5, "four crossings and the summary: {stdout}");
     // In time order: 2.70 V falling, 2.61 V falling, 2.70 V rising, 2.61 V rising.
@@ -98,7 +112,7 @@ fn a_refused_rail_request_is_exit_2_after_the_identity_line() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(out.status.code(), Some(2), "{stdout}");
     let mut lines = stdout.lines();
-    identity_ok(lines.next().unwrap());
+    identity_ok(lines.next().unwrap(), false);
     let e: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
     assert_eq!(e["error"], "request_refused");
     assert!(lines.next().is_none());
@@ -114,7 +128,7 @@ fn renode_is_a_child_with_the_bridges_own_streams_and_exit_code() {
     let stdout = String::from_utf8(out.stdout).unwrap();
     assert_eq!(out.status.code(), Some(3), "{stdout}");
     let mut lines = stdout.lines();
-    identity_ok(lines.next().unwrap());
+    identity_ok(lines.next().unwrap(), false);
     assert_eq!(lines.next(), Some("hi"));
     assert_eq!(lines.next(), None);
 }
@@ -147,7 +161,7 @@ fn renode_refuses_a_relative_path() {
         assert_eq!(out.status.code(), Some(2), "{exe}: {stdout}");
         assert!(!stdout.contains("hi"));
         let mut lines = stdout.lines();
-        identity_ok(lines.next().unwrap());
+        identity_ok(lines.next().unwrap(), false);
         let e: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
         assert_eq!(e["error"], "request_refused");
     }
