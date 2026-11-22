@@ -424,6 +424,10 @@ struct RefusalBody {
     kind: String,
     id: Option<String>,
     message: String,
+    /// The entries `acknowledge_unwitnessed` lacks
+    /// (`UnwitnessedFieldNotAcknowledged` only, `AET-WO-2307`); absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Vec<aethelgard_ir::UnwitnessedAcknowledgement>>,
 }
 
 fn refuse(kind: &str, id: Option<&str>, message: String, code: u8) -> ExitCode {
@@ -434,6 +438,7 @@ fn refuse(kind: &str, id: Option<&str>, message: String, code: u8) -> ExitCode {
                 kind: kind.to_owned(),
                 id: id.map(str::to_owned),
                 message,
+                entries: None,
             },
         },
         code,
@@ -1468,15 +1473,26 @@ pub fn verify(
         }
         // Every unwitnessed ledger row acknowledged by name (`AET-WO-4230`
         // R1, the architect's ruling): none is fabricated unread.
+        // `entries` is each missing entry, its reason left for a person
+        // (`AET-WO-2307`).
         if let Some(first) = unacknowledged.first() {
-            return refuse(
-                "UnwitnessedFieldNotAcknowledged",
-                Some(first),
-                format!(
-                    "no package: {} unwitnessed ledger row(s) no `acknowledge_unwitnessed` entry names for its register and class: {}",
-                    unacknowledged.len(),
-                    unacknowledged.join(", ")
-                ),
+            let entries = aethelgard_cli::ledger::missing_entries(&report.ledger, &spec);
+            return crate::emit(
+                &Refusal {
+                    ok: false,
+                    error: RefusalBody {
+                        kind: "UnwitnessedFieldNotAcknowledged".to_owned(),
+                        id: Some(first.clone()),
+                        message: format!(
+                            "no package: {} unwitnessed ledger row(s) no `acknowledge_unwitnessed` entry names for its register and class: {}. `entries` holds the {} entry(ies) they need, one per register and class with exactly the fields to cover: each replaces any entry for its register and class (at most one entry per register and class), and an entry the specification already held comes back with its fields completed and its `reason` emptied, to be written for the whole set. Write each `reason`: 1 to {} bytes of printable ASCII with no space at either end; `validate` refuses an empty one (`InvalidSource`)",
+                            unacknowledged.len(),
+                            unacknowledged.join(", "),
+                            entries.len(),
+                            aethelgard_ir::board::MAX_SOURCE,
+                        ),
+                        entries: Some(entries),
+                    },
+                },
                 EXIT_INVALID_SPEC,
             );
         }

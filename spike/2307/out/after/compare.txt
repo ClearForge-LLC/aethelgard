@@ -1,0 +1,7 @@
+sentinel-03: kind=UnwitnessedFieldNotAcknowledged id=RCC.AHB4ENR.GPIOCEN message_rows=280
+  probe: rows=280 first=RCC.AHB4ENR.GPIOCEN registers=35 pairs=43 completed=6 new=37 missing_fields=280 fields_in_entries=313
+  refusal entries == probe entries: True (43 entries)
+m-stripped: kind=UnwitnessedFieldNotAcknowledged id=SCB.CPACR.CP10 message_rows=254
+  probe: rows=254 first=SCB.CPACR.CP10 registers=34 pairs=44 completed=0 new=44 missing_fields=254 fields_in_entries=254
+  refusal entries == probe entries: True (44 entries)
+M committed (reason emptied) == probe entries: True (committed 44 entries / 254 fields; probe 44 / 254)
