@@ -208,7 +208,8 @@ fn a_fab_out_another_uid_could_write_is_refused() {
 #[test]
 fn a_tree_that_differs_writes_no_package_and_says_so() {
     let tree = scratch("against-empty");
-    fs::create_dir_all(&tree).unwrap();
+    // `AET-WO-2308` L4: an empty directory in the tree is named too.
+    fs::create_dir_all(tree.join("stray")).unwrap();
     let out = scratch("against-out");
     let (code, v) = run(&[
         "verify",
@@ -227,6 +228,15 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     ]);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["against"], "differs");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "against_extra"
+                && f["message"] == "stray/ is in the directory but is not generated"),
+        "{v}"
+    );
     assert_eq!(v["fab"]["status"], "not_written");
     assert!(!out.exists());
     let (code, v) = run(&[
@@ -262,6 +272,130 @@ fn each_fab_flag_requires_scenarios() {
         assert_eq!(v["error"]["kind"], "UsageError", "{flag}: {v}");
         assert!(!absent.exists(), "{flag}");
     }
+}
+
+/// `AET-WO-2308` (1), shape (b): a twin stand-in drawn on a board (the
+/// 1.8 V fixture drawn, with its one drawable stand-in, U5's ICM20948) is
+/// refused by each fab flag by name, exit 2, before any gate and before
+/// anything is written: the emitter's BOM carries no label for it. It comes
+/// after the campaign's coverage check (a board refused for its campaign
+/// keeps that verdict), so four scenarios cover the board's bus, SPI device
+/// and rail; they are read before any gate, never run. Without a fab flag
+/// the same specification is not refused for it. The fixture's ICP-10111 has
+/// no symbol and its second ICM20948 does not route, so both are dropped;
+/// every device declares a pin capacitance (the parts table cites none).
+#[test]
+fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
+    let fixture = root().join("crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json");
+    let mut spec: Value = serde_json::from_slice(&fs::read(&fixture).unwrap()).unwrap();
+    spec["board"]["drawn"] = true.into();
+    let keep = |list: &mut Value, drop: &str| {
+        let kept: Vec<Value> = list
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|d| d["reference"] != drop && d["part"] != drop)
+            .cloned()
+            .collect();
+        *list = Value::Array(kept);
+    };
+    keep(&mut spec["i2c_devices"], "ICP10111");
+    keep(&mut spec["accept_lifecycle"], "ICP10111");
+    keep(&mut spec["spi_devices"], "U7");
+    for list in ["i2c_devices", "spi_devices"] {
+        for d in spec[list].as_array_mut().unwrap() {
+            d["pin_capacitance"] = serde_json::json!({"declared": {
+                "femtofarads": 10000,
+                "condition": "AET-WO-2308 fixture: a bound for the test, not a part's",
+                "source": "AET-WO-2308 fixture, not a design"
+            }});
+        }
+    }
+    let dir = scratch("standin");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(dir.join("spec.json"), spec.to_string()).unwrap();
+    let droop = serde_json::json!({"droop": {"domain": "VDD_1V8", "floor_millivolts": 1650,
+        "start_ns": 1_000_000, "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}});
+    for (name, version, expect, findings, overrides) in [
+        (
+            "baseline",
+            1,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([]),
+        ),
+        (
+            "pullup",
+            1,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([{"bus": "SENSORS", "pull_up_ohms": 3300}]),
+        ),
+        (
+            "absent",
+            2,
+            "fail",
+            serde_json::json!(["spi_identity_mismatch", "spi_transaction_unwitnessed"]),
+            serde_json::json!([{"spi_device_absent": "U5"}]),
+        ),
+        (
+            "droop",
+            2,
+            "pass",
+            serde_json::json!([]),
+            serde_json::json!([droop]),
+        ),
+    ] {
+        let mut v = serde_json::json!({"schema_version": version, "name": name, "base": "spec.json",
+            "expect": expect, "expect_findings": findings, "overrides": overrides});
+        if name == "droop" {
+            v["expect_counts"] = serde_json::json!({"brownout_reset": 0,
+                "brownout_unrecovered": 0, "rail_below_tolerance": 1});
+        }
+        fs::write(dir.join(format!("{name}.json")), v.to_string()).unwrap();
+    }
+    let verify = |extra: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args([
+                "verify",
+                "--spec",
+                "spec.json",
+                "--scenarios",
+                "baseline.json",
+                "pullup.json",
+                "absent.json",
+                "droop.json",
+            ])
+            .args(extra)
+            .current_dir(&dir)
+            .env("PATH", "")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(stdout.lines().count(), 1, "{extra:?}: {stdout}");
+        let v: Value = serde_json::from_str(&stdout).unwrap();
+        (out.status.code(), v)
+    };
+    fs::create_dir_all(dir.join("against")).unwrap();
+    for (flag, target) in [("--fab-out", "pkg"), ("--against-fab", "against")] {
+        let (code, v) = verify(&[flag, target]);
+        assert_eq!(code, Some(2), "{flag}: {v}");
+        assert_eq!(v["error"]["kind"], "StandInInFabPackage", "{flag}: {v}");
+        assert_eq!(v["error"]["id"], "U5", "{flag}: {v}");
+        let m = v["error"]["message"].as_str().unwrap();
+        assert!(
+            m.contains("U5 (ICM20948)") && m.contains("never for a purchase"),
+            "{m}"
+        );
+    }
+    assert!(!dir.join("pkg").exists(), "nothing is created");
+    assert_eq!(fs::read_dir(dir.join("against")).unwrap().count(), 0);
+    // Without a fab flag the run goes on to the gates, and with an empty
+    // `PATH` the first tool is missing: never this refusal.
+    let (_, v) = verify(&[]);
+    assert_ne!(v["error"]["kind"], "StandInInFabPackage", "{v}");
 }
 
 /// `AET-WO-4210` D1, ruled by Scotty: an `eol` part the specification does

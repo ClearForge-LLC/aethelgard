@@ -318,6 +318,23 @@ fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
     unheld
 }
 
+/// Each twin stand-in the board draws, by reference and part, I2C then SPI
+/// in the specification's order (`AET-WO-2308` (1)): a part the table holds
+/// `stand_in`, there to exercise the twin and never for a purchase
+/// (`aethelgard_ir::parts`, `AET-WO-4210` D1). The emitter's BOM gives it no
+/// note and the banner names only its lifecycle, so `verify --fab-out` and
+/// `--against-fab` refuse it. A vendored table that cannot be read is an
+/// internal error, never an empty list.
+fn stand_ins(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<(String, String)>, String> {
+    let table = aethelgard_ir::parts::table()
+        .map_err(|e| format!("the parts table, read for twin stand-ins: {e}"))?;
+    Ok(topology
+        .parts_in_order()
+        .filter(|(_, part)| table.get(part).is_some_and(|p| p.stand_in))
+        .map(|(r, p)| (r.to_owned(), p.to_owned()))
+        .collect())
+}
+
 /// `--fab-out` must be an empty directory or absent. One that exists must be
 /// the caller's and writable by no group or other, or another uid could
 /// replace the package after the verdict names it (adversarial A1). Checked
@@ -1778,6 +1795,28 @@ pub fn verify(
                 EXIT_UNREADABLE,
             );
         }
+        // A twin stand-in drawn on the board is refused by name (`AET-WO-2308`
+        // (1), shape (b)): no package file can label it. After the coverage
+        // check, so a board refused for its campaign keeps that verdict.
+        let drawn = match stand_ins(&topology) {
+            Ok(d) => d,
+            Err(m) => {
+                crate::diagnose(&m);
+                return ExitCode::from(EXIT_INTERNAL);
+            }
+        };
+        if let Some((reference, _)) = drawn.first() {
+            let named: Vec<String> = drawn.iter().map(|(r, p)| format!("{r} ({p})")).collect();
+            return refuse(
+                "StandInInFabPackage",
+                Some(reference),
+                format!(
+                    "no package: {} is a twin stand-in (`stand_in` in the parts table), there to exercise the twin and never for a purchase, and the emitter's BOM carries no label for it: draw the part the board is for, or run `verify` without a fab flag",
+                    named.join(", ")
+                ),
+                EXIT_INVALID_SPEC,
+            );
+        }
         // Every unwitnessed ledger row acknowledged by name (`AET-WO-4230`
         // R1, the architect's ruling): none is fabricated unread.
         // `entries` is each missing entry, its reason left for a person
@@ -1812,7 +1851,7 @@ pub fn verify(
         if let Err(s) = crate::input::dir_check(dir) {
             return crate::stopped(s);
         }
-        let differences = match tree::diff(dir, &files, &[&format!("{BOARD_DIR}/target")]) {
+        let differences = match tree::against(dir, &files, &[&format!("{BOARD_DIR}/target")]) {
             Ok(d) => d,
             Err(s) => return crate::stopped(s),
         };
@@ -1881,6 +1920,49 @@ pub fn verify(
     ) {
         return code;
     }
+    let tail = Tail {
+        project: &project,
+        spec: &spec,
+        spec_sha256: &spec_sha256,
+        topology: &topology,
+        board: root.join(&pcb),
+        board_sha256: &hashes[&pcb],
+        elf: scratch.tool.join("firmware.elf"),
+        bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+        expected: &expected,
+        seeded: &seeded,
+        harnesses: &harnesses,
+    };
+    match conclude(&mut report, fab_mode, &tail) {
+        Ok(code) => crate::emit(&report, code),
+        Err(code) => code,
+    }
+}
+
+/// What [`conclude`] needs of a `verify` call besides its report.
+struct Tail<'a> {
+    project: &'a str,
+    spec: &'a aethelgard_ir::Specification,
+    spec_sha256: &'a str,
+    topology: &'a aethelgard_ir::SolvedTopology,
+    /// The generated board and ELF in `verify`'s scratch, and the board's
+    /// generated sha256.
+    board: PathBuf,
+    board_sha256: &'a str,
+    elf: PathBuf,
+    /// `emit`'s bill of materials, as generated.
+    bom: &'a [u8],
+    expected: &'a [Expected],
+    seeded: &'a [Seeded],
+    harnesses: &'a [String],
+}
+
+/// `verify`'s last steps once its gates have run: the verdict, then the
+/// package for a fab flag, then the exit code to print the verdict with.
+/// The code is the verdict's alone, `0` on a pass and `EXIT_FAIL` on a fail,
+/// whatever the fab mode (`AET-WO-2308` LP2, `AET-WO-1909` LP2); `Err` is a
+/// refusal already printed.
+fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Result<u8, ExitCode> {
     report.judged_nothing = judged_nothing(
         &report.gates,
         report.campaign.as_deref().unwrap_or_default(),
@@ -1897,20 +1979,21 @@ pub fn verify(
             .collect();
         let conditions = std::mem::take(&mut report.conditions);
         let bound = fab::Bound {
-            project: &project,
-            spec: &spec,
-            specification_sha256: &spec_sha256,
-            board: &root.join(&pcb),
-            board_sha256: &hashes[&pcb],
-            elf: &scratch.tool.join("firmware.elf"),
+            project: t.project,
+            spec: t.spec,
+            specification_sha256: t.spec_sha256,
+            board: &t.board,
+            board_sha256: t.board_sha256,
+            elf: &t.elf,
             elf_sha256: &elf_sha256,
-            bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+            bom: t.bom,
             conditions: &conditions,
             lifecycle: &lifecycle,
             support: &support_lines(report.support.as_ref()),
             campaign: &campaign_conditions(report.campaign.as_deref().unwrap_or_default()),
         };
-        let scenarios: Vec<fab::Scenario> = expected
+        let scenarios: Vec<fab::Scenario> = t
+            .expected
             .iter()
             .map(|e| fab::Scenario {
                 scenario: e.name.clone(),
@@ -1918,17 +2001,14 @@ pub fn verify(
             })
             .collect();
         let outcome = report.outcome.clone();
-        let short = coverage(&spec, &topology, &seeded, Some(&outcome));
-        let pre = preconditions(&report, &harnesses, short);
-        if let Err(code) = package(&mut report, mode, &bound, &scenarios, &pre) {
-            return code;
-        }
+        let short = coverage(t.spec, t.topology, t.seeded, Some(&outcome));
+        let pre = preconditions(report, t.harnesses, short);
+        package(report, mode, &bound, &scenarios, &pre)?;
         if let Some(f) = report.fab.as_mut() {
             f.preconditions = pre;
         }
     }
-    let code = if report.ok { 0 } else { EXIT_FAIL };
-    crate::emit(&report, code)
+    Ok(if report.ok { 0 } else { EXIT_FAIL })
 }
 
 /// Every condition the campaign's runs name, each once, in the order the
@@ -2043,7 +2123,7 @@ fn package(
         FabMode::Compare(dir) => {
             let mut package = exported.files;
             package.insert(fab::MANIFEST.to_owned(), manifest);
-            let differences = tree::diff(dir, &package, &[]).map_err(crate::stopped)?;
+            let differences = tree::against(dir, &package, &[]).map_err(crate::stopped)?;
             report.against_fab = Some(if differences.is_empty() {
                 "identical"
             } else {
@@ -2065,6 +2145,52 @@ fn package(
     }
     report.fab = Some(fab_report);
     Ok(())
+}
+
+/// The campaign gate's tool version (`AET-WO-2308` L3, `AET-WO-3301` F14):
+/// the Renode build each run's own archive header names (`AET-WO-2205`
+/// §1.1), read back by replay, never `simulate`'s. Every run must name the
+/// same one; an archive that does not replay, or names none or another, is a
+/// `ToolError`.
+fn campaign_renode(archive: &Path, runs: &[Run]) -> Result<String, ExitCode> {
+    let fail = |m: String| {
+        refuse(
+            "ToolError",
+            Some("aethelgard"),
+            format!("gate `campaign`: {m}"),
+            EXIT_TOOL_ERROR,
+        )
+    };
+    let mut build: Option<String> = None;
+    for run in runs {
+        let replayed = aethelgard_chaos::replay_dir(&archive.join(&run.run_id)).map_err(|e| {
+            fail(format!(
+                "the archive of run {} does not replay: {e}",
+                run.run_id
+            ))
+        })?;
+        let named = replayed
+            .header
+            .tools
+            .iter()
+            .find(|(name, _)| name == aethelgard_chaos::campaign::RENODE)
+            .map(|(_, version)| version.clone())
+            .ok_or_else(|| {
+                fail(format!(
+                    "the archive of run {} names no Renode build",
+                    run.run_id
+                ))
+            })?;
+        match &build {
+            Some(b) if *b != named => {
+                return Err(fail(format!(
+                    "the runs name two Renode builds, `{b}` and `{named}`"
+                )));
+            }
+            _ => build = Some(named),
+        }
+    }
+    build.ok_or_else(|| fail("no run to read a Renode build from".to_owned()))
 }
 
 fn describe(d: &Difference) -> String {
@@ -2301,6 +2427,7 @@ fn run_gates(
         });
     }
     let mut g = gate_report("campaign", None, &ran);
+    g.tool_version = Some(campaign_renode(Path::new(&p.archive), &out)?);
     g.scope = Some(Scope::of(out.len() as u64, NOTHING_LISTED));
     g.uid_boundary = Some(every_run_separated(runs));
     g.uid_boundary_unmet = runs
@@ -3648,5 +3775,158 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    /// `AET-WO-2308` LP2 (`AET-WO-1909` LP2): the tail `verify` runs once
+    /// its gates have run gives a failing verdict `EXIT_FAIL` with no fab
+    /// flag, with `--fab-out` and with `--against-fab` alike, and the same
+    /// verdict but for the package's keys; a passing one without a fab flag
+    /// exits 0. The report is the reference's, as `verify` builds it, with
+    /// one gate that did not pass. Nothing is written for the failing run.
+    #[test]
+    fn the_exit_code_is_the_verdicts_whatever_the_fab_mode() {
+        let path =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
+        let Ok((spec, spec_sha256)) = crate::parse_spec(&std::fs::read(path).unwrap()) else {
+            panic!("the reference parses");
+        };
+        let (topology, table) = crate::solve_spec(&spec, &spec_sha256).unwrap();
+        let (files, topology_sha256) = crate::generated(&spec, &topology, &table).unwrap();
+        let ledger = aethelgard_cli::ledger::build(&topology, &table).unwrap();
+        let fresh = |gates: Vec<Gate>| Report {
+            ok: false,
+            verdict: "fail",
+            check: "verify",
+            engine_version: env!("CARGO_PKG_VERSION"),
+            project_name: spec.project_name.clone(),
+            specification_sha256: spec_sha256.clone(),
+            topology_sha256: topology_sha256.clone(),
+            files: BTreeMap::new(),
+            lifecycle: Vec::new(),
+            against: None,
+            elf_sha256: None,
+            rise_times: RISE_TIMES,
+            gates,
+            judged_nothing: Vec::new(),
+            support: None,
+            campaign: None,
+            findings: Vec::new(),
+            declared_peers: Vec::new(),
+            silicon: aethelgard_cli::ledger::silicon(&topology),
+            ledger: ledger.clone(),
+            twin_limits: Vec::new(),
+            against_fab: None,
+            fab: None,
+            lifecycle_unheld: Vec::new(),
+            conditions: Vec::new(),
+            outcome: Vec::new(),
+        };
+        let bom = format!("{KICAD_DIR}/{}.bom.csv", spec.project_name);
+        let scratch = std::env::temp_dir().join(format!("aet-2308-lp2-{}", std::process::id()));
+        let tail = Tail {
+            project: &spec.project_name,
+            spec: &spec,
+            spec_sha256: &spec_sha256,
+            topology: &topology,
+            board: scratch.join("board.kicad_pcb"),
+            board_sha256: "",
+            elf: scratch.join("firmware.elf"),
+            bom: files[&bom].as_bytes(),
+            expected: &[],
+            seeded: &[],
+            harnesses: &[],
+        };
+        let gate = |verdict: &'static str| {
+            let mut g = not_run("erc");
+            g.verdict = verdict;
+            g
+        };
+        let out = scratch.join("pkg");
+        let against = scratch.join("against");
+        std::fs::create_dir_all(&against).unwrap();
+        let mut lines = Vec::new();
+        for mode in [
+            None,
+            Some(FabMode::Write(out.clone())),
+            Some(FabMode::Compare(against.clone())),
+        ] {
+            let mut report = fresh(vec![gate("fail")]);
+            let code = conclude(&mut report, mode.as_ref(), &tail)
+                .unwrap_or_else(|_| panic!("a failing verdict is concluded, not refused"));
+            assert_eq!(
+                code, EXIT_FAIL,
+                "a failing verdict exits EXIT_FAIL in every fab mode"
+            );
+            assert_eq!(report.verdict, "fail");
+            report.fab = None;
+            report.against_fab = None;
+            lines.push(serde_json::to_string(&report).unwrap());
+        }
+        assert!(
+            lines.windows(2).all(|w| w[0] == w[1]),
+            "one verdict but for the package"
+        );
+        assert!(!out.exists(), "a failing run writes nothing");
+        assert_eq!(std::fs::read_dir(&against).unwrap().count(), 0);
+        let mut report = fresh(vec![gate("pass")]);
+        assert_eq!(conclude(&mut report, None, &tail).ok(), Some(0));
+        std::fs::remove_dir_all(&scratch).unwrap();
+    }
+
+    /// `AET-WO-2308` L3: the campaign gate's version is the Renode build its
+    /// runs' archives name, read back by replay. Two runs naming one build
+    /// give it; two builds, a run naming none, no run, and a run with no
+    /// archive are each a `ToolError`, never a choice or a gap.
+    #[test]
+    fn the_campaign_names_the_renode_build_every_run_archive_names() {
+        let dir = std::env::temp_dir().join(format!("aet-2308-l3-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let renode = aethelgard_chaos::campaign::RENODE;
+        let run = |n: u8| Run {
+            scenario: format!("s{n}"),
+            verdict: "pass".to_owned(),
+            expect: "pass".to_owned(),
+            matched: true,
+            findings: Value::Null,
+            run_id: hex([n; 16]),
+            state_sequence_hash: String::new(),
+            battery_sag: Value::Null,
+            observation_witness: Value::Null,
+            conditions: Vec::new(),
+        };
+        for (n, tools) in [
+            (1, vec![("aethelgard", "0.2.0"), (renode, "build-a")]),
+            (2, vec![(renode, "build-a")]),
+            (3, vec![(renode, "build-b")]),
+            (4, vec![("aethelgard", "0.2.0")]),
+        ] {
+            let header = aethelgard_chaos::Header {
+                run_id: [n; 16],
+                artifacts: Vec::new(),
+                tools: tools
+                    .iter()
+                    .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
+                    .collect(),
+            };
+            aethelgard_chaos::TraceWriter::create(&dir.join(hex([n; 16])), &header)
+                .unwrap()
+                .commit()
+                .unwrap();
+        }
+        assert_eq!(
+            campaign_renode(&dir, &[run(1), run(2)]).ok(),
+            Some("build-a".to_owned())
+        );
+        for runs in [
+            vec![run(1), run(3)],
+            vec![run(2), run(4)],
+            vec![run(4)],
+            Vec::new(),
+            vec![run(9)],
+        ] {
+            assert!(campaign_renode(&dir, &runs).is_err(), "refused");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

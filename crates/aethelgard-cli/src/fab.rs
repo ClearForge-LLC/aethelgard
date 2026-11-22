@@ -280,6 +280,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
             campaign: b.campaign,
         },
     );
+    let notes = notes + &noted(b.project, b.bom)?;
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
         files,
@@ -360,6 +361,38 @@ fn notes(
     text.push_str(&brown_out_step(spec.mcu.bor_level));
     text.push_str(&aethelgard_eda::fab::jlcpcb_notes(project));
     text
+}
+
+/// The notes' last section (`AET-WO-2308` (1)): every part of the emitter's
+/// BOM that carries a note, by reference, so no stand-in reaches a person
+/// reading the package unlabelled. The BOM and the JLCPCB BOM carry the same
+/// note on the part's line; the JLCPCB placement file names the part by
+/// reference only, and KiCad's, unedited, prints its value with no note, so
+/// this section is its label. None for a board with no noted part, so its
+/// notes keep their bytes.
+fn noted(project: &str, bom: &[u8]) -> Result<String, Stop> {
+    let parts = aethelgard_eda::fab::noted(bom)
+        .map_err(|m| Stop::tool_error("aethelgard", format!("the BOM: {m}")))?;
+    if parts.is_empty() {
+        return Ok(String::new());
+    }
+    let mut text = format!(
+        "
+## Parts with a note
+
+Each part below is not what its value alone says: a symbol stands in for the
+ordered part, or no datasheet states its value. Read the note before ordering.
+`{project}.bom.csv` and `{project}-jlcpcb-bom.csv` carry it on the part's line.
+`{project}-jlcpcb-cpl.csv` names the part by reference only. `{project}-pos.csv` is
+KiCad's placement file, unedited: it prints the part's value with no note, and
+this section is its label.
+
+"
+    );
+    for [reference, value, note] in parts {
+        text.push_str(&format!("- {reference} ({value}): {note}\n"));
+    }
+    Ok(text)
 }
 
 /// The campaign's conditions (`AET-WO-2304b` §1.7, §1.11), each as its
@@ -728,6 +761,44 @@ pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
 
+    /// `AET-WO-2308` (1): every part the emitter's BOM notes is listed by
+    /// reference with its note as the BOM states it (D1's declared bulk,
+    /// with RFC 4180 quoting and commas, and W25Q's symbol stand-in); a part
+    /// with no note is not listed, and a BOM with none adds no byte.
+    #[test]
+    fn the_notes_list_every_part_the_bom_notes_and_only_those() {
+        let head = "Reference,Value,Footprint,Symbol,Note\r\n";
+        let d1 = "CVM2 declared, TI SLVSDS7B DRV8876 states no value: D1 fixture stand-in, not a design: SLVSDS7B 9.1 p. 31 leaves CVM2 to system testing";
+        let w25q = "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)";
+        let r1 = "R1,2k2,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n";
+        let bom = format!(
+            "{head}C2,10u 50V GCM32EC71H106KA03,Capacitor_SMD:C_1210_3225Metric,Device:C,\"{d1}\"\r\n{r1}U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"{w25q}\"\r\n"
+        );
+        let text = noted("p", bom.as_bytes()).unwrap();
+        assert!(text.starts_with("\n## Parts with a note\n"), "{text}");
+        assert!(
+            text.ends_with(&format!(
+                "\n\n- C2 (10u 50V GCM32EC71H106KA03): {d1}\n- U4 (W25Q64JVSSIQ): {w25q}\n"
+            )),
+            "{text}"
+        );
+        for file in [
+            "`p.bom.csv`",
+            "`p-jlcpcb-bom.csv`",
+            "`p-pos.csv`",
+            "`p-jlcpcb-cpl.csv`",
+        ] {
+            assert!(text.contains(file), "{file}");
+        }
+        assert!(
+            text.contains("`p-pos.csv` is\nKiCad's placement file, unedited: it prints the part's value with no note"),
+            "{text}"
+        );
+        assert!(!text.contains("R1"), "{text}");
+        assert_eq!(noted("p", format!("{head}{r1}").as_bytes()).unwrap(), "");
+        assert!(noted("p", b"Reference,Value\r\n").is_err());
+    }
+
     /// `AET-WO-2304b` §2: FAB-NOTES states every campaign condition
     /// verbatim, in a section of its own; a campaign with none adds no byte.
     #[test]
@@ -931,21 +1002,28 @@ mod tests {
         let (b, c) = (String::from_utf8(b).unwrap(), String::from_utf8(c).unwrap());
         let b: Vec<&str> = b.strip_suffix("\r\n").unwrap().split("\r\n").collect();
         let c: Vec<&str> = c.strip_suffix("\r\n").unwrap().split("\r\n").collect();
+        // `AET-WO-2308` (1): the sample's four columns, then `Note`.
         assert_eq!(
             b[0],
-            "Comment,Designator,Footprint,JLCPCB Part #（optional）"
+            "Comment,Designator,Footprint,JLCPCB Part #（optional）,Note"
         );
         assert_eq!(c[0], "Designator,Mid X,Mid Y,Layer,Rotation");
         // 13 kinds of part over 39 references (FEEDBACK §4, measured).
         assert_eq!(b.len(), 1 + 13);
         assert_eq!(
             b[1],
-            "100n,\"C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C13,C15,C19,C20,C21,C22\",C_0402_1005Metric,"
+            "100n,\"C1,C2,C3,C4,C5,C6,C7,C8,C9,C10,C11,C13,C15,C19,C20,C21,C22\",C_0402_1005Metric,,"
         );
+        // No part number is written; only U4, whose symbol stands in for
+        // the ordered part, carries a note.
         for row in &b[1..] {
-            assert!(row.ends_with(','), "a part number was written: {row}");
+            assert!(
+                row.ends_with(",,") || row.starts_with("W25Q64JVSSIQ,"),
+                "a part number or a note was written: {row}"
+            );
         }
-        assert!(b.contains(&"TMP117xxDRV,\"U3\",WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,"));
+        assert!(b.contains(&"TMP117xxDRV,\"U3\",WSON-6-1EP_2x2mm_P0.65mm_EP1x1.6mm,,"));
+        assert!(b.contains(&"W25Q64JVSSIQ,\"U4\",SOIC-8_5.3x5.3mm_P1.27mm,,\"symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)\""));
         // Every placement row, one for one, in KiCad's order.
         let kicad = aethelgard_eda::fab::placement(pos).unwrap();
         assert_eq!(c.len(), 1 + kicad.len());
@@ -1254,5 +1332,65 @@ mod tests {
             [("In1.Cu", "In1_Cu.g1", 9), ("In2.Cu", "In2_Cu.g2", 9)]
         );
         assert_eq!(four.len(), LAYERS.len() + 2);
+    }
+
+    /// `AET-WO-2308` F16 (`AET-WO-3300` F16): what a swap in `verify`'s
+    /// scratch between the gates and the export leaves `derive`, one binding
+    /// at a time with the other true. An ELF whose bytes are not the hash the
+    /// gates were bound to is refused, `BindingMismatch` naming the firmware,
+    /// before any copy; a board whose copy is not the generated hash is
+    /// refused, naming the board, before KiCad is looked for. Neither needs a
+    /// tool: with either guard gone, `derive` reads on and fails otherwise.
+    #[test]
+    fn a_swapped_elf_or_board_is_refused_by_its_own_binding() {
+        let dir = std::env::temp_dir().join(format!("aet-2308-f16-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let (elf, board) = (dir.join("firmware.elf"), dir.join("board.kicad_pcb"));
+        std::fs::write(&elf, b"the ELF the gates ran").unwrap();
+        std::fs::write(&board, b"the board the gates judged").unwrap();
+        let (elf_sha, board_sha) = (
+            tree::sha256(b"the ELF the gates ran"),
+            tree::sha256(b"the board the gates judged"),
+        );
+        let swapped = tree::sha256(b"another");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_str(&repo_file("examples/sentinel-01-minimal.json")).unwrap();
+        let bound = |elf_sha256: &str, board_sha256: &str| {
+            let e = derive(&Bound {
+                project: "p",
+                spec: &spec,
+                specification_sha256: "",
+                board: &board,
+                board_sha256,
+                elf: &elf,
+                elf_sha256,
+                bom: b"",
+                conditions: &[],
+                lifecycle: &[],
+                support: &[],
+                campaign: &[],
+            });
+            e.err().expect("a swapped binding is refused")
+        };
+        let e = bound(&swapped, &board_sha);
+        assert_eq!((e.kind, e.id.as_deref()), ("BindingMismatch", Some("fab")));
+        assert!(
+            e.message
+                .starts_with("the firmware read for the package has sha256")
+                && e.message.contains(&swapped),
+            "{}",
+            e.message
+        );
+        let e = bound(&elf_sha, &swapped);
+        assert_eq!((e.kind, e.id.as_deref()), ("BindingMismatch", Some("fab")));
+        assert!(
+            e.message
+                .starts_with("the board copied for export has sha256")
+                && e.message.contains(&swapped),
+            "{}",
+            e.message
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }
