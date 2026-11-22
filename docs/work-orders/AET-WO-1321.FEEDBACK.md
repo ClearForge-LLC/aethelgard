@@ -62,7 +62,7 @@
 
 ## 3. Item (3), not built
 
-`1217` had not merged when this was written: `origin/main` was still `a41a8a8d`, this branch's base, at the last fetch before READY, so there was nothing to merge in. So `PinDeviceNotDrawable`'s guard text, which says an undeclared IPROPI is the only case, is unchanged. It is for whoever builds after `1217`, against its ruling (Q1, the GND tie).
+`1217` had not merged at READY. `main` `c963385d` (docs only: the roadmap, and this work order, identical to the kickoff's copy) was merged in at `f126fc66`; `1217` is not in it. So `PinDeviceNotDrawable`'s guard text, which says an undeclared IPROPI is the only case, is unchanged. It is for whoever builds after `1217`, against its ruling (Q1, the GND tie).
 
 ## 4. Decisions
 
@@ -104,7 +104,8 @@
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
   - `cargo test --workspace` (target in the repository, as CI builds it; `TMPDIR` unset): **2760 passed, 0 failed**, 160 `test result: ok` lines.
 - **At the head `0bad145d`:** the one later code change is the R4 assert. It is inside `#[cfg(test)]` (`git diff -U0 d514f7a0 0bad145d -- crates` touches only line 1888, in `mod tests` from line 1393), so no emitted byte can move. fmt and clippy are clean, and `cargo test -p aethelgard-eda` gives 227 passed, 0 failed. The tests that read `docs/` (`readme_status`, `strict_fence`, `board_names`, `workspace_shape`) pass with this file in place.
-- **CI:** see the PR's checks. READY is posted only on green. `TIER2_MIN` is unchanged.
+- **CI on `3ffe0402` (PR #328): green.** Runs 45031249481 (`ci`), 45031249476 (`engine-image`) and 45031249466 (`ardupilot-image`). 33 checks pass and 3 are skipped by the workflow. The tier-2 guard reports `tier2_tests_passed=204 floor=203`; `TIER2_MIN` is unchanged.
+- **After CI:** `main` `c963385d` was merged in (`f126fc66`). It changes `docs/roadmap.md` and adds `docs/work-orders/AET-WO-1321.md`, and touches no specification, crate, `ci/` or workflow. So the measurement stands. The tests that read `docs/` pass at the merged head. The READY commit adds only this file's record of the rulings and of CI.
 
 - **Fence:** `crates/aethelgard-eda/src/schematic_arms.rs` and `schematic_power.rs`, `spike/1319/harness/mutants.sh` (line 10), `spike/1321/` and this file.
 - **Reduction pass (diff): +68 net in `crates/` (+103 −35) · 1 duplicate removed · 1 dead path removed · 1 protected kept · 2 findings above.**
