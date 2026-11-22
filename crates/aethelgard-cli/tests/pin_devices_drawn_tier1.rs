@@ -266,6 +266,8 @@ fn a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail() {
 /// An open-drain output left undeclared is a no-connect (its pull is the
 /// declaration's); a current output left undeclared is refused, since
 /// SLVSDS7B p. 13's alternative, IPROPI tied to GND, cannot be declared.
+/// Since `AET-WO-1211e` (ruled D-A2) `validate` refuses the DRV8876's
+/// unterminated IPROPI first (`TripSenseUnbound`), before any drawing.
 #[test]
 fn an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused() {
     let mut v = d2_drawn();
@@ -279,8 +281,11 @@ fn an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused() {
 
     let mut v = d1_drawn();
     v["pin_devices"][0]["analog"] = json!([]);
-    let e = drawing_err(&v);
-    assert_eq!((e.kind(), e.id()), ("PinDeviceNotDrawable", Some("U2")));
+    let e = serde_json::from_value::<Specification>(v)
+        .unwrap()
+        .validate()
+        .unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("TripSenseUnbound", Some("U2")));
     assert!(e.to_string().contains("`IPROPI`"), "{e}");
 }
 

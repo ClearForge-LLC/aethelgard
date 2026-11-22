@@ -32,8 +32,10 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 
 /// The `schema_version` the parser reads. Version 4 gave the MCU row
 /// `flash_kilobytes` and `ardupilot` (`AET-WO-4400b` D4, D6). Version 5
-/// added the `crystal` kind (`AET-WO-4240a` §1.3).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 5;
+/// added the `crystal` kind (`AET-WO-4240a` §1.3). Version 6 gave the MCU
+/// row `io`, each I/O pin's structure and the input each structure takes in
+/// operation (`AET-WO-1211e` A1).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 6;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -431,6 +433,67 @@ pub struct Mcu {
     /// What ArduPilot `Copter-4.7.2` calls the MCU and the SPI kernel clocks
     /// it runs it at (`AET-WO-4400b` D4, D6).
     pub ardupilot: McuArduPilot,
+    /// Each I/O pin's structure and what it tolerates (`AET-WO-1211e` A1).
+    pub io: McuIo,
+}
+
+/// The MCU's I/O pins against the input each takes (`AET-WO-1211e` A1):
+/// every pin the pin table holds (the vendored pin data's `I/O` pins, by
+/// canonical name), its structure as the datasheet's pin table prints it
+/// (`FT_h`, `TT_a`, …), and each structure family's input in operation. A
+/// pull is permanent, so the operating conditions bound it, not the stress
+/// ratings (ruled D-A1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McuIo {
+    /// Each pin's structure, and where it was read.
+    pub pins: BTreeMap<String, (String, At)>,
+    /// Each family (the structure before its first `_`), once.
+    pub families: Vec<IoFamily>,
+    /// Above the supply plus this, the internal pulls must be off.
+    pub pulls_off_above_supply: Limit,
+}
+
+/// What one structure family takes: the lesser of the pin's supply plus
+/// `above_supply_mv` and `max_mv`, each where stated (at least one is).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IoFamily {
+    pub family: String,
+    pub above_supply_mv: Option<i64>,
+    pub max_mv: Option<i64>,
+    pub at: At,
+}
+
+impl McuIo {
+    /// The family of `pin`'s structure and the input it tolerates with its
+    /// supply at `supply_mv`; `None` for a pin whose structure is not held.
+    pub fn tolerated(&self, pin: &str, supply_mv: i64) -> Option<(&str, &At, i64, &IoFamily)> {
+        let (structure, at) = self.pins.get(pin)?;
+        let family = self.family(structure)?;
+        Some((structure.as_str(), at, family.limit(supply_mv), family))
+    }
+
+    /// The least input any held pin tolerates with its supply at `supply_mv`:
+    /// a pull at or below it is tolerated wherever it lands.
+    pub fn floor(&self, supply_mv: i64) -> i64 {
+        self.families
+            .iter()
+            .map(|f| f.limit(supply_mv))
+            .min()
+            .unwrap_or(0)
+    }
+
+    fn family(&self, structure: &str) -> Option<&IoFamily> {
+        let name = structure.split('_').next().unwrap_or(structure);
+        self.families.iter().find(|f| f.family == name)
+    }
+}
+
+impl IoFamily {
+    /// The input this family tolerates with its supply at `supply_mv`.
+    pub fn limit(&self, supply_mv: i64) -> i64 {
+        let above = self.above_supply_mv.map_or(i64::MAX, |a| supply_mv + a);
+        above.min(self.max_mv.unwrap_or(i64::MAX))
+    }
 }
 
 /// ArduPilot's names for the MCU (`MCU <series> <mcu>`), and, for the one
@@ -1046,6 +1109,35 @@ struct RawMcu {
     support: RawSupport,
     flash_kilobytes: RawLimit,
     ardupilot: RawMcuArduPilot,
+    io: RawMcuIo,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMcuIo {
+    #[serde(deserialize_with = "crate::unique_keys")]
+    pins: BTreeMap<String, RawIoPin>,
+    pins_at: RawAt,
+    families: Vec<RawIoFamily>,
+    pulls_off_above_supply_millivolts: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIoPin {
+    structure: String,
+    page: u16,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawIoFamily {
+    family: String,
+    #[serde(deserialize_with = "Option::deserialize")]
+    above_supply_millivolts: Option<i64>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    max_millivolts: Option<i64>,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -2070,8 +2162,70 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 support: support(m.support, r)?,
                 flash_kilobytes: r.positive(m.flash_kilobytes, "kind.mcu.flash_kilobytes")?,
                 ardupilot: mcu_ardupilot(m.ardupilot, r)?,
+                io: mcu_io(m.io, r)?,
             }))
         }
+    })
+}
+
+/// The MCU's I/O rows: each pin a canonical name (`P[A-K]` and 0 to 15) with
+/// a structure of a held family, cited on its page; each family once, its
+/// limit above zero.
+fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
+    let mut families: Vec<IoFamily> = Vec::with_capacity(m.families.len());
+    for f in m.families {
+        let at = format!("kind.mcu.io.families.{}", f.family);
+        if f.family.is_empty()
+            || !f.family.bytes().all(|b| b.is_ascii_uppercase())
+            || families.iter().any(|g| g.family == f.family)
+        {
+            return Err(format!("`{at}` is not an upper-case family named once"));
+        }
+        let terms = [f.above_supply_millivolts, f.max_millivolts];
+        if terms.iter().all(Option::is_none) || terms.iter().flatten().any(|v| *v <= 0) {
+            return Err(format!("`{at}` states neither term, or one not above zero"));
+        }
+        families.push(IoFamily {
+            above_supply_mv: f.above_supply_millivolts,
+            max_mv: f.max_millivolts,
+            at: r.at(f.at, &format!("{at}.at"))?,
+            family: f.family,
+        });
+    }
+    let base = r.at(m.pins_at, "kind.mcu.io.pins_at")?;
+    let mut pins = BTreeMap::new();
+    for (name, p) in m.pins {
+        let canonical = name.len() <= 4
+            && name.starts_with('P')
+            && name
+                .as_bytes()
+                .get(1)
+                .is_some_and(|c| (b'A'..=b'K').contains(c))
+            && name[2..]
+                .parse::<u8>()
+                .is_ok_and(|n| n <= 15 && name[2..] == n.to_string());
+        let family = p.structure.split('_').next().unwrap_or_default();
+        if !canonical || !families.iter().any(|f| f.family == family) || p.page == 0 {
+            return Err(format!(
+                "`kind.mcu.io.pins.{name}` is not a canonical pin with a structure of a held family on a page"
+            ));
+        }
+        let at = At {
+            document: base.document.clone(),
+            section: format!("p. {}, {}: `{name}` {}", p.page, base.section, p.structure),
+        };
+        pins.insert(name, (p.structure, at));
+    }
+    if pins.is_empty() {
+        return Err("`kind.mcu.io.pins` is empty".to_owned());
+    }
+    Ok(McuIo {
+        pins,
+        families,
+        pulls_off_above_supply: r.positive(
+            m.pulls_off_above_supply_millivolts,
+            "kind.mcu.io.pulls_off_above_supply_millivolts",
+        )?,
     })
 }
 

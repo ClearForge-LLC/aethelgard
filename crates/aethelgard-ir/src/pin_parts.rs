@@ -195,6 +195,32 @@ pub struct PinPart {
     pub mode_strap: Option<String>,
     pub pins: BTreeMap<String, RowPin>,
     pub modes: Vec<Mode>,
+    /// A reference pin that sets a trip current against a current output
+    /// (`AET-WO-1211e` A2); absent when the part has none.
+    pub trip: Option<Trip>,
+    /// The supply whose bulk capacitor the held document leaves unstated
+    /// (`AET-WO-1211e`): a specification declares it (`bulk`); absent when
+    /// the document states it, and a declared one is refused.
+    pub bulk_unstated: Option<BulkUnstated>,
+}
+
+/// A trip current set by a reference voltage: the output chops when the
+/// voltage `sense`'s current makes across its resistor reaches the voltage on
+/// `reference` (`ITRIP x A = VREF / R`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Trip {
+    /// A `strap_analog` pin.
+    pub reference: String,
+    /// A `current_output` pin.
+    pub sense: String,
+    pub page: String,
+}
+
+/// A supply pin whose bulk capacitor the document gives no value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BulkUnstated {
+    pub supply: String,
+    pub page: String,
 }
 
 impl PinPart {
@@ -247,6 +273,25 @@ pub(crate) struct RawPinPart {
     #[serde(deserialize_with = "crate::unique_keys")]
     pins: BTreeMap<String, RawPin>,
     modes: Vec<RawMode>,
+    #[serde(default)]
+    trip: Option<RawTrip>,
+    #[serde(default)]
+    bulk_unstated: Option<RawBulkUnstated>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawTrip {
+    reference: String,
+    sense: String,
+    page: String,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawBulkUnstated {
+    supply: String,
+    page: String,
 }
 
 #[derive(Deserialize)]
@@ -405,6 +450,23 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
     {
         return Err(format!("`mode_strap` `{s}` is not a strap pin"));
     }
+    if let Some(t) = &raw.trip
+        && !(matches!(kind_of(&t.reference), Some(PinKind::StrapAnalog { .. }))
+            && matches!(kind_of(&t.sense), Some(PinKind::CurrentOutput { .. })))
+    {
+        return Err(format!(
+            "`trip`: `{}` is not a strap_analog pin or `{}` not a current_output pin",
+            t.reference, t.sense
+        ));
+    }
+    if let Some(b) = &raw.bulk_unstated
+        && !matches!(kind_of(&b.supply), Some(PinKind::Supply { .. }))
+    {
+        return Err(format!(
+            "`bulk_unstated`: `{}` is not a supply pin",
+            b.supply
+        ));
+    }
     let mut modes = Vec::new();
     for m in raw.modes {
         if !matches!(m.name.as_str(), "ph_en" | "in_in") {
@@ -515,6 +577,15 @@ pub(crate) fn pin_part(raw: RawPinPart) -> Result<PinPart, String> {
         mode_strap: raw.mode_strap,
         pins,
         modes,
+        trip: raw.trip.map(|t| Trip {
+            reference: t.reference,
+            sense: t.sense,
+            page: t.page,
+        }),
+        bulk_unstated: raw.bulk_unstated.map(|b| BulkUnstated {
+            supply: b.supply,
+            page: b.page,
+        }),
     })
 }
 
