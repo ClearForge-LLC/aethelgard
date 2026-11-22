@@ -1,0 +1,7 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+CMD_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[0]
+CMD_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[1]
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[1].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[1].pins[4]
+SERVO1	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[0]
+#validate	PartLimitUndeclared: `pin_devices[0].part_limits.input_pwm_max_hz`: `DRV8833PWPR` takes `A_IN1` at 20000 Hz on `AIN1`, and no held document states its maximum input PWM rate (TI SLVSAR1E DRV8833 January 2011, revised July 2015): declare one with its citation (`1211` §7)

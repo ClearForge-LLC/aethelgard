@@ -2133,13 +2133,79 @@ pub fn build(topology: &SolvedTopology, table: &PinTable) -> Result<Ledger, Ledg
 /// ruling on Q-I): each scripted device's start-up wait (`WAIT`,
 /// `silicon-only`) and each register a part's model answers 0x00 with a
 /// warning (`MODEL`, `ignored-by-model`). Never acknowledged, never blocking
-/// a package; no `PIN_C` row (Q-I).
+/// a package; no `PIN_C` row (Q-I). `verify` adds [`off_domain_rows`], which
+/// need the specification.
 pub fn twin_limits(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerError> {
     let mut rows = wait_rows(topology)?;
     rows.extend(model_rows(topology));
     rows.extend(identity_rows(topology)?);
     rows.extend(pin_rows(topology));
     Ok(rows)
+}
+
+/// Each path onto an MCU pin from off `mcu.supply` with no stated bound
+/// (`AET-WO-1216b`, `1216` D2 as ruled): `OFFDOMAIN`, `silicon-only`, one row
+/// per path in [`aethelgard_ir::off_domain::paths`]' order. `validate`'s step
+/// 25 judges only a stated figure, so such a path is named here and never
+/// passed: never acknowledged, never counted as judged, never blocking a
+/// package. The IR walks the specification; this writes the rows
+/// (`RUL-16`).
+pub fn off_domain_rows(
+    spec: &Specification,
+    topology: &SolvedTopology,
+) -> Result<Vec<LedgerRow>, LedgerError> {
+    use aethelgard_ir::off_domain::{self, Bound, Lead};
+    let fields = |e: aethelgard_ir::IrValidationError| LedgerError::Fields(e.to_string());
+    let mut out = Vec::new();
+    for p in off_domain::paths(spec).map_err(fields)? {
+        let Bound::Unbounded(why) = &p.bound else {
+            continue;
+        };
+        // The declared pin, else the one `solve` placed.
+        let pin = p.pin.clone().or_else(|| {
+            topology
+                .assignments
+                .get(&p.net)
+                .map(|a| a.pin.clone())
+                .or_else(|| topology.gpio.get(&p.net).map(|g| g.pin.clone()))
+                .or_else(|| topology.adc_inputs.get(&p.net).map(|a| a.pin.clone()))
+        });
+        let (limit, cite) = off_domain::limit_at_zero(spec, pin.as_deref()).map_err(fields)?;
+        let lead = match &p.lead {
+            Lead::Leads(w) => format!(
+                "its source can be up while `{}` is below 1 V ({w})",
+                spec.mcu.supply
+            ),
+            Lead::After(w) => format!(
+                "the drawn tree places its source after `{}` ({w})",
+                spec.mcu.supply
+            ),
+        };
+        out.push(LedgerRow {
+            id: format!("OFFDOMAIN.{}", p.at),
+            family: "OFFDOMAIN".into(),
+            register: String::new(),
+            field: p.net.clone(),
+            pos: 0,
+            width: 0,
+            access: "none",
+            value: None,
+            class: Class::SiliconOnly,
+            judge: format!(
+                "not judged: no bound is stated for what {} drives onto `{}` ({why}), so validate's step 25 (DS12117 Rev 10 Table 10 at VDD = 0) cannot judge it; never a pass, the bench's (AET-WO-1216b, 1216 D2)",
+                p.source, p.net
+            ),
+            note: format!(
+                "{} on {}: at VDD = 0 the pin takes at most {limit} mV ({cite}); {lead}",
+                p.class.name(),
+                pin.as_deref().map_or("a pin the solver places".to_owned(), |x| format!("`{x}`")),
+            ),
+            acknowledged: None,
+            reason: None,
+            address: None,
+        });
+    }
+    Ok(out)
 }
 
 /// The twin's limits on a pin device (`AET-WO-1211c`, the fidelity notes of

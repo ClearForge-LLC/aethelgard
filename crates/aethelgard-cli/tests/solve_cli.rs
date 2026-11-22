@@ -134,14 +134,19 @@ use sha2::{Digest, Sha256};
 /// (measured).
 /// Moved by `AET-WO-1211c` D7 (solved 17, specification 24 unchanged), which
 /// moved only `schema_version` (neither fixture has a pin device): with
-/// version 16 put back, each hashes to `1211e`'s digest exactly, which the
-/// test holds.
-const REFERENCE_DIGEST: &str = "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
-const STRESS_DIGEST: &str = "3a9d6f4ea98ce9ba1365b017b24c78f8d11ce11f86652fc6044c7fe8aa907222";
-/// `1211e`'s digests, solved version 16.
-const REFERENCE_DIGEST_16: &str =
-    "a6e65e992d1ec3fd7f790db23f950b5e9530bf0cb7b810c536101fdca4ed4801";
-const STRESS_DIGEST_16: &str = "67a9d96141b67d34f23419f86f5f2a42c76ff2877eb6b211576e2b6e2f354766";
+/// version 16 put back, each hashes to `1211e`'s digest exactly (measured).
+/// Moved by `AET-WO-1216b` (specification 25, solved 17 unchanged), which
+/// moved only the specification's sha256: with each file's specification-24
+/// sha256 put back, each hashes to `1211c`'s digest exactly, which the test
+/// holds.
+const REFERENCE_DIGEST: &str = "e531bf8a6c8324326e354f89051e61f09f55b963e6eb9243092aeeb3f7b0bb6d";
+const STRESS_DIGEST: &str = "15a566105c0d291f3386b88f8414a766cbbdb7a3eb2cd65072e66259e4d099e3";
+/// `1211c`'s digests, with each file's sha256 at specification 24.
+const REFERENCE_DIGEST_24: &str =
+    "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
+const STRESS_DIGEST_24: &str = "3a9d6f4ea98ce9ba1365b017b24c78f8d11ce11f86652fc6044c7fe8aa907222";
+const REFERENCE_SHA_24: &str = "b371356a60f0e656d3f3d2d658e45245e35ae8a1114561d45971a3973b3cd604";
+const STRESS_SHA_24: &str = "353ca7e3e5ba430662bf8afbfee217ed1018bfa5784f183da3a68f67fe8484f6";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -264,16 +269,26 @@ fn gate_clause_2_a_pin_set_twice_names_both_claimants_and_emits_nothing_else() {
 
 #[test]
 fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
-    for (file, digest, digest_16) in [
-        (reference(), REFERENCE_DIGEST, REFERENCE_DIGEST_16),
-        (fixture("stress"), STRESS_DIGEST, STRESS_DIGEST_16),
+    for (file, digest, sha_24, digest_24) in [
+        (
+            reference(),
+            REFERENCE_DIGEST,
+            REFERENCE_SHA_24,
+            REFERENCE_DIGEST_24,
+        ),
+        (
+            fixture("stress"),
+            STRESS_DIGEST,
+            STRESS_SHA_24,
+            STRESS_DIGEST_24,
+        ),
     ] {
-        let (_, a) = solved(&file);
+        let (t, a) = solved(&file);
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
-        let back = a.replacen("{\"schema_version\":17,", "{\"schema_version\":16,", 1);
-        assert_eq!(hex(back.as_bytes()), digest_16, "{}", file.display());
+        let back = a.replacen(&t.specification_sha256, sha_24, 1);
+        assert_eq!(hex(back.as_bytes()), digest_24, "{}", file.display());
     }
 }
 

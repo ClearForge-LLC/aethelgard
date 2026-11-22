@@ -234,18 +234,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// sha put back each hashes to the digest before, `517228e5…1834`,
 /// `58e5cb8d…56c6` and `23c7b018…929f`, measured); the boot image did not
 /// move.
+/// Moved in `AET-WO-1216b` (specification 25): the three texts by their
+/// specification sha line alone (with the specification-24 document's sha
+/// `37f62e5d…49d7` put back for `2e98370b…53ab`, each hashes to the digest
+/// before, `df6f7518…b40c`, `3f6da880…f3b3` and `062ef22f…36a7`, measured
+/// by `spike/1216b/order_back.rs`); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "df6f75183729ab57db952ea1f47c006c9b742499c293e7252a5aee3ef348b40c",
+        "3ba28d498d0b650d46bbb334c3de2775157aa59e01ebaf3a6826e7530291f786",
     ),
     (
         "platform",
-        "3f6da88022151a5170882e2340d04e8764c5d0f9edad7dcf35396af1d9f2f3b3",
+        "203b53372aa7af79b04af087817dd1193449286909fededc6ed36f9c0071e33e",
     ),
     (
         "platform faulted",
-        "062ef22fdf800dfc4cfce2547b917858416377cd35b6d330c43068e96d5636a7",
+        "22f1ba4baaf2ded09fd78d511bb570410ebb82a5b72ebff9a3988533c6b980d9",
     ),
     (
         "boot image",

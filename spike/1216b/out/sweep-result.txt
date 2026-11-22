@@ -1,0 +1,3 @@
+AET-WO-1216b null sweep: spike/1211d/measure/sweep.sh with c9d4096b's binary on c9d4096b's tree, and the branch's binary on the branch (HEAD 00a024f9); each branch output with its specification's spec-25 sha256 replaced by its spec-24 sha256 (54 files carried one), then spike/1211d/measure/same.sh:
+identical: 280 files
+exit codes:      86 0      16 2 

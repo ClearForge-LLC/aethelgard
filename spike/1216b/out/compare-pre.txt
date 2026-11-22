@@ -1,0 +1,35 @@
+connectors	same	paths 7/7	walker leads {'yes': 7}	walk1 non-paths 0	#validate ok
+d1-24-i2c	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+d3-24-i2c-12-spi	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+driver-judges-nothing	same	paths 8/8	walker leads {'yes': 8}	walk1 non-paths 0	#validate ok
+four-layer-power	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+four-layer	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+hse-crystal-16	same	paths 10/10	walker leads {'yes': 10}	walk1 non-paths 0	#validate ok
+hse-external-8	same	paths 11/11	walker leads {'yes': 11}	walk1 non-paths 0	#validate ok
+imu-baro-1v8	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+logger-4600	same	paths 4/4	walker leads {'yes': 4}	walk1 non-paths 0	#validate ok
+motors-dshot600	same	paths 6/6	walker leads {'yes': 6}	walk1 non-paths 0	#validate ok
+motors-pwm	same	paths 6/6	walker leads {'yes': 6}	walk1 non-paths 0	#validate ok
+pair-standin	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+sentinel-01-bench	same	paths 16/16	walker leads {'yes': 16}	walk1 non-paths 0	#validate ok
+sentinel-02-own	same	paths 4/4	walker leads {'yes': 4}	walk1 non-paths 0	#validate ok
+sentinel-02-shaped	same	paths 10/10	walker leads {'yes': 10}	walk1 non-paths 0	#validate ok
+sentinel-03	same	paths 36/36	walker leads {'yes': 36}	walk1 non-paths 0	#validate ok
+serial-dshot-9600	same	paths 8/8	walker leads {'yes': 8}	walk1 non-paths 0	#validate ok
+serial-four	same	paths 12/12	walker leads {'yes': 12}	walk1 non-paths 0	#validate ok
+solve-infeasible-shared	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+solve-pigeonhole-spi	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+solve-stress	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+solve-thrash-pins	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+spi-only	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+two-bme	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+d1-drv8876	same	paths 6/6	walker leads {'yes': 6}	walk1 non-paths 0	#validate OffDomainAboveLimit: `DRV_IPROPI`: `U2`'s IPROPI into `R2` (1500 ohm) can hold the pin at up to 4665 mV while `VDD_3V3` is below 1 V (no regulator in 
+d2-drv8833	same	paths 5/5	walker leads {'yes': 5}	walk1 non-paths 0	#validate PartLimitUndeclared: `pin_devices[0].part_limits.input_pwm_max_hz`: `DRV8833PWPR` takes `A_IN1` at 20000 Hz on `AIN1`, and no held document states its
+sentinel-02-power	same	paths 3/3	walker leads {'yes': 3}	walk1 non-paths 5	#validate ok
+invalid-zero-domain	same	paths 0/0	walker leads {}	walk1 non-paths 0	#validate ZeroNominalVoltage: voltage domain `VDD_3V3` has nominal_millivolts 0
+sentinel-01-ext-bmp581	same	paths 20/20	walker leads {'yes': 20}	walk1 non-paths 0	#validate ok
+sentinel-01-minimal	same	paths 4/4	walker leads {'yes': 4}	walk1 non-paths 0	#validate ok
+sentinel-01	same	paths 20/20	walker leads {'yes': 20}	walk1 non-paths 0	#validate ok
+sentinel-02-bench-hse8	same	paths 3/3	walker leads {'yes': 3}	walk1 non-paths 0	#validate ok
+sentinel-02-bench	same	paths 2/2	walker leads {'yes': 2}	walk1 non-paths 0	#validate ok
+total walk-1 paths 225; all boards same

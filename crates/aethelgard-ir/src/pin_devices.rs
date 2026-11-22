@@ -1340,6 +1340,7 @@ impl<'s> Device<'s> {
             output_max_ua,
             error_band,
             band_supply,
+            ..
         } = &p.kind
         else {
             return Err(self.kind_mismatch(
@@ -1869,6 +1870,27 @@ impl<'s> Device<'s> {
         }
         Ok(())
     }
+}
+
+/// `r`'s highest ohms over `d`'s temperature, by the rule the ADC input
+/// takes it (`validate`'s step 25, `AET-WO-1216b`: a current output's
+/// figure at VDD = 0).
+pub(crate) fn resistor_high_ohms(
+    spec: &Specification,
+    d: &PinDevice,
+    row: &PinPart,
+    r: &crate::power::Resistor,
+    path: &str,
+    at: &str,
+) -> Result<i128, IrValidationError> {
+    let dev = Device {
+        spec,
+        d,
+        row,
+        path: path.to_owned(),
+        bound: BTreeMap::new(),
+    };
+    Ok(band(r.ohms, resistor_error_ppm(&dev, r, at)?).1)
 }
 
 /// `ceil(a / b)` for `a >= 0`, `b > 0`.

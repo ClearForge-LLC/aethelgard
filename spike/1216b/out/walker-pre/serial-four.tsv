@@ -1,0 +1,14 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+MAVLINK_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[1]
+MAVLINK_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[2]
+GPS_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[1]
+GPS_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[2]
+I2C_SCL	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[3]
+I2C_SDA	connector	off-board	yes: an off-board end	not stated	-	-	connectors[1].pins[4]
+CRSF_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[2].pins[1]
+CRSF_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[2].pins[2]
+SBUS_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[0]
+SBUS_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[1]
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[4].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[4].pins[4]
+#validate	ok
