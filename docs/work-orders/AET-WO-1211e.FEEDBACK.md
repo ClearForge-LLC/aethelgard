@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. Merged in on 2026-11-22: `main` `ddfa64d6` (4240b, specification 23 / solved 15), `c1e444dd` (1211d, 1214) and `7fc81640` (1211b, solved 16). **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
 
-**Status: AWAITING-PACKAGE** (the bench package needs a write=true dispatch, §9; everything else is done). **The answer, in five lines:**
+**Status: READY** (the package is committed from dispatch 44986875477, §9). **The answer, in five lines:**
 - **A1:** a declared pull is judged against what the MCU pin takes in operation (DS12117 Rev 10 Table 13, p. 105), with VDD at `mcu.supply`'s minimum and a pull to `mcu.supply` itself exempt. Both of the WO's choices (Table 10, VDD at its maximum) were corrected by ruling.
 - **A2:** the DRV8876 is refused with VREF on GND, with an IPROPI no analog input terminates, or with a trip below its declared full scale.
 - **`bulk`:** required where the part leaves its value unstated (the DRV8876's VM). It is specification **24**, after 4240b's 23.
@@ -152,10 +152,8 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 
 - **Gates:**
   - `cargo fmt --all -- --check` passes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at `80cd4db6`.
-  - `cargo test --workspace` (Furnace, target outside the repository, at `80cd4db6`, the merge of `7fc81640`, 2026-11-22): 156 binaries, 2642 passed and 2 failed. Both failures are expected.
-    - `bench_board_tier1` waits on the package (§9).
-    - `fab_tier1` is F11.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at `76d6db67`.
+  - `cargo test --workspace` (Furnace, target outside the repository, at `76d6db67`, after the package and the merge of `122378c7`, 2026-11-22): 156 binaries, 2647 passed and 1 failed: `fab_tier1`, which is F11.
     - Before the merges, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
     - Before that merge, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
 - **The null sweep** (§2): main's binary on main's tree against the branch's on the branch's. 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. Taken twice:
@@ -177,4 +175,11 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 
 ## 9. The package
 
-`bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit` fails, by design. `fab/sentinel-01-bench/package` is bound to the bench specification's old sha (`81e1f19a…`). The specification moved by its version line only, and nothing the package draws moved (the null sweep's emitted bytes are identical), but the package must be rewritten by a write=true dispatch. **Queued for the architect.**
+`fab/sentinel-01-bench/package` is the artifact of the architect's write=true dispatch, **run 44986875477** on `80cd4db6`, committed byte for byte (`940d26d7`).
+- Only `FAB-NOTES.md` and `MANIFEST.json` moved, and each moved by its sha lines alone:
+  - the specification's sha (`81e1f19a…` → `d89d62e7…`);
+  - the topology's sha, which embeds it;
+  - the verdict's sha;
+  - FAB-NOTES' own hash.
+- The ELF, every Gerber, the drill, the BOMs and the placement are byte-identical.
+- `bench_board_tier1` passes on it.
