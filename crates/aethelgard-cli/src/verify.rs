@@ -1106,12 +1106,7 @@ fn stress(
         // target (D5, ruled: no generated firmware path reads an input, so
         // its gate would read back the twin's own stimulus, `INV-07`).
         Override::PinHeld { net, level } => {
-            let plan = aethelgard_twin::pins::plan(
-                &crate::pinwitness::declared(spec),
-                topology,
-                &Default::default(),
-            )
-            .ok();
+            let plan = aethelgard_twin::pins::plan(topology, &Default::default()).ok();
             // A hold the twin's plan refuses (an output, an unknown net) is
             // no baseline: the campaign refuses its run (adversarial F10).
             let Some(i) = plan
@@ -1125,12 +1120,7 @@ fn stress(
         // A set ADC value other than the idle's stresses its input: the run
         // must convert and read it (`AET-WO-1211c`).
         Override::AnalogValue { net, millivolts } => {
-            let plan = aethelgard_twin::pins::plan(
-                &crate::pinwitness::declared(spec),
-                topology,
-                &Default::default(),
-            )
-            .ok();
+            let plan = aethelgard_twin::pins::plan(topology, &Default::default()).ok();
             let Some(a) = plan
                 .as_ref()
                 .and_then(|p| p.analog.iter().find(|a| &a.net == net))
@@ -1371,11 +1361,7 @@ fn coverage(
     // input is no target (D5, ruled): no generated firmware path reads it,
     // so a held input's gate would read back the twin's own stimulus
     // (`INV-07`); it is named, as a bus no device uses (ruled (c)).
-    if let Ok(plan) = aethelgard_twin::pins::plan(
-        &crate::pinwitness::declared(spec),
-        topology,
-        &Default::default(),
-    ) {
+    if let Ok(plan) = aethelgard_twin::pins::plan(topology, &Default::default()) {
         for a in &plan.analog {
             let target = Target::Analog(a.net.clone());
             if !covered.contains(&target) {
@@ -1404,7 +1390,7 @@ fn coverage(
             continue;
         }
         // A motor rail (D1, ruled (ii)): named, never met, never blocking.
-        if let Some(why) = motor_rail(spec, &v.id) {
+        if let Some(why) = motor_rail(spec, topology, &v.id) {
             c.no_device.push(format!("{} ({why})", target.name()));
             continue;
         }
@@ -1443,18 +1429,23 @@ fn coverage(
 /// it but connector pins: no serial port, SPI or I2C device, I2C bus,
 /// regulator or declared load, and it is not the MCU's supply.
 /// `None` for every other domain.
-fn motor_rail(spec: &aethelgard_ir::Specification, domain: &str) -> Option<String> {
+fn motor_rail(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    domain: &str,
+) -> Option<String> {
     if domain == spec.mcu.supply {
         return None;
     }
-    let pins: Vec<String> = spec
-        .declared_pin_devices()
+    // The pin devices' supply pins, as solved (`AET-WO-1211c` D7, `RUL-16`).
+    let pins: Vec<String> = topology
+        .pin_devices
         .iter()
-        .flat_map(|d| {
+        .flat_map(|(reference, d)| {
             d.supplies
                 .iter()
                 .filter(|(_, v)| *v == domain)
-                .map(move |(pin, _)| format!("{}.{pin}", d.reference))
+                .map(move |(pin, _)| format!("{reference}.{pin}"))
         })
         .collect();
     if pins.is_empty() {
@@ -3498,9 +3489,9 @@ mod tests {
     /// serial port's RX line, a regulator or an SPI device is on.
     #[test]
     fn the_motor_rail_is_a_pin_device_s_supply_alone() {
-        let (spec, _) = solved(D1);
-        assert!(motor_rail(&spec, "VMOTOR").is_some());
-        assert!(motor_rail(&spec, "VDD_3V3").is_none());
+        let (spec, d1) = solved(D1);
+        assert!(motor_rail(&spec, &d1, "VMOTOR").is_some());
+        assert!(motor_rail(&spec, &d1, "VDD_3V3").is_none());
         for (path, domain) in [
             (
                 "crates/aethelgard-cli/tests/fixtures/connectors.json",
@@ -3523,8 +3514,8 @@ mod tests {
                 "VDD_1V8",
             ),
         ] {
-            let (spec, _) = solved(path);
-            assert!(motor_rail(&spec, domain).is_none(), "{path} {domain}");
+            let (spec, t) = solved(path);
+            assert!(motor_rail(&spec, &t, domain).is_none(), "{path} {domain}");
         }
         // The same rail with an SPI device on it is no motor rail.
         let mut v: Value = serde_json::from_slice(
@@ -3533,9 +3524,12 @@ mod tests {
         .unwrap();
         v["mcu"]["supply"] = json!("VDD_3V3");
         let mut spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
-        assert!(motor_rail(&spec, "VMOTOR").is_some());
+        assert!(motor_rail(&spec, &d1, "VMOTOR").is_some());
         spec.mcu.supply = "VMOTOR".into();
-        assert!(motor_rail(&spec, "VMOTOR").is_none(), "the MCU's supply");
+        assert!(
+            motor_rail(&spec, &d1, "VMOTOR").is_none(),
+            "the MCU's supply"
+        );
         // A declared load on it is a consumer: no motor rail.
         let read = |path: &str| -> Value {
             serde_json::from_slice(
@@ -3553,12 +3547,12 @@ mod tests {
             read("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json")["power"].clone();
         let unloaded: aethelgard_ir::Specification = serde_json::from_value(v.clone()).unwrap();
         assert!(
-            motor_rail(&unloaded, "VMOTOR").is_some(),
+            motor_rail(&unloaded, &d1, "VMOTOR").is_some(),
             "no load on it yet"
         );
         v["power"]["loads"][0]["domain"] = json!("VMOTOR");
         let loaded: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
-        assert!(motor_rail(&loaded, "VMOTOR").is_none(), "a load on it");
+        assert!(motor_rail(&loaded, &d1, "VMOTOR").is_none(), "a load on it");
     }
 
     fn sim_line(gpio: Value, adc: Value, motor: Value, findings: Value) -> Ran {

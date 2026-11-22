@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211c-pin-devices-twin` from `main` `7fc81640`; `main` merged at `3e2b33a7` (`171f2a60`, docs) and `b5dd68a9` (`122378c7`, 2307). **Builder:** Claude (Opus 5.5 orchestrating; three Sonnet readers mapping the twin, the chaos crate and `verify`, one Sonnet builder for the chaos crate's records and overrides, one Opus adversarial reviewer; each report checked at source before use). Written 2026-11-22.
 
-**Status:** DRAFT. See §7 for the open ruling (D7).
+**Status:** D1–D7 ruled and built (§6). PR #313.
 
 ## 0. The answer
 
@@ -25,8 +25,8 @@ Predictions `spike/1211c/PREDICTIONS.md`, committed (`4254de68`) before any run;
 ## 2. What was built
 
 ### 2.1 The twin (`crates/aethelgard-twin`)
-- **`pins::plan`**: from the solved topology and [`pins::Declared`] (§7, D7), each pin device's outputs (the declared level's `BSRR` bit, the port's `BSRR` and `MODER`), inputs (driven at the level the declared pull holds them at, or a scenario's hold; read at `IDR`), and ADC inputs (ADC1 → `adcM1S2`, ADC3 → `adc3`; set to the idle's value, 0 V for a current output of a bridged device, or a scenario's; the expected code from `aethelgard_chaos::record::adc_code`).
-- **Refused by name, what the twin cannot run** (`PinDeviceNotSimulated`, with why): an input with no stated level or active level, an ADC input off ADC1/ADC3, at a resolution other than the measured 12 bits, with no stated idle value, or sharing its ADC with another input (the twin reads one conversion's code per ADC). `PinHeldIsOutput` (any declared output or peripheral pin), `PinHeldUnknown`, `AnalogValueUnknown`.
+- **`pins::plan`**: from the solved topology alone (`RUL-16`; D7), each pin device's outputs (the declared level's `BSRR` bit, the port's `BSRR` and `MODER`), inputs (driven at the level the declared pull holds them at, or a scenario's hold; read at `IDR`), and ADC inputs (ADC1 → `adcM1S2`, ADC3 → `adc3`; set to the idle's value, 0 V for a current output of a bridged device, or a scenario's; the expected code from `aethelgard_chaos::record::adc_code`).
+- **Refused by name, what the twin cannot run** (`PinDeviceNotSimulated`, naming the signal and why): an input with no stated level or active level, an ADC input off ADC1/ADC3, at a resolution other than the measured 12 bits, with no stated idle value, or sharing its ADC with another input (the twin reads one conversion's code per ADC). `PinHeldIsOutput` (any declared output or peripheral pin), `PinHeldUnknown`, `AnalogValueUnknown`.
 - **The platform** lists ADC1 and ADC3 for a pin device's input (`STOCK`, `solved()`); a `power.sense` input (no solved resolution) stays out, as before.
 - **The image** holds a declared input at `MODER` 00, a pin device's ADC pin at 11, its ADC's clock gate, and `PCSEL` and `SQR1` (both stored by the model and read back).
 
@@ -48,6 +48,14 @@ Predictions `spike/1211c/PREDICTIONS.md`, committed (`4254de68`) before any run;
 - **Per-item gates** from `simulate`'s line, present only on a board with a pin device: `gpio` (one item per GPIO signal), `adc` (one per ADC input), `bridge` (one per bridge: its inputs' static levels and its enable's write). Each item carries its verdict; `judged` counts the items (2306: never a whole input counted once).
 - **Coverage:** `Target::Analog(net)`, met by a tolerated `analog_value` other than its idle's. Named in `no_device`, never met, never blocking, each with its reason: a motor rail (D1), a bridge (D2), an input (D5).
 - **The ledger:** `PCSEL`, `SQR1` and `RES` observed; `ADCAL`, `JQDIS` and `SMP#` ignored by the model (unhandled tags, measured); the other ADC fields silicon-only with 1211 §4's reasons; a pin device's output `BSRR` observed by the GPIO witness. `twin_limits` gain `PIN.<net>`, `ADC.<net>` and `IDLE.<label>` rows, 1211 §4's fidelity notes as reasons.
+
+## 3. No existing verdict moves (§2), and the solved bump (D7)
+
+- **The null sweep** (`spike/1211c/kit/null-sweep.sh`, `null-compare.py`): every committed specification's `solve`, `generate` and `simulate --firmware` (100 ms), and every committed scenario's campaign, with `main`'s CLI and the branch's, in the tools image. The comparer cuts the run-to-run noise (the sweep's own paths, `memory.*`) and, with `--versions`, the fields the trace bump moves (`run_id`, `state_sequence_hash`, `trace_bytes`, the header's version byte), and kind 24's two new fields; `solve`'s bytes are compared with the solved version line normalised.
+- **Results:**
+  - against `main` `7fc81640` at `adeb3acd` and against `122378c7` at `b5dd68a9`: of 33 specifications, only D1 differs (it simulates now); 55 of 55 campaigns identical but for the version fields, 15 on motor boards gaining kind 24's idle and tick (`spike/1211c/out/null-sweep-*.txt`);
+  - FINAL (D7's solved 17) against `main` `cc2cc923`: see the last row of this section, filled at READY.
+- **D2g's `verify`** (`spike/1211c/out/d2g_verify.json`): every gate passes but the campaign, which fails on the held-nFAULT run alone (D5: no rule counts it detected); `gpio` judges its five outputs and names nFAULT not judged, `bridge` judges two; with `--fab-out`, coverage is no longer short (VMOTOR, the bridges and nFAULT named), and the next precondition, `UnwitnessedFieldNotAcknowledged`, refuses: the 1211 fixtures declare no acknowledgements.
 
 ## 4. Mutants (§1.5)
 
@@ -77,3 +85,29 @@ A fresh Opus reviewer attacked `e0c7fae3` in its own worktree (`~/worktrees/aeth
 | F12 | a firmware `ODR` write clears a driven input (G4) | recorded; the generated firmware writes no `ODR`, and F2 now refuses an output's `ODR` write before `MODER` |
 
 **Could not break:** `pin_held` by 19 other names (outputs, peripheral pins, supplies, references, case and space variants: `PinHeldIsOutput` or `PinHeldUnknown`, before any run); the stimuli after a real BOR reset on D2g; any judgement of a pull (G2); a move on a board without a pin device; ADC1's gate; `INV-07` but F4.
+
+
+## 6. Decisions, as ruled
+
+- **D1 · the motor rail** (the stop): (ii). A domain a pin device's `supplies` names and that otherwise feeds only connector pins is no `Rail` target; named in `no_device` with its reason, computed, never declared (architect, 2026-11-22T04:55Z).
+- **D2 · `Target::Bridge`:** the same; listed with its reason until an output fault exists.
+- **D3 · "D2":** D2g, 1211d's variant (GPIO inputs, drawn), built from the committed fixture.
+- **D4 · the ADC end to end:** under `simulate` and the campaign on D1; `verify`'s ADC gate and `Target::Analog` at library level.
+- **D5 · no E4.** No firmware reads the input, so a held input's gate would read back the twin's own stimulus (`INV-07`). Inputs are named, not targets; `pin_held` and `PinHeldIsOutput` stay.
+- **D6 · build meanwhile:** yes, each part its own commit, `verify.rs` last after `main`.
+- **D7 · RUL-16 (05:40Z): (i).** `SolvedGpio` gains `active` and `pulled`, `SolvedAdcInput` `transfer`, `SolvedPinDevice` `supplies`; solved version 17; the twin and `verify` read the topology alone, and a test holds that `pinwitness.rs` names no `Specification`.
+
+## 7. Findings, not fixed here
+
+### 7.1 Rows for the roadmap
+- **VMOTOR's droop is unjudged until a model of the driver exists** (D1, ruled): a rail nothing observes; the Tviburi side of the seam.
+- **When generated firmware responds to nFAULT, its target and a rule arrive with that work order** (D5, ruled).
+- **A `pin_held` scenario fails `verify`'s campaign gate today** (D5's consequence): no rule counts its run detected, so a board's `verify` with one cannot pass; it runs, and is judged, under `campaign`.
+- **D2 as committed** stays refused (`PartLimitUndeclared`, SLVSAR1E states no input PWM maximum).
+- **A droop on D1** is refused upstream (`PassiveValueUnstated`, CVM2), so the ADC after a reset is unexercised (the stimuli's re-application after a reset is tested on D2g's GPIO, and by a unit test of the commands).
+- **One input per ADC:** the twin reads one conversion's code (a read hook's value is 0, measured), so a second input on one ADC is refused by name.
+- **Only 12 bits is measured** (P4e); another resolution is refused by name.
+
+## 8. Gates, fence, reduction pass
+
+Filled at READY.

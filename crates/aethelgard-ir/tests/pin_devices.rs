@@ -581,6 +581,8 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
             direction: aethelgard_ir::pin_devices::Direction::Input,
             initial: None,
             pull: Some(aethelgard_ir::pin_devices::McuPull::Up),
+            active: Some(aethelgard_ir::motor::Level::Low),
+            pulled: Some(aethelgard_ir::motor::Level::High),
         },
     );
     bad.pin_speeds.insert("DRV_NFAULT".into(), 0);
@@ -590,6 +592,7 @@ fn a_topology_with_a_device_s_gpio_and_no_device_is_refused() {
         aethelgard_ir::pin_devices::SolvedPinDevice {
             part: "DRV8876PWPR".into(),
             bridges: Default::default(),
+            supplies: Default::default(),
         },
     );
     bad.validate().unwrap();

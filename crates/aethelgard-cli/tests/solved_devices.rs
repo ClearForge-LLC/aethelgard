@@ -87,6 +87,23 @@ fn the_generators_never_name_a_specification() {
     }
 }
 
+/// `AET-WO-1211c` D7 (ruled 2026-11-22T05:40Z): the CLI's pin-device
+/// witness reads the solved topology alone, never the specification: every
+/// fact of a pin device it needs is solved (`active`, `pulled`, `transfer`,
+/// `supplies`), so its file names no `Specification` at all.
+#[test]
+fn the_pin_device_witness_never_names_a_specification() {
+    let path = crates().join("aethelgard-cli/src/pinwitness.rs");
+    let text = fs::read_to_string(&path).unwrap();
+    for (n, line) in code(&text) {
+        assert!(
+            !has_word(line, "Specification"),
+            "{}:{n} names `Specification`: {line}",
+            path.display()
+        );
+    }
+}
+
 /// A `clippy.toml` fence can be switched off by an `#[allow]` of its lint, and
 /// `forbid` cannot stop that here: clap's derives emit `allow(clippy::style)`,
 /// which `forbid` refuses (`AET-WO-1204` adversarial A1). So no source file of

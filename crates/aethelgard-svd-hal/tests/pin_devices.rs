@@ -113,9 +113,13 @@ fn the_adc_takes_the_declared_resolution_or_is_refused_by_name() {
     ] {
         assert!(lib.contains(bound), "{bound}");
     }
+    // A pin device's input with no solved resolution is now refused by
+    // `SolvedTopology::validate` first (`AET-WO-1211c` D7: its `transfer`
+    // names a device, which requires its `bits`), before the generator's own
+    // `AdcResolutionNotSolved` is reached.
     for (bits, kind) in [
         (Some(8), "AdcResolutionNotCommon"),
-        (None, "AdcResolutionNotSolved"),
+        (None, "InvalidTopology"),
     ] {
         let mut t = t.clone();
         t.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = bits;
@@ -197,6 +201,9 @@ fn four_adc_inputs_unwind_past_their_conversions() {
                 peripheral: "ADC3".into(),
                 channel: ch.into(),
                 bits: Some(12),
+                transfer: Some(aethelgard_ir::pin_devices::SolvedTransfer::CurrentOutput {
+                    device: "U2".into(),
+                }),
             },
         );
     }

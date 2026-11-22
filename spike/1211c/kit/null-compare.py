@@ -37,6 +37,14 @@ for kind in ["spec", "scenario"]:
         a, b = os.path.join(a_root, kind, n), os.path.join(b_root, kind, n)
         out, notes = [], []
         if kind == "spec":
+            # solve's bytes, with the solved version line normalised (D7: the
+            # bump moves it on every board; the new fields only on a pin
+            # device's).
+            sa, sb = (os.path.join(r, "solve.json") for r in (a, b))
+            if os.path.exists(sa) and os.path.exists(sb):
+                import re as _re
+                ver = lambda t: _re.sub(r'"schema_version":\d+', '"schema_version":N', t)
+                if ver(open(sa).read()) != ver(open(sb).read()): out.append("solve.json differs beyond its version line")
             for f in ["tree.sha256", "simulate.json", "generate.json"]:
                 x = norm(open(os.path.join(a, f)).read(), a_root) if os.path.exists(os.path.join(a, f)) else None
                 y = norm(open(os.path.join(b, f)).read(), b_root) if os.path.exists(os.path.join(b, f)) else None

@@ -1,13 +1,10 @@
 //! `AET-WO-1211c`: the twin's plan of a pin device (`pins::plan`), from the
-//! solved topology and the facts the CLI reads from the specification
-//! ([`pins::Declared`], `RUL-16`): D1's, and each refusal by its name. The
-//! CLI's reading of the specification is tested beside it
-//! (`aethelgard-cli` `pinwitness`).
+//! solved topology alone (`RUL-16`; `AET-WO-1211c` D7: an input's `active`
+//! and `pulled`, an ADC input's `transfer` are solved): D1's, and each
+//! refusal by its name.
 
-use aethelgard_ir::{SolvedTopology, Specification};
-use aethelgard_twin::pins::{
-    self, Declared, DeclaredAnalog, DeclaredDevice, DeclaredSignal, Overrides,
-};
+use aethelgard_ir::SolvedTopology;
+use aethelgard_twin::pins::{self, Overrides};
 use serde_json::Value;
 
 fn d1() -> Value {
@@ -18,52 +15,24 @@ fn d1() -> Value {
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 
-fn solved(v: &Value) -> (Specification, SolvedTopology) {
-    let spec: Specification = serde_json::from_value(v.clone()).unwrap();
+fn solved(v: &Value) -> SolvedTopology {
+    let spec: aethelgard_ir::Specification = serde_json::from_value(v.clone()).unwrap();
     spec.validate().unwrap();
     let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
-    let t = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
-    (spec, t)
+    aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap()
 }
 
-/// D1's facts as the specification declares them: nSLEEP an output; nFAULT
-/// an input, active low, R3 to `VDD_3V3` holding it high; IPROPI a current
-/// output of a device with a bridge, so 0 V at idle.
-fn declared() -> Declared {
-    let signal = |net: &str, output, active_high, pulled_high| DeclaredSignal {
-        net: net.into(),
-        output,
-        active_high,
-        pulled_high,
-    };
-    Declared {
-        devices: vec![DeclaredDevice {
-            reference: "U2".into(),
-            part: "DRV8876PWPR".into(),
-            signals: vec![
-                signal("DRV_NSLEEP", true, None, None),
-                signal("DRV_NFAULT", false, Some(false), Some(true)),
-            ],
-            analog: vec![DeclaredAnalog {
-                net: "DRV_IPROPI".into(),
-                bits: 12,
-                idle_microvolts: Ok(0),
-            }],
-        }],
-    }
-}
-
-fn plan(v: &Value, o: &Overrides) -> Result<pins::Pins, aethelgard_twin::TwinError> {
-    let (_, t) = solved(v);
-    pins::plan(&declared(), &t, o)
+fn plan(o: &Overrides) -> Result<pins::Pins, aethelgard_twin::TwinError> {
+    pins::plan(&solved(&d1()), o)
 }
 
 /// D1: nSLEEP an output at its declared `low`, its BSRR bit BR1; nFAULT an
-/// input driven high, where R3 to `VDD_3V3` holds it, active low; IPROPI on
-/// ADC3 INP5 at 12 bits, set to 0 V (the bridge idles non-driving), code 0.
+/// input driven high, where R3 to `VDD_3V3` holds it (solved `pulled`),
+/// active low; IPROPI on ADC3 INP5 at 12 bits, a current output of U2,
+/// whose bridge idles non-driving, so 0 V, code 0.
 #[test]
-fn d1_s_plan_is_its_declaration() {
-    let p = plan(&d1(), &Overrides::default()).unwrap();
+fn d1_s_plan_is_its_solved_topology() {
+    let p = plan(&Overrides::default()).unwrap();
     assert_eq!(p.devices, [("U2".to_owned(), "DRV8876PWPR".to_owned())]);
     let [o] = p.outputs.as_slice() else { panic!() };
     assert_eq!(
@@ -110,7 +79,7 @@ fn a_hold_and_a_value_replace_the_idle() {
         held: [("DRV_NFAULT".to_owned(), false)].into(),
         millivolts: [("DRV_IPROPI".to_owned(), 1500)].into(),
     };
-    let p = plan(&d1(), &o).unwrap();
+    let p = plan(&o).unwrap();
     assert_eq!((p.inputs[0].high, p.inputs[0].held), (false, true));
     assert_eq!(
         (p.analog[0].microvolts, p.analog[0].held, p.analog[0].code),
@@ -129,77 +98,67 @@ fn a_hold_or_a_value_off_a_declared_input_is_refused_by_name() {
         ..Default::default()
     };
     for net in ["DRV_NSLEEP", "DRV_EN", "CMD_TX", "CMD_RX"] {
-        let e = plan(&d1(), &held(net)).unwrap_err();
+        let e = plan(&held(net)).unwrap_err();
         assert_eq!(e.kind(), "PinHeldIsOutput", "{net}: {e}");
     }
-    assert_eq!(
-        plan(&d1(), &held("NOPE")).unwrap_err().kind(),
-        "PinHeldUnknown"
-    );
+    assert_eq!(plan(&held("NOPE")).unwrap_err().kind(), "PinHeldUnknown");
     let set = |net: &str| Overrides {
         millivolts: [(net.to_owned(), 100)].into(),
         ..Default::default()
     };
     for net in ["DRV_NFAULT", "NOPE"] {
-        assert_eq!(
-            plan(&d1(), &set(net)).unwrap_err().kind(),
-            "AnalogValueUnknown"
-        );
+        assert_eq!(plan(&set(net)).unwrap_err().kind(), "AnalogValueUnknown");
     }
 }
 
-/// What the twin cannot run is refused `PinDeviceNotSimulated`, naming it:
-/// an ADC input at a resolution other than the measured 12 bits, or on ADC2,
-/// one with no stated idle value, an input with no stated level, and one
-/// with no active level.
+/// What the twin cannot run is refused `PinDeviceNotSimulated`, naming the
+/// signal: an ADC input at a resolution other than the measured 12 bits, on
+/// ADC2, or a current output of a device with no bridge; an input with no
+/// stated level, or no active level.
 #[test]
 fn what_the_twin_cannot_run_is_refused_by_name() {
-    let (_, t) = solved(&d1());
-    let refused = |d: &Declared, t: &SolvedTopology, want: &str| {
-        let e = pins::plan(d, t, &Overrides::default()).unwrap_err();
+    let t = solved(&d1());
+    let refused = |t: &SolvedTopology, signal: &str, want: &str| {
+        let e = pins::plan(t, &Overrides::default()).unwrap_err();
         assert_eq!(e.kind(), "PinDeviceNotSimulated", "{e}");
         assert!(e.to_string().contains(want), "{e}");
-        assert!(e.to_string().contains("`U2` (DRV8876PWPR)"), "{e}");
+        assert!(e.to_string().contains(&format!("`{signal}`")), "{e}");
     };
-    let mut bits = t.clone();
-    bits.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = Some(16);
-    let mut d16 = declared();
-    d16.devices[0].analog[0].bits = 16;
-    refused(&d16, &bits, "16 bits");
-    // Declared and solved facts that disagree (adversarial F7).
+    let with = |f: &dyn Fn(&mut SolvedTopology)| {
+        let mut t = t.clone();
+        f(&mut t);
+        t
+    };
     refused(
-        &declared(),
-        &bits,
-        "solved at Some(16) bits and declared at 12",
+        &with(&|t| t.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = Some(16)),
+        "DRV_IPROPI",
+        "16 bits",
     );
-    let mut none = t.clone();
-    none.adc_inputs.get_mut("DRV_IPROPI").unwrap().bits = None;
-    refused(&declared(), &none, "solved at None bits");
-    let mut d = declared();
-    d.devices[0].signals[0].output = false;
-    d.devices[0].signals[0].active_high = Some(true);
-    d.devices[0].signals[0].pulled_high = Some(false);
     refused(
-        &d,
-        &t,
-        "`DRV_NSLEEP` is declared an input and solved an output",
+        &with(&|t| t.adc_inputs.get_mut("DRV_IPROPI").unwrap().peripheral = "ADC2".into()),
+        "DRV_IPROPI",
+        "ADC2, which Renode does not model",
     );
-    let mut adc2 = t.clone();
-    adc2.adc_inputs.get_mut("DRV_IPROPI").unwrap().peripheral = "ADC2".into();
-    refused(&declared(), &adc2, "ADC2, which Renode does not model");
-    let mut d = declared();
-    d.devices[0].analog[0].idle_microvolts = Err("why".into());
-    refused(&d, &t, "states no idle value: why");
-    let mut d = declared();
-    d.devices[0].signals[1].pulled_high = None;
-    refused(&d, &t, "states no level its pull holds it at");
-    let mut d = declared();
-    d.devices[0].signals[1].active_high = None;
-    refused(&d, &t, "declares no active level");
+    refused(
+        &with(&|t| t.pin_devices.get_mut("U2").unwrap().bridges.clear()),
+        "DRV_IPROPI",
+        "drives no bridge",
+    );
+    refused(
+        &with(&|t| t.gpio.get_mut("DRV_NFAULT").unwrap().pulled = None),
+        "DRV_NFAULT",
+        "states no level its pull holds it at",
+    );
+    refused(
+        &with(&|t| t.gpio.get_mut("DRV_NFAULT").unwrap().active = None),
+        "DRV_NFAULT",
+        "declares no active level",
+    );
 }
 
 /// The plan of a specification with no pin device is empty, so its boot's
-/// commands, reads and verdict are what they were before `1211c`.
+/// commands, reads and verdict are what they were before `1211c`; an SPI
+/// chip select is never a pin device's output.
 #[test]
 fn a_board_without_a_pin_device_has_an_empty_plan() {
     let path = format!(
@@ -207,10 +166,7 @@ fn a_board_without_a_pin_device_has_an_empty_plan() {
         env!("CARGO_MANIFEST_DIR")
     );
     let v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-    let (_, t) = solved(&v);
-    assert!(
-        pins::plan(&Declared::default(), &t, &Overrides::default())
-            .unwrap()
-            .is_empty()
-    );
+    let t = solved(&v);
+    assert!(!t.gpio.is_empty(), "the board's flash chip select");
+    assert!(pins::plan(&t, &Overrides::default()).unwrap().is_empty());
 }

@@ -36,6 +36,7 @@ fn with_pin_device() -> (Specification, SolvedTopology, aethelgard_ir::PinTable)
         SolvedPinDevice {
             part: "WAKE_SWITCH".into(),
             bridges: Default::default(),
+            supplies: Default::default(),
         },
     );
     t.gpio.insert(
@@ -45,6 +46,8 @@ fn with_pin_device() -> (Specification, SolvedTopology, aethelgard_ir::PinTable)
             direction: Direction::Input,
             initial: None,
             pull: Some(McuPull::Up),
+            active: Some(aethelgard_ir::motor::Level::Low),
+            pulled: Some(aethelgard_ir::motor::Level::High),
         },
     );
     t.pin_speeds.insert("WAKE".into(), 0);

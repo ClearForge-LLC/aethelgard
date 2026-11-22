@@ -502,15 +502,11 @@ fn main() -> ExitCode {
             foreign,
         } => match (firmware, spec, for_time.or(foreign)) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
-                let (parsed, topology) = match solved(&spec) {
-                    Ok((parsed, topology, _)) => (parsed, topology),
+                let topology = match solved(&spec) {
+                    Ok((_, topology, _)) => topology,
                     Err(code) => return code,
                 };
-                let pins = match aethelgard_twin::pins::plan(
-                    &pinwitness::declared(&parsed),
-                    &topology,
-                    &Default::default(),
-                ) {
+                let pins = match aethelgard_twin::pins::plan(&topology, &Default::default()) {
                     Ok(p) => p,
                     Err(e) => return stopped(twin_stop(e)),
                 };

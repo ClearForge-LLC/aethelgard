@@ -123,12 +123,8 @@ pub enum TwinError {
     ModelUnpinned { why: String },
     /// `AET-WO-1211c`: a pin device the twin cannot run, and what of it
     /// (`pins`); every other pin device runs, witnessed on the MCU's side.
-    #[error("`{reference}` ({part}) is a pin device the twin cannot run: {why}")]
-    PinDeviceNotSimulated {
-        reference: String,
-        part: String,
-        why: String,
-    },
+    #[error("`{signal}`, a pin device's signal, is one the twin cannot run: {why}")]
+    PinDeviceNotSimulated { signal: String, why: String },
     /// A scenario holds a net the twin must never drive: a declared output,
     /// or any pin a peripheral drives (`AET-WO-1211` §4 G4: Renode's drive
     /// overwrites `ODR`, with no contention).

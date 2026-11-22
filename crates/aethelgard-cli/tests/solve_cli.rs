@@ -127,8 +127,15 @@ use sha2::{Digest, Sha256};
 /// device): with version 15 put back, the reference's output hashes to
 /// `c6b03832…ebec` and the stress fixture's to `757acade…d99d`, the old
 /// digests, exactly (measured).
-const REFERENCE_DIGEST: &str = "d5ff8d99978aef89d1d2baf51dc39b8d63a414992ffb2972398d0bbfbcd3019b";
-const STRESS_DIGEST: &str = "efd09e0f8870953d82505f37c8078d701bceb2342a4c29f13aa4179df964929b";
+/// `AET-WO-1211c` D7 (solved 17) moved only `schema_version` again (neither
+/// fixture has a pin device): with version 16 put back, each hashes to
+/// `1211b`'s digest exactly, which the test holds.
+const REFERENCE_DIGEST: &str = "eb2e324ba3a7a0a3e3eb0a884d591148759a655abf94573c2abe776cb66e9bfd";
+const STRESS_DIGEST: &str = "630ab9fa125c97f3ddd3f1ad42c2a9bf1a1c30ea8d7f86b85cbcc7dd414256cc";
+/// `1211b`'s digests, solved version 16.
+const REFERENCE_DIGEST_16: &str =
+    "d5ff8d99978aef89d1d2baf51dc39b8d63a414992ffb2972398d0bbfbcd3019b";
+const STRESS_DIGEST_16: &str = "efd09e0f8870953d82505f37c8078d701bceb2342a4c29f13aa4179df964929b";
 
 /// The 1 s bound of `AET-WO-1200` §0 S1. The measured stress time is about
 /// 1.5 ms in a debug build, so this is a bound, not a benchmark.
@@ -251,14 +258,16 @@ fn gate_clause_2_a_pin_set_twice_names_both_claimants_and_emits_nothing_else() {
 
 #[test]
 fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
-    for (file, digest) in [
-        (reference(), REFERENCE_DIGEST),
-        (fixture("stress"), STRESS_DIGEST),
+    for (file, digest, digest_16) in [
+        (reference(), REFERENCE_DIGEST, REFERENCE_DIGEST_16),
+        (fixture("stress"), STRESS_DIGEST, STRESS_DIGEST_16),
     ] {
         let (_, a) = solved(&file);
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
+        let back = a.replacen("{\"schema_version\":17,", "{\"schema_version\":16,", 1);
+        assert_eq!(hex(back.as_bytes()), digest_16, "{}", file.display());
     }
 }
 

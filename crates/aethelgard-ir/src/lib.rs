@@ -538,9 +538,12 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// kernels `pll1_q` and `pclk` (`AET-WO-4240b` Q2, Q3, Q6, renumbered from
 /// 14 by the same rule), version 16 an ADC input's `bits` and a pin device's
 /// `bridges` (`AET-WO-1211b` S1, ruled: the declared mode, inputs and enable;
-/// every datasheet value is the part's row, looked up by part and mode); an
-/// older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 16;
+/// every datasheet value is the part's row, looked up by part and mode),
+/// version 17 an input's `active` and `pulled`, a pin device's ADC input's
+/// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
+/// twin and `verify` read the solved topology alone, `RUL-16`); an older
+/// file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 17;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds

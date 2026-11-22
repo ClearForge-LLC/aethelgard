@@ -1,7 +1,7 @@
 #!/bin/bash
 # The null sweep (§2), inside the tools image (img.sh, 8G): with the CLI at $BIN, for every committed
 # specification: generate (each file's sha256 kept), and where the tree holds a platform, build and
-# simulate --firmware for 100 ms; then every committed scenario's campaign, on its base's ELF. Out:
+# simulate --firmware for 100 ms (and solve's bytes, AET-WO-1211c D7); then every committed scenario's campaign, on its base's ELF. Out:
 # /cache/sweep/$TAG/. compare.py-style judging is null-compare.py. usage: null-sweep.sh TAG
 set -u
 TAG=$1; A=${BIN:-/cache/main-7fc81640-aethelgard}; O=/cache/sweep/$TAG; rm -rf "$O"; mkdir -p "$O"
@@ -19,6 +19,7 @@ key() { echo "$1" | tr '/' '_' | sed 's/\.json$//'; }
 while read -r t p; do
   [ "$t" = spec ] || continue
   d=$O/spec/$(key "$p"); mkdir -p "$d"
+  $A solve --file "$p" > "$d/solve.json" 2>&1
   $A generate --spec "$p" --out "$d/gen" > "$d/generate.json" 2>&1; g=$?
   [ $g -eq 0 ] && (cd "$d/gen" && find . -type f -print0 | sort -z | xargs -0 sha256sum) > "$d/tree.sha256"
   repl=$(ls "$d"/gen/board/*.repl 2>/dev/null | head -1)
