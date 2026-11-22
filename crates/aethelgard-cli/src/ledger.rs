@@ -738,6 +738,199 @@ fn table() -> Vec<Entry> {
         ));
     }
 
+    // ---- RCC and FLASH: the HSE bring-up (`AET-WO-4240b` §1.5), an HSE
+    // board only. Field names are the header's (`CSSHSEON` is RM0433's
+    // `HSECSSON`). Renode measured in `spike/4240b/renode/results.md`.
+    let clock_rule = "the twin's HSE clock rule (aethelgard_twin::hse::judge_clock, clock_access): each RCC_CR word is RM0433 Rev 9's reset 0x0000_0001 (p. 383) with the header's bits set in the contract's order, each written once, in order, with the HSERDY, PLL1RDY and SWS reads between; the Kani oracle's RCC clause takes the same words";
+    let pll_rule = "aethelgard_ir::clock::judge_tree (shares no code with the solver's choice of words; refuses validate and solve when it fails), held again by the twin's HSE clock rule (clock_access: the topology's word, once, in order) and by the Kani oracle's RCC clause, whose expected word is the topology's";
+    let hse_measured =
+        "AET-WO-4240b FEEDBACK (spike/4240b/renode/results.md, Renode 1.17.0 measured)";
+    for (field, class, source, note) in [
+        (
+            "HSEON",
+            Obs,
+            format!(
+                "{RCC_CS} L185 (HSERDY reads HSEON); {hse_measured}: CR reads 0x00030025 after HSEON"
+            ),
+            "the HSE's enable; the model's HSERDY follows it at once, so the bounded wait never runs there",
+        ),
+        (
+            "HSEBYP",
+            Ign,
+            format!("{RCC_CS} L186 (a tag); {hse_measured}: bit 18 written, never stored"),
+            "the external clock's bypass, written before HSEON; a tag in Renode, so crystal and bypass run the same there",
+        ),
+        (
+            "CSSHSEON",
+            Si,
+            String::new(),
+            "the clock security system (RM0433 HSECSSON), set after HSERDY: the model stores the flag (STM32H7_RCC.cs L187) with no detection and no NMI, so only the bench shows a failing HSE caught",
+        ),
+        (
+            "PLL1ON",
+            Obs,
+            format!(
+                "{RCC_CS} L197 (PLL1RDY reads PLL1ON); {hse_measured}: CR reads 0x030B0025 after PLL1ON, sys_ck 64,000,000 Hz after SW"
+            ),
+            "PLL1's enable; the model's PLL1RDY follows it at once",
+        ),
+    ] {
+        let judge = format!("{clock_rule}; the model: {source}");
+        t.push(e("RCC", "CR", field, W, class, &judge, &source, note));
+    }
+    let ready = |bit: &str, line: &str| {
+        format!(
+            "polled, a bounded wait that halts by name: the twin's RCC reads {bit} as its ON bit at once ({RCC_CS} L{line}), so the wait never times out there and the twin under-counts the boot by the wait (aethelgard_twin::boot::Image::unobservable, hse::HSE_RESIDUAL)"
+        )
+    };
+    for (field, line) in [("HSERDY", "185"), ("PLL1RDY", "197")] {
+        t.push(e(
+            "RCC",
+            "CR",
+            field,
+            R,
+            Si,
+            "none: the twin models no oscillator start-up or PLL lock; only the bench times the wait",
+            "",
+            &ready(field, line),
+        ));
+    }
+    let pll_stored = format!(
+        "{RCC_CS} L92–135 (sys_ck from DIVM1, DIVN1, DIVP1); {hse_measured}: PLLCKSELR and PLL1DIVR read back as written, sys_ck 64,000,000 Hz after SW on both fixtures"
+    );
+    for (register, field) in [
+        ("PLLCKSELR", "PLLSRC"),
+        ("PLLCKSELR", "DIVM#"),
+        ("PLL1DIVR", "N#"),
+        ("PLL1DIVR", "P#"),
+        ("PLL1DIVR", "Q#"),
+        ("PLL1DIVR", "R#"),
+    ] {
+        t.push(e(
+            "RCC",
+            register,
+            field,
+            W,
+            Rule,
+            pll_rule,
+            &pll_stored,
+            &format!(
+                "the topology's whole word (clock.hse); also observed: {pll_stored} (DIVQ1 and DIVR1 stored, never used, L370)"
+            ),
+        ));
+    }
+    let pllcfgr_tags = format!(
+        "{RCC_CS} L122, L291, L301–303: every RCC_PLLCFGR field the bring-up sets is a tag; {hse_measured}: written 0x30004, read back 0x01FF0000"
+    );
+    for field in [
+        "PLL#FRACEN",
+        "PLL#VCOSEL",
+        "PLL#RGE",
+        "DIVP#EN",
+        "DIVQ#EN",
+        "DIVR#EN",
+    ] {
+        t.push(e(
+            "RCC",
+            "PLLCFGR",
+            field,
+            W,
+            Rule,
+            pll_rule,
+            &pllcfgr_tags,
+            &format!(
+                "the topology's whole word (clock.hse); a tag in Renode, also ignored-by-model: {pllcfgr_tags}"
+            ),
+        ));
+    }
+    t.push(e(
+        "RCC",
+        "CFGR",
+        "SW",
+        W,
+        Obs,
+        &format!("{clock_rule}; the model: {RCC_CS} L219–226 (SWS follows SW)"),
+        &format!("{RCC_CS} L219–226; {hse_measured}: CFGR reads 0x1B after SW = PLL1, sys_ck 64,000,000 Hz"),
+        "SW = PLL1 (011), after the PLL1RDY read and FLASH_ACR; its SWS read (the CFGR SWS reset row's field) is the twin's clock rule's, read at once in Renode",
+    ));
+    // Every other field of the whole words the bring-up writes (`RCC_CR`,
+    // `RCC_PLLCKSELR`, `RCC_CFGR`): written at its reset value, or a
+    // read-only bit the write cannot move (RM0433 Rev 9 §8.7.2 p. 383, §8.7.7
+    // p. 393, §8.7.11 p. 399). The twin's clock rule judges each whole word as
+    // written; `PLLSRC` is the header's two overlapping masks.
+    for (register, field, what) in [
+        ("CR", "HSION", "HSI on, its reset 1"),
+        ("CR", "HSIKERON", "reset 0"),
+        ("CR", "HSIRDY", "read-only"),
+        ("CR", "HSIDIV", "reset 00 (÷1), which ResetClock read first"),
+        ("CR", "HSIDIVF", "read-only"),
+        ("CR", "CSION", "reset 0"),
+        ("CR", "CSIRDY", "read-only"),
+        ("CR", "CSIKERON", "reset 0"),
+        ("CR", "HSI48ON", "reset 0"),
+        ("CR", "HSI48RDY", "read-only"),
+        ("CR", "D1CKRDY", "read-only"),
+        ("CR", "D2CKRDY", "read-only"),
+        ("CR", "HSERDY", "read-only"),
+        ("CR", "PLL1RDY", "read-only"),
+        ("CR", "PLL2ON", "reset 0, PLL2 unused"),
+        ("CR", "PLL2RDY", "read-only"),
+        ("CR", "PLL3ON", "reset 0, PLL3 unused"),
+        ("CR", "PLL3RDY", "read-only"),
+        (
+            "PLLCKSELR",
+            "PLLSRC_CSI",
+            "PLLSRC's low bit, 0: PLLSRC 10 is the HSE",
+        ),
+        (
+            "PLLCKSELR",
+            "PLLSRC_HSE",
+            "PLLSRC's high bit, 1: PLLSRC 10 is the HSE",
+        ),
+        (
+            "CFGR",
+            "SWS",
+            "read-only; read back after SW by the clock rule",
+        ),
+        ("CFGR", "STOPWUCK", "reset 0"),
+        ("CFGR", "STOPKERWUCK", "reset 0"),
+        ("CFGR", "RTCPRE", "reset 0"),
+        ("CFGR", "HRTIMSEL", "reset 0"),
+        ("CFGR", "TIMPRE", "reset 0, as the solved clock's timpre"),
+        ("CFGR", "MCO#PRE", "reset 0"),
+        ("CFGR", "MCO#", "reset 0"),
+    ] {
+        t.push(e(
+            "RCC",
+            register,
+            field,
+            W,
+            Rule,
+            clock_rule,
+            "",
+            &format!(
+                "a field of the whole word the HSE bring-up writes, {what}; the twin's clock rule judges the word as written (RM0433 Rev 9 pp. 383, 393, 399)"
+            ),
+        ));
+    }
+    let acr_source = format!(
+        "STM32H7_FlashController.cs L76–80 (LATENCY and WRHIGHFREQ stored, read back, no wait state); {hse_measured}: written 0x11, read back 0x11"
+    );
+    for field in ["LATENCY", "WRHIGHFREQ"] {
+        t.push(e(
+            "FLASH",
+            "ACR",
+            field,
+            W,
+            Rule,
+            "aethelgard_ir::vos::flash_at_reset on clock.hse.flash_acr (RM0433 Rev 9 Table 17's least VOS Scale 2 row at hclk's fastest; AET-WO-4240b Q6), held again by the twin's HSE clock rule (clock_access: one write of the topology's word after the PLL1RDY read, one read back, both before SW)",
+            &acr_source,
+            &format!(
+                "written whole before SW and read back; also ignored-by-model: {acr_source}"
+            ),
+        ));
+    }
+
     // ---- GPIO.
     t.push(e(
         "GPIO",
@@ -2145,12 +2338,12 @@ pub fn silicon(topology: &SolvedTopology) -> Silicon {
     let spi: Vec<SpiFinding> = topology
         .spi_controllers
         .iter()
-        .map(|(p, c)| silicon::check_spi(p, c))
+        .map(|(p, c)| silicon::check_spi(p, c, &topology.clock))
         .collect();
     let i2c: Vec<I2cFinding> = topology
         .i2c_timings
         .iter()
-        .map(|(p, t)| silicon::check_i2c(p, t))
+        .map(|(p, t)| silicon::check_i2c_on(topology.clock.budget(), p, t))
         .collect();
     let usart: Vec<UsartFinding> = topology
         .serial_ports
@@ -2494,11 +2687,60 @@ mod tests {
         for field in ["LATENCY", "WRHIGHFREQ"] {
             let e = classify(&TABLE, "FLASH", "ACR", field, R, field).unwrap();
             assert_eq!(e.class, Class::SiliconOnly, "{field}");
-            assert!(classify(&TABLE, "FLASH", "ACR", field, W, field).is_err());
         }
         // Nothing else of the PWR is classified: no other field is written.
         assert!(classify(&TABLE, "PWR", "CR3", "USB33DEN", W, "u").is_err());
         assert!(classify(&TABLE, "PWR", "CSR1", "ACTVOS", R, "a").is_err());
+    }
+
+    /// `AET-WO-4240b` §1.5: a row for each field the HSE bring-up writes or
+    /// polls, by the header's field names; nothing else of `RCC_CR` is.
+    #[test]
+    fn the_hse_bring_up_rows_are_classed() {
+        use FieldAccess::{Reset as R, Written as W};
+        for (family, register, field, access, class) in [
+            ("RCC", "CR", "HSEON", W, Class::Observed),
+            ("RCC", "CR", "HSEBYP", W, Class::IgnoredByModel),
+            ("RCC", "CR", "CSSHSEON", W, Class::SiliconOnly),
+            ("RCC", "CR", "PLL1ON", W, Class::Observed),
+            ("RCC", "CR", "HSERDY", R, Class::SiliconOnly),
+            ("RCC", "CR", "PLL1RDY", R, Class::SiliconOnly),
+            ("RCC", "PLLCKSELR", "PLLSRC", W, Class::IndependentRule),
+            ("RCC", "PLLCKSELR", "DIVM1", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "PLL1RGE", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "PLL1VCOSEL", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "PLL1FRACEN", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "DIVP1EN", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "DIVQ1EN", W, Class::IndependentRule),
+            ("RCC", "PLLCFGR", "DIVR1EN", W, Class::IndependentRule),
+            ("RCC", "PLL1DIVR", "N1", W, Class::IndependentRule),
+            ("RCC", "PLL1DIVR", "P1", W, Class::IndependentRule),
+            ("RCC", "PLL1DIVR", "Q1", W, Class::IndependentRule),
+            ("RCC", "PLL1DIVR", "R1", W, Class::IndependentRule),
+            ("RCC", "CFGR", "SW", W, Class::Observed),
+            ("RCC", "CFGR", "SWS", R, Class::Observed),
+            ("FLASH", "ACR", "LATENCY", W, Class::IndependentRule),
+            ("FLASH", "ACR", "WRHIGHFREQ", W, Class::IndependentRule),
+        ] {
+            let e = classify(&TABLE, family, register, field, access, field).unwrap();
+            assert_eq!(e.class, class, "{family}.{register}.{field}");
+        }
+        // The other fields of each whole word, written at reset or read-only,
+        // are the clock rule's (the generator lists every field it writes).
+        for (register, field) in [
+            ("CR", "HSION"),
+            ("CR", "HSIKERON"),
+            ("CR", "PLL2ON"),
+            ("CR", "HSERDY"),
+            ("PLLCKSELR", "PLLSRC_HSE"),
+            ("CFGR", "SWS"),
+            ("CFGR", "MCO2PRE"),
+            ("CFGR", "MCO1"),
+        ] {
+            let e = classify(&TABLE, "RCC", register, field, W, field).unwrap();
+            assert_eq!(e.class, Class::IndependentRule, "RCC.{register}.{field}");
+        }
+        assert!(classify(&TABLE, "RCC", "CR", "HSEEXT", W, "h").is_err());
     }
 
     #[test]

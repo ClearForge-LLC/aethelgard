@@ -81,6 +81,21 @@ pub const BOOT_ADC_CALIBRATION_TIMEOUT: u32 = 0x2100_B0A1;
 pub const BOOT_ADC_READY_TIMEOUT: u32 = 0x2100_B0A2;
 pub const BOOT_ADC_CONVERSION_TIMEOUT: u32 = 0x2100_B0A3;
 
+// belt-and-suspenders: the judge holds its own copies (`aethelgard_twin::boot`,
+// `AET-WO-4240b`), so the expected values never come from the generator
+// (`INV-07`).
+/// What an HSE board's firmware writes to the boot word when `RCC_CR.HSERDY`
+/// does not read 1 within the declared start-up bound (`AET-WO-4240b`).
+pub const BOOT_HSE_NOT_READY: u32 = 0x2100_B0F4;
+/// ... when `RCC_CR.PLL1RDY` does not read 1 within its bound.
+pub const BOOT_PLL1_NOT_LOCKED: u32 = 0x2100_B0F5;
+/// ... when `RCC_CFGR.SWS` does not read PLL1 within its bound.
+pub const BOOT_SW_NOT_TAKEN: u32 = 0x2100_B0F6;
+/// ... in the clock security system's NMI: the HSE failed after `HSECSSON`.
+pub const BOOT_HSE_CSS_FAULT: u32 = 0x2100_B0F7;
+/// ... when `FLASH_ACR` reads back `LATENCY` or `WRHIGHFREQ` other than written.
+pub const BOOT_FLASH_ACR_NOT_TAKEN: u32 = 0x2100_B0F8;
+
 /// The most reads of `PWR_CSR1` the `ACTVOSRDY` wait makes, and of `PWR_D3CR`
 /// the `VOSRDY` wait. No maximum is stated in DS12117 Rev 10 for either bit,
 /// nor for a VOS change: its reset and power control tables (Table 16, pp.
@@ -375,9 +390,10 @@ struct Read {
 
 /// The spins of [`settle`] that make at least `us` microseconds on silicon:
 /// one per cycle of the core at its fastest, the reset clock's HSI at
-/// [`hsi_fastest`] (`AET-WO-4230` §1.9, amendment 1), rounded up.
-fn settle_spins(us: u32) -> u64 {
-    (u128::from(us) * u128::from(hsi_fastest(RESET_HZ)))
+/// [`hsi_fastest`] (`AET-WO-4230` §1.9, amendment 1), rounded up; on an HSE
+/// board the source's fastest after the switch (`AET-WO-4240b`).
+fn settle_spins(plan: &Plan, us: u32) -> u64 {
+    (u128::from(us) * u128::from(plan.core_fastest()))
         .div_ceil(1_000_000)
         .try_into()
         .unwrap_or(u64::MAX)
@@ -514,6 +530,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
             .as_str(),
     );
     let mut imports = vec!["Board".to_owned(), "PwrFault".to_owned()];
+    if plan.hse.is_some() {
+        imports.push("ClockFault".to_owned());
+        imports.push("css_hold".to_owned());
+    }
     for (name, p) in &plan.peripherals {
         if p.kind == Kind::I2c {
             imports.push(format!("{}_speed", name.to_ascii_lowercase()));
@@ -636,8 +656,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     let records = if reads.iter().any(|r| r.settle_us > 0) || wakes {
         format!(
             "{records}/// Waits at least `spins` core cycles (AET-WO-4220): each iteration is a volatile\n\
-             /// load the compiler keeps, at least one cycle. The counts are sized at HSI's\n\
-             /// fastest, {fast} Hz (DS12117 Rev 10 Table 36; AET-WO-4230 amendment 1).\n\
+             /// load the compiler keeps, at least one cycle. The counts are sized at {sized}\n\
              fn settle(spins: u32) {{\n    \
              let boot = (&raw const AETHELGARD_BOOT).cast::<u32>();\n    \
              for _ in 0..spins {{\n        \
@@ -646,7 +665,17 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
              }}\n\
              }}\n\
              \n",
-            fast = hsi_fastest(RESET_HZ),
+            sized = if plan.hse.is_some() {
+                format!(
+                    "the\n/// source's fastest after the switch to PLL1, {} Hz (AET-WO-4240b).",
+                    plan.core_fastest()
+                )
+            } else {
+                format!(
+                    "HSI's\n/// fastest, {} Hz (DS12117 Rev 10 Table 36; AET-WO-4230 amendment 1).",
+                    hsi_fastest(RESET_HZ)
+                )
+            },
         )
     } else {
         records
@@ -695,6 +724,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          #[unsafe(no_mangle)]\n\
          {boot_static}\n\
          \n\
+         {hse_consts}\
          {records}\
          {serial_consts}\
          unsafe extern \"C\" {{\n    \
@@ -706,7 +736,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          #[unsafe(link_section = \".vector_table.exceptions\")]\n\
          #[used]\n\
          static EXCEPTIONS: [unsafe extern \"C\" fn() -> !; 15] = [\n    \
-         Reset, fault, fault, fault, fault, fault, fault, fault, fault, fault, fault, fault, fault,\n    \
+         Reset, {nmi}, fault, fault, fault, fault, fault, fault, fault, fault, fault, fault, fault,\n    \
          fault, fault,\n\
          ];\n\
          \n\
@@ -754,6 +784,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          }}\n\
          }}\n\
          \n\
+         {nmi_handler}\
          #[unsafe(no_mangle)]\n\
          extern \"C\" fn main() -> ! {{\n    \
          // SAFETY: this is the part the board crate was generated for, and this is\n    \
@@ -762,7 +793,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          let Some(Board {{\n        \
          mut rcc,\n        \
          flash,\n        \
-         pwr,\n",
+         pwr,\n{hse_field}",
         imports = imports.join(", "),
         magic = BOOT_MAGIC,
         supply = BOOT_SUPPLY_NOT_DECLARED,
@@ -771,6 +802,14 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         polls = PWR_POLLS,
         boot_static = boot_static,
         records = records,
+        hse_consts = hse_consts(plan),
+        nmi = if plan.hse.is_some() { "nmi" } else { "fault" },
+        nmi_handler = if plan.hse.is_some() { NMI_HANDLER } else { "" },
+        hse_field = if plan.hse.is_some() {
+            "        hse,\n"
+        } else {
+            ""
+        },
     );
     for port in &plan.ports {
         let _ = writeln!(s, "        {},", port_field(*port));
@@ -819,7 +858,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
          }}\n        \
          }}\n    \
          }};\n",
-        bind = if plan.needs_clock() {
+        bind = if plan.needs_clock() || !plan.ports.is_empty() {
             "scale2"
         } else {
             "_scale2"
@@ -830,6 +869,11 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     // it, so without it the firmware stops here and never writes the boot word.
     if plan.needs_clock() {
         s.push_str(CLOCK_CHECK);
+    }
+    // An HSE board's clock bring-up (`AET-WO-4240b`), right after the reset
+    // clock's read: a fault writes its own boot word and parks.
+    if plan.hse.is_some() {
+        s.push_str(HSE_START);
     }
     // The brown-out word (`AET-WO-4230` §1.6, D10): `FLASH_OPTSR_CUR`, read
     // once and kept as read, before any write to the hardware.
@@ -843,6 +887,10 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     // Each SPI controller's kernel clock, before any SPI clock enable.
     let kernels = if plan.spi.is_empty() {
         ""
+    } else if plan.hse.is_some() {
+        // No select is written: each SPI clock enable takes the solved clock,
+        // whose `pll1_q_ck` or APB clock the selects give at reset.
+        ", &clock"
     } else {
         s.push_str("    let kernels = rcc.select_spi_kernels(&mut r, &clock);\n");
         ", &kernels"
@@ -851,7 +899,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         let f = port_field(*port);
         let _ = writeln!(
             s,
-            "    let {f} = rcc.enable_{f}(&mut r, {f}).split(&mut r);"
+            "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2).split(&mut r);"
         );
     }
     for name in plan.peripherals.keys() {
@@ -861,14 +909,17 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         } else {
             ""
         };
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}{k});");
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2{k});");
     }
     for n in plan.timers.keys() {
-        let _ = writeln!(s, "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n});");
+        let _ = writeln!(
+            s,
+            "    let tim{n} = rcc.enable_tim{n}(&mut r, tim{n}, scale2);"
+        );
     }
     for name in plan.serials.keys() {
         let f = name.to_ascii_lowercase();
-        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f});");
+        let _ = writeln!(s, "    let {f} = rcc.enable_{f}(&mut r, {f}, scale2);");
     }
     for name in plan.adcs.keys() {
         let f = name.to_ascii_lowercase();
@@ -972,7 +1023,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 "    // One wait for every scripted part's start-up, the largest cited\n    \
                  // (AET-WO-4220; AET-WO-4230 R6), {wait} us, before any data read.\n    \
                  settle({spins});",
-                spins = settle_spins(wait),
+                spins = settle_spins(plan, wait),
             );
         }
     };
@@ -1098,7 +1149,7 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
                 s,
                 "    // The part wakes: its row's t_wake, {us} us, before anything follows.\n    \
                  settle({spins});",
-                spins = settle_spins(us),
+                spins = settle_spins(plan, us),
             );
         }
     }
@@ -1142,6 +1193,75 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
     );
     s
 }
+
+/// An HSE board's constants (`AET-WO-4240b`): the five boot words, the judge's
+/// copies, and the three waits' bounds in reads, at HSI's fastest.
+fn hse_consts(plan: &Plan) -> String {
+    let Some(h) = &plan.hse else {
+        return String::new();
+    };
+    format!(
+        "/// What the clock bring-up's faults and the CSS NMI write instead (AET-WO-4240b):\n\
+         /// the judge's `aethelgard_twin::boot` words.\n\
+         const BOOT_HSE_NOT_READY: u32 = {BOOT_HSE_NOT_READY:#010x};\n\
+         const BOOT_PLL1_NOT_LOCKED: u32 = {BOOT_PLL1_NOT_LOCKED:#010x};\n\
+         const BOOT_SW_NOT_TAKEN: u32 = {BOOT_SW_NOT_TAKEN:#010x};\n\
+         const BOOT_HSE_CSS_FAULT: u32 = {BOOT_HSE_CSS_FAULT:#010x};\n\
+         const BOOT_FLASH_ACR_NOT_TAKEN: u32 = {BOOT_FLASH_ACR_NOT_TAKEN:#010x};\n\
+         /// The reads of `RCC_CR` the `HSERDY` wait makes: the declared start-up bound at\n\
+         /// HSI's fastest, one read at least one core cycle.\n\
+         const HSE_POLLS: u32 = {hse};\n\
+         /// The reads of `RCC_CR` the `PLL1RDY` wait makes: {lock} us (DS12117 Rev 10 Table 39).\n\
+         const PLL_POLLS: u32 = {pll};\n\
+         /// The reads of `RCC_CFGR` the `SWS` wait makes: {sws} us (ruled, AET-WO-4240b Q5).\n\
+         const SWS_POLLS: u32 = {sw};\n\
+         \n",
+        hse = h.polls[0],
+        pll = h.polls[1],
+        sw = h.polls[2],
+        lock = super::PLL_LOCK_US,
+        sws = super::SWS_US,
+    )
+}
+
+/// An HSE board's clock bring-up in `main` (`AET-WO-4240b`): the reset clock's
+/// token in, the solved clock's out, or the fault's own boot word and a park.
+const HSE_START: &str = "    // HSE, PLL1, FLASH_ACR, then the switch, each wait bounded (AET-WO-4240b). A\n    \
+     // fault writes its own boot word and parks, nothing else written.\n    \
+     let clock = match hse.start(&mut r, clock, HSE_POLLS, PLL_POLLS, SWS_POLLS) {\n        \
+     Ok(clock) => clock,\n        \
+     Err(fault) => {\n            \
+     let word = match fault {\n                \
+     ClockFault::HseNotReady => BOOT_HSE_NOT_READY,\n                \
+     ClockFault::Pll1NotLocked => BOOT_PLL1_NOT_LOCKED,\n                \
+     ClockFault::FlashAcrNotTaken => BOOT_FLASH_ACR_NOT_TAKEN,\n                \
+     ClockFault::SwNotTaken => BOOT_SW_NOT_TAKEN,\n            \
+     };\n            \
+     // SAFETY: the boot word, in RAM the linker script placed; the fixed point\n            \
+     // below, which writes it otherwise, is never reached.\n            \
+     unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(word) };\n            \
+     loop {\n                \
+     core::hint::spin_loop();\n            \
+     }\n        \
+     }\n    \
+     };\n";
+
+/// The clock security system's NMI (exception 2) on an HSE board
+/// (`AET-WO-4240b`): the fault's boot word, then every motor output held low
+/// by the board crate's `css_hold`, which never returns. It never clears
+/// `HSECSSF`, so the NMI is never left (RM0433 Rev 9 §8.5.3, p. 344), and
+/// nothing runs on after it on the HSI.
+const NMI_HANDLER: &str = "/// The CSS NMI (AET-WO-4240b): the HSE failed, so the part runs on the HSI with PLL1\n\
+     /// off (RM0433 Rev 9 \u{a7}8.5.3, p. 344). The fault's word, then every motor output\n\
+     /// driven low as a GPIO output, then a park: `HSECSSF` is never cleared.\n\
+     unsafe extern \"C\" fn nmi() -> ! {\n    \
+     // SAFETY: the boot word, in RAM the linker script placed.\n    \
+     unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_HSE_CSS_FAULT) };\n    \
+     // SAFETY: the part this crate was generated for; `main`, which holds the other\n    \
+     // `Mmio`, never runs again, since this handler never returns.\n    \
+     css_hold(&mut unsafe { Mmio::new() })\n\
+     }\n\
+     \n";
 
 /// The reset-clock check, first in the bring-up (`AET-WO-4230` D6).
 const CLOCK_CHECK: &str = "    // Every value below was solved for the reset clock: read it before any write\n    \

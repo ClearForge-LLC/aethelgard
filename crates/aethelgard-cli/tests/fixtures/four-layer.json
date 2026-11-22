@@ -1,5 +1,5 @@
 {
-  "schema_version": 22,
+  "schema_version": 23,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",

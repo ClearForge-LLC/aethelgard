@@ -123,7 +123,7 @@ fn the_start_takes_the_clock_token_and_only_its_own_configured_pins() {
     ));
     // TIM1's clock gate is RCC_APB2ENR bit 0, and its block is at 0x40010000.
     assert!(rcc.contains(
-        "pub fn enable_tim1<R: Registers>(&mut self, r: &mut R, _gated: Tim1<Gated>) -> Tim1<Clocked> {\n        \
+        "pub fn enable_tim1<R: Registers>(&mut self, r: &mut R, _gated: Tim1<Gated>, _scale2: Scale2) -> Tim1<Clocked> {\n        \
          r.modify(TOKEN, Block::Rcc, 0x0f0, |v| v | 0x00000001);\n        \
          let _ = r.read(TOKEN, Block::Rcc, 0x0f0);\n        \
          Tim1 { _state: PhantomData }"
@@ -168,7 +168,7 @@ fn the_firmware_reads_the_clock_first_and_starts_the_timer_after_the_reads() {
     let first_write = main.find("rcc.enable_").unwrap();
     assert!(clock < first_write && last_read < start && start < boot);
     assert_eq!(main.matches("tim1.").count(), 1);
-    assert!(main.contains("    let tim1 = rcc.enable_tim1(&mut r, tim1);\n"));
+    assert!(main.contains("    let tim1 = rcc.enable_tim1(&mut r, tim1, scale2);\n"));
     for (pin, k) in [("pa8", 1), ("pa9", 2), ("pa10", 3), ("pa11", 4)] {
         let port = "gpioa";
         assert!(main.contains(&format!(

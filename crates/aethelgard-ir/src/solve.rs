@@ -507,7 +507,7 @@ fn solve_inner(
             .map(|b| b.speed_hz)
             .min()
             .expect("this bus is on it");
-        let c = spi_controller(&bus.id, p, declared)?;
+        let c = spi_controller(&bus.id, p, declared, &out.clock)?;
         out.spi_controllers.insert(p.clone(), c);
     }
     for bus in &spec.i2c_buses {
@@ -803,10 +803,18 @@ fn port_on(
 /// as it calls the timing checks, and [`crate::clock::judge_tree`] judges
 /// what it returns.
 pub fn solved_clock(mcu: &crate::Mcu) -> Result<SolvedClock, IrValidationError> {
+    match &mcu.hse {
+        None => Ok(SolvedClock::reset()),
+        Some(hse) => hse_clock(hse),
+    }
+}
+
+/// [`solved_clock`] for a declared HSE. `SolvedTopology::validate` re-solves a
+/// topology's own copy of the declaration with it (`AET-WO-4240a` F3), so a
+/// path that reads only a topology refuses a derived field edited away from
+/// its declaration (`HseCopyNotSolved`).
+pub(crate) fn hse_clock(hse: &crate::clock::Hse) -> Result<SolvedClock, IrValidationError> {
     use crate::clock::{HseRefusal, SolvedHse, declared_budget, source_hz};
-    let Some(hse) = &mcu.hse else {
-        return Ok(SolvedClock::reset());
-    };
     let budget = declared_budget(hse)?;
     let (num, den) = source_hz(hse)?;
     let unreachable = || {
@@ -829,9 +837,28 @@ pub fn solved_clock(mcu: &crate::Mcu) -> Result<SolvedClock, IrValidationError> 
             pllckselr,
             pllcfgr,
             pll1divr,
+            flash_acr: flash_acr_vos2(budget.fastest_hz(H1_SYS_HZ)).ok_or_else(unreachable)?,
         }),
         ..SolvedClock::reset()
     })
+}
+
+/// `FLASH_ACR` for H1 (`AET-WO-4240b` Q6, ruled): `LATENCY` and
+/// `WRHIGHFREQ` of the least row of RM0433 Rev 9 Table 17 (p. 160) for VOS
+/// Scale 2 whose upper `rcc_aclk` bound is at or above `hclk_fastest_hz`
+/// (every prescaler is 1 under H1, so `hclk` = `sys_ck`). The solver's own
+/// copy of the Scale 2 rows; the rule's is `aethelgard_ir::vos`'s
+/// (`RUL-20`). `None` past the table.
+fn flash_acr_vos2(hclk_fastest_hz: u64) -> Option<u32> {
+    const ROWS: [(u64, u32, u32); 4] = [
+        (55_000_000, 0, 0b00),
+        (110_000_000, 1, 0b01),
+        (165_000_000, 2, 0b01),
+        (225_000_000, 3, 0b10),
+    ];
+    ROWS.iter()
+        .find(|(max, _, _)| hclk_fastest_hz <= *max)
+        .map(|(_, latency, wrhighfreq)| wrhighfreq << 4 | latency)
 }
 
 /// H1's `sys_ck` (`4240` D1): 64 MHz, so every kernel runs where the reset
@@ -908,20 +935,35 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
 /// bring-up never stops the HSI. An HSE board keeps them until `4240b`
 /// moves every select to its reset value (`4240` D6). `None` when
 /// `peripheral` is not SPI1–SPI6.
-pub(crate) fn spi_kernel(peripheral: &str) -> Option<(SpiKernel, u64)> {
+pub(crate) fn spi_kernel(peripheral: &str, clock: &SolvedClock) -> Option<(SpiKernel, u64)> {
     let hsi = 64_000_000;
-    match peripheral {
-        "SPI1" | "SPI2" | "SPI3" => Some((SpiKernel::PerCk, hsi)),
-        "SPI4" | "SPI5" | "SPI6" => Some((SpiKernel::HsiKerCk, hsi)),
+    match (peripheral, clock.hse.is_some()) {
+        ("SPI1" | "SPI2" | "SPI3", false) => Some((SpiKernel::PerCk, hsi)),
+        ("SPI4" | "SPI5" | "SPI6", false) => Some((SpiKernel::HsiKerCk, hsi)),
+        // `4240` D6 (ruled), `AET-WO-4240b` Q3: every select at reset under
+        // H1, whose `DIVQ1` = `DIVP1` and every prescaler 1, so `pll1_q_ck`
+        // and the APB clocks are `sys_ck`, 64 MHz ([`h1_words`]).
+        ("SPI1" | "SPI2" | "SPI3", true) => Some((SpiKernel::Pll1Q, H1_SYS_HZ)),
+        ("SPI4" | "SPI5" | "SPI6", true) => Some((SpiKernel::Pclk, H1_SYS_HZ)),
         _ => None,
     }
 }
 
-/// `MBR`: the least of 0 to 7 with the kernel at HSI's fastest divided by
-/// `2^(MBR+1)` at or below `declared_hz` (RM0433 Rev 9 §50.11.3, p. 2218,
-/// `000` ÷2 to `111` ÷256); `None` when even ÷256 is above it.
-pub(crate) fn solve_mbr(kernel_hz: u64, declared_hz: u32) -> Option<u8> {
-    let fast = PpmBudget::HSI.fastest_hz(kernel_hz);
+/// The budget the solver sizes `kernel` by: the HSI's for the HSI-derived
+/// kernels (which run whatever `SW` selects, `4240a` D-9), the clock's own
+/// for the kernels H1 derives from the HSE.
+fn kernel_budget(kernel: SpiKernel, clock: &SolvedClock) -> PpmBudget {
+    match kernel {
+        SpiKernel::PerCk | SpiKernel::HsiKerCk => PpmBudget::HSI,
+        SpiKernel::Pll1Q | SpiKernel::Pclk => clock.budget(),
+    }
+}
+
+/// `MBR`: the least of 0 to 7 with the kernel at its fastest (`budget`)
+/// divided by `2^(MBR+1)` at or below `declared_hz` (RM0433 Rev 9 §50.11.3,
+/// p. 2218, `000` ÷2 to `111` ÷256); `None` when even ÷256 is above it.
+pub(crate) fn solve_mbr(kernel_hz: u64, declared_hz: u32, budget: PpmBudget) -> Option<u8> {
+    let fast = budget.fastest_hz(kernel_hz);
     (0..=7u8).find(|mbr| fast >> (mbr + 1) <= u64::from(declared_hz))
 }
 
@@ -931,22 +973,25 @@ pub(crate) fn spi_controller(
     bus: &str,
     peripheral: &str,
     declared_hz: u32,
+    clock: &SolvedClock,
 ) -> Result<SolvedSpiController, SolveError> {
     let (kernel, kernel_hz) =
-        spi_kernel(peripheral).ok_or_else(|| SolveError::SpiKernelClockUnavailable {
+        spi_kernel(peripheral, clock).ok_or_else(|| SolveError::SpiKernelClockUnavailable {
             bus: bus.to_owned(),
             peripheral: peripheral.to_owned(),
         })?;
-    let fast = PpmBudget::HSI.fastest_hz(kernel_hz);
-    let mbr =
-        solve_mbr(kernel_hz, declared_hz).ok_or_else(|| SolveError::SpiSpeedBelowKernelRange {
+    let budget = kernel_budget(kernel, clock);
+    let fast = budget.fastest_hz(kernel_hz);
+    let mbr = solve_mbr(kernel_hz, declared_hz, budget).ok_or_else(|| {
+        SolveError::SpiSpeedBelowKernelRange {
             bus: bus.to_owned(),
             peripheral: peripheral.to_owned(),
             speed_hz: declared_hz,
             kernel_hz,
             fast_hz: fast,
             floor_hz: fast >> 8,
-        })?;
+        }
+    })?;
     Ok(SolvedSpiController {
         kernel,
         kernel_hz,
@@ -2666,15 +2711,18 @@ mod differential {
     /// reset tree's.
     #[test]
     fn an_spi_controller_with_no_kernel_clock_is_refused_by_name() {
-        let err = spi_controller("B", "SPI7", 20_000_000).unwrap_err();
+        let err = spi_controller("B", "SPI7", 20_000_000, &SolvedClock::reset()).unwrap_err();
         assert_eq!(err.kind(), "SpiKernelClockUnavailable", "{err}");
         assert_eq!(err.claimants(), ["B"]);
-        let c = spi_controller("B", "SPI6", 20_000_000).unwrap();
+        let c = spi_controller("B", "SPI6", 20_000_000, &SolvedClock::reset()).unwrap();
         assert_eq!(
             (c.kernel, c.kernel_hz, c.mbr),
             (SpiKernel::HsiKerCk, 64_000_000, 1)
         );
-        assert_eq!(spi_kernel("SPI2"), Some((SpiKernel::PerCk, 64_000_000)));
+        assert_eq!(
+            spi_kernel("SPI2", &SolvedClock::reset()),
+            Some((SpiKernel::PerCk, 64_000_000))
+        );
     }
 
     #[test]

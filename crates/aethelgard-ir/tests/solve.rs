@@ -296,11 +296,12 @@ fn the_hse_pins_are_reserved_exactly_as_the_hse_declares() {
     let crystal: aethelgard_ir::clock::Hse =
         serde_json::from_value(serde_json::json!({"crystal": {
         "part": "ABM8AIG-16.000MHZ-12-2Z-T3", "load_caps_femtofarads": [18000, 18000],
-        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000}}))
+        "pull_ppm": 30, "temperature_celsius": {"min": -20, "max": 85}, "life_hours": 8000,
+        "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}))
         .unwrap();
     let external: aethelgard_ir::clock::Hse =
         serde_json::from_value(serde_json::json!({"external": {
-        "hz_num": 8_000_000, "hz_den": 1, "ppm": 50, "source": "a test's declaration"}}))
+        "hz_num": 8_000_000, "hz_den": 1, "ppm": 50, "source": "a test's declaration", "startup_max_us": 20000, "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"}}))
         .unwrap();
     for (hse, reserved) in [
         (crystal, vec!["PA13", "PA14", "PC14", "PC15", "PH0", "PH1"]),

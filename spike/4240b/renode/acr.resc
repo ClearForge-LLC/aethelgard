@@ -1,0 +1,10 @@
+using sysbus
+mach create "acr"
+machine LoadPlatformDescription @/cache/m/renode/rcc_16.repl
+logLevel 0
+echo "ACR at reset"
+sysbus ReadDoubleWord 0x52002000
+sysbus WriteDoubleWord 0x52002000 0x00000011
+echo "ACR after write 0x11"
+sysbus ReadDoubleWord 0x52002000
+quit

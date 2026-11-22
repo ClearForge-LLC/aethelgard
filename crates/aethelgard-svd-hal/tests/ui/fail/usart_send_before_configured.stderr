@@ -1,7 +1,7 @@
 error[E0599]: no method named `send` found for struct `Usart1<Clocked>` in the current scope
-  --> tests/ui/fail/usart_send_before_configured.rs:19:20
+  --> tests/ui/fail/usart_send_before_configured.rs:20:20
    |
-19 |     let _ = usart1.send(&mut r, 0x55);
+20 |     let _ = usart1.send(&mut r, 0x55);
    |                    ^^^^ method not found in `Usart1<Clocked>`
    |
   ::: tests/ui/fail/../serial-four/board.rs
