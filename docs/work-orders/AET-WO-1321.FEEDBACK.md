@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1321-eda-backlog` from `main` `a41a8a8d`. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh subagent for the targeted adversarial read. Its finding was checked by planting its mutant. Written 2026-11-22.
 
-**Status: READY** (see §7 for CI). D1 was posted at the start and is built as posted; it is yours to rule on. **The answer:**
+**Status: READY** (see §7 for CI). D1 was posted at the start and built as posted; **it was accepted at 14:18Z**, and so was M2 as reported (F1). **The answer:**
 - **(1)** `check()` takes the decoupler table and refuses an entry with no bus row. `a_decoupler_entry_with_no_bus_row_is_refused` refuses three bad tables at compile time.
 - **(2)** `two_pin` takes the BOM note, and `declared_bulk` calls it.
 - **(4)** `spike/1319/harness/mutants.sh` names `schematic_arms.rs`. Re-run: M1 and M3 are killed by bytes; M2 now fails to compile (§2).
@@ -14,7 +14,7 @@
 ## 0. How it was made
 
 - **Predictions first:** `spike/1321/PREDICTIONS.md`, committed at `1efb48c2` before any run. Results beside them: `spike/1321/RESULTS.md`.
-- **Bus:** D1 (§4) was posted at the start (`~/.cache/aet-bus/architect.md`, "from 1321", 13:30Z). No ruling had arrived when this was written.
+- **Bus:** D1 (§4) was posted at the start (`~/.cache/aet-bus/architect.md`, "from 1321", 13:30Z). **D1 and M2 were accepted at 14:18Z** (`~/.cache/aet-bus/1321.md`).
 - **Kit:**
   - the null sweep is `1319`'s `run.sh` and `compare.sh`, unchanged;
   - `spike/1321/bulk.sh` draws the declared bulk (§2);
@@ -66,11 +66,10 @@
 
 ## 4. Decisions
 
-- **D1, the form of the reverse check** (posted at the start; built as posted; for your ruling).
+- **D1, the form of the reverse check** (posted at the start; built as posted; **accepted 14:18Z**).
   - A line over the global `DECOUPLERS` inside `check(rows)` would refuse every one-row bad table, and `1320`'s `Ok` controls with them. Those tables name one part, and the table names six.
   - So the decoupler table is `check`'s second argument, held both ways against `rows`.
   - The production call is the one `const` assertion. The tests give a one-row table its own entry.
-  - **Revert:** a separate `const fn` asserted beside `check`, with the signature left alone.
 
 ## 5. Adversarial pass (§5), targeted
 
@@ -95,7 +94,7 @@
 
 ## 6. Findings, not fixed here
 
-- **F1, `1319`'s M2 no longer measures the harness.** It is now a compile error (§2). A byte-level mutant of a bus row would need another change, a pull or a strap order say. `spike/1319/` is outside this fence except for the file name. By the scope test this is backlog, or none: `1320`'s check holds what M2 measured.
+- **F1, `1319`'s M2 is killed at compile time, not by the harness's bytes** (§2). **Accepted as reported at 14:18Z.** Being caught earlier is stronger, and the harness stays as it is past the file name. A §7.1 row will ask for a byte-level replacement mutant if anyone wants the harness to measure that case again.
 - **F2, a `DECOUPLERS` entry stated twice for one part** is not refused. The forward lookup takes the first match, so a second entry with another count is shadowed. The work order asks for an entry with no row, not this. One more line of `check()` would hold it; by the scope test, backlog.
 
 ## 7. Gates, fence, reduction pass
