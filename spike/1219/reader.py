@@ -138,15 +138,7 @@ def rename(name, rule, variant):
         return name.lower() if variant else name
     if rule == "UPPERCASE":
         return name.upper()
-    if rule == "SCREAMING_SNAKE_CASE":
-        return "_".join(w.upper() for w in words)
-    if rule == "kebab-case":
-        return "-".join(w.lower() for w in words)
-    if rule == "camelCase":
-        return words[0].lower() + "".join(w.capitalize() for w in words[1:])
-    if rule == "PascalCase":
-        return "".join(w.capitalize() for w in words)
-    raise ValueError(rule)
+    raise ValueError(rule)  # a rule the IR does not use today: teach it here
 
 
 ITEM = re.compile(r"\b(struct|enum)\s+(\w+)(\s*<[^>{]*>)?\s*(\{|\(|;)")
@@ -412,7 +404,7 @@ def skipped(f):
 class Schema:
     """The key tree serde reads from one root, and the entries on it."""
 
-    def __init__(self, crate, root, unit):
+    def __init__(self, crate, unit):
         self.crate = crate
         self.unit = unit
         self.entries = collections.OrderedDict()  # id -> entry
@@ -826,6 +818,55 @@ def version_of_path(path, rows):
     return (v, wo, p)
 
 
+# ------------------------------------------------------------ citations --
+
+DOC = r"(?:DS|RM|AN|ES|UM|DB)-?\d{3,5}|DS-009|SNVS\w+|SBVS\w+|SLVS\w+|SCES\w+|SLLS\w+|IPC-\d+\w*|JESD\w+"
+PAGE = re.compile(r"\b(?:pp?\.)\s*\d+(?:\s*[–-]\s*\d+)?")
+
+
+def cite_source_item(text, line):
+    """The citation of a source item: its doc comment (the `///` block above
+    `line`, or above the first item of its group) and its value, as written.
+    Returns (document, page or None)."""
+    lines = text.split("\n")
+    j = line - 2
+    # A group of items shares the doc block above its first (silicon.rs
+    # CR1_SPE, CR1_CSTART, CR1_SSI): walk up over the group, to a blank line.
+    while j >= 0 and lines[j].strip() and not lines[j].strip().startswith(("///", "#[", "}")):
+        j -= 1
+    block = []
+    while j >= 0 and (lines[j].strip().startswith("///") or lines[j].strip().startswith("#[")):
+        block.insert(0, lines[j].strip().lstrip("/").strip())
+        j -= 1
+    k = line - 1
+    while k < len(lines) and not lines[k].rstrip().endswith(";"):
+        k += 1
+    blob = " ".join(block + lines[line - 1 : k + 1])
+    docs = re.findall(DOC, blob)
+    m = PAGE.search(blob)
+    if not docs:
+        return ("the module's document", m.group(0)) if m else (None, None)
+    return ", ".join(dict.fromkeys(docs)), (m.group(0) if m else None)
+
+
+def cite_table(table):
+    """Every citation object in a held data file ({document, section} or
+    {document, ..., section}): how many, how many name a page."""
+    found = []
+    def walk(v):
+        if isinstance(v, dict):
+            if "document" in v and isinstance(v.get("document"), str):
+                found.append(v)
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, list):
+            for x in v:
+                walk(x)
+    walk(table)
+    paged = [c for c in found if PAGE.search(json.dumps(c))]
+    return len(found), len(paged), sorted({c["document"] for c in found})
+
+
 # ----------------------------------------------------------------- main --
 
 
@@ -879,7 +920,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--src", help="the IR's src/ (default: the repository's); a mutant copy for the reader's own mutation test")
     a = ap.parse_args()
-    repo = pathlib.Path(a.repo)
+    repo = pathlib.Path(a.repo).resolve()
     src = pathlib.Path(a.src) if a.src else repo / "crates/aethelgard-ir/src"
     out = pathlib.Path(a.out)
     out.mkdir(exist_ok=True)
@@ -888,7 +929,7 @@ def main():
 
     # K: from Specification.
     spec_item = crate.get("Specification", "lib.rs")
-    K = Schema(crate, spec_item, "K")
+    K = Schema(crate, "K")
     walk_schema(K, {"k": "item", "item": spec_item, "stack": (("x", "Specification"),)}, "", None)
 
     # Committed specifications: version from the file; current = SPECIFICATION_SCHEMA_VERSION.
@@ -980,7 +1021,7 @@ def main():
         for root, f, key in roots:
             it = crate.get(root, f)
             if sch is None:
-                sch = Schema(crate, it, "Hc")
+                sch = Schema(crate, "Hc")
                 first = it
             base = key or ""
             node = {"k": "item", "item": it, "stack": ((it["file"], root),)}
@@ -1004,7 +1045,9 @@ def main():
                 info["used"] = sorted({s for (x, s) in w.seen_variants.get(e["id"], ()) if x == vj})
             e["id"] = hid + "|" + e["id"]
             H_cols.append(e)
-        H.append({"unit": "H", "id": hid, "type_name": root, "member": "", "json": data, "at": it["file"] + ":%d" % it["line"]})
+        n_c, n_p, docs = cite_table(table)
+        H.append({"unit": "H", "id": hid, "type_name": first["name"], "member": "", "json": data, "at": it["file"] + ":%d" % it["line"],
+                  "cites": "%d row citations, %d name a page; documents: %s" % (n_c, n_p, ", ".join(docs))})
 
     # H in source: every const or static item outside `#[cfg(test)]` (RULES
     # amendment 1: a scalar is a one-row table).
@@ -1037,12 +1080,14 @@ def main():
                     "value": value[:300] + ("…" if len(value) > 300 else ""),
                 }
             )
+            d, pg = cite_source_item(text, line_of(clean, cm.start(4)))
+            H[-1]["cites"] = ("%s, %s" % (d, pg)) if d and pg else ("%s, no page cited" % d if d else "no citation")
 
     # H: the pin table's schema (lib.rs PinTable). Its rows are built outside
     # this crate (aethelgard-svd-hal::pin_table, from a vendored source), so
     # its columns are walked with no data.
     pt = crate.get("PinTable", "lib.rs")
-    ptsch = Schema(crate, pt, "Hc")
+    ptsch = Schema(crate, "Hc")
     REACHED.add((pt["file"], "PinTable"))
     walk_schema(ptsch, {"k": "item", "item": pt, "stack": ((pt["file"], "PinTable"),)}, "", None)
     for e in ptsch.entries.values():
@@ -1050,13 +1095,14 @@ def main():
         e["in_files"] = None
         e["id"] = "H:pin-table|" + e["id"]
         H_cols.append(e)
-    H.append({"unit": "H", "id": "H:pin-table", "type_name": "PinTable", "member": "", "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)", "at": pt["file"] + ":%d" % pt["line"]})
+    H.append({"unit": "H", "id": "H:pin-table", "type_name": "PinTable", "member": "", "json": "rows built by aethelgard-svd-hal::pin_table (out of scope)", "at": pt["file"] + ":%d" % pt["line"],
+              "cites": "no page cited: rows are built from a vendored source, cited by repository, commit and sha256 (PinSource)"})
 
     # T: the solved topology, from its Serialize derive (what solve prints),
     # then every other serde type no walk reached, each as its own root.
     st = crate.get("SolvedTopology", "lib.rs")
     REACHED.add((st["file"], "SolvedTopology"))
-    T = Schema(crate, st, "T")
+    T = Schema(crate, "T")
     walk_schema(T, {"k": "item", "item": st, "stack": ((st["file"], "SolvedTopology"),)}, "", None)
     REACHED.add((spec_item["file"], "Specification"))
     REACHED.update(WIRE_ONLY)
@@ -1176,7 +1222,7 @@ def write_list(inv, units, here):
     heads = {
         "K": ("K — specification keys (%d)", ["id", "paths", "v", "class", "tags", "at", "value at", "why", "RP2350"]),
         "R": ("R — refusal kinds (%d)", ["kind", "class", "tags", "at", "why", "RP2350"]),
-        "H": ("H — held tables and source items (%d)", ["id", "class", "tags", "at", "why", "RP2350"]),
+        "H": ("H — held tables and source items (%d)", ["id", "class", "tags", "at", "cites", "why", "RP2350"]),
         "Hc": ("H columns — the held data files' and the pin table's columns (%d)", ["id", "paths", "class", "tags", "at", "value at", "why", "RP2350"]),
         "T": ("T — solved topology and other output types, not counted toward acceptance (%d)", ["id", "paths", "class", "tags", "at", "why", "RP2350"]),
     }
@@ -1188,7 +1234,7 @@ def write_list(inv, units, here):
                 "id": "`%s`" % e["id"], "kind": "`%s`" % e["json"],
                 "paths": "<br>".join("`%s`" % p for p in e.get("paths", [])[:4]) + (" …" if len(e.get("paths", [])) > 4 else ""),
                 "v": e.get("version", ""), "class": e["class"] + e["flag"], "tags": e["tags"],
-                "at": "`%s`" % e["at"], "value at": e["value_at"], "why": e["why"], "RP2350": e["rp2350"],
+                "at": "`%s`" % e["at"], "value at": e["value_at"], "why": e["why"], "RP2350": e["rp2350"], "cites": e.get("cites", ""),
             }
             o.append("| " + " | ".join(md(cell[c]) for c in cols) + " |")
             if u == "K" and e.get("variants"):
