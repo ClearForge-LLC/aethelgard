@@ -423,7 +423,7 @@ pub(super) const ARMS: &[Arm] = &[
 ];
 
 // The table is refused at compile time where a row says what it may not.
-const _: () = match check(ARMS) {
+const _: () = match check(ARMS, DECOUPLERS) {
     Ok(()) => {}
     Err(why) => panic!("{}", why),
 };
@@ -456,14 +456,26 @@ const DECOUPLERS: &[(&str, usize)] = &[
     ("ICM42688P", 3),
 ];
 
-/// Whether [`DECOUPLERS`] states `n` for `part`.
-const fn decouplers_stated(part: &str, n: usize) -> bool {
+/// Whether `decouplers` states `n` for `part`.
+const fn decouplers_stated(decouplers: &[(&str, usize)], part: &str, n: usize) -> bool {
     let mut i = 0;
-    while i < DECOUPLERS.len() {
-        if same(DECOUPLERS[i].0, part) {
-            return DECOUPLERS[i].1 == n;
+    while i < decouplers.len() {
+        if same(decouplers[i].0, part) {
+            return decouplers[i].1 == n;
         }
         i += 1;
+    }
+    false
+}
+
+/// Whether `rows` has a bus row for `part`.
+const fn has_bus_row(rows: &[Arm], part: &str) -> bool {
+    let mut r = 0;
+    while r < rows.len() {
+        if same(rows[r].part, part) && !matches!(rows[r].wiring, Wiring::Pins { .. }) {
+            return true;
+        }
+        r += 1;
     }
     false
 }
@@ -512,10 +524,12 @@ const fn owns_once(pins: &[(Pin, Role)], name: &str) -> bool {
 /// - a pin device's passive on a bus row, or a bus device's on a pin row;
 /// - and since `AET-WO-1320`: two unstated passives on one pin (one `bulk`
 ///   would answer both); an I2C row with no address strap; a bus row whose
-///   decoupler count is not its part's in [`DECOUPLERS`]; one own-net name
-///   on two pins of a row (a strap and an own net, say); a pin listed twice
-///   in a row.
-const fn check(rows: &[Arm]) -> Result<(), &'static str> {
+///   decoupler count is not its part's in `counts` ([`DECOUPLERS`]); one
+///   own-net name on two pins of a row (a strap and an own net, say); a pin
+///   listed twice in a row;
+/// - and since `AET-WO-1321`: an entry of `counts` for a part with no
+///   bus row.
+const fn check(rows: &[Arm], counts: &[(&str, usize)]) -> Result<(), &'static str> {
     let mut r = 0;
     while r < rows.len() {
         let row = &rows[r];
@@ -632,10 +646,17 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
         if i2c && !matches!(row.passives[0], Passive::Decouple(v) if same(v, "100n")) {
             return Err("an I2C row whose first passive is not its 100 nF decoupler");
         }
-        if !decouplers_stated(row.part, decouplers) {
+        if !decouplers_stated(counts, row.part, decouplers) {
             return Err("a bus row whose decoupler count is not its part's");
         }
         r += 1;
+    }
+    let mut e = 0;
+    while e < counts.len() {
+        if !has_bus_row(rows, counts[e].0) {
+            return Err("a DECOUPLERS entry with no bus row");
+        }
+        e += 1;
     }
     Ok(())
 }
@@ -1101,28 +1122,24 @@ fn declared_bulk(
             });
         }
     };
-    let (Some(row), Ok(pf), Ok(mv)) = (row, u64::try_from(pf.value), u64::try_from(mv.value))
-    else {
+    let (Ok(pf), Ok(mv)) = (u64::try_from(pf.value), u64::try_from(mv.value)) else {
         return Err(EmitError::Internal(format!(
             "`{}`: a negative rating",
             bulk.part
         )));
     };
-    b.parts.push(Part {
-        lib_id: row.symbol.as_str(),
-        reference: bulk.reference.clone(),
-        value: format!("{} {} {}", super::power::farads(pf), volts(mv), bulk.part),
-        footprint: row.footprint.clone(),
-        conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
-        note: Some(format!(
+    super::power::two_pin(
+        b,
+        &bulk.reference,
+        &bulk.part,
+        format!("{} {} {}", super::power::farads(pf), volts(mv), bulk.part),
+        one,
+        two,
+        Some(format!(
             "{name} declared, {document} states no value: {}",
             bulk.source
         )),
-        owner: None,
-        offboard: BTreeMap::new(),
-        seat: None,
-    });
-    Ok(())
+    )
 }
 
 /// A bus device's pins, by `pins`' roles in order: a strap's resistor and an
@@ -1461,8 +1478,24 @@ mod tests {
 
     const ROW: Arm = ICM20948;
 
+    /// [`check`]'s refusal of `rows`, held to [`DECOUPLERS`]: its reverse
+    /// line runs after every row's, so it takes no row's refusal.
     fn refused(rows: &[Arm]) -> &'static str {
-        check(rows).unwrap_err()
+        check(rows, DECOUPLERS).unwrap_err()
+    }
+
+    /// `row`'s own [`DECOUPLERS`] entry, so that one row is held to its own
+    /// count and not to the other parts' rows (`AET-WO-1321`): none for a pin
+    /// row or a part the table does not name.
+    const fn entry(row: &Arm) -> &'static [(&'static str, usize)] {
+        let mut i = 0;
+        while i < DECOUPLERS.len() {
+            if same(DECOUPLERS[i].0, row.part) {
+                return core::slice::from_ref(&DECOUPLERS[i]);
+            }
+            i += 1;
+        }
+        &[]
     }
 
     /// `1211d` §4's hazard: a duplicate row would be shadowed silently.
@@ -1574,7 +1607,11 @@ mod tests {
             passives: &[Passive::Decouple("2u2")],
             ..W25Q64JVXIQ
         };
-        assert_eq!(check(&[row]), Ok(()), "an SPI row's decouplers are its own");
+        assert_eq!(
+            check(&[row], entry(&row)),
+            Ok(()),
+            "an SPI row's decouplers are its own"
+        );
     }
 
     /// `AET-WO-1211f`: a declared `bulk` answers only the unstated passive
@@ -1620,11 +1657,11 @@ mod tests {
         );
     }
 
-    /// [`check`] over the one row `$row`, evaluated by the compiler, as it is over
-    /// [`ARMS`] (`AET-WO-1320`).
+    /// [`check`] over the one row `$row` and its own [`DECOUPLERS`] entry,
+    /// evaluated by the compiler, as it is over [`ARMS`] (`AET-WO-1320`).
     macro_rules! at_compile_time {
         ($row:ident) => {{
-            const WHY: Result<(), &str> = check(&[$row]);
+            const WHY: Result<(), &str> = check(&[$row], entry(&$row));
             WHY
         }};
     }
@@ -1826,5 +1863,26 @@ mod tests {
         const WHY: Result<(), &str> = Err("a pin listed twice in one row");
         assert_eq!(at_compile_time!(BAD), WHY);
         assert_eq!(at_compile_time!(APART), WHY);
+    }
+
+    /// `1320` F2: a [`DECOUPLERS`] entry for a part with no bus row, first
+    /// (DRV8876, whose row is a pin device's), in the middle (BMP582) and
+    /// last (TMP116). Entries in an order other than the rows' are accepted.
+    #[test]
+    fn a_decoupler_entry_with_no_bus_row_is_refused() {
+        const FIRST: &[(&str, usize)] = &[("DRV8876", 0), ("BME280", 1), ("BMP581", 2)];
+        const MIDDLE: &[(&str, usize)] = &[("BME280", 1), ("BMP582", 2), ("BMP581", 2)];
+        const LAST: &[(&str, usize)] = &[("BME280", 1), ("BMP581", 2), ("TMP116", 1)];
+        const REVERSED: &[(&str, usize)] = &[("BMP581", 2), ("BME280", 1)];
+        const WHY: Result<(), &str> = Err("a DECOUPLERS entry with no bus row");
+        const ROWS: &[Arm] = &[BME280, BMP581, DRV8876];
+        const R_FIRST: Result<(), &str> = check(ROWS, FIRST);
+        const R_MIDDLE: Result<(), &str> = check(ROWS, MIDDLE);
+        const R_LAST: Result<(), &str> = check(ROWS, LAST);
+        const R_REVERSED: Result<(), &str> = check(ROWS, REVERSED);
+        assert_eq!(R_FIRST, WHY, "a pin device's row is not a bus row");
+        assert_eq!(R_MIDDLE, WHY, "middle");
+        assert_eq!(R_LAST, WHY, "last");
+        assert_eq!(R_REVERSED, Ok(()), "the entries in the other order");
     }
 }
