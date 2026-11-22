@@ -68,3 +68,5 @@ A neutral name over an ST value set is S.
 
 | Date | Change | Reason |
 |---|---|---|
+| 2026-11-22 | **1.** H in source is every `const` or `static` item outside `#[cfg(test)]`, a scalar as a one-row table. Each is classed by §3 as a table with one column, its value: D when a second vendor would add rows (a list of ST peripheral names), S when the item itself is an ST register, bit or enumeration (`CFG2_SSM`), V when it is an engine limit or plumbing | §1 said "a `const`/`static` table". The work order's own examples include register and bit names, which the crate holds as scalars (`silicon.rs`, `vos.rs`). Made after the reader first ran and before any entry was classed |
+| 2026-11-22 | **2.** ST facts held in a function's `match` arms or literals (a lookup in code, not a table) are not an entry unit. They are listed from a grep in FEEDBACK, one line per function, and not classed | Not a key, a refusal kind or a table. Listing them keeps the count from reading as the whole coupling. Made before classing |
