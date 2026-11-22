@@ -192,8 +192,66 @@ fn cases() -> Vec<Case> {
         out.push(r(&format!("m-i2c-{p}"), m.clone(), &i2c_part, p));
         out.push(r(&format!("m-spi-{p}"), m.clone(), &spi_part, p));
     }
-    // And behind the crossing on the power fixture.
     let pw = load("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json");
+    // 11. The adversarial reviewer's inputs (§5): which refusal wins.
+    for (tag, base) in [("d1", d1()), ("d2", d2())] {
+        let mut v = base.clone();
+        v["pin_devices"][0]["supplies"]["VM"] = json!("VFOO");
+        out.push(c(&format!("{tag}-vm-not-a-domain"), base.clone(), v));
+    }
+    let mut v = d2();
+    v["pin_devices"][0]["straps"]["FOO"] = json!({"tie": "GND"});
+    out.push(c("d2-strap-unknown-pin", d2(), v.clone()));
+    v["pin_devices"][0]["bridges"][0]["outputs"]["AOUT1"] = json!("MA_LOOSE");
+    out.push(c("d2-strap-unknown-pin-and-loose", d2(), v));
+    let mut v = d2();
+    v["pin_devices"][0]["signals"].as_array_mut().unwrap().push(json!({"device_pin": "AISEN", "net": "DRV_X", "pin": null, "direction": "output", "initial": "low"}));
+    out.push(c("d2-aisen-two-connections", d2(), v));
+    let mut v = d1();
+    v["pin_devices"][0]["analog"][0]["net"] = json!("DRV_IPROPX");
+    out.push(c("d1-analog-unsolved", d1(), v.clone()));
+    v["pin_devices"][0]["bridges"][0]["outputs"]["OUT2"] = json!("M1_LOOSE");
+    out.push(c("d1-analog-unsolved-and-loose", d1(), v));
+    // Pin device, I2C and SPI devices on one board, a declared resistor
+    // spelled like an emitter number in the other case.
+    let mut mixed = rename(&d2(), "U2", "U9");
+    for k in ["i2c_buses", "spi_buses", "i2c_devices", "spi_devices", "net_constraints"] {
+        mixed[k] = m[k].clone();
+    }
+    mixed["accept_lifecycle"] = m["accept_lifecycle"].clone();
+    mixed["i2c_devices"] = json!([{"reference": "U2", "part": "BMP581", "supply": "VDD_3V3", "bus": "SENSORS", "address": 0x47, "pin_capacitance": null},
+        {"reference": "U3", "part": "TMP117", "supply": "VDD_3V3", "bus": "SENSORS", "address": 0x4A, "pin_capacitance": null}]);
+    out.push(c("mixed", mixed.clone(), mixed.clone()));
+    for re in ["r5", "c7", "R2", "C3"] {
+        let mut v = mixed.clone();
+        v["pin_devices"][0]["signals"][1]["pull"] = json!({"resistor": {"reference": re, "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3"}, "source": "1319 harness"});
+        out.push(c(&format!("mixed-pull-{re}"), mixed.clone(), v));
+    }
+    // Two I2C buses: TMP117s on the second, ADD0 on its own lines.
+    let mut v = m.clone();
+    let mut aux = rename(&rename(&m["i2c_buses"][0], "I2C_SDA", "AUX_SDA"), "I2C_SCL", "AUX_SCL");
+    aux["id"] = json!("AUX");
+    v["i2c_buses"].as_array_mut().unwrap().push(aux);
+    for (f, t) in [("I2C_SDA", "AUX_SDA"), ("I2C_SCL", "AUX_SCL")] {
+        let k = v["net_constraints"].as_array().unwrap().iter().find(|n| n["net_name"] == f).unwrap().clone();
+        v["net_constraints"].as_array_mut().unwrap().push(rename(&k, f, t));
+    }
+    v["i2c_devices"] = json!([{"reference": "U2", "part": "TMP117", "supply": "VDD_3V3", "bus": "AUX", "address": 0x4A, "pin_capacitance": null},
+        {"reference": "U3", "part": "TMP117", "supply": "VDD_3V3", "bus": "AUX", "address": 0x4B, "pin_capacitance": null},
+        {"reference": "U5", "part": "BME280", "supply": "VDD_3V3", "bus": "SENSORS", "address": 0x77, "pin_capacitance": null}]);
+    out.push(c("m-two-i2c-buses", v.clone(), v));
+    // BMP581 on the power fixture, its own net spelled by the specification,
+    // crossed with an unsupported address.
+    let mut v = pw.clone();
+    v["i2c_devices"][0]["part"] = json!("BMP581");
+    v["i2c_devices"][0]["address"] = json!(0x46);
+    out.push(r("p-bmp581-own-sdo", v.clone(), "I2C_SDA", "U2_SDO"));
+    let mut w = v.clone();
+    w["i2c_devices"][0]["address"] = json!(0x10);
+    let mut k = r("p-bmp581-own-sdo-badaddr", v, "I2C_SDA", "U2_SDO");
+    k.case = rename(&w, "I2C_SDA", "U2_SDO");
+    out.push(k);
+    // And behind the crossing on the power fixture.
     let imu = pw["spi_devices"][1]["part"].as_str().unwrap().to_owned();
     out.push(r("p-imu-DRV8833PWPR", pw.clone(), &imu, "DRV8833PWPR"));
     out

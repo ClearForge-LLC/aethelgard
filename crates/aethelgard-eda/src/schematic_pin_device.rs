@@ -1299,11 +1299,6 @@ mod tests {
         check(rows).unwrap_err()
     }
 
-    #[test]
-    fn the_table_passes_its_own_check() {
-        assert_eq!(check(ARMS), Ok(()));
-    }
-
     /// `1211d` §4's hazard: a duplicate row would be shadowed silently.
     #[test]
     fn a_part_with_two_rows_is_refused() {

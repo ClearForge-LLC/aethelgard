@@ -2232,8 +2232,10 @@ mod tests {
         assert!(checked >= 6, "{checked}");
     }
 
-    /// `AET-WO-1319`: each row's footprint is its symbol's own, so a row
-    /// cannot draw a part on another footprint than the one before the table.
+    /// `AET-WO-1319`: each row's footprint is its symbol's own. For a bus
+    /// row that is the footprint it was drawn on before the table, which
+    /// read the symbol's; a pin row's was a literal already, and this adds
+    /// the constraint that it agrees with its symbol.
     #[test]
     fn each_arms_footprint_is_its_symbols() {
         for a in arms::ARMS {
