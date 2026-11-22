@@ -1342,3 +1342,49 @@ fn replay_refuses_each_window_and_stop_join_by_its_own_message() {
     assert_eq!(named(2, "error"), Err(ORDER));
     assert_eq!(named(1, "info"), Err(ORDER));
 }
+
+/// `AET-WO-1211c` (trace 18): kind 24 carries the declared idle and tick, and
+/// replay re-judges kind 25 as `check_silicon` has since `AET-WO-1211a`: an
+/// output idling low at CCR 0 holds with a high time of 0, one idling high
+/// at ARR + 1 holds with a high time of the whole period, and a kind 25
+/// whose figures are not its idle's is refused.
+#[test]
+fn replay_re_derives_the_static_check_from_the_declared_idle() {
+    use aethelgard_chaos::record::MotorIdle;
+    let at_idle = |idle: MotorIdle, ccr: u32, high_ps: u64| {
+        let mut r = run("witnessed", true, true, vec![]);
+        if let Record::MotorOutputSolved {
+            idle: i, ccr: c, ..
+        } = &mut r[3]
+        {
+            *i = Some(idle);
+            *c = ccr;
+        }
+        if let Record::MotorTimingCheck {
+            high_ps: h,
+            nominal_high_ps: n,
+            ..
+        } = &mut r[5]
+        {
+            *h = high_ps;
+            *n = high_ps;
+        }
+        r
+    };
+    let judged = |r: &[Record]| {
+        let solved = r[3].clone();
+        let check = r[5].clone();
+        // The joins of kinds 24 and 25 alone: the witness of M2 is the
+        // pulse's, which a level output does not have, so only the static
+        // check's refusal is read here.
+        check_run(r)
+            .err()
+            .filter(|e| *e == CHECK_REFUSED)
+            .map(|_| (solved, check))
+    };
+    assert!(judged(&at_idle(MotorIdle::Low, 0, 0)).is_none());
+    assert!(judged(&at_idle(MotorIdle::High, 2500, 2_500_000_000)).is_none());
+    assert!(judged(&at_idle(MotorIdle::Low, 0, 1)).is_some());
+    assert!(judged(&at_idle(MotorIdle::High, 2500, 0)).is_some());
+    assert!(judged(&at_idle(MotorIdle::PulseUs(1000), 1000, 0)).is_some());
+}
