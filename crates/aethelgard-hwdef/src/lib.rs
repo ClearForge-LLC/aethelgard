@@ -1174,4 +1174,58 @@ mod tests {
         assert_eq!(map_baudrate(14_400 / 1000), 14_000);
         assert_eq!(map_baudrate(0), 57_600);
     }
+
+    /// `AET-WO-1214` (`1213` F3): `generate` validates the topology first, and
+    /// `SolvedTopology::validate` refuses both bauds below (`ConsoleBaudNotRoundTrip`,
+    /// `SerialBaudReadAsKbaud`, each a `SerialPortMismatch` there), so the
+    /// generator's own guards are reached only by calling `serial` directly.
+    /// They stay as `RUL-20`'s pair, for a topology that reaches the
+    /// generator by another path. Each fires here, and names its port.
+    #[test]
+    fn the_serial_baud_guards_fire_when_called_directly() {
+        let fixture: SolvedTopology = serde_json::from_str(include_str!(
+            "../tests/fixtures/serial-dshot-9600.topology.json"
+        ))
+        .unwrap();
+        let serial =
+            |t: &SolvedTopology| serial(t, &mut Lines(Vec::new()), &mut Vec::new(), |_| "");
+        assert_eq!(serial(&fixture), Ok(()));
+
+        // The console at 76,800: SERIAL0 holds 76, which maps to 76,000.
+        let mut t = fixture.clone();
+        t.serial_ports.get_mut("CONSOLE").unwrap().framing.baud = 76_800;
+        assert_eq!(
+            serial(&t),
+            Err(Refusal::ConsoleBaud {
+                port: "CONSOLE".into(),
+                baud: 76_800,
+                mapped: 76_000
+            })
+        );
+        let Err(Refusal::InvalidTopology(e)) = generate(&t) else {
+            panic!("validate refuses first")
+        };
+        assert_eq!((e.kind(), e.id()), ("SerialPortMismatch", Some("CONSOLE")));
+
+        // A second port, `mavlink` on SERIAL1, at 1200: read as kbaud.
+        let mut t = fixture.clone();
+        let mut telem = t.serial_ports["CONSOLE"].clone();
+        (telem.index, telem.role) = (1, SerialRole::Mavlink);
+        (telem.tx, telem.rx) = ("TELEM_TX".into(), "TELEM_RX".into());
+        telem.framing.baud = 1200;
+        for net in ["TX", "RX"] {
+            let a = t.assignments[&format!("CONSOLE_{net}")].clone();
+            t.assignments.insert(format!("TELEM_{net}"), a);
+        }
+        t.serial_ports.insert("TELEM".into(), telem);
+        assert_eq!(
+            serial(&t),
+            Err(Refusal::SerialBaud {
+                port: "TELEM".into(),
+                baud: 1200
+            })
+        );
+        t.serial_ports.get_mut("TELEM").unwrap().framing.baud = 2001;
+        assert_eq!(serial(&t), Ok(()), "2001 is not kbaud");
+    }
 }

@@ -380,7 +380,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 55] = [
+    const DATA: [&str; 59] = [
         "data/aethelgard/README.md",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
@@ -439,6 +439,11 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         // `AET-WO-4240c`: the crystal.
         "data/kicad-10.0.7/footprints/Crystal.pretty/Crystal_SMD_3225-4Pin_3.2x2.5mm.kicad_mod",
         "data/kicad-10.0.7/symbols/Device.kicad_symdir/Crystal_GND24.kicad_sym",
+        // `AET-WO-1211d`: the two motor drivers.
+        "data/kicad-10.0.7/footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod",
+        "data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym",
+        "data/aethelgard/footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
+        "data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8876PWP.kicad_sym",
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);
