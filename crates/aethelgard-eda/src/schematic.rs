@@ -28,8 +28,9 @@ use crate::sexpr::{self, Sx, mm};
 // (`strict_fence` gives every file of `src/` a role).
 #[path = "schematic_hse.rs"]
 mod hse;
-#[path = "schematic_pin_device.rs"]
-mod pin_device;
+// The device arms, one table and one interpreter (`AET-WO-1319`).
+#[path = "schematic_arms.rs"]
+mod arms;
 #[path = "schematic_power.rs"]
 mod power;
 #[path = "schematic_support.rs"]
@@ -1380,7 +1381,7 @@ pub(crate) fn design(
     if let Some((reference, d)) = solved
         .pin_devices
         .iter()
-        .find(|(_, d)| !pin_device::draws(&d.part))
+        .find(|(_, d)| !arms::draws(&d.part))
     {
         return Err(EmitError::PinDeviceNotDrawn {
             reference: reference.clone(),
@@ -1396,7 +1397,7 @@ pub(crate) fn design(
         .chain(spec.declared_connectors().iter().map(|c| &c.reference))
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
         .chain(spec.declared_test_points().iter().map(|t| &t.reference))
-        .chain(pin_device::references(spec.declared_pin_devices()))
+        .chain(arms::references(spec.declared_pin_devices()))
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -1531,84 +1532,19 @@ pub(crate) fn design(
             Conn::Net(bus.sda.net.clone()),
             Conn::Net(bus.scl.net.clone()),
         );
-        let rail = b.rail(&d.supply);
-        let gnd = b.ground();
-        let (lib_id, conns) = match d.part.as_str() {
-            "BME280" => {
-                // SDO to GND, then to VDDIO (BME280 datasheet §6.2).
-                let target = strapped(d, &[gnd.clone(), rail.clone()])?;
-                let sdo = b.strap(&d.reference, "SDO", target)?;
-                (
-                    "Sensor:BME280",
-                    [
-                        ("1", gnd.clone()),
-                        ("7", gnd.clone()),
-                        ("6", rail.clone()),
-                        ("8", rail.clone()),
-                        ("2", rail.clone()),
-                        ("3", sda),
-                        ("4", scl),
-                        ("5", sdo),
-                    ]
-                    .to_vec(),
-                )
-            }
-            // BST-BMP581-DS004-13 Table 28 and Fig. 26 (I2C), pp. 46 and 48:
-            // VDDIO and VDD on the supply, each bypassed by 100 nF; the three
-            // VSS to GND; SCK is SCL and SDI is SDA; SDO selects the address
-            // LSB (low, then high: the parts table's order); CSB to VDDIO ("In I2C mode, the CSB
-            // pin must be connected to VDDIO"); INT to GND, allowed "as long
-            // as the IRQ pin is not activated" (Table 28 (a)), and the
-            // bring-up leaves INT_CONFIG at its reset, `int_en` 0 (p. 52).
-            "BMP581" => {
-                let target = strapped(d, &[gnd.clone(), rail.clone()])?;
-                let sdo = b.strap(&d.reference, "SDO", target)?;
-                (
-                    "Aethelgard_Sensor:BMP581",
-                    [
-                        ("1", rail.clone()),
-                        ("10", rail.clone()),
-                        ("3", gnd.clone()),
-                        ("8", gnd.clone()),
-                        ("9", gnd.clone()),
-                        ("2", scl),
-                        ("4", sda),
-                        ("5", sdo),
-                        ("6", rail.clone()),
-                        ("7", gnd.clone()),
-                    ]
-                    .to_vec(),
-                )
-            }
-            "TMP117" => {
-                // ADD0 to GND, V+, SDA, then SCL (TMP117 datasheet Table 7-2).
-                let add0 = strapped(d, &[gnd.clone(), rail.clone(), sda.clone(), scl.clone()])?;
-                (
-                    "Sensor_Temperature:TMP117xxDRV",
-                    [
-                        ("1", scl),
-                        ("2", gnd.clone()),
-                        ("4", add0),
-                        ("5", rail.clone()),
-                        ("6", sda),
-                    ]
-                    .to_vec(),
-                )
-            }
-            _ => {
-                return Err(EmitError::UnknownPart {
-                    reference: d.reference.clone(),
-                    part: d.part.clone(),
-                    known: KNOWN_PARTS,
-                });
-            }
+        let line = |r: arms::Role| match r {
+            arms::Role::Sda => Some(sda.clone()),
+            arms::Role::Scl => Some(scl.clone()),
+            _ => None,
         };
-        device(&mut b, &d.reference, lib_id, conns)?;
-        b.decouple(&d.reference, &d.supply, "100n")?;
-        if d.part == "BMP581" {
-            // Its second 100 nF: one on VDD and one on VDDIO (Fig. 26).
-            b.decouple(&d.reference, &d.supply, "100n")?;
-        }
+        let row = arms::on_bus(arms::Bus::I2c, &d.reference, &d.part)?;
+        let declared = arms::Declared::Bus {
+            reference: &d.reference,
+            supply: &d.supply,
+            i2c: Some(d),
+            line: &line,
+        };
+        arms::arm(&mut b, row, declared)?;
     }
     // Each crossing's device is drawn on the translator's B side.
     let behind = match &spec.power {
@@ -1629,8 +1565,6 @@ pub(crate) fn design(
         if !solved.gpio.contains_key(&d.cs.net) {
             return Err(EmitError::UnsolvedNet(d.cs.net.clone()));
         }
-        let rail = b.rail(&d.supply);
-        let gnd = b.ground();
         let net = |line: power::Line, own: &String| {
             Conn::Net(
                 behind
@@ -1640,80 +1574,21 @@ pub(crate) fn design(
                     .clone(),
             )
         };
-        match d.part.as_str() {
-            "W25Q64JVxIQ" => {
-                let wp = b.strap(&d.reference, "WP", rail.clone())?;
-                let hold = b.strap(&d.reference, "HOLD", rail.clone())?;
-                let conns = [
-                    ("1", net(power::Line::Cs, &d.cs.net)),
-                    ("2", net(power::Line::Miso, &bus.miso.net)),
-                    ("3", wp),
-                    ("4", gnd),
-                    ("5", net(power::Line::Mosi, &bus.mosi.net)),
-                    ("6", net(power::Line::Sck, &bus.sck.net)),
-                    ("7", hold),
-                    ("8", rail),
-                ]
-                .to_vec();
-                device(&mut b, &d.reference, "Memory_Flash:W25Q32JVSS", conns)?;
-                b.decouple(&d.reference, &d.supply, "100n")?;
-            }
-            // DS-000189 p. 20, 4.1 and 4.3: VDD and VDDIO on the supply, each
-            // bypassed; REGOUT's 0.1 uF filter capacitor (C1); FSYNC and RESV
-            // pin 20 to GND; RESV pin 19 and the auxiliary I2C master pins left
-            // open. SPI: SCLK, SDI, SDO and nCS (`AET-WO-4300d2` D2 (a)).
-            "ICM20948" => {
-                let regout = b.own_net(format!("{}_REGOUT", d.reference))?;
-                let conns = [
-                    ("8", rail.clone()),
-                    ("13", rail),
-                    ("18", gnd.clone()),
-                    ("20", gnd.clone()),
-                    ("11", gnd.clone()),
-                    ("10", Conn::Net(regout.clone())),
-                    ("22", net(power::Line::Cs, &d.cs.net)),
-                    ("23", net(power::Line::Sck, &bus.sck.net)),
-                    ("24", net(power::Line::Mosi, &bus.mosi.net)),
-                    ("9", net(power::Line::Miso, &bus.miso.net)),
-                ]
-                .to_vec();
-                device(&mut b, &d.reference, "Sensor_Motion:ICM-20948", conns)?;
-                b.passive('C', "100n".into(), Conn::Net(regout), gnd)?;
-                b.decouple(&d.reference, &d.supply, "100n")?;
-                b.decouple(&d.reference, &d.supply, "100n")?;
-            }
-            // DS-000347 Table 10 p. 20 and Fig. 7 p. 21 (4-wire SPI): VDD
-            // bypassed by 0.1 uF and 2.2 uF, VDDIO by 10 nF; GND and RESV pin
-            // 7 to GND; INT2/FSYNC to GND, "Connect to GND if FSYNC not
-            // used"; RESV pins 2, 3, 10 and 11 and INT1 left open ("No
-            // Connect or Connect to GND"; no interrupt is armed). AP_CS,
-            // AP_SCLK, AP_SDI and AP_SDO are CS, SCK, MOSI and MISO.
-            "ICM42688P" => {
-                let conns = [
-                    ("5", rail.clone()),
-                    ("8", rail),
-                    ("6", gnd.clone()),
-                    ("7", gnd.clone()),
-                    ("9", gnd),
-                    ("12", net(power::Line::Cs, &d.cs.net)),
-                    ("13", net(power::Line::Sck, &bus.sck.net)),
-                    ("14", net(power::Line::Mosi, &bus.mosi.net)),
-                    ("1", net(power::Line::Miso, &bus.miso.net)),
-                ]
-                .to_vec();
-                device(&mut b, &d.reference, "Aethelgard_Sensor:ICM-42688-P", conns)?;
-                b.decouple(&d.reference, &d.supply, "100n")?;
-                b.decouple(&d.reference, &d.supply, "2u2")?;
-                b.decouple(&d.reference, &d.supply, "10n")?;
-            }
-            _ => {
-                return Err(EmitError::UnknownPart {
-                    reference: d.reference.clone(),
-                    part: d.part.clone(),
-                    known: KNOWN_PARTS,
-                });
-            }
-        }
+        let line = |r: arms::Role| match r {
+            arms::Role::Cs => Some(net(power::Line::Cs, &d.cs.net)),
+            arms::Role::Sck => Some(net(power::Line::Sck, &bus.sck.net)),
+            arms::Role::Mosi => Some(net(power::Line::Mosi, &bus.mosi.net)),
+            arms::Role::Miso => Some(net(power::Line::Miso, &bus.miso.net)),
+            _ => None,
+        };
+        let row = arms::on_bus(arms::Bus::Spi, &d.reference, &d.part)?;
+        let declared = arms::Declared::Bus {
+            reference: &d.reference,
+            supply: &d.supply,
+            i2c: None,
+            line: &line,
+        };
+        arms::arm(&mut b, row, declared)?;
     }
     // `AET-WO-4400d`: each IMU's declared orientation and its part's cited
     // axes, for the placer.
@@ -1751,7 +1626,7 @@ pub(crate) fn design(
         .iter()
         .flat_map(|c| c.pins.iter().filter_map(|p| p.net.clone()))
         .collect();
-    pin_device::draw(
+    arms::pin_devices(
         &mut b,
         spec.declared_pin_devices(),
         &on_connectors,
@@ -1870,39 +1745,10 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
     Ok(())
 }
 
-/// A device's part, with the part's default footprint and the D2 note.
-fn device(
-    b: &mut Builder<'_>,
-    reference: &str,
-    lib_id: &'static str,
-    conns: Vec<(&str, Conn)>,
-) -> Result<(), EmitError> {
+/// A bus device's value: its symbol's `Value`.
+fn symbol_value(lib_id: &str) -> Result<String, EmitError> {
     let sym = library::symbol(lib_id)?;
-    let (value, note) = if lib_id == "Memory_Flash:W25Q32JVSS" {
-        (
-            // The ordering code in full: package `SS` (SOIC-8 208-mil, the
-            // footprint), then `IQ`, whose JEDEC identity the twin reads
-            // (`AET-WO-4300c` F11).
-            "W25Q64JVSSIQ".to_owned(),
-            Some(
-                "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)",
-            ),
-        )
-    } else {
-        (sym.property("Value").unwrap_or("").to_owned(), None)
-    };
-    b.parts.push(Part {
-        lib_id,
-        reference: reference.to_owned(),
-        value,
-        footprint: sym.property("Footprint").unwrap_or("").to_owned(),
-        conns: conns.into_iter().map(|(n, c)| (n.to_owned(), c)).collect(),
-        note,
-        owner: None,
-        offboard: BTreeMap::new(),
-        seat: None,
-    });
-    Ok(())
+    Ok(sym.property("Value").unwrap_or("").to_owned())
 }
 
 pub struct BomRow {
@@ -2385,48 +2231,16 @@ mod tests {
         assert!(checked >= 6, "{checked}");
     }
 
-    /// `AET-WO-1316` §1.2: the parts the two device matches have an arm
-    /// for are [`KNOWN_PARTS`], each once, so an arm written for a part
-    /// the list does not name (and so none the agreement test draws,
-    /// `parts_arms_tier1.rs`) fails here by name.
+    /// `AET-WO-1319`: each row's footprint is its symbol's own. For a bus
+    /// row that is the footprint it was drawn on before the table, which
+    /// read the symbol's; a pin row's was a literal already, and this adds
+    /// the constraint that it agrees with its symbol.
     #[test]
-    fn the_arms_are_the_known_parts() {
-        let code = include_str!("schematic.rs");
-        let code = &code[..code.find("#[cfg(test)]").unwrap()];
-        let mut found = Vec::new();
-        let mut matches = 0;
-        for (at, _) in code.match_indices("match d.part.as_str() {") {
-            matches += 1;
-            let line = code[..at].rfind('\n').map_or(0, |n| n + 1);
-            let indent = code[line..].len() - code[line..].trim_start().len();
-            let arm = format!("\n{}    ", " ".repeat(indent));
-            let body = &code[at..];
-            let end = body.find(&format!("{arm}_ =>")).unwrap();
-            for chunk in body[..end].split(&arm).skip(1) {
-                if let Some(rest) = chunk.strip_prefix('"') {
-                    let (name, tail) = rest.split_once('"').unwrap();
-                    assert!(
-                        tail.starts_with(" =>"),
-                        "an arm of two or more parts: {name}{tail}"
-                    );
-                    found.push(name);
-                }
-            }
+    fn each_arms_footprint_is_its_symbols() {
+        for a in arms::ARMS {
+            let sym = library::symbol(a.symbol).unwrap();
+            assert_eq!(sym.property("Footprint"), Some(a.footprint), "{}", a.part);
         }
-        assert_eq!(matches, 2, "the I2C and the SPI device matches");
-        // The pin devices' arms are `pin_device`'s table (`AET-WO-1211d`).
-        let (pins, mut known): (Vec<&str>, Vec<&str>) =
-            KNOWN_PARTS.split(", ").partition(|p| pin_device::draws(p));
-        assert_eq!(pins, ["DRV8876PWPR", "DRV8833PWPR"]);
-        for name in &found {
-            assert!(known.contains(name), "{name}: an arm, not in KNOWN_PARTS");
-        }
-        for name in &known {
-            assert!(found.contains(name), "{name}: in KNOWN_PARTS, and no arm");
-        }
-        found.sort_unstable();
-        known.sort_unstable();
-        assert_eq!(found, known, "each arm once");
     }
 
     #[test]
