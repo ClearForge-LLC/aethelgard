@@ -1,5 +1,5 @@
 {
-  "schema_version": 24,
+  "schema_version": 25,
   "project_name": "field-logger",
   "mcu": {
     "part": "STM32H753ZITx",

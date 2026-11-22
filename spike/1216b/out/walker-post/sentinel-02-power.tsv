@@ -1,0 +1,5 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+VBAT_SENSE	battery_divider	battery	yes: the battery is the tree's root	2536	maximum	-	power.sense[0]
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[0].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[0].pins[4]
+#validate	ok

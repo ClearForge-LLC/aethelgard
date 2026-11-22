@@ -1647,12 +1647,15 @@ pub fn verify(
     // The ledger before any gate: a field it cannot class is refused, never
     // guessed (`AET-WO-4230` §1.7, §5.4). A stale acknowledgement is refused
     // as `validate` refuses it; every unwitnessed row is then marked (R1).
-    let (mut ledger, twin_limits) = match aethelgard_cli::ledger::build(&topology, &table)
-        .and_then(|l| Ok((l, aethelgard_cli::ledger::twin_limits(&topology)?)))
-    {
-        Ok(l) => l,
-        Err(e) => return refuse(e.kind(), e.id(), e.message(), EXIT_INTERNAL),
-    };
+    let (mut ledger, twin_limits) =
+        match aethelgard_cli::ledger::build(&topology, &table).and_then(|l| {
+            let mut limits = aethelgard_cli::ledger::twin_limits(&topology)?;
+            limits.extend(aethelgard_cli::ledger::off_domain_rows(&spec, &topology)?);
+            Ok((l, limits))
+        }) {
+            Ok(l) => l,
+            Err(e) => return refuse(e.kind(), e.id(), e.message(), EXIT_INTERNAL),
+        };
     if let Some(s) = aethelgard_cli::ledger::stale(&ledger, &spec) {
         return refuse(
             aethelgard_cli::ledger::Stale::KIND,

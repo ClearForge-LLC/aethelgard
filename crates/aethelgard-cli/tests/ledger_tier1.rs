@@ -664,16 +664,37 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
         v["declared_peers"],
         serde_json::json!([{"port": "CONSOLE", "peer_deviation_ppm": 5000}])
     );
-    // One twin limit: the TMP117's identity read, which no model answers
-    // (`AET-WO-4241`), beside the ledger's unwitnessed rows.
+    // The twin limits: the TMP117's identity read, which no model answers
+    // (`AET-WO-4241`), then each unbounded path onto an MCU pin, named and
+    // never passed (`AET-WO-1216b`, `1216` D2): the console's and SWD's
+    // connector pins.
     let limits = v["twin_limits"].as_array().unwrap();
     assert_eq!(
         limits
             .iter()
             .map(|r| (r["id"].as_str(), r["class"].as_str()))
             .collect::<Vec<_>>(),
-        [(Some("IDENTITY.U3"), Some("silicon-only"))]
+        [
+            (Some("IDENTITY.U3"), Some("silicon-only")),
+            (
+                Some("OFFDOMAIN.connectors[0].pins[0]"),
+                Some("silicon-only")
+            ),
+            (
+                Some("OFFDOMAIN.connectors[0].pins[1]"),
+                Some("silicon-only")
+            ),
+            (
+                Some("OFFDOMAIN.connectors[1].pins[3]"),
+                Some("silicon-only")
+            ),
+            (
+                Some("OFFDOMAIN.connectors[1].pins[4]"),
+                Some("silicon-only")
+            ),
+        ]
     );
+    assert!(limits.iter().all(|r| r.get("acknowledged").is_none()));
     assert!(
         v["findings"]
             .as_array()
@@ -1150,4 +1171,66 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
             );
         }
     }
+}
+
+/// `AET-WO-1216b` (`1216` D2 as ruled): every path onto an MCU pin with no
+/// stated bound is one `OFFDOMAIN` twin limit, silicon-only, never
+/// acknowledged and never counted as judged; a stated path (the battery
+/// divider) is `validate`'s step 25's and has no row. Sentinel-03: 16
+/// connector pins and 19 test points on MCU nets, each with its pin and
+/// Table 10's limit at VDD = 0.
+#[test]
+fn every_unbounded_path_is_a_twin_limit_never_judged() {
+    let bytes =
+        fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+    let spec: Specification = serde_json::from_slice(&bytes).unwrap();
+    let (t, _) = solve(&bytes).unwrap();
+    let rows = ledger::off_domain_rows(&spec, &t).unwrap();
+    assert_eq!(rows.len(), 35);
+    assert_eq!(
+        rows.iter()
+            .filter(|r| r.id.starts_with("OFFDOMAIN.test_points["))
+            .count(),
+        19
+    );
+    for r in &rows {
+        assert_eq!(
+            (r.family.as_str(), r.class),
+            ("OFFDOMAIN", Class::SiliconOnly),
+            "{}",
+            r.id
+        );
+        assert!(!r.class.judged() && r.acknowledged.is_none() && r.register.is_empty());
+        assert!(
+            r.judge.starts_with("not judged: no bound is stated"),
+            "{}",
+            r.judge
+        );
+        assert!(
+            r.note.contains("at VDD = 0 the pin takes at most"),
+            "{}",
+            r.note
+        );
+    }
+    assert!(
+        !rows
+            .iter()
+            .any(|r| r.field == "VBAT_SENSE" && r.id.contains("power.sense"))
+    );
+    let boot0 = rows.iter().find(|r| r.field == "BOOT0").unwrap();
+    assert!(
+        boot0
+            .note
+            .contains("on `BOOT0`: at VDD = 0 the pin takes at most 9000 mV"),
+        "{}",
+        boot0.note
+    );
+    let motor = rows.iter().find(|r| r.field == "MOTOR1").unwrap();
+    assert!(
+        motor
+            .note
+            .contains("on `PE9`: at VDD = 0 the pin takes at most 4000 mV"),
+        "{}",
+        motor.note
+    );
 }

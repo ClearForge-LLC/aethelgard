@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -1910,6 +1910,42 @@
               "at": {
                 "document": "DS12117",
                 "section": "p. 105, Table 13 note 3 (= p. 209, Table 111 note 3): above Min(VDD, VDDA, VDD33USB) + 0.3 V the internal pull-up and pull-down must be disabled"
+              }
+            },
+            "absolute_maximum": {
+              "families": [
+                {
+                  "family": "FT",
+                  "above_supply_millivolts": 4000,
+                  "max_millivolts": 6000,
+                  "at": {
+                    "document": "DS12117",
+                    "section": "p. 103, Table 10 (voltage characteristics, absolute maximum ratings), VIN on FT_xxx pins: Min(Min(VDD, VDDA, VDD33USB, VBAT) + 4.0 V, 6 V); note 3 p. 104, the structure's own supplies"
+                  }
+                },
+                {
+                  "family": "TT",
+                  "above_supply_millivolts": null,
+                  "max_millivolts": 4000,
+                  "at": {
+                    "document": "DS12117",
+                    "section": "p. 103, Table 10 (voltage characteristics, absolute maximum ratings), VIN on TT_xx pins: 4.0 V"
+                  }
+                }
+              ],
+              "boot0_max_millivolts": {
+                "value": 9000,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 103, Table 10 (voltage characteristics, absolute maximum ratings), VIN on the BOOT0 pin: 9.0 V"
+                }
+              },
+              "other_max_millivolts": {
+                "value": 4000,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 103, Table 10 (voltage characteristics, absolute maximum ratings), VIN on any other pin: 4.0 V"
+                }
               }
             }
           }

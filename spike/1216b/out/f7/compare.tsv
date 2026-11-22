@@ -1,0 +1,17 @@
+board	side	net	class	detail	matched
+d1-drawn	drawn	DRV_IPROPI	ic	U2.6 DRV8876PWPR rails=GND,VDD_3V3,VMOTOR hop=- flag=yes:VMOTOR	yes
+d1-drawn	drawn	SERVO1	connector	J4.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+d1-drawn	drawn	DRV_NSLEEP	ic	U2.3 DRV8876PWPR rails=GND,VDD_3V3,VMOTOR hop=- flag=yes:VMOTOR	NO
+d1-drawn	drawn	CMD_TX	connector	J1.1 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+d1-drawn	drawn	DRV_EN	ic	U2.1 DRV8876PWPR rails=GND,VDD_3V3,VMOTOR hop=- flag=yes:VMOTOR	NO
+d1-drawn	drawn	DRV_PH	ic	U2.2 DRV8876PWPR rails=GND,VDD_3V3,VMOTOR hop=- flag=yes:VMOTOR	NO
+d1-drawn	drawn	CMD_RX	connector	J1.2 SM04B-GHS-TB rails=GND hop=- flag=off-board	yes
+d1-drawn	drawn	DRV_NFAULT	ic	U2.4 DRV8876PWPR rails=GND,VDD_3V3,VMOTOR hop=- flag=yes:VMOTOR	NO
+d1-drawn	drawn	SWDIO	connector	J2.4 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d1-drawn	drawn	SWCLK	connector	J2.5 SM06B-SRSS-TB rails=GND,VDD_3V3 hop=- flag=off-board	yes
+d1-drawn	spec	DRV_IPROPI	pin_device_current_output	U2.IPROPI into R2 1500 ohm: 3000 uA (row output_max_ua) x 1555 ohm, if	yes
+d1-drawn	spec	CMD_TX	connector	J1.1 SM04B-GHS-TB; carries no rail	yes
+d1-drawn	spec	CMD_RX	connector	J1.2 SM04B-GHS-TB; carries no rail	yes
+d1-drawn	spec	SWDIO	connector	J2.4 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d1-drawn	spec	SWCLK	connector	J2.5 SM06B-SRSS-TB; the connector also carries VDD_3V3	yes
+d1-drawn	spec	SERVO1	connector	J4.1 SM04B-GHS-TB; carries no rail	yes

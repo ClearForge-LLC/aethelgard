@@ -395,10 +395,16 @@ fn a_current_output_above_its_maximum_is_refused() {
 fn a_source_above_rain_with_no_reservoir_is_refused() {
     let mut v = d1();
     device(&mut v)["analog"][0]["transfer"]["current_output"]["reservoir"] = Value::Null;
-    assert_kind(&v, "AdcSourceImpedance");
-    // At 10 bits RAIN is 5650 ohms (Table 173): R2 needs no reservoir.
-    device(&mut v)["analog"][0]["adc_resolution_bits"] = json!(10);
+    // D1's R2 (1.07 kΩ since `AET-WO-1216b`) is at most 1110 Ω, under RAIN's
+    // 1150 Ω at 12 bits (Table 173): it needs no reservoir.
     spec(&v).validate().unwrap();
+    // 1.5 kΩ is above it, and with no reservoir is refused.
+    device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(1500);
+    assert_kind(&v, "AdcSourceImpedance");
+    // At 10 bits RAIN is 5650 ohms: 1.5 kΩ needs none, and the refusal is
+    // then step 25's (3 mA into 1555 Ω is above Table 10's 4.0 V).
+    device(&mut v)["analog"][0]["adc_resolution_bits"] = json!(10);
+    assert_kind(&v, "OffDomainAboveLimit");
 }
 
 // ---------------------------------------------------------------- the bridge
@@ -872,7 +878,9 @@ fn the_same_pull_to_the_mcu_s_supply_validates() {
 
 /// A TT pin takes VDD + 0.3 V: 5 V ±5 % on PA4 (TT_a, Table 8 p. 69) is
 /// refused, and so is a second 3.3 V ±5 % rail (3465 mV, above 3135 + 300),
-/// unpinned or on PA4; the same rail on PA1 (FT) validates, and so does 5 V.
+/// unpinned or on PA4; the same rail on PA1 (FT) validates. 5 V on PA1
+/// passes A1 and is refused by step 25: no tree orders `VDD_5V` after the
+/// MCU's supply, and at VDD = 0 the pin takes 4.0 V (`AET-WO-1216b`).
 #[test]
 fn a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not() {
     assert_refused_at(
@@ -890,9 +898,12 @@ fn a_tt_pin_on_another_rail_is_refused_and_an_ft_pin_is_not() {
     spec(&d2_pulled("VDD_3V3B", 3300, 50, json!("PA1")))
         .validate()
         .unwrap();
-    spec(&d2_pulled("VDD_5V", 5000, 50, json!("PA1")))
-        .validate()
-        .unwrap();
+    assert_refused_at(
+        &d2_pulled("VDD_5V", 5000, 50, json!("PA1")),
+        "OffDomainAboveLimit",
+        "pin_devices[0].signals[1].pull.resistor",
+        "up to 5250 mV",
+    );
 }
 
 /// At or below VDD's minimum + 0.3 V (3435 mV), the least any held structure
@@ -911,13 +922,16 @@ fn an_unpinned_pull_is_judged_against_the_least_structure_to_the_millivolt() {
     );
 }
 
-/// An FT pin takes less than 5.5 V: up to 5499 mV passes, 5500 is refused.
+/// An FT pin takes less than 5.5 V in operation: up to 5499 mV passes A1
+/// (and is refused by step 25 at VDD = 0, `AET-WO-1216b`), 5500 is refused
+/// by A1.
 #[test]
 fn an_ft_pin_is_judged_below_5v5_to_the_millivolt() {
     // 5444 mV +1 % is 5498.44, up to 5499; 5445 is 5499.45, up to 5500.
-    spec(&d2_pulled("VDD_5V5", 5444, 10, json!("PA1")))
-        .validate()
-        .unwrap();
+    assert_eq!(
+        refused(&d2_pulled("VDD_5V5", 5444, 10, json!("PA1"))).kind(),
+        "OffDomainAboveLimit"
+    );
     assert_refused_at(
         &d2_pulled("VDD_5V5", 5445, 10, json!("PA1")),
         "PullAboveMcuTolerance",
@@ -1014,45 +1028,44 @@ fn vref_on_ground_is_refused() {
     );
 }
 
-/// A2: at D1's 1.9 A full scale IPROPI reaches up to 3,102,225 µV (1995 µA
-/// at AERR's 5 %, R2 at most 1555 Ω). A 0.5 V VREF trips near 0.3 A; a
-/// 3.3 V ±1 % one (3267 mV at least) passes; 3.15 V ±2 % (3087 to 3213 mV)
-/// straddles it and is refused at its minimum.
+/// A2: at D1's 1.9 A full scale IPROPI reaches up to 2,214,450 µV (1995 µA
+/// at AERR's 5 %, R2 1.07 kΩ at most 1110 Ω, `AET-WO-1216b`). A 0.5 V VREF
+/// trips near 0.3 A; a 3.3 V ±1 % one (3267 mV at least) passes; 2.25 V ±2 %
+/// (2205 to 2295 mV) straddles it and is refused at its minimum.
 #[test]
 fn a_vref_below_the_full_scale_is_refused_and_one_above_it_passes() {
     assert_refused_at(
         &d1_vref(500, 50),
         "TripBelowFullScale",
         "pin_devices[0].straps.VREF",
-        "up to 3102225 uV across at most 1555 ohms, above `VREF_D`'s minimum of 475 mV",
+        "up to 2214450 uV across at most 1110 ohms, above `VREF_D`'s minimum of 475 mV",
     );
     spec(&d1_vref(3300, 10)).validate().unwrap();
     assert_refused_at(
-        &d1_vref(3150, 20),
+        &d1_vref(2250, 20),
         "TripBelowFullScale",
         "pin_devices[0].straps.VREF",
-        "minimum of 3087 mV",
+        "minimum of 2205 mV",
     );
 }
 
-/// A2 to the microvolt: R2 at 1543 Ω is at most 1600 Ω, so 1995 µA makes
-/// exactly 3,192,000 µV. A VREF whose minimum is 3192 mV passes (it chops at
-/// the full scale, not below it); 3191 mV is refused. The MCU sits at 3.4 V
-/// so VREF+ (3230 mV at least) holds the ADC's own reading.
+/// A2 to the microvolt: R2 at 1157 Ω is at most 1200 Ω, so 1995 µA makes
+/// exactly 2,394,000 µV. A VREF whose minimum is 2394 mV (2520 mV −5 %)
+/// passes (it chops at the full scale, not below it); 2393 mV is refused.
+/// At 3 mA, 1200 Ω is 3.6 V, under step 25's 4.0 V (`AET-WO-1216b`).
 #[test]
 fn a_vref_equal_to_the_full_scale_passes_and_one_millivolt_less_is_refused() {
     let at = |nominal: u32| {
         let mut v = d1_vref(nominal, 50);
-        v["voltage_domains"][0]["nominal_millivolts"] = json!(3400);
-        device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(1543);
+        device(&mut v)["analog"][0]["transfer"]["current_output"]["resistor"]["ohms"] = json!(1157);
         v
     };
-    spec(&at(3360)).validate().unwrap();
+    spec(&at(2520)).validate().unwrap();
     assert_refused_at(
-        &at(3359),
+        &at(2519),
         "TripBelowFullScale",
         "pin_devices[0].straps.VREF",
-        "up to 3192000 uV",
+        "up to 2394000 uV",
     );
 }
 

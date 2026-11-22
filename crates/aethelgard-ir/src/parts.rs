@@ -72,8 +72,10 @@ pub const PARTS_JSON: &str = include_str!("../data/parts.json");
 /// `bus: "none"` and `identity: null`, each pin's kind, pull and levels,
 /// and each strapped mode's truth table ([`crate::pin_parts`]). Version 12
 /// adds a pin part's `trip` and `bulk_unstated` (`AET-WO-1211e`), each
-/// absent where the part has none.
-pub const PARTS_SCHEMA_VERSION: u32 = 12;
+/// absent where the part has none. Version 13 requires a current output's
+/// `output_max_basis`, `maximum` or `recommended_operating`: what kind of
+/// figure `output_max_ua` is (`AET-WO-1216b`, `1216` D5).
+pub const PARTS_SCHEMA_VERSION: u32 = 13;
 
 /// A bus kind.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

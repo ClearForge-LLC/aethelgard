@@ -1,0 +1,8 @@
+net	class	rails	lead	worst_mv	basis	pin	at
+DRV_IPROPI	pin_device_current_output	VMOTOR	yes: no regulator in the drawn tree outputs `VMOTOR`, so nothing orders it after `VDD_3V3`	3330	recommended_operating	-	pin_devices[0].analog[0].transfer.current_output.resistor
+CMD_TX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[0]
+CMD_RX	connector	off-board	yes: an off-board end	not stated	-	-	connectors[0].pins[1]
+SWDIO	connector	off-board	yes: an off-board end	not stated	-	PA13	connectors[1].pins[3]
+SWCLK	connector	off-board	yes: an off-board end	not stated	-	PA14	connectors[1].pins[4]
+SERVO1	connector	off-board	yes: an off-board end	not stated	-	-	connectors[3].pins[0]
+#validate	ok
