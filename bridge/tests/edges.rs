@@ -45,7 +45,12 @@ fn bridge(request: &Path) -> Vec<Value> {
     // The identity line comes first in every mode (AET-WO-2200 F15).
     let identity = lines.next().unwrap();
     assert_eq!(identity["bridge"], "aethelgard-bridge", "{identity}");
-    lines.collect()
+    // Every answer names the release the identity read from the banner.
+    let answers: Vec<Value> = lines.collect();
+    for a in &answers {
+        assert_eq!(a["ngspice"], identity["ngspice"], "{a} {identity}");
+    }
+    answers
 }
 
 #[test]
@@ -74,4 +79,40 @@ fn a_slow_line_is_incomplete_and_a_strong_pull_up_is_stuck_high() {
     let volts = together[2]["volts_at_release"].as_f64().unwrap();
     assert!((volts - 1.65).abs() < 1e-6, "{volts}");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `AET-WO-1606`: `--version` starts the real library and prints one line,
+/// the identity with the banner the library printed and the release read
+/// from it, exit 0; it runs no circuit. Any argument after it is its usage.
+#[test]
+fn version_names_the_banner_the_library_printed() {
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard-bridge"))
+            .args(args)
+            .output()
+            .unwrap();
+        (out.status.code(), String::from_utf8(out.stdout).unwrap())
+    };
+    let (code, stdout) = run(&["--version"]);
+    assert_eq!(code, Some(0), "{stdout}");
+    let lines: Vec<Value> = stdout
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    let [identity] = lines.as_slice() else {
+        panic!("not one line: {stdout}");
+    };
+    assert_eq!(identity["bridge"], "aethelgard-bridge", "{stdout}");
+    assert_eq!(identity["ngspice_banner"], "** ngspice-44.2 shared library");
+    assert_eq!(identity["ngspice"], "44.2");
+    assert_eq!(identity.as_object().unwrap().len(), 5, "{stdout}");
+    let (code, stdout) = run(&["--version", "x"]);
+    assert_eq!(code, Some(2), "{stdout}");
+    let mut lines = stdout
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap());
+    let bare = lines.next().unwrap();
+    assert_eq!(bare["source_sha256"], identity["source_sha256"]);
+    assert!(bare.get("ngspice").is_none(), "{stdout}");
+    assert_eq!(lines.next().unwrap()["error"], "usage");
 }

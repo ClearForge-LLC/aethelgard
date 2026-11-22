@@ -1,0 +1,28 @@
+{
+ "ok": true,
+ "missing": [],
+ "tools": [
+  {
+   "tool": "kicad-cli",
+   "version": "10.0.7"
+  },
+  {
+   "tool": "renode",
+   "version": "Renode v1.17.0"
+  },
+  {
+   "tool": "aethelgard-bridge",
+   "version": "0.1.0",
+   "ngspice_loaded": true,
+   "ngspice": "44.2"
+  },
+  {
+   "tool": "cargo",
+   "version": "cargo 1.99.1 (5f94df478 2026-08-27)"
+  },
+  {
+   "tool": "cargo-kani",
+   "version": "Kani Rust Verifier 0.68.0 (cargo plugin)"
+  }
+ ]
+}

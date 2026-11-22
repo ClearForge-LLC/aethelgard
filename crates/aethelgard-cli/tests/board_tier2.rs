@@ -314,6 +314,77 @@ fn a_vacuous_harness_fails() {
 // ---------------------------------------------------------------------------
 // `AET-WO-3301`: `build`, `prove --spec` and `verify`, with the real tools.
 
+/// `AET-WO-1606`: `build` names the rustc cargo ran, as cargo recorded it,
+/// beside cargo's own version. The pinned toolchain's release and commit on a
+/// build that passes; under a caller's `RUSTUP_TOOLCHAIN`, the other
+/// toolchain's (the image's Kani nightly, which cannot build the target, so
+/// the build fails and still names it).
+#[test]
+fn build_names_the_rustc_cargo_ran() {
+    let base = std::env::temp_dir().join(format!("aet-1606-rustc-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&base);
+    copy_tree(&board(), &base.join("board"));
+    let vv = |toolchain: &str| {
+        let out = Command::new("rustc")
+            .arg("-vV")
+            .env("RUSTUP_TOOLCHAIN", toolchain)
+            .output()
+            .unwrap();
+        let text = String::from_utf8(out.stdout).unwrap();
+        let field = |k: &str| {
+            text.lines()
+                .find_map(|l| l.strip_prefix(k))
+                .unwrap()
+                .to_owned()
+        };
+        (field("release: "), field("commit-hash: "))
+    };
+    let pinned = fs::read_to_string(root().join("rust-toolchain.toml")).unwrap();
+    let channel = pinned
+        .lines()
+        .find_map(|l| l.strip_prefix("channel = "))
+        .unwrap()
+        .trim_matches('"');
+    let (v, _) = build(&base.join("board"), &base.join("a.elf"));
+    let (release, commit) = vv(channel);
+    assert_eq!(v["tool"]["rustc"]["release"], channel, "{v}");
+    assert_eq!(v["tool"]["rustc"]["release"], release, "{v}");
+    assert_eq!(v["tool"]["rustc"]["commit_hash"], commit, "{v}");
+    assert!(
+        v["tool"]["version"].as_str().unwrap().starts_with("cargo "),
+        "{v}"
+    );
+
+    let home = PathBuf::from(std::env::var_os("RUSTUP_HOME").expect("RUSTUP_HOME"));
+    let nightly: Vec<String> = fs::read_dir(home.join("toolchains"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .filter(|n| n.starts_with("nightly-"))
+        .collect();
+    let [nightly] = nightly.as_slice() else {
+        panic!("the image has one nightly toolchain, Kani's: {nightly:?}");
+    };
+    let elf = base.join("b.elf");
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["build", "--crate"])
+        .arg(base.join("board"))
+        .arg("--out")
+        .arg(&elf)
+        .env("RUSTUP_TOOLCHAIN", nightly)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let v = one(&String::from_utf8(out.stdout).unwrap());
+    assert_eq!(out.status.code(), Some(1), "{v}");
+    assert_eq!(v["findings"][0]["kind"], "build_failed", "{v}");
+    let (release, commit) = vv(nightly);
+    assert_ne!(release, channel);
+    assert_eq!(v["tool"]["rustc"]["release"], release, "{v}");
+    assert_eq!(v["tool"]["rustc"]["commit_hash"], commit, "{v}");
+    assert!(!elf.exists());
+    fs::remove_dir_all(&base).unwrap();
+}
+
 /// `AET-WO-3200` F11, closed: the same crate built at two paths of different
 /// lengths gives one sha256, and the verdict names it. Then what `build`
 /// refuses, end to end.

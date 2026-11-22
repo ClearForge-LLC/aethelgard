@@ -24,7 +24,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use serde::Serialize;
-use serde_json::Value;
 
 use crate::run::{self, SandboxReport, Stop};
 use crate::{EXIT_FAIL, Scratch, analog, firmware, kicad};
@@ -70,11 +69,14 @@ struct ToolLine {
     /// condition judges on the tool's own read grants.
     #[serde(skip_serializing_if = "Option::is_none")]
     sandbox: Option<SandboxReport>,
-    /// Set for the bridge alone: the bridge printed its identity, so the
-    /// loader resolved the `libngspice.so.0` it links. ngspice's own version
-    /// is named only in a measurement's answers, which no probe asks for.
+    /// Set for the bridge alone: its `--version` started libngspice and
+    /// accepted the library's banner.
     #[serde(skip_serializing_if = "Option::is_none")]
     ngspice_loaded: Option<bool>,
+    /// Set for the bridge alone: the ngspice release that banner named
+    /// (`AET-WO-1606`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    ngspice: Option<String>,
 }
 
 /// One missing piece: the refusal a blocked subcommand would print, and the
@@ -279,6 +281,7 @@ fn absent(tool: &'static str, path: Option<&run::Tool>) -> ToolLine {
         version: None,
         sandbox: None,
         ngspice_loaded: None,
+        ngspice: None,
     }
 }
 
@@ -380,10 +383,9 @@ fn renode(missing: &mut Vec<Missing>) -> ToolLine {
     )
 }
 
-/// The bridge, run with no request: it prints its identity, which must be
-/// the one this CLI was built with (`analog::identified`), then its usage,
-/// exit `2`. It links `libngspice.so.0`, so a bridge that printed anything
-/// was loaded with it.
+/// The bridge's `--version`: it starts libngspice and prints its identity,
+/// which must be the one this CLI was built with and name the library's
+/// banner (`analog::identified`), then exits `0`. It runs no circuit.
 fn bridge(missing: &mut Vec<Missing>) -> ToolLine {
     let tool = match analog::bridge() {
         Ok(t) => t,
@@ -399,30 +401,31 @@ fn bridge(missing: &mut Vec<Missing>) -> ToolLine {
     let probed = invocation(
         scratch,
         &tool,
-        Vec::new(),
+        run::args(["--version"]),
         Vec::new(),
         tool.dirs(),
         "status-bridge",
     )
     .run_bounded(crate::renode::BOOT_BOUNDS)
-    .and_then(|out| identity(&out).map(|version| (version, out.sandbox)));
+    .and_then(|out| identity(&out).map(|names| (names, out.sandbox)));
     match probed {
         Err(stop) => {
             note(missing, Missing::of(stop, &BRIDGE));
             absent(analog::BRIDGE, Some(&tool))
         }
-        Ok((version, sandbox)) => ToolLine {
+        Ok(((version, ngspice), sandbox)) => ToolLine {
             version: Some(version),
             sandbox: Some(sandbox),
             ngspice_loaded: Some(true),
+            ngspice: Some(ngspice),
             ..absent(analog::BRIDGE, Some(&tool))
         },
     }
 }
 
-/// The bridge's version, from an identity `analog::identified` accepted,
-/// after a run with no request that ended as its usage does.
-fn identity(out: &run::Output) -> Result<String, Stop> {
+/// The bridge's version and the ngspice it named, from an identity
+/// `analog::identified` accepted, after a `--version` that exited `0`.
+fn identity(out: &run::Output) -> Result<(String, String), Stop> {
     let code = out.code(analog::BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     if stdout.trim().is_empty() {
@@ -440,18 +443,17 @@ fn identity(out: &run::Output) -> Result<String, Stop> {
             format!("it printed nothing and exited {code}; it said: {said}"),
         ));
     }
-    analog::identified(&stdout)?;
-    if code != 2 {
-        return Err(Stop::unusable(
+    let (named, rest) = analog::identified(&stdout)?;
+    let said = rest.lines().next().unwrap_or_default().escape_debug();
+    match (code, named.ngspice) {
+        (0, Some(ngspice)) if rest.is_empty() => Ok((named.version, ngspice)),
+        _ => Err(Stop::unusable(
             analog::BRIDGE,
-            format!("with no request it exited {code}, not its usage's 2"),
-        ));
+            format!(
+                "its --version exited {code}, not 0 with its identity naming ngspice and nothing else; it said: {said}"
+            ),
+        )),
     }
-    let first = stdout.lines().next().unwrap_or_default();
-    serde_json::from_str::<Value>(first)
-        .ok()
-        .and_then(|v| v.get("version").and_then(Value::as_str).map(str::to_owned))
-        .ok_or_else(|| Stop::unusable(analog::BRIDGE, "its identity names no version".to_owned()))
 }
 
 /// `cargo --version`, with `build`'s variables and grants.

@@ -1,0 +1,20 @@
+s01min campaign exit 0 wall 14s fw 74a731a8
+s03 campaign exit 0 wall 11s fw e4906886
+doctor exit 0
+bridge usage exit 2
+bridge --version exit 0
+bridge refused exit 2
+bridge --renode exit 0
+== plain cargo, build's environment
+default: exit 0 | cargo --version: cargo 1.99.1 (5f94df478 2026-08-27) | (a) rustc -vV: 58cf8f9c35b355199727627d07ae34a4e2846d67 1.99.1  | (b) 3 entries; 1 -vV; 1.99.1 58cf8f9c35b355199727627d07ae34a4e2846d67 | elf 74a731a892662fc2
+nightly: exit 101 | cargo --version: cargo 1.100.0-nightly (514c56dd7 2026-08-19) | (a) rustc -vV: 8925ea358a0f265ca61026aadc7ecc506c545cbe 1.100.0-nightly  | (b) 4 entries; 1 -vV; 1.100.0-nightly 8925ea358a0f265ca61026aadc7ecc506c545cbe | elf -
+private: exit 0 | cargo --version: cargo 1.99.1 (5f94df478 2026-08-27) | (a) rustc -vV: 58cf8f9c35b355199727627d07ae34a4e2846d67 1.99.1  | (b) 3 entries; 1 -vV; 1.99.1 58cf8f9c35b355199727627d07ae34a4e2846d67 | elf 74a731a892662fc2
+alt: exit 0 | cargo --version: cargo 1.99.1 (5f94df478 2026-08-27) | (a) rustc -vV: a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 1.99.1-alt  | (b) 3 entries; 1 -vV; 1.99.1-alt a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 | elf 74a731a892662fc2
+ancestor: exit 0 | cargo --version: cargo 1.99.1 (5f94df478 2026-08-27) | (a) rustc -vV: 58cf8f9c35b355199727627d07ae34a4e2846d67 1.99.1  | (b) 3 entries; 1 -vV; 1.99.1-alt a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1 | elf 74a731a892662fc2
+cargo --version alone: .rustc_info.json not written; target dir absent
+== the CLI's build (sandboxed): /repo/target/img/debug/aethelgard
+cli-default: exit 0 | pass | {"name": "cargo", "version": "cargo 1.99.1 (5f94df478 2026-08-27)", "rustc": {"release": "1.99.1", "commit_hash": "58cf8f9c35b355199727627d07ae34a4e2846d67"}, "exit_code": 0} | 74a731a892662fc2 | 
+cli-nightly: exit 1 | fail | {"name": "cargo", "version": "cargo 1.100.0-nightly (514c56dd7 2026-08-19)", "rustc": {"release": "1.100.0-nightly", "commit_hash": "8925ea358a0f265ca61026aadc7ecc506c545cbe"}, "exit_code": 101} | - | 
+cli-private: exit 0 | pass | {"name": "cargo", "version": "cargo 1.99.1 (5f94df478 2026-08-27)", "rustc": {"release": "1.99.1", "commit_hash": "58cf8f9c35b355199727627d07ae34a4e2846d67"}, "exit_code": 0} | 74a731a892662fc2 | 
+cli-alt: exit 0 | pass | {"name": "cargo", "version": "cargo 1.99.1 (5f94df478 2026-08-27)", "rustc": {"release": "1.99.1-alt", "commit_hash": "a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"}, "exit_code": 0} | 74a731a892662fc2 | 
+cli-ancestor: exit 3 | None | {} | - | {'kind': 'CargoConfigRefused', 'id': '/cache/p4-head/anc/.cargo/config.toml', 'message': "/cache/p4-head/anc/.cargo/config.toml is above the crate's copy, where cargo or rustup would read it"}

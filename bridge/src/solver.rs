@@ -38,11 +38,64 @@ pub trait CoSimulation {
 }
 
 /// The ngspice release the bridge is pinned to: the header it was declared
-/// against, and the library the image ships (`AET-WO-2101` F1).
-pub const NGSPICE: &str = "44.2";
+/// against, and the library the image ships (`AET-WO-2101` F1). It is only
+/// compared with the banner; what the bridge reports is the banner's.
+const NGSPICE: &str = "44.2";
+
+/// What the library printed of itself when it was initialised: the banner
+/// line, verbatim, and the release it names (`AET-WO-1606`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Banner {
+    pub line: String,
+    pub release: String,
+}
+
+/// The one line of `log` that starts `** ngspice-`, which must read
+/// `** ngspice-<release> shared library` with a release of digits and dots.
+/// No such line, more than one, or one that does not read so is refused, by
+/// what was read.
+pub fn banner(log: &[String]) -> Result<Banner, String> {
+    let lines: Vec<&str> = log
+        .iter()
+        .map(|l| l.strip_prefix("stdout ").unwrap_or(l).trim())
+        .filter(|l| l.starts_with("** ngspice-"))
+        .collect();
+    let [line] = lines.as_slice() else {
+        return Err(format!(
+            "the library printed {} banner lines, not one: {log:?}",
+            lines.len()
+        ));
+    };
+    let release = line
+        .strip_prefix("** ngspice-")
+        .and_then(|r| r.strip_suffix(" shared library"))
+        .filter(|r| {
+            r.split('.')
+                .all(|p| !p.is_empty() && p.bytes().all(|b| b.is_ascii_digit()))
+        })
+        .ok_or_else(|| format!("the library's banner `{line}` names no release"))?;
+    Ok(Banner {
+        line: (*line).to_owned(),
+        release: release.to_owned(),
+    })
+}
+
+/// `banner`, then the pin: a library that is not 44.2 is refused by its own
+/// banner.
+fn pinned(log: &[String]) -> Result<Banner, String> {
+    let b = banner(log)?;
+    if b.release != NGSPICE {
+        return Err(format!(
+            "the library's banner `{}` names ngspice {}, not the {NGSPICE} this bridge is pinned to",
+            b.line, b.release
+        ));
+    }
+    Ok(b)
+}
 
 /// libngspice, in this process, stepped on this thread.
 pub struct Ngspice {
+    banner: Banner,
     loaded: bool,
     stepped: bool,
     inputs: Vec<Pwl>,
@@ -56,21 +109,18 @@ impl Ngspice {
     pub fn start() -> Result<Self, String> {
         ffi::init()?;
         let (log, _) = host::take_log();
-        let banner = format!("** ngspice-{NGSPICE} shared library");
-        if !log
-            .iter()
-            .any(|l| l.trim_start_matches("stdout ").trim() == banner)
-        {
-            return Err(format!(
-                "the library's banner does not say `{banner}`: {log:?}"
-            ));
-        }
         Ok(Self {
+            banner: pinned(&log)?,
             loaded: false,
             stepped: false,
             inputs: Vec::new(),
             breaks: Vec::new(),
         })
+    }
+
+    /// The banner the library printed when this instance started it.
+    pub fn banner(&self) -> &Banner {
+        &self.banner
     }
 
     /// Breakpoints, in seconds, that the next step places besides its inputs'.
@@ -214,5 +264,50 @@ impl CoSimulation for Ngspice {
 
     fn get_output(&mut self, name: &str) -> Result<Vec<f64>, String> {
         ffi::vector(name)?.ok_or_else(|| format!("ngspice has no real vector `{name}`"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{banner, pinned};
+
+    fn log(lines: &[&str]) -> Vec<String> {
+        lines.iter().map(|l| (*l).to_owned()).collect()
+    }
+
+    /// `AET-WO-1606`: the release is the banner's, whatever it names; the
+    /// pin is a separate refusal.
+    #[test]
+    fn the_release_is_read_from_the_banner_and_the_pin_refuses_another() {
+        let other = log(&[
+            "stdout ******",
+            "stdout ** ngspice-45.0.1 shared library",
+            "stdout ** Creation Date: Jan  1 2027",
+        ]);
+        let b = banner(&other).unwrap();
+        assert_eq!(b.line, "** ngspice-45.0.1 shared library");
+        assert_eq!(b.release, "45.0.1");
+        let e = pinned(&other).unwrap_err();
+        assert!(e.contains("names ngspice 45.0.1, not the 44.2"), "{e}");
+        let ours = pinned(&log(&["stdout ** ngspice-44.2 shared library"])).unwrap();
+        assert_eq!(ours.release, "44.2");
+    }
+
+    #[test]
+    fn a_banner_absent_repeated_or_unreadable_is_refused() {
+        for bad in [
+            log(&["stdout ** Creation Date: Jan  1 2027"]),
+            log(&[
+                "stdout ** ngspice-44.2 shared library",
+                "stdout ** ngspice-44.2 shared library",
+            ]),
+            log(&["stdout ** ngspice-44.2 shared"]),
+            log(&["stdout ** ngspice- shared library"]),
+            log(&["stdout ** ngspice-44..2 shared library"]),
+            log(&["stdout ** ngspice-44.2+ shared library"]),
+            log(&["stdout ** ngspice-44.2 shared library (debug)"]),
+        ] {
+            assert!(banner(&bad).is_err(), "{bad:?}");
+        }
     }
 }
