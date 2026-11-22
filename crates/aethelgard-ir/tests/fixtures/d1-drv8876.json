@@ -358,7 +358,7 @@
               "resistor": {
                 "reference": "R2",
                 "part": "CRCW0603_F_K",
-                "ohms": 1500
+                "ohms": 1070
               },
               "reservoir": {
                 "reference": "C1",

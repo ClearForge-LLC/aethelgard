@@ -143,8 +143,6 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     if !all.iter().any(Path::judged) {
         return Ok(());
     }
-    let io = mcu_io(spec)?;
-    let pp = crate::power_parts::table()?;
     for p in all.iter().filter(|p| p.judged()) {
         let (
             Lead::Leads(why),
@@ -157,7 +155,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
         else {
             continue;
         };
-        let (limit, at) = io.absolute_maximum(p.pin.as_deref(), 0);
+        let (limit, cite) = limit_at_zero(spec, p.pin.as_deref())?;
         if *millivolts > limit {
             let pin = p
                 .pin
@@ -175,7 +173,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     p.net,
                     p.source,
                     spec.mcu.supply,
-                    pp.cite(at),
+                    cite,
                     match basis {
                         Basis::Maximum => "a stated maximum",
                         Basis::RecommendedOperating =>
@@ -188,8 +186,17 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     Ok(())
 }
 
-/// The MCU row's I/O facts; a judged path with no row to judge it by is
-/// refused, never passed (`INV-06`).
+/// The most `pin` (`None`: one the solver places) takes at VDD = 0 by
+/// DS12117 Table 10, mV, and its citation. With no MCU row to read it from,
+/// the MCU is refused by name, never passed (`INV-06`).
+pub fn limit_at_zero(
+    spec: &Specification,
+    pin: Option<&str>,
+) -> Result<(i64, String), IrValidationError> {
+    let (limit, at) = mcu_io(spec)?.absolute_maximum(pin, 0);
+    Ok((limit, crate::power_parts::table()?.cite(at)))
+}
+
 fn mcu_io(spec: &Specification) -> Result<&'static crate::power_parts::McuIo, IrValidationError> {
     match crate::power_parts::table()?
         .get(&spec.mcu.part)
@@ -407,7 +414,7 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
             .pins
             .iter()
             .filter_map(|p| p.net.as_deref())
-            .filter(|n| w.is_rail(n))
+            .filter(|n| w.is_rail(n) && *n != w.supply)
             .collect();
         for (k, pin) in c.pins.iter().enumerate() {
             let Some(net) = pin.net.as_deref().filter(|n| w.mcu_nets.contains(n)) else {
@@ -419,11 +426,15 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
                 format!("`{}`.{} ({})", c.reference, pin.pin, c.part),
                 format!("connectors[{j}].pins[{k}]"),
                 if carried.is_empty() {
-                    "no specification field bounds what an off-board end drives; the connector carries no rail".to_owned()
+                    format!(
+                        "no specification field bounds what an off-board end drives; the connector carries no rail but `{}`, and a self-powered peer can still drive the pin",
+                        w.supply
+                    )
                 } else {
                     format!(
-                        "no specification field bounds what an off-board end drives; the connector also carries {}, so a peer it powers can drive the pin",
-                        carried.join(", ")
+                        "no specification field bounds what an off-board end drives; the connector also carries {}, so a peer it powers can drive the pin while `{}` is down",
+                        carried.join(", "),
+                        w.supply
                     )
                 },
             ));
