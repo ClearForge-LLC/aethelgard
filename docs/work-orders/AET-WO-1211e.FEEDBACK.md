@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211e-pin-device-validate` from `main` `adb8f61a`. `main` `ddfa64d6` (4240b, specification 23 / solved 15) was merged on 2026-11-22. **Builder:** Claude (Opus 5.5 orchestrating; one Sonnet worker read DS12117 Table 8 from the rendered pages, blind to the text extraction; one Opus adversarial reviewer). Each report was checked at source before use. Written 2026-11-20 to 2026-11-22.
 
-**Status: READY.** **The answer, in five lines:**
+**Status: AWAITING-PACKAGE** (the bench package needs a write=true dispatch, §9; everything else is done). **The answer, in five lines:**
 - **A1:** a declared pull is judged against what the MCU pin takes in operation (DS12117 Rev 10 Table 13, p. 105), with VDD at `mcu.supply`'s minimum and a pull to `mcu.supply` itself exempt. Both of the WO's choices (Table 10, VDD at its maximum) were corrected by ruling.
 - **A2:** the DRV8876 is refused with VREF on GND, with an IPROPI no analog input terminates, or with a trip below its declared full scale.
 - **`bulk`:** required where the part leaves its value unstated (the DRV8876's VM). It is specification **24**, after 4240b's 23.
@@ -136,26 +136,30 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 
   **Proposed row:** "A pull, divider or driver output from a domain that can be up while `mcu.supply` is below 1 V puts more than 4.0 V on an FT pin (DS12117 Rev 10 Table 10 p. 103 at VDD = 0; note 1). Wanted: a declared power sequence (which domains may lead `mcu.supply`, from what source), and A1 judged at VDD = 0 for every domain that may lead. Owner: a power-sequence work order."
 - **F2 · A GND tie for a `current_output` pin (ruled D-A2).** `TripSenseUnbound` refuses a DRV8876 whose IPROPI no analog input terminates. SLVSDS7B p. 13's honest way to turn regulation off (IPROPI on GND, VREF above GND) cannot be declared today, because a strap on IPROPI is `SignalKindMismatch`. **Proposed row:** "A `current_output` pin tied to `GND` (no feedback), admitted with its reference above `GND`, which turns the trip off. Wanted: a strap kind for it, and A2 skipping the trip when it is declared. Owner: the next IR work order on pin devices."
-- **F3 · The eda arm that draws `bulk`** (lifting `PassiveValueUnstated{CVM2}` for D1) is the follow-up after `1211d` merges, as the WO says. Until then D1 validates and solves, and eda still refuses to draw it.
-- **F4 · PC2 and PC3** are the `PC2_C` and `PC3_C` pads on the LQFP144. They are `I/O` in the open pin data and `ANA` in Table 8, and Table 11 limits a Px_C pin to 1 mA sunk (p. 104). A1 holds them at TT_a. Nothing else in the engine knows they are analog-switch pads; whether the solver should offer them as GPIO is a question for the pin table's owner.
-- **F5 · Table 11 note 4 (p. 104)** calls any VIN above VDD "positive injection". It adds to F1: a rail that leads `mcu.supply` injects current into the MCU before VDD exists.
+- **F3 · The eda arm that draws `bulk`** (lifting `PassiveValueUnstated{CVM2}` for D1) is the follow-up after `1211d` merges, as the WO says. Until then D1 validates and solves, and eda still refuses to draw it. **Proposed row:** "the eda arm draws `bulk` (lifting `PassiveValueUnstated{CVM2}`). Owner: the follow-up after `1211d`."
+- **F4 · PC2 and PC3** are the `PC2_C` and `PC3_C` pads on the LQFP144. They are `I/O` in the open pin data and `ANA` in Table 8, and Table 11 limits a Px_C pin to 1 mA sunk (p. 104). A1 holds them at TT_a. Nothing else in the engine knows they are analog-switch pads; whether the solver should offer them as GPIO is a question for the pin table's owner. **Proposed row:** "`PC2_C`/`PC3_C` in the pin table: analog-switch pads (Table 8 `ANA`, Table 11 1 mA sunk), offered to the solver as GPIO."
+- **F5 · Table 11 note 4 (p. 104)** calls any VIN above VDD "positive injection". It adds to F1: a rail that leads `mcu.supply` injects current into the MCU before VDD exists. **Proposed row:** F1's row, with Table 11 note 4 and Table 48's injected-current limits added to its citations.
 - **F6 · `bulk` judges the rating alone.** An 18 pF C0G validates as a motor-rail bulk. This is the WO's design: no value comes from any source but the declaration, and `source` must say why. **Proposed row:** "a bulk capacitance floor, where a held document states one."
 - **F7 · A power-tree control `wire` can join an MCU net** (adversarial A6). PG wired to D2's nFAULT net validates. It adds no voltage today, because every wirable control is open drain or an input. Separately, a buck's EN wired to a bridge output validates. **Proposed row:** "a control wire's net judged against what else drives it."
-- **F8 · Pre-existing, from 1211a: the ADC reservoir's rating is compared with VDDA's minimum, where its maximum belongs** (`crates/aethelgard-ir/src/pin_devices.rs`, `cap.rated_millivolts.value < i64::from(vref_min)`, in `analog()`). It is harmless with the 50 V parts held. Not fixed here (outside the WO's three rules).
-- **F9 · Order.** `analog()` runs before `trip()`, so an ADC refusal hides A2's kinds on the same device. The input is still refused; only the kind reported differs (adversarial A8).
-- **F10 · An unknown `mcu.part`** is now refused by a pin device with an off-rail pull, at the path `pin_devices[0].mcu`, which names no real field. `analog()` already did this. With D-A1's exemption, a pull to `mcu.supply` no longer reaches it (adversarial A11).
-- **F11 · Environment, not this change:** `cargo test --workspace` with `CARGO_TARGET_DIR` outside the repository fails `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`, because the test's scratch is under the target dir. CI keeps the target in the repository.
+- **F8 · Pre-existing, from 1211a: the ADC reservoir's rating is compared with VDDA's minimum, where its maximum belongs** (`crates/aethelgard-ir/src/pin_devices.rs:1190`, in `analog()`). It is harmless with the 50 V parts held. Not fixed here (outside the WO's three rules). **Proposed row:** "the reservoir judged against VDDA's maximum (pre-existing, from 1211a)."
+- **F9 · Order.** `analog()` runs before `trip()`, so an ADC refusal hides A2's kinds on the same device. The input is still refused; only the kind reported differs (adversarial A8). **Proposed row:** "A2 judged before the ADC rule, so the trip's kind is named first", taken when a work order next touches step 24's order.
+- **F10 · An unknown `mcu.part`** is now refused by a pin device with an off-rail pull, at the path `pin_devices[0].mcu`, which names no real field. `analog()` already did this. With D-A1's exemption, a pull to `mcu.supply` no longer reaches it (adversarial A11). **Proposed row:** "an unknown `mcu.part` refused once, at `mcu.part`, before step 24."
+- **F11 · Environment, by inference:** `cargo test --workspace` with `CARGO_TARGET_DIR` outside the repository fails `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` with `BaseOutsideRoot`. Its `connectors.json` base is under the target dir's `tmp`, outside the working directory. It failed the same way before this work order touched any CLI file (the first workspace run, at `e4d0f877`). CI keeps the target in the repository and is the confirmation. **Proposed row:** "the test's scratch under the repository, not `CARGO_TARGET_DIR`."
+- **F12 · `fab/sentinel-01-bench/BENCH-EXT-BMP581.md`** cites `examples/sentinel-01-ext-bmp581.json`'s sha256 at specification 23. It is 3403's bench record, written before the bench and never edited (its own rule), and no test binds it. It is left as written; the specification's bytes moved by their version line alone.
 
 ## 8. Gates, fence, reduction pass
 
 - **Gates:**
   - `cargo fmt --all -- --check` passes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` passes.
-  - `cargo test --workspace`: GATES_TEST.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at the FEEDBACK commit.
+  - `cargo test --workspace` (Furnace, target outside the repository, 2026-11-22): 153 binaries, 2606 passed and 4 failed.
+    - Two of the failures were goldens fixed after that run: `validate::refuses_unsupported_schema_version`, whose list of refused versions now holds 23 and 25, and `order_2203`'s digests. Each re-ran green.
+    - `bench_board_tier1` waits on the package (§9).
+    - `fab_tier1` is F11.
 - **The null sweep** (§2): main's binary on main's tree (`ddfa64d6`) against the branch's on the branch's (`out/sweep-result.json`). 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. The 27 generated trees each move 8 files by one sha line (216).
 - **Goldens moved by the bump:**
-  - 26 files by their sha256 line alone (`boards/sentinel-01*`, the svd-hal UI boards and topology, the hwdef fixtures);
-  - `solve_cli`'s two digests, each shown equal to main's with the old sha put back (measured, and recorded at the constant);
+  - 26 files by their sha256 line alone (`boards/sentinel-01*`, the svd-hal UI boards and topology, the hwdef fixtures). `boards/sentinel-01` and `boards/sentinel-01-bench` each equal, file for file, what the branch's `generate` writes for their specifications (`diff -r` against the null sweep's trees). The svd-hal and hwdef goldens are regenerated and compared by their own tests;
+  - `solve_cli`'s two digests and `order_2203`'s three text digests, each shown equal to main's with the old sha put back (measured, and recorded at each constant; `order_2203`'s boot image did not move);
   - the cli README's example line.
 - **Fence:** `crates/aethelgard-ir` (rules, data, schema, README, tests); the version literal and the files `renumber.py` touches; the sha-bearing goldens; `spike/1211e/`; this file. Nothing in `aethelgard-eda`, the generator, the twin, chaos, workflows or `ci/` changed.
 - **Reduction pass (diff): −37 lines removed** (the 34-line copy of the sweep script, 2 dead lines in `measure.py`, 1 in `table8.py`; the MCU-pull call became a 2-line comment saying why there is none).

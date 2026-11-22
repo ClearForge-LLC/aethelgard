@@ -32,3 +32,16 @@ The same script over `1211d`'s adversarial specifications (`out/measure-1211d-ad
 - every D1 variant: no `bulk`.
 
 No committed specification is refused by any rule: **no stop.**
+
+## Addendum, 2026-11-22: the final rule
+
+The rows above judge A1 by Table 10, as the WO first wrote it. Two rulings changed the rule:
+- **D-A1** (2026-11-20 19:58Z): Table 13, the operating conditions (p. 105), with a pull to `mcu.supply` exempt.
+- **D-A2:** `TripSenseUnbound`.
+
+The same script, with `--table13`, re-ran:
+- over the committed files at specification 23 (`out/measure-committed-table13.tsv`);
+- over the merged tree at specification 24 (`out/measure-committed-spec24.tsv`, 65 files, 132 I2C pulls);
+- over 1211d's boards (`out/measure-1211d-adv-table13.tsv`).
+
+Every committed pull is on `mcu.supply`, so it is exempt. Nothing committed is refused. The positive control still flags each adversarial board.
