@@ -288,10 +288,11 @@ pub fn analog(
                         && reads.first().is_some_and(|r| i < r)
                 })
             });
-            let (status, code) = match (reads.is_empty(), started, word) {
-                (true, _, _) | (_, false, _) | (_, _, None) => ("unwitnessed", None),
-                (false, true, Some(c)) if *c == a.code => ("witnessed", Some(*c)),
-                (false, true, Some(c)) => ("mismatch", Some(*c)),
+            // `started` holds a read after the conversion started.
+            let (status, code) = match (started, word) {
+                (false, _) | (_, None) => ("unwitnessed", None),
+                (true, Some(c)) if *c == a.code => ("witnessed", Some(*c)),
+                (true, Some(c)) => ("mismatch", Some(*c)),
             };
             AdcWitness {
                 net: a.net.clone(),
