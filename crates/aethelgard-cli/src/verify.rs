@@ -318,6 +318,22 @@ fn lifecycle_unheld(topology: &aethelgard_ir::SolvedTopology) -> Vec<String> {
     unheld
 }
 
+/// Each twin stand-in the board draws, by reference and part, I2C then SPI
+/// in the specification's order (`AET-WO-2308` (1)): a part the table holds
+/// `stand_in`, there to exercise the twin and never for a purchase
+/// (`aethelgard_ir::parts`, `AET-WO-4210` D1). The emitter's BOM gives it no
+/// note and the banner names only its lifecycle, so `verify --fab-out` and
+/// `--against-fab` refuse it. A table that cannot be read refuses too.
+fn stand_ins(topology: &aethelgard_ir::SolvedTopology) -> Result<Vec<(String, String)>, String> {
+    let table = aethelgard_ir::parts::table()
+        .map_err(|e| format!("the parts table, read for twin stand-ins: {e}"))?;
+    Ok(topology
+        .parts_in_order()
+        .filter(|(_, part)| table.get(part).is_some_and(|p| p.stand_in))
+        .map(|(r, p)| (r.to_owned(), p.to_owned()))
+        .collect())
+}
+
 /// `--fab-out` must be an empty directory or absent. One that exists must be
 /// the caller's and writable by no group or other, or another uid could
 /// replace the package after the verdict names it (adversarial A1). Checked
@@ -1748,6 +1764,24 @@ pub fn verify(
     // A harness the plan leaves out is refused by name before any gate runs
     // (`AET-WO-3303` §1.1); the other preconditions are judged on the gates.
     if fab_mode.is_some() {
+        // A twin stand-in drawn on the board is refused by name first
+        // (`AET-WO-2308` (1), shape (b)): no package file can label it.
+        let drawn = match stand_ins(&topology) {
+            Ok(d) => d,
+            Err(m) => return refuse("ToolError", Some("aethelgard"), m, EXIT_INTERNAL),
+        };
+        if let Some((reference, _)) = drawn.first() {
+            let named: Vec<String> = drawn.iter().map(|(r, p)| format!("{r} ({p})")).collect();
+            return refuse(
+                "StandInInFabPackage",
+                Some(reference),
+                format!(
+                    "no package: {} is a twin stand-in (`stand_in` in the parts table), there to exercise the twin and never for a purchase, and the emitter's BOM carries no label for it: draw the part the board is for, or run `verify` without a fab flag",
+                    named.join(", ")
+                ),
+                EXIT_INVALID_SPEC,
+            );
+        }
         let left_out = unplanned(&board, harnesses.len());
         if let Some(m) = left_out {
             return refuse(

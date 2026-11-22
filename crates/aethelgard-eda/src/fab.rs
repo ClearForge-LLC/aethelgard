@@ -683,10 +683,12 @@ fn stackup(st: &Stack, drills: &[Drill]) -> String {
     out
 }
 
-/// The header of JLCPCB's BOM, as its sample file `Sample-BOM_JLCSMT.xlsx`
-/// spells it, the part number's full-width parentheses included
-/// (`AET-WO-1604` §1.3, ruled on PR #199: the sample files are the format).
-pub const JLCPCB_BOM_HEADER: &str = "Comment,Designator,Footprint,JLCPCB Part #（optional）";
+/// The header of JLCPCB's BOM: its sample file `Sample-BOM_JLCSMT.xlsx`'s
+/// four columns as it spells them, the part number's full-width parentheses
+/// included (`AET-WO-1604` §1.3, ruled on PR #199: the sample files are the
+/// format), then `Note`, the emitter's note on the part (`AET-WO-2308` (1)):
+/// a stand-in is labelled wherever a person reads the package.
+pub const JLCPCB_BOM_HEADER: &str = "Comment,Designator,Footprint,JLCPCB Part #（optional）,Note";
 
 /// The header of JLCPCB's placement file (CPL), as `Sample-CPL_JLCSMT.xlsx`
 /// spells it.
@@ -762,9 +764,9 @@ pub fn placement(csv: &[u8]) -> Result<Vec<Placed<'_>>, String> {
 }
 
 /// The emitter's BOM (`crate::bom`), read back strictly: its header, then
-/// CRLF records of five RFC 4180 fields. Returns reference, value and
-/// footprint of each row.
-fn bom_rows(csv: &[u8]) -> Result<Vec<[String; 3]>, String> {
+/// CRLF records of five RFC 4180 fields. Returns reference, value,
+/// footprint and note of each row.
+fn bom_rows(csv: &[u8]) -> Result<Vec<[String; 4]>, String> {
     let text = std::str::from_utf8(csv).map_err(|_| "the BOM is not UTF-8".to_owned())?;
     let body = text
         .strip_prefix(crate::bom::HEADER)
@@ -804,13 +806,13 @@ fn bom_rows(csv: &[u8]) -> Result<Vec<[String; 3]>, String> {
                     return Err("the BOM has a bare CR".to_owned());
                 }
                 fields.push(std::mem::take(&mut field));
-                let [reference, value, footprint, _symbol, _note]: [String; 5] =
+                let [reference, value, footprint, _symbol, note]: [String; 5] =
                     std::mem::take(&mut fields)
                         .try_into()
                         .map_err(|f: Vec<String>| {
                             format!("a BOM row has {} fields, not 5", f.len())
                         })?;
-                rows.push([reference, value, footprint]);
+                rows.push([reference, value, footprint, note]);
                 start = true;
             }
             '\n' => return Err("the BOM has a bare LF".to_owned()),
@@ -824,6 +826,20 @@ fn bom_rows(csv: &[u8]) -> Result<Vec<[String; 3]>, String> {
         return Err("the BOM's last row has no CRLF".to_owned());
     }
     Ok(rows)
+}
+
+/// Every part of the emitter's BOM that carries a note (a symbol standing
+/// in for the ordered part, a value its datasheet does not state), in the
+/// references' natural order: reference, value and note (`AET-WO-2308`
+/// (1)). The package's notes list each one.
+pub fn noted(bom: &[u8]) -> Result<Vec<[String; 3]>, String> {
+    let mut out: Vec<[String; 3]> = bom_rows(bom)?
+        .into_iter()
+        .filter(|[.., note]| !note.is_empty())
+        .map(|[reference, value, _, note]| [reference, value, note])
+        .collect();
+    out.sort_by(|a, b| natural(&a[0]).cmp(&natural(&b[0])));
+    Ok(out)
 }
 
 /// A reference's order among others: `C2` before `C10`. A reference that is
@@ -892,11 +908,13 @@ fn coordinate(kicad: &str) -> Option<&str> {
 /// from the emitter's BOM and KiCad's placement file, adding nothing either
 /// lacks (`INV-06`):
 ///
-/// - **BOM**, one row per kind of part, grouped by value and footprint, in
-///   the order of each kind's first reference: `Comment` the value,
+/// - **BOM**, one row per kind of part, grouped by value, footprint and
+///   note, in the order of each kind's first reference: `Comment` the value,
 ///   `Designator` every reference of the kind, quoted, `Footprint` the KiCad
-///   footprint's name without its library, and the part number **empty for
-///   every part**, since no input names one;
+///   footprint's name without its library, the part number **empty for
+///   every part**, since no input names one, and `Note` the emitter's note,
+///   so a part with one never shares a row with a part without
+///   (`AET-WO-2308` (1));
 /// - **CPL**, one row per placed part in KiCad's order: `Mid X` and `Mid Y`
 ///   KiCad's coordinates with `mm`, `Layer` `T`, and `Rotation` KiCad's,
 ///   normalised to 0–359, in KiCad's frame with no per-footprint offset.
@@ -931,13 +949,13 @@ pub fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(String, String), JlcpcbRefusal>
         ));
     }
     let rows = bom_rows(bom).map_err(Malformed)?;
-    let mut kinds: Vec<((String, String), Vec<String>)> = Vec::new();
-    for [reference, value, footprint] in rows {
+    let mut kinds: Vec<((String, String, String), Vec<String>)> = Vec::new();
+    for [reference, value, footprint, note] in rows {
         let name = footprint
             .split_once(':')
             .map_or(footprint.as_str(), |(_, n)| n)
             .to_owned();
-        let key = (value, name);
+        let key = (value, name, note);
         match kinds.iter_mut().find(|(k, _)| *k == key) {
             Some((_, refs)) => refs.push(reference),
             None => kinds.push((key, vec![reference])),
@@ -960,12 +978,13 @@ pub fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(String, String), JlcpcbRefusal>
         )));
     }
     let mut out = format!("{JLCPCB_BOM_HEADER}\r\n");
-    for ((value, footprint), refs) in &kinds {
+    for ((value, footprint, note), refs) in &kinds {
         out.push_str(&format!(
-            "{},{},{},\r\n",
+            "{},{},{},,{}\r\n",
             csv_field(value, false),
             csv_field(&refs.join(","), true),
             csv_field(footprint, false),
+            csv_field(note, false),
         ));
     }
     Ok((out, cpl))
@@ -990,9 +1009,14 @@ out, as read on 2026-11-17 from:
 They are made from `{project}.bom.csv` and `{project}-pos.csv` and add nothing
 to them:
 
-- The BOM has one row per kind of part, grouped by value and footprint.
-  `Comment` is the value, `Designator` every reference of the kind, and
+- The BOM has one row per kind of part, grouped by value, footprint and
+  note. `Comment` is the value, `Designator` every reference of the kind, and
   `Footprint` the KiCad footprint's name without its library.
+- **`Note` is `{project}.bom.csv`'s note on the part, and a fifth column:
+  JLCPCB's sample has four.** A part whose symbol stands in for the ordered
+  part, or whose value its datasheet does not state, carries one, and never
+  shares a row with a part that does not. Every such part is listed in the
+  section on parts with a note, below.
 - **`JLCPCB Part #（optional）` is empty for every part.** No input of this
   engine names a fabricator's part number, so none is written. Choose each
   part in JLCPCB's library before ordering. A passive's value alone (`100n`)
@@ -1059,7 +1083,7 @@ mod tests {
     }
 
     #[test]
-    fn the_bom_groups_by_value_and_footprint_in_natural_order_and_quotes_designators() {
+    fn the_bom_groups_by_value_footprint_and_note_in_natural_order_and_quotes_designators() {
         let bom = format!(
             "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n\"A,\"\"B\",\"1k, 1%\",Resistor_SMD:R_0402_1005Metric,Device:R,note\r\nC3,1u,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n"
         );
@@ -1076,23 +1100,52 @@ mod tests {
             Err(JlcpcbRefusal::Malformed(_))
         ));
         let pos = format!(
-            "{POS_HEAD}{}{}{}",
+            "{POS_HEAD}{}{}{}{}",
             pos_row("C10", "0", "top"),
             pos_row("C2", "0", "top"),
-            pos_row("C3", "0", "top")
+            pos_row("C3", "0", "top"),
+            pos_row("C4", "0", "top")
         );
+        // C4 is C2's and C10's kind but for its note (`AET-WO-2308` (1)):
+        // it keeps a row of its own, its note quoted as RFC 4180 quotes it.
         let bom = format!(
-            "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC3,\"1u, X7R\",Capacitor_SMD:C_0402_1005Metric,Device:C,\r\n"
+            "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC3,\"1u, X7R\",Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC4,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,\"stand-in, not a design: \"\"A\"\"\"\r\n"
         );
         let (b, c) = jlcpcb(bom.as_bytes(), pos.as_bytes()).unwrap();
         assert_eq!(
             b,
-            "Comment,Designator,Footprint,JLCPCB Part #（optional）\r\n100n,\"C2,C10\",C_0402_1005Metric,\r\n\"1u, X7R\",\"C3\",C_0402_1005Metric,\r\n"
+            "Comment,Designator,Footprint,JLCPCB Part #（optional）,Note\r\n100n,\"C2,C10\",C_0402_1005Metric,,\r\n\"1u, X7R\",\"C3\",C_0402_1005Metric,,\r\n100n,\"C4\",C_0402_1005Metric,,\"stand-in, not a design: \"\"A\"\"\"\r\n"
         );
         assert_eq!(
             c,
-            "Designator,Mid X,Mid Y,Layer,Rotation\r\n\"C10\",1.500000mm,-2.250000mm,T,0\r\n\"C2\",1.500000mm,-2.250000mm,T,0\r\n\"C3\",1.500000mm,-2.250000mm,T,0\r\n"
+            "Designator,Mid X,Mid Y,Layer,Rotation\r\n\"C10\",1.500000mm,-2.250000mm,T,0\r\n\"C2\",1.500000mm,-2.250000mm,T,0\r\n\"C3\",1.500000mm,-2.250000mm,T,0\r\n\"C4\",1.500000mm,-2.250000mm,T,0\r\n"
         );
+        assert_eq!(
+            noted(bom.as_bytes()),
+            Ok(vec![[
+                "C4".to_owned(),
+                "100n".to_owned(),
+                "stand-in, not a design: \"A\"".to_owned()
+            ]])
+        );
+    }
+
+    /// `AET-WO-2308` (1): every noted part, in the references' natural order
+    /// (`C2` before `C10`), and none without a note; a BOM the emitter did
+    /// not write is refused as `jlcpcb` refuses it.
+    #[test]
+    fn noted_lists_every_part_with_a_note_in_natural_order() {
+        let bom = format!(
+            "{BOM_HEAD}C10,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,b\r\nC3,1u,Capacitor_SMD:C_0402_1005Metric,Device:C,\r\nC2,100n,Capacitor_SMD:C_0402_1005Metric,Device:C,a\r\n"
+        );
+        let refs: Vec<String> = noted(bom.as_bytes())
+            .unwrap()
+            .into_iter()
+            .map(|[r, _, n]| format!("{r}:{n}"))
+            .collect();
+        assert_eq!(refs, ["C2:a", "C10:b"]);
+        assert_eq!(noted(format!("{BOM_HEAD}").as_bytes()), Ok(Vec::new()));
+        assert!(noted(b"Reference,Value\r\n").is_err());
     }
 
     #[test]
@@ -1149,6 +1202,8 @@ mod tests {
             "https://jlcpcb.com/help/article/pick-place-file-for-pcb-assembly",
             "https://jlcpcb.com/help/article/how-to-generate-the-bom-and-centroid-file-from-kicad",
             "is empty for every part",
+            "`Note` is `p.bom.csv`'s note on the part, and a fifth column",
+            "the\n  section on parts with a note, below",
             "in KiCad's frame",
             "by eye",
             "bottom side",

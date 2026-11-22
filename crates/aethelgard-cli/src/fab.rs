@@ -280,6 +280,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
             campaign: b.campaign,
         },
     );
+    let notes = notes + &noted(b.project, b.bom)?;
     files.insert(NOTES.to_owned(), notes.into_bytes());
     Ok(Exported {
         files,
@@ -360,6 +361,35 @@ fn notes(
     text.push_str(&brown_out_step(spec.mcu.bor_level));
     text.push_str(&aethelgard_eda::fab::jlcpcb_notes(project));
     text
+}
+
+/// The notes' last section (`AET-WO-2308` (1)): every part of the emitter's
+/// BOM that carries a note, by reference, so no stand-in reaches a person
+/// reading the package unlabelled. The BOM and the JLCPCB BOM carry the same
+/// note on the part's line; KiCad's placement file and the JLCPCB one name
+/// the part by reference only. None for a board with no noted part, so its
+/// notes keep their bytes.
+fn noted(project: &str, bom: &[u8]) -> Result<String, Stop> {
+    let parts = aethelgard_eda::fab::noted(bom)
+        .map_err(|m| Stop::tool_error("aethelgard", format!("the BOM: {m}")))?;
+    if parts.is_empty() {
+        return Ok(String::new());
+    }
+    let mut text = format!(
+        "
+## Parts with a note
+
+Each part below is not what its value alone says: a symbol stands in for the
+ordered part, or no datasheet states its value. Read the note before ordering.
+`{project}.bom.csv` and `{project}-jlcpcb-bom.csv` carry it on the part's line;
+`{project}-pos.csv` and `{project}-jlcpcb-cpl.csv` name the part by reference only.
+
+"
+    );
+    for [reference, value, note] in parts {
+        text.push_str(&format!("- {reference} ({value}): {note}\n"));
+    }
+    Ok(text)
 }
 
 /// The campaign's conditions (`AET-WO-2304b` §1.7, §1.11), each as its
@@ -727,6 +757,40 @@ pub fn manifest(n: &Named<'_>, files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+
+    /// `AET-WO-2308` (1): every part the emitter's BOM notes is listed by
+    /// reference with its note as the BOM states it (D1's declared bulk,
+    /// with RFC 4180 quoting and commas, and W25Q's symbol stand-in); a part
+    /// with no note is not listed, and a BOM with none adds no byte.
+    #[test]
+    fn the_notes_list_every_part_the_bom_notes_and_only_those() {
+        let head = "Reference,Value,Footprint,Symbol,Note\r\n";
+        let d1 = "CVM2 declared, TI SLVSDS7B DRV8876 states no value: D1 fixture stand-in, not a design: SLVSDS7B 9.1 p. 31 leaves CVM2 to system testing";
+        let w25q = "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)";
+        let r1 = "R1,2k2,Resistor_SMD:R_0402_1005Metric,Device:R,\r\n";
+        let bom = format!(
+            "{head}C2,10u 50V GCM32EC71H106KA03,Capacitor_SMD:C_1210_3225Metric,Device:C,\"{d1}\"\r\n{r1}U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"{w25q}\"\r\n"
+        );
+        let text = noted("p", bom.as_bytes()).unwrap();
+        assert!(text.starts_with("\n## Parts with a note\n"), "{text}");
+        assert!(
+            text.ends_with(&format!(
+                "\n\n- C2 (10u 50V GCM32EC71H106KA03): {d1}\n- U4 (W25Q64JVSSIQ): {w25q}\n"
+            )),
+            "{text}"
+        );
+        for file in [
+            "`p.bom.csv`",
+            "`p-jlcpcb-bom.csv`",
+            "`p-pos.csv`",
+            "`p-jlcpcb-cpl.csv`",
+        ] {
+            assert!(text.contains(file), "{file}");
+        }
+        assert!(!text.contains("R1"), "{text}");
+        assert_eq!(noted("p", format!("{head}{r1}").as_bytes()).unwrap(), "");
+        assert!(noted("p", b"Reference,Value\r\n").is_err());
+    }
 
     /// `AET-WO-2304b` §2: FAB-NOTES states every campaign condition
     /// verbatim, in a section of its own; a campaign with none adds no byte.
