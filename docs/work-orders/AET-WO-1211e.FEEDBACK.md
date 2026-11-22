@@ -63,7 +63,7 @@ Predictions were committed before any run (`76e09a95`, `spike/1211e/PREDICTIONS.
 - **Kind names** (§1.3):
   - A1: `PullAboveMcuTolerance`, `McuPinStructureUnheld`;
   - A2: `TripReferenceGrounded`, `TripSenseUnbound`, `TripBelowFullScale`.
-- **Specification 24** (§1.4), by `spike/4240a/kit/renumber.py . 22 23 14 14`. The solved topology is unchanged at 14.
+- **Specification 24** (§1.4), by `spike/4240a/kit/renumber.py . 23 24 15 15` after 4240b took 23 (first to merge); a first renumber to 23 was discarded unpushed when 4240b merged. Later merges brought solved 16 (1211b) and a specification at 23 (4240d), which the kit moved to 24 as well. This work order moves no solved word.
 
 ## 3. Rulings and corrections
 
