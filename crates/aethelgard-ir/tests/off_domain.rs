@@ -169,6 +169,12 @@ fn a_pin_device_pull_to_a_leading_rail_is_judged() {
     let v = at("VDD_3V3B", 3300);
     assert_eq!(mv(&of(&v, Class::PinDevicePull)[0]), 3465);
     spec(&v).validate().unwrap();
+    // At the limit is admitted (Table 11 note 3, D4): 3960 mV + 1 % is
+    // exactly 4000 mV.
+    let mut v = at("VDD_4V0", 3960);
+    v["voltage_domains"].as_array_mut().unwrap().last_mut().unwrap()["tolerance_permille"] = json!(10);
+    assert_eq!(mv(&of(&v, Class::PinDevicePull)[0]), 4000);
+    spec(&v).validate().unwrap();
 }
 
 /// The battery divider: Sentinel-02's 26.1 V through R50/R51 at their
@@ -403,6 +409,8 @@ fn the_limits_are_table_10_s_at_vdd_zero() {
     assert_eq!(io.absolute_maximum(Some("PA1"), 3300).0, 6000);
     assert_eq!(io.absolute_maximum(Some("PA4"), 3300).0, 4000);
     assert_eq!(io.absolute_maximum(Some("BOOT0"), 3300).0, 9000);
+    // An unplaced signal takes the least row at any supply: TT's 4.0 V.
+    assert_eq!(io.absolute_maximum(None, 3300).0, 4000);
 }
 
 // ------------------------------------------------------------ the data

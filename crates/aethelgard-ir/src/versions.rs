@@ -264,6 +264,7 @@ pub const CHANGES: &[VersionChange] = &[
             "TripBelowFullScale",
         ],
     ),
+    row(25, "AET-WO-1216b", &[], &[], &[], &["OffDomainAboveLimit"]),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

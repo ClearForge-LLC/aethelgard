@@ -126,7 +126,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// specification moved by its version line alone.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 24;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 25;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
