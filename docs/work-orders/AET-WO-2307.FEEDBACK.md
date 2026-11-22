@@ -52,7 +52,7 @@ Predictions committed before any run: `spike/2307/PREDICTIONS.md`, `939593d3`. H
 
 - **The measurement:** §1. Sentinel-03 needs **43** (register, class) entries.
 - **Every other refusal's bytes are unchanged** [measured, `spike/2307/differential.sh` → `spike/2307/out/differential.txt`]:
-  - Main's CLI and this branch's ran on 16 refusing inputs, against each main merged in: `adb8f61a`, `ddfa64d6` and, last, `c1e444dd` (built by `git archive`): `verify --fab-out` on `UnsupportedSchemaVersion`, `InvalidJson`, `SchemaViolation`, `UnwitnessedAcknowledgementStale`, `InvalidSource`, `UnwitnessedAcknowledgedTwice`, `ScenarioBaseMismatch`, `BaseOutsideRoot` and `CampaignCoverageShort`; `validate` on five of those; two usage errors.
+  - Main's CLI and this branch's ran on 16 refusing inputs, against each main merged in: `adb8f61a`, `ddfa64d6`, `c1e444dd` and, last, `171f2a60` (built by `git archive`): `verify --fab-out` on `UnsupportedSchemaVersion`, `InvalidJson`, `SchemaViolation`, `UnwitnessedAcknowledgementStale`, `InvalidSource`, `UnwitnessedAcknowledgedTwice`, `ScenarioBaseMismatch`, `BaseOutsideRoot` and `CampaignCoverageShort`; `validate` on five of those; two usage errors.
   - **All 16 are byte-identical, stdout and exit.**
   - The control, `UnwitnessedFieldNotAcknowledged`, differs, as it must.
   - Every refusal test in the workspace ran in the gate run (§6).
@@ -89,15 +89,15 @@ The refusal on Sentinel-03 is 11,496 bytes (12,446 before F1 emptied the six kep
 | copy `judge` into a new entry's `reason` | **killed** | 6 tests, among them `sentinel_03_s_entries_never_carry_the_ledger_s_judge_text` and `battery_sag_tier1::sentinel_03_…` |
 | keep a held entry's reason (F1's guard, added with the ruling) | **killed** | 4 tests: `a_partial_entry_…_emptied`, `sentinel_03_s_entries_…`, `fab_tier1::an_unacknowledged_…`, `battery_sag_tier1::sentinel_03_…` |
 
-Run before the reduction pass, after it, and (four mutants) after F1 on the head with `main` `c1e444dd` merged.
+Run before the reduction pass, after it, after F1 (four mutants, `main` `c1e444dd` merged), and after `main` `171f2a60` (1211b) was merged.
 
 ## 6. Gates
 
-On `640bcc37`: F1 as ruled, with `main` `c1e444dd` (1211d, 1214) merged in [measured, log `~/.cache/aet-2307/gates-merged3.log`]. The earlier heads were `c9454881` (`ddfa64d6`, 4240b's specification 23; 2594 / 0) and `94394f68` (`349c75f5`; 2564 / 0). Each merge was clean, and Sentinel-03's counts never moved (280 / 35 / 43 / 6 / 313). After each, the measurement, the differential (baseline rebuilt from that main by `git archive`), the adversarial pass and the mutants were re-run. `main` `e3aea224` (docs only: the roadmap's record of these rulings, and `AET-WO-1319`) was merged after the gates and changes no code.
+On `0166549b`: F1 as ruled, with `main` `171f2a60` (1211b) merged in [measured, log `~/.cache/aet-2307/gates-merged4.log`]. `1211b` and this work order both appended tests to the end of `ledger_tier1.rs`, which GitHub marked as a conflict. It was resolved by keeping both: main's file with this work order's block after it. A check confirmed this side was exactly the merge base plus that block. Before that, on `640bcc37` (`main` `c1e444dd`, 1211d and 1214), the gates passed 2616 / 0. The earlier heads were `c9454881` (`ddfa64d6`, 4240b's specification 23; 2594 / 0) and `94394f68` (`349c75f5`; 2564 / 0). Each merge was clean, and Sentinel-03's counts never moved (280 / 35 / 43 / 6 / 313). After each, the measurement, the differential (baseline rebuilt from that main by `git archive`), the adversarial pass and the mutants were re-run. `main` `e3aea224` (docs only: the roadmap's record of these rulings, and `AET-WO-1319`) came in between.
 
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- `cargo test --workspace`: **2616 passed, 0 failed, 0 ignored**, 155 test binaries. Every refusal test of the workspace is among them.
+- `cargo test --workspace`: **2628 passed, 0 failed, 0 ignored**, 156 test binaries. Every refusal test of the workspace is among them.
 - The tests must run with the in-repo `target/`. With `CARGO_TARGET_DIR` outside the repository, `fab_tier1::a_rail_or_bus_no_fault_kind_reaches_is_named` fails as `BaseOutsideRoot`, because its scratch sits under the target directory. That is environmental, and CI uses the in-repo target.
 
 - **Reduction pass (diff):** −12 lines net in tests · 1 duplicate removed (my `every_pair_unwritten` grouping re-derived what `every_row_acknowledged` in the same file already does; the test now sorts and empties that helper's output) · 0 dead paths · 0 protected kept · 1 finding (F4). Done inline: the production diff is about 50 lines. Mutants re-run after it, all killed.
@@ -122,4 +122,8 @@ On `640bcc37`: F1 as ruled, with `main` `c1e444dd` (1211d, 1214) merged in [meas
 ## 8. CI
 
 - **First READY, before the rulings:** PR #305, head `c0a9fa23`, CI run `44976255887` green; the earlier head `b8940d50` had run `44974136823` green. Tier 2 was 201 / 201 on both.
-- **After F1 and F2 were ruled:** this commit is the READY commit. It follows the gated `640bcc37` with docs only (`main` `e3aea224` and this FEEDBACK). Its CI run is the one READY names, on the bus. `TIER2_MIN` is unchanged by this work order.
+- **After F1 and F2 were ruled:**
+  - Head `42b29ff4` (main `e3aea224`): ci `44980164301` green, tier 2 201 / 201, and engine-image `44980164345` green.
+  - Its ardupilot-image run `44980164309` failed the `image` job on the 20 min timeout. The `build` step took 1035 s against 56–66 s before, and no image input had changed. The architect re-ran it once (attempt 2): green, `build` 57 s.
+  - All 33 checks then passed, but #305 was CONFLICTING with `main` `171f2a60` (§6).
+- **The READY commit is this one,** after the gated `0166549b` with docs only. Its CI run is the one READY names, on the bus. `TIER2_MIN` is unchanged by this work order.
