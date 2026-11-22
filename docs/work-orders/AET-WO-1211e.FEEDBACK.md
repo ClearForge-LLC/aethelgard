@@ -24,7 +24,7 @@
 
 ## 1. The measurement (§1.1)
 
-Predictions were committed before any run (`76e09a95`, `spike/1211e/PREDICTIONS.md`). Results are in `spike/1211e/RESULTS.md` (`f6b63eaf`). **No committed specification is refused by any rule, so there was no stop.** The final rule was re-measured on the merged tree: 65 files, 132 I2C pulls, 1 crossing CS pull and 4 pin-device pulls, every one of them on `mcu.supply`. Nothing committed is refused (`out/measure-committed-spec24.tsv`). The only row refused is `spike/1211/fixtures/d1-drv8876.json`, the 1211 spike's frozen record (`schema_version` `"22-or-23"`), which no test reads.
+Predictions were committed before any run (`76e09a95`, `spike/1211e/PREDICTIONS.md`). Results are in `spike/1211e/RESULTS.md` (`f6b63eaf`). **No committed specification is refused by any rule, so there was no stop.** The final rule was re-measured on the merged tree: 65 files, 132 I2C pulls, 1 crossing CS pull and 4 pin-device pulls, every one of them on `mcu.supply`. Nothing committed is refused (`out/measure-committed-spec24.tsv`). The only row refused is `spike/1211/fixtures/d1-drv8876.json`, the 1211 spike's frozen record (`schema_version` `"22-or-23"`), which no test reads. After main `c1e444dd`, `spike/1211d/adv/` brings 1211d's three adversarial boards (`nfault_to_vmotor`, `d1_vref_gnd`, `d1_vref_low`; `out/measure-committed-c1e444dd.tsv`). They are refused, as the boards these rules were written to refuse. They are spike evidence that no test or CI job reads.
 
 - **A1.** 128 I2C line pulls, 1 crossing CS pull and 4 pin-device pulls. The largest is 3465 mV, against at least 4000 mV for any structure. The 8 hand I2C pins are all FT_f, FT_fa or FT_fh.
 - **A2.** The only reference-sets-trip part is D1's DRV8876, with VREF on `VDD_3V3` (3135 mV at least). At 1.9 A with AERR's 5 %, IPROPI sources 1995 µA into R2, which is at most 1555 Ω (1 % tolerance, 100 ppm/K over 65 K, 2 % drift). That is 3.102 V, inside VREF with 33 mV to spare.
@@ -152,11 +152,11 @@ An Opus reviewer worked in its own worktree at `e4d0f877`, given the code and §
 
 - **Gates:**
   - `cargo fmt --all -- --check` passes.
-  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at the FEEDBACK commit.
-  - `cargo test --workspace` (Furnace, target outside the repository, 2026-11-22): 153 binaries, 2606 passed and 4 failed.
-    - Two of the failures were goldens fixed after that run: `validate::refuses_unsupported_schema_version`, whose list of refused versions now holds 23 and 25, and `order_2203`'s digests. Each re-ran green.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passes, at the merge of `c1e444dd`.
+  - `cargo test --workspace` (Furnace, target outside the repository, at the merge of `c1e444dd`, 2026-11-22): 155 binaries, 2630 passed and 2 failed. Both failures are expected.
     - `bench_board_tier1` waits on the package (§9).
     - `fab_tier1` is F11.
+    - Before that merge, two goldens were fixed and re-run green: `validate::refuses_unsupported_schema_version` (its list now holds 23 and 25) and `order_2203`'s digests.
 - **The null sweep** (§2): main's binary on main's tree (`ddfa64d6`) against the branch's on the branch's (`out/sweep-result.json`). 33 files; 0 exit codes moved; `validate`, `solve` and `emit` output equal once each sha256 and run directory is masked; **every emitted file byte-identical**. The 27 generated trees each move 8 files by one sha line (216).
 - **Goldens moved by the bump:**
   - 26 files by their sha256 line alone (`boards/sentinel-01*`, the svd-hal UI boards and topology, the hwdef fixtures). `boards/sentinel-01` and `boards/sentinel-01-bench` each equal, file for file, what the branch's `generate` writes for their specifications (`diff -r` against the null sweep's trees). The svd-hal and hwdef goldens are regenerated and compared by their own tests;
