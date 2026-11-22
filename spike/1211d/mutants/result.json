@@ -1,0 +1,110 @@
+[
+ {
+  "mutant": "W1 a strap left floating (a tie not drawn)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused",
+   "a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail",
+   "each_bridge_output_reaches_its_declared_connector",
+   "d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration",
+   "d1_is_refused_for_cvm2_alone",
+   "a_strap_missing_from_the_declaration_is_refused_never_floated"
+  ]
+ },
+ {
+  "mutant": "W2 nFAULT's pull-up missing (declared resistors not drawn)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail"
+  ]
+ },
+ {
+  "mutant": "W3 a bridge output to no connector (the check removed)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "a_bridge_output_on_no_connector_is_refused"
+  ]
+ },
+ {
+  "mutant": "G1 CVM2 skipped instead of refused",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "d1_is_refused_for_cvm2_alone"
+  ]
+ },
+ {
+  "mutant": "G2 an undeclared current output left open",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused"
+  ]
+ },
+ {
+  "mutant": "G3 a pin device with no arm drawn anyway",
+  "target": "aethelgard-cli --test pin_device_refusals",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "the_schematic_emitter_refuses_a_pin_device_by_reference_and_part"
+  ]
+ },
+ {
+  "mutant": "G4 own_nets without the pin devices' nets",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "the_pin_devices_own_nets_are_listed",
+   "a_strap_missing_from_the_declaration_is_refused_never_floated",
+   "d1_is_refused_for_cvm2_alone",
+   "an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused",
+   "each_bridge_output_reaches_its_declared_connector",
+   "a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail",
+   "d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration"
+  ]
+ },
+ {
+  "mutant": "G5 VINT on a label, not a rail",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "d2_is_drawn_pin_by_pin_from_its_row_and_its_declaration"
+  ]
+ },
+ {
+  "mutant": "G6 the pin device's ADC input not on the MCU",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": false,
+  "compiled": true,
+  "failing": []
+ },
+ {
+  "mutant": "G7 a row pin left floating (the completeness refusal removed)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "a_strap_missing_from_the_declaration_is_refused_never_floated"
+  ]
+ },
+ {
+  "mutant": "G8 a bridge output on a rail drawn (adversarial #3's guard removed)",
+  "target": "aethelgard-cli --test pin_devices_drawn_tier1",
+  "killed": true,
+  "compiled": true,
+  "failing": [
+   "a_bridge_output_on_a_rail_is_refused"
+  ]
+ }
+]
