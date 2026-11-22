@@ -675,7 +675,7 @@ fn the_stand_in_undeclared_is_refused_by_validate_before_any_board() {
     assert_eq!(r["error"]["path"], "i2c_devices[1].part");
     assert_eq!(
         r["error"]["message"],
-        "`U6` is a `ICP10111`: row present, no emitter arm; the emitter draws: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P"
+        "`U6` is a `ICP10111`: row present, no emitter arm; the emitter draws: BME280, TMP117, BMP581, W25Q64JVxIQ, ICM20948, ICM42688P, DRV8876PWPR, DRV8833PWPR"
     );
     let r = json_line(&emit(&path, &d.0.join("o")), 2);
     assert_eq!(r["error"]["kind"], "UnknownPart", "{r}");

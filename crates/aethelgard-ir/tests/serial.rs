@@ -1061,10 +1061,12 @@ fn a_port_s_tx_and_rx_never_share_a_pin() {
 #[test]
 fn a_baud_no_brr_reaches_is_refused_by_name() {
     for baud in [900, 4_200_000] {
-        // A `mavlink` port: on the console both bauds are refused first, at
-        // step 13c (`ConsoleBaudNotRoundTrip`, `AET-WO-1213`).
+        // An `rc_sbus` port: 900 is refused first at step 13c on the console
+        // (`ConsoleBaudNotRoundTrip`, `AET-WO-1213`) and on a `mavlink` or
+        // `gps` port (`SerialBaudReadAsKbaud`, `AET-WO-1214`). Step 13c leaves
+        // an RC port's baud to AP_RCProtocol, and step 21 judges every role.
         let mut p = port("C", None, None, None);
-        p["role"] = json!("mavlink");
+        p["role"] = json!("rc_sbus");
         p["framing"]["baud"] = json!(baud);
         assert_eq!(
             solve_refused(spec_json(vec![p])),
@@ -1739,9 +1741,12 @@ fn a_console_baud_serial0_cannot_hold_is_refused_by_name() {
             (e.kind(), e.id()),
             ("ConsoleBaudNotRoundTrip", Some("CONSOLE"))
         );
-        // `1_BAUD` to `9_BAUD` hold their define as it stands.
-        assert_eq!(at(baud, "mavlink"), Ok(()), "{baud} on mavlink");
-        assert_eq!(at(baud, "gps"), Ok(()), "{baud} on gps");
+        // `1_BAUD` to `9_BAUD` hold their define as it stands: above 2000,
+        // it maps to itself (999 is `AET-WO-1214`'s, below).
+        if baud > 2000 {
+            assert_eq!(at(baud, "mavlink"), Ok(()), "{baud} on mavlink");
+            assert_eq!(at(baud, "gps"), Ok(()), "{baud} on gps");
+        }
     }
     // The rule comes after the framing's shape: a zero baud is still that.
     assert_eq!(at(0, "console").unwrap_err().kind(), "SerialFramingShape");
@@ -1765,4 +1770,101 @@ fn the_topology_refuses_a_console_baud_serial0_cannot_hold() {
     at(&mut t, 76_800);
     let e = t.validate().expect_err("refused");
     assert_eq!((e.kind(), e.id()), ("SerialPortMismatch", Some("CONSOLE")));
+}
+
+/// `AET-WO-1214`: a `mavlink` or `gps` port is SERIAL1 to 9, whose
+/// `SERIALn_BAUD` holds the define as it stands (`AP_SerialManager.cpp:199`)
+/// and is opened at `map_baudrate` of it (`:473`, `:490`). A baud of 2000 or
+/// less is a listed code or kbaud there, and is refused by name with the rate
+/// ArduPilot would open; above 2000 the value is the baud. RC input sets its
+/// own rate and the console has its own rule, so neither is held to this one.
+#[test]
+fn a_serial_baud_ardupilot_reads_as_kbaud_is_refused_by_name() {
+    let at = |baud: u32, role: &str| {
+        let mut p = port("TELEM", None, None, None);
+        p["framing"]["baud"] = json!(baud);
+        p["role"] = json!(role);
+        spec(vec![p]).validate()
+    };
+    for role in ["mavlink", "gps"] {
+        for (baud, mapped) in [
+            (2000, 2_000_000),
+            (1200, 1_200_000),
+            (1, 1200),
+            (999, 999_000),
+        ] {
+            let e = at(baud, role).expect_err("refused");
+            assert_eq!(
+                e,
+                IrValidationError::SerialBaudReadAsKbaud {
+                    id: "TELEM".into(),
+                    role: if role == "gps" { "gps" } else { "mavlink" },
+                    baud,
+                    mapped
+                },
+                "{baud} on {role}"
+            );
+            assert_eq!((e.kind(), e.id()), ("SerialBaudReadAsKbaud", Some("TELEM")));
+        }
+        for baud in [2001, 9600, 57_600, 115_200] {
+            assert_eq!(at(baud, role), Ok(()), "{baud} on {role}");
+        }
+    }
+    // The generator's guard, `aethelgard-hwdef`'s `SerialBaud`, is `b <= 2000`
+    // on every non-console port; the IR's rule is `map_baudrate(b) != b`. Over
+    // the boundary they agree, with no shared code (`RUL-20`).
+    for baud in 1..=4000 {
+        let kind = at(baud, "mavlink").err().map(|e| e.kind());
+        assert_eq!(
+            kind == Some("SerialBaudReadAsKbaud"),
+            baud <= 2000,
+            "{baud}"
+        );
+    }
+    // Not the rule's: the console keeps its own (1200 holds as `1` and maps
+    // back; 2000 holds as `2`, 2400), RC input is AP_RCProtocol's (13c's
+    // `rc_crsf` floor refuses first; `rc_sbus` passes step 13c).
+    assert_eq!(at(1200, "console"), Ok(()));
+    assert_eq!(
+        at(2000, "console").unwrap_err().kind(),
+        "ConsoleBaudNotRoundTrip"
+    );
+    assert_eq!(
+        at(1200, "rc_crsf").unwrap_err().kind(),
+        "SerialFramingContradictsRole"
+    );
+    assert_eq!(at(1200, "rc_sbus"), Ok(()));
+    // A baud `int32_t` cannot hold is no `SERIALn_BAUD`; step 21 refuses it.
+    for baud in [i32::MAX.unsigned_abs(), i32::MAX.unsigned_abs() + 1] {
+        assert_eq!(
+            at(baud, "mavlink").unwrap_err().kind(),
+            "SerialBaudOutOfRange",
+            "{baud}"
+        );
+    }
+}
+
+/// The same rule in `SolvedTopology::validate`, as each 13c rule is: a
+/// `mavlink` port moved to 1200 with its solved values recomputed is a
+/// mismatch, and at 2001 it is not.
+#[test]
+fn the_topology_refuses_a_serial_baud_ardupilot_reads_as_kbaud() {
+    use aethelgard_ir::serial::{actual_millibaud, error_ppm};
+    let mut mav = port("TELEM", None, None, None);
+    mav["role"] = json!("mavlink");
+    mav["framing"]["baud"] = json!(57_600);
+    let mut t = solved(spec_json(vec![port("CONSOLE", None, None, None), mav]));
+    let at = |t: &mut SolvedTopology, baud: u32| {
+        let p = t.serial_ports.get_mut("TELEM").unwrap();
+        p.framing.baud = baud;
+        p.brr = solve_brr(p.kernel_hz, baud).unwrap();
+        p.actual_millibaud = actual_millibaud(p.kernel_hz, p.brr);
+        p.error_ppm = error_ppm(p.kernel_hz, p.brr, baud);
+    };
+    assert_eq!(t.validate(), Ok(()));
+    at(&mut t, 2001);
+    assert_eq!(t.validate(), Ok(()));
+    at(&mut t, 1200);
+    let e = t.validate().expect_err("refused");
+    assert_eq!((e.kind(), e.id()), ("SerialPortMismatch", Some("TELEM")));
 }

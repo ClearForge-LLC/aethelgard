@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 54] = [
+pub const FILES: [(&str, &[u8]); 58] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -65,6 +65,12 @@ pub const FILES: [(&str, &[u8]); 54] = [
         "footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod",
         include_bytes!(
             "../data/kicad-10.0.7/footprints/Package_QFP.pretty/LQFP-144_20x20mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask2.46x2.31mm.kicad_mod"
         ),
     ),
     (
@@ -280,6 +286,12 @@ pub const FILES: [(&str, &[u8]); 54] = [
         include_bytes!("../data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym"),
     ),
     (
+        "footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
+        include_bytes!(
+            "../data/aethelgard/footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod"
+        ),
+    ),
+    (
         "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         include_bytes!(
             "../data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod"
@@ -289,6 +301,18 @@ pub const FILES: [(&str, &[u8]); 54] = [
         "footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
         include_bytes!(
             "../data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8833PWP.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Driver.kicad_symdir/DRV8876PWP.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Driver.kicad_symdir/DRV8876PWP.kicad_sym"
         ),
     ),
     (

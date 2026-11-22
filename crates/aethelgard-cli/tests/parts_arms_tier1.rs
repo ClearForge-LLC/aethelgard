@@ -115,7 +115,15 @@ fn fitted(row: &Part) -> (Value, &'static str) {
 #[test]
 fn every_row_draws_by_its_arm_or_is_refused_and_every_arm_has_a_row() {
     let table = parts::table().unwrap();
-    let rows: Vec<&str> = table.parts().iter().map(|p| p.part.as_str()).collect();
+    // A pin device's row is a busless part's (`pin_parts`, `AET-WO-1211a`);
+    // its arm draws it from the row and the declaration, and
+    // `pin_devices_drawn_tier1.rs` draws each (`AET-WO-1211d`).
+    let rows: Vec<&str> = table
+        .parts()
+        .iter()
+        .map(|p| p.part.as_str())
+        .chain(table.pin_parts().iter().map(|p| p.part.as_str()))
+        .collect();
     let arms: Vec<&str> = KNOWN_PARTS.split(", ").collect();
     for arm in &arms {
         assert!(

@@ -635,6 +635,27 @@ pub fn console_mapped(baud: u32) -> Option<u32> {
     (mapped != baud).then_some(mapped)
 }
 
+/// What ArduPilot opens a port of `role` at when the port is declared at
+/// `baud`, if that is not `baud` itself. A non-console port is SERIAL1 to 9
+/// (`aethelgard-hwdef` emits the console first), whose `SERIALn_BAUD` holds
+/// `DEFAULT_SERIALn_BAUD` as it stands (`:199` to `:390`). `AP_SerialManager::init`
+/// begins a `mavlink` and a `gps` port at `state[i].baudrate()` (`:470-475`,
+/// `:488-493`), which is `map_baudrate(baud)` (`AP_SerialManager.h:151-153`);
+/// AP_GPS's first probe is that rate too (`AP_GPS.cpp:707-708`). An `rc_crsf` or
+/// `rc_sbus` port is only handed to AP_RCProtocol (`:536-543`), which sets the
+/// UART's rate itself (`AP_RCProtocol.cpp:326-352`), and the generator emits no
+/// baud define for it. The console has its own rule, [`console_mapped`]. A
+/// baud an `int32_t` cannot hold is no `SERIALn_BAUD` at all, and is left to
+/// step 21: no BRR reaches it.
+fn read_as_kbaud(role: SerialRole, baud: u32) -> Option<u32> {
+    match role {
+        SerialRole::Mavlink | SerialRole::Gps => {}
+        SerialRole::Console | SerialRole::RcCrsf | SerialRole::RcSbus => return None,
+    }
+    let mapped = map_baudrate(i32::try_from(baud).ok()?);
+    (mapped != baud).then_some(mapped)
+}
+
 /// Step 13c of [`crate::Specification::validate`], each port in document
 /// order: a label unique with case folded; a peripheral that is `null` or one
 /// of [`PERIPHERALS`] exactly (`LPUART1`, in any case, refused by its own
@@ -646,7 +667,9 @@ pub fn console_mapped(baud: u32) -> Option<u32> {
 /// `peer_deviation_ppm` at least the cited spread; a
 /// `peer_deviation_source` of `cited` only where it is the cited spread
 /// ([`PeerDeviationSource`]); and a `console` port's baud one that ArduPilot's
-/// `SERIAL0_BAUD` maps back to ([`console_mapped`], `AET-WO-1213`). The nets
+/// `SERIAL0_BAUD` maps back to ([`console_mapped`], `AET-WO-1213`); and a
+/// `mavlink` or `gps` port's baud one ArduPilot's `SERIALn_BAUD` maps to
+/// itself ([`read_as_kbaud`], `AET-WO-1214`). The nets
 /// are step 11's and a constraint on one step 14's.
 pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
     use IrValidationError as E;
@@ -729,6 +752,14 @@ pub(crate) fn validate(ports: &[SerialPort]) -> Result<(), IrValidationError> {
         if let Some(mapped) = console_baud_error(port.role, port.framing.baud) {
             return Err(E::ConsoleBaudNotRoundTrip {
                 id: id(),
+                baud: port.framing.baud,
+                mapped,
+            });
+        }
+        if let Some(mapped) = read_as_kbaud(port.role, port.framing.baud) {
+            return Err(E::SerialBaudReadAsKbaud {
+                id: id(),
+                role: port.role.name(),
                 baud: port.framing.baud,
                 mapped,
             });
@@ -853,6 +884,7 @@ pub(crate) fn validate_solved(topology: &SolvedTopology) -> Result<(), IrValidat
             || contradiction(port.role, f, port.negotiated.is_some()).is_some()
             || peer_below_cited(port.role, port.peer_deviation_ppm).is_some()
             || console_baud_error(port.role, f.baud).is_some()
+            || read_as_kbaud(port.role, f.baud).is_some()
             || !solved
         {
             return Err(mismatch(label));
