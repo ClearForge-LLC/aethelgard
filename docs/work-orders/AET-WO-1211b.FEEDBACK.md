@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1211b-pin-devices-gen` from `main` `25203c58`; `main` merged at `349c75f5` (4240c, 1213), then at `ddfa64d6` (4240b, solved 15), then renumbered to solved 16. **Builder:** Claude (Opus 5.5 orchestrating; one Opus reader for the ADC contract, one Opus adversarial reviewer, each report checked at source before use). Written 2026-11-20.
 
-**Status: built, merged with `main` `ddfa64d6`, solved 16; waits on the package dispatch (write=true).** **The answer, in six lines:**
+**Status: READY.** Built, merged with `main` `ddfa64d6`, solved 16; the package committed byte for byte from the architect's write=true dispatch, run 44976609648 (§9). **The answer, in six lines:**
 - **D1 generates, builds and proves.** Every harness of its board crate proves in the tools image (10; the slowest `every_valid_sequence_tim1`, 48 s, which now holds the bridge's enable; ADC3's bring-up 4 s); its ELF builds. A tier-2 test runs it in CI. D2 stays refused at validate (`PartLimitUndeclared`).
 - **No existing byte moves.** All 25 committed specifications that generate on `main` generate byte-identical trees, against a baseline re-taken at each `main` merge (§1).
 - **The generator writes:** a GPIO output's declared level before `MODER`; an input's declared pull; a motor pad's pull from its idle (Q9); a pin device's ADC1/ADC3 inputs enabled, calibrated and converted once (§2.3); a bridge's enable after its timer's `CEN`, taking `&Tim<Running>`, with the row's `t_wake` waited only when its declared level wakes the part (§2.4). `PSC` and the idle `CCR` were already the solved words (1211a); the proof's expected `CCR` now comes from the declared idle (`oracle_idle_word`).
@@ -136,4 +136,7 @@ Held: byte stability over 63 JSON files (25 identical, 37 refused on both, D1 al
 
 ## 9. The package
 
-The solved bump moves `MANIFEST.json`'s `topology_sha256` (and with it `verdict_sha256`): queued for the architect's write=true dispatch after 4240b's; then committed byte for byte. No ELF or board file is predicted to move.
+From the architect's write=true dispatch, **run 44976609648** (on `3e30777d`, PR #307's head), artifact `bench-package`, committed byte for byte. It moved exactly as predicted and ruled:
+- `MANIFEST.json`: `topology_sha256` `6d93b01a…3597` → `ce2d02a1…9c93` (solved 16) and `verdict_sha256` `09552a0d…c97b` → `c1741912…bdec`; nothing else in it.
+- `FAB-NOTES.md`, `sentinel-01-bench.elf` and every Gerber, drill, placement and BOM file: **byte-identical** (16 of 17 files).
+- The binding test (`bench_board_tier1`) passes with it, 2/2.
