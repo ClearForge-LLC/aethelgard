@@ -51,6 +51,8 @@
 
 ## §2 Measured
 
+- **The specification's sha moved after `PREDICTIONS.md`** (`a5f09d12…` → `fefb053a…`). That is Q1's ruled `source` text, and `PREDICTIONS.md` is left as committed. `main` `171f2a60` (docs only) is merged at `486d6641`.
+
 - **The build of record** is at `main` `7fc81640`, merged at `0e3c17c1`, with the ruled `source` text. The run before the ruling, at `e3aea224`, gave the same ELF. Neither the source string nor 1211b's merge reaches the ELF; the board crate's input hash moved (`fa061817…` → `c669cefc…`) by the specification's sha lines.
 - **The baseline:** `main`'s `sentinel-02-bench` in the same run gives ELF `3f7b0507…`, the ELF `4202`'s note names, and `pass` at 39,039,880 ns.
 - **Kit:** `~/.cache/aet-4240d/kit/`. It holds `img.sh` (capped-run, 8 GiB, swap 0, one container, nice 10), `run.sh` and `sim.sh`. The logs are `run2.log` and `sim2.log`.
@@ -143,13 +145,16 @@ A fresh Opus subagent read the sheet at `59c008f1` against the primary PDFs, the
 
 ## §8 Reduction pass
 
-Reduction pass (diff): −26 net · 1 duplicate removed · 2 dead paths removed · 0 protected kept · 1 finding below.
-- **Removed:**
-  - the sheet's 16-row copy of the boot judge's register image, which now cites `3304` B2's table and S1's `boot.registers`, measured equal;
-  - in `derive.py`, a no-op `if k == "forward": pass` inside a copy loop;
-  - in `derive.py`, a one-element `for` over `("source",)`.
+Reduction pass (diff): −9 net · 0 duplicates removed · 2 dead paths removed · 0 protected kept · 2 findings below.
+- **Removed from `derive.py`:**
+  - a no-op `if k == "forward": pass` inside a copy loop;
+  - a one-element `for` over `("source",)`.
 
-  `derive.py` still reproduces the specification byte for byte.
+  It still reproduces the specification byte for byte.
+- **Proposed, not taken (a prose cut is the owner's):** replacing B3's 20-row register-image table with a citation of `3304` B2's. It was cut, then restored before the push.
+  - B4 cites B3's `AHB4ENR` row.
+  - `3304`'s sheet is frozen for another ELF, and its neighbouring SPI table predicts `D2CCIP1R` `0x4000` where this ELF holds `0x0000`.
+  - Sending the operator there would mislead.
 - **Kept, not duplicates:**
   - `PREDICTIONS.md` beside §1: the record before the runs, and its score;
   - `edges.py synth`: the evidence D-3 cites;

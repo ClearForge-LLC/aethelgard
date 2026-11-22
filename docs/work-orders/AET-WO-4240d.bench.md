@@ -280,7 +280,7 @@ One read each, for example `$P read $C b32 0x58024400 1`. Compare **only the mas
 | `RCC_D2CCIP1R` | `0x58024450` | `0x00007000` | `0x00000000`: `SPI123SEL` 000, `pll1_q_ck` | ignored-by-model (a reset-row tag; the twin reads 0 whatever silicon holds). The kernel `check_spi` assumes is `pll1_q` (topology `spi_controllers.SPI1.kernel`). §8.7.20 pp. 413–414 | | | |
 | `FLASH_ACR` | `0x52002000` | `0x0000003f` | `0x00000011`: `LATENCY` 1, `WRHIGHFREQ` 01 | rule (`vos::flash_at_reset`, Table 17's VOS2 ]55;110] MHz row). Reset `0x37` (§4.9.1 p. 201) | | | |
 | `PWR_CR3` | `0x5802480c` | `0x00000007` | `0x00000002`: `LDOEN` 1, `BYPASS` 0, `SCUEN` 0 | rule (ledger `independent-rule` for `PWR.CR3`); `4240v` FEEDBACK §0.4 predicts the whole word `0x42`, inferred for bit 6. §6.8.4 p. 307 | | | |
-| `PWR_CSR1`: `ACTVOS` | `0x58024804` | `0x0000c000` | `0x00008000`: `ACTVOS` 10 | manual: `ACTVOS` reflects the `VOS` applied (§6.8.2 p. 305); no ledger row. `4240v` §0.4 predicts the same | | | |
+| `PWR_CSR1`: `ACTVOS` | `0x58024804` | `0x0000c000` | `0x00008000`: `ACTVOS` 10 | **inferred**: RM0433 says only that `ACTVOS` reflects "the last VOS value applied" and gives no encoding for it (p. 306; `4240v` F1, `4240b` P10, an open residue). The value assumes `VOS`'s own encoding. No ledger row; `4240v` §0.4 predicts the same | | | |
 | `PWR_CSR1`: `ACTVOSRDY` | `0x58024804` | `0x00002000` | `0x00002000` | silicon-only (ledger: `PWR.CSR1.ACTVOSRDY`, polled) | | | |
 | `PWR_D3CR`: `VOS` | `0x58024818` | `0x0000c000` | `0x00008000`: Scale 2 | rule (ledger `independent-rule`, `PWR.D3CR.VOS`). §6.8.6 p. 310 | | | |
 | `PWR_D3CR`: `VOSRDY` | `0x58024818` | `0x00002000` | `0x00002000` | silicon-only (ledger: `PWR.D3CR.VOSRDY`, polled) | | | |
@@ -306,7 +306,26 @@ One read each, for example `$P read $C b32 0x58024400 1`. Compare **only the mas
 
 **Not predicted, for the record:** bits 2 (`HSIRDY`), 5 (`HSIDIVF`), 8 (`CSIRDY`), 13 (`HSI48RDY`), 14 (`D1CKRDY`) and 15 (`D2CKRDY`; the ledger takes silicon to have set it, `3302`).
 
-**The boot judge's register image:** S1's 20 masked rows equal `main`'s `sentinel-02-bench` run row for row (measured, `bench/simulate-verdict.json` `boot.registers`), and so equal `3304` B2's register-image table, whose rows, masks and sources stand unchanged. Read and fill that table for this ELF.
+**The boot judge's register image:** S1's 20 masked rows, verbatim from `bench/simulate-verdict.json` `boot.registers`. They equal `main`'s `sentinel-02-bench` run row for row (measured):
+
+| Register | Address | Mask | Expected | Source | Bench & mask |
+|---|---|---|---|---|---|
+| GPIOA.MODER | `0x58020000` | `0x00003c00` | `0x00002800` | generator | |
+| GPIOA.AFRL | `0x58020020` | `0x0ff00000` | `0x05500000` | generator | |
+| GPIOB.MODER | `0x58020400` | `0x0000fc00` | `0x0000a800` | generator | |
+| GPIOB.AFRL | `0x58020420` | `0xfff00000` | `0x44500000` | generator | |
+| GPIOD.MODER | `0x58020c00` | `0x30000000` | `0x10000000` | generator | |
+| RCC.AHB3ENR | `0x580244d4` | `0xffffffff` | `0x00000000` | twin (Renode reset) | |
+| RCC.AHB1ENR | `0x580244d8` | `0xffffffff` | `0x00000000` | twin (Renode reset) | |
+| RCC.AHB2ENR | `0x580244dc` | `0xffffffff` | `0x00000000` | twin (Renode reset) | |
+| RCC.AHB4ENR | `0x580244e0` | `0xffffffff` | `0x0000000b` | twin (observed: GPIOA, GPIOB); generator (GPIOD) | |
+| RCC.APB3ENR | `0x580244e4` | `0xffffffff` | `0x00000000` | twin (Renode reset) | |
+| RCC.APB1LENR | `0x580244e8` | `0xffffffff` | `0x00200000` | twin (observed) | |
+| RCC.APB1HENR | `0x580244ec` | `0xffffffff` | `0x00000000` | twin (Renode reset) | |
+| RCC.APB2ENR | `0x580244f0` | `0xffffffff` | `0x00001000` | twin (observed) | |
+| RCC.APB4ENR | `0x580244f4` | `0xffffffff` | `0x00010000` | twin (Renode reset) | |
+| SysTick.CSR | `0xe000e010` | `0x00010003` | `0x00000000` | twin (Renode reset) | |
+| NVIC.ISER0–4 | `0xe000e100`–`0xe000e110` | `0xffffffff` | `0x00000000` each | twin (Renode reset) | |
 
 ## B4. A clock out: `MCO1` = `pll1_q` ÷ 15 on `PA8`
 
