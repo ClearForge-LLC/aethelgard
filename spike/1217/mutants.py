@@ -14,10 +14,10 @@ PP = "crates/aethelgard-ir/src/power_parts.rs"
 
 MUTANTS = [
     ("F2.1 tie admitted on any current output", PD,
-     "if to == crate::GND && self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>",
+     "if to == crate::GND\n                        && self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>",
      "if to == crate::GND =>"),
     ("F2.2 tie admitted to any rail", PD,
-     "if to == crate::GND && self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>",
+     "if to == crate::GND\n                        && self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>",
      "if self.row.trip.as_ref().is_some_and(|t| t.sense == *pin) =>"),
     ("F2.3 the trip judged despite the tie", PD,
      "            return Ok(());\n        }\n        // The sense pin terminated by nothing",
@@ -50,8 +50,8 @@ MUTANTS = [
      ".filter(|(pin, _)| !reserved.contains(&pin.as_str()) && !pads.contains(&pin.as_str()))",
      ".filter(|(pin, _)| !reserved.contains(&pin.as_str()))"),
     ("F4.5 a chip select on a pad", SO,
-     "                        !reserved.contains(p) && !pads.contains(p) && !search.used.contains_key(p)",
-     "                        !reserved.contains(p) && !search.used.contains_key(p)"),
+     "                    !reserved.contains(p) && !pads.contains(p) && !search.used.contains_key(p)",
+     "                    !reserved.contains(p) && !search.used.contains_key(p)"),
     ("F4.6 a device GPIO on a pad", PD,
      "                        !reserved.contains(p)\n                            && !pads.contains(p)\n",
      "                        !reserved.contains(p)\n"),

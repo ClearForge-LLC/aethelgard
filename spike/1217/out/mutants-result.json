@@ -1,0 +1,82 @@
+[
+ {
+  "mutant": "F2.1 tie admitted on any current output",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F2.2 tie admitted to any rail",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F2.3 the trip judged despite the tie",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F2.4 a tied and read sense not refused",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F2.5 the tie skips the grounded reference",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F8 the reservoir at VDDA's minimum",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F9 the ADC rule before the trip",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F10 the MCU row looked up with no pin device",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.1 no digital hand pin refused on a pad",
+  "file": "crates/aethelgard-ir/src/solve.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.2 an ADC hand pin refused on a pad",
+  "file": "crates/aethelgard-ir/src/solve.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.3 bus and serial candidates on a pad",
+  "file": "crates/aethelgard-ir/src/solve.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.4 timer channels on a pad",
+  "file": "crates/aethelgard-ir/src/solve.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.5 a chip select on a pad",
+  "file": "crates/aethelgard-ir/src/solve.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.6 a device GPIO on a pad",
+  "file": "crates/aethelgard-ir/src/pin_devices.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.7 the topology's pad check",
+  "file": "crates/aethelgard-ir/src/lib.rs",
+  "verdict": "killed"
+ },
+ {
+  "mutant": "F4.8 a pad not held, or twice",
+  "file": "crates/aethelgard-ir/src/power_parts.rs",
+  "verdict": "killed"
+ }
+]
