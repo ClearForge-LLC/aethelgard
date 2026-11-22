@@ -163,14 +163,16 @@ fn si(v: u64, units: [char; 3]) -> String {
 }
 
 /// A declared two-pin part of the table: a capacitor, an inductor or a
-/// resistor, with the row's own symbol and footprint.
-fn two_pin(
+/// resistor, with the row's own symbol and footprint, and `note` in the BOM
+/// (a pin device's declared bulk's, `AET-WO-1211f`).
+pub(super) fn two_pin(
     b: &mut Builder<'_>,
     reference: &str,
     part: &str,
     value: String,
     one: Conn,
     two: Conn,
+    note: Option<String>,
 ) -> Result<(), EmitError> {
     let r = row(reference, part)?;
     b.parts.push(Part {
@@ -179,7 +181,7 @@ fn two_pin(
         value,
         footprint: r.footprint.clone(),
         conns: BTreeMap::from([("1".into(), one), ("2".into(), two)]),
-        note: None,
+        note,
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
@@ -202,7 +204,7 @@ fn capacitor(
     let pf = u64::try_from(c.rated_picofarads.value)
         .map_err(|_| refuse(reference, "a negative capacitance"))?;
     let value = format!("{} {part}", farads(pf));
-    two_pin(b, reference, part, value, one, two)
+    two_pin(b, reference, part, value, one, two, None)
 }
 
 pub(super) fn resistor(
@@ -212,7 +214,7 @@ pub(super) fn resistor(
     two: Conn,
 ) -> Result<(), EmitError> {
     let value = format!("{} {}", super::ohms(r.ohms), r.part);
-    two_pin(b, &r.reference, &r.part, value, one, two)
+    two_pin(b, &r.reference, &r.part, value, one, two, None)
 }
 
 /// A declared reservoir capacitor on an ADC input, by the MCU's pin at
@@ -684,6 +686,7 @@ fn regulator(
                     value,
                     Conn::Net(sw.clone()),
                     output.clone(),
+                    None,
                 )?;
                 anchor(b, u, &[("1", &swp)], SW_NM, SW_RULE);
             }
