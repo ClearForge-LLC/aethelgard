@@ -13,7 +13,7 @@ for k, v in s["mcu"].items():
             "hz_num": 8000000,
             "hz_den": 1,
             "ppm": 80000,
-            "source": "ST-LINK-V3E MCO = STM32F723 HSI/2 (RN0093 Rev 40 p.13); DS11853 Rev 8 Table 42 p.130 ACCHSI -8/+4.5 % at TA -40..105 C, so 80000 per side; B-1 confirms 8.000 MHz",
+            "source": "DS11853 Rev 8 Table 42 p.130 via cdn.components.ru/media/PDF/1368336.pdf sha256 3b81519f; Rev 7 agrees; currency unconfirmed: ACCHSI -8/+4.5 % at -40..105 C. MCO = F723 HSI/2 (RN0093 Rev 40 p.13)",
             "startup_max_us": 20000,
             "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)",
         }}
