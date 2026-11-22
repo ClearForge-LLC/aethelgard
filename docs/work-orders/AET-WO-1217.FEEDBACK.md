@@ -1,6 +1,6 @@
 # AET-WO-1217 — FEEDBACK: pin devices' IR backlog (a GND tie, the analog-switch pads, the reservoir's rating, step 24's order, an unknown MCU)
 
-**Branch:** `wo/aet-1217-pin-device-ir-backlog`, from `main` `22a1b3c0`. **Builder:** Claude (Opus 5.5 orchestrating, with one Opus adversarial reviewer in its own worktree, given the code and §5, not my conclusions). Each finding was checked at source before use. Written 2026-11-22.
+**Branch:** `wo/aet-1217-pin-device-ir-backlog`, from `main` `22a1b3c0`; merged in: `857525ad` (docs) and `a41a8a8d` (2308). **Builder:** Claude (Opus 5.5 orchestrating, with one Opus adversarial reviewer in its own worktree, given the code and §5, not my conclusions). Each finding was checked at source before use. Written 2026-11-22.
 
 **Status: AWAITING-PACKAGE.** The bump moves `fab/sentinel-01-bench/package`'s sha lines, so `bench_board_tier1` fails until the write=true dispatch is committed (§9).
 
@@ -170,7 +170,7 @@ The table is `spike/1217/RESULTS.md` §2. The predictions file says "solved 16";
 
 - **Gates (Furnace, target in the repository):**
   - `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass.
-  - `cargo test --workspace`: 160 binaries, 2764 passed and 1 failed (at `a3f4352a`). The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (§9).
+  - `cargo test --workspace`: 160 binaries, 2772 passed and 1 failed (at `cf22dbf5`, main `a41a8a8d` (2308) merged). The failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, which waits on the package (§9).
   - With the target in the repository, `1211e` F11's `fab_tier1` failure does not appear.
 - **The null sweep** (`spike/1211a/measure/run.sh` and `spike/1211e/compare.py`, `out/null-sweep.json`): main's binary on main's tree against the branch's on the branch's. 34 specifications; 0 exit codes and 0 `validate`/`solve` outputs moved once each sha is masked; every emitted file byte-identical; 232 generated files, each moved by one sha line.
 - **Goldens moved by the bump, by their generators, each by its sha line alone** (masked diffs pair line for line):
