@@ -83,19 +83,84 @@
 - **F2, `probe-rs write`'s help text says "Only supports RAM addresses"** (`cmd/write.rs`, v0.32.0). The command writes through the same `write_memory_32` as any address. The sheet reads back after every write and stops on a write that did not take. If it does not take on silicon, the clock-out steps need another tool; that is a bench result, not a guess here.
 - **F3, the bench cannot time `HSERDY`.** `4240b` F3 said the bypass bench "measures the real `HSERDY` time and so tests the ruled 20,000 µs". It does not: nothing toggles a pin before the switch, and `probe-rs` reads after the boot. It shows only that `HSERDY` came within the bound. Timing it needs a pin toggled around the wait, which is a generator change and is fenced here. `4240b` F3 stays open.
 - **F4, `probe-rs list` does not print the firmware version** (`cmd/list.rs` prints the probe's `Display`). B-0 reads it from the ST-LINK's `DETAILS.TXT` instead (RN0093 §4.16 p. 13), and from `lsusb`.
+- **F5, a ledger finding outside this fence (adversarial F4).** `ledger.rs` classes every field of the bring-up's whole `RCC_CR` and `RCC_CFGR` words as `independent-rule` through `clock_rule` (L744, L857–905). Those fields are `HSION`, the PLL2/PLL3 bits and `CFGR`'s other fields.
+  - That rule is `aethelgard_twin::hse::judge_clock`, a twin-side judge of the access log, not an `aethelgard-ir` rule as `RUL-20` (1) requires.
+  - The sheet labels those fields generator and says why. The class is the ledger owner's call, so nothing is changed here.
+- **F6, CN12's fitting is contradictory at source.** UM2407 Rev 6 §9.2 p. 43 says CN11 and CN12 are "both soldered by default". MB1364's BOM row 106 (H753ZI C-01 and E-01) says "Not Fitted".
+  - `3302` and `3304` used CN11/CN12 pins on this board, so it is probably fitted.
+  - The sheet looks first, falls back to TP4 by hook clip, and otherwise stops.
+- **F7, SPI SCK stalls between bytes on silicon** (adversarial F1). The generated driver writes one byte and waits for `RXP` before the next, and RM0433 p. 2176 says the master's clock "stops, waiting for additional data" when the TxFIFO empties.
+  - So `3304` B6's SCK row, read over a byte, is right, but any frame-span average would read low.
+  - The gap is unpredicted, and no source here times it.
 
 ## §6 Gates and CI
 
-(filled at the close)
+- **Local, at `59c008f1`** (main `7fc81640` merged; every later commit is docs or `spike/` only):
+  - `cargo fmt --all -- --check` clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings` clean;
+  - `cargo test --workspace`: 156 binaries, 2,624 passed, 0 failed.
+
+  The gates ran under a capped scope (32 GiB, swap 0).
+- **Every test that walks `examples/` passes on the new specification:**
+  - `hse_eda_tier1::no_committed_specification_without_a_crystal_draws_one`, now counting 3;
+  - `silicon_rules::every_solved_fixture_s_controllers_hold_under_the_independent_rules`;
+  - `ledger_tier1::every_specification_that_solves_has_a_ledger`;
+  - `hwdef_tier1::the_board_crate_s_speeds_equal_the_stored_ones`;
+  - `svd-hal` `silicon_words`;
+  - `board_names`.
+- **No CI job loops over `examples/`.** `ci.yml` and `engine-smoke.sh` name their files. `ardupilot-image` triggers on `examples/**` paths only.
+- **P9 confirmed.** No tier-2 test is added, so `TIER2_MIN` is unchanged.
+- **Mutant** (the one guard this WO changes): with `mcu.hse` set to `null` in the new example, `no_committed_specification_without_a_crystal_draws_one` fails (left 2, right 3). Restored, it passes, and the sha is back to `fefb053a…`.
+- **CI:** see §9.
 
 ## §7 Adversarial pass (targeted)
 
-(filled at the close)
+A fresh Opus subagent read the sheet at `59c008f1` against the primary PDFs, the generated firmware, the ledger, and the probe-rs and libsigrok sources, not against this builder's reads. Its findings are in `~/.cache/aet-4240d/adv/findings.md`. **No step can harm the board.** The builder re-read F1, F2, F6, F4's `TIMINGR` class, N2's p. 3195, N10's §4.11 and F1's p. 2176 at source before adopting them.
+
+| # | Finding | Severity | Done |
+|---|---|---|---|
+| F1 | B5's SCK rate averaged a frame's span across the stalls between bytes (−4 to −7 % on a synthetic capture with a 333 ns gap) | blocker | **Fixed**: `edges.py frames` measures within bytes (7 periods per 8 rising edges), band 1.5 %, the gap a not-predicted row (F7) |
+| F2 | Word 0 is `NOLOAD` and survives a warm reset, so a parked boot shows the last run's `B007` | should-fix | **Fixed**: word 0 is written 0 and read back before every reset whose word is read; B-1 always flashes `3f7b0507` |
+| F3 | `PWR_CSR1`/`D3CR` were labelled rule; the ledger has `VOS` rule and `ACTVOSRDY`/`VOSRDY` silicon-only | should-fix | **Fixed**: four rows, each with its class |
+| F4 | `HSION`, PLL2/3 and `CFGR`'s other fields: the ledger says independent-rule via the twin's clock rule. `TIMINGR` is rule (`check_timingr`) | should-fix | **Fixed**: the legend explains, F5 here; `TIMINGR` relabelled |
+| F5 | Reset values were labelled rule | should-fix | **Fixed**: a `manual` label; `twin (Renode reset)` defined |
+| F6 | CN12 may not be fitted (BOM vs UM2407) | should-fix | **Fixed**: look first, TP4 fallback, else stop (F6 here) |
+| F7 | C2's ±3 was under its own quantization worst case (3.13) | should-fix | **Fixed**: ±4, the monotonic-drift assumption stated |
+| F8 | B4's preconditions had no whole-word `MODER`/`AFRH` reads in B3 | should-fix | **Fixed**: two rows |
+| N1–N10 | read-backs; `DBGMCU` not reset by a system reset; "no halt" unproven; "output disabled"; X1's 25 MHz ±50 ppm; `SH_REG`; `details.txt` case; a stop still restores; the pre-boot frame; the default after V3J7 inferred, and E normalised | nit | **All fixed** |
+
+**Attacked and held:**
+- every write as the correct read-modify-write of its predicted read (`SW` always kept, `HSEBYP` only with `HSEON` 0, reserved bits 0);
+- `PA8` alone on TP4 and CN12-23;
+- `probe-rs reset` = `SYSRESETREQ`, not overridden for the H7, restoring every written register;
+- every address, mask, word, reset value, page and table, recomputed;
+- the gate windows;
+- 32/15;
+- N = 15;
+- the frames 16/16/16/16/56;
+- the sigrok format;
+- S1's equality with `main`.
 
 ## §8 Reduction pass
 
-(filled at the close)
+Reduction pass (diff): −26 net · 1 duplicate removed · 2 dead paths removed · 0 protected kept · 1 finding below.
+- **Removed:**
+  - the sheet's 16-row copy of the boot judge's register image, which now cites `3304` B2's table and S1's `boot.registers`, measured equal;
+  - in `derive.py`, a no-op `if k == "forward": pass` inside a copy loop;
+  - in `derive.py`, a one-element `for` over `("source",)`.
+
+  `derive.py` still reproduces the specification byte for byte.
+- **Kept, not duplicates:**
+  - `PREDICTIONS.md` beside §1: the record before the runs, and its score;
+  - `edges.py synth`: the evidence D-3 cites;
+  - the HSE count's comment naming the three specifications.
+- **Finding (outside the fence):** F5's ledger class.
 
 ## §9 State
 
-(filled at the close)
+- Branch `wo/aet-4240d-bypass-bench`. PR and CI: on the bus. The builder merges nothing.
+- ELF and evidence: `~/.cache/aet-4240d/bench/` (`SHA256SUMS`).
+- Kit: `~/.cache/aet-4240d/kit/`.
+- Reads: `~/.cache/aet-4240d/reads/`, `ds/`, `probe-rs/`, `sigrok/`.
+- Adversarial pass: `adv/`.
+- The bench is Scotty's: B-0 and B-1 first, then the rest only if B-1 says proceed.

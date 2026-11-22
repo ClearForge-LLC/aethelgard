@@ -20,14 +20,7 @@ for k, v in s["mcu"].items():
     else:
         mcu[k] = v
 s["mcu"] = mcu
-board = {}
-for k, v in s["board"].items():
-    board[k] = v
-    if k == "forward":
-        pass
-board["drawn"] = False
-s["board"] = board
-for f in ("source",):
-    t = mcu["hse"]["external"][f]
-    assert 1 <= len(t) <= 200 and t.isascii() and t.isprintable(), (f, len(t))
+s["board"]["drawn"] = False
+t = mcu["hse"]["external"]["source"]
+assert 1 <= len(t) <= 200 and t.isascii() and t.isprintable(), len(t)
 open(dst, "w", encoding="utf-8").write(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
