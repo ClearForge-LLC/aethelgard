@@ -443,6 +443,47 @@ const fn same(a: &str, b: &str) -> bool {
     true
 }
 
+/// belt-and-suspenders: each bus part's decoupler count, stated here once
+/// more than its row states it (`AET-WO-1320` asks for the restatement), so a row that drops or adds a decoupler is refused when the
+/// crate compiles, not only by the byte sweep (`AET-WO-1320`): no other
+/// fact of the row predicts it.
+const DECOUPLERS: &[(&str, usize)] = &[
+    ("BME280", 1),
+    ("TMP117", 1),
+    ("BMP581", 2),
+    ("W25Q64JVxIQ", 1),
+    ("ICM20948", 2),
+    ("ICM42688P", 3),
+];
+
+/// Whether [`DECOUPLERS`] states `n` for `part`.
+const fn decouplers_stated(part: &str, n: usize) -> bool {
+    let mut i = 0;
+    while i < DECOUPLERS.len() {
+        if same(DECOUPLERS[i].0, part) {
+            return DECOUPLERS[i].1 == n;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// The own net a bus row's pin draws (`<reference>_<name>`), if any.
+const fn own_name(role: Role) -> Option<&'static str> {
+    match role {
+        Role::Strap(name) | Own(name) | Addr(Some(name), _) => Some(name),
+        _ => None,
+    }
+}
+
+/// Whether two of a pin device's passives share a pin end.
+const fn share_a_pin(a: &Required, b: &Required) -> bool {
+    const fn on(e: End, f: End) -> bool {
+        matches!((e, f), (End::Pin(x), End::Pin(y)) if same(x, y))
+    }
+    on(a.one, b.one) || on(a.one, b.two) || on(a.two, b.one) || on(a.two, b.two)
+}
+
 /// Whether `pins` holds `Own(name)` exactly once.
 const fn owns_once(pins: &[(Pin, Role)], name: &str) -> bool {
     let mut n = 0;
@@ -468,7 +509,12 @@ const fn owns_once(pins: &[(Pin, Role)], name: &str) -> bool {
 ///   own net closed by none, or by two;
 /// - a bus row with no decoupler, or an I2C row whose first passive is not
 ///   the 100 nF decoupler every I2C device had before the table;
-/// - a pin device's passive on a bus row, or a bus device's on a pin row.
+/// - a pin device's passive on a bus row, or a bus device's on a pin row;
+/// - and since `AET-WO-1320`: two unstated passives on one pin (one `bulk`
+///   would answer both); an I2C row with no address strap; a bus row whose
+///   decoupler count is not its part's in [`DECOUPLERS`]; one own-net name
+///   on two pins of a row (a strap and an own net, say); a pin listed twice
+///   in a row.
 const fn check(rows: &[Arm]) -> Result<(), &'static str> {
     let mut r = 0;
     while r < rows.len() {
@@ -486,8 +532,19 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
             Wiring::Pins { .. } => {
                 let mut p = 0;
                 while p < row.passives.len() {
-                    if !matches!(row.passives[p], Passive::Required(_)) {
+                    let Passive::Required(a) = row.passives[p] else {
                         return Err("a bus device's passive on a pin device's row");
+                    };
+                    let mut q = p + 1;
+                    while q < row.passives.len() {
+                        if let Passive::Required(b) = row.passives[q]
+                            && a.value.is_none()
+                            && b.value.is_none()
+                            && share_a_pin(&a, &b)
+                        {
+                            return Err("two unstated passives on one pin");
+                        }
+                        q += 1;
                     }
                     p += 1;
                 }
@@ -517,9 +574,6 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
                     }
                 }
                 Own(name) => {
-                    if !owns_once(pins, name) {
-                        return Err("an own net named twice in one row");
-                    }
                     let (mut closed, mut p) = (0, 0);
                     while p < row.passives.len() {
                         if let Passive::OwnCap(cap, _) = row.passives[p]
@@ -540,6 +594,25 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
         if addresses > 1 {
             return Err("two address straps on one row");
         }
+        if i2c && addresses == 0 {
+            return Err("an I2C row with no address strap");
+        }
+        let mut i = 0;
+        while i < pins.len() {
+            let mut j = i + 1;
+            while j < pins.len() {
+                if same(pins[i].0, pins[j].0) {
+                    return Err("a pin listed twice in one row");
+                }
+                if let (Some(a), Some(b)) = (own_name(pins[i].1), own_name(pins[j].1))
+                    && same(a, b)
+                {
+                    return Err("one own-net name on two pins of a row");
+                }
+                j += 1;
+            }
+            i += 1;
+        }
         let (mut decouplers, mut p) = (0, 0);
         while p < row.passives.len() {
             match row.passives[p] {
@@ -558,6 +631,9 @@ const fn check(rows: &[Arm]) -> Result<(), &'static str> {
         }
         if i2c && !matches!(row.passives[0], Passive::Decouple(v) if same(v, "100n")) {
             return Err("an I2C row whose first passive is not its 100 nF decoupler");
+        }
+        if !decouplers_stated(row.part, decouplers) {
+            return Err("a bus row whose decoupler count is not its part's");
         }
         r += 1;
     }
@@ -1338,7 +1414,7 @@ mod tests {
         }
     }
 
-    /// Each bus row's pins are its symbol's, each once.
+    /// Each bus row's pins are its symbol's (each once is [`check`]'s).
     #[test]
     fn each_bus_rows_pins_are_its_symbols() {
         let mut checked = 0;
@@ -1352,10 +1428,8 @@ mod tests {
                 .into_iter()
                 .map(|p| p.number)
                 .collect();
-            let mut seen = BTreeSet::new();
             for (pin, _) in pins {
                 assert!(numbers.iter().any(|n| n == pin), "{}: pin {pin}", a.part);
-                assert!(seen.insert(*pin), "{}: pin {pin} twice", a.part);
             }
             checked += 1;
         }
@@ -1476,7 +1550,7 @@ mod tests {
             wiring: Wiring::Spi(&[("10", Own("REGOUT")), ("11", Own("REGOUT"))]),
             ..ROW
         };
-        assert_eq!(refused(&[row]), "an own net named twice in one row");
+        assert_eq!(refused(&[row]), "one own-net name on two pins of a row");
     }
 
     /// `1211d` §4's hazard: the I2C 100 nF decoupler, drawn for every I2C
@@ -1544,5 +1618,213 @@ mod tests {
             refused(&[row]),
             "a bus device's passive on a pin device's row"
         );
+    }
+
+    /// [`check`] over the one row `$row`, evaluated by the compiler, as it is over
+    /// [`ARMS`] (`AET-WO-1320`).
+    macro_rules! at_compile_time {
+        ($row:ident) => {{
+            const WHY: Result<(), &str> = check(&[$row]);
+            WHY
+        }};
+    }
+
+    const fn unstated(p: Passive) -> Passive {
+        match p {
+            Passive::Required(r) => Passive::Required(Required { value: None, ..r }),
+            _ => panic!("not a pin device's passive"),
+        }
+    }
+
+    /// `1211f` F2: two unstated passives on one pin, which one `bulk` would
+    /// answer twice. Unstated passives on two pins stay allowed.
+    #[test]
+    fn two_unstated_passives_on_one_pin_are_refused() {
+        // DRV8876's CVM2 (VM to GND, no value) twice; with its CVCP (VCP to
+        // VM) unstated, meeting at each pair of ends; beside DRV8833's CVINT (VINT to
+        // GND) unstated; and beside its own CVM1, stated, as in the row.
+        const CVM1: Passive = DRV8876.passives[0];
+        const CVM2: Passive = DRV8876.passives[3];
+        const CVCP: Passive = unstated(DRV8876.passives[1]);
+        const CVINT: Passive = unstated(DRV8833.passives[2]);
+        // CVCP moved to CPH: it meets CVCP only at their second ends, VM.
+        const CPH_TO_VM: Passive = match CVCP {
+            Passive::Required(r) => Passive::Required(Required {
+                one: End::Pin("CPH"),
+                ..r
+            }),
+            _ => panic!(),
+        };
+        const TWICE: Arm = Arm {
+            passives: &[CVM2, CVM2],
+            ..DRV8876
+        };
+        const SHARED: Arm = Arm {
+            passives: &[CVM2, CVCP],
+            ..DRV8876
+        };
+        const SHARED_TWO: Arm = Arm {
+            passives: &[CVCP, CVM2],
+            ..DRV8876
+        };
+        const SHARED_BOTH_TWO: Arm = Arm {
+            passives: &[CVCP, CPH_TO_VM],
+            ..DRV8876
+        };
+        const STATED: Arm = Arm {
+            passives: &[CVM2, CVM1],
+            ..DRV8876
+        };
+        const APART: Arm = Arm {
+            passives: &[CVM2, CVINT],
+            ..DRV8833
+        };
+        const WHY: Result<(), &str> = Err("two unstated passives on one pin");
+        assert_eq!(at_compile_time!(TWICE), WHY);
+        assert_eq!(at_compile_time!(SHARED), WHY, "VCP to VM shares VM");
+        assert_eq!(
+            at_compile_time!(SHARED_TWO),
+            WHY,
+            "VM, the first's second end"
+        );
+        assert_eq!(
+            at_compile_time!(SHARED_BOTH_TWO),
+            WHY,
+            "VM, both second ends"
+        );
+        assert_eq!(at_compile_time!(STATED), Ok(()), "CVM1 states its value");
+        assert_eq!(at_compile_time!(APART), Ok(()), "VM and VINT are two pins");
+    }
+
+    /// `1319` F3: an I2C row with no address strap (TMP117's ADD0 to GND).
+    #[test]
+    fn an_i2c_row_with_no_address_strap_is_refused() {
+        const BAD: Arm = Arm {
+            wiring: Wiring::I2c(&[("4", Gnd), ("1", Scl), ("2", Gnd), ("5", Rail), ("6", Sda)]),
+            ..TMP117
+        };
+        assert_eq!(
+            at_compile_time!(BAD),
+            Err("an I2C row with no address strap")
+        );
+    }
+
+    /// `1319` F3: the second, third or fourth decoupler, held against the
+    /// count [`DECOUPLERS`] states for the part, and a bus part it does not
+    /// name.
+    #[test]
+    fn a_decoupler_dropped_or_added_is_refused() {
+        const DROPPED: Arm = Arm {
+            passives: &[Passive::Decouple("100n")],
+            ..BMP581
+        };
+        const ADDED: Arm = Arm {
+            passives: &[
+                Passive::Decouple("100n"),
+                Passive::Decouple("2u2"),
+                Passive::Decouple("10n"),
+                Passive::Decouple("10n"),
+            ],
+            ..ICM42688P
+        };
+        const UNNAMED: Arm = Arm {
+            part: "BME281",
+            ..BME280
+        };
+        const WHY: Result<(), &str> = Err("a bus row whose decoupler count is not its part's");
+        assert_eq!(at_compile_time!(DROPPED), WHY, "dropped");
+        assert_eq!(at_compile_time!(ADDED), WHY, "added");
+        assert_eq!(at_compile_time!(UNNAMED), WHY, "not named");
+    }
+
+    /// `1319` F3: one own-net name on two pins of a row, which `emit` would
+    /// refuse as `ReservedName`, blaming the specification: ICM20948's VDD
+    /// strapped as REGOUT, W25Q64JVxIQ's HOLD strapped as WP, and BME280's
+    /// VDDIO pin 2, five pins after its SDO address strap, strapped as SDO.
+    #[test]
+    fn one_own_net_name_on_two_pins_is_refused() {
+        const STRAP_AND_OWN: Arm = Arm {
+            wiring: Wiring::Spi(&[
+                ("10", Own("REGOUT")),
+                ("8", Role::Strap("REGOUT")),
+                ("13", Rail),
+                ("18", Gnd),
+                ("20", Gnd),
+                ("11", Gnd),
+                ("22", Cs),
+                ("23", Sck),
+                ("24", Mosi),
+                ("9", Miso),
+            ]),
+            ..ICM20948
+        };
+        const TWO_STRAPS: Arm = Arm {
+            wiring: Wiring::Spi(&[
+                ("3", Role::Strap("WP")),
+                ("7", Role::Strap("WP")),
+                ("1", Cs),
+                ("2", Miso),
+                ("4", Gnd),
+                ("5", Mosi),
+                ("6", Sck),
+                ("8", Rail),
+            ]),
+            ..W25Q64JVXIQ
+        };
+        const ADDR_AND_STRAP: Arm = Arm {
+            wiring: Wiring::I2c(&[
+                ("5", Addr(Some("SDO"), &[Gnd, Rail])),
+                ("1", Gnd),
+                ("7", Gnd),
+                ("6", Rail),
+                ("8", Rail),
+                ("2", Role::Strap("SDO")),
+                ("3", Sda),
+                ("4", Scl),
+            ]),
+            ..BME280
+        };
+        const WHY: Result<(), &str> = Err("one own-net name on two pins of a row");
+        assert_eq!(at_compile_time!(STRAP_AND_OWN), WHY);
+        assert_eq!(at_compile_time!(TWO_STRAPS), WHY);
+        assert_eq!(at_compile_time!(ADDR_AND_STRAP), WHY);
+    }
+
+    /// `1319` F3: a pin listed twice in a row: ICM42688P's VDDIO (8) listed
+    /// as a second VDD (5), and its RESV (9) as a second GND (6), two rows
+    /// apart.
+    #[test]
+    fn a_pin_listed_twice_is_refused() {
+        const BAD: Arm = Arm {
+            wiring: Wiring::Spi(&[
+                ("5", Rail),
+                ("5", Rail),
+                ("6", Gnd),
+                ("7", Gnd),
+                ("9", Gnd),
+                ("12", Cs),
+                ("13", Sck),
+                ("14", Mosi),
+                ("1", Miso),
+            ]),
+            ..ICM42688P
+        };
+        const APART: Arm = Arm {
+            wiring: Wiring::Spi(&[
+                ("5", Rail),
+                ("8", Rail),
+                ("6", Gnd),
+                ("7", Gnd),
+                ("6", Gnd),
+                ("12", Cs),
+                ("13", Sck),
+                ("14", Mosi),
+                ("1", Miso),
+            ]),
+            ..ICM42688P
+        };
+        const WHY: Result<(), &str> = Err("a pin listed twice in one row");
+        assert_eq!(at_compile_time!(BAD), WHY);
+        assert_eq!(at_compile_time!(APART), WHY);
     }
 }
