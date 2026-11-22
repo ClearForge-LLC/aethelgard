@@ -294,9 +294,10 @@ fn adc_witness(status: &str, reads: u64, code: Option<u32>) -> Record {
 fn level_witness(status: &str) -> Record {
     let (settle_ns, end_level) = match status {
         "unanchored" => (None, Some(0)),
-        "unreadable" => (Some(2_499_000), None),
-        "mismatch" => (Some(2_499_000), Some(1)),
-        _ => (Some(2_499_000), Some(0)),
+        // An idle low settles at its anchor, kind 26's 6 ns (adversarial F1).
+        "unreadable" => (Some(6), None),
+        "mismatch" => (Some(6), Some(1)),
+        _ => (Some(6), Some(0)),
     };
     Record::MotorLevelWitness {
         label: "M1".into(),
@@ -860,25 +861,26 @@ fn motor_records() -> (Record, Record, Record) {
             protocol: "pwm".into(),
             psc: 63,
             arr: 2499,
-            ccr: 1000,
+            // Idling low (adversarial F1: this fixture idled at a pulse).
+            ccr: 0,
             pwm: Some((400, 1000, 2000)),
-            idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+            idle: Some(aethelgard_chaos::record::MotorIdle::Low),
             resolution_ps: Some(1_000_000),
         },
         Record::MotorTimingCheck {
             label: "M1".into(),
             kernel_hz: 64_000_000,
             period_ps: 2_500_000_000,
-            high_ps: 1_000_000_000,
+            high_ps: 0,
             nominal_period_ps: 2_500_000_000,
-            nominal_high_ps: 1_000_000_000,
+            nominal_high_ps: 0,
             holds: true,
         },
         Record::MotorWitness {
             label: "M1".into(),
             observer: "gpioPortA.pa8obs".into(),
             period_ns: PERIOD,
-            high_ns: 1_000_000,
+            high_ns: 0,
             grain_ns: 10,
             quantum_ns: 100_000,
             status: "level".into(),
@@ -1070,6 +1072,15 @@ fn finding_cases() -> Vec<(&'static str, &'static str, Cause)> {
             r[LEVEL_W] = level_witness("mismatch");
         }),
         (MOTOR_LEVEL_FINDING, MOTOR_REFUSED, |r| {
+            // Unanchored: kind 26 observed no CEN rise either (F1's join).
+            if let Record::MotorWitness {
+                anchor_ns,
+                cen_rises,
+                ..
+            } = &mut r[MOTOR_W]
+            {
+                (*anchor_ns, *cen_rises) = (None, 0);
+            }
             r[LEVEL_W] = level_witness("unanchored");
         }),
         (MOTOR_LEVEL_FINDING, MOTOR_REFUSED, |r| {
@@ -1142,7 +1153,14 @@ fn a_pin_witness_is_judged_only_once_the_boot_word_is_set() {
                 r[7] = boot(Some(0));
                 // The motor outputs' kind 26 unwitnessed before the boot word.
                 r[LED_W] = gpio_witness("LED", "unwitnessed");
-                r[BTN_W] = gpio_witness("BTN", "mismatch");
+                // A mismatch reads a level other than the driven one (F6).
+                r[BTN_W] = Record::PinGpioWitness {
+                    net: "BTN".into(),
+                    status: "mismatch".into(),
+                    bsrr: None,
+                    ordered: None,
+                    level: Some(0),
+                };
                 r[ADC_W] = adc_witness("unwitnessed", 0, None);
                 r[LEVEL_W] = level_witness("mismatch");
             },
@@ -1509,7 +1527,13 @@ fn level_relaxes_only_the_counts_of_a_motor_witness() {
             *off_grid = 7;
         }
     };
-    assert_eq!(judged(busy), Ok(()));
+    // Witnessed beside edges past an idle low's: refused (adversarial F1).
+    assert_eq!(
+        judged(busy),
+        Err(
+            "a witnessed level's motor witness shows an edge past its idle's, or its window holds no period after the settled instant"
+        )
+    );
     // The timing, the grain and the window still bind it.
     let timing = "a motor witness's status is not what its counts and its output's timing give";
     assert_eq!(
@@ -1565,4 +1589,169 @@ fn an_archived_run_with_a_pin_device_is_judged_by_its_records_alone() {
     let (dir, _) = write_run("pins-archived", 11, &events);
     let state = replay_dir(&dir).unwrap().state;
     assert!(check_run(&state.records).unwrap().matched);
+}
+
+// ---- AET-WO-1211c adversarial pass: each forgery refused by name.
+
+fn kind26(r: &mut [Record]) -> &mut Record {
+    &mut r[MOTOR_W]
+}
+
+/// F1: kind 26 says `level` and kind 37 `witnessed` on an output kind 24
+/// says idles at a pulse (a live PWM): refused.
+#[test]
+fn a_level_witness_on_a_pulse_idle_output_is_refused() {
+    let r = run(
+        |r| {
+            if let Record::MotorOutputSolved { idle, ccr, .. } = &mut r[5] {
+                (*idle, *ccr) = (
+                    Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+                    1000,
+                );
+            }
+            // Kinds 25 and 26 consistent with that pulse, so only the level
+            // witness can be refused.
+            for rec in r.iter_mut() {
+                match rec {
+                    Record::MotorTimingCheck {
+                        high_ps,
+                        nominal_high_ps,
+                        ..
+                    } => (*high_ps, *nominal_high_ps) = (1_000_000_000, 1_000_000_000),
+                    Record::MotorWitness { high_ns, .. } => *high_ns = 1_000_000,
+                    _ => {}
+                }
+            }
+        },
+        &[],
+    );
+    assert_eq!(
+        check_run(&r).unwrap_err(),
+        "a level witness's output does not idle at a static level"
+    );
+}
+
+/// F1: a failing PWM witness (38 rises to 95 ms) relabelled `level` beside a
+/// witnessed kind 37 with its finding dropped: refused, not a forged pass.
+#[test]
+fn a_live_pwm_forged_into_a_level_pass_is_refused() {
+    let forged = run(
+        |r| {
+            if let Record::MotorWitness {
+                rises,
+                falls,
+                first_ns,
+                last_ns,
+                span_ns,
+                ..
+            } = kind26(r)
+            {
+                (*rises, *falls) = (38, 38);
+                (*first_ns, *last_ns, *span_ns) = (Some(3_000_000), Some(95_000_000), Some(5));
+            }
+        },
+        &[],
+    );
+    assert!(check_run(&forged).is_err());
+    // Written as an archive and read back by the strict reader: the same.
+    let events: Vec<Event> = forged
+        .into_iter()
+        .enumerate()
+        .map(|(i, record)| Event::Record {
+            timestamp: i as u64,
+            record,
+        })
+        .collect();
+    let (dir, _) = write_run("forged-level", 12, &events);
+    assert!(check_run(&replay_dir(&dir).unwrap().state.records).is_err());
+}
+
+/// F1: kind 37's level is not kind 24's idle, or its settled instant is not
+/// kind 26's anchor's: each refused by its own name.
+#[test]
+fn a_level_witness_s_level_and_settled_instant_are_its_output_s() {
+    let with = |level: u8, settle: Option<u64>| {
+        run(
+            |r| {
+                if let Record::MotorLevelWitness {
+                    level: l,
+                    end_level,
+                    settle_ns,
+                    ..
+                } = &mut r[LEVEL_W]
+                {
+                    (*l, *end_level, *settle_ns) = (level, Some(level), settle);
+                }
+            },
+            &[],
+        )
+    };
+    assert_eq!(
+        check_run(&with(1, Some(6))).unwrap_err(),
+        "a level witness's level is not its output's declared idle"
+    );
+    assert_eq!(
+        check_run(&with(0, Some(99_999_999))).unwrap_err(),
+        "a level witness's settled instant is not its anchor's, plus a period and a quantum when high"
+    );
+    // F9: a window holding less than one period after the settled instant.
+    let short = run(
+        |r| {
+            if let Record::MotorWitness { end_ns, .. } = kind26(r) {
+                *end_ns = 6 + PERIOD - 1;
+            }
+        },
+        &[],
+    );
+    assert!(check_run(&short).is_err());
+}
+
+/// F5: a held input, an output and an ADC input on a motor output's pin, or
+/// on one another's: refused.
+#[test]
+fn a_pin_device_s_pin_is_its_own() {
+    let on = |k: usize, at: &str| {
+        run(
+            |r| match &mut r[k] {
+                Record::PinGpioDeclared { pin, .. } | Record::PinAdcDeclared { pin, .. } => {
+                    *pin = at.into()
+                }
+                _ => unreachable!(),
+            },
+            &[],
+        )
+    };
+    let why = "a pin device's pin is another signal's or a peripheral's";
+    assert_eq!(check_run(&on(BTN, "PA8")).unwrap_err(), why, "M1's pin");
+    let led = match &base()[LED] {
+        Record::PinGpioDeclared { pin, .. } => pin.clone(),
+        _ => unreachable!(),
+    };
+    assert_eq!(check_run(&on(ADC, &led)).unwrap_err(), why, "LED's pin");
+}
+
+/// F6: a mismatch whose reading is the declaration's is a forged failure:
+/// refused for an ADC input and for an input.
+#[test]
+fn a_mismatch_reads_other_than_its_declaration() {
+    let adc = run(
+        |r| r[ADC_W] = adc_witness("mismatch", 3, Some(1861)),
+        &[("adc_value_mismatch", "error", 1)],
+    );
+    assert_eq!(
+        check_run(&adc).unwrap_err(),
+        "an ADC input's mismatch reads no code, or the declared one"
+    );
+    let input = run(
+        |r| {
+            if let Record::PinGpioWitness { status, .. } = &mut r[BTN_W] {
+                *status = "mismatch".into();
+            }
+        },
+        &[("gpio_mismatch", "error", 1)],
+    );
+    assert_eq!(
+        check_run(&input).unwrap_err(),
+        "an input's mismatch reads no level, or the driven one"
+    );
 }

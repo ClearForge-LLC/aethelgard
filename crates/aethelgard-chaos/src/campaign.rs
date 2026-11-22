@@ -1909,6 +1909,34 @@ fn check_pin_device_records(
             _ => {}
         }
     }
+    // A pin device's pin is its own (adversarial F5): no two of kinds 33 and
+    // 35 share one, and none is a solved peripheral's (an I2C line, an SPI
+    // chip select, a motor output, a serial port's TX or RX), so a forged
+    // archive cannot hold a peripheral's pin under a pin device's name.
+    let mut taken: BTreeSet<&str> = BTreeSet::new();
+    for r in records {
+        match r {
+            Record::I2cBusSolved { lines, .. } => {
+                taken.extend(lines.iter().map(|l| l.pin.as_str()))
+            }
+            Record::SpiBusSolved { devices, .. } => {
+                taken.extend(devices.iter().map(|d| d.2.as_str()));
+            }
+            Record::MotorOutputSolved { pin, .. } => {
+                taken.insert(pin);
+            }
+            Record::SerialPortSolved { tx, rx, .. } => taken.extend([tx.as_str(), rx.as_str()]),
+            _ => {}
+        }
+    }
+    for r in gpio.values().chain(adc.values()) {
+        let (Record::PinGpioDeclared { pin, .. } | Record::PinAdcDeclared { pin, .. }) = r else {
+            continue;
+        };
+        if !taken.insert(pin) {
+            return Err("a pin device's pin is another signal's or a peripheral's");
+        }
+    }
     let mut out: BTreeMap<&'static str, u64> = BTreeMap::new();
     let mut gpio_witnessed: BTreeSet<&str> = BTreeSet::new();
     let mut adc_witnessed: BTreeSet<&str> = BTreeSet::new();
@@ -1941,6 +1969,11 @@ fn check_pin_device_records(
                 };
                 if !shaped {
                     return Err("a GPIO witness is not shaped as its signal's direction");
+                }
+                // An input's mismatch reads a level, and not the driven one
+                // (adversarial F6: a forged failure).
+                if !*output && status == "mismatch" && level.is_none_or(|l| l == *declared) {
+                    return Err("an input's mismatch reads no level, or the driven one");
                 }
                 if status == "witnessed" {
                     let fits = if *output {
@@ -1992,6 +2025,11 @@ fn check_pin_device_records(
                     return Err(
                         "a witnessed ADC input's code is not the one its declaration gives",
                     );
+                }
+                // A mismatch reads a code, and not the declared one
+                // (adversarial F6: a forged failure).
+                if status == "mismatch" && code.is_none_or(|c| c == *declared) {
+                    return Err("an ADC input's mismatch reads no code, or the declared one");
                 }
                 if booted {
                     let kind = match status.as_str() {
@@ -2082,6 +2120,70 @@ fn check_pin_device_records(
             && (!judged.contains(label.as_str()) || !levelled.insert(label))
         {
             return Err("a level witness names no kind 26 judged by level, or one twice");
+        }
+    }
+    // Each level witness against its output (adversarial F1, F9): its level
+    // is kind 24's declared idle level; its settled instant is kind 26's
+    // anchor, plus one period and one quantum for an idle high (`1211` Q10);
+    // its counts are within kind 26's; and witnessed, the window holds a
+    // period after it, and kind 26 shows no edge but an idle high's one rise.
+    for r in records {
+        let Record::MotorLevelWitness {
+            label,
+            level,
+            settle_ns,
+            rises_after,
+            falls_after,
+            status,
+            ..
+        } = r
+        else {
+            continue;
+        };
+        let idle = records.iter().find_map(|s| match s {
+            Record::MotorOutputSolved { label: l, idle, .. } if l == label => Some(*idle),
+            _ => None,
+        });
+        let high = match idle {
+            Some(Some(record::MotorIdle::Low)) => false,
+            Some(Some(record::MotorIdle::High)) => true,
+            _ => return Err("a level witness's output does not idle at a static level"),
+        };
+        if *level != u8::from(high) {
+            return Err("a level witness's level is not its output's declared idle");
+        }
+        let Some(Record::MotorWitness {
+            anchor_ns,
+            period_ns,
+            quantum_ns,
+            end_ns,
+            rises,
+            falls,
+            ..
+        }) = records
+            .iter()
+            .find(|w| matches!(w, Record::MotorWitness { label: l, .. } if l == label))
+        else {
+            return Err("a motor witness judged by level has no level witness");
+        };
+        let settle = anchor_ns.map(|a| a + if high { period_ns + quantum_ns } else { 0 });
+        if *settle_ns != settle {
+            return Err(
+                "a level witness's settled instant is not its anchor's, plus a period and a quantum when high",
+            );
+        }
+        if rises_after > rises || falls_after > falls {
+            return Err("a level witness counts more edges than its motor witness");
+        }
+        let still = match high {
+            false => *rises == 0 && *falls == 0,
+            true => *rises <= 1 && *falls == 0,
+        };
+        let window = settle.is_some_and(|s| s.saturating_add(*period_ns) <= *end_ns);
+        if status == "witnessed" && !(still && window) {
+            return Err(
+                "a witnessed level's motor witness shows an edge past its idle's, or its window holds no period after the settled instant",
+            );
         }
     }
     if levelled != judged {
