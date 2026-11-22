@@ -98,6 +98,23 @@ fn emitter_numbered(key: &str, mcu: &str) -> bool {
 /// I2C devices, SPI devices, connectors, the power tree's, the test points
 /// (`AET-WO-1312`), then the pin devices' (`AET-WO-1211a`).
 pub(crate) fn references(spec: &Specification) -> Vec<&str> {
+    declared(spec, true)
+}
+
+/// Every reference but the test points', in [`references`]' order: what
+/// step 15a judges each test point against (`AET-WO-1218`). It is built
+/// without them, not sliced from [`references`] by position, so a list
+/// that places another kind after the test points is still whole.
+pub(crate) fn references_but_test_points(spec: &Specification) -> Vec<&str> {
+    declared(spec, false)
+}
+
+fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
+    let test_points = if test_points {
+        spec.declared_test_points()
+    } else {
+        &[]
+    };
     spec.declared_i2c_devices()
         .iter()
         .map(|d| d.reference.as_str())
@@ -117,11 +134,7 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
                 .flat_map(power::references)
                 .map(String::as_str),
         )
-        .chain(
-            spec.declared_test_points()
-                .iter()
-                .map(|t| t.reference.as_str()),
-        )
+        .chain(test_points.iter().map(|t| t.reference.as_str()))
         .chain(crate::pin_devices::references(spec))
         .collect()
 }

@@ -2117,7 +2117,8 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 
 /// Step 11 (ruled D10 (a)): the battery sense's full scale against VREF+ and
 /// its source impedance against RAIN at the declared resolution, or the
-/// reservoir capacitor AN2834 requires.
+/// reservoir capacitor AN2834 requires, rated for VDDA's maximum
+/// (`AET-WO-1218`). A declared reservoir is a capacitor row either way.
 fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
     let (_, bmax) = battery_range(&ctx.power.battery);
     let vref_min = ctx.domain(&ctx.spec.mcu.supply).map_or(0, |d| range(d).0);
@@ -2164,10 +2165,19 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         let rth_hi = rt * (mm + et);
         let rbh = rb * (mm + eb);
         let rth = div_ceil(rth_hi * rbh, (rth_hi + rbh) * mm);
+        // A declared reservoir is a capacitor row whether or not RAIN needs
+        // it (`AET-WO-1218`, `1217` R5): `emit` draws it either way.
+        let reservoir = match &s.reservoir {
+            None => None,
+            Some(c) => match &ctx.row(&c.reference, &c.part)?.kind {
+                Kind::Capacitor(cap) => Some((c, cap)),
+                _ => return Err(ctx.kind_err(&c.reference, &c.part, "capacitor")),
+            },
+        };
         if rth <= i128::from(rain.value) {
             continue;
         }
-        let Some(c) = &s.reservoir else {
+        let Some((c, cap)) = reservoir else {
             return Err(refuse(
                 Refusal::SenseSourceImpedance,
                 &s.net,
@@ -2177,10 +2187,6 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 ),
                 ctx.cite(&rain.at),
             ));
-        };
-        let row = ctx.row(&c.reference, &c.part)?;
-        let Kind::Capacitor(cap) = &row.kind else {
-            return Err(ctx.kind_err(&c.reference, &c.part, "capacitor"));
         };
         let need = reservoir_min_picofarads(m, s.adc_resolution_bits);
         if i128::from(cap.rated_picofarads.value) < need {
@@ -2194,13 +2200,19 @@ fn sense(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                 ctx.cite(&m.reservoir_rule.at),
             ));
         }
-        if cap.rated_millivolts.value < i64::try_from(vref_min).unwrap_or(i64::MAX) {
+        // Rated for VDDA's maximum, by the pin devices' rule (`AET-WO-1218`,
+        // `1217` R3): the pin can sit anywhere up to it.
+        if let Some(vdda) = ctx.domain(&ctx.spec.mcu.supply)
+            && !crate::pin_devices::reservoir_rated(cap.rated_millivolts.value, vdda)
+        {
             return Err(refuse(
                 Refusal::ExternalPartOutOfRange,
                 &c.reference,
                 format!(
-                    "the reservoir is rated {} mV, below the pin's {vref_min} mV",
-                    cap.rated_millivolts.value
+                    "the reservoir is rated {} mV, below VDDA's maximum of {} mV on `{}`",
+                    cap.rated_millivolts.value,
+                    crate::maximum_millivolts(vdda),
+                    vdda.id
                 ),
                 ctx.cite(&cap.rated_millivolts.at),
             ));

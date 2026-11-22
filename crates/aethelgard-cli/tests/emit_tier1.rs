@@ -581,6 +581,53 @@ fn d1_drawn() -> Value {
     v
 }
 
+/// Every reference the emitted board's footprints carry, in file order.
+fn board_references(emitted: &Value) -> Vec<String> {
+    let text = fs::read_to_string(emitted["board"]["path"].as_str().unwrap()).unwrap();
+    let pcb = sexpr::parse(&text).unwrap();
+    pcb.children("footprint")
+        .map(|f| f.property("Reference").unwrap().to_owned())
+        .collect()
+}
+
+/// `AET-WO-1218` (`1216b` F1): D2 (`aethelgard-ir`'s DRV8833 fixture,
+/// drawn, its input PWM limit declared) with a test point validates, solves
+/// and emits; two emits are byte-identical, and its references are the bare
+/// board's with the test point beside them, so no other part's moves.
+#[test]
+fn a_pin_device_beside_a_test_point_validates_solves_and_emits_with_stable_references() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../aethelgard-ir/tests/fixtures/d2-drv8833.json");
+    let mut bare: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    bare["board"].as_object_mut().unwrap().remove("drawn");
+    bare["pin_devices"][0]["part_limits"]["input_pwm_max_hz"] =
+        json!({"value": 50000, "source": "a declaration for this test, no held document"});
+    let mut with_tp = bare.clone();
+    with_tp["test_points"] = json!([{"net": "DRV_NFAULT", "reference": "TP1"}]);
+
+    let d = Dir::new("tp-pin");
+    let spec = write_spec(&d, &with_tp);
+    for cmd in ["validate", "solve"] {
+        json_line(&run(&[cmd, "--file", spec.to_str().unwrap()], None), 0);
+    }
+    let first = json_line(&emit(&spec, &d.0.join("a")), 0);
+    let second = json_line(&emit(&spec, &d.0.join("b")), 0);
+    for file in ["schematic", "bill_of_materials", "board"] {
+        assert_eq!(first[file]["sha256"], second[file]["sha256"], "{file}");
+    }
+    let with = board_references(&first);
+
+    let b = Dir::new("tp-pin-bare");
+    let bare_refs = board_references(&json_line(&emit(&write_spec(&b, &bare), &b.0), 0));
+    let mut want = bare_refs.clone();
+    want.push("TP1".to_owned());
+    let mut got = with.clone();
+    want.sort();
+    got.sort();
+    assert_eq!(got, want, "bare {bare_refs:?}");
+    assert!(bare_refs.contains(&"U2".to_owned()), "{bare_refs:?}");
+}
+
 /// A pin ST's table and KiCad's symbol name differently (`PC2` and `PC2_C`,
 /// package pin 28) is drawn by its position, so it is not refused. The pad
 /// takes only an analog input (`AET-WO-1217` F4), so the witness is D1's

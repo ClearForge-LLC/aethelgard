@@ -968,6 +968,35 @@ fn adversarial_3_a_port_on_an_i2c_or_spi_pin_is_refused_by_name() {
     assert_eq!(t.assignments["I2C_SCL"].pin, "PB8");
 }
 
+/// `AET-WO-1218` (`1217` R4): on the H753, whose row withholds `PC2` as an
+/// analog pad, with `USART2_TX` also on `PC2` in the test table, the reason
+/// names the pad beside the pin held by hand.
+#[test]
+fn a_port_refusal_names_a_pin_withheld_as_an_analog_pad() {
+    const H753: &str = "STM32H753ZITx";
+    let mut t = table();
+    t.part = H753.into();
+    let mut pc2 = t.pins["PA2"].clone();
+    pc2.position = 900;
+    t.pins.insert("PC2".into(), pc2);
+    let mut v = spec_json(vec![
+        port("A", Some("USART2"), None, None),
+        port("B", None, Some("PA2"), None),
+    ]);
+    v["mcu"]["part"] = json!(H753);
+    let e = solve(&parse(v), &t, HASH).expect_err("refused");
+    let SolveError::NoSerialPeripheral { reasons, .. } = &e else {
+        panic!("{e}");
+    };
+    assert_eq!(
+        reasons,
+        &[
+            "USART2: every pin for `USART2_TX` is held by hand (`PA2` by `serial_ports[1].tx`); \
+           `PC2` withheld as an analog pad (the MCU row's `io.analog_pads`)"
+        ]
+    );
+}
+
 #[test]
 fn a_port_with_every_pin_held_names_the_holders() {
     let e = solve_refused(spec_json(vec![

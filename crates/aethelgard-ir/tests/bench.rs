@@ -156,6 +156,49 @@ fn a_reference_the_emitter_numbers_is_refused_by_name() {
     }
 }
 
+/// D2 (`fixtures/d2-drv8833.json`) with its input PWM limit declared: a
+/// board with a pin device and no test point.
+fn d2() -> Value {
+    let mut v: Value = serde_json::from_str(include_str!("fixtures/d2-drv8833.json")).unwrap();
+    v["pin_devices"][0]["part_limits"]["input_pwm_max_hz"] =
+        json!({"value": 50000, "source": "a declaration for this test, no held document"});
+    v
+}
+
+/// `AET-WO-1218` (`1216b` F1): a test point beside a pin device validates,
+/// on `GND`, on the device's own net and on `BOOT0`. Step 15a sliced the
+/// test points off the end of `names::references`, which lists the pin
+/// devices after them, so each test point met itself.
+#[test]
+fn a_test_point_beside_a_pin_device_validates() {
+    for tps in [
+        json!([{"net": "GND", "reference": "TP1"}]),
+        json!([{"net": "DRV_NFAULT", "reference": "TP1"}]),
+        json!([{"net": "BOOT0", "reference": "TP1"}]),
+        json!([{"net": "GND", "reference": "TP1"}, {"net": "DRV_NSLEEP", "reference": "TP2"}]),
+    ] {
+        let mut v = d2();
+        v["test_points"] = tps.clone();
+        assert_eq!(spec_of(&v).validate(), Ok(()), "{tps}");
+    }
+}
+
+/// `AET-WO-1218`: a test point named for a pin device's reference, exactly
+/// or under KiCad's key, is refused by step 15a and names the device, not
+/// itself. `DRV1` is outside the emitter's numbering, so the collision, not
+/// `emitter_prefix`, refuses it.
+#[test]
+fn a_test_point_named_for_a_pin_device_is_refused_by_name() {
+    for taken in ["DRV1", "drv01"] {
+        let mut v = d2();
+        v["pin_devices"][0]["reference"] = json!("DRV1");
+        v["test_points"] = json!([{"net": "GND", "reference": taken}]);
+        let err = refusal(&v);
+        assert_refusal(&err, "TestPointReferenceTaken", taken);
+        assert!(err.to_string().contains("that `DRV1` already"), "{err}");
+    }
+}
+
 /// `AET-WO-3402` §1.1: any net but `GND` carries one test point.
 #[test]
 fn the_same_net_twice_is_refused_by_name() {

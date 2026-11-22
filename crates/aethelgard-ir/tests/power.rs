@@ -1038,6 +1038,60 @@ fn the_mutation_survivors_are_held() {
     );
 }
 
+/// `AET-WO-1218` (`1217` R3): the battery sense's reservoir is rated for
+/// VDDA's maximum, as a pin device's is (`1217` F8). VDD_3V3 is 3300 mV at
+/// 50 per mille: 3135 mV to 3465 mV. No held capacitor is rated under 10 V,
+/// so the band is reached by a test row.
+#[test]
+fn the_sense_reservoir_is_rated_for_vddas_maximum() {
+    let vdd = aethelgard_ir::VoltageDomain {
+        id: "VDD_3V3".into(),
+        nominal_millivolts: 3300,
+        tolerance_permille: 50,
+    };
+    let (min, max) = (
+        aethelgard_ir::minimum_millivolts(&vdd),
+        aethelgard_ir::maximum_millivolts(&vdd),
+    );
+    assert_eq!((min, max), (3135, 3465));
+    let mut v = base();
+    v["power"]["sense"][0]["reservoir"]["part"] = json!("BAND_100N");
+    for (rated, ok) in [(min, false), (max - 1, false), (max, true)] {
+        let mut t = table_json();
+        let mut band = row(&mut t, "GCM188R71H104KA57").clone();
+        band["part"] = json!("BAND_100N");
+        band["kind"]["capacitor"]["rated_millivolts"]["value"] = json!(rated);
+        t["parts"].as_array_mut().unwrap().push(band);
+        let r = against(&v, &t);
+        if ok {
+            assert_eq!(r, Ok(()), "{rated}");
+        } else {
+            let err = r.unwrap_err();
+            assert_power(&err, Refusal::ExternalPartOutOfRange, "C50");
+            assert!(
+                err.to_string().contains("VDDA's maximum of 3465 mV"),
+                "{err}"
+            );
+        }
+    }
+}
+
+/// `AET-WO-1218` (`1217` R5): the battery sense's declared reservoir is a
+/// capacitor row whether or not RAIN needs it. 10 k / 1 k is under RAIN, so
+/// before this a resistor row validated and `emit` refused it
+/// (`PowerNotDrawable`).
+#[test]
+fn a_sense_reservoir_rain_does_not_need_is_still_a_capacitor_row() {
+    let mut v = base();
+    v["power"]["sense"][0]["top"]["ohms"] = json!(10_000);
+    v["power"]["sense"][0]["bottom"]["ohms"] = json!(1_000);
+    assert_eq!(spec(&v).validate(), Ok(()));
+    v["power"]["sense"][0]["reservoir"]["part"] = json!("CRCW0603_F_K");
+    let err = refused(&v);
+    assert_power(&err, Refusal::PowerPartUnknown, "C50");
+    assert!(err.to_string().contains("is not a capacitor row"), "{err}");
+}
+
 /// `power::check` is public: on a specification nobody validated, a BOR
 /// level past the table is refused, never an index past its end (A19).
 #[test]

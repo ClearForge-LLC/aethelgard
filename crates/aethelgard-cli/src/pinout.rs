@@ -3,8 +3,8 @@
 //! and a declared allow-list. It starts no process: the check reads bytes.
 //!
 //! The package is the solver's own pin table for `STM32H753ZITx`, the one
-//! part the check's register layout knows. The topology names no part yet
-//! (`AET-WO-4300a` adds it), so none is read from it.
+//! part the check's register layout knows. A topology naming another MCU is
+//! refused (`PartMismatch`, `AET-WO-1218`).
 
 use std::path::Path;
 
@@ -49,7 +49,8 @@ fn refused(err: CheckRefusal) -> Stop {
         CheckRefusal::DecodesDisagree { .. } => EXIT_TOOL_ERROR,
         CheckRefusal::InvalidPin { .. }
         | CheckRefusal::NoPinSpeed { .. }
-        | CheckRefusal::GpioNotJudged { .. } => EXIT_INVALID_SPEC,
+        | CheckRefusal::GpioNotJudged { .. }
+        | CheckRefusal::PartMismatch { .. } => EXIT_INVALID_SPEC,
         CheckRefusal::UnsupportedPart { .. } => EXIT_INTERNAL,
         CheckRefusal::Elf { .. }
         | CheckRefusal::Header { .. }

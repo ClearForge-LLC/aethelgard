@@ -1487,6 +1487,10 @@ struct Model<'s, 't> {
     spi_instances: Vec<String>,
     /// Per (instance, signal): the unreserved pins carrying it, in key order.
     candidates: BTreeMap<(String, &'static str), Vec<(&'t str, u8)>>,
+    /// Per (instance, signal): the analog pads carrying it, which
+    /// `candidates` leaves out (`AET-WO-1217` F4), in key order; a refusal
+    /// names them (`AET-WO-1218`, `1217` R4).
+    withheld: BTreeMap<(String, &'static str), Vec<&'t str>>,
 }
 
 /// An instance is offered when the table carries each of its kind's signals
@@ -1702,6 +1706,7 @@ impl<'s, 't> Model<'s, 't> {
             .filter(|p| carried(&format!("{p}_TX")) && carried(&format!("{p}_RX")))
             .collect();
         let mut candidates = BTreeMap::new();
+        let mut withheld = BTreeMap::new();
         let uart_signals: &[&'static str] = &["TX", "RX"];
         let groups = [
             (Kind::I2c.signals(), i2c_instances.clone()),
@@ -1728,6 +1733,17 @@ impl<'s, 't> Model<'s, 't> {
                         })
                         .collect();
                     candidates.insert((inst.clone(), *name), pins);
+                    let on_pads: Vec<&'t str> = table
+                        .pins
+                        .iter()
+                        .filter(|(pin, p)| {
+                            !reserved.contains(&pin.as_str())
+                                && pads.contains(&pin.as_str())
+                                && p.alternate_functions.contains_key(&wanted)
+                        })
+                        .map(|(pin, _)| pin.as_str())
+                        .collect();
+                    withheld.insert((inst.clone(), *name), on_pads);
                 }
             }
         }
@@ -1742,6 +1758,7 @@ impl<'s, 't> Model<'s, 't> {
             i2c_instances,
             spi_instances,
             candidates,
+            withheld,
         };
         model.check_peripherals()?;
         model.check_each_bus()?;
@@ -1759,6 +1776,23 @@ impl<'s, 't> Model<'s, 't> {
         self.candidates
             .get(&(inst.to_owned(), sig))
             .map_or(&[], Vec::as_slice)
+    }
+
+    /// What a refusal adds for the analog pads carrying `inst`'s `sig`:
+    /// nothing when none does (`AET-WO-1218`, `1217` R4).
+    fn withheld_note(&self, inst: &str, sig: &'static str) -> String {
+        let pads = self
+            .withheld
+            .get(&(inst.to_owned(), sig))
+            .map_or(&[][..], Vec::as_slice);
+        if pads.is_empty() {
+            return String::new();
+        }
+        let named: Vec<String> = pads.iter().map(|p| format!("`{p}`")).collect();
+        format!(
+            "; {} withheld as an analog pad (the MCU row's `io.analog_pads`)",
+            named.join(", ")
+        )
     }
 
     fn check_peripherals(&self) -> Result<(), SolveError> {
@@ -1815,13 +1849,14 @@ impl<'s, 't> Model<'s, 't> {
                     .expect("an unplaceable bus has a signal with no pin");
                 let pins = self.pins_for(inst, sig.name);
                 let name = format!("{inst}_{}", sig.name);
+                let note = self.withheld_note(inst, sig.name);
                 reasons.push(match sig.hand {
                     Some(h) => format!("{inst}: `{name}` is not on pin `{h}`"),
                     None if pins.is_empty() => {
-                        format!("{inst}: the table has no unreserved pin for `{name}`")
+                        format!("{inst}: the table has no unreserved pin for `{name}`{note}")
                     }
                     None => format!(
-                        "{inst}: every pin for `{name}` is held by hand ({})",
+                        "{inst}: every pin for `{name}` is held by hand ({}){note}",
                         pins.iter()
                             .map(|(pin, _)| format!("`{pin}` by `{}`", alone.used[pin]))
                             .collect::<Vec<_>>()
@@ -2391,17 +2426,18 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
         for sig in [&port.tx, &port.rx] {
             let name = format!("{p}_{}", sig.name);
             let pins = self.model.pins_for(p, sig.name);
+            let note = self.model.withheld_note(p, sig.name);
             match sig.hand {
                 Some(h) if !pins.iter().any(|(q, _)| *q == h) => {
                     return format!("{p}: `{name}` is not on pin `{h}`");
                 }
                 Some(_) => {}
                 None if pins.is_empty() => {
-                    return format!("{p}: the table has no unreserved pin for `{name}`");
+                    return format!("{p}: the table has no unreserved pin for `{name}`{note}");
                 }
                 None if pins.iter().all(|(q, _)| !self.free(q, &sig.path)) => {
                     return format!(
-                        "{p}: every pin for `{name}` is held by hand ({})",
+                        "{p}: every pin for `{name}` is held by hand ({}){note}",
                         pins.iter()
                             .map(|(q, _)| format!("`{q}` by `{}`", self.used[q]))
                             .collect::<Vec<_>>()

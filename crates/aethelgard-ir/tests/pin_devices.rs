@@ -436,6 +436,28 @@ fn a_source_above_rain_with_no_reservoir_is_refused() {
     assert_kind(&v, "OffDomainAboveLimit");
 }
 
+/// `AET-WO-1218` (`1217` R5): a declared reservoir is a capacitor row
+/// whether or not RAIN needs it. D1's R2 is under RAIN, so before this a
+/// part no row holds, or a resistor row, validated and `emit` refused it.
+#[test]
+fn a_reservoir_rain_does_not_need_is_still_a_capacitor_row() {
+    for part in ["NOPE", "CRCW0603_F_K"] {
+        let mut v = d1();
+        device(&mut v)["analog"][0]["transfer"]["current_output"]["reservoir"]["part"] =
+            json!(part);
+        let e = refused(&v);
+        assert_eq!(
+            (e.kind(), e.path()),
+            (
+                "PowerPartUnknown",
+                Some("pin_devices[0].analog[0].transfer.current_output.reservoir")
+            ),
+            "{part}: {e}"
+        );
+        assert!(e.to_string().contains("is not a capacitor row"), "{e}");
+    }
+}
+
 // ---------------------------------------------------------------- the bridge
 
 #[test]
