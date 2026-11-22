@@ -1,5 +1,5 @@
 {
-  "schema_version": 22,
+  "schema_version": 23,
   "project_name": "bench-motor-driver",
   "mcu": {
     "part": "STM32H753ZITx",

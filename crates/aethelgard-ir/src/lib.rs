@@ -112,7 +112,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// with no default; `{"pulse_us": pulse_min_us}` and 1,000,000 restate what
 /// the firmware wrote before, so no solved word of a committed specification
 /// moved.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 22;
+/// Version 23 requires `startup_max_us` and `startup_source` on a declared
+/// `crystal` or `external` HSE (`AET-WO-4240b` §1.1, Q1 ruled 2026-11-20;
+/// renumbered from 22 by the same rule, merging after `1211a`): the
+/// bring-up's `HSERDY` bound with its source, which no default supplies; a
+/// `null` HSE carries neither, so a committed specification moved by its
+/// version line alone.
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 23;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -527,9 +533,12 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// for `mcu.hse` `null`, so such a topology differs only in its version),
 /// version 14 `gpio`'s direction with an output's `initial` or an input's
 /// `pull`, `adc_inputs`, a PWM output's `idle` and `resolution_ps`, and
-/// `pin_devices` (`AET-WO-1211a`: absent when none is declared); an older
-/// file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 14;
+/// `pin_devices` (`AET-WO-1211a`: absent when none is declared), version 15
+/// the HSE tree's `flash_acr`, its declaration's start-up bound and the SPI
+/// kernels `pll1_q` and `pclk` (`AET-WO-4240b` Q2, Q3, Q6, renumbered from
+/// 14 by the same rule); an older file is refused, never defaulted
+/// (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 15;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -645,16 +654,20 @@ pub struct SolvedTopology {
     pub pin_devices: BTreeMap<String, pin_devices::SolvedPinDevice>,
 }
 
-/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): `per_ck`
-/// for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`, RM0433 Rev 9 §8.7.20; `per_ck`
-/// is `hsi_ker_ck` at `CKPERSEL`'s reset `00`, §8.7.19), `hsi_ker_ck` for
-/// SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6 (`RCC_D3CCIPR.SPI6SEL` =
-/// `011`, §8.7.22).
+/// The kernel clock an SPI controller is given (`AET-WO-4230` §1.1): on a
+/// board with no HSE, `per_ck` for SPI1–3 (`RCC_D2CCIP1R.SPI123SEL` = `100`,
+/// RM0433 Rev 9 §8.7.20; `per_ck` is `hsi_ker_ck` at `CKPERSEL`'s reset `00`,
+/// §8.7.19), `hsi_ker_ck` for SPI4/5 (`SPI45SEL` = `011`, §8.7.20) and SPI6
+/// (`RCC_D3CCIPR.SPI6SEL` = `011`, §8.7.22). On an HSE board every select is
+/// left at its reset `000` (`4240` D6, ruled; `AET-WO-4240b` Q3): `pll1_q_ck`
+/// for SPI1–3, the APB clock for SPI4–6 (`rcc_pclk2`, `rcc_pclk4` for SPI6).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SpiKernel {
     PerCk,
     HsiKerCk,
+    Pll1Q,
+    Pclk,
 }
 
 /// One SPI controller as solved (`AET-WO-4230` §1.2, contract D2 and
@@ -1923,7 +1936,7 @@ pub enum IrValidationError {
     )]
     SerialPortMismatch { id: String },
     #[error(
-        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the reset clock gives it, its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at HSI's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
+        "SPI controller `{id}` disagrees with the solved topology: one entry per SPI peripheral of `assignments` and no other, its kernel and kernel clock what the solved clock gives it (the reset selects' `pll1_q`/`pclk` on an HSE tree, `AET-WO-4240b` Q3), its declared speed the lowest of its buses', MBR at most 7 and the least whose rate at the kernel's fastest is at or below it, and the achieved rates the nominal and fastest kernel divided by 2^(MBR+1)"
     )]
     SpiControllerMismatch { id: String },
     #[error(
@@ -1949,7 +1962,7 @@ pub enum IrValidationError {
         cite: String,
     },
     #[error(
-        "FLASH_ACR at reset (LATENCY 7, WRHIGHFREQ 11) is below RM0433 Rev 9 Table 17's row for VOS {vos} at an AXI clock of {hclk_fastest_hz} Hz at its fastest (`AET-WO-4240v` D-7)"
+        "FLASH_ACR as the firmware leaves it (at reset, LATENCY 7 and WRHIGHFREQ 11, or an HSE tree's solved flash_acr) is below RM0433 Rev 9 Table 17's row for VOS {vos} at an AXI clock of {hclk_fastest_hz} Hz at its fastest, or sets a reserved bit (`AET-WO-4240v` D-7, `AET-WO-4240b` Q6)"
     )]
     FlashWaitStatesBelowTable { vos: vos::Vos, hclk_fastest_hz: u64 },
     #[error("mcu.foreign_clock.{field} is 0 Hz")]
@@ -4414,7 +4427,9 @@ impl SolvedTopology {
                     })
                     .map(|(_, l)| l.rate_hz)
                     .min();
-                if let Some(c) = declared.and_then(|d| solve::spi_controller(p, p, d).ok()) {
+                if let Some(c) =
+                    declared.and_then(|d| solve::spi_controller(p, p, d, &self.clock).ok())
+                {
                     spi.insert(p.to_owned(), c);
                 }
             } else if p.starts_with("I2C")
@@ -4562,6 +4577,31 @@ impl SolvedTopology {
             return Err(E::UnsupportedClock);
         }
         clock::judge_tree(&self.clock)?;
+        // The copy (`AET-WO-4240a` F3, `4240b` §1.3): `generate` re-solves from
+        // the specification, and every path that reads only a topology
+        // (`generate hwdef --topology`, `check pinout`) comes through here. It
+        // re-solves the clock from the declaration the topology carries and
+        // requires the topology's every derived field to equal it. The judge
+        // above shares no word-choice code with the solver (`4240a` A6, ruled
+        // (a)); this is the solver's own check of its copy. What it cannot see:
+        // a declaration edited together with every field derived from it, which
+        // is another specification, bound only by `specification_sha256`.
+        if let Some(h) = &self.clock.hse {
+            let again = solve::hse_clock(&h.declared)?;
+            if again != self.clock {
+                let ours = again.hse.as_ref();
+                let field = if ours.map(clock::SolvedHse::budget) != Some(h.budget()) {
+                    "the budget"
+                } else if ours.map(|o| [o.pllckselr, o.pllcfgr, o.pll1divr])
+                    != Some([h.pllckselr, h.pllcfgr, h.pll1divr])
+                {
+                    "the PLL words"
+                } else {
+                    "a clock field"
+                };
+                return Err(E::Hse(clock::HseRefusal::HseCopyNotSolved { field }));
+            }
+        }
         let mismatch = |id: &str| E::MotorOutputMismatch { id: id.to_owned() };
         for (net, a) in &self.assignments {
             let timer = a.peripheral.starts_with("TIM");

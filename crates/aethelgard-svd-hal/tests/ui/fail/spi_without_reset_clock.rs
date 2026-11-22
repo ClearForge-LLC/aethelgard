@@ -11,11 +11,11 @@ fn main() {
     let mut rcc = board.rcc;
     let unchecked = rcc.reset_clock(&mut r, &scale2);
     let kernels = rcc.select_spi_kernels(&mut r, unchecked.as_ref().unwrap());
-    let a = rcc.enable_gpioa(&mut r, board.gpioa).split(&mut r);
+    let a = rcc.enable_gpioa(&mut r, board.gpioa, scale2).split(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);
     let mosi = a.pa7.into_spi1_mosi(&mut r);
     let miso = a.pa6.into_spi1_miso(&mut r);
     let pa0 = a.pa0.into_output(&mut r);
-    let spi = rcc.enable_spi1(&mut r, board.spi1, &kernels);
+    let spi = rcc.enable_spi1(&mut r, board.spi1, scale2, &kernels);
     let _bus = spi.init(&mut r, &unchecked, sck, mosi, miso, Spi1Selects { pa0 });
 }

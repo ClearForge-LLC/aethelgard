@@ -1,0 +1,316 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p2996452-i183349886.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+=== run16
+R[15:46:11.2792] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+enode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) i @/cache/m/renode/run16.resc
+[15:46:11.3700] [INFO] Including script(s): /cache/m/renode/run16.resc
+[15:46:11.3802] [INFO] System bus created.
+[15:46:12.0799] [INFO] Pseudorandom Number Generator was created with seed: 1359842133
+RESET CR
+0x00000025
+nvic.Frequency at reset
+0x0000000003D09000
+[15:46:12.2039] [DEBUG] rcc: TIM2 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM3 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM4 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM5 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM6 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM7 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM12 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM13 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM14 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2047] [DEBUG] rcc: TIM1 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2048] [DEBUG] rcc: TIM8 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2048] [DEBUG] rcc: TIM15 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2048] [DEBUG] rcc: TIM16 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2048] [DEBUG] rcc: TIM17 peripheral frequency changed to 64000000 from 250000000
+[15:46:12.2048] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 64000000 from 32000000
+[15:46:12.2048] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 64000000 from 32000000
+[15:46:12.2048] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 64000000 from 32000000
+[15:46:12.2048] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 64000000 from 32000000
+[15:46:12.2048] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 64000000 from 50000000
+CR after HSEON (expect HSERDY bit17)
+0x00030025
+CR after HSECSSON
+0x000B0025
+[15:46:12.2094] [WARNING] rcc: Unhandled write to offset 0x2C. Unhandled bits: [2, 18-24] when writing value 0x30004. Tags: PLL1GRE (0x1), DIVR1EN (0x0), DIVP2EN (0x0), DIVQ2EN (0x0), DIVR2EN (0x0), DIVP3EN (0x0), DIVQ3EN (0x0), DIVR3EN (0x0).
+PLLCKSELR PLLCFGR PLL1DIVR readback
+0x00000052
+0x01FF0000
+0x0103064F
+[15:46:12.2108] [WARNING] rcc: Unhandled write to offset 0x50. Unhandled bits: [1, 4] when writing value 0x12. Tags: SAI1SEL (0x2), RESERVED (0x2).
+[15:46:12.2109] [WARNING] rcc: Unhandled write to offset 0x58. Unhandled bits: [0-1] when writing value 0x3. Tags: LPUART1SEL (0x3).
+D2CCIP1R D3CCIPR readback after writing nonzero
+0x00000000
+0x00000000
+nvic.Frequency before PLL1ON/SW
+0x0000000003D09000
+CR after PLL1ON (expect PLL1RDY bit25)
+0x030B0025
+[15:46:12.2126] [DEBUG] rcc: TIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2126] [DEBUG] rcc: TIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM6 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM7 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM12 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM13 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM14 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM1 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM8 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM15 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM16 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: TIM17 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2127] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2128] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2128] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 4000000 from 64000000
+[15:46:12.2128] [DEBUG] rcc: systick clock frequency changed to 4000000. Current effective frequency: 4000000
+CFGR after SW=CSI (probe: sys_ck must move off HSI 64 MHz), nvic.Frequency next
+0x00000000003D0900
+[15:46:12.2134] [DEBUG] rcc: TIM2 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2134] [DEBUG] rcc: TIM3 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2134] [DEBUG] rcc: TIM4 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2134] [DEBUG] rcc: TIM5 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2134] [DEBUG] rcc: TIM6 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM7 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM12 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM13 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM14 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM1 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM8 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM15 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM16 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: TIM17 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2135] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 64000000 from 4000000
+[15:46:12.2136] [DEBUG] rcc: systick clock frequency changed to 64000000. Current effective frequency: 64000000
+CFGR after SW=PLL1 (expect 0x1B)
+0x0000001B
+FINAL nvic.Frequency (systick = sys_ck/D1CPRE)
+0x0000000003D09000
+nvic.Divider
+0x0000000000000001
+timer2.Frequency
+0x0000000003D09000
+timer5.Frequency
+0x0000000003D09000
+Renode is quitting
+[15:46:12.2665] [INFO] run16: Disposed.
+=== run8
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) [15:46:13.3551] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+i @/cache/m/renode/run8.resc
+[15:46:13.4445] [INFO] Including script(s): /cache/m/renode/run8.resc
+[15:46:13.4544] [INFO] System bus created.
+[15:46:14.1442] [INFO] Pseudorandom Number Generator was created with seed: 281869026
+RESET CR
+0x00000025
+nvic.Frequency at reset
+0x0000000003D09000
+[15:46:14.2681] [DEBUG] rcc: TIM2 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2688] [DEBUG] rcc: TIM3 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM4 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM5 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM6 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM7 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM12 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM13 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM14 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM1 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM8 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM15 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM16 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2689] [DEBUG] rcc: TIM17 peripheral frequency changed to 64000000 from 250000000
+[15:46:14.2690] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 64000000 from 32000000
+[15:46:14.2690] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 64000000 from 32000000
+[15:46:14.2690] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 64000000 from 32000000
+[15:46:14.2690] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 64000000 from 32000000
+[15:46:14.2690] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 64000000 from 50000000
+[15:46:14.2711] [WARNING] rcc: Unhandled write to offset 0x0. Unhandled bits: [18] when writing value 0x40001. Tags: HSEBYP (0x1).
+CR after HSEBYP
+0x00000025
+[15:46:14.2726] [WARNING] rcc: Unhandled write to offset 0x0. Unhandled bits: [18] when writing value 0x50001. Tags: HSEBYP (0x1).
+CR after HSEON (expect HSERDY bit17)
+0x00030025
+[15:46:14.2732] [WARNING] rcc: Unhandled write to offset 0x0. Unhandled bits: [18] when writing value 0xD0001. Tags: HSEBYP (0x1).
+CR after HSECSSON
+0x000B0025
+[15:46:14.2741] [WARNING] rcc: Unhandled write to offset 0x2C. Unhandled bits: [1, 18-24] when writing value 0x30002. Tags: PLL1VCOSEL (0x1), DIVR1EN (0x0), DIVP2EN (0x0), DIVQ2EN (0x0), DIVR2EN (0x0), DIVP3EN (0x0), DIVQ3EN (0x0), DIVR3EN (0x0).
+PLLCKSELR PLLCFGR PLL1DIVR readback
+0x00000052
+0x01FF0000
+0x0103069F
+[15:46:14.2751] [WARNING] rcc: Unhandled write to offset 0x50. Unhandled bits: [1, 4] when writing value 0x12. Tags: SAI1SEL (0x2), RESERVED (0x2).
+D2CCIP1R D3CCIPR rea[15:46:14.2752] [WARNING] rcc: Unhandled write to offset 0x58. Unhandled bits: [0-1] when writing value 0x3. Tags: LPUART1SEL (0x3).
+dback after writing nonzero
+0x00000000
+0x00000000
+nvic.Frequency before PLL1ON/SW
+0x0000000003D09000
+[15:46:14.2763] [WARNING] rcc: Unhandled write to offset 0x0. Unhandled bits: [18] when writing value 0x10D0001. Tags: HSEBYP (0x1).
+CR after PLL1ON (expect PLL1RDY bit25)
+0x030B0025
+[15:46:14.2769] [DEBUG] rcc: TIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM6 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM7 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM12 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM13 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2769] [DEBUG] rcc: TIM14 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: TIM1 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: TIM8 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: TIM15 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: TIM16 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: TIM17 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2770] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 4000000 from 64000000
+[15:46:14.2771] [DEBUG] rcc: systick clock frequency changed to 4000000. Current effective frequency: 4000000
+CFGR after SW=CSI (probe: sys_ck must move off HSI 64 MHz), nvic.Frequency next
+0x00000000003D0900
+[15:46:14.2777] [DEBUG] rcc: TIM2 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM3 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM4 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM5 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM6 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM7 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM12 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM13 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM14 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM1 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2777] [DEBUG] rcc: TIM8 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: TIM15 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: TIM16 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: TIM17 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 64000000 from 4000000
+[15:46:14.2778] [DEBUG] rcc: systick clock frequency changed to 64000000. Current effective frequency: 64000000
+CFGR after SW=PLL1 (expect 0x1B)
+0x0000001B
+FINAL nvic.Frequency (systick = sys_ck/D1CPRE)
+0x0000000003D09000
+nvic.Divider
+0x0000000000000001
+timer2.Frequency
+0x0000000003D09000
+timer5.Frequency
+0x0000000003D09000
+Renode is quitting
+[15:46:14.3353] [INFO] run8: Disposed.
+=== runctl
+[15:46:15.3164] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) i @/cache/m/renode/runctl.resc
+[15:46:15.4022] [INFO] Including script(s): /cache/m/renode/runctl.resc
+[15:46:15.4101] [INFO] System bus created.
+[15:46:16.0221] [INFO] Pseudorandom Number Generator was created with seed: 490669414
+RESET CR
+0x00000025
+nvic.Frequency at reset
+0x0000000003D09000
+[15:46:16.1333] [DEBUG] rcc: TIM2 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM3 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM4 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM5 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM6 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM7 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM12 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM13 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM14 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM1 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1340] [DEBUG] rcc: TIM8 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1341] [DEBUG] rcc: TIM15 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1341] [DEBUG] rcc: TIM16 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1341] [DEBUG] rcc: TIM17 peripheral frequency changed to 64000000 from 250000000
+[15:46:16.1341] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 64000000 from 32000000
+[15:46:16.1341] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 64000000 from 32000000
+[15:46:16.1341] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 64000000 from 32000000
+[15:46:16.1341] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 64000000 from 32000000
+[15:46:16.1341] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 64000000 from 50000000
+CR after HSEON (expect HSERDY bit17)
+0x00030025
+CR after HSECSSON
+0x000B0025
+[15:46:16.1384] [WARNING] rcc: Unhandled write to offset 0x2C. Unhandled bits: [2, 18-24] when writing value 0x30004. Tags: PLL1GRE (0x1), DIVR1EN (0x0), DIVP2EN (0x0), DIVQ2EN (0x0), DIVR2EN (0x0), DIVP3EN (0x0), DIVQ3EN (0x0), DIVR3EN (0x0).
+PLLCKSELR PLLCFGR PLL1DIVR readback
+0x00000052
+0x01FF0000
+0x0103064F
+[15:46:16.1399] [WARNING] rcc: Unhandled write to offset 0x50. Unhandled bits: [1, 4] when writing value 0x12. Tags: SAI1SEL (0x2), RESERVED (0x2).
+[15:46:16.1400] [WARNING] rcc: Unhandled write to offset 0x58. Unhandled bits: [0-1] when writing value 0x3. Tags: LPUART1SEL (0x3).
+D2CCIP1R D3CCIPR readback after writing nonzero
+0x00000000
+0x00000000
+nvic.Frequency before PLL1ON/SW
+0x0000000003D09000
+CR after PLL1ON (expect PLL1RDY bit25)
+0x030B0025
+[15:46:16.1417] [DEBUG] rcc: TIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM6 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM7 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM12 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM13 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM14 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM1 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM8 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM15 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM16 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: TIM17 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1418] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1419] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1419] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1419] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1419] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 4000000 from 64000000
+[15:46:16.1419] [DEBUG] rcc: systick clock frequency changed to 4000000. Current effective frequency: 4000000
+CFGR after SW=CSI (probe: sys_ck must move off HSI 64 MHz), nvic.Frequency next
+0x00000000003D0900
+[15:46:16.1425] [DEBUG] rcc: TIM2 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1425] [DEBUG] rcc: TIM3 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM4 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM5 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM6 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM7 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM12 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM13 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM14 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM1 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM8 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM15 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM16 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: TIM17 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: LPTIM2 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: LPTIM3 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: LPTIM4 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: LPTIM5 peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1426] [DEBUG] rcc: ETH1MAC peripheral frequency changed to 32000000 from 4000000
+[15:46:16.1427] [DEBUG] rcc: systick clock frequency changed to 32000000. Current effective frequency: 32000000
+CFGR after SW=PLL1 (expect 0x1B)
+0x0000001B
+FINAL nvic.Frequency (systick = sys_ck/D1CPRE)
+0x0000000001E84800
+nvic.Divider
+0x0000000000000001
+timer2.Frequency
+0x0000000001E84800
+timer5.Frequency
+0x0000000001E84800
+Renode is quitting
+[15:46:16.1959] [INFO] runctl: Disposed.

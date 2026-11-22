@@ -416,9 +416,10 @@ impl RegisterFacts {
     /// position order. A field whose mask overlaps one of fewer bits is an
     /// alias of it and is left out: `USART_CR1_M` of `M0` and `M1`, and the
     /// `TIM_CCMRx` input-capture names of the output-compare bits; so is a
-    /// mask that names another field's (`RCC_APB1LENR_HDMICECEN`). A register
-    /// with no field, a mask of another shape, or two fields of equal size that
-    /// overlap is refused.
+    /// mask that names another field's (`RCC_APB1LENR_HDMICECEN`), and a mask
+    /// equal to another's, whose name sorts later (`RCC_CR_PLLON` of
+    /// `PLL1ON`). A register with no field, a mask of another shape, or two
+    /// different fields of equal size that overlap is refused.
     pub fn fields_of(&self, prefix: &str) -> Result<Vec<(String, u32, u32)>, RegisterError> {
         let head = format!("{prefix}_");
         let mut all: Vec<(String, u32, u32)> = Vec::new();
@@ -478,7 +479,10 @@ impl RegisterFacts {
         let mut kept: Vec<(String, u32, u32)> = Vec::new();
         for (name, pos, mask) in all {
             if let Some(other) = kept.iter().find(|k| k.2 & mask != 0) {
-                if other.2.count_ones() == mask.count_ones() {
+                // The same bits under a second name are one field: ST keeps
+                // `RCC_CR_PLLON` and `PLLRDY` beside `PLL1ON` and `PLL1RDY`
+                // (`AET-WO-4240b`); the first by name is kept.
+                if other.2 != mask && other.2.count_ones() == mask.count_ones() {
                     return malformed(format!(
                         "`{prefix}_{name}` and `{prefix}_{}` overlap and neither is the smaller",
                         other.0

@@ -2088,7 +2088,11 @@ mod tests {
         // `AET-WO-4230` R3: the console's BRR, 556 the nearest whole divider
         // of 64 MHz at 115200 baud, 557 one off.
         let silicon_brr = |mbr, brr| {
-            let spi = vec![aethelgard_ir::silicon::check_spi("SPI1", &controller(mbr))];
+            let spi = vec![aethelgard_ir::silicon::check_spi(
+                "SPI1",
+                &controller(mbr),
+                &aethelgard_ir::SolvedClock::reset(),
+            )];
             let usart = vec![aethelgard_cli::ledger::UsartFinding {
                 port: "CONSOLE".into(),
                 peripheral: "USART1".into(),
