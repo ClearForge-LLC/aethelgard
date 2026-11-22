@@ -1,6 +1,6 @@
 # AET-WO-1218 — results, against `PREDICTIONS.md` (9156a5e8)
 
-Kit: `measure.sh` (the baseline sweep by `spike/1211d/measure/sweep.sh`, then every probe of `probes.py`: validate, solve, emit twice, the two emits compared byte for byte, the board's references by `refs.py`). The null sweep is `spike/1211a/measure/run.sh` and `spike/1211e/compare.py`. Mutants: `mutants.py`. Outputs: `out/`.
+Kit: `measure.sh` (the baseline sweep by `spike/1211d/measure/sweep.sh`, then every probe of `probes.py`: validate, solve, emit twice, the two emits compared byte for byte, the board's references by `refs.py`). The null sweep is `spike/1211a/measure/run.sh` and `spike/1211e/compare.py`. Mutants: `mutants.py`. Outputs: `out/`. `probes-base.tsv` and `refs-base.tsv` are main's binary on a worktree of `2ccd2450` (specification 26). `probes-after.tsv` and `refs-after.tsv` are the specification-27 binary on this branch. Both run the same `probes.py`.
 
 ## P1 — the baseline
 - **P1.1 held.** 34 committed specifications. 2 carry pin devices (D1 and D2, both `board.drawn: false`), 4 carry test points, none carry both. Exits: `out/baseline-exits.tsv`.
@@ -32,7 +32,7 @@ Kit: `measure.sh` (the baseline sweep by `spike/1211d/measure/sweep.sh`, then ev
   - The serial path is unreachable on the real table, so it is tested on the IR's synthetic table, relabelled as the H753.
 - **P4.4 held, and wider than the row named.** On D1, R2 is under RAIN at 1070, 1000 and 900 Ω. A reservoir part `NOPE`, or a resistor row, validated today; after, it is `PowerPartUnknown` at the reservoir's path.
   - On the power tree's sense, `NOPE` was already refused by the tree's own part lookup. A resistor row validated, and `emit` refused it (`PowerNotDrawable`). After, it is `PowerPartUnknown`.
-  - The held capacitor stays admitted (`out/r5-probes.tsv`).
+  - The held capacitor stays admitted (the `r5-*` rows of `out/probes-base.tsv` and `out/probes-after.tsv`).
 
 ## §5 — the adversarial pass, targeted (probes `adv-*` in `probes.py`)
 - **A reference read differently by two readers.**
@@ -43,7 +43,7 @@ Kit: `measure.sh` (the baseline sweep by `spike/1211d/measure/sweep.sh`, then ev
     - D2 with the reset switch numbers `SW1` with and without a test point on `NRST`.
     - A test point on the bridge output `MA_OUT1` or on `VMOTOR` emits beside `U2`.
     - Every board's references are the bare board's plus the test point's (`refs.py`).
-  - The generator (`generate`, D1 with and without `TP1`) moves its KiCad files by the test point's footprint and symbol, and every other generated file by its sha line only: 0 other lines moved.
+  - The generator (`generate`, D1 with and without `TP1`) moves its KiCad files by the test point's footprint and symbol, and every other generated file by its sha line only: 0 other lines moved (`out/generate-d1-tp.txt`, run with the build at `3eece126` before the bump).
   - D2 does not generate, bare or not (`BridgeAcrossParts`, the generator's own refusal).
   - `check pinout` reads no reference.
 - **A renamed MCU that still escapes a check.** Only two commands read a topology file: `check pinout` and `generate hwdef`.
@@ -59,3 +59,10 @@ Kit: `measure.sh` (the baseline sweep by `spike/1211d/measure/sweep.sh`, then ev
 `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings` pass. `cargo test --workspace`: 160 binaries, 2784 passed, 0 failed.
 
 The null sweep (`out/null-sweep-prebump.json`) ran main's binary against the branch's, each on the same specification bytes. Over 34 specifications, nothing moved: no exit, no `validate` or `solve` output, no emitted file, no generated file.
+
+## P5 — the bump
+**Held.** Specification 27 is a rules-only row, `[PowerPartUnknown]`. All 34 committed specifications moved by their version line alone, checked line by line against `2ccd2450`.
+
+The null sweep (`out/null-sweep.json`, main's binary on main's tree against the branch's on the branch's) moved no exit, no output and no emitted file. 232 generated files each moved by one sha line.
+
+The goldens moved by their generators, each by its sha line alone. `fab/sentinel-01-bench/package` waits for a `write=true` dispatch.
