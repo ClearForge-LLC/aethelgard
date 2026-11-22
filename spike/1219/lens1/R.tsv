@@ -1,0 +1,293 @@
+id	class	flag	tags	value_at	reason
+R:UnsupportedSchemaVersion	V			lib.rs:4305	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnsupportedLayerCount	V			board.rs:295	board stackup/class/via rule; generic PCB
+R:LayerTable	V			board.rs:299	board stackup/class/via rule; generic PCB
+R:LayerRole	V			board.rs:317	board stackup/class/via rule; generic PCB
+R:PlaneNet	V			board.rs:346	board stackup/class/via rule; generic PCB
+R:PlaneLayout	V			board.rs:349	board stackup/class/via rule; generic PCB
+R:DielectricTable	V			board.rs:361	board stackup/class/via rule; generic PCB
+R:FinishedThickness	V			board.rs:383	board stackup/class/via rule; generic PCB
+R:StackupValue	V			board.rs:404	board stackup/class/via rule; generic PCB
+R:InvalidSource	V			board.rs:601	board stackup/class/via rule; generic PCB
+R:RuleBelowFloor	V			board.rs:532	board stackup/class/via rule; generic PCB
+R:OutlineBound	V			board.rs:562	board stackup/class/via rule; generic PCB
+R:UnsupportedViaRule	V			board.rs:549	board stackup/class/via rule; generic PCB
+R:ClassBelowMinimum	V			classes.rs:112	board stackup/class/via rule; generic PCB
+R:ClassAboveMaximum	V			classes.rs:120	board stackup/class/via rule; generic PCB
+R:ViaRingUnderRules	V			classes.rs:162	board stackup/class/via rule; generic PCB
+R:ThermalViasZero	V			thermal.rs:71	board stackup/class/via rule; generic PCB
+R:ThermalViasUnsourced	V			thermal.rs:86	board stackup/class/via rule; generic PCB
+R:ThermalViaRingUnderRules	V			thermal.rs:100	board stackup/class/via rule; generic PCB
+R:ThermalViaPitch	V			thermal.rs:109	board stackup/class/via rule; generic PCB
+R:ThermalViaLayers	V			thermal.rs:120	board stackup/class/via rule; generic PCB
+R:DuplicateClassName	V			classes.rs:133	board stackup/class/via rule; generic PCB
+R:ClassNoNets	V			classes.rs:136	board stackup/class/via rule; generic PCB
+R:ClassUnknownNet	V			classes.rs:240	board stackup/class/via rule; generic PCB
+R:ClassNetNotLiteral	V			classes.rs:233	board stackup/class/via rule; generic PCB
+R:NetInTwoClasses	V			classes.rs:253	board stackup/class/via rule; generic PCB
+R:PairNets	V			classes.rs:178	board stackup/class/via rule; generic PCB
+R:PairOnRail	V			classes.rs:191	board stackup/class/via rule; generic PCB
+R:InvalidIdentifier	V			lib.rs:3052	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NoVoltageDomain	V			lib.rs:3672	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicateDomainId	V			lib.rs:3682	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ZeroNominalVoltage	V			lib.rs:3692	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ToleranceOutOfRange	V			lib.rs:3695	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnknownDomain	V			lib.rs:3706	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SupplyMismatch	V			lib.rs:3725	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DuplicateBusId	V			lib.rs:3762	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnsupportedI2cSpeed	V		std	lib.rs:3775	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ZeroPullUp	V			lib.rs:3781	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ZeroSpiSpeed	V			lib.rs:3786	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicateReference	V			lib.rs:4139	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnknownBus	V			lib.rs:3803	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:I2cAddressOutOfRange	V		std	lib.rs:3819	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicateI2cAddress	V		std	lib.rs:3825	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicateNetName	V			lib.rs:3864	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NetShadowsDomain	V			lib.rs:3844	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicateNetConstraint	V			lib.rs:3888	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnknownNet	V			lib.rs:3891	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:ZeroCapacitance	V			lib.rs:3894	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ZeroRiseTime	V			lib.rs:3897	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ZeroImpedance	V			lib.rs:3900	generic specification, solver or consistency check; no ST register, enumeration or document
+R:MalformedSpecificationHash	V			lib.rs:4313	generic specification, solver or consistency check; no ST register, enumeration or document
+R:AlternateFunctionOutOfRange	S			lib.rs:4399	ST alternate-function numbering 0..15 (AFSEL); value set checked at lib.rs:4399
+R:InvalidCeiling	V		std	lib.rs:4407	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NetAssignedTwice	V			lib.rs:4411	generic specification, solver or consistency check; no ST register, enumeration or document
+R:DuplicatePin	V			lib.rs:4423	generic specification, solver or consistency check; no ST register, enumeration or document
+R:AnalogPadPin	S			lib.rs:4434	ST analog-only pad (DS12117 Table 8 type ANA, Px_C pins): ST pin structure
+R:AnalogLineNotI2c	V			lib.rs:4963	generic specification, solver or consistency check; no ST register, enumeration or document
+R:MissingAnalogLine	V			lib.rs:4997	generic specification, solver or consistency check; no ST register, enumeration or document
+R:AnalogBusMismatch	V			lib.rs:4989	generic specification, solver or consistency check; no ST register, enumeration or document
+R:I2cDeviceIndex	V			lib.rs:4929	generic specification, solver or consistency check; no ST register, enumeration or document
+R:I2cDevicePeripheral	V			lib.rs:4923	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpiDeviceIndex	V			lib.rs:4841	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpiDevicePeripheral	V			lib.rs:4830	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpiDeviceSelect	V			lib.rs:4835	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ReferenceCollision	V			lib.rs:4155	generic specification, solver or consistency check; no ST register, enumeration or document
+R:BorLevelOutOfRange	S			lib.rs:3647	ST brown-out reset level enumeration 0..3 (MAX_BOR_LEVEL)
+R:PowerPartsTableInvalid	V			power_parts.rs:2412	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PartsTableInvalid	V			parts.rs:917	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:OutputSpeedTableInvalid	S			speeds.rs:255	validates held OSPEEDR output-speed table (DS12117 Table 149 rows, ospeedr column)
+R:AmbiguousPartName	V		other-vendor	lib.rs:4185	JEDEC id ambiguity of Winbond W25Q part ordering code; other vendor
+R:PartNameCase	V			lib.rs:4199	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SupplyOutsidePart	V			lib.rs:3408	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:IoOutsidePart	V			lib.rs:3469	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnjudgedSpiConstraint	V			lib.rs:3316	generic specification, solver or consistency check; no ST register, enumeration or document
+R:LifecycleNotAccepted	V			lib.rs:3590	part lifecycle acknowledgement; generic
+R:LifecycleStatusMismatch	V			lib.rs:3598	part lifecycle acknowledgement; generic
+R:LifecycleAcceptedTwice	V			lib.rs:3562	part lifecycle acknowledgement; generic
+R:LifecycleStatementInvalid	V			lib.rs:3569	part lifecycle acknowledgement; generic
+R:LifecycleAcceptanceUnused	V			lib.rs:3614	part lifecycle acknowledgement; generic
+R:UnwitnessedRegisterMalformed	V			lib.rs:3959	acknowledgement list shape; generic format
+R:UnwitnessedClassUnknown	V			lib.rs:3962	acknowledgement list shape; generic format
+R:UnwitnessedFieldsEmpty	V			lib.rs:3968	acknowledgement list shape; generic format
+R:UnwitnessedFieldTwice	V			lib.rs:3975	acknowledgement list shape; generic format
+R:UnwitnessedAcknowledgedTwice	V			lib.rs:3983	acknowledgement list shape; generic format
+R:PartOnWrongBus	V			lib.rs:4214	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:I2cAddressNotOffered	V		std	lib.rs:4238	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpiClockAbovePart	V		std	lib.rs:4265	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpiLineMismatch	V			lib.rs:4769	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PinSpeedMismatch	S			lib.rs:4536	pin_speeds must be OSPEEDR code 0 or 1; 10 and 11 never selected: ST GPIO speed enumeration
+R:PinSpeedNotSolved	S			lib.rs:4558	stored OSPEEDR value differs from solved output speed: ST GPIO speed grade
+R:CeilingNotDerived	V		std	lib.rs:5018	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SpeedBusMismatch	V		std	lib.rs:5060	generic specification, solver or consistency check; no ST register, enumeration or document
+R:BusTooFast	V		std	lib.rs:3198	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PullUpBelowSinkFloor	V		std	lib.rs:3211	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BusCapacitanceOverLimit	V		std	lib.rs:3223	generic specification, solver or consistency check; no ST register, enumeration or document
+R:MotorTimingShape	V			lib.rs:4124	PWM/DShot motor timing or timer placement; generic
+R:ZeroMotorRate	V			lib.rs:4097	PWM/DShot motor timing or timer placement; generic
+R:PulseRange	V			lib.rs:4108	PWM/DShot motor timing or timer placement; generic
+R:PulseExceedsPeriod	V			lib.rs:4115	PWM/DShot motor timing or timer placement; generic
+R:UnjudgedMotorConstraint	V			lib.rs:3321	PWM/DShot motor timing or timer placement; generic
+R:MotorOutputMismatch	S	?		lib.rs:4685	TIMn_CHk assignment, PSC/ARR/CCR within timer: ST timer naming and registers; meaning partly generic PWM
+R:DuplicateSerialLabel	V			serial.rs:685	serial port placement/uniqueness; generic (USART word is generic, no ST register or set stated)
+R:SerialPeripheralLpuart	S			serial.rs:689	LPUART1 refused: RCC_APB4ENR enable bit and ST baud generator
+R:UnknownSerialPeripheral	S	?		serial.rs:695	value set USART1..UART8 hard-coded, the STM32H7 instance set; names also generic
+R:SerialPeripheralTwice	V			serial.rs:701	serial port placement/uniqueness; generic (USART word is generic, no ST register or set stated)
+R:SerialFramingShape	V			serial.rs:709	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SerialFramingContradictsRole	V			serial.rs:728	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SerialNegotiatedOffCrsf	V		std	serial.rs:560	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SerialNegotiatedAtCitedBaud	V		std	serial.rs:573	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PeerDeviationBelowCited	V		std	serial.rs:737	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PeerDeviationNotCited	V		std	serial.rs:745	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ConsoleBaudNotRoundTrip	V			serial.rs:753	ArduPilot baud mapping rule; not ST
+R:SerialBaudReadAsKbaud	V			serial.rs:760	ArduPilot baud mapping rule; not ST
+R:UnjudgedSerialConstraint	V			lib.rs:3332	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SerialPortMismatch	S	?		serial.rs:839	USART1..UART8 <periph>_TX/_RX assignments vs solved topology; ST instance set
+R:SpiControllerMismatch	S			lib.rs:4602	SPI kernel clock mux, MBR, CFG: RM0433 SPI kernel and register state
+R:I2cTimingMismatch	S			lib.rs:4617	I2C TIMINGR/CR1 as solved, RM0433 §47.4.9
+R:TimerShared	N			lib.rs:4727	outputs of one timer share counter (protocol, rate, PSC, ARR); generic, ST register names
+R:UnsupportedClock	S			lib.rs:4657	reset clock HSI 64 MHz, TIMPRE, prescalers: ST RCC reset state
+R:VosLimitExceeded	S			lib.rs:4637	ST VOS voltage-scale max frequency limits (DS12117/RM0433)
+R:FlashWaitStatesBelowTable	S			lib.rs:4646	FLASH_ACR LATENCY/WRHIGHFREQ vs RM0433 Table 17 by VOS
+R:ForeignClockZero	V			lib.rs:1192	zero Hz foreign clock declaration; generic
+R:ForeignClockUsarts	S	?		lib.rs:1201	must name each USART the platform carries (H7 set), once
+R:ForeignClockMuxSplit	S			lib.rs:1217	RM0433 §8.7.21 USART16SEL/USART234578SEL kernel clock mux
+R:UnknownConnectorPart	V			connectors.rs:336	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorPinUnknown	V			connectors.rs:344	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorPinRepeated	V			connectors.rs:351	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorPinMissing	V			connectors.rs:361	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorNetUnknown	V			connectors.rs:373	connector/test-point wiring check; board-level, no ST rule
+R:TestPointNetUnknown	V			bench.rs:160	connector/test-point wiring check; board-level, no ST rule
+R:TestPointReferenceTaken	V			bench.rs:167	connector/test-point wiring check; board-level, no ST rule
+R:TestPointNetRepeated	V			bench.rs:184	connector/test-point wiring check; board-level, no ST rule
+R:NoProgrammingPath	V		arch	connectors.rs:466	needs SWDIO, SWCLK, GND and supply on a connector; Arm SWD
+R:SupplyHasNoSource	V			connectors.rs:497	connector/test-point wiring check; board-level, no ST rule
+R:SupplyHasTwoSources	V			connectors.rs:511	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorBudgetMissing	V			connectors.rs:398	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorBudgetNotApplicable	V			connectors.rs:384	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorReferenceReserved	V			connectors.rs:334	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorBudgetTooLarge	V			connectors.rs:390	connector/test-point wiring check; board-level, no ST rule
+R:UnknownConnectorStandard	V		std	ds009.rs:203	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorPartContradictsStandard	V		std	ds009.rs:208	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorSupplyContradictsStandard	V		std	ds009.rs:268	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorPinContradictsStandard	V		std	ds009.rs:276	connector/test-point wiring check; board-level, no ST rule
+R:ConnectorSerialRoleContradictsStandard	V		std	ds009.rs:257	connector/test-point wiring check; board-level, no ST rule
+R:SerialPortNotAtConnector	V			connectors.rs:426	connector/test-point wiring check; board-level, no ST rule
+R:MissingBusConstraint	V			lib.rs:3292	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ReservedName	V			names.rs:290	generic specification, solver or consistency check; no ST register, enumeration or document
+R:InvalidDeviceName	V			names.rs:343	generic specification, solver or consistency check; no ST register, enumeration or document
+R:LoadNamesNoPart	V			names.rs:385	generic specification, solver or consistency check; no ST register, enumeration or document
+R:LoadNamesCountedPart	V			names.rs:401	generic specification, solver or consistency check; no ST register, enumeration or document
+R:UnknownPart	V			lib.rs:3355	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:UnboundedPinCapacitance	V			drawn.rs:37	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PartNotDrawable	V			drawn.rs:79	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:ForwardUndeclared	V			lib.rs:3917	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ImuAxesNotPerpendicular	V			lib.rs:3910	generic specification, solver or consistency check; no ST register, enumeration or document
+R:OrientationOnNonImu	V			lib.rs:3367	generic specification, solver or consistency check; no ST register, enumeration or document
+R:ImuAxesNotCited	V			lib.rs:3380	generic specification, solver or consistency check; no ST register, enumeration or document
+R:RiseTimeTooSlow	V		std	lib.rs:3192	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SupplyOutsideSpeedTable	S			lib.rs:3240	supply outside DS12117 Table 149 1620..3600 mV OSPEEDR table
+R:MissingSpiConstraint	S	?		lib.rs:3249	needs a load to pick OSPEEDR output speed (AET-WO-4300c); rule itself reads generic, speed grade is ST
+R:SpiModeNotDriven	V		std	lib.rs:4277	generic specification, solver or consistency check; no ST register, enumeration or document
+R:PinCapacitanceOutOfRange	V			lib.rs:3513	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PinCapacitanceBelowI2cCi	V		std	lib.rs:3520	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PinCapacitanceAlreadyCited	V			lib.rs:3529	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PinCapacitanceBelowTypical	V			lib.rs:3540	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:MotorTiming	V			solve.rs:1186	PWM/DShot motor timing or timer placement; generic
+R:OffDomainAboveLimit	V			off_domain.rs:168	pin held above absolute maximum with supply off; generic concept, limit read from held table
+R:SerialBaudOutOfRange	S			solve.rs:769	USART BRR range 16..0xFFFF at oversampling 16, RM0433 §48.8.5
+R:SerialBaudTolerance	N			solve.rs:806	baud error tolerance arithmetic generic; names HSI as clock source
+R:LoadAboveSpeedTable	S			speeds.rs:112	load above DS12117 Table 149 OSPEEDR speed rows: ST output-speed table
+R:RateAbovePinSpeed	S			speeds.rs:118	rate above fmax of OSPEEDR speed row: ST output-speed grade
+R:RiseTimeBelowPinSpeed	S			speeds.rs:122	rise faster than OSPEEDR speed row allows: ST output-speed grade
+R:HsePartNotCrystal	N			clock.rs:355	part must be a crystal row; generic, ST HSE name
+R:HseDeclarationZero	N			clock.rs:425	declared zero is no declaration; generic, HSE name
+R:HseFrequencyOutOfRange	N			clock.rs:466	crystal frequency range check; generic, HSE name (limits read from held table)
+R:HseTemperatureOutsidePart	N			clock.rs:518	declared temperature inside crystal stability range; generic, HSE name
+R:HseLifeBeyondAging	N			clock.rs:527	life hours beyond crystal aging statement; generic, HSE name
+R:HseGmCritExceeded	N			clock.rs:540	oscillator gain margin Gm_crit vs max (DS12117, AN2867 formula); generic margin, HSE name
+R:HseBudgetUnbounded	N			clock.rs:567	ppm budget side 1,000,000 or more is no clock; generic, HSE name
+R:HseLoadCapsUnfit	N			clock.rs:501	crystal load capacitors CL1=CL2 fit (AN2867); generic, HSE name
+R:HseTreeUnreachable	S			solve.rs:845	PLL1 setting for 64 MHz with reference inside a PLL1RGE range: ST PLL1RGE
+R:PllReferenceNotInsideRange	S			clock.rs:680	PLL1RGE reference ranges, RM0433 §8.7.12
+R:PllVcoSelectMismatch	S			clock.rs:688	PLL1VCOSEL vs PLL1RGE, RM0433 p.347/402
+R:PllVcoOutOfRange	S			clock.rs:710	VCO range per PLL1VCOSEL: ST PLL register setting
+R:PllOutputDisabled	S			clock.rs:637	RCC_PLLCFGR DIVP1EN 0 disables pll1_p_ck, RM0433 p.401
+R:PllWordsUndecodable	S			clock.rs:612	solved RCC PLL register words do not decode
+R:HseClockMismatch	N			clock.rs:611	solved HSE clock disagrees with its declaration; generic, HSE name
+R:HseCopyNotSolved	N			lib.rs:4682	topology clock is not what the HSE declaration solves to; generic, HSE name
+R:IdleSpelledTwice	N			lib.rs:4100	idle pulse equal to CCR has one spelling; generic PWM idle, ST CCR name
+R:ResolutionNotDerivable	V			solve.rs:1207	tick resolution must be whole 1..65536 timer cycles; generic prescaler arithmetic
+R:PulseNotOnTick	V			solve.rs:1214	PWM/DShot motor timing or timer placement; generic
+R:IdleNotOnTick	V			solve.rs:1220	PWM/DShot motor timing or timer placement; generic
+R:IdleExceedsPeriod	V			solve.rs:1233	PWM/DShot motor timing or timer placement; generic
+R:PartHasBus	V			pin_devices.rs:754	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PartWithoutBus	V			pin_devices.rs:819	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SupplyPinUndeclared	V			pin_devices.rs:983	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SupplyOutOfRange	V			pin_devices.rs:970	device supply outside part range; generic
+R:StrapUndeclared	V			pin_devices.rs:1104	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:StrapLevelInvalid	V			pin_devices.rs:1002	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:UnknownDevicePin	V			pin_devices.rs:874	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DevicePinBoundTwice	V			pin_devices.rs:888	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DevicePinUnbound	V			pin_devices.rs:939	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SignalKindMismatch	V			pin_devices.rs:898	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SignalShape	V			pin_devices.rs:1120	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:LogicLevelIncompatible	V			pin_devices.rs:1245	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:UnheldDuringReset	S			pin_devices.rs:1255	PA13/PA15/PB4 pulled from reset to first write, RM0433 p.542: ST reset pin state
+R:OpenDrainUnpulled	V			pin_devices.rs:1186	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PullOverDrive	V			pin_devices.rs:1280	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PartLimitUndeclared	V			pin_devices.rs:1424	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PartLimitDeclaredTwice	V			pin_devices.rs:1921	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:TemperatureUndeclared	V			pin_devices.rs:2016	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:TemperatureDeclaredTwice	V			pin_devices.rs:2007	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PowerPartUnknown	V			pin_devices.rs:794	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:AdcFullScaleExceeded	V			pin_devices.rs:1304	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:AdcOutputCurrentExceeded	V			pin_devices.rs:1461	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:AdcSourceImpedance	V			pin_devices.rs:1320	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeModeUnknown	V			pin_devices.rs:1714	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeModeStrapMismatch	V			pin_devices.rs:1733	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeChannelUnknown	V			pin_devices.rs:1753	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeInputUnknown	V			pin_devices.rs:1813	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeInputShared	V			pin_devices.rs:1779	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeIdlePulsed	V			pin_devices.rs:1784	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeIdleDrives	V			pin_devices.rs:1843	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeForbiddenState	V			pin_devices.rs:1894	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:InputRateAbovePart	V			pin_devices.rs:1948	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PinDeviceUndeclared	V			pin_devices.rs:2062	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BridgeUndeclared	V			pin_devices.rs:923	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SenseAdcMismatch	V			pin_devices.rs:2073	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PullAboveMcuTolerance	S			pin_devices.rs:1507	pull voltage vs ST FT/TT pin structure tolerance, DS12117 Table 13 and RM0433 reset pulls
+R:McuPinStructureUnheld	S			pin_devices.rs:1528	no held ST I/O structure (FT/TT) for pin, DS12117 Table 8
+R:TripReferenceGrounded	V			pin_devices.rs:1563	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:TripBelowFullScale	V			pin_devices.rs:1630	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:TripSenseUnbound	V			pin_devices.rs:1612	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BulkUndeclared	V			pin_devices.rs:1657	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BulkNotAllowed	V			pin_devices.rs:1649	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BulkUnderRated	V			pin_devices.rs:1686	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BatterySideUnmodelled	V			power.rs:3193	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PowerValueInvalid	V			power.rs:653	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DomainWithoutSource	V			power.rs:966	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DomainWithTwoSources	V			power.rs:975	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PowerLoop	V			power.rs:992	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BatteryOutsideRegulatorInput	V			power.rs:1347	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DomainOutsideConsumer	V			power.rs:1315	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:RegulatorOutsideDomain	V			power.rs:1053	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DropoutViolated	V			power.rs:1570	generic specification, solver or consistency check; no ST register, enumeration or document
+R:BuckHeadroomViolated	V			power.rs:1540	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:OnTimeTooShort	V			power.rs:1555	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:RegulatorOverloaded	V			power.rs:1466	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PowerInputOverloaded	V			power.rs:1646	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:JunctionTooHot	V			power.rs:1598	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BoardOutsidePartTemperature	V			power.rs:1686	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:ExternalPartMissing	V			power.rs:1032	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:ExternalPartOutOfRange	V			power.rs:1040	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SenseFullScaleExceeded	V			power.rs:2145	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SenseSourceImpedance	V			power.rs:2182	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:CrossingInvalid	V			power.rs:2268	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:CrossingDomainMismatch	V			power.rs:2324	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:CrossingPullUp	V			power.rs:2340	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:CrossingTooFast	V			power.rs:2361	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:MisoRoundTripTooSlow	V			power.rs:2404	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:OutputDelayMissing	V			power.rs:2376	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BatteryInputUndamped	V			power.rs:2524	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:BuckJunctionOverLimit	V			power.rs:2657	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:EffectiveCapacitanceBelowMinimum	V			power.rs:2043	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:SupplyFloorBelowBorRising	N			power.rs:2836	supply minimum must clear brown-out rising threshold: generic rule, ST BOR vocabulary and level index
+R:ControlPinUnwired	V			power.rs:2908	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:DcBiasBeyondCurve	V		other-vendor	power.rs:2747	ceramic past last point of maker DC-bias curve (Murata data); other vendor
+R:PartMismatch	V			solve.rs:441	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:UnknownPin	V			solve.rs:1537	pin not in held pin table; only matched against table (tie-break b)
+R:ReservedPin	V			solve.rs:1544	pin reserved (debug port or oscillator) in pin table; matched against table
+R:UnknownPeripheral	V			solve.rs:1804	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PinClaimedTwice	V			solve.rs:1556	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:PeripheralClaimedTwice	V			solve.rs:1810	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NoInstance	V			solve.rs:1868	generic specification, solver or consistency check; no ST register, enumeration or document
+R:Infeasible	V			solve.rs:2086	generic specification, solver or consistency check; no ST register, enumeration or document
+R:BudgetExceeded	V			solve.rs:2053	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NoFreePin	V			solve.rs:554	generic specification, solver or consistency check; no ST register, enumeration or document
+R:NoAdcPin	V			solve.rs:606	generic specification, solver or consistency check; no ST register, enumeration or document
+R:AdcChannelNotOnPin	V			pin_devices.rs:2180	driver-IC / power-chain / placement check; generic electrical or solver rule
+R:AdcUnmodelled	V			solve.rs:608	free ADC pins only ADC2, which the twin does not model; tool limit not ST rule
+R:BridgeSplitAcrossTimers	V			solve.rs:654	PWM/DShot motor timing or timer placement; generic
+R:NoTimerChannel	V			solve.rs:1897	PWM/DShot motor timing or timer placement; generic
+R:TimerRateConflict	V			solve.rs:1916	PWM/DShot motor timing or timer placement; generic
+R:TimerResolutionConflict	V			solve.rs:1910	PWM/DShot motor timing or timer placement; generic
+R:MotorsInfeasible	V			solve.rs:1940	PWM/DShot motor timing or timer placement; generic
+R:SerialPinsSplit	V			solve.rs:1999	serial port placement/uniqueness; generic (USART word is generic, no ST register or set stated)
+R:NoSerialPeripheral	V			solve.rs:2011	serial port placement/uniqueness; generic (USART word is generic, no ST register or set stated)
+R:SerialPortsInfeasible	V			solve.rs:2031	serial port placement/uniqueness; generic (USART word is generic, no ST register or set stated)
+R:SerialClock	S			solve.rs:722	no kernel clock for USART from RCC_D2CCIP2R, RM0433 §8.7.21
+R:SpiKernelClockUnavailable	S			solve.rs:1003	SPI kernel clock per_ck/hsi_ker_ck from RM0433 §8.7.19-22 mux
+R:SpiSpeedBelowKernelRange	S			solve.rs:1010	SPI MBR 111 divide by 256 of kernel clock, RM0433 §50.11.3
+R:NoI2cTiming	S			solve.rs:1143	I2C TIMINGR/PRESC fit for kernel clock, RM0433 §47.4.9

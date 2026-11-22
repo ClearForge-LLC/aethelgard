@@ -1,0 +1,294 @@
+id	class	flag	tags	value_at	reason
+lib:SolvedTopology.schema_version	V			lib.rs:4304	Integer version of the solved-topology schema.
+lib:SolvedTopology.specification_sha256	V			lib.rs:4311	SHA-256 hex digest of the solved specification.
+lib:SolvedTopology.assignments	V			-	Map net to PinAssignment; unnamed net key, classed by value type; container only, fields classed apart.
+lib:PinAssignment.pin	N			lib.rs:4317	P<port><n> pin name, only matched against held pin table and checked plain; ST port naming (DS12117 pinout).
+lib:PinAssignment.peripheral	N			lib.rs:4318	Peripheral instance name (TIMn, SPIn, USARTn) matched against held pin table; ST instance names, meaning is a peripheral instance.
+lib:PinAssignment.signal	N			lib.rs:4319	Signal name such as TIM1_CH1 or SPI1_SCK taken from held pin table; only the name is ST vocabulary.
+lib:PinAssignment.alternate_function	S			lib.rs:4398	ST alternate-function number AF0-AF15 (DS12117 AF mapping tables); value set is ST numbering.
+lib:SolvedTopology.gpio	V			-	Map net to SolvedGpio; container, fields classed apart.
+pin_devices:SolvedGpio.pin	N			lib.rs:4321	P<port><n> pin name matched only against held table; ST port naming.
+pin_devices:SolvedGpio.direction	V			pin_devices.rs:121	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.initial	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.pull	V			pin_devices.rs:129	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.active	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.pulled	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+lib:SolvedTopology.adc_inputs	V			-	Map net to SolvedAdcInput; container.
+pin_devices:SolvedAdcInput.pin	N			lib.rs:4327	P<port><n> pin name matched against held table; ST port naming.
+pin_devices:SolvedAdcInput.peripheral	N			lib.rs:4328	ADC instance name (ADC1, ADC3) chosen by solver; ST instance naming.
+pin_devices:SolvedAdcInput.channel	N			lib.rs:4329	ADC channel name INPm read from held pin table; meaning is an ADC input channel, name is ST (tie-break c).
+pin_devices:SolvedAdcInput.bits	V			-	Declared ADC resolution in bits.
+pin_devices:SolvedAdcInput.transfer	V			pin_devices.rs:333	Neutral current-output transfer descriptor.
+pin_devices:SolvedTransfer.device	V			-	Reference designator of the pin device.
+lib:SolvedTopology.i2c_ceilings	V		std	lib.rs:538	Map bus to I2C speed ceiling in Hz; value in 100k/400k/1M, I2C standard modes.
+lib:SolvedTopology.i2c_speeds	V		std	lib.rs:538	Map bus to declared I2C speed in Hz; I2C standard modes.
+lib:SolvedTopology.analog_lines	V			-	Map net to AnalogLine; container.
+lib:AnalogLine.bus	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.pull_up_ohms	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.capacitance_femtofarads	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.ceiling_ns	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.domain_millivolts	V			-	Generic electrical quantity or bus id in plain units.
+lib:SolvedTopology.i2c_devices	V			-	Map reference to SolvedI2cDevice; container.
+lib:SolvedI2cDevice.index	V			-	Position index in specification order.
+lib:SolvedI2cDevice.part	V			-	Part string looked up in held parts table; neutral name.
+lib:SolvedI2cDevice.bus	V			-	Bus id, a key of i2c_ceilings.
+lib:SolvedI2cDevice.peripheral	N			lib.rs:4353	ST name of controller (I2C1..I2C4) per doc comment; meaning is an I2C instance.
+lib:SolvedI2cDevice.address	V		std	-	I2C device address.
+lib:SolvedTopology.spi_devices	V			-	Map reference to SolvedSpiDevice; container.
+lib:SolvedSpiDevice.index	V			-	Position index in specification order.
+lib:SolvedSpiDevice.part	V			-	Part string looked up in held parts table.
+lib:SolvedSpiDevice.bus	V			-	Bus id.
+lib:SolvedSpiDevice.peripheral	N			lib.rs:4363	ST name of controller (SPI1..SPI6) per doc comment; meaning is an SPI instance.
+lib:SolvedSpiDevice.cs	V			-	Net of the chip select.
+lib:SolvedSpiDevice.orientation	V			orientation.rs:33	IMU orientation, neutral axes.
+orientation:Orientation.x	V			orientation.rs:33	Body direction the sensor axis points (forward, aft, right, left, up, down).
+orientation:Orientation.z	V			orientation.rs:33	Body direction the sensor axis points (forward, aft, right, left, up, down).
+lib:SolvedTopology.spi_lines	V			-	Map net to SpiLine; container.
+lib:SpiLine.bus	V			-	Bus id.
+lib:SpiLine.signal	V		std	lib.rs:847	SCK or MOSI, SPI signal names.
+lib:SpiLine.rate_hz	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.capacitance_femtofarads	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.rise_time_ns	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.vdd_min_millivolts	V			-	Generic electrical quantity in plain units.
+lib:SolvedTopology.clock	V			-	The solved clock the firmware runs on; neutral name, container (fields classed apart).
+motor:SolvedClock.source	S			motor.rs:383	Clock source HSI or PLL1, an ST RCC clock-tree mux position (RM0433 8.7.7 SW).
+motor:SolvedClock.sysclk_hz	V			-	System clock frequency in Hz; neutral.
+motor:SolvedClock.hse_hz	N			-	Frequency of the external high-speed clock in Hz; only the HSE name is ST.
+motor:SolvedClock.d1cpre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.hpre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d1ppre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d2ppre1	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d2ppre2	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d3ppre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.timpre	S			motor.rs:340	RCC_CFGR.TIMPRE bit (RM0433 8.7.7), selects timer kernel multiplier 2 or 4.
+motor:SolvedClock.vos	S			vos.rs:36	PWR_D3CR.VOS core voltage scale (RM0433 6.6.2); ST scale0-scale3 enumeration.
+motor:SolvedClock.hse	N			-	The external high-speed clock tree; meaning is a crystal-driven PLL tree, name HSE/PLL is ST.
+clock:SolvedHse.declared	V			clock.rs:83	Crystal or external clock declaration; neutral meaning (quartz or driven clock).
+clock:HseCrystal.part	V			-	Crystal part string from held parts table.
+clock:HseCrystal.load_caps_femtofarads	V			-	Load capacitors in femtofarads.
+clock:HseCrystal.pull_ppm	V			-	Pulling in ppm per side.
+clock:HseCrystal.temperature_celsius	V			-	Temperature range in degrees C.
+clock:CelsiusRange.min	V			-	Temperature in degrees C.
+clock:CelsiusRange.max	V			-	Temperature in degrees C.
+clock:HseCrystal.life_hours	V			-	Service life in hours.
+clock:HseCrystal.startup_max_us	V			-	Start-up wait bound in microseconds; meaning generic (oscillator ready bound).
+clock:HseCrystal.startup_source	V			-	Citation text for the start-up bound, tie-break f.
+clock:HseExternal.hz_num	V			-	Numerator of frequency in Hz.
+clock:HseExternal.hz_den	V			-	Denominator of frequency in Hz.
+clock:HseExternal.ppm	V			-	Deviation in ppm per side.
+clock:HseExternal.source	V			-	Citation text for ppm, tie-break f.
+clock:HseExternal.startup_max_us	V			-	Start-up wait bound in microseconds.
+clock:HseExternal.startup_source	V			-	Citation text, tie-break f.
+clock:SolvedHse.fast_ppm	V			-	Clock deviation budget in ppm.
+clock:SolvedHse.slow_ppm	V			-	Clock deviation budget in ppm.
+clock:SolvedHse.pllckselr	S			clock.rs:183	RCC_PLLCKSELR word (RM0433 8.7.11); register content.
+clock:SolvedHse.pllcfgr	S			clock.rs:183	RCC_PLLCFGR word (RM0433 8.7.12); register content.
+clock:SolvedHse.pll1divr	S			clock.rs:183	RCC_PLL1DIVR word (RM0433 8.7.13); register content.
+clock:SolvedHse.flash_acr	S			clock.rs:183	FLASH_ACR word, LATENCY and WRHIGHFREQ (RM0433 Table 17); register content.
+lib:SolvedTopology.motor_outputs	V			-	Map label to SolvedMotorOutput; container.
+motor:SolvedMotorOutput.index	V			-	Position index in specification order.
+motor:SolvedMotorOutput.protocol	V		std	motor.rs:26	pwm, dshot300, dshot600: PWM and DShot are published protocols.
+motor:SolvedMotorOutput.pwm	V			-	Optional neutral PWM timing struct.
+motor:PwmTiming.rate_hz	V			-	Generic time or rate quantity in plain units.
+motor:PwmTiming.pulse_min_us	V			-	Generic time or rate quantity in plain units.
+motor:PwmTiming.pulse_max_us	V			-	Generic time or rate quantity in plain units.
+motor:PwmTiming.idle	V			motor.rs:115	Held level or idle pulse; neutral.
+motor:PwmTiming.resolution_ps	V			-	Generic time or rate quantity in plain units.
+motor:SolvedMotorOutput.psc	S			lib.rs:4629	TIMx_PSC register value as the firmware writes it (RM0433 timer chapter).
+motor:SolvedMotorOutput.arr	S			lib.rs:4629	TIMx_ARR register value as the firmware writes it (RM0433 timer chapter).
+motor:SolvedMotorOutput.ccr	S			lib.rs:4629	TIMx_CCRk register value as the firmware writes it (RM0433 timer chapter).
+lib:SolvedTopology.power	V			-	Optional solved power tree; neutral name.
+lib:SolvedPower.domains	V			-	Map domain id to SolvedDomain; container.
+lib:SolvedDomain.regulator	V			-	Reference or part string of the regulator.
+lib:SolvedDomain.part	V			-	Reference or part string of the regulator.
+lib:SolvedDomain.vout_min_microvolts	V			-	Generic electrical quantity in plain units.
+lib:SolvedDomain.vout_max_microvolts	V			-	Generic electrical quantity in plain units.
+lib:SolvedDomain.source	V			-	Pad (reference and pad number), neutral.
+lib:Pad.reference	V			-	Part reference designator.
+lib:Pad.pad	V			-	Pad number of a part.
+lib:SolvedDomain.ret	V			-	Return pad, neutral.
+lib:SolvedDomain.load_milliamps	V			-	Generic electrical quantity in plain units.
+lib:SolvedDomain.consumers	V			-	List of consumers; container.
+lib:Consumer.name	V			-	Consumer name.
+lib:Consumer.floor_millivolts	V			-	Lowest supply in millivolts.
+lib:SolvedPower.input_steady_milliamps	V			-	Current in milliamps.
+lib:SolvedPower.input_fault_milliamps	V			-	Current in milliamps.
+lib:SolvedPower.conditions	V			-	Free-text condition names.
+lib:SolvedPower.sense	V			-	Map net to SolvedSense; container.
+lib:SolvedSense.pin	N			-	ADC pin P<port><n> matched against held table; ST port naming.
+lib:SolvedSense.position	V			-	Package position of the pin, an ordering number.
+lib:SolvedSense.channels	N			-	ADC input channel names (INPm) from held pin table; ST ADC naming.
+lib:SolvedTopology.serial_ports	V			-	Map label to SolvedSerialPort; container.
+serial:SolvedSerialPort.index	V			-	Position index in specification order.
+serial:SolvedSerialPort.peripheral	N			serial.rs:188	USART1..UART8, ST instance names, value set serial::PERIPHERALS; USART vs UART split is ST naming.
+serial:SolvedSerialPort.tx	V			-	Net name of transmit line.
+serial:SolvedSerialPort.rx	V			-	Net name of receive line.
+serial:SolvedSerialPort.role	V		std	serial.rs:31	console, mavlink, gps, rc_crsf, rc_sbus; protocol roles, not ST.
+serial:SolvedSerialPort.framing	V			-	Framing struct, neutral.
+serial:Framing.baud	V		std	-	Baud rate.
+serial:Framing.data_bits	V		std	serial.rs:90	Data bits 7, 8 or 9, UART framing.
+serial:Framing.parity	V		std	serial.rs:55	none/even/odd parity.
+serial:Framing.stop_bits	V		std	serial.rs:108	Stop bits 1 or 2.
+serial:Framing.inverted	V		std	-	Line inversion flag.
+serial:SolvedSerialPort.negotiated	V		std	-	Optional negotiated-baud declaration; CRSF protocol.
+serial:Negotiated.source	V			-	Citation text, tie-break f.
+serial:SolvedSerialPort.peer_deviation_ppm	V			-	Peer clock deviation in ppm.
+serial:SolvedSerialPort.kernel_hz	N			-	USART kernel clock in Hz; units neutral, name is ST kernel clock (RM0433 8.7.21).
+serial:SolvedSerialPort.brr	S			serial.rs:220	USART_BRR register value (RM0433 48.8.5), range 16..0xFFFF.
+serial:SolvedSerialPort.actual_millibaud	V			-	Baud achieved, in millibaud.
+serial:SolvedSerialPort.error_ppm	V			-	Baud error in ppm.
+lib:SolvedTopology.spi_controllers	V			-	Map peripheral to SolvedSpiController; container.
+lib:SolvedSpiController.kernel	S			lib.rs:688	SPI kernel clock selection per_ck/hsi_ker_ck/pll1_q/pclk: RCC SPIxSEL mux position (RM0433 8.7.20, 8.7.22).
+lib:SolvedSpiController.kernel_hz	N			-	Kernel clock in Hz; name is ST kernel clock.
+lib:SolvedSpiController.declared_hz	V			-	Declared speed in Hz.
+lib:SolvedSpiController.mbr	S			silicon.rs:232	SPI_CFG1.MBR[2:0] baud-rate divider field (RM0433 50.11.3), 0..7.
+lib:SolvedSpiController.achieved_hz	V			-	Achieved SPI clock in Hz.
+lib:SolvedSpiController.achieved_max_hz	V			-	Fastest achieved SPI clock in Hz.
+lib:SolvedTopology.i2c_timings	V			-	Map peripheral to SolvedI2cTiming; container.
+lib:SolvedI2cTiming.kernel_hz	N			-	Kernel clock in Hz; name is ST kernel clock (i2c_ker_ck).
+lib:SolvedI2cTiming.cr1	S			silicon.rs:361	I2C_CR1 register word (RM0433 47.9.1).
+lib:SolvedI2cTiming.timingr	S			silicon.rs:635	Map mode to I2C_TIMINGR register word (RM0433 47.9.5).
+lib:SolvedTopology.bor_level	S			lib.rs:4571	Brownout reset threshold level 0-3: ST BOR option-byte levels (RM0433 FLASH_OPTSR BOR_LEV).
+lib:SolvedTopology.core_supply	S	?		vos.rs:673	LDO or Bypass supply configuration, RM0433 Table 34 rows (LDOEN/BYPASS); ST supply structure.
+lib:SolvedTopology.mcu	V			lib.rs:3644	MCU part string, value set from held parts table; neutral name (tie-break c).
+lib:SolvedTopology.pin_speeds	S			lib.rs:4538	OSPEEDR output speed grade 0 or 1 (DS12117 Table 149; GPIOx_OSPEEDR).
+lib:SolvedTopology.foreign_clock	V			-	Optional declared clock values of foreign firmware; neutral name.
+motor:SolvedForeignClock.apb1_timers_hz	N			lib.rs:1184	Timer kernel clock on APB1 in Hz; APB timer clock tree is ST (RM0433 Fig 49).
+motor:SolvedForeignClock.apb2_timers_hz	N			lib.rs:1184	Timer kernel clock on APB2 in Hz; APB timer clock tree is ST.
+motor:SolvedForeignClock.usarts	N			lib.rs:1195	Map USART instance name to kernel Hz; keys ST USART1..UART8, mux groups ST.
+motor:SolvedForeignClock.vos	S			vos.rs:36	Declared PWR VOS scale; ST scale0-scale3.
+lib:SolvedTopology.pin_devices	V			-	Map reference to SolvedPinDevice; container.
+pin_devices:SolvedPinDevice.part	V			-	Pin device part string, held table.
+pin_devices:SolvedPinDevice.bridges	V			-	Map bridge to SolvedBridge; container.
+pin_devices:SolvedBridge.mode	V		other-vendor	-	Strapped mode string of the part; other-vendor part vocabulary.
+pin_devices:SolvedBridge.inputs	V			-	Input net names.
+pin_devices:SolvedBridge.enable	V			-	Optional enable struct.
+pin_devices:SolvedEnable.net	V			-	Net name.
+pin_devices:SolvedEnable.active	V			motor.rs:94	Logic level.
+pin_devices:SolvedPinDevice.supplies	V			-	Map supply pin to domain name.
+clock:GmCrit.nano_amps_per_volt	V			-	Oscillator critical transconductance in nA/V; generic electronics.
+clock:GmCrit.holds	V			-	Verdict bool.
+clock:GmCrit.an2867_margin_hundredths_uncited	N			-	Margin ratio in hundredths; name cites ST AN2867, meaning is a ratio.
+clock:TreeVerdict.reference_hz	V			-	PLL reference frequency as num/den Hz pair.
+clock:TreeVerdict.range_hz	V			-	Frequency range pair in Hz.
+clock:TreeVerdict.vco_hz	V			-	VCO frequency pair in Hz.
+clock:TreeVerdict.pll1_p_hz	N			-	PLL1 P output in Hz; pll1_p_ck is ST naming.
+clock:TreeVerdict.pll1_q_hz	N			-	PLL1 Q output in Hz when DIVQ1EN; ST naming.
+clock:TreeVerdict.gm_crit	V			-	Optional GmCrit struct.
+motor:SiliconTiming.kernel_hz	N			-	Kernel clock in Hz; ST kernel clock name.
+motor:SiliconTiming.period_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.high_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.period_slowest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.period_fastest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.high_slowest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.high_fastest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.nominal_period_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.nominal_high_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.holds	V			-	Time in picoseconds or verdict bool; generic.
+serial:ToleranceRow.table	V			-	Citation string of RM0433 Table 406/407; tie-break f.
+serial:ToleranceRow.m_bits	S			serial.rs:97	USART_CR1.M[1:0] field value (RM0433 48.8.1).
+serial:ToleranceRow.tolerance_ppm	V			-	Receiver tolerance in ppm.
+serial:SiliconFraming.kernel_hz	N			-	Kernel clock in Hz; ST kernel clock name.
+serial:SiliconFraming.brr	S			serial.rs:220	USART_BRR register value.
+serial:SiliconFraming.actual_millibaud	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.error_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.quantization_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.hsi_ppm	N			-	Clock deviation bound in ppm; name HSI is ST (though holds the active source bound).
+serial:SiliconFraming.receiver_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.peer_deviation_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.worst_case_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.tolerance	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.margin_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.holds	V			-	Generic ppm, baud or verdict quantity.
+silicon:SpiFinding.peripheral	N			-	SPI instance name SPI1..SPI6; ST instance naming.
+silicon:SpiFinding.kernel	S			lib.rs:688	SPI kernel clock mux position (RM0433 8.7.20).
+silicon:SpiFinding.kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:SpiFinding.fast_kernel_hz	N			-	Kernel clock at fastest in Hz; ST name.
+silicon:SpiFinding.declared_hz	V			-	Declared speed in Hz.
+silicon:SpiFinding.mbr	S			silicon.rs:232	SPI_CFG1.MBR field (RM0433 50.11.3).
+silicon:SpiFinding.achieved_hz	V			-	Achieved SPI clock in Hz.
+silicon:SpiFinding.achieved_max_hz	V			-	Fastest SPI clock in Hz.
+silicon:SpiFinding.kernel_ok	S	?		silicon.rs:232	Verdict that kernel mux and clock equal what SPIxSEL gives at reset (RM0433 8.7.20).
+silicon:SpiFinding.mbr_ok	S	?		silicon.rs:232	Verdict on MBR[2:0] range and divider (RM0433 50.11.3).
+silicon:SpiFinding.achieved_ok	S	?		silicon.rs:232	Verdict that achieved rates equal kernel / 2^(MBR+1).
+silicon:SpiFinding.holds	V			-	Overall verdict bool.
+silicon:SpiWords.cr1_idle	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cr1_enable	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cr1_start	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cfg1	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cfg2	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.kernel_select	S			silicon.rs:316	RCC offset and word of the SPIxSEL select register (RM0433 8.7.20, 8.7.22).
+silicon:I2cLimits.mode	V		std	silicon.rs:394	I2C mode name Standard100k, Fast400k, FastPlus1M; UM10204 modes.
+silicon:I2cLimits.scl_hz	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_low_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_high_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.tr_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.tf_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_su_dat_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_hd_dat_min_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_vd_dat_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.kernel_min_hz	N			silicon.rs:394	Least i2c_ker_ck in Hz (DS12117 Table 93); units neutral, name is ST kernel clock.
+silicon:Timingr.presc	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.scldel	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.sdadel	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.sclh	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.scll	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.reserved	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:I2cConstraints.t_low	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.t_high	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.scl_frequency	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.data_setup	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.data_hold	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.kernel_minimum	N			silicon.rs:556	Slowest kernel at least DS12117 Table 93 minimum; ST kernel clock name.
+silicon:TimingFinding.mode	V		std	silicon.rs:394	I2C mode name.
+silicon:TimingFinding.timingr	S			silicon.rs:635	TIMINGR register word.
+silicon:TimingFinding.fields	S			silicon.rs:477	Decoded TIMINGR fields struct.
+silicon:TimingFinding.fast_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:TimingFinding.slow_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:TimingFinding.t_low_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_low_min_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_high_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_high_min_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.scl_max_hz	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.scl_mode_hz	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.constraints	V			-	Container of constraint verdicts, fields classed apart.
+silicon:TimingFinding.data_valid	S	?		silicon.rs:613	Verdict on SDADEL bound (RM0433 p. 1958).
+silicon:TimingFinding.tight	S	?		silicon.rs:613	Verdict that lowering any TIMINGR field fails a constraint.
+silicon:TimingFinding.presc_least	S	?		silicon.rs:613	Verdict that PRESC is least feasible (TIMINGR.PRESC).
+silicon:TimingFinding.reserved_zero	S			silicon.rs:613	Verdict that TIMINGR bits 27:24 are zero (reserved bits).
+silicon:TimingFinding.holds	V			-	Overall verdict bool.
+silicon:I2cFinding.peripheral	N			-	I2C instance name I2C1..I2C4; ST naming.
+silicon:I2cFinding.kernel_ok	N			-	Verdict on i2c kernel clock; meaning generic, name ST kernel.
+silicon:I2cFinding.cr1_ok	S			silicon.rs:361	Verdict that I2C_CR1 equals the generated word (RM0433 47.9.1).
+silicon:I2cFinding.modes_ok	V		std	silicon.rs:394	Verdict that modes are the three I2C modes.
+silicon:I2cFinding.timingr	N			-	List of TimingFinding; name is ST register, content is verdicts.
+silicon:I2cFinding.holds	V			-	Overall verdict bool.
+silicon:BrrFinding.kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:BrrFinding.topology_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:BrrFinding.kernel_ok	N			-	Verdict on kernel clock; ST name.
+silicon:BrrFinding.baud	V		std	-	Baud rate.
+silicon:BrrFinding.brr	S			silicon.rs:754	USART_BRR value.
+silicon:BrrFinding.residue	V			-	Integer residue |BRR*baud-kernel|; arithmetic.
+silicon:BrrFinding.nearest	S	?		silicon.rs:793	Verdict that BRR is nearest whole USARTDIV (RM0433 48.5.7).
+silicon:BrrFinding.in_range	S			silicon.rs:754	Verdict 16 <= BRR <= 0xFFFF (RM0433 48.8.5).
+silicon:BrrFinding.holds	V			-	Overall verdict bool.
+versions:Replacement.path	V			none found	Specification key path text. Repository change log data.
+versions:Replacement.by	V			none found	Replacement key path text. Repository change log data.
+versions:VersionChange.version	V			none found	Specification schema version number. Repository change log data.
+versions:VersionChange.work_order	V			none found	Work order name text. Repository change log data.
+versions:VersionChange.requires	V			-	List of key paths. Repository change log data.
+versions:VersionChange.optional	V			-	List of key paths. Repository change log data.
+versions:VersionChange.replaced	V			-	List of Replacement rows. Repository change log data.
+versions:VersionChange.removed	V			-	List of key paths. Repository change log data.
+versions:VersionChange.rules	V			-	List of refusal kind names. Repository change log data.
+vos:Judged.clock	N			-	Free-text clock name such as TIM1 kernel, APB1 timers kernel; names are ST clock-tree vocabulary.
+vos:Judged.family	S			vos.rs:65	Limit-table family (Cpu, Hclk, Pclk, Tim, Spi123, Spi45, Spi6, I2c123, I2c4, Usart16, Usart234578, Lpuart1): RM0433 Table 60 kernel groupings.
+vos:Judged.nominal_hz	V			-	Frequency in Hz or verdict.
+vos:Judged.fastest_hz	V			-	Frequency in Hz or verdict.
+vos:Judged.limit_hz	V			-	Frequency in Hz or verdict.
+vos:Judged.cite	V			vos.rs:89	Citation string, tie-break f.
+vos:Judged.holds	V			-	Frequency in Hz or verdict.
+vos:ForeignVerdict.vos	S			vos.rs:36	PWR VOS scale scale0-scale3.
+vos:ForeignVerdict.clocks	V			-	List of Judged; container.
+vos:ForeignVerdict.not_judged	V			-	List of clock names with reason.
+vos:ForeignVerdict.conditions	V			-	List of condition names.

@@ -1,0 +1,103 @@
+id	class	flag	tags	value_at	reason
+H:power-parts.json|power_parts:RawExternal.role	V			power_parts.rs:735	Regulator external part roles cin, cin_hf, cboot, cvcc, cout, inductor, bypass_a/b: generic power-converter terms, hard-coded enum.
+H:power-parts.json|power_parts:RawExternal.min_picofarads	V			power_parts.rs:1485	Least total rated capacitance of the role, pF; null for the inductor.
+H:power-parts.json|power_parts:RawExternal.max_picofarads	V			power_parts.rs:1485	Greatest total rated capacitance of the role, pF, or null.
+H:power-parts.json|power_parts:RawExternal.effective_min_picofarads	V			-	Least effective capacitance under DC bias with its citation and shortfall action; generic.
+H:power-parts.json|power_parts:RawExternal.rated_min_millivolts	V			power_parts.rs:1510	Least rated voltage of the role's parts, mV.
+H:power-parts.json|power_parts:RawExternal.rated_step	V			-	A higher least rating from a domain nominal up, mV pairs; generic.
+H:power-parts.json|power_parts:RawExternal.rated_at_least_working	V			power_parts.rs:1525	Whether the rated voltage must cover the working voltage; bool.
+H:power-parts.json|power_parts:RawExternal.dielectrics	V		std	power_parts.rs:299	Allowed ceramic dielectric codes C0G, X5R, X7R, X7S: EIA class codes, generic electronics.
+H:power-parts.json|power_parts:RawExternal.at	V			power_parts.rs:1483	Citation, document and section (tie-break f).
+H:power-parts.json|power_parts:RawMcu.vdd_millivolts	V			power_parts.rs:2217	The MCU's VDD operating range in mV; VDD is a generic supply symbol.
+H:power-parts.json|power_parts:RawMcu.idd_max_milliamps	V			power_parts.rs:2218	Largest tabled supply current in mA.
+H:power-parts.json|power_parts:RawMcu.idd_condition	V			power_parts.rs:2156	Condition text for the current figure, 1 to 200 bytes.
+H:power-parts.json|power_parts:RawMcu.bor_falling_max_millivolts	S	?		power_parts.rs:2157	Exactly four values, VBOR0 to VBOR3, indexed by RM0433's BOR_LEV levels. Doubt: each value is plain mV; only the four-level indexing is ST's enumeration.
+H:power-parts.json|power_parts:RawMcu.bor_rising_max_millivolts	S	?		power_parts.rs:2174	Exactly four values, VBOR0 to VBOR3 rising, indexed by ST's BOR levels. Doubt: values are plain mV; only the four-level indexing is ST's.
+H:power-parts.json|power_parts:RawMcu.rain_max_ohms	N	?		power_parts.rs:2191	Largest external ADC source resistance per resolution, ohms. RAIN is DS12117's symbol. Doubt: whether a datasheet parameter symbol counts as ST vocabulary, else V.
+H:power-parts.json|power_parts:RawRain.bits	V			power_parts.rs:2196	ADC resolution in bits, 6 to 16, highest first, once.
+H:power-parts.json|power_parts:RawRain.max_ohms	V			power_parts.rs:2202	Resistance limit in ohms with citation.
+H:power-parts.json|power_parts:RawMcu.reservoir_rule	V			-	The external reservoir capacitor rule Cext >= 2^(N+extra) x C_ADC (cited to AN2834); generic charge-sharing electronics.
+H:power-parts.json|power_parts:RawReservoirRule.statement	V			power_parts.rs:2206	Statement text of the rule, 1 to 200 bytes.
+H:power-parts.json|power_parts:RawReservoirRule.extra_bits	V			power_parts.rs:2207	Extra bits of margin, 0 to 8.
+H:power-parts.json|power_parts:RawReservoirRule.adc_capacitance_femtofarads	V			power_parts.rs:2207	ADC sampling capacitance in fF, above zero.
+H:power-parts.json|power_parts:RawReservoirRule.at	V			power_parts.rs:2227	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcu.spi_input_setup_min_ns	V		std	power_parts.rs:2239	SPI master data-input setup time, ns.
+H:power-parts.json|power_parts:RawMcu.spi_sck_low_shortfall_ns	V		std	power_parts.rs:2232	How much shorter than half a period SCK's low phase may be, ns, not below zero.
+H:power-parts.json|power_parts:RawMcu.support	V			-	The MCU's support network as its datasheet draws it; neutral container.
+H:power-parts.json|power_parts:RawSupport.pins	N	?		power_parts.rs:1721	Keys are the datasheet's pin-group names (VDD, VCAP, PDR_ON, BOOT0), text 1-16; names.rs:189 hard-codes group VCAP to name nets. Doubt: names are table rows (tie-break c, V).
+H:power-parts.json|power_parts:RawSupport.pins_at	V			power_parts.rs:1843	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupport.supply	V			power_parts.rs:1755	A group name of pins, matched against the row's own pins keys (tie-break c).
+H:power-parts.json|power_parts:RawSupport.grounds	V			power_parts.rs:1756	Group names matched against the row's pins keys, non-empty (tie-break c).
+H:power-parts.json|power_parts:RawSupport.powered	V			-	Groups each on a domain within a stated mV range; neutral container.
+H:power-parts.json|power_parts:RawPowered.group	V			power_parts.rs:1763	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawPowered.min_millivolts	V			power_parts.rs:1764	Least supply in mV, 0 or more.
+H:power-parts.json|power_parts:RawPowered.max_millivolts	V			power_parts.rs:1764	Greatest supply in mV, at least the minimum.
+H:power-parts.json|power_parts:RawPowered.at	V			power_parts.rs:1773	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupport.own_nets	V			-	Groups whose pins each need a net of their own; neutral container.
+H:power-parts.json|power_parts:RawOwnNet.group	V			power_parts.rs:1779	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawOwnNet.at	V			power_parts.rs:1781	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupport.capacitors	V			-	Support capacitor roles; neutral container.
+H:power-parts.json|power_parts:RawSupportCapacitor.role	N			power_parts.rs:626	SupportRole enum; variant vcap names ST's VCAP core-regulator pin. Others (vdd/analog/usb bypass and bulk, reset) are generic. Meaning neutral.
+H:power-parts.json|power_parts:RawSupportCapacitor.owner	V			power_parts.rs:1797	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawSupportCapacitor.per_pin	V			none found	One capacitor per owner pin or one per group; bool. Grepped per_pin in IR src: copied only (power_parts.rs:1815).
+H:power-parts.json|power_parts:RawSupportCapacitor.ground	V			power_parts.rs:1798	A group name, one of grounds (power_parts.rs:1799).
+H:power-parts.json|power_parts:RawSupportCapacitor.picofarads	V			power_parts.rs:1803	Capacitance in pF, above zero.
+H:power-parts.json|power_parts:RawSupportCapacitor.tolerance_permille	V			power_parts.rs:1803	Value-class tolerance, 0 to 500 permille.
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_um	V			power_parts.rs:1808	Placement distance bound in um, 1 to 100000, or null.
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_basis	V			power_parts.rs:1811	Basis text for the bound, 1 to 256 bytes.
+H:power-parts.json|power_parts:RawSupportCapacitor.at	V			power_parts.rs:1821	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupport.straps	V			-	Single pins tied to a group's net; neutral container.
+H:power-parts.json|power_parts:RawStrap.pin	V			power_parts.rs:1827	A one-pin group name (BOOT0, PDR_ON, VBAT, VREF+) matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawStrap.to	V			power_parts.rs:1834	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawStrap.at	V			power_parts.rs:1838	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcu.flash_kilobytes	V			power_parts.rs:2242	Embedded flash size in KB.
+H:power-parts.json|power_parts:RawMcu.ardupilot	V			-	ArduPilot's names and SPI kernel clocks for the MCU: ArduPilot's vocabulary, not ST's; container.
+H:power-parts.json|power_parts:RawMcuArduPilot.series	V			power_parts.rs:1371	ArduPilot's MCU series name; IR admits any 1-32 letters and digits, no ST set in IR. See report: hwdef (outside IR) pins it to STM32H7xx.
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu	V			power_parts.rs:1371	ArduPilot's MCU name; IR admits any 1-32 letters and digits, no fixed set in IR (value is an ST part string, data).
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu_at	V			power_parts.rs:1393	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.table_at	V			power_parts.rs:1394	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_hz	V			none found	ArduPilot's OSCILLATOR_HZ the rows hold for, Hz. Grepped oscillator_hz in IR src: copied only (power_parts.rs:1395).
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_at	V			power_parts.rs:1396	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_kernel_hz	N			power_parts.rs:1378	Keyed by exactly SPI1 to SPI6 (hard-coded set), ST instance names; values Hz. In IR the keys are only matched, no number-derived meaning: amendment 3.
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_divider_at	V			power_parts.rs:1398	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcu.io	V			-	The MCU's I/O pins against the input each tolerates; neutral container. Its structure and family columns are S.
+H:power-parts.json|power_parts:RawMcuIo.pins	N			power_parts.rs:2283	Keys are canonical pin names in ST's P<port><n> form, shape-checked P, A-K, 0-15; matched only, no port/number meaning derived (tie-break b).
+H:power-parts.json|power_parts:RawIoPin.structure	S			power_parts.rs:2292	DS12117 pin-structure code (FT_h, TT_a); split at _ into an ST structure family matched against held families. ST structure letters (rule 2).
+H:power-parts.json|power_parts:RawIoPin.page	V			power_parts.rs:2293	Datasheet page of the pin row, nonzero: a citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuIo.pins_at	V			power_parts.rs:2280	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuIo.families	S			power_parts.rs:2254	One entry per ST I/O structure family (FT, TT) with its tolerated input: keyed by the DS12117 structure letter.
+H:power-parts.json|power_parts:RawIoFamily.family	S			power_parts.rs:2340	ST pin-structure family letters (FT, TT) of DS12117's pin table, upper case, once.
+H:power-parts.json|power_parts:RawIoFamily.above_supply_millivolts	V			power_parts.rs:2347	Tolerated input above the pin's supply, mV, above zero or null.
+H:power-parts.json|power_parts:RawIoFamily.max_millivolts	V			power_parts.rs:2347	Tolerated input maximum, mV, above zero or null.
+H:power-parts.json|power_parts:RawIoFamily.at	V			power_parts.rs:2353	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuIo.pulls_off_above_supply_millivolts	V			power_parts.rs:2322	Above the supply plus this, internal pulls must be off, mV.
+H:power-parts.json|power_parts:RawMcuIo.absolute_maximum	V			-	Absolute maximum input ratings at any supply; neutral container (its families column is S).
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.families	S			power_parts.rs:2256	Absolute-maximum input per ST structure family, the same families as io.families in order (power_parts.rs:2262).
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.boot0_max_millivolts	N			power_parts.rs:2271	Absolute maximum on the BOOT0 pin, mV; BOOT0 is ST's boot pin name, matched via crate::BOOT0 (power_parts.rs:530). Meaning is a voltage.
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.other_max_millivolts	V			power_parts.rs:2275	Absolute maximum on every other pin, mV.
+H:power-parts.json|power_parts:RawMcuIo.analog_pads	V			-	Pins whose pad takes only an analog input; neutral container.
+H:power-parts.json|power_parts:RawAnalogPads.pins	N			power_parts.rs:2308	Pin names in ST's P<port><n> form, matched against io.pins keys only (tie-break b).
+H:power-parts.json|power_parts:RawAnalogPads.at	V			power_parts.rs:2317	Citation (tie-break f).
+H:power-parts.json|power_parts:RawCrystal.frequency_hz	V			power_parts.rs:2112	Crystal nominal frequency, Hz.
+H:power-parts.json|power_parts:RawCrystal.load_femtofarads	V			power_parts.rs:2113	Crystal load capacitance CL, fF.
+H:power-parts.json|power_parts:RawCrystal.tolerance_ppm	V			power_parts.rs:2115	Frequency tolerance at +25 C, ppm.
+H:power-parts.json|power_parts:RawCrystal.stability_ppm	V			power_parts.rs:2116	Frequency stability over temperature, ppm.
+H:power-parts.json|power_parts:RawCrystal.aging_ppm	V			power_parts.rs:2117	Aging over aging_hours, ppm.
+H:power-parts.json|power_parts:RawCrystal.aging_hours	V			power_parts.rs:2118	Span the aging figure holds for, hours.
+H:power-parts.json|power_parts:RawCrystal.esr_max_milliohms	V			power_parts.rs:2119	Crystal ESR maximum, mOhm.
+H:power-parts.json|power_parts:RawCrystal.c0_max_femtofarads	V			power_parts.rs:2121	Crystal shunt capacitance C0 maximum, fF.
+H:power-parts.json|power_parts:RawCrystal.drive_level_max_microwatts	V			power_parts.rs:2123	Crystal drive level maximum, uW.
+H:output-speeds.json|speeds:RawTable.vbat_pins	N			speeds.rs:347	Pins a VBAT supply can feed, with their Fmax and note (DS12117 Table 149 note 2). VBAT is ST's backup-supply pin name; meaning neutral.
+H:output-speeds.json|speeds:RawVbat.pins	N			speeds.rs:351	Pin names in ST's P<port><n> form; identifier-checked and matched by equality only (speeds.rs:182), tie-break b.
+H:output-speeds.json|speeds:RawRow.ospeedr	S			speeds.rs:272	GPIOx_OSPEEDR speed grade 00, 01, 10, 11 (DS12117 Table 149 / Table 52): an ST register field enumeration.
+H:output-speeds.json|speeds:RawRow.requires_compensation_cell	S	?		speeds.rs:310	Whether the row holds only with ST's I/O compensation cell (note 5), forced true exactly for OSPEEDR 10 and 11. Doubt: a bool; its meaning is ST's.
+H:pin-table|lib:PinTable.part	V			solve.rs:440	The part the table is for, matched equal to mcu.part: a part name, data.
+H:pin-table|lib:PinTable.package	V			none found	Package name. Grepped .package across IR src: only power_parts rows' own package fields; PinTable.package has no check or consumer.
+H:pin-table|lib:PinTable.source	V			-	Provenance of the vendored pin data (repository, commit, file hashes).
+H:pin-table|lib:PinSource.repository	V			none found	Source repository text. Grepped repository across IR src: the definition and #[cfg(test)] fixtures (solve.rs:2609) only.
+H:pin-table|lib:PinSource.commit	V			none found	Source commit text. Grepped .commit across IR src: no hit.
+H:pin-table|lib:PinSource.files	V			none found	File name to sha256 map, provenance. Grepped .files across IR src: no hit.
+H:pin-table|lib:PinTable.pins	N			solve.rs:1536	Keys are canonical ST pin names (PB8); matched as keys (get_key_value), never parsed for port or number in IR (tie-break b).
+H:pin-table|lib:Pin.position	V			pin_devices.rs:2204	Package pin number; orders candidates (also solve.rs:589).
+H:pin-table|lib:Pin.alternate_functions	S			solve.rs:1654	Signal name to ST alternate-function number (I2C1_SCL to 4); AF numbers are an ST enumeration, and TIMn keys are parsed for APB bus (motor.rs:675).
+H:pin-table|lib:Pin.adc_channels	N			pin_devices.rs:2167	ST ADC channel names ADCn_INPm, split and matched only; ADC2 avoided for the twin, no number-derived meaning (amendment 3).

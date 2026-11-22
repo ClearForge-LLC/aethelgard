@@ -1,0 +1,1434 @@
+id	class	flag	tags	value_at	reason
+H:bench:BOOT0_LEAKAGE_NANOAMPS	D				Reviewer, amendment 4: DS12117 BOOT0 leakage figure in nA; a held fact, rule 1.
+H:bench:BOOT0_PULL_DOWN_OHMS	V			bench.rs:39	Reviewer (re-read for its citation): the 10 kOhm the emitter draws, an engine design value that judge_boot0_pull_down tests against DS12117 Tables 49-50; not a datasheet figure, so not D.
+H:bench:DRIVER_DROP_MILLIVOLTS	D				Reviewer, amendment 4: DS12117 Table 50 VOH drop in mV; a held fact, rule 1.
+H:bench:DRIVER_MICROAMPS	D				Reviewer, amendment 4: DS12117 Table 50 I/O current figure in uA; a held fact, rule 1.
+H:board:FLOOR_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:LAYER_COUNTS	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_OUTLINE_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_PERMITTIVITY_PERMILLE	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_SOURCE	V			-	Engine limit on board geometry; no ST meaning.
+H:board:MAX_THICKNESS_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:VIA_DIAMETER_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:board:VIA_DRILL_UM	V			-	Engine limit on board geometry; no ST meaning.
+H:clock:CRYSTAL_HZ	D				Reviewer, amendment 4: DS12117 Table 33 HSE crystal range in Hz; a held fact, rule 1.
+H:clock:EXTERNAL_HZ	D				Reviewer, amendment 4: DS12117 Table 31 external clock range in Hz; a held fact, rule 1.
+H:clock:GM_CRIT_MAX_NANO_AMPS_PER_VOLT	D				Reviewer, amendment 4: DS12117 Table 33 Gm_crit_max in nA/V; a held fact, rule 1.
+H:clock:HSI	D				Reviewer, amendment 4: the HSI accuracy budget in ppm from DS12117; a held fact under an ST name, rule 1.
+H:connectors:AMASS_XT30PW_M30_2025	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M30_2025_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M_V12	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30PW_M_V12_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30_TABLE	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:AMASS_XT30_TABLE_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_GH	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_GH_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_SH	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:JST_SH_SHA256	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:MAX_OFFBOARD_FEMTOFARADS	V			-	Engine limit on off-board capacitance.
+H:connectors:PARTS	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:connectors:POWER_IN	V		other-vendor	-	Connector vendor catalogue citation or part data (JST, AMASS); not ST.
+H:ds009:DOCUMENT	V			-	Citation of the project's own connector standard DS-009.
+H:ds009:PORTS	V			-	DS-009 connector port table, the project's own standard; no ST content.
+H:ds009:SHA256	V			-	Citation of the project's own connector standard DS-009.
+H:electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS	D			-	Reviewer, amendment 4: the 2.7 V boundary of DS12117's 8 mA VOL row (electrical.rs:53), a held ST figure; lens 1 had it as a UM10204 limit.
+H:electrical:I2C_PIN_CI_FEMTOFARADS	V		std	-	I2C bus limit from UM10204.
+H:electrical:LOW_RAIL_MILLIVOLTS	V		std	-	I2C bus limit from UM10204.
+H:electrical:LOW_RAIL_SINK_MICROAMPS	V		std	-	I2C bus limit from UM10204.
+H:electrical:VOL_MILLIVOLTS	V		std	-	I2C bus limit from UM10204.
+H:lib:ALL	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:BASE_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:BOOT0	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:DEBUG_NETS	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:DRIVEN_SPI_SIGNALS	V		std	-	I2C speed grades / SPI signal names are standards.
+H:lib:GND	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:I2C_SPEEDS_HZ	V		std	-	I2C speed grades / SPI signal names are standards.
+H:lib:MAX_BOR_LEVEL	S			-	Highest BOR_LEV option-byte level (RM0433), 0 to 3; value set is ST's option-byte enumeration.
+H:lib:MAX_LIFECYCLE_STATEMENT	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:MEMORY_SUFFIX	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:NRST	N			-	Generic net-name strings; NRST and BOOT0 are ST pin vocabulary (DEBUG_NETS lists them).
+H:lib:OBSERVER_RULE	N			-	Rule text for the observer name pa8obs built from a P<port><n> pin form; ST port naming vocabulary, generic meaning.
+H:lib:PROJECT_MAX	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:PROJECT_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:REFERENCE_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:REFUSED_IN_IDENTIFIERS	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:RESERVED_REFERENCES	D			-	Reviewer: rows of reference names (the Renode STM32H7 platform's peripheral names); a second vendor adds rows; doubt cleared.
+H:lib:RESERVED_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:SOLVED_SCHEMA_VERSION	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:SPECIFICATION_SCHEMA_VERSION	V			-	Plumbing: schema version, naming rule or engine limit.
+H:lib:SWCLK	V		arch	-	Net name of the Arm SWD debug port signals.
+H:lib:SWDIO	V		arch	-	Net name of the Arm SWD debug port signals.
+H:lib:WINDOWS_RULE	V			-	Plumbing: schema version, naming rule or engine limit.
+H:motor:DSHOT_BIT_TICKS	V		std	-	DShot bit timing standard.
+H:motor:DSHOT_ZERO_TICKS	V		std	-	DShot bit timing standard.
+H:motor:OFFSETS	S			-	RCC register names and offsets, RM0433 §8.7; ST registers.
+H:motor:PS_PER_S	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:motor:TIMERS	D			-	List of STM32H753 timers with capture/compare channels, RM0433 Table 8; a second vendor adds rows.
+H:names:BUCK_NETS	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:names:UNCONNECTED	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:names:WINDOWS_RESERVED	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:off_domain:BATTERY	V			-	Unit constant or neutral emitter naming; no ST meaning.
+H:off_domain:FOREIGN_CLOCK_NET	N			-	Net name for a foreign clock path; OSC_IN is ST pin-group vocabulary.
+H:output-speeds.json	S			-	RULES §3: S columns speeds:RawRow.ospeedr, speeds:RawRow.requires_compensation_cell
+H:output-speeds.json|parts:RawCitation.document	V			parts.rs:889	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.pending	V			parts.rs:893	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.revision	V			parts.rs:890	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.section	V			parts.rs:891	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|parts:RawCitation.sha256	V			parts.rs:892	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawCitations.rev_v	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawCitations.rev_y	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawRow.fmax_hz	V			speeds.rs:249	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.load_picofarads	V			speeds.rs:248	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.ospeedr	S			speeds.rs:272	GPIOx_OSPEEDR speed grade 00, 01, 10, 11 (DS12117 Table 149 / Table 52): an ST register field enumeration.
+H:output-speeds.json|speeds:RawRow.requires_compensation_cell	S			speeds.rs:310	bool checked equal to ospeedr>=2: the ST I/O compensation cell of the OSPEEDR high grades
+H:output-speeds.json|speeds:RawRow.rise_fall_picoseconds	V			speeds.rs:250	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.vdd_max_millivolts	V			speeds.rs:247	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawRow.vdd_min_millivolts	V			speeds.rs:246	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.citations	V			-	citation or its container (document/page/section/hash); tie-break f
+H:output-speeds.json|speeds:RawTable.definition	V			speeds.rs:221	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.mcu	V			speeds.rs:219	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.open_drain	V			speeds.rs:223	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.rows	V			-	list of grade rows; neutral container, its S/columns classed apart
+H:output-speeds.json|speeds:RawTable.schema_version	V			speeds.rs:218	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawTable.vbat_pins	N			speeds.rs:347	Pins a VBAT supply can feed, with their Fmax and note (DS12117 Table 149 note 2). VBAT is ST's backup-supply pin name; meaning neutral.
+H:output-speeds.json|speeds:RawVbat.fmax_hz	V			speeds.rs:238	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawVbat.note	V			speeds.rs:239	generic table field in units or prose, no ST naming
+H:output-speeds.json|speeds:RawVbat.pins	N			speeds.rs:351	Pin names in ST's P<port><n> form; identifier-checked and matched by equality only (speeds.rs:182), tie-break b.
+H:parts.json	D			-	RULES §3: every column V or N; a second vendor adds rows
+H:parts.json|parts:RawArduPilot.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawArduPilot.driver	V		other-vendor	parts.rs:742	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.frame	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.id	V		other-vendor	parts.rs:745	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.kind	V		other-vendor	parts.rs:740	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawArduPilot.spidev	V		other-vendor	parts.rs:744	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawAxes.x_toward_pins	V		other-vendor	parts.rs:724	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.y_toward_pins	V		other-vendor	parts.rs:725	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawAxes.z	V		other-vendor	parts.rs:726	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.bytes	V		other-vendor	parts.rs:805	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.lsb	V		other-vendor	parts.rs:803	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.order	V		other-vendor	parts.rs:806	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.quantity	V		other-vendor	parts.rs:799	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.signed	V		other-vendor	parts.rs:804	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.stimulus	V		other-vendor	parts.rs:801	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.unit	V		other-vendor	parts.rs:800	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawChannel.zero	V		other-vendor	parts.rs:802	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawCitation.document	V			parts.rs:889	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.pending	V			parts.rs:893	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.revision	V			parts.rs:890	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.section	V			parts.rs:891	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitation.sha256	V			parts.rs:892	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.bus	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.configure	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.data	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.identity	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.io	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.lifecycle	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.pin_capacitance	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.reads	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.spi_output_delay	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.start_up	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawCitations.supply	V			-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawConfigure.settle_us	V		other-vendor	parts.rs:773	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawConfigure.start_up	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawConfigure.writes	V		other-vendor	parts.rs:770	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawData.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawData.write	V		other-vendor	parts.rs:792	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawFrame.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawFrame.is	V		other-vendor	parts.rs:733	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawI2c.addresses	V		other-vendor,std	parts.rs:819	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.datasheet_value	V		other-vendor,std	parts.rs:838	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.mask	V		other-vendor,std	parts.rs:837	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.read	V		other-vendor,std	parts.rs:833	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.value	V		other-vendor,std	parts.rs:834	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawIdentity.write	V		other-vendor,std	parts.rs:832	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.ardupilot	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.axes	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.bus	V		other-vendor,std	parts.rs:811	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.citations	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|parts:RawPart.identity	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.io_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.lifecycle	V		other-vendor	parts.rs:689	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.part	V		other-vendor	parts.rs:688	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.pin_capacitance	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.reads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.renode	V		other-vendor	parts.rs:705	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.script	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.spi_output_delay_max_ns	V		other-vendor	parts.rs:701	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.stand_in	V		other-vendor	parts.rs:690	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPart.supply_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPinCapacitance.max_femtofarads	V		other-vendor	parts.rs:854	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawPinCapacitance.typical_femtofarads	V		other-vendor	parts.rs:856	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawRead.read	V		other-vendor	parts.rs:757	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawRead.write	V		other-vendor	parts.rs:756	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawScript.configure	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawScript.data	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSpi.max_clock_hz	V		other-vendor,std	parts.rs:826	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSpi.modes	V		other-vendor,std	parts.rs:825	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.condition	V		other-vendor	parts.rs:786	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.max_us	V		other-vendor	parts.rs:782	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawStartUp.typ_us	V		other-vendor	parts.rs:785	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSupply.max	V		other-vendor	parts.rs:845	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawSupply.min	V		other-vendor	parts.rs:844	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawTable.parts	V		other-vendor	parts.rs:680	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawTable.pin_parts	V		other-vendor	parts.rs:682	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|parts:RawTable.schema_version	V		other-vendor	parts.rs:676	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand._condition	V		other-vendor	pin_parts.rs:394	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.absolute_ua	V		other-vendor	pin_parts.rs:392	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.load_ma	V		other-vendor	pin_parts.rs:388	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBand.percent	V		other-vendor	pin_parts.rs:390	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawBulkUnstated.page	V		other-vendor	pin_parts.rs:315	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawBulkUnstated.supply	V		other-vendor	pin_parts.rs:314	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawChannel.inputs	V		other-vendor	pin_parts.rs:412	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawChannel.outputs	V		other-vendor	pin_parts.rs:413	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.page	V		other-vendor	pin_parts.rs:332	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawLevels.vih_min_mv	V		other-vendor	pin_parts.rs:330	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.vil_max_mv	V		other-vendor	pin_parts.rs:329	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawLevels.vin_max_mv	V		other-vendor	pin_parts.rs:331	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.forbidden	V		other-vendor	pin_parts.rs:405	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.name	V		other-vendor	pin_parts.rs:400	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.page	V		other-vendor	pin_parts.rs:406	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawMode.states	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawMode.strap_level	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.active	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band_supply_mv	V		other-vendor	pin_parts.rs:376	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.error_band_supply_pin	V		other-vendor	pin_parts.rs:374	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.high_min_mv	V		other-vendor	pin_parts.rs:380	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.iod_max_ma	V		other-vendor	pin_parts.rs:362	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.kind	V		other-vendor	pin_parts.rs:347	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.number	V		other-vendor	pin_parts.rs:346	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.output_max_basis	V		other-vendor	pin_parts.rs:370	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.output_max_ua	V		other-vendor	pin_parts.rs:368	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.page	V		other-vendor	pin_parts.rs:348	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPin.pull_down_ohms_typical	V		other-vendor	pin_parts.rs:352	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.pull_up_max_mv	V		other-vendor	pin_parts.rs:364	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.range_mv	V		other-vendor	pin_parts.rs:378	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.resistors	V		other-vendor	pin_parts.rs:382	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.ua_per_a_typical	V		other-vendor	pin_parts.rs:366	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vih_min_mv	V		other-vendor	pin_parts.rs:356	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vil_max_mv	V		other-vendor	pin_parts.rs:354	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vol_max_mv	V		other-vendor	pin_parts.rs:358	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPin.vol_test_current_ma	V		other-vendor	pin_parts.rs:360	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.bulk_unstated	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.bus	V		other-vendor	pin_parts.rs:281	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.enable	V		other-vendor	pin_parts.rs:291	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.identity	V		other-vendor	pin_parts.rs:283	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.input_pwm_max_hz	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.logic_levels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.mode_strap	V		other-vendor	pin_parts.rs:293	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.modes	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.part	V		other-vendor	pin_parts.rs:280	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.pins	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.source	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawPinPart.t_wake_max_us	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawPinPart.trip	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawSource.document	V		other-vendor	pin_parts.rs:321	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawSource.revision	V		other-vendor	pin_parts.rs:322	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawSource.sha256	V		other-vendor	pin_parts.rs:323	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawState.drives	V		other-vendor	pin_parts.rs:423	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.enable	V		other-vendor	motor.rs:94	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.inputs	V		other-vendor	pin_parts.rs:421	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.name	V		other-vendor	pin_parts.rs:419	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawState.outputs	V		other-vendor	pin_parts.rs:422	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawStated.page	V		other-vendor	pin_parts.rs:339	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawStated.value	V		other-vendor	pin_parts.rs:338	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawTrip.page	V		other-vendor	pin_parts.rs:308	citation or its container (document/page/section/hash); tie-break f
+H:parts.json|pin_parts:RawTrip.reference	V		other-vendor	pin_parts.rs:306	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts.json|pin_parts:RawTrip.sense	V		other-vendor	pin_parts.rs:307	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:parts:BARE_W25Q64JV	V		other-vendor	-	Winbond part name; other vendor.
+H:parts:CONFIGURE_STEPS	V			-	Plumbing or engine limit on the parts table.
+H:parts:DRIVEN_SPI_MODE	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:FLASH_CAPACITY_CODES	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:JEDEC_READ	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:JEDEC_WIDTH	V		std	-	JEDEC flash identity and SPI mode standards.
+H:parts:MAX_CONFIGURE	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_DATA_BYTES	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_PIN_FEMTOFARADS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_READS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_READ_BYTES	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SETTLE_US	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SPI_CLOCK_HZ	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SPI_OUTPUT_DELAY_NS	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_STEP_WRITE	V			-	Plumbing or engine limit on the parts table.
+H:parts:MAX_SUPPLY_MILLIVOLTS	V			-	Plumbing or engine limit on the parts table.
+H:parts:PARTS_JSON	V			-	Plumbing or engine limit on the parts table.
+H:parts:PARTS_SCHEMA_VERSION	V			-	Plumbing or engine limit on the parts table.
+H:parts:QUANTITIES	V			-	Plumbing or engine limit on the parts table.
+H:parts:RENODE_MODELS	V		other-vendor	-	Renode sensor/flash model names with buses; other vendors' parts.
+H:parts:SETTLE_COVERS_MAXIMUM	V			-	Plumbing or engine limit on the parts table.
+H:parts:SETTLE_TWICE_TYPICAL	V			-	Plumbing or engine limit on the parts table.
+H:parts:TABLE	V			-	Plumbing or engine limit on the parts table.
+H:pin-table	S			-	RULES §3: S columns lib:Pin.alternate_functions
+H:pin-table|lib:Pin.adc_channels	N			pin_devices.rs:2121	Reviewer (lenses S / N), tie-break b by analogy: ADCn_INPm is split only to match the instance against the held MODELLED_ADCS list; no meaning is derived from the numbers.
+H:pin-table|lib:Pin.alternate_functions	S			solve.rs:1654	Signal name to ST alternate-function number (I2C1_SCL to 4); AF numbers are an ST enumeration, and TIMn keys are parsed for APB bus (motor.rs:675).
+H:pin-table|lib:Pin.position	V			pin_devices.rs:2204	Package pin number; orders candidates (also solve.rs:589).
+H:pin-table|lib:PinSource.commit	V			none found	Source commit text. Grepped .commit across IR src: no hit.
+H:pin-table|lib:PinSource.files	V			none found	File name to sha256 map, provenance. Grepped .files across IR src: no hit.
+H:pin-table|lib:PinSource.repository	V			none found	Source repository text. Grepped repository across IR src: the definition and #[cfg(test)] fixtures (solve.rs:2609) only.
+H:pin-table|lib:PinTable.package	V			none found	Package name. Grepped .package across IR src: only power_parts rows' own package fields; PinTable.package has no check or consumer.
+H:pin-table|lib:PinTable.part	V			solve.rs:440	The part the table is for, matched equal to mcu.part: a part name, data.
+H:pin-table|lib:PinTable.pins	N			solve.rs:1536	Keys are canonical ST pin names (PB8); matched as keys (get_key_value), never parsed for port or number in IR (tie-break b).
+H:pin-table|lib:PinTable.source	V			-	Provenance of the vendored pin data (repository, commit, file hashes).
+H:pin_devices:MCU_IO_LEVELS	V			-	Citation string of DS12117 Table 50; tie-break f.
+H:pin_devices:MCU_RESET_PULL_DOWNS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_devices:MCU_RESET_PULL_UPS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_devices:MCU_RPU_MIN_OHMS	D				Reviewer, amendment 4: DS12117 RPU minimum in ohms; a held fact, rule 1.
+H:pin_devices:MCU_VOH_DROP_MV	D				Reviewer, amendment 4: DS12117 VOH drop in mV; a held fact, rule 1.
+H:pin_devices:MCU_VOL_MAX_MV	D				Reviewer, amendment 4: DS12117 VOL max in mV; a held fact, rule 1.
+H:pin_devices:MODELLED_ADCS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:pin_parts:CURRENT_OUTPUT_FIELDS	V			-	Plumbing, field-name list or engine limit.
+H:power-parts.json	S			-	RULES §3: S columns power_parts:RawMcu.bor_falling_max_millivolts, power_parts:RawMcu.bor_rising_max_millivolts, power_parts:RawIoPin.structure, power_parts:RawMcuIo.families, power_parts:RawIoFamily.family, power_parts:RawIoAbsoluteMaximum.families
+H:power-parts.json|power_parts:RawAnalogPads.at	V			power_parts.rs:2317	Citation (tie-break f).
+H:power-parts.json|power_parts:RawAnalogPads.pins	N			power_parts.rs:2308	Pin names in ST's P<port><n> form, matched against io.pins keys only (tie-break b).
+H:power-parts.json|power_parts:RawAt.document	V			power_parts.rs:921	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawAt.section	V			power_parts.rs:922	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.fsw_hz	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.high_side_limit_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.ifb_max_nanoamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.inductor_min_coefficient	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.input_damping_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.iout_max_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rds_high_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rds_low_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_production_tested	V		other-vendor	power_parts.rs:977	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.regulation_vin_min	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.rfbt_max_ohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.stated_at	V		other-vendor	power_parts.rs:988	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawBuck.thermal_vias	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.theta_ja	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.toff_min_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.ton_min_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.vfb_microvolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.vin_abs_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBuck.vin_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.esr_condition	V		other-vendor	power_parts.rs:1125	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.esr_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.rated_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawBulk.rated_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.dc_bias	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.dielectric	V		std	power_parts.rs:299	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.rated_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.rated_picofarads	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCapacitor.tolerance	V		other-vendor	power_parts.rs:1098	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.direction	V		other-vendor	power_parts.rs:233	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.input	V		other-vendor	power_parts.rs:1049	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawChannel.output	V		other-vendor	power_parts.rs:1050	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawControl.pin	V		other-vendor	power_parts.rs:1015	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.straps	V		other-vendor	power_parts.rs:164	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawControl.wirable	V		other-vendor	power_parts.rs:1017	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCrystal.aging_hours	V			power_parts.rs:2118	Span the aging figure holds for, hours.
+H:power-parts.json|power_parts:RawCrystal.aging_ppm	V			power_parts.rs:2117	Aging over aging_hours, ppm.
+H:power-parts.json|power_parts:RawCrystal.c0_max_femtofarads	V			power_parts.rs:2121	Crystal shunt capacitance C0 maximum, fF.
+H:power-parts.json|power_parts:RawCrystal.drive_level_max_microwatts	V			power_parts.rs:2123	Crystal drive level maximum, uW.
+H:power-parts.json|power_parts:RawCrystal.esr_max_milliohms	V			power_parts.rs:2119	Crystal ESR maximum, mOhm.
+H:power-parts.json|power_parts:RawCrystal.frequency_hz	V			power_parts.rs:2112	Crystal nominal frequency, Hz.
+H:power-parts.json|power_parts:RawCrystal.load_femtofarads	V			power_parts.rs:2113	Crystal load capacitance CL, fF.
+H:power-parts.json|power_parts:RawCrystal.stability_ppm	V			power_parts.rs:2116	Frequency stability over temperature, ppm.
+H:power-parts.json|power_parts:RawCrystal.tolerance_ppm	V			power_parts.rs:2115	Frequency tolerance at +25 C, ppm.
+H:power-parts.json|power_parts:RawCurve.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawCurve.points	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurve.temperature_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurve.tolerance_permille	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurvePoint.change_permille	V		other-vendor	power_parts.rs:1116	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawCurvePoint.millivolts	V		other-vendor	power_parts.rs:1115	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawDocument.pending	V			power_parts.rs:915	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawDocument.revision	V			power_parts.rs:913	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawDocument.sha256	V			power_parts.rs:914	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawDocument.title	V			power_parts.rs:912	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawEffective.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawEffective.on_shortfall	V		other-vendor	power_parts.rs:808	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawEffective.value	V		other-vendor	power_parts.rs:1328	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawExternal.at	V			power_parts.rs:1483	Citation, document and section (tie-break f).
+H:power-parts.json|power_parts:RawExternal.dielectrics	V		std	power_parts.rs:299	Allowed ceramic dielectric codes C0G, X5R, X7R, X7S: EIA class codes, generic electronics.
+H:power-parts.json|power_parts:RawExternal.effective_min_picofarads	V			-	Least effective capacitance under DC bias with its citation and shortfall action; generic.
+H:power-parts.json|power_parts:RawExternal.max_picofarads	V			power_parts.rs:1485	Greatest total rated capacitance of the role, pF, or null.
+H:power-parts.json|power_parts:RawExternal.min_picofarads	V			power_parts.rs:1485	Least total rated capacitance of the role, pF; null for the inductor.
+H:power-parts.json|power_parts:RawExternal.rated_at_least_working	V			power_parts.rs:1525	Whether the rated voltage must cover the working voltage; bool.
+H:power-parts.json|power_parts:RawExternal.rated_min_millivolts	V			power_parts.rs:1510	Least rated voltage of the role's parts, mV.
+H:power-parts.json|power_parts:RawExternal.rated_step	V			-	A higher least rating from a domain nominal up, mV pairs; generic.
+H:power-parts.json|power_parts:RawExternal.role	V			power_parts.rs:735	Regulator external part roles cin, cin_hf, cboot, cvcc, cout, inductor, bypass_a/b: generic power-converter terms, hard-coded enum.
+H:power-parts.json|power_parts:RawInductor.dcr_max_milliohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.isat_definition	V		other-vendor	power_parts.rs:1155	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.isat_typical_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawInductor.nanohenries	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.boot0_max_millivolts	N			power_parts.rs:2271	Absolute maximum on the BOOT0 pin, mV; BOOT0 is ST's boot pin name, matched via crate::BOOT0 (power_parts.rs:530). Meaning is a voltage.
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.families	S			power_parts.rs:2256	Absolute-maximum input per ST structure family, the same families as io.families in order (power_parts.rs:2262).
+H:power-parts.json|power_parts:RawIoAbsoluteMaximum.other_max_millivolts	V			power_parts.rs:2275	Absolute maximum on every other pin, mV.
+H:power-parts.json|power_parts:RawIoFamily.above_supply_millivolts	V			power_parts.rs:2347	Tolerated input above the pin's supply, mV, above zero or null.
+H:power-parts.json|power_parts:RawIoFamily.at	V			power_parts.rs:2353	Citation (tie-break f).
+H:power-parts.json|power_parts:RawIoFamily.family	S			power_parts.rs:2340	ST pin-structure family letters (FT, TT) of DS12117's pin table, upper case, once.
+H:power-parts.json|power_parts:RawIoFamily.max_millivolts	V			power_parts.rs:2347	Tolerated input maximum, mV, above zero or null.
+H:power-parts.json|power_parts:RawIoPin.page	V			power_parts.rs:2293	Datasheet page of the pin row, nonzero: a citation (tie-break f).
+H:power-parts.json|power_parts:RawIoPin.structure	S			power_parts.rs:2292	DS12117 pin-structure code (FT_h, TT_a); split at _ into an ST structure family matched against held families. ST structure letters (rule 2).
+H:power-parts.json|power_parts:RawLdo.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.dropout_at_milliamps	V		other-vendor	power_parts.rs:1036	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.dropout_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.ignd_max_microamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.iout_max_milliamps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.junction_max_celsius	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.theta_ja_condition	V		other-vendor	power_parts.rs:1040	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.theta_ja_decikelvin_per_watt	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vin_abs_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vin_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vout_condition	V		other-vendor	power_parts.rs:1034	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLdo.vout_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawLimit.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawLimit.value	V			power_parts.rs:928	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawMcu.ardupilot	V			-	ArduPilot's names and SPI kernel clocks for the MCU: ArduPilot's vocabulary, not ST's; container.
+H:power-parts.json|power_parts:RawMcu.bor_falling_max_millivolts	S			power_parts.rs:2157	exactly four levels VBOR0 to VBOR3, rising order: ST option-byte BOR levels (DS12117 Table 115)
+H:power-parts.json|power_parts:RawMcu.bor_rising_max_millivolts	S			power_parts.rs:2174	exactly four levels VBOR0 to VBOR3, each at or above falling: ST option-byte BOR levels (DS12117 Table 115)
+H:power-parts.json|power_parts:RawMcu.flash_kilobytes	V			power_parts.rs:2242	Embedded flash size in KB.
+H:power-parts.json|power_parts:RawMcu.idd_condition	V			power_parts.rs:2156	Condition text for the current figure, 1 to 200 bytes.
+H:power-parts.json|power_parts:RawMcu.idd_max_milliamps	V			power_parts.rs:2218	Largest tabled supply current in mA.
+H:power-parts.json|power_parts:RawMcu.io	V			-	The MCU's I/O pins against the input each tolerates; neutral container. Its structure and family columns are S.
+H:power-parts.json|power_parts:RawMcu.rain_max_ohms	N			power_parts.rs:2191	max ADC source resistance per resolution in ohms; meaning generic, RAIN is the ST/DS12117 Table 173 name
+H:power-parts.json|power_parts:RawMcu.reservoir_rule	V			-	The external reservoir capacitor rule Cext >= 2^(N+extra) x C_ADC (cited to AN2834); generic charge-sharing electronics.
+H:power-parts.json|power_parts:RawMcu.spi_input_setup_min_ns	V		std	power_parts.rs:2239	SPI master data-input setup time, ns.
+H:power-parts.json|power_parts:RawMcu.spi_sck_low_shortfall_ns	V		std	power_parts.rs:2232	How much shorter than half a period SCK's low phase may be, ns, not below zero.
+H:power-parts.json|power_parts:RawMcu.support	V			-	The MCU's support network as its datasheet draws it; neutral container.
+H:power-parts.json|power_parts:RawMcu.vdd_millivolts	V			power_parts.rs:2217	The MCU's VDD operating range in mV; VDD is a generic supply symbol.
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu	V			power_parts.rs:1371	ArduPilot's MCU name; IR admits any 1-32 letters and digits, no fixed set in IR (value is an ST part string, data).
+H:power-parts.json|power_parts:RawMcuArduPilot.mcu_at	V			power_parts.rs:1393	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_at	V			power_parts.rs:1396	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.oscillator_hz	V			none found	ArduPilot's OSCILLATOR_HZ the rows hold for, Hz. Grepped oscillator_hz in IR src: copied only (power_parts.rs:1395).
+H:power-parts.json|power_parts:RawMcuArduPilot.series	V			power_parts.rs:1371	ArduPilot's MCU series name; IR admits any 1-32 letters and digits, no ST set in IR. See report: hwdef (outside IR) pins it to STM32H7xx.
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_divider_at	V			power_parts.rs:1398	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuArduPilot.spi_kernel_hz	N			power_parts.rs:1378	Keyed by exactly SPI1 to SPI6 (hard-coded set), ST instance names; values Hz. In IR the keys are only matched, no number-derived meaning: amendment 3.
+H:power-parts.json|power_parts:RawMcuArduPilot.table_at	V			power_parts.rs:1394	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuIo.absolute_maximum	V			-	Absolute maximum input ratings at any supply; neutral container (its families column is S).
+H:power-parts.json|power_parts:RawMcuIo.analog_pads	N			power_parts.rs:2307	container of pins with a direct analog pad (Px_C analog-switch pads, DS12117 Table 8 note 4 via SYSCFG); meaning statable as dedicated analog pads, ST names
+H:power-parts.json|power_parts:RawMcuIo.families	S			power_parts.rs:2254	One entry per ST I/O structure family (FT, TT) with its tolerated input: keyed by the DS12117 structure letter.
+H:power-parts.json|power_parts:RawMcuIo.pins	N			power_parts.rs:2283	Reviewer (lenses S / N), tie-break g: the map's own content is pin-name keys, shape-checked as P[A-K]0-15 and matched (tie-break b); the structure each maps to is S at RawIoPin.structure.
+H:power-parts.json|power_parts:RawMcuIo.pins_at	V			power_parts.rs:2280	Citation (tie-break f).
+H:power-parts.json|power_parts:RawMcuIo.pulls_off_above_supply_millivolts	V			power_parts.rs:2322	Above the supply plus this, internal pulls must be off, mV.
+H:power-parts.json|power_parts:RawOwnNet.at	V			power_parts.rs:1781	Citation (tie-break f).
+H:power-parts.json|power_parts:RawOwnNet.group	V			power_parts.rs:1779	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawPowered.at	V			power_parts.rs:1773	Citation (tie-break f).
+H:power-parts.json|power_parts:RawPowered.group	V			power_parts.rs:1763	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawPowered.max_millivolts	V			power_parts.rs:1764	Greatest supply in mV, at least the minimum.
+H:power-parts.json|power_parts:RawPowered.min_millivolts	V			power_parts.rs:1764	Least supply in mV, 0 or more.
+H:power-parts.json|power_parts:RawRain.bits	V			power_parts.rs:2196	ADC resolution in bits, 6 to 16, highest first, once.
+H:power-parts.json|power_parts:RawRain.max_ohms	V			power_parts.rs:2202	Resistance limit in ohms with citation.
+H:power-parts.json|power_parts:RawRanged.at	V			-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawRanged.max	V			power_parts.rs:936	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawRanged.min	V			power_parts.rs:935	neutral MCU power/electrical field in stated units, name and meaning not ST
+H:power-parts.json|power_parts:RawReservoirRule.adc_capacitance_femtofarads	V			power_parts.rs:2207	ADC sampling capacitance in fF, above zero.
+H:power-parts.json|power_parts:RawReservoirRule.at	V			power_parts.rs:2227	Citation (tie-break f).
+H:power-parts.json|power_parts:RawReservoirRule.extra_bits	V			power_parts.rs:2207	Extra bits of margin, 0 to 8.
+H:power-parts.json|power_parts:RawReservoirRule.statement	V			power_parts.rs:2206	Statement text of the rule, 1 to 200 bytes.
+H:power-parts.json|power_parts:RawResistor.drift_condition	V		other-vendor	power_parts.rs:1076	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.drift_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tcr_ppm_per_kelvin	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tcr_reference_celsius	V		other-vendor	power_parts.rs:1074	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawResistor.tolerance_ppm	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawRow.footprint	V			power_parts.rs:946	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.kind	V			power_parts.rs:955	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.lifecycle	V			power_parts.rs:84	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.part	V			power_parts.rs:943	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.pins	V			power_parts.rs:948	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.symbol	V			power_parts.rs:945	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawRow.temperature_celsius	V			-	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawStep.from_nominal_millivolts	V		other-vendor	power_parts.rs:1336	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawStep.rated_min_millivolts	V		other-vendor	power_parts.rs:1337	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawStrap.at	V			power_parts.rs:1838	Citation (tie-break f).
+H:power-parts.json|power_parts:RawStrap.pin	V			power_parts.rs:1827	A one-pin group name (BOOT0, PDR_ON, VBAT, VREF+) matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawStrap.to	V			power_parts.rs:1834	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawSupport.capacitors	V			-	Support capacitor roles; neutral container.
+H:power-parts.json|power_parts:RawSupport.grounds	V			power_parts.rs:1756	Group names matched against the row's pins keys, non-empty (tie-break c).
+H:power-parts.json|power_parts:RawSupport.own_nets	V			-	Groups whose pins each need a net of their own; neutral container.
+H:power-parts.json|power_parts:RawSupport.pins	N	?		names.rs:189	Reviewer (lenses V / N?): keys are DS12117 pin-group names (VCAP, PDR_ON, BOOT0), and names.rs hard-codes VCAP to name nets; ST names over neutral groups (tie-break b). Could be V.
+H:power-parts.json|power_parts:RawSupport.pins_at	V			power_parts.rs:1843	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupport.powered	V			-	Groups each on a domain within a stated mV range; neutral container.
+H:power-parts.json|power_parts:RawSupport.straps	V			-	Single pins tied to a group's net; neutral container.
+H:power-parts.json|power_parts:RawSupport.supply	V			power_parts.rs:1755	A group name of pins, matched against the row's own pins keys (tie-break c).
+H:power-parts.json|power_parts:RawSupportCapacitor.at	V			power_parts.rs:1821	Citation (tie-break f).
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_basis	V			power_parts.rs:1811	Basis text for the bound, 1 to 256 bytes.
+H:power-parts.json|power_parts:RawSupportCapacitor.bound_um	V			power_parts.rs:1808	Placement distance bound in um, 1 to 100000, or null.
+H:power-parts.json|power_parts:RawSupportCapacitor.ground	V			power_parts.rs:1798	A group name, one of grounds (power_parts.rs:1799).
+H:power-parts.json|power_parts:RawSupportCapacitor.owner	V			power_parts.rs:1797	A group name matched against the row's pins keys (tie-break c).
+H:power-parts.json|power_parts:RawSupportCapacitor.per_pin	V			none found	One capacitor per owner pin or one per group; bool. Grepped per_pin in IR src: copied only (power_parts.rs:1815).
+H:power-parts.json|power_parts:RawSupportCapacitor.picofarads	V			power_parts.rs:1803	Capacitance in pF, above zero.
+H:power-parts.json|power_parts:RawSupportCapacitor.role	N			power_parts.rs:626	SupportRole enum; variant vcap names ST's VCAP core-regulator pin. Others (vdd/analog/usb bypass and bulk, reset) are generic. Meaning neutral.
+H:power-parts.json|power_parts:RawSupportCapacitor.tolerance_permille	V			power_parts.rs:1803	Value-class tolerance, 0 to 500 permille.
+H:power-parts.json|power_parts:RawTable.documents	V			-	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawTable.parts	V			power_parts.rs:906	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawTable.schema_version	V			power_parts.rs:900	table plumbing or row identity (part, footprint, kind, schema version); value set not ST
+H:power-parts.json|power_parts:RawThermal.columns	V		other-vendor	power_parts.rs:1344	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.drill_um	V		other-vendor	power_parts.rs:1347	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.pad	V		other-vendor	power_parts.rs:1343	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.pitch_um	V		other-vendor	power_parts.rs:1346	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.ring_um	V		other-vendor	power_parts.rs:1348	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.rows	V		other-vendor	power_parts.rs:1345	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermal.sources	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.count	V		other-vendor	power_parts.rs:1355	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.drill	V		other-vendor	power_parts.rs:1357	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.layers	V		other-vendor	power_parts.rs:1359	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.pitch	V		other-vendor	power_parts.rs:1356	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThermalSources.ring	V		other-vendor	power_parts.rs:1358	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.at	V		other-vendor	-	citation or its container (document/page/section/hash); tie-break f
+H:power-parts.json|power_parts:RawTheta.board_copper_layers	V		other-vendor	power_parts.rs:999	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.condition	V		other-vendor	power_parts.rs:1000	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.package	V		other-vendor	power_parts.rs:998	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTheta.points	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThetaPoint.decikelvin_per_watt	V		other-vendor	power_parts.rs:1009	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawThetaPoint.square_centimetres	V		other-vendor	power_parts.rs:1008	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.channels	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.controls	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.external	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.pull_up_max_ohms	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tmax_a_to_b_bps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tmax_b_to_a_bps	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tpd_a_to_b_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.tpd_b_to_a_max_ns	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.vcca_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTranslator.vccb_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.clamp_condition	V		other-vendor	power_parts.rs:1133	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.clamp_max_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawTvs.standoff_millivolts	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawVinStep.from_vout_millivolts	V		other-vendor	power_parts.rs:1024	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power-parts.json|power_parts:RawVinStep.vin_min	V		other-vendor	-	non-ST part column (sensor, regulator, passive, driver or ArduPilot-side label); value set not ST
+H:power:BATTERY	V			-	Plumbing, field-name list or engine limit.
+H:power:BATTERY_NET	V			power.rs:82	Reviewer (re-read for its citation): the drawn board's battery-pack rail (AET-WO-4300d2 K10), a generic battery abbreviation, not the MCU's VBAT pin; generic in name and meaning.
+H:power_parts:F	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:MAX_VALUE	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:POWER_PARTS_JSON	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:POWER_PARTS_SCHEMA_VERSION	V			-	Plumbing, field-name list or engine limit.
+H:power_parts:TABLE	V			-	Plumbing, field-name list or engine limit.
+H:serial:CRSF_BAUDS	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_ELRS_SOURCE	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_MIN_BAUD	V		std	-	CRSF protocol baud rates and citations.
+H:serial:CRSF_SOURCE	V		std	-	CRSF protocol baud rates and citations.
+H:serial:LPUART	D			-	ST USART/UART/LPUART instance names; a second vendor adds rows.
+H:serial:PERIPHERALS	D			-	ST USART/UART/LPUART instance names; a second vendor adds rows.
+H:serial:TOLERANCE	S			-	Reviewer, amendment 4 / §3: m_bits is the USART_CR1.M[1:0] field value (serial.rs:237), an S column, so the table is S.
+H:serial:TOLERANCE_SOURCE	V			-	Citation string (RM0433 §48.5.8); tie-break f.
+H:silicon:BRR_MAX	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:BRR_MIN	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_CRCSIZE_RESET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_DSIZE_8BIT	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG1_MBR_SHIFT	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_AFCNTR	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_MASTER	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CFG2_SSM	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_CSTART	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_SPE	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:CR1_SSI	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:I2C_LIMITS	D			-	Reviewer: every column is a generic I2C quantity in Hz or ns (silicon.rs:380), kernel_min_hz included; rows of RM0433 Tables 388/390; doubt cleared.
+H:silicon:NS_PER_S	V			-	Unit constant or solver engine limit.
+H:silicon:PS_PER_S	V			-	Unit constant or solver engine limit.
+H:silicon:PUPDR_PULL_DOWN	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:PUPDR_PULL_UP	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RCC_D2CCIP1R_OFFSET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RCC_D3CCIPR_OFFSET	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RESET_CKPERSEL	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:silicon:RESET_HSI_KER_HZ	D				Reviewer, amendment 4: RM0433 reset kernel-clock frequency in Hz; a held fact, rule 1.
+H:silicon:RESET_PCLK_HZ	D				Reviewer, amendment 4: RM0433 reset PCLK frequency in Hz; a held fact, rule 1.
+H:silicon:SYNC_MIN_CYCLES	D				Reviewer, amendment 4: RM0433 §47.4.9 tSYNC minimum in kernel cycles; a held fact, rule 1.
+H:silicon:T_AF_MAX_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF maximum in ns; a held fact, rule 1.
+H:silicon:T_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns; a held fact, rule 1.
+H:solve:H1_SYS_HZ	D				Reviewer, amendment 4: the 64 MHz HSI-derived sys_ck of the H1 bring-up; one row of ST clock fact, rule 1.
+H:solve:I2C_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns (the solver's copy); a held fact, rule 1.
+H:solve:I2C_CR1	S			-	ST register offset, bit, field or field value (RM0433 RCC, SPI_CR1/CFG, USART_BRR, GPIOx_PUPDR, I2C_CR1).
+H:solve:I2C_MODES	D			-	Reviewer: the solver's copy of the same generic columns (solve.rs:1054); doubt cleared.
+H:solve:MOTORS	V			-	Unit constant or solver engine limit.
+H:solve:NODE_LIMIT	V			-	Unit constant or solver engine limit.
+H:solve:RANGES	D			-	PLL input-frequency ranges (RM0433 §8.7.11 PLLRGE rows); generic columns, a second vendor adds rows.
+H:solve:RESERVED_PINS	D			-	List of ST pin or peripheral names (PUPDR reset pulls, modelled ADCs, SWD/LSE pins); a second vendor adds rows.
+H:solve:ROWS	S			-	Flash wait-state rows keyed to ST FLASH_ACR LATENCY/WRHIGHFREQ field values (RM0433 Table 17, VOS scale).
+H:solve:SERIAL	V			-	Unit constant or solver engine limit.
+H:speeds:BANDS_MILLIVOLTS	D			-	Reviewer: the DS12117 output-speed table's VDD bands in mV, generic units; doubt cleared.
+H:speeds:LOADS_PICOFARADS	D			-	Reviewer: the DS12117 output-speed table's load axis in pF, generic units; doubt cleared.
+H:speeds:MAX_FMAX_HZ	V			-	Plumbing, engine limit or version log.
+H:speeds:MAX_RISE_FALL_PS	V			-	Plumbing, engine limit or version log.
+H:speeds:OUTPUT_SPEEDS_JSON	V			-	Plumbing, engine limit or version log.
+H:speeds:OUTPUT_SPEEDS_SCHEMA_VERSION	V			-	Plumbing, engine limit or version log.
+H:speeds:TABLE	V			-	Plumbing, engine limit or version log.
+H:thermal:HOLE_GAP_UM	V			-	Plumbing, engine limit or version log.
+H:versions:CHANGES	V			-	Plumbing, engine limit or version log.
+H:vos:BUS_LIMITS_REV_V	S	?		-	Reviewer: a verdict condition naming ST silicon revision V's Table 111 limits; the meaning (ST revision-scoped limits) is ST's. Could be N.
+H:vos:CR3_SUPPLY_CONFIG_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:CR3_SUPPLY_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:D3CR_VOS_MASK	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:D3CR_VOS_SCALE2	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:DS12117_TABLE_111	V			-	Citation string; tie-break f.
+H:vos:FLASH_ACR_RESET	S			-	ST register reset value, mask or field value (FLASH_ACR, PWR_CR3, PWR_D3CR VOS).
+H:vos:LIMITS	S			-	Reviewer, §3: each row is [Option<u64>; 4], one column per VOS scale 0-3 (vos.rs:89); the columns are ST's VOS enumeration, so the table is S.
+H:vos:RM0433_TABLE_60	V			-	Citation string; tie-break f.
+H:vos:TABLE_17	S			-	Flash wait-state rows keyed to ST FLASH_ACR LATENCY/WRHIGHFREQ field values (RM0433 Table 17, VOS scale).
+H:vos:VOS_LIMIT_AT_BOUNDARY	S	?		-	Reviewer: a verdict condition about a VOS scale limit; the VOS value set is ST's. Could be N.
+R:AdcChannelNotOnPin	V			pin_devices.rs:2180	Pinned ADC pin carries no such channel per the held pin table; match only, generic.
+R:AdcFullScaleExceeded	V			pin_devices.rs:1304	Sense voltage at full scale above VREF+ minimum (VDDA); generic ADC electronics.
+R:AdcOutputCurrentExceeded	V		other-vendor	pin_devices.rs:1461	Part's current output at full scale above its cited maximum; generic.
+R:AdcSourceImpedance	V			pin_devices.rs:1320	ADC source impedance above RAIN at the resolution with no reservoir; RAIN figures read from the held MCU row (tie-break c), generic ADC.
+R:AdcUnmodelled	V			solve.rs:608	free ADC pins only ADC2, which the twin does not model; tool limit not ST rule
+R:AlternateFunctionOutOfRange	S			lib.rs:4399	Alternate function number above 15: ST's GPIO alternate-function numbering 0 to 15; the value set is ST's (no document cited at the check).
+R:AmbiguousPartName	V		other-vendor	lib.rs:4185	Bare W25Q64JV name is ambiguous: its JEDEC identity depends on the ordering code; another vendor's part.
+R:AnalogBusMismatch	V			lib.rs:4989	Analog line bus and peripheral not one-to-one; generic bookkeeping.
+R:AnalogLineNotI2c	V		std	lib.rs:4963	analog_lines key is not a solved I2C line; is_i2c_line matches I2Cn_SDA/SCL names only (amendment 3 match), meaning generic.
+R:AnalogPadPin	V			solve.rs:1550	Reviewer (lenses S / V), tie-break c: the pad set is read from the held MCU row; the kind judges a digital signal on an analog-only pad, generic in name and meaning. The ST structure is counted at its column.
+R:BatteryInputUndamped	V		other-vendor	power.rs:2524	Battery input lacks a cited bulk capacitor or clamp for hot-plug ring; generic power electronics.
+R:BatteryOutsideRegulatorInput	V		other-vendor	power.rs:1347	Battery range outside the regulator's cited input range; generic electronics.
+R:BatterySideUnmodelled	V			power.rs:3193	Battery-fed regulator the chain cannot model (not a buck, no loss, no regulation input); generic power.
+R:BoardOutsidePartTemperature	V			power.rs:1686	Board temperature range outside a part's rated range; generic.
+R:BorLevelOutOfRange	S			lib.rs:3647	mcu.bor_level must be 0 to 3 (MAX_BOR_LEVEL lib.rs:416): ST's brown-out reset level enumeration, RM0433 option bytes BOR_LEV (lib.rs:415).
+R:BridgeChannelUnknown	V		other-vendor	pin_devices.rs:1753	Bridge inputs and outputs are no channel of the mode; driver IC.
+R:BridgeForbiddenState	V		other-vendor	pin_devices.rs:1894	Bridge enters a forbidden state of the driver's truth table; driver IC.
+R:BridgeIdleDrives	V		other-vendor	pin_devices.rs:1843	Bridge idle state drives the outputs per the driver's truth table; driver IC.
+R:BridgeIdlePulsed	V			pin_devices.rs:1784	Bridge input idles at a pulse, visiting two truth-table rows; generic.
+R:BridgeInputShared	V			pin_devices.rs:1779	One motor output drives two bridge inputs; generic.
+R:BridgeInputUnknown	V			pin_devices.rs:1813	Bridge input is neither a PWM motor output nor the device's output signal; generic.
+R:BridgeModeStrapMismatch	V		other-vendor	pin_devices.rs:1733	Bridge mode needs a strap level the device is not strapped to; driver IC.
+R:BridgeModeUnknown	V		other-vendor	pin_devices.rs:1714	Bridge mode not one of the driver part's modes; another vendor's driver IC.
+R:BridgeSplitAcrossTimers	V			solve.rs:654	An IN/IN bridge's two inputs on two timers; one counter must time both, generic.
+R:BridgeUndeclared	V		other-vendor	pin_devices.rs:923	A bridge channel input is taken by no declared bridge; generic.
+R:BuckHeadroomViolated	V		other-vendor	power.rs:1540	Buck cannot reach its output at minimum input and maximum duty; generic electronics.
+R:BuckJunctionOverLimit	V		other-vendor	power.rs:2657	Buck junction screen does not clear its limit; generic thermal.
+R:BudgetExceeded	V			solve.rs:2053	Solver search exceeded NODE_LIMIT; engine limit.
+R:BulkNotAllowed	V		other-vendor	pin_devices.rs:1649	Bulk declared for a part that states its own supply capacitance; generic.
+R:BulkUndeclared	V		other-vendor	pin_devices.rs:1657	Part needs a bulk capacitor value and none is declared; driver IC.
+R:BulkUnderRated	V			pin_devices.rs:1686	Bulk capacitor rated not above the domain maximum; generic electronics.
+R:BusCapacitanceOverLimit	V		std	lib.rs:3223	I2C line capacitance over the mode's bus limit (UM10204); I2C standard.
+R:BusTooFast	V		std	lib.rs:3198	I2C bus speed above its rise-time ceiling (electrical::ceiling_hz, UM10204 modes); I2C standard.
+R:CeilingNotDerived	V		std	lib.rs:5018	Stored I2C ceiling differs from the mode its analog lines' rise time derives (UM10204 modes); bookkeeping on the I2C standard.
+R:ClassAboveMaximum	V			classes.rs:120	Net class dimension above engine maximum in um; generic PCB.
+R:ClassBelowMinimum	V			classes.rs:112	Net class width, drill or gap below board rules; generic PCB design rule.
+R:ClassNetNotLiteral	V			classes.rs:233	Net name holds a quote or wildcard that KiCad DRC expressions misread; KiCad tool constraint, not ST.
+R:ClassNoNets	V			classes.rs:136	Net class names no nets; generic.
+R:ClassUnknownNet	V			classes.rs:240	Net class names an undeclared net; generic.
+R:ConnectorBudgetMissing	V		std	connectors.rs:398	Connector pin on an I2C or SPI line declares no off-board capacitance; generic electronics.
+R:ConnectorBudgetNotApplicable	V			connectors.rs:384	Off-board capacitance declared on a pin on no bus line; generic.
+R:ConnectorBudgetTooLarge	V			connectors.rs:390	Off-board capacitance above MAX_OFFBOARD_FEMTOFARADS; generic units.
+R:ConnectorNetUnknown	V			connectors.rs:373	Connector pin names an undeclared net; generic.
+R:ConnectorPartContradictsStandard	V		std	ds009.rs:208	Connector part's series or pin count differs from its DS-009 port; published standard.
+R:ConnectorPinContradictsStandard	V		std	ds009.rs:276	DS-009 pin's net is not its role (ground, I2C, serial, may-float); published standard.
+R:ConnectorPinMissing	V			connectors.rs:361	Connector omits a signal pin; generic.
+R:ConnectorPinRepeated	V			connectors.rs:351	Connector lists a pin twice; generic.
+R:ConnectorPinUnknown	V			connectors.rs:344	Connector pin number outside 1 to its part's pin count; generic.
+R:ConnectorReferenceReserved	V			connectors.rs:334	Connector reference spelled like the emitter's U/R/C numbering; KiCad emitter plumbing.
+R:ConnectorSerialRoleContradictsStandard	V		std	ds009.rs:257	Serial port on a DS-009 port has a role other than the port's serial role; published standard.
+R:ConnectorSupplyContradictsStandard	V		std	ds009.rs:268	DS-009 supply pin's net is not the 5 V, 3.3 V or target-voltage domain the port names; published standard.
+R:ConsoleBaudNotRoundTrip	V			serial.rs:753	Console baud must round-trip ArduPilot's SERIAL0_BAUD map_baudrate; flight software behaviour, not ST.
+R:ControlPinUnwired	V		other-vendor	power.rs:2908	Regulator control pin neither wired nor tied by an allowed strap; generic.
+R:CrossingDomainMismatch	V			power.rs:2324	Crossing domains do not match its bus and device; generic.
+R:CrossingInvalid	V		other-vendor	power.rs:2268	Level-shifter crossing declaration invalid against its part row; generic.
+R:CrossingPullUp	V		other-vendor	power.rs:2340	Crossing CS pull-up above what the translator's pull-downs allow; generic electronics.
+R:CrossingTooFast	V		other-vendor	power.rs:2361	SPI rate through a crossing above its maximum data rate; generic.
+R:DcBiasBeyondCurve	V		other-vendor	power.rs:2747	Ceramic capacitor works past its maker's DC-bias curve; another vendor's data.
+R:DevicePinBoundTwice	V			pin_devices.rs:888	Device pin bound twice (or tied to GND and bound); generic.
+R:DevicePinUnbound	V			pin_devices.rs:939	Device input pin bound by no signal or bridge (INV-06); generic.
+R:DielectricTable	V			board.rs:361	One dielectric between each adjacent copper pair, in order; generic PCB stackup.
+R:DomainOutsideConsumer	V			power.rs:1315	Domain range not inside a consumer's supply range; generic electronics.
+R:DomainWithTwoSources	V			power.rs:975	Two regulators output one domain; generic power tree.
+R:DomainWithoutSource	V			power.rs:966	No regulator outputs the domain; generic power tree.
+R:DropoutViolated	V		other-vendor	power.rs:1570	LDO input minimum below output plus dropout; generic electronics.
+R:DuplicateBusId	V			lib.rs:3762	Bus id repeated; generic.
+R:DuplicateClassName	V			classes.rs:133	Net class or diff pair name repeated; naming plumbing.
+R:DuplicateDomainId	V			lib.rs:3682	Voltage domain id repeated (case folded for KiCad ERC); generic.
+R:DuplicateI2cAddress	V		std	lib.rs:3825	Two devices share an I2C address on one bus; I2C standard.
+R:DuplicateNetConstraint	V			lib.rs:3888	net_name repeated in net_constraints; generic.
+R:DuplicateNetName	V			lib.rs:3864	Net declared by more than one signal, case folded; generic.
+R:DuplicatePin	V			lib.rs:4423	One pin assigned to two nets; generic. Pin names come from the held pin table.
+R:DuplicateReference	V			lib.rs:4139	Device reference repeated, case folded for KiCad ERC; also the emitter's duplicate at lib.rs:2162. Generic naming.
+R:DuplicateSerialLabel	V			serial.rs:685	Serial port label repeated, case folded; plumbing.
+R:EffectiveCapacitanceBelowMinimum	V		other-vendor	power.rs:2043	Capacitor effective capacitance under DC bias at or below the role minimum; generic.
+R:ExternalPartMissing	V		other-vendor	power.rs:1032	Regulator role (feedback divider, inductor) has no part; generic.
+R:ExternalPartOutOfRange	V		other-vendor	power.rs:1040	External part outside its role's cited bounds (RFBT, inductance, saturation, rating, dielectric); generic electronics.
+R:FinishedThickness	V			board.rs:383	Finished board thickness bounds and ordering in um; generic PCB fabrication.
+R:FlashWaitStatesBelowTable	S			lib.rs:4646	FLASH_ACR LATENCY and WRHIGHFREQ below RM0433 Rev 9 Table 17's row for the VOS and AXI clock; ST register fields and table.
+R:ForeignClockMuxSplit	S			lib.rs:1217	USART1/USART6 and the other six share a kernel clock mux (RM0433 Rev 9 §8.7.21 USART16SEL, USART234578SEL); ST clock mux grouping hard-coded.
+R:ForeignClockUsarts	V			lib.rs:1195	Reviewer, amendment 3 (both lenses S?, as above): the map's keys must equal the held PERIPHERALS list (D), only matched; the kind judges a missing or extra declared clock, generic.
+R:ForeignClockZero	V			lib.rs:1192	A declared foreign kernel clock frequency is 0 Hz; generic units.
+R:ForwardUndeclared	V			lib.rs:3917	IMU orientation declared without board.forward; generic board frame.
+R:HseBudgetUnbounded	N			clock.rs:567	Oscillator ppm budget side of 1,000,000 ppm or more; generic units, HSE name.
+R:HseClockMismatch	S	?		clock.rs	Reviewer (lenses N / S?): one clause compares the RCC PLL words (PLLCKSELR, PLLCFGR, PLL1DIVR) the declaration decodes to, ST registers (rule 2); the other clauses are generic.
+R:HseCopyNotSolved	S	?		lib.rs:4682	Reviewer (lenses N / S?): as HseClockMismatch, the re-solve compares the RCC PLL words; most coupled clause (tie-break a).
+R:HseDeclarationZero	N			clock.rs:425	A declared crystal or external-clock field is zero (INV-06); generic. Only the HSE name is ST's.
+R:HseFrequencyOutOfRange	N			clock.rs:466	External oscillator frequency outside DS12117's crystal or external-clock range in Hz (rule 3's test case); figures in Hz, name HSE.
+R:HseGmCritExceeded	N			clock.rs:540	Crystal critical gain (AN2867 formula) over DS12117 Gm_crit_max 1.5 mA/V (clock.rs:348); oscillator figure in nA/V, generic, HSE name.
+R:HseLifeBeyondAging	N			clock.rs:527	Service life beyond the hours the crystal's aging is stated for; generic, HSE name.
+R:HseLoadCapsUnfit	N			clock.rs:501	Crystal load caps differ or exceed CL in series (AN2867 §3.3); generic crystal electronics, HSE name.
+R:HsePartNotCrystal	N			clock.rs:355	External crystal part is not a crystal row of the power parts table; generic. HSE is ST's name for the external high-speed oscillator.
+R:HseTemperatureOutsidePart	N			clock.rs:518	Board temperature range not inside the crystal's stated stability range; generic crystal electronics, HSE name.
+R:HseTreeUnreachable	S			solve.rs:845	No PLL1 setting reaches sys_ck 64 MHz with a reference strictly inside a PLL1RGE range (h1_words); ST RCC PLL1 register fields and ranges.
+R:I2cAddressNotOffered	V		other-vendor,std	lib.rs:4238	Device I2C address not one its part's straps offer, cited; other vendor's datasheet.
+R:I2cAddressOutOfRange	V		std	lib.rs:3819	I2C address outside 0x08..=0x77, the I2C standard's 7-bit non-reserved range.
+R:I2cDeviceIndex	V			lib.rs:4929	i2c_devices indices not exactly 0..n; plumbing.
+R:I2cDevicePeripheral	V			lib.rs:4923	Device's peripheral differs from the one its bus was solved to; matched, not parsed. Generic.
+R:I2cTimingMismatch	S			lib.rs:4617	Solved I2C controller's CR1 and TIMINGR words must equal solve's synthesis (RM0433 Rev 9 §47.4.9); ST I2C register words.
+R:IdleExceedsPeriod	V			motor.rs:888	PWM idle pulse longer than the period; generic arithmetic.
+R:IdleNotOnTick	V			motor.rs:886	PWM idle pulse not a whole number of ticks; generic arithmetic.
+R:IdleSpelledTwice	V			motor.rs:805	Reviewer (lenses N / V): rule 3 tests the kind string, which is generic; the CCR name is only in the message. Generic PWM idle rule.
+R:ImuAxesNotCited	V		other-vendor	lib.rs:3380	IMU row cites no axes or ardupilot.frame; other vendor's IMU datasheet and ArduPilot.
+R:ImuAxesNotPerpendicular	V			lib.rs:3910	Declared IMU X and Z axes not at right angles; geometry.
+R:Infeasible	V			solve.rs:2086	Buses cannot all be placed at once (minimal set); solver, generic.
+R:InputRateAbovePart	V		other-vendor	pin_devices.rs:1948	Motor PWM rate above the part's maximum input rate; generic.
+R:InvalidCeiling	V		std	lib.rs:4407	I2C ceiling must be 100k, 400k or 1M Hz (I2C_SPEEDS_HZ), the I2C standard's modes.
+R:InvalidDeviceName	V			names.rs:343	generic specification, solver or consistency check; no ST register, enumeration or document
+R:InvalidIdentifier	N	?		lib.rs:3036	Reviewer (lenses V / S?): one clause hard-codes the observer shape p<a-k><0-15>obs, ST port naming over a neutral concept (tie-break b by analogy); the rest is generic. Could be V.
+R:InvalidSource	V			board.rs:601	A source citation string must be 1 to 200 printable ASCII bytes; plumbing.
+R:IoOutsidePart	V		other-vendor	lib.rs:3469	Bus domain outside the part's cited I/O voltage range, no crossing; generic electronics.
+R:JunctionTooHot	V		other-vendor	power.rs:1598	Regulator junction temperature above its maximum; generic thermal.
+R:LayerRole	V			board.rs:316	Signal or plane role per copper layer; generic PCB stackup rule.
+R:LayerTable	V			board.rs:299	Layer table shape and KiCad copper layer names; PCB/KiCad plumbing.
+R:LifecycleAcceptanceUnused	V			lib.rs:3614	Lifecycle acknowledgement for a part no device uses as eol or nrnd; plumbing.
+R:LifecycleAcceptedTwice	V			lib.rs:3562	accept_lifecycle names a part twice; plumbing.
+R:LifecycleNotAccepted	V		other-vendor	lib.rs:3590	Part listed eol or nrnd by its vendor not acknowledged; generic lifecycle bookkeeping.
+R:LifecycleStatementInvalid	V			lib.rs:3569	Lifecycle statement empty, over 512 bytes, or not printable ASCII; plumbing.
+R:LifecycleStatusMismatch	V		other-vendor	lib.rs:3598	Acknowledged lifecycle status differs from the cited one; generic.
+R:LoadAboveSpeedTable	S			speeds.rs:112	load above DS12117 Table 149 OSPEEDR speed rows: ST output-speed table
+R:LoadNamesCountedPart	V			names.rs:401	Power load names the MCU or a regulator already counted; generic power budgeting.
+R:LoadNamesNoPart	V			names.rs:385	Power load names no part the board has; generic.
+R:LogicLevelIncompatible	V			pin_devices.rs:1245	MCU VOH/VOL (DS12117 Table 50 figures in mV, MCU_IO_LEVELS) do not meet the part's VIH/VIL; generic logic levels.
+R:MalformedSpecificationHash	V			lib.rs:4313	specification_sha256 must be 64 lowercase hex digits; plumbing.
+R:McuPinStructureUnheld	N			-	Reviewer (lenses S / S?), tie-break c: the structure is read from the held table, so meaning is a missing row (generic); "pin structure" is DS12117's I/O-structure term, an ST name.
+R:MisoRoundTripTooSlow	V		std	power.rs:2404	SCK out plus device delay plus MISO back plus MCU setup exceeds half a period; SPI timing, MCU setup read from the held row.
+R:MissingAnalogLine	V		std	lib.rs:4997	Solved I2C line lacks an analog_lines entry; generic bookkeeping.
+R:MissingBusConstraint	V		std	lib.rs:3292	I2C SDA or SCL has no net constraint, so no rise time bounds its speed; I2C standard.
+R:MissingSpiConstraint	V			-	Reviewer (lenses S? / V): it judges a missing declared net constraint on SCK or MOSI, a generic requirement; that it feeds the OSPEEDR choice is the speed refusals' coupling, counted there.
+R:MotorOutputMismatch	S	?		lib.rs:4685	Omnibus: motor net is a TIMn_CHk assignment with PSC, ARR, CCR within 16-bit timer registers; ST timer register words. Most coupled clause taken.
+R:MotorTiming	V			solve.rs:1186	PWM/DShot motor timing or timer placement; generic
+R:MotorTimingShape	V		std	lib.rs:4124	pwm object present exactly for PWM and null for DShot; motor protocol shape, published protocols.
+R:MotorsInfeasible	V			solve.rs:1940	Motor outputs cannot all be placed at once; solver, generic.
+R:NetAssignedTwice	V			lib.rs:4411	Net in both assignments and gpio; topology bookkeeping.
+R:NetInTwoClasses	V			classes.rs:253	A net belongs to two classes; generic PCB design-rule bookkeeping.
+R:NetShadowsDomain	V			lib.rs:3844	Signal net spells a voltage domain, GND or a debug net name; generic naming.
+R:NoAdcPin	V			solve.rs:606	No free pin carries a single-ended ADC input; channel set from the held pin table, generic.
+R:NoFreePin	V			solve.rs:554	Claimant has no free pin left; generic.
+R:NoI2cTiming	S			solve.rs:1143	Kernel clock gives the I2C mode no TIMINGR (no PRESC fits; RM0433 Rev 9 §47.4.9); ST I2C_TIMINGR register fields.
+R:NoInstance	V			solve.rs:1868	No peripheral instance in the pin table can place the bus; solver search over held table, generic.
+R:NoProgrammingPath	V		arch	connectors.rs:466	No connector carries SWDIO, SWCLK, GND and the MCU supply; Arm SWD debug port, not ST.
+R:NoSerialPeripheral	V			solve.rs:2011	No USART or UART in the pin table can serve the port; generic solver.
+R:NoTimerChannel	V			solve.rs:1897	No timer channel in the pin table can serve the motor output; generic solver.
+R:NoVoltageDomain	V			lib.rs:3672	voltage_domains is empty; generic.
+R:OffDomainAboveLimit	V			off_domain.rs:168	Unpowered-MCU pin held above its absolute maximum at VDD=0, limit read from the held MCU row (DS12117 Table 10, tie-break c); millivolts, generic.
+R:OnTimeTooShort	V		other-vendor	power.rs:1555	Buck on-time below the part's minimum; generic electronics.
+R:OpenDrainUnpulled	V			pin_devices.rs:1186	Open-drain signal with no pull-up never reads high; generic electronics.
+R:OrientationOnNonImu	V			lib.rs:3367	Orientation declared on a part whose ardupilot.kind is not imu; flight-software part kind, not ST.
+R:OutlineBound	V			board.rs:562	Board outline bound from 1 um to the engine maximum; generic PCB.
+R:OutputDelayMissing	V		other-vendor	power.rs:2376	Device behind a crossing has no output delay in the sensor table; generic.
+R:OutputSpeedTableInvalid	S			speeds.rs:279	Held output-speed table malformed: hard-codes OSPEEDR codes 00 to 11, DS12117 Table 149 VDD bands and loads, note-5 compensation cell.
+R:PairNets	V			classes.rs:178	Diff pair names exactly two distinct nets; generic.
+R:PairOnRail	V			classes.rs:191	Diff pair names a rail or GND; generic electronics.
+R:PartHasBus	V			pin_devices.rs:754	A part with a bus declared as a pin device; schema bookkeeping.
+R:PartLimitDeclaredTwice	V		other-vendor	pin_devices.rs:1921	Part limit declared although the row states it; generic.
+R:PartLimitUndeclared	V		other-vendor	pin_devices.rs:1424	Part's error band or input PWM limit not stated for the condition; generic.
+R:PartMismatch	V			solve.rs:441	Specification's MCU part differs from the pin table's part; plumbing.
+R:PartNameCase	V			lib.rs:4199	Device part name differs in case from the parts table's name; exact-name plumbing.
+R:PartNotDrawable	V			drawn.rs:79	Part has a table row but no emitter arm; emitter plumbing.
+R:PartOnWrongBus	V		other-vendor	lib.rs:4214	Part on a bus kind other than its row's (I2C vs SPI); generic.
+R:PartWithoutBus	V			pin_devices.rs:819	A busless part declared as a bus device; schema bookkeeping.
+R:PartsTableInvalid	V		other-vendor	parts.rs:917	Held peripheral parts table malformed (addresses, SPI modes 0-3, identity reads, citations); rows are other vendors' parts, no ST value set.
+R:PeerDeviationBelowCited	V		std	serial.rs:737	rc_crsf peer deviation below the cited CRSF baud spread; CRSF protocol.
+R:PeerDeviationNotCited	V		std	serial.rs:745	Only an rc_crsf port's peer deviation may be called cited; CRSF and repository rule.
+R:PeripheralClaimedTwice	V			solve.rs:1810	One peripheral claimed by two buses; generic.
+R:PinCapacitanceAlreadyCited	V		other-vendor	lib.rs:3529	Pin capacitance declared for a part that cites a maximum; other vendor's datasheet.
+R:PinCapacitanceBelowI2cCi	V		std	lib.rs:3520	Declared I2C pin capacitance below UM10204 Ci; I2C standard.
+R:PinCapacitanceBelowTypical	V		other-vendor	lib.rs:3540	Declared pin capacitance below the part's cited typical; other vendor's datasheet.
+R:PinCapacitanceOutOfRange	V			lib.rs:3513	Declared pin capacitance not 1 fF to the table maximum; generic units.
+R:PinClaimedTwice	V			solve.rs:1556	One pin claimed by two claimants; generic.
+R:PinDeviceUndeclared	V			pin_devices.rs:2062	Topology GPIO or ADC input that only a pin device could own, with no pin device; bookkeeping.
+R:PinSpeedMismatch	S			lib.rs:4536	pin_speeds values must be 0 or 1: ST OSPEEDR output speed codes, 10 and 11 never selected (lib.rs:655, DS12117 Table 149).
+R:PinSpeedNotSolved	S			lib.rs:4558	Stored OSPEEDR speed differs from the one solve chooses from DS12117 Table 149 (speeds::OutputSpeeds::choose); ST speed grades.
+R:PlaneLayout	V			board.rs:349	One plane per net, GND plane at 4 layers; generic PCB stackup.
+R:PlaneNet	V			board.rs:346	A plane's net must be GND or a declared voltage domain; generic PCB.
+R:PllOutputDisabled	S			clock.rs:637	RCC_PLLCFGR.DIVP1EN is 0, disabling pll1_p_ck that sys_ck uses (RM0433 Rev 9 p. 401); ST register bit.
+R:PllReferenceNotInsideRange	S			clock.rs:680	PLL1 reference not strictly inside the PLL1RGE range its field selects (RM0433 Rev 9 §8.7.12 p. 402); ST register field and its range table.
+R:PllVcoOutOfRange	S			clock.rs:710	VCO outside the range its PLL1VCOSEL value selects (DS12117 Tables 39/40); value set keyed by an ST register field.
+R:PllVcoSelectMismatch	S			clock.rs:688	PLL1VCOSEL inconsistent with PLL1RGE (RM0433 Rev 9 pp. 347, 402); ST RCC_PLLCFGR fields.
+R:PllWordsUndecodable	S			clock.rs:612	Solved RCC_PLLCKSELR/PLLCFGR/PLL1DIVR words fail decoding: PLLSRC, PLL1FRACEN, reserved bits, DIVR1, DIVM1 (RM0433 §8.7.11-13); ST registers.
+R:PowerInputOverloaded	V			power.rs:1646	Power input connector or LDO input current above its rating or unbounded; generic.
+R:PowerLoop	V			power.rs:992	Regulator inputs form a loop; generic power tree.
+R:PowerPartUnknown	V			pin_devices.rs:794	Named part is not a row of the power parts table of the needed kind (MCU, capacitor, resistor); generic. Also power.rs:392.
+R:PowerPartsTableInvalid	S	?		power_parts.rs:2412	Reviewer (lenses V / S?): the parser hard-codes the FT/TT structure families, an ST value set (rule 2), beside generic clauses; the most coupled clause decides (tie-break a).
+R:PowerValueInvalid	V			power.rs:653	Declared power value outside the schema (zero, min above max, no table row for a resolution or BOR level); generic, row lookups in held tables.
+R:PullAboveMcuTolerance	V			pin_devices.rs:1519	Reviewer (lenses S / S?), tie-break c: the limit is the held I/O family row's (FT/TT, counted at its column); a pull above the pin's tolerance is generic.
+R:PullOverDrive	V		other-vendor	pin_devices.rs:1280	Pull-up current exceeds what the part's pin sinks; generic electronics.
+R:PullUpBelowSinkFloor	V		std	lib.rs:3211	I2C pull-up below the floor its rail and mode set by UM10204 sink current; I2C standard.
+R:PulseExceedsPeriod	V			lib.rs:4115	Longest PWM pulse does not fit its period at rate_hz; generic arithmetic.
+R:PulseNotOnTick	V			motor.rs:869	PWM pulse range not a whole number of ticks; generic arithmetic. Also solve.rs:1214.
+R:PulseRange	V			lib.rs:4108	PWM pulse minimum at least 1 us and below the maximum; generic units.
+R:RateAbovePinSpeed	S			speeds.rs:205	Line rate above OSPEEDR 01's Fmax; 10 and 11 need the I/O compensation cell and are never selected (DS12117 Table 149); ST speed grades.
+R:ReferenceCollision	V			lib.rs:4155	Reference plus _memory collides with a Renode platform name (RESERVED_REFERENCES, a source list classed as H); simulator namespace, not ST rule.
+R:RegulatorOutsideDomain	V		other-vendor	power.rs:1053	Regulator output tolerance outside its domain; generic electronics.
+R:RegulatorOverloaded	V		other-vendor	power.rs:1466	Regulator load above its rated current; generic.
+R:ReservedName	V			names.rs:290	Net, rail or reference spells a name the emitter uses for itself (#, unconnected-, own nets); KiCad emitter plumbing.
+R:ReservedPin	V			solve.rs:1544	pin reserved (debug port or oscillator) in pin table; matched against table
+R:ResolutionNotDerivable	V			solve.rs:1207	tick resolution must be whole 1..65536 timer cycles; generic prescaler arithmetic
+R:RiseTimeBelowPinSpeed	S			speeds.rs:207	Declared rise time below OSPEEDR 01's maximum rise and fall time (DS12117 Table 149); ST speed grades.
+R:RiseTimeTooSlow	V		std	lib.rs:3192	I2C rise time slower than every I2C mode (1000 ns at most); I2C standard.
+R:RuleBelowFloor	V			board.rs:532	Clearance or track width below the engine's floor in um; generic PCB rule.
+R:SenseAdcMismatch	V			pin_devices.rs:2073	power.sense input not held at the same pin in adc_inputs; bookkeeping.
+R:SenseFullScaleExceeded	V			power.rs:2145	Battery sense divider output above VREF+ minimum; generic ADC electronics.
+R:SenseSourceImpedance	V			power.rs:2182	Sense divider source impedance above RAIN with no reservoir; RAIN read from the held MCU row, generic ADC.
+R:SerialBaudOutOfRange	S			solve.rs:769	Baud needs a BRR outside 16 to 0xFFFF at the kernel clock (RM0433 Rev 9 §48.8.5, oversampling 16); ST USART_BRR register range.
+R:SerialBaudReadAsKbaud	V			serial.rs:760	Baud of 2000 or less read by ArduPilot map_baudrate as a code or kbaud; flight software, not ST.
+R:SerialBaudTolerance	V			serial.rs:249	Reviewer (lenses N / S), tie-break c: the receiver tolerance comes from the held TOLERANCE table (S, counted there); the kind string and its meaning, worst-case baud error, are generic.
+R:SerialClock	S			solve.rs:722	Solved clock gives no kernel clock for the USART per RCC_D2CCIP2R reset mux selections (RM0433 Rev 9 §8.7.21, serial::kernel_hz); ST clock mux.
+R:SerialFramingContradictsRole	V		std	serial.rs:728	An rc_crsf port's framing must be 8N1, non-inverted, a cited CRSF baud (serial.rs:500); CRSF protocol, not ST.
+R:SerialFramingShape	V			serial.rs:709	generic specification, solver or consistency check; no ST register, enumeration or document
+R:SerialNegotiatedAtCitedBaud	V		std	serial.rs:573	negotiated declared at a cited CRSF baud; CRSF protocol.
+R:SerialNegotiatedOffCrsf	V		std	serial.rs:560	negotiated baud only on an rc_crsf port (CRSF frame 0x70); CRSF protocol.
+R:SerialPeripheralLpuart	S			serial.rs:689	Refuses LPUART1 because its enable bit is in RCC_APB4ENR and its baud generator differs (serial.rs:193); ST instance and RCC register.
+R:SerialPeripheralTwice	V			serial.rs:701	Two serial ports name one peripheral; a peripheral carries one port, generic.
+R:SerialPinsSplit	V			solve.rs:1999	Fixed TX and RX pins are on no single USART or UART; a port's lines are one peripheral's, generic.
+R:SerialPortMismatch	S	?		serial.rs:839	Omnibus: recomputes kernel clock from RCC_D2CCIP2R muxes (serial.rs:195) and BRR, requires USART1..UART8; ST clock mux and register. Rest generic.
+R:SerialPortNotAtConnector	V			connectors.rs:426	Serial TX or RX net ends at no declared connector pin; generic.
+R:SerialPortsInfeasible	V			solve.rs:2031	Serial ports cannot all be placed at once; solver, generic.
+R:SignalKindMismatch	V			pin_devices.rs:898	Signal direction does not match the device pin's kind; generic.
+R:SignalShape	V			pin_devices.rs:1120	GPIO signal fields inconsistent with its direction (initial, active, pull); generic schema shape.
+R:SpeedBusMismatch	V			lib.rs:5060	i2c_speeds and i2c_ceilings name different buses; bookkeeping.
+R:SpiClockAbovePart	V		other-vendor	lib.rs:4265	SPI bus clock above the part's cited maximum Hz; generic.
+R:SpiControllerMismatch	S			lib.rs:4602	Solved SPI controller must match the RCC kernel mux selection (pll1_q/pclk) and MBR at most 7 with rate kernel/2^(MBR+1); ST MBR[2:0] divider field and RCC clock mux.
+R:SpiDeviceIndex	V			lib.rs:4841	spi_devices indices not exactly 0..n; plumbing.
+R:SpiDevicePeripheral	V			lib.rs:4830	SPI device not on a solved SPI peripheral; matches the name prefix SPI only (amendment 3), meaning generic.
+R:SpiDeviceSelect	V		std	lib.rs:4835	SPI chip-select net is not a solved GPIO; generic.
+R:SpiKernelClockUnavailable	S			solve.rs:1003	No SPI kernel clock: spi_kernel maps SPI1-3 and SPI4-6 to per_ck, hsi_ker_ck, pll1_q or pclk (RM0433 Rev 9 §8.7.19, §8.7.20, §8.7.22); ST clock mux by instance number.
+R:SpiLineMismatch	V		std	lib.rs:4769	spi_lines disagree with solved SCK/MOSI signals; matches SPIn_SCK-style names only (amendment 3 match), bookkeeping.
+R:SpiModeNotDriven	V		other-vendor,std	lib.rs:4277	Part's cited SPI modes exclude mode 0, the one the firmware drives (CPOL 0, CPHA 0); SPI standard modes.
+R:SpiSpeedBelowKernelRange	S			solve.rs:1010	Declared SPI speed below kernel at HSI's fastest divided by 256 (MBR 111, RM0433 Rev 9 §50.11.3); ST MBR[2:0] divider set.
+R:StackupValue	V			board.rs:404	Stackup values (permittivity, copper, temperature, fab tolerances) in generic units and ranges.
+R:StrapLevelInvalid	V		other-vendor	pin_devices.rs:1002	Strap level not one the part's pin accepts, cited; generic.
+R:StrapUndeclared	V		other-vendor	pin_devices.rs:1104	Part's strap pin not declared; generic.
+R:SupplyFloorBelowBorRising	N			power.rs:2836	MCU supply minimum does not clear the brown-out rising threshold in mV, read from the held MCU row by bor_level (tie-break c); generic meaning, Bor name.
+R:SupplyHasNoSource	V			connectors.rs:497	MCU supply has no declared source (connector pin or regulator); generic.
+R:SupplyHasTwoSources	V			connectors.rs:511	MCU supply has both a connector source and a regulator; generic.
+R:SupplyMismatch	V			lib.rs:3725	Bus or device on a different domain from its bus or the MCU; generic.
+R:SupplyOutOfRange	V		other-vendor	pin_devices.rs:970	Domain voltage span outside the part's supply pin range, cited; generic electronics.
+R:SupplyOutsidePart	V		other-vendor	lib.rs:3408	Device supply range outside its part's cited supply range in mV; generic electronics.
+R:SupplyOutsideSpeedTable	S			lib.rs:3240	supply outside DS12117 Table 149 1620..3600 mV OSPEEDR table
+R:SupplyPinUndeclared	V		other-vendor	pin_devices.rs:983	A driver part's supply pin names no domain; generic.
+R:TemperatureDeclaredTwice	V			pin_devices.rs:2007	Board temperature declared in two places; generic.
+R:TemperatureUndeclared	V			pin_devices.rs:2016	No board temperature declared for a temperature-judged device; generic.
+R:TestPointNetRepeated	V			bench.rs:184	Two test points on one net other than GND; generic.
+R:TestPointNetUnknown	V			bench.rs:160	Test point names no declared signal, domain, GND or debug net; generic.
+R:TestPointReferenceTaken	V			bench.rs:167	Test point reference already held by another part; generic naming.
+R:ThermalViaLayers	V			thermal.rs:120	Thermal via layer list against the board's copper layers; generic PCB.
+R:ThermalViaPitch	V			thermal.rs:109	Thermal via pitch below drill plus hole gap; generic PCB fabrication.
+R:ThermalViaRingUnderRules	V			thermal.rs:100	Thermal via ring under the board's via ring; generic PCB.
+R:ThermalViasUnsourced	V			thermal.rs:86	Thermal via field lacks a source citation; plumbing.
+R:ThermalViasZero	V			thermal.rs:71	Thermal via array field is zero; generic PCB thermal-via geometry.
+R:TimerRateConflict	V			solve.rs:1916	Two motor outputs forced onto one timer differ in rate; shared counter, generic.
+R:TimerResolutionConflict	V			solve.rs:1910	Two motor outputs forced onto one timer differ in tick; shared counter, generic.
+R:TimerShared	S	?		lib.rs:4629	Reviewer (lenses N / S?): it compares the solved PSC and ARR words, ST timer register contents (rule 2); a shared counter is generic, hence the flag.
+R:ToleranceOutOfRange	V			lib.rs:3695	Voltage domain tolerance outside 1 to 500 permille; generic units.
+R:TripBelowFullScale	V		other-vendor	pin_devices.rs:1630	Driver chops below the declared full-scale current; driver IC datasheet.
+R:TripReferenceGrounded	V		other-vendor	pin_devices.rs:1563	Driver trip reference tied to GND, so ITRIP is 0; driver IC datasheet.
+R:TripSenseUnbound	V		other-vendor	pin_devices.rs:1612	Trip sense pin terminated by no analog input; driver IC.
+R:UnboundedPinCapacitance	V			drawn.rs:37	Device on an MCU-driven SPI line has no cited or declared pin capacitance; generic electronics.
+R:UnheldDuringReset	V			pin_devices.rs:2358	Reviewer (lenses S / S?), tie-break c: the reset-pulled pins come from the held MCU_RESET_PULL_UPS list (D, counted there); an input unheld during reset is generic in name and meaning.
+R:UnjudgedMotorConstraint	V			lib.rs:3321	Net constraint on a motor output no check reads is refused; generic.
+R:UnjudgedSerialConstraint	V			lib.rs:3332	Net constraint on a serial TX or RX no check reads is refused; generic.
+R:UnjudgedSpiConstraint	V		std	lib.rs:3316	Net constraint on SPI MISO or chip select that no check reads is refused; generic.
+R:UnknownBus	V			lib.rs:3803	Device names a bus not of its kind; generic.
+R:UnknownConnectorPart	V			connectors.rs:336	Connector part not in the held connectors table; generic.
+R:UnknownConnectorStandard	V		std	ds009.rs:203	Connector names a port not in the DS-009 ports table; DS-009 Connector Standard (ds009.rs:39), not an ST document.
+R:UnknownDevicePin	V			pin_devices.rs:874	Named pin is not a pin of the part's row; generic.
+R:UnknownDomain	V			lib.rs:3706	Named voltage domain is not declared; also pin_devices.rs:859 and power.rs:803, same rule.
+R:UnknownNet	V			lib.rs:3891	Net constraint names no declared net or domain; generic.
+R:UnknownPart	V			lib.rs:3355	Device part has no row in the held parts table (PartWithoutRow); generic. Also pin_devices.rs:764.
+R:UnknownPeripheral	V			solve.rs:1804	Named peripheral not offered by the held pin table for the bus kind; instance set read from the table (tie-break c), match only.
+R:UnknownPin	V			solve.rs:1537	Named pin not in the held pin table; value set read from the table (tie-break c), generic rule.
+R:UnknownSerialPeripheral	V			serial.rs:188	Reviewer, amendment 3 (both lenses S?, which followed the R2 prompt's wording over amendment 3): the set is the held PERIPHERALS list (D); an unknown instance is generic.
+R:UnsupportedClock	S			lib.rs:4657	Solved clock must equal ST's reset RCC tree: HSI at 64 MHz, prescalers 1, TIMPRE 0 (SolvedClock::reset); ST clock tree state.
+R:UnsupportedI2cSpeed	V		std	lib.rs:3775	I2C speed must be 100k, 400k or 1M Hz (I2C_SPEEDS_HZ lib.rs:538), the I2C standard's modes.
+R:UnsupportedLayerCount	V			board.rs:295	Copper layer count must be 2 or 4 (engine's LAYER_COUNTS); PCB fabrication, no ST concept.
+R:UnsupportedSchemaVersion	V			lib.rs:4305	Specification schema version differs from the engine's; repository plumbing, no ST concept.
+R:UnsupportedViaRule	V			board.rs:549	Via drill and diameter must equal the engine's one via size; generic PCB.
+R:UnwitnessedAcknowledgedTwice	V			lib.rs:3983	Two acknowledgements for one register and class; plumbing.
+R:UnwitnessedClassUnknown	V			lib.rs:3962	Acknowledgement class not ignored-by-model, same-source or silicon-only (UnwitnessedClass lib.rs:259); engine's ledger classes.
+R:UnwitnessedFieldTwice	V			lib.rs:3975	Acknowledgement names a field twice; plumbing.
+R:UnwitnessedFieldsEmpty	V			lib.rs:3968	Acknowledgement names no fields; plumbing.
+R:UnwitnessedRegisterMalformed	V			lib.rs:3959	Register name must be PERIPHERAL.REGISTER in upper case (register_name_ok); syntax only, the register set itself is checked against the ledger elsewhere.
+R:ViaRingUnderRules	V			classes.rs:162	Net class via annular ring under the board rules' ring; generic PCB.
+R:VosLimitExceeded	S			lib.rs:4637	A clock exceeds its maximum at the VOS voltage scale (vos::judge_generated); VOS scales are an ST enumeration, limits from DS12117 and RM0433 Table 60 (vos.rs:1-24).
+R:ZeroCapacitance	V			lib.rs:3894	Net max capacitance is zero fF; generic units.
+R:ZeroImpedance	V			lib.rs:3900	Net impedance is zero ohms; generic units.
+R:ZeroMotorRate	V			lib.rs:4097	Motor PWM rate_hz is zero; generic units.
+R:ZeroNominalVoltage	V			lib.rs:3692	Voltage domain nominal millivolts is zero; generic units.
+R:ZeroPullUp	V		std	lib.rs:3781	I2C pull-up resistance is zero; generic electronics.
+R:ZeroRiseTime	V			lib.rs:3897	Net max rise time is zero ns; generic units.
+R:ZeroSpiSpeed	V		std	lib.rs:3786	SPI bus speed is zero Hz; generic.
+bench:TestPoint.net	V			bench.rs:159	A nameable declared net.
+bench:TestPoint.reference	V			bench.rs:166	Reference designator, not the emitter's numbering.
+board:Board.copper_layers	V			board.rs:294	Copper layer count, 2 or 4 (LAYER_COUNTS).
+board:Board.drawn	V			drawn.rs:22	Whether a board is drawn from the specification; bool.
+board:Board.forward	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.layers	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.max_outline_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.rules	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Board.stackup	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:CopperLayer.name	V			board.rs:305	KiCad's copper layer names F.Cu, In1.Cu, In2.Cu, B.Cu in order: EDA tool vocabulary, not ST.
+board:CopperLayer.net	V			board.rs:345	A plane's net: GND or a declared domain.
+board:CopperLayer.role	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:DesignRules.clearance_um	V			board.rs:528	Copper clearance in um.
+board:DesignRules.track_width_um	V			board.rs:529	Track width in um.
+board:DesignRules.via_diameter_um	V			board.rs:543	Via diameter in um.
+board:DesignRules.via_drill_um	V			board.rs:541	Via drill in um.
+board:Dielectric.between	V			board.rs:368	The two KiCad copper layer names it separates, upper first.
+board:Dielectric.max_thickness_um	V			board.rs:515	Dielectric thickness maximum in um, at least the minimum.
+board:Dielectric.min_thickness_um	V			board.rs:375	Dielectric thickness minimum in um, bounded.
+board:Dielectric.source	V			board.rs:422	Citation text (tie-break f).
+board:FabTolerances.hole_position_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.hole_size_minus_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.hole_size_plus_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.track_width_permille	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FabTolerances.via_ring_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:FinishedThickness.max	V			board.rs:382	Finished thickness maximum in um, at most 10000.
+board:FinishedThickness.min	V			board.rs:382	Finished thickness minimum in um, above 0.
+board:FinishedThickness.nominal	V			board.rs:387	Finished board thickness in um, between min and max.
+board:FinishedThickness.source	V			board.rs:420	Citation text (tie-break f).
+board:OutlineBound.height	V			board.rs:559	Outline height bound in um, 1 to MAX_OUTLINE_UM.
+board:OutlineBound.width	V			board.rs:558	Outline width bound in um, 1 to MAX_OUTLINE_UM.
+board:Sourced.source	V			lib.rs:3659	Citation text (tie-break f).
+board:Sourced.value	V			lib.rs:1191	A sourced figure in generic units (Hz, um, permille, degrees C); zero and range checks per path (lib.rs:1191, board.rs bounded).
+board:Stackup.copper_max_um	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.copper_temperature_max_c	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.dielectrics	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.fab_tolerances	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.finished_thickness_um	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.outer_copper_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.plane_copper_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.plating_min_um	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+board:Stackup.relative_permittivity_max_permille	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+classes:ClassVia.diameter_um	V			classes.rs:153	Via diameter in um.
+classes:ClassVia.drill_um	V			classes.rs:145	Via drill in um, at least the rules' drill.
+classes:DiffPair.gap_um	V			classes.rs:202	Pair gap in um, at least the rules' clearance.
+classes:DiffPair.name	V			classes.rs:173	Pair name identifier.
+classes:DiffPair.nets	V			classes.rs:177	Exactly two distinct declared nets, positive then negative.
+classes:DiffPair.width_um	V			classes.rs:201	Pair track width in um.
+classes:NetClass.name	V			classes.rs:131	Class name identifier, unique across classes and pairs.
+classes:NetClass.nets	V			classes.rs:138	Declared nets or domains of the class.
+classes:NetClass.track_width_um	V			classes.rs:142	Track width in um, between the floor and MAX_THICKNESS_UM.
+classes:NetClass.via	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:CelsiusRange.max	V			clock.rs:517	Board operating temperature maximum in degrees C, inside the crystal row's range.
+clock:CelsiusRange.min	V			clock.rs:517	Board operating temperature minimum in degrees C, inside the crystal row's range.
+clock:GmCrit.an2867_margin_hundredths_uncited	N			-	Margin ratio in hundredths; name cites ST AN2867, meaning is a ratio.
+clock:GmCrit.holds	V			-	Verdict bool.
+clock:GmCrit.nano_amps_per_volt	V			-	Oscillator critical transconductance in nA/V; generic electronics.
+clock:HseCrystal.life_hours	V			clock.rs:526	Service life in hours, at most the crystal row's aging span; nonzero at clock.rs:484.
+clock:HseCrystal.load_caps_femtofarads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseCrystal.part	V			clock.rs:353	A crystal row of the power parts table (held table, tie-break c).
+clock:HseCrystal.pull_ppm	V			clock.rs:481	Crystal pulling in ppm per side, at least 1; generic units.
+clock:HseCrystal.startup_max_us	V			clock.rs:424	Oscillator start-up wait bound in microseconds (the bring-up's HSERDY wait); nonzero. Neutral key in an HSE container (tie-break g).
+clock:HseCrystal.startup_source	V			clock.rs:429	Citation text for the start-up bound (tie-break f).
+clock:HseCrystal.temperature_celsius	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+clock:HseExternal.hz_den	V			clock.rs:442	Denominator of the exact frequency fraction; nonzero.
+clock:HseExternal.hz_num	V			clock.rs:451	External clock frequency numerator in Hz; range 4-50 MHz is DS12117 Table 31 held as const EXTERNAL_HZ (classed as H). Neutral key (tie-break g).
+clock:HseExternal.ppm	V			clock.rs:452	Frequency deviation in ppm per side, nonzero.
+clock:HseExternal.source	V			clock.rs:450	Citation text for the ppm figure (tie-break f).
+clock:HseExternal.startup_max_us	V			clock.rs:424	Oscillator start-up wait bound in microseconds; nonzero.
+clock:HseExternal.startup_source	V			clock.rs:429	Citation text for the start-up bound (tie-break f).
+clock:SolvedHse.declared	V			clock.rs:83	Crystal or external clock declaration; neutral meaning (quartz or driven clock).
+clock:SolvedHse.fast_ppm	V			-	Clock deviation budget in ppm.
+clock:SolvedHse.flash_acr	S			clock.rs:183	FLASH_ACR word, LATENCY and WRHIGHFREQ (RM0433 Table 17); register content.
+clock:SolvedHse.pll1divr	S			clock.rs:183	RCC_PLL1DIVR word (RM0433 8.7.13); register content.
+clock:SolvedHse.pllcfgr	S			clock.rs:183	RCC_PLLCFGR word (RM0433 8.7.12); register content.
+clock:SolvedHse.pllckselr	S			clock.rs:183	RCC_PLLCKSELR word (RM0433 8.7.11); register content.
+clock:SolvedHse.slow_ppm	V			-	Clock deviation budget in ppm.
+clock:TreeVerdict.gm_crit	V			-	Optional GmCrit struct.
+clock:TreeVerdict.pll1_p_hz	N			-	PLL1 P output in Hz; pll1_p_ck is ST naming.
+clock:TreeVerdict.pll1_q_hz	N			-	PLL1 Q output in Hz when DIVQ1EN; ST naming.
+clock:TreeVerdict.range_hz	V			-	Frequency range pair in Hz.
+clock:TreeVerdict.reference_hz	V			-	PLL reference frequency as num/den Hz pair.
+clock:TreeVerdict.vco_hz	V			-	VCO frequency pair in Hz.
+connectors:Connector.part	V			connectors.rs:336	A row of connectors::PARTS (held source table, tie-break c).
+connectors:Connector.pins	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:Connector.reference	V			connectors.rs:443	Reference designator; U/R/C plus digits refused (connectors.rs:330).
+connectors:Connector.standard	V		std	ds009.rs:186	A DS-009 (Dronecode connector standard) port row name, or null; judged by ds009::judge.
+connectors:ConnectorPin.net	V			connectors.rs:450	Net name, or null for a no-connect.
+connectors:ConnectorPin.offboard	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+connectors:ConnectorPin.pin	V			connectors.rs:342	Connector pin number, 1 to the part's pin count.
+connectors:OffBoard.capacitance_femtofarads	V			connectors.rs:389	Off-board capacitance in fF, 1 to MAX_OFFBOARD_FEMTOFARADS.
+connectors:OffBoard.source	V			connectors.rs:452	Citation text (tie-break f).
+lib:AnalogLine.bus	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.capacitance_femtofarads	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.ceiling_ns	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.domain_millivolts	V			-	Generic electrical quantity or bus id in plain units.
+lib:AnalogLine.pull_up_ohms	V			-	Generic electrical quantity or bus id in plain units.
+lib:Consumer.floor_millivolts	V			-	Lowest supply in millivolts.
+lib:Consumer.name	V			-	Consumer name.
+lib:CoreSupply.mode	S			vos.rs:673	RM0433 Rev 9 Table 34 supply-configuration rows ldo and bypass, written as PWR_CR3 LDOEN/BYPASS: an ST enumeration.
+lib:CoreSupply.source	V			lib.rs:3652	Citation text for the mode (tie-break f).
+lib:DeclaredPinCapacitance.condition	V			lib.rs:3071	Condition text under which the bound holds (source rule).
+lib:DeclaredPinCapacitance.femtofarads	V			lib.rs:3511	Pin capacitance in fF, 1 to MAX_PIN_FEMTOFARADS and at least the I2C Ci on an I2C device.
+lib:DeclaredPinCapacitance.source	V			lib.rs:3075	Citation text (tie-break f).
+lib:I2cBus.domain	V			lib.rs:3711	A declared voltage domain id.
+lib:I2cBus.id	V			lib.rs:4020	Bus identifier.
+lib:I2cBus.peripheral	S			solve.rs:1034	Reviewer (lenses N? / S), amendment 3: i2c_kernel_hz sends I2C1-3 to I2C123SEL/pclk1 and I2C4 to I2C4SEL/pclk4 by instance number. The reviewer had read only silicon.rs:351, the judge's reset-only copy.
+lib:I2cBus.pull_up_ohms	V		std	lib.rs:3780	Pull-up resistance in ohms; nonzero and at least the I2C sink-current floor (lib.rs:3210, electrical.rs).
+lib:I2cBus.scl	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:I2cBus.sda	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:I2cBus.speed_hz	V		std	lib.rs:3774	I2C Standard-mode, Fast-mode, Fast-mode Plus speeds 100k/400k/1M Hz (I2C_SPEEDS_HZ).
+lib:I2cDevice.address	V		std	lib.rs:3818	7-bit I2C address 0x08 to 0x77 (the I2C standard's reserved ranges excluded); also one of the part's strap addresses (lib.rs:4235).
+lib:I2cDevice.bus	V			lib.rs:3802	A declared I2C bus id.
+lib:I2cDevice.part	V			lib.rs:3354	A parts-table row (held table, tie-break c).
+lib:I2cDevice.pin_capacitance	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:I2cDevice.reference	V			lib.rs:4037	Reference designator under RUL-14's Reference rule.
+lib:I2cDevice.supply	V			lib.rs:3717	A declared voltage domain id.
+lib:LifecycleAcceptance.part	V			lib.rs:3588	A parts-table part with eol or nrnd lifecycle.
+lib:LifecycleAcceptance.statement	V			lib.rs:3565	Printable statement of why, 1 to 512 bytes.
+lib:LifecycleAcceptance.status	V			lib.rs:3597	eol or nrnd, as the parts table cites the part's lifecycle; generic vendor lifecycle terms.
+lib:McuWire.bor_level	S			lib.rs:3646	RM0433 BOR_LEV option-byte brown-out level, 0 (factory default) to 3 (MAX_BOR_LEVEL, lib.rs:416): an ST enumeration.
+lib:McuWire.core_supply	S			-	The core supply configuration of RM0433 Rev 9 Table 34 / §6.8.4 (PWR_CR3 LDOEN, BYPASS); container classed by its meaning, as foreign_clock.vos is.
+lib:McuWire.foreign_clock	V			-	Reviewer (lenses S? / V), tie-break g: the container is classed on its own meaning, the clocks a foreign firmware programs, generic; its S members are counted on their own.
+lib:McuWire.hse	N			clock.rs:81	HSE is ST's name (RM0433 §8.5.2, RCC_CR.HSEBYP) for the high-speed external clock; variants crystal/external are generic clock sources.
+lib:McuWire.hse_hz	N			lib.rs:1051	Version-19 spelling of the HSE frequency in Hz; only 0 (none) is admitted. HSE is ST's name; the meaning is a frequency.
+lib:McuWire.part	V			solve.rs:440	MCU part name, matched against the pin table's part and the power-parts mcu row (held tables, tie-break c); identifier rule at lib.rs:4009. No part literal in source.
+lib:McuWire.reset_switch	V			-	Reviewer (lenses N / V): rule 3 tests the key's name, which is generic; a reset push-button is generic. The NRST net name is counted at H:lib:NRST.
+lib:McuWire.supply	V			lib.rs:3709	A declared voltage domain id the MCU is supplied from.
+lib:McuWire.supply_source	V			none found	Connector and connector pin the supply enters by; generic
+lib:NetConstraint.impedance_ohms	V			lib.rs:3899	Impedance in ohms or null, nonzero.
+lib:NetConstraint.max_capacitance_femtofarads	V			lib.rs:3893	Capacitance bound in fF, nonzero.
+lib:NetConstraint.max_rise_time_nanoseconds	V			lib.rs:3896	Rise-time bound in ns, nonzero.
+lib:NetConstraint.net_name	V			lib.rs:3887	A declared net or domain, once.
+lib:Pad.pad	V			-	Pad number of a part.
+lib:Pad.reference	V			-	Part reference designator.
+lib:PinAssignment.alternate_function	S			lib.rs:4398	ST alternate-function number AF0-AF15 (DS12117 AF mapping tables); value set is ST numbering.
+lib:PinAssignment.peripheral	S	?		solve.rs:962	Reviewer, amendment 3, for consistency with its siblings: the value set holds SPI, I2C and USART instances whose numbers select a kernel mux or APB domain; TIMn and others only match. Could be N.
+lib:PinAssignment.pin	N			lib.rs:4317	P<port><n> pin name, only matched against held pin table and checked plain; ST port naming (DS12117 pinout).
+lib:PinAssignment.signal	N			lib.rs:4319	Signal name such as TIM1_CH1 or SPI1_SCK taken from held pin table; only the name is ST vocabulary.
+lib:PinCapacitance.declared	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Signal.net	V			lib.rs:3083	Net name, a plain identifier, unique with case folded in step 11.
+lib:Signal.pin	N			solve.rs:1536	MCU pin by hand in ST's PB9 form; only matched as a pin-table key (get_key_value) and reserved/pad lists. Grepped strip_prefix('P'), b'A', EXTI, port: no parsing for meaning (tie-break b).
+lib:SolvedDomain.consumers	V			-	List of consumers; container.
+lib:SolvedDomain.load_milliamps	V			-	Generic electrical quantity in plain units.
+lib:SolvedDomain.part	V			-	Reference or part string of the regulator.
+lib:SolvedDomain.regulator	V			-	Reference or part string of the regulator.
+lib:SolvedDomain.ret	V			-	Return pad, neutral.
+lib:SolvedDomain.source	V			-	Pad (reference and pad number), neutral.
+lib:SolvedDomain.vout_max_microvolts	V			-	Generic electrical quantity in plain units.
+lib:SolvedDomain.vout_min_microvolts	V			-	Generic electrical quantity in plain units.
+lib:SolvedI2cDevice.address	V		std	-	I2C device address.
+lib:SolvedI2cDevice.bus	V			-	Bus id, a key of i2c_ceilings.
+lib:SolvedI2cDevice.index	V			-	Position index in specification order.
+lib:SolvedI2cDevice.part	V			-	Part string looked up in held parts table; neutral name.
+lib:SolvedI2cDevice.peripheral	S			solve.rs:1034	Reviewer, amendment 3 (as lib:I2cBus.peripheral): the instance number selects I2C123SEL/pclk1 or I2C4SEL/pclk4.
+lib:SolvedI2cTiming.cr1	S			silicon.rs:361	I2C_CR1 register word (RM0433 47.9.1).
+lib:SolvedI2cTiming.kernel_hz	N			-	Kernel clock in Hz; name is ST kernel clock (i2c_ker_ck).
+lib:SolvedI2cTiming.timingr	S			silicon.rs:635	Map mode to I2C_TIMINGR register word (RM0433 47.9.5).
+lib:SolvedPower.conditions	V			-	Free-text condition names.
+lib:SolvedPower.domains	V			-	Map domain id to SolvedDomain; container.
+lib:SolvedPower.input_fault_milliamps	V			-	Current in milliamps.
+lib:SolvedPower.input_steady_milliamps	V			-	Current in milliamps.
+lib:SolvedPower.sense	V			-	Map net to SolvedSense; container.
+lib:SolvedSense.channels	N			-	ADC input channel names (INPm) from held pin table; ST ADC naming.
+lib:SolvedSense.pin	N			-	ADC pin P<port><n> matched against held table; ST port naming.
+lib:SolvedSense.position	V			-	Package position of the pin, an ordering number.
+lib:SolvedSpiController.achieved_hz	V			-	Achieved SPI clock in Hz.
+lib:SolvedSpiController.achieved_max_hz	V			-	Fastest achieved SPI clock in Hz.
+lib:SolvedSpiController.declared_hz	V			-	Declared speed in Hz.
+lib:SolvedSpiController.kernel	S			lib.rs:688	SPI kernel clock selection per_ck/hsi_ker_ck/pll1_q/pclk: RCC SPIxSEL mux position (RM0433 8.7.20, 8.7.22).
+lib:SolvedSpiController.kernel_hz	N			-	Kernel clock in Hz; name is ST kernel clock.
+lib:SolvedSpiController.mbr	S			silicon.rs:232	SPI_CFG1.MBR[2:0] baud-rate divider field (RM0433 50.11.3), 0..7.
+lib:SolvedSpiDevice.bus	V			-	Bus id.
+lib:SolvedSpiDevice.cs	V			-	Net of the chip select.
+lib:SolvedSpiDevice.index	V			-	Position index in specification order.
+lib:SolvedSpiDevice.orientation	V			orientation.rs:33	IMU orientation, neutral axes.
+lib:SolvedSpiDevice.part	V			-	Part string looked up in held parts table.
+lib:SolvedSpiDevice.peripheral	S			solve.rs:962	Reviewer, amendment 3 (as lib:SpiBus.peripheral): the instance number selects the kernel mux.
+lib:SolvedTopology.adc_inputs	V			-	Map net to SolvedAdcInput; container.
+lib:SolvedTopology.analog_lines	V			-	Map net to AnalogLine; container.
+lib:SolvedTopology.assignments	V			-	Map net to PinAssignment; unnamed net key, classed by value type; container only, fields classed apart.
+lib:SolvedTopology.bor_level	S			lib.rs:4571	Brownout reset threshold level 0-3: ST BOR option-byte levels (RM0433 FLASH_OPTSR BOR_LEV).
+lib:SolvedTopology.clock	V			-	The solved clock the firmware runs on; neutral name, container (fields classed apart).
+lib:SolvedTopology.core_supply	S	?		vos.rs:673	LDO or Bypass supply configuration, RM0433 Table 34 rows (LDOEN/BYPASS); ST supply structure.
+lib:SolvedTopology.foreign_clock	V			-	Optional declared clock values of foreign firmware; neutral name.
+lib:SolvedTopology.gpio	V			-	Map net to SolvedGpio; container, fields classed apart.
+lib:SolvedTopology.i2c_ceilings	V		std	lib.rs:538	Map bus to I2C speed ceiling in Hz; value in 100k/400k/1M, I2C standard modes.
+lib:SolvedTopology.i2c_devices	V			-	Map reference to SolvedI2cDevice; container.
+lib:SolvedTopology.i2c_speeds	V		std	lib.rs:538	Map bus to declared I2C speed in Hz; I2C standard modes.
+lib:SolvedTopology.i2c_timings	V			-	Map peripheral to SolvedI2cTiming; container.
+lib:SolvedTopology.mcu	V			lib.rs:3644	MCU part string, value set from held parts table; neutral name (tie-break c).
+lib:SolvedTopology.motor_outputs	V			-	Map label to SolvedMotorOutput; container.
+lib:SolvedTopology.pin_devices	V			-	Map reference to SolvedPinDevice; container.
+lib:SolvedTopology.pin_speeds	S			lib.rs:4538	OSPEEDR output speed grade 0 or 1 (DS12117 Table 149; GPIOx_OSPEEDR).
+lib:SolvedTopology.power	V			-	Optional solved power tree; neutral name.
+lib:SolvedTopology.schema_version	V			lib.rs:4304	Integer version of the solved-topology schema.
+lib:SolvedTopology.serial_ports	V			-	Map label to SolvedSerialPort; container.
+lib:SolvedTopology.specification_sha256	V			lib.rs:4311	SHA-256 hex digest of the solved specification.
+lib:SolvedTopology.spi_controllers	V			-	Map peripheral to SolvedSpiController; container.
+lib:SolvedTopology.spi_devices	V			-	Map reference to SolvedSpiDevice; container.
+lib:SolvedTopology.spi_lines	V			-	Map net to SpiLine; container.
+lib:Specification.accept_lifecycle	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.acknowledge_unwitnessed	V			-	Reviewer (lenses S / V), tie-break g: the container's own meaning, acknowledgements of unwitnessed ledger rows, is an engine concept; its register and fields keys are S on their own.
+lib:Specification.board	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.connectors	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.diff_pairs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.i2c_buses	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Specification.i2c_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.mcu	V			-	Container; generic name
+lib:Specification.motor_outputs	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.net_classes	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.net_constraints	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.pin_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.power	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.project_name	V			lib.rs:4006	Project identifier under RUL-14's Project rule (lower case, digits, hyphen, no Windows reserved name).
+lib:Specification.schema_version	V			lib.rs:3637	The specification format's version, checked equal to SPECIFICATION_SCHEMA_VERSION; engine plumbing.
+lib:Specification.serial_ports	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.spi_buses	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:Specification.spi_devices	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.test_points	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:Specification.voltage_domains	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiBus.domain	V			lib.rs:3714	A declared voltage domain id.
+lib:SpiBus.id	V			lib.rs:4028	Bus identifier.
+lib:SpiBus.miso	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.mosi	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.peripheral	S			solve.rs:962	Reviewer (lenses N? / S), amendment 3: spi_kernel sends SPI1-3 and SPI4-6 to different kernel muxes by instance number.
+lib:SpiBus.sck	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+lib:SpiBus.speed_hz	V			lib.rs:3785	SPI clock in Hz, nonzero.
+lib:SpiDevice.bus	V			lib.rs:3809	A declared SPI bus id.
+lib:SpiDevice.cs	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.orientation	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.part	V			lib.rs:3354	A parts-table row (held table, tie-break c).
+lib:SpiDevice.pin_capacitance	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+lib:SpiDevice.reference	V			lib.rs:4047	Reference designator under RUL-14's Reference rule.
+lib:SpiDevice.supply	V			lib.rs:3720	A declared voltage domain id.
+lib:SpiLine.bus	V			-	Bus id.
+lib:SpiLine.capacitance_femtofarads	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.rate_hz	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.rise_time_ns	V			-	Generic electrical quantity in plain units.
+lib:SpiLine.signal	V		std	lib.rs:847	SCK or MOSI, SPI signal names.
+lib:SpiLine.vdd_min_millivolts	V			-	Generic electrical quantity in plain units.
+lib:SupplySource.connector	V			connectors.rs:519	A declared connector's reference.
+lib:SupplySource.pin	V			connectors.rs:532	A connector pin number, matched against that connector's declared pins; not an MCU pin.
+lib:UnwitnessedAcknowledgement.class	V			lib.rs:259	UnwitnessedClass: the engine's ledger classes ignored-by-model, same-source, silicon-only.
+lib:UnwitnessedAcknowledgement.fields	S			lib.rs:3967	ST register bit-field names of that register (ledger rows); IR checks non-empty and no repeat, the CLI matches the ledger.
+lib:UnwitnessedAcknowledgement.reason	V			lib.rs:3981	Reason text (source rule).
+lib:UnwitnessedAcknowledgement.register	S			lib.rs:3958	An ST register as the ledger names it (SPI1.CFG1, FLASH.OPTSR_CUR); shape check lib.rs:290; the CLI matches it to the register ledger. ST register name.
+lib:VoltageDomain.id	V			lib.rs:4016	Rail identifier; unique with case folded (lib.rs:3688).
+lib:VoltageDomain.nominal_millivolts	V			lib.rs:3691	Nominal rail voltage in mV, nonzero.
+lib:VoltageDomain.tolerance_permille	V			lib.rs:3694	Rail tolerance, 1 to 500 permille.
+motor:ForeignClock.apb1_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): Hz is generic, but which timers this clock feeds is RM0433 Table 8's bus partition, ST's structure; tie-break a. Could be N.
+motor:ForeignClock.apb2_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): as apb1_timers_hz.
+motor:ForeignClock.usarts	S			lib.rs:1210	Reviewer (lenses S? / S), amendment 3: the keys are split by the USART16SEL / USART234578SEL mux by instance number (RM0433 §8.7.21); meaning from the number.
+motor:ForeignClock.vos	S			-	The core voltage scale with its source: RM0433 Rev 9 §6.6.2 VOS (struct SourcedVos).
+motor:MotorOutput.esc	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:MotorOutput.label	V			lib.rs:4063	The output's name and its net's, a plain identifier.
+motor:MotorOutput.pin	N			solve.rs:1536	MCU pin by hand in ST's PB9 form; the motor's hand pin goes through the same table-key match (solve.rs:1617). No port/number parsing found (tie-break b).
+motor:MotorOutput.protocol	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+motor:MotorOutput.pwm	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:NoEsc.source	V			lib.rs:4066	Citation text for an output with no ESC (tie-break f).
+motor:PwmTiming.idle	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+motor:PwmTiming.pulse_max_us	V			lib.rs:4114	Longest command pulse in us, inside the period.
+motor:PwmTiming.pulse_min_us	V			lib.rs:4107	Shortest command pulse in us, at least 1 and below the maximum.
+motor:PwmTiming.rate_hz	V			lib.rs:4096	PWM rate in Hz, above 0, longest pulse inside the period.
+motor:PwmTiming.resolution_ps	V			solve.rs:1208	Picoseconds per timer tick, statable in units; the 1 to 65,536 cycle bound is the 16-bit prescaler (RM0433), a derived limit, not ST vocabulary.
+motor:SiliconTiming.high_fastest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.high_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.high_slowest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.holds	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.kernel_hz	N			-	Kernel clock in Hz; ST kernel clock name.
+motor:SiliconTiming.nominal_high_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.nominal_period_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.period_fastest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.period_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SiliconTiming.period_slowest_ps	V			-	Time in picoseconds or verdict bool; generic.
+motor:SolvedClock.d1cpre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d1ppre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d2ppre1	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d2ppre2	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.d3ppre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.hpre	S	?		motor.rs:420	Prescaler divisor of an ST RCC register (D1CPRE, HPRE, D1PPRE, D2PPRE, D3PPRE; RM0433 8.7.8-8.7.10); ladder and domain structure are ST. Divisor units neutral.
+motor:SolvedClock.hse	N			-	The external high-speed clock tree; meaning is a crystal-driven PLL tree, name HSE/PLL is ST.
+motor:SolvedClock.hse_hz	N			-	Frequency of the external high-speed clock in Hz; only the HSE name is ST.
+motor:SolvedClock.source	S			motor.rs:383	Clock source HSI or PLL1, an ST RCC clock-tree mux position (RM0433 8.7.7 SW).
+motor:SolvedClock.sysclk_hz	V			-	System clock frequency in Hz; neutral.
+motor:SolvedClock.timpre	S			motor.rs:340	RCC_CFGR.TIMPRE bit (RM0433 8.7.7), selects timer kernel multiplier 2 or 4.
+motor:SolvedClock.vos	S			vos.rs:36	PWR_D3CR.VOS core voltage scale (RM0433 6.6.2); ST scale0-scale3 enumeration.
+motor:SolvedForeignClock.apb1_timers_hz	N			lib.rs:1184	Timer kernel clock on APB1 in Hz; APB timer clock tree is ST (RM0433 Fig 49).
+motor:SolvedForeignClock.apb2_timers_hz	N			lib.rs:1184	Timer kernel clock on APB2 in Hz; APB timer clock tree is ST.
+motor:SolvedForeignClock.usarts	S			lib.rs:1210	Reviewer, amendment 3 (as motor:ForeignClock.usarts): the keys split by USART16SEL / USART234578SEL.
+motor:SolvedForeignClock.vos	S			vos.rs:36	Declared PWR VOS scale; ST scale0-scale3.
+motor:SolvedMotorOutput.arr	S			lib.rs:4629	TIMx_ARR register value as the firmware writes it (RM0433 timer chapter).
+motor:SolvedMotorOutput.ccr	S			lib.rs:4629	TIMx_CCRk register value as the firmware writes it (RM0433 timer chapter).
+motor:SolvedMotorOutput.index	V			-	Position index in specification order.
+motor:SolvedMotorOutput.protocol	V		std	motor.rs:26	pwm, dshot300, dshot600: PWM and DShot are published protocols.
+motor:SolvedMotorOutput.psc	S			lib.rs:4629	TIMx_PSC register value as the firmware writes it (RM0433 timer chapter).
+motor:SolvedMotorOutput.pwm	V			-	Optional neutral PWM timing struct.
+motor:SourcedVos.source	V			lib.rs:3661	Citation text (tie-break f).
+motor:SourcedVos.value	S			vos.rs:35	RM0433 Rev 9 §6.6.2 voltage scales scale0 to scale3 (PWR_D3CR.VOS): an ST enumeration.
+orientation:Orientation.x	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+orientation:Orientation.z	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AdcChannel.input	N			pin_devices.rs:2167	ST ADC input label INPm, matched only against the pin table's adc_channels; grepped INP/channel parsing, none (amendment 3 by analogy).
+pin_devices:AdcChannel.peripheral	N	?		pin_devices.rs:661	ADC instance name (ADC3) matched against held pin table; ST instance naming
+pin_devices:AnalogInput.adc_resolution_bits	V			pin_devices.rs:1317	ADC resolution in bits, matched against the MCU row's rain_max_ohms bits (held table).
+pin_devices:AnalogInput.channel	V			-	Reviewer (lenses N / V), tie-break g: the container's own name and meaning, an ADC channel, are generic; its peripheral and input keys are N on their own.
+pin_devices:AnalogInput.device_pin	V			pin_devices.rs:1387	A pin of the device's parts row.
+pin_devices:AnalogInput.full_scale	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:AnalogInput.net	V			pin_devices.rs:658	Net name.
+pin_devices:AnalogInput.pin	N			pin_devices.rs:2172	MCU pin by hand in ST's PB9 form; matched as a pin-table key only (tie-break b).
+pin_devices:AnalogInput.transfer	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:Bridge.id	V			pin_devices.rs:679	Bridge identifier.
+pin_devices:Bridge.inputs	V			pin_devices.rs:1749	Keys: the row's bridge input pins; values: motor output labels or nets.
+pin_devices:Bridge.mode	V			pin_devices.rs:1712	One of the driver row's named modes (held table).
+pin_devices:Bridge.outputs	V			pin_devices.rs:1749	Keys: the row's bridge output pins; values: nets.
+pin_devices:Bulk.part	V			pin_devices.rs:1667	A capacitor or bulk_capacitor row of the power parts table.
+pin_devices:Bulk.reference	V			pin_devices.rs:695	Reference designator.
+pin_devices:Bulk.source	V			pin_devices.rs:699	Citation text (tie-break f).
+pin_devices:CurrentOutput.reservoir	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:CurrentOutput.resistor	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.active	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.device_pin	V			pin_devices.rs:1119	A pin of the device's parts row (the driver IC's pin name).
+pin_devices:GpioSignal.direction	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.initial	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:GpioSignal.net	V			pin_devices.rs:643	Net name.
+pin_devices:GpioSignal.pin	N			pin_devices.rs:2253	MCU pin by hand in ST's PB9 form; matched as a pin-table key only (tie-break b).
+pin_devices:GpioSignal.pull	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PartLimits.input_pwm_max_hz	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.analog	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.bridges	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.bulk	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.part	V			pin_devices.rs:750	A busless parts row (held table, tie-break c).
+pin_devices:PinDevice.part_limits	V		other-vendor	-	Part-table row key; other-vendor or generic part
+pin_devices:PinDevice.reference	V			pin_devices.rs:628	Reference designator.
+pin_devices:PinDevice.signals	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PinDevice.straps	V			pin_devices.rs:113	Strap enum tie or resistor; keys are the device row's strap pins (pin_devices.rs:997).
+pin_devices:PinDevice.supplies	V			pin_devices.rs:955	Keys: the device row's supply pins; values: declared domain ids.
+pin_devices:PinDevice.temperature_celsius	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:PullResistor.ohms	V			pin_devices.rs:1201	Resistance in ohms, judged against the device row's thresholds.
+pin_devices:PullResistor.part	V			pin_devices.rs:1999	A resistor row (held table), read for its tolerance.
+pin_devices:PullResistor.reference	V			pin_devices.rs:647	Reference designator.
+pin_devices:PullResistor.to	V			pin_devices.rs:1195	A declared domain id.
+pin_devices:SignalPull.mcu	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SignalPull.resistor	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+pin_devices:SignalPull.source	V			pin_devices.rs:653	Citation text (tie-break f).
+pin_devices:SolvedAdcInput.bits	V			-	Declared ADC resolution in bits.
+pin_devices:SolvedAdcInput.channel	N			lib.rs:4329	ADC channel name INPm read from held pin table; meaning is an ADC input channel, name is ST (tie-break c).
+pin_devices:SolvedAdcInput.peripheral	N			lib.rs:4328	ADC instance name (ADC1, ADC3) chosen by solver; ST instance naming.
+pin_devices:SolvedAdcInput.pin	N			lib.rs:4327	P<port><n> pin name matched against held table; ST port naming.
+pin_devices:SolvedAdcInput.transfer	V			pin_devices.rs:333	Neutral current-output transfer descriptor.
+pin_devices:SolvedBridge.enable	V			-	Optional enable struct.
+pin_devices:SolvedBridge.inputs	V			-	Input net names.
+pin_devices:SolvedBridge.mode	V		other-vendor	-	Strapped mode string of the part; other-vendor part vocabulary.
+pin_devices:SolvedEnable.active	V			motor.rs:94	Logic level.
+pin_devices:SolvedEnable.net	V			-	Net name.
+pin_devices:SolvedGpio.active	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.direction	V			pin_devices.rs:121	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.initial	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.pin	N			lib.rs:4321	P<port><n> pin name matched only against held table; ST port naming.
+pin_devices:SolvedGpio.pull	V			pin_devices.rs:129	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedGpio.pulled	V			motor.rs:94	Generic GPIO direction, logic level or pull; value set output/input, low/high, up/down/none.
+pin_devices:SolvedPinDevice.bridges	V			-	Map bridge to SolvedBridge; container.
+pin_devices:SolvedPinDevice.part	V			-	Pin device part string, held table.
+pin_devices:SolvedPinDevice.supplies	V			-	Map supply pin to domain name.
+pin_devices:SolvedTransfer.device	V			-	Reference designator of the pin device.
+pin_devices:SourcedValue.source	V			pin_devices.rs:690	Citation text (tie-break f).
+pin_devices:SourcedValue.value	V			pin_devices.rs:1918	A part limit the row does not state, input_pwm_max_hz in Hz.
+power:Battery.cell_max_millivolts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.cell_min_millivolts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.cells	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Battery.chemistry	V			power.rs:727	A battery chemistry label, text by the source rule; not judged.
+power:Battery.series_milliohms	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Cells.max	V			power.rs:745	Most cell count, at most 24.
+power:Cells.min	V			power.rs:745	Least cell count, 1 to max.
+power:Conditions.board_temperature_celsius	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Conditions.dc_bias_derating	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Control.pin	V			power.rs:2856	A control pin of the regulator or translator row (such as EN), from that part's row; not an MCU pin.
+power:Control.strap	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Control.wire	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.a_domain	V			power.rs:926	A declared domain id, the MCU side.
+power:Crossing.b_domain	V			power.rs:927	A declared domain id, the device side.
+power:Crossing.bus	V			power.rs:925	A declared SPI bus id.
+power:Crossing.controls	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.cs_pull_up	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.external	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Crossing.part	V			power.rs:924	A translator row (held table).
+power:Crossing.reference	V			power.rs:923	Reference designator.
+power:Derating.dielectrics	V		std	none found	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+power:Derating.ratio_max_permille	V			power.rs:713	Working-to-rated voltage ratio in permille, 1 to 1000.
+power:Derating.retained_permille	V			power.rs:713	Retained capacitance share in permille, 1 to 1000, at most 500 for class-2 ceramics (power.rs:703).
+power:Derating.source	V			power.rs:675	Citation text (tie-break f).
+power:Divider.bottom	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Divider.top	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:DropLimit.domain	V			power.rs:864	A declared domain id, once.
+power:DropLimit.max_millivolts	V			power.rs:866	Supply plus ground drop in mV, 1 to 100000.
+power:DropLimit.source	V			power.rs:865	Citation text (tie-break f).
+power:External.part	V			power.rs:794	A power-parts row (held table).
+power:External.reference	V			power.rs:793	Reference designator.
+power:External.role	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:HotPlug.part	V			power.rs:764	A parts row (held table).
+power:HotPlug.reference	V			power.rs:763	Reference designator.
+power:HotPlug.side	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Junction.copper_square_centimetres	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Junction.loss_milliwatts	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Load.domain	V			power.rs:844	A declared domain id.
+power:Load.milliamps	V			power.rs:855	Load current in mA, nonzero.
+power:Load.reference	V			power.rs:847	Reference designator of the part this load is.
+power:Load.source	V			power.rs:845	Citation text (tie-break f).
+power:Power.battery	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.conditions	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.crossings	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.drop_limits	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.input	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.loads	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.regulators	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Power.sense	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:PowerIn.hot_plug	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:PowerIn.part	V			power.rs:1622	A row of connectors::POWER_IN (held source table).
+power:PowerIn.reference	V			power.rs:724	Reference designator of the power-in connector.
+power:Regulator.controls	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.external	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.feedback	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.input	V			power.rs:811	battery or a declared domain id.
+power:Regulator.junction	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Regulator.output	V			power.rs:813	A declared domain id.
+power:Regulator.part	V			power.rs:809	A power-parts row (held table).
+power:Regulator.reference	V			power.rs:808	Reference designator.
+power:Reservoir.part	V			power.rs:917	A capacitor row (held table).
+power:Reservoir.reference	V			power.rs:916	Reference designator.
+power:Resistor.ohms	V			power.rs:786	Resistance in ohms, nonzero.
+power:Resistor.part	V			power.rs:785	A resistor row (held table).
+power:Resistor.reference	V			power.rs:784	Reference designator.
+power:Sense.adc_resolution_bits	V			power.rs:2153	ADC resolution in bits, matched against the MCU row's rain_max_ohms bits (held table).
+power:Sense.bottom	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.net	V			power.rs:904	A new net name, not a rail or signal.
+power:Sense.reservoir	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:Sense.top	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+power:SourcedValue.source	V			power.rs:729	Citation text (tie-break f).
+power:SourcedValue.value	V			power.rs:755	A sourced figure in generic units (cell mV, mOhm, cm2, mW), range-checked per path.
+power:Temperature.max	V			power.rs:664	Board temperature maximum in degrees C, -273 to 500.
+power:Temperature.min	V			power.rs:664	Board temperature minimum in degrees C, -273 to 500.
+power:Temperature.source	V			power.rs:660	Citation text (tie-break f).
+power:Wire.net	V			power.rs:777	Net name.
+power:Wire.role	V			power.rs:778	Free text stating the wire's role (source rule).
+serial:Framing.baud	V		std	serial.rs:799	UART baud rate, nonzero. Statable in baud; solve later bounds it by the BRR range (RM0433), which is a derived limit, not the key's value set.
+serial:Framing.data_bits	V		std	serial.rs:802	UART data bits 7 to 9, statable as a UART word length; the USART_CR1.M mapping (serial.rs:96) is derived from it, not its value set.
+serial:Framing.inverted	V			serial.rs:512	Whether both lines are inverted; bool.
+serial:Framing.parity	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:Framing.stop_bits	V		std	serial.rs:816	UART stop bits 1 or 2, statable as UART framing; USART_CR2.STOP encoding (serial.rs:109) is derived, not the value set.
+serial:Negotiated.source	V			serial.rs:566	Citation text for a negotiated baud (tie-break f).
+serial:SerialPort.framing	V			-	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:SerialPort.label	V			lib.rs:4071	Port name, unique with case folded.
+serial:SerialPort.negotiated	V			none found	Generic electrical, geometry, identifier or citation quantity; neither name nor value set is ST
+serial:SerialPort.peer_deviation_ppm	V			serial.rs:790	Remote transmitter's baud deviation in ppm; at least the cited CRSF spread on rc_crsf.
+serial:SerialPort.peer_deviation_source	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.peripheral	S			serial.rs:201	Reviewer (lenses S? / S), amendment 3: kernel_hz takes D2PPRE2 for USART1/6 and D2PPRE1 for the rest, by instance number; vos.rs:291 the same split.
+serial:SerialPort.role	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.rx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SerialPort.tx	V		std	-	Published-standard concept (I2C, SPI, UART, DShot, CRSF, MAVLink, DS-009, EIA dielectric); not ST
+serial:SiliconFraming.actual_millibaud	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.brr	S			serial.rs:220	USART_BRR register value.
+serial:SiliconFraming.error_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.holds	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.hsi_ppm	N			-	Clock deviation bound in ppm; name HSI is ST (though holds the active source bound).
+serial:SiliconFraming.kernel_hz	N			-	Kernel clock in Hz; ST kernel clock name.
+serial:SiliconFraming.margin_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.peer_deviation_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.quantization_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.receiver_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.tolerance	V			-	Generic ppm, baud or verdict quantity.
+serial:SiliconFraming.worst_case_ppm	V			-	Generic ppm, baud or verdict quantity.
+serial:SolvedSerialPort.actual_millibaud	V			-	Baud achieved, in millibaud.
+serial:SolvedSerialPort.brr	S			serial.rs:220	USART_BRR register value (RM0433 48.8.5), range 16..0xFFFF.
+serial:SolvedSerialPort.error_ppm	V			-	Baud error in ppm.
+serial:SolvedSerialPort.framing	V			-	Framing struct, neutral.
+serial:SolvedSerialPort.index	V			-	Position index in specification order.
+serial:SolvedSerialPort.kernel_hz	N			-	USART kernel clock in Hz; units neutral, name is ST kernel clock (RM0433 8.7.21).
+serial:SolvedSerialPort.negotiated	V		std	-	Optional negotiated-baud declaration; CRSF protocol.
+serial:SolvedSerialPort.peer_deviation_ppm	V			-	Peer clock deviation in ppm.
+serial:SolvedSerialPort.peripheral	S			serial.rs:201	Reviewer, amendment 3 (as serial:SerialPort.peripheral): the instance number selects the APB prescaler and mux group.
+serial:SolvedSerialPort.role	V		std	serial.rs:31	console, mavlink, gps, rc_crsf, rc_sbus; protocol roles, not ST.
+serial:SolvedSerialPort.rx	V			-	Net name of receive line.
+serial:SolvedSerialPort.tx	V			-	Net name of transmit line.
+serial:ToleranceRow.m_bits	S			serial.rs:97	USART_CR1.M[1:0] field value (RM0433 48.8.1).
+serial:ToleranceRow.table	V			-	Citation string of RM0433 Table 406/407; tie-break f.
+serial:ToleranceRow.tolerance_ppm	V			-	Receiver tolerance in ppm.
+silicon:BrrFinding.baud	V		std	-	Baud rate.
+silicon:BrrFinding.brr	S			silicon.rs:754	USART_BRR value.
+silicon:BrrFinding.holds	V			-	Overall verdict bool.
+silicon:BrrFinding.in_range	S			silicon.rs:754	Verdict 16 <= BRR <= 0xFFFF (RM0433 48.8.5).
+silicon:BrrFinding.kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:BrrFinding.kernel_ok	N			-	Verdict on kernel clock; ST name.
+silicon:BrrFinding.nearest	S	?		silicon.rs:793	Verdict that BRR is nearest whole USARTDIV (RM0433 48.5.7).
+silicon:BrrFinding.residue	V			-	Integer residue |BRR*baud-kernel|; arithmetic.
+silicon:BrrFinding.topology_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:I2cConstraints.data_hold	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.data_setup	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.kernel_minimum	N			silicon.rs:556	Slowest kernel at least DS12117 Table 93 minimum; ST kernel clock name.
+silicon:I2cConstraints.scl_frequency	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.t_high	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cConstraints.t_low	S	?		silicon.rs:556	Verdict on a constraint of the TIMINGR word, stated through SCLL/SCLH/SCLDEL/SDADEL and tPRESC (RM0433 47.4); I2C term but TIMINGR-bound.
+silicon:I2cFinding.cr1_ok	S			silicon.rs:361	Verdict that I2C_CR1 equals the generated word (RM0433 47.9.1).
+silicon:I2cFinding.holds	V			-	Overall verdict bool.
+silicon:I2cFinding.kernel_ok	N			-	Verdict on i2c kernel clock; meaning generic, name ST kernel.
+silicon:I2cFinding.modes_ok	V		std	silicon.rs:394	Verdict that modes are the three I2C modes.
+silicon:I2cFinding.peripheral	N			silicon.rs:351	Reviewer, amendment 3: the judge's i2c_kernel_hz treats I2C1-4 alike (reset pclk), so the name is only matched here.
+silicon:I2cFinding.timingr	N			-	List of TimingFinding; name is ST register, content is verdicts.
+silicon:I2cLimits.kernel_min_hz	N			silicon.rs:394	Least i2c_ker_ck in Hz (DS12117 Table 93); units neutral, name is ST kernel clock.
+silicon:I2cLimits.mode	V		std	silicon.rs:394	I2C mode name Standard100k, Fast400k, FastPlus1M; UM10204 modes.
+silicon:I2cLimits.scl_hz	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_hd_dat_min_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_high_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_low_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_su_dat_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.t_vd_dat_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.tf_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:I2cLimits.tr_max_ns	V		std	silicon.rs:394	I2C timing limit in ns or Hz, UM10204 timings.
+silicon:SpiFinding.achieved_hz	V			-	Achieved SPI clock in Hz.
+silicon:SpiFinding.achieved_max_hz	V			-	Fastest SPI clock in Hz.
+silicon:SpiFinding.achieved_ok	S	?		silicon.rs:232	Verdict that achieved rates equal kernel / 2^(MBR+1).
+silicon:SpiFinding.declared_hz	V			-	Declared speed in Hz.
+silicon:SpiFinding.fast_kernel_hz	N			-	Kernel clock at fastest in Hz; ST name.
+silicon:SpiFinding.holds	V			-	Overall verdict bool.
+silicon:SpiFinding.kernel	S			lib.rs:688	SPI kernel clock mux position (RM0433 8.7.20).
+silicon:SpiFinding.kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:SpiFinding.kernel_ok	S	?		silicon.rs:232	Verdict that kernel mux and clock equal what SPIxSEL gives at reset (RM0433 8.7.20).
+silicon:SpiFinding.mbr	S			silicon.rs:232	SPI_CFG1.MBR field (RM0433 50.11.3).
+silicon:SpiFinding.mbr_ok	S	?		silicon.rs:232	Verdict on MBR[2:0] range and divider (RM0433 50.11.3).
+silicon:SpiFinding.peripheral	S			silicon.rs:147	Reviewer, amendment 3: SpiSelect::of maps the instance to its SPI123SEL/SPI45SEL/SPI6SEL select.
+silicon:SpiWords.cfg1	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cfg2	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cr1_enable	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cr1_idle	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.cr1_start	S			silicon.rs:316	SPI_CR1/CFG1/CFG2 register word (RM0433 50.11).
+silicon:SpiWords.kernel_select	S			silicon.rs:316	RCC offset and word of the SPIxSEL select register (RM0433 8.7.20, 8.7.22).
+silicon:TimingFinding.constraints	V			-	Container of constraint verdicts, fields classed apart.
+silicon:TimingFinding.data_valid	S	?		silicon.rs:613	Verdict on SDADEL bound (RM0433 p. 1958).
+silicon:TimingFinding.fast_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:TimingFinding.fields	S			silicon.rs:477	Decoded TIMINGR fields struct.
+silicon:TimingFinding.holds	V			-	Overall verdict bool.
+silicon:TimingFinding.mode	V		std	silicon.rs:394	I2C mode name.
+silicon:TimingFinding.presc_least	S	?		silicon.rs:613	Verdict that PRESC is least feasible (TIMINGR.PRESC).
+silicon:TimingFinding.reserved_zero	S			silicon.rs:613	Verdict that TIMINGR bits 27:24 are zero (reserved bits).
+silicon:TimingFinding.scl_max_hz	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.scl_mode_hz	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.slow_kernel_hz	N			-	Kernel clock in Hz; ST name.
+silicon:TimingFinding.t_high_min_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_high_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_low_min_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.t_low_ps	V		std	-	I2C timing or frequency in plain units.
+silicon:TimingFinding.tight	S	?		silicon.rs:613	Verdict that lowering any TIMINGR field fails a constraint.
+silicon:TimingFinding.timingr	S			silicon.rs:635	TIMINGR register word.
+silicon:Timingr.presc	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.reserved	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.scldel	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.sclh	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.scll	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+silicon:Timingr.sdadel	S			silicon.rs:477	I2C_TIMINGR bit field (RM0433 47.9.5).
+versions:Replacement.by	V			none found	Replacement key path text. Repository change log data.
+versions:Replacement.path	V			none found	Specification key path text. Repository change log data.
+versions:VersionChange.optional	V			-	List of key paths. Repository change log data.
+versions:VersionChange.removed	V			-	List of key paths. Repository change log data.
+versions:VersionChange.replaced	V			-	List of Replacement rows. Repository change log data.
+versions:VersionChange.requires	V			-	List of key paths. Repository change log data.
+versions:VersionChange.rules	V			-	List of refusal kind names. Repository change log data.
+versions:VersionChange.version	V			none found	Specification schema version number. Repository change log data.
+versions:VersionChange.work_order	V			none found	Work order name text. Repository change log data.
+vos:ForeignVerdict.clocks	V			-	List of Judged; container.
+vos:ForeignVerdict.conditions	V			-	List of condition names.
+vos:ForeignVerdict.not_judged	V			-	List of clock names with reason.
+vos:ForeignVerdict.vos	S			vos.rs:36	PWR VOS scale scale0-scale3.
+vos:Judged.cite	V			vos.rs:89	Citation string, tie-break f.
+vos:Judged.clock	N			-	Free-text clock name such as TIM1 kernel, APB1 timers kernel; names are ST clock-tree vocabulary.
+vos:Judged.family	S			vos.rs:65	Limit-table family (Cpu, Hclk, Pclk, Tim, Spi123, Spi45, Spi6, I2c123, I2c4, Usart16, Usart234578, Lpuart1): RM0433 Table 60 kernel groupings.
+vos:Judged.fastest_hz	V			-	Frequency in Hz or verdict.
+vos:Judged.holds	V			-	Frequency in Hz or verdict.
+vos:Judged.limit_hz	V			-	Frequency in Hz or verdict.
+vos:Judged.nominal_hz	V			-	Frequency in Hz or verdict.

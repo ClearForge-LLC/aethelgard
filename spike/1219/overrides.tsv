@@ -1,0 +1,64 @@
+id	class	flag	tags	value_at	reason
+H:bench:BOOT0_PULL_DOWN_OHMS	V			bench.rs:39	Reviewer (re-read for its citation): the 10 kOhm the emitter draws, an engine design value that judge_boot0_pull_down tests against DS12117 Tables 49-50; not a datasheet figure, so not D.
+H:bench:BOOT0_LEAKAGE_NANOAMPS	D				Reviewer, amendment 4: DS12117 BOOT0 leakage figure in nA; a held fact, rule 1.
+H:bench:DRIVER_MICROAMPS	D				Reviewer, amendment 4: DS12117 Table 50 I/O current figure in uA; a held fact, rule 1.
+H:bench:DRIVER_DROP_MILLIVOLTS	D				Reviewer, amendment 4: DS12117 Table 50 VOH drop in mV; a held fact, rule 1.
+H:clock:HSI	D				Reviewer, amendment 4: the HSI accuracy budget in ppm from DS12117; a held fact under an ST name, rule 1.
+H:clock:CRYSTAL_HZ	D				Reviewer, amendment 4: DS12117 Table 33 HSE crystal range in Hz; a held fact, rule 1.
+H:clock:EXTERNAL_HZ	D				Reviewer, amendment 4: DS12117 Table 31 external clock range in Hz; a held fact, rule 1.
+H:clock:GM_CRIT_MAX_NANO_AMPS_PER_VOLT	D				Reviewer, amendment 4: DS12117 Table 33 Gm_crit_max in nA/V; a held fact, rule 1.
+H:pin_devices:MCU_VOL_MAX_MV	D				Reviewer, amendment 4: DS12117 VOL max in mV; a held fact, rule 1.
+H:pin_devices:MCU_VOH_DROP_MV	D				Reviewer, amendment 4: DS12117 VOH drop in mV; a held fact, rule 1.
+H:pin_devices:MCU_RPU_MIN_OHMS	D				Reviewer, amendment 4: DS12117 RPU minimum in ohms; a held fact, rule 1.
+H:silicon:RESET_HSI_KER_HZ	D				Reviewer, amendment 4: RM0433 reset kernel-clock frequency in Hz; a held fact, rule 1.
+H:silicon:RESET_PCLK_HZ	D				Reviewer, amendment 4: RM0433 reset PCLK frequency in Hz; a held fact, rule 1.
+H:silicon:T_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns; a held fact, rule 1.
+H:silicon:T_AF_MAX_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF maximum in ns; a held fact, rule 1.
+H:solve:I2C_AF_MIN_NS	D				Reviewer, amendment 4: DS12117 Table 94 tAF minimum in ns (the solver's copy); a held fact, rule 1.
+H:silicon:SYNC_MIN_CYCLES	D				Reviewer, amendment 4: RM0433 §47.4.9 tSYNC minimum in kernel cycles; a held fact, rule 1.
+H:solve:H1_SYS_HZ	D				Reviewer, amendment 4: the 64 MHz HSI-derived sys_ck of the H1 bring-up; one row of ST clock fact, rule 1.
+H:serial:TOLERANCE	S			-	Reviewer, amendment 4 / §3: m_bits is the USART_CR1.M[1:0] field value (serial.rs:237), an S column, so the table is S.
+H:silicon:I2C_LIMITS	D			-	Reviewer: every column is a generic I2C quantity in Hz or ns (silicon.rs:380), kernel_min_hz included; rows of RM0433 Tables 388/390; doubt cleared.
+H:solve:I2C_MODES	D			-	Reviewer: the solver's copy of the same generic columns (solve.rs:1054); doubt cleared.
+H:lib:RESERVED_REFERENCES	D			-	Reviewer: rows of reference names (the Renode STM32H7 platform's peripheral names); a second vendor adds rows; doubt cleared.
+H:speeds:LOADS_PICOFARADS	D			-	Reviewer: the DS12117 output-speed table's load axis in pF, generic units; doubt cleared.
+H:speeds:BANDS_MILLIVOLTS	D			-	Reviewer: the DS12117 output-speed table's VDD bands in mV, generic units; doubt cleared.
+H:vos:LIMITS	S			-	Reviewer, §3: each row is [Option<u64>; 4], one column per VOS scale 0-3 (vos.rs:89); the columns are ST's VOS enumeration, so the table is S.
+H:power:BATTERY_NET	V			power.rs:82	Reviewer (re-read for its citation): the drawn board's battery-pack rail (AET-WO-4300d2 K10), a generic battery abbreviation, not the MCU's VBAT pin; generic in name and meaning.
+H:vos:BUS_LIMITS_REV_V	S	?		-	Reviewer: a verdict condition naming ST silicon revision V's Table 111 limits; the meaning (ST revision-scoped limits) is ST's. Could be N.
+H:vos:VOS_LIMIT_AT_BOUNDARY	S	?		-	Reviewer: a verdict condition about a VOS scale limit; the VOS value set is ST's. Could be N.
+R:InvalidIdentifier	N	?		lib.rs:3036	Reviewer (lenses V / S?): one clause hard-codes the observer shape p<a-k><0-15>obs, ST port naming over a neutral concept (tie-break b by analogy); the rest is generic. Could be V.
+R:AnalogPadPin	V			solve.rs:1550	Reviewer (lenses S / V), tie-break c: the pad set is read from the held MCU row; the kind judges a digital signal on an analog-only pad, generic in name and meaning. The ST structure is counted at its column.
+R:PowerPartsTableInvalid	S	?		power_parts.rs:2412	Reviewer (lenses V / S?): the parser hard-codes the FT/TT structure families, an ST value set (rule 2), beside generic clauses; the most coupled clause decides (tie-break a).
+R:TimerShared	S	?		lib.rs:4629	Reviewer (lenses N / S?): it compares the solved PSC and ARR words, ST timer register contents (rule 2); a shared counter is generic, hence the flag.
+R:MissingSpiConstraint	V			-	Reviewer (lenses S? / V): it judges a missing declared net constraint on SCK or MOSI, a generic requirement; that it feeds the OSPEEDR choice is the speed refusals' coupling, counted there.
+R:SerialBaudTolerance	V			serial.rs:249	Reviewer (lenses N / S), tie-break c: the receiver tolerance comes from the held TOLERANCE table (S, counted there); the kind string and its meaning, worst-case baud error, are generic.
+R:HseClockMismatch	S	?		clock.rs	Reviewer (lenses N / S?): one clause compares the RCC PLL words (PLLCKSELR, PLLCFGR, PLL1DIVR) the declaration decodes to, ST registers (rule 2); the other clauses are generic.
+R:HseCopyNotSolved	S	?		lib.rs:4682	Reviewer (lenses N / S?): as HseClockMismatch, the re-solve compares the RCC PLL words; most coupled clause (tie-break a).
+R:IdleSpelledTwice	V			motor.rs:805	Reviewer (lenses N / V): rule 3 tests the kind string, which is generic; the CCR name is only in the message. Generic PWM idle rule.
+R:UnheldDuringReset	V			pin_devices.rs:2358	Reviewer (lenses S / S?), tie-break c: the reset-pulled pins come from the held MCU_RESET_PULL_UPS list (D, counted there); an input unheld during reset is generic in name and meaning.
+R:PullAboveMcuTolerance	V			pin_devices.rs:1519	Reviewer (lenses S / S?), tie-break c: the limit is the held I/O family row's (FT/TT, counted at its column); a pull above the pin's tolerance is generic.
+R:McuPinStructureUnheld	N			-	Reviewer (lenses S / S?), tie-break c: the structure is read from the held table, so meaning is a missing row (generic); "pin structure" is DS12117's I/O-structure term, an ST name.
+R:UnknownSerialPeripheral	V			serial.rs:188	Reviewer, amendment 3 (both lenses S?, which followed the R2 prompt's wording over amendment 3): the set is the held PERIPHERALS list (D); an unknown instance is generic.
+R:ForeignClockUsarts	V			lib.rs:1195	Reviewer, amendment 3 (both lenses S?, as above): the map's keys must equal the held PERIPHERALS list (D), only matched; the kind judges a missing or extra declared clock, generic.
+lib:McuWire.reset_switch	V			-	Reviewer (lenses N / V): rule 3 tests the key's name, which is generic; a reset push-button is generic. The NRST net name is counted at H:lib:NRST.
+lib:McuWire.foreign_clock	V			-	Reviewer (lenses S? / V), tie-break g: the container is classed on its own meaning, the clocks a foreign firmware programs, generic; its S members are counted on their own.
+motor:ForeignClock.apb1_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): Hz is generic, but which timers this clock feeds is RM0433 Table 8's bus partition, ST's structure; tie-break a. Could be N.
+motor:ForeignClock.apb2_timers_hz	S	?		motor.rs:664	Reviewer (lenses N / S?): as apb1_timers_hz.
+motor:ForeignClock.usarts	S			lib.rs:1210	Reviewer (lenses S? / S), amendment 3: the keys are split by the USART16SEL / USART234578SEL mux by instance number (RM0433 §8.7.21); meaning from the number.
+lib:I2cBus.peripheral	S			solve.rs:1034	Reviewer (lenses N? / S), amendment 3: i2c_kernel_hz sends I2C1-3 to I2C123SEL/pclk1 and I2C4 to I2C4SEL/pclk4 by instance number. The reviewer had read only silicon.rs:351, the judge's reset-only copy.
+lib:SpiBus.peripheral	S			solve.rs:962	Reviewer (lenses N? / S), amendment 3: spi_kernel sends SPI1-3 and SPI4-6 to different kernel muxes by instance number.
+serial:SerialPort.peripheral	S			serial.rs:201	Reviewer (lenses S? / S), amendment 3: kernel_hz takes D2PPRE2 for USART1/6 and D2PPRE1 for the rest, by instance number; vos.rs:291 the same split.
+lib:Specification.acknowledge_unwitnessed	V			-	Reviewer (lenses S / V), tie-break g: the container's own meaning, acknowledgements of unwitnessed ledger rows, is an engine concept; its register and fields keys are S on their own.
+pin_devices:AnalogInput.channel	V			-	Reviewer (lenses N / V), tie-break g: the container's own name and meaning, an ADC channel, are generic; its peripheral and input keys are N on their own.
+H:power-parts.json|power_parts:RawSupport.pins	N	?		names.rs:189	Reviewer (lenses V / N?): keys are DS12117 pin-group names (VCAP, PDR_ON, BOOT0), and names.rs hard-codes VCAP to name nets; ST names over neutral groups (tie-break b). Could be V.
+H:power-parts.json|power_parts:RawMcuIo.pins	N			power_parts.rs:2283	Reviewer (lenses S / N), tie-break g: the map's own content is pin-name keys, shape-checked as P[A-K]0-15 and matched (tie-break b); the structure each maps to is S at RawIoPin.structure.
+H:pin-table|lib:Pin.adc_channels	N			pin_devices.rs:2121	Reviewer (lenses S / N), tie-break b by analogy: ADCn_INPm is split only to match the instance against the held MODELLED_ADCS list; no meaning is derived from the numbers.
+lib:SolvedI2cDevice.peripheral	S			solve.rs:1034	Reviewer, amendment 3 (as lib:I2cBus.peripheral): the instance number selects I2C123SEL/pclk1 or I2C4SEL/pclk4.
+lib:SolvedSpiDevice.peripheral	S			solve.rs:962	Reviewer, amendment 3 (as lib:SpiBus.peripheral): the instance number selects the kernel mux.
+serial:SolvedSerialPort.peripheral	S			serial.rs:201	Reviewer, amendment 3 (as serial:SerialPort.peripheral): the instance number selects the APB prescaler and mux group.
+silicon:SpiFinding.peripheral	S			silicon.rs:147	Reviewer, amendment 3: SpiSelect::of maps the instance to its SPI123SEL/SPI45SEL/SPI6SEL select.
+silicon:I2cFinding.peripheral	N			silicon.rs:351	Reviewer, amendment 3: the judge's i2c_kernel_hz treats I2C1-4 alike (reset pclk), so the name is only matched here.
+motor:SolvedForeignClock.usarts	S			lib.rs:1210	Reviewer, amendment 3 (as motor:ForeignClock.usarts): the keys split by USART16SEL / USART234578SEL.
+H:electrical:FM_PLUS_8MA_RAIL_MILLIVOLTS	D			-	Reviewer, amendment 4: the 2.7 V boundary of DS12117's 8 mA VOL row (electrical.rs:53), a held ST figure; lens 1 had it as a UM10204 limit.
+lib:PinAssignment.peripheral	S	?		solve.rs:962	Reviewer, amendment 3, for consistency with its siblings: the value set holds SPI, I2C and USART instances whose numbers select a kernel mux or APB domain; TIMn and others only match. Could be N.
