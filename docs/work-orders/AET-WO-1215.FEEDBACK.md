@@ -1,7 +1,7 @@
 # AET-WO-1215 FEEDBACK — an older specification is refused with every change it lacks
 
-**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f` and `c1e444dd` merged (specification 23, solved 15). **Branch:** `wo/aet-1215-version-changes`, PR #303.
-**State:** BUILT to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z), with one question still open on D6 (§6).
+**Builder:** Claude (Opus 5.5), 2026-11-22. **Base:** main `ddfa64d6`, then `7c1f369f`, `c1e444dd`, `e3aea224` and `7fc81640` merged (specification 23, solved 16). **Branch:** `wo/aet-1215-version-changes`, PR #303.
+**State:** BUILT to the ruling. It first STOPPED at §1.1 (§7: the README prose and the code disagreed about versions 14, 16 and 20; C1–C3 in §3). The architect ruled every lean of D1–D8 (bus, 2026-11-22T03:05Z; D6's text corrected at 04:00Z, §6).
 **Gates:** §8.
 
 ## 1. What was measured, and how (`spike/1215/`)
@@ -148,11 +148,10 @@ Every bump's work order is the one README §`Specification` names, in order. **(
   - Two existing CLI tests pinned an older version's exact message (`bench_tier1.rs` v13, `outline_tier1.rs` v14). They now compare it to `versions::unsupported(N)`. Seven IR tests put `changes: _` (or `lacked_by(v)`) first in the variant, so `expected: 23` stays the line the renumber kit rewrites.
 - **The next bump** (`1211e`, 24) writes row 24, and the last-row test fails until it does. It also edits by hand the literal lists the WO asks for (`[21, 22, 23]`, `2..=23`) and the `not 23; ` prefixes, which the kit does not rewrite. The kit gains nothing.
 
-## 6. Open: D6's wording
+## 6. D6, settled
 
-- The ruling reads "Version 0 and version 1 are refused as today, with no rows". My lean was version 0 alone, and WO §1.3 requires "a version-1 file lists 2 to 23".
-- Built to the WO: version 1 lists 2 to 23, and version 0 lists none. I asked on the bus (2026-11-22).
-- If version 1 is meant to have no rows too, it is one guard in `lacked_by` and two tests.
+- The ruling's first text (03:05Z) read "Version 0 and version 1 … with no rows". The architect corrected it at 04:00Z: build to the WO. A version-1 file lists rows 2 to 23, and version 0 lists none. That is what is built.
+- Also ruled at 04:00Z: a solved bump (`1211b`, solved 16, merged as main `7fc81640`) is not a row. The README says so beside the table.
 
 ## 7. Adversarial pass (targeted, §5)
 
@@ -184,5 +183,4 @@ Every bump's work order is the one README §`Specification` names, in order. **(
 - **The §7.1 row (D4), for the roadmap, which I do not edit:** "A `validate` refusal, or a key, added without a bump is a bump, or the work order says why not." Evidence:
   - C1: eight optional keys at version 16 (`1303b` `acae53f7`, `1314` `565b32c5`);
   - §3's refusals under unchanged versions (`2b436729`, `2fda6e13`, `fff49a49`, `adb8f61a`, and `1214`'s `SerialBaudReadAsKbaud` at 23).
-- **D6**, §6.
 - **The `lib.rs` doc comment**, §8's finding.
