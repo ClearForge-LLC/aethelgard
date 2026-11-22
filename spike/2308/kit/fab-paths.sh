@@ -21,17 +21,17 @@ for c in "${cases[@]}"; do
   d="$work/$(basename "$spec" .json)"; mkdir -p "$d"
   cp "$repo/$spec" "$d/spec.json"
   if [ -z "$scen" ]; then
-    printf '{"schema_version":1,"name":"baseline","base":"spec.json","expect":"pass","expect_findings":[],"overrides":[]}' > "$d/s0.json"
+    printf '{"schema_version":1,"name":"baseline","base":"spec.json","expect":"pass","expect_findings":[],"overrides":[]}' > "$d/scen-0.json"
   else
     i=0
     for f in "$repo/$scen"/*.json; do
-      python3 -I -c 'import json,sys; v=json.load(open(sys.argv[1])); v["base"]="spec.json"; json.dump(v,open(sys.argv[2],"w"))' "$f" "$d/s$i.json"
+      python3 -I -c 'import json,sys; v=json.load(open(sys.argv[1])); v["base"]="spec.json"; json.dump(v,open(sys.argv[2],"w"))' "$f" "$d/scen-$i.json"
       i=$((i+1))
     done
   fi
   for who in base branch; do
     bin=$base; [ "$who" = branch ] && bin=$branch
-    (cd "$d" && env PATH= "$bin" verify --spec spec.json --scenarios s*.json --fab-out "pkg-$who" > "$who.out" 2>/dev/null; echo $? > "$who.exit")
+    (cd "$d" && env PATH= "$bin" verify --spec spec.json --scenarios scen-*.json --fab-out "pkg-$who" > "$who.out" 2>/dev/null; echo $? > "$who.exit")
   done
   same=same; cmp -s "$d/base.out" "$d/branch.out" || { same=DIFFERS; bad=1; }
   for who in base branch; do
