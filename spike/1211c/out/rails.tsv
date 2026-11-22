@@ -1,0 +1,33 @@
+crates/aethelgard-cli/tests/fixtures/connectors.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`, rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)
+crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json	3	CampaignCoverageShort	I2C bus `B0`, I2C bus `B1`, I2C bus `B2`, I2C bus `B3`, SPI bus `F0`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json	3	CampaignCoverageShort	I2C bus `B0`, I2C bus `B1`, I2C bus `B2`, I2C bus `B3`, SPI bus `F0`, SPI bus `F1`, SPI bus `F2`, SPI bus `F3`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json	3	CampaignCoverageShort	serial port `CMD`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/four-layer-power.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/four-layer.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, serial port `MAVLINK`, serial port `CRSF`, rail `VDD_3V3`, rail `VDD_5V`, rail `VDD_1V8` (`VDD_1V8` has no consumer a judge observes)
+crates/aethelgard-cli/tests/fixtures/hse-external-8.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, serial port `MAVLINK`, serial port `CRSF`, rail `VDD_3V3`, rail `VDD_5V`, rail `VDD_1V8` (`VDD_1V8` has no consumer a judge observes)
+crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `IMU`, rail `VDD_1V8`
+crates/aethelgard-cli/tests/fixtures/logger-4600.json	3	CampaignCoverageShort	I2C bus `TEMP`, I2C bus `BARO`, SPI bus `LOG`, serial port `READOUT`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/motors-dshot600.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/motors-pwm.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/pair-standin.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, serial port `CONSOLE`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, serial port `CONSOLE`, rail `VDD_3V3`, rail `VDD_5V` (`VDD_5V` has no consumer a judge observes), rail `VDD_1V8` (`VDD_1V8` has no consumer a judge observes)
+crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, serial port `MAVLINK`, serial port `CRSF`, rail `VDD_3V3`, rail `VDD_5V`, rail `VDD_1V8` (`VDD_1V8` has no consumer a judge observes)
+crates/aethelgard-cli/tests/fixtures/sentinel-03.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, serial port `CONSOLE`, serial port `CRSF`, serial port `MAVLINK`, rail `VDD_3V3`, rail `VDD_5V`, rail `battery`
+crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, serial port `CONSOLE`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/serial-four.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, serial port `MAVLINK`, serial port `GPS`, serial port `CRSF`, serial port `SBUS`, rail `VDD_3V3`, rail `VDD_5V`
+crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json	2	Infeasible	buses `I2C_BUS_0`, `I2C_BUS_2`, `I2C_BUS_3` cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)
+crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json	2	Infeasible	buses `SPI_BUS_0`, `SPI_BUS_1`, `SPI_BUS_2`, `SPI_BUS_3`, `SPI_BUS_4`, `SPI_BUS_5`, `SPI_BUS_6` cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)
+crates/aethelgard-cli/tests/fixtures/solve/stress.json	3	CampaignCoverageShort	I2C bus `I2C_BUS_0`, I2C bus `I2C_BUS_1`, I2C bus `I2C_BUS_2`, I2C bus `I2C_BUS_3`, SPI bus `SPI_BUS_0`, SPI bus `SPI_BUS_1`, SPI bus `SPI_BUS_2`, SPI bus `SPI_BUS_3`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json	2	Infeasible	buses `SPI_BUS_3`, `SPI_BUS_4`, `SPI_BUS_5` cannot all be placed at once (a minimal set: dropping any one makes the rest placeable)
+crates/aethelgard-cli/tests/fixtures/spi-only.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-cli/tests/fixtures/two-bme.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, rail `VDD_3V3`
+crates/aethelgard-ir/tests/fixtures/d1-drv8876.json	3	CampaignCoverageShort	serial port `CMD`, rail `VDD_3V3`, rail `VMOTOR` (`VMOTOR` has no consumer a judge observes)
+crates/aethelgard-ir/tests/fixtures/d2-drv8833.json	2	PartLimitUndeclared	`pin_devices[0].part_limits.input_pwm_max_hz`: `DRV8833PWPR` takes `A_IN1` at 20000 Hz on `AIN1`, and no held document states its maximum input PWM rate (TI SLVSAR1E DRV8833 January 2011, revised July 2015): declare one with its citation (`1211` §7)
+crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, SPI bus `IMU`, rail `VDD_3V3`, rail `VDD_5V` (`VDD_5V` has no consumer a judge observes), rail `VDD_1V8`, rail `battery`
+examples/invalid-zero-domain.json	2	ZeroNominalVoltage	voltage domain `VDD_3V3` has nominal_millivolts 0
+examples/sentinel-01-ext-bmp581.json	3	CampaignCoverageShort	I2C bus `SENSORS`, I2C bus `EXT`, SPI bus `FLASH`, serial port `CONSOLE`, rail `VDD_3V3`
+examples/sentinel-01-minimal.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, serial port `CONSOLE`, rail `VDD_3V3`
+examples/sentinel-01.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `FLASH`, serial port `CONSOLE`, rail `VDD_3V3`
+examples/sentinel-02-bench.json	3	CampaignCoverageShort	I2C bus `SENSORS`, SPI bus `IMU`, rail `VDD_3V3`

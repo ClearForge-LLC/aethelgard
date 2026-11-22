@@ -1,7 +1,7 @@
 {
   "project": "sentinel-01-bench",
   "specification_sha256": "d89d62e7dd7e835b01268958fd57d18a32c389af3542c23ab38a18b043607260",
-  "topology_sha256": "a154111d01e64827e36a1fcbcd555372e9297655bbb97c5b6f7ba73e2f6a3bf0",
+  "topology_sha256": "f7be51d24a9475d4bfde86a4f16d97bb2005cecc0afa10af83ba6b7e9c989428",
   "scenarios": [
     {
       "scenario": "pullup-3k3",
@@ -45,7 +45,7 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "6adb74ca7ec19800b0f2bbfd93a04a5251db719834c6ae5d691d7626e4fda0ed",
+  "verdict_sha256": "860b121125908811307a92ca8a14064f1402187310162f5828e7ad5449bca2d2",
   "files": {
     "FAB-NOTES.md": "de33fa98b61eed82e81d6be63d554900573cac0427ecd4b278736a56ad8e9ee6",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",

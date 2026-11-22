@@ -25,10 +25,11 @@ use common::*;
 /// version 11), `AET-WO-4230` (`27753b78…c311`, version 12),
 /// `AET-WO-2302` (`25392c25…8747`, version 13), `AET-WO-4400g` (`bcd082c2…8383`,
 /// version 14), `AET-WO-2304b` (`10d566b5…fe1a`, version 15) and
-/// `AET-WO-3305` (`7eccc893…5d31`, version 16) and `AET-WO-2305` (version 17)
-/// each changed the version byte alone.
+/// `AET-WO-3305` (`7eccc893…5d31`, version 16), `AET-WO-2305` (`3ac943f6…673c`,
+/// version 17) and `AET-WO-1211c` (version 18) each changed the version byte
+/// alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "3ac943f66440d5f3cbf4615ca1ab89e034ba4eaa605900a475074b27663c673c";
+    "aec9e66ede9cc6094b016690f5fa40072b9a7f140421d5a4915a182a137f9c59";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -42,8 +43,8 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `1236d811…e1dbd4` until `AET-WO-2302` did, then `64a3c723…5d03e0` until
 /// `AET-WO-4400g` did, then `ada1b631…fdd8f7` until `AET-WO-2304b` did, then
 /// `4b06f855…c3cbf2` until `AET-WO-3305` did, then `f4c133fa…34c693` until
-/// `AET-WO-2305` did.
-const GOLDEN_STATE_HASH: &str = "707d5af0065373665fdd65bafdf59823a7dc34cde763694d9d99aa9425970773";
+/// `AET-WO-2305` did, then `707d5af0…970773` until `AET-WO-1211c` did.
+const GOLDEN_STATE_HASH: &str = "fb34fc9951bdff538c9f522d4365a0a1471fc17f7a1fcbbd087bdad6cc4226d1";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -72,6 +73,11 @@ fn golden_trace_and_state_hash_are_pinned() {
     let at = 1 + 1 + "aethelgard-trace".len();
     assert_eq!(u64::from(bytes[at]), aethelgard_chaos::event::TRACE_VERSION);
     let mut bytes = bytes.clone();
+    bytes[at] = 17;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "3ac943f66440d5f3cbf4615ca1ab89e034ba4eaa605900a475074b27663c673c"
+    );
     bytes[at] = 16;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),

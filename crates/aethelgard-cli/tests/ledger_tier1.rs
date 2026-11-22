@@ -802,7 +802,44 @@ fn a_pin_device_s_input_pull_and_output_level_are_named() {
             "{}",
             r.note
         );
+        // `AET-WO-1211c`: the GPIO witness observes the write and its order.
+        assert_eq!(r.class, Class::Observed, "{}", r.id);
     }
+    // `AET-WO-1211c`: what the twin now runs of ADC3 is observed, the tags it
+    // logs as unhandled ignored by the model, the rest silicon-only.
+    let class = |register: &str, field: &str| {
+        l.rows
+            .iter()
+            .find(|r| r.register == register && r.field == field)
+            .unwrap_or_else(|| panic!("{register}.{field}"))
+            .class
+    };
+    for (register, field, want) in [
+        ("ADC3.PCSEL", "PCSEL", Class::Observed),
+        ("ADC3.SQR1", "SQ1", Class::Observed),
+        ("ADC3.CFGR", "RES", Class::Observed),
+        ("ADC3.CR", "ADCAL", Class::IgnoredByModel),
+        ("ADC3.CFGR", "JQDIS", Class::IgnoredByModel),
+        ("ADC3.CR", "DEEPPWD", Class::SiliconOnly),
+        ("ADC3.CR", "ADVREGEN", Class::SiliconOnly),
+    ] {
+        assert_eq!(class(register, field), want, "{register}.{field}");
+    }
+    // The twin's limits on D1's pin device, named (`1211` §4 as reasons).
+    let limits: Vec<String> = ledger::twin_limits(&t)
+        .unwrap()
+        .into_iter()
+        .map(|r| r.id)
+        .collect();
+    for id in [
+        "PIN.DRV_NFAULT",
+        "ADC.DRV_IPROPI",
+        "IDLE.DRV_EN",
+        "IDLE.DRV_PH",
+    ] {
+        assert!(limits.iter().any(|l| l == id), "{id}: {limits:?}");
+    }
+    assert!(!limits.iter().any(|l| l == "IDLE.SERVO1"), "{limits:?}");
     let mut fields = register_fields(&t, &table).unwrap();
     let f = fields
         .iter_mut()

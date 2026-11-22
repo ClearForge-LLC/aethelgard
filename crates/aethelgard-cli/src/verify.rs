@@ -383,6 +383,10 @@ struct Gate {
     #[serde(skip_serializing_if = "Option::is_none")]
     cover_count: Option<u64>,
     findings: Vec<Value>,
+    /// A per-item gate's items, each with its own verdict (`AET-WO-1211c`,
+    /// `2306`'s rule: `judged` counts them); absent on every other gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    items: Option<Vec<Value>>,
 }
 
 #[derive(Serialize)]
@@ -609,7 +613,191 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         harness_provenance: v["harness_provenance"].as_str().map(str::to_owned),
         cover_count: v["cover_count"].as_u64(),
         findings: v["findings"].as_array().cloned().unwrap_or_default(),
+        items: None,
     }
+}
+
+/// The finding kinds each per-item gate carries from `simulate`'s line.
+const GPIO_KINDS: [&str; 3] = [
+    aethelgard_chaos::campaign::GPIO_INPUT_ASSERTED_FINDING,
+    aethelgard_chaos::campaign::GPIO_MISMATCH_FINDING,
+    aethelgard_chaos::campaign::GPIO_UNWITNESSED_FINDING,
+];
+const ADC_KINDS: [&str; 2] = [
+    aethelgard_chaos::campaign::ADC_MISMATCH_FINDING,
+    aethelgard_chaos::campaign::ADC_UNWITNESSED_FINDING,
+];
+const BRIDGE_KINDS: [&str; 3] = [
+    aethelgard_chaos::campaign::MOTOR_LEVEL_FINDING,
+    aethelgard_chaos::campaign::GPIO_MISMATCH_FINDING,
+    aethelgard_chaos::campaign::GPIO_UNWITNESSED_FINDING,
+];
+
+/// A pin device's per-item gates (`AET-WO-1211c`), from `simulate`'s line:
+/// `gpio`, one item per GPIO signal; `adc`, one per ADC input; `bridge`, one
+/// per bridge, its inputs' static levels and its enable's write. Each item
+/// carries its own verdict, and `judged` counts the items (`2306`: never a
+/// whole input counted once). A gate is present only when it has an item,
+/// so a board without a pin device reports as before. Each takes
+/// `simulate`'s exit, tools, sandbox and input: it reads that run.
+fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
+    let v = sim.last();
+    let boot = &v["boot"];
+    let ok = |w: &Value| w["status"] == "witnessed";
+    let gpio: Vec<Value> = boot["gpio"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|g| {
+            // An input is named, never judged (D5, ruled; adversarial F4):
+            // no firmware path reads it, so its read-back is the twin's own
+            // stimulus. An input read at its active level still fails the
+            // gate, by its finding.
+            if g["direction"] == "input" {
+                return serde_json::json!({
+                    "net": g["net"],
+                    "direction": "input",
+                    "status": g["status"],
+                    "verdict": "not_judged",
+                    "reason": INPUT_NOT_JUDGED,
+                });
+            }
+            serde_json::json!({
+                "net": g["net"],
+                "direction": g["direction"],
+                "status": g["status"],
+                "verdict": if ok(g) { "pass" } else { "fail" },
+            })
+        })
+        .collect();
+    let adc: Vec<Value> = boot["adc"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|a| {
+            serde_json::json!({
+                "net": a["net"],
+                "status": a["status"],
+                "expected": a["expected"],
+                "observed": a["observed"],
+                "verdict": if ok(a) { "pass" } else { "fail" },
+            })
+        })
+        .collect();
+    // A bridge input is a motor output (its level witness) or a GPIO output
+    // (its write's witness); the enable is a GPIO output.
+    let status_of = |net: &str| -> Value {
+        let motor = boot["motor"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|m| m["label"] == net)
+            .map(|m| m["level"]["status"].clone());
+        let gpio = boot["gpio"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|g| g["net"] == net)
+            .map(|g| g["status"].clone());
+        motor.or(gpio).unwrap_or(Value::Null)
+    };
+    let bridge: Vec<Value> = bridges
+        .iter()
+        .map(|b| {
+            let inputs: Vec<Value> = b
+                .inputs
+                .iter()
+                .map(|n| serde_json::json!({"net": n, "status": status_of(n)}))
+                .collect();
+            let enable = b
+                .enable
+                .as_ref()
+                .map(|n| serde_json::json!({"net": n, "status": status_of(n)}));
+            let pass = inputs
+                .iter()
+                .chain(&enable)
+                .all(|i| i["status"] == "witnessed");
+            serde_json::json!({
+                "id": b.id,
+                "inputs": inputs,
+                "enable": enable,
+                "verdict": if pass { "pass" } else { "fail" },
+            })
+        })
+        .collect();
+    let findings = |kinds: &[&str]| -> Vec<Value> {
+        v["findings"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|f| f["kind"].as_str().is_some_and(|k| kinds.contains(&k)))
+            .cloned()
+            .collect()
+    };
+    [
+        ("gpio", gpio, findings(&GPIO_KINDS)),
+        ("adc", adc, findings(&ADC_KINDS)),
+        ("bridge", bridge, findings(&BRIDGE_KINDS)),
+    ]
+    .into_iter()
+    .filter(|(_, items, _)| !items.is_empty())
+    .map(|(name, items, findings)| Gate {
+        gate: name,
+        harness: None,
+        scenario: None,
+        verdict: if items.iter().all(|i| i["verdict"] != "fail")
+            && findings.iter().all(|f| f["severity"] != "error")
+        {
+            "pass"
+        } else {
+            "fail"
+        },
+        scope: Some(Scope::of(
+            items
+                .iter()
+                .filter(|i| i["verdict"] != "not_judged")
+                .count() as u64,
+            INPUT_NOT_JUDGED,
+        )),
+        exit_code: Some(sim.code),
+        tool_version: v["tool"]["version"].as_str().map(str::to_owned),
+        uid_boundary: Some(v["sandbox"]["uid_boundary"] == true),
+        uid_boundary_unmet: v["sandbox"]["uid_boundary_unmet"]
+            .as_str()
+            .map(str::to_owned),
+        input_sha256: v["input"]["sha256"].as_str().map(str::to_owned),
+        harness_provenance: None,
+        cover_count: None,
+        findings,
+        items: Some(items),
+    })
+    .collect()
+}
+
+/// Why a pin device's input is never a judged item (D5, ruled).
+const INPUT_NOT_JUDGED: &str = "no generated firmware path reads a pin device's input, so its read-back is the twin's own stimulus (INV-07; D5, ruled)";
+
+/// One bridge of a pin device, as the per-item gate judges it: its id, its
+/// inputs' nets (motor outputs or GPIO outputs) and its enable's net.
+#[derive(Debug, Clone)]
+struct Bridge {
+    id: String,
+    inputs: Vec<String>,
+    enable: Option<String>,
+}
+
+/// Every bridge of `topology`'s pin devices, by device and id.
+fn bridges(topology: &aethelgard_ir::SolvedTopology) -> Vec<Bridge> {
+    topology
+        .pin_devices
+        .values()
+        .flat_map(|d| d.bridges.iter())
+        .map(|(id, b)| Bridge {
+            id: id.clone(),
+            inputs: b.inputs.clone(),
+            enable: b.enable.as_ref().map(|e| e.net.clone()),
+        })
+        .collect()
 }
 
 /// The campaign's `uid_boundary`: true only when every run line says `true`.
@@ -632,6 +820,7 @@ fn not_run(name: &'static str) -> Gate {
         harness_provenance: None,
         cover_count: None,
         findings: Vec::new(),
+        items: None,
     }
 }
 
@@ -722,6 +911,9 @@ enum Target {
     /// The battery (`AET-WO-2304b` §1.10): a variant of its own, so no
     /// domain id can collide with it.
     Battery,
+    /// A pin device's ADC input, by net (`AET-WO-1211c`): reached by an
+    /// `analog_value` other than its idle's, which the run must survive.
+    Analog(String),
 }
 
 impl Target {
@@ -732,6 +924,7 @@ impl Target {
             Self::Serial(l) => format!("serial port `{l}`"),
             Self::Rail(r) => format!("rail `{r}`"),
             Self::Battery => "rail `battery`".to_owned(),
+            Self::Analog(n) => format!("ADC input `{n}`"),
         }
     }
 }
@@ -908,6 +1101,35 @@ fn stress(
         // A rail out of band is detected by its consumers' mechanism: E3 for
         // serial ports, E2 for SPI devices, its subjects theirs
         // (`AET-WO-2304b` §1.10). A rail the checks refuse stresses nothing.
+        // A held input (`AET-WO-1211c`): at the level its pull holds it, it
+        // changes nothing; at the other it changes the run but reaches no
+        // target (D5, ruled: no generated firmware path reads an input, so
+        // its gate would read back the twin's own stimulus, `INV-07`).
+        Override::PinHeld { net, level } => {
+            let plan = aethelgard_twin::pins::plan(topology, &Default::default()).ok();
+            // A hold the twin's plan refuses (an output, an unknown net) is
+            // no baseline: the campaign refuses its run (adversarial F10).
+            let Some(i) = plan
+                .as_ref()
+                .and_then(|p| p.inputs.iter().find(|i| &i.net == net))
+            else {
+                return Some((None, None));
+            };
+            (i.high != (*level == aethelgard_chaos::record::Level::High)).then_some((None, None))
+        }
+        // A set ADC value other than the idle's stresses its input: the run
+        // must convert and read it (`AET-WO-1211c`).
+        Override::AnalogValue { net, millivolts } => {
+            let plan = aethelgard_twin::pins::plan(topology, &Default::default()).ok();
+            let Some(a) = plan
+                .as_ref()
+                .and_then(|p| p.analog.iter().find(|a| &a.net == net))
+            else {
+                return Some((None, None));
+            };
+            (u64::from(*millivolts) * 1000 != a.microvolts)
+                .then(|| (Some(Target::Analog(net.clone())), None))
+        }
         Override::RailOutOfBand { domain } => {
             let r = crate::campaign::rendered(spec, domain).ok()?;
             let (kinds, rule, subjects) = if r.devices.is_empty() {
@@ -1016,6 +1238,7 @@ fn classify(
                     | Override::SpiDeviceAbsent { .. }
                     | Override::SerialRxOpen { .. }
                     | Override::RailOutOfBand { .. }
+                    | Override::PinHeld { .. }
             )
         });
         // A droop that crossed no BOR threshold covers nothing, as an eased
@@ -1132,9 +1355,43 @@ fn coverage(
             c.unmet.push(target.name());
         }
     }
+    // A pin device's ADC inputs and inputs (`AET-WO-1211c`), in the
+    // specification's order, from the twin's plan; a plan the twin refuses
+    // leaves `simulate` to refuse the board, and covers nothing here. An
+    // input is no target (D5, ruled): no generated firmware path reads it,
+    // so a held input's gate would read back the twin's own stimulus
+    // (`INV-07`); it is named, as a bus no device uses (ruled (c)).
+    if let Ok(plan) = aethelgard_twin::pins::plan(topology, &Default::default()) {
+        for a in &plan.analog {
+            let target = Target::Analog(a.net.clone());
+            if !covered.contains(&target) {
+                c.unmet.push(target.name());
+            }
+        }
+        for i in &plan.inputs {
+            c.no_device.push(format!(
+                "input `{}` (no generated firmware path reads it, so a held input's gate would read back the twin's own stimulus, INV-07; a target when firmware responds to it)",
+                i.net
+            ));
+        }
+    }
+    // A bridge (D2, ruled): no fault kind reaches its outputs, so it is
+    // named, never met, and does not block, as a bus no device uses.
+    for (reference, d) in &topology.pin_devices {
+        for id in d.bridges.keys() {
+            c.no_device.push(format!(
+                "bridge `{id}` of `{reference}` (no fault kind reaches a bridge's outputs: the twin models no pin device; AET-WO-4600 F3)"
+            ));
+        }
+    }
     for v in &spec.voltage_domains {
         let target = Target::Rail(v.id.clone());
         if covered.contains(&target) {
+            continue;
+        }
+        // A motor rail (D1, ruled (ii)): named, never met, never blocking.
+        if let Some(why) = motor_rail(spec, topology, &v.id) {
+            c.no_device.push(format!("{} ({why})", target.name()));
             continue;
         }
         // A rail no fault can reach says why (`AET-WO-2304b` §1.10); the
@@ -1165,6 +1422,53 @@ fn coverage(
         c.unmet.push(Target::Battery.name());
     }
     c
+}
+
+/// Why `domain` is a motor rail no fault can reach (`AET-WO-1211c` D1,
+/// ruled (ii)): a pin device's supply pin is on it, and nothing else consumes
+/// it but connector pins: no serial port, SPI or I2C device, I2C bus,
+/// regulator or declared load, and it is not the MCU's supply.
+/// `None` for every other domain.
+fn motor_rail(
+    spec: &aethelgard_ir::Specification,
+    topology: &aethelgard_ir::SolvedTopology,
+    domain: &str,
+) -> Option<String> {
+    if domain == spec.mcu.supply {
+        return None;
+    }
+    // The pin devices' supply pins, as solved (`AET-WO-1211c` D7, `RUL-16`).
+    let pins: Vec<String> = topology
+        .pin_devices
+        .iter()
+        .flat_map(|(reference, d)| {
+            d.supplies
+                .iter()
+                .filter(|(_, v)| *v == domain)
+                .map(move |(pin, _)| format!("{reference}.{pin}"))
+        })
+        .collect();
+    if pins.is_empty() {
+        return None;
+    }
+    let r = aethelgard_ir::power::rail_consumers(spec, domain);
+    let loaded = spec
+        .power
+        .iter()
+        .any(|p| p.loads.iter().any(|l| l.domain == domain));
+    (r.serial_rx.is_empty()
+        && r.tx_only.is_empty()
+        && r.spi_devices.is_empty()
+        && r.i2c_devices.is_empty()
+        && r.i2c_buses.is_empty()
+        && r.regulators.is_empty()
+        && !loaded)
+        .then(|| {
+            format!(
+                "it supplies only pin devices' supply pins ({}), and the twin models no pin device (device_unmodelled): no fault on it reaches anything the twin observes; judged on the bench",
+                pins.join(", ")
+            )
+        })
 }
 
 /// Whether a failed run is its seeded fault detected by the named mechanism
@@ -1568,6 +1872,7 @@ pub fn verify(
             spec: &spec_sha256,
             harnesses: harnesses.clone(),
             boot_time: format!("{}ns", aethelgard_twin::boot::MAX_VIRTUAL_NS),
+            bridges: bridges(&topology),
         },
         &expected,
     ) {
@@ -1787,6 +2092,8 @@ struct Want<'a> {
     /// The `--for` `simulate` boots for: the board's window, as the
     /// campaign's (`AET-WO-4300a` D1).
     boot_time: String,
+    /// The pin devices' bridges (`AET-WO-1211c`), for the bridge gate.
+    bridges: Vec<Bridge>,
 }
 
 fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
@@ -1923,6 +2230,7 @@ fn run_gates(
     )?;
     bound("simulate", &sim, want, &elf, "")?;
     report.gates.push(gate_report("simulate", None, &sim));
+    report.gates.extend(pin_gates(&sim, &want.bridges));
 
     if expected.is_empty() {
         return Ok(());
@@ -2970,6 +3278,7 @@ mod tests {
             spec: "spec",
             harnesses: Vec::new(),
             boot_time: "100000000ns".to_owned(),
+            bridges: Vec::new(),
         }
     }
 
@@ -3040,6 +3349,301 @@ mod tests {
         assert_eq!(
             harnesses(text),
             ["proofs::every_valid_sequence", "proofs::i2c1_transfer"]
+        );
+    }
+
+    // ---- AET-WO-1211c: a pin device's coverage and per-item gates.
+
+    const D1: &str = "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json";
+
+    fn v5(
+        expect_pass: bool,
+        findings: &[&str],
+        overrides: Value,
+    ) -> aethelgard_chaos::campaign::Scenario {
+        aethelgard_chaos::campaign::Scenario::parse(
+            json!({"schema_version": 5, "name": "x", "base": "b.json",
+                "expect": if expect_pass { "pass" } else { "fail" },
+                "expect_findings": findings, "overrides": overrides})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap()
+    }
+
+    /// A held nFAULT seeds no target at its active level (low): D5, ruled, no
+    /// firmware reads it, so its gate would read back the twin's own
+    /// stimulus. It changes nothing at its pull's level (high, R3 to
+    /// VDD_3V3). A set IPROPI other than its idle's 0 V is a tolerable stress
+    /// of its ADC input, and 0 mV changes nothing.
+    #[test]
+    fn a_held_input_seeds_nothing_and_a_set_adc_value_its_input() {
+        let (spec, t) = solved(D1);
+        let held = |level: &str, pass: bool, f: &[&str]| {
+            classify(
+                &spec,
+                &t,
+                &v5(
+                    pass,
+                    f,
+                    json!([{"pin_held": {"net": "DRV_NFAULT", "level": level}}]),
+                ),
+            )
+        };
+        assert_eq!(
+            held("low", false, &["pin_device_input_asserted"]),
+            Seeded::Other
+        );
+        assert_eq!(held("high", true, &[]), Seeded::Baseline);
+        // A hold or a value the twin refuses is no baseline (adversarial
+        // F10): the campaign refuses its run.
+        for o in [
+            json!({"pin_held": {"net": "DRV_NSLEEP", "level": "high"}}),
+            json!({"pin_held": {"net": "NOPE", "level": "low"}}),
+            json!({"analog_value": {"net": "NOPE", "millivolts": 1}}),
+        ] {
+            assert_ne!(
+                classify(&spec, &t, &v5(true, &[], json!([o.clone()]))),
+                Seeded::Baseline,
+                "{o}"
+            );
+        }
+        // Held low and expected to pass: never a fault to survive.
+        assert_eq!(
+            held("low", true, &[]),
+            Seeded::Tolerable(Vec::new(), Vec::new())
+        );
+        let set = |mv: u32| {
+            classify(
+                &spec,
+                &t,
+                &v5(
+                    true,
+                    &[],
+                    json!([{"analog_value": {"net": "DRV_IPROPI", "millivolts": mv}}]),
+                ),
+            )
+        };
+        assert_eq!(
+            set(2850),
+            Seeded::Tolerable(vec![Target::Analog("DRV_IPROPI".into())], Vec::new())
+        );
+        assert_eq!(set(0), Seeded::Baseline);
+    }
+
+    /// D1's coverage: its ADC input is a target, unmet until a fault covers
+    /// it; its input, its bridge and its motor rail are named and never
+    /// block (D5, D2, D1, ruled); the rest is as every board's.
+    #[test]
+    fn a_pin_device_s_adc_input_is_a_target_and_its_input_bridge_and_motor_rail_are_named() {
+        let (spec, t) = solved(D1);
+        let base = || classify(&spec, &t, &v5(true, &[], json!([])));
+        let c = coverage(&spec, &t, &[base()], None);
+        assert_eq!(
+            c.unmet,
+            [
+                "serial port `CMD`",
+                "ADC input `DRV_IPROPI`",
+                "rail `VDD_3V3`"
+            ]
+        );
+        assert_eq!(c.no_device.len(), 3, "{:?}", c.no_device);
+        for (k, start) in [
+            "input `DRV_NFAULT` (no generated firmware path reads it",
+            "bridge `M1` of `U2`",
+            "rail `VMOTOR` (it supplies only pin devices' supply pins (U2.VM)",
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            assert!(c.no_device[k].starts_with(start), "{:?}", c.no_device);
+        }
+        let held = classify(
+            &spec,
+            &t,
+            &v5(
+                false,
+                &["pin_device_input_asserted"],
+                json!([{"pin_held": {"net": "DRV_NFAULT", "level": "low"}}]),
+            ),
+        );
+        let set = classify(
+            &spec,
+            &t,
+            &v5(
+                true,
+                &[],
+                json!([{"analog_value": {"net": "DRV_IPROPI", "millivolts": 2850}}]),
+            ),
+        );
+        let c = coverage(&spec, &t, &[base(), held.clone(), set.clone()], None);
+        assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
+        // A survived value covers its input with no baseline too (ruled (a)).
+        let c = coverage(&spec, &t, &[held, set], None);
+        assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
+    }
+
+    /// The motor rail's predicate catches a pin device's supply alone: none
+    /// of the five committed rails with no consumer a judge observes (none
+    /// feeds a pin device; `spike/1211c/RESULTS.md` P3d), and not a domain a
+    /// serial port's RX line, a regulator or an SPI device is on.
+    #[test]
+    fn the_motor_rail_is_a_pin_device_s_supply_alone() {
+        let (spec, d1) = solved(D1);
+        assert!(motor_rail(&spec, &d1, "VMOTOR").is_some());
+        assert!(motor_rail(&spec, &d1, "VDD_3V3").is_none());
+        for (path, domain) in [
+            (
+                "crates/aethelgard-cli/tests/fixtures/connectors.json",
+                "VDD_5V",
+            ),
+            (
+                "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
+                "VDD_5V",
+            ),
+            (
+                "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json",
+                "VDD_1V8",
+            ),
+            (
+                "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json",
+                "VDD_5V",
+            ),
+            (
+                "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json",
+                "VDD_1V8",
+            ),
+        ] {
+            let (spec, t) = solved(path);
+            assert!(motor_rail(&spec, &t, domain).is_none(), "{path} {domain}");
+        }
+        // The same rail with an SPI device on it is no motor rail.
+        let mut v: Value = serde_json::from_slice(
+            &std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(D1)).unwrap(),
+        )
+        .unwrap();
+        v["mcu"]["supply"] = json!("VDD_3V3");
+        let mut spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        assert!(motor_rail(&spec, &d1, "VMOTOR").is_some());
+        spec.mcu.supply = "VMOTOR".into();
+        assert!(
+            motor_rail(&spec, &d1, "VMOTOR").is_none(),
+            "the MCU's supply"
+        );
+        // A declared load on it is a consumer: no motor rail.
+        let read = |path: &str| -> Value {
+            serde_json::from_slice(
+                &std::fs::read(
+                    Path::new(env!("CARGO_MANIFEST_DIR"))
+                        .join("../..")
+                        .join(path),
+                )
+                .unwrap(),
+            )
+            .unwrap()
+        };
+        let mut v = read(D1);
+        v["power"] =
+            read("crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json")["power"].clone();
+        let unloaded: aethelgard_ir::Specification = serde_json::from_value(v.clone()).unwrap();
+        assert!(
+            motor_rail(&unloaded, &d1, "VMOTOR").is_some(),
+            "no load on it yet"
+        );
+        v["power"]["loads"][0]["domain"] = json!("VMOTOR");
+        let loaded: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        assert!(motor_rail(&loaded, &d1, "VMOTOR").is_none(), "a load on it");
+    }
+
+    fn sim_line(gpio: Value, adc: Value, motor: Value, findings: Value) -> Ran {
+        Ran {
+            code: 0,
+            lines: vec![json!({"verdict": "pass", "tool": {"version": "r"},
+                "sandbox": {"uid_boundary": true}, "input": {"sha256": "e"},
+                "boot": {"gpio": gpio, "adc": adc, "motor": motor}, "findings": findings})],
+        }
+    }
+
+    /// The per-item gates count one per item, never the whole input once
+    /// (`2306`), pass only when every item does, and are absent with no item.
+    #[test]
+    fn the_per_item_gates_count_each_signal_and_fail_on_one() {
+        let gpio = json!([
+            {"net": "DRV_NSLEEP", "direction": "output", "status": "witnessed"},
+            {"net": "DRV_NFAULT", "direction": "input", "status": "witnessed", "read": "high", "active": "low"}
+        ]);
+        let adc =
+            json!([{"net": "DRV_IPROPI", "status": "witnessed", "expected": 0, "observed": 0}]);
+        let motor = json!([
+            {"label": "DRV_EN", "level": {"status": "witnessed"}},
+            {"label": "DRV_PH", "level": {"status": "witnessed"}}
+        ]);
+        let bridge = [Bridge {
+            id: "M1".into(),
+            inputs: vec!["DRV_EN".into(), "DRV_PH".into()],
+            enable: Some("DRV_NSLEEP".into()),
+        }];
+        let gates = pin_gates(
+            &sim_line(gpio.clone(), adc.clone(), motor.clone(), json!([])),
+            &bridge,
+        );
+        let summary: Vec<(&str, &str, u64)> = gates
+            .iter()
+            .map(|g| (g.gate, g.verdict, g.scope.as_ref().unwrap().judged))
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("gpio", "pass", 1),
+                ("adc", "pass", 1),
+                ("bridge", "pass", 1)
+            ]
+        );
+        // nFAULT is named, never judged (D5; adversarial F4).
+        let items = gates[0].items.as_ref().unwrap();
+        assert_eq!(items[1]["verdict"], "not_judged");
+        assert!(items[1]["reason"].as_str().unwrap().contains("INV-07"));
+        // A gate whose only GPIO signal is an input judged nothing, and says
+        // why (2306).
+        let only = pin_gates(
+            &sim_line(
+                json!([gpio[1].clone()]),
+                adc.clone(),
+                motor.clone(),
+                json!([]),
+            ),
+            &[],
+        );
+        let scope = serde_json::to_value(only[0].scope.as_ref().unwrap()).unwrap();
+        assert_eq!(
+            (scope["judged"].clone(), scope["nothing_in_scope"].clone()),
+            (json!(0), json!(true))
+        );
+        // nFAULT read at its active level fails the gate, by its finding.
+        let mut asserted = gpio.clone();
+        asserted[1]["read"] = json!("low");
+        let f = json!([{"kind": "pin_device_input_asserted", "severity": "error", "message": "m"},
+            {"kind": "boot_word_missing", "severity": "error", "message": "m"}]);
+        let gates = pin_gates(&sim_line(asserted, adc.clone(), motor.clone(), f), &bridge);
+        assert_eq!(gates[0].verdict, "fail");
+        let items = gates[0].items.as_ref().unwrap();
+        assert_eq!(
+            (items[0]["verdict"].clone(), items[1]["verdict"].clone()),
+            (json!("pass"), json!("not_judged"))
+        );
+        assert_eq!(gates[0].findings.len(), 1, "its own kinds only");
+        // A bridge input's level unwitnessed fails the bridge.
+        let mut still = motor.clone();
+        still[1]["level"]["status"] = json!("mismatch");
+        let gates = pin_gates(&sim_line(gpio, adc, still, json!([])), &bridge);
+        assert_eq!(gates[2].verdict, "fail");
+        // No pin device: no gate.
+        assert!(
+            pin_gates(
+                &sim_line(json!(null), json!(null), json!([]), json!([])),
+                &[]
+            )
+            .is_empty()
         );
     }
 }

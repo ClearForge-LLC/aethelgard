@@ -127,6 +127,8 @@ fn solved(label: &str, channel: u8, pin: &str, ccr: u32) -> Record {
         arr: 2499,
         ccr,
         pwm: Some((400, 1000, 2000)),
+        idle: Some(aethelgard_chaos::record::MotorIdle::PulseUs(1000)),
+        resolution_ps: Some(1_000_000),
     }
 }
 
@@ -684,6 +686,8 @@ fn dshot_with(
             arr: 106,
             ccr: 40,
             pwm: None,
+            idle: None,
+            resolution_ps: None,
         },
     );
     let i = after(&r, &|x| matches!(x, Record::MotorTimingCheck { .. }));

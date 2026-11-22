@@ -1,0 +1,93 @@
+Renode v1.17.0
+  build: 1.17.0+20260907gitf1dd1b4af.aet1605
+  build type: Release
+  runtime: .NET 8.0.12
+[04:10:49.6529] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) include @/repo/spike/1211c/kit/d1-stock-plain.resc;  quit
+[04:10:49.6919] [INFO] Including script(s): /repo/spike/1211c/kit/d1-stock-plain.resc
+[04:10:49.8254] [INFO] System bus created.
+[04:10:50.5099] [INFO] Pseudorandom Number Generator was created with seed: 1
+[04:10:50.5817] [INFO] sysbus: Loading block of 64 bytes length at 0x8000000.
+[04:10:50.5843] [INFO] sysbus: Loading block of 2176 bytes length at 0x8000040.
+[04:10:50.5843] [INFO] sysbus: Loading block of 52 bytes length at 0x80008C0.
+[04:10:50.5843] [INFO] sysbus: Loading block of 8 bytes length at 0x20000000.
+[04:10:50.5844] [INFO] sysbus: Loading block of 4 bytes length at 0x80008F4.
+M4 GPIOA IDR at t=0 (PA11 held low)
+[04:10:50.9413] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+0x00000000
+[04:10:50.9462] [INFO] cpu: Setting initial values: PC = 0x8000041, SP = 0x20020000.
+[04:10:50.9475] [INFO] machine-0: Machine started.
+[04:10:50.9825] [INFO] machine-0: Machine paused.
+M4d GPIOA IDR at 10 ms, then 7 more instants 7 us apart (PA8 bit 8, PA9 bit 9, PA11 bit 11)
+0x00000000
+[04:10:50.9837] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:10:50.9846] [INFO] machine-0: Machine resumed.
+[04:10:50.9846] [INFO] machine-0: Machine paused.
+[04:10:50.9849] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+0x00000000
+[04:10:50.9854] [INFO] machine-0: Machine resumed.
+[04:10:50.9855] [INFO] machine-0: Machine paused.
+0[04:10:50.9857] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+x00000000
+[04:10:50.9860] [INFO] machine-0: Machine resumed.
+[04:10:50.9860] [INFO] machine-0: Machine paused.
+0x00000000
+[04:10:50.9862] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+[04:10:50.9867] [INFO] machine-0: Machine resumed.
+[04:10:50.9867] [INFO] machine-0: Machine paused.
+0[04:10:50.9869] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+x00000000
+[04:10:50.9871] [INFO] machine-0: Machine resumed.
+[04:10:50.9872] [INFO] machine-0: Machine paused.
+[04:10:50.9874] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+0x00000000
+[04:10:50.9876] [INFO] machine-0: Machine resumed.
+[04:10:50.9876] [INFO] machine-0: Machine paused.
+0[04:10:50.9878] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+x00000000
+[04:10:50.9881] [INFO] machine-0: Machine resumed.
+[04:10:51.0540] [INFO] machine-0: Machine paused.
+M4a boot word candidates: 0x20000000 (DTCM), 0x24000000 (AXI SRAM)
+0x2100B0F1
+0x00000000
+M4c GPIOA MODER, PUPDR, ODR, IDR
+0x00000000
+[04:10:51.0564] [INFO] gpioPortA: ReadUInt32 from 0x0 (Mode), returned 0x0
+0x00000000
+[04:10:51.0574] [INFO] gpioPortA: ReadUInt32 from 0xC (PullUpPullDown), returned 0x0
+0x00000000
+[04:10:51.0577] [INFO] gpioPortA: ReadUInt32 from 0x14 (OutputData), returned 0x0
+0x[04:10:51.0579] [INFO] gpioPortA: ReadUInt32 from 0x10 (InputData), returned 0x0
+00000000
+M4e ADC3 CR, ISR, CFGR, PCSEL, SQR1, DR
+0x0FC00000
+[04:10:51.0584] [INFO] adc3: ReadUInt32 from 0x8 (Control), returned 0xFC00000
+0x00000000
+[04:10:51.0586] [INFO] adc3: ReadUInt32 from 0x0 (InterruptAndStatus), returned 0x0
+0x[04:10:51.0590] [INFO] adc3: ReadUInt32 from 0xC (Configuration1), returned 0x0
+00000000
+0x000000[04:10:51.0592] [INFO] adc3: ReadUInt32 from 0x1C (ChannelPreselection), returned 0x0
+00
+0x00000000
+[04:10:51.0594] [INFO] adc3: ReadUInt32 from 0x30 (RegularSequence1), returned 0x0
+0x000000[04:10:51.0606] [INFO] adc3: ReadUInt32 from 0x40 (DataRegister), returned 0x0
+00
+M4d TIM1 CR1, CCR1, CCR2, ARR, PSC
+0x[04:10:51.0619] [INFO] timer1: ReadUInt32 from 0x0 (Control1), returned 0x0
+00000000
+0x000[04:10:51.0625] [INFO] timer1: ReadUInt32 from 0x34 (CaptureOrCompare1), returned 0xFFFF
+0FFFF
+0x0[04:10:51.0627] [INFO] timer1: ReadUInt32 from 0x38 (CaptureOrCompare2), returned 0xFFFF
+000FFFF
+0x0000FFFF[04:10:51.0629] [INFO] timer1: ReadUInt32 from 0x2C (AutoReload), returned 0xFFFF
+
+0x000[04:10:51.0631] [INFO] timer1: ReadUInt32 from 0x28 (Prescaler), returned 0x0
+00000
+cpu PC
+0x800015a
+M4-END
+Renode is quitting
+[04:10:51.1024] [INFO] machine-0: Disposed.
+exit 0

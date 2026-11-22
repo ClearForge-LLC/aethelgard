@@ -171,7 +171,7 @@ fn a_battery_sag_and_a_rail_out_of_band_parse_under_version_4_only() {
         assert!(e.message.contains("schema_version 4"), "{e}");
     }
     assert_eq!(
-        parse(&scenario(5, json!([]))).unwrap_err().kind,
+        parse(&scenario(6, json!([]))).unwrap_err().kind,
         "UnsupportedSchemaVersion"
     );
 }

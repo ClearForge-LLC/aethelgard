@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"CampaignCoverageShort","id":null,"message":"no package: the campaign covers no fault on serial port `CMD`, rail `VDD_3V3`, rail `VMOTOR` (`VMOTOR` has no consumer a judge observes)"}}

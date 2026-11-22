@@ -334,6 +334,14 @@ pub struct Boot {
     /// reports as before.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub serial: Vec<SerialReport>,
+    /// One per GPIO signal of a pin device, outputs then inputs, in the
+    /// specification's order (`AET-WO-1211c`); absent from the JSON when the
+    /// board has none, so such a board reports as before.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub gpio: Vec<GpioReport>,
+    /// One per ADC input of a pin device (`AET-WO-1211c`); absent as `gpio`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub adc: Vec<AdcReport>,
     /// The instant of the boot word's write in the boot the judge reads, as
     /// the CLI's hook observed it (`AET-WO-2302`): the serial frames go in
     /// one quantum after it. `null` until Renode has run, or when none was
@@ -387,9 +395,83 @@ pub struct MotorReport {
     pub ccr: u32,
     pub silicon: aethelgard_ir::motor::SiliconTiming,
     pub twin: TwinReport,
+    /// An output idling at a static level, judged by its level, not its
+    /// period (`AET-WO-1211c`); absent for every other output, which
+    /// reports as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub level: Option<LevelReport>,
     /// What the verdict says of the pin's output speed (`AET-WO-4300a` Q3,
     /// ruled: owned by `AET-WO-4500`'s backlog).
     pub speed: &'static str,
+}
+
+/// An output at a static level, as the twin showed it (`AET-WO-1211c`, kind
+/// 37): its declared idle, the instant from which it must be still, the
+/// edges after it, and the observer's level at the window's end.
+#[derive(Serialize)]
+pub struct LevelReport {
+    pub idle: &'static str,
+    pub settle_ns: Option<u64>,
+    pub rises_after: Option<u64>,
+    pub falls_after: Option<u64>,
+    pub end_level: Option<&'static str>,
+    pub status: Option<&'static str>,
+}
+
+/// A level's name in a verdict and a finding (`AET-WO-1211c`).
+pub fn level_name(high: bool) -> &'static str {
+    if high { "high" } else { "low" }
+}
+
+/// What the twin cannot show of a pin device's GPIO signal (`AET-WO-1211`
+/// §4 G1, G2, G4): the verdict states it on every entry.
+pub const GPIO_RESIDUAL: &str = "the twin witnesses an output's level only as its BSRR write before MODER, never as a pad level (G1); it drives an input at a level the specification states and reads it back, and never sees a pull (G2) or the device (device_unmodelled)";
+
+/// What the twin cannot show of a pin device's ADC input (`AET-WO-1211` §4
+/// A0, A1, A6; `1211c` P4e).
+pub const ADC_RESIDUAL: &str = "the twin sets the channel's voltage and reads the code DR holds after the firmware's read; the transfer, the source impedance against the sampling time, the regulator's and calibration's timing and ADC2 are never witnessed (A0, A1, A6), and only 12 bits is measured";
+
+/// One GPIO signal of a pin device (`AET-WO-1211c`, kinds 33 and 34): what
+/// the specification declares and the twin drives, and what it showed.
+#[derive(Serialize)]
+pub struct GpioReport {
+    pub net: String,
+    pub pin: String,
+    pub direction: &'static str,
+    /// An output's declared initial level; an input's level as the twin
+    /// drives it in this run.
+    pub level: &'static str,
+    /// An input's declared active level; absent for an output.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active: Option<&'static str>,
+    /// A scenario's `pin_held` drives it, not the declared pull.
+    pub held: bool,
+    /// `null` until Renode has run.
+    pub status: Option<&'static str>,
+    pub bsrr: Option<String>,
+    pub ordered: Option<bool>,
+    pub read: Option<&'static str>,
+    pub residual: &'static str,
+}
+
+/// One ADC input of a pin device (`AET-WO-1211c`, kinds 35 and 36).
+#[derive(Serialize)]
+pub struct AdcReport {
+    pub net: String,
+    pub pin: String,
+    pub peripheral: String,
+    pub channel: u8,
+    pub bits: u8,
+    pub microvolts: u64,
+    pub held: bool,
+    /// The code the set value converts to
+    /// ([`aethelgard_chaos::record::adc_code`]).
+    pub expected: u32,
+    /// `null` until Renode has run.
+    pub status: Option<&'static str>,
+    pub reads: Option<u64>,
+    pub observed: Option<u32>,
+    pub residual: &'static str,
 }
 
 /// The motor pin's speed is not judged: its load is off-board and no
@@ -595,6 +677,7 @@ impl MotorReport {
             arr: m.arr,
             ccr: m.ccr,
             silicon: m.silicon.clone(),
+            level: None,
             speed: MOTOR_SPEED_NOT_JUDGED,
             twin: TwinReport {
                 observer: o.source.clone(),

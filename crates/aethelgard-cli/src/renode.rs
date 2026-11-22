@@ -388,6 +388,10 @@ pub struct BootPlan<'a> {
     /// [`aethelgard_twin::hse::judge_clock`]. `None` for a board with no HSE
     /// and for a foreign firmware.
     pub clock: Option<&'a aethelgard_twin::hse::ClockRule>,
+    /// What the twin drives and reads of the specification's pin devices
+    /// (`AET-WO-1211c`, [`aethelgard_twin::pins`]); empty for a board with
+    /// none, whose commands are then exactly what they were before.
+    pub pins: &'a aethelgard_twin::pins::Pins,
 }
 
 /// The sentinels around the read after a release (`AET-WO-2301` §2.3), one
@@ -674,6 +678,19 @@ impl BootPlan<'_> {
                 ));
             }
         }
+        // A pin device's inputs' `IDR` and ADC inputs' `DR` (`AET-WO-1211c`).
+        for (k, i) in self.pins.inputs.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", i.idr_at),
+                Read::Idr(k),
+            ));
+        }
+        for (k, a) in self.pins.analog.iter().enumerate() {
+            reads.push((
+                format!("sysbus ReadDoubleWord {:#010x}", a.dr_at),
+                Read::Dr(k),
+            ));
+        }
         reads
     }
 
@@ -845,6 +862,9 @@ impl BootPlan<'_> {
         for (k, r) in self.resets.iter().enumerate() {
             at(&mut c, r.asserted_ns);
             c.extend(self.assert_reset());
+            // A pin device's inputs and ADC values again, which the reset
+            // returns to the model's own (`AET-WO-1211c`).
+            c.extend(crate::pinwitness::stimuli(self.pins));
             let Some(release) = r.released_ns else { break };
             at(&mut c, release);
             if k == last {
@@ -919,6 +939,8 @@ impl BootPlan<'_> {
         c.extend(self.witness_levels());
         c.extend(self.capture_commands());
         c.extend(self.stimuli());
+        c.extend(crate::pinwitness::stimuli(self.pins));
+        c.extend(crate::pinwitness::hooks(self.pins));
         c.extend(
             self.timer_hooks()
                 .iter()
@@ -957,6 +979,10 @@ enum Read {
     Record(usize, usize),
     /// Unmodelled device `.0`'s identity record (`AET-WO-4241`), as `Record`.
     Unwitnessable(usize, usize),
+    /// A pin device's input `.0`'s `IDR` word (`AET-WO-1211c`).
+    Idr(usize),
+    /// A pin device's ADC input `.0`'s `DR` word (`AET-WO-1211c`).
+    Dr(usize),
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -1031,6 +1057,13 @@ pub struct Observed {
     pub timers: Vec<TimerWitness>,
     /// Each port's injection (`AET-WO-2302` D4).
     pub injections: Vec<PortInjection>,
+    /// A pin device's GPIO signals, outputs then inputs, and its ADC inputs,
+    /// as the twin showed them (`AET-WO-1211c`); empty for a board with none.
+    pub gpio: Vec<crate::pinwitness::GpioWitness>,
+    pub adc: Vec<crate::pinwitness::AdcWitness>,
+    /// Each motor output whose idle is a static level (`AET-WO-1211c`), in
+    /// the specification's order; empty for a board with none.
+    pub levels: Vec<LevelWitness>,
 }
 
 /// What an unmodelled device's identity read left (`AET-WO-4241`): its
@@ -1358,6 +1391,10 @@ pub struct Motor {
     pub arr: u32,
     pub ccr: u32,
     pub silicon: aethelgard_ir::motor::SiliconTiming,
+    /// A PWM output whose `pwm.idle` is a static level (`AET-WO-1211c`):
+    /// `Some(true)` for high. Its edges are judged by [`witness_level`], not
+    /// by a period; `None` for every other output.
+    pub idle_high: Option<bool>,
 }
 
 /// Every motor output of `topology`, in the specification's order.
@@ -1370,6 +1407,12 @@ pub fn motors(
         .zip(topology.motor_outputs_in_order())
         .map(|(observer, (_, m, _))| Motor {
             silicon: aethelgard_ir::motor::check_silicon(&topology.clock, observer.timer, m),
+            idle_high: match m.pwm.as_ref().map(|p| p.idle) {
+                Some(aethelgard_ir::motor::Idle::Level(l)) => {
+                    Some(l == aethelgard_ir::motor::Level::High)
+                }
+                _ => None,
+            },
             observer,
             psc: m.psc,
             arr: m.arr,
@@ -1941,6 +1984,98 @@ fn witness_motor(m: &Motor, edges: Option<Option<Vec<(u64, bool)>>>, end_ns: u64
     w
 }
 
+/// What an output held at a static level showed (`AET-WO-1211c`, kind 37):
+/// its declared idle, the instant from which it must be still, the edges
+/// after it, and the observer's level at the window's end.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LevelWitness {
+    pub label: String,
+    pub high: bool,
+    pub settle_ns: Option<u64>,
+    pub rises_after: u64,
+    pub falls_after: u64,
+    pub end_level: Option<bool>,
+    /// One of [`aethelgard_chaos::record::LEVEL_STATUSES`].
+    pub status: &'static str,
+}
+
+/// Judges an output at a static level (`AET-WO-1211` Q10, ruled; `1211` §4
+/// T1–T2, H1–H2): from its timer's `CEN` anchor (low), or one period and one
+/// quantum after it (high: Renode holds the output low until the first
+/// update event, and an edge's stamp is its quantum's), no edge to the
+/// window's end, and the observer's level there the declared one. The
+/// observer starts low (`Miscellaneous.LED`). The first period of an idle
+/// high, and every instant before `CEN`, are never witnessed (O1–O2): a
+/// silicon-only reason in the ledger.
+pub fn witness_level(
+    m: &Motor,
+    high: bool,
+    edges: Option<&[(u64, bool)]>,
+    anchor_ns: Option<u64>,
+    end_ns: u64,
+) -> LevelWitness {
+    let mut w = LevelWitness {
+        label: m.observer.label.clone(),
+        high,
+        settle_ns: None,
+        rises_after: 0,
+        falls_after: 0,
+        end_level: None,
+        status: "unreadable",
+    };
+    let Some(edges) = edges else {
+        return w;
+    };
+    let inside: Vec<&(u64, bool)> = edges.iter().filter(|e| e.0 <= end_ns).collect();
+    w.end_level = Some(inside.last().is_some_and(|e| e.1));
+    let Some(anchor) = anchor_ns else {
+        w.status = "unanchored";
+        return w;
+    };
+    let settle = anchor
+        + if high {
+            m.observer.period_ns + aethelgard_twin::boot::QUANTUM_NS
+        } else {
+            0
+        };
+    w.settle_ns = Some(settle);
+    w.rises_after = inside.iter().filter(|e| e.0 > settle && e.1).count() as u64;
+    w.falls_after = inside.iter().filter(|e| e.0 > settle && !e.1).count() as u64;
+    // The window must hold a period after the settled instant (adversarial
+    // F9): a shorter one could pass a PWM that has not shown an edge yet.
+    let window = settle.saturating_add(m.observer.period_ns) <= end_ns;
+    w.status = if window && w.rises_after == 0 && w.falls_after == 0 && w.end_level == Some(high) {
+        "witnessed"
+    } else {
+        "mismatch"
+    };
+    w
+}
+
+/// A level witness's finding, once the boot reached its fixed point.
+fn level_findings_of(m: &Motor, w: &LevelWitness) -> Option<Finding> {
+    (w.status != "witnessed").then(|| {
+        Finding::plain(
+            aethelgard_chaos::campaign::MOTOR_LEVEL_FINDING,
+            format!(
+                "{}: declared idle {}, {}",
+                motor_who(&m.observer),
+                crate::verdict::level_name(w.high),
+                match (w.status, w.settle_ns) {
+                    ("unreadable", _) => "Renode's log could not be read whole, so its edges were not".to_owned(),
+                    ("unanchored", _) | (_, None) => "and its timer's CEN rise was never observed, so no instant was settled from".to_owned(),
+                    (_, Some(settle)) => format!(
+                        "from {settle} ns it made {} rises and {} falls and ended {}",
+                        w.rises_after,
+                        w.falls_after,
+                        w.end_level.map_or("unread", crate::verdict::level_name)
+                    ),
+                }
+            ),
+        )
+    })
+}
+
 fn motor_who(o: &aethelgard_twin::timer::Observer) -> String {
     format!("{} (TIM{}_CH{} on {})", o.label, o.timer, o.channel, o.pin)
 }
@@ -2020,6 +2155,9 @@ fn witness_findings_of(m: &Motor, w: &MotorWitness) -> Vec<Finding> {
             ),
         )),
         "unanchored" => {}
+        // An output at a static level is judged by its level witness
+        // (`AET-WO-1211c`, [`level_findings_of`]).
+        "level" => {}
         "stopped" => out.push(Finding::plain(
             aethelgard_chaos::campaign::MOTOR_MISMATCH_FINDING,
             format!(
@@ -2502,14 +2640,38 @@ pub fn judge_boot(
                 let edges = (out.dropped_log_lines == 0)
                     .then(|| observer_edges(&m.observer.source, &last_boot));
                 let timer = timers.iter().find(|t| t.timer == m.observer.timer);
-                witness_motor_in(m, edges, timer, plan.virtual_ns)
+                let mut w = witness_motor_in(m, edges, timer, plan.virtual_ns);
+                // An output at a static level is judged by its kind 37
+                // (`AET-WO-1211c`); its kind 26 says so.
+                if m.idle_high.is_some() {
+                    w.status = "level";
+                }
+                w
             })
             .collect(),
+        levels: plan
+            .motors
+            .iter()
+            .filter_map(|m| {
+                let high = m.idle_high?;
+                let edges = (out.dropped_log_lines == 0)
+                    .then(|| observer_edges(&m.observer.source, &last_boot))
+                    .flatten();
+                let timer = timers.iter().find(|t| t.timer == m.observer.timer);
+                let anchor = timer.and_then(|t| t.anchor.map(|a| a.2));
+                let end = timer.and_then(|t| t.end_ns).unwrap_or(plan.virtual_ns);
+                Some(witness_level(m, high, edges.as_deref(), anchor, end))
+            })
+            .collect(),
+        gpio: Vec::new(),
+        adc: Vec::new(),
         boot_word_ns: boot_word_hook.map(|(_, ns)| ns),
         register_expected: plan.image.registers.iter().map(|r| r.value).collect(),
         timers: timers.clone(),
         injections: injections.clone(),
     };
+    let mut idr = vec![None; plan.pins.inputs.len()];
+    let mut dr = vec![None; plan.pins.analog.len()];
     for ((cmd, read), line) in reads.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
         let word = || u32::try_from(v).map_err(|_| untrusted(format!("`{cmd}` read {v:#x}")));
@@ -2527,6 +2689,8 @@ pub fn judge_boot(
                 let r = &mut observed.records[i].1;
                 *r = (*r << 32) | u64::from(word()?);
             }
+            Read::Idr(k) => idr[k] = Some(word()?),
+            Read::Dr(k) => dr[k] = Some(word()?),
             Read::Unwitnessable(j, 0) => observed.unmodelled[j].record.0 = word()?,
             Read::Unwitnessable(j, _) => {
                 let r = &mut observed.unmodelled[j].record.1;
@@ -2534,6 +2698,13 @@ pub fn judge_boot(
             }
         }
     }
+    // A pin device's witnesses (`AET-WO-1211c`): outputs then inputs, and
+    // the ADC inputs; none for a board with no pin device.
+    observed.gpio = crate::pinwitness::outputs(plan.pins, hooks.as_deref());
+    observed
+        .gpio
+        .extend(crate::pinwitness::inputs(plan.pins, &idr));
+    observed.adc = crate::pinwitness::analog(plan.pins, hooks.as_deref(), &dr);
     // Each boot's accesses on the logged peripherals, in log order: the
     // first boot, then one per release (`AET-WO-4300b` adversarial F1–F4).
     let starts = std::iter::once(0).chain(releases.iter().map(|&r| r + 1));
@@ -2855,6 +3026,18 @@ pub fn judge_boot(
         for (m, w) in plan.motors.iter().zip(&observed.motors) {
             findings.extend(witness_findings_of(m, w));
         }
+        // An output at a static level, and a pin device's signals
+        // (`AET-WO-1211c`), read once the boot reached its fixed point.
+        for w in &observed.levels {
+            if let Some(m) = plan.motors.iter().find(|m| m.observer.label == w.label) {
+                findings.extend(level_findings_of(m, w));
+            }
+        }
+        findings.extend(crate::pinwitness::findings(
+            plan.pins,
+            &observed.gpio,
+            &observed.adc,
+        ));
         if hooks.is_some() {
             let last_device = checks
                 .iter()
@@ -4239,7 +4422,7 @@ mod tests {
 
     fn image() -> aethelgard_twin::boot::Image {
         let topology: aethelgard_ir::SolvedTopology = serde_json::from_str(
-            r#"{"schema_version":16,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
+            r#"{"schema_version":17,"specification_sha256":"acd60081f2d111b1b1ed0d974078fff45ccf2a967ec5f42317417f8ce68149d1","assignments":{"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4}},"gpio":{},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{},"spi_lines":{},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{},"spi_controllers":{},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":0,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"I2C_SCL":0,"I2C_SDA":0},"foreign_clock":null}"#,
         )
         .unwrap();
         aethelgard_twin::boot::expected(&topology).unwrap()
@@ -4308,8 +4491,16 @@ mod tests {
             capture: None,
             pwr: None,
             clock: None,
+            pins: &NO_PINS,
         }
     }
+
+    /// A board with no pin device (`AET-WO-1211c`).
+    static NO_PINS: aethelgard_twin::pins::Pins = aethelgard_twin::pins::Pins {
+        outputs: Vec::new(),
+        inputs: Vec::new(),
+        analog: Vec::new(),
+    };
 
     /// `AET-WO-4400g` §1.6, `INV-07` residue (a)(3): under a declared clock
     /// the DWT keeps the stock file's 250 MHz (a condition the foreign
@@ -4440,7 +4631,53 @@ mod tests {
                     ccr: 1000,
                 },
             ),
+            idle_high: None,
         }
+    }
+
+    /// `AET-WO-1211c`: an output at a static level. Low: no edge from its
+    /// anchor on, ending low. High: one rise inside the first period (and
+    /// quantum) after the anchor, then none, ending high. An edge after the
+    /// settled instant, the wrong end level, no anchor, or a log not read
+    /// whole each fail closed.
+    #[test]
+    fn a_static_level_is_witnessed_only_still_from_its_settled_instant() {
+        let m = motor();
+        let p = m.observer.period_ns;
+        let q = aethelgard_twin::boot::QUANTUM_NS;
+        let (anchor, end) = (1_000_000, 100_000_000);
+        let w =
+            |high, edges: &[(u64, bool)], anchor| witness_level(&m, high, Some(edges), anchor, end);
+        assert_eq!(w(false, &[], Some(anchor)).status, "witnessed");
+        assert_eq!(w(false, &[], Some(anchor)).settle_ns, Some(anchor));
+        let rise = [(anchor + p, true)];
+        assert_eq!(w(true, &rise, Some(anchor)).status, "witnessed");
+        assert_eq!(w(true, &rise, Some(anchor)).settle_ns, Some(anchor + p + q));
+        // Idle high read low at the end, or idle low read high.
+        assert_eq!(w(true, &[], Some(anchor)).status, "mismatch");
+        assert_eq!(w(false, &rise, Some(anchor)).status, "mismatch");
+        // An edge after the settled instant.
+        let late = [
+            (anchor + p, true),
+            (anchor + p + q + 1, false),
+            (anchor + 2 * p + q, true),
+        ];
+        let l = w(true, &late, Some(anchor));
+        assert_eq!((l.status, l.rises_after, l.falls_after), ("mismatch", 1, 1));
+        // No anchor, or the log not read whole.
+        assert_eq!(w(false, &[], None).status, "unanchored");
+        assert_eq!(
+            witness_level(&m, false, None, Some(anchor), end).status,
+            "unreadable"
+        );
+        // An edge past the window's end is not the window's.
+        assert_eq!(
+            w(false, &[(end + 1, true)], Some(anchor)).status,
+            "witnessed"
+        );
+        // A window holding less than one period after settling (F9).
+        let near = witness_level(&m, false, Some(&[]), Some(end - p + 1), end);
+        assert_eq!(near.status, "mismatch");
     }
 
     /// Edges as the probes measured them (`pwm400-63`): each the exact time
@@ -4587,7 +4824,7 @@ mod tests {
         serde_json::from_str(CONSOLE_TOPOLOGY).unwrap()
     }
 
-    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":16,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
+    const CONSOLE_TOPOLOGY: &str = r#"{"schema_version":17,"specification_sha256":"30673b074ee63ac8373134a838fe733b0759eb98584b455fc586bc9814f60bda","assignments":{"CONSOLE_RX":{"pin":"PA10","peripheral":"USART1","signal":"USART1_RX","alternate_function":7},"CONSOLE_TX":{"pin":"PA9","peripheral":"USART1","signal":"USART1_TX","alternate_function":7},"I2C_SCL":{"pin":"PB6","peripheral":"I2C1","signal":"I2C1_SCL","alternate_function":4},"I2C_SDA":{"pin":"PB7","peripheral":"I2C1","signal":"I2C1_SDA","alternate_function":4},"SPI_MISO":{"pin":"PA6","peripheral":"SPI1","signal":"SPI1_MISO","alternate_function":5},"SPI_MOSI":{"pin":"PA7","peripheral":"SPI1","signal":"SPI1_MOSI","alternate_function":5},"SPI_SCK":{"pin":"PA5","peripheral":"SPI1","signal":"SPI1_SCK","alternate_function":5}},"gpio":{"FLASH_CS":{"pin":"PA0","direction":"output","initial":"high"}},"adc_inputs":{},"i2c_ceilings":{"SENSORS":400000},"i2c_speeds":{"SENSORS":400000},"analog_lines":{"I2C_SCL":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300},"I2C_SDA":{"bus":"SENSORS","pull_up_ohms":2200,"capacitance_femtofarads":100000,"ceiling_ns":300,"domain_millivolts":3300}},"i2c_devices":{"U2":{"index":0,"part":"BME280","bus":"SENSORS","peripheral":"I2C1","address":118},"U3":{"index":1,"part":"TMP117","bus":"SENSORS","peripheral":"I2C1","address":72}},"spi_devices":{"U4":{"index":0,"part":"W25Q64JVxIQ","bus":"FLASH","peripheral":"SPI1","cs":"FLASH_CS"}},"spi_lines":{"SPI_MOSI":{"bus":"FLASH","signal":"MOSI","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135},"SPI_SCK":{"bus":"FLASH","signal":"SCK","rate_hz":20000000,"capacitance_femtofarads":30000,"rise_time_ns":20,"vdd_min_millivolts":3135}},"clock":{"source":"HSI","sysclk_hz":64000000,"hse_hz":0,"d1cpre":1,"hpre":1,"d1ppre":1,"d2ppre1":1,"d2ppre2":1,"d3ppre":1,"timpre":false,"vos":"scale2"},"motor_outputs":{},"power":null,"serial_ports":{"CONSOLE":{"index":0,"peripheral":"USART1","tx":"CONSOLE_TX","rx":"CONSOLE_RX","role":"console","framing":{"baud":115200,"data_bits":8,"parity":"none","stop_bits":1,"inverted":false},"negotiated":null,"peer_deviation_ppm":5000,"kernel_hz":64000000,"brr":556,"actual_millibaud":115107913,"error_ppm":-799}},"spi_controllers":{"SPI1":{"kernel":"per_ck","kernel_hz":64000000,"declared_hz":20000000,"mbr":1,"achieved_hz":16000000,"achieved_max_hz":16239744}},"i2c_timings":{"I2C1":{"kernel_hz":64000000,"cr1":0,"timingr":{"Fast400k":281481788,"FastPlus1M":11669037,"Standard100k":1356016192}}},"bor_level":3,"core_supply":"ldo","mcu":"STM32H753ZITx","pin_speeds":{"CONSOLE_RX":0,"CONSOLE_TX":0,"FLASH_CS":0,"I2C_SCL":0,"I2C_SDA":0,"SPI_MISO":0,"SPI_MOSI":1,"SPI_SCK":1},"foreign_clock":null}"#;
 
     /// The console's expectations for a firmware whose sha256 is all `0x11`.
     fn console() -> Vec<Serial> {
@@ -4715,6 +4952,69 @@ mod tests {
         assert_eq!(c.matches("AddWatchpointHook").count(), 4);
         assert_eq!(c.matches("AETHELGARD-STEP").count(), 3);
         assert!(!c.contains("WriteChar") && !c.contains("ScheduleAction"));
+    }
+
+    /// `AET-WO-1211c`: a pin device's stimuli and hooks go in before the run,
+    /// and its stimuli again after each rendered reset (which returns the
+    /// GPIO and ADC models to their own); its IDR and DR reads follow the
+    /// others. A board without one boots exactly as before.
+    #[test]
+    fn a_pin_device_s_stimuli_hooks_and_reads_are_in_the_boot() {
+        let image = image();
+        let pins = aethelgard_twin::pins::Pins {
+            outputs: vec![aethelgard_twin::pins::Output {
+                net: "DRV_NSLEEP".into(),
+                pin: "PA1".into(),
+                bit: 1,
+                high: false,
+                bsrr_at: 0x5802_0018,
+                moder_at: 0x5802_0000,
+                odr_at: 0x5802_0014,
+            }],
+            inputs: vec![aethelgard_twin::pins::Input {
+                net: "DRV_NFAULT".into(),
+                pin: "PA11".into(),
+                renode: "gpioPortA",
+                bit: 11,
+                high: true,
+                active_high: false,
+                held: false,
+                idr_at: 0x5802_0010,
+            }],
+            analog: vec![aethelgard_twin::pins::Analog {
+                net: "DRV_IPROPI".into(),
+                pin: "PF3".into(),
+                peripheral: "ADC3".into(),
+                renode: "adc3",
+                channel: 5,
+                bits: 12,
+                microvolts: 0,
+                held: false,
+                code: 0,
+                dr_at: 0x5802_6040,
+                cr_at: 0x5802_6008,
+            }],
+        };
+        let resets = [power::Reset {
+            asserted_ns: 1_014_430,
+            released_ns: Some(1_634_430),
+            cause: vec!["VBOR3".to_owned()],
+        }];
+        let before = plan(&image, &resets).commands();
+        let mut p = plan(&image, &resets);
+        p.pins = &pins;
+        let c = p.commands();
+        assert_eq!(c.matches("gpioPortA OnGPIO 11 true").count(), 2, "{c}");
+        assert_eq!(c.matches("adc3 SetVoltage 0 5").count(), 2, "{c}");
+        let after_reset = c.find("machine Reset").unwrap();
+        assert!(c[after_reset..].contains("gpioPortA OnGPIO 11 true"));
+        assert_eq!(c.matches("AETHELGARD-GPIO").count(), 4, "{c}");
+        assert_eq!(c.matches("AETHELGARD-DR").count(), 1, "{c}");
+        assert!(c.contains("sysbus ReadDoubleWord 0x58020010"));
+        assert!(c.contains("sysbus ReadDoubleWord 0x58026040"));
+        // The same board without the pin device: no command of it.
+        assert!(!before.contains("OnGPIO") && !before.contains("SetVoltage"));
+        assert!(!before.contains("AETHELGARD-GPIO") && !before.contains("AETHELGARD-DR"));
     }
 
     /// `AET-WO-2302` D4, sequential: the boot word schedules the first
@@ -5591,6 +5891,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5738,6 +6039,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -5921,6 +6223,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -6062,6 +6365,7 @@ mod tests {
                         u64::from(aethelgard_twin::boot::STATUS_OK)
                     }
                     Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
                 };
                 text.push_str(&format!("{v:#x}\n"));
             }
@@ -7482,6 +7786,9 @@ mod tests {
             register_expected: Vec::new(),
             timers: Vec::new(),
             injections: Vec::new(),
+            gpio: Vec::new(),
+            adc: Vec::new(),
+            levels: Vec::new(),
         };
         witness_findings(checks, &observed)
     }

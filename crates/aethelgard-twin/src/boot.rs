@@ -1009,27 +1009,33 @@ const OCM_PWM1: u32 = 0b110;
 
 // belt-and-suspenders: the generator's `board.rs` states these too; the
 // judge computes the expected image without the generator's code (`INV-07`).
-/// MODER values (RM0433 §11.4.1), the two roles the topology solves.
+/// MODER values (RM0433 §11.4.1), the roles the topology solves: a pin
+/// device's input (`AET-WO-1211c`), an output, a peripheral's pin, and a
+/// pin device's ADC input.
+const MODE_INPUT: u32 = 0b00;
 const MODE_OUTPUT: u32 = 0b01;
 const MODE_AF: u32 = 0b10;
+const MODE_ANALOG: u32 = 0b11;
 
 /// The expected register image of `topology`.
 pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     topology.validate().map_err(TwinError::InvalidTopology)?;
-    crate::refuse_pin_devices(topology)?;
     let identity = identity(topology)?;
     let f = cmsis::register_facts()?;
     let gpio = f.layout("GPIO")?;
     let rcc = f.layout("RCC")?;
     let rcc_base = f.base("RCC")?;
 
-    // Pin name to (port, index, Some(af) for a peripheral pin, None for GPIO).
-    let mut pins: BTreeMap<&str, (char, u32, Option<u32>)> = BTreeMap::new();
+    // Pin name to (port, index, its MODER role, Some(af) for a peripheral pin).
+    let mut pins: BTreeMap<&str, (char, u32, u32, Option<u32>)> = BTreeMap::new();
     let mut gates: BTreeSet<String> = BTreeSet::new();
     let mut unobservable = Vec::new();
     for a in topology.assignments.values() {
         let (port, index) = split_pin(&a.pin)?;
-        pins.insert(&a.pin, (port, index, Some(u32::from(a.alternate_function))));
+        pins.insert(
+            &a.pin,
+            (port, index, MODE_AF, Some(u32::from(a.alternate_function))),
+        );
         kind(&a.peripheral)?;
         gates.insert(a.peripheral.clone());
         gates.insert(format!("GPIO{port}"));
@@ -1052,8 +1058,36 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
     for g in topology.gpio.values() {
         let pin = &g.pin;
         let (port, index) = split_pin(pin)?;
-        pins.insert(pin, (port, index, None));
+        let mode = match g.direction {
+            aethelgard_ir::pin_devices::Direction::Output => MODE_OUTPUT,
+            aethelgard_ir::pin_devices::Direction::Input => MODE_INPUT,
+        };
+        pins.insert(pin, (port, index, mode, None));
         gates.insert(format!("GPIO{port}"));
+    }
+    // A pin device's ADC inputs (`AET-WO-1211c`; a solved resolution marks
+    // one, `AET-WO-1211b` S1): the pin in analog mode, the ADC's clock gate
+    // (ADC1 shares `ADC12EN` with ADC2), and per ADC the channels it
+    // preselects and sequences, in channel order. The model stores `PCSEL`
+    // (it warns of a channel not preselected, `STM32_ADC_Common.cs`
+    // L196-202) and `SQR1` (`DR` reads the sequenced channel): both are
+    // judged.
+    let mut adcs: BTreeMap<&str, Vec<u32>> = BTreeMap::new();
+    for a in topology.adc_inputs.values().filter(|a| a.bits.is_some()) {
+        let (port, index) = split_pin(&a.pin)?;
+        pins.insert(&a.pin, (port, index, MODE_ANALOG, None));
+        gates.insert(format!("GPIO{port}"));
+        gates.insert(match a.peripheral.as_str() {
+            "ADC1" => "ADC12".to_owned(),
+            p => p.to_owned(),
+        });
+        let channel = crate::pins::channel(&a.channel)
+            .map(u32::from)
+            .ok_or_else(|| TwinError::UnsupportedPeripheral {
+                peripheral: format!("{} {}", a.peripheral, a.channel),
+            })?;
+        kind(&a.peripheral)?;
+        adcs.entry(&a.peripheral).or_default().push(channel);
     }
 
     // (address, name) to (mask, value), so the list comes out in address order.
@@ -1063,12 +1097,11 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
         e.0 |= mask;
         e.1 |= value;
     };
-    for &(port, index, af) in pins.values() {
+    for &(port, index, mode, af) in pins.values() {
         // Every configured port's `OTYPER` is written whole (`AET-WO-4230`
         // D5, B0), and Renode stores none of its bits (spike F11).
         unobservable.push(format!("GPIO{port}.OTYPER"));
         let base = f.base(&format!("GPIO{port}"))?;
-        let mode = if af.is_some() { MODE_AF } else { MODE_OUTPUT };
         field(
             base + gpio.offset("MODER", 0)?,
             format!("GPIO{port}.MODER"),
@@ -1083,6 +1116,34 @@ pub fn expected(topology: &SolvedTopology) -> Result<Image, TwinError> {
                 format!("GPIO{port}.{}", ["AFRL", "AFRH"][word as usize]),
                 0xF << shift,
                 af << shift,
+            );
+        }
+    }
+    if !adcs.is_empty() {
+        let adc = f.layout("ADC")?;
+        for (peripheral, mut channels) in adcs {
+            channels.sort_unstable();
+            let base = f.base(peripheral)?;
+            let pcsel = channels.iter().fold(0, |w, c| w | 1 << c);
+            field(
+                base + adc.offset("PCSEL", 0)?,
+                format!("{peripheral}.PCSEL"),
+                u32::MAX,
+                pcsel,
+            );
+            // `L` (bits 3:0) is the length less one; `SQ1` to `SQ4` are 5
+            // bits at 6, 12, 18 and 24 (RM0433 Rev 9 §25.6.11).
+            let sqr1 = channels
+                .iter()
+                .enumerate()
+                .fold((channels.len() as u32).saturating_sub(1), |w, (k, c)| {
+                    w | c << (6 + 6 * k as u32)
+                });
+            field(
+                base + adc.offset("SQR1", 0)?,
+                format!("{peripheral}.SQR1"),
+                u32::MAX,
+                sqr1,
             );
         }
     }

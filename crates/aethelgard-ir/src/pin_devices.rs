@@ -266,6 +266,17 @@ pub struct SolvedGpio {
     pub initial: Option<Level>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pull: Option<McuPull>,
+    /// An input's declared active level (`AET-WO-1211c` D7, solved version
+    /// 17): the twin judges an input read at it as the device asserted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active: Option<Level>,
+    /// The level an input's declared pull holds it at when nothing drives it
+    /// (`AET-WO-1211c` D7): the MCU's pull, or the resistor's, high to a
+    /// domain and low to `GND`; absent when the specification states none (a
+    /// pull of `none` and no resistor, or two that disagree). The twin drives
+    /// the input at it (Renode applies no pull, `1211` §4 G2).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pulled: Option<Level>,
 }
 
 impl SolvedGpio {
@@ -276,6 +287,8 @@ impl SolvedGpio {
             direction: Direction::Output,
             initial: Some(initial),
             pull: None,
+            active: None,
+            pulled: None,
         }
     }
 
@@ -298,6 +311,20 @@ pub struct SolvedAdcInput {
     pub channel: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bits: Option<u8>,
+    /// A pin device's input's transfer (`AET-WO-1211c` D7, solved version
+    /// 17): a current output, and the device whose output it is; absent for
+    /// a `power.sense` input. The twin sets a current output of a device
+    /// whose bridges idle non-driving to 0 V.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer: Option<SolvedTransfer>,
+}
+
+/// An ADC input's transfer as the topology carries it (`AET-WO-1211c` D7).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum SolvedTransfer {
+    /// A current output of the pin device `device` (its reference).
+    CurrentOutput { device: String },
 }
 
 /// A pin device as the topology carries it: its part, and each bridge it
@@ -310,6 +337,10 @@ pub struct SolvedAdcInput {
 pub struct SolvedPinDevice {
     pub part: String,
     pub bridges: BTreeMap<String, SolvedBridge>,
+    /// Each supply pin of the part to its declared domain (`AET-WO-1211c`
+    /// D7, solved version 17): `verify` names a domain only pin devices'
+    /// supply pins consume as a motor rail (D1).
+    pub supplies: BTreeMap<String, String>,
 }
 
 /// One bridge of a pin device: its strapped mode, its two inputs' nets in
@@ -1904,15 +1935,17 @@ fn resistor_error_ppm(
 pub(crate) fn validate_solved(t: &crate::SolvedTopology) -> Result<(), IrValidationError> {
     for (net, g) in &t.gpio {
         let ok = match g.direction {
-            Direction::Output => g.initial.is_some() && g.pull.is_none(),
-            Direction::Input => g.pull.is_some() && g.initial.is_none(),
+            Direction::Output => {
+                g.initial.is_some() && g.pull.is_none() && g.active.is_none() && g.pulled.is_none()
+            }
+            Direction::Input => g.pull.is_some() && g.initial.is_none() && g.active.is_some(),
         };
         if !ok {
             return Err(refuse(
                 K::SignalShape,
                 net,
                 format!("gpio.{net}"),
-                "an output states `initial` and no `pull`; an input `pull` and no `initial`",
+                "an output states `initial` and no `pull`, `active` or `pulled`; an input `pull` and `active` and no `initial`",
             ));
         }
         if t.pin_devices.is_empty() && !g.is_high_output() {
@@ -1935,6 +1968,24 @@ pub(crate) fn validate_solved(t: &crate::SolvedTopology) -> Result<(), IrValidat
                     "`power.sense.{net}` is on `{}`; `adc_inputs` does not hold it there",
                     s.pin
                 ),
+            ));
+        }
+    }
+    // A pin device's ADC input names its device; a `power.sense` input has
+    // no transfer (`AET-WO-1211c` D7).
+    for (net, a) in &t.adc_inputs {
+        let ok = match &a.transfer {
+            Some(SolvedTransfer::CurrentOutput { device }) => {
+                a.bits.is_some() && t.pin_devices.contains_key(device)
+            }
+            None => a.bits.is_none(),
+        };
+        if !ok {
+            return Err(refuse(
+                K::SignalShape,
+                net,
+                format!("adc_inputs.{net}"),
+                "a pin device's ADC input states its `bits` and a `transfer` naming a declared pin device; a `power.sense` input neither",
             ));
         }
     }
@@ -2077,6 +2128,11 @@ pub(crate) fn place<'t>(
                     peripheral,
                     channel,
                     bits: Some(a.adc_resolution_bits),
+                    transfer: Some(match &a.transfer {
+                        Transfer::CurrentOutput(_) => SolvedTransfer::CurrentOutput {
+                            device: d.reference.clone(),
+                        },
+                    }),
                 },
             );
         }
@@ -2114,11 +2170,33 @@ pub(crate) fn place<'t>(
                     direction: s.direction,
                     initial: s.initial,
                     pull: s.pull.as_ref().map(|p| p.mcu.unwrap_or(McuPull::None)),
+                    active: s.active,
+                    pulled: s.pull.as_ref().and_then(pulled_level),
                 },
             );
         }
     }
     Ok(())
+}
+
+/// The level a declared pull holds its input at when nothing drives it
+/// (`AET-WO-1211c` D7): the MCU's pull (up high, down low), or the
+/// resistor's (to `GND` low, to a domain high); `None` when neither states
+/// one, or the two disagree.
+fn pulled_level(pull: &SignalPull) -> Option<Level> {
+    let mcu = match pull.mcu {
+        Some(McuPull::Up) => Some(Level::High),
+        Some(McuPull::Down) => Some(Level::Low),
+        Some(McuPull::None) | None => None,
+    };
+    let resistor = pull.resistor.as_ref().map(|r| match r.to == crate::GND {
+        true => Level::Low,
+        false => Level::High,
+    });
+    match (mcu, resistor) {
+        (Some(a), Some(b)) if a != b => None,
+        (a, b) => a.or(b),
+    }
 }
 
 /// A hand pin neither reserved nor owned by another claimant.
