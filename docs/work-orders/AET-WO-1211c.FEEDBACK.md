@@ -54,3 +54,24 @@ Predictions `spike/1211c/PREDICTIONS.md`, committed (`4254de68`) before any run;
 `spike/1211c/mutants/mutants.py`, one mutant per witness, fault kind, gate and refusal, each alone in a scratch export of HEAD: **22 of 22 killed** (`spike/1211c/out/mutants.txt`). Two survived the first run and were acted on:
 - **R4** (the motor rail ignoring a sourced domain) survived: no fixture reached the clause. Its regulator-output half is not in D1's ruled words (a regulated VMOTOR still feeds only pins nothing observes) and was cut; its load half is now tested on a constructed specification and killed.
 - **R6** (a held input stressing as a target) was equivalent: `classify` treats every `pin_held` as intolerable and never reads its target. Replaced by a mutant on the hold's comparison with the pull's level, killed.
+
+## 5. Adversarial pass (full)
+
+A fresh Opus reviewer attacked `e0c7fae3` in its own worktree (`~/worktrees/aethelgard/1211c-adv`), with probes (`adv_*` tests, `~/.cache/aet-1211c/adv/probes.patch`) and three Renode mutants of D1's firmware. Report: `spike/1211c/out/adv/REPORT.md`. Each finding was checked at source before it was acted on.
+
+| # | finding | done |
+|---|---|---|
+| F1 | replay never joined kind 26 `level`, kind 37, kind 24's idle and kind 26's anchor and edges: a live PWM relabelled `level` passed replay, archived too. The chaos tests' own fixture idled at a pulse and was judged by level | joined (`c4ae210c`): a level witness's output idles at a static level, its level is that idle, its settled instant is kind 26's anchor (plus a period and a quantum when high), its counts are within kind 26's, and witnessed it has no edge past its idle's and a period of window; the fixture idles low at CCR 0. Four tests, the forged pass refused archived |
+| F2 | an output was witnessed at its declared level while the firmware set the other level before `MODER` (a second `BSRR` word; an `ODR` write): Renode mutants `twoset`, `odr` passed | the level is judged as of `MODER`: every `BSRR` word touching the pin before it carries the declared bit alone, and no `ODR` write precedes it (`ODR` hooked). Both mutants now fail `gpio_mismatch` (`spike/1211c/out/adv/*-sim-34a4.json`) |
+| F3 | at the idle's 0 V the ADC's code is `DR`'s reset value, so a firmware that never converts passed (mutant `noconv`): 2306's defect | the conversion is witnessed: `ADSTART` written to its ADC's `CR` before the firmware's first `DR` read. `noconv` now fails `adc_read_unwitnessed`; D1's firmware passes |
+| F4 | the `gpio` gate counted an input as judged on the twin's own stimulus, which D5 names `INV-07` | an input's item is `not_judged`, with D5's reason, outside `judged`; an asserted input still fails the gate by its finding. **Applied as the ruling's consequence; the architect may rule otherwise** |
+| F5 | replay checked no pin across kinds | a pin device's pin is its own: not another signal's, an I2C line's, a chip select's, a motor output's, a serial pin's |
+| F6 | replay accepted a `mismatch` whose reading was the declaration's (a forged failure) | an input's and an ADC input's mismatch must read otherwise |
+| F7 | the plan took a signal's direction from the declaration, never the topology's, and fell back to the declared resolution | the declared and solved direction and resolution must agree, or `PinDeviceNotSimulated` names the disagreement |
+| F8 | the null sweep was taken at `adeb3acd` and never runs `verify` | re-taken against `main` `122378c7` at `b5dd68a9` (§3); a final one at READY. `verify` is not swept whole (Kani, ERC, DRC on 27 boards): its new parts (`pin_gates`, coverage, the ledger rows) are absent by construction for a board with no pin device, which the reviewer's `adv_n` checked on all 27 specifications at library level, and D2g's `verify` shows them on a board with one |
+| F9 | an idle high's settled window could be shorter than a period | a level is witnessed only with a period of window after settling, in the twin and in replay |
+| F10 | `classify` called a hold the twin refuses `Baseline` | it changes the run; the campaign refuses it |
+| F11 | with no `boot`, the `gpio` and `adc` gates vanish; nSLEEP counts in `gpio` and `bridge` | recorded: the first fails closed (`simulate`'s own gate fails); the bridge gate is one item per bridge as 1211 §2.7 (e) writes it, judging what `gpio` does not (the pair and its enable as a row) |
+| F12 | a firmware `ODR` write clears a driven input (G4) | recorded; the generated firmware writes no `ODR`, and F2 now refuses an output's `ODR` write before `MODER` |
+
+**Could not break:** `pin_held` by 19 other names (outputs, peripheral pins, supplies, references, case and space variants: `PinHeldIsOutput` or `PinHeldUnknown`, before any run); the stimuli after a real BOR reset on D2g; any judgement of a pull (G2); a move on a board without a pin device; ADC1's gate; `INV-07` but F4.
