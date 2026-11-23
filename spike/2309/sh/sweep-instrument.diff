@@ -1,0 +1,192 @@
+diff --git a/crates/aethelgard-chaos/src/archive.rs b/crates/aethelgard-chaos/src/archive.rs
+index ab1ed43..6f7f346 100644
+--- a/crates/aethelgard-chaos/src/archive.rs
++++ b/crates/aethelgard-chaos/src/archive.rs
+@@ -304,6 +304,18 @@ fn open_entry(dirfd: &OwnedFd, dir: &Path, name: &str) -> Result<Option<File>, A
+ 
+ /// Replay a run directory, refusing anything it cannot prove complete.
+ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
++    let key = crate::sweep2309::dir_key(dir);
++    let r = replay_dir_inner(dir);
++    let outcome = match &r {
++        Ok(x) => format!("ok {:?} {}", x.manifest.state_hash, x.manifest.event_count),
++        Err(e @ ArchiveError::Io { .. }) => format!("err {}", e.kind()),
++        Err(e) => format!("err {} {e}", e.kind()),
++    };
++    crate::sweep2309::log("replay_dir", &key, &outcome);
++    r
++}
++
++fn replay_dir_inner(dir: &Path) -> Result<Replayed, ArchiveError> {
+     // Components drop a trailing separator, which would make the open follow
+     // a symlinked run directory.
+     let dir: PathBuf = dir.components().collect();
+diff --git a/crates/aethelgard-chaos/src/campaign.rs b/crates/aethelgard-chaos/src/campaign.rs
+index dfd4236..f67312e 100644
+--- a/crates/aethelgard-chaos/src/campaign.rs
++++ b/crates/aethelgard-chaos/src/campaign.rs
+@@ -1006,6 +1006,17 @@ pub struct RunSummary {
+ /// output's (kind 37) sit with the motor witnesses (kind 26), in any order
+ /// among them.
+ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
++    let r = check_run_inner(records);
++    let outcome = format!(
++        "{} {} {r:?}",
++        std::thread::current().name().unwrap_or("?").replace(' ', "_"),
++        crate::sweep2309::candidates(records),
++    );
++    crate::sweep2309::log("check_run", format!("{records:?}").as_bytes(), &outcome);
++    r
++}
++
++fn check_run_inner(records: &[Record]) -> Result<RunSummary, &'static str> {
+     fn rank(r: &Record) -> u8 {
+         match r {
+             Record::Scenario { .. } => 0,
+diff --git a/crates/aethelgard-chaos/src/lib.rs b/crates/aethelgard-chaos/src/lib.rs
+index bd61f6e..917f029 100644
+--- a/crates/aethelgard-chaos/src/lib.rs
++++ b/crates/aethelgard-chaos/src/lib.rs
+@@ -20,6 +20,7 @@ pub mod power;
+ pub mod record;
+ pub mod replay;
+ pub mod synthetic;
++pub mod sweep2309;
+ 
+ pub use archive::{CommitStage, Replayed, TraceWriter, replay_dir};
+ pub use event::{Event, Header, Manifest};
+diff --git a/crates/aethelgard-chaos/src/sweep2309.rs b/crates/aethelgard-chaos/src/sweep2309.rs
+new file mode 100644
+index 0000000..da07e51
+--- /dev/null
++++ b/crates/aethelgard-chaos/src/sweep2309.rs
+@@ -0,0 +1,129 @@
++//! AET-WO-2309 sweep C instrumentation, applied to a scratch copy only (never committed into
++//! `crates/`): with `AET_2309_SWEEP` set to a file, each `replay_dir` and `check_run` call appends
++//! one line, `<what> <sha256 of its input> <outcome>`.
++use std::io::{Read, Write};
++use std::path::Path;
++
++use sha2::{Digest, Sha256};
++
++pub fn log(what: &str, key: &[u8], outcome: &str) {
++    // A CLI the tests spawn runs under `env_clear` with `HOME` kept: it logs to the marker's
++    // sibling while `~/.cache/aet-2309/sweep-on` exists.
++    let path = match std::env::var_os("AET_2309_SWEEP") {
++        Some(p) => std::path::PathBuf::from(p),
++        None => {
++            let Some(home) = std::env::var_os("HOME") else {
++                return;
++            };
++            let dir = std::path::Path::new(&home).join(".cache/aet-2309");
++            if !dir.join("sweep-on").exists() {
++                return;
++            }
++            dir.join("sweep-subprocess.log")
++        }
++    };
++    let hex: String = Sha256::digest(key).iter().map(|b| format!("{b:02x}")).collect();
++    let line = format!("{what} {hex} {}\n", outcome.replace('\n', " "));
++    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
++        let _ = f.write_all(line.as_bytes());
++    }
++}
++
++/// The run directory's contents: its own file type, then each entry's name, type, length and
++/// the sha256 of its first MiB (a regular file only: a FIFO is never opened).
++pub fn dir_key(dir: &Path) -> Vec<u8> {
++    let mut key = format!("{:?}", std::fs::symlink_metadata(dir).map(|m| m.file_type())).into_bytes();
++    let mut paths: Vec<_> = std::fs::read_dir(dir)
++        .map(|r| r.filter_map(Result::ok).map(|e| e.path()).collect())
++        .unwrap_or_default();
++    paths.sort();
++    for p in paths {
++        key.extend(p.file_name().unwrap_or_default().as_encoded_bytes());
++        key.push(0);
++        match std::fs::symlink_metadata(&p) {
++            Ok(m) if m.is_file() => {
++                key.extend(m.len().to_le_bytes());
++                let mut b = Vec::new();
++                if let Ok(f) = std::fs::File::open(&p) {
++                    let _ = f.take(1 << 20).read_to_end(&mut b);
++                }
++                key.extend(Sha256::digest(&b));
++            }
++            Ok(m) => key.extend(format!("{:?}", m.file_type()).as_bytes()),
++            Err(_) => key.push(b'?'),
++        }
++    }
++    key
++}
++
++/// The candidate rules of `AET-WO-2309`, judged on the records `check_run` was given, each `ok` or
++/// `REFUSES`: `motor` (a booted run's every kind 24 has a kind 26), `full` (kinds 11, 12 and 21,
++/// value and status, read exactly when kind 10 is; 13 and 22 unread with it) and `status` (as
++/// `full`, but kinds 12 and 21 bound both ways by their status, their value one way).
++pub fn candidates(records: &[crate::record::Record]) -> String {
++    use crate::record::Record;
++    let boot = records.iter().find_map(|r| match r {
++        Record::BootObserved { boot_word, .. } => Some(boot_word),
++        _ => None,
++    });
++    let read = boot.is_some_and(|b| b.observed.is_some());
++    let booted = boot.is_some_and(|b| b.observed == Some(b.expected));
++    let witnesses = |r: &Record| match r {
++        Record::I2cWitness { observed, absent, .. } => read || (observed.is_none() && absent.is_empty()),
++        Record::SpiWitness { observed, unrouted, .. } => {
++            read || (observed.is_none() && unrouted.is_empty())
++        }
++        Record::RegisterObserved { reading, .. } => reading.observed.is_some() == read,
++        _ => true,
++    };
++    let full = records.iter().all(|r| match r {
++        Record::I2cCheck { observed, status, .. } | Record::SpiCheck { observed, status, .. } => {
++            observed.is_some() == read && status.is_some() == read
++        }
++        r => witnesses(r),
++    });
++    let status = records.iter().all(|r| match r {
++        Record::I2cCheck { observed, status, .. } | Record::SpiCheck { observed, status, .. } => {
++            status.is_some() == read && (read || observed.is_none())
++        }
++        r => witnesses(r),
++    });
++    let solved: std::collections::BTreeSet<&str> = records
++        .iter()
++        .filter_map(|r| match r {
++            Record::MotorOutputSolved { label, .. } => Some(label.as_str()),
++            _ => None,
++        })
++        .collect();
++    let witnessed: std::collections::BTreeSet<&str> = records
++        .iter()
++        .filter_map(|r| match r {
++            Record::MotorWitness { label, .. } => Some(label.as_str()),
++            _ => None,
++        })
++        .collect();
++    let motor = !booted || solved.is_subset(&witnessed);
++    let motor_read = !read || solved.is_subset(&witnessed);
++    // D3: an unread boot holds nothing Renode reads (kinds 26, 29, 30, 34, 36, 37).
++    let unlisted = read
++        || !records.iter().any(|r| {
++            matches!(
++                r,
++                Record::MotorWitness { .. }
++                    | Record::SerialWitness { .. }
++                    | Record::JudgeStop { .. }
++                    | Record::PinGpioWitness { .. }
++                    | Record::PinAdcWitness { .. }
++                    | Record::MotorLevelWitness { .. }
++            )
++        });
++    let w = |b: bool| if b { "ok" } else { "REFUSES" };
++    format!(
++        "motor={} full={} status={} unlisted={} motor_read={} read={read} booted={booted}",
++        w(motor),
++        w(full),
++        w(status),
++        w(unlisted),
++        w(motor_read)
++    )
++}

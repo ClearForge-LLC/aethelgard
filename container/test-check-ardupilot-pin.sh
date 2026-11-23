@@ -4,8 +4,10 @@
 # is named in the table below with its verdict:
 #   accept   exit 0, stdout exactly the `pin` fixture's line, stderr empty;
 #   missing  exit 1, stdout empty, stderr exactly "FILE missing or unreadable";
-#   form     exit 1, stdout empty, stderr exactly "FILE is not <form>: <pin>",
-#            the pin being the file with NULs and trailing newlines dropped.
+#   form     exit 1, stdout empty, stderr one line, exactly "FILE is not
+#            <form>: <pin>", the pin being the file with NULs and trailing
+#            newlines dropped, cut to 200 bytes and escaped by printf %q
+#            (AET-WO-4407), so no line of it starts with `::` and none is long.
 # So a fixture cannot pass on the other refusal. The committed pin must pass,
 # and every fixture in the directory must be in the table. The check runs
 # under en_US.UTF-8 when the host has it, where [0-9a-f] matches look-alikes
@@ -24,6 +26,14 @@ loc=$(grep -ixm1 'en_US\.utf-\?8' <<< "$locales" || echo C.UTF-8)
 echo "the check runs under LC_ALL=$loc"
 fail=0
 
+# quoted FILE: the refusal's view of FILE, NULs and trailing newlines dropped.
+quoted() {
+  local p
+  p=$(LC_ALL=C tr -d '\000' < "$1")
+  if [ "$(printf %s "$p" | wc -c)" -le 200 ]; then LC_ALL=C printf '%q' "$p"
+  else LC_ALL=C printf '%q (the first 200 of %s bytes)' "$(printf %s "$p" | head -c 200)" "$(printf %s "$p" | wc -c)"; fi
+}
+
 run() {
   local f=$1 verdict=$2 out err rc ok=1
   set +e
@@ -33,7 +43,8 @@ run() {
   case $verdict in
     accept) [ "$rc" -eq 0 ] && [ "$out" = "$want_pin" ] && [ -z "$err" ] || ok=0 ;;
     missing) [ "$rc" -eq 1 ] && [ -z "$out" ] && [ "$err" = "$f missing or unreadable" ] || ok=0 ;;
-    form) [ "$rc" -eq 1 ] && [ -z "$out" ] && [ "$err" = "$f is not $want_form: $(tr -d '\000' < "$f")" ] || ok=0 ;;
+    form) [ "$rc" -eq 1 ] && [ -z "$out" ] && [ "$err" = "$f is not $want_form: $(quoted "$f")" ] \
+            && [ "$(wc -l < "$tmp")" -eq 1 ] && [ "$(wc -c < "$tmp")" -le 1024 ] || ok=0 ;;
   esac
   if [ "$ok" -eq 1 ]; then
     echo "ok   $verdict $f"
@@ -72,6 +83,8 @@ lookalike-cyrillic   form      a Cyrillic es in clearforge-llc
 lookalike-fullwidth  form      a fullwidth 4 in the digest
 lookalike-accent     form      an a with an acute accent in the digest
 long-line            form      the pin followed by 65536 more hex digits
+workflow-command     form      a second line ::warning::, which must not start a log line
+carriage-return      form      a CR, then ::error:: on what a terminal shows as its own line
 directory            missing   a directory in place of the file
 symlink-dangling     missing   a symlink to nothing
 does-not-exist       missing   no file at all

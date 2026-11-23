@@ -485,8 +485,9 @@ jobs:
       - name: push and record the digest
         run: |
           docker push "$TAG"
-          digest=$(docker image inspect --format '{{index .RepoDigests 0}}' "$TAG")
-          [[ "$digest" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]] || { echo "no digest: $digest" >&2; exit 1; }
+          docker image inspect --format '{{index .RepoDigests 0}}' "$TAG" > "$RUNNER_TEMP/pushed"
+          # The one pin regex (AET-WO-4407; 4402 Q3), with its bounded refusal.
+          digest=$(bash container/check-ardupilot-pin.sh "$RUNNER_TEMP/pushed")
           echo "Published \`$digest\` from \`$GITHUB_SHA\`." >> "$GITHUB_STEP_SUMMARY"
 
   # 4403 acceptance: an anonymous client fetches the mirror by its pinned

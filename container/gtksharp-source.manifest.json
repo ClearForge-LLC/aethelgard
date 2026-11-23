@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "mediaType": "application/vnd.oci.image.manifest.v1+json",
+  "artifactType": "application/vnd.clearforge.aethelgard.corresponding-source.v1",
+  "config": {
+    "mediaType": "application/vnd.oci.empty.v1+json",
+    "digest": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "size": 2
+  },
+  "layers": [
+    {
+      "mediaType": "application/octet-stream",
+      "digest": "sha256:7e1e6bc4ae1ad356f884512cc3d58f7e1c642ee5dfafc7ded547473d287f3cef",
+      "size": 2200493,
+      "annotations": {
+        "org.opencontainers.image.title": "GtkSharp-964cb9c31506adf7c1c68fe8a6ac8c8076237f3a.tar.gz"
+      }
+    }
+  ],
+  "annotations": {
+    "org.opencontainers.image.description": "Corresponding source of GTK# 3.24.24.95 (GtkSharp, AtkSharp, CairoSharp, GdkSharp, GioSharp, GLibSharp, PangoSharp) in ghcr.io/clearforge-llc/aethelgard-tools: GitHub's archive of GtkSharp/GtkSharp at commit 964cb9c31506adf7c1c68fe8a6ac8c8076237f3a, byte for byte",
+    "org.opencontainers.image.url": "https://github.com/GtkSharp/GtkSharp/archive/964cb9c31506adf7c1c68fe8a6ac8c8076237f3a.tar.gz",
+    "org.opencontainers.image.source": "https://github.com/ClearForge-LLC/aethelgard"
+  }
+}
