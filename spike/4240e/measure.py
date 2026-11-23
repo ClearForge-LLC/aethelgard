@@ -93,8 +93,17 @@ def measure_one(ae, root, rel, scratch):
     body_writes = []
     m = re.search(r"fn select_spi_kernels.*?\n(.*?)\n\s*Ok\(SpiKernels \{|fn select_spi_kernels.*?\n(.*?)\n\s*SpiKernels \{", board, re.S)
     if m:
-        for w in re.finditer(r"r\.write\(TOKEN, Block::Rcc, (0x[0-9a-f]+), (0x[0-9a-f]+)\)", m.group(1) or m.group(2)):
-            body_writes.append((int(w.group(1), 16), int(w.group(2), 16)))
+        # A whole-word write, or RCC_CR's PLL1ON set or cleared by a
+        # read-modify-write (AET-WO-4240e), read as the word it leaves:
+        # bit 24 set or clear.
+        pat = (r"r\.write\(TOKEN, Block::Rcc, (0x[0-9a-f]+), (0x[0-9a-f]+)\)"
+               r"|r\.modify\(TOKEN, Block::Rcc, (0x[0-9a-f]+), \|v\| v (\||& !)(0x[0-9a-f]+)\)")
+        for w in re.finditer(pat, m.group(1) or m.group(2)):
+            if w.group(1):
+                body_writes.append((int(w.group(1), 16), int(w.group(2), 16)))
+            else:
+                bit = int(w.group(5), 16)
+                body_writes.append((int(w.group(3), 16), bit if w.group(4) == "|" else 0))
     writes = [(OFFSET[o], v) for o, v in body_writes if o in OFFSET]
     row["select_writes"] = ["%s=%#010x" % w for w in writes]
     row["switch_writes"] = ["%#05x=%#010x" % w for w in body_writes if w[0] not in OFFSET]

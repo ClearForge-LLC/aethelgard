@@ -398,14 +398,15 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 
 - **Tests:** RM0433 Rev 9 §8.5.10, pp. 371–372: a kernel-clock mux moves to a new input only while its old and new inputs both run, and gives the peripheral no clock otherwise. `SPI123SEL` resets to `pll1_q_ck` (p. 414). Until `4240e` the firmware wrote `per_ck` with PLL1 never started, so by that reading SPI1 had no kernel clock (`TVI-WO-1300` §1.1; `spike/4240e/RESULTS.md`). The package ELF now runs PLL1 from the HSI across the select and stops it after. This row is the scar's re-check, and its result decides whether the p. 371 reading is literal (roadmap §7.1).
 - **Board:** a NUCLEO-H753ZI, as `3302`, with the package ELF (above). No flash is fitted there, so record 1's value is whatever MISO floats to and is not a row.
-- **Instrument:** SWD (`probe-rs`); a scope on PA5 (SPI1 SCK, the Nucleo's D13, as `3302` B8), single-shot on its first edge, across a reset.
+- **Instrument:** SWD (`probe-rs`); a scope on PA5 (SPI1 SCK, the Nucleo's D13, as `3302` B8), single-shot on its first edge.
+- **Power-on reset before each image** (unplug the Nucleo's USB, then plug it in), never a debugger or NRST reset alone: after a system reset a kernel mux keeps the input it had if the reset stops that input's clock (RM0433 Rev 9 pp. 371–372, the USART1 example). Then a previous image's switch can carry over into the next, and the row reads the history, not the image.
 - **Pass:**
   - **Word 0** = `0x2100B007`. A PLL1 that never locks writes `0x2100B0F5` instead, before any SPI write. Source: **twin** (the boot judge's words).
   - `RCC.D2CCIP1R` (`0x58024450`) masked `0x00007000` = `0x00004000`: `SPI123SEL` `100`, `per_ck`. Source: **rule** (`aethelgard_ir::kernel_clock`, with `silicon::spi_words`). A read cannot show the mux's input, only the selector's value: the SCK below is what shows the switch.
   - `RCC.CR` (`0x58024400`) masked `0x03000000` = `0`: PLL1 stopped after the switch, `PLL1ON` and `PLL1RDY` clear. Source: **generator** (the switch's Kani harness holds the write).
   - `SPI1.SR.MODF` (`0x40013014`, bit 9) = 0, and `SPI1.CFG2.MASTER` (`0x4001300C`, bit 22) = 1. Source: as B4.
   - **SCK on PA5:** 32 clocks in one burst (the command and three bytes), at **15.59–16.24 MHz**. Source: **rule**, as B4: `per_ck` is the HSI, so the rate is B4's.
-- **On a disagreement:** no SCK, with `D2CCIP1R` reading `0x00004000` and `CR` clear, means the switch did not take with PLL1 running. That would contradict the p. 371 reading, and is a stop for the architect. SCK at the HSI rate on today's `main` firmware (before `4240e`) would also contradict it, the other way (roadmap §7.1's second half).
+- **On a disagreement:** no SCK, with `D2CCIP1R` reading `0x00004000` and `CR` clear, means the switch did not take with PLL1 running. That would contradict the p. 371 reading, and is a stop for the architect. SCK at the HSI rate on today's `main` firmware (before `4240e`), **started from a power-on reset**, would also contradict it, the other way (roadmap §7.1's second half). After a system reset that followed a `4240e` image it would not: the mux may still hold `per_ck` from that image.
 
 ## B11. An ADC on `adc_sclk`, with PLL2 off, on the Nucleo (`AET-WO-4240e`)
 
@@ -413,7 +414,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   - the architect's ruling on the ADC (`4240e`): with `ADCx_CCR.CKMODE` ≠ `00` the ADC takes `adc_sclk` (revision V; revision Y's is `adc_hclk`, p. 921), not `adc_ker_ck_input` through `RCC_D3CCIPR.ADCSEL` (RM0433 Rev 9 §25.4.3, p. 920);
   - `ADCSEL` resets to `pll2_p_ck` (p. 419), and no generated firmware starts PLL2. Tviburi's guard refused this board's `ADC3EN` by not reading `CKMODE`.
 - **Board:** the NUCLEO-H753ZI, with **another ELF**: the firmware `aethelgard build` writes for `crates/aethelgard-ir/tests/fixtures/d1-drv8876.json` (ADC3, `INP5` on PF3) at this work order's merge. Its sha256 is in `docs/work-orders/AET-WO-4240e.FEEDBACK.md`; this sheet names only the package ELF's. PF3's level does not matter: the row is that a conversion ends, not its value.
-- **Instrument:** SWD (`probe-rs`).
+- **Instrument:** SWD (`probe-rs`). Power-on reset before the image, as B10.
 - **Pass:**
   - **Word 0** = `0x2100B007`, written only after ADC3's calibration, `ADRDY` and one conversion each ended within its bound. A bound that expires writes `0x2100B0A1` (calibration), `0x2100B0A2` (`ADRDY`) or `0x2100B0A3` (the conversion) instead. Source: **twin** (the boot judge's words).
   - `ADC3_COMMON.CCR` (`0x58026308`) masked `0x00030000` = `0x00030000` (`CKMODE` `11`). Source: **rule** (the topology's `clock.adc`, which `aethelgard_ir::kernel_clock` judges).

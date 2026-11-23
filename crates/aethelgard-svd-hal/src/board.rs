@@ -167,6 +167,18 @@ pub enum BoardError {
         "ADC input `{net}`: the solved topology's clock.adc.ckmode is {found:?}, and the ADC bring-up is written for 3 (adc_sclk / 4, RM0433 Rev 9 p. 1039; AET-WO-4240e)"
     )]
     AdcClockNotGenerated { net: String, found: Option<u32> },
+    /// `AET-WO-4240e` (adversarial pass 4): the switch's transition wait,
+    /// [`SWITCH_READS`], is sized for a `pll1_q_ck` at least as fast as
+    /// `per_ck` (the HSI) at the band's slowest; a slower one would be
+    /// stopped mid-transition (RM0433 Rev 9 p. 371). The rule passes any
+    /// legal `pll1_q_ck`; this is the generator's own premise.
+    #[error(
+        "the kernel switch's pll1_q_ck is {q_slowest_hz} Hz at the HSI's slowest, under per_ck's {hsi_slowest_hz} Hz, so SWITCH_READS would not cover the mux's transition (RM0433 Rev 9 p. 371; AET-WO-4240e)"
+    )]
+    SwitchQBelowPerCk {
+        q_slowest_hz: u64,
+        hsi_slowest_hz: u64,
+    },
     /// `AET-WO-4240e` (D5, ruled): an enabled kernel-clocked peripheral with
     /// no running kernel clock at its start, by RM0433 Rev 9 pp. 371–372, as
     /// `aethelgard_ir::kernel_clock::check` judges the topology. Its kind is
@@ -255,6 +267,7 @@ impl BoardError {
             Self::AdcNotGenerated { .. } => "AdcNotGenerated",
             Self::AdcOnHseNotGenerated { .. } => "AdcOnHseNotGenerated",
             Self::AdcClockNotGenerated { .. } => "AdcClockNotGenerated",
+            Self::SwitchQBelowPerCk { .. } => "SwitchQBelowPerCk",
             Self::KernelClock(r) => r.kind(),
             Self::AdcResolutionNotSolved { .. } => "AdcResolutionNotSolved",
             Self::AdcResolutionNotCommon { .. } => "AdcResolutionNotCommon",
@@ -1674,6 +1687,21 @@ struct SwitchPlan {
 impl SwitchPlan {
     fn new(k: &aethelgard_ir::clock::SolvedKernelSwitch) -> Result<Self, BoardError> {
         let hz = hsi_fastest(RESET_HZ);
+        // `pll1_q_ck` at the HSI's slowest: / DIVM1 × (DIVN1 + 1) / (DIVQ1 + 1).
+        let bits = |w: u32, at: u32, n: u32| u64::from((w >> at) & ((1 << n) - 1));
+        let slow = hsi_slowest(RESET_HZ);
+        let (m, n, q) = (
+            bits(k.pllckselr, 4, 6),
+            bits(k.pll1divr, 0, 9) + 1,
+            bits(k.pll1divr, 16, 7) + 1,
+        );
+        let q_slowest_hz = (slow * n).checked_div(m * q).unwrap_or(0);
+        if q_slowest_hz < slow {
+            return Err(BoardError::SwitchQBelowPerCk {
+                q_slowest_hz,
+                hsi_slowest_hz: slow,
+            });
+        }
         Ok(Self {
             pllckselr: k.pllckselr,
             pllcfgr: k.pllcfgr,

@@ -4562,7 +4562,7 @@ impl SolvedTopology {
     pub fn derive_controllers(&mut self) {
         (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
         // The kernel-clock switch those controllers need (`AET-WO-4240e`).
-        self.clock.kernel_switch = solve::kernel_switch(&self.clock, &self.spi_controllers);
+        self.clock.kernel_switch = solve::kernel_switch(&self.spi_controllers);
         let speeds: BTreeMap<String, u8> = solve::solved_pins(self)
             .filter_map(|(net, pin)| Some((net.clone(), solve::pin_speed(self, net, pin).ok()?)))
             .collect();

@@ -337,8 +337,6 @@ const ORACLE_ONLY: &str = "the generated oracle only";
 
 const SPI_RULE: &str = "aethelgard_ir::silicon::spi_words, held by silicon::check_spi before generation (svd-hal check_silicon); the proof's expected CR1, CFG1 and CFG2 are the rule's words (board.rs oracle_spi)";
 const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): the whole select word, the solved controllers' codes and every other field at reset, held by silicon::check_spi; the proof's expected word is the rule's; that the mux takes it, judged by aethelgard_ir::kernel_clock::check (RM0433 Rev 9 pp. 371-372: the old and the new input both run across the select; AET-WO-4240e), which refuses generation and the verdict";
-/// `AET-WO-4240e` D2 (ruled): a selector the firmware leaves at reset.
-const RESET_SELECT_RULE: &str = "aethelgard_ir::kernel_clock::check (AET-WO-4240e): each mux's input at entry is its reset input (RM0433 Rev 9 pp. 371-372, after any system reset), its reset code from the rule's own table (§8.7.19-§8.7.22, pp. 412-420), and the peripheral's kernel clock runs from it or from a switch both of whose inputs run; it refuses generation and the verdict. ResetClock reads the field and parks unless it is 0";
 /// `AET-WO-4240e` D1 (a): the kernel-clock switch's PLL1 on a board with no
 /// HSE tree.
 const SWITCH_RULE: &str = "on a board with no HSE tree, aethelgard_ir::kernel_clock::check (AET-WO-4240e): the topology's clock.kernel_switch words judged against RM0433 Rev 9 pp. 399-403 and DS12117 Rev 10 Table 39 across the HSI's band, refusing generation and the verdict; the switch's Kani harness (spi_kernel_switch_is_in_order_bounded_and_named) takes the topology's words";
@@ -603,12 +601,10 @@ fn table() -> Vec<Entry> {
             register,
             field,
             R,
-            Rule,
-            RESET_SELECT_RULE,
+            Ign,
             &src,
-            &format!(
-                "the reset code the kernel clock is derived from (aethelgard_ir::kernel_clock; silicon::spi_kernel_hz, i2c_kernel_hz, serial::kernel_hz); also ignored-by-model: {src}"
-            ),
+            &src,
+            "the kernel clock each independent rule derives assumes this reset code (silicon::spi_kernel_hz, i2c_kernel_hz, serial::kernel_hz); the twin reads 0 whatever silicon holds, so ResetClock's read of it is never judged",
         ));
     }
 
@@ -2953,10 +2949,8 @@ mod tests {
             }
         );
         assert_eq!(err.kind(), "LedgerFieldUnclassified");
-        // The access is part of the key: a written select is the rule's; the
-        // same field at reset is the rule's too since `AET-WO-4240e` D2
-        // (`kernel_clock::check` takes each mux's reset input), with another
-        // entry and judge.
+        // The access is part of the key: a written select is the rule's, the
+        // same field at reset a tag.
         assert_eq!(
             classify(
                 &TABLE,
@@ -2981,16 +2975,8 @@ mod tests {
             )
             .unwrap()
             .class,
-            Class::IndependentRule
+            Class::IgnoredByModel
         );
-        let judge = |access| {
-            classify(&TABLE, "RCC", "D2CCIP1R", "SPI123SEL", access, "a")
-                .unwrap()
-                .judge
-                .clone()
-        };
-        assert_ne!(judge(FieldAccess::Written), judge(FieldAccess::Reset));
-        assert!(judge(FieldAccess::Reset).starts_with("aethelgard_ir::kernel_clock::check"));
         // A gate no generator emits (MDMA) is unknown.
         assert!(
             classify(

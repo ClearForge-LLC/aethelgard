@@ -327,6 +327,15 @@ pub enum WordFault {
     },
     /// `DIVQ1EN` (bit 17) is clear: `pll1_q_ck` is disabled (p. 401).
     Divq1enClear,
+    /// A `PLL1DIVR` code the manual does not allow (`AET-WO-4240e`
+    /// adversarial pass 6): `DIVN1` below `0x003` (×4, p. 404), `DIVP1` giving
+    /// an odd factor other than 1 ("odd division factors are not allowed",
+    /// p. 403), `DIVR1` `0` ("Not allowed", p. 403).
+    CodeNotAllowed { field: &'static str, code: u32 },
+    /// `PLL1FRACEN` (bit 0) is set: the sigma-delta PLL locks within 166 µs,
+    /// not the 150 µs of normal mode the switch's `PLL1RDY` wait is sized to
+    /// (DS12117 Rev 10 Table 39, p. 130; adversarial pass 6).
+    FractionalMode,
 }
 
 impl fmt::Display for WordFault {
@@ -387,6 +396,13 @@ impl fmt::Display for WordFault {
             Self::Divq1enClear => f.write_str(
                 "RCC_PLLCFGR.DIVQ1EN is clear: pll1_q_ck is disabled (RM0433 Rev 9 §8.7.12, p. 401)",
             ),
+            Self::CodeNotAllowed { field, code } => write!(
+                f,
+                "RCC_PLL1DIVR.{field} is {code:#x}, a code the manual does not allow (RM0433 Rev 9 §8.7.13, pp. 403-404)"
+            ),
+            Self::FractionalMode => f.write_str(
+                "RCC_PLLCFGR.PLL1FRACEN is set: the sigma-delta PLL locks within 166 us, past the 150 us of normal mode (DS12117 Rev 10 Table 39, p. 130)",
+            ),
         }
     }
 }
@@ -402,6 +418,24 @@ fn judge_words(ks: &SolvedKernelSwitch, vos: Vos) -> Result<(), WordFault> {
     let m = u128::from(field(ks.pllckselr, 4, 6));
     if m == 0 {
         return Err(WordFault::Divm1Zero);
+    }
+    let not_allowed = |field: &'static str, code: u32| WordFault::CodeNotAllowed { field, code };
+    let (n_code, p_code, r_code) = (
+        field(ks.pll1divr, 0, 9),
+        field(ks.pll1divr, 9, 7),
+        field(ks.pll1divr, 24, 7),
+    );
+    if n_code < 3 {
+        return Err(not_allowed("DIVN1", n_code));
+    }
+    if p_code != 0 && p_code % 2 == 0 {
+        return Err(not_allowed("DIVP1", p_code));
+    }
+    if r_code == 0 {
+        return Err(not_allowed("DIVR1", r_code));
+    }
+    if field(ks.pllcfgr, 0, 1) == 1 {
+        return Err(WordFault::FractionalMode);
     }
     let slow = u128::from(Budget::HSI.slowest_hz(HSI_HZ));
     let fast = u128::from(Budget::HSI.fastest_hz(HSI_HZ));
@@ -596,6 +630,13 @@ pub enum Unknown {
     /// `clock.kernel_switch` beside `clock.hse`: PLL1 already runs from the
     /// HSE, and its words cannot be written while it runs (pp. 399–404).
     KernelSwitchBesideHse,
+    /// Two controllers of one select solved on different kernels (SPI1–3
+    /// share `SPI123SEL`, SPI4/5 `SPI45SEL`, p. 414): one field cannot give
+    /// both (`AET-WO-4240e` adversarial pass, a note).
+    SelectSharedApart {
+        selector: &'static str,
+        other: String,
+    },
 }
 
 impl fmt::Display for Unknown {
@@ -614,6 +655,10 @@ impl fmt::Display for Unknown {
             Self::CkmodeNotACode { ckmode } => write!(
                 f,
                 "clock.adc.ckmode {ckmode} is not a 2-bit CKMODE code (RM0433 Rev 9 §25.7.2, p. 1039)"
+            ),
+            Self::SelectSharedApart { selector, other } => write!(
+                f,
+                "{other} shares {selector} with it and is solved on another kernel: one field gives both one input"
             ),
             Self::KernelSwitchBesideHse => f.write_str(
                 "clock.kernel_switch is stated beside clock.hse: PLL1 runs from the HSE tree, and its words cannot be written while it runs (RM0433 Rev 9 §8.7.11–§8.7.13, pp. 399–404)",
@@ -775,6 +820,19 @@ pub fn check(t: &SolvedTopology) -> Vec<KernelClockRefusal> {
                 out.push(unknown(p, why, sel.pages));
                 continue;
             };
+            let apart = t.spi_controllers.iter().find(|(q, c)| {
+                *q != p
+                    && selector(q).is_some_and(|s| s.name == sel.name)
+                    && spi_code(sel, c.kernel) != Some(code)
+            });
+            if let Some((other, _)) = apart {
+                let why = Unknown::SelectSharedApart {
+                    selector: sel.name,
+                    other: other.clone(),
+                };
+                out.push(unknown(p, why, sel.pages));
+                continue;
+            }
             code
         } else {
             // I2C and USART selects are never written: their reset input.

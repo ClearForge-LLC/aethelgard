@@ -786,10 +786,12 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
         rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "HSERDY", 1));
         rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 1));
     } else {
-        // The kernel-clock switch polls `PLL1RDY` until it reads 1
-        // (`AET-WO-4240e`).
+        // The kernel-clock switch polls `PLL1RDY` until it reads 1, then
+        // stops PLL1 (`AET-WO-4240e`): the bench reads it 0 after boot (the
+        // adversarial pass's finding 2); the poll's 1 shows as a boot word
+        // that is not `BOOT_PLL1_NOT_LOCKED`.
         if plan.switch.is_some() {
-            rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 1));
+            rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 0));
         }
         rows.push((
             "FLASH",

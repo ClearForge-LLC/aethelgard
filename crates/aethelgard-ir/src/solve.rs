@@ -598,7 +598,7 @@ fn solve_inner(
         let c = spi_controller(&bus.id, p, declared, &out.clock)?;
         out.spi_controllers.insert(p.clone(), c);
     }
-    out.clock.kernel_switch = kernel_switch(&out.clock, &out.spi_controllers);
+    out.clock.kernel_switch = kernel_switch(&out.spi_controllers);
     for bus in &spec.i2c_buses {
         let p = out.assignments[&bus.sda.net].peripheral.clone();
         let t = i2c_controller(&bus.id, &out.clock, &p)?;
@@ -1039,14 +1039,15 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
 
 /// The switch's PLL1 a board needs (`AET-WO-4240e` D1 (a)): `per_ck` is
 /// selected away from `SPI123SEL`'s reset input `pll1_q_ck` (RM0433 Rev 9
-/// p. 414), so on a board with no HSE tree whose SPI1–3 take `per_ck`, PLL1
+/// p. 414), so on a board whose SPI1–3 take `per_ck` (never an HSE board), PLL1
 /// runs from the HSI across the select ([`hsi_switch_words`]). `None`
 /// otherwise.
 pub(crate) fn kernel_switch(
-    clock: &SolvedClock,
     spi: &BTreeMap<String, crate::SolvedSpiController>,
 ) -> Option<crate::clock::SolvedKernelSwitch> {
-    if clock.hse.is_some() || !spi.values().any(|c| c.kernel == SpiKernel::PerCk) {
+    // An HSE board's SPI1–3 take `pll1_q_ck`, never `per_ck` (`spi_kernel`), so
+    // the `per_ck` test alone excludes it (`AET-WO-4240e` reduction, G10).
+    if !spi.values().any(|c| c.kernel == SpiKernel::PerCk) {
         return None;
     }
     let [pllckselr, pllcfgr, pll1divr] =
@@ -1074,7 +1075,7 @@ pub(crate) fn kernel_switch(
 /// - `DIVQ1` the least, 1 to 128, whose `pll1_q_ck` at the band's top is at
 ///   most 200 MHz, VOS Scale 3's ceiling (Table 39, p. 130), so it holds at
 ///   any scale; `DIVQ1EN` the only output enable; `DIVP1` and `DIVR1` at
-///   their reset 1 (÷2; 0 is "not allowed", p. 403).
+///   their reset 1 (÷2; `DIVR1` 0 is "not allowed", p. 403).
 ///
 /// `None` when no setting exists. The solver's; the rule shares none of it
 /// (`RUL-20`).

@@ -1477,7 +1477,8 @@ pub fn rcc_rule(
 ///   (`RCC.CR 0x1 written, not the kernel switch's next word`), a select
 ///   written outside its PLL1 window (`RCC.D2CCIP1R written while PLL1 was
 ///   not running for the switch`), and a boot that ends with the switch
-///   half done (`the kernel switch stopped after 3 of its 5 words`).
+///   begun and not finished (`the kernel switch stopped after 3 of its 5
+///   words`).
 pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut note = |x: String| {
@@ -1611,7 +1612,9 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
                 }
             }
         }
-        if switched != rule.switch.len() {
+        // A switch begun and not finished; one never begun shows by its
+        // select instead (outside the window, or after the gate).
+        if switched != 0 && switched != rule.switch.len() {
             note(format!(
                 "the kernel switch stopped after {switched} of its {} words",
                 rule.switch.len()
@@ -3104,10 +3107,7 @@ mod tests {
         // The select before PLL1 runs: the scar, and the firmware before 4240e.
         assert_eq!(
             boot(&[std::slice::from_ref(&select), std::slice::from_ref(&spi1)]),
-            [
-                "RCC.D2CCIP1R written while PLL1 was not running for the switch",
-                "the kernel switch stopped after 0 of its 5 words"
-            ]
+            ["RCC.D2CCIP1R written while PLL1 was not running for the switch"]
         );
         // The select after PLL1 is stopped.
         assert_eq!(

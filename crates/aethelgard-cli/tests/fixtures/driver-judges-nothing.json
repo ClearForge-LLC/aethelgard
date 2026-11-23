@@ -873,6 +873,33 @@
       "reason": "Outside the bits the timer model stores (clock division). Bench: read back after boot."
     },
     {
+      "register": "RCC.D1CCIPR",
+      "class": "ignored-by-model",
+      "fields": [
+        "CKPERSEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value, which the firmware keeps. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.D2CCIP1R",
+      "class": "ignored-by-model",
+      "fields": [
+        "SPI123SEL",
+        "SPI45SEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value. Bench: read back after boot."
+    },
+    {
+      "register": "RCC.D2CCIP2R",
+      "class": "ignored-by-model",
+      "fields": [
+        "USART16SEL",
+        "USART28SEL",
+        "I2C123SEL"
+      ],
+      "reason": "A kernel-clock select the RCC model ignores; every rule assumes its reset value. Bench: read back after boot."
+    },
+    {
       "register": "RCC.CR",
       "class": "ignored-by-model",
       "fields": [

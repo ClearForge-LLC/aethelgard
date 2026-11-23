@@ -180,6 +180,63 @@ fn pllsrc_divm1_and_divq1en_are_read() {
     );
 }
 
+/// SPI1–3 share one select (`SPI123SEL`, p. 414): an HSE board with SPI1 on
+/// `pll1_q_ck` and SPI2 on `per_ck` cannot have both, so each is refused by
+/// name (`AET-WO-4240e` adversarial pass, a note: the select word ORs both).
+#[test]
+fn controllers_sharing_a_select_on_different_kernels_are_refused() {
+    let t = topology(&[("SPI1", "pll1_q"), ("SPI2", "per_ck")], |v| {
+        v["clock"]["hse"] = serde_json::to_value(hse(0x0003_0002)).unwrap();
+    });
+    let got = kinds(&kernel_clock::check(&t));
+    assert_eq!(
+        got.iter()
+            .map(|(k, p)| (*k, p.as_str()))
+            .collect::<Vec<_>>(),
+        [
+            ("KernelClockUnknown", "SPI1"),
+            ("KernelClockUnknown", "SPI2")
+        ]
+    );
+}
+
+/// `AET-WO-4240e` adversarial pass 6: the `PLL1DIVR` codes the manual does
+/// not allow (pp. 403–404) and the fractional mode, whose lock bound is past
+/// the switch's wait (DS12117 Rev 10 Table 39, p. 130). The ruled words
+/// carry `DIVP1` and `DIVR1` at their reset `1` (÷2), `DIVN1` 15 (×16).
+#[test]
+fn codes_the_manual_does_not_allow_are_refused() {
+    let s2 = Vos::Scale2;
+    let not = |field: &'static str, code: u32| Some(W::CodeNotAllowed { field, code });
+    // DIVN1 0x002 (below 0x003, ×4).
+    assert_eq!(
+        fault(switch(0x50, 0x0002_000C, 0x0101_0202), s2),
+        not("DIVN1", 2)
+    );
+    // DIVP1 0b0000010, ÷3: "Not allowed"; 0b0000100, ÷5, odd too.
+    assert_eq!(
+        fault(switch(0x50, 0x0002_000C, 0x0101_040F), s2),
+        not("DIVP1", 2)
+    );
+    assert_eq!(
+        fault(switch(0x50, 0x0002_000C, 0x0101_080F), s2),
+        not("DIVP1", 4)
+    );
+    // DIVP1 0 (÷1) and 3 (÷4) are allowed.
+    assert_eq!(fault(switch(0x50, 0x0002_000C, 0x0101_000F), s2), None);
+    assert_eq!(fault(switch(0x50, 0x0002_000C, 0x0101_060F), s2), None);
+    // DIVR1 0: "Not allowed".
+    assert_eq!(
+        fault(switch(0x50, 0x0002_000C, 0x0001_020F), s2),
+        not("DIVR1", 0)
+    );
+    // PLL1FRACEN set.
+    assert_eq!(
+        fault(switch(0x50, 0x0002_000D, 0x0101_020F), s2),
+        Some(W::FractionalMode)
+    );
+}
+
 /// The reference at the band's edges against `PLL1RGE`: 64 MHz / 8 = 8 MHz
 /// nominal is inside both `10` (4–8) and `11` (8–16), but the HSI's fastest
 /// (8,119,872 Hz) leaves `10` and its slowest (7,792,848 Hz) leaves `11`.
@@ -339,23 +396,33 @@ fn pll1_q_on_an_hsi_board_is_not_running() {
 
 /// (5) An HSE board: PLL1 runs from the HSE tree throughout, so
 /// `pll1_q_ck` runs exactly when `DIVQ1EN` is set in its words, both for
-/// SPI1–3 left on it and for a move to `per_ck`.
+/// SPI1–3 left on it and for a move to `per_ck`, each on its own board
+/// (SPI1–3 share one select).
 #[test]
 fn an_hse_board_runs_pll1_q_when_divq1en_is_set() {
-    let mut t = topology(&[("SPI1", "pll1_q"), ("SPI3", "per_ck")], |_| {});
-    t.clock.hse = hse(DIVP1EN | DIVQ1EN | 0b0010);
-    assert_eq!(kernel_clock::check(&t), []);
-    t.clock.hse = hse(DIVP1EN | 0b0010);
-    let r = kernel_clock::check(&t);
     let disabled = NotRunning::OutputDisabled { field: "DIVQ1EN" };
+    let mut on = topology(&[("SPI1", "pll1_q")], |_| {});
+    let mut moved = topology(&[("SPI3", "per_ck")], |_| {});
+    for t in [&mut on, &mut moved] {
+        t.clock.hse = hse(DIVP1EN | DIVQ1EN | 0b0010);
+        assert_eq!(kernel_clock::check(t), []);
+        t.clock.hse = hse(DIVP1EN | 0b0010);
+    }
+    let r = kernel_clock::check(&on);
     assert!(
         matches!(
             r.as_slice(),
-            [
-                R::KernelClockNotRunning { peripheral: p1, input: "pll1_q_ck", why: w1, .. },
-                R::KernelClockDeadSwitch { peripheral: p3, from: "pll1_q_ck", to: "per_ck", dead, .. },
-            ] if p1 == "SPI1" && p3 == "SPI3" && *w1 == disabled
-                && dead == &[DeadInput { input: "pll1_q_ck", why: disabled.clone() }]
+            [R::KernelClockNotRunning { peripheral: p1, input: "pll1_q_ck", why: w1, .. }]
+                if p1 == "SPI1" && *w1 == disabled
+        ),
+        "{r:?}"
+    );
+    let r = kernel_clock::check(&moved);
+    assert!(
+        matches!(
+            r.as_slice(),
+            [R::KernelClockDeadSwitch { peripheral: p3, from: "pll1_q_ck", to: "per_ck", dead, .. }]
+                if p3 == "SPI3" && dead == &[DeadInput { input: "pll1_q_ck", why: disabled.clone() }]
         ),
         "{r:?}"
     );
@@ -544,8 +611,9 @@ fn refusals_are_one_per_peripheral_in_name_order() {
         kinds(&kernel_clock::check(&t)),
         [
             ("KernelClockNotRunning", "ADC3".to_owned()),
-            ("KernelClockNotRunning", "SPI1".to_owned()),
-            ("KernelClockDeadSwitch", "SPI3".to_owned()),
+            // SPI1 and SPI3 share `SPI123SEL` on different kernels.
+            ("KernelClockUnknown", "SPI1".to_owned()),
+            ("KernelClockUnknown", "SPI3".to_owned()),
             ("KernelClockUnknown", "SPI4".to_owned()),
         ]
     );

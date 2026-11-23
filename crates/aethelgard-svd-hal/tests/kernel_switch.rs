@@ -13,7 +13,9 @@ use std::fs;
 use std::path::Path;
 
 use aethelgard_ir::{SolvedTopology, Specification};
-use aethelgard_svd_hal::board::{BOOT_PLL1_NOT_LOCKED, BoardError, SWITCH_READS, generate_with};
+use aethelgard_svd_hal::board::{
+    BOOT_PLL1_NOT_LOCKED, BoardError, FieldAccess, SWITCH_READS, generate_with, register_fields,
+};
 use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
 
@@ -192,4 +194,43 @@ fn the_adc_converts_on_the_clock_the_topology_states() {
             other => panic!("{found:?}: {:?}", other.map(|_| ())),
         }
     }
+}
+
+/// Adversarial pass 4: `SWITCH_READS` is sized for a `pll1_q_ck` at least as
+/// fast as `per_ck`; a legal but slower one (`DIVQ1` 127, ÷128: 1.56 MHz at
+/// the HSI's slowest) is refused, not emitted with too short a wait.
+#[test]
+fn a_switch_slower_than_per_ck_is_refused() {
+    let (mut t, table) = cli("sentinel-01-bench");
+    let k = t.clock.kernel_switch.as_mut().unwrap();
+    k.pll1divr = (k.pll1divr & !(0x7F << 16)) | 127 << 16;
+    match generate_with("switch-board", &t, &table, &answers) {
+        Err(e @ BoardError::SwitchQBelowPerCk { .. }) => assert_eq!(e.kind(), "SwitchQBelowPerCk"),
+        other => panic!("{:?}", other.map(|_| ())),
+    }
+}
+
+/// The ledger's rows for the switch (`AET-WO-4240e`): `PLL1ON` changed alone
+/// (a read-modify-write, no other `RCC_CR` field written), and `PLL1RDY`
+/// polled, which the bench reads 0 after boot, PLL1 stopped (adversarial
+/// pass 2).
+#[test]
+fn the_switch_s_ledger_rows_are_pll1on_alone_and_pll1rdy_read_zero() {
+    let (t, table) = cli("sentinel-01-bench");
+    let rows = register_fields(&t, &table).unwrap();
+    let cr: Vec<(&str, FieldAccess, Option<u32>)> = rows
+        .iter()
+        .filter(|r| r.register == "RCC.CR")
+        .map(|r| (r.field.as_str(), r.access, r.value))
+        .collect();
+    assert!(
+        cr.contains(&("PLL1RDY", FieldAccess::Reset, Some(0))),
+        "{cr:?}"
+    );
+    assert!(
+        cr.iter()
+            .filter(|(_, a, _)| *a == FieldAccess::Written)
+            .all(|(f, _, _)| *f == "PLL1ON"),
+        "{cr:?}"
+    );
 }

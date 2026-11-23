@@ -312,6 +312,33 @@
       "reason": "Polled by the kernel-clock switch (AET-WO-4240e); the stock RCC reads PLL1RDY = PLL1ON at once (STM32H7_RCC.cs L197). Judged by the bench row and Tviburi's RCC guard."
     },
     {
+      "register": "RCC.D1CCIPR",
+      "class": "ignored-by-model",
+      "fields": [
+        "CKPERSEL"
+      ],
+      "reason": "A tag in Renode (STM32H7_RCC.cs L401, read 0 whatever is written, 4230 FEEDBACK section 2). SPI1's kernel per_ck assumes HSI here; the bench row reads it, as 3302 B8."
+    },
+    {
+      "register": "RCC.D2CCIP1R",
+      "class": "ignored-by-model",
+      "fields": [
+        "SPI123SEL",
+        "SPI45SEL"
+      ],
+      "reason": "ResetClock reads them at reset before the select write; a tag (STM32H7_RCC.cs L408-410) reads 0 whatever silicon holds. The written SPI123SEL is judged by spi_words."
+    },
+    {
+      "register": "RCC.D2CCIP2R",
+      "class": "ignored-by-model",
+      "fields": [
+        "USART16SEL",
+        "USART28SEL",
+        "I2C123SEL"
+      ],
+      "reason": "Left at reset (rcc_pclk2/pclk1 kernels the BRR and TIMINGR rules assume); a tag (STM32H7_RCC.cs L420-425) reads 0 whatever silicon holds. The bench row reads each."
+    },
+    {
       "register": "SCB.CPACR",
       "class": "same-source",
       "fields": [
