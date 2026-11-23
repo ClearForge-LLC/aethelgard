@@ -4,7 +4,7 @@
 # with the verdicts (6) touches: check erc, check drc with and without --spec, check support,
 # generate, and prove of the first harness with and without --spec. same.sh-style comparison:
 # `diff -r` of two output directories.
-# Usage: sweep.sh <aethelgard binary> <a git archive of one commit> <out dir> [--no-prove]
+# Usage: [PROVE_SPECS='a.json b.json'] sweep.sh <aethelgard binary> <a git archive of one commit> <out dir> [--no-prove]
 set -euo pipefail
 bin=$1 repo=$2 out=$3 prove=${4:-}
 mkdir -p "$out"
@@ -48,7 +48,9 @@ while read -r f; do
     step "$d" support "$bin" check support --schematic "$sch" --board "$pcb" --spec "$f"
   fi
   step "$d" generate "$bin" generate --spec "$f" --out "$d/gen"
-  if [ "$prove" != --no-prove ] && [ "$(cat "$d/generate.exit")" = 0 ]; then
+  # PROVE_SPECS, if set, is a space-separated list of the specifications to prove.
+  case " ${PROVE_SPECS:-$f} " in *" $f "*) want=1;; *) want=;; esac
+  if [ "$prove" != --no-prove ] && [ -n "$want" ] && [ "$(cat "$d/generate.exit")" = 0 ]; then
     h=$(grep -A3 -F '#[kani::proof]' "$d/gen/board/src/proofs.rs" | grep -oE '^\s*fn [a-z0-9_]+' | head -1 | awk '{print $2}')
     step "$d" prove-spec "$bin" prove --crate "$d/gen/board" --harness "proofs::$h" --spec "$f"
     step "$d" prove "$bin" prove --crate "$d/gen/board" --harness "proofs::$h"
