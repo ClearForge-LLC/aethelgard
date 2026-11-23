@@ -957,7 +957,9 @@ fn good() -> Vec<Record> {
             width: 1,
             expected: 0x71,
             mask: 0xFF,
-            observed: None,
+            // The record's value word, which the judge reads with its status
+            // (`AET-WO-2309`: all read or all unread).
+            observed: Some(0),
             status: Some("timeout_txis".into()),
         },
         witness("I2C1", "U2", 0x75, 0x71, Some(vec![])),
@@ -2278,7 +2280,7 @@ fn two_devices_on_one_controller_have_two_witnesses() {
             width: 1,
             expected: 0x71,
             mask: 0xFF,
-            observed: None,
+            observed: Some(0),
             status: Some("timeout_txis".into()),
         },
     );
@@ -2544,7 +2546,9 @@ fn i2c_step_check(step: &str, write: Vec<u8>, width: u8, expected: u64, mask: u6
         width,
         expected,
         mask,
-        observed: (width > 0).then_some(expected),
+        // A configure step's record still holds a value word, read with its
+        // status (`AET-WO-2309`); the judge leaves it unjudged.
+        observed: Some(if width > 0 { expected } else { 0 }),
         status: Some("ok".into()),
     }
 }
@@ -3071,12 +3075,37 @@ fn a_line_bound_only_by_another_bus_or_another_line_is_refused() {
 /// error, once, and a read boot names none.
 #[test]
 fn a_boot_that_read_nothing_names_its_bound() {
+    // Unread whole, as the judge archives a boot killed before its reads:
+    // kind 10's four, its flash accesses, and every register, record and
+    // witness line beside it (`AET-WO-2309`: all read or all unread).
     let unread = || {
-        good_with_boot(|w, n, pc| {
+        let mut r = good_with_boot(|w, n, pc| {
             w.observed = None;
             *n = None;
             *pc = None;
-        })
+        });
+        for x in &mut r {
+            match x {
+                Record::BootObserved {
+                    brown_out,
+                    flash_access,
+                    ..
+                } => {
+                    brown_out.observed = None;
+                    *flash_access = None;
+                }
+                Record::RegisterObserved { reading, .. } => reading.observed = None,
+                Record::I2cCheck {
+                    observed, status, ..
+                } => {
+                    *observed = None;
+                    *status = None;
+                }
+                Record::I2cWitness { observed, .. } => *observed = None,
+                _ => {}
+            }
+        }
+        r
     };
     let others = [
         (PAST, "error", 2),
@@ -3211,5 +3240,191 @@ fn a_record_judged_without_the_boot_word_is_refused() {
             .collect();
         f.sort();
         assert!(check_run(&with_findings(good(), &f)).is_ok(), "{kind}");
+    }
+}
+
+const NOT_TOGETHER: &str = "the boot's registers, identity reads and witnesses are not all read or all unread with its boot word";
+
+/// `good()` with U4 on SPI1 (kinds 23, 21 and 22) read as the judge reads it.
+fn good_with_spi() -> Vec<Record> {
+    let mut r = good();
+    let bus = position(&r, is_bus);
+    r.insert(
+        bus + 1,
+        Record::SpiBusSolved {
+            peripheral: "SPI1".into(),
+            devices: vec![("U4".into(), 0, "PA0".into())],
+        },
+    );
+    let mut check = spi_step_check("identity", vec![0x9F], 3, 0xEF_4017, 0xFF_FFFF);
+    if let Record::SpiCheck {
+        observed, status, ..
+    } = &mut check
+    {
+        *observed = Some(0xEF_4017);
+        *status = Some("ok".into());
+    }
+    let mut witness = spi_step_witness("identity");
+    if let Record::SpiWitness {
+        expected, observed, ..
+    } = &mut witness
+    {
+        let line =
+            "[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation";
+        *expected = vec![line.to_owned()];
+        *observed = Some(vec![line.to_owned()]);
+    }
+    let verdict = r.len() - 1;
+    r.insert(verdict, witness);
+    r.insert(verdict, check);
+    r
+}
+
+/// `AET-WO-2309` rule (3), `AET-WO-3201` adversarial 5.8: a read boot whose
+/// registers or identity reads are set unread, value or status, is refused
+/// by name; so is any one of them read beside an unread boot. A read boot's
+/// witness may be unread (its log past the filter's budget); an unread boot's
+/// holds no lines and no attribution evidence.
+#[test]
+fn a_boots_reads_are_all_read_or_all_unread() {
+    let base = good_with_spi();
+    assert_eq!(check_run(&base).map(|_| ()), Ok(()));
+    let edited = |r: &[Record], f: &dyn Fn(&mut Record)| {
+        let mut r = r.to_vec();
+        r.iter_mut().for_each(f);
+        check_run(&r).map(|_| ())
+    };
+    // The flooded log's shape: read, its witnesses unread. Accepted.
+    assert_eq!(
+        edited(&base, &|x| match x {
+            Record::I2cWitness { observed, .. } | Record::SpiWitness { observed, .. } =>
+                *observed = None,
+            _ => {}
+        }),
+        Ok(())
+    );
+    // 5.8, one record at a time, beside a read boot.
+    let unread_in_read: [(&str, &dyn Fn(&mut Record)); 5] = [
+        ("kind 11", &|x| {
+            if let Record::RegisterObserved { reading, .. } = x {
+                reading.observed = None;
+            }
+        }),
+        ("kind 12 value", &|x| {
+            if let Record::I2cCheck { observed, .. } = x {
+                *observed = None;
+            }
+        }),
+        ("kind 12 status", &|x| {
+            if let Record::I2cCheck { status, .. } = x {
+                *status = None;
+            }
+        }),
+        ("kind 21 value", &|x| {
+            if let Record::SpiCheck { observed, .. } = x {
+                *observed = None;
+            }
+        }),
+        ("kind 21 status", &|x| {
+            if let Record::SpiCheck { status, .. } = x {
+                *status = None;
+            }
+        }),
+    ];
+    for (what, f) in unread_in_read {
+        assert_eq!(edited(&base, f), Err(NOT_TOGETHER), "{what}");
+    }
+    // The same run read as a boot killed before its reads: accepted whole,
+    // then each read thing put back alone is refused.
+    let unread_all = |x: &mut Record| match x {
+        Record::BootObserved {
+            boot_word,
+            instructions_observed,
+            pc,
+            brown_out,
+            flash_access,
+            ..
+        } => {
+            boot_word.observed = None;
+            *instructions_observed = None;
+            *pc = None;
+            brown_out.observed = None;
+            *flash_access = None;
+        }
+        Record::RegisterObserved { reading, .. } => reading.observed = None,
+        Record::I2cCheck {
+            observed, status, ..
+        }
+        | Record::SpiCheck {
+            observed, status, ..
+        } => {
+            *observed = None;
+            *status = None;
+        }
+        Record::I2cWitness { observed, .. } | Record::SpiWitness { observed, .. } => {
+            *observed = None
+        }
+        _ => {}
+    };
+    let mut killed = base.clone();
+    killed.iter_mut().for_each(unread_all);
+    let killed = with_findings(
+        killed,
+        &[
+            (PAST, "error", 2),
+            ("cpu_aborted", "error", 1),
+            ("device_unmodelled", "info", 1),
+        ],
+    );
+    assert_eq!(check_run(&killed).map(|_| ()), Ok(()));
+    let read_in_unread: [(&str, &dyn Fn(&mut Record)); 9] = [
+        ("kind 11", &|x| {
+            if let Record::RegisterObserved { reading, .. } = x {
+                reading.observed = Some(0x12);
+            }
+        }),
+        ("kind 12 value", &|x| {
+            if let Record::I2cCheck { observed, .. } = x {
+                *observed = Some(0);
+            }
+        }),
+        ("kind 12 status", &|x| {
+            if let Record::I2cCheck { status, .. } = x {
+                *status = Some("timeout_txis".into());
+            }
+        }),
+        ("kind 21 value", &|x| {
+            if let Record::SpiCheck { observed, .. } = x {
+                *observed = Some(0);
+            }
+        }),
+        ("kind 21 status", &|x| {
+            if let Record::SpiCheck { status, .. } = x {
+                *status = Some("ok".into());
+            }
+        }),
+        ("kind 13 lines", &|x| {
+            if let Record::I2cWitness { observed, .. } = x {
+                *observed = Some(vec![]);
+            }
+        }),
+        ("kind 13 absent", &|x| {
+            if let Record::I2cWitness { absent, .. } = x {
+                absent.push(0x75);
+            }
+        }),
+        ("kind 22 lines", &|x| {
+            if let Record::SpiWitness { observed, .. } = x {
+                *observed = Some(vec![]);
+            }
+        }),
+        ("kind 22 unrouted", &|x| {
+            if let Record::SpiWitness { unrouted, .. } = x {
+                unrouted.push("[WARNING] spi1.spi1mux: a line".into());
+            }
+        }),
+    ];
+    for (what, f) in read_in_unread {
+        assert_eq!(edited(&killed, f), Err(NOT_TOGETHER), "{what}");
     }
 }

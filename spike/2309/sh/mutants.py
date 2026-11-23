@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AET-WO-2309: one mutant per guard the rule patch adds, each run against the aethelgard-chaos suite
+"""AET-WO-2309: one mutant per guard the rules add, each run against the aethelgard-chaos suite
 (the suites the guards live in) in the repository copy given, which holds the patch. Each mutant is an
 exact, once-only text replacement; the file is restored after. Prints KILLED or SURVIVED, and the
 first failing test with its panic line, so a kill is seen to be by the guard's own named refusal.
@@ -24,6 +24,33 @@ MUTANTS = {
     "m-gone": (CAMPAIGN, "    if booted && witnessed.len() != solved.len() {", "    if false && witnessed.len() != solved.len() {"),
     "m-unbooted-too": (CAMPAIGN, "    if booted && witnessed.len() != solved.len() {", "    if witnessed.len() != solved.len() {"),
 }
+
+# Rule (3): all read or all unread, and what only a read boot holds (ruled D3).
+MUTANTS.update({
+    "r-gone": (CAMPAIGN, "    check_read_with_the_boot(records)?;\n", ""),
+    "r-11": (CAMPAIGN, "Record::RegisterObserved { reading, .. } => reading.observed.is_some() == read,",
+             "Record::RegisterObserved { reading, .. } => true,"),
+    "r-12-21-value": (CAMPAIGN, "} => observed.is_some() == read && status.is_some() == read,", "} => status.is_some() == read,"),
+    "r-12-21-status": (CAMPAIGN, "} => observed.is_some() == read && status.is_some() == read,", "} => observed.is_some() == read,"),
+    "r-13-lines": (CAMPAIGN, "} => read || (observed.is_none() && absent.is_empty()),", "} => read || absent.is_empty(),"),
+    "r-13-absent": (CAMPAIGN, "} => read || (observed.is_none() && absent.is_empty()),", "} => read || observed.is_none(),"),
+    "r-22-lines": (CAMPAIGN, "} => read || (observed.is_none() && unrouted.is_empty()),", "} => read || unrouted.is_empty(),"),
+    "r-22-unrouted": (CAMPAIGN, "} => read || (observed.is_none() && unrouted.is_empty()),", "} => read || observed.is_none(),"),
+    "r-renode-gone": (CAMPAIGN, "    if !read && renode_read {", "    if false && renode_read {"),
+})
+_BLOCK = [
+    "            Record::MotorWitness { .. }",
+    "                | Record::SerialWitness { .. }",
+    "                | Record::JudgeStop { .. }",
+    "                | Record::PinGpioWitness { .. }",
+    "                | Record::PinAdcWitness { .. }",
+    "                | Record::MotorLevelWitness { .. }",
+]
+for i, kind in enumerate([26, 29, 30, 34, 36, 37]):
+    kept = _BLOCK[:i] + _BLOCK[i + 1:]
+    if i == 0:
+        kept[0] = kept[0].replace("                | ", "            ")
+    MUTANTS[f"r-k{kind}"] = (CAMPAIGN, "\n".join(_BLOCK), "\n".join(kept))
 
 repo = pathlib.Path(sys.argv[1])
 ids = sys.argv[2:] or list(MUTANTS)
