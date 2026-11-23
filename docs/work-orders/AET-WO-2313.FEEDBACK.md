@@ -186,7 +186,19 @@ is about 130 lines.
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean on the host and in the tools image with
   `--features aethelgard-cli/with-tools`.
-- `cargo test --workspace` on the host: 169 suites, 0 failed (before the reduction); `boot_tier1` (64) and
-  `campaign_tier1` (70) again after it. Tier 2 locally: the twin test only; CI runs the rest.
+- `cargo test --workspace` on the host, on the merged and reduced tree: 173 suites, 0 failed.
+  `boot_tier1` (64) and `campaign_tier1` (70) also pass inside the tools image (`with-tools`, `capped-run`
+  16 GiB), where CI runs them. Tier 2 locally: the twin test only; CI runs the rest.
+- The three new tests are in `boot_tier1` and `campaign_tier1`, neither lock-serialised, each a few seconds:
+  they take `ci/shard.sh`'s default weight and need no `test-weights.tsv` row.
 - `main` merged at ee239949 (4240e). `1609` has not merged; when it does, its `foreign.rs` is taken and the
   comment and the L181 string re-applied.
+
+## 8. Findings
+
+- **F1, a unit slip in the work order's grounds:** "on Furnace the same tree peaks at about 984 MiB". Tviburi's
+  figure is 983,816 KiB, about 961 MiB. The comment in `renode.rs` states the KiB figure.
+- **F2, for whichever of `1609` (#376) and this PR merges second:** #376 carries the pre-2313 text on the
+  same lines (README L335/353/409/416/494, `renode.rs` L216–221, `foreign.rs` L28 and L181, `boot_tier1`'s
+  `HOG`, `twin_tier2` L2285–2287). Its own changes there are not about the bound, so the merge takes 1609's
+  edits and this PR's bound.

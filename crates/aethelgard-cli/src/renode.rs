@@ -218,7 +218,7 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
 /// amended by `AET-WO-2313`), not by that rule: Tviburi `TVI-WO-1301`
 /// measured ArduPilot's full boot on its one-file overlay at 768,856 to
 /// 1,049,556 KiB across CI runs of nearly the same tree, for a cause not yet
-/// known (about 984 MiB on Furnace), so a 1 GiB cap passed or failed it by
+/// known (983,816 KiB on Furnace), so a 1 GiB cap passed or failed it by
 /// chance. A droop's boot, Renode under the bridge, takes this bound; the
 /// bridge alone keeps [`crate::analog::BRIDGE_BOUNDS`].
 /// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
