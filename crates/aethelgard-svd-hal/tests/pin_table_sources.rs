@@ -110,15 +110,14 @@ fn families(afs: &Afs) -> Afs {
         .collect()
 }
 
-/// DS12117's AF rows on the package's GPIO pins.
+/// DS12117's AF rows; each pin must be one of the package's.
 fn ds_afs(on_package: &BTreeSet<String>) -> Afs {
     let mut afs = Afs::new();
     for f in rows(DS_AFS, 4) {
         let (pin, af, signal) = (f[0], f[1].parse::<u8>().unwrap(), f[2]);
         assert!(af <= 15 && in_families(signal), "row {f:?}");
-        if on_package.contains(pin)
-            && let Some(old) = afs.insert((pin.to_owned(), signal.to_owned()), af)
-        {
+        assert!(on_package.contains(pin), "{pin} is not on the package");
+        if let Some(old) = afs.insert((pin.to_owned(), signal.to_owned()), af) {
             panic!("{pin} {signal} twice (AF{old}, AF{af})");
         }
     }
@@ -335,13 +334,7 @@ fn a_row_only_ds12117_contradicts_fails() {
     let key = ("PB6".to_owned(), "I2C1_SCL".to_owned());
     assert_eq!(afs.get(&key), Some(&4));
     let ap = ardupilot("AltFunction_map = {\n\t\"PB6:I2C1_SCL\"\t:\t4,\n}\n");
-    assert_eq!(
-        diff("st", &afs, "ardupilot", &ap)
-            .iter()
-            .filter(|d| d.starts_with("PB6 I2C1_SCL"))
-            .count(),
-        0
-    );
+    assert_eq!(ap.get(&key), Some(&4));
     let mut ds = ds_afs(&on_package);
     assert_eq!(ds.insert(key, 6), Some(4));
     assert_eq!(

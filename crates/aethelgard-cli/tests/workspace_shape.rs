@@ -268,6 +268,10 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
             // `AET-WO-3303` §1.2: the motor fixture's solved topology, read by
             // the split's unit tests, held to `solve` by `tests/motor_outputs.rs`.
             || file == "tests/ui/motors-pwm/topology.json"
+            // `AET-WO-4408`: DS12117's pads and AF rows, the third source
+            // `tests/pin_table_sources.rs` holds ST's pin table against.
+            || file == "tests/fixtures/ds12117/pads.tsv"
+            || file == "tests/fixtures/ds12117/af.tsv"
             || DATA.contains(&file.as_str());
         assert!(
             allowed,
