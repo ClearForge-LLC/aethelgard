@@ -1,0 +1,192 @@
+diff --git a/crates/aethelgard-chaos/README.md b/crates/aethelgard-chaos/README.md
+index 6c68b9f4..8b8cbc55 100644
+--- a/crates/aethelgard-chaos/README.md
++++ b/crates/aethelgard-chaos/README.md
+@@ -156,7 +156,9 @@ Writer (`TraceWriter`): create the run directory (refused if it exists); create
+ buffered writer; flush and `sync_all` the trace; write `manifest.cbor.tmp` with
+ `create_new`, `sync_all` it, rename it to `manifest.cbor`, `sync_all` the
+ directory. The writer refuses an event or header its own reader would refuse,
+-and a timestamp that goes backwards.
++a timestamp that goes backwards, and an event that would take the trace past
++256 MiB (`TraceFull`, before the event is folded, so what came before it
++still commits; `AET-WO-2309`).
+ 
+ Reader (`replay_dir`) checks in this order, each refusal its own
+ `ArchiveError` variant:
+@@ -399,6 +401,15 @@ refuses:
+   bound: `cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`; or not
+   loaded: `platform_load_error` or `firmware_load_error`), or a read boot that
+   names one (`AET-WO-3201` B2);
++- a register (kind 11) or an identity read's value or status (kinds 12 and
++  21) read when kind 10 is unread, or unread when it is read; or a witness
++  (kinds 13 and 22) holding observed lines, absent addresses or unrouted
++  lines beside an unread kind 10. A read boot may hold an unread witness: its
++  log passed the filter's budget (`AET-WO-2309`, from `AET-WO-3201`
++  adversarial 5.8);
++- a booted run in which a solved motor output (kind 24) has no witness
++  (kind 26): a run holds at most one per output, and a booted run exactly
++  one (`AET-WO-2309`, from `AET-WO-2302` A2-2);
+ - a verdict that judges an identity read's record (a mismatch of any step,
+   `*_record_invalid`, `*_transaction_unwitnessed`) of a boot without its boot
+   word: the judge names a record before the fixed point only by its timeout
+diff --git a/crates/aethelgard-chaos/src/archive.rs b/crates/aethelgard-chaos/src/archive.rs
+index ab1ed43a..4a50e8c7 100644
+--- a/crates/aethelgard-chaos/src/archive.rs
++++ b/crates/aethelgard-chaos/src/archive.rs
+@@ -21,8 +21,9 @@ pub const MIRROR: &str = "mirror.cbor";
+ /// The mirror step's temporary file. Replay ignores it, as it ignores `mirror.cbor`.
+ pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
+ 
+-/// A manifest declaring a longer trace is refused before the trace is read
+-/// (`OQ-03` revisits the number when P2 measures real volume).
++/// A manifest declaring a longer trace is refused before the trace is read,
++/// and the writer refuses to write one (`OQ-03` revisits the number when P2
++/// measures real volume).
+ pub const MAX_TRACE_BYTES: u64 = 256 << 20;
+ /// The most a manifest may be: it holds a handful of integers and a hash.
+ pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
+@@ -157,7 +158,9 @@ impl TraceWriter {
+     }
+ 
+     /// Append one event. Refuses what the reader would refuse, and a
+-    /// timestamp earlier than the last one.
++    /// timestamp earlier than the last one. An event that would take the
++    /// trace past [`MAX_TRACE_BYTES`] is refused whole, before it is folded,
++    /// so the run commits what came before it (`AET-WO-2303` F3).
+     pub fn append(&mut self, event: &Event) -> Result<(), ArchiveError> {
+         let index = self.replayer.event_count();
+         event
+@@ -173,6 +176,15 @@ impl TraceWriter {
+                 reason: "event is over 4096 bytes",
+             });
+         }
++        let bytes = self.bytes + scratch.len() as u64;
++        if bytes > MAX_TRACE_BYTES {
++            self.scratch = scratch;
++            return Err(ArchiveError::TraceFull {
++                index,
++                bytes,
++                limit: MAX_TRACE_BYTES,
++            });
++        }
+         self.replayer.apply(event)?;
+         let result = self.put(&scratch);
+         self.scratch = scratch;
+diff --git a/crates/aethelgard-chaos/src/campaign.rs b/crates/aethelgard-chaos/src/campaign.rs
+index dfd42369..248a2d84 100644
+--- a/crates/aethelgard-chaos/src/campaign.rs
++++ b/crates/aethelgard-chaos/src/campaign.rs
+@@ -1083,11 +1083,12 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
+     if let Record::Scenario { overrides, .. } = &records[0] {
+         check_rail_out_of_band(overrides)?;
+     }
+-    check_joins(records)?;
+     let booted = records.iter().any(|r| {
+         matches!(r, Record::BootObserved { boot_word, .. }
+             if boot_word.observed == Some(boot_word.expected))
+     });
++    check_read_with_the_boot(records)?;
++    check_joins(records, booted)?;
+     check_serial_joins(records, booted)?;
+     let Record::Scenario {
+         name,
+@@ -1463,6 +1464,43 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
+     })
+ }
+ 
++/// Kind 10's "all read or all unread" across the boot's reads (`AET-WO-3201`
++/// adversarial 5.8): the judge reads every solved register (kind 11) and
++/// every identity read's record (kinds 12 and 21, its value and its status)
++/// in the read that reads the boot, so each is read exactly when the boot
++/// is. A witness's log lines and its attribution evidence (kinds 13 and 22)
++/// are unread when the boot is; a read boot may still hold a witness unread,
++/// when Renode's log passed the filter's budget (`renode.rs`, `AET-WO-2204`
++/// D2).
++fn check_read_with_the_boot(records: &[Record]) -> Result<(), &'static str> {
++    let read = records.iter().any(
++        |r| matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some()),
++    );
++    let together = records.iter().all(|r| match r {
++        Record::RegisterObserved { reading, .. } => reading.observed.is_some() == read,
++        Record::I2cCheck {
++            observed, status, ..
++        }
++        | Record::SpiCheck {
++            observed, status, ..
++        } => observed.is_some() == read && status.is_some() == read,
++        Record::I2cWitness {
++            observed, absent, ..
++        } => read || (observed.is_none() && absent.is_empty()),
++        Record::SpiWitness {
++            observed, unrouted, ..
++        } => read || (observed.is_none() && unrouted.is_empty()),
++        _ => true,
++    });
++    if together {
++        Ok(())
++    } else {
++        Err(
++            "the boot's registers, identity reads and witnesses are not all read or all unread with its boot word",
++        )
++    }
++}
++
+ /// `AET-WO-3100` R2: every bus, net, device and controller the other records
+ /// name is joined by exactly one solved bus (kind 15), so a dropped or forged
+ /// join is refused here and never reaches attribution as a guess.
+@@ -2987,8 +3025,9 @@ fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
+ 
+ /// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
+ /// every output has exactly one static check and at most one witness, and
+-/// a witness's observer is its output's pin's (`AET-WO-4300a`).
+-fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
++/// exactly one in a booted run (`AET-WO-2302` A2-2), and a witness's
++/// observer is its output's pin's (`AET-WO-4300a`).
++fn check_motor_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
+     let mut solved: BTreeMap<&str, &Record> = BTreeMap::new();
+     for r in records {
+         if let Record::MotorOutputSolved { label, .. } = r
+@@ -3098,6 +3137,9 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
+     if checked.len() != solved.len() {
+         return Err("a solved motor output has no static timing check");
+     }
++    if booted && witnessed.len() != solved.len() {
++        return Err("a booted run's solved motor output has no witness");
++    }
+     // Each judge's stop (kind 30): a DShot timer's, once, at its witnesses'
+     // anchor plus `DSHOT_WINDOW_NS`, inside the boot.
+     let mut stopped: BTreeSet<&str> = BTreeSet::new();
+@@ -3419,8 +3461,8 @@ pub fn witness_continuous(w: &Record) -> bool {
+     spaced && alternating
+ }
+ 
+-fn check_joins(records: &[Record]) -> Result<(), &'static str> {
+-    check_motor_joins(records)?;
++fn check_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
++    check_motor_joins(records, booted)?;
+     /// A kind 15's bus, peripheral, lines and devices.
+     type Solved<'a> = (&'a str, &'a str, &'a [BusLine], &'a [(String, u8)]);
+     let solved: Vec<Solved> = records
+diff --git a/crates/aethelgard-chaos/src/lib.rs b/crates/aethelgard-chaos/src/lib.rs
+index bd61f6eb..708789cb 100644
+--- a/crates/aethelgard-chaos/src/lib.rs
++++ b/crates/aethelgard-chaos/src/lib.rs
+@@ -55,6 +55,10 @@ pub enum ArchiveError {
+     ManifestTooLarge { limit: u64 },
+     #[error("the manifest declares a trace of {declared} bytes, over the {limit}-byte bound")]
+     TraceTooLarge { declared: u64, limit: u64 },
++    #[error(
++        "event {index} would take the trace to {bytes} bytes, past MAX_TRACE_BYTES ({limit}), which the reader refuses"
++    )]
++    TraceFull { index: u64, bytes: u64, limit: u64 },
+     #[error("trace is {actual} bytes, the manifest committed {expected}")]
+     Truncated { expected: u64, actual: u64 },
+     #[error("trace is {actual} bytes, the manifest committed {expected}")]
+@@ -107,6 +111,7 @@ impl ArchiveError {
+             Self::UnknownVersion { .. } => "UnknownVersion",
+             Self::ManifestTooLarge { .. } => "ManifestTooLarge",
+             Self::TraceTooLarge { .. } => "TraceTooLarge",
++            Self::TraceFull { .. } => "TraceFull",
+             Self::Truncated { .. } => "Truncated",
+             Self::Extended { .. } => "Extended",
+             Self::HashMismatch => "HashMismatch",
