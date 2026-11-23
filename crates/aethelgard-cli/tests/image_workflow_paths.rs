@@ -286,6 +286,43 @@ fn every_file_the_ardupilot_image_workflow_reads_triggers_it() {
         );
     }
     assert_eq!(unlisted(&workflow, &inputs), []);
+    // A glob that matches no file guards nothing (a renamed directory):
+    // each one in both lists matches some file of the tree.
+    for event in ["pull_request", "push"] {
+        for g in paths(&workflow, event) {
+            assert!(
+                matches_some_file(&root, &g),
+                "on.{event}.paths: `{g}` matches no file"
+            );
+        }
+    }
+}
+
+/// Whether `pattern` matches some file under its fixed prefix (the part
+/// before its first `*`, up to the last `/`; the root's own entries for a
+/// pattern with no `/` before a wildcard).
+fn matches_some_file(root: &Path, pattern: &str) -> bool {
+    let fixed = &pattern[..pattern.find('*').unwrap_or(pattern.len())];
+    let files = match fixed.rfind('/') {
+        Some(i) if root.join(&fixed[..i]).exists() => files_under(root, &fixed[..i]),
+        Some(_) => return false,
+        None => fs::read_dir(root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().into_string().unwrap())
+            .collect(),
+    };
+    files.iter().any(|f| glob(pattern.as_bytes(), f.as_bytes()))
+}
+
+#[test]
+fn a_glob_that_matches_no_file_is_found() {
+    let root = root();
+    assert!(matches_some_file(&root, "boards/sentinel-01/**"));
+    assert!(matches_some_file(&root, "Cargo.*"));
+    assert!(matches_some_file(&root, "ci/foreign-judge.sh"));
+    assert!(!matches_some_file(&root, "boards/sentinel-01-renamed/**"));
+    assert!(!matches_some_file(&root, "Cargo.json*"));
+    assert!(!matches_some_file(&root, "ci/foreign-judge.bash"));
 }
 
 /// The COPY reader on planted text: a file missing from one list is named
