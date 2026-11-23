@@ -4187,6 +4187,9 @@ mod tests {
                 "a failing verdict exits EXIT_FAIL in every fab mode"
             );
             assert_eq!(report.verdict, "fail");
+            // `conclude` states the table (`AET-WO-1609`), in every fab mode.
+            assert_eq!(report.ran, ran_table(&report.gates).unwrap());
+            assert!(report.ran.len() >= GATES.len());
             report.fab = None;
             report.against_fab = None;
             lines.push(serde_json::to_string(&report).unwrap());

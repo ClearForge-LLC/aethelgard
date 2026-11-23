@@ -5210,6 +5210,13 @@ fn each_hse_fixture_boots_to_pass_under_the_clock_rule() {
         assert_eq!(code, Some(0), "{fixture}: {v}");
         assert_eq!(v["verdict"], "pass", "{fixture}: {v}");
         assert!(!kinds(&v).contains(&"clock_access"), "{fixture}: {v}");
+        // The clock rule's row (`AET-WO-1609`): on with `mcu.hse`, judged
+        // once the boot word is written.
+        assert_eq!(
+            v["ran"],
+            serde_json::json!([{"gate": "simulate.hse_clock", "judged": 1}]),
+            "{fixture}: {v}"
+        );
         let residuals = v["boot"]["residuals"].to_string();
         assert!(residuals.contains("HSE (AET-WO-4240b)"), "{fixture}: {v}");
         let unobservable = v["boot"]["unobservable"].to_string();

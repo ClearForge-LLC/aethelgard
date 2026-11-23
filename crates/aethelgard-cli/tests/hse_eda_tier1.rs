@@ -313,6 +313,14 @@ fn extract_reports_each_oscillator_net_and_the_pin_condition() {
         .collect();
     assert!(conditions.contains(&extract::OSC_PIN_CONDITION));
     assert_eq!(v["findings"], json!([]), "{v}");
+    // The part's row (`AET-WO-1609`): each net judged by its no-via rule.
+    let row = v["ran"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["gate"] == "extract.oscillator")
+        .unwrap();
+    assert_eq!(row, &json!({"gate": "extract.oscillator", "judged": 2}));
 }
 
 #[test]
@@ -332,6 +340,13 @@ fn a_board_with_no_crystal_reports_no_oscillator() {
     std::fs::remove_dir_all(&dir).unwrap();
     assert_eq!(code, 0, "{v}");
     assert!(v.get("oscillator").is_none(), "{v}");
+    assert!(
+        v["ran"]
+            .as_array()
+            .unwrap()
+            .contains(&json!({"gate": "extract.oscillator", "off": "mcu.hse.crystal"})),
+        "{v}"
+    );
     assert!(
         !v["conditions"]
             .as_array()
