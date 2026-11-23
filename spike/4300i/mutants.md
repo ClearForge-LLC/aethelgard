@@ -2,7 +2,7 @@
 
 One mutant per guard this work order adds, sized to the diff (CLAUDE.md). `spike/4300i/mutants.py` applies each edit, runs the named filter of `cargo test -p aethelgard-ir --test offboard`, records the result, and restores the file with `git checkout`. It ran on the committed tree, with no other change in any file it touches. The raw results are in `out/mutants.tsv`.
 
-**Result: 33/33 killed, 0 survived.**
+**Result: 37/37 killed, 0 survived.**
 
 | id | guard | file | mutant (exact edit) | killing test | result |
 |---|---|---|---|---|---|
@@ -39,6 +39,10 @@ One mutant per guard this work order adds, sized to the diff (CLAUDE.md). `spike
 | M31 | FT first: a pin device's ADC input | `src/pin_devices.rs` | `ft.order(&a.net, free, \|(n, _)\| n);` -> `ft.order("", free, \|(n, _)\| n);` | `offboard::a_connector_facing_adc_input` | killed |
 | M32 | FT first: a pin device's signal | `src/pin_devices.rs` | `.order(                         &s.net,` -> `.order(                         "",` | `offboard::a_connector_facing_device_signal` | killed |
 | M33 | implied_pupd is 0 on a motor output | `src/silicon.rs` | `(Some(_), _) => 0,` -> `(Some(_), _) => PUPDR_PULL_DOWN,` | `offboard::a_motor_net_has_no_internal_pull` | killed |
+| M34 | step 2: a reserved pin is an identifier | `src/lib.rs` | `plain(&r.pin, \\|\\| format!("mcu.reserved_pins[{i}].pin"))?;` -> `` | `offboard::a_blank_reserved_pin` | killed |
+| M35 | step 2: the pull's reference is a reference | `src/lib.rs` | `identifier(IdentifierKind::Reference, &r.reference, \\|\\| {                 format!("{at}.resistor.reference")             })?;` -> `` | `offboard::a_blank_source_or_reference` | killed |
+| M36 | step 2: the pull's part is an identifier | `src/lib.rs` | `plain(&r.part, \\|\\| format!("{at}.resistor.part"))?;` -> `` | `offboard::a_blank_source_or_reference` | killed |
+| M37 | step 2: the pull's `to` is an identifier | `src/lib.rs` | `plain(&r.to, \\|\\| format!("{at}.resistor.to"))?;` -> `` | `offboard::a_blank_source_or_reference` | killed |
 
 Not mutated:
 
