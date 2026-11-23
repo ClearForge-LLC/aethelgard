@@ -1,0 +1,97 @@
+{
+ "samples": 10,
+ "wall_s": 9.002,
+ "memory_peak_gib": 0.669,
+ "current_max_gib": 0.379,
+ "current_max_at": 8.002,
+ "anon_max_gib": 0.365,
+ "anon_max_at": 8.002,
+ "file_max_gib": 0.009,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 50.2,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "cbmc",
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered",
+   "rss_gib": 0.221,
+   "hwm_gib": 0.233,
+   "cmd": "cbmc --no-malloc-may-fail --no-undefined-shift-check --no-signed-overflow-check --nan-check --no-self-loops-to-assumptions --no-pointer-primitive-check --object"
+  },
+  {
+   "class": "kani-driver",
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered",
+   "rss_gib": 0.108,
+   "hwm_gib": 0.113,
+   "cmd": "cargo-kani kani --harness proofs::i2c2_transfer_is_bounded_and_ordered --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 9.002,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002
+  },
+  "prove i2c2_transfer_is_bounded_and_ordered": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.355,
+   "hwm_max_gib": 0.233,
+   "at": 8.002
+  }
+ },
+ "classes": {
+  "cbmc": {
+   "rss_max_gib": 0.221,
+   "hwm_max_gib": 0.233,
+   "at": 7.002,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "kani-driver": {
+   "rss_max_gib": 0.108,
+   "hwm_max_gib": 0.113,
+   "at": 8.002,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.052,
+   "at": 2.0,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "goto": {
+   "rss_max_gib": 0.012,
+   "hwm_max_gib": 0.019,
+   "at": 2.0,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 9.0,
+ "inner_memory_peak_gib": 0.669
+}

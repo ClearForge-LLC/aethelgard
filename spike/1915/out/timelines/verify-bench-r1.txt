@@ -1,0 +1,182 @@
+     0.0 anon= 0.014 file= 0.000 cur= 0.018 top=podman/conmon@None 0.010
+     1.0 anon= 0.033 file= 0.000 cur= 0.037 top=aethelgard@verify 0.023
+     2.0 anon= 0.175 file= 0.006 cur= 0.189 top=kicad@check erc 0.132
+     3.0 anon= 0.038 file= 0.007 cur= 0.051 top=aethelgard@verify 0.025
+     4.0 anon= 0.059 file= 0.007 cur= 0.072 top=aethelgard@verify 0.025
+     5.0 anon= 0.066 file= 0.007 cur= 0.080 top=aethelgard@prove every_valid_sequence_i2c1 0.025
+     6.0 anon= 0.085 file= 0.013 cur= 0.106 top=aethelgard@prove every_valid_sequence_i2c1 0.025
+     7.0 anon= 0.190 file= 0.014 cur= 0.211 top=cbmc@prove every_valid_sequence_i2c1 0.127
+     8.0 anon= 0.273 file= 0.014 cur= 0.294 top=cbmc@prove every_valid_sequence_i2c1 0.210
+     9.0 anon= 0.421 file= 0.014 cur= 0.442 top=cbmc@prove every_valid_sequence_i2c1 0.357
+    10.0 anon= 0.424 file= 0.014 cur= 0.444 top=cbmc@prove every_valid_sequence_i2c1 0.360
+    11.0 anon= 0.428 file= 0.014 cur= 0.449 top=cbmc@prove every_valid_sequence_i2c1 0.364
+    12.0 anon= 0.437 file= 0.014 cur= 0.459 top=cbmc@prove every_valid_sequence_i2c1 0.374
+    13.0 anon= 0.442 file= 0.014 cur= 0.462 top=cbmc@prove every_valid_sequence_i2c1 0.378
+    14.0 anon= 0.448 file= 0.014 cur= 0.469 top=cbmc@prove every_valid_sequence_i2c1 0.385
+    15.0 anon= 0.462 file= 0.014 cur= 0.482 top=cbmc@prove every_valid_sequence_i2c1 0.398
+    16.0 anon= 0.478 file= 0.014 cur= 0.499 top=cbmc@prove every_valid_sequence_i2c1 0.415
+    17.0 anon= 0.494 file= 0.014 cur= 0.515 top=cbmc@prove every_valid_sequence_i2c1 0.430
+    18.0 anon= 0.512 file= 0.014 cur= 0.532 top=cbmc@prove every_valid_sequence_i2c1 0.448
+    19.0 anon= 0.525 file= 0.014 cur= 0.547 top=cbmc@prove every_valid_sequence_i2c1 0.462
+    20.0 anon= 0.540 file= 0.014 cur= 0.561 top=cbmc@prove every_valid_sequence_i2c1 0.477
+    21.0 anon= 0.554 file= 0.014 cur= 0.576 top=cbmc@prove every_valid_sequence_i2c1 0.491
+    22.0 anon= 0.571 file= 0.014 cur= 0.592 top=cbmc@prove every_valid_sequence_i2c1 0.507
+    23.0 anon= 0.595 file= 0.014 cur= 0.616 top=cbmc@prove every_valid_sequence_i2c1 0.496
+    24.0 anon= 0.707 file= 0.014 cur= 0.728 top=cbmc@prove every_valid_sequence_i2c1 0.496
+    25.0 anon= 0.815 file= 0.014 cur= 0.838 top=cbmc@prove every_valid_sequence_i2c1 0.496
+    26.0 anon= 0.925 file= 0.014 cur= 0.948 top=cbmc@prove every_valid_sequence_i2c1 0.496
+    27.0 anon= 1.037 file= 0.014 cur= 1.060 top=cbmc@prove every_valid_sequence_i2c1 0.496
+    28.0 anon= 1.144 file= 0.014 cur= 1.168 top=kani-driver@prove every_valid_sequence_i2c1 0.586
+    29.0 anon= 1.855 file= 0.014 cur= 1.879 top=kani-driver@prove every_valid_sequence_i2c1 1.793
+    30.0 anon= 0.057 file= 0.007 cur= 0.069 top=aethelgard@verify 0.025
+    31.0 anon= 0.059 file= 0.007 cur= 0.072 top=aethelgard@verify 0.025
+    32.0 anon= 0.096 file= 0.021 cur= 0.123 top=goto@prove every_valid_sequence_i2c2 0.032
+    33.0 anon= 0.139 file= 0.020 cur= 0.167 top=cbmc@prove every_valid_sequence_i2c2 0.076
+    34.0 anon= 0.235 file= 0.020 cur= 0.263 top=cbmc@prove every_valid_sequence_i2c2 0.172
+    35.0 anon= 0.357 file= 0.020 cur= 0.385 top=cbmc@prove every_valid_sequence_i2c2 0.293
+    36.0 anon= 0.360 file= 0.020 cur= 0.388 top=cbmc@prove every_valid_sequence_i2c2 0.296
+    37.0 anon= 0.369 file= 0.020 cur= 0.397 top=cbmc@prove every_valid_sequence_i2c2 0.305
+    38.0 anon= 0.378 file= 0.020 cur= 0.407 top=cbmc@prove every_valid_sequence_i2c2 0.315
+    39.0 anon= 0.383 file= 0.020 cur= 0.410 top=cbmc@prove every_valid_sequence_i2c2 0.319
+    40.0 anon= 0.395 file= 0.020 cur= 0.423 top=cbmc@prove every_valid_sequence_i2c2 0.332
+    41.0 anon= 0.412 file= 0.020 cur= 0.439 top=cbmc@prove every_valid_sequence_i2c2 0.348
+    42.0 anon= 0.430 file= 0.020 cur= 0.457 top=cbmc@prove every_valid_sequence_i2c2 0.366
+    43.0 anon= 0.447 file= 0.020 cur= 0.474 top=cbmc@prove every_valid_sequence_i2c2 0.383
+    44.0 anon= 0.463 file= 0.020 cur= 0.490 top=cbmc@prove every_valid_sequence_i2c2 0.399
+    45.0 anon= 0.479 file= 0.020 cur= 0.506 top=cbmc@prove every_valid_sequence_i2c2 0.415
+    46.0 anon= 0.494 file= 0.020 cur= 0.522 top=cbmc@prove every_valid_sequence_i2c2 0.432
+    47.0 anon= 0.548 file= 0.020 cur= 0.574 top=cbmc@prove every_valid_sequence_i2c2 0.431
+    48.0 anon= 0.657 file= 0.020 cur= 0.684 top=cbmc@prove every_valid_sequence_i2c2 0.431
+    49.0 anon= 0.767 file= 0.020 cur= 0.794 top=cbmc@prove every_valid_sequence_i2c2 0.431
+    50.0 anon= 0.876 file= 0.020 cur= 0.905 top=cbmc@prove every_valid_sequence_i2c2 0.431
+    51.0 anon= 0.989 file= 0.020 cur= 1.017 top=kani-driver@prove every_valid_sequence_i2c2 0.495
+    52.0 anon= 1.469 file= 0.020 cur= 1.498 top=kani-driver@prove every_valid_sequence_i2c2 0.978
+    53.0 anon= 2.142 file= 0.020 cur= 2.172 top=kani-driver@prove every_valid_sequence_i2c2 2.079
+    54.0 anon= 0.059 file= 0.013 cur= 0.077 top=aethelgard@verify 0.025
+    55.0 anon= 0.071 file= 0.013 cur= 0.091 top=aethelgard@prove every_valid_sequence_spi1 0.025
+    56.0 anon= 0.181 file= 0.021 cur= 0.210 top=goto@prove every_valid_sequence_spi1 0.117
+    57.0 anon= 0.187 file= 0.021 cur= 0.215 top=cbmc@prove every_valid_sequence_spi1 0.124
+    58.0 anon= 0.279 file= 0.021 cur= 0.307 top=cbmc@prove every_valid_sequence_spi1 0.215
+    59.0 anon= 0.353 file= 0.021 cur= 0.381 top=cbmc@prove every_valid_sequence_spi1 0.290
+    60.0 anon= 0.414 file= 0.021 cur= 0.442 top=cbmc@prove every_valid_sequence_spi1 0.351
+    61.0 anon= 0.466 file= 0.021 cur= 0.494 top=cbmc@prove every_valid_sequence_spi1 0.403
+    62.0 anon= 0.516 file= 0.021 cur= 0.544 top=cbmc@prove every_valid_sequence_spi1 0.452
+    63.0 anon= 0.560 file= 0.021 cur= 0.588 top=cbmc@prove every_valid_sequence_spi1 0.496
+    64.0 anon= 0.775 file= 0.021 cur= 0.804 top=cbmc@prove every_valid_sequence_spi1 0.711
+    65.0 anon= 0.843 file= 0.021 cur= 0.872 top=cbmc@prove every_valid_sequence_spi1 0.779
+    66.0 anon= 0.843 file= 0.021 cur= 0.872 top=cbmc@prove every_valid_sequence_spi1 0.780
+    67.0 anon= 0.845 file= 0.021 cur= 0.873 top=cbmc@prove every_valid_sequence_spi1 0.782
+    68.0 anon= 0.849 file= 0.021 cur= 0.876 top=cbmc@prove every_valid_sequence_spi1 0.785
+    69.0 anon= 0.851 file= 0.021 cur= 0.880 top=cbmc@prove every_valid_sequence_spi1 0.788
+    70.0 anon= 0.867 file= 0.021 cur= 0.894 top=cbmc@prove every_valid_sequence_spi1 0.803
+    71.0 anon= 0.879 file= 0.021 cur= 0.907 top=cbmc@prove every_valid_sequence_spi1 0.815
+    72.0 anon= 0.893 file= 0.021 cur= 0.921 top=cbmc@prove every_valid_sequence_spi1 0.829
+    73.0 anon= 0.902 file= 0.021 cur= 0.929 top=cbmc@prove every_valid_sequence_spi1 0.838
+    74.0 anon= 0.912 file= 0.021 cur= 0.940 top=cbmc@prove every_valid_sequence_spi1 0.848
+    75.0 anon= 0.920 file= 0.021 cur= 0.948 top=cbmc@prove every_valid_sequence_spi1 0.856
+    76.0 anon= 0.927 file= 0.021 cur= 0.955 top=cbmc@prove every_valid_sequence_spi1 0.863
+    77.0 anon= 0.936 file= 0.021 cur= 0.963 top=cbmc@prove every_valid_sequence_spi1 0.872
+    78.0 anon= 0.945 file= 0.021 cur= 0.972 top=cbmc@prove every_valid_sequence_spi1 0.881
+    79.0 anon= 0.957 file= 0.021 cur= 0.984 top=cbmc@prove every_valid_sequence_spi1 0.893
+    80.0 anon= 0.967 file= 0.021 cur= 0.995 top=cbmc@prove every_valid_sequence_spi1 0.903
+    81.0 anon= 0.975 file= 0.021 cur= 1.003 top=cbmc@prove every_valid_sequence_spi1 0.911
+    82.0 anon= 0.983 file= 0.021 cur= 1.011 top=cbmc@prove every_valid_sequence_spi1 0.919
+    83.0 anon= 0.993 file= 0.021 cur= 1.021 top=cbmc@prove every_valid_sequence_spi1 0.929
+    84.0 anon= 1.003 file= 0.021 cur= 1.031 top=cbmc@prove every_valid_sequence_spi1 0.939
+    85.0 anon= 1.014 file= 0.021 cur= 1.042 top=cbmc@prove every_valid_sequence_spi1 0.950
+    86.0 anon= 1.022 file= 0.021 cur= 1.050 top=cbmc@prove every_valid_sequence_spi1 0.958
+    87.0 anon= 1.033 file= 0.021 cur= 1.060 top=cbmc@prove every_valid_sequence_spi1 0.969
+    88.0 anon= 1.043 file= 0.021 cur= 1.071 top=cbmc@prove every_valid_sequence_spi1 0.979
+    89.0 anon= 1.053 file= 0.021 cur= 1.080 top=cbmc@prove every_valid_sequence_spi1 0.989
+    90.0 anon= 1.067 file= 0.021 cur= 1.094 top=cbmc@prove every_valid_sequence_spi1 1.003
+    91.0 anon= 1.080 file= 0.021 cur= 1.108 top=cbmc@prove every_valid_sequence_spi1 1.016
+    92.0 anon= 1.090 file= 0.021 cur= 1.118 top=cbmc@prove every_valid_sequence_spi1 1.026
+    93.0 anon= 1.100 file= 0.021 cur= 1.128 top=cbmc@prove every_valid_sequence_spi1 1.036
+    94.0 anon= 1.111 file= 0.021 cur= 1.139 top=cbmc@prove every_valid_sequence_spi1 1.047
+    95.0 anon= 1.123 file= 0.021 cur= 1.151 top=cbmc@prove every_valid_sequence_spi1 1.059
+    96.0 anon= 1.132 file= 0.021 cur= 1.160 top=cbmc@prove every_valid_sequence_spi1 1.068
+    97.0 anon= 1.146 file= 0.021 cur= 1.174 top=cbmc@prove every_valid_sequence_spi1 1.082
+    98.0 anon= 1.146 file= 0.021 cur= 1.174 top=cbmc@prove every_valid_sequence_spi1 1.082
+    99.0 anon= 1.094 file= 0.021 cur= 1.122 top=cbmc@prove every_valid_sequence_spi1 1.030
+   100.0 anon= 1.094 file= 0.021 cur= 1.123 top=cbmc@prove every_valid_sequence_spi1 1.031
+   101.0 anon= 1.175 file= 0.021 cur= 1.203 top=cbmc@prove every_valid_sequence_spi1 1.031
+   102.0 anon= 1.285 file= 0.021 cur= 1.313 top=cbmc@prove every_valid_sequence_spi1 1.031
+   103.0 anon= 1.393 file= 0.021 cur= 1.422 top=cbmc@prove every_valid_sequence_spi1 1.031
+   104.0 anon= 1.505 file= 0.021 cur= 1.534 top=cbmc@prove every_valid_sequence_spi1 1.031
+   105.0 anon= 1.618 file= 0.021 cur= 1.648 top=cbmc@prove every_valid_sequence_spi1 1.031
+   106.0 anon= 1.731 file= 0.021 cur= 1.761 top=cbmc@prove every_valid_sequence_spi1 1.031
+   107.0 anon= 1.844 file= 0.021 cur= 1.874 top=cbmc@prove every_valid_sequence_spi1 1.031
+   108.0 anon= 1.925 file= 0.021 cur= 1.956 top=cbmc@prove every_valid_sequence_spi1 1.031
+   109.0 anon= 2.020 file= 0.021 cur= 2.051 top=cbmc@prove every_valid_sequence_spi1 1.031
+   110.0 anon= 3.097 file= 0.021 cur= 3.131 top=kani-driver@prove every_valid_sequence_spi1 2.020
+   111.0 anon= 3.261 file= 0.021 cur= 3.295 top=kani-driver@prove every_valid_sequence_spi1 3.199
+   112.0 anon= 0.058 file= 0.013 cur= 0.077 top=aethelgard@verify 0.025
+   113.0 anon= 0.059 file= 0.013 cur= 0.077 top=aethelgard@verify 0.025
+   114.0 anon= 0.083 file= 0.023 cur= 0.114 top=aethelgard@prove i2c1_transfer_is_bounded_and_ordered 0.025
+   115.0 anon= 0.127 file= 0.023 cur= 0.157 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.063
+   116.0 anon= 0.239 file= 0.023 cur= 0.269 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.175
+   117.0 anon= 0.256 file= 0.023 cur= 0.286 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.193
+   118.0 anon= 0.278 file= 0.023 cur= 0.308 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.214
+   119.0 anon= 0.324 file= 0.023 cur= 0.354 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.221
+   120.0 anon= 0.425 file= 0.023 cur= 0.456 top=cbmc@prove i2c1_transfer_is_bounded_and_ordered 0.221
+   121.0 anon= 0.058 file= 0.014 cur= 0.077 top=aethelgard@verify 0.025
+   122.0 anon= 0.059 file= 0.014 cur= 0.077 top=aethelgard@verify 0.025
+   123.0 anon= 0.112 file= 0.023 cur= 0.143 top=goto@prove i2c2_transfer_is_bounded_and_ordered 0.048
+   124.0 anon= 0.109 file= 0.023 cur= 0.139 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.045
+   125.0 anon= 0.239 file= 0.023 cur= 0.269 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.175
+   126.0 anon= 0.253 file= 0.023 cur= 0.283 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.189
+   127.0 anon= 0.272 file= 0.023 cur= 0.304 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.210
+   128.0 anon= 0.302 file= 0.023 cur= 0.332 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.221
+   129.0 anon= 0.413 file= 0.023 cur= 0.443 top=cbmc@prove i2c2_transfer_is_bounded_and_ordered 0.221
+   130.0 anon= 0.059 file= 0.014 cur= 0.078 top=aethelgard@verify 0.025
+   131.0 anon= 0.063 file= 0.014 cur= 0.082 top=aethelgard@verify 0.025
+   132.0 anon= 0.108 file= 0.023 cur= 0.138 top=goto@prove spi1_transfer_is_bounded_and_ordered 0.046
+   133.0 anon= 0.130 file= 0.023 cur= 0.160 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.067
+   134.0 anon= 0.267 file= 0.023 cur= 0.297 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.204
+   135.0 anon= 0.292 file= 0.023 cur= 0.323 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.229
+   136.0 anon= 0.308 file= 0.023 cur= 0.338 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.244
+   137.0 anon= 0.321 file= 0.023 cur= 0.350 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.257
+   138.0 anon= 0.343 file= 0.023 cur= 0.372 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.279
+   139.0 anon= 0.367 file= 0.023 cur= 0.396 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.300
+   140.0 anon= 0.481 file= 0.023 cur= 0.510 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.300
+   141.0 anon= 0.595 file= 0.023 cur= 0.624 top=cbmc@prove spi1_transfer_is_bounded_and_ordered 0.300
+   142.0 anon= 0.933 file= 0.023 cur= 0.963 top=kani-driver@prove spi1_transfer_is_bounded_and_ordered 0.873
+   143.0 anon= 0.058 file= 0.014 cur= 0.077 top=aethelgard@verify 0.025
+   144.0 anon= 0.080 file= 0.014 cur= 0.102 top=aethelgard@prove spi1_transfer_refuses_too_many_frames 0.025
+   145.0 anon= 0.071 file= 0.023 cur= 0.101 top=aethelgard@prove spi1_transfer_refuses_too_many_frames 0.025
+   146.0 anon= 0.187 file= 0.023 cur= 0.217 top=cbmc@prove spi1_transfer_refuses_too_many_frames 0.123
+   147.0 anon= 0.216 file= 0.023 cur= 0.247 top=cbmc@prove spi1_transfer_refuses_too_many_frames 0.152
+   148.0 anon= 0.319 file= 0.023 cur= 0.349 top=cbmc@prove spi1_transfer_refuses_too_many_frames 0.157
+   149.0 anon= 0.058 file= 0.014 cur= 0.078 top=aethelgard@verify 0.025
+   150.0 anon= 0.085 file= 0.015 cur= 0.108 top=aethelgard@prove reset_clock_is_ok_exactly_at_reset 0.025
+   151.0 anon= 0.058 file= 0.014 cur= 0.079 top=aethelgard@verify 0.025
+   152.0 anon= 0.062 file= 0.014 cur= 0.082 top=aethelgard@prove usart1_start_writes_the_solved_values 0.026
+   153.0 anon= 0.075 file= 0.022 cur= 0.105 top=aethelgard@prove usart1_start_writes_the_solved_values 0.025
+   154.0 anon= 0.153 file= 0.021 cur= 0.182 top=cbmc@prove usart1_start_writes_the_solved_values 0.090
+   155.0 anon= 0.210 file= 0.021 cur= 0.239 top=cbmc@prove usart1_start_writes_the_solved_values 0.146
+   156.0 anon= 0.250 file= 0.021 cur= 0.278 top=cbmc@prove usart1_start_writes_the_solved_values 0.181
+   157.0 anon= 0.371 file= 0.021 cur= 0.399 top=cbmc@prove usart1_start_writes_the_solved_values 0.181
+   158.0 anon= 0.474 file= 0.021 cur= 0.502 top=kani-driver@prove usart1_start_writes_the_solved_values 0.414
+   159.0 anon= 0.059 file= 0.014 cur= 0.078 top=aethelgard@verify 0.025
+   160.0 anon= 0.071 file= 0.014 cur= 0.093 top=aethelgard@prove flash_option_status_is_one_read 0.025
+   161.0 anon= 0.063 file= 0.014 cur= 0.083 top=aethelgard@prove pwr_scale2_is_once_in_order_and_bounded 0.027
+   162.0 anon= 0.079 file= 0.014 cur= 0.102 top=aethelgard@prove pwr_scale2_is_once_in_order_and_bounded 0.025
+   163.0 anon= 0.054 file= 0.020 cur= 0.080 top=aethelgard@verify 0.025
+   164.0 anon= 0.226 file= 0.090 cur= 0.324 top=renode@simulate 0.171
+   165.0 anon= 0.335 file= 0.095 cur= 0.439 top=renode@simulate 0.280
+   166.0 anon= 0.062 file= 0.094 cur= 0.163 top=aethelgard@verify 0.025
+   167.0 anon= 0.250 file= 0.094 cur= 0.352 top=renode@campaign 0.194
+   168.0 anon= 0.358 file= 0.096 cur= 0.462 top=renode@campaign 0.294
+   169.0 anon= 0.110 file= 0.094 cur= 0.212 top=renode@campaign 0.053
+   170.0 anon= 0.276 file= 0.096 cur= 0.379 top=renode@campaign 0.217
+   171.0 anon= 0.067 file= 0.096 cur= 0.169 top=aethelgard@verify 0.025
+   172.0 anon= 0.265 file= 0.096 cur= 0.369 top=renode@campaign 0.205
+   173.0 anon= 0.362 file= 0.096 cur= 0.467 top=renode@campaign 0.303
+   174.0 anon= 0.163 file= 0.094 cur= 0.266 top=renode@campaign 0.105
+   175.0 anon= 0.316 file= 0.096 cur= 0.421 top=renode@campaign 0.257
+   176.0 anon= 0.058 file= 0.094 cur= 0.159 top=aethelgard@verify 0.025
+   177.0 anon= 0.238 file= 0.094 cur= 0.341 top=renode@campaign 0.180
+   178.0 anon= 0.347 file= 0.096 cur= 0.451 top=renode@campaign 0.288
+   179.0 anon= 0.120 file= 0.094 cur= 0.222 top=renode@campaign 0.063
+   180.0 anon= 0.285 file= 0.096 cur= 0.389 top=renode@campaign 0.226
+   181.0 anon= 0.052 file= 0.095 cur= 0.155 top=aethelgard@verify 0.025

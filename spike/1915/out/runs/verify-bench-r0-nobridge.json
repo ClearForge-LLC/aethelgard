@@ -1,0 +1,207 @@
+{
+ "samples": 176,
+ "wall_s": 175.042,
+ "memory_peak_gib": 3.546,
+ "current_max_gib": 3.261,
+ "current_max_at": 118.029,
+ "anon_max_gib": 3.204,
+ "anon_max_at": 118.029,
+ "file_max_gib": 0.047,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 46.2,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_spi1",
+   "rss_gib": 3.137,
+   "hwm_gib": 3.429,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_spi1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 175.042,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 175.042
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 175.042,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 175.042
+  },
+  "verify": {
+   "first": 0.0,
+   "last": 175.042,
+   "rss_max_gib": 0.026,
+   "hwm_max_gib": 0.053,
+   "at": 2.001
+  },
+  "check erc": {
+   "first": 2.001,
+   "last": 2.001,
+   "rss_max_gib": 0.118,
+   "hwm_max_gib": 0.19,
+   "at": 2.001
+  },
+  "check drc": {
+   "first": 3.001,
+   "last": 3.001,
+   "rss_max_gib": 0.168,
+   "hwm_max_gib": 0.283,
+   "at": 3.001
+  },
+  "prove every_valid_sequence_i2c1": {
+   "first": 4.001,
+   "last": 30.007,
+   "rss_max_gib": 2.181,
+   "hwm_max_gib": 2.16,
+   "at": 30.007
+  },
+  "prove every_valid_sequence_i2c2": {
+   "first": 31.007,
+   "last": 55.014,
+   "rss_max_gib": 1.974,
+   "hwm_max_gib": 1.953,
+   "at": 55.014
+  },
+  "prove every_valid_sequence_spi1": {
+   "first": 56.014,
+   "last": 118.029,
+   "rss_max_gib": 3.164,
+   "hwm_max_gib": 3.429,
+   "at": 118.029
+  },
+  "prove i2c1_transfer_is_bounded_and_ordered": {
+   "first": 119.029,
+   "last": 128.032,
+   "rss_max_gib": 0.387,
+   "hwm_max_gib": 0.233,
+   "at": 128.032
+  },
+  "prove i2c2_transfer_is_bounded_and_ordered": {
+   "first": 129.032,
+   "last": 138.034,
+   "rss_max_gib": 0.541,
+   "hwm_max_gib": 0.52,
+   "at": 138.034
+  },
+  "prove spi1_transfer_is_bounded_and_ordered": {
+   "first": 139.034,
+   "last": 153.037,
+   "rss_max_gib": 0.75,
+   "hwm_max_gib": 0.445,
+   "at": 153.037
+  },
+  "prove spi1_transfer_refuses_too_many_frames": {
+   "first": 154.038,
+   "last": 160.039,
+   "rss_max_gib": 0.246,
+   "hwm_max_gib": 0.169,
+   "at": 160.039
+  },
+  "prove reset_clock_is_ok_exactly_at_reset": {
+   "first": 161.039,
+   "last": 163.039,
+   "rss_max_gib": 0.04,
+   "hwm_max_gib": 0.053,
+   "at": 163.039
+  },
+  "prove usart1_start_writes_the_solved_values": {
+   "first": 164.04,
+   "last": 171.041,
+   "rss_max_gib": 0.784,
+   "hwm_max_gib": 0.798,
+   "at": 171.041
+  },
+  "prove flash_option_status_is_one_read": {
+   "first": 172.041,
+   "last": 172.041,
+   "rss_max_gib": 0.027,
+   "hwm_max_gib": 0.05,
+   "at": 172.041
+  },
+  "prove pwr_scale2_is_once_in_order_and_bounded": {
+   "first": 173.042,
+   "last": 175.042,
+   "rss_max_gib": 0.042,
+   "hwm_max_gib": 0.053,
+   "at": 175.042
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 3.137,
+   "hwm_max_gib": 3.429,
+   "at": 118.029,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cbmc": {
+   "rss_max_gib": 1.082,
+   "hwm_max_gib": 1.136,
+   "at": 103.026,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "kicad": {
+   "rss_max_gib": 0.157,
+   "hwm_max_gib": 0.283,
+   "at": 3.001,
+   "phase": "check drc"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.096,
+   "hwm_max_gib": 0.255,
+   "at": 58.015,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "goto": {
+   "rss_max_gib": 0.039,
+   "hwm_max_gib": 0.045,
+   "at": 131.032,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.027,
+   "hwm_max_gib": 0.053,
+   "at": 130.032,
+   "phase": "prove i2c2_transfer_is_bounded_and_ordered"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 165.04,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 175.042,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   116.029,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 4,
+ "ctl_wall_s": 175.8,
+ "inner_memory_peak_gib": 3.546
+}

@@ -1,0 +1,70 @@
+run	rc	wall_s	inner_memory_peak_gib	sampled_memory_peak_gib	anon_max_gib	file_max_gib	shmem_max_gib	oom_kills	top_at_anon_peak	cbmc_beside_build_samples	samples_two_procs_over_1gib
+cand-split-every_valid_sequence_i2c1-r1	0	19.5	1.499	1.393	1.38	0.006	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.366	0	0
+cand-split-every_valid_sequence_i2c2-r1	0	17.4	1.44	1.44	1.427	0.005	0.0	0	kani-driver@prove every_valid_sequence_i2c2:1.413	0	0
+cand-split-every_valid_sequence_spi1-r1	0	44.3	2.632	2.632	2.416	0.014	0.0	0	kani-driver@prove every_valid_sequence_spi1:2.396	0	0
+cand-whole-every_valid_sequence-r1	0	1046.1	11.3	11.3	11.264	0.007	0.0	0	kani-driver@prove every_valid_sequence:7.004	0	16
+confirm8g-prove-s02-every_valid_sequence_spi1	0	155.1	6.525	6.525	6.465	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.427	0	10
+confirm8g-verify-bench	0	192.6	3.536	3.536	3.179	0.036	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.116	0	1
+confirm8g-verify-ref	0	144.4	3.503	3.503	3.238	0.011	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.176	0	1
+gate-build-sentinel-01-bench-r1	0	0.2	0.043	0.026	0.02	0.0	0.0	0	None@None:None	0	0
+gate-build-sentinel-01-bench-r2	0	0.2	0.042	0.025	0.019	0.0	0.0	0	None@None:None	0	0
+gate-build-sentinel-01-r1	0	0.2	0.044	0.024	0.019	0.0	0.0	0	None@None:None	0	0
+gate-build-sentinel-01-r2	0	0.2	0.043	0.03	0.023	0.0	0.0	0	None@None:None	0	0
+gate-campaign-sentinel-01-bench-r1	0	17.5	0.35	0.35	0.319	0.002	0.0	0	renode@campaign:0.287	0	0
+gate-campaign-sentinel-01-bench-r2	0	16.7	0.35	0.35	0.322	0.002	0.0	0	renode@campaign:0.29	0	0
+gate-campaign-sentinel-01-r1	0	17.1	0.347	0.347	0.33	0.002	0.0	0	renode@campaign:0.297	0	0
+gate-campaign-sentinel-01-r2	0	16.8	0.349	0.349	0.323	0.002	0.0	0	renode@campaign:0.289	0	0
+prove-s02-every_valid_sequence_i2c1-r1	0	26.6	2.156	2.037	2.021	0.007	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.984	0	0
+prove-s02-every_valid_sequence_spi1-r1	0	157.9	6.525	6.525	6.432	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.395	0	12
+prove-s02-every_valid_sequence_spi1-r2	0	149.9	6.525	6.525	6.441	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.403	0	10
+prove-s02-flash_option_status_is_one_read-r1	0	1.0	0.086	0.086	0.019	0.0	0.0	0	None@None:None	0	0
+prove-s02-i2c1_transfer_is_bounded_and_ordered-r1	0	12.2	0.892	0.892	0.629	0.022	0.0	0	kani-driver@prove i2c1_transfer_is_bounded_and_ordered:0.593	0	0
+prove-s02-pwr_scale2_is_once_in_order_and_bounded-r1	0	1.2	0.095	0.095	0.047	0.004	0.0	0	None@None:None	0	0
+prove-s02-reset_clock_is_ok_exactly_at_reset-r1	0	1.8	0.153	0.153	0.143	0.004	0.0	0	kani-compiler@prove reset_clock_is_ok_exactly_at_reset:0.102	0	0
+prove-s02-spi1_transfer_is_bounded_and_ordered-r1	0	24.8	1.57	1.425	1.387	0.009	0.0	0	kani-driver@prove spi1_transfer_is_bounded_and_ordered:1.351	0	0
+prove-s02-spi1_transfer_refuses_too_many_frames-r1	0	8.7	0.625	0.379	0.36	0.014	0.0	0	cbmc@prove spi1_transfer_refuses_too_many_frames:0.19	0	0
+prove-sentinel-01-bench-every_valid_sequence_i2c1-r1	0	27.2	2.227	2.227	1.731	0.008	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.657	0	0
+prove-sentinel-01-bench-every_valid_sequence_i2c1-r2	0	24.7	2.229	1.918	1.902	0.008	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.867	0	0
+prove-sentinel-01-bench-every_valid_sequence_i2c2-r1	0	27.3	2.137	2.137	2.046	0.008	0.0	0	kani-driver@prove every_valid_sequence_i2c2:2.009	0	0
+prove-sentinel-01-bench-every_valid_sequence_i2c2-r2	0	23.1	2.137	2.137	1.401	0.008	0.0	0	kani-driver@prove every_valid_sequence_i2c2:1.367	0	0
+prove-sentinel-01-bench-every_valid_sequence_spi1-r1	0	68.4	3.492	3.492	3.387	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.351	0	1
+prove-sentinel-01-bench-every_valid_sequence_spi1-r2	0	61.9	3.48	3.378	3.361	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.325	0	0
+prove-sentinel-01-bench-flash_option_status_is_one_read-r1	0	2.1	0.09	0.09	0.038	0.004	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-flash_option_status_is_one_read-r2	0	1.9	0.091	0.041	0.033	0.0	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-i2c1_transfer_is_bounded_and_ordered-r1	0	10.6	0.792	0.477	0.464	0.01	0.0	0	kani-driver@prove i2c1_transfer_is_bounded_and_ordered:0.216	0	0
+prove-sentinel-01-bench-i2c1_transfer_is_bounded_and_ordered-r2	0	9.2	0.679	0.679	0.585	0.01	0.0	0	kani-driver@prove i2c1_transfer_is_bounded_and_ordered:0.549	0	0
+prove-sentinel-01-bench-i2c2_transfer_is_bounded_and_ordered-r1	0	11.2	0.751	0.751	0.607	0.009	0.0	0	kani-driver@prove i2c2_transfer_is_bounded_and_ordered:0.57	0	0
+prove-sentinel-01-bench-i2c2_transfer_is_bounded_and_ordered-r2	0	9.0	0.669	0.669	0.365	0.009	0.0	0	cbmc@prove i2c2_transfer_is_bounded_and_ordered:0.221	0	0
+prove-sentinel-01-bench-pwr_scale2_is_once_in_order_and_bounded-r1	0	2.2	0.099	0.099	0.047	0.005	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-pwr_scale2_is_once_in_order_and_bounded-r2	0	2.1	0.099	0.099	0.037	0.005	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-reset_clock_is_ok_exactly_at_reset-r1	0	2.9	0.157	0.157	0.125	0.006	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-reset_clock_is_ok_exactly_at_reset-r2	0	2.5	0.157	0.157	0.058	0.007	0.0	0	None@None:None	0	0
+prove-sentinel-01-bench-spi1_transfer_is_bounded_and_ordered-r1	0	16.5	1.098	1.049	0.945	0.009	0.0	0	kani-driver@prove spi1_transfer_is_bounded_and_ordered:0.91	0	0
+prove-sentinel-01-bench-spi1_transfer_is_bounded_and_ordered-r2	0	15.7	1.098	0.955	0.672	0.009	0.0	0	kani-driver@prove spi1_transfer_is_bounded_and_ordered:0.637	0	0
+prove-sentinel-01-bench-spi1_transfer_refuses_too_many_frames-r1	0	7.9	0.523	0.261	0.247	0.01	0.0	0	cbmc@prove spi1_transfer_refuses_too_many_frames:0.157	0	0
+prove-sentinel-01-bench-spi1_transfer_refuses_too_many_frames-r2	0	7.2	0.484	0.484	0.337	0.009	0.0	0	kani-driver@prove spi1_transfer_refuses_too_many_frames:0.3	0	0
+prove-sentinel-01-bench-usart1_start_writes_the_solved_values-r1	0	9.5	0.844	0.694	0.565	0.007	0.0	0	kani-driver@prove usart1_start_writes_the_solved_values:0.53	0	0
+prove-sentinel-01-bench-usart1_start_writes_the_solved_values-r2	0	8.7	0.843	0.504	0.491	0.008	0.0	0	kani-driver@prove usart1_start_writes_the_solved_values:0.282	0	0
+prove-sentinel-01-every_valid_sequence_i2c1-r1	0	29.4	1.976	1.976	1.95	0.014	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.912	0	0
+prove-sentinel-01-every_valid_sequence_i2c1-r2	0	22.2	1.969	1.969	1.823	0.007	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.783	0	0
+prove-sentinel-01-every_valid_sequence_spi1-r1	0	59.6	3.476	3.476	3.428	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.39	0	1
+prove-sentinel-01-every_valid_sequence_spi1-r2	0	52.2	3.476	3.476	2.778	0.007	0.0	0	kani-driver@prove every_valid_sequence_spi1:2.742	0	1
+prove-sentinel-01-flash_option_status_is_one_read-r1	0	1.5	0.249	0.111	0.038	0.061	0.0	0	None@None:None	0	0
+prove-sentinel-01-flash_option_status_is_one_read-r2	0	1.2	0.087	0.065	0.058	0.001	0.0	0	None@None:None	0	0
+prove-sentinel-01-i2c1_transfer_is_bounded_and_ordered-r1	0	9.0	0.659	0.368	0.354	0.009	0.0	0	cbmc@prove i2c1_transfer_is_bounded_and_ordered:0.21	0	0
+prove-sentinel-01-i2c1_transfer_is_bounded_and_ordered-r2	0	7.5	0.646	0.405	0.391	0.008	0.0	0	cbmc@prove i2c1_transfer_is_bounded_and_ordered:0.21	0	0
+prove-sentinel-01-pwr_scale2_is_once_in_order_and_bounded-r1	0	1.5	0.095	0.059	0.053	0.0	0.0	0	None@None:None	0	0
+prove-sentinel-01-pwr_scale2_is_once_in_order_and_bounded-r2	0	1.4	0.095	0.067	0.06	0.001	0.0	0	None@None:None	0	0
+prove-sentinel-01-reset_clock_is_ok_exactly_at_reset-r1	0	1.9	0.153	0.064	0.058	0.001	0.0	0	None@None:None	0	0
+prove-sentinel-01-reset_clock_is_ok_exactly_at_reset-r2	0	1.9	0.154	0.065	0.059	0.001	0.0	0	None@None:None	0	0
+prove-sentinel-01-spi1_transfer_is_bounded_and_ordered-r1	0	12.4	1.052	0.948	0.89	0.009	0.0	0	kani-driver@prove spi1_transfer_is_bounded_and_ordered:0.853	0	0
+prove-sentinel-01-spi1_transfer_is_bounded_and_ordered-r2	0	11.5	1.052	0.89	0.697	0.008	0.0	0	kani-driver@prove spi1_transfer_is_bounded_and_ordered:0.662	0	0
+prove-sentinel-01-spi1_transfer_refuses_too_many_frames-r1	0	5.8	0.441	0.244	0.231	0.009	0.0	0	cbmc@prove spi1_transfer_refuses_too_many_frames:0.145	0	0
+prove-sentinel-01-spi1_transfer_refuses_too_many_frames-r2	0	5.0	0.449	0.449	0.205	0.008	0.0	0	cbmc@prove spi1_transfer_refuses_too_many_frames:0.145	0	0
+prove-sentinel-01-usart1_start_writes_the_solved_values-r1	0	6.9	0.818	0.416	0.404	0.007	0.0	0	kani-driver@prove usart1_start_writes_the_solved_values:0.194	0	0
+prove-sentinel-01-usart1_start_writes_the_solved_values-r2	0	6.6	0.819	0.484	0.473	0.007	0.0	0	kani-driver@prove usart1_start_writes_the_solved_values:0.271	0	0
+verify-bench-r0-nobridge	4	175.8	3.546	3.546	3.204	0.047	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.137	0	1
+verify-bench-r1	0	182.0	3.523	3.523	3.261	0.096	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.199	0	1
+verify-bench-r2	0	201.7	3.516	3.516	3.452	0.028	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.389	0	1
+verify-ref-r1	0	135.1	3.503	3.503	3.4	0.01	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.329	0	1
+verify-ref-r2	0	151.5	3.51	3.51	3.451	0.042	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.387	0	1

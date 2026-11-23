@@ -1,0 +1,96 @@
+{
+ "samples": 23,
+ "wall_s": 22.005,
+ "memory_peak_gib": 1.969,
+ "current_max_gib": 1.838,
+ "current_max_at": 22.005,
+ "anon_max_gib": 1.823,
+ "anon_max_at": 22.005,
+ "file_max_gib": 0.007,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 49.0,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_i2c1",
+   "rss_gib": 1.783,
+   "hwm_gib": 1.921,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_i2c1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 22.005,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 22.005
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 22.005,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 22.005
+  },
+  "prove every_valid_sequence_i2c1": {
+   "first": 0.0,
+   "last": 22.005,
+   "rss_max_gib": 1.81,
+   "hwm_max_gib": 1.921,
+   "at": 22.005
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 1.783,
+   "hwm_max_gib": 1.921,
+   "at": 22.005,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.431,
+   "hwm_max_gib": 0.443,
+   "at": 16.004,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.016,
+   "hwm_max_gib": 0.083,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 22.005,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 22.005,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 22.2,
+ "inner_memory_peak_gib": 1.969
+}

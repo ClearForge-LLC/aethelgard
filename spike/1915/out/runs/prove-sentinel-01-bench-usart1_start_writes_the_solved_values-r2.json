@@ -1,0 +1,97 @@
+{
+ "samples": 9,
+ "wall_s": 8.002,
+ "memory_peak_gib": 0.504,
+ "current_max_gib": 0.504,
+ "current_max_at": 8.002,
+ "anon_max_gib": 0.491,
+ "anon_max_at": 8.002,
+ "file_max_gib": 0.008,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 50.0,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove usart1_start_writes_the_solved_values",
+   "rss_gib": 0.282,
+   "hwm_gib": 0.287,
+   "cmd": "cargo-kani kani --harness proofs::usart1_start_writes_the_solved_values --exact"
+  },
+  {
+   "class": "cbmc",
+   "phase": "prove usart1_start_writes_the_solved_values",
+   "rss_gib": 0.174,
+   "hwm_gib": 0.193,
+   "cmd": "cbmc --no-malloc-may-fail --no-undefined-shift-check --no-signed-overflow-check --nan-check --no-self-loops-to-assumptions --no-pointer-primitive-check --object"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002
+  },
+  "prove usart1_start_writes_the_solved_values": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.483,
+   "hwm_max_gib": 0.287,
+   "at": 8.002
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 0.282,
+   "hwm_max_gib": 0.287,
+   "at": 8.002,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.181,
+   "hwm_max_gib": 0.193,
+   "at": 7.002,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.001,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 1.0,
+   "phase": "(podman)"
+  },
+  "goto": {
+   "rss_max_gib": 0.008,
+   "hwm_max_gib": 0.013,
+   "at": 2.001,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 8.7,
+ "inner_memory_peak_gib": 0.843
+}
