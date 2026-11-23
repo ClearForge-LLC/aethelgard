@@ -521,3 +521,73 @@ fn check_drc_with_spec_refuses_a_board_that_is_not_the_declared_one() {
     assert_eq!(code, 3, "{x}");
     fs::remove_dir_all(&dir).unwrap();
 }
+
+// ---- `AET-WO-1323` ----
+
+/// `spec`'s emitted board as the router reads it.
+fn routed_board(label: &str, spec: &str) -> aethelgard_eda::route::Board {
+    let dir = scratch(label);
+    let (code, v, text) = emit(&dir, spec);
+    assert_eq!(code, 0, "{label}: {v}");
+    let spec: aethelgard_ir::Specification = serde_json::from_value(load(spec)).unwrap();
+    let stack = aethelgard_eda::stack::Stack::of(&spec).unwrap();
+    let tree = aethelgard_eda::strict::board(&text).unwrap();
+    let (board, _) = aethelgard_eda::route::read(&tree, &stack).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+    board
+}
+
+/// D1: the heaviest committed specification's routing (§1.1:
+/// `sentinel-02-power`, 119.0 M) does at most half the work the bound
+/// allows, the margin stated with `route::WORK`.
+#[test]
+fn the_heaviest_committed_board_routes_within_half_the_work_bound() {
+    use aethelgard_eda::route;
+    let spec = "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json";
+    let board = routed_board("heaviest", spec);
+    let (_, work) = route::route_measured(&board, route::Rung::TODAY, route::WORK).unwrap();
+    assert!(2 * work <= route::WORK, "{work}");
+}
+
+/// D2 (`1310` D3's U1): d3 with every part of at most 8 pads shifted by
+/// seed 13's whole-pitch offsets (`spike/1323/u1hunt.rs`) routes only when
+/// a soft search's hop is judged on the hard maps, as the search judged it;
+/// with bans alone it is refused (`/SCK2 … after 500 rip-ups`). Seed 16 is
+/// the reverse trade (FEEDBACK).
+#[test]
+fn a_shifted_d3_routes_with_its_soft_hops_judged_on_the_hard_maps() {
+    use aethelgard_eda::route;
+    let mix = |mut z: u64| {
+        z = z.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    };
+    let mut board = routed_board(
+        "d3-13",
+        "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json",
+    );
+    let mut z = 13 * 7919 + 1;
+    for p in &mut board.parts {
+        z = mix(z);
+        if p.pads.len() > 8 {
+            continue;
+        }
+        let dx = ((z % 9) as i64 - 4) * 125_000;
+        let dy = (((z >> 16) % 9) as i64 - 4) * 125_000;
+        let shift = |r: &mut aethelgard_eda::pcb::Rect| {
+            *r = aethelgard_eda::pcb::Rect {
+                x0: r.x0 + dx,
+                y0: r.y0 + dy,
+                x1: r.x1 + dx,
+                y1: r.y1 + dy,
+            };
+        };
+        p.pads.iter_mut().for_each(|pad| shift(&mut pad.rect));
+        p.keepouts.iter_mut().for_each(|k| shift(&mut k.rect));
+        for e in &mut p.courtyard {
+            *e = ((e.0.0 + dx, e.0.1 + dy), (e.1.0 + dx, e.1.1 + dy));
+        }
+    }
+    route::route(&board).unwrap();
+}

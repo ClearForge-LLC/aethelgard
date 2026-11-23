@@ -1,0 +1,316 @@
+--- base/crates/aethelgard-eda/src/route.rs	2026-11-23 09:21:04.000000000 +0000
++++ inst/crates/aethelgard-eda/src/route.rs	2026-11-23 10:13:05.871830593 +0000
+@@ -65,6 +65,33 @@
+ use crate::rules::FLOOR_NM;
+ use crate::stack::Rule;
+ 
++
++/// AET-WO-1323 measuring shim (never committed).
++pub mod spike_work {
++    use std::cell::Cell;
++    thread_local! {
++        pub static SEARCH: Cell<u64> = const { Cell::new(0) };
++        pub static PAIR: Cell<u64> = const { Cell::new(0) };
++        pub static FLOOD: Cell<u64> = const { Cell::new(0) };
++        pub static SEARCH_NS: Cell<u128> = const { Cell::new(0) };
++        pub static BOUND: Cell<u64> = const { Cell::new(u64::MAX) };
++    }
++    pub fn bump(c: &'static std::thread::LocalKey<Cell<u64>>) {
++        c.with(|v| v.set(v.get() + 1));
++        let b = BOUND.with(|v| v.get());
++        if SEARCH.with(|v| v.get()) + FLOOD.with(|v| v.get()) > b {
++            panic!("AET1323 bound {b} crossed");
++        }
++    }
++    pub fn log(line: &str) {
++        if let Some(p) = std::env::var_os("AET1323_WORK_LOG") {
++            use std::io::Write;
++            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(p).unwrap();
++            f.write_all(line.as_bytes()).unwrap();
++        }
++    }
++}
++
+ /// The grid's pitch.
+ pub const PITCH_NM: i64 = 125_000;
+ /// The gate's Default net class via: 0.6 mm, drilled 0.3 mm.
+@@ -1222,6 +1249,23 @@
+         window: (usize, usize, usize, usize),
+         soft: bool,
+     ) -> Option<Vec<Node>> {
++        let t0 = std::time::Instant::now();
++        let r = self.search_inner(net, sources, goal, h, b_moves, window, soft);
++        spike_work::SEARCH_NS.with(|v| v.set(v.get() + t0.elapsed().as_nanos()));
++        r
++    }
++
++    #[allow(clippy::too_many_arguments)]
++    fn search_inner(
++        &mut self,
++        net: usize,
++        sources: &[Node],
++        goal: &dyn Fn(Layer, usize) -> bool,
++        h: &dyn Fn(usize) -> u32,
++        b_moves: bool,
++        window: (usize, usize, usize, usize),
++        soft: bool,
++    ) -> Option<Vec<Node>> {
+         let n = self.grid.len();
+         self.generation = self.generation.wrapping_add(1);
+         if self.generation == 0 {
+@@ -1264,6 +1308,7 @@
+             if f != c + h(node) {
+                 continue;
+             }
++            spike_work::bump(&spike_work::SEARCH);
+             if goal(l, node) {
+                 let mut path = vec![(l, node)];
+                 let (mut at, mut al, mut ad) = (node, l, d);
+@@ -1790,6 +1835,7 @@
+             // Flood the island; its rim is the fence.
+             let mut stack = vec![seed];
+             while let Some(n) = stack.pop() {
++                spike_work::bump(&spike_work::FLOOD);
+                 if std::mem::replace(&mut seen[n], true) {
+                     continue;
+                 }
+@@ -2080,6 +2126,7 @@
+             let mut stack = vec![s];
+             label[s] = next;
+             while let Some(n) = stack.pop() {
++                spike_work::bump(&spike_work::FLOOD);
+                 for d in 0..4 {
+                     if let Some(m) = grid.step(n, d)
+                         && core[m]
+@@ -2137,6 +2184,53 @@
+ 
+ /// [`route`] at one rung of the capacitance ladder.
+ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
++    for c in [&spike_work::SEARCH, &spike_work::PAIR, &spike_work::FLOOD] {
++        c.with(|v| v.set(0));
++    }
++    spike_work::SEARCH_NS.with(|v| v.set(0));
++    spike_work::BOUND.with(|v| v.set(std::env::var("AET1323_BOUND").ok().and_then(|b| b.parse().ok()).unwrap_or(u64::MAX)));
++    let t0 = std::time::Instant::now();
++    let r = route_with_inner(board, rung);
++    let wall = t0.elapsed().as_millis();
++    let get = |c: &'static std::thread::LocalKey<std::cell::Cell<u64>>| c.with(|v| v.get());
++    let nets = net_pads(board).len();
++    let (outcome, ripups, why) = match &r {
++        Ok(routed) => ("ok", routed.ripups.to_string(), String::new()),
++        Err(e) => ("err", "-".to_owned(), {
++            let mut w = format!("{}: {}", e.net, e.why).replace(['\t', '\n'], " ");
++            if w.len() > 160 {
++                let mut k = 160;
++                while !w.is_char_boundary(k) {
++                    k -= 1;
++                }
++                w.truncate(k);
++            }
++            w
++        }),
++    };
++    let o = board.outline;
++    spike_work::log(&format!(
++        "{}\t{}/{}\t{}x{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
++        std::thread::current().name().unwrap_or("-"),
++        rung.bounded_via_cost,
++        rung.bounded_first,
++        (o.x1 - o.x0) / 1_000_000,
++        (o.y1 - o.y0) / 1_000_000,
++        board.parts.len(),
++        nets,
++        outcome,
++        get(&spike_work::SEARCH),
++        get(&spike_work::PAIR),
++        get(&spike_work::FLOOD),
++        wall,
++        spike_work::SEARCH_NS.with(|v| v.get()) / 1_000_000,
++        ripups,
++        why
++    ));
++    r
++}
++
++fn route_with_inner(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
+     let fail = |net: &str, why: String| Unroutable {
+         net: net.to_owned(),
+         why,
+@@ -3248,6 +3342,7 @@
+             }
+         }
+         while let Some(Reverse((f, done, s, node))) = heap.pop() {
++            spike_work::bump(&spike_work::PAIR);
+             let (d, steps) = ((s / (gate + 1)) % 4, s % (gate + 1));
+             if done {
+                 // The cheapest run with both breakouts priced: walk it back.
+@@ -4367,6 +4462,8 @@
+ }
+ 
+ mod read;
++#[cfg(test)]
++mod adv1307;
+ pub use read::*;
+ 
+ #[cfg(test)]
+--- base/crates/aethelgard-eda/src/supply.rs	2026-11-23 09:21:04.000000000 +0000
++++ inst/crates/aethelgard-eda/src/supply.rs	2026-11-23 09:31:32.076714191 +0000
+@@ -1158,6 +1158,7 @@
+             ));
+         }
+     }
++    let tb = std::time::Instant::now();
+     let h = nc.h_nm;
+     let mut net = Network::default();
+     let src = net.node();
+@@ -1223,9 +1224,12 @@
+     for s in sheets.into_iter().flatten() {
+         s.finish(&mut net);
+     }
++    spike_time(&format!("build {}", sink.number), tb);
++    let ts = std::time::Instant::now();
+     let b = net
+         .bound(src, snk, max_iter, 1e-10)
+         .map_err(Refusal::Flow)?;
++    spike_time(&format!("solve {}", sink.number), ts);
+     let via_transfer = ports
+         .into_iter()
+         .map(|(at, per_layer)| {
+@@ -1340,6 +1344,16 @@
+ /// Each domain the specification limits, judged on the read board. A
+ /// specification with no `power.drop_limits` gives none, and nothing about
+ /// its verdict changes.
++
++/// AET-WO-1323 measuring shim (never committed).
++pub fn spike_time(what: &str, t0: std::time::Instant) {
++    if let Some(p) = std::env::var_os("AET1323_TIME_LOG") {
++        use std::io::Write;
++        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(p).unwrap();
++        writeln!(f, "{}\t{what}\t{}", std::process::id(), t0.elapsed().as_micros()).unwrap();
++    }
++}
++
+ pub fn supplies(
+     spec: &aethelgard_ir::Specification,
+     solved: &aethelgard_ir::SolvedTopology,
+@@ -1593,7 +1607,9 @@
+          -> Result<(Vec<PinResult>, Vec<String>), crate::extract::Refused> {
+             let mut terminals = vec![from];
+             terminals.extend(sinks.iter().copied());
++            let tc = std::time::Instant::now();
+             let nc = copper(board, &read.routed, net, &terminals, &model).map_err(to_refused)?;
++            spike_time(&format!("copper {net}"), tc);
+             let notes = nc.notes.iter().map(|n| format!("`{net}`: {n}")).collect();
+             let results = sinks
+                 .iter()
+--- base/crates/aethelgard-eda/src/flow.rs	2026-11-23 09:21:04.000000000 +0000
++++ inst/crates/aethelgard-eda/src/flow.rs	2026-11-23 10:21:37.387926425 +0000
+@@ -430,11 +430,17 @@
+         for f in &mut flux {
+             *f /= current;
+         }
++        let t_rep = std::time::Instant::now();
+         let q = self
+             .repair(&flux, source, sink)
+             .ok_or(FlowError::Disconnected)?;
++        crate::supply::spike_time("solve.repair", t_rep);
++        let t_c = std::time::Instant::now();
+         self.conserves(&q, source, sink)?;
++        crate::supply::spike_time("solve.conserves", t_c);
++        let t_e = std::time::Instant::now();
+         let kinds = self.energy_by_kind(&q);
++        crate::supply::spike_time("solve.energy", t_e);
+         Ok(Bound {
+             energy: kinds[0].add(kinds[1]).add(kinds[2]),
+             kinds,
+@@ -589,6 +595,7 @@
+     /// Nodes not connected to either terminal keep potential 0 and carry no
+     /// flux.
+     fn solve(&self, source: usize, sink: usize, max_iter: usize, tol: f64) -> Option<Vec<f64>> {
++        let t_prep = std::time::Instant::now();
+         let n = self.nodes;
+         let mut adj: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n];
+         for &(a, b, g) in &self.edges {
+@@ -644,7 +651,11 @@
+             val,
+             diag,
+         };
++        crate::supply::spike_time("solve.prep", t_prep);
++        let t_amg = std::time::Instant::now();
+         let amg = Amg::new(a);
++        crate::supply::spike_time(&format!("solve.amg levels {}", amg.levels.len()), t_amg);
++        let t_cg = std::time::Instant::now();
+         let a = &amg.levels[0];
+         let mut x = vec![0.0; m];
+         let mut r = b.clone();
+@@ -682,6 +693,7 @@
+             it += 1;
+             res = r.iter().map(|v| v * v).sum::<f64>().sqrt() / bnorm;
+         }
++        crate::supply::spike_time(&format!("solve.cg it {it} m {m}"), t_cg);
+         let mut u = vec![0.0; n];
+         u[source] = 1.0;
+         for (k, &i) in free.iter().enumerate() {
+@@ -805,7 +817,11 @@
+             }
+         };
+         let mut total = [Iv::exact(0.0); 3];
++        let mut spent = [0u128; 4];
++        let (mut boxes, mut cells, mut groups, mut distinct_w) = (0usize, 0usize, 0usize, 0usize);
+         for el in &self.elements {
++            let t_el = std::time::Instant::now();
++            let kind_ix = match el { Element::Cell { .. } => 0, Element::Joint { .. } => 1, Element::Tall { .. } => 2, Element::Group { kappa, widths, talls, .. } => { groups += 1; boxes += kappa.len(); cells += talls.len(); let mut ws: Vec<(usize, u64, u64, u64, u64)> = widths.iter().flat_map(|w| w.iter().enumerate().map(|(c, (lo, hi))| (c, lo.lo.to_bits(), lo.hi.to_bits(), hi.lo.to_bits(), hi.hi.to_bits()))).collect(); let all = ws.len(); ws.sort_unstable(); ws.dedup(); distinct_w += ws.len(); if groups == 1 { eprintln!("AET1323 group0: {} (col, width) pairs, {} distinct, {} columns", all, ws.len(), widths.first().map_or(0, |w| w.len())); } 3 } };
+             match el {
+                 Element::Cell {
+                     node,
+@@ -906,6 +922,12 @@
+                     }
+                 }
+             }
++            spent[kind_ix] += t_el.elapsed().as_nanos();
++        }
++        if let Some(p) = std::env::var_os("AET1323_TIME_LOG") {
++            use std::io::Write;
++            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(p).unwrap();
++            writeln!(f, "{}	energy.kinds cell {} joint {} tall {} group {} ms; groups {groups} boxes {boxes} cells {cells} distinct_width_rows {distinct_w}	0", std::process::id(), spent[0] / 1_000_000, spent[1] / 1_000_000, spent[2] / 1_000_000, spent[3] / 1_000_000).unwrap();
+         }
+         total
+     }
+--- base/crates/aethelgard-cli/src/extract.rs	2026-11-23 09:21:04.000000000 +0000
++++ inst/crates/aethelgard-cli/src/extract.rs	2026-11-23 09:31:32.076839422 +0000
+@@ -195,6 +195,14 @@
+ 
+ /// `aethelgard extract --board <pcb> --spec <spec>`.
+ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
++    let t_all = std::time::Instant::now();
++    let r = extract_inner(board_path, spec_path);
++    aethelgard_eda::supply::spike_time("extract total", t_all);
++    r
++}
++
++fn extract_inner(board_path: &Path, spec_path: &Path) -> ExitCode {
++    let t_pre = std::time::Instant::now();
+     let (spec, spec_sha256) = match crate::read_spec(Some(spec_path)) {
+         Ok(s) => s,
+         Err((r, code)) => return crate::emit(&r, code),
+@@ -239,8 +247,12 @@
+             return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
+         }
+     };
++    aethelgard_eda::supply::spike_time("spec, solve, lines", t_pre);
++    let t_b = std::time::Instant::now();
+     let bounded = bound::read(text, &stack)
+         .and_then(|read| bound::bound(&read, &wanted).map(|lines| (read, lines)));
++    aethelgard_eda::supply::spike_time("read and capacitance bound", t_b);
++    let t_s = std::time::Instant::now();
+     let (read, lines) = match bounded {
+         Ok(l) => l,
+         Err(r) => {
+@@ -254,6 +266,7 @@
+         Ok(g) => g,
+         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
+     };
++    aethelgard_eda::supply::spike_time("supplies", t_s);
+     // The oscillator nets beside a declared crystal (`AET-WO-4240c` §1.4 (b),
+     // §1.6, ruled A7): reported, and a via on one is a finding; none for a
+     // specification that declares no crystal, whose report is unchanged.
