@@ -36,7 +36,7 @@ Each statement is labelled:
 - **Predictions first:** `spike/3307/predictions.md`, committed at `0057d2ce` before any run.
 - **Method** (3306's, reused):
   - `spike/3307/sh/measure.sh` makes every run **once**, in the image, by `main`'s CLI. The CLI was built from a `git archive` of `28fba951`.
-  - `spike/3307/sh/rejudge.py` then judges each archive on the host with `main`'s CLI and with the branch's. The branch's CLI was built in the image from a `git archive` of `936b9fa3`, whose `lib.rs` behaves as the head's (§Reduction).
+  - `spike/3307/sh/rejudge.py` then judges each archive on the host with `main`'s CLI and with the branch's. The branch's CLI was built in the image from a `git archive` of `936b9fa3`, and again from the final `7d198c17` after the adversarial fix (§5). The two judgements are byte-identical.
   - For each run it records `attribute`'s bytes; for a software rule, `propose`'s files and exit code; and each device's whole-sequence class (`spike/3306/dump`).
   - This order changes no twin, trace or firmware, so one archive per run is the whole comparison.
 - **What ran (68 runs):**
@@ -83,7 +83,7 @@ Each statement is labelled:
   - Each byte is `0x` and two upper-case digits, single-spaced, as `Join` writes it.
   - The pointer is at most `0x7F`, as the model masks it.
   - The verb and the arrow must pair.
-  - A line is read whole or not at all. A line whose bytes do not fit in 8 is no line, including an empty read.
+  - A malformed line is no line. A read is at least one byte. A read too wide to pack keeps its pointer as the `Write` and has no value, as the other form's `Write XX` line does (Adv-2). A write too wide to pack is no line.
 - **The witness's form is its script's.** If any expected line is a BMP581 line, the witness reads only BMP581 lines; otherwise it reads only `Write`/`Read` lines.
 - **`noisy`** is the `[NOISY] {device}: ` prefix, shared by both readers (§Reduction).
 - **Unchanged:**
@@ -101,13 +101,14 @@ Each statement is labelled:
   - U5's data witness has no fields.
   - It failed on unchanged `lib.rs` (measured: I4, evidence `[3:7,4:7]`). That is the WO's "a test that fails without the change".
 - **`a_bmp581_witness_reads_only_its_models_lines_whole`** (§5) covers:
-  - the model's line with a wrong value, register, pointer-only write or written byte, each named exactly;
-  - 24 lines that are none it reads, each carrying a wrong value, all showing nothing wrong: another model's or form's line, a warning, another device's, and malformed ones;
+  - the model's line with a wrong value, register, pointer-only write, written byte, or a too-wide read from the wrong pointer, each named exactly;
+  - a too-wide read from the right pointer, which shows its pointer and no value;
+  - 23 lines that are none it reads, each carrying a wrong value, all showing nothing wrong: another model's or form's line, a warning, another device's, and malformed ones;
   - a malformed script, which is no evidence;
   - a BME280 witness, which does not read the BMP581 form.
 - **The helper `bme_bmp`** builds two-bme with U5 a BMP581 at 0x47. It is the old pinning test's records, factored.
 
-**Mutants** (`~/.cache/aet-3307/mut/mut.py`, measured). Each is applied exactly once to `lib.rs`, the evolve tests run, and the file is restored. The final run is after the reduction pass: **all 8 killed.** Each was killed by the line meant for it, read from its panic message.
+**Mutants** (`~/.cache/aet-3307/mut/mut.py`, measured). Each is applied exactly once to `lib.rs`, the evolve tests run, and the file is restored. The final run is after the reduction pass and the Adv-2 fix: **all 9 killed.** Each was killed by the line meant for it, read from its panic message.
 
 | Mutant | Killed by |
 |---|---|
@@ -116,16 +117,40 @@ Each statement is labelled:
 | M3 lower-case digits | `0x5a` |
 | M4 any digit count | `0x5` |
 | M5 pointer not 7-bit | `read 0x81 -> 0x51` |
-| M6 half a line read | `read 0x01 -> (none)` |
+| M6 an empty read accepted | `read 0x01 -> (none)` |
 | M7 arrow not paired with the verb | `read 0x02 <- 0x50` |
 | M8 any log level | `[WARNING] … read 0x01 -> 0x51` (and 3306's `a_repeat_…`) |
+| M9 a read too wide drops its pointer | `read 0x01 -> ` and nine bytes |
 
-- **One guard was removed as equivalent:** the empty read (`read 0xRR -> (none)`). The whole-line pack already refuses it, since `packed` gives `None` for no bytes. M6 shows the pack is load-bearing.
 - **No tier-2 test was added.** The re-judged archives are the end-to-end proof (§2), and `TIER2_MIN` does not move.
 
 ## 5. Adversarial pass, targeted
 
-ADVERSARIAL-SECTION
+A fresh Opus subagent ran the pass at `3540dfcf`, in its own worktree. It was given the code, the model sources and the two §5 questions, but not my conclusions, and it probed with throwaway tests (reverted).
+
+- **§5.1, a line another part's model also emits, read as a BMP581's: none found.** These are all refused:
+  - our model's other lines (`INT set`/`INT cleared`, its three `[WARNING]`s);
+  - the ICM42688P's `bank N …`, the ICM-20948's, the GenericSpiFlash's, the ICP-101xx's `[DEBUG]`, and the BME280's `Write`/`Read`;
+  - other device paths (`i2c1.u55`) and other levels.
+
+  No other model's script line parses in the BMP581 form, so a BME280 witness is never read as one. Renode's framework files were not all read.
+- **§5.2, a malformed BMP581 line taken as evidence: none.** It found three gaps that hide a fault, the safe side (I4, never a false S):
+  - **Adv-1 (medium, pre-existing, not fixed): the `Write` and `Read` fields compare values, not byte counts.**
+    - `write 0x00 <- 0x36 0x40 0x81` in configure's slot packs to `0x00364081`, which equals the solved `0x364081`, so it shows right.
+    - The `Write`/`Read` form has the same flaw (`Write 0 D0`), but BME280 scripts are identity reads only. The BMP581's 3-byte configure is where it now matters.
+    - Fixing it changes how every witness is compared, the BME280's included, which this order's "not any other part's attribution" fences out. **A §7.1 row is proposed:** compare `(value, count)`, with a sweep.
+  - **Adv-2 (low, new, fixed): a read of 9 or more bytes lost its pointer.** My first rule read a line whole or not at all. The `Write`/`Read` form keeps the `Write XX` line when its read is too wide.
+    - Now a well-formed read too wide to judge keeps its pointer as the `Write`, and has no value. A malformed line is still refused whole.
+    - **Tests:** `read 0x02 -> ` and nine bytes is named wrong (`Write` `0x02`), and `read 0x01 -> ` and nine bytes shows its pointer and no value.
+    - **Mutant M9** (drop the pointer again) is killed. The empty-read guard is back (M6), since the pack no longer refuses the whole line.
+  - **Adv-3 (latent, pre-existing): the `Write` and `Read` can come from different lines,** since `find_map` takes the first line that yields each. It is unreachable today: each step takes one line, and only the last (the 6-byte data read, never judged) takes the rest. The other form behaves the same.
+- **Model-log ambiguities it noted (read at source, not parser faults):**
+  - a read with no pointer write logs the last pointer;
+  - `0x81` and `0x01` log alike (7-bit mask);
+  - a write, read, write in one transaction logs as one line;
+  - the twin's script pointer is not masked (F3).
+- **What held** (run): a FIFO read (`read 0x29 -> 0x7F 0x7F`) named wrong; a pointer-only write in configure named wrong; a write then a read in one transaction read right; a correct line followed by `INT cleared` read right.
+- **Re-judged after the fix** (measured): every archive, with a CLI built in the image from `7d198c17`. The result is byte-identical to the first branch judgement (`spike/3307/out/final/`, 68 rows equal).
 
 ## 6. Findings
 
@@ -138,6 +163,7 @@ ADVERSARIAL-SECTION
   - a warning the wrong transaction makes takes its step's line slot;
   - the 6-byte data step is never judged (`read_width > 4`).
   - Whole-sequence reading (F1) would see the wrong `write 0x37` wherever it lands.
+- **Adv-1 (§5; §7.1 row proposed): `Write`/`Read` compare values, not byte counts.** A zero byte prepended to a BMP581's configure write passes.
 - **F3 (info): the twin's script does not mask a BMP581 pointer, and the model does** (read at source). A step whose first byte is `0x80` or more would be scripted `read 0x81 …`, which the parser refuses. So that step is no evidence, the safe side. No committed step has such a write.
 - **Fence:** nothing outside `crates/aethelgard-evolve`, `spike/3307/` and this file. No `ci/` row, since no tier-2 test was added.
 
@@ -145,19 +171,19 @@ ADVERSARIAL-SECTION
 
 - **`cargo fmt --all -- --check`:** clean.
 - **`cargo clippy --workspace --all-targets -- -D warnings`:** clean (host).
-- **`ci/gates.sh run`** (the `gates` job's set; host, capped user scope, 16G, swap 0): **green**, 2,733 passed and 0 failed over 155 result lines, at `3540dfcf`.
-- **Bench `--against-fab`, in CI's layout** (`ci-img.sh`, 16G):
+- **`ci/gates.sh run`** (the `gates` job's set; host, capped user scope, 16G, swap 0): **green**, 2,733 passed and 0 failed over 155 result lines, at `3540dfcf`, and again at `7d198c17`, the final code (2,733 passed, 0 failed; fmt and clippy clean).
+- **Bench `--against-fab`, in CI's layout** (`ci-img.sh`, 16G, on the branch at `06576f66`, whose `lib.rs` is `936b9fa3`'s; the bench board has no BMP581):
   - `main`'s source and the branch give byte-identical `verify` JSON;
   - each derives 17 files, and only `MANIFEST.json` differs from the committed package (`uid_boundary: false`, `user_namespace` unmet: Furnace's sandbox, as 3306 found). The rest are identical.
   - CI's `bench-package` job decides it on the runner.
-- **CI:** CI-LINE
+- **CI:** the PR's checks on its head decide; the result and its run id are posted on the bus with READY.
 
 ## Reduction pass
 
-Reduction pass (diff): −2 net · 1 duplicate removed · 1 dead path removed · 0 protected kept · 0 findings below.
+Reduction pass (diff): −2 net · 1 duplicate removed · 0 dead paths removed · 0 protected kept · 0 findings below.
 - **The duplicate:** the `[NOISY] {device}: ` prefix, stripped in `witness_bytes` and `bmp581_bytes`, is now one `noisy`.
-- **The dead path:** the empty-read guard, equivalent under the whole-line pack (§4).
-- **Proof:** the 164 evolve tests pass, all 8 mutants are still killed after it (M8 now mutates `noisy`), and the gates above ran on the reduced head.
+- **One guard was removed and then restored.** The empty-read guard was removed as equivalent under the whole-line pack. The Adv-2 fix made it load-bearing again, and M6 now kills its removal.
+- **Proof:** the 164 evolve tests pass, all 9 mutants are killed on the final head (M8 now mutates `noisy`), and the gates below ran on it.
 
 ## What moved
 
