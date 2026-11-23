@@ -8,7 +8,7 @@
 **The answer, in six lines:**
 - **No `fab/` byte would move** under any of the five. `examples/sentinel-01.json`, the package's specification, emits byte-identical under U1, under the pair fix, and under the keepout rule.
 - **None of §7's other stops fires.** Every vendored keepout lies inside its own courtyard, and (5) can be cut without changing what the gate proves, but only by parallelism.
-- **(1):** the heaviest routing anywhere in the workspace suite does 142.9 M units of work. I propose a bound of **300 000 000** per routing, refused as **`RouterWorkExceeded`**. The adversary (a reconstruction) crosses it in 37.5 s, where it took 203 s to `RIPUPS`.
+- **(1):** the heaviest tier-1 routing in the workspace suite does 142.9 M units of work, and 148.7 M under U1. U1's killer test would do 170.1 M. I propose a bound of **350 000 000** per routing if that killer is built, **300 000 000** if not, refused as **`RouterWorkExceeded`**. The adversary (a reconstruction) crosses them in 51 s and 37.5 s, where it took 203 s to `RIPUPS`.
 - **(2) U1 moves 4 committed boards' `.kicad_pcb`** (d1, d3, Sentinel-03, `solve/stress`) and 3 of `d1319`'s drawn boards. Nothing else moves. It is a trade, not a strict gain: on shifted d3 boards it wins one seed and loses another.
 - **(4) is `route_pair`'s own:** the breakout walks back along its own coupled run. Pruning the leaves clears all 152 stubs of a 1 232-placement sweep. No committed byte moves.
 - **(5) is 86 % solve.** The time is CG (47 %) and the interval energy of each via's 1 024 hole-position boxes (35 %), per pin, 27 pins. Nothing in it recurs, so the only cut that keeps every bit is threads.
@@ -41,7 +41,8 @@ Each piece in one paragraph; the tables are in RESULTS.
 - `search` holds 64–92 % of a committed routing's wall time and 90 % of the adversary's; the floods hold most of the rest.
 - The count is a function of the board alone: equal in release and dev, and on every repeat.
 - The heaviest committed specification is `sentinel-02-power`: 86.4 M search + 32.6 M flood = 119.0 M, in 11.6 s.
-- The heaviest routing in `cargo test --workspace` (701 routings logged) is `power_board_tier1`'s `power_tree()` fixture through the ladder, rung 320/false: 118.7 M + 24.1 M = **142.9 M**.
+- The heaviest routing in tier-1 `cargo test --workspace` (701 routings logged) is `power_board_tier1`'s `power_tree()` fixture through the ladder, rung 320/false: 118.7 M + 24.1 M = **142.9 M**. Under U1 it is a 204 × 129 mm board, at 148.7 M. Tier 2 is unmeasured.
+- The suite's refused routings are tiny (≤ 146 k), so no such bound changes an asserted refusal.
 - The adversary, a reconstruction (seed 1307: a 249 mm board, 4 LQFP-144, 288 random two-pad nets), fails by `RIPUPS` after 203 s and 353 MB, at 1 370.8 M. `1307` measured 616 s on its own board.
 
 **(2) U1** (RESULTS §3).
@@ -51,7 +52,12 @@ Each piece in one paragraph; the tables are in RESULTS.
 - Shifted placements: the reference board, d1, `four-layer` and Sentinel-01 never differ (180 seeds). On d3, seed 13 routes only under U1 (the mutant's killer), and seed 16 routes only under bans alone.
 
 **(3) The keepout** (RESULTS §4).
-- Read through the real reader on the 8 committed boards that place a keepout footprint: every keepout lies inside its courtyard.
+- Checked through the real reader three ways, with every byte and exit code identical to base:
+  - `emit` of all 34 specifications, since `emit` builds parts through `route::part_of`;
+  - `extract` on the 7 boards it reads that place a keepout footprint;
+  - `emit` with the IMU turned 0°, 90°, 180° and 270°.
+
+  Every keepout lies inside its courtyard.
 - The B.Cu keepouts of the TDK LGA-14 and the Bosch LGA-10 lie outside the pad field, so the rule is "courtyard or field". `extract` is identical to base on all 8.
 - The QFN-24's keepout is read from its footprint only; no emitting board places it.
 
@@ -69,7 +75,7 @@ Each piece in one paragraph; the tables are in RESULTS.
   Prune takes off every leaf of a pair conductor's copper that lies in none of its pads, then rebuilds the maps as `rip` does.
 - Of the 152 former stubs, 119 route and 33 are refused by the pair judge.
 - Run on the pairs' own copper straight after the pair loop, that judge refuses those 33 by name **before** `connectivity`.
-- `pair-standin.json`, the only committed specification with a pair, is byte-identical under both.
+- The whole sweep under both emits all 75 files byte-identical to base, `pair-standin.json` (the only committed specification with a pair) among them.
 
 **(5) The supply gate** (RESULTS §6).
 - `extract` on `s024l` takes 278–303 s release (568 MB); the test-side `emit` takes 0.98 s. Of that:
@@ -104,28 +110,34 @@ Each piece in one paragraph; the tables are in RESULTS.
 
 **D1 · (1) the bound, its unit and its name.**
 - **Unit:** the router's work in one routing (`route_with`), counted as search expansions plus fill-flood nodes. It is a count, never a clock, so a run's answer cannot depend on the machine.
+  - `pair_run`'s expansions are left out: each call is capped at `4 × MAX_NODES` states, and it runs at most twice per pair, before the rip-up loop (24 k on `pair-standin`).
   - Counting search alone (the alternative) leaves the floods unbounded except through `RIPUPS`. The suite's heaviest flood is 66.3 M, on a 204 × 129 mm board.
-- **Number:** `route::WORK` = **300 000 000**:
-  - 2.10× the suite's heaviest routing (142.9 M);
+- **Number:** `route::WORK` = **350 000 000** if D2 builds U1 with its killer (d3 seed 13, itself 170.1 M: 2.06×); otherwise **300 000 000**. 300 M is:
+  - 2.10× the suite's heaviest tier-1 routing (142.9 M);
   - 2.02× the heaviest under U1 (148.7 M, RESULTS §3.1);
   - 2.52× the heaviest committed specification (119.0 M).
 
   It is per routing, so the ladder's eight routings may spend eight bounds.
 - **Name:** `EmitError::RouterWorkExceeded` (kind `RouterWorkExceeded`, exit 2, `id` the net being routed when it was crossed). The message names the bound and the rip-ups so far. `RIPUPS` stays.
-- **Cost:** the adversary's test runs about 40 s on Furnace (37.5 s release, 41.6 s dev, 352 MB), about 1.7–2.8× that on CI. A weight row moves.
-- **Lean: as stated.** A wider margin costs test time in proportion: about 13 s per 100 M.
+- **Cost:** the adversary's test runs, on Furnace:
+  - 300 M: 37.5 s release, 41.6 s dev;
+  - 350 M: 50.8 s release, 57.2 s dev, on a busier box;
+  - about 350 MB either way.
+
+  CI takes about 1.7–2.8× that. A weight row moves.
+- **Lean: as stated**, the number tied to D2.
 
 **D2 · (2) U1.**
 - **Build it, or not?** It is the rule `1310` called sounder, and it moves no `fab/` byte. But it is a trade on shifted d3 boards, not a gain.
 - **If built:**
   - no tier-1 literal moves: the suite under all three router changes passes, `strict_fence`'s refusal of the spike's modules aside (RESULTS §3.1);
   - the tier-2 tests that judge the moved boards (`with_tools`' d3 and d1 DRC, `board_tier2`'s Sentinel-03) re-run in the image;
-  - the killer test is d3 shifted by seed 13, about 6 s per routing in release.
+  - the killer test is d3 shifted by seed 13: under U1 it routes with 307 rip-ups in 16.5 s release (170.1 M of work). Under bans alone, it is refused.
 - **Lean: build**, as the roadmap row asks, saying in the PR that it is a trade.
 
 **D3 · (3) the keepout rule.** Built as `1310` FEEDBACK A7 states it, not as the row reads:
 - **The rule:** `route::read` refuses a footprint keepout not wholly inside its footprint's courtyard outline (the exact polygon) or its pad field (the pads' box), by name.
-- **No byte or verdict moves** on a committed board.
+- **No byte or verdict moves** on a committed board, nor at any of the IMU's four turns.
 - **The roadmap row's wording** is for the docs PR.
 - **Lean: as stated.**
 

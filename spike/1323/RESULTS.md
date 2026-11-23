@@ -1,6 +1,6 @@
 # AET-WO-1323 — results of §1.1, beside `PREDICTIONS.md`
 
-Measured 2026-11-23 on Furnace. The base is a `git archive` of `main` `cd79024c`; each prototype is that archive with one patch, built in its own target dir, release unless stated. Evidence is in `~/.cache/aet-1323/` (`logs/`, `out-*`, the trees and their patches). Every script named here is in `spike/1323/`.
+Measured 2026-11-23 on Furnace. The base is a `git archive` of `main` `cd79024c`; each prototype is that archive with one patch, built in its own target dir, release unless stated. Evidence is in `~/.cache/aet-1323/` (`logs/`, `out-*`, the trees). Every script named here is in `spike/1323/`. `inst.py` is the shim's first form. The timers added later (the solve's phases, the energy by element kind) and the bound trip are in `patches/inst.patch`, the shim as last run. `patches/all.patch` is the combined tree.
 
 ## 1. The baseline
 
@@ -70,7 +70,13 @@ The shimmed tree, dev profile, `RUST_TEST_THREADS=6`, in a capped scope: 18 min 
 |---|---|---|---|
 | 300 000 000 | 37.5 s | 41.6 s | 352 MB |
 
-That is a test cost of about 40 s here, and 1.7–2.8 × that on CI by earlier work orders' ratios.
+| 350 000 000 | 50.8 s | 57.2 s | 353 MB |
+
+The 350 M run had a busier box than the 300 M run, so the times do not scale exactly. That is a test cost of 40–57 s here, and 1.7–2.8 × that on CI by earlier work orders' ratios.
+
+- **Refused routings are far from any bound.** The largest count among the suite's 26 refused routings is 145 877 (`route::tests::a_net_blocked_only_by_a_fixed_pair_names_the_pair`), under base and under the combined prototypes. No bound near 10⁸ can change a refusal a test asserts.
+- **`pair_run` is left out of the unit.** Its state space is capped per call (`states ≤ 4 × MAX_NODES`, or the window is skipped). It runs at most twice per declared pair, before the rip-up loop, never inside it. It expanded 24 176 states on the only committed board with a pair.
+- **Tier 2 is not in this maximum.** The `with-tools` tests were not compiled here. They emit committed fixtures (Sentinel-03, the reference, Sentinel-01, `sentinel-02-own`, d1, `four-layer`, …) and variants of them, so their routings are unmeasured.
 
 ## 3. (2) U1
 
@@ -87,7 +93,7 @@ The prototype (`~/.cache/aet-1323/u1.patch`): `unhop` takes `soft`, and a flatte
 - **`examples/sentinel-01.json` is byte-identical. No `fab/` byte moves.**
 - **U1-a, half wrong.** I predicted d3 alone among the committed specifications; d1, Sentinel-03 and `solve/stress` move too.
 - **U1-b, hit.** No board changes between routed and refused.
-- **U1-c, a killer exists, and U1 is a trade, not a strict gain.** `u1hunt.rs` reads each board back as `route::Board`, shifts every part of at most 8 pads by a seeded whole-pitch offset (as `escape_tier1`'s `shifted_placements…` does), and routes it with U1 and with bans alone. `route::BANS_ONLY` is a spike-only switch.
+- **U1-c, a killer exists, and U1 is a trade, not a strict gain.** The killer's own cost under U1 (the combined tree, shimmed): 137 281 875 search + 32 777 568 flood = **170 059 443**, 307 rip-ups, 16.5 s release. As a test, it would be the suite's heaviest routing (§7). `u1hunt.rs` reads each board back as `route::Board`, shifts every part of at most 8 pads by a seeded whole-pitch offset (as `escape_tier1`'s `shifted_placements…` does), and routes it with U1 and with bans alone. `route::BANS_ONLY` is a spike-only switch.
 
   | board | seeds | same outcome | differ |
   |---|---|---|---|
@@ -112,7 +118,12 @@ The prototype (`~/.cache/aet-1323/u1.patch`): `unhop` takes `soft`, and a flatte
 
 ## 4. (3) The keepout held to its footprint
 
-- **R3 confirmed through the real reader.** A prototype (`k3`: each keepout's rectangle inside its courtyard's box or its pad field's box, else refused) was run as `extract` on the 8 committed boards that place a keepout footprint: `sentinel-02-own`, `sentinel-02-bench`, `sentinel-02-shaped`, `logger-4600`, `sentinel-03`, `hse-crystal-16`, `sentinel-01-ext-bmp581`, and `sentinel-02-power`, which `extract` refuses before reading the board in both trees. On every board read, every keepout lies inside its courtyard. Every B.Cu keepout (TDK LGA-14, Bosch LGA-10) lies **outside** the pad field, so the rule is "courtyard or field". `extract`'s stdout and exit are identical to base on all 8.
+- **R3 confirmed through the real reader.** A prototype (`k3`: each keepout's rectangle inside its courtyard's box or its pad field's box, else refused) was run three ways.
+  - **`emit` of all 34 specifications.** `emit` builds every part through `route::part_of`, so the check is on emit's own path: all 75 files byte-identical to base, every exit code the same.
+  - **`extract` on the boards that place a keepout footprint.** Seven were read: `sentinel-02-own`, `sentinel-02-bench`, `sentinel-02-shaped`, `logger-4600`, `sentinel-03`, `hse-crystal-16` and `sentinel-01-ext-bmp581`. An eighth, `sentinel-02-power`, `extract` refuses before reading the board, in both trees.
+  - **`emit` of `sentinel-02-own` with U5 turned** to each heading, Z up: `right` 0°, `forward` 90°, `left` 180°, `aft` 270°. Each is byte-identical to base, with the B.Cu keepout turned to 2.6 × 3.1 mm at 90° and 270°.
+
+  On every board, every keepout lies inside its courtyard. Every B.Cu keepout (TDK LGA-14, Bosch LGA-10) lies **outside** the pad field, so the rule is "courtyard or field". `extract`'s stdout and exit are identical to base on all 8.
 - **No §7 stop:** no vendored keepout lies outside its own courtyard and field.
 - The QFN-24 (ICM-20948) is placed by no board that emits (`imu-baro-1v8` is refused before `emit`); its keepout was read from the footprint only.
 - The build's test is exact against the courtyard polygon, not its box; every vendored courtyard is a rectangle.
@@ -134,7 +145,7 @@ Two prototypes (`s4` tree, switched by environment):
 
 - Of the 152 stubs, prune routes 119 cleanly; 33 are refused by name by the pair judge (15 "the coupled run breaks at …", 18 "… uncoupled at an end"). With prune alone those 33 are refused by `pairs()` **after** `connectivity`; with the early judge, **before** it, as §2 (4) asks ("refused by name before `connectivity`"). The early judge also moves 12 refusals that today name `/S` ("only the fixed copper of the pair") to the pair's own refusal, on boards whose pair copper the judge already refuses.
 - The early judge alone already names F2 ("`/N`: its copper branches at (2500000, 3625000)"): the stub is a branch the pair judge sees. Today `connectivity` runs first and speaks first.
-- **S4, hit.** `pair-standin.json` (the only committed specification with a pair) emits byte-identical to base under prune and under prune with the early judge. **No `fab/` byte moves.**
+- **S4, hit.** The whole sweep, run with the `s4` binary under prune and the early judge, emits all 75 files byte-identical to base, with every exit code the same. That includes `pair-standin.json`, the only committed specification with a pair. **No `fab/` byte moves.**
 
 ## 6. (5) The supply gate
 
@@ -185,6 +196,7 @@ The solve, split on a third run at 165 mV (292 s whole):
   - no vendored keepout lies outside its own courtyard and field;
   - (5) can be cut without changing what the gate proves (by threads only).
 - **The decisions** (the bound and its name, U1, the keepout rule, the stub fix, the supply gate's threads) are D1–D5 in `docs/work-orders/AET-WO-1323.FEEDBACK.md` §3.
+- **The bound and U1's killer depend on each other.** If d3's seed 13 becomes a test (170.1 M), a 300 M bound stands only 1.76× above it, and 350 M restores a 2× margin (2.06×). Without that test, 300 M is 2.02× the heaviest routing under U1.
 - **The prototypes**, as diffs against `cd79024c`, are in `patches/`:
   - `u1.patch`;
   - `k3-keepout.patch`: box containment, the build's is the exact polygon;
