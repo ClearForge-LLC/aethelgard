@@ -1,0 +1,20 @@
+# Sentinel-01 (sentinel-01-bench): the fabrication files as ordered (AET-WO-3308).
+# Ordered: 2026-11-19 (ORDER.md §1 names these ten files, zipped and uploaded).
+# Source: the commit range, not the upload. These bytes are identical at ac5f8c82 (2026-11-17, where they were created),
+# ee835bde (2026-11-19 19:43 UTC, the last commit before the order ended), cd79024c and b9d5f4b6; no commit between
+# touched them. No uploaded zip was hashed. If the uploaded zip is found, its members' hashes outrank this range: a
+# member that differs is recorded in a ruling block below.
+# Check by hand: cd fab/sentinel-01-bench && sha256sum --strict -c ORDERED.sha256
+# A re-spin edits this list only by a ruling, named in a dated block added below; nothing above it is rewritten.
+# A ruling block opens with `# Ruling YYYY-MM-DD`; an entry in it supersedes the same file's above. A tier-1 test holds
+# every byte above the first ruling block (AET-WO-3308).
+e479681d8d56f18e9a3d90d38301e696b3a81f7ff56914831fe0fb8dc9450283  package/sentinel-01-bench-F_Cu.gtl
+f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d  package/sentinel-01-bench-B_Cu.gbl
+77096eda672cf3062eedb19df7e41154ee55211383553cef517fb39559d88dcb  package/sentinel-01-bench-F_Mask.gts
+8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4  package/sentinel-01-bench-B_Mask.gbs
+0a362a26f4846201a969a73f20e643d0a6a4852f2c1194f2c81022898832ebfb  package/sentinel-01-bench-F_Paste.gtp
+0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0  package/sentinel-01-bench-B_Paste.gbp
+3e9ac114da35117797f46be5a096f025a4c1857e665bbc95967dd982e4619cc2  package/sentinel-01-bench-F_Silkscreen.gto
+c33d6c7655263578ed865ab787c5ff4d141f3a821500e9293b7492099005c09e  package/sentinel-01-bench-B_Silkscreen.gbo
+766c7570a7760280d3c25d31a3d9f2e63470de6a56f3d41afd354c73c822d254  package/sentinel-01-bench-Edge_Cuts.gm1
+099e9665d894813e1308cf755ab1afffdcd7b257a3e1a66ce2f4775be87ce2c8  package/sentinel-01-bench.drl

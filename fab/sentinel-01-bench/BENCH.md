@@ -2,7 +2,7 @@
 
 The rows to run when the boards arrive (AET-WO-3401 §2.4, corrected by AET-WO-3403 after the post-order review, `docs/reviews/2026-11-19-sentinel-01-as-ordered.md`). Each row says which prediction it tests, the instrument, the pass line and what a disagreement adds to the record. A pass line is a number from a cited prediction, and a reading outside it fails the row. A failed row is a finding, never a retry.
 
-The board is `examples/sentinel-01.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-01-bench.elf` (sha256 `008a2a59…`, the full hash in `package/MANIFEST.json`). Every row here runs that ELF. The BMP581 on J4 runs a different ELF, from a bench specification, and has its own sheet: `BENCH-EXT-BMP581.md`. That specification describes a board that was never made (the breakout as an on-board part), so its `verify` verdict says nothing about J4's copper with a breakout plugged in.
+The board is `examples/sentinel-01.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-01-bench.elf`, sha256 `f3e871bb4a16678a77ac1b81bf2f9b53e463b3c9aee435dd45010a1fde7452c4`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, `AET-WO-3308`). Every row here runs that ELF, and every prediction below was re-checked against it on 2026-11-23, row by row (`spike/3308/ROWS.md`). Line numbers (`L…`) are those of the generated `boards/sentinel-01-bench/` as `AET-WO-3308` merged it, which builds this ELF byte for byte; a later regeneration that keeps the ELF can move them, and the statement each cites is what holds. It is not the ELF the package held when the boards were ordered on 2026-11-19: `4240v` (VOS2) and `4241` (U3's identity read) replaced that one before the boards arrived. The BMP581 on J4 runs a different ELF, from a bench specification, and has its own sheet: `BENCH-EXT-BMP581.md`. That specification describes a board that was never made (the breakout as an on-board part), so its `verify` verdict says nothing about J4's copper with a breakout plugged in.
 
 **What each prediction rests on** (`RUL-20`'s terms, as `AET-WO-3304.bench.md` labels them). Every pass line names one:
 - **twin:** the twin's own run of this ELF (Renode's models and the boot judge, or ngspice through the campaign).
@@ -18,7 +18,7 @@ The board is `examples/sentinel-01.json`, and its package is `package/` beside t
 > - Anything plugged into J4 that adds more is outside the bound the gates judged.
 > - The copper itself leaves about 71 pF per line before the declared 100 pF: a declared 70 pF off-board passes `extract`, and 85 pF fails it [measured on this board, 2026-11-17].
 
-> **U2 is not fitted on these boards.** The BME280 is out of stock everywhere, and its replacement, the BMP581, is an LGA-10 of 2.0 × 2.0 mm that does not land on U2's LGA-8 2.5 × 2.5 mm pads (the review's U2; Scotty chose the BMP581 on #237). What the ordered ELF does with U2 empty, row by row, is in "U2 empty" below. A BMP581 breakout can stand in on J4 instead (`BENCH-EXT-BMP581.md`).
+> **U2 is not fitted on these boards.** The BME280 is out of stock everywhere, and its replacement, the BMP581, is an LGA-10 of 2.0 × 2.0 mm that does not land on U2's LGA-8 2.5 × 2.5 mm pads (the review's U2; Scotty chose the BMP581 on #237). What the package ELF does with U2 empty, row by row, is in "U2 empty" below. A BMP581 breakout can stand in on J4 instead (`BENCH-EXT-BMP581.md`).
 
 > **What is on order** (Scotty's DigiKey order, 2026-11-19, read by the architect; `ORDER.md` §2): U1, U4, J2, SW1 and every passive, for 3 boards.
 > - **U2 is not ordered** (above).
@@ -69,61 +69,56 @@ Every step here runs with nothing powered. Each catches a fault that a later row
 
 **One GND pad, TP1, as ruled** (`AET-WO-3402` Q2 (c), PR #203). The specification now admits several GND test points (`AET-WO-3402` §1.1), but the placer puts a second one where the specification cannot steer it, 25.8–31.5 mm from the I2C pads [measured]. So the other ground points are the GND pins of J1–J4 (pin 4 of J1, J3 and J4; pin 6 of J2), and B6 names the nearest.
 
-## What the ordered ELF puts where (review F1)
+## What the package ELF puts where (review F1)
 
 The ELF reports in two places, and the console carries neither record.
 
-- **The console** (USART1, J1 pin 1 = CONSOLE_TX, 115200 8N1) sends exactly **12 bytes** once per boot, `43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF` (`CONSOLE`, then the tail `00 FE 7F 80 FF`; `boards/sentinel-01-bench/firmware/src/main.rs` L172–177 and L56). It sends them **before** any I2C or SPI read. It then echoes at most 8 received bytes, each within a bounded wait (L204–211), and falls silent. Source: **twin** (the boot judge's witness of this pattern, `simulate`'s `serial[0].twin.pattern`).
+- **The console** (USART1, J1 pin 1 = CONSOLE_TX, 115200 8N1) sends exactly **12 bytes** once per boot, `43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF` (`CONSOLE`, then the tail `00 FE 7F 80 FF`; `boards/sentinel-01-bench/firmware/src/main.rs` L200–205 and L64). It sends them **before** any I2C or SPI read. It then echoes at most 8 received bytes, each within a bounded wait (L245–252), and falls silent. Source: **twin** (the boot judge's witness of this pattern, `simulate`'s `serial[0].twin.pattern`).
   - Open the terminal, in hex, **before** releasing reset: the bytes come within milliseconds of it.
-  - The echo is not a pass line. Its window closes within milliseconds of the boot word (at most 20,000 polls of `ISR` per byte, L60).
-- **The records** are the RAM array `AETHELGARD_BOOT` at `0x20000000` (`link.x`: the first word of DTCM; `main.rs` L30), six words, read over SWD:
+  - The echo is not a pass line. Its window closes within milliseconds of the boot word (at most 20,000 polls of `ISR` per byte, L68).
+- **The records** are the RAM array `AETHELGARD_BOOT` at `0x20000000` (`link.x`: the first word of DTCM; `main.rs` L38), eight words, read over SWD. The firmware reads U2's identity, then U4's, then U3's, and writes the boot word last:
 
-  | Word | Address | What | Expected, U2 empty | Source |
+  | Word | Address | What | Expected, U2 and U3 empty | Source |
   |---|---|---|---|---|
-  | 0 | `0x20000000` | boot word, written last (L203) | `0x2100B007` | twin |
-  | 1 | `0x20000004` | `FLASH_OPTSR_CUR` as read at boot (L148–150) | bits 3:2 = `11` after B3's procedure; `00` before it | B3 |
-  | 2 | `0x20000008` | record 0 status: I2C1, address `0x76`, register `0xD0` (U2's identity; L179–190) | `0x22020001` (TXIS) | generator and RM0433, as "U2 empty" traces; **repeat in kind** (`3302` read TXIS with no device, same driver) |
+  | 0 | `0x20000000` | boot word, written last (L244) | `0x2100B007` | twin |
+  | 1 | `0x20000004` | `FLASH_OPTSR_CUR` as read at boot (L176–178) | bits 3:2 = `11` after B3's procedure; `00` before it | B3 |
+  | 2 | `0x20000008` | record 0 status: I2C1, address `0x76`, register `0xD0` (U2's identity; L207–218) | `0x22020001` (TXIS) | generator and RM0433, as "U2 empty" traces; **repeat in kind** (`3302` read TXIS with no device, same driver) |
   | 3 | `0x2000000C` | record 0 value | `0x00000000` | as above |
-  | 4 | `0x20000010` | record 1 status: SPI1 `0x9F` to U4 (L191–201) | `0x22020000` (OK) | twin |
+  | 4 | `0x20000010` | record 1 status: SPI1 `0x9F` to U4 (L219–229) | `0x22020000` (OK) | twin |
   | 5 | `0x20000014` | record 1 value | `0x00EF4017` (`EF 40 17`) | twin; Winbond W25Q64JV rev J §8.1, read at source by `3401` |
+  | 6 | `0x20000018` | record 2 status: I2C1, address `0x48`, register `0x0F`, two bytes (U3's `Device_ID`; L230–242) | `0x22020001` (TXIS), as record 0. **U3 fitted:** `0x22020000` (OK) | empty: generator and RM0433, as record 0. Fitted: TI SNOSD82D §7.6.11 |
+  | 7 | `0x2000001C` | record 2 value | `0x00000000`. **U3 fitted:** `0x00000117` (`DID[11:0]` `0x117`, `Rev[3:0]` 0 at reset; full 16-bit mask) | SNOSD82D §7.6.11, document sha256 `78212e91…b789` (`4241` FEEDBACK §8) |
 
   With U2 fitted (a BME280), record 0 would be `0x22020000` / `0x00000060`, the twin's value. No board of this order has it.
 
-  **With the package ELF of `AET-WO-4241` (#279; `sentinel-01-bench.elf` `f3e871bb…52c4`), not the ordered one,** the firmware also reads U3's identity after record 1 and before the boot word (`main.rs` L230–242), so the records are **eight words**: read `b32 0x20000000 8`. Words 0–5 are as above.
-
-  | Word | Address | What | Expected | Source |
-  |---|---|---|---|---|
-  | 6 | `0x20000018` | record 2 status: I2C1, address `0x48`, register `0x0F`, two bytes (U3's `Device_ID`) | **U3 empty:** `0x22020001` (TXIS), as record 0. **U3 fitted:** `0x22020000` (OK) | empty: generator and RM0433, as record 0. Fitted: TI SNOSD82D §7.6.11 |
-  | 7 | `0x2000001C` | record 2 value | **U3 empty:** `0x00000000`. **U3 fitted:** `0x00000117` (`DID[11:0]` `0x117`, `Rev[3:0]` 0 at reset; full 16-bit mask) | SNOSD82D §7.6.11, document sha256 `78212e91…b789` (`4241` FEEDBACK §8) |
-
-  **Not predicted by the twin:** it has no TMP117 model, so its own record 2 is a TXIS timeout, a twin limit and not a prediction of the board (`simulate`: `identity_not_witnessable`). With this ELF, B9 part 1 sees a **second** I2C1 transaction after the SPI read: with U3 empty, `Address write: 48`, `NACK`, `Stop`; with U3 fitted, in order, `Address write: 48`, `ACK`, `Data write: 0F`, then `Address read: 48`, `ACK`, `Data read: 01`, `Data read: 17`, whatever framing the decoder shows between them. B9 part 1's "exactly these lines, once" is the ordered ELF's. With U3 fitted and this ELF, record 2 is the firmware's own positive witness of I2C1, and B9 part 2's address probe is a cross-check, no longer the only one.
+  **Not predicted by the twin:** it has no TMP117 model, so its own record 2 is a TXIS timeout, a twin limit and not a prediction of the board (`simulate`: `identity_not_witnessable`). With U3 fitted, record 2 is the firmware's own positive witness of I2C1, and B9 part 2's address probe is a cross-check, no longer the only one.
 
 **The commands.** `probe-rs` 0.32.0 is the bench's (`AET-WO-3304.bench.md` §0). Its exact syntax was not run on Furnace (no `probe-rs` here): check `probe-rs read --help` and `probe-rs write --help` before the first row, as `3302` and `4240` said.
 
 ```
 P=~/tools/probe-rs/bin/probe-rs
-$P read --chip STM32H753ZITx b32 0x20000000 6
+$P read --chip STM32H753ZITx b32 0x20000000 8
 ```
 
 **Clear the records before the boot being judged.** The reset handler zeroes `.bss` only, and `.aethelgard_boot` is `NOLOAD` (`link.x`), so a reset leaves the last boot's words in RAM (`3302` saw residue there). A boot that dies early would then still show `0x2100B007` and the old records. So either power-cycle the board first (J3's supply off and on), or write zeros and read them back as zeros, then reset:
 
 ```
-$P write --chip STM32H753ZITx b32 0x20000000 0 0 0 0 0 0
-$P read  --chip STM32H753ZITx b32 0x20000000 6
+$P write --chip STM32H753ZITx b32 0x20000000 0 0 0 0 0 0 0 0
+$P read  --chip STM32H753ZITx b32 0x20000000 8
 $P reset --chip STM32H753ZITx
 ```
 
-Let the firmware run for at least 1 s after reset before reading. A read attaches over the AHB access port; whether this `probe-rs` halts the core to read is not known here. The core is parked in its final loop by then (L213), so a halt changes no record.
+Let the firmware run for at least 1 s after reset before reading. A read attaches over the AHB access port; whether this `probe-rs` halts the core to read is not known here. The core is parked in its final loop by then (L254), so a halt changes no record.
 
-## U2 empty: what the ordered ELF does
+## U2 empty: what the package ELF does
 
-**The code path** (the ordered firmware, `boards/sentinel-01-bench/`):
-1. The console's 12 bytes go out first (`firmware/src/main.rs` L172–177).
-2. `i2c1.transfer(0x76, [0xD0], 1 byte)` (`main.rs` L179). The write phase writes `CR2` with `START`, one byte, `AUTOEND` 0 (`src/board.rs` L587), then waits for `TXIS` at most `I2C_WAIT_SPINS` = 20,000 reads of `ISR` (L204, L589–590).
+**The code path** (the package firmware, `boards/sentinel-01-bench/`):
+1. The console's 12 bytes go out first (`firmware/src/main.rs` L200–205).
+2. `i2c1.transfer(0x76, [0xD0], 1 byte)` (`main.rs` L207). The write phase writes `CR2` with `START`, one byte, `AUTOEND` 0 (`src/board.rs` L611), then waits for `TXIS` at most `I2C_WAIT_SPINS` = 20,000 reads of `ISR` (L228, L613–614).
 3. No device answers `0x76`, so the address is NACKed. RM0433 Rev 9 §47.4.9 (p. 1975, read at source): "When a NACK is received, the TXIS flag is not set and a STOP condition is automatically sent. The NACKF flag of the I2C_ISR register is set."
-4. The wait expires: `I2cError::Txis` (L590). No `TC`, read or `STOPF` wait follows (L595–611). `ICR` is written with `STOPCF | NACKCF` (L613), so I2C1 is left idle and clear.
-5. `main.rs` L184 records `(0x22020001, 0)` as record 0 (L190). The SPI read, the boot word and the echo follow unchanged (L191–211).
-6. Nothing else in the firmware addresses `0x76` or I2C1.
+4. The wait expires: `I2cError::Txis` (L614). No `TC`, read or `STOPF` wait follows (L619–635). `ICR` is written with `STOPCF | NACKCF` (L637), so I2C1 is left idle and clear.
+5. `main.rs` L212 records `(0x22020001, 0)` as record 0 (L218). The SPI read, U3's read on I2C1, the boot word and the echo follow unchanged (L219–252).
+6. Nothing else in the firmware addresses `0x76`. I2C1 is addressed once more, at `0x48` for U3 (L231): the same driver, after the SPI read, so record 0 stands whatever that read finds.
 
 `3302` measured this path on silicon (rev V Nucleo, `AET-WO-3302.bench.md` L242–246): `0xEC`, NACK, STOP, status `0x22020001`, no lockup. That was a sibling ELF of the same generated driver, not this ELF.
 
@@ -137,7 +132,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 | B4 | Unchanged: record 1 follows record 0 whatever it holds |
 | B6 | SENSORS' bounds still hold. They include U2's and U3's pads and pin capacitance, so with U2 off (and U3, while it is not fitted) they are looser by up to those pins |
 | B7 | Unchanged: EXT, not SENSORS |
-| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. U3 (the TMP117), if fitted, is the positive witness of I2C1 |
+| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. Then, after the SPI read, U3's `0x90`: with U3 empty, NACK, STOP, and record 2 is TXIS (changed 2026-11-23 (`AET-WO-3308`), before the bench, with B9 part 1's pass line). U3 (the TMP117), if fitted, is the positive witness of I2C1 |
 
 **What is lost:** the silicon witness of a full I2C read on SENSORS by the firmware (record 0 = `0x60`). With U3 fitted, B9's TMP117 probe witnesses PB6/PB7 at AF4 and the SENSORS copper without it. With U3 empty as well, no device on I2C1 acknowledges anything (B9).
 
@@ -150,7 +145,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
      - A scope on a connect-under-reset is not enough: the MCU pulls NRST low itself on every internal reset (`AET-WO-3403.FEEDBACK.md` §2.2).
      - With Before power step 4, this is the row's only witness of J2 pin 3: the probe attaches through SWD whether or not NRST arrives, so items 2 and 3 pass with NRST open.
   2. `package/sentinel-01-bench.elf` flashes and verifies (`download --verify` if this `probe-rs` offers it). Its sha256 is checked against `MANIFEST.json` before the download. Source: **not predicted** (no model of the probe).
-  3. After reset, the console sends exactly the 12 bytes `43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF` at 115200 8N1. Source: **twin**. Count from the first `43`: any other byte among the twelve, a missing byte or a different count fails. A byte or framing error before the first `43` is recorded, not judged: PA9 is switched to AF7 (`main.rs` L163) before USART1 is enabled (L171), and the twin does not model the pin's level in between. Send nothing from the terminal during the reading: the firmware echoes what it receives.
+  3. After reset, the console sends exactly the 12 bytes `43 4F 4E 53 4F 4C 45 00 FE 7F 80 FF` at 115200 8N1. Source: **twin**. Count from the first `43`: any other byte among the twelve, a missing byte or a different count fails. A byte or framing error before the first `43` is recorded, not judged: PA9 is switched to AF7 (`main.rs` L191) before USART1 is enabled (L199), and the twin does not model the pin's level in between. Send nothing from the terminal during the reading: the firmware echoes what it receives.
 - **On a disagreement:** a row in `architecture.md` §2.1 (corrections) naming the step that failed. Item 1 failing implicates J2 pin 3's net, which parity judged.
 
 ## B2. The register image, read back
@@ -168,7 +163,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   - **rule:** `independent-rule`, `silicon.rs`;
   - **not predicted:** `ignored-by-model` or `silicon-only`: only the bench judges it.
   - `TIMINGR`'s exact word is the generator's (the rule holds its fields only by inequalities), so those rows can fail only on a read-back difference (`AET-WO-3304.FEEDBACK.md` A5).
-  - `I2C1.CR2`'s mask leaves out `AUTOEND`, `START`, the address and the count: they hold the last transfer's, which differs with U2 fitted or empty. No row below depends on U2.
+  - `I2C1.CR2`'s mask leaves out `AUTOEND`, `START`, the address and the count: they hold the last transfer's (U3's at `0x48`, `main.rs` L231), which differs with U3 fitted or empty. No row below depends on U2 or U3.
 
   | Register | Address | Mask | Expected | Source |
   |---|---|---|---|---|
@@ -221,7 +216,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   | RCC.D1CCIPR | `0x5802444c` | `0x30000000` | `0x00000000` | not predicted (no model reacts) |
   | RCC.D2CCIP2R | `0x58024454` | `0x0000303f` | `0x00000000` | not predicted (no model reacts) |
 
-- **The supply state, `4240`'s bench row B-2** (review F14). Before `4240v` (#259), the package ELF ran at VOS3 with every APB clock at 64 MHz, above DS12117's 50 MHz for VOS3, and never wrote a PWR register. Since `4240v`, the package ELF (`e4e24372…1d496f11`) programs the supply first: `PWR_CR3` written once and read back, then VOS Scale 2. Flash that ELF. `PWR_CR3` is reset only by a power-on reset, so **power-cycle the board first** (remove J3's supply), then attach under reset and read, before and again after the boot:
+- **The supply state, `4240`'s bench row B-2** (review F14). The package ELF programs the supply first: `PWR_CR3` written once and read back, then VOS Scale 2 (`4240v`, #259; before it, the package ELF ran at VOS3 with every APB clock at 64 MHz, above DS12117's 50 MHz for VOS3, and never wrote a PWR register). `PWR_CR3` is reset only by a power-on reset, so **power-cycle the board first** (remove J3's supply), then attach under reset and read, before and again after the boot:
 
   ```
   $P read --chip STM32H753ZITx b32 0x5802480C 1   # PWR_CR3: SCUEN bit 2, LDOEN bit 1, BYPASS bit 0
@@ -257,7 +252,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 - **Instrument:** SWD; a scope on TP10 (SPI_SCK) and TP7 (FLASH_CS), single-shot on TP7's falling edge, across a reset. TP9 (SPI_MOSI) and TP8 (SPI_MISO) are there too.
 - **Pass:**
   - **Record 1** (above): `0x20000010` = `0x22020000` and `0x20000014` = `0x00EF4017`. Source: **twin**; the value is Winbond's (W25Q64JV rev J §8.1, Read JEDEC ID 9Fh: `EFh`, then `4017h` for the IQ ordering codes; `parts.json`'s row, sha256 `452d906c…`). The value can come only from the flash over PA5–PA7 and PA0: with a wrong AF, an open line or a dead U4, the controller still completes the transfer (status OK) but the value is whatever floating MISO reads, never `EF4017` [inferred: `3304`'s floating-MISO note].
-  - **Word 0** = `0x2100B007` (written after record 1; L203). Source: **twin**.
+  - **Word 0** = `0x2100B007` (written after record 2; L244). Source: **twin**.
   - `SPI1.SR.MODF` (`0x40013014`, bit 9) = 0. Source: **not predicted** by the twin (Renode models no `MODF`): the scar's row.
   - `SPI1.CFG2.MASTER` (`0x4001300C`, bit 22) = 1. Source: **rule** (`silicon::spi_words`, held by `check_spi`).
   - **SCK on TP10:** 32 clocks while TP7 is low (the command and three bytes), at **15.59–16.24 MHz** (16.000 MHz at HSI's 64 MHz, `MBR` 1, /4). Source: **rule** (the solved `MBR`, judged by `silicon::check_spi`: `achieved_max_hz` 16,239,744; the low end is HSI's −2.6 %). This replaces "`SPE` is set during the transfer", which cannot be read after boot.
@@ -312,7 +307,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 - **Why the old method could not do it** (review F2). RM0433 Rev 9 §47.4.9 (p. 1971, read at source): the controller "detects its own SCL high level after a tSYNC2 delay depending on the SCL rising edge, SCL input noise filters (analog and digital), and SCL synchronization to the I2CxCLK clock", and counts `SCLH` from that detection. So one edge times threshold, delay and the kernel clock's error together. At this edge's slope (about 3–4 mV/ns near 1.7 V) a 100 ns delay reads as 0.3–0.4 V of threshold, and HSI's −2.6/+1.5 % on 4.031 µs as ±0.2–0.3 V. Both exceed the old ±0.2 V band.
 - **The method: two edge rates, solved together.** A threshold is fixed in volts; the delay and the count are fixed in time. Two edges of different slope separate them.
   - **Instrument:** the scope on TP11 (EXT_SCL, R3 10 kΩ), J4 empty, at ≥ 500 MSa/s, probe ground to J4 pin 4; the DMM on TP4. One 47 pF C0G capacitor (any value 33–100 pF works; C0G so its value does not move with voltage), to be fitted from TP11 to J3 pin 4 or J4 pin 4 for the second edge and removed after.
-  - **The bus traffic, over SWD** (the ordered ELF starts no transfer on EXT; I2C2 is enabled and idle, `TIMINGR` `0x50D32A40`, B2):
+  - **The bus traffic, over SWD** (the package ELF starts no transfer on EXT; I2C2 is enabled and idle, `TIMINGR` `0x50D32A40`, B2):
     ```
     $P write --chip STM32H753ZITx b32 0x4000581C 0x00000030   # I2C2.ICR: clear STOPF, NACKF
     $P write --chip STM32H753ZITx b32 0x40005804 0x020020AA   # I2C2.CR2: address 0x55, write, NBYTES 0, AUTOEND, START
@@ -361,15 +356,22 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   sigrok-cli -i s01-i2c1.sr -P i2c:scl=D0:sda=D1 -A i2c=addr-data
   ```
   **Pass:**
-  - exactly these lines, once:
+  - **Changed 2026-11-23 (`AET-WO-3308`), before the bench.** The package ELF makes a second I2C1 transaction after the SPI read: U3's identity read (`main.rs` L230–242). The line before this change was the ELF of the order's, which made one transaction: ~~"exactly these lines, once: `Start`, `Write`, `Address write: 76`, `NACK`, `Stop`"~~. The second transaction was already predicted in this sheet's records section before the change; the pass line now holds it.
+  - exactly these lines, once, in this order (U3 empty, as ordered):
     ```
     i2c-1: Start
     i2c-1: Write
     i2c-1: Address write: 76
     i2c-1: NACK
     i2c-1: Stop
+    i2c-1: Start
+    i2c-1: Write
+    i2c-1: Address write: 48
+    i2c-1: NACK
+    i2c-1: Stop
     ```
-    On a scope, the address byte is `1110 1100` (`0xEC`, the 7-bit `0x76` and the write bit). Source: **generator** (the address, `main.rs` L179) and **RM0433** (the STOP after a NACK, p. 1975); **repeat** (`3302`: `0xEC`, NACK, STOP).
+    **With U3 fitted,** the second transaction is, in order, `Address write: 48`, `ACK`, `Data write: 0F`, then `Address read: 48`, `ACK`, `Data read: 01`, `Data read: 17`, whatever framing the decoder shows between them (SNOSD82D §7.6.11).
+    On a scope, the first address byte is `1110 1100` (`0xEC`, the 7-bit `0x76` and the write bit), the second `1001 0000` (`0x90`, `0x48` and the write bit). Source: **generator** (the addresses, `main.rs` L207 and L231) and **RM0433** (the STOP after a NACK, p. 1975); **repeat** for the first (`3302`: `0xEC`, NACK, STOP).
   - **SCL's period inside the address byte: at least 2.5247 µs** (at most 396.1 kHz). Expected **2.65–2.90 µs**, recorded beside it, not a pass line: the band is from `3302`'s Nucleo rig (about 59 pF), not this board. The floor is **rule** (`silicon.rs`: 160 programmed kernel cycles of `TIMINGR` `0x10C7123C` plus `t_SYNC1 + t_SYNC2` ≥ 4 cycles, at HSI's fastest 64.958976 MHz). The expected band is **repeat-derived** (`3302`'s ≈ 0.26 µs excess at 2K; `AET-WO-3304.bench.md` §B6). Read the period on a scope: the FX2's 41.7 ns sample is too coarse for the margin. "400 kHz" exactly is not a pass line: a correct board runs slower, by its edges and its synchronisation.
   - **Record 0** (`0x20000008`, `0x2000000C`) = `0x22020001` / `0x00000000` (U2 empty, above).
 - **2. Only if U3 is fitted: the TMP117 (U3, `0x48`) answers on I2C1, over SWD, no firmware change.** After the boot, start a second, longer untriggered capture (`--time 60s`, file `s01-i2c1-probe.sr`), then run the six commands within it:
@@ -384,10 +386,10 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   **Pass:**
   - **`0x48`: `ISR & 0x00008030` = `0x00000020`** (`STOPF` 1, `NACKF` 0, `BUSY` 0), and the decoder shows `Start`, `Write`, `Address write: 48`, **`ACK`**, `Stop`.
   - **`0x76`: `ISR & 0x00008030` = `0x00000030`** (`NACKF` 1), and `Address write: 76`, **`NACK`**, `Stop`. This is the control: it shows the probe's write reached the controller, and that the ACK above was the TMP117's, not a stuck-low SDA.
-  - Source: the address is the specification's (`U3`, 72 = `0x48`, its ADD0 on GND); the flags are **RM0433**'s (with `AUTOEND` 1 and `NBYTES` 0, a STOP follows the address; on a NACK, `NACKF` and a STOP, p. 1975). The twin has no TMP117 model (`simulate`: `device_unmodelled` on the ordered ELF; `identity_not_witnessable` on `4241`'s package ELF), so this is **not predicted by the twin**.
+  - Source: the address is the specification's (`U3`, 72 = `0x48`, its ADD0 on GND); the flags are **RM0433**'s (with `AUTOEND` 1 and `NBYTES` 0, a STOP follows the address; on a NACK, `NACKF` and a STOP, p. 1975). The twin has no TMP117 model (`simulate`: `identity_not_witnessable`), so this is **not predicted by the twin**.
   - **Not a read of register `0x0F`:** a debugger-paced read holds SCL low past the TMP117's 20–40 ms bus timeout and would fail for a reason this row does not name (`AET-WO-3403.FEEDBACK.md` §2.1). The address probe never stretches SCL.
 - **With U3 empty** (it is not on the order of 2026-11-19), SENSORS has no device and part 2 is not run: `0x48` would NACK like `0x76`, and would witness nothing.
-  - What remains is part 1: the `0xEC` address phase at TP13/TP14, its NACK and STOP, and record 0 = `0x22020001`.
+  - What remains is part 1: the `0xEC` and `0x90` address phases at TP13/TP14, each with its NACK and STOP, and records 0 and 2 = `0x22020001` (the `0x90` phase and record 2: changed 2026-11-23, as part 1's pass line says).
   - That shows PB6 and PB7 driving SCL and SDA at AF4 onto the SENSORS net. A wrong AF or an open line leaves the pads without the address phase [inferred].
   - It does not show an ACK. With no device to pull SDA, the controller's receive path and a device's reach over the SENSORS copper go unwitnessed until U3 is fitted.
 - **On a disagreement:** a NACK at `0x48` with the `0x76` control behaving implicates PB6/PB7's AF, the SENSORS copper or U3's fitting: record which line the scope shows not moving. A corrections row against the generator's AF for I2C1 if the lines are dead at the pins.
@@ -398,4 +400,3 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 - **The buck, the flight sensors and the witness:** they are Sentinel-03's (ruled on PR #184).
 - **SPI rise times** against `extract` are not a row: SPI's declared bound (30 pF) chooses the pin speed and is judged by `check speeds`. The SPI pads (TP8–TP10) are for logic timing.
 - **U2's identity read on silicon** (record 0 = `0x60`): U2 is not fitted (above). B9 witnesses I2C1 through U3 instead, if U3 is fitted. **With U3 empty, no ACK on I2C1 is witnessed at all** (B9).
-- **The ordered ELF inside DS12117's conditions.** It runs at VOS3 with 64 MHz APB clocks (B2, `4240` F-VOS). Every reading here is of that ELF as ordered; `4240v`'s ELF re-runs B2 and B4.
