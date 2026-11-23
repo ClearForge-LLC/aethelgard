@@ -1,6 +1,6 @@
 # AET-WO-1917 — FEEDBACK: CI that cannot skip what it should run
 
-**Branch:** `wo/aet-1917-ci-coverage` from `main` `77e829f1`. `main` `1c32c8ea` (docs only) is merged in.
+**Branch:** `wo/aet-1917-ci-coverage` from `main` `77e829f1`. `main` `1c32c8ea` (docs) and `465bd860` (`4300j`, #358) are merged in. `4300j` added its own `BOARDS` row beside D1's: both are kept, and `sentinel-01-full`'s fixtures were regenerated under specification 29. Only the header's specification sha256 changed.
 **Builder:** Claude (Opus 5.5), acting as project manager.
 - Two Sonnet subagents built (4) and (6), each in its own worktree. I reviewed every line of both and re-ran one mutant of each.
 - One subagent traced the workflow's inputs for §1.1, and I checked each claim at source.
@@ -156,10 +156,24 @@ Reduction pass (diff): −4 net (in the pass itself) · 1 duplicate removed · 0
 
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets --locked --features aethelgard-cli/with-tools -- -D warnings`: pass on the head. Run on the host, capped scope.
-- `cargo test --workspace --locked --no-fail-fast`: **2,934 passed, 0 failed**. Run on the host, from a clean target dir, before the dead-glob check and the reduction; the targets those changed were re-run after.
+- `cargo test --workspace --locked --no-fail-fast`: **2,958 passed, 0 failed** on the merge `0e0ce3f0`.
+  - Run on the host after the architect's 17:22Z instruction: the whole `target/` was removed (`podman unshare rm -rf`), because the worktree had inherited an earlier work order's.
+  - At `0dcdc9a4`, before the merge: 2,935 passed, 0 failed, also from the emptied `target/`.
+- The 21 mutants were re-run on the emptied `target/` at `0dcdc9a4`: all killed, tree clean. The merge touches none of the guards.
 - `bash ci/test-route.sh`: 77 passed. `bash ci/test-shard.sh`: 150 passed. `bash ci/route.sh check ci/docs-tests.tsv`: 9 rows, unchanged.
 - No weight rows: every new test runs in under 0.1 s.
 
 ## 7. CI
 
-Nothing was dispatched (§1.3). The image workflow runs on this PR by its own paths. CI's run IDs and results are reported on the bus with READY.
+Nothing was dispatched (§1.3). The image workflow runs on this PR by its own paths.
+
+**On `0dcdc9a4`, before the merge of `465bd860`:** all four workflows green.
+- **`ci` `45222668485`:** 17 jobs, all success. `ANSWER tier2_tests_passed=206 floor=205`, `tools_total_passed=3175`.
+- **`ardupilot-image` `45222669053`:** every job green, and `generated (sentinel-01-full)` ran.
+- **The `pinout` job's log** (A6's proof), 0 `::error::` lines:
+  - `judged set: 9 boards`;
+  - `step-g`, `seed-pin`, `seed-af`, `seed-pkg`: exit 1, each with exactly its findings;
+  - `sentinel-01`, `sentinel-02`, `serial-dshot-9600`, `four-port`, `sentinel-01-full`: exit 0.
+- **`engine-image` `45222668499` and `tools-image` `45222668353`:** green.
+
+The run on this, the last push, is reported on the bus.
