@@ -1044,7 +1044,7 @@ For a child that exits and prints exactly one JSON object line:
 
 - `content[0].text` is that line, unchanged, without its newline;
 - `structuredContent` (its object keys sorted, so not byte-identical to the text) is `{"exit_code": <n or null>, "verdict": <the child's object>}`. `null` means the child was killed by a signal;
-- `isError` is `false` for exit `0` and `1`, because a fail verdict is a successful call, and `true` for every other exit code. A refusal, such as `ZeroNominalVoltage` (exit `2`), is therefore `isError` `true` with the refusal object as the verdict.
+- `isError` is `false` for exit `0` and `1`, because a fail verdict is a successful call, and for `propose`'s `6` and `verify`'s `7` (`not_verified`, `AET-WO-1607`), which are verdicts too; it is `true` for every other exit code. A refusal, such as `ZeroNominalVoltage` (exit `2`), is therefore `isError` `true` with the refusal object as the verdict.
 
 `campaign` alone prints one line per scenario before its summary (`LINE_PER_RECORD` in `main.rs`): every line must be a JSON object, `verdict` is the last, and `structuredContent` adds `"records"`, the lines before it. `content[0].text` is then every line.
 
