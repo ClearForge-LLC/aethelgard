@@ -2277,9 +2277,10 @@ fn windowed_dshot(v: &Value, rises: u64) {
     );
     let memory = &v["memory"];
     let peak = memory["peak_rss_kib"].as_u64().unwrap();
-    assert_eq!(memory["bound_kib"], 1_048_576);
+    // The boot's cap, 1.5 GiB (`RUL-13` as amended by `AET-WO-2313`).
+    assert_eq!(memory["bound_kib"], 1_572_864);
     assert!(
-        peak > 0 && memory["share_permille"].as_u64() == Some(peak * 1000 / 1_048_576),
+        peak > 0 && memory["share_permille"].as_u64() == Some(peak * 1000 / 1_572_864),
         "{memory}"
     );
 }

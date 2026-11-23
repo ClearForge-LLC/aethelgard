@@ -1002,8 +1002,34 @@ fn bounded(output: &str, then: &str) -> (Option<i32>, Value, std::time::Duration
     (out.status.code(), report(&out), start.elapsed())
 }
 
-/// About 1.3 GB held in a shell variable, past the 1 GiB cap.
-const HOG: &str = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
+/// The boot's memory cap, 1.5 GiB (`RUL-13` as amended by `AET-WO-2313`),
+/// written out so that a change to `renode::BOOT_BOUNDS` fails here.
+const CAP_KIB: u64 = 1_572_864;
+
+/// `dd` fills one block from `yes` and holds it resident while it waits to
+/// write it to a reader that never reads: the tree's resident size is the
+/// block plus about 26 MiB, steady (measured on Furnace: `bs=1300M`
+/// 1,357,428 KiB, `bs=1800M` 1,869,572 KiB). The sandbox denies `/dev/zero`,
+/// so `yes` feeds it. A shell variable is not used, because bash holds about
+/// two copies of it (`yes | head -c 1300000000` held 2,543,124 KiB, past
+/// both caps, `AET-WO-2313` §1.2).
+macro_rules! hold {
+    ($mib:literal, $secs:literal) => {
+        concat!(
+            "/usr/bin/yes | /bin/dd bs=",
+            $mib,
+            "M count=1 iflag=fullblock status=none | /bin/sleep ",
+            $secs
+        )
+    };
+}
+
+/// About 1,870,000 KiB, past the 1.5 GiB cap and under 2 GiB, held until the
+/// reaper kills it.
+const HOG: &str = hold!(1800, 60);
+
+/// About 1,357,000 KiB for 3 s: past the former 1 GiB cap, under 1.5 GiB.
+const BETWEEN_CAPS: &str = hold!(1300, 3);
 
 #[test]
 fn a_boot_past_the_memory_cap_fails_and_names_it() {
@@ -1015,16 +1041,49 @@ fn a_boot_past_the_memory_cap_fails_and_names_it() {
     // The reaper's own record (`AET-WO-2302` D6) shows the cap was passed:
     // it records the peak it killed at, never a time.
     let memory = &v["memory"];
-    assert!(
-        memory["peak_rss_kib"].as_u64().unwrap() > memory["bound_kib"].as_u64().unwrap(),
-        "{v}"
-    );
+    assert_eq!(memory["bound_kib"], CAP_KIB, "{v}");
+    assert!(memory["peak_rss_kib"].as_u64().unwrap() > CAP_KIB, "{v}");
     // The kind already proves the reaper fired. The wall time need only show
     // the kill came before the stub's own 60 s sleep could end, so it is
     // bounded at 50 s: 10 s of margin, as for the wall bound below, for a
     // loaded runner's start-up and teardown (31.8 s was measured on CI, PR
     // #185, run 43970150780, against the former 30 s bound).
     assert!(took.as_secs() < 50, "{took:?}");
+}
+
+/// A tree between the former 1 GiB cap and today's 1.5 GiB is not reaped
+/// (`AET-WO-2313`): the boot runs to its end and passes, and the reaper's
+/// record shows the tree really was past 1 GiB.
+#[test]
+fn a_boot_between_one_and_one_and_a_half_gib_is_not_reaped() {
+    let (code, v, _) = bounded(&good(), BETWEEN_CAPS);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    let memory = &v["memory"];
+    assert_eq!(memory["bound_kib"], CAP_KIB, "{v}");
+    let peak = memory["peak_rss_kib"].as_u64().unwrap();
+    assert!(peak > 1024 * 1024 && peak < CAP_KIB, "{v}");
+}
+
+/// The bridge keeps its own 1 GiB (`analog::BRIDGE_BOUNDS`, `AET-WO-2313`):
+/// the same tree that a boot may hold kills a bridge at its memory bound,
+/// well before its 30 s wall bound.
+#[test]
+fn a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound() {
+    const HOGGING_BRIDGE: &str = concat!("#!/bin/sh\n", hold!(1300, 60), "\n");
+    let start = std::time::Instant::now();
+    let (code, v) = pre_pass(Some(HOGGING_BRIDGE), false);
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    assert_eq!(v["error"]["id"], "aethelgard-bridge", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("Memory bound"),
+        "{v}"
+    );
+    assert!(start.elapsed().as_secs() < 30, "{:?}", start.elapsed());
 }
 
 #[test]

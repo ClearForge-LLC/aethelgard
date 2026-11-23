@@ -406,7 +406,7 @@ fn bridge(missing: &mut Vec<Missing>) -> ToolLine {
         tool.dirs(),
         "status-bridge",
     )
-    .run_bounded(crate::renode::BOOT_BOUNDS)
+    .run_bounded(analog::BRIDGE_BOUNDS)
     .and_then(|out| identity(&out).map(|names| (names, out.sandbox)));
     match probed {
         Err(stop) => {

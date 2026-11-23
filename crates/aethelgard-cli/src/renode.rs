@@ -214,11 +214,18 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
 /// Furnace, and 2.59 s and 404,620 KiB in the tools image. The ruling asks at
 /// least 10x the slower wall time (26 s) and 2x the higher peak (791 MiB):
 /// 30 s, since CI's boots under parallel tests took up to 6.84 s, and 1 GiB.
+/// **The memory cap is 1.5 GiB by ruling** (Scotty, 2026-11-23, `RUL-13` as
+/// amended by `AET-WO-2313`), not by that rule: Tviburi `TVI-WO-1301`
+/// measured ArduPilot's full boot on its one-file overlay at 768,856 to
+/// 1,049,556 KiB across CI runs of nearly the same tree, for a cause not yet
+/// known (about 984 MiB on Furnace), so a 1 GiB cap passed or failed it by
+/// chance. A droop's boot, Renode under the bridge, takes this bound; the
+/// bridge alone keeps [`crate::analog::BRIDGE_BOUNDS`].
 /// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
 /// limit, 256 GiB included (measured), so the reaper polls instead.
 pub const BOOT_BOUNDS: Bounds = Bounds {
     wall: std::time::Duration::from_secs(30),
-    rss_kib: 1024 * 1024,
+    rss_kib: 1_572_864,
 };
 
 /// What Renode logs once its CPU has aborted; `RunFor` then never returns

@@ -1,6 +1,7 @@
 # AET-WO-2313 — FEEDBACK
 
-Base: `origin/main` 9b246a6a. **Status: STOPPED at §1.1 by §7's first condition, before any code change.**
+Base: `origin/main` 9b246a6a, then 9e19ca0f (the work order and `RUL-13`'s amendment, #378). Stopped at §1.1 by §7's
+first condition (22:3xZ); ruled by the architect at 22:47Z (§2); built to the ruling (§3–§6).
 
 ## 1. Measure first (§1.1): every place the bound is stated or relied on
 
@@ -41,7 +42,9 @@ No second literal of the bound in any script, workflow, `container/` file or tes
 
 A plant between the caps that the reaper must not kill: `dd if=/dev/zero bs=1300M count=1 | sleep N` holds
 **1,350,928 KiB** (dd blocks writing to the sleeping reader with its buffer resident), inside
-1,048,576–1,572,864 KiB.
+1,048,576–1,572,864 KiB. Inside the tool sandbox `/dev/zero` is denied (the first build's plant held 11,680 KiB,
+caught by the test's own `peak > 1 GiB` assertion), so the tests feed `dd` from `yes` with `iflag=fullblock`:
+`bs=1300M` holds **1,357,428 KiB**, `bs=1800M` **1,869,572 KiB** (Furnace, sampled every 0.1 s).
 
 ### 1.3 Prose that states the bound
 
@@ -78,7 +81,7 @@ shipped configuration (access log on each declared USART) still passes the new c
 the memory cap alone. I read this as no weakening; the architect may read 1609's "would name" (from ICSR,
 not a judged run) otherwise.
 
-## 2. Decisions needed
+## 2. Decisions (ruled 2026-11-23 22:47Z, `~/.cache/aet-bus/2313.md`)
 
 - **D1, the droop boot's bound.** The work order keeps "the bridge's 1 GiB (`cli/src/analog.rs`)", and the
   kickoff says split the constant if the bridge shares it. Three of the bridge's four runs are the bridge
@@ -92,3 +95,54 @@ not a judged run) otherwise.
   as live rows the ruling answers.
 - **Fence:** the split touches `analog.rs` (three call sites and the new constant) and `doctor.rs:409`,
   outside the listed fence; `foreign.rs:181` is a verdict string. Both need the architect's yes.
+
+**Rulings:** D1 **(a)**. The steering lines in §1.3 are dated history and stay; the architect updates L1154
+himself. The fence is granted for `analog.rs`, `doctor.rs:409` and `foreign.rs:181`. Tests as planned; mutants
+the old constant and the bridge's bound raised.
+
+**The steering lines, checked and left** (each still true of its date): `docs/architecture.md` L713 (the
+2026-11-08 amendments row); `docs/roadmap.md` L184 (`2100`'s record), §7.1 rows L982, L1056, L1158. L1154
+is the architect's. `RUL-13` (L563) carries the 2026-11-23 amendment on main 9e19ca0f.
+
+## 3. Build
+
+- `renode::BOOT_BOUNDS.rss_kib` = **1,572,864**. Its comment keeps the 2026-11-08 measurement and the 2× rule,
+  and says the 1.5 GiB is the ruling's value, not the rule's (2 × 1,049,556 KiB would be more), with Tviburi's
+  spread and the date. The wall bound is unchanged.
+- **The split (D1 (a)):** `analog::BRIDGE_BOUNDS` = {30 s, 1 GiB} bounds the bridge's own runs (`measure`,
+  `rail`, `chain`) and `doctor`'s bridge probe. `analog::boot`, a droop's boot (Renode under the bridge), keeps
+  `BOOT_BOUNDS`, so its verdict's `memory.bound_kib` and its `memory_cap_exceeded` message
+  ("passed the 1536 MiB cap") name the bound actually enforced. A bridge killed at its bound reports
+  `ToolError` "killed at its Memory bound" (exit 5), as before; that message names no size.
+- `foreign.rs`: the comment ("the memory bound … 1.5 GiB since `AET-WO-2313`") and the rule table's
+  verdict string, now "30 s, 1.5 GiB, an aborted machine". **No golden or fixture carries that string**
+  outside `spike/2311/out/*` and `spike/4400f/out/**` (dated spike records, not read by any test); no test,
+  `ci/` script or workflow reads the row.
+- `crates/aethelgard-cli/README.md`: the bounds paragraph (1.5 GiB, `bound_kib` 1572864, the droop boot takes
+  it, the bridge keeps 1 GiB, the ruling's reason); L351's two measurements restated against the bound they
+  were taken under (98.5 % of the then 1 GiB, about 657‰ of 1.5 GiB; 851‰ then, about 567‰ now);
+  `--foreign`'s two mentions; the bridge's paragraph names its own 1 GiB.
+
+## 4. Tests and mutants
+
+| Test | Change | Kills |
+|---|---|---|
+| `boot_tier1` `a_boot_past_the_memory_cap_fails_and_names_it` | `HOG` = `yes \| dd bs=1800M` (1,869,572 KiB) held 60 s; asserts `bound_kib == 1_572_864` literally and `peak > 1_572_864` | M1, M4 |
+| `boot_tier1` `a_boot_between_one_and_one_and_a_half_gib_is_not_reaped` (new) | `dd bs=1300M` (1,357,428 KiB) for 3 s after a passing transcript: exit 0, pass, `bound_kib` 1,572,864, `1 GiB < peak < 1.5 GiB` | M1 |
+| `boot_tier1` `a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound` (new) | the same 1,357,428 KiB in a stub bridge: `ToolError` "Memory bound", inside 30 s | M2 |
+| `campaign_tier1` `a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays` | hog moved to `dd bs=1800M`; still `memory_cap_exceeded` | (past both caps by design) |
+| `campaign_tier1` `a_droop_boot_between_one_and_one_and_a_half_gib_is_not_reaped` (new) | the 1,357,428 KiB plant in the droop boot: exit 0, matched, no `memory_cap_exceeded` | M3 |
+| `twin_tier2` `the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot` (`windowed_dshot`) | `bound_kib == 1_572_864`, `share_permille` against it | M1 (tier 2, in the tools image) |
+| `boot_tier1` `an_aborted_machine_killed_at_a_bound_is_cpu_aborted` | shares `HOG`, unchanged assertion | — |
+
+**The old `HOG` proved nothing about the value:** `x=$(yes | head -c 1300000000)` held 2,543,124 KiB, past
+both caps, so the cap test passed unchanged at 1 GiB and at 1.5 GiB (§5's second item). The droop hog was the
+same.
+
+Mutants (one each, against the suites they live in; `~/.cache/aet-2313/mutants.sh`):
+- **M1, the old constant** (`BOOT_BOUNDS.rss_kib = 1024 * 1024`): killed by `a_boot_past_the_memory_cap…`
+  and `a_boot_between_…` (tier 1), and by the tier-2 twin test (§4.1).
+- **M2, the bridge's bound raised** (`BRIDGE_BOUNDS.rss_kib = 1_572_864`): killed by `a_bridge_between_…`.
+- **M3, the droop boot on the bridge's bound** (`analog::boot` → `BRIDGE_BOUNDS`): killed by
+  `a_droop_boot_between_…`.
+- **M4, a cap above the plant** (`2 * 1024 * 1024`): killed by `a_boot_past_the_memory_cap…`.
