@@ -12,6 +12,9 @@
 # - A NUL anywhere is refused: a command substitution drops NULs, so a pin
 #   split by one would otherwise read as whole.
 # - Only a regular file (or a symlink to one) is read.
+# - A refusal quotes at most the first 200 bytes, escaped by printf %q, so a
+#   newline, a CR or a `::warning::` in the file never starts a log line of
+#   its own, and a long file does not flood the log (AET-WO-4407; 4402 Q4).
 set -euo pipefail
 export LC_ALL=C
 f=${1:?usage: check-ardupilot-pin.sh FILE}
@@ -19,5 +22,6 @@ f=${1:?usage: check-ardupilot-pin.sh FILE}
 pin=$(tr -d '\000' < "$f")
 nul=$(tr -cd '\000' < "$f" | wc -c)
 { [ "$nul" -eq 0 ] && [[ "$pin" =~ ^ghcr\.io/clearforge-llc/aethelgard-ardupilot@sha256:[0-9a-f]{64}$ ]]; } \
-  || { echo "$f is not ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:<64 hex>: $pin" >&2; exit 1; }
+  || { more=; [ "${#pin}" -le 200 ] || more=" (the first 200 of ${#pin} bytes)"
+       printf '%s is not ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:<64 hex>: %q%s\n' "$f" "${pin:0:200}" "$more" >&2; exit 1; }
 printf '%s\n' "$pin"
