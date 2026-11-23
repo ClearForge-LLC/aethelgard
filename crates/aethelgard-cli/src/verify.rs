@@ -2722,6 +2722,7 @@ mod tests {
                 spi,
                 i2c: Vec::new(),
                 usart,
+                kernel_clock: Vec::new(),
                 holds,
             }
         };

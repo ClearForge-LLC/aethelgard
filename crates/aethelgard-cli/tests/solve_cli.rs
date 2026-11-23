@@ -154,8 +154,13 @@ use sha2::{Digest, Sha256};
 /// has a motor output): with `"schema_version":17` and each file's
 /// specification-24 sha256 put back, each still hashes to `1211c`'s digest,
 /// which the test holds. Before: `81246f99…3a22` and `8eb15a7f…48de`.
-const REFERENCE_DIGEST: &str = "17515df2b4367fba34bd54792e264568875616dc18e694f07171fd89c39a1ce7";
-const STRESS_DIGEST: &str = "2c4cb5574c7f962b9995d5eb8a1f09a841e8e8d44f9c9fcdce77e3f14300890e";
+/// Moved by `AET-WO-4240e` (solved 19; the reference also by its `RCC.CR`
+/// acknowledgements, Q8 and Q11): both files have SPI1 on `per_ck`, so
+/// each topology gains `clock.kernel_switch`; with it taken out,
+/// `"schema_version":17` and the specification-24 sha256 put back, each still
+/// hashes to `1211c`'s digest. Before: `17515df2…1ce7` and `2c4cb557…890e`.
+const REFERENCE_DIGEST: &str = "320a409d931d6c834d43d7ffddb42a9a669bc03ea6fa338ba1719ae9de1490b0";
+const STRESS_DIGEST: &str = "d794bad8883030619f0278e200890c4ae9c51b013983e62452fe06428867f94e";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
@@ -302,11 +307,15 @@ fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
-        let back = a.replacen(&t.specification_sha256, sha_24, 1).replacen(
-            "\"schema_version\":18",
-            "\"schema_version\":17",
-            1,
-        );
+        // `AET-WO-4240e` (solved 19): the clock's `kernel_switch` taken out too.
+        let back = a
+            .replacen(&t.specification_sha256, sha_24, 1)
+            .replacen("\"schema_version\":19", "\"schema_version\":17", 1)
+            .replacen(
+                ",\"kernel_switch\":{\"pllckselr\":80,\"pllcfgr\":131084,\"pll1divr\":16843279}",
+                "",
+                1,
+            );
         assert_eq!(hex(back.as_bytes()), digest_24, "{}", file.display());
     }
 }

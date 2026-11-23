@@ -1351,9 +1351,10 @@ fn solved_refuses_version_and_hash() {
     // (`AET-WO-1211b`), 16 the file before an input's `active` and `pulled`,
     // an ADC input's `transfer` and a pin device's `supplies`
     // (`AET-WO-1211c` D7), 17 the file before a motor output's `pull`
-    // (`AET-WO-4300j` D9), 19 one this build does not know.
+    // (`AET-WO-4300j` D9), 18 the file before the clock's `kernel_switch`
+    // and `adc` (`AET-WO-4240e` D7), 20 one this build does not know.
     for version in [
-        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19,
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20,
     ] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
