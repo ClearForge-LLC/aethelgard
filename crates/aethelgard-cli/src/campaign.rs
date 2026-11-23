@@ -2386,6 +2386,9 @@ struct Replayed {
     /// The tools that judged the run, as the archive names them; never
     /// required equal to this host's (`AET-WO-2205` §1.1).
     tools: BTreeMap<String, String>,
+    /// The content hash the archive holds beside a tool's name: ngspice's
+    /// library and the host toolchain's sysroot (`AET-WO-2310`).
+    tool_sha256: BTreeMap<String, String>,
     event_count: u64,
     trace_bytes: u64,
     state_sequence_hash: String,
@@ -2456,6 +2459,12 @@ pub fn replay(dir: &Path) -> ExitCode {
                 .map(|(n, h)| (n.clone(), hex(h)))
                 .collect(),
             tools: replayed.header.tools.iter().cloned().collect(),
+            tool_sha256: replayed
+                .header
+                .tool_sha256
+                .iter()
+                .map(|(n, h)| (n.clone(), hex(h)))
+                .collect(),
             event_count: replayed.manifest.event_count,
             trace_bytes: replayed.manifest.trace_bytes,
             state_sequence_hash: hex(replayed.manifest.state_hash),

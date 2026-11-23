@@ -575,7 +575,15 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         ),
         ("ngspice", "44.2"),
         ("renode", BUILD),
+        // `AET-WO-2310`: the stub's host has no rustc on PATH.
+        ("rust-toolchain", "absent"),
     ];
+    // The library's hash is of the file the bridge named (`AET-WO-2310`).
+    let library: [u8; 32] = {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(fs::read(common::bridge_library()).unwrap()).into()
+    };
+    assert_eq!(header.tool_sha256, [("ngspice".to_owned(), library)]);
     let got: Vec<(&str, &str)> = header
         .tools
         .iter()
@@ -591,6 +599,11 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
         .map(|(n, v)| (n.clone(), v.as_str().unwrap().to_owned()))
         .collect();
     assert_eq!(reported, header.tools);
+    assert_eq!(
+        r[0]["tool_sha256"],
+        json!({"ngspice": library.iter().map(|b| format!("{b:02x}")).collect::<String>()}),
+        "{r:?}"
+    );
 
     // A Renode that names another build, the stock 1.17.0's, no build or a
     // blank one is not one a boot can be judged by.
@@ -2666,29 +2679,41 @@ fn a_record_that_claims_ok_without_the_device_logging_a_transfer_is_unrecovered(
 }
 
 /// `AET-WO-2301` D3 and the runner's droop rules: a droop off the MCU's
-/// supply, or one whose rail floor lies in a threshold's band, is refused
-/// (exit 2) before any run starts or anything is archived.
+/// supply, or one whose rail floor lies in a threshold's band at the
+/// specification's BOR level, is refused (exit 2) before any run starts or
+/// anything is archived. Since `AET-WO-2310` a droop states no BOR level (the
+/// specification's is the level), and one older than scenario 6 is refused
+/// by what changed.
 #[test]
 fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
     let tb = toolbox(&good());
-    for (domain, floor, bor_level, kind) in [
-        ("VDD_OTHER", 2400, 3, "DroopNotMcuSupply"),
-        ("VDD_3V3", 2660, 3, "DroopRefused"),
-        // `AET-WO-4300d` D4 (K8): the level is the specification's.
-        ("VDD_3V3", 2400, 2, "BorLevelContradictsSpecification"),
+    let droop = |domain: &str, floor: u64| {
+        json!({
+            "domain": domain, "floor_millivolts": floor, "from_boot_word_ns": 974_250,
+            "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+            "source_milliohms": 500, "load_milliamps": 100
+        })
+    };
+    let mut stated = droop("VDD_3V3", 2400);
+    stated["bor_level"] = 3.into();
+    let mut old = droop("VDD_3V3", 2400);
+    old["start_ns"] = old["from_boot_word_ns"].take();
+    old.as_object_mut().unwrap().remove("from_boot_word_ns");
+    old["bor_level"] = 3.into();
+    for (version, d, kind) in [
+        (6, droop("VDD_OTHER", 2400), "DroopNotMcuSupply"),
+        (6, droop("VDD_3V3", 2660), "DroopRefused"),
+        (6, stated, "SchemaViolation"),
+        (2, old, "PlantedEventNeedsVersion6"),
     ] {
         let work = Work::new();
         let doc = json!({
-            "schema_version": 2,
+            "schema_version": version,
             "name": "d",
             "base": "spec.json",
             "expect": "pass",
             "expect_findings": [],
-            "overrides": [{"droop": {
-                "domain": domain, "floor_millivolts": floor, "start_ns": 1000000,
-                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                "source_milliohms": 500, "load_milliamps": 100, "bor_level": bor_level
-            }}],
+            "overrides": [{"droop": d}],
         });
         work.dir.write("d.json", doc.to_string().as_bytes());
         let out = campaign(
@@ -2804,18 +2829,18 @@ fn s03() -> Value {
     .unwrap()
 }
 
-fn sag(r: u64, start: u64) -> Value {
-    json!({"battery_sag": {"series_milliohms": r, "start_ns": start}})
+fn sag(r: u64, from_boot_word_ns: i64) -> Value {
+    json!({"battery_sag": {"series_milliohms": r, "from_boot_word_ns": from_boot_word_ns}})
 }
 
-/// One scenario-4 campaign over `spec` with `overrides`, with `bridge` beside
+/// One scenario-6 campaign over `spec` with `overrides`, with `bridge` beside
 /// the CLI (or none); its output, and whether an archive was made.
 fn sag_campaign(spec: &Value, overrides: Value, bridge: Option<&'static str>) -> (Output, bool) {
     let tb = toolbox(&good());
     let work = Work::new();
     work.dir.write("tree.json", spec.to_string().as_bytes());
     let doc = json!({
-        "schema_version": 4, "name": "sag", "base": "tree.json", "expect": "pass",
+        "schema_version": 6, "name": "sag", "base": "tree.json", "expect": "pass",
         "expect_findings": [], "overrides": overrides,
     });
     work.dir.write("sag.json", doc.to_string().as_bytes());
@@ -2827,7 +2852,9 @@ fn sag_campaign(spec: &Value, overrides: Value, bridge: Option<&'static str>) ->
         &work.firmware,
         &work.archive,
     );
-    let made = work.archive.exists();
+    // Whether any run was archived: a refusal after a boot places the sag
+    // (`AET-WO-2310`) comes after the archive directory is made, with no run.
+    let made = fs::read_dir(&work.archive).is_ok_and(|mut d| d.next().is_some());
     (out, made)
 }
 
@@ -2842,13 +2869,17 @@ fn sag_refused(spec: &Value, overrides: Value, kind: &str, says: &str) -> Value 
 }
 
 /// §1.6: each clause of a battery sag refuses by name before any run, with
-/// its own message; a sag the clauses admit reaches the deck (here, no
-/// bridge: `BridgeUnavailable`, exit 4). The edges are measured: U10's
-/// regulation floor (7,000 mV, D-B9) admits 949 mΩ and refuses 950 mΩ.
+/// its own message; a sag the clauses admit reaches its boot (here, no
+/// bridge: the boot's analog pass, `BridgeUnavailable`, exit 4). The edges
+/// are measured: U10's regulation floor (7,000 mV, D-B9) admits 949 mΩ and
+/// refuses 950 mΩ. Its instant is placed from the boot word (`AET-WO-2310`),
+/// so before the boot only the offset is judged, and says so; past the span
+/// once placed is `battery_sag_tier2`'s, after a real boot.
 #[test]
 fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong() {
     let spec = s03();
-    let start = 10_000_000;
+    // Sentinel-03's undisturbed boot word, 43,929,480 ns, measured: 10 ms.
+    let start = -33_929_480;
     let r = "BatterySagRefused";
     sag_refused(
         &json!(serde_json::from_slice::<Value>(&spec_bytes()).unwrap()),
@@ -2864,10 +2895,17 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
         m.contains("U10") && m.contains("7000000 µV") && m.contains("3800000 µV"),
         "{m}"
     );
-    sag_refused(&spec, json!([sag(500, 99_999_999)]), r, "past the span");
+    for offset in [100_000_010, -100_000_010, 99_999_999] {
+        sag_refused(
+            &spec,
+            json!([sag(500, offset)]),
+            "SchemaViolation",
+            "judged before the boot, from the offset alone",
+        );
+    }
     let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
-        "start_ns": 1_000_000, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
-        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}});
+        "from_boot_word_ns": -42_929_480, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
+        "source_milliohms": 500, "load_milliamps": 100}});
     sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
     for admitted in [2, 500, 949] {
         let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
@@ -2884,7 +2922,7 @@ fn an_undeclared_path_or_esc_halts_a_battery_sag_by_name() {
     spec["power"]["battery"]["series_milliohms"] = Value::Null;
     sag_refused(
         &spec,
-        json!([sag(500, 10_000_000)]),
+        json!([sag(500, -33_929_480)]),
         "SeriesResistanceUndeclared",
         "null",
     );
@@ -2892,7 +2930,7 @@ fn an_undeclared_path_or_esc_halts_a_battery_sag_by_name() {
     spec["motor_outputs"][2]["esc"] = Value::Null;
     let v = sag_refused(
         &spec,
-        json!([sag(500, 10_000_000)]),
+        json!([sag(500, -33_929_480)]),
         "EscUndeclared",
         "MOTOR3",
     );
@@ -3041,35 +3079,32 @@ fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
     );
 }
 
-/// `AET-WO-2302`, ruled (a-i): a board with a DShot output boots
-/// `MAX_VIRTUAL_NS` like any other (it booted `DSHOT_WINDOW_NS`, and a droop
-/// at 3 ms was refused past it, under `AET-WO-4300a` D1). A droop whose
-/// effects run past the boot is refused by name, with its time, before any
-/// run, never cut short; one at 3 ms is not refused.
+/// `AET-WO-2302`, ruled (a-i): every board boots `MAX_VIRTUAL_NS`, and a
+/// droop whose effects run past the boot is refused by name, with its time,
+/// never cut short. Since `AET-WO-2310` its instant is placed from the
+/// undisturbed boot word, so the refusal follows that boot (on the stub's,
+/// 25,750 ns), and no run is archived; one placed at 3 ms is not refused.
+/// The stub boots `sentinel-01-minimal` only, so this is that board's.
 #[test]
-fn a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time() {
+fn a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it() {
     let tb = toolbox(&good());
-    let droop = |start: u64| {
+    let droop = |at: i64| {
         json!({"droop": {
-            "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": start,
+            "domain": "VDD_3V3", "floor_millivolts": 2400,
+            "from_boot_word_ns": at - STUB_BOOT_WORD_NS,
             "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+            "source_milliohms": 500, "load_milliamps": 100
         }})
     };
     let work = Work::new();
-    work.dir.write(
-        "spec.json",
-        &std::fs::read(root().join("crates/aethelgard-cli/tests/fixtures/motors-dshot600.json"))
-            .unwrap(),
-    );
-    let scenario = |file: &str, start: u64| {
+    let scenario = |file: &str, at: i64| {
         let doc = json!({
-            "schema_version": 2,
+            "schema_version": 6,
             "name": "late",
             "base": "spec.json",
             "expect": "pass",
             "expect_findings": [],
-            "overrides": [droop(start)],
+            "overrides": [droop(at)],
         });
         work.dir.write(file, doc.to_string().as_bytes());
         campaign(
@@ -3085,13 +3120,26 @@ fn a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time() {
     let v = expect_refusal(&out, 2, "DroopRefused");
     let message = v["error"]["message"].as_str().unwrap();
     assert!(
-        message.contains("past the boot's 100000000 ns"),
+        message.contains("past the boot's 100000000 ns")
+            && message.contains("its instant 99900000 ns, placed from the undisturbed boot word"),
         "{message}"
     );
-    assert!(!work.archive.exists(), "an archive was made");
+    assert!(
+        fs::read_dir(&work.archive).unwrap().next().is_none(),
+        "a run was archived"
+    );
+    // Before reset: refused by name, never planted at 0.
+    let out = scenario("before.json", 0);
+    let v = expect_refusal(&out, 2, "PlantedEventUnplaced");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("-25750 ns from the boot word at 25750 ns, lies at or before reset"),
+        "{message}"
+    );
     let out = scenario("early.json", 3_000_000);
     assert!(
-        !String::from_utf8_lossy(&out.stdout).contains("DroopRefused"),
+        !String::from_utf8_lossy(&out.stdout).contains("DroopRefused")
+            && !String::from_utf8_lossy(&out.stdout).contains("PlantedEventUnplaced"),
         "{}",
         String::from_utf8_lossy(&out.stdout)
     );

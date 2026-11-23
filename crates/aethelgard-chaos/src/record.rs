@@ -2685,6 +2685,10 @@ impl Record {
             } => {
                 if !name_ok(&droop.droop.domain) {
                     Err("a droop's domain is not 1 to 64 printable ASCII bytes")
+                } else if droop.bor_level > crate::power::MAX_BOR_LEVEL {
+                    // The level is the specification's (`AET-WO-2310`); the
+                    // part has levels 0 to 3 only.
+                    Err("a declared rail's BOR level is not 0 to 3")
                 } else if droop.droop.floor_millivolts >= *nominal_millivolts
                     || *decoupling_picofarads == 0
                 {

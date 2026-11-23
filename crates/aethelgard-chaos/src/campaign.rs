@@ -1768,21 +1768,6 @@ fn reads_as_expected(r: &Reading) -> bool {
         .is_some_and(|o| o & r.mask == r.expected & r.mask)
 }
 
-/// The droop's records against the scenario and against each other, and the
-/// counts of the droop's findings they require (`AET-WO-2301` §2.2, §2.3, §5):
-/// - kinds 16 to 19 appear only with a droop override, and kind 16 then
-///   exactly once, carrying the override's own values;
-/// - each active threshold's level is crossed exactly when the declared rail
-///   floor is below it: once falling while the source falls, once rising
-///   while it rises (within 10 τ of each ramp), at the table's typical value;
-/// - the resets are exactly [`power::schedule`] of those crossings, each
-///   with its fixed rendering;
-/// - kind 32 is archived once exactly when a reset is released, and each
-///   probe lies inside the run (`AET-WO-2305` §1.2);
-/// - each release has exactly one observation, at its probe (the release, its
-///   nudge and the bound),
-///   unless the boot was killed before its reads (its boot record observed
-///   nothing), when there is none and every release counts as unrecovered.
 /// The undisturbed boot word a planted run's instants are placed from
 /// (`AET-WO-2310`, ruled Q-A (a)): a run with a droop or a battery sag holds
 /// exactly one kind 32, and it holds the word (a run whose undisturbed boot
@@ -1822,6 +1807,23 @@ pub fn declared_bor_level(brown_out: &Reading) -> Option<u8> {
         .and_then(|v| u8::try_from(v).ok())
 }
 
+/// The droop's records against the scenario and against each other, and the
+/// counts of the droop's findings they require (`AET-WO-2301` §2.2, §2.3, §5):
+/// - kinds 16 to 19 appear only with a droop override, and kind 16 then
+///   exactly once, carrying the override's own values;
+/// - each active threshold's level is crossed exactly when the declared rail
+///   floor is below it: once falling while the source falls, once rising
+///   while it rises (within 10 τ of each ramp), at the table's typical value;
+/// - the resets are exactly [`power::schedule`] of those crossings, each
+///   with its fixed rendering;
+/// - the rail's instant is the undisturbed boot word (kind 32, which every
+///   planted run holds, [`planted_reference`]) plus the scenario's offset,
+///   and its BOR level the one kind 10 declares (`AET-WO-2310`);
+/// - each probe lies inside the run (`AET-WO-2305` §1.2);
+/// - each release has exactly one observation, at its probe (the release, its
+///   nudge and the bound),
+///   unless the boot was killed before its reads (its boot record observed
+///   nothing), when there is none and every release counts as unrecovered.
 fn check_droop_records(
     records: &[Record],
     overrides: &[Override],
