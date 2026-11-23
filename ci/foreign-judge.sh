@@ -85,6 +85,7 @@ and all(witnessed.get((r, "identity")) for r in ("U4", "U5", "U7"))
 and witnessed.get(("U5", "data (reads[0])"))
 and witnessed.get(("U7", "data (script)"))
 and boot["log_lines_dropped"] == 0 and boot["log_kept_bytes"] < boot["log_budget_bytes"]
+and boot["panic"]["entered_ns"] == [] and boot["panic"]["address"].startswith("0x")
 and [(c["clock"], c["declared_hz"], c["decoded_hz"], c["holds"]) for c in boot["clock"]["checked"]]
     == [("apb1_timers_hz", 200000000, 200000000, True), ("apb2_timers_hz", 200000000, 200000000, True)]
 and len(boot["clock"]["declared_only"]) == 8
@@ -255,3 +256,78 @@ run_spec=$work/spec-four-inverted.json run four-inverted 0 '
 v["verdict"] == "pass"
 and [p["pupdr"] for p in boot["serial_pulls"] if p["label"] == "GPS"] == ["pull-down", "pull-down"]
 ' --platform "$inv_platform" --firmware "$work/four-inverted.elf" --foreign "$window"
+
+# AET-WO-1609 (ruled at §1.2, spike/1609): ArduPilot's own AP_HAL::panic,
+# planted straight after U5's last witness (its first FIFO data read: the
+# device transfer in AP_InertialSensor_Invensensev3::read_fifo, before
+# accumulate_samples), so it follows the witness by causality. Before 1609
+# this run passed (exit 0); it fails by name, every witness still present.
+# And the same ELF with the panic's name altered in its symbol table is
+# refused before any boot: no run is judged without the hook.
+plant() {
+  python3 -I - "$elf" "$work/$1.elf" "$1" <<'PY'
+import struct, sys
+src, dst, how = sys.argv[1:]
+data = bytearray(open(src, "rb").read())
+assert data[:4] == b"\x7fELF" and data[4] == 1 and data[5] == 1, "not a 32-bit little-endian ELF"
+shoff, = struct.unpack_from("<I", data, 0x20)
+shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x2E)
+secs = [struct.unpack_from("<IIIIIIIIII", data, shoff + i * shentsize) for i in range(shnum)]
+symtab, = [s for s in secs if s[1] == 2]
+strtab = secs[symtab[6]]
+def cstr(off):
+    return bytes(data[off:data.index(0, off)])
+def symbol(name):
+    hits = {(v & ~1, size, strtab[4] + n) for n, v, size in (
+        struct.unpack_from("<III", data, symtab[4] + i * 16) for i in range(symtab[5] // 16))
+        if cstr(strtab[4] + n) == name}
+    (hit,) = hits
+    return hit
+def file_off(a):
+    (s,) = [s for s in secs if s[1] == 1 and s[3] <= a < s[3] + s[5]]
+    return a - s[3] + s[4]
+def bl(at, target):
+    off = target - (at + 4)
+    s = (off >> 24) & 1
+    j1, j2 = (~(((off >> 23) & 1) ^ s)) & 1, (~(((off >> 22) & 1) ^ s)) & 1
+    return struct.pack("<HH", 0xF000 | (s << 10) | ((off >> 12) & 0x3FF), 0xD000 | (j1 << 13) | (j2 << 11) | ((off >> 1) & 0x7FF))
+def mov32(rd, v):
+    def half(op, imm):
+        return struct.pack("<HH", op | (((imm >> 11) & 1) << 10) | (imm >> 12), (((imm >> 8) & 7) << 12) | (rd << 8) | (imm & 0xFF))
+    return half(0xF240, v & 0xFFFF) + half(0xF2C0, v >> 16)
+panic, _, panic_name = symbol(b"_ZN6AP_HAL5panicEPKcz")
+if how == "panic-unnamed":
+    data[panic_name + 7] = ord("q")  # _ZN6AP_HAL5panic -> _ZN6AP_HAL5qanic
+    open(dst, "wb").write(data)
+    print("ANSWER 1609: panic-unnamed: the panic's symbol renamed")
+    sys.exit()
+read_fifo, size, _ = symbol(b"_ZN30AP_InertialSensor_Invensensev39read_fifoEv")
+acc, _, _ = symbol(b"_ZN30AP_InertialSensor_Invensensev318accumulate_samplesEPK8FIFODatah")
+(call,) = [a for a in range(read_fifo, read_fifo + size, 2) if bytes(data[file_off(a):file_off(a) + 4]) == bl(a, acc)]
+# The FIFO data transfer is the last `blx rN` (0x4780 | n << 3) before that call.
+blx = max(a for a in range(read_fifo, call, 2)
+          if (struct.unpack_from("<H", data, file_off(a))[0] & 0xFF87) == 0x4780)
+site = blx + 2
+assert call + 4 - site >= 12, f"{call + 4 - site} bytes from the transfer to accumulate_samples"
+# An empty string for the message: the first zero byte of .text, which also
+# holds ArduPilot's read-only data (its link has no .rodata).
+names = secs[shstrndx]
+text, = [s for s in secs if cstr(names[4] + s[0]) == b".text"]
+empty = text[3] + data[text[4]:text[4] + text[5]].index(0)
+patch = mov32(0, empty) + bl(site + 8, panic)
+data[file_off(site):file_off(site) + 12] = patch
+open(dst, "wb").write(data)
+print(f"ANSWER 1609: panic planted at {site:#010x}, after the transfer at {blx:#010x}; panic {panic:#010x}")
+PY
+}
+plant panic
+plant panic-unnamed
+run late-panic 1 '
+kinds == ["foreign_panic"] and boot["booted"]
+and all(witnessed.get((r, "identity")) for r in ("U4", "U5", "U7"))
+and witnessed.get(("U5", "data (reads[0])")) and witnessed.get(("U7", "data (script)"))
+and len(boot["panic"]["entered_ns"]) == 1
+and boot["panic"]["entered_ns"][0] > witnessed[("U5", "data (reads[0])")]
+' --platform "$platform" --firmware "$work/panic.elf" --foreign "$window"
+run panic-unnamed 3 'v["error"]["kind"] == "ForeignPanicSymbolMissing"' \
+  --platform "$platform" --firmware "$work/panic-unnamed.elf" --foreign "$window"

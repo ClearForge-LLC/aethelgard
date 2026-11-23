@@ -860,6 +860,55 @@ impl Drop for Scratch {
     }
 }
 
+/// `check drc`'s parts (`AET-WO-1609`, ruled D3): the coupled pairs, judged
+/// on the board's copper only with `--spec` and `diff_pairs` (each pair), and
+/// the power tree's loop rules only with `--spec` and `power` (each loop rule
+/// judged). Each is decided by the predicate `check_kicad` itself tests:
+/// `Stack::of`'s pairs are the specification's `diff_pairs`.
+fn drc_parts(
+    spec: Option<&Specification>,
+    pairs: Option<usize>,
+    loops: Option<usize>,
+) -> Vec<verdict::Ran> {
+    use verdict::Ran;
+    let Some(spec) = spec else {
+        return vec![
+            Ran::off("drc.pairs", "--spec"),
+            Ran::off("drc.power", "--spec"),
+        ];
+    };
+    vec![
+        Ran::part(
+            "drc.pairs",
+            !spec.diff_pairs.is_empty(),
+            pairs.unwrap_or(0) as u64,
+            "diff_pairs",
+        ),
+        Ran::part(
+            "drc.power",
+            spec.power.is_some(),
+            loops.unwrap_or(0) as u64,
+            "power",
+        ),
+    ]
+}
+
+/// A generated `simulate`'s part (`AET-WO-1609`, ruled D3): the HSE clock
+/// rule ([`aethelgard_twin::hse::clock_rule`]), set only for a topology with
+/// an HSE, so `mcu.hse` turns it on, and judged, once, only after the boot
+/// word, as `renode::judge` reads the clock's accesses then.
+fn simulate_parts(clock: bool, booted: bool) -> Vec<verdict::Ran> {
+    use verdict::Ran;
+    vec![match (clock, booted) {
+        (false, _) => Ran::off("simulate.hse_clock", "mcu.hse"),
+        (true, true) => Ran::judged("simulate.hse_clock", 1),
+        (true, false) => Ran::not_reached(
+            "simulate.hse_clock",
+            "the firmware never wrote its boot word",
+        ),
+    }]
+}
+
 /// Asks the tool its version, in the same sandbox as the judging run. A tool
 /// that will not say is unusable (exit 4).
 fn version(inv: run::Invocation<'_>) -> Result<String, run::Stop> {
@@ -1020,6 +1069,11 @@ fn check_kicad(
             .map(|(spec, _)| spec.lifecycle_banner().unwrap_or_default())
             .unwrap_or_default();
         v.specification_sha256 = spec_sha256;
+        v.ran = drc_parts(
+            read_spec_value.as_ref().map(|(spec, _)| spec),
+            pairs.as_ref().map(Vec::len),
+            power.as_ref().map(|p| p.loops.len()),
+        );
         v.pairs = pairs;
         v.power = power;
         v.schematic = schematic.map(|s| verdict::InputReport {
@@ -1470,6 +1524,9 @@ struct Ready {
     /// The foreign firmware's loaded flash segments, read back after the run;
     /// empty for a generated firmware.
     flash: Vec<elf::FlashLoad>,
+    /// Where the foreign firmware's `AP_HAL::panic` starts, which the judge
+    /// hooks (`AET-WO-1609`); `None` for a generated firmware.
+    panic: Option<u64>,
     /// The generated firmware's PWR rule (`AET-WO-4240v` §1.6); `None` for a
     /// foreign firmware, which is never given it.
     pwr: Option<aethelgard_twin::serial::PwrRule>,
@@ -1592,6 +1649,23 @@ fn ready(
         Some(regions) => elf::flash_loads(&bytes, &regions[0].1)?,
         None => Vec::new(),
     };
+    // The panic the foreign judge hooks (`AET-WO-1609`): a firmware whose
+    // symbol table does not name it cannot be judged for it, so it is
+    // refused by name, never booted without the hook (`INV-06`).
+    let panic = match &foreign {
+        Some(_) => Some(
+            elf::function(&bytes, renode::foreign::PANIC_SYMBOL)?.ok_or_else(|| {
+                run::Stop::refused(
+                    "ForeignPanicSymbolMissing",
+                    format!(
+                        "the firmware's symbol table names no function `{}` (ArduPilot's AP_HAL::panic), which the foreign judge hooks to fail a run that panics",
+                        renode::foreign::PANIC_SYMBOL
+                    ),
+                )
+            })?,
+        ),
+        None => None,
+    };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let pwr = pwr_of(boot.foreign, &boot.topology)?;
     let clock = match boot.foreign {
@@ -1655,6 +1729,7 @@ fn ready(
             rail: boot.rail,
             foreign,
             flash,
+            panic,
             pwr,
             clock,
             pins: boot.pins,
@@ -2081,6 +2156,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             plan,
             &ready.as_ref().expect("foreign is ready's").flash,
             &foreign_serial,
+            ready
+                .as_ref()
+                .and_then(|r| r.panic)
+                .expect("ready holds a foreign firmware's panic"),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2125,6 +2204,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 parts,
                 renode::foreign::ClockReport::declared(&r.topology)
                     .expect("ready refuses a foreign run with no declared clock"),
+                r.panic.expect("ready holds a foreign firmware's panic"),
             )
         })
     });
@@ -2133,23 +2213,23 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         // Killed at a bound: a fail that names it, with nothing read. A killed
         // tool has no exit code, so the verdict records -1.
         (Some(plan), run::Ended::Bounded(bound)) => {
-            if let Some((firmware, spec, regions, _, clock)) = foreign_inputs.clone() {
+            if let Some((firmware, spec, regions, _, clock, panic)) = foreign_inputs.clone() {
                 foreign_report = Some(renode::foreign::report(
-                    plan, firmware, spec, regions, clock,
+                    plan, firmware, spec, regions, clock, panic,
                 ));
             }
             (-1, (vec![renode::bounded(&out, *bound)], None, None))
         }
         (Some(plan), _) if foreign_inputs.is_some() => {
             let code = out.code("renode")?;
-            let (firmware, spec, regions, parts, clock) =
+            let (firmware, spec, regions, parts, clock, panic) =
                 foreign_inputs.clone().expect("the guard holds it");
             let r = ready.as_ref().expect("foreign is ready's");
             let (findings, machine, report) = renode::foreign::judge(
                 code,
                 &out,
                 plan,
-                renode::foreign::report(plan, firmware, spec, regions, clock),
+                renode::foreign::report(plan, firmware, spec, regions, clock, panic),
                 &parts,
                 &r.flash,
                 r.topology.clock.hse_hz,
@@ -2229,7 +2309,15 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     if let (Some(r), Some(plan)) = (&ready, &plan) {
         match foreign_report {
             Some(report) => v.foreign_boot = Some(report),
-            None => v.boot = Some(boot_report(r, plan, observed.as_ref())),
+            None => {
+                v.boot = Some(boot_report(r, plan, observed.as_ref()));
+                v.ran = simulate_parts(
+                    plan.clock.is_some(),
+                    observed
+                        .as_ref()
+                        .is_some_and(|o| o.boot_word == aethelgard_twin::boot::BOOT_MAGIC),
+                );
+            }
         }
         v.memory = out
             .peak_rss_kib
@@ -3367,6 +3455,108 @@ mod tests {
 
     fn root() -> PathBuf {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    }
+
+    fn fixture(name: &str, edit: impl FnOnce(&mut serde_json::Value)) -> Specification {
+        let path = root()
+            .join("crates/aethelgard-cli/tests/fixtures")
+            .join(name);
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        edit(&mut v);
+        serde_json::from_value(v).unwrap()
+    }
+
+    /// `AET-WO-1609` D3: `check drc`'s two parts, both ways. Without
+    /// `--spec` neither can run; with it, the pairs follow `diff_pairs` and
+    /// the loop rules follow `power`, and a row is never omitted.
+    #[test]
+    fn drc_parts_are_judged_or_off_by_their_key() {
+        use verdict::Ran;
+        assert_eq!(
+            drc_parts(None, None, None),
+            [
+                Ran::off("drc.pairs", "--spec"),
+                Ran::off("drc.power", "--spec")
+            ]
+        );
+        let paired = fixture("pair-standin.json", |_| ());
+        assert_eq!(
+            drc_parts(Some(&paired), Some(1), None),
+            [Ran::judged("drc.pairs", 1), Ran::off("drc.power", "power")]
+        );
+        let unpaired = fixture("pair-standin.json", |v| {
+            v["diff_pairs"] = serde_json::json!([])
+        });
+        assert_eq!(
+            drc_parts(Some(&unpaired), None, None)[0],
+            Ran::off("drc.pairs", "diff_pairs")
+        );
+        let powered = fixture("sentinel-03.json", |_| ());
+        assert_eq!(
+            drc_parts(Some(&powered), None, Some(0))[1],
+            Ran::judged("drc.power", 0),
+            "a power tree with no loop rule judges 0, and says so"
+        );
+        assert_eq!(
+            drc_parts(Some(&powered), None, Some(3))[1],
+            Ran::judged("drc.power", 3)
+        );
+    }
+
+    /// `AET-WO-1609` D3: the HSE clock rule's row, all three ways.
+    #[test]
+    fn the_hse_clock_row_is_off_judged_or_not_reached() {
+        use verdict::Ran;
+        assert_eq!(
+            simulate_parts(false, true),
+            [Ran::off("simulate.hse_clock", "mcu.hse")]
+        );
+        assert_eq!(
+            simulate_parts(false, false),
+            [Ran::off("simulate.hse_clock", "mcu.hse")]
+        );
+        assert_eq!(
+            simulate_parts(true, true),
+            [Ran::judged("simulate.hse_clock", 1)]
+        );
+        assert!(matches!(
+            simulate_parts(true, false)[0].state,
+            verdict::RanState::NotReached(_)
+        ));
+    }
+
+    /// The HSE row reads `mcu.hse`; the twin sets its rule exactly when the
+    /// solved topology has an HSE, which only `mcu.hse` gives.
+    #[test]
+    fn the_clock_rule_is_set_exactly_when_mcu_hse_is_declared() {
+        for (name, hse) in [
+            ("hse-crystal-16.json", true),
+            ("hse-external-8.json", true),
+            ("sentinel-01-bench.json", false),
+        ] {
+            let spec = fixture(name, |_| ());
+            let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+            let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+            let rule = aethelgard_twin::hse::clock_rule(&topology).unwrap();
+            assert_eq!(rule.is_some(), hse, "{name}");
+            assert_eq!(spec.mcu.hse.is_some(), hse, "{name}");
+        }
+    }
+
+    /// The pairs' row reads `diff_pairs`, and `check_kicad` runs the pair
+    /// judge on `Stack::of`'s pairs: the two must be the same predicate.
+    #[test]
+    fn the_stacks_pairs_are_the_specifications_diff_pairs() {
+        for (name, empty) in [("pair-standin.json", false), ("pair-standin.json", true)] {
+            let spec = fixture(name, |v| {
+                if empty {
+                    v["diff_pairs"] = serde_json::json!([]);
+                }
+            });
+            let stack = aethelgard_eda::stack::Stack::of(&spec).unwrap();
+            assert_eq!(stack.pairs.is_empty(), spec.diff_pairs.is_empty());
+        }
     }
 
     /// `AET-WO-2305` §1.2: every release's probe lies inside the boot and

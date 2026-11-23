@@ -185,6 +185,11 @@ pub const RULES: &[(&str, &str, &str)] = &[
         "kept",
         "a device with no model is named (info)",
     ),
+    (
+        "foreign_panic",
+        "added (AET-WO-1609)",
+        "an execution hook on AP_HAL::panic, found by its symbol in the ELF (a firmware whose symbol table does not name it is refused, ForeignPanicSymbolMissing), fails a run that enters it, whenever it did, with each entry's virtual time in boot.panic. Weakens: a fault, a hang or a reset that never calls it is judged only by the rules above (a thread-mode hang after the last witness passes; spike/1609)",
+    ),
 ];
 
 /// One region a foreign firmware may load into.
@@ -358,6 +363,47 @@ pub struct ForeignBoot {
     /// The clock the platform was built at, and what of it was checked
     /// (`AET-WO-4400g` §1.2).
     pub clock: ClockReport,
+    /// ArduPilot's `AP_HAL::panic`, hooked where its symbol is, and every
+    /// entry the hook logged (`AET-WO-1609`).
+    pub panic: PanicReport,
+}
+
+/// The panic hook's evidence (`AET-WO-1609`): the symbol, the address the
+/// hook was set at, and the virtual time of each entry it logged, in order.
+#[derive(Serialize, Clone)]
+pub struct PanicReport {
+    pub symbol: &'static str,
+    pub address: String,
+    pub entered_ns: Vec<Option<u64>>,
+}
+
+/// ArduPilot's panic, `AP_HAL::panic(const char*, ...)` (`AP_HAL/system.h`;
+/// `AP_HAL_ChibiOS/system.cpp:327` prints and sleeps forever in the calling
+/// thread), by its mangled name in the ELF's symbol table.
+pub const PANIC_SYMBOL: &str = "_ZN6AP_HAL5panicEPKcz";
+
+/// The line the panic hook logs on each entry, with the PC.
+const PANIC_MARK: &str = "AETHELGARD-PANIC ";
+
+/// The execution hook on the panic's first instruction (`AET-WO-1609`, ruled
+/// at §1.2): each entry logs a `[WARNING]` of the CPU's own, which no
+/// firmware can write. A panic leaves the core in thread mode, parked, with
+/// every witness already logged (`spike/1609`), so nothing else the judge
+/// reads tells it from a healthy run.
+fn panic_hook(address: u64) -> String {
+    format!(
+        "cpu AddHook {address:#x} \"__import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{PANIC_MARK}%x' % pc)\""
+    )
+}
+
+/// The virtual time of an entry the panic hook logged at `address`, as
+/// `Some(stamp)`; `None` for any other line.
+fn panic_entry(line: &str, address: u64) -> Option<Option<u64>> {
+    let pc = log_text(line)
+        .strip_prefix("[WARNING] cpu: ")?
+        .strip_prefix(PANIC_MARK)?;
+    (u64::from_str_radix(pc.trim(), 16).ok()? == address)
+        .then(|| log_stamped(line).map(|(ns, _)| ns))
 }
 
 /// The foreign firmware's clock in the verdict (`AET-WO-4400g` §1.2, Q2
@@ -766,6 +812,7 @@ pub fn commands(
     plan: &BootPlan<'_>,
     flash: &[crate::elf::FlashLoad],
     serial: &[aethelgard_twin::serial::Options],
+    panic: u64,
 ) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -786,6 +833,7 @@ pub fn commands(
     c.extend(spi_controllers(plan).iter().map(|s| cfg2_hook(s)));
     c.extend(usart_logs(serial));
     c.push(Erase::facts()?.hook());
+    c.push(panic_hook(panic));
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
@@ -1171,6 +1219,7 @@ pub fn report(
     specification_sha256: String,
     regions: Vec<RegionReport>,
     clock: ClockReport,
+    panic: u64,
 ) -> ForeignBoot {
     ForeignBoot {
         judge: JUDGE,
@@ -1197,6 +1246,11 @@ pub fn report(
         serial_options: Vec::new(),
         serial_pulls: Vec::new(),
         option_changes: Vec::new(),
+        panic: PanicReport {
+            symbol: PANIC_SYMBOL,
+            address: format!("{panic:#010x}"),
+            entered_ns: Vec::new(),
+        },
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
         rules: RULES
@@ -1712,6 +1766,29 @@ pub fn judge(
             ),
         ));
     }
+    // The firmware's panic, as its hook logs each entry (`AET-WO-1609`):
+    // a run that panicked fails by name, whenever it panicked.
+    let address = u64::from_str_radix(report.panic.address.trim_start_matches("0x"), 16)
+        .map_err(|_| untrusted(format!("the panic hook's address {}", report.panic.address)))?;
+    report.panic.entered_ns = run_log
+        .iter()
+        .filter_map(|line| panic_entry(line, address))
+        .collect();
+    if let Some(first) = report.panic.entered_ns.first() {
+        let last_witness = report.devices.iter().filter_map(|d| d.observed_ns).max();
+        let at =
+            |ns: &Option<u64>| ns.map_or("an unstamped time".to_owned(), |n| format!("{n} ns"));
+        findings.push(Finding::plain(
+            "foreign_panic",
+            format!(
+                "the firmware entered {PANIC_SYMBOL} at {:#010x} {} time(s), first at {}, the last device witness at {}",
+                address,
+                report.panic.entered_ns.len(),
+                at(first),
+                at(&last_witness),
+            ),
+        ));
+    }
     Ok((findings, Some(machine), report))
 }
 
@@ -1861,11 +1938,17 @@ mod tests {
             assert!(seen.insert(*rule), "{rule} twice");
             assert!(!judges.is_empty(), "{rule}");
             assert!(
-                ["kept", "replaced", "dropped"]
+                ["kept", "replaced", "dropped", "added"]
                     .iter()
                     .any(|d| disposition.starts_with(d)),
                 "{rule}: {disposition}"
             );
+            if disposition.starts_with("added") {
+                assert!(
+                    judges.contains("Weakens"),
+                    "{rule}: an added rule says what it leaves"
+                );
+            }
             if disposition.starts_with("dropped") {
                 assert!(
                     judges.contains("Weakens") || rule == &"records in RAM",
@@ -2196,6 +2279,38 @@ mod tests {
         let (f, ..) = judge_serial(&lines, false, &ports, &pulls);
         assert_eq!(failing(&f).len(), 4);
         assert!(failing(&f).iter().all(|(k, _)| k == OPTIONS_UNJUDGEABLE));
+    }
+
+    /// `AET-WO-1609`: the hook is set at the symbol's address, and only the
+    /// CPU's own line carrying that address is an entry, with its virtual
+    /// time; a line of another source, another address or no mark is not.
+    #[test]
+    fn a_panic_entry_is_the_cpus_own_hook_line_at_the_symbols_address() {
+        let hook = panic_hook(0x080c_033c);
+        assert!(hook.starts_with("cpu AddHook 0x80c033c \""), "{hook}");
+        assert!(hook.contains(&format!("'{PANIC_MARK}%x' % pc")), "{hook}");
+        let line = |body: &str| format!("[00:00:04.392440850] {body}");
+        assert_eq!(
+            panic_entry(
+                &line("[WARNING] cpu: AETHELGARD-PANIC 80c033c"),
+                0x080c_033c
+            ),
+            Some(Some(4_392_440_850))
+        );
+        for other in [
+            "[WARNING] cpu: AETHELGARD-PANIC 80c0340",
+            "[WARNING] usart1: AETHELGARD-PANIC 80c033c",
+            "[INFO] cpu: AETHELGARD-PANIC 80c033c",
+            "[WARNING] cpu: AETHELGARD-PANICK 80c033c",
+            "[WARNING] cpu: 80c033c",
+        ] {
+            assert_eq!(panic_entry(&line(other), 0x080c_033c), None, "{other}");
+        }
+        assert_eq!(
+            panic_entry("[WARNING] cpu: AETHELGARD-PANIC 80c033c", 0x080c_033c),
+            Some(None),
+            "an unstamped entry still counts"
+        );
     }
 
     /// D2: each declared USART's accesses are logged once, and each serial

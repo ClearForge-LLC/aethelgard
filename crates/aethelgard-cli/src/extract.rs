@@ -13,7 +13,7 @@ use aethelgard_eda::extract::{self as bound, LineBound};
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::verdict::{InputReport, Scope};
+use crate::verdict::{InputReport, Ran, Scope};
 use crate::{EXIT_FAIL, EXIT_INVALID_SPEC, EXIT_UNREADABLE, Refusal};
 
 /// `RUL-19`, in the verdict itself.
@@ -55,7 +55,55 @@ struct Report {
     /// declared, so no other report moves.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     oscillator: Vec<Value>,
+    /// Each part of the gate, judged or off by the key that turns it on
+    /// (`AET-WO-1609`): [`parts`].
+    ran: Vec<Ran>,
     findings: Vec<Finding>,
+}
+
+/// The gate's parts (`AET-WO-1609`, ruled D1 (a), D3): each one's row from
+/// the specification's own predicate, the one eda tests before it bounds
+/// anything, with the count of what it judged. The bus lines always run; a
+/// supply domain only under a non-empty `power.drop_limits`
+/// (`aethelgard_eda::supply::supplies`: `[]` validates and judges nothing);
+/// an oscillator net only beside a declared crystal
+/// (`aethelgard_eda::extract::oscillator`: an external clock has none), each
+/// judged by its no-via rule; a coupled pair's conductors only under
+/// `diff_pairs`. A test drives each both ways against eda's own result.
+fn parts(
+    spec: &aethelgard_ir::Specification,
+    lines: usize,
+    supplies: usize,
+    oscillator: usize,
+    conductors: usize,
+) -> Vec<Ran> {
+    let drop_limits = spec
+        .power
+        .as_ref()
+        .and_then(|p| p.drop_limits.as_ref())
+        .is_some_and(|l| !l.is_empty());
+    let crystal = matches!(spec.mcu.hse, Some(aethelgard_ir::clock::Hse::Crystal(_)));
+    vec![
+        Ran::judged("extract.lines", lines as u64),
+        Ran::part(
+            "extract.supply",
+            drop_limits,
+            supplies as u64,
+            "power.drop_limits",
+        ),
+        Ran::part(
+            "extract.oscillator",
+            crystal,
+            oscillator as u64,
+            "mcu.hse.crystal",
+        ),
+        Ran::part(
+            "extract.pairs",
+            !spec.diff_pairs.is_empty(),
+            conductors as u64,
+            "diff_pairs",
+        ),
+    ]
 }
 
 /// D2's stated condition: the bound holds each conductor's capacitance, not
@@ -443,6 +491,17 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         (out.len() + supplies.len() + oscillator.len()) as u64,
         NOTHING_IN_SCOPE,
     );
+    let conductors = pairs
+        .iter()
+        .map(|p| p["conductors"].as_array().map_or(0, Vec::len))
+        .sum();
+    let ran = parts(
+        &spec,
+        out.len(),
+        supplies.len(),
+        oscillator.len(),
+        conductors,
+    );
     let ok = findings.is_empty();
     let report = Report {
         ok,
@@ -462,7 +521,114 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         supplies,
         pairs,
         oscillator,
+        ran,
         findings,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn spec(fixture: &str, edit: impl FnOnce(&mut Value)) -> aethelgard_ir::Specification {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
+        let mut v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        edit(&mut v);
+        serde_json::from_value(v).unwrap()
+    }
+
+    fn row(rows: &[Ran], gate: &str) -> Ran {
+        rows.iter().find(|r| r.gate == gate).unwrap().clone()
+    }
+
+    /// Every part has its row, every time, in this order: none is omitted,
+    /// whatever the specification declares (`AET-WO-1609` §2).
+    #[test]
+    fn every_part_has_a_row_in_order() {
+        let s = spec("tests/fixtures/sentinel-03.json", |_| ());
+        let gates: Vec<String> = parts(&s, 0, 0, 0, 0).into_iter().map(|r| r.gate).collect();
+        assert_eq!(
+            gates,
+            [
+                "extract.lines",
+                "extract.supply",
+                "extract.oscillator",
+                "extract.pairs"
+            ]
+        );
+        assert_eq!(
+            row(&parts(&s, 0, 0, 0, 0), "extract.lines"),
+            Ran::judged("extract.lines", 0),
+            "no line is `judged 0`, never omitted"
+        );
+    }
+
+    /// The supply part, both ways: off with `power.drop_limits` absent (as
+    /// on every committed board) and when declared empty, which validates;
+    /// judged with a limit, its count eda's.
+    #[test]
+    fn the_supply_part_is_off_until_a_drop_limit_is_declared() {
+        let off = Ran::off("extract.supply", "power.drop_limits");
+        let absent = spec("tests/fixtures/sentinel-03.json", |_| ());
+        assert!(absent.power.is_some() && absent.power.as_ref().unwrap().drop_limits.is_none());
+        assert_eq!(row(&parts(&absent, 3, 0, 0, 0), "extract.supply"), off);
+        let empty = spec("tests/fixtures/sentinel-03.json", |v| {
+            v["power"]["drop_limits"] = json!([]);
+        });
+        assert_eq!(row(&parts(&empty, 3, 0, 0, 0), "extract.supply"), off);
+        let no_power = spec("tests/fixtures/sentinel-01-bench.json", |_| ());
+        assert!(no_power.power.is_none());
+        assert_eq!(row(&parts(&no_power, 3, 0, 0, 0), "extract.supply"), off);
+        let limited = spec("tests/fixtures/sentinel-03.json", |v| {
+            v["power"]["drop_limits"] =
+                json!([{"domain": "VDD_3V3", "max_millivolts": 165, "source": "test"}]);
+        });
+        assert_eq!(
+            row(&parts(&limited, 3, 1, 0, 0), "extract.supply"),
+            Ran::judged("extract.supply", 1)
+        );
+    }
+
+    /// The oscillator part, both ways: judged beside a crystal (each net by
+    /// its no-via rule), off with no HSE and off with an external clock,
+    /// whose `mcu.hse` is present.
+    #[test]
+    fn the_oscillator_part_is_on_only_beside_a_crystal() {
+        let off = Ran::off("extract.oscillator", "mcu.hse.crystal");
+        let crystal = spec("tests/fixtures/hse-crystal-16.json", |_| ());
+        assert_eq!(
+            row(&parts(&crystal, 3, 0, 2, 0), "extract.oscillator"),
+            Ran::judged("extract.oscillator", 2)
+        );
+        let external = spec("tests/fixtures/hse-external-8.json", |_| ());
+        assert!(external.mcu.hse.is_some());
+        assert_eq!(
+            row(&parts(&external, 3, 0, 0, 0), "extract.oscillator"),
+            off
+        );
+        let none = spec("tests/fixtures/sentinel-01-bench.json", |_| ());
+        assert!(none.mcu.hse.is_none());
+        assert_eq!(row(&parts(&none, 3, 0, 0, 0), "extract.oscillator"), off);
+    }
+
+    /// The pair part, both ways: judged by its conductors under
+    /// `diff_pairs`, off without it.
+    #[test]
+    fn the_pair_part_is_off_without_diff_pairs() {
+        let paired = spec("tests/fixtures/pair-standin.json", |_| ());
+        assert!(!paired.diff_pairs.is_empty());
+        assert_eq!(
+            row(&parts(&paired, 4, 0, 0, 2), "extract.pairs"),
+            Ran::judged("extract.pairs", 2)
+        );
+        let unpaired = spec("tests/fixtures/pair-standin.json", |v| {
+            v["diff_pairs"] = json!([]);
+        });
+        assert_eq!(
+            row(&parts(&unpaired, 4, 0, 0, 0), "extract.pairs"),
+            Ran::off("extract.pairs", "diff_pairs")
+        );
+    }
 }
