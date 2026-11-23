@@ -1,6 +1,6 @@
 # AET-WO-1917 — FEEDBACK: CI that cannot skip what it should run
 
-**Branch:** `wo/aet-1917-ci-coverage` from `main` `77e829f1`. `main` `1c32c8ea` (docs) and `465bd860` (`4300j`, #358) are merged in. `4300j` added its own `BOARDS` row beside D1's: both are kept, and `sentinel-01-full`'s fixtures were regenerated under specification 29. Only the header's specification sha256 changed.
+**Branch:** `wo/aet-1917-ci-coverage` from `main` `77e829f1`. `main` `1c32c8ea` (docs) and `465bd860` (`4300j`, #358) and `db9167e7` (docs) are merged in. `4300j` added its own `BOARDS` row beside D1's: both are kept, and `sentinel-01-full`'s fixtures were regenerated under specification 29. Only the header's specification sha256 changed.
 **Builder:** Claude (Opus 5.5), acting as project manager.
 - Two Sonnet subagents built (4) and (6), each in its own worktree. I reviewed every line of both and re-ran one mutant of each.
 - One subagent traced the workflow's inputs for §1.1, and I checked each claim at source.
