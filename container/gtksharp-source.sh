@@ -9,10 +9,13 @@
 #
 #   fetch REPO DIR    the pin from REPO into DIR, anonymously; exit 2 when it
 #                     is not there (404), 1 for every other refusal.
-#   publish REPO DIR  fetch; only if it is not there, download the archive
-#                     from the manifest's url, push it (oci-mirror.sh refuses a
-#                     file whose sha256 or size is not the manifest's), and
-#                     fetch it anonymously again.
+#   publish REPO DIR  fetch; only if it is not there, take the archive from
+#                     the published mirror (CANON, anonymously, verified), or,
+#                     only if that is not there either, from the manifest's
+#                     url; push it (oci-mirror.sh refuses a file whose sha256
+#                     or size is not the manifest's), and fetch it anonymously
+#                     again. So once main has published the mirror, GitHub is
+#                     not asked (AET-WO-4408, 4407 Q4; gcc-source.sh's pattern).
 set -euo pipefail
 export LC_ALL=C
 here=$(dirname "$0")
@@ -27,6 +30,7 @@ m = json.load(open(sys.argv[1]))
 print(l["annotations"]["org.opencontainers.image.title"], m["annotations"]["org.opencontainers.image.url"])' "$MANIFEST") \
   || die "$MANIFEST names not exactly one layer (above)"
 PIN=$(sha256sum < "$MANIFEST" | cut -d' ' -f1)
+CANON=ghcr.io/clearforge-llc/aethelgard-tools
 oci() { bash "$here/oci-mirror.sh" "$@"; }
 fetch() { oci fetch "$1@sha256:$PIN" "$2" --manifest "$MANIFEST"; }
 
@@ -38,7 +42,16 @@ case $1 in
     case $rc in
       0) echo "already mirrored: $2@sha256:$PIN" ;;
       2) mkdir -p "$3"
-         curl -q -fsSL --proto '=https' --proto-redir '=https' --max-time 300 -o "$3/$TITLE" "$URL" || die "download failed: $URL"
+         seed=1
+         if [ "$2" != "$CANON" ]; then
+           seed=0; fetch "$CANON" "$3" || seed=$?
+           [ "$seed" -ne 1 ] || die "the published mirror is there but refused (above); GitHub not asked"
+         fi
+         case $seed in
+           0) echo "$TITLE seeded from $CANON" ;;
+           *) curl -q -fsSL --proto '=https' --proto-redir '=https' --max-time 300 -o "$3/$TITLE" "$URL" || die "download failed: $URL"
+              echo "$TITLE from GitHub: $URL" ;;
+         esac
          oci push "$2" "${TITLE%.tar.gz}" "$MANIFEST" "$3"
          rm -f "$3/$TITLE"; fetch "$2" "$3" ;;
       *) die "the mirror is there but refused (above); nothing pushed" ;;
