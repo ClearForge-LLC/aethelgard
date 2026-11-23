@@ -26,7 +26,7 @@ Labels: **measured**, **read at source** (file:line at `7dec1d7b`), **inferred**
 | P6 | **yes** | 0 of 1,890 kind 11 records differ between the name prefix `RCC.` and `svd-hal`'s RCC range (`0x58024400..0x58024530`). **No `svd-hal` in chaos** |
 | P7 | **yes** | The prototype's index set equals `select`'s on all 64, for every kind (`proto_vs_select` empty on every line). After the build: **all 128 outputs (64 `replay`, 64 `attribute`) are identical**, main against branch (`out/sweep-branch.txt`) |
 | P8 | **wrong on three counts** | Below. (a) `replay` is not under 0.5 s on `big_pass`: `check_run`'s unread-witness join is quadratic in `ok` reads. (b) `attribute` is slower than predicted in the debug CLI. (c) The lean changed from an index to a bound |
-| P9 | **yes** | At trace 19: `reg_unnamed`, `timeout_unnamed` and `idmismatch_unnamed` replay `pass`, `matched: true`, exit 0 at main; `attribute` says `I1`. `halted_unnamed` is refused at main. Sizes 1,276–1,320 B (trace and manifest). Committed under `crates/aethelgard-chaos/tests/fixtures/round3/` with their healthy original |
+| P9 | **yes** | At trace 19: `reg_unnamed`, `timeout_unnamed` and `idmismatch_unnamed` replay `pass`, `matched: true`, exit 0 at main; `attribute` says `I1`. `halted_unnamed` is refused at main. Sizes 1,276–1,320 B (trace and manifest), all under 256 KiB. They are **not committed**: `cli/tests/workspace_shape.rs` holds chaos to `.rs` files under `tests/`. So they are built in code by the reviewer's edits through `archived` (`evolve/tests/attribute.rs`), the WO's own fallback |
 | P10 | **yes, read at source** | The fold's `ONCE_KINDS` refusal (`DuplicateRecord { index, kind }`) fires before `check_run` and names the index; removing it moves every duplicate refusal's kind. **Kept.** Only its misplaced doc comment is fixed |
 | P11 | **yes** | No §7 stop fires: no committed or CLI-made verdict, `matched` or `Attribution` moves (P1, P7); no format bump; no `svd-hal` (P6); records and judge agree on every committed scenario (P3) |
 
@@ -41,7 +41,7 @@ shapes, K buses × D devices.
 | K=20 D=128 `big_pass` | 663,763 | 5,244 | 0.15 s | 0.32 s | 0.062 s | refused, 0.060 s |
 | K=100 D=128 `big_fail` | 2,496,485 | 25,904 | 0.25 s | **251 s** | 0.24 s | refused, 0.24 s |
 | K=100 D=128 `big_pass` | 3,315,663 | 25,904 | **2.7 s** | 6.1 s | 0.32 s | refused, 0.29 s |
-| K=200 D=128 `big_fail` | 4,992,163 | 51,804 | 0.51 s | (see below) | 0.54 s | refused, 0.55 s |
+| K=200 D=128 `big_fail` | 4,992,163 | 51,804 | 0.51 s | **> 900 s** (killed at the cap, exit 124) | 0.54 s | refused, 0.55 s |
 | K=200 D=128 `big_pass` | 6,630,541 | 51,804 | **10.6 s** | 23.4 s | 0.62 s | refused, 0.59 s |
 | K=200 D=1 `big_fail` | 73,162 | 1,004 | 0.020 s | 0.63 s | | |
 | K=200 D=5 `big_fail` | 226,763 | 2,604 | 0.038 s | 4.3 s | | |

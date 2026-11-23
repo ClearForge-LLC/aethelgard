@@ -9,3 +9,4 @@ k=100 big_fail bytes=2496485 attribute rc=1 wall_ms=250962 {"ok":false,"check":"
 k=200 big_pass bytes=6630541 replay rc=0 wall_ms=10584 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"e
 k=200 big_pass bytes=6630541 attribute rc=0 wall_ms=23428 {"ok":true,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"b5e9d45ef9236c88a0fcd572d72537ecf6dce3f2d233ebb59fab99b443e3b1
 k=200 big_fail bytes=4992163 replay rc=0 wall_ms=508 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"fail","expect":"pass","matched":false,"findings":["i2
+k=200 big_fail bytes=4992163 attribute rc=124 wall_ms=900015 
