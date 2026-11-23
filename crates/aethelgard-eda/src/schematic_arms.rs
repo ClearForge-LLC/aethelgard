@@ -528,7 +528,8 @@ const fn owns_once(pins: &[(Pin, Role)], name: &str) -> bool {
 ///   own-net name on two pins of a row (a strap and an own net, say); a pin
 ///   listed twice in a row;
 /// - and since `AET-WO-1321`: an entry of `counts` for a part with no
-///   bus row.
+///   bus row; since `AET-WO-1322` (`1321` F2): a part with two entries in
+///   `counts`, whose second the forward count would never read.
 const fn check(rows: &[Arm], counts: &[(&str, usize)]) -> Result<(), &'static str> {
     let mut r = 0;
     while r < rows.len() {
@@ -655,6 +656,13 @@ const fn check(rows: &[Arm], counts: &[(&str, usize)]) -> Result<(), &'static st
     while e < counts.len() {
         if !has_bus_row(rows, counts[e].0) {
             return Err("a DECOUPLERS entry with no bus row");
+        }
+        let mut f = e + 1;
+        while f < counts.len() {
+            if same(counts[e].0, counts[f].0) {
+                return Err("a part with two DECOUPLERS entries");
+            }
+            f += 1;
         }
         e += 1;
     }
@@ -1855,5 +1863,22 @@ mod tests {
             TWO,
             Err("a bus row whose decoupler count is not its part's")
         );
+    }
+
+    /// `1321` F2: a part with two [`DECOUPLERS`] entries, the second with
+    /// another count (which the forward lookup, taking the first, would
+    /// never read) or the same one, adjacent or apart, first or last.
+    #[test]
+    fn a_part_with_two_decoupler_entries_is_refused() {
+        const ROWS: &[Arm] = &[BME280, BMP581];
+        const WHY: Result<(), &str> = Err("a part with two DECOUPLERS entries");
+        const OTHER: Result<(), &str> = check(ROWS, &[("BME280", 1), ("BMP581", 2), ("BMP581", 1)]);
+        const SAME: Result<(), &str> = check(ROWS, &[("BMP581", 2), ("BMP581", 2), ("BME280", 1)]);
+        const APART: Result<(), &str> = check(ROWS, &[("BME280", 1), ("BMP581", 2), ("BME280", 3)]);
+        const ONCE: Result<(), &str> = check(ROWS, &[("BMP581", 2), ("BME280", 1)]);
+        assert_eq!(OTHER, WHY, "a second count");
+        assert_eq!(SAME, WHY, "the same count twice");
+        assert_eq!(APART, WHY, "apart, the first entry doubled");
+        assert_eq!(ONCE, Ok(()), "each once");
     }
 }

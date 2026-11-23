@@ -7,12 +7,15 @@ use std::collections::BTreeSet;
 
 use super::*;
 
-/// The most copper items (pads, tracks and vias) [`read`] takes
-/// (`AET-WO-1311` §1.2). `check` compares every pair of items and
+/// The most items [`read`] takes (`AET-WO-1311` §1.2): copper items (pads,
+/// tracks and vias), and since `AET-WO-1322` (`1311` adversarial F) every
+/// courtyard edge and footprint keepout, which `check` also scans for every
+/// via or item. `check` compares every pair of copper items and
 /// `connectivity` every track with every item, so both cost the square of
 /// the count; measured (release, Furnace, 2026-11-16): 0.9 s together at
-/// 20 000 items, 5.8 s at 30 000. The largest board the fixtures emit holds
-/// 3 351 (`d3-24-i2c-12-spi`).
+/// 20 000 copper items, 5.8 s at 30 000. The largest board the fixtures
+/// emit holds 3 351 copper items, 800 courtyard edges and no keepout
+/// (`d3-24-i2c-12-spi`, measured 2026-11-23 by `spike/1322/count.py`).
 pub const MAX_ITEMS: usize = 20_000;
 use crate::sexpr::Sx;
 use crate::strict::{self, Tree};
@@ -79,14 +82,17 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         .map_err(|e| e.to_string())?
         .unwrap_or("?")
         .to_owned();
-    let at = one(fp, "at")?.ok_or_else(|| format!("{reference}: no `at`"))?;
-    let theta =
-        angle(at.arg(3)).ok_or_else(|| format!("{reference} is rotated by {:?}", at.arg(3)))?;
-    let origin = xy_of(Some(at), &reference)?;
+    // The reference and pad numbers as a refusal writes them: bounded and
+    // escaped when long or unprintable (`AET-WO-1322`; `1311` adversarial J).
+    let named = strict::shown(&reference).into_owned();
+    let at = one(fp, "at")?.ok_or_else(|| format!("{named}: no `at`"))?;
+    let theta = angle(at.arg(3))
+        .ok_or_else(|| format!("{named} is rotated by {}", strict::echo(&at.arg(3))))?;
+    let origin = xy_of(Some(at), &named)?;
     let mut pads = Vec::new();
     for pad in fp.all("pad") {
         let number = pad.arg(1).unwrap_or("").to_owned();
-        let what = format!("{reference} pad {number}");
+        let what = format!("{named} pad {}", strict::shown(&number));
         // A pad with no `layers`, or with a padstack of its own, puts copper
         // where KiCad says, not where this reads it (`AET-WO-1311`
         // adversarial E: KiCad flashed a pad with no `layers` on F.Cu and
@@ -145,7 +151,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
                 return Err(format!("{what} is a circle whose size is not square"));
             }
             Some("oval" | "circle") => w.min(h) / 2,
-            other => return Err(format!("{what} has shape {other:?}")),
+            other => return Err(format!("{what} has shape {}", strict::echo(&other))),
         };
         let (cx, cy) = (origin.0 + px, origin.1 + py);
         pads.push(Pad {
@@ -180,7 +186,7 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         if !head.starts_with("fp_") || one(&g, "layer")?.and_then(|l| l.arg(1)) != Some("F.CrtYd") {
             continue;
         }
-        let what = format!("{reference}'s courtyard {head}");
+        let what = format!("{named}'s courtyard {head}");
         match head {
             "fp_line" | "fp_rect" => {
                 let a = at(xy_of(one(&g, "start")?, &what)?);
@@ -244,18 +250,18 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         *corners.entry(a).or_default() += 1;
         *corners.entry(b).or_default() += 1;
         if !seen.insert((a.min(b), a.max(b))) {
-            return Err(format!("{reference}'s courtyard has an edge twice"));
+            return Err(format!("{named}'s courtyard has an edge twice"));
         }
     }
     if corners.values().any(|n| n % 2 == 1) {
-        return Err(format!("{reference}'s courtyard is not a closed outline"));
+        return Err(format!("{named}'s courtyard is not a closed outline"));
     }
     if courtyard.is_empty() && !pads.is_empty() {
-        return Err(format!("{reference} has copper pads and no courtyard"));
+        return Err(format!("{named} has copper pads and no courtyard"));
     }
     let mut keepouts = Vec::new();
     for z in fp.all("zone") {
-        keepouts.push(keepout(&z, &reference)?);
+        keepouts.push(keepout(&z, &named)?);
     }
     Ok(Part {
         reference,
@@ -270,8 +276,9 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
 /// layer, turned with the footprint, each of its five kinds `allowed` or
 /// `not_allowed`, no net. Anything else is refused by name, never dropped
 /// (`RUL-03`, amended for `AET-WO-4300d2` D2).
-fn keepout(z: &strict::Node<'_>, reference: &str) -> Result<Keepout, String> {
-    let what = format!("{reference}'s zone");
+/// `named` is the part's reference as a refusal writes it.
+fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Keepout, String> {
+    let what = format!("{named}'s zone");
     let k = one(z, "keepout")?.ok_or_else(|| format!("{what} is not a keepout"))?;
     for token in ["net", "net_name"] {
         if one(z, token)?.is_some() {
@@ -284,13 +291,21 @@ fn keepout(z: &strict::Node<'_>, reference: &str) -> Result<Keepout, String> {
     let layer = match one(z, "layer")?.and_then(|l| l.arg(1)) {
         Some("F.Cu") => Layer::F,
         Some("B.Cu") => Layer::B,
-        other => return Err(format!("{what} is on {other:?}, not F.Cu or B.Cu")),
+        other => {
+            return Err(format!(
+                "{what} is on {}, not F.Cu or B.Cu",
+                strict::echo(&other)
+            ));
+        }
     };
     let flag = |name: &str| -> Result<bool, String> {
         match one(&k, name)?.map(|n| (n.arg(1), n.arg(2))) {
             Some((Some("not_allowed"), None)) => Ok(true),
             Some((Some("allowed"), None)) => Ok(false),
-            other => Err(format!("{what}'s keepout `{name}` is {other:?}")),
+            other => Err(format!(
+                "{what}'s keepout `{name}` is {}",
+                strict::echo(&other)
+            )),
         }
     };
     let (tracks, vias, pads, fill) = (
@@ -346,7 +361,12 @@ fn through_hole(
     let join = match one(pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
         None => None,
         Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => Some(j),
-        Some(other) => return Err(format!("{what} has `zone_connect` {other:?}")),
+        Some(other) => {
+            return Err(format!(
+                "{what} has `zone_connect` {}",
+                strict::echo(&other)
+            ));
+        }
     };
     for token in [
         "thermal_gap",
@@ -504,7 +524,8 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         return Err(no(
             "LayersDisagree",
             format!(
-                "the board's copper layers are {copper:?}; the specification declares {want:?}"
+                "the board's copper layers are {}; the specification declares {want:?}",
+                strict::echo(&copper)
             ),
         ));
     }
@@ -517,8 +538,9 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
             return Err(no(
                 "ViaNotThrough",
                 format!(
-                    "a via typed {:?} on {layers:?}; the specification declares through vias, F.Cu to B.Cu",
-                    v.arg(1)
+                    "a via typed {} on {}; the specification declares through vias, F.Cu to B.Cu",
+                    strict::echo(&v.arg(1)),
+                    strict::echo(&layers)
                 ),
             ));
         }
@@ -555,7 +577,8 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         return Err(no(
             "PlanesDisagree",
             format!(
-                "the board's zones are {zones:?}; the specification declares {planes:?} (and ground's B.Cu zone at 2 layers)"
+                "the board's zones are {}; the specification declares {planes:?} (and ground's B.Cu zone at 2 layers)",
+                strict::echo(&zones)
             ),
         ));
     }
@@ -639,7 +662,8 @@ fn imu_agrees(
     let layer = one(&fp, "layer")?.and_then(|l| l.arg(1).map(str::to_owned));
     if layer.as_deref() != Some("F.Cu") {
         return Err(format!(
-            "its footprint is on {layer:?}; a part on the back is mirrored, and the declaration is for F.Cu"
+            "its footprint is on {}; a part on the back is mirrored, and the declaration is for F.Cu",
+            strict::echo(&layer)
         ));
     }
     let placed = part(&fp)?;
@@ -707,7 +731,7 @@ fn layer_of(item: &strict::Node<'_>, what: &str) -> Result<Layer, String> {
     match one(item, "layer")?.and_then(|l| l.arg(1)) {
         Some("F.Cu") => Ok(Layer::F),
         Some("B.Cu") => Ok(Layer::B),
-        other => Err(format!("{what} on layer {other:?}")),
+        other => Err(format!("{what} on layer {}", strict::echo(&other))),
     }
 }
 
@@ -758,6 +782,16 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         .all("footprint")
         .map(|fp| part(&fp))
         .collect::<Result<Vec<_>, _>>()?;
+    let rest = parts
+        .iter()
+        .map(|p| p.courtyard.len() + p.keepouts.len())
+        .sum::<usize>();
+    if items + rest > MAX_ITEMS {
+        return Err(format!(
+            "the board holds {items} copper items and {rest} courtyard edges and keepouts, which `check` also scans: {} items; the judges read at most {MAX_ITEMS}",
+            items + rest
+        ));
+    }
     let net = |item: &strict::Node<'_>, what: &str| {
         one(item, "net")?
             .and_then(|n| n.arg(1))
@@ -841,7 +875,10 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
                 return Err(format!("a thermal via at {at:?} has no size or drill"));
             };
             if v.arg(1).is_some() || layers != ["F.Cu", "B.Cu"] {
-                return Err(format!("a thermal via at {at:?} on {layers:?}"));
+                return Err(format!(
+                    "a thermal via at {at:?} on {}",
+                    strict::echo(&layers)
+                ));
             }
             let net = net(&v, "a via")?;
             let i = match routed
@@ -879,11 +916,13 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         {
             let class = named(&v, rule)?;
             return Err(if class.is_empty() {
-                format!("a via {size:?}/{drill:?} on {layers:?}")
+                format!("a via {size:?}/{drill:?} on {}", strict::echo(&layers))
             } else {
                 format!(
-                    "a via {size:?}/{drill:?} on {layers:?}{class} {}/{} nm",
-                    rule.via_nm, rule.drill_nm
+                    "a via {size:?}/{drill:?} on {}{class} {}/{} nm",
+                    strict::echo(&layers),
+                    rule.via_nm,
+                    rule.drill_nm
                 )
             });
         }
@@ -899,6 +938,12 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .map(str::to_owned)
             .ok_or("a zone has no layer")?;
         let name = net(&z, "a zone")?;
+        // As a refusal writes it (`AET-WO-1322`).
+        let zone = format!(
+            "zone `{}` on {}",
+            strict::shown(&name),
+            strict::shown(&layer)
+        );
         // A fill is solid and as the engine writes it: its judges assume
         // sure, solid copper (`AET-WO-1309` adversarial F3), and a relieved
         // pad's gap and spokes are the zone's (measured, B2).
@@ -918,7 +963,7 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
                     | "filled_polygon"
             ) {
                 return Err(format!(
-                    "zone `{name}` on {layer} has `{head}`, which the gate does not model"
+                    "{zone} has `{head}`, which the gate does not model"
                 ));
             }
         }
@@ -931,7 +976,7 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
                     "thermal_gap" | "thermal_bridge_width" | "island_removal_mode"
                 ) {
                     return Err(format!(
-                        "zone `{name}` on {layer}: its fill has `{head}`, which the gate does not model"
+                        "{zone}: its fill has `{head}`, which the gate does not model"
                     ));
                 }
             }
@@ -953,7 +998,7 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             )
         {
             return Err(format!(
-                "zone `{name}` on {layer}: its fill is not the engine's solid fill (min_thickness {}, island_removal_mode 0)",
+                "{zone}: its fill is not the engine's solid fill (min_thickness {}, island_removal_mode 0)",
                 crate::sexpr::mm(MIN_THICKNESS_NM)
             ));
         }
@@ -969,13 +1014,11 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             || at("thermal_bridge_width")? != Some(THERMAL_BRIDGE_NM)
         {
             return Err(format!(
-                "zone `{name}` on {layer}: its relief gap and spoke are not the engine's {THERMAL_GAP_NM}/{THERMAL_BRIDGE_NM} nm"
+                "{zone}: its relief gap and spoke are not the engine's {THERMAL_GAP_NM}/{THERMAL_BRIDGE_NM} nm"
             ));
         }
         if !zone_is_outline(&z, outline)? {
-            return Err(format!(
-                "zone `{name}` on {layer}: its outline is not the board's"
-            ));
+            return Err(format!("{zone}: its outline is not the board's"));
         }
         routed.zones.push((name, layer));
     }

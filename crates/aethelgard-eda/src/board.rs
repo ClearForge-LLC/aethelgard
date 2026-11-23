@@ -14,6 +14,8 @@
 //!   beats the project's, is replaced by the gate's ([`crate::rules::SETUP`]).
 //!   A board without one gets it.
 
+use std::rc::Rc;
+
 use crate::sexpr::{self, SexprError};
 use crate::strict::{self, Node, Tree};
 
@@ -76,31 +78,56 @@ impl BoardRefusal {
     }
 }
 
-/// A human name for an item that can carry a rule.
-fn name(item: &Node<'_>, within: &str) -> Result<Option<String>, BoardRefusal> {
-    let of = |s: String| {
-        if within.is_empty() {
-            s
-        } else {
-            format!("{s} of {within}")
+/// What carries an item: the nearest named item around it, and what carries
+/// that. Each label is held once and shared by every child scanned inside
+/// it, and the chain is rendered only into a refusal (`AET-WO-1322`; `1311`
+/// adversarial C: a copy per child took 3.0 GB for a 10 kB reference over
+/// 300 000 children).
+struct Within {
+    label: String,
+    footprint: bool,
+    parent: Option<Rc<Within>>,
+}
+
+/// `within` as a refusal names it, such as `pad 2 of footprint R7`; empty
+/// for an item at the top level.
+fn render(within: Option<&Within>) -> String {
+    let mut out = String::new();
+    let mut at = within;
+    while let Some(w) = at {
+        if !out.is_empty() {
+            out.push_str(" of ");
         }
-    };
+        out.push_str(&w.label);
+        at = w.parent.as_deref();
+    }
+    out
+}
+
+/// A human name for an item that can carry a rule, without what carries it.
+/// The file's text in it is [`strict::shown`]: as written when short and
+/// plain, else quoted and bounded (`AET-WO-1322`; `1311` adversarial J).
+fn name(item: &Node<'_>) -> Result<Option<String>, BoardRefusal> {
+    use strict::shown;
     Ok(match item.head() {
         Some("footprint" | "module") => {
             let reference = item
                 .field("Reference")?
                 .or_else(|| item.arg(1))
                 .unwrap_or("?");
-            Some(of(format!("footprint {reference}")))
+            Some(format!("footprint {}", shown(reference)))
         }
-        Some("pad") => Some(of(format!("pad {}", item.arg(1).unwrap_or("?")))),
+        Some("pad") => Some(format!("pad {}", shown(item.arg(1).unwrap_or("?")))),
         Some("zone") => {
             let net = item
                 .one("net_name")?
                 .and_then(|n| n.arg(1))
                 .filter(|n| !n.is_empty())
-                .map_or_else(|| "with no net".to_owned(), |n| format!("on net {n}"));
-            Some(of(format!("zone {net}")))
+                .map_or_else(
+                    || "with no net".to_owned(),
+                    |n| format!("on net {}", shown(n)),
+                );
+            Some(format!("zone {net}"))
         }
         _ => None,
     })
@@ -110,10 +137,9 @@ fn name(item: &Node<'_>, within: &str) -> Result<Option<String>, BoardRefusal> {
 /// KiCad's `(connect_pads (clearance <number>))` and nothing else: true only
 /// for a zone directly inside a footprint that carries a `keepout`. A
 /// `connect_pads` with anything else in it is refused as a local clearance.
-fn admitted_keepout(item: &Node<'_>, within: &str) -> Result<bool, BoardRefusal> {
+fn admitted_keepout(item: &Node<'_>, within: Option<&Within>) -> Result<bool, BoardRefusal> {
     if item.head() != Some("zone")
-        || !within.starts_with("footprint ")
-        || within.contains(" of ")
+        || !within.is_some_and(|w| w.footprint && w.parent.is_none())
         || item.one("keepout")?.is_none()
     {
         return Ok(false);
@@ -130,7 +156,8 @@ fn admitted_keepout(item: &Node<'_>, within: &str) -> Result<bool, BoardRefusal>
         Ok(true)
     } else {
         Err(BoardRefusal::LocalClearance(format!(
-            "the keepout zone of {within}"
+            "the keepout zone of {}",
+            render(within)
         )))
     }
 }
@@ -172,20 +199,17 @@ pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, Boar
     let root = tree.root();
     // Depth-first, in document order, without recursion. The top-level
     // setup block is skipped: the gate replaces it whole.
-    let mut stack: Vec<(Node<'_>, String)> = root
+    let mut stack: Vec<(Node<'_>, Option<Rc<Within>>)> = root
         .lists()
         .filter(|c| c.head() != Some("setup"))
-        .map(|c| (c, String::new()))
+        .map(|c| (c, None))
         .collect();
     stack.reverse();
     while let Some((item, within)) = stack.pop() {
         // What carries the item, for a refusal's `id`.
-        let at = || {
-            if within.is_empty() {
-                "the board".to_owned()
-            } else {
-                within.clone()
-            }
+        let at = || match &within {
+            None => "the board".to_owned(),
+            Some(w) => render(Some(w)),
         };
         // KiCad's keywords are lowercase atoms; a quoted, upper-case or
         // missing head is refused rather than guessed at (`CLEARANCE`, or
@@ -196,7 +220,14 @@ pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, Boar
         {
             return Err(BoardRefusal::OddList(at()));
         }
-        let here = name(&item, &within)?.unwrap_or_else(|| within.clone());
+        let here = match name(&item)? {
+            Some(label) => Some(Rc::new(Within {
+                label,
+                footprint: matches!(item.head(), Some("footprint" | "module")),
+                parent: within.clone(),
+            })),
+            None => within.clone(),
+        };
         match item.head() {
             // Every clearance is a rule but a custom pad's shape option,
             // `(clearance outline)` or `(clearance convexhull)`, which stays. Any
@@ -208,7 +239,10 @@ pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, Boar
             }
             Some("net_class") => {
                 let class = item.arg(1).unwrap_or("?");
-                return Err(BoardRefusal::NetClass(format!("net class {class}")));
+                return Err(BoardRefusal::NetClass(format!(
+                    "net class {}",
+                    strict::shown(class)
+                )));
             }
             Some(token) if waives(&item) => {
                 return Err(BoardRefusal::Waiver(format!("{} ({token})", at())));
@@ -216,7 +250,7 @@ pub fn prepare_read(tree: &Tree, text: &str, setup: &str) -> Result<String, Boar
             _ => {}
         }
         let children: Vec<_> = item.lists().collect();
-        let keepout = admitted_keepout(&item, &within)?;
+        let keepout = admitted_keepout(&item, within.as_deref())?;
         for child in children.into_iter().rev() {
             // A vendored footprint's keepout zone carries KiCad's own
             // `(connect_pads (clearance N))`, which binds nothing in a zone

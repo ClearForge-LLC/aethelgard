@@ -43,7 +43,9 @@
 //! bound depends on every child of the copper it reads, refuses them; KiCad
 //! judges them for DRC and ERC).
 
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::{self, Write as _};
 use std::rc::Rc;
 
 use crate::sexpr::{self, SexprError, Sx};
@@ -91,7 +93,7 @@ pub enum Refusal {
         first: String,
         child: String,
     },
-    #[error("{path} names the field {name:?} twice; KiCad keeps one, so neither is read")]
+    #[error("{path} names the field {} twice; KiCad keeps one, so neither is read", echo(.name))]
     FieldTwice {
         kind: Kind,
         path: String,
@@ -106,7 +108,7 @@ pub enum Refusal {
         name: String,
         canonical: &'static str,
     },
-    #[error("{path} quotes its keyword {word:?}, which KiCad does not read as one")]
+    #[error("{path} quotes its keyword {}, which KiCad does not read as one", echo(.word))]
     Quoted {
         kind: Kind,
         path: String,
@@ -119,14 +121,15 @@ pub enum Refusal {
         child: String,
     },
     #[error(
-        "{path} gives {text:?} where KiCad reads a number; a number is `-?[0-9]+(.[0-9]{{1,6}})?`, bare"
+        "{path} gives {} where KiCad reads a number; a number is `-?[0-9]+(.[0-9]{{1,6}})?`, bare",
+        echo(.text)
     )]
     Number {
         kind: Kind,
         path: String,
         text: String,
     },
-    #[error("{path} is version {found}; KiCad 10.0.7 writes {want}, and no other is read")]
+    #[error("{path} is version {}; KiCad 10.0.7 writes {want}, and no other is read", shown(.found))]
     Version {
         kind: Kind,
         path: String,
@@ -142,7 +145,8 @@ pub enum Refusal {
         bytes: usize,
     },
     #[error(
-        "{path} names the layer {name:?}, which is not a canonical name in the board's layer table{wildcards}"
+        "{path} names the layer {}, which is not a canonical name in the board's layer table{wildcards}",
+        echo(.name)
     )]
     Layer {
         kind: Kind,
@@ -150,6 +154,71 @@ pub enum Refusal {
         name: String,
         wildcards: String,
     },
+}
+
+/// The most bytes of a file's own text a refusal writes (`AET-WO-1322`;
+/// `1311` adversarial J: a 14 MB layer name gave 49 MB on stdout). As
+/// `AET-WO-4407` bounds the pin check's echo, the rest is counted, never
+/// written.
+pub const MAX_ECHO_BYTES: usize = 200;
+
+/// Keeps the first [`MAX_ECHO_BYTES`] of what is written, cut on a
+/// character boundary, and counts every byte. Once a piece is cut, nothing
+/// after it is kept, so the head is always a prefix of the whole.
+struct Capped {
+    head: String,
+    bytes: usize,
+    cut: bool,
+}
+
+impl fmt::Write for Capped {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.bytes += s.len();
+        if !self.cut {
+            let mut end = s.len().min(MAX_ECHO_BYTES - self.head.len());
+            while !s.is_char_boundary(end) {
+                end -= 1;
+            }
+            self.head.push_str(&s[..end]);
+            self.cut = end < s.len();
+        }
+        Ok(())
+    }
+}
+
+/// `value` as `{:?}` writes it (a string quoted, a newline, a quote or a
+/// control character escaped), at most [`MAX_ECHO_BYTES`] of it: past that,
+/// the first bytes and the count. A refusal quotes the file's text through
+/// this, so no line of its own and nothing long reaches the output.
+pub fn echo(value: &(impl fmt::Debug + ?Sized)) -> String {
+    let mut c = Capped {
+        head: String::new(),
+        bytes: 0,
+        cut: false,
+    };
+    // `Capped` never fails, and a `Debug` of the file's text never does.
+    let _ = write!(c, "{value:?}");
+    if c.bytes <= MAX_ECHO_BYTES {
+        c.head
+    } else {
+        format!(
+            "{}… (the first {} of {} bytes as escaped)",
+            c.head,
+            c.head.len(),
+            c.bytes
+        )
+    }
+}
+
+/// `text` as written when it is at most [`MAX_ECHO_BYTES`] and `{:?}` would
+/// escape nothing in it (a reference such as `R7`, a pad number, a net
+/// name); otherwise [`echo`]'s quoted and bounded form.
+pub fn shown(text: &str) -> Cow<'_, str> {
+    if text.len() <= MAX_ECHO_BYTES && text.chars().all(|c| c.escape_debug().len() == 1) {
+        Cow::Borrowed(text)
+    } else {
+        Cow::Owned(echo(text))
+    }
 }
 
 impl Refusal {
@@ -1534,5 +1603,171 @@ mod tests {
         };
         assert_eq!(path.matches(&at).count(), depth);
         assert!(path.len() <= MAX_PATH_BYTES, "{}", path.len());
+    }
+
+    /// `AET-WO-1322` §5: the echo is cut on a character boundary whichever
+    /// byte of a 2-, 3- or 4-byte character the cap falls on, keeps a prefix
+    /// of what `{:?}` writes, and counts the rest.
+    #[test]
+    fn an_echo_is_cut_on_a_character_boundary_and_counted() {
+        for ch in ['é', '€', '😀'] {
+            for short in 0..5 {
+                let text = format!(
+                    "{}{}",
+                    "a".repeat(MAX_ECHO_BYTES - 1 - short),
+                    ch.to_string().repeat(4)
+                );
+                let full = format!("{text:?}");
+                let e = echo(&text);
+                if full.len() <= MAX_ECHO_BYTES {
+                    assert_eq!(e, full, "{ch} {short}");
+                    continue;
+                }
+                let tail = format!("… (the first {{}} of {} bytes as escaped)", full.len());
+                let (head, rest) = e.split_once('…').unwrap();
+                assert!(full.starts_with(head), "{ch} {short}: {e}");
+                assert!(
+                    head.len() <= MAX_ECHO_BYTES && head.len() + ch.len_utf8() > MAX_ECHO_BYTES,
+                    "{ch} {short}: {}",
+                    head.len()
+                );
+                assert_eq!(
+                    format!("…{rest}"),
+                    tail.replace("{}", &head.len().to_string())
+                );
+            }
+        }
+        // A newline, a CR and a quote reach no output unescaped, however many.
+        let e = echo("\n\r\"::warning::".repeat(1000).as_str());
+        assert!(!e.contains(['\n', '\r']) && e.len() < 300, "{e}");
+        // A list is bounded whole, not item by item.
+        let many: Vec<String> = (0..10_000).map(|i| format!("L{i}")).collect();
+        assert!(echo(&many).len() < 300);
+    }
+
+    /// A short plain name is written as it is, so every id and message that
+    /// names `R7` or `pad 1` reads as before; anything `{:?}` would escape,
+    /// or anything long, is quoted and bounded.
+    #[test]
+    fn a_short_plain_name_is_shown_as_written() {
+        for t in [
+            "R7",
+            "1",
+            "GND",
+            "/A",
+            "unconnected-(T-A-Pad1)",
+            "µ",
+            "F.Cu",
+        ] {
+            assert_eq!(shown(t), t);
+        }
+        for t in ["a\"b", "a\\b", "a\nb", "a'b", "\u{7}"] {
+            assert_eq!(shown(t), echo(t), "{t:?}");
+            assert!(shown(t).starts_with('"'), "{t:?}");
+        }
+        assert_eq!(
+            shown(&"R".repeat(MAX_ECHO_BYTES)),
+            "R".repeat(MAX_ECHO_BYTES)
+        );
+        assert!(shown(&"R".repeat(MAX_ECHO_BYTES + 1)).starts_with('"'));
+    }
+
+    /// `AET-WO-1322` (3), `1311` adversarial J: a 10 kB name planted where
+    /// each reader echoes the file's text (the strict reader's refusals,
+    /// `board::prepare`'s ids, `route::read`'s messages) reaches no refusal
+    /// whole: every message and id stays under 1 kB, and still begins with
+    /// what it names.
+    #[test]
+    fn a_long_name_reaches_no_refusal_whole() {
+        let n = "N".repeat(10_000);
+        let small = |what: &str, s: &str| {
+            assert!(s.len() < 1024, "{what}: {} bytes", s.len());
+            assert!(
+                s.contains("\"NNNN") && s.contains(" bytes as escaped)"),
+                "{what}: {s}"
+            );
+        };
+        // The strict reader.
+        let table = "(layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user))";
+        for (what, text) in [
+            (
+                "layer",
+                format!("(kicad_pcb {table} (segment (layer \"{n}\")))"),
+            ),
+            ("number", format!("(kicad_pcb (general (thickness {n})))")),
+            (
+                "quoted",
+                format!("(kicad_pcb (footprint \"X\" (pad \"1\" \"{n}\" rect)))"),
+            ),
+            (
+                "field",
+                format!(
+                    "(kicad_pcb (footprint \"X\" (property \"{n}\" \"a\") (property \"{n}\" \"b\")))"
+                ),
+            ),
+        ] {
+            let r = refused(&text);
+            small(what, &r.to_string());
+            assert!(r.id().unwrap().len() < 1024);
+        }
+        let r = version(&board(&format!("(kicad_pcb (version {n}))")).unwrap()).unwrap_err();
+        small("version", &r.to_string());
+        // The board's rules, whose ids are the names.
+        for (what, text) in [
+            (
+                "reference",
+                format!(
+                    "(kicad_pcb (footprint \"X\" (property \"Reference\" \"{n}\") (clearance 0.1)))"
+                ),
+            ),
+            (
+                "pad",
+                format!("(kicad_pcb (footprint \"X\" (pad \"{n}\" smd rect (clearance 0.1))))"),
+            ),
+            (
+                "zone",
+                format!("(kicad_pcb (zone (net_name \"{n}\") (connect_pads (clearance 0.1))))"),
+            ),
+            (
+                "net class",
+                format!("(kicad_pcb (net_class \"{n}\" \"x\"))"),
+            ),
+        ] {
+            let e = crate::board::prepare(&text, crate::rules::SETUP).unwrap_err();
+            small(what, &e.to_string());
+            small(what, e.id().unwrap());
+        }
+        // `route::read`, past the strict reader.
+        let read = |body: &str| {
+            let tree = board(&format!(
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (25 \"Edge.Cuts\" user) (40 \"{n}\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) {body})"
+            ))
+            .unwrap();
+            crate::route::read(&tree, &crate::stack::reference()).unwrap_err()
+        };
+        small(
+            "part",
+            &read(&format!(
+                "(footprint \"X\" (property \"Reference\" \"{n}\"))"
+            )),
+        );
+        small(
+            "pad number",
+            &read(&format!(
+                "(footprint \"X\" (at 5 5) (property \"Reference\" \"R1\") (pad \"{n}\" smd rect (padstack)))"
+            )),
+        );
+        small(
+            "segment layer",
+            &read(&format!(
+                "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"{n}\") (net \"A\"))"
+            )),
+        );
+        small(
+            "zone net",
+            &read(&format!(
+                "(zone (net \"{n}\") (layer \"F.Cu\") (priority 1))"
+            )),
+        );
     }
 }

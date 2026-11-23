@@ -3,12 +3,12 @@
 # copy of the branch's tree, measured by run.sh, and compared with the base
 # by compare.sh, which must report a difference. One tree and one target dir
 # serve all three in turn, so each rebuild is incremental.
-# Usage: mutants.sh <branch tree (pristine)> <scratch dir> <base out dir> <repo>
+# Usage: mutants.sh <branch tree (pristine)> <scratch dir> <base out dir> <repo> [ids...]
 set -uo pipefail
-src=$1 scratch=$2 base=$3 repo=$4
+src=$1 scratch=$2 base=$3 repo=$4; shift 4
 here=$(cd "$(dirname "$0")" && pwd)
 file=crates/aethelgard-eda/src/schematic_arms.rs
-for m in M1 M2 M3; do
+for m in ${*:-M1 M2 M3}; do
   rm -rf "$scratch/mut-src"; mkdir -p "$scratch/mut-src"
   cp -a "$src/." "$scratch/mut-src/"
   python3 -I - "$scratch/mut-src/$file" "$m" <<'PY'
@@ -20,7 +20,12 @@ code, tests = s[:cut], s[cut:]
 if m == "M1":   # W25Q64JVxIQ's WP and HOLD rows swapped
     old = '        ("3", Role::Strap("WP")),\n        ("7", Role::Strap("HOLD")),\n'
     new = '        ("7", Role::Strap("HOLD")),\n        ("3", Role::Strap("WP")),\n'
-elif m == "M2": # BMP581's second 100 nF decoupler left out
+elif m == "M2": # BMP581's second 100 nF decoupler left out, its DECOUPLERS
+                # count lowered to match, so 1320's count check compiles it and
+                # the harness judges the bytes (AET-WO-1322; 1321 F1)
+    count = '    ("BMP581", 2),\n'
+    assert code.count(count) == 1, m
+    code = code.replace(count, '    ("BMP581", 1),\n')
     old = '    passives: &[Passive::Decouple("100n"), Passive::Decouple("100n")],\n'
     new = '    passives: &[Passive::Decouple("100n")],\n'
 else:           # DRV8833's CVCP and CVINT drawn in the other order

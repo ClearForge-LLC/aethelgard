@@ -5247,21 +5247,24 @@ mod tests {
     }
 
     /// `AET-WO-1311` §1.2: `read` takes at most [`MAX_ITEMS`] copper items,
-    /// pads included; one more is refused before any is read.
+    /// pads included; one more is refused before any is read. Since
+    /// `AET-WO-1322` the footprint's four courtyard edges count too.
     #[test]
     fn a_board_past_the_item_cap_is_refused() {
-        let board = |pads: usize, segments: usize| {
+        let keepout = "(zone (layer \"F.Cu\") (keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints allowed)) (polygon (pts (xy 4 4) (xy 6 4) (xy 6 6) (xy 4 6))))";
+        let with = |pads: usize, segments: usize, zone: &str| {
             let pad = "(pad \"1\" smd rect (at 0 0) (size 0.5 0.5) (layers \"F.Cu\") (net \"/A\"))";
             let segment =
                 "(segment (start 1 1) (end 2 1) (width 0.2) (layer \"F.Cu\") (net \"/A\"))";
             strict::board(&format!(
-                "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (31 \"F.CrtYd\" user) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) (footprint \"x\" (at 5 5) (property \"Reference\" \"R1\") {} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\"))) {})",
+                "(kicad_pcb (layers (0 \"F.Cu\" signal) (2 \"B.Cu\" signal) (31 \"F.CrtYd\" user) (25 \"Edge.Cuts\" user)) (gr_rect (start 0 0) (end 10 10) (layer \"Edge.Cuts\")) (footprint \"x\" (at 5 5) (property \"Reference\" \"R1\") {} (fp_rect (start -1 -1) (end 1 1) (layer \"F.CrtYd\")) {zone}) {})",
                 pad.repeat(pads),
                 segment.repeat(segments)
             ))
             .unwrap()
         };
-        assert!(read_ref(&board(2, MAX_ITEMS - 2)).is_ok());
+        let board = |pads, segments| with(pads, segments, "");
+        assert!(read_ref(&board(2, MAX_ITEMS - 6)).is_ok());
         for (pads, segments) in [(2, MAX_ITEMS - 1), (MAX_ITEMS + 1, 0)] {
             let e = read_ref(&board(pads, segments)).unwrap_err();
             assert!(
@@ -5269,6 +5272,19 @@ mod tests {
                 "{e}"
             );
         }
+        let e = read_ref(&board(2, MAX_ITEMS - 5)).unwrap_err();
+        assert!(
+            e.contains(&format!(
+                "{} copper items and 4 courtyard edges and keepouts, which `check` also scans: {} items",
+                MAX_ITEMS - 3,
+                MAX_ITEMS + 1
+            )),
+            "{e}"
+        );
+        // A footprint's keepout counts as one.
+        assert!(read_ref(&with(2, MAX_ITEMS - 7, keepout)).is_ok());
+        let e = read_ref(&with(2, MAX_ITEMS - 6, keepout)).unwrap_err();
+        assert!(e.contains("5 courtyard edges and keepouts"), "{e}");
     }
 
     /// A board past the grid's cap is refused before anything is allocated.
