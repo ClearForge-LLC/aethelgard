@@ -752,7 +752,7 @@ fn table() -> Vec<Entry> {
     // `HSECSSON`). Renode measured in `spike/4240b/renode/results.md`.
     let clock_rule = "the twin's HSE clock rule (aethelgard_twin::hse::judge_clock, clock_access): each RCC_CR word is RM0433 Rev 9's reset 0x0000_0001 (p. 383) with the header's bits set in the contract's order, each written once, in order, with the HSERDY, PLL1RDY and SWS reads between; the Kani oracle's RCC clause takes the same words";
     let pll_rule = format!(
-        "on an HSE board, aethelgard_ir::clock::judge_tree (shares no code with the solver's choice of words; refuses validate and solve when it fails), held again by the twin's HSE clock rule (clock_access: the topology's word, once, in order) and by the Kani oracle's RCC clause, whose expected word is the topology's; {SWITCH_RULE}"
+        "aethelgard_ir::clock::judge_tree, on an HSE board (shares no code with the solver's choice of words; refuses validate and solve when it fails), held again by the twin's HSE clock rule (clock_access: the topology's word, once, in order) and by the Kani oracle's RCC clause, whose expected word is the topology's; {SWITCH_RULE}"
     );
     let pll_rule = pll_rule.as_str();
     let hse_measured =
@@ -2953,8 +2953,10 @@ mod tests {
             }
         );
         assert_eq!(err.kind(), "LedgerFieldUnclassified");
-        // The access is part of the key: a written select is the rule's, the
-        // same field at reset a tag.
+        // The access is part of the key: a written select is the rule's; the
+        // same field at reset is the rule's too since `AET-WO-4240e` D2
+        // (`kernel_clock::check` takes each mux's reset input), with another
+        // entry and judge.
         assert_eq!(
             classify(
                 &TABLE,
@@ -2979,8 +2981,16 @@ mod tests {
             )
             .unwrap()
             .class,
-            Class::IgnoredByModel
+            Class::IndependentRule
         );
+        let judge = |access| {
+            classify(&TABLE, "RCC", "D2CCIP1R", "SPI123SEL", access, "a")
+                .unwrap()
+                .judge
+                .clone()
+        };
+        assert_ne!(judge(FieldAccess::Written), judge(FieldAccess::Reset));
+        assert!(judge(FieldAccess::Reset).starts_with("aethelgard_ir::kernel_clock::check"));
         // A gate no generator emits (MDMA) is unknown.
         assert!(
             classify(

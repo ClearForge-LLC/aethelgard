@@ -17,11 +17,11 @@ use aethelgard_svd_hal::board::{BOOT_PLL1_NOT_LOCKED, BoardError, SWITCH_READS, 
 use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
 
-/// `RCC_CR` (offset 0x000, reset `0x0000 0001`, p. 383): `HSION` 0, `PLL1ON`
-/// 24, `PLL1RDY` 25; `RCC_PLLCKSELR` 0x028, `RCC_PLLCFGR` 0x02C,
-/// `RCC_PLL1DIVR` 0x030 (§8.7.11–§8.7.13); `RCC_D2CCIP1R` 0x050 (§8.7.20).
-const CR_ON: u32 = 0x0100_0001;
-const CR_OFF: u32 = 0x0000_0001;
+/// `RCC_CR` (offset 0x000, p. 383): `PLL1ON` 24, `PLL1RDY` 25, each changed
+/// by a read-modify-write of its one bit, every other bit as read;
+/// `RCC_PLLCKSELR` 0x028, `RCC_PLLCFGR` 0x02C, `RCC_PLL1DIVR` 0x030
+/// (§8.7.11–§8.7.13); `RCC_D2CCIP1R` 0x050 (§8.7.20).
+const PLL1ON: u32 = 1 << 24;
 const PLL1RDY: u32 = 1 << 25;
 
 fn solved(path: &str) -> (SolvedTopology, aethelgard_ir::PinTable) {
@@ -90,20 +90,26 @@ fn the_switch_locks_pll1_before_the_select_and_stops_it_after() {
             w(0x028, k.pllckselr),
             w(0x02C, k.pllcfgr),
             w(0x030, k.pll1divr),
-            w(0x000, CR_ON),
+            format!("r.modify(TOKEN, Block::Rcc, 0x000, |v| v | {PLL1ON:#010x});"),
             "for _ in 0..pll_polls {".to_owned(),
             format!("r.read(TOKEN, Block::Rcc, 0x000) & {PLL1RDY:#010x} != 0"),
             "return Err(KernelClockFault::Pll1NotLocked);".to_owned(),
             // SPI123SEL `100`, `per_ck` (p. 414), every other field at reset.
             w(0x050, 0x0000_4000),
-            w(0x000, CR_OFF),
+            format!("r.modify(TOKEN, Block::Rcc, 0x000, |v| v & !{PLL1ON:#010x});"),
             "Ok(SpiKernels { _private: () })".to_owned(),
         ],
     );
     // Exactly `SWITCH_READS` reads of `RCC_D2CCIP1R`, straight-line, between
     // the select and `PLL1ON` cleared.
     let select = body.find(&w(0x050, 0x0000_4000)).unwrap();
-    let off = body.find(&w(0x000, CR_OFF)).unwrap();
+    let off = body
+        .find(&format!(
+            "r.modify(TOKEN, Block::Rcc, 0x000, |v| v & !{PLL1ON:#010x});"
+        ))
+        .unwrap();
+    // No whole-word `RCC_CR` write: every other bit stays as read.
+    assert!(!body.contains("r.write(TOKEN, Block::Rcc, 0x000,"));
     let settle = "let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition";
     assert_eq!(
         body[select..off].matches(settle).count(),

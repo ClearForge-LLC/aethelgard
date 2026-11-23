@@ -715,6 +715,14 @@
       "reason": "D2CKRDY is a tag in the model, set by hardware on silicon. Bench: read back after boot."
     },
     {
+      "register": "RCC.CR",
+      "class": "silicon-only",
+      "fields": [
+        "PLL1RDY"
+      ],
+      "reason": "Polled by the kernel-clock switch (AET-WO-4240e); the stock RCC reads PLL1RDY = PLL1ON at once (STM32H7_RCC.cs L197). Judged by the bench row and Tviburi's RCC guard."
+    },
+    {
       "register": "FLASH.OPTSR_CUR",
       "class": "silicon-only",
       "fields": [

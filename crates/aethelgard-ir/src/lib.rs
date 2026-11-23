@@ -4551,7 +4551,7 @@ impl SolvedTopology {
         self.validate_pin_speeds()
     }
 
-    /// Sets `spi_controllers` and `i2c_timings` to what `solve` derives for
+    /// Sets `spi_controllers`, `i2c_timings` and `clock.kernel_switch` to what `solve` derives for
     /// the SPI and I2C peripherals of `assignments`, from `clock` and, for
     /// SPI, the lowest `rate_hz` of each controller's lines in `spi_lines`;
     /// a peripheral it derives nothing for is left out, which `validate`
@@ -4561,6 +4561,8 @@ impl SolvedTopology {
     /// builds one (`AET-WO-4230`); `solve` fills all three itself.
     pub fn derive_controllers(&mut self) {
         (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
+        // The kernel-clock switch those controllers need (`AET-WO-4240e`).
+        self.clock.kernel_switch = solve::kernel_switch(&self.clock, &self.spi_controllers);
         let speeds: BTreeMap<String, u8> = solve::solved_pins(self)
             .filter_map(|(net, pin)| Some((net.clone(), solve::pin_speed(self, net, pin).ok()?)))
             .collect();

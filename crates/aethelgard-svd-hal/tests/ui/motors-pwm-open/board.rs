@@ -879,7 +879,8 @@ impl Rcc {
     /// `SPI123SEL` leaves its reset input `pll1_q_ck`, and a kernel mux switches only
     /// while its old and new inputs both run (RM0433 Rev 9 §8.5.10, pp. 371–372;
     /// `AET-WO-4240e`): PLL1 from the HSI, its three words as solved (`clock.kernel_switch`)
-    /// with PLL1 off, `PLL1ON`, at most `pll_polls` reads for `PLL1RDY`; the selects;
+    /// with PLL1 off, `PLL1ON` (a read-modify-write of `RCC_CR`, which keeps every other
+    /// bit), at most `pll_polls` reads for `PLL1RDY`; the selects;
     /// [`SWITCH_READS`] reads of the last select register through the transition, one
     /// line each; then
     /// `PLL1ON` cleared, since nothing else takes a clock from PLL1. A lock that does
@@ -894,7 +895,8 @@ impl Rcc {
         r.write(TOKEN, Block::Rcc, 0x028, 0x00000050); // PLLCKSELR: PLLSRC hsi_ck
         r.write(TOKEN, Block::Rcc, 0x02c, 0x0002000c); // PLLCFGR: DIVQ1EN
         r.write(TOKEN, Block::Rcc, 0x030, 0x0101020f); // PLL1DIVR
-        r.write(TOKEN, Block::Rcc, 0x000, 0x01000001); // CR: HSION, PLL1ON
+        // CR: PLL1ON, every other bit as read.
+        r.modify(TOKEN, Block::Rcc, 0x000, |v| v | 0x01000000);
         let mut locked = false;
         for _ in 0..pll_polls {
             if r.read(TOKEN, Block::Rcc, 0x000) & 0x02000000 != 0 {
@@ -914,7 +916,8 @@ impl Rcc {
         let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
         let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
         let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
-        r.write(TOKEN, Block::Rcc, 0x000, 0x00000001); // CR: HSION, PLL1ON cleared
+        // CR: PLL1ON cleared, every other bit as read.
+        r.modify(TOKEN, Block::Rcc, 0x000, |v| v & !0x01000000);
         Ok(SpiKernels { _private: () })
     }
 }

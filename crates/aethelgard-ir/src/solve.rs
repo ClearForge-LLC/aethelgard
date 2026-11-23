@@ -598,22 +598,7 @@ fn solve_inner(
         let c = spi_controller(&bus.id, p, declared, &out.clock)?;
         out.spi_controllers.insert(p.clone(), c);
     }
-    // `per_ck` is selected away from `SPI123SEL`'s reset input `pll1_q_ck`,
-    // so PLL1 runs from the HSI across the select (`AET-WO-4240e` D1 (a)).
-    if out.clock.hse.is_none()
-        && out
-            .spi_controllers
-            .values()
-            .any(|c| c.kernel == SpiKernel::PerCk)
-    {
-        let [pllckselr, pllcfgr, pll1divr] =
-            hsi_switch_words().expect("the HSI's band has a PLL1 setting (unit test)");
-        out.clock.kernel_switch = Some(crate::clock::SolvedKernelSwitch {
-            pllckselr,
-            pllcfgr,
-            pll1divr,
-        });
-    }
+    out.clock.kernel_switch = kernel_switch(&out.clock, &out.spi_controllers);
     for bus in &spec.i2c_buses {
         let p = out.assignments[&bus.sda.net].peripheral.clone();
         let t = i2c_controller(&bus.id, &out.clock, &p)?;
@@ -1050,6 +1035,27 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
         }
     }
     None
+}
+
+/// The switch's PLL1 a board needs (`AET-WO-4240e` D1 (a)): `per_ck` is
+/// selected away from `SPI123SEL`'s reset input `pll1_q_ck` (RM0433 Rev 9
+/// p. 414), so on a board with no HSE tree whose SPI1–3 take `per_ck`, PLL1
+/// runs from the HSI across the select ([`hsi_switch_words`]). `None`
+/// otherwise.
+pub(crate) fn kernel_switch(
+    clock: &SolvedClock,
+    spi: &BTreeMap<String, crate::SolvedSpiController>,
+) -> Option<crate::clock::SolvedKernelSwitch> {
+    if clock.hse.is_some() || !spi.values().any(|c| c.kernel == SpiKernel::PerCk) {
+        return None;
+    }
+    let [pllckselr, pllcfgr, pll1divr] =
+        hsi_switch_words().expect("the HSI's band has a PLL1 setting (unit test)");
+    Some(crate::clock::SolvedKernelSwitch {
+        pllckselr,
+        pllcfgr,
+        pll1divr,
+    })
 }
 
 /// The solver's choice of PLL1 words for the kernel-clock switch on a board

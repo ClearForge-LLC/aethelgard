@@ -260,10 +260,10 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `39db0635…279b`, each hashes to the digest before, `7df27b59…ec96`,
 /// `871c2296…1453` and `6962b767…618a`, measured by
 /// `spike/4300j/order_back.rs`; the boot image did not move.
-/// Moved in `AET-WO-4240e` (D2, D6, ruled): the specification lost its three
-/// stale selector acknowledgements, so the three texts move by their
-/// specification sha line (with `39db0635…279b` put back for
-/// `9183270c…2d4c`, the two platforms hash to the digests before,
+/// Moved in `AET-WO-4240e` (D2, D6, Q8, ruled): the specification lost its
+/// three stale selector acknowledgements and gained `RCC.CR` `PLL1RDY`'s, so
+/// the three texts move by their specification sha line (with
+/// `39db0635…279b` put back for `c27608ad…ddba`, the two platforms hash to the digests before,
 /// `39f2aedd…5f04` and `30f151af…c656`, measured by
 /// `spike/4240e/order_back.rs`), and `firmware/src/main.rs` also by the
 /// kernel-clock switch's fault arm and its two constants (it was
@@ -271,15 +271,15 @@ fn digests() -> Vec<(&'static str, String)> {
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "25b41c339b0d751afa7205c634f4b5e01ec78952decddc496be2e4abaedbc1e5",
+        "0fb98b5ca186c25a1eea77e8f8a659ce571fa72f6a08b0f7bca25140ff652285",
     ),
     (
         "platform",
-        "a92085cf192cce837708b406053609842dd5c5c6cf8407c8e73355057dd8c007",
+        "57fdb53848f99f8d328dae4b9daefb379c7179aaaf9299f3ecfe7624b22bcd72",
     ),
     (
         "platform faulted",
-        "348fd55f2d66a4210227f4062fcfca8a6e81da0c6085ba33c9645cde48f2bb62",
+        "62cfa25094c2fd243ceb7e268504c70cffdb0ba3abc7fdadf62a6fd94a90e7db",
     ),
     (
         "boot image",
