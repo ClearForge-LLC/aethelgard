@@ -651,12 +651,7 @@ struct Run<'a> {
 /// model logs them (each byte in upper-case hexadecimal, joined by spaces),
 /// first byte most significant, with their count; `None` for any other line.
 fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
-    let rest = line
-        .strip_prefix("[NOISY] ")?
-        .strip_prefix(device)?
-        .strip_prefix(": ")?
-        .strip_prefix(what)?
-        .strip_prefix(' ')?;
+    let rest = noisy(line, device)?.strip_prefix(what)?.strip_prefix(' ')?;
     let bytes: Vec<u8> = rest
         .split(' ')
         .map(|b| {
@@ -665,10 +660,60 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
                 .flatten()
         })
         .collect::<Option<_>>()?;
+    packed(&bytes)
+}
+
+/// What a `[NOISY]` line of `device`'s model says, after `{device}: `.
+fn noisy<'l>(line: &'l str, device: &str) -> Option<&'l str> {
+    line.strip_prefix("[NOISY] ")?
+        .strip_prefix(device)?
+        .strip_prefix(": ")
+}
+
+/// Bytes as one value, first byte most significant, with their count;
+/// `None` for none or more than fit.
+fn packed(bytes: &[u8]) -> Option<(u64, usize)> {
     (1..=8).contains(&bytes.len()).then(|| {
         let v = bytes.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
         (v, bytes.len())
     })
+}
+
+/// The bytes of a BMP581 witness line (`AET-WO-3307`), as our model logs a
+/// transaction, one line each (`BMP581.cs` `FinishTransmission`): `write
+/// 0xRR <- 0xBB …`, or `<- (none)`, writes the pointer and the bytes after
+/// it; `read 0xRR -> 0xVV …` writes the pointer and reads the bytes. Each
+/// byte is `0x` and two upper-case digits, as `Join` writes it, and the
+/// pointer is the model's, 7 bits; a line that is not so says nothing. `what` is `Write` or `Read`, as for
+/// [`witness_bytes`]; `None` for any other line.
+fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
+    let byte = |t: &str| {
+        let d = t.strip_prefix("0x")?;
+        (d.len() == 2 && d.bytes().all(|c| matches!(c, b'0'..=b'9' | b'A'..=b'F')))
+            .then(|| u8::from_str_radix(d, 16).ok())
+            .flatten()
+    };
+    let (verb, rest) = noisy(line, device)?.split_once(' ')?;
+    let (pointer, rest) = rest.split_once(' ')?;
+    let (arrow, rest) = rest.split_once(' ')?;
+    let pointer = byte(pointer).filter(|&p| p <= 0x7F)?;
+    let bytes: Vec<u8> = if rest == "(none)" {
+        Vec::new()
+    } else {
+        rest.split(' ').map(byte).collect::<Option<_>>()?
+    };
+    let (written, read) = match (verb, arrow) {
+        ("write", "<-") => ([&[pointer], &bytes[..]].concat(), None),
+        ("read", "->") if !bytes.is_empty() => (vec![pointer], Some(bytes)),
+        _ => return None,
+    };
+    // A read too wide to hold says nothing of its value, but its pointer
+    // stands, as the `Write` line of the other form does (adversarial 2).
+    match what {
+        "Write" => packed(&written),
+        "Read" => packed(&read?),
+        _ => None,
+    }
 }
 
 /// `lines` as `device`'s transactions (`AET-WO-3306`), each its range of
@@ -1015,8 +1060,20 @@ impl<'a> Run<'a> {
             return None;
         };
         let observed = observed.as_deref()?;
+        // A witness is read in its script's form: our BMP581's, or `Write`
+        // and `Read` (`AET-WO-3307`). A line in the other form is not the
+        // device's model's.
+        let bmp581 = expected
+            .iter()
+            .any(|l| bmp581_bytes(l, device, "Write").is_some());
         let logged = |lines: &[String], what: &str| {
-            lines.iter().find_map(|l| witness_bytes(l, device, what))
+            lines.iter().find_map(|l| {
+                if bmp581 {
+                    bmp581_bytes(l, device, what)
+                } else {
+                    witness_bytes(l, device, what)
+                }
+            })
         };
         let reg_want = logged(expected, "Write")?;
         if Some(reg_want) != step_shape(write, *read_width).0 || *read_width > 4 {
