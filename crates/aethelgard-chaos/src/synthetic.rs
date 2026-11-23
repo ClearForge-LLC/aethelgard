@@ -48,6 +48,7 @@ pub fn header(seed: u64) -> Header {
             ("spec.json".to_owned(), Sha256::digest(b"spec").into()),
         ],
         tools: Vec::new(),
+        tool_sha256: Vec::new(),
     }
 }
 

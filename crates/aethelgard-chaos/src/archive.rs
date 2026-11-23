@@ -333,6 +333,7 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         Fault::Version(found) => ArchiveError::UnknownVersion {
             item: "manifest",
             found,
+            changes: &[],
         },
         Fault::Malformed(reason) => ArchiveError::MalformedManifest(reason.to_owned()),
         Fault::UnknownKind(_) => ArchiveError::MalformedManifest("unexpected kind".to_owned()),
@@ -378,6 +379,7 @@ pub fn replay_dir(dir: &Path) -> Result<Replayed, ArchiveError> {
         Fault::Version(found) => ArchiveError::UnknownVersion {
             item: "header",
             found,
+            changes: crate::event::changes_since(found),
         },
         Fault::Malformed(reason) => ArchiveError::MalformedHeader(reason.to_owned()),
         Fault::UnknownKind(_) => ArchiveError::MalformedHeader("unexpected kind".to_owned()),

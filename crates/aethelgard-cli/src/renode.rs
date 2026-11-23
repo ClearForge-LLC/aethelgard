@@ -175,7 +175,7 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
             None => Ok((Vec::new(), Some(Machine { cpus, peripherals }))),
             Some(line) => Ok((
                 vec![Finding::plain(
-                    "platform_load_error",
+                    aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING,
                     line.trim().to_owned(),
                 )],
                 None,
@@ -185,7 +185,7 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
             let detail = lines.get(i + 1).map(|l| l.trim()).unwrap_or_default();
             Ok((
                 vec![Finding::plain(
-                    "platform_load_error",
+                    aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING,
                     format!("{} {detail}", lines[i].trim()).trim().to_owned(),
                 )],
                 None,
@@ -292,7 +292,7 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
     let text = out.text();
     if let Some(line) = text.lines().find(|l| l.contains(ABORTED)) {
         return Finding::plain(
-            "cpu_aborted",
+            aethelgard_chaos::campaign::CPU_ABORTED_FINDING,
             format!(
                 "the machine aborted and the run never ended; killed at the {bound:?} bound: {}",
                 line.trim_matches(['\r', ' '])
@@ -301,14 +301,14 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
     }
     match bound {
         Bound::Wall => Finding::plain(
-            "wall_bound_exceeded",
+            aethelgard_chaos::campaign::WALL_BOUND_FINDING,
             format!(
                 "the boot ran past the {} s wall-clock bound and was killed",
                 BOOT_BOUNDS.wall.as_secs()
             ),
         ),
         Bound::Memory => Finding::plain(
-            "memory_cap_exceeded",
+            aethelgard_chaos::campaign::MEMORY_CAP_FINDING,
             format!(
                 "Renode's resident memory passed the {} MiB cap and it was killed",
                 BOOT_BOUNDS.rss_kib / 1024
@@ -2444,9 +2444,9 @@ pub fn judge_boot(
         let message = format!("{} {detail}", lines[i].trim()).trim().to_owned();
         let kind = if lines[i].contains("error executing command 'machine LoadPlatformDescription")
         {
-            "platform_load_error"
+            aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING
         } else if lines[i].contains("error executing command 'sysbus LoadELF") {
-            "firmware_load_error"
+            aethelgard_chaos::campaign::FIRMWARE_LOAD_FINDING
         } else {
             return Err(untrusted(format!("a monitor command failed: {message}")));
         };
@@ -2812,13 +2812,11 @@ pub fn judge_boot(
             w.echo = "not_judged";
         }
     }
+    // A core that slept or stopped executed fewer instructions than the run
+    // holds; with the boot word set too, it is the firmware's own doing, so
+    // it is the run's finding, `cpu_halted` below, never a stop of the
+    // campaign (`AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10).
     let halted = observed.instructions < expected;
-    if booted && halted {
-        return Err(untrusted(format!(
-            "the boot word is set but the core executed {} of {expected} instructions",
-            observed.instructions
-        )));
-    }
     // A line of ours lagging its stamp is a core that executed fewer
     // instructions than its time held: with the whole run's executed, the
     // witnesses disagree.
@@ -2889,7 +2887,7 @@ pub fn judge_boot(
             .map(|s| format!("; {s}: the core slept or stopped before it"))
             .unwrap_or_default();
         findings.push(Finding::plain(
-            "cpu_halted",
+            aethelgard_chaos::campaign::HALTED_FINDING,
             format!(
                 "the core executed {} of the run's {expected} instructions{lag}",
                 observed.instructions
@@ -4358,7 +4356,7 @@ pub fn build(version_stdout: &[u8]) -> Option<String> {
 /// (`AET-WO-4200`), so an I2C record holding `RXP`'s word is invalid.
 pub fn status_name(wire: &aethelgard_twin::boot::Wire, status: u32) -> &'static str {
     match wire.status(status) {
-        Some(None) => "ok",
+        Some(None) => aethelgard_chaos::campaign::STATUS_OK,
         Some(Some("TXIS")) => "timeout_txis",
         Some(Some("TC")) => "timeout_tc",
         Some(Some("RXNE")) => "timeout_rxne",
@@ -5226,7 +5224,7 @@ mod tests {
         });
         let mut f: Vec<Finding> = slept
             .into_iter()
-            .map(|s| Finding::plain("cpu_halted", s))
+            .map(|s| Finding::plain(aethelgard_chaos::campaign::HALTED_FINDING, s))
             .collect();
         f.extend(witness_findings_of(&motors[0], &w));
         f.extend(anchor_findings(

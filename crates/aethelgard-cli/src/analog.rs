@@ -23,7 +23,7 @@ use std::path::Path;
 
 use aethelgard_chaos::campaign;
 use aethelgard_chaos::power::{self, Crossing};
-use aethelgard_chaos::record::Droop;
+use aethelgard_chaos::record::RailDroop;
 use aethelgard_ir::SolvedTopology;
 use aethelgard_twin::analog::{self, Deck};
 use serde_json::{Value, json};
@@ -84,18 +84,66 @@ pub struct Identity {
     /// The ngspice release its library's banner named, in a run that started
     /// the library and accepted it (`AET-WO-1606`); none otherwise.
     pub ngspice: Option<String>,
+    /// With it, the sha256 of the file the bridge's loader mapped the library
+    /// from, lower-case hex (`AET-WO-2310`).
+    pub ngspice_library_sha256: Option<String>,
+}
+
+/// The internal name the library's sha256 travels under beside
+/// [`campaign::NGSPICE`] in a verdict's tools (`AET-WO-2310`): the campaign
+/// folds it into ngspice's header entry, and a boot whose bridges mapped two
+/// different files stops on it as two versions. Never a header name.
+pub const NGSPICE_LIBRARY: &str = "ngspice-library";
+
+/// The most bytes the CLI reads of the library file (libngspice 44.2 is
+/// 8.9 MB): a larger file is refused, never hashed in part.
+const MAX_LIBRARY_BYTES: u64 = 256 << 20;
+
+/// The sha256 of the library file the bridge named, lower-case hex: an
+/// absolute, canonical path to a regular file of at most
+/// [`MAX_LIBRARY_BYTES`].
+fn library_sha256(path: &str) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let p = Path::new(path);
+    if !p.is_absolute() || fs::canonicalize(p).ok().as_deref() != Some(p) {
+        return Err(format!("`{path}` is not an absolute, canonical path"));
+    }
+    let file = fs::File::open(p).map_err(|e| format!("`{path}`: {e}"))?;
+    let meta = file.metadata().map_err(|e| format!("`{path}`: {e}"))?;
+    if !meta.is_file() || meta.len() > MAX_LIBRARY_BYTES {
+        return Err(format!(
+            "`{path}` is not a regular file of at most {MAX_LIBRARY_BYTES} bytes"
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_LIBRARY_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("`{path}`: {e}"))?;
+    if bytes.len() as u64 > MAX_LIBRARY_BYTES {
+        return Err(format!(
+            "`{path}` grew past {MAX_LIBRARY_BYTES} bytes while read"
+        ));
+    }
+    Ok(Sha256::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
 }
 
 impl Identity {
     /// The ngspice a run that answered must have named: a bridge whose
     /// identity names none started no library, so its answers are refused.
-    fn ran(&self) -> Result<String, run::Stop> {
-        self.ngspice.clone().ok_or_else(|| {
-            run::Stop::tool_error(
-                BRIDGE,
-                "it answered, but its identity names no ngspice".to_owned(),
-            )
-        })
+    fn ran(&self) -> Result<(String, String), run::Stop> {
+        self.ngspice
+            .clone()
+            .zip(self.ngspice_library_sha256.clone())
+            .ok_or_else(|| {
+                run::Stop::tool_error(
+                    BRIDGE,
+                    "it answered, but its identity names no ngspice".to_owned(),
+                )
+            })
     }
 }
 
@@ -122,10 +170,11 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
         ))
     })?;
     const BARE: [&str; 3] = ["bridge", "source_sha256", "version"];
-    const LOADED: [&str; 5] = [
+    const LOADED: [&str; 6] = [
         "bridge",
         "ngspice",
         "ngspice_banner",
+        "ngspice_library",
         "source_sha256",
         "version",
     ];
@@ -137,7 +186,7 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
         })
         .ok_or_else(|| {
             mismatch(format!(
-                "its identity is not its three fields, or five with ngspice: `{}`",
+                "its identity is not its three fields, or six with ngspice: `{}`",
                 first.escape_debug()
             ))
         })?;
@@ -159,12 +208,21 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
     };
     // belt-and-suspenders: the bridge parses and pins its banner (`solver::pinned`); the CLI holds
     // the line it reports to the same form, since it cannot link the bridge's parser.
-    let ngspice = match (field("ngspice"), field("ngspice_banner")) {
-        (None, None) if o.len() == BARE.len() => None,
-        (Some(release), Some(banner))
+    let (ngspice, ngspice_library_sha256) = match (
+        field("ngspice"),
+        field("ngspice_banner"),
+        field("ngspice_library"),
+    ) {
+        (None, None, None) if o.len() == BARE.len() => (None, None),
+        (Some(release), Some(banner), Some(library))
             if release == NGSPICE && banner == format!("** ngspice-{release} shared library") =>
         {
-            Some(release.to_owned())
+            let hash = library_sha256(library).map_err(|e| {
+                mismatch(format!(
+                    "the ngspice library it names cannot be hashed: {e}"
+                ))
+            })?;
+            (Some(release.to_owned()), Some(hash))
         }
         _ => {
             return Err(mismatch(format!(
@@ -178,6 +236,7 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
             version: version.to_owned(),
             source_sha256,
             ngspice,
+            ngspice_library_sha256,
         },
         rest,
     ))
@@ -317,7 +376,7 @@ fn measure(
             ),
         ));
     }
-    let ngspice = identity.ran()?;
+    let (ngspice, library) = identity.ran()?;
     let measured =
         answers(decks, stdout, &ngspice).map_err(|e| run::Stop::tool_error(BRIDGE, e))?;
     let mut pass = judge(decks, &measured, declared, &ngspice);
@@ -325,6 +384,7 @@ fn measure(
     pass.tools = vec![
         (BRIDGE, identity.source_sha256),
         (campaign::NGSPICE, ngspice),
+        (NGSPICE_LIBRARY, library),
     ];
     Ok(pass)
 }
@@ -333,7 +393,9 @@ fn measure(
 /// nominal and tolerance, and the emitter's decoupling on it (ruled D7).
 #[derive(Clone, Debug)]
 pub struct Rail {
-    pub droop: Droop,
+    /// The droop as rendered: its instant placed from the undisturbed boot
+    /// word, its level the specification's (`AET-WO-2310`).
+    pub droop: RailDroop,
     pub nominal_millivolts: u32,
     pub tolerance_permille: u32,
     pub decoupling_picofarads: u64,
@@ -360,14 +422,14 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
         .mode(0o700)
         .create(dir)
         .map_err(|e| run::Stop::tool_error(BRIDGE, format!("cannot create its directory: {e}")))?;
-    let d = &rail.droop;
-    let levels = power::levels(d.bor_level);
+    let (r, d) = (&rail.droop, &rail.droop.droop);
+    let levels = power::levels(r.bor_level);
     let request = dir.join("rail.json");
     let body = json!({
         "domain": d.domain,
         "nominal_microvolts": u64::from(rail.nominal_millivolts) * 1000,
         "floor_microvolts": u64::from(d.floor_millivolts) * 1000,
-        "start_ns": d.start_ns,
+        "start_ns": r.start_ns,
         "fall_ns": d.fall_ns,
         "hold_ns": d.hold_ns,
         "rise_ns": d.rise_ns,
@@ -401,13 +463,14 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    let ngspice = identity.ran()?;
+    let (ngspice, library) = identity.ran()?;
     let (crossings, minimum_microvolts) = rail_answer(stdout, &levels, &ngspice).map_err(fail)?;
     let mut tools = vec![(BRIDGE, identity.source_sha256)];
     // Every crossing line named the identity's ngspice or was refused; a rail
     // that crossed nothing named none.
     if !crossings.is_empty() {
         tools.push((campaign::NGSPICE, ngspice));
+        tools.push((NGSPICE_LIBRARY, library));
     }
     Ok(Solved {
         crossings,
@@ -444,6 +507,7 @@ pub struct ChainSolved {
 /// `status` is the reaper's.
 pub fn chain(
     sag: &aethelgard_chaos::record::BatterySag,
+    start_ns: u64,
     side: &aethelgard_ir::power::BatterySide,
     chain: &aethelgard_chaos::battery::SagChain,
     span_ns: u64,
@@ -481,7 +545,7 @@ pub fn chain(
         "v_open_microvolts": chain.v_open_microvolts,
         "healthy_milliohms": chain.healthy_milliohms,
         "fault_milliohms": sag.series_milliohms,
-        "start_ns": sag.start_ns,
+        "start_ns": start_ns,
         "span_ns": span_ns,
         "bulk": bulk,
         "ceramics_picofarads": ceramics,
@@ -512,7 +576,7 @@ pub fn chain(
             String::from_utf8_lossy(&out.stderr).trim()
         )));
     }
-    let ngspice = identity.ran()?;
+    let (ngspice, library) = identity.ran()?;
     let (minimum_microvolts, crossings) = chain_answer(stdout, chain, &ngspice).map_err(fail)?;
     Ok(ChainSolved {
         minimum_microvolts,
@@ -521,6 +585,7 @@ pub fn chain(
         tools: vec![
             (BRIDGE, identity.source_sha256),
             (campaign::NGSPICE, ngspice),
+            (NGSPICE_LIBRARY, library),
         ],
     })
 }
@@ -801,7 +866,7 @@ pub fn droop_report(
         CrossingReport, DroopReport, ObservedReport, RailReport, RecoveryBoundReport, ResetReport,
     };
     let bound = undisturbed.flatten().and_then(power::recovery_bound);
-    let d = &rail.droop;
+    let (placed, d) = (&rail.droop, &rail.droop.droop);
     let mut findings = Vec::new();
     let mut reports = Vec::new();
     for r in resets {
@@ -922,14 +987,14 @@ pub fn droop_report(
             nominal_millivolts: rail.nominal_millivolts,
             tolerance_permille: rail.tolerance_permille,
             floor_millivolts: d.floor_millivolts,
-            start_ns: d.start_ns,
+            start_ns: placed.start_ns,
             fall_ns: d.fall_ns,
             hold_ns: d.hold_ns,
             rise_ns: d.rise_ns,
             source_milliohms: d.source_milliohms,
             load_milliamps: d.load_milliamps,
             decoupling_picofarads: rail.decoupling_picofarads,
-            bor_level: d.bor_level,
+            bor_level: placed.bor_level,
             minimum_microvolts: solved.minimum_microvolts,
             thresholds: "DS12117 Rev 10 Table 16, typical (read from st.com; equal to Rev 7's, AET-WO-2205)",
         },
