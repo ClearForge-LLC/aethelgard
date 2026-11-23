@@ -530,14 +530,8 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tests::fixture as spec;
     use serde_json::json;
-
-    fn spec(fixture: &str, edit: impl FnOnce(&mut Value)) -> aethelgard_ir::Specification {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(fixture);
-        let mut v: Value = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
-        edit(&mut v);
-        serde_json::from_value(v).unwrap()
-    }
 
     fn row(rows: &[Ran], gate: &str) -> Ran {
         rows.iter().find(|r| r.gate == gate).unwrap().clone()
@@ -547,7 +541,7 @@ mod tests {
     /// whatever the specification declares (`AET-WO-1609` §2).
     #[test]
     fn every_part_has_a_row_in_order() {
-        let s = spec("tests/fixtures/sentinel-03.json", |_| ());
+        let s = spec("sentinel-03.json", |_| ());
         let gates: Vec<String> = parts(&s, 0, 0, 0, 0).into_iter().map(|r| r.gate).collect();
         assert_eq!(
             gates,
@@ -571,17 +565,17 @@ mod tests {
     #[test]
     fn the_supply_part_is_off_until_a_drop_limit_is_declared() {
         let off = Ran::off("extract.supply", "power.drop_limits");
-        let absent = spec("tests/fixtures/sentinel-03.json", |_| ());
+        let absent = spec("sentinel-03.json", |_| ());
         assert!(absent.power.is_some() && absent.power.as_ref().unwrap().drop_limits.is_none());
         assert_eq!(row(&parts(&absent, 3, 0, 0, 0), "extract.supply"), off);
-        let empty = spec("tests/fixtures/sentinel-03.json", |v| {
+        let empty = spec("sentinel-03.json", |v| {
             v["power"]["drop_limits"] = json!([]);
         });
         assert_eq!(row(&parts(&empty, 3, 0, 0, 0), "extract.supply"), off);
-        let no_power = spec("tests/fixtures/sentinel-01-bench.json", |_| ());
+        let no_power = spec("sentinel-01-bench.json", |_| ());
         assert!(no_power.power.is_none());
         assert_eq!(row(&parts(&no_power, 3, 0, 0, 0), "extract.supply"), off);
-        let limited = spec("tests/fixtures/sentinel-03.json", |v| {
+        let limited = spec("sentinel-03.json", |v| {
             v["power"]["drop_limits"] =
                 json!([{"domain": "VDD_3V3", "max_millivolts": 165, "source": "test"}]);
         });
@@ -597,18 +591,18 @@ mod tests {
     #[test]
     fn the_oscillator_part_is_on_only_beside_a_crystal() {
         let off = Ran::off("extract.oscillator", "mcu.hse.crystal");
-        let crystal = spec("tests/fixtures/hse-crystal-16.json", |_| ());
+        let crystal = spec("hse-crystal-16.json", |_| ());
         assert_eq!(
             row(&parts(&crystal, 3, 0, 2, 0), "extract.oscillator"),
             Ran::judged("extract.oscillator", 2)
         );
-        let external = spec("tests/fixtures/hse-external-8.json", |_| ());
+        let external = spec("hse-external-8.json", |_| ());
         assert!(external.mcu.hse.is_some());
         assert_eq!(
             row(&parts(&external, 3, 0, 0, 0), "extract.oscillator"),
             off
         );
-        let none = spec("tests/fixtures/sentinel-01-bench.json", |_| ());
+        let none = spec("sentinel-01-bench.json", |_| ());
         assert!(none.mcu.hse.is_none());
         assert_eq!(row(&parts(&none, 3, 0, 0, 0), "extract.oscillator"), off);
     }
@@ -617,13 +611,13 @@ mod tests {
     /// `diff_pairs`, off without it.
     #[test]
     fn the_pair_part_is_off_without_diff_pairs() {
-        let paired = spec("tests/fixtures/pair-standin.json", |_| ());
+        let paired = spec("pair-standin.json", |_| ());
         assert!(!paired.diff_pairs.is_empty());
         assert_eq!(
             row(&parts(&paired, 4, 0, 0, 2), "extract.pairs"),
             Ran::judged("extract.pairs", 2)
         );
-        let unpaired = spec("tests/fixtures/pair-standin.json", |v| {
+        let unpaired = spec("pair-standin.json", |v| {
             v["diff_pairs"] = json!([]);
         });
         assert_eq!(

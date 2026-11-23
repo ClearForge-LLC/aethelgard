@@ -3462,7 +3462,8 @@ mod tests {
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
     }
 
-    fn fixture(name: &str, edit: impl FnOnce(&mut serde_json::Value)) -> Specification {
+    /// A test fixture, edited (`AET-WO-1609`; `extract`'s tests share it).
+    pub(crate) fn fixture(name: &str, edit: impl FnOnce(&mut serde_json::Value)) -> Specification {
         let path = root()
             .join("crates/aethelgard-cli/tests/fixtures")
             .join(name);
