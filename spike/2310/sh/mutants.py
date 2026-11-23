@@ -42,8 +42,9 @@ M = {
     "changes-list": (E, "    &TRACE_CHANGES[TRACE_CHANGES.partition_point(|c| c.version <= found)..]", "    &TRACE_CHANGES[..0]", CHAOS),
     # The CLI.
     "library-canonical": (CA, "    if !p.is_absolute() || fs::canonicalize(p).ok().as_deref() != Some(p) {", "    if !p.is_absolute() {", CLI_UNIT),
-    "tree-link-bytes": (CC, "                    file(&mut hash, &p, resolved.1)?;\n", "", CLI_UNIT),
+    "tree-link-bytes": (CC, "                file(&mut hash, &p, len)?;\n", "", CLI_UNIT),
     "booted-sleep-stop": (CR, "    let halted = observed.instructions < expected;", "    let halted = observed.instructions < expected;\n    if booted && halted {\n        return Err(untrusted(\"the boot word is set but the core executed fewer\".to_owned()));\n    }", CLI_UNIT),
+    "mips-speed": (CR, "    if observed.mips != aethelgard_twin::boot::MIPS {", "    if false {", ["-p", "aethelgard-cli", "--test", "boot_tier1"]),
     "place-past-run": (CC, "        Some(at) if at <= aethelgard_twin::boot::MAX_VIRTUAL_NS => Ok(at),", "        Some(at) => Ok(at),", CLI_T1),
     "library-folded": (CC, "        (Some(hex), true) => hashes.push((rules::NGSPICE.to_owned(), unhex(&hex)?)),", "        (Some(_), true) => {}", CLI_T1),
     "toolchain-absent": (CC, '        Err(s) if s.kind == "ToolMissing" => return absent(),', '        Err(s) if s.kind == "ToolMissingX" => return absent(),', CLI_T1),

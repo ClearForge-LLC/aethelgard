@@ -1,12 +1,13 @@
 # AET-WO-2310 — FEEDBACK: one trace and scenario schema bump
 
-**Branch:** `wo/aet-2310-trace-schema` from `main` `15798f91`; `main` `29a34afa` merged at the build's start (§9).
+**Branch:** `wo/aet-2310-trace-schema` from `main` `15798f91`; `main` `29a34afa` merged at the build's start, and `c7a62975` (1607) at 05:3xZ (§9).
 **Builder:** Claude (Opus 5.5). It orchestrated three subagents, for the chaos tests' adaptation, a source survey and the reduction pass; each report was spot-checked against the code before use. Written 2026-11-23.
 
-**Status: BUILT to the architect's ruling of 04:30Z (`~/.cache/aet-bus/2310.md`), not yet READY.** Three items wait:
-- **1607 (#342):** `verify.rs` and `fab_tier1.rs` are 1607's, so they wait for it to merge, as ruled (§8 Q-H);
-- **Q-M:** the droop pipeline sits in `main.rs`;
-- **Q-E:** the evolve test literals.
+**Status: built to the architect's rulings of 04:30Z and 05:32Z (`~/.cache/aet-bus/2310.md`).** 05:32Z:
+- 1607 merged, freeing `verify.rs` and `fab_tier1.rs`;
+- Q-E admitted;
+- Q-M (ii) as built, its cost named in seconds (§8);
+- no WIP push.
 
 The stop is PR #346's record at `c4838059`. The ruling: shapes as proposed, Q-A (a), Q-G lean, Q-T T1, (2) the campaign line only, (4) `cpu_halted` overturning A10, (6) and (7) as proposed, the fence additions as granted.
 
@@ -28,7 +29,7 @@ Each statement is labelled where it matters:
 |---|---|---|
 | (1) the droop's `bor_level` | chaos `record.rs` `Droop`/`RailDroop`, `campaign.rs` `check_droop_records`; cli `campaign.rs` `prepare_droop` | the scenario states none; kind 16's is the specification's, bounded 0–3 by its record, and must be the one kind 10's brown-out reading declares under its own mask (`declared_bor_level`). `BorLevelContradictsSpecification` is gone with the field |
 | (2) `window` | cli `campaign.rs` `ScenarioLine` | removed from the campaign line. The verdict's `boot.window` stays, as ruled: a foreign boot's says `FOREIGN_MAX_VIRTUAL_NS` |
-| (3) planted from the boot word | chaos `record::resolve_instant`, `plant_offset_ok`, `campaign::planted_reference`; cli `campaign.rs` `place`, `place_droop`, `run_one` | a droop's prepared boot runs first with nothing planted, then its word places the droop (Q-M option (ii), §8). A battery sag is placed from its own boot's word and the deck solves after the boot. Before the boot only the offset is judged, and the refusal says so; after it, `PlantedEventUnplaced` covers an instant at or before reset or past the run, and a run with no word |
+| (3) planted from the boot word | chaos `record::resolve_instant`, `plant_offset_ok`, `campaign::planted_reference`; cli `campaign.rs` `place`, `place_droop`, `run_one` | a droop's prepared boot runs first with nothing planted, then its word places the droop (Q-M (ii), ruled 05:32Z; its cost in §8). A battery sag is placed from its own boot's word and the deck solves after the boot. Before the boot only the offset is judged, and the refusal says so; after it, `PlantedEventUnplaced` covers an instant at or before reset or past the run, and a run with no word |
 | (4) a sleeping boot | cli `renode.rs` `judge_boot`; chaos `campaign.rs` `check_run` | the booted sleep is `cpu_halted`, exit 1, not a stop. **This overturns `AET-WO-2100`'s ruled A10 on purpose** (also in the CLI README). Replay requires `cpu_halted` on a booted kind 10 exactly when it counts fewer instructions than the run holds. The L2822 path, a line lagging its stamp with every instruction executed, stays exit 5 |
 | (5) content hashes | `bridge/src/ffi.rs` `library_path` (`dladdr`), `main.rs` identity's `ngspice_library`; cli `analog.rs` `library_sha256`, `campaign.rs` `toolchain_entry`, `tree_sha256`, `header_tools` | the bridge names the file its loader mapped and the CLI hashes it. `rust-toolchain` is `rustc -V` plus a digest of the active sysroot, run as `build` runs cargo; `absent` with no hash on a host with none. **The README says it is the host's toolchain, not bound to the ELF** (Q-T) |
 | (6) names | chaos `campaign.rs` `CPU_ABORTED_FINDING`…`WALL_BOUND_FINDING`, `HALTED_FINDING`, `STATUS_OK` | `UNREAD_FINDINGS` is built from them; `renode.rs` uses them. `renode/foreign.rs` L1039, L1041 keep their copies (outside the fence) |
@@ -92,7 +93,7 @@ The committed scenarios use the stop's measured offsets (`spike/2310/results.md`
   - tier 2: the deck test;
   - bridge: the six-field identity.
 - **Mutants** (`spike/2310/sh/mutants.py`, `out/mutants.txt`): 22 at first, one per guard; four repointed after the reduction pass (§7). Each is killed by its guard's own test.
-  - **A harness flaw, found and fixed.** The CLI unit suite carries six held `verify.rs` failures (§8 Q-H), so a CLI-unit mutant read as killed whatever happened. Those mutants now run with `--skip verify::` (`out/mutants-2.txt`).
+  - **A harness flaw, found and fixed.** The CLI unit suite then carried six `verify.rs` failures, held until 1607 merged (§8), so a CLI-unit mutant read as killed whatever happened. Those mutants now run with `--skip verify::` (`out/mutants-2.txt`).
   - **The rerun showed the first pass overstated one:** `library-canonical` survived. The test's non-canonical case was a directory, which the regular-file clause refuses anyway. It now has a `..` path to the same regular file (a `.` path would not do: `Path` equality ignores `.`). The test passes unmutated and kills the mutant. **So: 23 mutants, 23 killed by their own tests, one of them only after that test was fixed.**
 
 ## 5. Adversarial pass (§5, full)
@@ -102,6 +103,7 @@ The committed scenarios use the stop's measured offsets (`spike/2310/results.md`
 | An archive at the old version that replays without its refusal | **None found.** The four trace-14 archives and 2309's trace-18 flood are refused `UnknownVersion`, with the rows since each. A trace-18 header relabelled 19 is malformed: tool entries of two items, and override 3 of ten fields. A trace-18 run with nothing planted, rewritten whole as 19 with `rust-toolchain`, is a forged new archive: replay has no signature (residual, as before) |
 | A planted event on another instruction after re-expression | **None.** All eight committed instants, and every reset, are equal on main and the branch (measured). The offset is bounded and on the grid before any arithmetic, and the sum is in `i128`. The two undisturbed boots of a released droop must give one word (belt-and-suspenders, labelled: no stub can make them differ) |
 | A tool hash that does not change when the tool's bytes do | **Found and fixed.** A symlink in the sysroot was hashed by its target text only, so bytes behind a link to a file outside the tree could change unseen. The digest now hashes the bytes a link resolves to (test plus mutant). Measured: today's sysroot has no links. `rustc` alone would be the trap (a stub over `librustc_driver`/`libLLVM`, measured at the stop); the digest takes the whole tree. **Residual:** the library is hashed by path after the bridge mapped it, so a file swapped between the map and the read is a time-of-check gap. The toolchain is the host's, not bound to the ELF (Q-T, README) |
+| A tool fault that item (4) lets through as the firmware's `cpu_halted` | **Found and fixed.** `judge_boot` never checked the MIPS Renode reports. A core reported at 1 MIPS executes too few instructions, and only A10's stop had refused it, so with A10 overturned it read as a booted sleep (caught by `boot_tier1`'s `more_instructions_than_the_run_holds_or_another_speed_is_untrusted`). The judge now refuses a reported speed other than the platform's `boot::MIPS` (exit 5, by name), and a mutant covers the check. `a_halted_core_fails_and_a_set_word_beside_one_is_untrusted`'s second half now asserts `cpu_halted`, exit 1, as ruled |
 | A sleeping boot that still exits 5 by some path | **One by design:** the L2822 path, a line lagging its stamp with every instruction executed. It is two witnesses disagreeing, a tool fault, ruled to stay. No other booted-sleep stop remains (read at source). The undisturbed boot (main.rs) judges no halt |
 
 ## 6. Rulings (04:30Z), as built
@@ -131,13 +133,21 @@ All as stated in §1. Q-F's grants as used:
 
 ## 8. For the architect
 
-- **Q-M (open):** `main.rs` L1946–2030. Option (ii), built, runs the undisturbed boot twice for a released droop. Option (i) runs it once, after 1607.
-- **Q-E (open):** five evolve test helpers need fixed `tool_sha256` lines. Two `attribute.rs` assertions move from "unexplained" to "replay refuses", B2's pattern. Measured: 65 pass with them.
-- **Q-H (held, as ruled):**
-  - `verify.rs`'s test literal (`tool_sha256`, one line);
-  - its droop authors L2696, L2725, L2994, L3137, which are four of its six red tests: `a_droop_covers_its_rail_by_its_loaded_floor`, `a_droop_covers_the_mcu_rail_only_by_crossing_its_bor_level`, `a_rail_no_kind_reaches_is_unmet_and_a_deviceless_bus_does_not_block`, `a_scenario_seeds_one_fault_by_its_own_mechanism_or_counts_for_nothing`;
-  - `fab_tier1.rs`'s droop.
-- **The roadmap rows the ruling adds:** `twin_tier2`'s firmware spins planted from the boot word (Q-G); binding the toolchain digest to the ELF through `build` (Q-T).
+- **Q-M (ruled 05:32Z: (ii) as built).** A droop's campaign runs the same prepared boot first with nothing planted, then the droop's boot. When the droop releases a reset, `main.rs` runs its own undisturbed boot as well. So every droop pays one more boot than on `main`: a released droop boots three times where `main` boots twice, and a tolerated one twice where `main` boots once. A battery sag boots once either way. The measured cost is below (`out/cost.txt`). Reusing the undisturbed boot is the roadmap row you add.
+  - **Measured** (`sh/cost.sh`, in the image, the same ELF, one `droop-bor3` campaign on sentinel-01-minimal, three runs each):
+    - main 9.98, 8.23 and 6.48 s (the first two warming the cache);
+    - the branch 8.16, 8.11 and 8.06 s;
+    - fastest against fastest, **+1.6 s a droop (≈ 25 % on a released one), about one boot on this board.**
+  - The committed scenarios hold six droops, so a campaign over all of them costs about six boots more: about 9.6 s at this board's boot, more on sentinel-03, whose boot is longer (inferred).
+- **Q-E (ruled 05:32Z):**
+  - five evolve test helpers carry fixed `tool_sha256` lines for ngspice and `rust-toolchain`;
+  - `attribute.rs`'s two booted-halt assertions now assert the replay refusal ("the verdict's cpu_halted does not match the booted core's instruction count"), as `a_boot_word_missing_unnamed_is_refused` does.
+  - No other evolve change. Evolve: 67 + 32 + 27 + 23 + 15 pass.
+- **Held until 1607, now done:**
+  - `verify.rs`'s test literal and its four droop authors are at scenario 6. Its "the board's level decides, not the droop's own field" assertion is true by construction now that the field is gone; it is kept as a comment beside the four-layer case, which still shows a level-0 board deciding.
+  - `fab_tier1.rs`'s two droops are at scenario 6 with offset 0: tier 1's verify judges coverage before any boot, so they are never placed.
+- **`ci/colocate.tsv`** (outside the fence): `campaign_tier2`'s block row (116 s) is stale. The new deck test adds 28 s in the image, and each droop scenario adds one boot. The block counts as weighed, so P3 does not refuse it (`ci/shard.sh` L243–248); its refit is yours or 1914's successor's.
+- **The roadmap rows the ruling adds:** `twin_tier2`'s firmware spins planted from the boot word (Q-G); binding the toolchain digest to the ELF through `build` (Q-T); reusing the undisturbed boot (Q-M).
 - **My process slip:** at 05:1xZ I ran one bare `podman run … find` of the sysroot's links. It was uncapped, and while my tier-2 container ran, so it broke the `capped-run` and one-container rules. It was read-only and short. Not repeated.
 
 ## 9. Gates, merge and CI

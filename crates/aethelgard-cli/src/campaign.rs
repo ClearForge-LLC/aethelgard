@@ -1556,14 +1556,14 @@ fn toolchain_entry(scratch: &Scratch) -> Result<(String, Option<[u8; 32]>), run:
 pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
     use std::io::Read;
     use std::os::unix::ffi::OsStrExt;
-    fn walk(root: &Path, dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
         for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
             let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
             let kind = fs::symlink_metadata(&path)
                 .map_err(|e| format!("{}: {e}", path.display()))?
                 .file_type();
             if kind.is_dir() {
-                walk(root, &path, out)?;
+                walk(&path, out)?;
             } else if kind.is_file() || kind.is_symlink() {
                 out.push(path);
             } else {
@@ -1576,7 +1576,7 @@ pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
         Ok(())
     }
     let mut paths = Vec::new();
-    walk(root, root, &mut paths)?;
+    walk(root, &mut paths)?;
     let mut rel: Vec<(Vec<u8>, PathBuf)> = paths
         .into_iter()
         .map(|p| {
@@ -1623,10 +1623,8 @@ pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
             hash.update((t.len() as u64).to_le_bytes());
             hash.update(t);
             // The bytes a link resolves to, inside the tree or not.
-            if let Ok(resolved) = fs::metadata(&p).map(|m| (m.is_file(), m.len())) {
-                if resolved.0 {
-                    file(&mut hash, &p, resolved.1)?;
-                }
+            if let Ok((true, len)) = fs::metadata(&p).map(|m| (m.is_file(), m.len())) {
+                file(&mut hash, &p, len)?;
             }
             continue;
         }

@@ -2805,6 +2805,17 @@ pub fn judge_boot(
             observed.instructions
         )));
     }
+    // The run's instructions are its time at the platform's speed; a core
+    // reported at another speed is the tool's fault, never the firmware's.
+    // Before `AET-WO-2310` A10's stop caught it as too few instructions; a
+    // booted sleep is now the firmware's `cpu_halted`, so it is named here.
+    if observed.mips != aethelgard_twin::boot::MIPS {
+        return Err(untrusted(format!(
+            "renode reports the core at {} MIPS, not the platform's {}",
+            observed.mips,
+            aethelgard_twin::boot::MIPS
+        )));
+    }
     let booted = observed.boot_word == aethelgard_twin::boot::BOOT_MAGIC;
     // The echo follows the boot word, so without it nothing is judged of it.
     if !booted {
