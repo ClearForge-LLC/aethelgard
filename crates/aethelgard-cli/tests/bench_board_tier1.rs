@@ -426,6 +426,10 @@ fn the_ordered_list_refuses_crlf_a_duplicate_a_malformed_line_and_a_rewrite() {
         refused(format!("{text}{bad}\n"), "malformed");
     }
     refused(format!("{text}# a note\n{first}\n"), "opens with `# Ruling");
+    refused(
+        format!("{text}# Ruling soon\n{first}\n"),
+        "opens with `# Ruling",
+    );
     let other = "0".repeat(64);
     let rewritten = text.replacen(hash, &other, 1);
     refused(rewritten, "was rewritten");

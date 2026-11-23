@@ -12,7 +12,7 @@ Builder: Claude (Opus 5.5) in `~/aethelgard-3308`, branch `wo/aet-3308-freeze-or
 - Five tier-1 tests in `crates/aethelgard-cli/tests/bench_board_tier1.rs`.
 - `ci/route.sh` (`is_docs`) and `ci/test-route.sh`.
 
-No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weights.tsv` needs no row: the new tests take milliseconds, and an unlisted test gets `DEFAULT_WEIGHT`.
+No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weights.tsv` needs no row (it lists tests of 0.5 s or more). The new tests were measured each alone in the image (`--exact`, one test run per call) at 1–10 ms; the package they copy is 412 KB.
 
 ## 1. The measurement (§1.1) and the stop (§1.2)
 
@@ -57,8 +57,8 @@ No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weig
 
 ## 3. Mutants (one per guard this WO adds; `~/.cache/aet-3308/mut/mutants.py`)
 
-**23 of 23 killed** on the final tree, each run alone against its own suite (`~/.cache/aet-3308/mut/run3.log`):
-- **`bench_board_tier1` mutants (22):** CRLF; final newline; hash form; lowercase hash; empty name; name characters; dated ruling block; as-ordered end; block reset; duplicate in a block; ruling supersedes; as-ordered pin; moved bytes; missing file; extra file; a long run anywhere; seven standing alone; alone before; alone after; more than 8 after `0x`; ELF exactly once; the named non-ELF set.
+**24 of 24 killed** on the final tree, each run alone against its own suite (`~/.cache/aet-3308/mut/run5.log`):
+- **`bench_board_tier1` mutants (23):** CRLF; final newline; hash form; lowercase hash; empty name; name characters; dated ruling block; the ruling's date (`# Ruling soon`); as-ordered end; block reset; duplicate in a block; ruling supersedes; as-ordered pin; moved bytes; missing file; extra file; a long run anywhere; seven standing alone; alone before; alone after; more than 8 after `0x`; ELF exactly once; the named non-ELF set.
 - **Route mutant (1):** the route line. `test-route.sh` and `route.sh check` both fail.
 
 **Earlier runs found four survivors, each redundant, and all four were removed** (§5):
@@ -86,7 +86,7 @@ No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weig
 
 ## 5. Reduction pass
 
-Reduction pass (diff): −20 net · 2 duplicates removed · 4 dead paths removed · 0 protected kept · 0 findings below.
+Reduction pass (diff): about −20 net, counted per edit · 2 duplicates removed · 4 dead paths removed · 0 protected kept · 0 findings below.
 - **Duplicates removed:** the ELF-bytes assertion (the manifest test holds it), and a second `MANIFEST.json` reader (one `manifest()` now).
 - **Dead paths removed:**
   - the count-of-ten assertion (the closed name set fails any dropped entry);
@@ -105,6 +105,7 @@ Reduction pass (diff): −20 net · 2 duplicates removed · 4 dead paths removed
 - **F2.** The WO's prediction for (3) ("fails, naming `008a2a59`") assumed the sheet held a full hash. It held none, and that is the gap (3) closes.
 - **F3.** `b2.py` (3403's B2 generator) composes `PWR.D3CR` as `0x8000`: it takes the written `VOSRDY` 0 to a read-only bit over the ledger's reset row. The sheet's `0xA000` is right. The script lives in `spike/3308/` only.
 - **F4.** No test enforces "only by a ruling". A WO can still add a `# Ruling` block that is no ruling. The pin makes an in-place rewrite fail; a ruling block is visible in review. That is the honest limit of a tier-1 test.
+- **F5.** `BENCH.md` now cites `spike/3308/ROWS.md` for its row-by-row re-check. Earlier spike directories were deleted after their builds; if this one goes, the sentence goes with it. The architect decides.
 - **Q-ZIP stays open.** If Scotty finds the uploaded zip, a member that differs from the range is recorded in a ruling block.
 
 ## Gates
@@ -117,4 +118,4 @@ Run in the pinned image (`container/IMAGE` `1e0ab105…`) under `capped-run --me
 - `cd fab/sentinel-01-bench && sha256sum --strict -c ORDERED.sha256`: 10 OK.
 - `git diff b9d5f4b6 -- fab/sentinel-01-bench/package`: empty. No package byte moved.
 
-The tokens minted are revoked with HTTP 204. CI on the pushed head is the remaining gate.
+**After the workspace run,** one test-only change: the `# Ruling soon` case and its mutant. `bench_board_tier1` (7 passed), clippy on that target, and the 24 mutants were re-run on the final tree; the workspace run was not repeated. CI on the pushed head is the remaining gate.
