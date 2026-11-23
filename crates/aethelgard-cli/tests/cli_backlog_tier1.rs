@@ -391,3 +391,31 @@ fn the_pinout_verdict_carries_the_banner_of_its_topology() {
         assert_eq!(v["lifecycle"], banner(rel), "{rel}: {v}");
     }
 }
+
+// ------------------------------------------------------------------- (2)
+
+/// `AET-WO-1607` (2), `1603` F2: the tier-1 tests' private scratch, which
+/// they pass as `TMPDIR` to `build` and `prove`, resolves outside `$HOME`, so
+/// a `~/.cargo/config.toml` is never an ancestor of a crate those commands
+/// copy. Root's is `/var/lib/aethelgard`.
+#[test]
+fn the_private_scratch_is_outside_home() {
+    let tmp = private_tmp(&format!("1607-home-{}", next()));
+    let real = fs::canonicalize(&tmp.0).unwrap();
+    let home = fs::canonicalize(std::env::var_os("HOME").unwrap()).unwrap();
+    assert!(
+        !real.starts_with(&home),
+        "{} is under {}",
+        real.display(),
+        home.display()
+    );
+    let base = if rustix::process::geteuid().is_root() {
+        PathBuf::from("/var/lib/aethelgard")
+    } else {
+        PathBuf::from(format!(
+            "/run/user/{}/aethelgard-tests",
+            rustix::process::geteuid().as_raw()
+        ))
+    };
+    assert_eq!(real.parent(), Some(base.as_path()));
+}
