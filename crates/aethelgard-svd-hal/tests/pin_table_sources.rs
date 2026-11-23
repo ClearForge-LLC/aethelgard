@@ -2,36 +2,34 @@
 //! the single source `verify`'s gates read for each AF number and pad
 //! position, held against two sources that do not come from it.
 //!
-//! - **DS12117 Rev 10** (`tests/fixtures/ds12117/`, transcribed by hand from
-//!   the PDF): the LQFP144 pad of every pin (Table 8), and the AF number of
+//! - **DS12117 Rev 10** (`tests/fixtures/ds12117/`, read from the PDF and
+//!   checked by eye, `spike/4408/RESULTS.md`): the LQFP144 pad of every pin (Table 8), and the AF number of
 //!   every signal in the families the solver assigns (Table 9). Tier 1.
 //! - **ArduPilot's `STM32H753xx.py`** at `Copter-4.7.2` (`fb773567`), the
 //!   table `check pinout`'s ArduPilot resolves `hwdef.dat` against. It is
 //!   GPL-3.0-or-later, and no byte of it is committed here
 //!   (`container/ARDUPILOT-LICENSE.md`). `ardupilot-image.yml` copies it out
-//!   of the pinned image and runs the one `#[ignore]`d test with
-//!   `AETHELGARD_ARDUPILOT_AF_TABLE` naming it. Its sha256 is pinned below.
+//!   of the pinned image and runs `ardupilot_leg` (below, compiled only under
+//!   `--cfg aethelgard_ardupilot`) with `AETHELGARD_ARDUPILOT_AF_TABLE`
+//!   naming it. Its sha256 is pinned there.
 //!
 //! Each pair is compared on its own, and every difference fails, naming the
 //! row and both values. There is no two-of-three vote: a row that ST and
 //! ArduPilot agree on still fails when DS12117 differs.
 
+// `aethelgard_ardupilot` is set only by `ardupilot-image.yml`'s `pin-table`
+// job (RUSTFLAGS); an item-level allow cannot reach a cfg that removes the item.
+#![allow(unexpected_cfgs)]
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_svd_hal::pin_table;
-use sha2::{Digest, Sha256};
 
 /// (pin, signal) to AF number.
 type Afs = BTreeMap<(String, String), u8>;
 
 const PADS: &str = include_str!("fixtures/ds12117/pads.tsv");
 const DS_AFS: &str = include_str!("fixtures/ds12117/af.tsv");
-
-const ARDUPILOT_ENV: &str = "AETHELGARD_ARDUPILOT_AF_TABLE";
-/// `libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H753xx.py` at ArduPilot
-/// `fb773567896014da007bca58358704d4a0d8516f`, as the pinned ArduPilot image
-/// holds it (measured, `spike/4408`).
-const ARDUPILOT_SHA256: &str = "58fd32c3dd2c2049d541bb18189f16eb6fc6dc6c4cc04dba7c36a6bb4542c0b4";
 
 /// The signals the solver can assign a pin (`solve.rs`: `Kind::I2c`,
 /// `Kind::Spi`, a serial port's `{p}_TX`/`{p}_RX`, `motor::timer_channel`),
@@ -232,10 +230,6 @@ fn ardupilot(text: &str) -> Afs {
     panic!("AltFunction_map is not closed");
 }
 
-/// Known ArduPilot rows in the families that ST's data does not carry, each
-/// with its reason. Empty: none was found (`spike/4408`).
-const ARDUPILOT_ONLY: [&str; 0] = [];
-
 // ------------------------------------------------------------ the sources
 
 #[test]
@@ -262,65 +256,6 @@ fn st_afs_equal_ds12117_in_the_solver_families() {
     eprintln!("ANSWER ds12117 af_rows={}", ds.len());
     assert_eq!(
         diff("st", &families(&afs), "ds12117", &ds),
-        Vec::<String>::new()
-    );
-}
-
-#[test]
-// Reads ArduPilot's STM32H753xx.py, which is not committed; ardupilot-image.yml
-// runs it. A bare `#[ignore]`: libtest prints a reason after `ignored,`, and
-// ci/shard.sh's timer reads only a result line that ends in `ignored`.
-#[ignore]
-fn st_afs_equal_ardupilot() {
-    let path = std::env::var(ARDUPILOT_ENV)
-        .unwrap_or_else(|_| panic!("{ARDUPILOT_ENV} names no file: set it to STM32H753xx.py"));
-    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    let sha: String = Sha256::digest(&bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    assert_eq!(
-        sha, ARDUPILOT_SHA256,
-        "{path} is not the pinned STM32H753xx.py"
-    );
-    let ap = ardupilot(std::str::from_utf8(&bytes).unwrap());
-    let (positions, afs) = st();
-    let ap: Afs = ap
-        .into_iter()
-        .filter(|((p, _), _)| positions.contains_key(p))
-        .collect();
-    // Every (pin, signal) the two tables share carries one AF, whatever its family.
-    let shared: Afs = afs
-        .iter()
-        .filter(|(k, _)| ap.contains_key(*k))
-        .map(|(k, v)| (k.clone(), *v))
-        .collect();
-    assert!(shared.len() >= 500, "{}", shared.len());
-    let ap_shared: Afs = ap
-        .iter()
-        .filter(|(k, _)| shared.contains_key(*k))
-        .map(|(k, v)| (k.clone(), *v))
-        .collect();
-    assert_eq!(
-        diff("st", &shared, "ardupilot", &ap_shared),
-        Vec::<String>::new()
-    );
-    eprintln!(
-        "ANSWER ardupilot shared={} families={}",
-        shared.len(),
-        families(&ap).len()
-    );
-    // In the solver's families, the same rows both ways.
-    let mut ap_families = families(&ap);
-    for known in ARDUPILOT_ONLY {
-        let (p, s) = known.split_once(':').unwrap();
-        assert!(
-            ap_families.remove(&(p.to_owned(), s.to_owned())).is_some(),
-            "{known}"
-        );
-    }
-    assert_eq!(
-        diff("st", &families(&afs), "ardupilot", &ap_families),
         Vec::<String>::new()
     );
 }
@@ -436,4 +371,83 @@ fn an_unread_ardupilot_line_is_refused() {
 #[should_panic(expected = "twice")]
 fn a_twice_given_ardupilot_key_is_refused() {
     ardupilot("AltFunction_map = {\n\"PA9:X\":1,\n\"PA9:X\":1,\n}\n");
+}
+
+/// The ArduPilot leg (ruling D1 (a)). It reads ArduPilot's `STM32H753xx.py`,
+/// which is not committed, so it compiles only under
+/// `RUSTFLAGS="--cfg aethelgard_ardupilot"`, as `ardupilot-image.yml`'s
+/// `pin-table` job builds it; that job also requires the test's `ANSWER`
+/// line, so a missing cfg cannot pass by running nothing. It is not
+/// `#[ignore]`d, because `ci/shard.sh` refuses any ignored test in the
+/// workspace (`die "$suite: $f failed, $ig ignored"`).
+#[cfg(aethelgard_ardupilot)]
+mod ardupilot_leg {
+    use super::*;
+    use sha2::{Digest, Sha256};
+
+    const ARDUPILOT_ENV: &str = "AETHELGARD_ARDUPILOT_AF_TABLE";
+    /// `libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H753xx.py` at ArduPilot
+    /// `fb773567896014da007bca58358704d4a0d8516f`, as the pinned ArduPilot
+    /// image holds it (measured, `spike/4408`).
+    const ARDUPILOT_SHA256: &str =
+        "58fd32c3dd2c2049d541bb18189f16eb6fc6dc6c4cc04dba7c36a6bb4542c0b4";
+
+    /// Known ArduPilot rows in the families that ST's data does not carry,
+    /// each with its reason. Empty: none was found (`spike/4408`).
+    const ARDUPILOT_ONLY: [&str; 0] = [];
+
+    #[test]
+    fn st_afs_equal_ardupilot() {
+        let path = std::env::var(ARDUPILOT_ENV)
+            .unwrap_or_else(|_| panic!("{ARDUPILOT_ENV} names no file: set it to STM32H753xx.py"));
+        let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+        let sha: String = Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            sha, ARDUPILOT_SHA256,
+            "{path} is not the pinned STM32H753xx.py"
+        );
+        let ap = ardupilot(std::str::from_utf8(&bytes).unwrap());
+        let (positions, afs) = st();
+        let ap: Afs = ap
+            .into_iter()
+            .filter(|((p, _), _)| positions.contains_key(p))
+            .collect();
+        // Every (pin, signal) the two tables share carries one AF, whatever its family.
+        let shared: Afs = afs
+            .iter()
+            .filter(|(k, _)| ap.contains_key(*k))
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        assert!(shared.len() >= 500, "{}", shared.len());
+        let ap_shared: Afs = ap
+            .iter()
+            .filter(|(k, _)| shared.contains_key(*k))
+            .map(|(k, v)| (k.clone(), *v))
+            .collect();
+        assert_eq!(
+            diff("st", &shared, "ardupilot", &ap_shared),
+            Vec::<String>::new()
+        );
+        eprintln!(
+            "ANSWER ardupilot shared={} families={}",
+            shared.len(),
+            families(&ap).len()
+        );
+        // In the solver's families, the same rows both ways.
+        let mut ap_families = families(&ap);
+        for known in ARDUPILOT_ONLY {
+            let (p, s) = known.split_once(':').unwrap();
+            assert!(
+                ap_families.remove(&(p.to_owned(), s.to_owned())).is_some(),
+                "{known}"
+            );
+        }
+        assert_eq!(
+            diff("st", &families(&afs), "ardupilot", &ap_families),
+            Vec::<String>::new()
+        );
+    }
 }

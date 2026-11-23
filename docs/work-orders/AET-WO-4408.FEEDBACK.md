@@ -58,8 +58,8 @@ Predictions were committed before any measurement. Their outcomes:
   - **ST–ArduPilot:** every shared (pin, signal) on the package across all families (603), and the solver's families both ways (167).
 - **The DS12117 data** is `tests/fixtures/ds12117/{pads,af}.tsv`. Each row carries its PDF page, and the header carries the PDF's sha256 `607b9ead…`. How it was transcribed is in `RESULTS.md` §P.
 - **The ArduPilot leg (ruling D1 (a), 07:37Z):**
-  - It is `#[ignore]`d in `cargo test`.
-  - `ardupilot-image.yml`'s new `pin-table` job copies the file out of the pinned image and runs it with `--ignored` and `AETHELGARD_ARDUPILOT_AF_TABLE`.
+  - **Not `#[ignore]`d, unlike the ruling's literal words** (§3 A4): `ci/shard.sh` refuses any ignored test in the workspace. It is the module `ardupilot_leg`, compiled only under `RUSTFLAGS="--cfg aethelgard_ardupilot"`, so every normal `cargo test` lacks it entirely.
+  - `ardupilot-image.yml`'s new `pin-table` job copies the file out of the pinned image and runs the leg with that cfg and `AETHELGARD_ARDUPILOT_AF_TABLE`. It requires the test's `ANSWER ardupilot shared=` line, so a build without the cfg (0 tests) fails rather than passes [measured both ways].
   - The file's sha256 `58fd32c3…` is pinned, and any other file is refused by name, as is an unset variable.
   - No ArduPilot byte is committed. The roadmap row's "tier-1" holds for the planted half only: the planted tests use lines I wrote in ArduPilot's format. The ArduPilot table itself is GPL-3.0-or-later, and `container/ARDUPILOT-LICENSE.md` keeps every GPL byte out of the crates, whose `tests/` ship to crates.io (98 files in svd-hal's package, measured). (b) was not taken.
 
@@ -148,10 +148,17 @@ Each one is needed for something inside the fence to be checked at all:
 **A3 (found while building).**
 - The ArduPilot `pinout` list of generated boards is hard-coded, so a matrix board missing from it builds and is never judged. I added four-port there and did not generalise. §5 Q4 has the one-line generalisation.
 
-**A4. `ci/shard.sh`'s timer refuses an ignore reason (found by CI on `0b102fd4`).**
-- `#[ignore = "…"]` makes libtest print `test x ... ignored, <reason>`. The P3 timer (`times`) matches only a result line that ends in `ok|FAILED|ignored`. It counted 1 of the binary's 2 tests and failed shard 11 closed: "tests/pin_table_sources.rs: timed 1 of its 2 tests".
-- **Fixed in my file:** a bare `#[ignore]`, with its reason in a comment. Checked with `bash ci/shard.sh times` on a stamped log of the binary: 8/8 timed, rc 0.
-- This was the workspace's only `#[ignore = …]`, so the trap was latent until now. `ci/` is outside the fence, so the parser was not changed (§5 Q6).
+**A4. `ci/shard.sh` refuses the ruled `#[ignore]` (found by CI, twice).**
+- **On `0b102fd4`, the timer.** `#[ignore = "…"]` makes libtest print `test x ... ignored, <reason>`. The P3 timer (`times`) matches only a result line that ends in `ok|FAILED|ignored`, so it counted 1 of 2 and failed shard 11 ("tests/pin_table_sources.rs: timed 1 of its 2 tests").
+- **On `81f66368`, the tally.** With a bare `#[ignore]` the timer passed, but `run` refuses any ignored test (`ci/shard.sh:310`, `die "$suite: $f failed, $ig ignored"`): "shard: ws: 0 failed, 1 ignored".
+- **So no ignored test can live in the workspace.** The ArduPilot leg became a cfg-gated module (§2.2), and every ruled property holds:
+  - no ArduPilot byte is committed;
+  - it is absent from `cargo test`;
+  - CI runs it with the variable;
+  - an unset variable or a wrong hash panics by name.
+
+  Only the mechanism changed (the cfg, not `#[ignore]`), and the job's `ANSWER` guard covers what the cfg adds: a run of nothing.
+- **`#![allow(unexpected_cfgs)]` is file-level** in that test file. The workspace lints refuse an undeclared cfg name, an item-level allow cannot reach a cfg that removes its item (measured), and svd-hal's `Cargo.toml` takes its lints from the workspace.
 
 ## 4. Reduction pass (diff)
 
@@ -169,7 +176,7 @@ Each one is needed for something inside the fence to be checked at all:
 2. **The roadmap row (`4404` draft) for the run-time serial pull-ups and `USART_CR2`**, assigned to 4408 at roadmap L1054 and L1056, is not in this WO's text. It is not built here. Four-port's generated header carries 4404's "Serial pulls" line.
 3. **PC2SO/PC3SO.** A board on PC2 or PC3 depends on `SYSCFG_PMCR`'s package-dependent reset. A rule that no generated firmware writes `PC2SO`/`PC3SO`, or a twin row for `PMCR`, would close it. Today no committed board uses PC2 or PC3 [not measured beyond the CI boards'].
 4. **`ardupilot-pinout.sh`** could judge every `generated-*` artifact it is given instead of a fixed list. It is one loop, deferred as outside this WO.
-6. **`ci/shard.sh` `times`** could accept libtest's `ignored, <reason>` form, so that the next `#[ignore = "…"]` does not fail a shard by surprise (§3 A4). It is a one-line change to the regex; `ci/` is outside this fence.
+6. **The cfg instead of `#[ignore]`** (§3 A4) is a departure from D1 (a)'s literal words, forced by `ci/shard.sh:310`. If you would rather keep the `#[ignore]`, that needs a `ci/` change: an allowance for named ignored tests in `run`, and the timer reading `ignored, <reason>`. Both are outside this fence.
 5. **F7's third item**, `examples/sentinel-01.json` in the ArduPilot matrix (roadmap L1057), is not in the WO text, and is not built.
 
 ## 6. Gates
@@ -177,13 +184,13 @@ Each one is needed for something inside the fence to be checked at all:
 All three pass on Furnace at `7d8b7190` (2026-11-23). The commits after it touch no Rust.
 - `cargo fmt --all -- --check`;
 - `cargo clippy --workspace --all-targets -- -D warnings`;
-- `cargo test --workspace`: 164 suites, 2,860 passed, 0 failed, 1 ignored (the ArduPilot leg, run in CI by `pin-table`).
+- `cargo test --workspace`: 164 suites, 2,860 passed, 0 failed, 1 ignored. The ignored one was then the ArduPilot leg; it is now cfg-gated (§3 A4), so it is absent and not ignored.
 
 An earlier run had caught one failure of mine (`workspace_shape.rs`: svd-hal's file allowlist, §2.6), which is fixed.
 
 Beside them:
 - `bash container/test-check-pins.sh` and `test-check-ardupilot-pin.sh` pass;
-- the ArduPilot leg passes with the pinned file (`--ignored`, 603 shared rows, 167 family rows).
+- the ArduPilot leg passes under its cfg with the pinned file (603 shared rows, 167 family rows), and fails by name without the variable.
 
 ## 7. CI
 

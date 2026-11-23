@@ -390,10 +390,18 @@ jobs:
           docker run --rm --network none "$pin" \
             cat /opt/ardupilot/libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H753xx.py > "$RUNNER_TEMP/STM32H753xx.py"
       - run: rustup toolchain install && rustc --version
+      # The leg compiles only under this cfg (ci/shard.sh refuses an ignored
+      # test), so its ANSWER line is required: a run of nothing cannot pass.
       - name: ST's pin table against ArduPilot's
-        run: >-
-          AETHELGARD_ARDUPILOT_AF_TABLE="$RUNNER_TEMP/STM32H753xx.py"
-          cargo test --locked -p aethelgard-svd-hal --test pin_table_sources -- --ignored --nocapture
+        env:
+          RUSTFLAGS: --cfg aethelgard_ardupilot
+          AETHELGARD_ARDUPILOT_AF_TABLE: ${{ runner.temp }}/STM32H753xx.py
+        run: |
+          rc=0
+          cargo test --locked -p aethelgard-svd-hal --test pin_table_sources ardupilot_leg -- --nocapture > "$RUNNER_TEMP/pin-table.log" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/pin-table.log"
+          [ "$rc" -eq 0 ]
+          grep -q '^ANSWER ardupilot shared=' "$RUNNER_TEMP/pin-table.log"
 
   cli:
     runs-on: ubuntu-latest
