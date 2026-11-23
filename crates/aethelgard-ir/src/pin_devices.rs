@@ -2157,6 +2157,8 @@ pub(crate) fn place<'t>(
     adc: &mut BTreeMap<String, SolvedAdcInput>,
 ) -> Result<(), crate::SolveError> {
     let key = |pin: &str| table.pins.get_key_value(pin).map(|(k, _)| k.as_str());
+    // belt-and-suspenders: the model built the same filter; `place` builds its
+    // own so it never reads another phase's state.
     let at =
         crate::offboard::AtConnector::new(spec).map_err(crate::SolveError::InvalidSpecification)?;
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
@@ -2334,6 +2336,8 @@ fn hand_free(
     reserved: &[&str],
     used: &BTreeMap<&str, String>,
 ) -> Result<(), crate::SolveError> {
+    // belt-and-suspenders: `Model::new` refused a reserved hand pin first; this
+    // keeps `place` refusing one if it is ever called without the model.
     if reserved.contains(&pin) {
         return Err(crate::solve::reserved_refusal(spec, pin, claimant));
     }

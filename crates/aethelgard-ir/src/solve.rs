@@ -50,6 +50,8 @@ pub(crate) fn all_reserved(spec: &Specification) -> Vec<&str> {
 /// the declared one (`AET-WO-4300i` F7).
 pub(crate) fn reserved_refusal(spec: &Specification, pin: &str, claimant: &str) -> SolveError {
     let reason = match spec.mcu.reserved_pins.iter().find(|r| r.pin == pin) {
+        // belt-and-suspenders: validate refuses a declared pin the engine also
+        // reserves (`ReservedPinEngineReserved`); the engine's reason wins here.
         Some(r) if !reserved_pins(spec.mcu.hse.as_ref()).contains(&pin) => {
             format!("`mcu.reserved_pins`: {}", r.reason)
         }
@@ -1587,6 +1589,9 @@ impl<'s, 't> Model<'s, 't> {
         }
         let reserved = all_reserved(spec);
         let pads = analog_pads(&spec.mcu.part).map_err(SolveError::InvalidSpecification)?;
+        // belt-and-suspenders: step 26 already refused a part with no MCU row
+        // when a net faces a connector; `solve` re-checks its input rather than
+        // trusting its caller, as it re-runs `validate`.
         let at =
             crate::offboard::AtConnector::new(spec).map_err(SolveError::InvalidSpecification)?;
         let mut claimed: BTreeMap<&'t str, String> = BTreeMap::new();
