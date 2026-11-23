@@ -22,7 +22,13 @@ These files are tool-calibration inputs, not board artifacts. No specification p
 
 ## The pin check's fixtures
 
-`check-pins/` holds Dockerfiles that `container/check-pins.sh` must refuse (`AET-WO-4401`). The forms are the four that 4400a's A7 left open (`git submodule update --remote`, `git fetch` and `git pull`, `pipx`, a `pip install` without `--require-hashes`), a venv whose pip is unpinned, and the ways the adversarial pass tried to slip a form past the check. Each `# expect:` line names one refusal. `container/test-check-pins.sh` requires exactly those refusals and no others, and requires the three real Dockerfiles to pass. `copy-script.sh` is never run: it is the script that `copy-script.Dockerfile` copies in.
+`check-pins/` holds Dockerfiles that `container/check-pins.sh` must refuse (`AET-WO-4401`). The forms are the four that 4400a's A7 left open (`git submodule update --remote`, `git fetch` and `git pull`, `pipx`, a `pip install` without `--require-hashes`), a venv whose pip is unpinned, and the ways the adversarial pass tried to slip a form past the check. Each `# expect:` line names one refusal. `container/test-check-pins.sh` requires exactly those refusals and no others, and requires the three real Dockerfiles to pass. `copy-script.sh` is never run: it is the script that `copy-script.Dockerfile` copies in. `AET-WO-4407` adds:
+
+- the `# syntax=` spellings BuildKit reads (case, spacing, `//`, after a shebang) and a byte-order mark;
+- an `apt-get update` with no snapshot source, or in a stage that skips it, and the ways around the source (a second one written, `APT_CONFIG`, a missing file);
+- a fullwidth digit in a `FROM` digest.
+
+`snapshot.sources` is the snapshot source the apt fixtures copy. A fixture in a directory of its own (`apt-moving-sources/`, `apt-two-dates/`) has its own `*.sources` beside it. The test runs every fixture under `C` and under `en_US.UTF-8`.
 
 ## The GCC source pin's fixtures
 

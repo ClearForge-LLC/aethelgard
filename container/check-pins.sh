@@ -42,6 +42,9 @@
 #
 #   bash container/check-pins.sh [container/Dockerfile]
 set -euo pipefail
+# Under en_US.UTF-8, [0-9a-f] also matches a fullwidth digit (measured,
+# AET-WO-4407 adversarial; 4402 for the ArduPilot pin), so bytes, not letters.
+export LC_ALL=C
 
 file=${1:-container/Dockerfile}
 image_file=$(dirname "$file")/IMAGE
