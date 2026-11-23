@@ -1,6 +1,6 @@
 # AET-WO-1914 — FEEDBACK: the shard planner's P3, and refusal fixtures that check their reason
 
-**Status: READY FOR REVIEW.** One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
+**Status: CI pending; READY once it is green and P3 is read back from this PR's own shard logs (§5).** One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
 
 **Base:** `main` `d09a5187` (verified live after the build: `origin/main` has not moved). **Branch:** `wo/aet-1914-planner-p3`.
 **Predictions:** `spike/1914/predictions.md`, committed `f164d606` before any `main` CI log was read for this work order.
@@ -31,7 +31,7 @@
 5. **The awk** is gawk on the runner (`ubuntu-26.04`) and on Furnace, which print the warning, and mawk in the image, which does
    not. The warning printed in exactly the fixtures predicted.
 6. **Decisions for the architect:** D1 (P3's scope) and D2 (the margin rows). Both are built on my lean, posted on the bus at
-   02:39Z.
+   02:38Z. No ruling yet.
 
 ## 1. What was built
 
@@ -54,9 +54,11 @@
   - The nine separate "says so" greps that the argument replaces are gone.
   - The run-log fixtures are stamped, with real `running N tests` and result lines.
   - 17 P3 checks: 14 synthetic, 3 on `main` d09a5187's own shard 4 (`ci/fixtures/p3-d09a5187-shard-4.log`, cargo's and
-    libtest's lines of that job's log).
+    libtest's lines of that job's log), judged against that commit's weights and blocks frozen beside it (`p3-d09a5187-weights.tsv`,
+    `p3-d09a5187-colocate.tsv`), as P2's fixtures are, so a later rename or refit cannot break it.
   - The suite's first line names the awk it ran under.
-  - 137 checks pass under gawk 5.3.2 and mawk 1.3.4.
+  - 137 checks pass under gawk 5.3.2 and mawk 1.3.4 (a PATH shim), each run. `times` gives byte-identical output under both awks
+    on all 84 shard logs of the seven runs measured.
 - **`ci/test-weights.tsv`:** three rows, inserted in place with nothing else moved, and one comment line naming their source.
 
 | row | seconds | why |
@@ -89,8 +91,8 @@ reproduces CI's own shard 0 byte for byte.
 | A1 | a test whose time straddles 10 s across runners | **Real; handled by D2.** The spread is up to 2.52×, so the margin rows cover every unweighted test of 4 s or more. Residual: adding rows re-plans, so a test meets new neighbours, and the spread was measured on one plan. This PR's own CI run is the first measurement on the new plan. |
 | A2 | a test that straddles 60 s | **Moot for an unweighted test:** P3 has no upper bound, so it refuses one at 10 s before 60 s matters. A weighted test is not judged. The lock-serialised binaries' tests all carry rows (P2's rule). |
 | A3 | a log line without a time stamp that P3 silently skips | **Held: refused, by line number** (fixture). So are a stamp that goes back, a result line P3 cannot read (the binary's timed count falls short of its `running N tests`), and a log that ends inside a binary. All are mutated. |
-| A4 | a tool line that looks like a result (`trybuild` prints `test tests/ui/x.rs ... ok`) | **Held:** a result names a Rust path (`[A-Za-z0-9_:]+`). Anything else is not timed, and if it was a real result the count check refuses it. 0 such lines in the 36 held logs. |
-| A5 | a tool's unfinished line before libtest's result | **Held:** the result is matched at the line's end (fixture). |
+| A4 | a tool line that looks like a result (`trybuild` prints `test tests/ui/x.rs ... ok`) | **Held:** a result names a Rust path (`[A-Za-z0-9_:]+`). Anything else is not timed, and if it was a real result the count check refuses it. In the 36 held logs, no result-like line names anything but a Rust path (grep). |
+| A5 | a tool's unfinished line before libtest's result | **Held:** the result is matched at the line's end (fixture). The held logs have no such line (grep), so the fixture is the only evidence. |
 | A6 | a wrong thread count | **Mostly fail-safe.** Too many threads starts tests early, which over-reads them (a false refusal). Too few under-reads them, which is silent. `nproc` honours `OMP_NUM_THREADS`, which libtest ignores, so that variable set below the cores would under-read. CI sets it nowhere. It is a finding (F3), not built. |
 | A7 | the stamper lagging a burst of tool output | **Negligible:** 81,000 lines/s on Furnace, read a byte at a time from a pipe. A whole shard log is about 1,300 lines. |
 | A8 | the clock stepping back during a run | **A false refusal** ("the time stamp goes back"), never a silent pass. Accepted. |

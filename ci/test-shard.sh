@@ -214,14 +214,12 @@ refuses "P3: a log that ends inside a binary" "the log ends inside unittests src
 p3log 105.000000 106.000000 >"$tmp/p3.log"
 refuses "P3: a thread count that is not one" "the test thread count 'x' is not a positive integer" env RUST_TEST_THREADS=x "${py[@]}" result 0 "$tmp/p3.tsv" "$tmp/p3.log" "$tmp/none.log" "$RE"
 # P3 on CI's own log: shard 4 of main d09a5187 (run 45099268629; held.sh's stamps from GitHub's, cargo's and libtest's
-# own lines kept). Against main's weights (this file's less the rows AET-WO-1914 adds) it names the one test; with them, none.
+# own lines kept), against that commit's weights and blocks, frozen beside it. It names the one test; with its row, none.
 awk -F'\t' '{ print "ws\t" $2 "\t1" }' <("${py[@]}" times "$fx/p3-d09a5187-shard-4.log" 4) >"$tmp/p3ci.tsv"
-grep -v -e '	a_pin_device_beside_a_test_point_validates_solves_and_emits_with_stable_references	' \
-  -e '	a_declared_hse_validates_and_solves_and_h1_is_not_refused_as_hse	' -e '	a_power_sense_input_is_not_generated	' \
-  "$here/test-weights.tsv" >"$tmp/main-weights.tsv"
-refuses "P3: main d09a5187's shard 4 against main's weights" "the REFIT RULE): tests/pin_device_refusals.rs a_power_sense_input_is_not_generated 20.971;" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$tmp/main-weights.tsv" "$here/colocate.tsv"
+refuses "P3: main d09a5187's shard 4 against its own weights" "the REFIT RULE): tests/pin_device_refusals.rs a_power_sense_input_is_not_generated 20.971;" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$fx/p3-d09a5187-weights.tsv" "$fx/p3-d09a5187-colocate.tsv"
 [ "$(grep -c 'a_power_sense_input_is_not_generated 20.971;$' "$tmp/out")" -eq 1 ] && ok "P3: it names that test alone" || bad "P3: d09a5187: $(tail -1 "$tmp/out")"
-accepts "P3: main d09a5187's shard 4 with this file's rows" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$here/test-weights.tsv" "$here/colocate.tsv"
+{ cat "$fx/p3-d09a5187-weights.tsv"; printf 'tests/pin_device_refusals.rs\ta_power_sense_input_is_not_generated\t20.971\n'; } >"$tmp/w-d09.tsv"
+accepts "P3: the same shard with the row AET-WO-1914 adds" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$tmp/w-d09.tsv" "$fx/p3-d09a5187-colocate.tsv"
 # The gates split (ci/gates.sh): the complement of tools-only by name; refused by name otherwise.
 gs=(bash "$here/gates.sh")
 meta() { # extra-target-json

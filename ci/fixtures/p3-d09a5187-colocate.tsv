@@ -1,0 +1,55 @@
+# binary<TAB>CI seconds: tests kept in one shard because they overlap when run together.
+# attribute_seeded: its 11 tests overlap in one process; the whole block took 475, 505, 575 and 721 s on CI (AET-WO-1908 FEEDBACK), 1377 s alone with AET-WO-1909's removed oq_03 (146 s), 1231 s without it. Weighed at the worst sample.
+# AET-WO-3303b (fence widened by the architect, 2026-11-19 21:40Z; REFIT RULE 3 and 5): the three blocks whose Sentinel-01 verifies no longer prove
+# the whole schedule, at their libtest `finished in` on run 44621800144 (PR #255, 47983ca5), rounded up: attribute_seeded 386.04, verify_47k_tier2
+# 227.97, four_layer_fab_tier2 581.82 (main's run 44613208491: 985.98, 504.76, 1272.99). The other blocks do not run a timerless schedule proof and keep
+# their rows. Then at the worst of that run, 44624532447 and 44629051297: attribute_seeded 321.89 and 478.53 (raised to 479); verify_47k_tier2
+# 226.99, 226.61; four_layer_fab_tier2 485.65, 556.99 (kept at the first run's).
+# AET-WO-1911 §1.4 refit (REFIT RULE 3 and 5): every block at its worst libtest `finished in` over runs 44585686986, 44605214137, 44605212605,
+# 44605218028 and 44622353365, rounded up; four_layer_fab_tier2 measured 1,575 s there, before AET-WO-3303b's schedule split (see the merge note below).
+tests/attribute_seeded.rs	526
+# AET-WO-1909: each of these binaries reads one shared run (common::verify::Shared), which pays only inside one process.
+# Weighed by ci/shard.sh's REFIT RULE step 3, at the block's worst in-process wall time on CI (libtest's `finished in`) over runs 43570762262, 43573333731, 43574423322, 43575564961.
+# against_fab_tier2: one --fab-out verify, then one --against-fab verify per test, one at a time.
+# AET-WO-3303 D1: every package verify now runs the seeded set (four scenarios); against_fab_tier2 and verify_47k_tier2
+# re-weighed as their Furnace wall time in the pinned image (530 s, 179 s) times 1.7, the CI-to-Furnace ratio of one verify: estimates until the refit rule's measurement.
+# verify_47k_tier2: one verify (47k, --fab-out).
+tests/verify_47k_tier2.rs	278
+# campaign_tier2: first() (one campaign of 2k2 and 47k) once instead of once per shard.
+# AET-WO-1211c: + 32.228 s for d1_s_pin_device_simulates_and_its_faults_run_and_replay, a Furnace estimate (11.51 s in the pinned image, libtest `finished in`, times 2.8, AET-WO-1310's factor), rounded up; replace it at the next refit.
+tests/campaign_tier2.rs	116
+# AET-WO-4300b refit: the four blocks re-weighed at their worst in-process wall time (libtest's `finished in`) over runs 43752525127 and 43763615224: attribute_seeded 872.87 s, against_fab_tier2 869.15 s, verify_47k_tier2 278.56 s, campaign_tier2 45.34 s, rounded up.
+# AET-WO-4300b, Q10 (b) (PR #152 comment 6903399822): the four blocks at their worst in-shard wall time (libtest's `finished in`) over runs 43771580225 and 43774296207: attribute_seeded 726, against_fab_tier2 860, verify_47k_tier2 278, campaign_tier2 71.
+# AET-WO-4230 refit (2026-11-16), rule 5: the four blocks at their libtest `finished in` in run 43875567562 (head 2bb9ee4), rounded up, kept at the earlier
+# worst where that was larger and the binary did not change on this branch: attribute_seeded 964.43, against_fab_tier2 1143.94, verify_47k_tier2 429.67 (all raised);
+# campaign_tier2 54.98, below its earlier 71, but campaign_tier2.rs changed on this branch (the boot record's offsets, a fourth Renode run in its reset-recipe test), so its measured 55 is used.
+# AET-WO-4230 follow-up refit (2026-11-16), rule 5: the four blocks at their worst libtest `finished in` over runs 43889629997 and 43895706619, rounded up, all above 43875567562's: attribute_seeded 1123.73, against_fab_tier2 1728.26 (three verifies at 510-579 s each, 381 s in 43875567562), verify_47k_tier2 562.93, campaign_tier2 84.49.
+# AET-WO-4230 follow-up (operator's choice, 2026-11-16): against_fab_tier2 leaves the colocated blocks. Kept whole it was 1728.26 s, which no 8-shard plan holds within 10 % of the mean (10.37 %); split, each test is weighed alone in test-weights.tsv, and each shard holding one pays the shared --fab-out verify itself (about 575 s more machine time in all). A departure from REFIT RULE 4 (the block whole), stated here and in the PR.
+# AET-WO-1910 (ruled on PR #233, comment 6999515740): three binaries that read one shared run per process (common::verify::Shared), kept whole.
+# Until the first CI run measures each block in one process (REFIT RULE 3 and 5), each is weighed from the census (FEEDBACK §1.2):
+# power_board_tier1 (D1): its worst gates whole-binary 797.5 s times the measured 0.68 of the shared prototype = 542.
+tests/power_board_tier1.rs	331
+# outline_tier1 (D2): 535.9 s times 0.84 = 450.
+tests/outline_tier1.rs	251
+# four_layer_fab_tier2 (D3): one --fab-out verify and two --against-fab, at the worst measured 530 s each = 1590.
+tests/four_layer_fab_tier2.rs	741
+# AET-WO-1910 refit after the build (REFIT RULE 3 and 5): every block above at its libtest `finished in` on run 44461834066 (head bc31f19c),
+# rounded up: attribute_seeded 893.39, verify_47k_tier2 447.93, campaign_tier2 36.42, power_board_tier1 223.26, outline_tier1 407.37,
+# four_layer_fab_tier2 1370.63. The estimates above are superseded; the rows keep the lines that say what each block is.
+# Then each at its worst `finished in` over that run and 44466633965 (head 8b18b060): attribute_seeded 1085.79, campaign_tier2 36.42, four_layer_fab_tier2 1370.63, outline_tier1 407.37, power_board_tier1 271.36, verify_47k_tier2 447.93.
+# AET-WO-1910, REFIT RULE 3 after run 44471583247 (head bdc27610): supply_tier1 (two OnceLock boards, s03 and s024l) and via_ring_tier1 (one) split
+# across shards were weighed per test, each test carrying the shared run it waited on, so shard 0 ran 942 s of a 1,987 s plan. Kept whole, each at its
+# worst whole-binary libtest `finished in` measured on CI (the gates job runs a binary whole, 4 threads): supply_tier1 795.25 (565b32c5, run 44441889769),
+# via_ring_tier1 172.96 (e6679f12, run 44433378021).
+tests/supply_tier1.rs	721
+tests/via_ring_tier1.rs	61
+# AET-WO-1911 merge of main 52a2d62e: the three blocks AET-WO-3303b re-measured after the schedule split keep its rows (attribute_seeded 479,
+# verify_47k_tier2 228, four_layer_fab_tier2 582): 1911's refit runs predate the split. The other five keep 1911's refit.
+# AET-WO-1911 second refit: every block at its worst libtest `finished in` over runs 44644135555 and 44647140730 (the merged tree), rounded up.
+# AET-WO-1318 (REFIT RULE 3 and 5): outline_tier1, whose size test AET-WO-1317 made emit sizes 2 and 6 on the eight-rung ladder, at its worst libtest
+# `finished in` over the five green main runs after 1317 and this PR's two runs, rounded up: 44706411946 157.13, 44711555077 203.26, 44712465606 195.92,
+# 44722695274 163.88, 44724070629 237.61, 44728879123 202.47, 44734895126 250.19 s. No other block changed.
+# AET-WO-1912 (REFIT RULE 3 and 5): the three blocks more than 25 % under their worst libtest `finished in` over the five green main runs 44747545277, 44747464266,
+# 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39 in
+# two modes, its cause not measured, AET-WO-1912 FEEDBACK F2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
+# AET-WO-1913 (REFIT RULE 3 and 5; WO §1 step 3): four_layer_fab_tier2 and verify_47k_tier2 raised to their worst `finished in` over the five green main runs above, the throwaway run 44787324803 (its normal pass and each binary run whole alone) and AET-WO-1912's measured 740.63 and 277.29, rounded up: 741 and 278. The other blocks are within 25 % of their worst and keep their rows.

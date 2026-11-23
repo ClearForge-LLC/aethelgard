@@ -27,10 +27,12 @@
 #   guard N ENTRIES OUTDIR         the shard lists are disjoint and their union is the list
 #   names SHARDFILE SUITE          the names a shard runs in a suite, one per line
 #   result K SHARDFILE WSLOG BRIDGELOG TIER2_RE [WEIGHTS [COLOCATE]]
-#                                  passes in the logs equal the assignment; with WEIGHTS, no test with no row
-#                                  ran past libtest's 60 s line (AET-WO-1910 P2); prints the result line
+#                                  over `run`'s stamped logs: passes equal the assignment; with WEIGHTS, no test
+#                                  with no row ran past libtest's 60 s line (AET-WO-1910 P2) or took P3_SECONDS or
+#                                  more by its stamps (AET-WO-1914 P3); prints the result line
 #   heavy_unweighted LOG WEIGHTS COLOCATE
 #                                  the tests P2 refuses, one per line
+#   times STAMPEDLOG THREADS       each test's seconds by its stamps, `binary<TAB>test<TAB>seconds` (P3)
 #   aggregate DIR N TIER2_MIN      across the shards' artifacts: nothing missing, floor held
 set -euo pipefail
 export LC_ALL=C
@@ -471,7 +473,7 @@ run() {
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
 
-cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run|build|pack|unpack ...}
+cmd=${1:?usage: shard.sh parse|assign|guard|names|result|times|aggregate|plan|run|build|pack|unpack ...}
 shift
 case $cmd in
   parse | assign | guard | names | result | aggregate | tally | heavy_unweighted | times) "$cmd" "$@" ;;
@@ -479,5 +481,5 @@ case $cmd in
   run) run "$@" ;;
   build) build_all ;;
   pack | unpack | compiled_in) "$cmd" "$@" ;;
-  *) echo "usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run" >&2; exit 2 ;;
+  *) echo "usage: shard.sh parse|assign|guard|names|result|times|aggregate|plan|run|build|pack|unpack" >&2; exit 2 ;;
 esac
