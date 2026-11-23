@@ -1265,12 +1265,19 @@ fn held_low_run() -> Vec<Record> {
         bus: "SENSORS".into(),
         line: Line::Sda,
     }];
-    *expect_findings = vec!["i2c_line_held_low".into()];
+    *expect_findings = vec!["i2c_line_held_low".into(), "i2c_timeout".into()];
     // The other line is measured, healthy; the held one only faulted
-    // (`AET-WO-3201` B1).
+    // (`AET-WO-3201` B1). The read times out, as every committed held-low
+    // scenario expects, and the verdict names it (`AET-WO-2312`).
     r.insert(3, healthy_rise("SENSORS", "I2C_SCL"));
     r.insert(4, fault(vec![HELD_LOW], vec!["I2C_SDA"]));
-    r.push(verdict(false, &[("i2c_line_held_low", "error", 1)]));
+    r.push(verdict(
+        false,
+        &[
+            ("i2c_line_held_low", "error", 1),
+            ("i2c_timeout", "error", 1),
+        ],
+    ));
     r
 }
 
@@ -1278,7 +1285,14 @@ fn held_low_run() -> Vec<Record> {
 fn a_held_low_run_is_ok_and_matches() {
     let s = check_run(&held_low_run()).unwrap();
     assert!(s.matched);
-    assert_eq!(s.failing_kinds, vec!["i2c_line_held_low".to_owned()]);
+    // Before `AET-WO-2312` the fixture left the read's timeout out of its
+    // verdict and replayed; the records show it, so that is refused by it.
+    let r = with_findings(held_low_run(), &[("i2c_line_held_low", "error", 1)]);
+    assert_eq!(check_run(&r).unwrap_err(), why("i2c_timeout"));
+    assert_eq!(
+        s.failing_kinds,
+        vec!["i2c_line_held_low".to_owned(), "i2c_timeout".to_owned()]
+    );
 }
 
 #[test]
@@ -2421,6 +2435,17 @@ fn two_devices_on_one_controller_have_two_witnesses() {
         "a step's read without its witness, or a witness without its read"
     );
     r.insert(w + 2, witness("I2C1", "U3", 0x75, 0x71, Some(vec![])));
+    // Its timeout is the judge's second (`AET-WO-2312`): the fixture's old
+    // verdict, one timeout, is refused by it.
+    assert_eq!(check_run(&r).unwrap_err(), why("i2c_timeout"));
+    let r = with_findings(
+        r,
+        &[
+            (PAST, "error", 2),
+            ("device_unmodelled", "info", 1),
+            ("i2c_timeout", "error", 2),
+        ],
+    );
     assert!(check_run(&r).is_ok());
 }
 
@@ -3214,11 +3239,19 @@ fn a_boot_that_read_nothing_names_its_bound() {
         unread_boot(&mut r);
         r
     };
-    let others = [
-        (PAST, "error", 2),
-        ("device_unmodelled", "info", 1),
+    // No record is read, so no timeout is named (`AET-WO-2312`): the
+    // fixture's old verdict, a timeout beside its bound, is refused by it.
+    let others = [(PAST, "error", 2), ("device_unmodelled", "info", 1)];
+    let mut f = others.to_vec();
+    f.extend([
         ("i2c_timeout", "error", 1),
-    ];
+        ("wall_bound_exceeded", "error", 1),
+    ]);
+    f.sort();
+    assert_eq!(
+        check_run(&with_findings(unread(), &f)).unwrap_err(),
+        why("i2c_timeout")
+    );
     // Before: the run's other findings alone replayed.
     assert_eq!(
         check_run(&with_findings(unread(), &others)).unwrap_err(),
@@ -3340,13 +3373,29 @@ fn a_record_judged_without_the_boot_word_is_refused() {
             "the verdict judges an identity read's record of a boot without its boot word",
             "{kind}"
         );
-        // Booted, the same kind is the judge's to name (replay binds no count).
+        // Booted, the records bind the count (`AET-WO-2312`): no record of
+        // good()'s shows a mismatch, so naming one is refused by its kind;
+        // an invalid read and an unwitnessed one are reached, not equalled
+        // (an unmodelled device's read and a cut log are not archived).
         let mut f: Vec<_> = f
             .into_iter()
             .filter(|x| x.0 != "boot_word_missing")
             .collect();
         f.sort();
-        assert!(check_run(&with_findings(good(), &f)).is_ok(), "{kind}");
+        let booted = check_run(&with_findings(good(), &f));
+        if kind.ends_with("_mismatch") {
+            assert_eq!(
+                booted.unwrap_err(),
+                aethelgard_chaos::campaign::SHOWN
+                    .iter()
+                    .find(|(k, _)| *k == kind)
+                    .unwrap()
+                    .1,
+                "{kind}"
+            );
+        } else {
+            assert!(booted.is_ok(), "{kind}");
+        }
     }
 }
 
@@ -3414,10 +3463,7 @@ fn a_boots_reads_are_all_read_or_all_unread() {
         }
         _ => {}
     };
-    assert_eq!(
-        edited(&base, &flooded),
-        Err("an ok read's witness is unread and the verdict does not name it unwitnessed")
-    );
+    assert_eq!(edited(&base, &flooded), Err(UNWITNESSED_SPI));
     let mut named = base.clone();
     let Some(Record::Verdict { findings, .. }) = named.last_mut() else {
         panic!("the verdict is last")
@@ -3523,8 +3569,9 @@ fn a_boots_reads_are_all_read_or_all_unread() {
 // ---- AET-WO-2310: cpu_halted and the unwitnessed ok read ----
 
 const HALTED: &str = "the verdict's cpu_halted does not match the booted core's instruction count";
-const UNWITNESSED: &str =
-    "an ok read's witness is unread and the verdict does not name it unwitnessed";
+// Each bus's own reason since `AET-WO-2312`.
+const UNWITNESSED: &str = "the verdict's i2c_transaction_unwitnessed does not reach the I2C reads' unread or differing witnesses";
+const UNWITNESSED_SPI: &str = "the verdict's spi_transaction_unwitnessed does not reach the SPI reads' unread or differing witnesses";
 
 /// `good()`'s own findings.
 const GOOD_FINDINGS: [(&str, &str, u64); 3] = [
@@ -3629,7 +3676,7 @@ fn an_ok_spi_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
     }
     assert_eq!(
         check_run(&with_findings(spi_only.clone(), &GOOD_FINDINGS)).unwrap_err(),
-        UNWITNESSED
+        UNWITNESSED_SPI
     );
     let named = plus(&[("spi_transaction_unwitnessed", "error", 1)]);
     check_run(&with_findings(spi_only.clone(), &named)).unwrap();
@@ -3637,6 +3684,446 @@ fn an_ok_spi_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
     let other = plus(&[("i2c_transaction_unwitnessed", "error", 1)]);
     assert_eq!(
         check_run(&with_findings(spi_only, &other)).unwrap_err(),
-        UNWITNESSED
+        UNWITNESSED_SPI
+    );
+}
+
+// ---- AET-WO-2312: every kind the records show is bound by them ----
+
+/// The reason replay refuses a verdict whose count of `kind` its records do
+/// not bound.
+fn why(kind: &str) -> &'static str {
+    aethelgard_chaos::campaign::SHOWN
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, w)| *w)
+        .unwrap()
+}
+
+/// `good_with_spi()` (booted: U2's I2C read timed out, U4's SPI read ok and
+/// witnessed) edited by `edit`, its verdict the analog findings and
+/// `findings`.
+fn judged(
+    edit: &dyn Fn(&mut Vec<Record>),
+    findings: &[(&str, &str, u64)],
+) -> Result<(), &'static str> {
+    let mut r = good_with_spi();
+    edit(&mut r);
+    let mut f = vec![(PAST, "error", 2), ("device_unmodelled", "info", 1)];
+    f.extend_from_slice(findings);
+    f.sort();
+    check_run(&with_findings(r, &f)).map(|_| ())
+}
+
+/// Each of U2's kind 12 and kind 13 by `f`.
+fn on_u2(r: &mut [Record], f: &dyn Fn(&mut Record)) {
+    r.iter_mut()
+        .filter(|x| matches!(x, Record::I2cCheck { .. } | Record::I2cWitness { .. }))
+        .for_each(f);
+}
+
+fn u2_read(status: &'static str, value: u64) -> impl Fn(&mut Vec<Record>) {
+    move |r| {
+        on_u2(r, &|x| {
+            if let Record::I2cCheck {
+                status: s,
+                observed,
+                ..
+            } = x
+            {
+                (*s, *observed) = (Some(status.into()), Some(value));
+            }
+        })
+    }
+}
+
+fn u4(f: impl Fn(&mut Record)) -> impl Fn(&mut Vec<Record>) {
+    move |r| {
+        r.iter_mut()
+            .filter(|x| matches!(x, Record::SpiCheck { .. } | Record::SpiWitness { .. }))
+            .for_each(&f)
+    }
+}
+
+fn unbooted(r: &mut [Record]) {
+    if let Record::BootObserved { boot_word, .. } =
+        at(r, |x| matches!(x, Record::BootObserved { .. }))
+    {
+        boot_word.observed = Some(0);
+    }
+}
+
+const TIMEOUT: (&str, &str, u64) = ("i2c_timeout", "error", 1);
+
+/// Review round 3 A8: an archive whose records show a failure never
+/// replays as a pass. Each exact kind, omitted, inflated or named at `info`,
+/// is refused by its own reason; a reached kind may pass its records, never
+/// fall short.
+#[test]
+fn each_kind_the_records_show_binds_the_verdicts_count() {
+    let none = |_: &mut Vec<Record>| {};
+    // The timeout as recorded: named once, as an error.
+    assert_eq!(judged(&none, &[TIMEOUT]), Ok(()));
+    for f in [
+        vec![],
+        vec![("i2c_timeout", "error", 2)],
+        vec![("i2c_timeout", "info", 1)],
+    ] {
+        assert_eq!(judged(&none, &f), Err(why("i2c_timeout")), "{f:?}");
+    }
+    // Every status spelling of a timeout, on each bus (`renode::status_name`).
+    for s in [
+        "timeout_txis",
+        "timeout_tc",
+        "timeout_rxne",
+        "timeout_stopf",
+    ] {
+        assert_eq!(judged(&u2_read(s, 0), &[TIMEOUT]), Ok(()), "{s}");
+        assert_eq!(judged(&u2_read(s, 0), &[]), Err(why("i2c_timeout")), "{s}");
+    }
+    for s in ["timeout_rxp", "timeout_eot"] {
+        let edit = u4(move |x| {
+            if let Record::SpiCheck { status, .. } = x {
+                *status = Some(s.into());
+            }
+        });
+        let spi = ("spi_timeout", "error", 1);
+        assert_eq!(judged(&edit, &[TIMEOUT, spi]), Ok(()), "{s}");
+        assert_eq!(judged(&edit, &[TIMEOUT]), Err(why("spi_timeout")), "{s}");
+    }
+    // A register wrong under its mask: exactly once; under a zero mask it
+    // shows nothing.
+    let reg = |mask: u32| {
+        move |r: &mut Vec<Record>| {
+            if let Record::RegisterObserved { reading, .. } =
+                at(r, |x| matches!(x, Record::RegisterObserved { .. }))
+            {
+                (reading.mask, reading.observed) = (mask, Some(0x13));
+            }
+        }
+    };
+    let one = ("register_mismatch", "error", 1);
+    assert_eq!(judged(&reg(0xff), &[TIMEOUT, one]), Ok(()));
+    assert_eq!(
+        judged(&reg(0xff), &[TIMEOUT]),
+        Err(why("register_mismatch"))
+    );
+    assert_eq!(
+        judged(&reg(0xff), &[TIMEOUT, ("register_mismatch", "error", 2)]),
+        Err(why("register_mismatch"))
+    );
+    assert_eq!(judged(&reg(0), &[TIMEOUT]), Ok(()));
+    assert_eq!(
+        judged(&reg(0), &[TIMEOUT, one]),
+        Err(why("register_mismatch"))
+    );
+    // A completed read's value, named by its step, exactly; a configuration
+    // reads nothing, so any bit it returns is a mismatch; under a zero mask
+    // the value shows nothing.
+    let step = |name: &'static str, width: u8, mask: u64, value: u64| {
+        move |r: &mut Vec<Record>| {
+            // U2's identity read passes and is witnessed; the step under test
+            // follows it, as a device's script orders them.
+            u2_read("ok", 0x71)(r);
+            on_u2(r, &|x| {
+                if let Record::I2cWitness {
+                    expected, observed, ..
+                } = x
+                {
+                    *observed = Some(expected.clone());
+                }
+            });
+            if name == "identity" {
+                on_u2(r, &|x| {
+                    if let Record::I2cCheck {
+                        mask: m, observed, ..
+                    } = x
+                    {
+                        (*m, *observed) = (mask, Some(value));
+                    }
+                });
+                return;
+            }
+            let c = position(r, |x| matches!(x, Record::I2cCheck { .. }));
+            let mut check = r[c].clone();
+            if let Record::I2cCheck {
+                step: s,
+                width: w,
+                mask: m,
+                expected,
+                observed,
+                ..
+            } = &mut check
+            {
+                (*s, *w, *m, *observed) = (name.into(), width, mask, Some(value));
+                if width == 0 {
+                    *expected = 0;
+                }
+            }
+            r.insert(c + 1, check);
+            let w = position(r, |x| matches!(x, Record::I2cWitness { .. }));
+            let mut witness = r[w].clone();
+            if let Record::I2cWitness { step: s, .. } = &mut witness {
+                *s = name.into();
+            }
+            r.insert(w + 1, witness);
+        }
+    };
+    for (name, width, kind) in [
+        ("identity", 1, "i2c_identity_mismatch"),
+        ("configure", 0, "i2c_configure_mismatch"),
+        ("data", 1, "i2c_data_mismatch"),
+    ] {
+        let wrong = step(name, width, 0xff, 0x70);
+        assert_eq!(judged(&wrong, &[(kind, "error", 1)]), Ok(()), "{kind}");
+        assert_eq!(judged(&wrong, &[]), Err(why(kind)), "{kind}");
+        assert_eq!(
+            judged(&wrong, &[(kind, "error", 2)]),
+            Err(why(kind)),
+            "{kind}"
+        );
+    }
+    assert_eq!(judged(&step("identity", 1, 0, 0x70), &[]), Ok(()));
+    let spi_wrong = u4(|x| {
+        if let Record::SpiCheck { observed, .. } = x {
+            *observed = Some(0xEF_4018);
+        }
+    });
+    let spi = ("spi_identity_mismatch", "error", 1);
+    assert_eq!(judged(&spi_wrong, &[TIMEOUT, spi]), Ok(()));
+    assert_eq!(
+        judged(&spi_wrong, &[TIMEOUT]),
+        Err(why("spi_identity_mismatch"))
+    );
+    // Before the boot word, a record's value, validity and witness show
+    // nothing; its timeout still does (`renode::timeouts_without_the_boot_word`).
+    let word = ("boot_word_missing", "error", 1);
+    let unbooted_wrong = |r: &mut Vec<Record>| {
+        step("identity", 1, 0xff, 0x70)(r);
+        unbooted(r);
+    };
+    assert_eq!(judged(&unbooted_wrong, &[word]), Ok(()));
+    let unbooted_invalid = |r: &mut Vec<Record>| {
+        u2_read("invalid", 0)(r);
+        unbooted(r);
+    };
+    assert_eq!(judged(&unbooted_invalid, &[word]), Ok(()));
+    assert_eq!(
+        judged(&|r: &mut Vec<Record>| unbooted(r), &[word]),
+        Err(why("i2c_timeout"))
+    );
+    assert_eq!(
+        judged(&|r: &mut Vec<Record>| unbooted(r), &[word, TIMEOUT]),
+        Ok(())
+    );
+    // An invalid record is reached, not equalled: an unmodelled device's
+    // invalid read is named by the same kind and not archived.
+    let invalid = u2_read("invalid", 0);
+    assert_eq!(judged(&invalid, &[]), Err(why("i2c_record_invalid")));
+    for n in [1, 2] {
+        assert_eq!(
+            judged(&invalid, &[("i2c_record_invalid", "error", n)]),
+            Ok(())
+        );
+    }
+    // An ok read whose witness is unread is reached; a step with no witness
+    // format (`expected` empty) is the judge's `spi_witness_unavailable`.
+    let flooded = |expected: bool| {
+        u4(move |x| {
+            if let Record::SpiWitness {
+                observed,
+                expected: e,
+                ..
+            } = x
+            {
+                *observed = None;
+                if !expected {
+                    e.clear();
+                }
+            }
+        })
+    };
+    let un = |n| ("spi_transaction_unwitnessed", "error", n);
+    assert_eq!(
+        judged(&flooded(true), &[TIMEOUT]),
+        Err(why("spi_transaction_unwitnessed"))
+    );
+    assert_eq!(judged(&flooded(true), &[TIMEOUT, un(1)]), Ok(()));
+    assert_eq!(judged(&flooded(true), &[TIMEOUT, un(2)]), Ok(()));
+    // With no witness format the judge names `spi_witness_unavailable`,
+    // exactly, the log unread or not (adversarial F1).
+    let ua = ("spi_witness_unavailable", "error", 1);
+    assert_eq!(
+        judged(&flooded(false), &[TIMEOUT]),
+        Err(why("spi_witness_unavailable"))
+    );
+    assert_eq!(judged(&flooded(false), &[TIMEOUT, ua]), Ok(()));
+    // A core that read fewer instructions than the run holds is named at any
+    // boot the judge read, the boot word set or not.
+    let halted = |r: &mut Vec<Record>| {
+        unbooted(r);
+        if let Record::BootObserved {
+            instructions_observed,
+            ..
+        } = at(r, |x| matches!(x, Record::BootObserved { .. }))
+        {
+            *instructions_observed = Some(7);
+        }
+    };
+    let cpu = ("cpu_halted", "error", 1);
+    assert_eq!(judged(&halted, &[word, TIMEOUT, cpu]), Ok(()));
+    assert_eq!(judged(&halted, &[word, TIMEOUT]), Err(why("cpu_halted")));
+    // The locked access: at most once, from Renode's log.
+    let locked = |n| ("locked_peripheral_access", "error", n);
+    assert_eq!(judged(&none, &[TIMEOUT, locked(1)]), Ok(()));
+    assert_eq!(
+        judged(&none, &[TIMEOUT, locked(2)]),
+        Err("the verdict names locked_peripheral_access more than once")
+    );
+}
+
+/// `shown` derives the judge's kinds, each once, in `SHOWN`'s order, with
+/// the locked access last; an `RCC.` register read with an enable bit off
+/// is its evidence, by name (B6: chaos holds no register map).
+#[test]
+fn shown_names_every_kind_once_and_finds_the_locked_access_by_name() {
+    use aethelgard_chaos::campaign::{Bound, SHOWN, shown};
+    let mut r = good_with_spi();
+    let s = shown(&r);
+    let kinds: Vec<&str> = s.iter().map(|x| x.kind).collect();
+    let mut want: Vec<&str> = SHOWN.iter().map(|(k, _)| *k).collect();
+    want.push("locked_peripheral_access");
+    assert_eq!(kinds, want);
+    assert_eq!(s.last().unwrap().bound, Bound::AtMostOnce);
+    let i = position(&r, |x| matches!(x, Record::RegisterObserved { .. }));
+    for (name, observed, shows) in [
+        ("RCC.AHB4ENR", 0x10, true),
+        ("RCC.AHB4ENR", 0x13, false),
+        ("GPIOA.MODER", 0x10, false),
+    ] {
+        r[i] = Record::RegisterObserved {
+            name: name.into(),
+            reading: reading(Some(observed)),
+        };
+        let locked = shown(&r).pop().unwrap();
+        assert_eq!(locked.records == [i], shows, "{name} {observed:#x}");
+    }
+}
+
+/// U4's SPI witness edited: its expected lines and what was observed.
+fn u4_witness(expected: Vec<String>, observed: Option<Vec<String>>) -> impl Fn(&mut Vec<Record>) {
+    u4(move |x| {
+        if let Record::SpiWitness {
+            expected: e,
+            observed: o,
+            ..
+        } = x
+        {
+            (*e, *o) = (expected.clone(), observed.clone());
+        }
+    })
+}
+
+fn lines(n: usize, text: &str) -> Vec<String> {
+    (0..n)
+        .map(|i| format!("[NOISY] spi1.spi1mux.u4: {text} {i:03}"))
+        .collect()
+}
+
+/// `AET-WO-2312` adversarial pass F1-F4: what a witness shows of the judge's
+/// three witness findings, bound without refusing what the judge writes.
+/// An `[ERROR]` line archived is `step_error`. An `ok` read with no witness
+/// format is `witness_unavailable`, and one whose short witness differs is
+/// `unwitnessed`, each or, where the archive may have cut an `[ERROR]`
+/// line, `step_error`. A status the judge never writes is refused.
+#[test]
+fn the_witness_findings_and_the_statuses_are_bound_as_the_judge_writes_them() {
+    let joint = "the verdict's spi witness findings do not reach the SPI witnesses that show one";
+    let spi = |kind: &'static str| (kind, "error", 1);
+    // F1: an ok read with no witness format, its log read: refused unless
+    // named, as `witness_unavailable` or a cut line's `step_error`.
+    let no_format = u4_witness(vec![], Some(lines(1, "Transmitting data 0x9F")));
+    assert_eq!(judged(&no_format, &[TIMEOUT]), Err(joint));
+    assert_eq!(
+        judged(&no_format, &[TIMEOUT, spi("spi_witness_unavailable")]),
+        Ok(())
+    );
+    assert_eq!(
+        judged(&no_format, &[TIMEOUT, spi("spi_step_error")]),
+        Ok(())
+    );
+    // F2: a short witness that differs, whole: named, or refused.
+    let differs = u4_witness(lines(1, "expected"), Some(lines(1, "other")));
+    assert_eq!(judged(&differs, &[TIMEOUT]), Err(joint));
+    assert_eq!(
+        judged(&differs, &[TIMEOUT, spi("spi_transaction_unwitnessed")]),
+        Ok(())
+    );
+    // F3: an `[ERROR]` line, at any status: `step_error`, by its kind.
+    let error = u4_witness(
+        lines(1, "expected"),
+        Some(vec!["[ERROR] spi1.spi1mux.u4: bus error".into()]),
+    );
+    assert_eq!(judged(&error, &[TIMEOUT]), Err(why("spi_step_error")));
+    assert_eq!(judged(&error, &[TIMEOUT, spi("spi_step_error")]), Ok(()));
+    let timed_out_error = |r: &mut Vec<Record>| {
+        u2_read("timeout_txis", 0)(r);
+        on_u2(r, &|x| {
+            if let Record::I2cWitness { observed, .. } = x {
+                *observed = Some(vec!["[ERROR] i2c1.u2: bus error".into()]);
+            }
+        });
+    };
+    assert_eq!(
+        judged(&timed_out_error, &[TIMEOUT]),
+        Err(why("i2c_step_error"))
+    );
+    assert_eq!(
+        judged(&timed_out_error, &[TIMEOUT, ("i2c_step_error", "error", 1)]),
+        Ok(())
+    );
+    // Must accept: an `[ERROR]` past the archive's 16 lines, which the judge
+    // names `step_error` alone, beside a witness format or none.
+    for expected in [lines(1, "expected"), vec![]] {
+        let cut = u4_witness(expected, Some(lines(16, "flood")));
+        assert_eq!(judged(&cut, &[TIMEOUT, spi("spi_step_error")]), Ok(()));
+    }
+    // Must accept: a passing log so long that `fit` cut the archived copy
+    // of the model's own lines (16 of about 230 bytes: both copies pass
+    // 4,096, so `fit` kept one observed line, and the record fits).
+    let long = lines(16, &"x".repeat(200));
+    let popped = u4_witness(long.clone(), Some(long[..1].to_vec()));
+    assert_eq!(judged(&popped, &[TIMEOUT]), Ok(()));
+    // Before the boot word, no witness finding is named, and a witness that
+    // differs shows none.
+    let word = ("boot_word_missing", "error", 1);
+    let unbooted_differs = |r: &mut Vec<Record>| {
+        differs(r);
+        unbooted(r);
+    };
+    assert_eq!(judged(&unbooted_differs, &[word, TIMEOUT]), Ok(()));
+    for kind in ["spi_step_error", "spi_witness_unavailable"] {
+        assert_eq!(
+            judged(
+                &|r: &mut Vec<Record>| unbooted(r),
+                &[word, TIMEOUT, spi(kind)]
+            ),
+            Err("the verdict judges an identity read's record of a boot without its boot word"),
+            "{kind}"
+        );
+    }
+    // F4: a status the judge never writes, or another bus's, is refused.
+    let status = "a read's status is not one the judge writes for its bus";
+    for s in ["bogus", "OK", "timeout", "timeout_rxp", "timeout_eot"] {
+        assert_eq!(judged(&u2_read(s, 0), &[TIMEOUT]), Err(status), "{s}");
+    }
+    let spi_txis = u4(|x| {
+        if let Record::SpiCheck { status, .. } = x {
+            *status = Some("timeout_txis".into());
+        }
+    });
+    assert_eq!(
+        judged(&spi_txis, &[TIMEOUT, spi("spi_timeout")]),
+        Err(status)
     );
 }
