@@ -113,7 +113,15 @@ The layer digests differ between A and B, except the base's and the plain `COPY`
 
 ## 6. Gates
 
-GATES_RESULT
+All three pass on Furnace at `83bed98e` (2026-11-23):
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace`: 160 suites, 2 784 passed, 0 failed.
+
+Beside them:
+- `bash container/test-check-pins.sh` and `bash container/test-check-ardupilot-pin.sh` pass;
+- `python3 -I container/debian-src.py check container/TOOLS-DEBIAN-GPL2.tsv` passes (84 packages, 274 files);
+- `git diff --stat origin/main -- crates fab ci` is empty, and the one `ardupilot-image.yml` hunk is inside `publish`.
 
 ## 7. CI
 
