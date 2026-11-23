@@ -648,10 +648,19 @@ fn a_motor_pull_on_another_footprint_or_none_fails_by_name() {
 }
 
 /// A second resistor joining the motor net to `GND` beside the declared one
-/// is another value in parallel: `motor_pull_count`, naming it.
+/// is another value in parallel: `motor_pull_count`, naming it. A part of
+/// another symbol across the same two nets (a capacitor) is no pull, and step
+/// 8 says nothing of it.
 #[test]
 fn a_second_resistor_beside_a_motor_pull_fails_by_name() {
-    let (spec, mut pads, board, _) = motors();
+    let (spec, pads, board, _) = motors();
+    let mut cap = pads.clone();
+    cap.0.insert("C99".into(), "100n".into());
+    cap.1.insert(("C99".into(), "1".into()), "/MOTOR1".into());
+    cap.1.insert(("C99".into(), "2".into()), "GND".into());
+    let out = judge(&spec, &cap, &board);
+    assert!(motor_findings(&out).is_empty(), "{:?}", out.findings);
+    let mut pads = pads;
     pads.0.insert("R99".into(), "40k2 CRCW0603_F_K".into());
     pads.2
         .insert("R99".into(), "Resistor_SMD:R_0603_1608Metric".into());
