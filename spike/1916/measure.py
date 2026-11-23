@@ -7,6 +7,7 @@
   measure.py shards RUNDIR...            per shard: job, setup, step, after, planned (minutes / seconds)
   measure.py tests ROWS COLO RUNDIR...   per test of 10 s or more: samples, worst, row
   measure.py blocks ROWS COLO RUNDIR...  per run, shard and binary: wall against planned seconds
+  measure.py clause SHARDS RUN,RUN,RUN    the REFIT RULE's persistent-shard clause (D1) over three runs of one plan
   measure.py check BLOCKS SHARDS BASE NEW,NEW RUN,RUN,...   predictions.md P1-P3
 """
 import datetime as dt
@@ -181,6 +182,30 @@ def check(blocks_path, shards_path, base, news, plan_runs):
     print(f"P3 mean pairwise correlation over {len(plan_runs)} runs: {st.mean(rs):+.2f}")
 
 
+def clause(shards_path, trio):
+    """The REFIT RULE's persistent-shard clause (AET-WO-1916 D1) over three runs of one plan: each shard's mean of
+    ln(step / that run's median step); it fires when one passes ln 1.25."""
+    import math
+    import statistics as st
+    steps, rid = {}, None
+    for line in Path(shards_path).read_text().splitlines():
+        if line.startswith("## "):
+            rid = line.split()[1]
+            steps[rid] = {}
+        elif line and line[0].isdigit():
+            f = line.split("\t")
+            steps[rid][int(f[0])] = float(f[3])
+    acc = [0.0] * 12
+    for r in trio:
+        m = st.median(steps[r].values())
+        for k in range(12):
+            acc[k] += math.log(steps[r][k] / m) / len(trio)
+    worst = max(range(12), key=lambda k: acc[k])
+    print(" ".join(f"{k}:x{math.exp(a):.2f}" for k, a in enumerate(acc)))
+    print(f"worst shard {worst} at x{math.exp(acc[worst]):.2f}: the clause "
+          f"{'FIRES' if acc[worst] > math.log(1.25) else 'does not fire'}")
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "shards":
         shards(sys.argv[2:])
@@ -188,6 +213,8 @@ if __name__ == "__main__":
         tests(sys.argv[2], sys.argv[3], sys.argv[4:])
     elif sys.argv[1] == "blocks":
         blocks(sys.argv[2], sys.argv[3], sys.argv[4:])
+    elif sys.argv[1] == "clause":
+        clause(sys.argv[2], sys.argv[3].split(","))
     elif sys.argv[1] == "check":
         check(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split(","), sys.argv[6].split(","))
     else:
