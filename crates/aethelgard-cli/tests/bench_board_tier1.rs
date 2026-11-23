@@ -135,3 +135,358 @@ fn the_committed_package_is_bound_to_its_specification_scenarios_and_emit() {
     );
     fs::remove_dir_all(&out).unwrap();
 }
+
+// ---- AET-WO-3308: what was ordered, and the bench sheet's ELF -------------------------------------------------
+
+/// The fabrication files as ordered, by hash (`AET-WO-3308` (1)): the ten
+/// files `ORDER.md` §1 uploads. A re-spin edits it only by a ruling.
+const ORDERED: &str = "fab/sentinel-01-bench/ORDERED.sha256";
+/// The bench sheet, which names the ELF it predicts (`AET-WO-3308` (3)).
+const BENCH: &str = "fab/sentinel-01-bench/BENCH.md";
+/// Every file of `package/` that was not uploaded to the fabricator. With the
+/// list's ten, the package's whole name set, closed (ruling D2 on PR #362): a
+/// file under any other name, whatever its extension, is a finding.
+const NOT_ORDERED: [&str; 7] = [
+    "FAB-NOTES.md",
+    "MANIFEST.json",
+    "sentinel-01-bench-jlcpcb-bom.csv",
+    "sentinel-01-bench-jlcpcb-cpl.csv",
+    "sentinel-01-bench-pos.csv",
+    "sentinel-01-bench.bom.csv",
+    "sentinel-01-bench.elf",
+];
+/// The abbreviated digests `BENCH.md` may name that are not an ELF's
+/// (ruling D3 on PR #362), each with what it is.
+const NOT_AN_ELF: [(&str, &str); 2] = [
+    (
+        "78212e91…b789",
+        "TI SNOSD82D, the TMP117 datasheet (AET-WO-4241 FEEDBACK §8)",
+    ),
+    ("452d906c…", "the W25Q64JV row of parts.json"),
+];
+
+/// Parses `ORDERED.sha256`: `#` lines (the header, and any ruling block
+/// below it), then `sha256sum` lines, `<64 lowercase hex>  package/<name>`.
+/// Refuses CRLF, a missing final newline, a list that does not open with its
+/// header, an empty or malformed line, and a name listed twice.
+fn parse_ordered(text: &str) -> Result<Vec<(String, String)>, String> {
+    if text.contains('\r') {
+        return Err("a carriage return: the list is LF only".to_owned());
+    }
+    let Some(body) = text.strip_suffix('\n') else {
+        return Err("no final newline".to_owned());
+    };
+    if !body.starts_with('#') {
+        return Err("the list does not open with its header".to_owned());
+    }
+    let mut entries: Vec<(String, String)> = Vec::new();
+    for (i, line) in body.split('\n').enumerate() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let entry = line.split_once("  ").and_then(|(hash, path)| {
+            let name = path.strip_prefix("package/")?;
+            let hash_ok = hash.len() == 64
+                && hash
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+            let name_ok = !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
+            (hash_ok && name_ok).then(|| (hash.to_owned(), name.to_owned()))
+        });
+        let Some(entry) = entry else {
+            return Err(format!("line {}: malformed: {line:?}", i + 1));
+        };
+        if entries.iter().any(|(_, n)| *n == entry.1) {
+            return Err(format!("line {}: {} is listed twice", i + 1, entry.1));
+        }
+        entries.push(entry);
+    }
+    Ok(entries)
+}
+
+/// Every way `pkg` differs from the list: a listed file whose bytes moved or
+/// that is gone, and a file outside the list and [`NOT_ORDERED`]. Each names
+/// the file.
+fn ordered_differences(pkg: &Path, list: &[(String, String)]) -> Vec<String> {
+    let mut out = Vec::new();
+    for (hash, name) in list {
+        match fs::read(pkg.join(name)) {
+            Ok(bytes) if sha(&bytes) == *hash => {}
+            Ok(_) => out.push(format!("{name}: its bytes are not the ones ordered")),
+            Err(_) => out.push(format!("{name}: ordered, and not in the package")),
+        }
+    }
+    for entry in fs::read_dir(pkg).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        if !list.iter().any(|(_, n)| *n == name) && !NOT_ORDERED.contains(&name.as_str()) {
+            out.push(format!(
+                "{name}: in the package, neither ordered nor named as not ordered"
+            ));
+        }
+    }
+    out
+}
+
+fn ordered_list() -> Vec<(String, String)> {
+    parse_ordered(&fs::read_to_string(root().join(ORDERED)).unwrap()).unwrap()
+}
+
+/// `AET-WO-3308` (2): the package holds the ordered bytes, and no other file
+/// than those and the named rest.
+#[test]
+fn the_package_holds_the_files_as_ordered() {
+    let list = ordered_list();
+    assert_eq!(list.len(), 10, "ORDER.md §1 uploads ten files: {list:?}");
+    let differences = ordered_differences(&root().join(PACKAGE), &list);
+    assert!(
+        differences.is_empty(),
+        "the package is not what was ordered (a re-spin edits {ORDERED} only by a ruling): {differences:#?}"
+    );
+}
+
+/// A copy of the package in a scratch directory, for the cases below.
+fn package_copy(tag: &str) -> PathBuf {
+    let out = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("aet-3308-{tag}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&out);
+    fs::create_dir_all(&out).unwrap();
+    for entry in fs::read_dir(root().join(PACKAGE)).unwrap() {
+        let path = entry.unwrap().path();
+        fs::copy(&path, out.join(path.file_name().unwrap())).unwrap();
+    }
+    out
+}
+
+/// Each way a package can stop being what was ordered fails, naming the file.
+#[test]
+fn a_moved_added_removed_or_split_fabrication_file_is_named() {
+    let list = ordered_list();
+    let cases: [(&str, fn(&Path), &[&str]); 5] = [
+        (
+            "one byte",
+            |p| {
+                let f = p.join("sentinel-01-bench-B_Mask.gbs");
+                let mut b = fs::read(&f).unwrap();
+                let last = b.len() - 2;
+                b[last] ^= 1;
+                fs::write(f, b).unwrap();
+            },
+            &["sentinel-01-bench-B_Mask.gbs: its bytes"],
+        ),
+        (
+            "a new layer",
+            |p| fs::write(p.join("sentinel-01-bench-In1_Cu.gbr"), "G04*\n").unwrap(),
+            &["sentinel-01-bench-In1_Cu.gbr: in the package"],
+        ),
+        (
+            "a layer renamed",
+            |p| {
+                fs::rename(
+                    p.join("sentinel-01-bench-Edge_Cuts.gm1"),
+                    p.join("sentinel-01-bench-Edge_Cuts.gko"),
+                )
+                .unwrap();
+            },
+            &[
+                "sentinel-01-bench-Edge_Cuts.gm1: ordered, and not",
+                "sentinel-01-bench-Edge_Cuts.gko: in the package",
+            ],
+        ),
+        (
+            "the drill split in two",
+            |p| {
+                let drl = p.join("sentinel-01-bench.drl");
+                fs::copy(&drl, p.join("sentinel-01-bench-PTH.drl")).unwrap();
+                fs::rename(&drl, p.join("sentinel-01-bench-NPTH.drl")).unwrap();
+            },
+            &[
+                "sentinel-01-bench.drl: ordered, and not",
+                "sentinel-01-bench-PTH.drl: in the package",
+                "sentinel-01-bench-NPTH.drl: in the package",
+            ],
+        ),
+        (
+            "a file removed",
+            |p| fs::remove_file(p.join("sentinel-01-bench-F_Paste.gtp")).unwrap(),
+            &["sentinel-01-bench-F_Paste.gtp: ordered, and not"],
+        ),
+    ];
+    for (i, (case, change, want)) in cases.iter().enumerate() {
+        let pkg = package_copy(&format!("case{i}"));
+        assert!(
+            ordered_differences(&pkg, &list).is_empty(),
+            "{case}: the copy"
+        );
+        change(&pkg);
+        let got = ordered_differences(&pkg, &list);
+        assert_eq!(got.len(), want.len(), "{case}: {got:#?}");
+        for w in *want {
+            assert!(
+                got.iter().any(|g| g.starts_with(w)),
+                "{case}: {w} not in {got:#?}"
+            );
+        }
+        fs::remove_dir_all(&pkg).unwrap();
+    }
+}
+
+/// The list's own form: each refusal, and the form it accepts.
+#[test]
+fn the_ordered_list_refuses_crlf_a_duplicate_and_a_malformed_line() {
+    let text = fs::read_to_string(root().join(ORDERED)).unwrap();
+    let first = text
+        .lines()
+        .find(|l| !l.starts_with('#'))
+        .unwrap()
+        .to_owned();
+    let refused = |t: String, why: &str| {
+        let e = parse_ordered(&t).expect_err(why);
+        assert!(e.contains(why), "{why}: {e}");
+    };
+    refused(text.replace('\n', "\r\n"), "carriage return");
+    refused(text.trim_end().to_owned(), "no final newline");
+    refused(format!("{first}\n{text}"), "header");
+    refused(format!("{text}{first}\n"), "listed twice");
+    for bad in [
+        first.replacen("  ", " ", 1),
+        first.replacen("  ", "  ./", 1),
+        first.replacen("package/", "", 1),
+        format!("{first} "),
+        first.to_uppercase(),
+        first[1..].to_owned(),
+        String::new(),
+    ] {
+        refused(format!("{text}{bad}\n"), "malformed");
+    }
+    let more = format!("{text}# Ruling 2026-12-01: a block below the header, as the header says\n");
+    assert_eq!(parse_ordered(&more).unwrap(), parse_ordered(&text).unwrap());
+}
+
+/// Every hex token in `text` that could name a digest, by line: the 64-digit
+/// ones, and the abbreviated ones (eight digits or more, then `…` or `...`,
+/// then any digits). Tokens inside a word or after `0x` are not digests.
+fn digests(text: &str) -> (Vec<String>, Vec<String>) {
+    let (mut full, mut short) = (Vec::new(), Vec::new());
+    for (n, line) in text.lines().enumerate() {
+        let b = line.as_bytes();
+        let mut i = 0;
+        while i < b.len() {
+            if !b[i].is_ascii_hexdigit() || (i > 0 && b[i - 1].is_ascii_alphanumeric()) {
+                i += 1;
+                continue;
+            }
+            let mut j = i;
+            while j < b.len() && b[j].is_ascii_hexdigit() {
+                j += 1;
+            }
+            let rest = &line[j..];
+            let dots = ["…", "..."].into_iter().find(|d| rest.starts_with(*d));
+            if let (Some(d), true) = (dots, j - i >= 8) {
+                let mut k = j + d.len();
+                while k < b.len() && b[k].is_ascii_hexdigit() {
+                    k += 1;
+                }
+                short.push(format!("L{}: {}", n + 1, &line[i..k]));
+                j = k;
+            } else if j - i == 64 && !rest.starts_with(|c: char| c.is_ascii_alphanumeric()) {
+                full.push(format!("L{}: {}", n + 1, &line[i..j]));
+            }
+            i = j;
+        }
+    }
+    (full, short)
+}
+
+/// Ruling D3 on PR #362: the sheet states exactly one full digest, the ELF's,
+/// and abbreviates only the named digests that are not an ELF's.
+fn bench_names_only(text: &str, elf: &str) -> Result<(), String> {
+    let (full, short) = digests(text);
+    if full.len() != 1 || !full[0].ends_with(&format!(": {elf}")) {
+        return Err(format!(
+            "BENCH.md must state exactly one full digest, MANIFEST.json's ELF {elf}; it states {full:?}"
+        ));
+    }
+    let other: Vec<_> = short
+        .iter()
+        .filter(|s| {
+            !NOT_AN_ELF
+                .iter()
+                .any(|(d, _)| s.ends_with(&format!(": {d}")))
+        })
+        .collect();
+    if !other.is_empty() {
+        return Err(format!(
+            "BENCH.md abbreviates a digest that is not one of the named non-ELF ones (NOT_AN_ELF): {other:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn package_elf() -> String {
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(root().join(PACKAGE).join("MANIFEST.json")).unwrap())
+            .unwrap();
+    manifest["files"]["sentinel-01-bench.elf"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+/// `AET-WO-3308` (3): the bench sheet predicts the ELF the package carries.
+#[test]
+fn the_bench_sheet_names_the_package_elf() {
+    let text = fs::read_to_string(root().join(BENCH)).unwrap();
+    let elf = package_elf();
+    assert_eq!(
+        elf,
+        sha(&fs::read(root().join(PACKAGE).join("sentinel-01-bench.elf")).unwrap())
+    );
+    bench_names_only(&text, &elf).unwrap();
+}
+
+/// The cases (3) exists to fail, on the sheet as committed.
+#[test]
+fn a_bench_sheet_naming_another_elf_fails() {
+    let text = fs::read_to_string(root().join(BENCH)).unwrap();
+    let elf = package_elf();
+    let off = format!(
+        "{}{}",
+        &elf[..63],
+        if elf.ends_with('0') { '1' } else { '0' }
+    );
+    let other = "008a2a59".repeat(8);
+    for (case, sheet) in [
+        ("one character off", text.replace(&elf, &off)),
+        (
+            "a prefix only",
+            text.replace(&elf, &format!("{}…", &elf[..8])),
+        ),
+        (
+            "a second full digest in a table row",
+            format!("{text}| x | `{other}` |\n"),
+        ),
+        (
+            "the old ELF abbreviated",
+            format!("{text}The ELF `008a2a59…`.\n"),
+        ),
+        (
+            "the old ELF with three dots",
+            format!("{text}The ELF 008a2a59....\n"),
+        ),
+        (
+            "the ELF in capitals",
+            text.replace(&elf, &elf.to_uppercase()),
+        ),
+    ] {
+        assert!(bench_names_only(&sheet, &elf).is_err(), "{case} passed");
+    }
+    for (d, _) in NOT_AN_ELF {
+        assert!(
+            text.contains(d),
+            "{d} is named but the sheet no longer cites it"
+        );
+    }
+}
