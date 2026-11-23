@@ -19,7 +19,13 @@ Today each tool is `[name, version]` (`event.rs` L308–317, L346–367; six ite
 | a new `rust-toolchain` entry | absent | `rustc -vV`'s `release (commit)`, and a content digest: ruling question Q-T below |
 
 - **Lean: a third item per tool**, not `sha256:` folded into the version text. It keeps `version` the tool's own
-  words (replay reports them, `event.rs` L312), and `check_archived`'s name rule (`campaign.rs` L3803) is unchanged.
+  words (replay reports them, `event.rs` L312).
+- **The name rule changes with a `rust-toolchain` entry.** `check_archived` (`campaign.rs` L3803) requires the
+  header's names to equal `tools_of(records)`, and no record names the toolchain. So `tools_of` gains
+  `rust-toolchain` on every campaign run. Today `campaign` needs no toolchain on the host. On a host with none,
+  lean: the entry is `[rust-toolchain, "absent", null]`, named and not refused, so a campaign of a foreign or
+  prebuilt ELF still runs. The alternative is to refuse `ToolUnavailable` (exit 4), which adds a dependency
+  `campaign` does not have today.
 - **Where libngspice's hash is taken.** The bridge links `-l:libngspice.so.0` (`bridge/build.rs` L22) and runs
   sandboxed with an empty environment. Only the bridge knows which file its loader mapped. So the hash is best
   taken **in the bridge** (`/proc/self/maps`, the mapped path's bytes), and reported in its identity JSON beside
@@ -87,10 +93,13 @@ unread witness on a read boot and nothing ties the finding to it.
 
 `judge_boot` (`renode.rs` L2815–2820) returns a tool error (exit 5) when the boot word is set and the core
 executed fewer instructions than the run holds; `campaign.rs` L1048–1051 then aborts the campaign.
+- **This overturns `2100`'s ruled A10** (`AET-WO-2100.FEEDBACK.md` L350: "`wfi` after the word | exit 5
+  (ruled)"), as item (4) asks. Named so the ruling is explicit.
 - **Lean:** that shape becomes the finding `cpu_halted` (the name the same sleep already gets without the boot
-  word, `renode.rs` L2881–2896): one name for one fact, the core executed fewer than its time. Kind 10 already
-  archives both counts, so replay can require `cpu_halted` exactly when a booted kind 10 shows
-  `instructions_observed < instructions_expected`.
+  word, `renode.rs` L2881–2896): one name for one fact, the core executed fewer than its time. **Replay binds
+  `cpu_halted` nowhere today** (no reference in chaos `campaign.rs`). The new run rule: on a booted kind 10,
+  `cpu_halted` is among the findings exactly when `instructions_observed < instructions_expected`. Kind 10
+  already archives both counts.
 - **Not moved:** the sibling at L2822–2828 (a line of ours lagging its stamp while the core executed every
   instruction) is two witnesses disagreeing, a tool fault, and stays exit 5. The adversarial pass will try to
   reach exit 5 from a sleep by that path.
@@ -116,12 +125,24 @@ executed fewer instructions than the run holds; `campaign.rs` L1048–1051 then 
   a later boot word moves it later from reset, and a shorter boot can put sentinel-02-power's sag (−71.6 ms)
   before reset (refused by name, `PlantedEventBeforeReset`, lean).
   - (a) **Every planted event from the boot word, signed** (the WO's text). Today's instants are kept exactly, so
-    no committed verdict should move. **My lean**, with the refusal above.
+    no committed verdict should move (inferred, results P8). **My lean**, with the refusal above. Its cost
+    (results P9): the bound checks on the instant that run before any boot today (`droop_end_ns`,
+    `check_battery_sag`'s start bound, `solve_battery_sag`, and `verify`'s tool-less coverage stage) can check
+    only the offset before the boot. The resolved instant is checked after it, so those refusals cost a Renode
+    boot.
   - (b) The scenario names its anchor, `after_reset_ns` or `from_boot_word_ns`. Pre-boot events keep reset;
     post-boot ones use the boot word. More format for the same eight instants.
   - (c) Re-plant the droops where they were authored: 973,380 ns *after* the boot word, as 1 ms was when the
     minimal boot word was at 26,620 ns. That moves every droop into running firmware, with unmeasured verdicts:
-    a §7 stop by construction. I would measure it first if you want it.
+    a §7 stop by construction. I would measure it first if you want it. (973,380 ns is the minimal board's
+    figure; each board's would be measured.)
+- **Q-G: format 6 removes none of the re-pins that ground item (3).** 4241 §0a's nine re-pins are firmware spin
+  counts in `twin_tier2.rs` (outside the fence) and pinned expectations in `campaign_tier2.rs` (L705–712, L949, in
+  the fence). None is a scenario field, and the eight scenario instants never needed re-pinning: 4241 moved the
+  boot word past them without moving a verdict. Lean: build (a) for future post-boot plants. In
+  `campaign_tier2.rs`, derive the pinned instants from kind 32's `boot_word_ns` plus each one's delta, in place of
+  the literals (in the fence). Leave `twin_tier2.rs`'s firmware spins to a backlog row (spin until the boot word
+  plus N), which needs a fence of its own.
 
 ## (2) `window`
 
@@ -142,13 +163,16 @@ leave them and list them in FEEDBACK.
 
 ## Q-F: fence additions this shape needs (read at source)
 
-1. `bridge/src` and `cli/src/analog.rs` `identified`, for libngspice's hash, taken where it is loaded.
-2. `cli/src/analog.rs` L370/L484/L925 hand the instant to the bridge; it stays absolute (the resolved one), so
+1. `cli/tests/twin_tier2.rs`: L2993 asserts the campaign line's `window`, and L2746 pins exit 5 for the sleeping
+   boot (`m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement`). Items (2) and (4) cannot close
+   without editing both. L2217 (the verdict's `boot.window`) moves only if (2)'s verdict half does.
+2. `bridge/src` and `cli/src/analog.rs` `identified`, for libngspice's hash, taken where it is loaded.
+3. `cli/src/analog.rs` L370/L484/L925 hand the instant to the bridge; it stays absolute (the resolved one), so
    no change is expected there. Named in case it needs to move.
-3. Droop and sag scenarios authored outside the fence, which format 6 refuses unless they move:
+4. Droop and sag scenarios authored outside the fence, which format 6 refuses unless they move:
    `cli/src/verify.rs` L2696, L2725, L2994 and L3137 (1607's file); `cli/tests/fab_tier1.rs`;
    `cli/tests/board_tier2.rs`.
-4. `verdict.rs` / `main.rs`, only if the verdict's `window` goes too (see (2); my lean is no).
+5. `verdict.rs` / `main.rs`, only if the verdict's `window` goes too (see (2); my lean is no).
 
 ## (1) The droop's `bor_level`
 
