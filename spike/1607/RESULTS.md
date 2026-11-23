@@ -35,6 +35,10 @@ Base `aethelgard-cli` tests with `HOME` a private directory holding `.cargo/conf
 - **V4, resolved by the ruling:** the banner goes to stderr, so the `hwdef` and `pinout` verdicts' `topology_sha256` do not move.
 - **V6, hit:** plain `verify` on the reference (`sentinel-01-minimal`, drawn), base binary against head binary in the image with the bridge: both `pass`, and the verdict lines are **byte-identical** (202,708 bytes; `vref/`). Measured again with the D2 binary (`1a8a4364`): byte-identical to base (`vref/d2.json`), so `reason` is absent on a drawn board as designed.
 
+## The null sweep at the shipped code (`33348085`, after D2, the exit-code fix, MCP and two merges of `main`)
+
+- Again **94 files differ**: the same 69 lines and 25 `solve` stderr files, none unexplained (`same-final.txt`).
+
 ## `prove` with Kani (V1 for `prove`)
 
 On `sentinel-01-minimal`, `sentinel-02-power` and `sentinel-02-bench`, base and branch (`sw/prove-*`):
@@ -44,4 +48,33 @@ On `sentinel-01-minimal`, `sentinel-02-power` and `sentinel-02-bench`, base and 
 
 ## Mutants
 
-`mutants.py`, under the acceptance condition (fake `HOME` with `.cargo/config.toml`, target outside the tree): **22 of 22 killed** at `d2a5737a` and again at `8ff08248`. Each is killed by its named test, and every selection passes on the pristine tree (`mut/result-final.txt`).
+`mutants.py`, under the acceptance condition (fake `HOME` with `.cargo/config.toml`, target outside the tree). Each mutant is killed by its named test, and every selection passes on the pristine tree:
+- 22 of 22 at `d2a5737a`, and at `8ff08248`;
+- 23 of 23 at `1a8a4364` (M19);
+- **25 of 25 at `ff210f1d`** (M19–M21), the final code (`mut-final/result.txt`).
+
+## Every prediction, scored
+
+| # | Result | Note |
+|---|---|---|
+| B1 | hit | 34 / 32 / 29 / 25 |
+| B2 | hit | 27 bannered; three non-active parts |
+| B3 | hit | 1,178 files identical |
+| V1 | hit | `emit`, `check drc --spec`, `check support` (sweep); `prove --spec` (Kani, three specifications); `check pinout` (stub tier 1) |
+| V2 | hit | plain `check drc` and plain `prove` unchanged |
+| V3 | hit | no line moves for a specification without a banner |
+| V4 | resolved by D1 (b) | the banner went to stderr; nothing downstream moves |
+| V5 | hit | no emitted file, no `fab/` byte |
+| V6 | hit | the reference's `verify` is byte-identical, base against head and again with D2 |
+| P1 | hit | `check_support_runs_only_the_pinned_kicad`; M1 |
+| P2 | hit, narrower | 36 `CargoConfigRefused`, in `tools_tier1` and `generate_tier1` only |
+| P3 | hit | `/run/user/<euid>`; CI's non-root runner has it (F2 settled) |
+| P4 | hit | both runners' `TMPDIR` reached; edit (b) accepted |
+| P5 | partly missed | only the named `fab_tier1` test failed |
+| P6 | missed | no other file failed |
+| P7 | hit | five phases; today's README passes |
+| P8 | missed (overruled) | D2: never `pass`; `not_verified`, exit 7 |
+| P9 | hit | `passes` excuses only the four gates, only when not drawn; M6, M6b, M9 |
+| P10 | hit | `emit_tier1`'s row moved; edit (c) accepted |
+| G1 | missed | one tier-2 test, its weights row, `TIER2_MIN` 205 |
+| G2 | missed | +912 net in `crates/` against `main` |

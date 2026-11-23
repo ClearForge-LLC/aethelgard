@@ -67,7 +67,7 @@
 
 ## 2. Measurement and acceptance
 
-- **Null sweep, base against the final head `8ff08248`** (34 specifications, the tools image; `RESULTS.md`): **94 files differ, every one as (6) names.**
+- **Null sweep, base against `8ff08248`, and again against the shipped code `33348085`** (34 specifications, the tools image; `RESULTS.md`): **94 files differ, every one as (6) names, at both** (`same-head.txt`, `same-final.txt`). Nothing under `fab/`, `boards/`, `examples/`, `scenarios/` or the CLI's test fixtures differs from `main` (`git diff --stat origin/main...HEAD`: empty).
   - 69 stdout lines, each differing from base only by a `lifecycle` key equal to that specification's `validate` banner: `emit`, `check drc --spec` and `check support` of the 23 drawn, bannered specifications.
   - 25 `solve` stderr files, each now exactly the banner's lines. `solve`'s stdout is byte-identical on all 29 that solve.
   - Every emitted file (`emit/`'s three, `generate`'s whole tree) and every other line (`validate`, `check erc`, plain `check drc`, `generate`) is byte-identical.
@@ -103,15 +103,17 @@
 
 ## 4. Predictions against results
 
-All in `spike/1607/RESULTS.md`. The misses:
+Every prediction is scored in `spike/1607/RESULTS.md` (its last table). The misses:
 - **P2:** narrower than predicted. The failures were in `tools_tier1` (35) and `generate_tier1` (1) only, not `lifecycle_tier1`, `boot_tier1` or `mcp_tier1`.
 - **P5, partly missed:** only the named `fab_tier1` test failed. Lines 350 and 602 are refused before `read_base`.
 - **P6, missed:** no other file failed with the target outside.
-- **G2, missed:** +807 net lines in `crates/`, against +250 to +600. Most of it is `cli_backlog_tier1.rs` (478 lines).
+- **P8, missed (overruled):** "its `ok` follows the gates that ran" was built, then ruled against (D2). A no-board run is never `pass`.
+- **G1, missed:** a tier-2 test was added (D2), with a `ci/test-weights.tsv` row, and `TIER2_MIN` moved to 205.
+- **G2, missed:** +912 net lines in `crates/` against `main` (+1042 −130), against +250 to +600. Most of it is `cli_backlog_tier1.rs` (478 lines).
 
 ## 5. Adversarial pass (§5), targeted
 
-A fresh read-only subagent (Opus), given the work order and the diff, not these conclusions. Its report is in this session; it could not write `adv/REPORT.md`. It found no high or medium defect in (1), (5) or (6). Each attack:
+A fresh read-only subagent (Opus), given the work order and the diff at `c1eb5153`, not these conclusions. **It did not see what came after:** D1 (b)'s stderr banner, D2's `not_verified` and exit 7, `exit_code`, and MCP's one line. CI's tier-2 tests caught the one defect in that code (§5b); the rest is covered by its tests and mutants M18–M21, not by a fresh read. Its report is in this session; it could not write `adv/REPORT.md`. It found no high or medium defect in (1), (5) or (6). Each attack:
 - **An `eol` verdict path without the banner: none.**
   - It checked every return of the five sites. Failing DRC, support and pinout verdicts carry the banner; refusals do not, as with `validate`.
   - It checked that `validate`'s banner equals the topology's on all 24 bannered committed specifications, `imu-baro-1v8`'s two EOL parts included.
@@ -156,6 +158,11 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **MCP and exit 7, ruled 03:30Z:** a successful call, like 1. `mcp.rs` counts 7 with 0, 1 and 6 (one line), and its unit test is now `exit_0_1_6_and_7_are_successful_calls_and_others_are_errors`; the snapshot `tests/mcp-tools.json` does not move (`mcp_snapshot_tier1` passes). Mutant M20.
 - **`TIER2_MIN`, ruled 03:30Z:** raised in `ci.yml` from 203 to **205**: `main`'s count, 204 (run 45099268629 at `d09a5187`; 2309 and 4407 add no `TIER2_RE` test), plus D2's. As ruled, one line: the value only. The comment history above it, which ends at 203, is not extended.
 
+- **F-K: the shard refit rule fires** (`ci/shard.sh` REFIT RULE: a spread above 6 minutes on two runs in a row).
+  - Tools-shard spread on this PR: 6.2 min on `f6372ddd` (run 45095787493), then 7.3 min on `ff210f1d` (45107410136). The slowest shard is 17m52s, under the 20-minute line.
+  - `main`'s `b22600d3` (3307) was already 7.2 min, and `d09a5187` 3.1 min.
+  - D2's 345 s row is one of the inputs. The refit is `ci/` work, outside this fence, and yours to schedule.
+
 ## 7. Gates, fence, reduction pass, mutants
 
 - **Gates at `6ea27f87`** (D2's first build; the merged final code is under "`main` merged" below):
@@ -170,7 +177,7 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **CI on `ea46983a` (D2's first build): red**, three checks. Tools shards 1 and 8 failed, and `tools` with them: the defect in §5b.
 - **CI on `f6372ddd` (PR #342, before D2): green.**
   - Runs: `ci` 45095787493, `engine-image` 45095787593 and `ardupilot-image` 45095787549. 33 checks pass; 3 are skipped by the workflow.
-  - The tier-2 guard reports `tier2_tests_passed=204 floor=203`. `TIER2_MIN` and `ci/test-weights.tsv` are unchanged; no tier-2 test was added.
+  - The tier-2 guard reports `tier2_tests_passed=204 floor=203`. At that commit no tier-2 test had been added; D2 later added one, and `TIER2_MIN` became 205.
   - **F2, settled:** CI's host `gates` job runs as the runner user, not root. There `cli_backlog_tier1::the_private_scratch_is_outside_home` and every `private_tmp` caller pass, so the runner has `/run/user/<uid>`.
 - **Mutants** (`spike/1607/mutants.py`; 25, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
   - **22 of 22 killed at `d2a5737a`, and at `8ff08248` after the reduction. 23 of 23 at `1a8a4364`. 25 of 25 at `ff210f1d`, the final code**, with M19–M21. Each was killed by its named test, and every selection passes on the pristine tree (`mut-final/result.txt`).
@@ -187,7 +194,7 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`.
   - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`.
   - `15798f91` (2309's chaos change, 4407's images, and `docs/`), at `ff708b3a`. One conflict: `ci/test-weights.tsv`, where each side added a header line, and both are kept. On the merged tree: fmt and clippy clean, `cargo test --workspace` **2802 passed, 0 failed** (`m/ws-merged.log`), and `ci/test-shard.sh` 126 PASS. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
-- **Reduction pass (diff): +807 net in `crates/` (+927 −120) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
+- **Reduction pass (diff): +912 net in `crates/` against `main` (+1042 −130; +807 at `8ff08248`, when the pass ran) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
   - **Removed:** `doctor`'s `KICAD_PINNED`, equal to `KICAD` once (1) landed.
   - **Removed:** the banner-to-lines conversion, written twice in `cli_backlog_tier1` (now `banner_lines`).
   - **Removed:** `generate_tier1`'s re-derivation of `private_tmp`'s root and non-root mode, and its probe scratch.
