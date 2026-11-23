@@ -1130,12 +1130,58 @@ pub fn copper(
 /// The bound between two pads of the net, and for each via the current
 /// its barrel carries between layers (quanta of the unit current; the
 /// largest net transfer from any one layer).
+#[derive(Debug)]
 pub struct PinBound {
     pub bound: Bound,
     /// The bound's share in sheet cells, via junctions and barrels, ohms
     /// (upper ends).
     pub shares: [f64; 3],
     pub via_transfer: Vec<((i64, i64), i64)>,
+}
+
+/// The most threads [`bound_all`] spends (`AET-WO-1323` D5).
+pub const SOLVE_THREADS: usize = 4;
+
+/// [`bound`] from `source` to each of `sinks`, on at most `threads` scoped
+/// threads, in `sinks`' order. Each pin's bound is computed alone, exactly
+/// as one call of [`bound`] computes it, and kept at its index, so the
+/// results are the same bytes whatever the thread count or the timing.
+pub fn bound_all(
+    nc: &NetCopper,
+    m: &Model,
+    source: &Pad,
+    sinks: &[&Pad],
+    max_iter: usize,
+    threads: usize,
+) -> Vec<Result<PinBound, Refusal>> {
+    let threads = threads.clamp(1, sinks.len().max(1));
+    if threads == 1 {
+        return sinks
+            .iter()
+            .map(|p| bound(nc, m, source, p, max_iter))
+            .collect();
+    }
+    let mut out: Vec<Option<Result<PinBound, Refusal>>> = sinks.iter().map(|_| None).collect();
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = (0..threads)
+            .map(|k| {
+                scope.spawn(move || {
+                    (k..sinks.len())
+                        .step_by(threads)
+                        .map(|i| (i, bound(nc, m, source, sinks[i], max_iter)))
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        for h in handles {
+            for (i, r) in h.join().expect("a supply bound's thread panicked") {
+                out[i] = Some(r);
+            }
+        }
+    });
+    out.into_iter()
+        .map(|r| r.expect("every pin is bounded by one thread"))
+        .collect()
 }
 
 /// The certified bound from `source` to `sink`, both pads of the net on
@@ -1595,9 +1641,13 @@ pub fn supplies(
             terminals.extend(sinks.iter().copied());
             let nc = copper(board, &read.routed, net, &terminals, &model).map_err(to_refused)?;
             let notes = nc.notes.iter().map(|n| format!("`{net}`: {n}")).collect();
-            let results = sinks
-                .iter()
-                .map(|p| match bound(&nc, &model, from, p, 400) {
+            let threads = std::thread::available_parallelism()
+                .map_or(1, |n| n.get())
+                .min(SOLVE_THREADS);
+            let results = bound_all(&nc, &model, from, sinks, 400, threads)
+                .into_iter()
+                .zip(sinks)
+                .map(|(r, p)| match r {
                     Ok(b) => bounded_pin(p, &b),
                     Err(r) => {
                         let (kind, message) = match r {
@@ -1893,6 +1943,61 @@ mod tests {
     /// Two vias carry the current down to B.Cu and back: the bound holds
     /// above the tracks' bars and both barrels at their shortest, and not
     /// far above.
+    /// `AET-WO-1323` D5: the pins bounded on threads are the serial pins,
+    /// byte for byte, in the same order, at every thread count: each pin's
+    /// whole result (bound, fluxes, shares, via transfers, or refusal) as
+    /// `{:?}` writes it, which names every float's shortest exact form.
+    #[test]
+    fn the_pins_bounded_on_threads_are_the_serial_pins_byte_for_byte() {
+        let pad_at = |n: &str, x: i64| pad(n, "VDD", x, 2_000_000, x + 1_000_000, 3_000_000);
+        let b = board(vec![
+            part("J1", vec![pad_at("1", 1_000_000)]),
+            part(
+                "J2",
+                vec![
+                    pad_at("1", 15_000_000),
+                    pad_at("2", 19_000_000),
+                    pad_at("3", 23_000_000),
+                    pad_at("4", 27_000_000),
+                    pad_at("5", 31_000_000),
+                ],
+            ),
+        ]);
+        let (v1, v2) = ((6_000_000, 2_500_000), (11_000_000, 2_500_000));
+        let routed = Routed {
+            segments: vec![
+                seg(Layer::F, (1_500_000, 2_500_000), v1),
+                seg(Layer::B, v1, v2),
+                seg(Layer::F, v2, (31_500_000, 2_500_000)),
+            ],
+            vias: [v1, v2]
+                .map(|at| Via {
+                    net: "VDD".into(),
+                    at,
+                })
+                .to_vec(),
+            ..Routed::default()
+        };
+        let src = &b.parts[0].pads[0];
+        let sinks: Vec<&Pad> = b.parts[1].pads.iter().collect();
+        let mut terminals = vec![src];
+        terminals.extend(&sinks);
+        let m = model();
+        let nc = copper(&b, &routed, "VDD", &terminals, &m).unwrap();
+        let text = |threads| {
+            bound_all(&nc, &m, src, &sinks, 400, threads)
+                .iter()
+                .map(|r| format!("{r:?}"))
+                .collect::<Vec<_>>()
+        };
+        let serial = text(1);
+        assert_eq!(serial.len(), 5);
+        assert!(serial.iter().all(|r| r.starts_with("Ok(")), "{serial:?}");
+        for threads in [2, 3, SOLVE_THREADS] {
+            assert_eq!(text(threads), serial, "{threads} threads");
+        }
+    }
+
     #[test]
     fn a_path_through_two_vias_is_bounded_above_its_floor() {
         let b = board(vec![

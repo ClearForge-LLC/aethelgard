@@ -263,6 +263,19 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     for z in fp.all("zone") {
         keepouts.push(keepout(&z, &named)?);
     }
+    // A footprint's keepout is its own part's (`AET-WO-1323` D3, `1310`
+    // A7): wholly inside its courtyard outline or its pad field, edges
+    // included. One moved off its part would have `check` judge copper by a
+    // zone that is not where the part is.
+    let field = pads.iter().map(|p| p.rect).reduce(Rect::union);
+    for k in &keepouts {
+        if !field.is_some_and(|f| f.contains(k.rect)) && !held(&courtyard, k.rect) {
+            return Err(format!(
+                "{named}'s keepout on {} lies outside its own courtyard and pad field",
+                k.layer.name()
+            ));
+        }
+    }
     Ok(Part {
         reference,
         rotation: theta,
@@ -270,6 +283,31 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         courtyard,
         keepouts,
     })
+}
+
+/// Whether the box `r` lies wholly inside the closed outline `edges`, its
+/// boundary included: no edge enters `r`'s open interior, and `r`'s centre
+/// is inside (both at doubled coordinates, so the centre is exact).
+fn held(edges: &[Edge], r: Rect) -> bool {
+    let twice: Vec<Edge> = edges
+        .iter()
+        .map(|&(a, b)| ((2 * a.0, 2 * a.1), (2 * b.0, 2 * b.1)))
+        .collect();
+    !edges.iter().any(|&e| enters(e, r)) && under(&twice, (r.x0 + r.x1, r.y0 + r.y1))
+}
+
+/// Whether the segment `(a, b)` passes through the open interior of `r`: no
+/// separating axis among x, y and the segment's normal (a segment along
+/// `r`'s side, or touching only a corner, does not).
+fn enters((a, b): Edge, r: Rect) -> bool {
+    if a.0.max(b.0) <= r.x0 || a.0.min(b.0) >= r.x1 || a.1.max(b.1) <= r.y0 || a.1.min(b.1) >= r.y1
+    {
+        return false;
+    }
+    let (dx, dy) = (i128::from(b.0 - a.0), i128::from(b.1 - a.1));
+    let side = |(x, y): (i64, i64)| dx * i128::from(y - a.1) - dy * i128::from(x - a.0);
+    let c = [(r.x0, r.y0), (r.x1, r.y0), (r.x1, r.y1), (r.x0, r.y1)].map(side);
+    c.iter().any(|&v| v < 0) && c.iter().any(|&v| v > 0)
 }
 
 /// A footprint zone, which only a keepout may be: a rectangle on one copper
