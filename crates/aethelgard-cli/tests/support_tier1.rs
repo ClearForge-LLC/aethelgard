@@ -497,7 +497,7 @@ fn motors() -> (Specification, Pads, String, String) {
 fn motor_findings(r: &support::Record) -> Vec<(&'static str, &str)> {
     r.findings
         .iter()
-        .filter(|f| f.kind.starts_with("motor_pull"))
+        .filter(|f| f.kind.starts_with("motor_"))
         .map(|f| (f.kind, f.message.as_str()))
         .collect()
 }
@@ -654,12 +654,32 @@ fn a_motor_pull_on_another_footprint_or_none_fails_by_name() {
 #[test]
 fn a_second_resistor_beside_a_motor_pull_fails_by_name() {
     let (spec, pads, board, _) = motors();
+    // Any two-pin part across the two nets is a second path, whatever its
+    // symbol: a capacitor, a ferrite, a jumper (none of them a resistor).
+    for (r, v) in [("C99", "100n"), ("FB99", "600R"), ("JP99", "0")] {
+        let mut other = pads.clone();
+        other.0.insert(r.into(), v.into());
+        other.1.insert((r.into(), "1".into()), "/MOTOR1".into());
+        other.1.insert((r.into(), "2".into()), "GND".into());
+        let out = judge(&spec, &other, &board);
+        let f = motor_findings(&out);
+        assert_eq!(
+            f.iter().map(|x| x.0).collect::<Vec<_>>(),
+            ["motor_pull_count"],
+            "{r}: {f:?}"
+        );
+        assert!(f[0].1.contains(r) && f[0].1.contains("R6"), "{f:?}");
+    }
+    // A part on the line alone, or beside the pull across other nets, is not
+    // a second path.
     let mut cap = pads.clone();
     cap.0.insert("C99".into(), "100n".into());
     cap.1.insert(("C99".into(), "1".into()), "/MOTOR1".into());
-    cap.1.insert(("C99".into(), "2".into()), "GND".into());
-    let out = judge(&spec, &cap, &board);
-    assert!(motor_findings(&out).is_empty(), "{:?}", out.findings);
+    cap.1.insert(("C99".into(), "2".into()), "VDD_3V3".into());
+    assert!(
+        motor_findings(&judge(&spec, &cap, &board)).is_empty(),
+        "a capacitor to the rail is no second pull"
+    );
     let mut pads = pads;
     pads.0.insert("R99".into(), "40k2 CRCW0603_F_K".into());
     pads.2
@@ -674,4 +694,59 @@ fn a_second_resistor_beside_a_motor_pull_fails_by_name() {
         "{f:?}"
     );
     assert!(f[0].1.contains("R99") && f[0].1.contains("R6"), "{f:?}");
+}
+
+/// A resistor of another symbol (`R_Small`) in parallel with the pull counts
+/// as a second path; a resistor from the line to the rail (a pull-up, a
+/// divider with the pull-down) is `motor_net_extra_resistor`, and a
+/// resistor elsewhere is neither.
+#[test]
+fn another_resistor_on_a_motor_line_fails_by_name() {
+    let (spec, pads, board, _) = motors();
+    let with = |r: &str, other: &str, symbol: &str, footprint: &str| {
+        let mut p = pads.clone();
+        p.0.insert(r.into(), "10k CRCW0603_F_K".into());
+        p.2.insert(r.into(), footprint.into());
+        p.1.insert((r.into(), "1".into()), "/MOTOR1".into());
+        p.1.insert((r.into(), "2".into()), other.into());
+        let text = netlist_text(&p).replace(
+            &format!("(comp (ref \"{r}\") (value \"10k CRCW0603_F_K\") (libsource (lib \"Device\") (part \"R\"))"),
+            &format!("(comp (ref \"{r}\") (value \"10k CRCW0603_F_K\") (libsource (lib \"Device\") (part \"{symbol}\"))"),
+        );
+        assert!(
+            text.contains(&format!("(part \"{symbol}\")")),
+            "edit applied"
+        );
+        motor_findings(&judge_text(&spec, &text, &board))
+            .iter()
+            .map(|x| (x.0, x.1.to_owned()))
+            .collect::<Vec<_>>()
+    };
+    let f = with("R98", "GND", "R_Small", "Resistor_SMD:R_0603_1608Metric");
+    assert_eq!(
+        f.iter().map(|x| x.0).collect::<Vec<_>>(),
+        ["motor_pull_count"],
+        "{f:?}"
+    );
+    assert!(f[0].1.contains("R98"), "{f:?}");
+    // Each way the gate knows a resistor stands alone: the symbol family,
+    // or the footprint class.
+    for (symbol, footprint) in [
+        ("R", "Resistor_SMD:R_0603_1608Metric"),
+        ("R_Small", "Other:Pad"),
+        ("Odd", "Resistor_SMD:R_0603_1608Metric"),
+    ] {
+        let f = with("R99", "VDD_3V3", symbol, footprint);
+        assert_eq!(
+            f.iter().map(|x| x.0).collect::<Vec<_>>(),
+            ["motor_net_extra_resistor"],
+            "{symbol}: {f:?}"
+        );
+        assert!(f[0].1.contains("R99") && f[0].1.contains("R6"), "{f:?}");
+    }
+    assert!(
+        with("R99", "/OTHER", "R", "Resistor_SMD:R_0603_1608Metric")
+            .iter()
+            .any(|x| x.0 == "motor_net_extra_resistor")
+    );
 }
