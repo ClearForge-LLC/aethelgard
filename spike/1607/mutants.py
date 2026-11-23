@@ -108,7 +108,7 @@ MUTANTS = [
      '',
      "cli_backlog_tier1", "solve_prints_the_banner_on_stderr_and_the_topology_alone_on_stdout"),
     ("M19", "src/verify.rs",
-     '        (true, false) => (false, "not_verified", Some("DrawsNoBoard"), EXIT_NOT_VERIFIED),',
+     '        (true, false) => (\n            false,\n            "not_verified",\n            Some("DrawsNoBoard"),\n            EXIT_NOT_VERIFIED,\n        ),',
      '        (true, false) => (true, "pass", None, 0),',
      "--bin", "a_board_not_drawn_never_exits_0"),
     ("M15", "src/doctor.rs",
