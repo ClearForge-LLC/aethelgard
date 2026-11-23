@@ -1,0 +1,8 @@
+board	erc	drc (--spec --schematic)	support
+driver-judges-nothing	pass 0 findings	pass 0 findings	pass 0 findings
+hse-crystal-16	pass 0 findings	pass 0 findings	pass 0 findings
+motors-dshot600	pass 0 findings	pass 0 findings	pass 0 findings
+motors-pwm	pass 0 findings	pass 0 findings	pass 0 findings
+sentinel-02-shaped	pass 0 findings	pass 0 findings	pass 0 findings
+sentinel-03	pass 0 findings	pass 0 findings	pass 0 findings
+serial-dshot-9600	pass 0 findings	pass 0 findings	pass 0 findings
