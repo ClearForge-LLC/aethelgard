@@ -2,7 +2,7 @@
 
 One mutant per guard phase B2 (eda draws the motor pull) adds, sized to the diff. `spike/4300i/mutants_b2.py` applies each edit, runs the named filter of `cargo test -p aethelgard-cli --test <binary>`, records the result and restores the file with `git checkout`. It ran on the committed tree. Raw results: `out/mutants-b2.tsv`.
 
-**Result: 16/16 killed, 0 survived.** B16 survived its first run (no test put a non-resistor across a motor net and GND); `a_second_resistor_beside_a_motor_pull_fails_by_name` gained the capacitor case, and the run above is after it.
+**Result: 22/22 killed, 0 survived** (B1-B16 above; B13, B14 and B16 re-run and B17-B22 added by the adversary-fix commit, which widened `motor_pull_count` to any two-pin part and added `motor_net_extra_resistor`; B14's and B16's edits are rewritten to the new code, B16 now restores the resistor-symbol filter). B16 survived its first run (no test put a non-resistor across a motor net and GND); `a_second_resistor_beside_a_motor_pull_fails_by_name` gained the capacitor case, and the run above is after it.
 
 | id | guard | file | mutant (exact edit) | killing test | result |
 |---|---|---|---|---|---|
@@ -18,7 +18,13 @@ One mutant per guard phase B2 (eda draws the motor pull) adds, sized to the diff
 | B10 | `motor_pull_value`: the part | `src/support.rs` | `ohms(token) == Some(u64::from(r.ohms)) && part == r.part` -> `ohms(token) == Some(u64::from(r.ohms))` | `support_tier1::a_motor_pull_of_another_value_or_part_fails_by_name` | killed |
 | B11 | `motor_pull_footprint`: the row's footprint | `src/support.rs` | `if c.footprint.as_deref() != Some(row.footprint.as_str()) {` -> `if c.footprint.is_none() {` | `support_tier1::a_motor_pull_on_another_footprint_or_none_fails_by_name` | killed |
 | B12 | `motor_pull_footprint`: none stated is a finding | `src/support.rs` | `if c.footprint.as_deref() != Some(row.footprint.as_str()) {` -> `if c.footprint.is_some() && c.footprint.as_deref() != Some(row.footprint.as_str()) {` | `support_tier1::a_motor_pull_on_another_footprint_or_none_fails_by_name` | killed |
-| B13 | `motor_pull_count` is reported | `src/support.rs` | `if !parallel.is_empty() {` -> `if false && !parallel.is_empty() {` | `support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name` | killed |
-| B14 | `motor_pull_count`: the declared pull is not its own parallel | `src/support.rs` | `q.as_str() != reference                     &&` -> `` | `support_tier1::the_motor_fixtures_pulls_pass_the_support_gate` | killed |
-| B16 | `motor_pull_count`: only a resistor counts | `src/support.rs` | `&& x.symbol.as_deref() == Some(row.symbol.as_str())` -> `` | `support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name` | killed |
 | B15 | step 8 runs in `judge` | `src/support.rs` | `motor_pulls(spec, netlist, &mut fail)?;` -> `` | `support_tier1::a_motor_pull_` | killed |
+| B13 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `if !parallel.is_empty() {` -> `if false && !parallel.is_empty() {` | `support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name` | killed |
+| B14 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `.filter(\|q\| q.as_str() != reference && joins(q))` -> `.filter(\|q\| joins(q))` | `support_tier1::the_motor_fixtures_pulls_pass_the_support_gate` | killed |
+| B16 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `.filter(\|q\| q.as_str() != reference && joins(q))` -> `.filter(\|q\| q.as_str() != reference && joins(q) && netlist.components[*q].symbol.as_deref() == Some(row.symbol.as_str()))` | `support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name` | killed |
+| B17 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `if !extra.is_empty() {` -> `if false && !extra.is_empty() {` | `support_tier1::another_resistor_on_a_motor_line_fails_by_name` | killed |
+| B18 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `q.as_str() != reference                     && is_resistor(x)` -> `is_resistor(x)` | `support_tier1::the_motor_fixtures_pulls_pass_the_support_gate` | killed |
+| B19 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `&& !parallel.contains(q)` -> `` | `support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name` | killed |
+| B20 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `&& netlist.pins_of(q).any(\|(_, n)\| n == line)` -> `&& netlist.pins_of(q).next().is_some()` | `support_tier1::the_motor_fixtures_pulls_pass_the_support_gate` | killed |
+| B21 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `s.strip_prefix("Device:R")             .is_some_and(\|rest\| rest.is_empty() \|\| rest.starts_with('_'))` -> `false` | `support_tier1::another_resistor_on_a_motor_line_fails_by_name` | killed |
+| B22 | step 8 B2 fix, guard 4300i-adv | `src/support.rs` | `.is_some_and(\|f\| f.starts_with("Resistor_"))` -> `.is_some_and(\|_\| false)` | `support_tier1::another_resistor_on_a_motor_line_fails_by_name` | killed |

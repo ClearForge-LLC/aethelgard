@@ -12,6 +12,12 @@ B10	src/support.rs	`ohms(token) == Some(u64::from(r.ohms)) && part == r.part` ->
 B11	src/support.rs	`if c.footprint.as_deref() != Some(row.footprint.as_str()) {` -> `if c.footprint.is_none() {`	support_tier1::a_motor_pull_on_another_footprint_or_none_fails_by_name	killed
 B12	src/support.rs	`if c.footprint.as_deref() != Some(row.footprint.as_str()) {` -> `if c.footprint.is_some() && c.footprint.as_deref() != Some(row.footprint.as_str()) {`	support_tier1::a_motor_pull_on_another_footprint_or_none_fails_by_name	killed
 B13	src/support.rs	`if !parallel.is_empty() {` -> `if false && !parallel.is_empty() {`	support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name	killed
-B14	src/support.rs	`q.as_str() != reference                     &&` -> ``	support_tier1::the_motor_fixtures_pulls_pass_the_support_gate	killed
-B16	src/support.rs	`&& x.symbol.as_deref() == Some(row.symbol.as_str())` -> ``	support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name	killed
+B14	src/support.rs	`.filter(|q| q.as_str() != reference && joins(q))` -> `.filter(|q| joins(q))`	support_tier1::the_motor_fixtures_pulls_pass_the_support_gate	killed
 B15	src/support.rs	`motor_pulls(spec, netlist, &mut fail)?;` -> ``	support_tier1::a_motor_pull_	killed
+B16	src/support.rs	`.filter(|q| q.as_str() != reference && joins(q))` -> `.filter(|q| q.as_str() != reference && joins(q) && netlist.components[*q].symbol.as_deref() == Some(row.symbol.as_str()))`	support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name	killed
+B17	src/support.rs	`if !extra.is_empty() {` -> `if false && !extra.is_empty() {`	support_tier1::another_resistor_on_a_motor_line_fails_by_name	killed
+B18	src/support.rs	`q.as_str() != reference                     && is_resistor(x)` -> `is_resistor(x)`	support_tier1::the_motor_fixtures_pulls_pass_the_support_gate	killed
+B19	src/support.rs	`&& !parallel.contains(q)` -> ``	support_tier1::a_second_resistor_beside_a_motor_pull_fails_by_name	killed
+B20	src/support.rs	`&& netlist.pins_of(q).any(|(_, n)| n == line)` -> `&& netlist.pins_of(q).next().is_some()`	support_tier1::the_motor_fixtures_pulls_pass_the_support_gate	killed
+B21	src/support.rs	`s.strip_prefix("Device:R")             .is_some_and(|rest| rest.is_empty() || rest.starts_with('_'))` -> `false`	support_tier1::another_resistor_on_a_motor_line_fails_by_name	killed
+B22	src/support.rs	`.is_some_and(|f| f.starts_with("Resistor_"))` -> `.is_some_and(|_| false)`	support_tier1::another_resistor_on_a_motor_line_fails_by_name	killed
