@@ -1,0 +1,115 @@
+{
+ "samples": 9,
+ "wall_s": 8.002,
+ "memory_peak_gib": 0.368,
+ "current_max_gib": 0.368,
+ "current_max_at": 8.002,
+ "anon_max_gib": 0.354,
+ "anon_max_at": 8.002,
+ "file_max_gib": 0.009,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 49.4,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "cbmc",
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered",
+   "rss_gib": 0.21,
+   "hwm_gib": 0.222,
+   "cmd": "cbmc --no-malloc-may-fail --no-undefined-shift-check --no-signed-overflow-check --nan-check --no-self-loops-to-assumptions --no-pointer-primitive-check --object"
+  },
+  {
+   "class": "kani-driver",
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered",
+   "rss_gib": 0.107,
+   "hwm_gib": 0.113,
+   "cmd": "cargo-kani kani --harness proofs::i2c1_transfer_is_bounded_and_ordered --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 8.002
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002
+  },
+  "prove i2c1_transfer_is_bounded_and_ordered": {
+   "first": 0.0,
+   "last": 8.002,
+   "rss_max_gib": 0.344,
+   "hwm_max_gib": 0.222,
+   "at": 8.002
+  }
+ },
+ "classes": {
+  "cbmc": {
+   "rss_max_gib": 0.21,
+   "hwm_max_gib": 0.222,
+   "at": 7.001,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "kani-driver": {
+   "rss_max_gib": 0.107,
+   "hwm_max_gib": 0.113,
+   "at": 8.002,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.052,
+   "at": 1.0,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.018,
+   "hwm_max_gib": 0.098,
+   "at": 1.0,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "goto": {
+   "rss_max_gib": 0.011,
+   "hwm_max_gib": 0.017,
+   "at": 2.0,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 1.0,
+   "phase": "prove i2c1_transfer_is_bounded_and_ordered"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 8.002,
+   "phase": "(no gate)"
+  },
+  "other:gcc": {
+   "rss_max_gib": 0,
+   "hwm_max_gib": 0,
+   "at": null,
+   "phase": null
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 9.0,
+ "inner_memory_peak_gib": 0.659
+}

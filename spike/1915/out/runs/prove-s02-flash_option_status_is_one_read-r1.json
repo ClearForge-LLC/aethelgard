@@ -1,0 +1,64 @@
+{
+ "samples": 2,
+ "wall_s": 1.0,
+ "memory_peak_gib": 0.086,
+ "current_max_gib": 0.024,
+ "current_max_at": 1.0,
+ "anon_max_gib": 0.019,
+ "anon_max_at": 1.0,
+ "file_max_gib": 0.0,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 49.2,
+ "stops": 0,
+ "at_anon_peak": [],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 1.0,
+   "rss_max_gib": 0.019,
+   "hwm_max_gib": 0.044,
+   "at": 1.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 0.0,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 0.0
+  },
+  "prove flash_option_status_is_one_read": {
+   "first": 0.0,
+   "last": 0.0,
+   "rss_max_gib": 0.004,
+   "hwm_max_gib": 0.025,
+   "at": 0.0
+  }
+ },
+ "classes": {
+  "podman/conmon": {
+   "rss_max_gib": 0.011,
+   "hwm_max_gib": 0.044,
+   "at": 1.0,
+   "phase": "(podman)"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.004,
+   "hwm_max_gib": 0.025,
+   "at": 0.0,
+   "phase": "prove flash_option_status_is_one_read"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 0.0,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 1.0,
+ "inner_memory_peak_gib": 0.086
+}

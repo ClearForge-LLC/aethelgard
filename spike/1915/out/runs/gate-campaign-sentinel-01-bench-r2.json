@@ -1,0 +1,84 @@
+{
+ "samples": 17,
+ "wall_s": 16.003,
+ "memory_peak_gib": 0.35,
+ "current_max_gib": 0.331,
+ "current_max_at": 11.002,
+ "anon_max_gib": 0.322,
+ "anon_max_at": 11.002,
+ "file_max_gib": 0.002,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 46.9,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "renode",
+   "phase": "campaign",
+   "rss_gib": 0.29,
+   "hwm_gib": 0.369,
+   "cmd": "/usr/local/bin/renode --config /var/lib/aethelgard/aethelgard-3-1795412386570830916/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 16.003,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 16.003
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 16.003,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 16.003
+  },
+  "campaign": {
+   "first": 0.0,
+   "last": 16.003,
+   "rss_max_gib": 0.312,
+   "hwm_max_gib": 0.369,
+   "at": 11.002
+  }
+ },
+ "classes": {
+  "renode": {
+   "rss_max_gib": 0.29,
+   "hwm_max_gib": 0.369,
+   "at": 11.002,
+   "phase": "campaign"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.023,
+   "hwm_max_gib": 0.054,
+   "at": 14.003,
+   "phase": "campaign"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "ngspice": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 4.001,
+   "phase": "campaign"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 16.003,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 16.7,
+ "inner_memory_peak_gib": 0.35
+}

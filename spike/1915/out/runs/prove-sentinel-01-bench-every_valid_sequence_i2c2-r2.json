@@ -1,0 +1,102 @@
+{
+ "samples": 24,
+ "wall_s": 23.005,
+ "memory_peak_gib": 2.137,
+ "current_max_gib": 1.415,
+ "current_max_at": 22.005,
+ "anon_max_gib": 1.401,
+ "anon_max_at": 22.005,
+ "file_max_gib": 0.008,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 48.9,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_i2c2",
+   "rss_gib": 1.367,
+   "hwm_gib": 1.372,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_i2c2 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 23.005,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 23.005
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 23.005,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 23.005
+  },
+  "prove every_valid_sequence_i2c2": {
+   "first": 0.0,
+   "last": 23.005,
+   "rss_max_gib": 1.394,
+   "hwm_max_gib": 1.372,
+   "at": 22.005
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 1.367,
+   "hwm_max_gib": 1.372,
+   "at": 22.005,
+   "phase": "prove every_valid_sequence_i2c2"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.434,
+   "hwm_max_gib": 0.455,
+   "at": 16.003,
+   "phase": "prove every_valid_sequence_i2c2"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 23.005,
+   "phase": "prove every_valid_sequence_i2c2"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "other:cc1": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c2"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 23.005,
+   "phase": "(no gate)"
+  },
+  "goto": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.005,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c2"
+  },
+  "other:gcc": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.002,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c2"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 23.1,
+ "inner_memory_peak_gib": 2.137
+}

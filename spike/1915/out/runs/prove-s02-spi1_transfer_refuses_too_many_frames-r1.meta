@@ -1,0 +1,7 @@
+tag=prove-board-spi1_transfer_refuses_too_many_frames-r1 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T05:08:16+00:00
+host_avail_kB=50869148
+cmd: bash /repo/spike/1915/tools/ctl.sh prove target/s02/board examples/sentinel-02-bench.json spi1_transfer_refuses_too_many_frames
+exit=0
+end=2026-11-23T05:08:25+00:00

@@ -1,0 +1,210 @@
+{
+ "samples": 1046,
+ "wall_s": 1045.23,
+ "memory_peak_gib": 11.3,
+ "current_max_gib": 11.296,
+ "current_max_at": 1044.23,
+ "anon_max_gib": 11.264,
+ "anon_max_at": 1044.23,
+ "file_max_gib": 0.007,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 39.2,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence",
+   "rss_gib": 7.004,
+   "hwm_gib": 7.012,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence --exact"
+  },
+  {
+   "class": "cbmc",
+   "phase": "prove every_valid_sequence",
+   "rss_gib": 4.246,
+   "hwm_gib": 5.519,
+   "cmd": "cbmc --no-malloc-may-fail --no-undefined-shift-check --no-signed-overflow-check --nan-check --no-self-loops-to-assumptions --no-pointer-primitive-check --object"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 1045.23,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 1045.23,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 1045.23
+  },
+  "prove every_valid_sequence": {
+   "first": 0.0,
+   "last": 1045.23,
+   "rss_max_gib": 11.254,
+   "hwm_max_gib": 7.012,
+   "at": 1044.23
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 7.004,
+   "hwm_max_gib": 7.012,
+   "at": 1044.23,
+   "phase": "prove every_valid_sequence"
+  },
+  "cbmc": {
+   "rss_max_gib": 5.435,
+   "hwm_max_gib": 5.519,
+   "at": 252.053,
+   "phase": "prove every_valid_sequence"
+  },
+  "goto": {
+   "rss_max_gib": 0.085,
+   "hwm_max_gib": 0.093,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 120.026,
+   "phase": "(podman)"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.002,
+   "hwm_max_gib": 0.018,
+   "at": 1045.23,
+   "phase": "prove every_valid_sequence"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 1045.23,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   1030.226,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1031.227,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1032.227,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1033.227,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1034.227,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1035.228,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1036.228,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1037.228,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1038.228,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1039.229,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1040.229,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1041.229,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1042.229,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1043.23,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1044.23,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ],
+  [
+   1045.23,
+   [
+    "kani-driver@prove every_valid_sequence",
+    "cbmc@prove every_valid_sequence"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 1046.1,
+ "inner_memory_peak_gib": 11.3
+}

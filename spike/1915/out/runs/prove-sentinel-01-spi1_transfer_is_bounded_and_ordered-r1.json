@@ -1,0 +1,108 @@
+{
+ "samples": 13,
+ "wall_s": 12.003,
+ "memory_peak_gib": 0.948,
+ "current_max_gib": 0.904,
+ "current_max_at": 12.003,
+ "anon_max_gib": 0.89,
+ "anon_max_at": 12.003,
+ "file_max_gib": 0.009,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 48.8,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove spi1_transfer_is_bounded_and_ordered",
+   "rss_gib": 0.853,
+   "hwm_gib": 0.859,
+   "cmd": "cargo-kani kani --harness proofs::spi1_transfer_is_bounded_and_ordered --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 12.003,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 12.003
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 12.003,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 12.003
+  },
+  "prove spi1_transfer_is_bounded_and_ordered": {
+   "first": 0.0,
+   "last": 12.003,
+   "rss_max_gib": 0.88,
+   "hwm_max_gib": 0.859,
+   "at": 12.003
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 0.853,
+   "hwm_max_gib": 0.859,
+   "at": 12.003,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.274,
+   "hwm_max_gib": 0.298,
+   "at": 11.003,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 1.0,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "goto": {
+   "rss_max_gib": 0.019,
+   "hwm_max_gib": 0.026,
+   "at": 2.0,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.012,
+   "hwm_max_gib": 0.061,
+   "at": 1.0,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 12.003,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.017,
+   "at": 1.0,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 12.003,
+   "phase": "(no gate)"
+  },
+  "other:gcc": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.001,
+   "at": 2.0,
+   "phase": "prove spi1_transfer_is_bounded_and_ordered"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 12.4,
+ "inner_memory_peak_gib": 1.052
+}

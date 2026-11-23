@@ -1,0 +1,76 @@
+{
+ "samples": 3,
+ "wall_s": 2.001,
+ "memory_peak_gib": 0.157,
+ "current_max_gib": 0.071,
+ "current_max_at": 2.001,
+ "anon_max_gib": 0.058,
+ "anon_max_at": 2.001,
+ "file_max_gib": 0.007,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 49.7,
+ "stops": 0,
+ "at_anon_peak": [],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 2.001,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 0.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 2.001,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 2.001
+  },
+  "prove reset_clock_is_ok_exactly_at_reset": {
+   "first": 0.0,
+   "last": 2.001,
+   "rss_max_gib": 0.048,
+   "hwm_max_gib": 0.053,
+   "at": 2.001
+  }
+ },
+ "classes": {
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.001,
+   "phase": "prove reset_clock_is_ok_exactly_at_reset"
+  },
+  "goto": {
+   "rss_max_gib": 0.021,
+   "hwm_max_gib": 0.028,
+   "at": 2.001,
+   "phase": "prove reset_clock_is_ok_exactly_at_reset"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "kani-driver": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 2.001,
+   "phase": "prove reset_clock_is_ok_exactly_at_reset"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 2.001,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 2.5,
+ "inner_memory_peak_gib": 0.157
+}
