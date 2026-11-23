@@ -33,7 +33,7 @@ fn table() -> PinTable {
         ("PB7", &[]),
     ];
     PinTable {
-        part: "TEST_PART".into(),
+        part: "STM32H753ZITx".into(),
         package: "TEST".into(),
         source: PinSource {
             repository: "test".into(),
@@ -55,14 +55,24 @@ fn table() -> PinTable {
     }
 }
 
+/// An output's declared pull-down (specification 28, `AET-WO-4300i`), its
+/// reference named after the output.
+fn pull(label: &str) -> Value {
+    json!({"resistor": {"reference": format!("RPD_{label}"), "part": "CRCW0603_F_K",
+        "ohms": 40200, "to": "GND"},
+        "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm (test)"})
+}
+
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
     json!({"label": label, "pin": pin, "protocol": "pwm",
            "pwm": {"rate_hz": rate_hz, "pulse_min_us": 1000, "pulse_max_us": 2000,
-                   "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000}, "esc": null})
+                   "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000}, "esc": null,
+           "pull": pull(label)})
 }
 
 fn dshot(label: &str, pin: Option<&str>) -> Value {
-    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null, "esc": null})
+    json!({"label": label, "pin": pin, "protocol": "dshot600", "pwm": null, "esc": null,
+           "pull": pull(label)})
 }
 
 fn spec_json(motors: Vec<Value>) -> Value {
@@ -72,9 +82,9 @@ fn spec_json(motors: Vec<Value>) -> Value {
         "acknowledge_unwitnessed": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+        "mcu": {"part": "STM32H753ZITx", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
                 "core_supply": {"mode": "ldo", "source": "DS12117 Rev 10 sec. 3.5.1 p. 27"},
-                "supply_source": {"connector": "J2", "pin": "1"}},
+                "supply_source": {"connector": "J2", "pin": "1"}, "reserved_pins": []},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],
         "i2c_buses": [], "spi_buses": [], "i2c_devices": [], "spi_devices": [],
         "net_constraints": [],
@@ -871,7 +881,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 27);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 28);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -887,7 +897,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: aethelgard_ir::versions::lacked_by(16),
                 version: 16,
-                expected: 27
+                expected: 28
             }
         );
     }

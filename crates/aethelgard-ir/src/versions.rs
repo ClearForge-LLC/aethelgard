@@ -274,6 +274,18 @@ pub const CHANGES: &[VersionChange] = &[
         &["AnalogPadPin", "PowerPartUnknown"],
     ),
     row(27, "AET-WO-1218", &[], &[], &[], &["PowerPartUnknown"]),
+    row(
+        28,
+        "AET-WO-4300i",
+        &["motor_outputs[].pull", "mcu.reserved_pins"],
+        &[],
+        &[],
+        &[
+            "ConnectorPinNotFt",
+            "McuPinStructureUnheld",
+            "PowerPartUnknown",
+        ],
+    ),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

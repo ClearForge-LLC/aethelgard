@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "e16fc8283cdbddaef2e35bcf9bba5e43b3657c3515c5a62595d8f609056fe9c5";
+const TABLE_SHA256: &str = "7c72add8a6212022c2956fd5590a1aff8f902e8f402eecd0b49232fca72d249e";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));

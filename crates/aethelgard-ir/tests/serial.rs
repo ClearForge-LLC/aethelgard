@@ -50,7 +50,7 @@ const PINS: Pins = &[
 
 fn table_of(pins: Pins) -> PinTable {
     PinTable {
-        part: "TEST_PART".into(),
+        part: "STM32H753ZITx".into(),
         package: "TEST".into(),
         source: PinSource {
             repository: "test".into(),
@@ -129,9 +129,9 @@ fn spec_json(ports: Vec<Value>) -> Value {
         "acknowledge_unwitnessed": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
+        "mcu": {"part": "STM32H753ZITx", "supply": "VDD_3V3", "hse_hz": 0, "bor_level": 0,
             "core_supply": {"mode": "ldo", "source": "DS12117 Rev 10 sec. 3.5.1 p. 27"},
-            "supply_source": {"connector": "J91", "pin": "1"}},
+            "supply_source": {"connector": "J91", "pin": "1"}, "reserved_pins": []},
         "voltage_domains": [
             {"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50},
             {"id": "VDD_5V", "nominal_millivolts": 5000, "tolerance_permille": 50}],
@@ -934,18 +934,24 @@ fn adversarial_3_tx_and_rx_on_different_peripherals_are_refused_by_name() {
 
 #[test]
 fn adversarial_3_a_port_on_an_i2c_or_spi_pin_is_refused_by_name() {
-    for pin in ["PB8", "PA5"] {
-        let e = solve_refused(spec_json(vec![port("C", None, Some(pin), None)]));
-        let SolveError::NoSerialPeripheral { port: who, reasons } = &e else {
-            panic!("{pin}: {e}");
-        };
-        assert_eq!(who, "C");
-        assert!(
-            reasons.contains(&format!("USART1: `USART1_TX` is not on pin `{pin}`")),
-            "{e}"
-        );
-        assert_eq!(reasons.len(), 4, "one reason per offered peripheral: {e}");
-    }
+    // `AET-WO-4300i`: `C_TX` reaches J100, and `PA5` is `TT_ha`, so
+    // `validate`'s step 26 refuses it at the connector before the search.
+    let e = solve_refused(spec_json(vec![port("C", None, Some("PA5"), None)]));
+    assert_eq!(
+        (e.kind(), e.id()),
+        ("ConnectorPinNotFt", Some("C_TX")),
+        "{e}"
+    );
+    let e = solve_refused(spec_json(vec![port("C", None, Some("PB8"), None)]));
+    let SolveError::NoSerialPeripheral { port: who, reasons } = &e else {
+        panic!("PB8: {e}");
+    };
+    assert_eq!(who, "C");
+    assert!(
+        reasons.contains(&"USART1: `USART1_TX` is not on pin `PB8`".to_owned()),
+        "{e}"
+    );
+    assert_eq!(reasons.len(), 4, "one reason per offered peripheral: {e}");
     // A pin an I2C line fixes is claimed twice.
     let v = with_i2c(
         spec_json(vec![port("C", None, Some("PB6"), None)]),
@@ -1011,11 +1017,22 @@ fn a_port_with_every_pin_held_names_the_holders() {
         reasons,
         &["USART2: every pin for `USART2_TX` is held by hand (`PA2` by `serial_ports[1].tx`)"]
     );
-    for (pin, kind) in [("PA13", "ReservedPin"), ("PZ1", "UnknownPin")] {
-        let e = solve_refused(spec_json(vec![port("C", None, None, Some(pin))]));
-        assert_eq!(e.kind(), kind, "{pin}");
-        assert_eq!(e.claimants(), ["serial_ports[0].rx"]);
-    }
+    // `AET-WO-4300i`: `C_RX` reaches J100, so a pin with no held structure
+    // is `validate`'s step 26 (`McuPinStructureUnheld`), before `solve`'s
+    // `UnknownPin`.
+    let e = solve_refused(spec_json(vec![port("C", None, None, Some("PA13"))]));
+    assert_eq!(e.kind(), "ReservedPin");
+    assert_eq!(e.claimants(), ["serial_ports[0].rx"]);
+    let e = solve_refused(spec_json(vec![port("C", None, None, Some("PZ1"))]));
+    assert_eq!(
+        (e.kind(), e.id()),
+        ("McuPinStructureUnheld", Some("C_RX")),
+        "{e}"
+    );
+    assert_eq!(
+        e.to_string().split('`').nth(1),
+        Some("serial_ports[0].rx.pin")
+    );
     let e = solve_refused(spec_json(vec![port("C", Some("UART7"), None, None)]));
     assert_eq!(
         e,
@@ -1601,7 +1618,7 @@ fn a_peer_deviation_is_cited_only_as_the_crsf_spread() {
 /// defaulted; a version-9 file that has it is refused by its version.
 #[test]
 fn a_version_9_specification_is_refused() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 27);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 28);
     let mut v = spec_json(vec![port("C", None, None, None)]);
     v["schema_version"] = json!(9);
     let e = refused(v.clone());
@@ -1611,7 +1628,7 @@ fn a_version_9_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 9,
-                expected: 27
+                expected: 28
             }
         ),
         "{e}"
@@ -1641,7 +1658,7 @@ fn a_version_10_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 10,
-                expected: 27
+                expected: 28
             }
         ),
         "{e}"
@@ -1669,7 +1686,7 @@ fn a_version_11_specification_is_refused() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: _,
                 version: 11,
-                expected: 27
+                expected: 28
             }
         ),
         "{e}"

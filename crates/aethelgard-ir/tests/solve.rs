@@ -166,7 +166,7 @@ fn spec(
         "power": null,
         "project_name": "t",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
+        "mcu": Mcu { part: PART.into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None, reserved_pins: vec![] },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -333,7 +333,8 @@ fn a_hand_pin_on_each_reserved_pin_refuses() {
             refused(&s),
             SolveError::ReservedPin {
                 pin: pin.into(),
-                claimant: "spi_devices[0].cs".into()
+                claimant: "spi_devices[0].cs".into(),
+                reason: "debug port or oscillator".into()
             }
         );
     }

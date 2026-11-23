@@ -21,6 +21,7 @@ pub mod electrical;
 pub mod motor;
 pub mod names;
 pub mod off_domain;
+pub mod offboard;
 pub mod orientation;
 pub mod parts;
 pub mod pin_devices;
@@ -133,9 +134,14 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// validates (`1216b` F1), and a declared reservoir that RAIN does not need
 /// is still a capacitor row (`PowerPartUnknown`); a committed specification
 /// moved by its version line alone.
+/// Version 28 (`AET-WO-4300i`) requires `motor_outputs[].pull`, each motor
+/// line's external pull-down to `GND` inside the MCU row's RPD range, and
+/// `mcu.reserved_pins`, each pin the board keeps with its reason; a hand
+/// pin at a connector is FT (`ConnectorPinNotFt`), and the solver tries FT
+/// pins first for a connector-facing net.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 27;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 28;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -379,6 +385,21 @@ pub struct Mcu {
         skip_serializing_if = "Option::is_none"
     )]
     pub foreign_clock: Option<motor::ForeignClock>,
+    /// Pins the board keeps for itself (`AET-WO-4300i` F7), each with its
+    /// reason: the solver offers none of them to any claimant, and a hand pin
+    /// on one is `ReservedPin` naming the reason. Required as a key; an empty
+    /// array reserves none beyond the engine's ([`solve::reserved_pins`]).
+    pub reserved_pins: Vec<ReservedPin>,
+}
+
+/// One declared reservation: a pin of the MCU's table and why the board
+/// keeps it. A pin the engine already reserves is refused
+/// (`ReservedPinEngineReserved`): a reservation has one home.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct ReservedPin {
+    pub pin: String,
+    pub reason: String,
 }
 
 /// The core supply configuration (`AET-WO-4240v` §1.1, D-1), as RM0433 Rev 9
@@ -1001,6 +1022,7 @@ object_only!(
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
     CoreSupply,
+    ReservedPin,
     SupplySource,
     VoltageDomain,
     Signal,
@@ -1072,6 +1094,7 @@ impl<'de> Deserialize<'de> for Mcu {
                     supply_source: w.supply_source,
                     reset_switch: w.reset_switch,
                     foreign_clock: w.foreign_clock,
+                    reserved_pins: w.reserved_pins,
                 })
             }
         }
@@ -1099,6 +1122,7 @@ struct McuWire {
     reset_switch: bool,
     #[serde(default, deserialize_with = "board::present")]
     foreign_clock: Option<motor::ForeignClock>,
+    reserved_pins: Vec<ReservedPin>,
 }
 
 /// The wire form of a [`SolvedTopology`]. It differs in one field: `i2c_speeds`
@@ -2349,6 +2373,10 @@ pub enum IrValidationError {
     /// refusal's.
     #[error("{0}")]
     PinDevice(pin_devices::PinDeviceRefusal),
+    /// Step 26 (`AET-WO-4300i`): a motor pull, a declared reservation or a
+    /// hand pin at a connector; the kind is the inner refusal's.
+    #[error("{0}")]
+    Offboard(offboard::OffboardRefusal),
     /// Step 25 (`AET-WO-1216b`): a path from a rail that can lead
     /// `mcu.supply` holds an MCU pin above DS12117 Table 10's limit at
     /// VDD = 0 ([`off_domain`]).
@@ -2573,6 +2601,7 @@ impl IrValidationError {
             Self::MotorTiming { .. } => "MotorTiming",
             Self::Pwm(r) => r.kind(),
             Self::PinDevice(r) => r.kind(),
+            Self::Offboard(r) => r.kind(),
             Self::OffDomainAboveLimit { .. } => "OffDomainAboveLimit",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
             Self::SerialBaudTolerance { .. } => "SerialBaudTolerance",
@@ -2764,6 +2793,7 @@ impl IrValidationError {
             Self::MotorTiming { output, .. } => Some(output),
             Self::Pwm(r) => Some(r.output()),
             Self::PinDevice(r) => Some(&r.id),
+            Self::Offboard(r) => Some(&r.id),
             Self::OffDomainAboveLimit { net, .. } => Some(net),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
                 Some(port)
@@ -2787,6 +2817,7 @@ impl IrValidationError {
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::PinDevice(r) => Some(&r.path),
+            Self::Offboard(r) => Some(&r.path),
             Self::InvalidIdentifier { path, .. }
             | Self::LayerTable { path, .. }
             | Self::LayerRole { path, .. }
@@ -3156,7 +3187,10 @@ impl Specification {
         // 24 (`AET-WO-1211a`): each pin device
         pin_devices::validate(self)?;
         // 25 (`AET-WO-1216b`): each path from off `mcu.supply` at VDD = 0
-        off_domain::validate(self)
+        off_domain::validate(self)?;
+        // 26 (`AET-WO-4300i`): the motor pulls, the declared reservations
+        // and the hand pins at a connector
+        offboard::validate(self)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset
@@ -4012,6 +4046,10 @@ impl Specification {
             plain(&s.connector, || "mcu.supply_source.connector".into())?;
             plain(&s.pin, || "mcu.supply_source.pin".into())?;
         }
+        for (i, r) in self.mcu.reserved_pins.iter().enumerate() {
+            plain(&r.pin, || format!("mcu.reserved_pins[{i}].pin"))?;
+            board::source(&r.reason, &format!("mcu.reserved_pins[{i}].reason"))?;
+        }
         for (i, domain) in self.voltage_domains.iter().enumerate() {
             plain(&domain.id, || format!("voltage_domains[{i}].id"))?;
         }
@@ -4065,6 +4103,14 @@ impl Specification {
             if let Some(motor::Esc::NoEsc(n)) = &m.esc {
                 board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
             }
+            let r = &m.pull.resistor;
+            let at = format!("motor_outputs[{i}].pull");
+            identifier(IdentifierKind::Reference, &r.reference, || {
+                format!("{at}.resistor.reference")
+            })?;
+            plain(&r.part, || format!("{at}.resistor.part"))?;
+            plain(&r.to, || format!("{at}.resistor.to"))?;
+            board::source(&m.pull.source, &format!("{at}.source"))?;
         }
         for (i, p) in self.serial_ports.iter().enumerate() {
             let at = format!("serial_ports[{i}]");

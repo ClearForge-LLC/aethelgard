@@ -2156,6 +2156,9 @@ pub(crate) fn place<'t>(
     adc: &mut BTreeMap<String, SolvedAdcInput>,
 ) -> Result<(), crate::SolveError> {
     let key = |pin: &str| table.pins.get_key_value(pin).map(|(k, _)| k.as_str());
+    // A connector-facing net's candidates FT first (`AET-WO-4300i`, D1 (a)).
+    let ft =
+        crate::offboard::FtOrder::new(spec).map_err(crate::SolveError::InvalidSpecification)?;
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         for (k, a) in d.analog.iter().enumerate() {
             let claimant = format!("pin_devices[{i}].analog[{k}]");
@@ -2175,7 +2178,7 @@ pub(crate) fn place<'t>(
                             pin: p.clone(),
                         }
                     })?;
-                    hand_free(name, &claimant, reserved, used)?;
+                    hand_free(spec, name, &claimant, reserved, used)?;
                     if !fits(pin) {
                         return Err(crate::SolveError::AdcChannelNotOnPin {
                             net: a.net.clone(),
@@ -2202,6 +2205,7 @@ pub(crate) fn place<'t>(
                         .map(|(n, p)| (n.as_str(), p))
                         .collect();
                     free.sort_by_key(|(_, p)| p.position);
+                    let free = ft.order(&a.net, free, |(n, _)| n);
                     // A named channel is taken as named, but an ADC2 one only
                     // on a pinned pin (`1211` Q8: "unless the specification
                     // pins it").
@@ -2256,13 +2260,16 @@ pub(crate) fn place<'t>(
                         claimant: claimant.clone(),
                         pin: p.clone(),
                     })?;
-                    hand_free(p, &claimant, reserved, used)?;
+                    hand_free(spec, p, &claimant, reserved, used)?;
                     p
                 }
-                None => table
-                    .pins
-                    .keys()
-                    .map(String::as_str)
+                None => ft
+                    .order(
+                        &s.net,
+                        table.pins.keys().map(String::as_str).collect(),
+                        |p| p,
+                    )
+                    .into_iter()
                     .find(|p| {
                         !reserved.contains(p)
                             && !pads.contains(p)
@@ -2312,16 +2319,14 @@ fn pulled_level(pull: &SignalPull) -> Option<Level> {
 
 /// A hand pin neither reserved nor owned by another claimant.
 fn hand_free(
+    spec: &Specification,
     pin: &str,
     claimant: &str,
     reserved: &[&str],
     used: &BTreeMap<&str, String>,
 ) -> Result<(), crate::SolveError> {
     if reserved.contains(&pin) {
-        return Err(crate::SolveError::ReservedPin {
-            pin: pin.to_owned(),
-            claimant: claimant.to_owned(),
-        });
+        return Err(crate::solve::reserved_refusal(spec, pin, claimant));
     }
     // The model claimed each hand pin for its own claimant up front.
     if let Some(first) = used.get(pin).filter(|by| *by != claimant) {

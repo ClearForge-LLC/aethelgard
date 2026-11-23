@@ -136,6 +136,11 @@ fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
         )
         .chain(test_points.iter().map(|t| t.reference.as_str()))
         .chain(crate::pin_devices::references(spec))
+        .chain(
+            spec.motor_outputs
+                .iter()
+                .map(|m| m.pull.resistor.reference.as_str()),
+        )
         .collect()
 }
 

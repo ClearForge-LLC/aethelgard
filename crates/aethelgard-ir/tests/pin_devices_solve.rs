@@ -366,9 +366,6 @@ fn a_digital_hand_pin_on_an_analog_pad_is_refused() {
         ("spi_devices[0].cs", |v: &mut Value| {
             v["spi_devices"][0]["cs"]["pin"] = json!("PC3")
         }),
-        ("serial_ports[0].tx", |v: &mut Value| {
-            v["serial_ports"][0]["tx"]["pin"] = json!("PC2")
-        }),
     ] {
         let mut v = d1_with_flash();
         edit(&mut v);
@@ -376,6 +373,13 @@ fn a_digital_hand_pin_on_an_analog_pad_is_refused() {
         assert_eq!(e.kind(), "AnalogPadPin", "{claimant}: {e}");
         assert_eq!(e.claimants(), [claimant.to_owned()], "{claimant}: {e}");
     }
+    // `AET-WO-4300i`: the serial port's TX reaches J1, and `PC2` is `TT_a`,
+    // so `validate`'s step 26 refuses it at the connector first.
+    let mut v = d1_with_flash();
+    v["serial_ports"][0]["tx"]["pin"] = json!("PC2");
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(e.kind(), "ConnectorPinNotFt", "{e}");
+    assert_eq!(e.id(), Some("CMD_TX"), "{e}");
     let mut v = d1_with_flash();
     analog(&mut v)["pin"] = json!("PC3");
     let s = solved(&v, &t).unwrap();
