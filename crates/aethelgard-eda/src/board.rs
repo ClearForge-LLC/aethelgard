@@ -396,4 +396,34 @@ mod tests {
     fn a_string_that_says_clearance_is_only_text() {
         assert!(prepare("(kicad_pcb (gr_text \"(clearance 0.05)\" (at 0 0)))", SETUP).is_ok());
     }
+
+    /// `AET-WO-1322` (2): a footprint's keepout is admitted by where it
+    /// sits, not by its name's text. A reference with " of " in it is
+    /// admitted as any footprint's (the string test refused it before); a
+    /// keepout in a footprint inside another, or at the top level, is not.
+    #[test]
+    fn a_footprints_keepout_is_judged_by_where_it_sits() {
+        let zone =
+            "(zone (net_name \"\") (keepout (tracks not_allowed)) (connect_pads (clearance 0.5)))";
+        let fp = |r: &str, inner: &str| {
+            format!("(footprint \"X\" (property \"Reference\" \"{r}\") {inner})")
+        };
+        for r in ["U1", "A of B", "footprint X"] {
+            let board = format!("(kicad_pcb {})", fp(r, zone));
+            assert!(prepare(&board, SETUP).is_ok(), "{r}");
+        }
+        for (board, at) in [
+            (
+                format!("(kicad_pcb {})", fp("U1", &fp("U2", zone))),
+                "zone with no net of footprint U2 of footprint U1",
+            ),
+            (format!("(kicad_pcb {zone})"), "zone with no net"),
+        ] {
+            assert_eq!(
+                prepare(&board, SETUP),
+                Err(BoardRefusal::LocalClearance(at.to_owned())),
+                "{board}"
+            );
+        }
+    }
 }

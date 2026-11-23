@@ -1341,12 +1341,7 @@ fn pin_pins<'d>(
                 conns.insert(n, Conn::NoConnect);
             }
             PinKind::CurrentOutput { .. } => {
-                return Err(not_drawable(
-                    d,
-                    format!(
-                        "`{name}` is declared neither as an analog output nor tied: SLVSDS7B p. 13 asks for RIPROPI to GND, or IPROPI tied to GND with VREF above GND, and a pin device cannot declare that tie"
-                    ),
-                ));
+                return Err(not_drawable(d, current_output_undeclared(name)));
             }
             _ => {
                 return Err(not_drawable(
@@ -1360,6 +1355,17 @@ fn pin_pins<'d>(
         }
     }
     Ok((conns, (resistors, analog)))
+}
+
+/// Why a current output left undeclared is refused. Since `AET-WO-1217` F2
+/// `validate` admits the tie to `GND` on the pin the row's trip senses, so
+/// only a current output no trip names reaches this (`1217` R1: a copied
+/// row with a second `current_output`), or a library caller that draws
+/// without `validate` (`AET-WO-1322`; `1211f` F3, `1217` Q1).
+fn current_output_undeclared(name: &str) -> String {
+    format!(
+        "`{name}` is declared neither as an analog output nor tied: SLVSDS7B p. 13 asks for RIPROPI to GND, or IPROPI tied to GND with VREF above GND; `validate` admits that tie (`straps`: `{{\"tie\": \"GND\"}}`) only on the pin the row's trip senses (AET-WO-1217 F2)"
+    )
 }
 
 #[cfg(test)]
@@ -1863,6 +1869,19 @@ mod tests {
             TWO,
             Err("a bus row whose decoupler count is not its part's")
         );
+    }
+
+    /// `1211f` F3, `1217` Q1: the refusal of an undeclared current output
+    /// names the tie to `GND` that `validate` admits, and where.
+    #[test]
+    fn an_undeclared_current_output_names_the_tie_validate_admits() {
+        let why = current_output_undeclared("IPROPI");
+        assert!(why.starts_with("`IPROPI` is declared neither"), "{why}");
+        assert!(
+            why.contains("`straps`: `{\"tie\": \"GND\"}`) only on the pin the row's trip senses"),
+            "{why}"
+        );
+        assert!(!why.contains("cannot declare"), "{why}");
     }
 
     /// `1321` F2: a part with two [`DECOUPLERS`] entries, the second with
