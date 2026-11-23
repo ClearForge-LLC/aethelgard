@@ -4663,26 +4663,28 @@ fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
         .collect();
     let (doc, body, polls) = match (&plan.switch, &facts.switch) {
         (Some(k), Some(f)) => {
-            let pll1on = 1u32 << f.pll1on;
+            // `RCC_CR` whole, from its reset `HSION` (RM0433 Rev 9 p. 383), as
+            // the HSE bring-up writes it (`AET-WO-4240e` Q11, ruled).
+            let hsion = 1u32 << f.hsion;
+            let on = hsion | 1u32 << f.pll1on;
             let pll1rdy = 1u32 << f.pll1rdy;
             let last = facts.kernel_selects.last().map_or(0, |s| s.offset);
             (
                 "    /// `SPI123SEL` leaves its reset input `pll1_q_ck`, and a kernel mux switches only\n    \
                  /// while its old and new inputs both run (RM0433 Rev 9 \u{a7}8.5.10, pp. 371\u{2013}372;\n    \
                  /// `AET-WO-4240e`): PLL1 from the HSI, its three words as solved (`clock.kernel_switch`)\n    \
-                 /// with PLL1 off, `PLL1ON` (a read-modify-write of `RCC_CR`, which keeps every other\n    \
-                 /// bit), at most `pll_polls` reads for `PLL1RDY`; the selects;\n    \
+                 /// with PLL1 off, `RCC_CR` whole with `HSION` and `PLL1ON`, at most `pll_polls` reads\n    \
+                 /// for `PLL1RDY`; the selects;\n    \
                  /// [`SWITCH_READS`] reads of the last select register through the transition, one\n    \
                  /// line each; then\n    \
-                 /// `PLL1ON` cleared, since nothing else takes a clock from PLL1. A lock that does\n    \
+                 /// `RCC_CR` whole with `HSION` alone, since nothing else takes a clock from PLL1. A lock that does\n    \
                  /// not come is [`KernelClockFault::Pll1NotLocked`], with nothing written after it.\n"
                     .to_owned(),
                 format!(
                     "        r.write(TOKEN, Block::Rcc, {pllckselr_at:#05x}, {pllckselr:#010x}); // PLLCKSELR: PLLSRC hsi_ck\n        \
                      r.write(TOKEN, Block::Rcc, {pllcfgr_at:#05x}, {pllcfgr:#010x}); // PLLCFGR: DIVQ1EN\n        \
                      r.write(TOKEN, Block::Rcc, {pll1divr_at:#05x}, {pll1divr:#010x}); // PLL1DIVR\n        \
-                     // CR: PLL1ON, every other bit as read.\n        \
-                     r.modify(TOKEN, Block::Rcc, {cr:#05x}, |v| v | {pll1on:#010x});\n        \
+                     r.write(TOKEN, Block::Rcc, {cr:#05x}, {on:#010x}); // CR: HSION, PLL1ON\n        \
                      let mut locked = false;\n        \
                      for _ in 0..pll_polls {{\n            \
                          if r.read(TOKEN, Block::Rcc, {cr:#05x}) & {rdy:#010x} != 0 {{\n                \
@@ -4695,8 +4697,7 @@ fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
                      }}\n\
                      {selects}\n\
                      {settle}        \
-                     // CR: PLL1ON cleared, every other bit as read.\n        \
-                     r.modify(TOKEN, Block::Rcc, {cr:#05x}, |v| v & !{pll1on:#010x});\n",
+                     r.write(TOKEN, Block::Rcc, {cr:#05x}, {hsion:#010x}); // CR: HSION, PLL1ON cleared\n",
                     pllckselr_at = f.pllckselr,
                     pllckselr = k.pllckselr,
                     pllcfgr_at = f.pllcfgr,
@@ -5906,29 +5907,20 @@ fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32
         .copied()
         .zip([k.pllckselr, k.pllcfgr, k.pll1divr])
         .collect();
-    // `RCC_CR`'s two writes are read-modify-writes of `PLL1ON` alone: each
-    // the word read just before, with `PLL1ON` set, then cleared.
-    let at_on = expect.len();
-    expect.push((ORACLE_RCC_CR, 0));
+    // `RCC_CR` whole, from its reset `HSION` (p. 383): with `PLL1ON`, then
+    // without it.
+    expect.push((ORACLE_RCC_CR, ORACLE_CR_RESET | ORACLE_CR_PLL1ON));
     let at_pll = expect.len();
     expect.extend(selects.iter().map(|(o, v)| (*o, *v)));
     let at_reads = expect.len();
-    expect.push((ORACLE_RCC_CR, 0));
+    expect.push((ORACLE_RCC_CR, ORACLE_CR_RESET));
     let total = expect.len();
-    let on = ORACLE_CR_PLL1ON;
     let checks: Vec<String> = expect
         .iter()
         .enumerate()
         .map(|(i, (off, word))| {
-            let want = if i == at_on {
-                format!("self.cr_read.is_some_and(|v| value == v | {on:#010x})")
-            } else if i == at_reads {
-                format!("self.cr_read.is_some_and(|v| value == v & !{on:#010x})")
-            } else {
-                format!("value == {word:#010x}")
-            };
             format!(
-                "            {i} => kani::assert(block == Block::Rcc && offset == {off:#05x} && {want}, \"write {n} is not the contract's\"),",
+                "            {i} => kani::assert(block == Block::Rcc && offset == {off:#05x} && value == {word:#010x}, \"write {n} is not the contract's\"),",
                 n = i + 1
             )
         })
@@ -5942,8 +5934,7 @@ fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32
              writes: usize,\n    \
              pll_reads: u32,\n    \
              pll: bool,\n    \
-             settle_reads: u32,\n    \
-             cr_read: Option<u32>,\n\
+             settle_reads: u32,\n\
          }}\n\
          \n\
          impl sealed::Sealed for SwitchSpy {{}}\n\
@@ -5951,10 +5942,7 @@ fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32
          impl Registers for SwitchSpy {{\n    \
              fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
                  let v: u32 = kani::any();\n        \
-                 if block == Block::Rcc && offset == {cr:#05x} && (self.writes == {at_on} || self.writes == {at_reads}) {{\n            \
-                     kani::assert(self.writes == {at_on} || self.settle_reads >= {reads}, \"CR read for PLL1ON's clearing before the transition's reads\");\n            \
-                     self.cr_read = Some(v);\n        \
-                 }} else if block == Block::Rcc && offset == {cr:#05x} && self.writes == {at_pll} {{\n            \
+                 if block == Block::Rcc && offset == {cr:#05x} && self.writes == {at_pll} {{\n            \
                      kani::assert(!self.pll, \"CR polled after PLL1RDY read 1\");\n            \
                      self.pll_reads += 1;\n            \
                      self.pll = v & {pll1rdy:#010x} != 0;\n        \
@@ -5998,7 +5986,7 @@ fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32
              let scale2 = scale2_token(board.pwr);\n    \
              let reset = board.rcc.reset_clock(&mut regs, &scale2);\n    \
              kani::assert(reset.is_ok(), \"the reset clock refused a reset RCC\");\n    \
-             let mut spy = SwitchSpy {{ writes: 0, pll_reads: 0, pll: false, settle_reads: 0, cr_read: None }};\n    \
+             let mut spy = SwitchSpy {{ writes: 0, pll_reads: 0, pll: false, settle_reads: 0 }};\n    \
              match board.rcc.select_spi_kernels(&mut spy, &reset.unwrap(), pb) {{\n        \
                  Ok(_) => {{\n            \
                      kani::assert(spy.writes == {total} && spy.pll && spy.settle_reads == {reads}, \"SpiKernels without every word written, PLL1RDY ready and the transition's reads\");\n            \

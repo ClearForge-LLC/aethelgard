@@ -19,11 +19,12 @@ use aethelgard_svd_hal::board::{
 use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
 
-/// `RCC_CR` (offset 0x000, p. 383): `PLL1ON` 24, `PLL1RDY` 25, each changed
-/// by a read-modify-write of its one bit, every other bit as read;
-/// `RCC_PLLCKSELR` 0x028, `RCC_PLLCFGR` 0x02C, `RCC_PLL1DIVR` 0x030
-/// (§8.7.11–§8.7.13); `RCC_D2CCIP1R` 0x050 (§8.7.20).
-const PLL1ON: u32 = 1 << 24;
+/// `RCC_CR` (offset 0x000, reset `0x0000 0001`, p. 383): `HSION` 0,
+/// `PLL1ON` 24, `PLL1RDY` 25, written whole (Q11 ruled); `RCC_PLLCKSELR`
+/// 0x028, `RCC_PLLCFGR` 0x02C, `RCC_PLL1DIVR` 0x030 (§8.7.11–§8.7.13);
+/// `RCC_D2CCIP1R` 0x050 (§8.7.20).
+const CR_ON: u32 = 0x0100_0001;
+const CR_OFF: u32 = 0x0000_0001;
 const PLL1RDY: u32 = 1 << 25;
 
 fn solved(path: &str) -> (SolvedTopology, aethelgard_ir::PinTable) {
@@ -92,26 +93,22 @@ fn the_switch_locks_pll1_before_the_select_and_stops_it_after() {
             w(0x028, k.pllckselr),
             w(0x02C, k.pllcfgr),
             w(0x030, k.pll1divr),
-            format!("r.modify(TOKEN, Block::Rcc, 0x000, |v| v | {PLL1ON:#010x});"),
+            w(0x000, CR_ON),
             "for _ in 0..pll_polls {".to_owned(),
             format!("r.read(TOKEN, Block::Rcc, 0x000) & {PLL1RDY:#010x} != 0"),
             "return Err(KernelClockFault::Pll1NotLocked);".to_owned(),
             // SPI123SEL `100`, `per_ck` (p. 414), every other field at reset.
             w(0x050, 0x0000_4000),
-            format!("r.modify(TOKEN, Block::Rcc, 0x000, |v| v & !{PLL1ON:#010x});"),
+            w(0x000, CR_OFF),
             "Ok(SpiKernels { _private: () })".to_owned(),
         ],
     );
     // Exactly `SWITCH_READS` reads of `RCC_D2CCIP1R`, straight-line, between
     // the select and `PLL1ON` cleared.
     let select = body.find(&w(0x050, 0x0000_4000)).unwrap();
-    let off = body
-        .find(&format!(
-            "r.modify(TOKEN, Block::Rcc, 0x000, |v| v & !{PLL1ON:#010x});"
-        ))
-        .unwrap();
-    // No whole-word `RCC_CR` write: every other bit stays as read.
-    assert!(!body.contains("r.write(TOKEN, Block::Rcc, 0x000,"));
+    let off = body.find(&w(0x000, CR_OFF)).unwrap();
+    // No read-modify-write of `RCC_CR`: each word is the contract's.
+    assert!(!body.contains("r.modify(TOKEN, Block::Rcc, 0x000,"));
     let settle = "let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition";
     assert_eq!(
         body[select..off].matches(settle).count(),
@@ -210,12 +207,12 @@ fn a_switch_slower_than_per_ck_is_refused() {
     }
 }
 
-/// The ledger's rows for the switch (`AET-WO-4240e`): `PLL1ON` changed alone
-/// (a read-modify-write, no other `RCC_CR` field written), and `PLL1RDY`
-/// polled, which the bench reads 0 after boot, PLL1 stopped (adversarial
-/// pass 2).
+/// The ledger's rows for the switch (`AET-WO-4240e`): `RCC_CR` written whole
+/// (Q11 ruled), so each of its fields has a written row, `HSION` 1 and the
+/// rest 0 as the second word leaves them; and `PLL1RDY` polled, which the
+/// bench reads 0 after boot, PLL1 stopped (adversarial pass 2).
 #[test]
-fn the_switch_s_ledger_rows_are_pll1on_alone_and_pll1rdy_read_zero() {
+fn the_switch_s_ledger_rows_are_cr_whole_and_pll1rdy_read_zero() {
     let (t, table) = cli("sentinel-01-bench");
     let rows = register_fields(&t, &table).unwrap();
     let cr: Vec<(&str, FieldAccess, Option<u32>)> = rows
@@ -227,10 +224,15 @@ fn the_switch_s_ledger_rows_are_pll1on_alone_and_pll1rdy_read_zero() {
         cr.contains(&("PLL1RDY", FieldAccess::Reset, Some(0))),
         "{cr:?}"
     );
-    assert!(
-        cr.iter()
-            .filter(|(_, a, _)| *a == FieldAccess::Written)
-            .all(|(f, _, _)| *f == "PLL1ON"),
-        "{cr:?}"
-    );
+    for (field, value) in [
+        ("HSION", 1),
+        ("PLL1ON", 0),
+        ("CSSHSEON", 0),
+        ("HSIKERON", 0),
+    ] {
+        assert!(
+            cr.contains(&(field, FieldAccess::Written, Some(value))),
+            "{field}: {cr:?}"
+        );
+    }
 }

@@ -1357,19 +1357,14 @@ pub struct RccRule {
     pub clock_owned: Vec<u32>,
     /// On a board with the kernel-clock switch (`AET-WO-4240e` D1 (a)), its
     /// writes in order, (offset, word): the topology's `clock.kernel_switch`
-    /// words (`PLLCKSELR`, `PLLCFGR`, `PLL1DIVR`), then `RCC_CR` from its reset
-    /// `HSION` ([`crate::hse::RCC_CR_RESET`], p. 383) with `PLL1ON` set, then
-    /// back to `HSION`, each judged with [`Self::switch_flags`] masked out
-    /// (the firmware's read-modify-write carries back the flags it read, and
-    /// Renode's log holds no reads); positions the header's, never the
-    /// generator's. Each select is written between the two `RCC_CR` writes,
-    /// with PLL1 running, since a kernel mux moves only while both its inputs
-    /// run (RM0433 Rev 9 pp. 371–372). Empty on every other board.
+    /// words (`PLLCKSELR`, `PLLCFGR`, `PLL1DIVR`), then `RCC_CR` whole from
+    /// its reset `HSION` ([`crate::hse::RCC_CR_RESET`], p. 383) with `PLL1ON`
+    /// (the header's position), then `HSION` alone (Q11 ruled: as the HSE
+    /// bring-up, every word whole); never from the generator. Each select is
+    /// written between the two `RCC_CR` words, with PLL1 running, since a
+    /// kernel mux moves only while both its inputs run (RM0433 Rev 9
+    /// pp. 371–372). Empty on every other board.
     pub switch: Vec<(u32, u32)>,
-    /// `RCC_CR`'s read-only flags (`HSIRDY`, `HSIDIVF`, `CSIRDY`, `HSI48RDY`,
-    /// `D1CKRDY`, `D2CKRDY`, `HSERDY`, `PLL1RDY`–`PLL3RDY`; p. 383), which a
-    /// write cannot move: 0 with no switch.
-    pub switch_flags: u32,
 }
 
 /// The RCC rule of a port on `peripheral` (its USART) with `pins`, on
@@ -1423,11 +1418,9 @@ pub fn rcc_rule(
             spi_gates,
             clock_owned: crate::hse::owned_offsets(&clock),
             switch: Vec::new(),
-            switch_flags: 0,
         });
     }
     let mut switch = Vec::new();
-    let mut switch_flags = 0;
     if let Some(k) = &topology.clock.kernel_switch {
         let on = 1 << f.position("RCC_CR_PLL1ON_Pos")?;
         let cr = rcc.offset("CR", 0)?;
@@ -1438,12 +1431,6 @@ pub fn rcc_rule(
             (cr, crate::hse::RCC_CR_RESET | on),
             (cr, crate::hse::RCC_CR_RESET),
         ];
-        for flag in [
-            "HSIRDY", "HSIDIVF", "CSIRDY", "HSI48RDY", "D1CKRDY", "D2CKRDY", "HSERDY", "PLL1RDY",
-            "PLL2RDY", "PLL3RDY",
-        ] {
-            switch_flags |= 1 << f.position(&format!("RCC_CR_{flag}_Pos"))?;
-        }
     }
     for p in topology.spi_controllers.keys() {
         let words =
@@ -1465,7 +1452,6 @@ pub fn rcc_rule(
         spi_gates,
         clock_owned: Vec::new(),
         switch,
-        switch_flags,
     })
 }
 
@@ -1526,12 +1512,7 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
                 continue;
             }
             if rule.switch.iter().any(|s| s.0 == a.offset) {
-                // The two `RCC_CR` writes (the fourth and fifth) are judged
-                // with the read-only flags masked out.
-                let next = rule.switch.get(switched).map(|&(at, word)| {
-                    let flags = if switched >= 3 { rule.switch_flags } else { 0 };
-                    at == a.offset && value & !flags == word
-                });
+                let next = rule.switch.get(switched).map(|&w| w == (a.offset, value));
                 if next == Some(true) {
                     switched += 1;
                 } else {
@@ -3072,7 +3053,6 @@ mod tests {
             .clone()
             .expect("the reference has SPI1 on per_ck");
         let rule = rcc_rule(&reference, "USART1", &["PA9", "PA10"]).unwrap();
-        let on = 1 << 24;
         assert_eq!(
             rule.switch,
             [
@@ -3083,17 +3063,12 @@ mod tests {
                 (0x00, 0x0000_0001),
             ]
         );
-        // HSIRDY 2, HSIDIVF 5, CSIRDY 8, HSI48RDY 13, D1CKRDY 14, D2CKRDY 15,
-        // HSERDY 17, PLL1RDY 25, PLL2RDY 27, PLL3RDY 29 (p. 383).
-        assert_eq!(rule.switch_flags, 0x2A02_E124);
         let words: Vec<Access> = rule.switch[..3]
             .iter()
             .map(|(o, v)| w("rcc", *o, *v))
             .collect();
-        // Renode's log holds no reads: each RCC_CR word as the firmware's
-        // read-modify-write leaves it, the flags it read carried back.
-        let pll_on = [w("rcc", 0x00, 0x25 | on)];
-        let pll_off = [w("rcc", 0x00, 0x0200_0025)];
+        let pll_on = [w("rcc", 0x00, 0x0100_0001)];
+        let pll_off = [w("rcc", 0x00, 0x0000_0001)];
         let select = w("rcc", 0x50, 0x4000);
         let spi1 = w("rcc", 0xF0, 0x1000);
         let boot = |order: &[&[Access]]| judge_rcc(&rule, &[order.concat()]);
@@ -3122,11 +3097,11 @@ mod tests {
             ]),
             ["RCC.D2CCIP1R written while PLL1 was not running for the switch"]
         );
-        // PLL1ON before the words; a whole word that clears a bit read set
-        // (HSION); a PLL word changed.
+        // PLL1ON before the words; a CR word that clears HSION; a PLL word
+        // changed.
         assert_eq!(
             boot(&[&pll_on, &words[..]])[0],
-            "RCC.CR 0x1000025 written, not the kernel switch's next word"
+            "RCC.CR 0x1000001 written, not the kernel switch's next word"
         );
         assert_eq!(
             boot(&[&words[..], &[w("rcc", 0x00, 0x0100_0000)]])[0],

@@ -261,6 +261,10 @@ pub struct Entry {
     /// to; required for `observed` and `ignored-by-model`.
     pub source: String,
     pub note: String,
+    /// A read-only field inside a whole word the firmware writes: what it
+    /// writes there is not what reads back, so its written row predicts
+    /// nothing on the bench (`AET-WO-4240e`; RM0433 Rev 9 p. 383).
+    pub read_only: bool,
 }
 
 /// Whether `e` may be used: every entry names its judge, and every
@@ -429,6 +433,7 @@ fn e(
         judge: judge.to_owned(),
         source: source.to_owned(),
         note: note.to_owned(),
+        read_only: false,
     }
 }
 
@@ -872,7 +877,7 @@ fn table() -> Vec<Entry> {
     // and acts on it, `ignored-by-model` where Renode drops the written bit
     // (a tag, or a read-only field), and `PLLSRC`'s two bits (the header's
     // overlapping masks) the topology's word that `judge_tree` holds.
-    let word = "a field of the whole word the HSE bring-up writes";
+    let word = "a field of the whole word the HSE bring-up, or the kernel-clock switch (AET-WO-4240e), writes";
     let held = "the twin's clock rule (aethelgard_twin::hse::judge_clock) holds the whole word as written, a twin-side rule, not an aethelgard-ir one (RUL-20 (1))";
     let dropped =
         |line: &str, how: &str| format!("{RCC_CS} L{line} ({how}): the written bit is dropped");
@@ -1013,16 +1018,19 @@ fn table() -> Vec<Entry> {
         ("CFGR", "MCO#", Ign, dropped("234, L236", "tags"), "reset 0"),
     ] {
         let judge = format!("{held}; the model: {source}");
-        t.push(e(
-            "RCC",
-            register,
-            field,
-            W,
-            class,
-            &judge,
-            &source,
-            &format!("{word}, {what}; {held} (RM0433 Rev 9 pp. 383, 393, 399)"),
-        ));
+        t.push(Entry {
+            read_only: what.starts_with("read-only"),
+            ..e(
+                "RCC",
+                register,
+                field,
+                W,
+                class,
+                &judge,
+                &source,
+                &format!("{word}, {what}; {held} (RM0433 Rev 9 pp. 383, 393, 399)"),
+            )
+        });
     }
     for (field, what) in [
         ("PLLSRC_CSI", "PLLSRC's low bit, 0: PLLSRC 10 is the HSE"),
@@ -2777,12 +2785,29 @@ const WRITE_ONLY: [&str; 4] = ["BSRR", "ICR", "IFCR", "EGR"];
 /// can read. The bench reads after the boot, so a reset row of a field the
 /// firmware then writes is left out (its written row stands for it).
 pub fn on_the_bench(ledger: &Ledger, r: &LedgerRow) -> bool {
+    // A read-only field written inside a whole word (`AET-WO-4240e`): its
+    // written value is not what reads back, so that row predicts nothing,
+    // and the field's reset row, if any, keeps the bench's prediction.
+    let read_only = |w: &LedgerRow| {
+        w.access == "written"
+            && w.register.split_once('.').is_some_and(|(_, reg)| {
+                classify(
+                    &TABLE,
+                    &w.family,
+                    reg,
+                    &w.field,
+                    FieldAccess::Written,
+                    &w.id,
+                )
+                .is_ok_and(|e| e.read_only)
+            })
+    };
     let rewritten = r.access == "reset"
-        && ledger
-            .rows
-            .iter()
-            .any(|w| w.access == "written" && w.register == r.register && w.field == r.field);
+        && ledger.rows.iter().any(|w| {
+            w.access == "written" && w.register == r.register && w.field == r.field && !read_only(w)
+        });
     !rewritten
+        && !read_only(r)
         && !r.class.judged()
         && r.address.is_some()
         && r.value.is_some()

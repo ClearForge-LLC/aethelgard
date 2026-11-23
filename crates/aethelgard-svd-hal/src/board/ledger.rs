@@ -241,9 +241,9 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             whole(hf.cfgr_word()),
         );
     }
-    // The kernel-clock switch's PLL1 (`AET-WO-4240e`): its three words,
-    // whole, and `RCC_CR.PLL1ON` set by a read-modify-write of its one bit;
-    // the selection; then `PLL1ON` cleared the same way. Then each clock gate
+    // The kernel-clock switch's PLL1 (`AET-WO-4240e`, Q11 ruled): its three
+    // words and `RCC_CR` with `HSION` and `PLL1ON`, every one whole; the
+    // selection; then `RCC_CR` whole with `HSION` alone. Then each clock gate
     // (a read-modify-write of its one bit).
     let switch = plan.switch.as_ref().zip(facts.switch.as_ref());
     if let Some((k, sf)) = switch {
@@ -261,17 +261,13 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
                 whole(word),
             );
         }
-        let pll1on = 1u32 << sf.pll1on;
         add(
             "RCC",
             "RCC",
             "CR",
             "RCC_CR",
             sf.cr,
-            Write::Changed {
-                mask: pll1on,
-                value: pll1on,
-            },
+            whole(1 << sf.hsion | 1 << sf.pll1on),
         );
     }
     for s in &facts.kernel_selects {
@@ -279,17 +275,7 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
         add("RCC", "RCC", s.register, &prefix, s.offset, whole(s.word));
     }
     if let Some((_, sf)) = switch {
-        add(
-            "RCC",
-            "RCC",
-            "CR",
-            "RCC_CR",
-            sf.cr,
-            Write::Changed {
-                mask: 1 << sf.pll1on,
-                value: 0,
-            },
-        );
+        add("RCC", "RCC", "CR", "RCC_CR", sf.cr, whole(1 << sf.hsion));
     }
     let gates = facts
         .ports

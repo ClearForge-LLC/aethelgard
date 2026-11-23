@@ -52,3 +52,14 @@ The first form compared each `RCC_CR` write with the last read in the access log
 |---|---|---|---|
 | T01 | `crates/aethelgard-twin/src/serial.rs` | twin: CR's read-only flags not masked | killed by serial::tests::the_rcc_takes_the_kernel_switch_in_order_around_the_select |
 | T02 | `crates/aethelgard-twin/src/serial.rs` | twin: any switch word passes | killed by serial::tests::the_rcc_takes_the_kernel_switch_in_order_around_the_select |
+
+## Q11, whole RCC_CR words (T03, B, L)
+
+| id | file | change | result |
+|---|---|---|---|
+| T03 | `crates/aethelgard-twin/src/serial.rs` | twin: any word at the switch's offsets passes | killed by serial::tests::the_rcc_takes_the_kernel_switch_in_order_around_the_select |
+| B01 | `crates/aethelgard-cli/src/ledger.rs` | a read-only written row is a bench prediction | killed by the_reference_s_bench_rows_are_pinned |
+| B02 | `crates/aethelgard-cli/src/ledger.rs` | a read-only written row displaces the reset row | killed by the_reference_s_bench_rows_are_pinned |
+| L01 | `crates/aethelgard-svd-hal/src/board/ledger.rs` | RCC_CR's first whole word listed as PLL1ON alone | survived: equivalent. The second word, `HSION` alone, lists every field of `RCC_CR`, so the first adds no row. Kept, as the HSE bring-up lists each of its words |
+
+T01 and T02 (the masked comparison) went with the mask: Q11 made the comparison exact, and T03 holds it.

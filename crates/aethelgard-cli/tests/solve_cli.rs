@@ -154,12 +154,12 @@ use sha2::{Digest, Sha256};
 /// has a motor output): with `"schema_version":17` and each file's
 /// specification-24 sha256 put back, each still hashes to `1211c`'s digest,
 /// which the test holds. Before: `81246f99…3a22` and `8eb15a7f…48de`.
-/// Moved by `AET-WO-4240e` (solved 19; the reference also by `RCC.CR`
-/// `PLL1RDY`'s acknowledgement, Q8): both files have SPI1 on `per_ck`, so
+/// Moved by `AET-WO-4240e` (solved 19; the reference also by its `RCC.CR`
+/// acknowledgements, Q8 and Q11): both files have SPI1 on `per_ck`, so
 /// each topology gains `clock.kernel_switch`; with it taken out,
 /// `"schema_version":17` and the specification-24 sha256 put back, each still
 /// hashes to `1211c`'s digest. Before: `17515df2…1ce7` and `2c4cb557…890e`.
-const REFERENCE_DIGEST: &str = "b2a53ac1f1ab38923f871944ba6c09eff831047b2ed09971e6be91dd82c145df";
+const REFERENCE_DIGEST: &str = "320a409d931d6c834d43d7ffddb42a9a669bc03ea6fa338ba1719ae9de1490b0";
 const STRESS_DIGEST: &str = "d794bad8883030619f0278e200890c4ae9c51b013983e62452fe06428867f94e";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =

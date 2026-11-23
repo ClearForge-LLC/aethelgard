@@ -78,9 +78,13 @@ fn every_row_acknowledged(l: &Ledger) -> Vec<UnwitnessedAcknowledgement> {
     let mut by: BTreeMap<(String, &str), Vec<String>> = BTreeMap::new();
     for r in &l.rows {
         if let Some(c) = r.class.unwitnessed() {
-            by.entry((r.register.clone(), c.name()))
-                .or_default()
-                .push(r.field.clone());
+            // Each field once: since `AET-WO-4240e`'s whole RCC_CR words a
+            // field can have a written and a reset row in one class
+            // (`D2CKRDY`), as `ledger::missing_entries` keeps it.
+            let fields = by.entry((r.register.clone(), c.name())).or_default();
+            if !fields.contains(&r.field) {
+                fields.push(r.field.clone());
+            }
         }
     }
     by.into_iter()
@@ -128,20 +132,23 @@ fn the_reference_s_counts_are_pinned() {
     // ports A and B (24 more than the 8 solved pins' rows); R7: `D2CKRDY`.
     // `AET-WO-4240v` §1.7: nine PWR and FLASH.ACR rows, and PWR_CR3's three
     // reserved runs written back as read. `AET-WO-4240e`: the kernel-clock
-    // switch's 29, PLLCKSELR's 5, PLLCFGR's 18 and PLL1DIVR's 4 fields
-    // (whole words), RCC_CR.PLL1ON (a read-modify-write) and PLL1RDY polled.
-    assert_eq!(l.total, 330);
+    // switch's 50, PLLCKSELR's 5, PLLCFGR's 18 and PLL1DIVR's 4 fields and
+    // RCC_CR's 22 (whole words, Q11), and PLL1RDY polled.
+    assert_eq!(l.total, 351);
     let by_class: BTreeMap<&str, usize> = l.counts.by_class.clone();
     assert_eq!(
         by_class,
         BTreeMap::from([
-            // `AET-WO-4240e`: +27 the PLL words (the kernel-clock rule's), +1
-            // PLL1ON (observed), +1 PLL1RDY (silicon-only).
+            // `AET-WO-4240e`: +27 the PLL words (the kernel-clock rule's);
+            // RCC_CR's whole words (Q11): observed +8 (PLL1ON, and HSION,
+            // HSIDIV, CSION, HSI48ON, HSEON, PLL2ON, PLL3ON), ignored-by-model
+            // +13 (the tags and read-only flags), silicon-only +1 (CSSHSEON);
+            // and PLL1RDY polled, silicon-only +1.
             ("independent-rule", 102),
-            ("observed", 59),
+            ("observed", 66),
             ("same-source", 83),
-            ("ignored-by-model", 80),
-            ("silicon-only", 6),
+            ("ignored-by-model", 93),
+            ("silicon-only", 7),
         ])
     );
     let by_family: BTreeMap<String, usize> = l.counts.by_family.clone();
@@ -153,7 +160,7 @@ fn the_reference_s_counts_are_pinned() {
             ("GPIO".to_owned(), 119),
             ("I2C".to_owned(), 46),
             ("PWR".to_owned(), 10),
-            ("RCC".to_owned(), 57),
+            ("RCC".to_owned(), 78),
             ("SPI".to_owned(), 46),
             ("USART".to_owned(), 47),
         ])
@@ -399,7 +406,7 @@ fn the_reference_acknowledges_every_unwitnessed_row_by_register_and_class() {
         ),
         (15, 11, 5)
     );
-    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 169);
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 182);
     // The hand-written form is the ledger's, entry for entry.
     let want = every_row_acknowledged(&l);
     let mut have: Vec<_> = entries
@@ -453,7 +460,7 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
     l.rows.push(extra);
     assert_eq!(ledger::acknowledge(&mut l, &spec), ["GPIOA.MODER.MODER1"]);
     assert_eq!(l.counts.unacknowledged, 1);
-    assert_eq!(l.rows.len(), 331);
+    assert_eq!(l.rows.len(), 352);
     let new = l.rows.last().unwrap();
     assert_eq!(
         (new.acknowledged, new.reason.as_deref()),
@@ -645,12 +652,33 @@ fn the_reference_s_bench_rows_are_pinned() {
     // Q-F).
     assert!(rows.contains("| RCC.CR (`D2CKRDY`) | `0x58024400` | `0x00008000` | `0x00008000` |"));
     // `AET-WO-4240e`: `RCC.CR` `PLL1RDY`, read 0 after the switch stops PLL1
-    // (the adversarial pass's finding 2), and the reset reads kept (Q10).
+    // (the adversarial pass's finding 2), and the reset reads kept (Q10);
+    // RCC_CR's whole words (Q11) add HSIKERON, CSIKERON, HSEBYP and CSSHSEON
+    // at 0, and no read-only flag, whose written value is not what reads back.
     assert!(rows.contains("| RCC.CR (`PLL1RDY`) | `0x58024400` | `0x02000000` | `0x00000000` |"));
-    assert_eq!(on.len(), 149);
+    for (field, mask) in [
+        ("HSIKERON", 0x0000_0002),
+        ("CSIKERON", 0x0000_0200),
+        ("HSEBYP", 0x0004_0000),
+        ("CSSHSEON", 0x0008_0000),
+    ] {
+        assert!(
+            rows.contains(&format!(
+                "| RCC.CR (`{field}`) | `0x58024400` | `{mask:#010x}` | `0x00000000` |"
+            )),
+            "{field}"
+        );
+    }
+    for field in ["HSIRDY", "HSIDIVF", "D1CKRDY", "HSERDY", "PLL2RDY"] {
+        assert!(
+            !rows.contains(&format!("| RCC.CR (`{field}`) |")),
+            "{field}"
+        );
+    }
+    assert_eq!(on.len(), 153);
     assert_eq!(
         sha(&rows),
-        "1526becfc1a4b22f2d710b3e4fdc26c329a3b490b3e572e02a398513b419d72c"
+        "01d6d8e5ce44ffdadda7c0eed0060a9880b44c20f380452c87721114d73921af"
     );
 }
 
@@ -687,8 +715,8 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     let line = run(&root().join("examples/sentinel-01-minimal.json"));
     let v: serde_json::Value = serde_json::from_slice(&line).unwrap();
     assert_eq!(v["against"], "differs");
-    assert_eq!(v["ledger"]["total"], 330);
-    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 330);
+    assert_eq!(v["ledger"]["total"], 351);
+    assert_eq!(v["ledger"]["rows"].as_array().unwrap().len(), 351);
     assert_eq!(v["ledger"]["counts"]["by_class"]["independent-rule"], 102);
     assert_eq!(v["ledger"]["evidence"].as_object().unwrap().len(), 5);
     assert_eq!(v["silicon"]["holds"], true);
@@ -702,7 +730,7 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
     );
     let rows = v["ledger"]["rows"].as_array().unwrap();
     let acknowledged: Vec<_> = rows.iter().filter(|r| r["acknowledged"] == true).collect();
-    assert_eq!(acknowledged.len(), 169);
+    assert_eq!(acknowledged.len(), 183);
     assert!(
         acknowledged
             .iter()
@@ -713,7 +741,7 @@ fn verify_s_verdict_carries_the_ledger_and_the_silicon_findings() {
         rows.iter()
             .filter(|r| r.get("acknowledged").is_none())
             .count(),
-        102 + 59,
+        102 + 66,
         "judged rows carry no acknowledgement"
     );
     assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0);
@@ -1013,7 +1041,8 @@ fn with_no_acknowledgement_each_register_and_class_gets_one_unwritten_entry() {
     let mut spec = written.clone();
     spec.acknowledge_unwitnessed.clear();
     let mut l = reference_ledger();
-    assert_eq!(ledger::acknowledge(&mut l, &spec).len(), 169);
+    // `AET-WO-4240e` Q11: one more row than fields, D2CKRDY both written (in RCC_CR's whole word) and read at reset under one acknowledged field.
+    assert_eq!(ledger::acknowledge(&mut l, &spec).len(), 183);
     let entries = ledger::missing_entries(&l, &spec);
     // The ledger's own grouping (`every_row_acknowledged`), fields sorted and
     // each reason "".
@@ -1049,7 +1078,7 @@ fn with_no_acknowledgement_each_register_and_class_gets_one_unwritten_entry() {
         .collect();
     emptied.sort_by(|a, b| (&a.register, &a.class).cmp(&(&b.register, &b.class)));
     assert_eq!(entries, emptied);
-    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 169);
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 182);
 }
 
 /// §1.3: the entries pasted in with each reason written pass the

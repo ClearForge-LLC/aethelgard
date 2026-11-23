@@ -1001,13 +1001,17 @@ fn writes_at(elf: &Path, words: &[u32]) -> Vec<Vec<u64>> {
 /// (the record array's two more `.bss` words, 8 instructions of the reset's
 /// zeroing loop, and `main`'s code generation): measured −2 to +25
 /// instructions across the committed boards, bound here at 32 (0.32 µs at
-/// 100 MIPS). The reference firmware, against itself with U3's read and its
+/// 100 MIPS). Raised to 40 by `AET-WO-4240e` Q12 (ruled 20:58Z): with the
+/// kernel-clock switch's code preceding both reads, U4's status write moved
+/// 35 (2898 with U3, 2863 without). A later change that needs it raised again
+/// is a stop, not an edit here. The name keeps 32: `ci/` routes and weighs
+/// the test by it, outside this work order's fence. The reference firmware, against itself with U3's read and its
 /// record removed (the board without U3): U2's and U4's status writes each
 /// happen once in each, within the bound; the boot word follows by U3's
 /// TXIS wait, milliseconds later.
 #[test]
 fn the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions() {
-    const BOUND: u64 = 32;
+    const BOUND: u64 = 40;
     let without = mutant("no-u3", |dir| {
         edit(
             dir,

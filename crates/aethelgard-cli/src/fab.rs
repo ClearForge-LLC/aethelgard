@@ -1193,18 +1193,17 @@ mod tests {
                 &format!("{added}- `FLASH.OPTSR_CUR`"),
                 1,
             );
-            // `AET-WO-4240e` Q8: `RCC.CR` `PLL1RDY`'s acknowledgement, after
-            // `RCC.CR`'s other entry.
+            // `AET-WO-4240e` Q8 and Q11: `RCC.CR`'s two acknowledgements, where
+            // its one entry was.
             let switch = added_by("AET-WO-4240e");
             let golden: String = golden
                 .split_inclusive('\n')
-                .flat_map(|l| {
-                    let after = if l.starts_with("- `RCC.CR` (ignored-by-model)") {
+                .map(|l| {
+                    if l.starts_with("- `RCC.CR` (ignored-by-model)") {
                         switch.as_str()
                     } else {
-                        ""
-                    };
-                    [l, after]
+                        l
+                    }
                 })
                 .collect();
             for n in [1, 64] {
