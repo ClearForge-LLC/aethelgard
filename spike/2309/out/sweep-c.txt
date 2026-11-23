@@ -1,10 +1,5 @@
-check_run calls logged: 1229 distinct (input, test) pairs; 1182 distinct inputs
-
-## motor: refuses 2 distinct inputs
-accepted before, refused after: 0 (input, test) pairs in 0 tests
-refused before already, by main's reason: 2 (input, test) pairs in 1 tests
-  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness is not its output's pin's observer, or is there twice")
-  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness names no solved output")
+check_run: 1229 distinct (input, test) pairs; 1182 distinct inputs; 0 pairs from a spawned CLI
+distinct inputs by (read, booted): {(None, None): 1182}
 
 ## full: refuses 155 distinct inputs
 accepted before, refused after: 43 (input, test) pairs in 20 tests
@@ -84,6 +79,12 @@ refused before already, by main's reason: 116 (input, test) pairs in 43 tests
   two_devices_on_one_controller_have_two_witnesses: 1 x Err("a step's read without its witness, or a witness without its read")
   two_solved_records_for_one_bus_or_unsorted_buses_are_refused: 2 x Err("the solved buses are not sorted by unique bus")
   two_verdicts_are_refused: 1 x Err("a run holds exactly one scenario, topology, boot and verdict")
+
+## motor: refuses 2 distinct inputs
+accepted before, refused after: 0 (input, test) pairs in 0 tests
+refused before already, by main's reason: 2 (input, test) pairs in 1 tests
+  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness is not its output's pin's observer, or is there twice")
+  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness names no solved output")
 
 ## status: refuses 21 distinct inputs
 accepted before, refused after: 6 (input, test) pairs in 2 tests
