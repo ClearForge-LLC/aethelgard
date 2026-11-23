@@ -1,4 +1,4 @@
-//! `AET-WO-4400b`: the generator on the three CI boards' topologies, byte
+//! `AET-WO-4400b`: the generator on the CI boards' topologies, byte
 //! for byte; every emitted keyword one ArduPilot `Copter-4.7.2` reads; every
 //! refusal by name; and the generator calls none of the rules the pinout
 //! check judges by (`RUL-20`).
@@ -7,7 +7,7 @@ use aethelgard_hwdef::{Refusal, generate};
 use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 
-const BOARDS: [(&str, &str, &str); 3] = [
+const BOARDS: [(&str, &str, &str); 4] = [
     (
         "sentinel-01",
         include_str!("fixtures/sentinel-01.topology.json"),
@@ -22,6 +22,12 @@ const BOARDS: [(&str, &str, &str); 3] = [
         "serial-dshot-9600",
         include_str!("fixtures/serial-dshot-9600.topology.json"),
         include_str!("fixtures/serial-dshot-9600.hwdef.dat"),
+    ),
+    // AET-WO-4408: the CI board with SERIAL1–3.
+    (
+        "four-port",
+        include_str!("fixtures/four-port.topology.json"),
+        include_str!("fixtures/four-port.hwdef.dat"),
     ),
 ];
 

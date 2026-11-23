@@ -261,6 +261,10 @@ jobs:
             spec: crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
           - board: serial-dshot-9600
             spec: crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json
+          # AET-WO-4408: SERIAL0-3 (console, GPS, CRSF, GPS), so the serial
+          # protocols and options reach unmodified ArduPilot and `check pinout`.
+          - board: four-port
+            spec: crates/aethelgard-cli/tests/fixtures/four-port.json
           # AET-WO-4400e §2: sentinel-02's committed hwdef without its IMU
           # line, for `foreign` only.
           - board: sentinel-02-noimu
