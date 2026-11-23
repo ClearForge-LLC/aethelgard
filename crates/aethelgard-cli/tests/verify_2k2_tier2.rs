@@ -163,7 +163,9 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             // USART1's bring-up, generated for a board with a serial port;
             // since `AET-WO-4230` the brown-out word's one flash read; since
             // `AET-WO-3303b` the scheduler in two parts, I2C1's and SPI1's;
-            // since `AET-WO-4240v` the supply and VOS Scale 2 sequence.
+            // since `AET-WO-4240v` the supply and VOS Scale 2 sequence; since
+            // `AET-WO-4240e` the kernel-clock switch.
+            ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),
             ("prove", "pass"),

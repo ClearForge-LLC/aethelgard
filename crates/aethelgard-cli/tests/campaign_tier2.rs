@@ -1279,11 +1279,14 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
     .unwrap();
     scenario["name"] = "droop-bor3-50-ns-later".into();
     scenario["base"] = "sentinel-01.json".into();
-    // Planted from the undisturbed boot word (`AET-WO-2310`): the bench's,
-    // 3,630,040 ns, so -2,630,040 is 1 ms from reset, and 50 ns later is -2,629,990.
+    // Planted from the undisturbed boot word (`AET-WO-2310`): the bench's
+    // was 3,630,040 ns, so -2,630,040 was 1 ms from reset, and 50 ns later
+    // -2,629,990. `AET-WO-4240e`'s kernel-clock switch puts the boot word
+    // 2,070 ns later (207 instructions at the twin's 100 MIPS), so the plant
+    // moves by the same to fall on 1,018,380 ns again.
     let start = &mut scenario["overrides"][0]["droop"]["from_boot_word_ns"];
-    assert_eq!(*start, -2_630_040, "the bench's droop starts at 1 ms");
-    *start = (-2_629_990).into();
+    assert_eq!(*start, -2_630_040, "the bench's droop as committed");
+    *start = (-2_632_060).into();
     fs::write(
         dir.join("droop.json"),
         serde_json::to_vec_pretty(&scenario).unwrap(),
