@@ -2240,6 +2240,25 @@ mod tests {
         ]
     }
 
+    /// `AET-WO-2311` §5: a generated firmware that sets `CR2.SWAP` is
+    /// refused today, as a bit Renode does not store that the bring-up's
+    /// word leaves clear, and again in the word at `UE`.
+    #[test]
+    fn a_generated_firmware_that_sets_swap_is_refused() {
+        let b = Bringup::of(&framing(8, Parity::Even, 2, true), 640).unwrap();
+        let mut boot = sbus_boot();
+        boot[1] = w("uart4", 4, 0x0003_2000 | 1 << 15);
+        let j = judge_writes(&b, "uart4", &[boot]);
+        assert!(!j.holds());
+        assert_eq!(
+            j.unexpected,
+            [
+                "CR2 0x8000 set, a bit Renode does not store",
+                "CR2 0xA000 at UE, not 0x2000"
+            ]
+        );
+    }
+
     #[test]
     fn the_bring_up_s_words_come_from_the_framing_and_the_header() {
         let b = Bringup::of(&framing(8, Parity::Even, 2, true), 640).unwrap();
