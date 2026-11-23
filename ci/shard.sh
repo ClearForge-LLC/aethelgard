@@ -239,11 +239,63 @@ heavy_unweighted() {
   ' "$weights" "$colocate" "$log"
 }
 
+# AET-WO-1914 P3. `run` stamps every line of a shard's log `seconds.micro<TAB>line` ($EPOCHREALTIME, as read).
+# times LOG THREADS: each test's seconds, as `binary<TAB>test<TAB>seconds`. libtest starts a binary's tests in name
+# order on THREADS threads and each completion starts the next, so the j-th by name (j > THREADS) starts at the
+# (j - THREADS)-th completion; a test's seconds are its result line's stamp less that start. A line with no stamp,
+# a stamp that goes back, or a binary whose results are not all timed is refused (fail closed, not skipped).
+times() {
+  local log=$1 threads=$2
+  readable "$log"
+  case $threads in '' | *[!0-9]* | 0) die "the test thread count '$threads' is not a positive integer" ;; esac
+  awk -v lf="$log" -v T="$threads" '
+    function bad(m) { print "shard: " lf ":" NR ": " m > "/dev/stderr"; failed = 1; exit 1 }
+    function flush(   i, j, x, s, st) {
+      for (i = 1; i <= n; i++) { x = nm[i]; for (j = i - 1; j >= 1 && ("" s[j]) > ("" x); j--) s[j + 1] = s[j]; s[j + 1] = x }
+      for (j = 1; j <= n; j++) { st = (j <= T) ? t0 : tc[j - T]; printf "%s\t%s\t%.3f\n", binary, s[j], at[s[j]] - st }
+      split("", at); n = 0; open = 0
+    }
+    { tab = index($0, "\t"); ts = substr($0, 1, tab - 1)
+      if (tab == 0 || ts !~ /^[0-9]+[.][0-9]+$/) bad("a line with no time stamp: " substr($0, 1, 80))
+      t = ts + 0; line = substr($0, tab + 1); gsub(/\033\[[0-9;]*[A-Za-z]/, "", line)
+      if (t < last) bad("the time stamp goes back"); last = t }
+    line ~ /^ +Running / { split(line, f, " "); binary = f[2]; if (f[3] ~ /^src\//) binary = f[2] " " f[3]; next }
+    line ~ /^ +Doc-tests / { binary = line; sub(/^ +/, "", binary); next }
+    line ~ /^running [0-9]+ tests?$/ { if (open) bad("a second `running` line before the result"); split(line, r, " ")
+      want = r[2]; t0 = t; n = 0; open = 1; next }
+    # A tool line can precede the result on one line: match its end. A libtest name is a Rust path.
+    open && match(line, /test [A-Za-z0-9_:]+( - should panic)? [.][.][.] (ok|FAILED|ignored)$/) {
+      x = substr(line, RSTART + 5); sub(/ .*$/, "", x)
+      if (x in at) bad(x " has two results"); n++; nm[n] = x; tc[n] = t; at[x] = t; next }
+    line ~ /^test result: / { if (!open) bad("a result with no `running` line")
+      if (n != want) bad(binary ": timed " n " of its " want " tests"); flush(); next }
+    END { if (failed) exit 1; if (open) bad("the log ends inside " binary) }
+  ' "$log"
+}
+
+# The seconds over which a test must carry a row (AET-WO-1910 D6, P3).
+P3_SECONDS=10
+
+# slow_unweighted TIMES WEIGHTS COLOCATE: each test of TIMES (`times`' output) that took P3_SECONDS or more with no row in
+# WEIGHTS and in no binary of COLOCATE, as `binary<TAB>test<TAB>seconds`. No upper bound: a test past 60 s whose libtest
+# warning was split by a tool line is refused here too.
+slow_unweighted() {
+  local times=$1 weights=$2 colocate=$3
+  readable "$times"; readable "$weights"; readable "$colocate"
+  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v lim="$P3_SECONDS" '
+    FILENAME == wf { if ($0 !~ /^#/ && NF == 3) w[$1 "\t" $2] = 1; next }
+    FILENAME == cf { if ($0 !~ /^#/ && NF == 2) blk[$1] = 1; next }
+    $3 + 0 >= lim && !($1 in blk) && !(($1 "\t" $2) in w) { print }
+  ' "$weights" "$colocate" "$times"
+}
+
 result() {
   local k=$1 shardfile=$2 wslog=$3 bridgelog=$4 re=$5 weights=${6:-} colocate=${7:-/dev/null}
   readable "$shardfile"
   [ -s "$shardfile" ] || die "shard $k lists nothing; a shard that runs nothing fails"
-  local suite log expect total=0 tier2=0 expected=0 p f ig t2
+  local suite log expect total=0 tier2=0 expected=0 p f ig t2 tmp threads=${RUST_TEST_THREADS:-$(nproc)}
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' RETURN
   for suite in ws bridge; do
     if [ "$suite" = ws ]; then log=$wslog; else log=$bridgelog; fi
     expect=$(awk -F'\t' -v s="$suite" '$1 == s { n += $3 } END { print n + 0 }' "$shardfile")
@@ -252,9 +304,13 @@ result() {
       [ ! -e "$log" ] || die "$log ran though shard $k has no $suite tests"
       continue
     fi
-    read -r p f ig t2 < <(tally "$log" "$re")
+    # Every line is stamped (AET-WO-1914): the log's per-test times, then the log without its stamps.
+    times "$log" "$threads" >"$tmp/times" || exit 1
+    cut -f2- "$log" >"$tmp/log"
+    read -r p f ig t2 < <(tally "$tmp/log" "$re")
     { [ "$f" -eq 0 ] && [ "$ig" -eq 0 ]; } || die "$suite: $f failed, $ig ignored"
     [ "$p" -eq "$expect" ] || die "$suite: $p passed, the assignment is $expect"
+    [ "$(wc -l <"$tmp/times")" -eq "$p" ] || die "$suite: $(wc -l <"$tmp/times") test results timed, $p passed"
     total=$((total + p))
     tier2=$((tier2 + t2))
     # AET-WO-1910 P2 (ruled D6): the plan gave a test with no row DEFAULT_WEIGHT; one libtest reports
@@ -262,8 +318,11 @@ result() {
     # every test of a lock-serialised binary carries a row).
     if [ -n "$weights" ]; then
       local heavy
-      heavy=$(heavy_unweighted "$log" "$weights" "$colocate") || exit 1
+      heavy=$(heavy_unweighted "$tmp/log" "$weights" "$colocate") || exit 1
       [ -z "$heavy" ] || die "$suite: ran over 60 s with no row in $(basename "$weights") (the plan gave each $DEFAULT_WEIGHT s; weigh it by the REFIT RULE): $(tr '\t\n' ' ;' <<<"$heavy")"
+      # AET-WO-1914 P3: the same, for a test that took P3_SECONDS or more by its stamps; P2 stays, a second witness.
+      heavy=$(slow_unweighted "$tmp/times" "$weights" "$colocate") || exit 1
+      [ -z "$heavy" ] || die "$suite: took $P3_SECONDS s or more with no row in $(basename "$weights") (the plan gave each $DEFAULT_WEIGHT s; weigh it by the REFIT RULE): $(tr '\t\n' ' ;' <<<"$heavy")"
     fi
   done
   echo "shard=$k expected=$expected passed=$total tier2=$tier2"
@@ -319,10 +378,10 @@ LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.r
 BASE0=${SHARD0_FIXED_SECONDS:-37}
 
 # compiled_in LOG: the `Compiling` lines cargo printed before the first test binary ran (a tool a test runs may print
-# its own later); none on a shard.
+# its own later); none on a shard. A line of `run`'s log is read past its time stamp.
 compiled_in() {
   readable "$1"
-  awk '{ gsub(/\033\[[0-9;]*[A-Za-z]/, "") } /^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
+  awk '{ sub(/^[0-9]+[.][0-9]+\t/, ""); gsub(/\033\[[0-9;]*[A-Za-z]/, "") } /^ +Running / { exit } /^ +Compiling / { print; n++ } END { exit (n > 0) }' "$1" \
     && return 0
   die "$1: this shard compiled; it must run the tools-build job's binaries (a stale or partial archive?)"
 }
@@ -382,6 +441,13 @@ plan() {
   guard "$n" "$out/entries.tsv" "$out"
 }
 
+# stamp_lines: each line of stdin as `seconds.micro<TAB>line`, stamped as read (AET-WO-1914 P3); a last line with no
+# newline is kept.
+stamp_lines() {
+  local l
+  while IFS= read -r l || [ -n "$l" ]; do printf '%s\t%s\n' "$EPOCHREALTIME" "$l"; done
+}
+
 run() {
   local out=$1 k=$2 shard="$1/shard-$2.tsv" ws br status=0 log
   readable "$shard"
@@ -392,13 +458,13 @@ run() {
   mapfile -t br < <(names "$shard" bridge)
   if [ "${#ws[@]}" -gt 0 ]; then
     set +e
-    cargo test --workspace "${FEATURES[@]}" -- --exact "${ws[@]}" 2>&1 | tee "$out/test-ws.log"
+    cargo test --workspace "${FEATURES[@]}" -- --exact "${ws[@]}" 2>&1 | stamp_lines | tee "$out/test-ws.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
   if [ "${#br[@]}" -gt 0 ]; then
     set +e
-    cargo test "${BRIDGE[@]}" -- --exact "${br[@]}" 2>&1 | tee "$out/test-bridge.log"
+    cargo test "${BRIDGE[@]}" -- --exact "${br[@]}" 2>&1 | stamp_lines | tee "$out/test-bridge.log"
     [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
     set -e
   fi
@@ -410,7 +476,7 @@ run() {
 cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run|build|pack|unpack ...}
 shift
 case $cmd in
-  parse | assign | guard | names | result | aggregate | tally | heavy_unweighted) "$cmd" "$@" ;;
+  parse | assign | guard | names | result | aggregate | tally | heavy_unweighted | times | slow_unweighted) "$cmd" "$@" ;;
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
   build) build_all ;;
