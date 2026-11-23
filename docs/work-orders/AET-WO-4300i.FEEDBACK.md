@@ -12,7 +12,7 @@
 
 Every worker's summary was spot-checked against the artifact before it was used. Written 2026-11-23.
 
-**Status: READY.** The bench package is the one from dispatch run 45117832704, committed byte for byte (§6). Main `aaad1555` (1607) is merged in, and no package byte moved on that merge.
+**Status: READY.** The bench package is the one from dispatch run 45117832704, committed byte for byte (§6). Main `aaad1555` (1607) is merged in. That merge changed no file under `fab/`. The bench-package job's `against_fab` on the pushed head is the witness that the package still matches.
 
 **The answer, in six lines:**
 - **(1) Every motor output declares its pull-down,** `motor_outputs[].pull`, a required key:
@@ -43,7 +43,9 @@ Every worker's summary was spot-checked against the artifact before it was used.
 | `54e091df` … `05f1b28e` | the adversarial fixes |
 | `521d85be` | the support-gate fixes |
 | `2e8a1de6` … `dfc53649` | the reduction pass |
-| `172e0657` | the labels |
+| `172e0657` | the labels; this is the head CI and the dispatch ran on |
+| `5f10de68` | the bench package (dispatch 45117832704) and the P3 weight row |
+| `591bdd30` and after | main `aaad1555` merged; FEEDBACK; the re-checks on the merged head |
 
 **Kit** (`spike/4300i/`):
 - `universe.sh`, `run.sh` (with `OUT=`), `motors.py`, `facing.py`, `repin.*`;
@@ -231,3 +233,45 @@ The report and probes are in `~/.cache/aet-4300i/adv/`, with before and after in
 - **R6 · The FT and reservation tests use synthetic pin tables.** The IR holds no real one. The real cross-instance probe is recorded in `out/adv-fixes.tsv` only.
 - **R7 · A mistyped pin on a connector-facing net** is now refused at validate as `McuPinStructureUnheld`, where before it was `UnknownPin` at solve. It is still refused by name, and earlier.
 - **R8 · New CLI tests with no weight row** get the default weight unless CI measures them at 10 s or more (1914 P3, §6).
+
+## 8. Fence
+
+**Inside the fence:**
+- `aethelgard-ir`, `-svd-hal`, `-hwdef`, `-pincheck` and `-eda`;
+- `examples/`, plus `crates/aethelgard-cli/tests/fixtures/sentinel-03.json` (ruled F1);
+- the version literals and goldens a bump moves, by their generators: the CLI test fixtures, `boards/` and `fab/`;
+- `spike/4300i/` and this file.
+
+**Outside it, each with its reason:**
+- **`crates/aethelgard-cli/src/ledger.rs` and `tests/ledger_tier1.rs`:** ruled F2.
+- **`ci/test-weights.tsv`:** one row, by the architect's note of 04:30Z (1914 P3).
+- **Literals moved in CLI tests:**
+  - `README.md`: the example hash prefix, and the ledger row's rule;
+  - `battery_sag_tier1.rs` and `ledger_tier1.rs`: counts;
+  - `solve_cli.rs`: digests, and the F8 kind;
+  - `stackups_tier1.rs`: 21..28;
+  - `outline_tier1.rs` and `via_ring_tier1.rs`: Sentinel-03's measured outline, digest and ladder.
+- **Shared test helpers:**
+  - `tests/common/netlist.rs` now writes each footprint, so step 8 can judge it;
+  - `bench_tier1.rs`: one replace string lost its closing `)` and still matches.
+- **New CLI tests:** in `emit_tier1.rs` and `support_tier1.rs`.
+- **Refusal kinds that moved on existing tests:**
+  - a hand motor on PA13 or PA14 is now `MotorPinResetPull` where it was `ReservedPin` (`motor.rs` now checks `ReservedPin` on PC14);
+  - serial PA5 is now `ConnectorPinNotFt`;
+  - serial PZ1 is now `McuPinStructureUnheld` (R7);
+  - a rowless part in `solve_cli` is now `PowerPartUnknown`.
+- **Public error fields added:** `SolveError::ReservedPin.reason`, and `withheld` on `NoFreePin`, `NoAdcPin` and `AdcUnmodelled`. When nothing is withheld the message is byte-identical.
+
+**Not touched:** the twin, chaos, `verify`, and the workflows.
+
+## 9. Re-checks on the merged head
+
+- **Null sweep:** 34/34 with the release binary of the merged tree. `out/after` came out byte-identical to the committed copy.
+- **The adversary's reservation sweep:** 338 cases, 299 moved off the reserved pin and 39 refused by name (31 `ReservedPin`, every one a hand pin). No violation, and identical to its first run (`out/adv-final-reserve-sweep.txt`).
+- **The probes** (`out/adv-final-repro.txt`):
+  - F1's p2 solves on SPI2, all FT;
+  - PB4 and PA15 are refused `MotorPinResetPull`;
+  - the solver avoids PA15 unaided;
+  - a hand TT pin at a connector is refused for each of the eight kinds.
+- **`ardupilot-image` on `172e0657`:** all green, including the generated `serial-dshot-9600` motor board and `pinout`.
+
