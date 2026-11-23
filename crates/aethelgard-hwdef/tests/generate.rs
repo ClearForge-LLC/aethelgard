@@ -123,13 +123,12 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("DEFAULT_SERIAL9_BAUD", "AP_SerialManager.cpp:390"),
         ("DEFAULT_SERIAL9_OPTIONS", "AP_SerialManager.cpp:395"),
     ];
-    const PIN_TOKENS: [&str; 6] = [
+    const PIN_TOKENS: [&str; 5] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
         "PUSHPULL",
         "OPENDRAIN",
         "FLOATING",
-        "PULLDOWN",
     ];
     for (name, t, _) in BOARDS {
         let text = generate(&topology(t)).unwrap().text;
@@ -182,7 +181,6 @@ fn the_generator_calls_none_of_the_check_s_rules() {
     for name in [
         "implied_pupd",
         "implied_open_drain",
-        "motor_output_pupd",
         "speeds::",
         ".choose(",
         "Specification",
@@ -505,29 +503,69 @@ fn a_topology_with_a_pin_device_is_refused_as_not_emitted() {
     assert_eq!((err.kind(), err.id()), ("GpioNotEmitted", Some("U9")));
 }
 
-/// `AET-WO-1211a`: the motor line is `PULLDOWN`, which a motor output that
-/// idles high contradicts, so it is refused by the net's name.
-#[test]
-fn a_motor_output_that_idles_high_is_refused_as_not_emitted() {
-    let mut t: SolvedTopology = serde_json::from_str(include_str!(
+/// `serial-dshot-9600` (four DShot600 outputs on TIM1 CH1..CH4, PA8..PA11)
+/// with the motors-pwm fixture's four PWM outputs on the same pins, timer and
+/// speeds in their place: a PWM board this generator emits (it has a console).
+fn pwm_board() -> SolvedTopology {
+    let pwm: Value = serde_json::from_str(include_str!(
         "../../aethelgard-svd-hal/tests/ui/motors-pwm/topology.json"
     ))
     .unwrap();
-    let (net, m) = t
+    let mut v: Value = serde_json::from_str(BOARDS[2].1).unwrap();
+    v["motor_outputs"] = pwm["motor_outputs"].clone();
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    t.validate().unwrap();
+    t
+}
+
+/// The `PWM(n)` lines of a generated file, comments dropped.
+fn pwm_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|l| l.split('#').next().unwrap().trim().to_owned())
+        .filter(|l| l.split_whitespace().any(|w| w.starts_with("PWM(")))
+        .collect()
+}
+
+/// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23): a motor line
+/// carries no internal pull, since its pull-down is the declared external
+/// resistor (`motor_outputs[].pull`). Every `PWM(n)` line ends `PUSHPULL
+/// FLOATING`, ArduPilot's own default for a PWM line, written explicitly
+/// (`chibios_hwdef.py:387-427` at the pinned tag); none carries `PULLDOWN`
+/// or `PULLUP`.
+#[test]
+fn every_motor_line_is_floating() {
+    for t in [topology(BOARDS[2].1), pwm_board()] {
+        let text = generate(&t).unwrap().text;
+        let lines = pwm_lines(&text);
+        assert_eq!(lines.len(), 4, "{text}");
+        for line in &lines {
+            assert!(line.ends_with(" PUSHPULL FLOATING"), "`{line}`");
+            assert!(
+                !line.contains("PULLDOWN") && !line.contains("PULLUP"),
+                "`{line}`"
+            );
+        }
+    }
+}
+
+/// With no internal motor pull, an output that idles high is emitted like
+/// any other: `IdleHighNotEmitted` (`AET-WO-1211a`) refused it only because
+/// the `PULLDOWN` line fought a high idle, and that line is gone (D0). The
+/// file is the one a pulsed idle gets, byte for byte (hwdef.dat carries no
+/// idle).
+#[test]
+fn a_motor_output_that_idles_high_is_emitted_like_any_other() {
+    let before = generate(&pwm_board()).unwrap().text;
+    let mut t = pwm_board();
+    let (_, m) = t
         .motor_outputs
         .iter_mut()
         .find(|(_, m)| m.pwm.is_some())
         .unwrap();
-    let net = net.clone();
     m.pwm.as_mut().unwrap().idle =
         aethelgard_ir::motor::Idle::Level(aethelgard_ir::motor::Level::High);
     // An idle high's CCR is ARR + 1, as `solve` writes it.
     m.ccr = m.arr + 1;
     t.validate().unwrap();
-    let err = generate(&t).unwrap_err();
-    assert_eq!(err, Refusal::IdleHighNotEmitted { net: net.clone() });
-    assert_eq!(
-        (err.kind(), err.id()),
-        ("IdleHighNotEmitted", Some(net.as_str()))
-    );
+    assert_eq!(generate(&t).unwrap().text, before);
 }

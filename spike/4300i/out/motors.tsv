@@ -1,0 +1,41 @@
+board	label	pin	hand_solved	solved_pin	protocol	idle	implied_pupd	structure	connector_ends	test_point_ends	bridge_input_ends	far_class	drawn
+driver-judges-nothing	HB_IN1	null	solved	PA8	pwm	{"pulse_us": 1}	down	FT_fha (FT)	J4.1	-	-	connector	yes
+driver-judges-nothing	HB_IN2	null	solved	PA9	pwm	{"pulse_us": 1}	down	FT_u (FT)	J4.2	-	-	connector	yes
+driver-judges-nothing	SERVO1	null	solved	PA0	pwm	{"pulse_us": 1000}	down	FT_a (FT)	J4.3	-	-	connector	yes
+driver-judges-nothing	SERVO2	null	solved	PA1	pwm	{"pulse_us": 1000}	down	FT_ha (FT)	J4.4	-	-	connector	yes
+hse-crystal-16	MOTOR1	null	solved	PA8	dshot600	dshot	down	FT_fha (FT)	J3.1	-	-	connector	yes
+hse-crystal-16	MOTOR2	null	solved	PA9	dshot600	dshot	down	FT_u (FT)	J3.2	-	-	connector	yes
+hse-crystal-16	MOTOR3	PA0	hand	PA0	dshot600	dshot	down	FT_a (FT)	J3.3	-	-	connector	yes
+hse-crystal-16	MOTOR4	PA1	hand	PA1	dshot600	dshot	down	FT_ha (FT)	J3.4	-	-	connector	yes
+hse-external-8	MOTOR1	null	solved	PA8	dshot600	dshot	down	FT_fha (FT)	J3.1	-	-	connector	-
+hse-external-8	MOTOR2	null	solved	PA9	dshot600	dshot	down	FT_u (FT)	J3.2	-	-	connector	-
+hse-external-8	MOTOR3	PA0	hand	PA0	dshot600	dshot	down	FT_a (FT)	J3.3	-	-	connector	-
+hse-external-8	MOTOR4	PA1	hand	PA1	dshot600	dshot	down	FT_ha (FT)	J3.4	-	-	connector	-
+motors-dshot600	MOTOR1	null	solved	PA8	dshot600	dshot	down	FT_fha (FT)	J1.1	-	-	connector	yes
+motors-dshot600	MOTOR2	null	solved	PA9	dshot600	dshot	down	FT_u (FT)	J1.2	-	-	connector	yes
+motors-dshot600	MOTOR3	null	solved	PA10	dshot600	dshot	down	FT_u (FT)	J1.3	-	-	connector	yes
+motors-dshot600	MOTOR4	null	solved	PA11	dshot600	dshot	down	FT_u (FT)	J1.4	-	-	connector	yes
+motors-pwm	MOTOR1	null	solved	PA8	pwm	{"pulse_us": 1000}	down	FT_fha (FT)	J1.1	-	-	connector	yes
+motors-pwm	MOTOR2	null	solved	PA9	pwm	{"pulse_us": 1000}	down	FT_u (FT)	J1.2	-	-	connector	yes
+motors-pwm	MOTOR3	null	solved	PA10	pwm	{"pulse_us": 1000}	down	FT_u (FT)	J1.3	-	-	connector	yes
+motors-pwm	MOTOR4	null	solved	PA11	pwm	{"pulse_us": 1000}	down	FT_u (FT)	J1.4	-	-	connector	yes
+sentinel-02-shaped	MOTOR1	null	solved	PA8	dshot600	dshot	down	FT_fha (FT)	J3.1	-	-	connector	yes
+sentinel-02-shaped	MOTOR2	null	solved	PA9	dshot600	dshot	down	FT_u (FT)	J3.2	-	-	connector	yes
+sentinel-02-shaped	MOTOR3	null	solved	PA10	dshot600	dshot	down	FT_u (FT)	J3.3	-	-	connector	yes
+sentinel-02-shaped	MOTOR4	null	solved	PA11	dshot600	dshot	down	FT_u (FT)	J3.4	-	-	connector	yes
+sentinel-03	MOTOR1	PE9	hand	PE9	dshot600	dshot	down	TT_ha (non-FT)	J5.1	TP19	-	connector	yes
+sentinel-03	MOTOR2	PE11	hand	PE11	dshot600	dshot	down	FT_ha (FT)	J5.2	TP20	-	connector	yes
+sentinel-03	MOTOR3	PE13	hand	PE13	dshot600	dshot	down	FT_h (FT)	J5.3	TP21	-	connector	yes
+sentinel-03	MOTOR4	PE14	hand	PE14	dshot600	dshot	down	FT_h (FT)	J5.4	TP22	-	connector	yes
+serial-dshot-9600	MOTOR1	null	solved	PA8	dshot600	dshot	down	FT_fha (FT)	J1.1	-	-	connector	yes
+serial-dshot-9600	MOTOR2	null	solved	PA9	dshot600	dshot	down	FT_u (FT)	J1.2	-	-	connector	yes
+serial-dshot-9600	MOTOR3	null	solved	PA10	dshot600	dshot	down	FT_u (FT)	J1.3	-	-	connector	yes
+serial-dshot-9600	MOTOR4	null	solved	PA11	dshot600	dshot	down	FT_u (FT)	J1.4	-	-	connector	yes
+d1-drv8876	DRV_EN	null	solved	PA8	pwm	{"level": "low"}	down	FT_fha (FT)	-	-	U2.M1.EN/IN1	bridge_input_only	-
+d1-drv8876	DRV_PH	null	solved	PA9	pwm	{"level": "low"}	down	FT_u (FT)	-	-	U2.M1.PH/IN2	bridge_input_only	-
+d1-drv8876	SERVO1	null	solved	PA0	pwm	{"pulse_us": 1500}	down	FT_a (FT)	J4.1	-	-	connector	-
+d2-drv8833	A_IN1	PA8	hand	-	pwm	{"level": "low"}	down	FT_fha (FT)	-	-	U2.MA.AIN1	bridge_input_only	-
+d2-drv8833	A_IN2	PA9	hand	-	pwm	{"level": "low"}	down	FT_u (FT)	-	-	U2.MA.AIN2	bridge_input_only	-
+d2-drv8833	B_IN1	PC6	hand	-	pwm	{"level": "low"}	down	FT_h (FT)	-	-	U2.MB.BIN1	bridge_input_only	-
+d2-drv8833	B_IN2	PC7	hand	-	pwm	{"level": "low"}	down	FT_h (FT)	-	-	U2.MB.BIN2	bridge_input_only	-
+d2-drv8833	SERVO1	null	solved	-	pwm	{"pulse_us": 1500}	down	- (-)	J4.1	-	-	connector	-

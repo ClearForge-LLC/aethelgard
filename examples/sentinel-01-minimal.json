@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -400,7 +400,8 @@
     "supply_source": {
       "connector": "J3",
       "pin": "1"
-    }
+    },
+    "reserved_pins": []
   },
   "voltage_domains": [
     {

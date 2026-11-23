@@ -151,7 +151,8 @@ fn only_adc2_pins_left_is_adc_unmodelled() {
         e,
         SolveError::AdcUnmodelled {
             net: "DRV_IPROPI".into(),
-            pins: vec!["PB2".into()]
+            pins: vec!["PB2".into()],
+            withheld: String::new()
         }
     );
     assert_eq!((e.kind(), e.id()), ("AdcUnmodelled", Some("DRV_IPROPI")));
@@ -215,7 +216,8 @@ fn no_adc_pin_left_is_no_adc_pin() {
     assert_eq!(
         e,
         SolveError::NoAdcPin {
-            net: "DRV_IPROPI".into()
+            net: "DRV_IPROPI".into(),
+            withheld: String::new()
         }
     );
 }
@@ -247,8 +249,9 @@ fn a_device_s_hand_pin_claimed_twice_or_reserved_is_refused() {
 }
 
 /// RM0433 Rev 9 p. 542: PA15 and PB4 reset pulled up. An unpinned output
-/// signal passes them though they are the first free keys; pinned there,
-/// or a bridge input's motor output there, is refused (`1211` §2.6).
+/// signal passes them though they are the first free keys, and pinned
+/// there is refused (`1211` §2.6); no motor output is offered one, and a
+/// motor output pinned there is refused at validate (`AET-WO-4300i` F2).
 #[test]
 fn no_driven_input_sits_on_a_reset_pull_up() {
     let t = table(&[
@@ -258,10 +261,10 @@ fn no_driven_input_sits_on_a_reset_pull_up() {
         ("PC7", 63, &[("TIM3_CH2", 2)], &[]),
     ]);
     let s = solved(&d1(), &t).unwrap();
-    // SERVO1, no driver input, takes PB4's TIM3 channel; nSLEEP passes
-    // PA15, the first free key, for PC6.
-    assert_eq!(s.assignments["SERVO1"].pin, "PB4");
-    assert_eq!(s.gpio["DRV_NSLEEP"].pin, "PC6");
+    // SERVO1 passes PB4's TIM3 channel, the first key, for PC6's; nSLEEP
+    // passes PA15 and PB4, the first free keys, for PC7.
+    assert_eq!(s.assignments["SERVO1"].pin, "PC6");
+    assert_eq!(s.gpio["DRV_NSLEEP"].pin, "PC7");
     let mut v = d1();
     signal(&mut v, 0)["pin"] = json!("PA15");
     assert_eq!(
@@ -279,7 +282,7 @@ fn no_driven_input_sits_on_a_reset_pull_up() {
         .find(|m| m["label"] == "DRV_EN")
         .unwrap();
     en["pin"] = json!("PB4");
-    assert_eq!(solved(&v, &t).unwrap_err().kind(), "UnheldDuringReset");
+    assert_eq!(solved(&v, &t).unwrap_err().kind(), "MotorPinResetPull");
     // An input (nFAULT) may sit there: the MCU reads it.
     let mut v = d1();
     signal(&mut v, 1)["pin"] = json!("PA15");
@@ -366,9 +369,6 @@ fn a_digital_hand_pin_on_an_analog_pad_is_refused() {
         ("spi_devices[0].cs", |v: &mut Value| {
             v["spi_devices"][0]["cs"]["pin"] = json!("PC3")
         }),
-        ("serial_ports[0].tx", |v: &mut Value| {
-            v["serial_ports"][0]["tx"]["pin"] = json!("PC2")
-        }),
     ] {
         let mut v = d1_with_flash();
         edit(&mut v);
@@ -376,6 +376,13 @@ fn a_digital_hand_pin_on_an_analog_pad_is_refused() {
         assert_eq!(e.kind(), "AnalogPadPin", "{claimant}: {e}");
         assert_eq!(e.claimants(), [claimant.to_owned()], "{claimant}: {e}");
     }
+    // `AET-WO-4300i`: the serial port's TX reaches J1, and `PC2` is `TT_a`,
+    // so `validate`'s step 26 refuses it at the connector first.
+    let mut v = d1_with_flash();
+    v["serial_ports"][0]["tx"]["pin"] = json!("PC2");
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(e.kind(), "ConnectorPinNotFt", "{e}");
+    assert_eq!(e.id(), Some("CMD_TX"), "{e}");
     let mut v = d1_with_flash();
     analog(&mut v)["pin"] = json!("PC3");
     let s = solved(&v, &t).unwrap();

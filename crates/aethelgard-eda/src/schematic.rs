@@ -1390,21 +1390,12 @@ pub(crate) fn design(
         });
     }
     let mut used = Taken::default();
-    for r in spec
-        .declared_i2c_devices()
-        .iter()
-        .map(|d| &d.reference)
-        .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
-        .chain(spec.declared_connectors().iter().map(|c| &c.reference))
-        .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
-        .chain(spec.declared_test_points().iter().map(|t| &t.reference))
-        .chain(arms::references(spec.declared_pin_devices()))
-    {
+    for r in aethelgard_ir::names::references(spec) {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
         // own power symbols and flags there.
         if r.starts_with('#') {
-            return Err(EmitError::ReservedName(r.clone()));
+            return Err(EmitError::ReservedName(r.to_owned()));
         }
         used.claim(r)
             .map_err(|holder| collision(r, holder, EmitError::DuplicateReference))?;
@@ -1637,7 +1628,35 @@ pub(crate) fn design(
     )?;
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
+    motor_pulls(&mut b)?;
     Ok((b.parts, b.rails))
+}
+
+/// Each motor output's declared pull-down (`AET-WO-4300i`, ruled D0
+/// `external`), in document order: its resistor from the output's net to
+/// its `to` (`GND`, held there by `validate`'s `MotorPullNotDown`), drawn as
+/// a pin device's signal pull is, valued `<ohms> <part>` with its
+/// power-parts row's symbol and footprint. It is placed as that pull is,
+/// unanchored: beside the one IC on its net, the MCU, its target the motor
+/// pin's pad (5-11 mm from it on the seven drawn boards, measured). Drawn after every other part, so no other part's reference or
+/// schematic position moves.
+fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
+    let spec = b.spec;
+    for m in &spec.motor_outputs {
+        let r = &m.pull.resistor;
+        let to = b.declared(&r.to);
+        power::resistor(
+            b,
+            &aethelgard_ir::power::Resistor {
+                reference: r.reference.clone(),
+                part: r.part.clone(),
+                ohms: r.ohms,
+            },
+            Conn::Net(m.label.clone()),
+            to,
+        )?;
+    }
+    Ok(())
 }
 
 /// Whether pin `number` of symbol `lib_id` is a `power_in` pin.

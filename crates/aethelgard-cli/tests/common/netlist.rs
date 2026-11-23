@@ -7,15 +7,22 @@ use std::collections::BTreeMap;
 
 use aethelgard_eda::strict;
 
-/// Each footprint's value and each pad's net, from the board text.
-pub type Pads = (BTreeMap<String, String>, BTreeMap<(String, String), String>);
+/// Each footprint's value, each pad's net and each footprint's library id,
+/// from the board text.
+pub type Pads = (
+    BTreeMap<String, String>,
+    BTreeMap<(String, String), String>,
+    BTreeMap<String, String>,
+);
 
 pub fn pads_of(board: &str) -> Pads {
     let tree = strict::board(board).unwrap();
     let mut values = BTreeMap::new();
     let mut nets = BTreeMap::new();
+    let mut footprints = BTreeMap::new();
     for fp in tree.root().all("footprint") {
         let reference = fp.field("Reference").unwrap().unwrap().to_owned();
+        footprints.insert(reference.clone(), fp.arg(1).unwrap().to_owned());
         values.insert(
             reference.clone(),
             fp.field("Value").unwrap().unwrap().to_owned(),
@@ -30,12 +37,13 @@ pub fn pads_of(board: &str) -> Pads {
             );
         }
     }
-    (values, nets)
+    (values, nets, footprints)
 }
 
 /// The netlist, each symbol named as KiCad writes it for the emitter's parts
-/// by their reference's letters.
-pub fn netlist_text((values, nets): &Pads) -> String {
+/// by their reference's letters, then each footprint as the board names it
+/// (after the symbol, so a test's edit of a value and its symbol reads one span).
+pub fn netlist_text((values, nets, footprints): &Pads) -> String {
     let mut by_net: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
     for ((r, p), n) in nets {
         by_net.entry(n).or_default().push((r, p));
@@ -51,7 +59,10 @@ pub fn netlist_text((values, nets): &Pads) -> String {
             "TP" => " (libsource (lib \"Connector\") (part \"TestPoint\"))",
             _ => "",
         };
-        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib})\n"));
+        let fp = footprints
+            .get(r)
+            .map_or_else(String::new, |f| format!(" (footprint \"{f}\")"));
+        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib}{fp})\n"));
     }
     s.push_str(")\n(nets\n");
     for (i, (n, nodes)) in by_net.iter().enumerate() {

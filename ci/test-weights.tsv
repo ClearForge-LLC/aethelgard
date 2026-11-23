@@ -543,3 +543,5 @@ unittests src/main.rs	renode::tests::every_run_for_runs_exactly_its_nanoseconds_
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.800
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	1.700
 unittests src/main.rs	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode	1.40
+# AET-WO-4300i (1914 P3): one row, its worst in-shard seconds by P3 over ci runs 45117199226 (pull_request, 172e0657) and 45117832704 (dispatch, 172e0657): 29.939 and 22.647. No other test this WO adds takes 4 s or more in either run (the next, 1.854 s).
+tests/emit_tier1.rs	every_motor_net_carries_its_declared_pull_down_in_the_emitted_files	29.939

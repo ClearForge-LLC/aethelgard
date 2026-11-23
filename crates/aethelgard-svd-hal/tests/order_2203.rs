@@ -249,18 +249,24 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `c5f6f9fd…ebea` put back for `e13e1170…bd98`, each hashes to the digest
 /// before, `a0e8aa93…c309`, `449c1eaf…c03c` and `a8a780bd…a98d`, measured
 /// by `spike/1218/order_back.rs`); the boot image did not move.
+/// Moved in `AET-WO-4300i` (specification 28, `mcu.reserved_pins` `[]`): the
+/// three texts by their specification sha line alone (with the
+/// specification-27 document's sha `e13e1170…bd98` put back for
+/// `732658ad…3897`, each hashes to the digest before, `6ecb73f2…50ee`,
+/// `d47abe5e…3087` and `fdd08fd6…ff1b`, measured by
+/// `spike/4300i/order_back.rs`); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "6ecb73f2d37049cc73dde79025e27e7e7dc62088b51917ec2f896cb3de0450ee",
+        "7df27b590463f4ddfaf0ed1cb66b14c1ad4d6e6560c0ba7f49dcc6c95b1dec96",
     ),
     (
         "platform",
-        "d47abe5e2223eaca97e63ea3dc2e0eae8b3afb6e7d8cc41ee783403eda253087",
+        "871c2296278a066957d0e94cf079c0a8847eef06c52343da26ecc50f58bc1453",
     ),
     (
         "platform faulted",
-        "fdd08fd6da99d7fb96fdc229f46f04c61dfd2990eaa7fd345b30765c03a6ff1b",
+        "6962b767b3268b825f3cebb9aa51d38f507b3450c5c9ad07334acf2f0e88618a",
     ),
     (
         "boot image",

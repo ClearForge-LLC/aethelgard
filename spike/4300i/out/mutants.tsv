@@ -1,0 +1,43 @@
+id	file	mutant	test	result
+M1	src/offboard.rs	`if r.to != crate::GND {` -> `if false && r.to != crate::GND {`	offboard::a_pull_that_is_not_to_gnd	killed
+M2	src/offboard.rs	`Some(power_parts::Kind::Resistor(_))` -> `Some(_)`	offboard::a_pull_whose_part_is_not_a_resistor_row	killed
+M3	src/offboard.rs	`if ohms < rpd.min || ohms > rpd.max {` -> `if ohms < rpd.min {`	offboard::a_pull_outside_rpd	killed
+M4	src/offboard.rs	`if ohms < rpd.min || ohms > rpd.max {` -> `if ohms <= rpd.min || ohms > rpd.max {`	offboard::a_pull_outside_rpd	killed
+M5	src/offboard.rs	`if ohms < rpd.min || ohms > rpd.max {` -> `if ohms < rpd.min || ohms >= rpd.max {`	offboard::a_pull_outside_rpd	killed
+M6	src/offboard.rs	`if !seen.insert(r.pin.as_str()) {` -> `if false && !seen.insert(r.pin.as_str()) {`	offboard::a_pin_reserved_twice	killed
+M7	src/offboard.rs	`if engine.contains(&r.pin.as_str()) {` -> `if false && engine.contains(&r.pin.as_str()) {`	offboard::a_pin_the_engine_reserves	killed
+M8	src/offboard.rs	`if spec.motor_outputs.is_empty() && at.is_empty() {` -> `if spec.motor_outputs.is_empty() || at.is_empty() {`	offboard::an_mcu_with_no_row	killed
+M9	src/offboard.rs	`if !is_ft(structure) {` -> `if false && !is_ft(structure) {`	offboard::a_hand_tt_pin_at_a_connector	killed
+M10	src/offboard.rs	`let Some((structure, at)) = io.pins.get(pin) else {` -> `let Some((structure, at)) = io.pins.get(pin).or_else(|| io.pins.get("PA0")) else {`	offboard::a_hand_pin_at_a_connector_with_no_held_structure	killed
+M11	src/offboard.rs	`.filter(|(_, net, _)| facing.contains(net))` -> `.filter(|(_, net, _)| facing.contains(net) && false)`	offboard::a_hand_tt_pin_at_a_connector	killed
+M12	src/offboard.rs	`structure.split('_').next() == Some("FT")` -> `structure.starts_with("FT_")`	offboard::a_hand_ft_pin_of_bare_structure	killed
+M14	src/offboard.rs	`.filter_map(|p| p.net.as_deref())` -> `.filter_map(|_| None::<&str>)`	offboard::a_connector_facing_	killed
+M15	src/lib.rs	`board::source(&m.pull.source, &format!("{at}.source"))?;` -> ``	offboard::a_blank_source_or_reference	killed
+M16	src/lib.rs	`board::source(&r.reason, &format!("mcu.reserved_pins[{i}].reason"))?;` -> ``	offboard::a_blank_reason	killed
+M17	src/names.rs	`.map(|m| m.pull.resistor.reference.as_str()),` -> `.map(|m| m.pull.resistor.reference.as_str()).filter(|_| false),`	offboard::a_pull_reference_another_part_holds	killed
+M18	src/power_parts.rs	`if raw.min <= 0 || raw.min > raw.typical || raw.typical > raw.max {` -> `if raw.min > raw.typical || raw.typical > raw.max {`	offboard::the_mcu_row_holds_rpd	killed
+M19	src/power_parts.rs	`if raw.min <= 0 || raw.min > raw.typical || raw.typical > raw.max {` -> `if raw.min <= 0 || raw.typical > raw.max {`	offboard::the_mcu_row_holds_rpd	killed
+M20	src/power_parts.rs	`if raw.min <= 0 || raw.min > raw.typical || raw.typical > raw.max {` -> `if raw.min <= 0 || raw.min > raw.typical {`	offboard::the_mcu_row_holds_rpd	killed
+M21	src/solve.rs	`pins.extend(spec.mcu.reserved_pins.iter().map(|r| r.pin.as_str()));` -> ``	offboard::never_	killed
+M22	src/solve.rs	`spec.validate().map_err(SolveError::InvalidSpecification)?;     let reserved = all_reserved(spec);` -> `spec.validate().map_err(SolveError::InvalidSpecification)?;     let reserved = reserved_pins(spec.mcu.hse.as_ref());`	offboard::never_	killed
+M23	src/solve.rs	`let reserved = all_reserved(spec);         let pads` -> `let reserved = reserved_pins(spec.mcu.hse.as_ref());         let pads`	offboard::never_	killed
+M24	src/solve.rs	`if !table.pins.contains_key(&r.pin) {` -> `if false && !table.pins.contains_key(&r.pin) {`	offboard::a_reservation_of_an_unknown_pin	killed
+M25	src/solve.rs	`format!("`mcu.reserved_pins`: {}", r.reason)` -> `ENGINE_RESERVED.to_owned()`	offboard::a_hand_pin_on_a_declared_reservation	killed
+M34	src/lib.rs	`plain(&r.pin, || format!("mcu.reserved_pins[{i}].pin"))?;` -> ``	offboard::a_blank_reserved_pin	killed
+M35	src/lib.rs	`identifier(IdentifierKind::Reference, &r.reference, || {                 format!("{at}.resistor.reference")             })?;` -> ``	offboard::a_blank_source_or_reference	killed
+M36	src/lib.rs	`plain(&r.part, || format!("{at}.resistor.part"))?;` -> ``	offboard::a_blank_source_or_reference	killed
+M37	src/lib.rs	`plain(&r.to, || format!("{at}.resistor.to"))?;` -> ``	offboard::a_blank_source_or_reference	killed
+M33	src/silicon.rs	`(Some(_), _) => 0,` -> `(Some(_), _) => PUPDR_PULL_DOWN,`	offboard::a_motor_net_has_no_internal_pull	killed
+A1	src/solve.rs	`let order: Vec<(&'t str, u8)> = model.offered(inst, sig).collect();` -> `let order: Vec<(&'t str, u8)> = model.pins_for(inst, sig.name).to_vec();`	offboard::a_connector_facing_bus	killed
+A2	src/solve.rs	`self.model             .offered(inst, sig)             .map(|(pin, _)| pin)` -> `self.model             .pins_for(inst, sig.name)             .iter()             .map(|(pin, _)| *pin)`	offboard::a_connector_facing_bus	killed
+A3	src/solve.rs	`self.model                 .offered(p, sig)                 .filter(|(pin, _)|` -> `self.model                 .pins_for(p, sig.name)                 .iter()                 .copied()                 .filter(|(pin, _)|`	offboard::a_connector_facing_port	killed
+A4	src/solve.rs	`let pins: Vec<(&str, u8)> = self.model.offered(p, sig).collect();` -> `let pins: Vec<(&str, u8)> = self.model.pins_for(p, sig.name).to_vec();`	offboard::a_connector_facing_port_whose_only_pin_is_tt	killed
+A5	src/solve.rs	`&& self.model.at.offers(motor.label, pin)` -> ``	offboard::a_connector_facing_motor	killed
+A6	src/solve.rs	`free().find(|p| model.at.offers(cs.net, p))` -> `free().find(|_| true)`	offboard::a_connector_facing_chip_select	killed
+A7	src/pin_devices.rs	`free.retain(|(n, _)| at.offers(&a.net, n));` -> ``	offboard::a_connector_facing_adc_input	killed
+A8	src/pin_devices.rs	`free().find(|p| at.offers(&s.net, p))` -> `free().find(|_| true)`	offboard::a_connector_facing_device_signal	killed
+A9	src/offboard.rs	`pins.into_iter().filter(|p| !self.offers(net, p)).collect();` -> `pins.into_iter().filter(|_| false).collect();`	offboard::a_connector_facing_	killed
+A10	src/offboard.rs	`self.structure(pin).is_some_and(is_ft)` -> `self.structure(pin).is_none_or(is_ft)`	offboard::a_pin_with_no_held_structure	killed
+A11	src/solve.rs	`&& !reset_pull(pin)` -> ``	offboard::the_solver_never_offers_a_motor_a_reset_pull	killed
+A12	src/offboard.rs	`if let Some(pin) = m.pin.as_deref().filter(|p| {` -> `if let Some(pin) = m.pin.as_deref().filter(|p| false && {`	offboard::a_motor_pinned_on_a_reset_pull	killed
+A14	src/offboard.rs	`.filter(|(_, net, _)| facing.contains(net))` -> `.filter(|(_, net, p)| facing.contains(net) && p.is_some())`	offboard::an_mcu_with_no_row	killed

@@ -144,8 +144,13 @@ use sha2::{Digest, Sha256};
 /// reference's output hashes to `e531bf8a…bb6d`, and with `6a418102…6eff`
 /// the stress fixture's to `15a56610…99e3`, `1216b`'s digests, exactly
 /// (measured).
-const REFERENCE_DIGEST: &str = "e29d0b72ec35996692dd7093ce60f6abe8a41238c0c0e3e46f8e201ead19fd24";
-const STRESS_DIGEST: &str = "6a30b8c3e16d7e0d48e693265ed7bd76d5c362bfd2adac01bdf9acf0c991a0d5";
+/// Moved by `AET-WO-4300i` (specification 28, solved 17 unchanged), which
+/// moved only the specification's sha256: with `4582c029…98dd` put back, the
+/// reference's output hashes to `e29d0b72…fd24`, and with `e5c2e247…0f5c`
+/// the stress fixture's to `6a30b8c3…a0d5`, the digests before, exactly
+/// (measured).
+const REFERENCE_DIGEST: &str = "81246f99e5e303b37e155322d7aa5bead8b8523e7ebfd7f1cbb0dc5917fb3a22";
+const STRESS_DIGEST: &str = "8eb15a7f8540e3eb5ce6cc6a5221189d02903fc3b0c30b7809daa2f7156848de";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
@@ -548,7 +553,8 @@ fn two_buses_on_one_hand_set_instance_are_refused() {
 fn an_unknown_part_is_exit_2() {
     let dir = Dir::new("unknown-part");
     let file = edited(&dir, |d| d["mcu"]["part"] = "STM32F103C8Tx".into());
-    let report = refused(&file, "UnknownPart");
+    // Step 26 (`AET-WO-4300i` F8) now refuses a rowless MCU part at validate, before the pin table.
+    let report = refused(&file, "PowerPartUnknown");
     assert_eq!(report["error"]["id"], "STM32F103C8Tx");
 }
 

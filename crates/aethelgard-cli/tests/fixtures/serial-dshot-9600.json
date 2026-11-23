@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -21,7 +21,8 @@
     "supply_source": {
       "connector": "J4",
       "pin": "1"
-    }
+    },
+    "reserved_pins": []
   },
   "voltage_domains": [
     {
@@ -307,28 +308,64 @@
       "pin": null,
       "protocol": "dshot600",
       "pwm": null,
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R6",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "MOTOR2",
       "pin": null,
       "protocol": "dshot600",
       "pwm": null,
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R7",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "MOTOR3",
       "pin": null,
       "protocol": "dshot600",
       "pwm": null,
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R8",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "MOTOR4",
       "pin": null,
       "protocol": "dshot600",
       "pwm": null,
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R9",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     }
   ],
   "net_classes": [],

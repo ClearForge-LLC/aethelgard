@@ -2143,7 +2143,8 @@ pub(crate) fn choose_channel(channels: &BTreeSet<String>, hand: bool) -> Option<
 /// pin is owned, so no pin solved before moves: each ADC input on its hand
 /// pin or the free unreserved pin of lowest package position with an ADC1 or
 /// ADC3 channel (`1211` Q8), then each signal on its hand pin or the first
-/// free unreserved pin in key order (as a chip select). The ADC inputs go
+/// free unreserved pin in key order (as a chip select). At a connector only
+/// an FT pin is offered (`AET-WO-4300i` D1). The ADC inputs go
 /// first because they are the narrower: a signal placed first by key order
 /// can take the only ADC pin left (measured in `pin_devices_solve.rs`).
 pub(crate) fn place<'t>(
@@ -2156,6 +2157,10 @@ pub(crate) fn place<'t>(
     adc: &mut BTreeMap<String, SolvedAdcInput>,
 ) -> Result<(), crate::SolveError> {
     let key = |pin: &str| table.pins.get_key_value(pin).map(|(k, _)| k.as_str());
+    // belt-and-suspenders: the model built the same filter; `place` builds its
+    // own so it never reads another phase's state.
+    let at =
+        crate::offboard::AtConnector::new(spec).map_err(crate::SolveError::InvalidSpecification)?;
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         for (k, a) in d.analog.iter().enumerate() {
             let claimant = format!("pin_devices[{i}].analog[{k}]");
@@ -2175,7 +2180,7 @@ pub(crate) fn place<'t>(
                             pin: p.clone(),
                         }
                     })?;
-                    hand_free(name, &claimant, reserved, used)?;
+                    hand_free(spec, name, &claimant, reserved, used)?;
                     if !fits(pin) {
                         return Err(crate::SolveError::AdcChannelNotOnPin {
                             net: a.net.clone(),
@@ -2202,6 +2207,8 @@ pub(crate) fn place<'t>(
                         .map(|(n, p)| (n.as_str(), p))
                         .collect();
                     free.sort_by_key(|(_, p)| p.position);
+                    let withheld = at.note(&a.net, free.iter().map(|(n, _)| *n));
+                    free.retain(|(n, _)| at.offers(&a.net, n));
                     // A named channel is taken as named, but an ADC2 one only
                     // on a pinned pin (`1211` Q8: "unless the specification
                     // pins it").
@@ -2215,9 +2222,15 @@ pub(crate) fn place<'t>(
                             return Err(crate::SolveError::AdcUnmodelled {
                                 net: a.net.clone(),
                                 pins: free.iter().map(|(n, _)| (*n).to_owned()).collect(),
+                                withheld,
                             });
                         }
-                        None => return Err(crate::SolveError::NoAdcPin { net: a.net.clone() }),
+                        None => {
+                            return Err(crate::SolveError::NoAdcPin {
+                                net: a.net.clone(),
+                                withheld,
+                            });
+                        }
                     }
                 }
             };
@@ -2227,6 +2240,7 @@ pub(crate) fn place<'t>(
                     crate::SolveError::AdcUnmodelled {
                         net: a.net.clone(),
                         pins: vec![name.to_owned()],
+                        withheld: String::new(),
                     }
                 })?,
             };
@@ -2256,22 +2270,26 @@ pub(crate) fn place<'t>(
                         claimant: claimant.clone(),
                         pin: p.clone(),
                     })?;
-                    hand_free(p, &claimant, reserved, used)?;
+                    hand_free(spec, p, &claimant, reserved, used)?;
                     p
                 }
-                None => table
-                    .pins
-                    .keys()
-                    .map(String::as_str)
-                    .find(|p| {
-                        !reserved.contains(p)
-                            && !pads.contains(p)
-                            && !used.contains_key(p)
-                            && !(s.direction == Direction::Output && MCU_RESET_PULL_UPS.contains(p))
-                    })
-                    .ok_or_else(|| crate::SolveError::NoFreePin {
-                        claimant: claimant.clone(),
-                    })?,
+                None => {
+                    let free = || {
+                        table.pins.keys().map(String::as_str).filter(|p| {
+                            !reserved.contains(p)
+                                && !pads.contains(p)
+                                && !used.contains_key(p)
+                                && !(s.direction == Direction::Output
+                                    && MCU_RESET_PULL_UPS.contains(p))
+                        })
+                    };
+                    free().find(|p| at.offers(&s.net, p)).ok_or_else(|| {
+                        crate::SolveError::NoFreePin {
+                            claimant: claimant.clone(),
+                            withheld: at.note(&s.net, free()),
+                        }
+                    })?
+                }
             };
             used.insert(pin, claimant);
             gpio.insert(
@@ -2312,16 +2330,16 @@ fn pulled_level(pull: &SignalPull) -> Option<Level> {
 
 /// A hand pin neither reserved nor owned by another claimant.
 fn hand_free(
+    spec: &Specification,
     pin: &str,
     claimant: &str,
     reserved: &[&str],
     used: &BTreeMap<&str, String>,
 ) -> Result<(), crate::SolveError> {
+    // belt-and-suspenders: `Model::new` refused a reserved hand pin first; this
+    // keeps `place` refusing one if it is ever called without the model.
     if reserved.contains(&pin) {
-        return Err(crate::SolveError::ReservedPin {
-            pin: pin.to_owned(),
-            claimant: claimant.to_owned(),
-        });
+        return Err(crate::solve::reserved_refusal(spec, pin, claimant));
     }
     // The model claimed each hand pin for its own claimant up front.
     if let Some(first) = used.get(pin).filter(|by| *by != claimant) {
@@ -2334,11 +2352,12 @@ fn hand_free(
     Ok(())
 }
 
-/// Each driven input of a pin device (an output signal, or a motor output on
-/// a bridge input) off the MCU's reset pull-ups ([`MCU_RESET_PULL_UPS`]):
-/// the part's pull-down must hold it from reset (`1211` §2.6). An unpinned
-/// output signal never lands on one; a hand pin or a motor output's
-/// channel may, and is refused by name.
+/// Each output signal of a pin device off the MCU's reset pull-ups
+/// ([`MCU_RESET_PULL_UPS`]): the part's pull-down must hold it from reset
+/// (`1211` §2.6). An unpinned output signal never lands on one; a hand pin
+/// may, and is refused by name. A motor output on a bridge input never sits
+/// on one either: `validate` refuses one pinned there (`MotorPinResetPull`)
+/// and the solver offers it none (`AET-WO-4300i` F2).
 pub(crate) fn reset_held(
     spec: &Specification,
     t: &crate::SolvedTopology,
@@ -2349,12 +2368,7 @@ pub(crate) fn reset_held(
             .iter()
             .filter(|s| s.direction == Direction::Output)
             .map(|s| (&s.net, &t.gpio[&s.net].pin));
-        let motors = d
-            .bridges
-            .iter()
-            .flat_map(|b| b.inputs.values())
-            .filter_map(|l| t.assignments.get(l).map(|a| (l, &a.pin)));
-        for (net, pin) in signals.chain(motors) {
+        for (net, pin) in signals {
             if MCU_RESET_PULL_UPS.contains(&pin.as_str()) {
                 return Err(crate::SolveError::UnheldDuringReset {
                     net: net.clone(),

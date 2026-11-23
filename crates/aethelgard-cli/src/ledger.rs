@@ -189,10 +189,10 @@ pub enum LedgerError {
     /// Two rows with one id.
     Duplicate { id: String },
     /// A row an independent rule would class whose value is not the rule's:
-    /// a motor-output pin's `PUPDR` field that is not
-    /// [`silicon::motor_output_pupd`] (`AET-WO-4230` R5), or not the pull its
-    /// idle implies, or a GPIO input's that is not its declared pull
-    /// ([`silicon::implied_pupd`], `AET-WO-1211b`). `name` is the rule's.
+    /// a motor-output pin's `PUPDR` field that is not `00`, no internal pull
+    /// (`AET-WO-4300i` D0), or a GPIO input's that is not its declared pull
+    /// (`AET-WO-1211b`), both by [`silicon::implied_pupd`]. `name` is the
+    /// rule's.
     RuleDisagrees {
         id: String,
         value: Option<u32>,
@@ -339,9 +339,8 @@ const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): th
 const I2C_CR1_RULE: &str = "aethelgard_ir::silicon::i2c_cr1, held by silicon::check_i2c before generation; the proof's expected CR1 is the rule's word (and the rule's word with PE for the enable)";
 const TIMINGR_RULE: &str = "aethelgard_ir::silicon::check_timingr (through check_i2c), a decode and inequalities at HSI's worst case, which refuses generation when it fails; the proof's expected word is the topology's, which that rule held, for the mode aethelgard_ir::silicon::i2c_start_mode gives the declared speed where the schedule starts the bus (the adversarial pass's F3)";
 const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr, on the rule's own kernel clock (silicon::usart_kernel_hz: RM0433 Rev 9 §8.7.21, USART16SEL and USART234578SEL at reset 000, rcc_pclk2 and rcc_pclk1 from the solved clock's prescalers), which the topology's must equal (the adversarial pass's F1, never serial::kernel_hz); generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
-const MOTOR_PUPD_RULE: &str = "aethelgard_ir::silicon::motor_output_pupd (AET-WO-4230 R5; its source is the architect's ruling on PR #161, comment 6911424608, Q-G: pull-down `10` on every motor-output pin in the first GPIO init, whole word); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
-/// `AET-WO-1211b`: an idle `high` motor output's pull-up (`1211` Q9).
-const MOTOR_PUPD_HIGH_RULE: &str = "aethelgard_ir::silicon::implied_pupd (AET-WO-1211 Q9 as ruled: the pad's pull follows the idle, pull-up `01` for an idle `high`, so it never fights the idle before start_outputs); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
+/// `AET-WO-4300i` D0: a motor output's pin carries no internal pull.
+const MOTOR_PUPD_RULE: &str = "aethelgard_ir::silicon::implied_pupd (D0, AET-WO-4300h, ruled by Scotty 2026-11-23; AET-WO-4300i: no internal pull on a motor pin, `00`, the pull-down is the declared external resistor motor_outputs[].pull; this reverses Q-G, AET-WO-4230 R5, for motor outputs, and AET-WO-1211 Q9's idle-high pull-up went with it); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
 /// `AET-WO-1211b`: a pin device's GPIO input's declared MCU pull.
 const INPUT_PUPD_RULE: &str = "aethelgard_ir::silicon::implied_pupd: the specification's declared MCU pull of the signal (pin_devices[].signals[].pull.mcu, validated against the part's row by aethelgard_ir::pin_devices); the proof's expected PUPDR takes this pin's field from the rule (svd-hal board.rs oracle_pupdr), and the ledger refuses a value other than the rule's (LedgerRuleDisagrees)";
 const TIM_RULE: &str = "aethelgard_ir::motor::check_silicon (RUL-20 (1)'s own example: silicon's ARR + 1), a static finding that fails the twin's verdict (renode.rs static_motor_findings); the proof's expected word is the topology's, which that rule judged";
@@ -1085,7 +1084,7 @@ fn table() -> Vec<Entry> {
         (
             "PUPDR",
             "PUPD#",
-            "no pull is modelled; written whole per port by `split` (AET-WO-4230 R5), every pin's field at its role's pull or its reset value, and a motor-output pin's field is independent-rule instead (silicon::motor_output_pupd, see motor_pupd)",
+            "no pull is modelled; written whole per port by `split` (AET-WO-4230 R5), every pin's field at its role's pull or its reset value, and a motor-output pin's field is independent-rule instead (silicon::implied_pupd, no internal pull, AET-WO-4300i D0; see motor_pupd)",
         ),
     ] {
         t.push(e(
@@ -2337,34 +2336,15 @@ fn identity_rows(topology: &SolvedTopology) -> Result<Vec<LedgerRow>, LedgerErro
     Ok(out)
 }
 
-/// `AET-WO-4230` R5: each motor-output pin's `PUPDR` field is the
-/// independent rule's ([`silicon::motor_output_pupd`]), not the table's
-/// same-source; any other value is refused (`LedgerRuleDisagrees`). The pin
-/// is the assignment of the output's net (`RUL-16`), never a role the table
-/// cannot see.
+/// `AET-WO-4300i` D0: each motor-output pin's `PUPDR` field is the
+/// independent rule's ([`silicon::implied_pupd`]: `00`, no internal pull,
+/// since the pull-down is the declared external resistor), not the table's
+/// same-source; any other value, a pull-down or a pull-up, is refused
+/// (`LedgerRuleDisagrees`). The pin is the assignment of the output's net
+/// (`RUL-16`), never a role the table cannot see.
 pub fn motor_pupd(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(), LedgerError> {
-    for (net, m) in &topology.motor_outputs {
-        // An idle `high` takes the pull-up (`AET-WO-1211b`, `1211` Q9); every
-        // other motor output the pull-down, its text unchanged.
-        let high = matches!(
-            m.pwm.as_ref().map(|p| p.idle),
-            Some(aethelgard_ir::motor::Idle::Level(
-                aethelgard_ir::motor::Level::High
-            ))
-        );
-        let (rule, name, judge) = if high {
-            (
-                silicon::implied_pupd(topology, net),
-                "implied_pupd",
-                MOTOR_PUPD_HIGH_RULE,
-            )
-        } else {
-            (
-                silicon::motor_output_pupd(),
-                "motor_output_pupd",
-                MOTOR_PUPD_RULE,
-            )
-        };
+    for net in topology.motor_outputs.keys() {
+        let rule = silicon::implied_pupd(topology, net);
         let pin = topology
             .assignments
             .get(net)
@@ -2384,20 +2364,14 @@ pub fn motor_pupd(rows: &mut [LedgerRow], topology: &SolvedTopology) -> Result<(
                 id: row.id.clone(),
                 value: row.value,
                 rule,
-                name,
+                name: "implied_pupd",
             });
         }
         row.class = Class::IndependentRule;
-        row.judge = judge.to_owned();
-        row.note = if high {
-            format!(
-                "motor output `{net}` on {pin}: pulled up from the first GPIO init until start_outputs, while the timer does not yet drive it, as its idle `high` (AET-WO-1211b); the table's class for any other pin's field is same-source (no pull is modelled)"
-            )
-        } else {
-            format!(
-                "motor output `{net}` on {pin}: pulled down from the first GPIO init until start_outputs, while the timer does not yet drive it; the table's class for any other pin's field is same-source (no pull is modelled)"
-            )
-        };
+        row.judge = MOTOR_PUPD_RULE.to_owned();
+        row.note = format!(
+            "motor output `{net}` on {pin}: no internal pull from the first GPIO init, its pull-down the declared external resistor (motor_outputs[].pull, AET-WO-4300i D0) from power-up; the table's class for any other pin's field is same-source (no pull is modelled)"
+        );
     }
     Ok(())
 }

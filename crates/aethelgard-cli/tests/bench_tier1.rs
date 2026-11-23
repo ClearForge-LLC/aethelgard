@@ -399,8 +399,8 @@ fn a_test_point_or_switch_of_another_shape_fails() {
     let text = {
         let with_pin = netlist_text(&p);
         with_pin.replace(
-            "(comp (ref \"TP9\") (value \"TestPoint\") (libsource (lib \"Connector\") (part \"TestPoint\")))",
-            "(comp (ref \"TP9\") (value \"0\") (libsource (lib \"Device\") (part \"R\")))",
+            "(comp (ref \"TP9\") (value \"TestPoint\") (libsource (lib \"Connector\") (part \"TestPoint\"))",
+            "(comp (ref \"TP9\") (value \"0\") (libsource (lib \"Device\") (part \"R\"))",
         )
     };
     assert!(text.contains("(ref \"TP9\") (value \"0\")"));

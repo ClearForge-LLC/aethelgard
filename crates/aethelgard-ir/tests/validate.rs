@@ -37,7 +37,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None, reserved_pins: vec![] },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -197,7 +197,8 @@ fn refuses_unsupported_schema_version() {
         24,
         25,
         26,
-        28,
+        27,
+        29,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -919,12 +920,20 @@ fn full_document() -> serde_json::Value {
     v["diff_pairs"] = json!([
         {"name": "USB", "nets": ["SPI_SCK", "SPI_MOSI"], "gap_um": 300, "width_um": 200}
     ]);
+    // `AET-WO-4300i` F7: one declared reservation, so the list walks a row.
+    v["mcu"]["reserved_pins"] = json!([
+        {"pin": "PA11", "reason": "USB OTG_FS DM, kept free for USB (test)"}
+    ]);
     v["motor_outputs"] = json!([
         {"label": "M1", "pin": null, "protocol": "pwm",
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
-                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null},
+                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null,
+         "pull": {"resistor": {"reference": "R91", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"},
+                  "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm"}},
         {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null,
-         "esc": {"none": {"source": "a bench header with no power pin"}}}
+         "esc": {"none": {"source": "a bench header with no power pin"}},
+         "pull": {"resistor": {"reference": "R92", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"},
+                  "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm"}}
     ]);
     // `AET-WO-4300b`: a port left to the solver, and one with its peripheral
     // and pins named, parity, two stop bits and inversion.
@@ -3721,7 +3730,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             E::UnsupportedSchemaVersion {
                 changes: _,
                 version: 12,
-                expected: 27
+                expected: 28
             }
         ),
         "{e}"
