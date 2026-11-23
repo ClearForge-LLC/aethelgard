@@ -12,6 +12,8 @@ use std::process::{Command, Stdio};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 
+mod common;
+
 const SPEC: &str = "examples/sentinel-01-minimal.json";
 
 fn root() -> PathBuf {
@@ -30,9 +32,18 @@ fn run(args: &[&str], no_tools: bool) -> (Option<i32>, Value) {
     run_in(&root(), args, no_tools)
 }
 
+/// With `TMPDIR` a private directory outside `$HOME`, so a
+/// `~/.cargo/config.toml` is never above the crate `build` or `prove` copies
+/// (`AET-WO-1607` (2)).
 fn run_in(cwd: &Path, args: &[&str], no_tools: bool) -> (Option<i32>, Value) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let tmp = common::private_tmp(&format!("gen-{}", N.fetch_add(1, Ordering::Relaxed)));
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_aethelgard"));
-    cmd.args(args).current_dir(cwd).stdin(Stdio::null());
+    cmd.args(args)
+        .current_dir(cwd)
+        .env("TMPDIR", &tmp.0)
+        .stdin(Stdio::null());
     if no_tools {
         cmd.env("PATH", "");
     }
@@ -834,31 +845,18 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
     use std::os::unix::fs::DirBuilderExt;
     let dir = reference("above");
     let board = dir.join("board");
-    // Under the CLI's own base, whose ancestors no one else can write
-    // (`AET-WO-1601` §1.4).
-    // (`AET-WO-1601` §1.4); as root, searchable by the tool uid, as
-    // `common::private_tmp` makes it.
-    let (base, mode) = if rustix::process::geteuid().is_root() {
-        (PathBuf::from("/var/lib/aethelgard"), 0o711)
-    } else {
-        (
-            PathBuf::from(std::env::var_os("HOME").unwrap()).join(".cache/aethelgard"),
-            0o700,
-        )
-    };
     for (rel, kind) in [
         (".cargo/config.toml", "CargoConfigRefused"),
         ("rust-toolchain.toml", "ToolchainFileRefused"),
         ("Cargo.toml", "WorkspaceAboveCrate"),
     ] {
-        let parent = base.join(format!("tests-{}-above-{kind}", std::process::id()));
-        let _ = fs::remove_dir_all(&parent);
+        // `common::private_tmp`: outside `$HOME`, with no ancestor another
+        // user can write (`AET-WO-1601` §1.4, `AET-WO-1607` (2)); `tmp` in it
+        // is searchable by the tool uid, as root needs.
+        let scratch = common::private_tmp(&format!("above-{kind}"));
+        let parent = &scratch.0;
         let tmp = parent.join("tmp");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(mode)
-            .create(&tmp)
-            .unwrap();
+        fs::DirBuilder::new().mode(0o711).create(&tmp).unwrap();
         put(parent.join(rel), "[build]\n");
         for args in [
             vec![
@@ -883,6 +881,5 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
             assert_eq!(v["error"]["kind"], kind, "{rel}: {v}");
             assert_eq!(v["error"]["id"], s(&parent.join(rel)), "{rel}: {v}");
         }
-        fs::remove_dir_all(&parent).unwrap();
     }
 }

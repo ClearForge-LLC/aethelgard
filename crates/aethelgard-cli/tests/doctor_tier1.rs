@@ -296,7 +296,7 @@ fn a_tool_off_its_pin_reports_its_version_and_blocks_what_pins_it() {
     );
     assert_eq!(
         v["missing"][0]["blocks"],
-        json!(["check drc", "check erc", "verify"]),
+        json!(["check drc", "check erc", "check support", "verify"]),
         "{v}"
     );
     assert_eq!(

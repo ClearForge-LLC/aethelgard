@@ -300,8 +300,8 @@ async fn execute(exe: &PathBuf, args: &[OsString]) -> std::io::Result<Finished> 
     })
 }
 
-/// Maps a finished child to the tool result. `isError` is false only for exit 0, 1 or `propose`'s 6
-/// (a generator report) with exactly one JSON object on stdout; a fail verdict is a successful call. With `lines`, stdout may hold
+/// Maps a finished child to the tool result. `isError` is false only for exit 0, 1, `propose`'s 6
+/// (a generator report) or `verify`'s 7 (`not_verified`, `AET-WO-1607`, ruled 03:30Z) with exactly one JSON object on stdout; a fail verdict is a successful call. With `lines`, stdout may hold
 /// one JSON object line per record before the verdict's: the last line is the verdict, and the
 /// lines before it are `records`.
 fn result(done: &Finished, lines: bool) -> CallToolResult {
@@ -347,7 +347,9 @@ fn result(done: &Finished, lines: bool) -> CallToolResult {
         json!({"exit_code": done.code, "verdict": verdict})
     });
     let report = i32::from(crate::EXIT_GENERATOR_REPORT);
-    r.is_error = Some(!matches!(done.code, Some(c) if c == 0 || c == 1 || c == report));
+    let not_verified = i32::from(crate::EXIT_NOT_VERIFIED);
+    r.is_error =
+        Some(!matches!(done.code, Some(c) if c == 0 || c == 1 || c == report || c == not_verified));
     r
 }
 
@@ -808,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn exit_0_1_and_6_are_successful_calls_and_others_are_errors() {
+    fn exit_0_1_6_and_7_are_successful_calls_and_others_are_errors() {
         let line = br#"{"ok":false,"verdict":"fail"}"#;
         let with_nl = [line.as_slice(), b"\n"].concat();
         for (code, error) in [
@@ -819,7 +821,7 @@ mod tests {
             (Some(4), true),
             (Some(5), true),
             (Some(6), false),
-            (Some(7), true),
+            (Some(7), false),
             (Some(64), true),
             (Some(70), true),
             (None, true),

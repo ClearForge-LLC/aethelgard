@@ -6,8 +6,9 @@
 //! environment inside Landlock, so a stub uses shell builtins or absolute paths and writes only
 //! where it is told to (`-o <report>` for KiCad).
 
-#[path = "common/stub.rs"]
-mod stub;
+mod common;
+
+use common::stub;
 
 use std::ffi::OsStr;
 use std::fs;
@@ -67,11 +68,17 @@ fn o<S: AsRef<OsStr> + ?Sized>(s: &S) -> &OsStr {
 }
 
 /// Runs the binary with an empty environment, `PATH=<path>` and the given extra variables.
+/// With `TMPDIR` a private directory outside `$HOME`, so a
+/// `~/.cargo/config.toml` is never above the crate `prove` copies
+/// (`AET-WO-1607` (2)); `extra_env` may name another.
 fn run(args: &[&OsStr], path: &Path, extra_env: &[(&str, &Path)]) -> Output {
+    static N: AtomicUsize = AtomicUsize::new(0);
+    let tmp = common::private_tmp(&format!("t1-{}", N.fetch_add(1, Ordering::Relaxed)));
     Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(args)
         .env_clear()
         .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+        .env("TMPDIR", &tmp.0)
         .env("PATH", path)
         .envs(extra_env.iter().copied())
         .stdin(Stdio::null())

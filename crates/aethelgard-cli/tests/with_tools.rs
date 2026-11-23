@@ -1655,3 +1655,39 @@ fn a_turned_keepout_is_where_kicad_draws_it() {
         assert_eq!(kinds(&drc), Vec::<&str>::new(), "{theta}: {drc}");
     }
 }
+
+/// `AET-WO-1607` (5) and D2 (ruled 02:15Z): plain `verify` on a
+/// specification that declares `board.drawn: false` runs every gate it can,
+/// reports ERC, DRC, `support` and `extract` `not_applicable`, and is never
+/// `pass` (`INV-03`: no ERC, so never verified). With every other gate
+/// passed it is `not_verified`, reason `DrawsNoBoard`, exit 7, never 0.
+#[test]
+fn a_board_not_drawn_runs_its_gates_and_is_never_verified() {
+    let (code, stdout) = common::verify::aethelgard(&[
+        "verify",
+        "--spec",
+        "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
+    ]);
+    let v = common::verify::one(&stdout);
+    assert_eq!(code, Some(7), "{v}");
+    assert_eq!(v["ok"], false, "{v}");
+    assert_eq!(v["verdict"], "not_verified", "{v}");
+    assert_eq!(v["reason"], "DrawsNoBoard", "{v}");
+    let gates = v["gates"].as_array().unwrap();
+    let board = ["erc", "drc", "support", "extract"];
+    for g in gates {
+        let name = g["gate"].as_str().unwrap();
+        if board.contains(&name) {
+            assert_eq!(g["verdict"], "not_applicable", "{g}");
+            assert!(g["reason"].is_string(), "{g}");
+            assert!(g["exit_code"].is_null(), "{g}");
+        } else {
+            assert_eq!(g["verdict"], "pass", "{g}");
+        }
+    }
+    let names: Vec<&str> = gates.iter().map(|g| g["gate"].as_str().unwrap()).collect();
+    assert_eq!(names[..4], board, "{names:?}");
+    for ran in ["prove", "build", "simulate"] {
+        assert!(names.contains(&ran), "{ran}: {names:?}");
+    }
+}
