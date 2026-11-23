@@ -2268,16 +2268,7 @@ pub(crate) fn write_placed_at(
         stack: stack.clone(),
     };
     let routed = rung
-        .map(|rung| {
-            route::route_with(&board, rung).map_err(|e| match (e.exhausted, e.net.is_empty()) {
-                (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
-                (None, true) => EmitError::BoardUnroutable(e.why),
-                (None, false) => EmitError::Unroutable {
-                    net: e.net,
-                    why: e.why,
-                },
-            })
-        })
+        .map(|rung| route::route_with(&board, rung).map_err(unroutable))
         .transpose()?;
     out.push(Sx::List(vec![
         Sx::atom("gr_rect"),
@@ -2404,6 +2395,19 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
         ]));
     }
     out
+}
+
+/// The router's refusal as the emitter's: a run with no escape by its part
+/// and pads (`AET-WO-1310` D1), else the net, else the board.
+fn unroutable(e: route::Unroutable) -> EmitError {
+    match (e.exhausted, e.net.is_empty()) {
+        (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
+        (None, true) => EmitError::BoardUnroutable(e.why),
+        (None, false) => EmitError::Unroutable {
+            net: e.net,
+            why: e.why,
+        },
+    }
 }
 
 #[cfg(test)]
@@ -3572,5 +3576,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// `AET-WO-1322` (7), `1310`: a run with no escape reaches the CLI's
+    /// envelope as `{"kind": "PadEscapeExhausted", "id": <the part>,
+    /// "message": …}`, the three fields `kind()`, `id()` and the message
+    /// give; the router's net and reason do not replace it.
+    #[test]
+    fn a_run_with_no_escape_keeps_its_shape() {
+        let e = unroutable(route::Unroutable {
+            net: "N".into(),
+            why: "w".into(),
+            exhausted: Some(("U1".into(), vec!["7".into(), "8".into(), "9".into()])),
+        });
+        assert_eq!(e.kind(), "PadEscapeExhausted");
+        assert_eq!(e.id(), Some("U1"));
+        assert_eq!(
+            e.to_string(),
+            "`U1` pads 7, 8, 9 have no escape: no lane on which this run of adjacent connected pads reaches the grid at its width and clearance"
+        );
+        let e = unroutable(route::Unroutable {
+            net: "N".into(),
+            why: "w".into(),
+            exhausted: None,
+        });
+        assert_eq!((e.kind(), e.id()), ("Unroutable", Some("N")));
+        let e = unroutable(route::Unroutable {
+            net: String::new(),
+            why: "w".into(),
+            exhausted: None,
+        });
+        assert_eq!((e.kind(), e.id()), ("Unroutable", None));
     }
 }
