@@ -549,9 +549,8 @@ unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crat
 unittests src/main.rs	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode	1.40
 # AET-WO-4300i (1914 P3): one row, its worst in-shard seconds by P3 over ci runs 45117199226 (pull_request, 172e0657) and 45117832704 (dispatch, 172e0657): 29.939 and 22.647. No other test this WO adds takes 4 s or more in either run (the next, 1.854 s).
 tests/emit_tier1.rs	every_motor_net_carries_its_declared_pull_down_in_the_emitted_files	29.939
-# AET-WO-1323: five rows, Furnace estimates (each test alone, dev profile, libtest --report-time, 2026-11-23) times 2.8 (AET-WO-1310's factor), rounded up; replace them at the next refit: the adversary 54.001, the stub sweep 6.292, the threaded supply bound 10.243, the shifted d3 27.797, the heaviest committed board 29.137.
+# AET-WO-1323: four rows, Furnace estimates (each test alone, dev profile, libtest --report-time, 2026-11-23) times 2.8 (AET-WO-1310's factor), rounded up; replace them at the next refit: the adversary 54.001, the stub sweep 6.292, the shifted d3 27.797, the heaviest committed board 29.137.
 unittests src/lib.rs	route::tests::the_1307_adversary_is_refused_by_the_work_bound	152
 unittests src/lib.rs	route::tests::no_placement_of_a_crossing_part_leaves_a_pair_stub	18
-unittests src/lib.rs	supply::tests::the_pins_bounded_on_threads_are_the_serial_pins_byte_for_byte	29
 tests/stackups_tier1.rs	a_shifted_d3_routes_with_its_soft_hops_judged_on_the_hard_maps	78
 tests/stackups_tier1.rs	the_heaviest_committed_board_routes_within_half_the_work_bound	82

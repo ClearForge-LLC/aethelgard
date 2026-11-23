@@ -6,12 +6,12 @@
 # removed (W1), the bound off by one (W2), U1 reverted to bans alone (U1),
 # the keepout's containment removed (K1), the stub fix reverted (S1); and
 # four more: the field's branch (K2), the early pair judge (S2), an
-# escape's end not kept by the prune (S3, the adversarial pass's A1), the
-# threads' order (T1).
+# escape's end not kept by the prune (S3, the adversarial pass's A1).
+# T1 (the threads' order) left with the threads, D7.
 # Usage: mutants.sh <branch tree (pristine)> <scratch dir> [ids...]
 set -uo pipefail
 src=$1 scratch=$2; shift 2
-ids=${*:-W1 W2 U1 K1 K2 S1 S2 S3 T1}
+ids=${*:-W1 W2 U1 K1 K2 S1 S2 S3}
 bad=0
 mkdir -p "$scratch"
 for m in $ids; do
@@ -49,9 +49,6 @@ M = {
     # D4, adversarial A1: an escaped pad's escape end pruned like any end.
     "S3": (E + "route.rs", "                            && !escaped.contains(&n)\n", "",
            lib + "route::tests::a_pair_on_escaped_pads_keeps_its_breakouts"),
-    # D5: a thread's pins kept at the wrong index.
-    "T1": (E + "supply.rs", "                out[i] = Some(r);", "                out[sinks.len() - 1 - i] = Some(r);",
-           lib + "supply::tests::the_pins_bounded_on_threads_are_the_serial_pins_byte_for_byte"),
 }
 f, old, new, test = M[m]
 p = f"{root}/{f}"
