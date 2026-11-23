@@ -71,6 +71,8 @@ Each statement is labelled:
   - The wrong write, `write 0x37 <- 0x40 0x81`, lands in the data witness. Its 6-byte read is refused, so it is no evidence.
   - This is F2 (§7). It is not a stop, because the run is not committed and does not move.
 - **sentinel-02-own was predicted but not run.** It declares `mcu.foreign_clock`, so `campaign` refuses generated firmware on it (`ForeignClockOnGeneratedRun`, measured). Sentinel-03's U7 is the committed BMP581 under a fault, and it ran.
+- **The bench sheets pin no attribution** (read at source): `fab/sentinel-01-bench/BENCH-EXT-BMP581.md`'s `S1`/`S2` are source-run names, and `BENCH.md` names none. The bench board's own verdicts are judged by the bench `--against-fab` run (Gates).
+- **No tier-2 test asserts an attribution on a BMP581 fixture** (read at source). The CLI's `attribute` assertions are on two-bme, the dshot and serial fixtures, and the seeded set, all of which are in the sweep. No `ci/` file names the renamed test.
 - **bme-bmp is rebuilt, not reused.** `spike/3306/spec/bme-bmp.json` is at schema 19, which `main` refuses (measured). `spike/3307/spec/bme-bmp.json` makes the same two edits to today's `two-bme.json`: U5 becomes a BMP581 at 71.
 
 ## 3. The change (§1.3), `crates/aethelgard-evolve/src/lib.rs`
@@ -105,7 +107,8 @@ Each statement is labelled:
   - a too-wide read from the right pointer, which shows its pointer and no value;
   - 23 lines that are none it reads, each carrying a wrong value, all showing nothing wrong: another model's or form's line, a warning, another device's, and malformed ones;
   - a malformed script, which is no evidence;
-  - a BME280 witness, which does not read the BMP581 form.
+  - a BME280 witness, which does not read the BMP581 form;
+  - a silent BMP581 witness under an `ok` claim, which is the software's.
 - **The helper `bme_bmp`** builds two-bme with U5 a BMP581 at 0x47. It is the old pinning test's records, factored.
 
 **Mutants** (`~/.cache/aet-3307/mut/mut.py`, measured). Each is applied exactly once to `lib.rs`, the evolve tests run, and the file is restored. The final run is after the reduction pass and the Adv-2 fix: **all 9 killed.** Each was killed by the line meant for it, read from its panic message.
@@ -171,7 +174,7 @@ A fresh Opus subagent ran the pass at `3540dfcf`, in its own worktree. It was gi
 
 - **`cargo fmt --all -- --check`:** clean.
 - **`cargo clippy --workspace --all-targets -- -D warnings`:** clean (host).
-- **`ci/gates.sh run`** (the `gates` job's set; host, capped user scope, 16G, swap 0): **green**, 2,733 passed and 0 failed over 155 result lines, at `3540dfcf`, and again at `7d198c17`, the final code (2,733 passed, 0 failed; fmt and clippy clean).
+- **`ci/gates.sh run`** (the `gates` job's set; host, capped user scope, 16G, swap 0): **green**, 2,733 passed and 0 failed over 155 result lines, at `3540dfcf`, and again at `7d198c17`, the final `lib.rs` (2,733 passed, 0 failed; fmt and clippy clean). The head adds one tier-1 assertion after that (the silent witness): evolve's tests, fmt and clippy were re-run on it.
 - **Bench `--against-fab`, in CI's layout** (`ci-img.sh`, 16G, on the branch at `06576f66`, whose `lib.rs` is `936b9fa3`'s; the bench board has no BMP581):
   - `main`'s source and the branch give byte-identical `verify` JSON;
   - each derives 17 files, and only `MANIFEST.json` differs from the committed package (`uid_boundary: false`, `user_namespace` unmet: Furnace's sandbox, as 3306 found). The rest are identical.
@@ -189,5 +192,6 @@ Reduction pass (diff): −2 net · 1 duplicate removed · 0 dead paths removed �
 
 - **Attribution:** bmp-0x47 alone, I4 → S1. It is a spike case; no committed scenario or seeded case moves.
 - **Generator report:** a software run with a sound BMP581 witness that disagrees now names its `Write`/`Read`. No committed run has one.
+- **Silence:** a BMP581 witness that logged nothing while its check claims `ok` is now software evidence by silence, as a `Write`/`Read` witness already was (asserted in `a_bmp581_witness_reads_only_its_models_lines_whole`). No committed run has one: every BMP581 witness in the sweep logs its script, or nothing under a timeout.
 - **Bench package:** no committed verdict moves, and the package does not move.
 - **`TIER2_MIN`:** unchanged.

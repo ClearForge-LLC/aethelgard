@@ -2497,6 +2497,24 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
         *expected = vec!["[NOISY] i2c1.u5: read 0x01 -> 0x5".to_owned()];
     }
     assert!(fields_of(&r, i).is_empty(), "a malformed script");
+    // A BMP581 witness that logged nothing where its check claims `ok` is
+    // now the software's by silence, as a `Write`/`Read` witness is.
+    let r = bme_bmp(
+        |_| {},
+        [
+            &[],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+            &["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"],
+        ],
+    );
+    assert_eq!(
+        fields_of(&r, identity(&r))
+            .into_iter()
+            .map(|f| (f.3, f.4))
+            .collect::<Vec<_>>(),
+        [(None, false), (None, true), (None, true)],
+        "silent"
+    );
     // Nor does a `Write`/`Read` witness read our BMP581's form.
     let r = two_bme(&[], |r| observe(r, "U2", &["read 0xD1 -> 0x61"]));
     let f = fields_of(&r, witness_index(&r, "U2"));
