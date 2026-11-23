@@ -1,0 +1,4 @@
+step	rc	kind
+spec_diff	-	[('/motor_outputs[0]/pin', 'PE9', 'PA8')]
+validate	0	-
+solve	0	-

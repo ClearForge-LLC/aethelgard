@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "project_name": "drv8833-in-in",
   "mcu": {
     "part": "STM32H753ZITx",
@@ -13,7 +13,8 @@
     "supply_source": {
       "connector": "J3",
       "pin": "1"
-    }
+    },
+    "reserved_pins": []
   },
   "voltage_domains": [
     {
@@ -270,7 +271,16 @@
         },
         "resolution_ps": 15625
       },
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R1",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "A_IN2",
@@ -285,7 +295,16 @@
         },
         "resolution_ps": 15625
       },
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R2",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "B_IN1",
@@ -300,7 +319,16 @@
         },
         "resolution_ps": 15625
       },
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R3",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "B_IN2",
@@ -315,7 +343,16 @@
         },
         "resolution_ps": 15625
       },
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R4",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     },
     {
       "label": "SERVO1",
@@ -330,7 +367,16 @@
         },
         "resolution_ps": 1000000
       },
-      "esc": null
+      "esc": null,
+      "pull": {
+        "resistor": {
+          "reference": "R5",
+          "part": "CRCW0603_F_K",
+          "ohms": 40200,
+          "to": "GND"
+        },
+        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+      }
     }
   ],
   "power": null,

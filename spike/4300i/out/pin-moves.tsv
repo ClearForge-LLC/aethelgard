@@ -1,0 +1,2 @@
+board	path	base	after	allowed
+sentinel-03	/assignments/MOTOR1/pin	"PE9"	"PA8"	yes

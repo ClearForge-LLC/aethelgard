@@ -831,40 +831,20 @@ fn divider(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
 const PUPDR_PULL_DOWN: u32 = 0b10;
 const PUPDR_PULL_UP: u32 = 0b01;
 
-/// The `PUPDR` field of every motor-output pin: pull-down, written in the
-/// port's first GPIO init as part of the whole word, so that a motor line is
-/// held low from then until `start_outputs` (the architect's ruling on
-/// PR #161, comment 6911424608, Q-G: "PUPDR pull-down (`10`) on every
-/// motor-output pin in the first GPIO init, whole word").
-pub fn motor_output_pupd() -> u32 {
-    PUPDR_PULL_DOWN
-}
-
-/// The `PUPDR` field that follows a motor output's declared idle
-/// (`AET-WO-1211a`, `1211` Q9 as ruled): pull-up for `{"level": "high"}`,
-/// else [`motor_output_pupd`]'s pull-down (a low or pulsed idle, and DShot,
-/// whose `pwm` is `null`), so the pad before `start_outputs` never fights
-/// the idle. The generator's own copy is `aethelgard-svd-hal`'s `motor_pull`
-/// (`AET-WO-1211b`).
-pub fn idle_pupd(idle: Option<&crate::motor::Idle>) -> u32 {
-    match idle {
-        Some(crate::motor::Idle::Level(crate::motor::Level::High)) => PUPDR_PULL_UP,
-        _ => motor_output_pupd(),
-    }
-}
-
 /// The `PUPDR` field the solved topology implies for the pin of `net`
-/// (`AET-WO-4400b` D3): on a motor output the pull its idle implies
-/// ([`idle_pupd`], `AET-WO-1211a`); on a pin device's GPIO input its declared
-/// MCU pull (`AET-WO-1211b`); and no internal pull on every other pin. An
-/// I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`). A pull a
-/// board needs is a declared fact, never a generator's default. The pinout
-/// check and the board crate's proof oracle read this; no generator calls it
-/// (`RUL-20`).
+/// (`AET-WO-4400b` D3): none on a motor output, `00`, whose pull-down is the
+/// declared external resistor `motor_outputs[].pull` from power-up
+/// (`AET-WO-4300i`, ruled D0 `external`, which reverses Q-G's internal
+/// pull-down for motor outputs; `1211` Q9 went with it); on a pin device's
+/// GPIO input its declared MCU pull (`AET-WO-1211b`); and no internal pull on
+/// every other pin. An I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`).
+/// A pull a board needs is a declared fact, never a generator's default. The
+/// pinout check and the board crate's proof oracle read this; no generator
+/// calls it (`RUL-20`).
 pub fn implied_pupd(t: &crate::SolvedTopology, net: &str) -> u32 {
     use crate::pin_devices::{Direction, McuPull};
     match (t.motor_outputs.get(net), t.gpio.get(net)) {
-        (Some(m), _) => idle_pupd(m.pwm.as_ref().map(|p| &p.idle)),
+        (Some(_), _) => 0,
         (None, Some(g)) if g.direction == Direction::Input => match g.pull {
             Some(McuPull::Up) => PUPDR_PULL_UP,
             Some(McuPull::Down) => PUPDR_PULL_DOWN,
@@ -1397,10 +1377,5 @@ mod tests {
         // A peripheral with no kernel at reset holds nothing.
         let f = check_brr("LPUART1", &reset, 64_000_000, 115_200, 556);
         assert!(!f.kernel_ok && !f.holds && f.kernel_hz == 0, "{f:?}");
-    }
-
-    #[test]
-    fn a_motor_output_pin_is_pulled_down() {
-        assert_eq!(motor_output_pupd(), 0b10);
     }
 }

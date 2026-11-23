@@ -394,38 +394,42 @@ fn an_output_no_unit_owns_is_proved_in_the_gpio_part() {
     assert!(!body.contains("enable_gpioa"), "{body}");
 }
 
-/// `AET-WO-4230` R5 (the architect's ruling on Q-G): every motor-output pin
-/// is pulled down, `PUPDR` `10`, from port A's first init: `split` writes the
-/// whole word, the debug port's reset pulls (`0x6400_0000`, RM0433 Rev 9
-/// §11.4.4, p. 542) and `10` at PA8..PA11 (bits 23:16, `0x00AA_0000`); no
-/// pin method writes `PUPDR` any more, and the proofs hold the word whole.
+/// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23), which reverses
+/// `AET-WO-4230` R5 (Q-G) for motor outputs: no motor-output pin carries an
+/// internal pull, `PUPDR` `00`, because its pull-down is the declared external
+/// resistor (`motor_outputs[].pull`). `split` still writes port A's whole
+/// word, the debug port's reset pulls (`0x6400_0000`, RM0433 Rev 9 §11.4.4,
+/// p. 542) and `00` at PA8..PA11 (bits 23:16); no pin method writes `PUPDR`,
+/// and the proofs hold the word whole. A motor pull written in either
+/// (`10` or `01` in bits 23:16) fails here.
 #[test]
-fn motor_pins_are_pulled_down_from_the_first_port_init() {
+fn motor_pins_carry_no_internal_pull_from_the_first_port_init() {
     for name in ["motors-pwm", "motors-dshot600"] {
         let files = generated(name);
         let board = &files["src/board.rs"];
         let split = item(board, "impl GpioA<Clocked> {");
         assert!(
-            split.contains("r.write(TOKEN, Block::GpioA, 0x0c, 0x64aa0000);"),
+            split.contains("r.write(TOKEN, Block::GpioA, 0x0c, 0x64000000);"),
             "{name}: {split}"
         );
         assert_eq!(board.matches("Block::GpioA, 0x0c").count(), 1, "{name}");
         let proofs = &files["src/proofs.rs"];
         assert!(
             proofs.contains(
-                "kani::assert(value == 0x64aa0000, \"GpioA PUPDR is not the solved word, whole\");"
+                "kani::assert(value == 0x64000000, \"GpioA PUPDR is not the solved word, whole\");"
             ),
             "{name}"
         );
     }
 }
 
-/// `AET-WO-1211b` (`1211` §2.4, Q9): a PWM output declared `idle: high` is
-/// written `CCR` = `ARR + 1` (OCxREF held at 1, RM0433 Rev 9 p. 1558) and
-/// pulled up, in the generator and in the oracle, whose word comes from the
-/// declared idle; the other outputs keep their pulled-down pulse.
+/// `AET-WO-1211b` (`1211` §2.4): a PWM output declared `idle: high` is
+/// written `CCR` = `ARR + 1` (OCxREF held at 1, RM0433 Rev 9 p. 1558), in the
+/// generator and in the oracle, whose word comes from the declared idle. Its
+/// pin carries no internal pull, as every motor pin (`AET-WO-4300i` D0; the
+/// pull-up `1211` Q9 gave an idle `high` went with Q-G).
 #[test]
-fn an_idle_high_output_is_written_arr_plus_one_and_pulled_up() {
+fn an_idle_high_output_is_written_arr_plus_one_and_carries_no_pull() {
     use aethelgard_ir::motor::{Idle, Level};
     let (mut solved, table) = fixture("motors-pwm");
     let (net, arr) = solved
@@ -451,19 +455,10 @@ fn an_idle_high_output_is_written_arr_plus_one_and_pulled_up() {
             && proofs.contains(&format!("\"TIM{n} CCR{k} is not the solved value\"")),
         "the oracle's CCR{k}"
     );
-    // The port's whole PUPDR: this pin's field `01`, the others' `10`.
-    let index: u32 = pin[2..].parse().unwrap();
+    // The port's whole PUPDR: every motor pin's field `00`, so the port's
+    // reset word (the debug port's pulls on port A).
     let port = &pin[1..2];
-    let pupdr = solved
-        .motor_outputs
-        .keys()
-        .map(|o| &solved.assignments[o].pin)
-        .filter(|p| &p[1..2] == port)
-        .fold(if port == "A" { 0x6400_0000u32 } else { 0 }, |w, p| {
-            let i: u32 = p[2..].parse().unwrap();
-            let pull = if i == index { 0b01 } else { 0b10 };
-            (w & !(0b11 << (2 * i))) | (pull << (2 * i))
-        });
+    let pupdr = if port == "A" { 0x6400_0000u32 } else { 0 };
     let pupdr = format!("{pupdr:#010x}");
     assert!(
         lib.contains(&format!(", 0x0c, {pupdr});")),

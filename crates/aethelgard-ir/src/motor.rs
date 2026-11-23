@@ -159,7 +159,8 @@ impl<'de> Deserialize<'de> for Idle {
 /// One declared motor output. Every key is required (`INV-06`): `pin` is
 /// `null` for the solver to choose, `pwm` is `null` exactly when the
 /// protocol is DShot, and `esc` is `null` when the output's ESC is
-/// undeclared (specification 18, `AET-WO-2304b` §1.2).
+/// undeclared (specification 18, `AET-WO-2304b` §1.2). `pull` is never
+/// `null` (specification 28, `AET-WO-4300i` D0).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct MotorOutput {
@@ -172,6 +173,21 @@ pub struct MotorOutput {
     pub pwm: Option<PwmTiming>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub esc: Option<Esc>,
+    pub pull: MotorPull,
+}
+
+/// The external pull-down every motor line carries from power-up
+/// (`AET-WO-4300i`, ruled D0 `external`): a resistor from the output's net
+/// to `GND`, and where its value comes from. There is no `mcu` arm: no
+/// internal pull holds a motor line (D0 reverses Q-G for motor outputs).
+/// `validate` holds it to `GND` (`MotorPullNotDown`), to a resistor row
+/// (`PowerPartUnknown`) and to the MCU row's RPD range
+/// (`MotorPullOutsideRpd`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct MotorPull {
+    pub resistor: crate::pin_devices::PullResistor,
+    pub source: String,
 }
 
 /// What an output's ESC is (`AET-WO-2304` D2, `2304b` §1.2): today only
@@ -710,6 +726,7 @@ pub struct SolvedMotorOutput {
 crate::object_only!(
     PwmTiming,
     MotorOutput,
+    MotorPull,
     NoEsc,
     SolvedClock,
     SolvedMotorOutput,

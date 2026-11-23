@@ -1,0 +1,44 @@
+== F1 solver lands a connector-facing net on TT across instances
+LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv exported by Scotty 2026-11-16, column 15 
+EXT_SCK	PA12	SPI2	FT_u
+== F1b the same pin by hand is refused
+{"ok":false,"error":{"kind":"ConnectorPinNotFt","id":"EXT_SCK","path":"spi_buses[1].sck.pin","message":"`spi_buses[1].sck.pin`: `EXT_SCK` reaches connector pin J2.2 on `PA5`, which is TT_ha (ST DS1211
+== F2 motor on PB4/PA15 (reset pull-up) accepted
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys;print(json.load(sys.stdin)["assignments"]["MOTOR1"])
+                          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+KeyError: 'assignments'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys;print(json.load(sys.stdin)["assignments"]["MOTOR1"])
+                          ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^
+KeyError: 'assignments'
+== F3 idle-high motor with pull-down accepted, hwdef emitted
+{"ok":true,"project_name":"bench-motor-driver","voltage_doma
+# Not emitted: HB_IN1: its protocol (pwm) and PWM range are ArduPilot parameters (MOT_PWM_TYPE, MOT_PWM_MIN/MAX), not hwdef.dat lines; they wait for the defaults.parm work order (D10).
+PA8 TIM1_CH1 TIM1 PWM(1) SPEED_VERYLOW PUSHPULL FLOATING  # [T] motor_outputs.HB_IN1 (index 0), assignments, pin_speeds; no internal pull: the pull-down is the declared resistor (4300i D0)
+== F5 boundary ohms (1% row) accepted
+{"ok":true,"project_name":"mot
+{"ok":true,"project_name":"mot
+== F1c an all-FT solution exists (EXT pinned to SPI2)
+LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv exported by Scotty 2026-11-16, column 15 
+EXT_MISO	PB14	SPI2	FT_u
+EXT_MOSI	PB15	SPI2	FT_u
+EXT_SCK	PA12	SPI2	FT_u
+== F2b solver reaches PA15 unaided (8 earlier channels reserved)
+LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv exported by Scotty 2026-11-16, column 15 
+{'pin': 'PA1', 'peripheral': 'TIM2', 'signal': 'TIM2_CH2', 'alternate_function': 1}
+== hand TT at a connector, every kind
+tt-cs ConnectorPinNotFt spi_devices[0].cs.pin
+tt-motor-pe9 ConnectorPinNotFt motor_outputs[0].pin
+tt-serial-tx ConnectorPinNotFt serial_ports[0].tx.pin
+tt-serial-rx ConnectorPinNotFt serial_ports[0].rx.pin
+tt-pd-signal ConnectorPinNotFt pin_devices[0].signals[0].pin
+tt-pd-analog ConnectorPinNotFt pin_devices[0].analog[0].pin
+tt-i2c ConnectorPinNotFt i2c_buses[0].scl.pin
+tt-miso ConnectorPinNotFt spi_buses[1].mosi.pin
+== support gate step 8 probes (copy rust/adv_probe_support.rs into crates/aethelgard-cli/tests/ and run):
+   cargo test -p aethelgard-cli --test adv_probe_support -- --nocapture   # P1 pull-up beside, P2 R_Small parallel, P3 MCU pad off net, P4 connector off net: all silent
+MotorPinResetPull motor_outputs[0].pin
+MotorPinResetPull motor_outputs[0].pin

@@ -1,0 +1,11 @@
+board	file	source	highest_R	references
+driver-judges-nothing	crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json	spec+emit	0	R1,R2,R3,R4
+hse-crystal-16	crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	spec+emit	6	R7,R8,R9,R10
+hse-external-8	crates/aethelgard-cli/tests/fixtures/hse-external-8.json	spec	0	R1,R2,R3,R4
+motors-dshot600	crates/aethelgard-cli/tests/fixtures/motors-dshot600.json	spec+emit	5	R6,R7,R8,R9
+motors-pwm	crates/aethelgard-cli/tests/fixtures/motors-pwm.json	spec+emit	5	R6,R7,R8,R9
+sentinel-02-shaped	crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	spec+emit	6	R7,R8,R9,R10
+sentinel-03	crates/aethelgard-cli/tests/fixtures/sentinel-03.json	spec+emit	51	R52,R53,R54,R55
+serial-dshot-9600	crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json	spec+emit	5	R6,R7,R8,R9
+d1-drv8876	crates/aethelgard-ir/tests/fixtures/d1-drv8876.json	spec	3	R4,R5,R6
+d2-drv8833	crates/aethelgard-ir/tests/fixtures/d2-drv8833.json	spec	0	R1,R2,R3,R4,R5

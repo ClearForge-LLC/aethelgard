@@ -1,0 +1,15 @@
+board	phase	parts	R	segments	vias	outline
+driver-judges-nothing	phaseA	24	R=0(max -)	394	81	48.05x39.40
+driver-judges-nothing	b2	28	R=4(max R4)	456	93	48.05x39.40
+hse-crystal-16	phaseA	47	R=6(max R6)	984	187	63.60x45.75
+hse-crystal-16	b2	51	R=10(max R10)	1085	190	63.60x46.60
+motors-dshot600	phaseA	34	R=5(max R5)	605	124	44.10x48.50
+motors-dshot600	b2	38	R=9(max R9)	614	129	49.00x48.50
+motors-pwm	phaseA	34	R=5(max R5)	605	124	44.10x48.50
+motors-pwm	b2	38	R=9(max R9)	614	129	49.00x48.50
+sentinel-02-shaped	phaseA	44	R=6(max R6)	934	187	63.60x51.35
+sentinel-02-shaped	b2	48	R=10(max R10)	895	184	63.60x51.35
+sentinel-03	phaseA	98	R=14(max R51)	1364	337	95.80x67.60
+sentinel-03	b2	102	R=18(max R55)	1307	316	96.25x67.60
+serial-dshot-9600	phaseA	35	R=5(max R5)	657	145	48.05x48.50
+serial-dshot-9600	b2	39	R=9(max R9)	674	160	49.00x48.50
