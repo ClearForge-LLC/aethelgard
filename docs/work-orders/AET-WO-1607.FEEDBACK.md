@@ -163,6 +163,8 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - `main`'s `b22600d3` (3307) was already 7.2 min, and `d09a5187` 3.1 min.
   - D2's 345 s row is one of the inputs. The refit is `ci/` work, outside this fence, and yours to schedule.
 
+- **F-L: three of `cli_backlog_tier1`'s tests are heavy.** Together they take about 66 s alone on Furnace, weighed 184.6 s in CI, mostly because each emits or generates the same three boards. One shared emit per specification across them (a `OnceLock`, as `common::verify::Shared` does for `verify`) would cut that to about a third. This was found at READY; it is a test-structure change that would re-open the mutant run, so it is reported, not made.
+
 ## 7. Gates, fence, reduction pass, mutants
 
 - **Gates at `6ea27f87`** (D2's first build; the merged final code is under "`main` merged" below):
@@ -190,10 +192,20 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - D2's tier-2 test in `with_tools.rs`, with its `ci/test-weights.tsv` row, which §3 allows. It is a Furnace estimate: 123.33 s alone in the image, times 2.8, gives 345.324.
   - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
   - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
-- **`main` merged twice:**
+- **`main` merged three times:**
   - `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`.
   - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`.
-  - `15798f91` (2309's chaos change, 4407's images, and `docs/`), at `ff708b3a`. One conflict: `ci/test-weights.tsv`, where each side added a header line, and both are kept. On the merged tree: fmt and clippy clean, `cargo test --workspace` **2802 passed, 0 failed** (`m/ws-merged.log`), and `ci/test-shard.sh` 126 PASS. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
+  - `15798f91` (2309's chaos change, 4407's images, and `docs/`), at `ff708b3a`. One conflict: `ci/test-weights.tsv`, where each side added a header line, and both are kept. On the merged tree: fmt and clippy clean, `cargo test --workspace` **2802 passed, 0 failed** (`m/ws-merged.log`), and `ci/test-shard.sh` 126 PASS.
+  - `29a34afa` (1914: the shard planner's P3, which refuses a test of 10 s or more with no row), at `b280f37b`. It changes only `ci/` and `docs/`, so no crate gate moves. One conflict, again a header line in `ci/test-weights.tsv`; both are kept. `ci/test-shard.sh`: 137 PASS.
+  - As the architect's 04:30Z note asks, **every new tier-1 test of 0.5 s or more now has a row**, measured on Furnace alone (the worst of three, one thread, debug host build), times 2.8:
+    - `the_prove_verdict_…` 32.86 s → 92.008;
+    - `the_drc_and_support_…` 16.94 → 47.432;
+    - `the_emit_verdict_…` 16.12 → 45.136;
+    - `check_support_runs_only_the_pinned_kicad` 1.15 → 3.220;
+    - `verify_of_a_board_not_drawn_…` 1.12 → 3.136;
+    - the pinout test 0.27 → 0.756;
+    - the `solve` test 0.22 → 0.616.
+    - `the_three_specifications_…` (0.11 s) and `the_private_scratch_…` (0.00 s) are under the floor. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
 - **Reduction pass (diff): +912 net in `crates/` against `main` (+1042 −130; +807 at `8ff08248`, when the pass ran) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
   - **Removed:** `doctor`'s `KICAD_PINNED`, equal to `KICAD` once (1) landed.
   - **Removed:** the banner-to-lines conversion, written twice in `cli_backlog_tier1` (now `banner_lines`).

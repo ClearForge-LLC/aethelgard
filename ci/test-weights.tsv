@@ -69,6 +69,7 @@
 # AET-WO-2309: bounds.rs's the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib, a Furnace estimate (worst 5.78 s in a debug build, times 2.8, as AET-WO-1310's), not a run; the next refit replaces it.
 # AET-WO-1914 (P3 refuses a test of 10 s or more with no row): three rows, each its worst in-shard seconds (P3's reconstruction from the job log's stamps; an upper bound) over the held main runs 45099268629 (d09a5187), 45098769482 (b22600d3) and 45088311091 (fa9d7edd). pin_device_refusals' a_power_sense_input_is_not_generated took 10 s or more on all three (20.971 worst). emit_tier1's a_pin_device_beside_a_test_point_... (5.758) and generate_tier1's a_declared_hse_... (5.334) are the two other tests with no row over 4 s: the same test's in-shard time varied up to 2.52x across seven main runs, so either can reach 10 s on a slow runner (spike/1914/).
 # AET-WO-1607: with_tools' a_board_not_drawn_runs_its_gates_and_is_never_verified is a Furnace estimate, not a run: 123.33 s in the pinned image on Furnace (libtest `finished in`, alone: d1-drv8876's ten harnesses, build and simulate), times 2.8 (AET-WO-1310's factor), 345.324; replace it at the next refit.
+# AET-WO-1607 (P3, AET-WO-1914): cli_backlog_tier1's tests are Furnace estimates, not runs: the worst of three, each alone (`--exact`, one thread, libtest `finished in`, debug host build), times 2.8 (AET-WO-1310's factor). Most of the three large ones is emitting the same three boards in each test (FEEDBACK F-L). Replace them at the next refit.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.61
@@ -243,6 +244,13 @@ tests/classes_tier1.rs	a_part_on_each_edge_is_routed_and_read_back_where_kicad_p
 tests/classes_tier1.rs	extract_bounds_a_classed_line_at_its_own_width	0.920
 tests/classes_tier1.rs	the_pair_judge_refuses_each_breakage	0.800
 tests/classes_tier1.rs	the_stand_in_pair_is_routed_coupled_and_measured	0.700
+tests/cli_backlog_tier1.rs	check_support_runs_only_the_pinned_kicad	3.220
+tests/cli_backlog_tier1.rs	solve_prints_the_banner_on_stderr_and_the_topology_alone_on_stdout	0.616
+tests/cli_backlog_tier1.rs	the_drc_and_support_verdicts_carry_the_banner_of_their_spec	47.432
+tests/cli_backlog_tier1.rs	the_emit_verdict_carries_the_banner_and_the_files_do_not	45.136
+tests/cli_backlog_tier1.rs	the_pinout_verdict_carries_the_banner_of_its_topology	0.756
+tests/cli_backlog_tier1.rs	the_prove_verdict_carries_the_banner_of_its_spec	92.008
+tests/cli_backlog_tier1.rs	verify_of_a_board_not_drawn_runs_past_its_board_gates	3.136
 tests/connectors_tier1.rs	a_board_draws_exactly_its_declared_connectors	1.1
 tests/connectors_tier1.rs	extract_counts_each_connectors_declared_budget_and_no_ci	2.800
 tests/connectors_tier1.rs	the_fixture_emits_its_connectors_at_the_bottom_edge	4.300
