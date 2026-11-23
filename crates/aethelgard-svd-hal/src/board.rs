@@ -185,7 +185,7 @@ pub enum BoardError {
     /// the rule's (`KernelClockDeadSwitch`, `KernelClockNotRunning`,
     /// `KernelClockUnknown`).
     #[error("{0}")]
-    KernelClock(aethelgard_ir::kernel_clock::KernelClockRefusal),
+    KernelClock(Box<aethelgard_ir::kernel_clock::KernelClockRefusal>),
     /// `AET-WO-1211b` S1: the solved topology carries no resolution for a
     /// device ADC input, and none is substituted (`INV-06`).
     #[error(
@@ -339,7 +339,7 @@ pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
         .into_iter()
         .next()
     {
-        return Err(BoardError::KernelClock(refusal));
+        return Err(BoardError::KernelClock(Box::new(refusal)));
     }
     let rule = vos::judge_generated(solved);
     if !rule.holds() {
