@@ -3463,10 +3463,7 @@ fn a_boots_reads_are_all_read_or_all_unread() {
         }
         _ => {}
     };
-    assert_eq!(
-        edited(&base, &flooded),
-        Err("an ok read's witness is unread and the verdict does not name it unwitnessed")
-    );
+    assert_eq!(edited(&base, &flooded), Err(UNWITNESSED_SPI));
     let mut named = base.clone();
     let Some(Record::Verdict { findings, .. }) = named.last_mut() else {
         panic!("the verdict is last")
@@ -3572,8 +3569,9 @@ fn a_boots_reads_are_all_read_or_all_unread() {
 // ---- AET-WO-2310: cpu_halted and the unwitnessed ok read ----
 
 const HALTED: &str = "the verdict's cpu_halted does not match the booted core's instruction count";
-const UNWITNESSED: &str =
-    "an ok read's witness is unread and the verdict does not name it unwitnessed";
+// Each bus's own reason since `AET-WO-2312`.
+const UNWITNESSED: &str = "the verdict's i2c_transaction_unwitnessed does not reach the I2C reads' unread or differing witnesses";
+const UNWITNESSED_SPI: &str = "the verdict's spi_transaction_unwitnessed does not reach the SPI reads' unread or differing witnesses";
 
 /// `good()`'s own findings.
 const GOOD_FINDINGS: [(&str, &str, u64); 3] = [
@@ -3678,7 +3676,7 @@ fn an_ok_spi_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
     }
     assert_eq!(
         check_run(&with_findings(spi_only.clone(), &GOOD_FINDINGS)).unwrap_err(),
-        UNWITNESSED
+        UNWITNESSED_SPI
     );
     let named = plus(&[("spi_transaction_unwitnessed", "error", 1)]);
     check_run(&with_findings(spi_only.clone(), &named)).unwrap();
@@ -3686,7 +3684,7 @@ fn an_ok_spi_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
     let other = plus(&[("i2c_transaction_unwitnessed", "error", 1)]);
     assert_eq!(
         check_run(&with_findings(spi_only, &other)).unwrap_err(),
-        UNWITNESSED
+        UNWITNESSED_SPI
     );
 }
 
@@ -3952,7 +3950,14 @@ fn each_kind_the_records_show_binds_the_verdicts_count() {
     );
     assert_eq!(judged(&flooded(true), &[TIMEOUT, un(1)]), Ok(()));
     assert_eq!(judged(&flooded(true), &[TIMEOUT, un(2)]), Ok(()));
-    assert_eq!(judged(&flooded(false), &[TIMEOUT]), Ok(()));
+    // With no witness format the judge names `spi_witness_unavailable`,
+    // exactly, the log unread or not (adversarial F1).
+    let ua = ("spi_witness_unavailable", "error", 1);
+    assert_eq!(
+        judged(&flooded(false), &[TIMEOUT]),
+        Err(why("spi_witness_unavailable"))
+    );
+    assert_eq!(judged(&flooded(false), &[TIMEOUT, ua]), Ok(()));
     // A core that read fewer instructions than the run holds is named at any
     // boot the judge read, the boot word set or not.
     let halted = |r: &mut Vec<Record>| {
@@ -4003,4 +4008,122 @@ fn shown_names_every_kind_once_and_finds_the_locked_access_by_name() {
         let locked = shown(&r).pop().unwrap();
         assert_eq!(locked.records == [i], shows, "{name} {observed:#x}");
     }
+}
+
+/// U4's SPI witness edited: its expected lines and what was observed.
+fn u4_witness(expected: Vec<String>, observed: Option<Vec<String>>) -> impl Fn(&mut Vec<Record>) {
+    u4(move |x| {
+        if let Record::SpiWitness {
+            expected: e,
+            observed: o,
+            ..
+        } = x
+        {
+            (*e, *o) = (expected.clone(), observed.clone());
+        }
+    })
+}
+
+fn lines(n: usize, text: &str) -> Vec<String> {
+    (0..n)
+        .map(|i| format!("[NOISY] spi1.spi1mux.u4: {text} {i:03}"))
+        .collect()
+}
+
+/// `AET-WO-2312` adversarial pass F1-F4: what a witness shows of the judge's
+/// three witness findings, bound without refusing what the judge writes.
+/// An `[ERROR]` line archived is `step_error`. An `ok` read with no witness
+/// format is `witness_unavailable`, and one whose short witness differs is
+/// `unwitnessed`, each or, where the archive may have cut an `[ERROR]`
+/// line, `step_error`. A status the judge never writes is refused.
+#[test]
+fn the_witness_findings_and_the_statuses_are_bound_as_the_judge_writes_them() {
+    let joint = "the verdict's spi witness findings do not reach the SPI witnesses that show one";
+    let spi = |kind: &'static str| (kind, "error", 1);
+    // F1: an ok read with no witness format, its log read: refused unless
+    // named, as `witness_unavailable` or a cut line's `step_error`.
+    let no_format = u4_witness(vec![], Some(lines(1, "Transmitting data 0x9F")));
+    assert_eq!(judged(&no_format, &[TIMEOUT]), Err(joint));
+    assert_eq!(
+        judged(&no_format, &[TIMEOUT, spi("spi_witness_unavailable")]),
+        Ok(())
+    );
+    assert_eq!(
+        judged(&no_format, &[TIMEOUT, spi("spi_step_error")]),
+        Ok(())
+    );
+    // F2: a short witness that differs, whole: named, or refused.
+    let differs = u4_witness(lines(1, "expected"), Some(lines(1, "other")));
+    assert_eq!(judged(&differs, &[TIMEOUT]), Err(joint));
+    assert_eq!(
+        judged(&differs, &[TIMEOUT, spi("spi_transaction_unwitnessed")]),
+        Ok(())
+    );
+    // F3: an `[ERROR]` line, at any status: `step_error`, by its kind.
+    let error = u4_witness(
+        lines(1, "expected"),
+        Some(vec!["[ERROR] spi1.spi1mux.u4: bus error".into()]),
+    );
+    assert_eq!(judged(&error, &[TIMEOUT]), Err(why("spi_step_error")));
+    assert_eq!(judged(&error, &[TIMEOUT, spi("spi_step_error")]), Ok(()));
+    let timed_out_error = |r: &mut Vec<Record>| {
+        u2_read("timeout_txis", 0)(r);
+        on_u2(r, &|x| {
+            if let Record::I2cWitness { observed, .. } = x {
+                *observed = Some(vec!["[ERROR] i2c1.u2: bus error".into()]);
+            }
+        });
+    };
+    assert_eq!(
+        judged(&timed_out_error, &[TIMEOUT]),
+        Err(why("i2c_step_error"))
+    );
+    assert_eq!(
+        judged(&timed_out_error, &[TIMEOUT, ("i2c_step_error", "error", 1)]),
+        Ok(())
+    );
+    // Must accept: an `[ERROR]` past the archive's 16 lines, which the judge
+    // names `step_error` alone, beside a witness format or none.
+    for expected in [lines(1, "expected"), vec![]] {
+        let cut = u4_witness(expected, Some(lines(16, "flood")));
+        assert_eq!(judged(&cut, &[TIMEOUT, spi("spi_step_error")]), Ok(()));
+    }
+    // Must accept: a passing log so long that `fit` cut the archived copy
+    // of the model's own lines (16 of about 230 bytes: both copies pass
+    // 4,096, so `fit` kept one observed line, and the record fits).
+    let long = lines(16, &"x".repeat(200));
+    let popped = u4_witness(long.clone(), Some(long[..1].to_vec()));
+    assert_eq!(judged(&popped, &[TIMEOUT]), Ok(()));
+    // Before the boot word, no witness finding is named, and a witness that
+    // differs shows none.
+    let word = ("boot_word_missing", "error", 1);
+    let unbooted_differs = |r: &mut Vec<Record>| {
+        differs(r);
+        unbooted(r);
+    };
+    assert_eq!(judged(&unbooted_differs, &[word, TIMEOUT]), Ok(()));
+    for kind in ["spi_step_error", "spi_witness_unavailable"] {
+        assert_eq!(
+            judged(
+                &|r: &mut Vec<Record>| unbooted(r),
+                &[word, TIMEOUT, spi(kind)]
+            ),
+            Err("the verdict judges an identity read's record of a boot without its boot word"),
+            "{kind}"
+        );
+    }
+    // F4: a status the judge never writes, or another bus's, is refused.
+    let status = "a read's status is not one the judge writes for its bus";
+    for s in ["bogus", "OK", "timeout", "timeout_rxp", "timeout_eot"] {
+        assert_eq!(judged(&u2_read(s, 0), &[TIMEOUT]), Err(status), "{s}");
+    }
+    let spi_txis = u4(|x| {
+        if let Record::SpiCheck { status, .. } = x {
+            *status = Some("timeout_txis".into());
+        }
+    });
+    assert_eq!(
+        judged(&spi_txis, &[TIMEOUT, spi("spi_timeout")]),
+        Err(status)
+    );
 }

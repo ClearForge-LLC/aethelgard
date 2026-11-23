@@ -126,17 +126,21 @@ pub const UNREAD_FINDINGS: [&str; 5] = [
 /// The identity reads' findings the judge makes only once the boot word is
 /// set (`renode::judge_boot`): a record is judged at the fixed point, and
 /// before it only a timeout is named (`AET-WO-3201`; adversarial pass, F2).
-pub const BOOTED_READ_FINDINGS: [&str; 10] = [
+pub const BOOTED_READ_FINDINGS: [&str; 14] = [
     "i2c_configure_mismatch",
     "i2c_data_mismatch",
     "i2c_identity_mismatch",
     "i2c_record_invalid",
+    "i2c_step_error",
     "i2c_transaction_unwitnessed",
+    "i2c_witness_unavailable",
     "spi_configure_mismatch",
     "spi_data_mismatch",
     "spi_identity_mismatch",
     "spi_record_invalid",
+    "spi_step_error",
     "spi_transaction_unwitnessed",
+    "spi_witness_unavailable",
 ];
 /// A read's status in kinds 12 and 21 when it completed (`renode::status_name`).
 pub const STATUS_OK: &str = "ok";
@@ -196,7 +200,7 @@ pub struct Shown {
 /// Every kind [`shown`] derives, in its order, with the reason `check_run`
 /// refuses a verdict whose count of it is outside its bound, or names it at
 /// `info`. The judge makes each of them an error.
-pub const SHOWN: [(&str, &str); 29] = [
+pub const SHOWN: [(&str, &str); 33] = [
     (
         PAST_CEILING_FINDING,
         "the verdict's analog_rise_exceeds_ceiling does not match the computed rises",
@@ -235,7 +239,15 @@ pub const SHOWN: [(&str, &str); 29] = [
     ),
     (
         UNWITNESSED_I2C,
-        "an ok read's witness is unread and the verdict does not name it unwitnessed",
+        "the verdict's i2c_transaction_unwitnessed does not reach the I2C reads' unread or differing witnesses",
+    ),
+    (
+        "i2c_witness_unavailable",
+        "the verdict's i2c_witness_unavailable does not reach the I2C reads with no witness format",
+    ),
+    (
+        "i2c_step_error",
+        "the verdict's i2c_step_error does not reach the I2C witnesses' [ERROR] lines",
     ),
     (
         "spi_timeout",
@@ -259,7 +271,15 @@ pub const SHOWN: [(&str, &str); 29] = [
     ),
     (
         UNWITNESSED_SPI,
-        "an ok read's witness is unread and the verdict does not name it unwitnessed",
+        "the verdict's spi_transaction_unwitnessed does not reach the SPI reads' unread or differing witnesses",
+    ),
+    (
+        "spi_witness_unavailable",
+        "the verdict's spi_witness_unavailable does not reach the SPI reads with no witness format",
+    ),
+    (
+        "spi_step_error",
+        "the verdict's spi_step_error does not reach the SPI witnesses' [ERROR] lines",
     ),
     (
         BOOT_WORD_FINDING,
@@ -379,20 +399,7 @@ pub fn shown(records: &[Record]) -> Vec<Shown> {
         .map(|(k, _)| (*k, (Vec::new(), Bound::Equal)))
         .collect();
     let mut locked = Vec::new();
-    // Each witness by (kind, reference, step): kind 13 or 22.
-    let mut witnesses: BTreeMap<(u64, &str, &str), usize> = BTreeMap::new();
-    for (i, r) in records.iter().enumerate() {
-        if let Record::I2cWitness {
-            reference, step, ..
-        }
-        | Record::SpiWitness {
-            reference, step, ..
-        } = r
-        {
-            witnesses.entry((r.kind(), reference, step)).or_insert(i);
-        }
-    }
-    let mut unread = [0u64; 2];
+    let witnesses = witness_index(records);
     for (i, r) in records.iter().enumerate() {
         let mut add = |kind: &'static str| {
             if let Some((v, _)) = out.get_mut(kind) {
@@ -474,7 +481,6 @@ pub fn shown(records: &[Record]) -> Vec<Shown> {
                         if let Some((v, _)) = out.get_mut(kind) {
                             v.push(w);
                         }
-                        unread[usize::from(spi)] += u64::from(observed.is_none());
                     }
                 }
             }
@@ -530,10 +536,19 @@ pub fn shown(records: &[Record]) -> Vec<Shown> {
             _ => {}
         }
     }
-    for (kind, least) in [(UNWITNESSED_I2C, unread[0]), (UNWITNESSED_SPI, unread[1])] {
-        if let Some(e) = out.get_mut(kind) {
-            e.0.sort_unstable();
-            e.1 = Bound::Reach(least);
+    let steps = witness_steps(records, &witnesses);
+    for (w, kinds) in steps.iter().zip([
+        [UNWITNESSED_I2C, "i2c_witness_unavailable", "i2c_step_error"],
+        [UNWITNESSED_SPI, "spi_witness_unavailable", "spi_step_error"],
+    ]) {
+        for (kind, least) in kinds
+            .into_iter()
+            .zip([w.unwitnessed, w.unavailable, w.error])
+        {
+            if let Some(e) = out.get_mut(kind) {
+                e.0.sort_unstable();
+                e.1 = Bound::Reach(least);
+            }
         }
     }
     for kind in ["i2c_record_invalid", "spi_record_invalid"] {
@@ -569,9 +584,163 @@ pub fn shown(records: &[Record]) -> Vec<Shown> {
     shown
 }
 
+/// Each witness by (kind, reference, step): kind 13 or 22, the first.
+fn witness_index(records: &[Record]) -> BTreeMap<(u64, &str, &str), usize> {
+    let mut witnesses = BTreeMap::new();
+    for (i, r) in records.iter().enumerate() {
+        if let Record::I2cWitness {
+            reference, step, ..
+        }
+        | Record::SpiWitness {
+            reference, step, ..
+        } = r
+        {
+            witnesses
+                .entry((r.kind(), reference.as_str(), step.as_str()))
+                .or_insert(i);
+        }
+    }
+    witnesses
+}
+
+/// What one bus's witnesses (kinds 13 and 22) show of the judge's three
+/// witness findings, once the boot word is set (`renode::witness_findings`):
+/// a step whose log holds an `[ERROR]` line is `{bus}_step_error`, at any
+/// status; else an `ok` read with no witness format is
+/// `{bus}_witness_unavailable`, and one whose lines are not the model's is
+/// `{bus}_transaction_unwitnessed`. The archive keeps at most
+/// `MAX_WITNESS_LINES` lines of a log, and `fit` cuts a record past
+/// `MAX_EVENT_BYTES`, so an `[ERROR]` line may be cut away: where it may, the
+/// step is counted jointly with `step_error` (`AET-WO-2312` adversarial F1-F3).
+#[derive(Default)]
+struct WitnessSteps {
+    /// Steps whose archived lines hold an `[ERROR]` line: `step_error`.
+    error: u64,
+    /// `ok` reads whose log was unread (no line at all): `witness_unavailable`
+    /// with no witness format, else `unwitnessed`.
+    unavailable: u64,
+    unwitnessed: u64,
+    /// `ok` reads with no `[ERROR]` archived: with no witness format,
+    /// `witness_unavailable` or (a cut line) `step_error`; with lines that
+    /// differ from the model's, where the model's own would have archived
+    /// whole, `unwitnessed` or `step_error`.
+    joint_unavailable: u64,
+    joint_unwitnessed: u64,
+}
+
+/// The judge's `LOG_ERROR` (`renode.rs`): Renode's error lines.
+const LOG_ERROR: &str = "[ERROR]";
+
+fn witness_steps(
+    records: &[Record],
+    witnesses: &BTreeMap<(u64, &str, &str), usize>,
+) -> [WitnessSteps; 2] {
+    let mut out = [WitnessSteps::default(), WitnessSteps::default()];
+    if !booted(records) {
+        return out;
+    }
+    for r in records {
+        let (Record::I2cCheck {
+            reference,
+            step,
+            status: Some(status),
+            ..
+        }
+        | Record::SpiCheck {
+            reference,
+            step,
+            status: Some(status),
+            ..
+        }) = r
+        else {
+            continue;
+        };
+        let spi = r.kind() == 21;
+        let key = (if spi { 22 } else { 13 }, reference.as_str(), step.as_str());
+        let Some(&w) = witnesses.get(&key) else {
+            continue;
+        };
+        let (Record::I2cWitness {
+            expected, observed, ..
+        }
+        | Record::SpiWitness {
+            expected, observed, ..
+        }) = &records[w]
+        else {
+            continue;
+        };
+        let s = &mut out[usize::from(spi)];
+        let error = observed
+            .as_ref()
+            .is_some_and(|o| o.iter().any(|l| l.starts_with(LOG_ERROR)));
+        if error {
+            s.error += 1;
+        } else if status != STATUS_OK {
+        } else if observed.is_none() {
+            if expected.is_empty() {
+                s.unavailable += 1;
+            } else {
+                s.unwitnessed += 1;
+            }
+        } else if expected.is_empty() {
+            s.joint_unavailable += 1;
+        } else if observed.as_ref() != Some(expected) && equal_fits(&records[w]) {
+            s.joint_unwitnessed += 1;
+        }
+    }
+    out
+}
+
+/// Whether witness `w`, its observed lines replaced by the model's own, fits
+/// one event (`fit`, `archive::MAX_EVENT_BYTES`). Then a log equal to the
+/// model's would have been archived whole: the reader holds the expected
+/// lines to `text_ok` and `MAX_WITNESS_LINES`, and `fit` never cuts them. So
+/// lines that differ in the archive differed in the log.
+fn equal_fits(w: &Record) -> bool {
+    let mut equal = w.clone();
+    if let Record::I2cWitness {
+        expected, observed, ..
+    }
+    | Record::SpiWitness {
+        expected, observed, ..
+    } = &mut equal
+    {
+        *observed = Some(expected.clone());
+    }
+    let event = crate::event::Event::Record {
+        timestamp: u64::MAX,
+        record: equal,
+    };
+    crate::cbor::to_bytes(&event.to_value()).len() <= crate::archive::MAX_EVENT_BYTES
+}
+
+/// A read's status as the judge writes it (`renode::status_name`), by bus.
+const I2C_STATUSES: [&str; 6] = [
+    STATUS_OK,
+    "timeout_txis",
+    "timeout_tc",
+    "timeout_rxne",
+    "timeout_stopf",
+    "invalid",
+];
+const SPI_STATUSES: [&str; 4] = [STATUS_OK, "timeout_rxp", "timeout_eot", "invalid"];
+
 /// The verdict's count of every kind [`shown`] derives, against its bound,
 /// each named as an error (`AET-WO-2312`): the refusal names the kind.
 fn check_shown(records: &[Record], findings: &[(String, String, u64)]) -> Result<(), &'static str> {
+    // A status the judge never writes shows nothing; it is no campaign's
+    // (adversarial F4).
+    if records.iter().any(|r| match r {
+        Record::I2cCheck {
+            status: Some(s), ..
+        } => !I2C_STATUSES.contains(&s.as_str()),
+        Record::SpiCheck {
+            status: Some(s), ..
+        } => !SPI_STATUSES.contains(&s.as_str()),
+        _ => false,
+    }) {
+        return Err("a read's status is not one the judge writes for its bus");
+    }
     for s in shown(records) {
         let (mut n, mut failing) = (0u64, 0u64);
         for (k, severity, c) in findings {
@@ -585,6 +754,35 @@ fn check_shown(records: &[Record], findings: &[(String, String, u64)]) -> Result
                 .iter()
                 .find(|(k, _)| *k == s.kind)
                 .map_or(LOCKED_REFUSAL, |(_, why)| why));
+        }
+    }
+    // A step whose `[ERROR]` line may be cut away is the named kind or
+    // `step_error`: their sum reaches it.
+    let n = |kind: &str| -> u64 {
+        findings
+            .iter()
+            .filter(|(k, _, _)| k == kind)
+            .map(|(_, _, c)| *c)
+            .sum()
+    };
+    let steps = witness_steps(records, &witness_index(records));
+    for (w, (bus, why)) in steps.iter().zip([
+        (
+            "i2c",
+            "the verdict's i2c witness findings do not reach the I2C witnesses that show one",
+        ),
+        (
+            "spi",
+            "the verdict's spi witness findings do not reach the SPI witnesses that show one",
+        ),
+    ]) {
+        let error = n(&format!("{bus}_step_error"));
+        if n(&format!("{bus}_witness_unavailable")) + error
+            < w.unavailable + w.error + w.joint_unavailable
+            || n(&format!("{bus}_transaction_unwitnessed")) + error
+                < w.unwitnessed + w.error + w.joint_unwitnessed
+        {
+            return Err(why);
         }
     }
     Ok(())

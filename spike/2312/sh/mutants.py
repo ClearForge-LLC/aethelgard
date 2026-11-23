@@ -9,7 +9,7 @@ E = 'crates/aethelgard-evolve/src/lib.rs'
 M = [
  ('M1a kind dropped: register_mismatch', C, 'add("register_mismatch");', '{}'),
  ('M1b kind dropped: timeouts', C, 'add(if spi { "spi_timeout" } else { "i2c_timeout" });', '{}'),
- ('M1c kind dropped: read mismatches', C, '                        add(kind);\n                    }\n                    let witness', '                        let _ = kind;\n                    }\n                    let witness'),
+ ('M1c kind dropped: read mismatches', C, '                        add(kind);\n                    }\n', '                        let _ = kind;\n                    }\n'),
  ('M1d kind dropped: record_invalid', C, '''add(if spi {
                         "spi_record_invalid"
                     } else {
@@ -26,10 +26,18 @@ M = [
             e.1 = Bound::Equal;'''),
  ('M2d info severity counted', C, 'if n != failing || !s.bound.holds(n, s.records.len())', 'if !s.bound.holds(n, s.records.len())'),
  ('M5 boot gate dropped (value/validity before the boot word)', C, '                } else if !booted {\n                } else if status == "invalid" {', '                } else if status == "invalid" {'),
- ('M6 unread lower bound dropped', C, 'unread[usize::from(spi)] += u64::from(observed.is_none());', 'let _ = observed;'),
- ('M7 no-witness-format step counted', C, '                        && !expected.is_empty()\n', ''),
+ ('M6 unread lower bound dropped', C, '                s.unwitnessed += 1;\n', ''),
+ ('M7 unread no-format step counted as unwitnessed', C, '''            if expected.is_empty() {
+                s.unavailable += 1;''', '''            if expected.is_empty() {
+                s.unwitnessed += 1;'''),
  ('M8 locked evidence by any name', C, 'if name.starts_with("RCC.")\n', 'if !name.is_empty()\n'),
  ('M9 check_shown not called', C, '    check_shown(records, findings)?;\n', ''),
+ ('M13 status set dropped', C, '        return Err("a read\'s status is not one the judge writes for its bus");', '        let _ = ();'),
+ ('M14 joint bound dropped', C, '            return Err(why);\n        }\n    }\n    Ok(())', '            let _ = why;\n        }\n    }\n    Ok(())'),
+ ('M15 equal_fits always', C, '        } else if observed.as_ref() != Some(expected) && equal_fits(&records[w]) {', '        } else if observed.as_ref() != Some(expected) {'),
+ ('M16 [ERROR] line ignored', C, '            .is_some_and(|o| o.iter().any(|l| l.starts_with(LOG_ERROR)));', '            .is_some_and(|o| o.iter().any(|l| l.starts_with(LOG_ERROR) && false));'),
+ ('M17 witness steps judged before the boot word', C, '    if !booted(records) {\n        return out;\n    }\n', ''),
+ ('M18 no-format joint dropped', C, '            s.joint_unavailable += 1;\n', ''),
  ('M10 (4) bound removed', E, 'if records > MAX_ATTRIBUTE_RECORDS {', 'if records > usize::MAX - 1 {'),
  ('M11 attribute exactness dropped', E, '&& (s.bound == Bound::AtMostOnce || s.records.len() as u64 == count) =>', '=>'),
  ('M12 attribute converse loop dropped', E, '''    for s in &shown {

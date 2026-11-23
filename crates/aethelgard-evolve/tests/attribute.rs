@@ -1511,10 +1511,13 @@ fn every_kind_of_failing_event_the_verdict_omits_is_refused_or_unexplained() {
             Box::new(|r| replace(r, is_check, check("ok", 0x61))),
             Some("i2c_identity_mismatch"),
         ),
+        // A short, whole witness that differs: the judge names it (or a
+        // cut `[ERROR]` line's `step_error`), so it is refused jointly
+        // (`AET-WO-2312` adversarial F2).
         (
             "unwitnessed",
             Box::new(|r| replace(r, is_witness, witness(Some(&["Write D1", "Read 60"])))),
-            None,
+            Some("i2c witness"),
         ),
         (
             "register",
@@ -1534,6 +1537,10 @@ fn every_kind_of_failing_event_the_verdict_omits_is_refused_or_unexplained() {
     for (name, edit, kind) in cases {
         let mut r = healthy();
         edit(&mut r);
+        if let Some("i2c witness") = kind {
+            assert_eq!(refused(&r), I2C_WITNESSES, "{name}");
+            continue;
+        }
         if let Some(kind) = kind {
             assert_eq!(refused(&r), refusal(kind), "{name}");
             continue;
@@ -1933,9 +1940,33 @@ fn observe(r: &mut [Record], reference: &str, lines: &[&str]) {
     r[i] = with;
 }
 
+/// The joint witness refusal (`AET-WO-2312` adversarial F1-F3).
+const I2C_WITNESSES: &str =
+    "the verdict's i2c witness findings do not reach the I2C witnesses that show one";
+
+/// `records` with its verdict naming each witness that differs from the
+/// model's, as the judge names it (`campaign::shown`'s unwitnessed records),
+/// when the verdict passes: the view tests read a witness's fields, and
+/// replay refuses a differing witness left unnamed (`AET-WO-2312` F2).
+fn named_witnesses(records: &[Record]) -> Vec<Record> {
+    let mut r = records.to_vec();
+    let n = campaign::shown(&r)
+        .into_iter()
+        .find(|s| s.kind == "i2c_transaction_unwitnessed")
+        .map_or(0, |s| s.records.len() as u64);
+    if n > 0 && matches!(r.last(), Some(Record::Verdict { pass: true, .. })) {
+        replace(
+            &mut r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", n)]),
+        );
+    }
+    r
+}
+
 /// The fields `attribute`'s view gives witness `index`.
 fn fields_of(records: &[Record], index: usize) -> Vec<(String, u32, u64, Option<u64>, bool)> {
-    let run = archived(records);
+    let run = archived(&named_witnesses(records));
     let e = aethelgard_evolve::EventRef {
         index: index as u64,
         kind: 13,
@@ -2504,6 +2535,17 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
             .collect()
     };
     assert!(wrong("[NOISY] i2c1.u5: read 0x01 -> 0x50").is_empty());
+    // Its fixtures' passing verdict, a differing witness unnamed, is refused
+    // (`fields_of` names it, `AET-WO-2312` adversarial F2).
+    let r = bme_bmp(
+        |_| {},
+        [
+            &["[NOISY] i2c1.u5: read 0x01 -> 0x51"],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+            &["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"],
+        ],
+    );
+    assert_eq!(refused(&r), I2C_WITNESSES);
     assert_eq!(
         shown("[NOISY] i2c1.u5: read 0x01 -> 0x51 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00")
             .into_iter()
@@ -2688,12 +2730,22 @@ fn a_candidate_that_cannot_be_told_names_no_step() {
             *observed = Some(vec!["[ERROR] i2c1.u6: bus error".to_owned()]);
         }
         observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+        // U6's step logged an `[ERROR]`: the judge names it
+        // `i2c_step_error`, not unwitnessed (`AET-WO-2312` adversarial F3).
         replace(
             r,
             is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 3)]),
+            verdict(&[("i2c_step_error", 1), ("i2c_transaction_unwitnessed", 2)]),
         );
     });
+    // The fixture's old verdict, three unwitnessed, is refused by it.
+    let mut old = r.clone();
+    replace(
+        &mut old,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 3)]),
+    );
+    assert_eq!(refused(&old), refusal("i2c_step_error"));
     let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
         .into_iter()
         .filter(|f| f.4)
