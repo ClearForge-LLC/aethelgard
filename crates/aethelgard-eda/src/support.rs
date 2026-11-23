@@ -1031,6 +1031,8 @@ fn motor_pulls(
     for m in &spec.motor_outputs {
         let r = &m.pull.resistor;
         let reference = r.reference.as_str();
+        // belt-and-suspenders: `validate` refuses a motor pull whose part
+        // the table lacks (`PowerPartUnknown`) before any gate reads it.
         let row = table.get(&r.part).ok_or_else(|| {
             format!(
                 "{}'s pull-down {reference} names `{}`, which the power parts table lacks",

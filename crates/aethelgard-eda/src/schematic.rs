@@ -1651,8 +1651,8 @@ pub(crate) fn design(
 /// its `to` (`GND`, held there by `validate`'s `MotorPullNotDown`), drawn as
 /// a pin device's signal pull is, valued `<ohms> <part>` with its
 /// power-parts row's symbol and footprint. It is placed as that pull is,
-/// unanchored: beside the one IC on its net, the MCU, at the motor pin's
-/// pad. Drawn after every other part, so no other part's reference or
+/// unanchored: beside the one IC on its net, the MCU, its target the motor
+/// pin's pad (5-11 mm from it on the seven drawn boards, measured). Drawn after every other part, so no other part's reference or
 /// schematic position moves.
 fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
     let spec = b.spec;
