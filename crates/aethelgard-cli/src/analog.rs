@@ -1353,17 +1353,20 @@ mod tests {
             loaded.replace(library, "libngspice.so.0"),
             loaded.replace(library, "/nonexistent/libngspice.so.0"),
             loaded.replace(library, "/tmp"),
+            // The same regular file, by a path that is not canonical (`..`:
+            // `Path` equality ignores a `.` component, never a `..`).
             loaded.replace(
                 library,
                 &format!(
-                    "{}/../{}",
+                    "{}/../{}/{}",
                     file.parent().unwrap().display(),
                     file.parent()
                         .unwrap()
                         .file_name()
                         .unwrap()
                         .to_str()
-                        .unwrap()
+                        .unwrap(),
+                    file.file_name().unwrap().to_str().unwrap()
                 ),
             ),
             String::new(),

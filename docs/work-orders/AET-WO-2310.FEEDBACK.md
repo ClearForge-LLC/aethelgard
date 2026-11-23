@@ -92,7 +92,8 @@ The committed scenarios use the stop's measured offsets (`spike/2310/results.md`
   - tier 2: the deck test;
   - bridge: the six-field identity.
 - **Mutants** (`spike/2310/sh/mutants.py`, `out/mutants.txt`): 22 at first, one per guard; four repointed after the reduction pass (§7). Each is killed by its guard's own test.
-  - A harness flaw was found and fixed: the CLI unit suite carries six held `verify.rs` failures (§8 Q-H), so a CLI-unit mutant read as killed whatever happened. Those mutants now run with `--skip verify::`, and each kill is read from the failing test's name.
+  - **A harness flaw, found and fixed.** The CLI unit suite carries six held `verify.rs` failures (§8 Q-H), so a CLI-unit mutant read as killed whatever happened. Those mutants now run with `--skip verify::` (`out/mutants-2.txt`).
+  - **The rerun showed the first pass overstated one:** `library-canonical` survived. The test's non-canonical case was a directory, which the regular-file clause refuses anyway. It now has a `..` path to the same regular file (a `.` path would not do: `Path` equality ignores `.`). The test passes unmutated and kills the mutant. **So: 23 mutants, 23 killed by their own tests, one of them only after that test was fixed.**
 
 ## 5. Adversarial pass (§5, full)
 
