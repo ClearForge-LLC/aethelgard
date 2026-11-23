@@ -706,7 +706,7 @@ fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     };
     let (written, read) = match (verb, arrow) {
         ("write", "<-") => ([&[pointer], &bytes[..]].concat(), None),
-        ("read", "->") if !bytes.is_empty() => (vec![pointer], Some(bytes)),
+        ("read", "->") => (vec![pointer], Some(bytes)),
         _ => return None,
     };
     // Whole or not at all: a line whose bytes do not fit says nothing.
