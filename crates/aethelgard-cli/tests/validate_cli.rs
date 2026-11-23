@@ -302,7 +302,8 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
     refused(
         &v,
         "SPI2.CFG1",
-        "acknowledge_unwitnessed[30].fields",
+        // `AET-WO-4240e` Q8 added one entry before it: the 32nd.
+        "acknowledge_unwitnessed[31].fields",
         "`MBR` of register `SPI2.CFG1`",
     );
     // No ledger at all: the console's pin taken by the flash's chip select.

@@ -305,6 +305,22 @@ pub struct SolvedClock {
         skip_serializing_if = "Option::is_none"
     )]
     pub hse: Option<crate::clock::SolvedHse>,
+    /// PLL1 from the HSI across the kernel-clock selects (`AET-WO-4240e`):
+    /// present on a board with no HSE tree whose select leaves `pll1_q_ck`.
+    /// Absent otherwise, and not written then; an explicit `null` is refused.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub kernel_switch: Option<crate::clock::SolvedKernelSwitch>,
+    /// The ADCs' clock (`AET-WO-4240e`): present when an ADC is enabled.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub adc: Option<crate::clock::SolvedAdcClock>,
 }
 
 impl SolvedClock {
@@ -327,6 +343,8 @@ impl SolvedClock {
             timpre: false,
             vos: crate::vos::Vos::Scale2,
             hse: None,
+            kernel_switch: None,
+            adc: None,
         }
     }
 
@@ -471,6 +489,8 @@ impl SolvedClock {
             // (`mcu.foreign_clock.vos`, `AET-WO-4240v` D-4).
             vos,
             hse: None,
+            kernel_switch: None,
+            adc: None,
         })
     }
 }

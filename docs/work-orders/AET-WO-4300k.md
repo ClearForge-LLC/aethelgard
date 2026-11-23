@@ -32,13 +32,19 @@
 > - **(8) B2.** Sentinel-03 becomes `examples/sentinel-03.json` (`git mv`; the paths that name it follow). It gets `fab/sentinel-03/package/` by dispatch, a `BENCH.md` bound to `MANIFEST.json`'s ELF hash (`3308`'s binding), and a CI `--against-fab` step beside `ci.yml:569-571`.
 > - **Each refusal comes with a test, and each test with a mutant it kills.**
 >
-> - **(9) The flash's supply floor against the reset threshold (ruled by Scotty, 2026-11-23: build both).** DS12117 Rev 10 Table 16 (p. 107, read by the architect): `VBOR3` falling 2.54 / 2.61 / 2.68 V (min / typ / max), rising 2.63 / 2.70 / 2.78 V. So with BOR level 3 the MCU can run at 2.54 V, while W25Q64JV's floor is 2.7 V (cite its page). The PVD cannot close the gap: `VPVD6` falling in Run mode is 2.69 / 2.76 / 2.83 V, whose minimum is under 2.7 V.
+> - **(9) The flash's supply floor against the reset threshold (ruled by Scotty, 2026-11-23: build both; Sentinel-03 takes Path B, Scotty agreeing the same evening).** DS12117 Rev 10 Table 16 (p. 107, read by the architect): `VBOR3` falling 2.54 / 2.61 / 2.68 V (min / typ / max), rising 2.63 / 2.70 / 2.78 V. So with BOR level 3 the MCU can run at 2.54 V, while W25Q64JV's floor is 2.7 V (cite its page). The PVD cannot close the gap: `VPVD6` falling in Run mode is 2.69 / 2.76 / 2.83 V, whose minimum is under 2.7 V.
 >   - **The rule, independent** (`RUL-20` (1)): every supply-bounded device on a rail the reset supervises has its VCC minimum at or below the reset's falling-threshold minimum: the BOR level's from DS12117 Table 16, or a declared external supervisor's. Refused by name otherwise, naming both numbers and their pages.
 >   - **Path A, preferred:** a wide-range flash whose VCC minimum sits below `VBOR3`'s 2.54 V (a candidate is Macronix MX25R6435F, 1.65–3.6 V by its distributors' listings; Scotty sources it, and its datasheet is held before it is declared). Sentinel-03 takes it, and passes with no supervisor.
 >   - **Path B, the checked alternative, not a bypass:** a 2.7 V-floor part is accepted only with a declared external voltage supervisor on `NRST`, from a held datasheet: its falling-threshold minimum at or above the device's VCC minimum, and its rising-threshold maximum below the rail's regulated minimum (so it never resets a healthy board). A fixture exercises it.
 >   - **Tests:** the wide-range part passes at BOR3; W25Q64JV with no supervisor is refused; with a conforming supervisor it passes; a supervisor whose threshold sits under 2.7 V, or above the rail's minimum, is refused.
 >
-> **Still for Scotty, not decided here:** no reverse-polarity protection or fuse (cite at source). The gate lists it as an unacknowledged condition until he rules.
+>   - **Sentinel-03 declares Path B:** it keeps W25Q64JV and adds a TI **TLV803S** supervisor on `NRST` (held: `~/.cache/aet-held/ti-tlv803-sbvs157.pdf`, SBVS157E, sha256 `1645cfe1…`; LCSC C702125). Falling threshold 2.87 / 2.93 / 2.99 V and 40 mV hysteresis (cite the table and page), so it trips above the flash's 2.7 V and releases below the 3.3 V rail's regulated minimum. Its output is open-drain, which suits the STM32's bidirectional `NRST`; its pull-up is drawn. Path A (a wide-range flash such as GigaDevice GD25WQ64E, 1.65–3.6 V) stays supported by the rule and its tests, for a later board.
+> - **(10) Input protection (ruled by Scotty, 2026-11-23: the architect's recommendation).**
+>   - **Measure first:** whether the ESCs' battery current flows through Sentinel-03's copper, or only the flight controller's own supply branch does. Protect only that branch: a fuse in the motor path can cut power in flight, which is worse than the fault it guards against.
+>   - **Reverse polarity:** a P-channel MOSFET in the supply branch, its gate held by a resistor and a zener that keep `VGS` inside its rating at 4S (17.4 V maximum, `cells.max` 4 × 4350 mV). It drops almost nothing forward and blows nothing reversed.
+>   - **Fuse:** a fast-blow SMD fuse at about twice the branch's maximum input current, by the power tree's own numbers.
+>   - **Parts:** propose candidates at the stop; each is declared only from a held datasheet (ask for it on the bus; the architect fetches it). The IR judges them like any power part: `VDS`, `VGS` and current against the doubled 4S pack and the branch's current, each bound cited.
+>   - **Tests:** a reversed input is refused for want of protection; the drawn FET and fuse are judged; a fuse on a branch that carries motor current is refused by name.
 
 ## 1. Build
 
@@ -50,7 +56,7 @@
    - AN2867 Rev 25's gain margin, CL and ESR, by page, against the ABM8AIG row, and every place Rev 25 differs from Rev 10's text in `clock.rs`;
    - which fabricator can source every bound;
    - which bytes move, by board. **Predicted:** Sentinel-03's topology and board; every committed specification's version literal; `fab/sentinel-01-bench/package/MANIFEST.json`'s hash lines (the ELF: measure); no file `ORDERED.sha256` lists; no other board's pin or copper.
-2. **Stop with the measurement and these decisions:** (a) the thermal copper, measured or pours drawn; (b) the fabricator, and how its single source is declared; (c) how Sentinel-01's `--against-fab` stays byte-identical under the new precondition without back-filling it; (d) the gate's key list and condition ids; (e) (9)'s flash part (held or not yet) and Scotty's remaining question.
+2. **Stop with the measurement and these decisions:** (a) the thermal copper, measured or pours drawn; (b) the fabricator, and how its single source is declared; (c) how Sentinel-01's `--against-fab` stays byte-identical under the new precondition without back-filling it; (d) the gate's key list and condition ids; (e) (10)'s current path, and the FET and fuse candidates whose datasheets you need held.
 3. **Build (1)–(7) to the ruling,** with goldens and scenarios moved by their generators.
 4. **(8):** promote the specification, request the dispatch, commit the package byte for byte, and add `BENCH.md` and the CI step. Measure the step's CI time.
 5. **Re-run the review's mutations** (A13's five, J4 rotated): each is refused by name.
@@ -59,14 +65,14 @@
 
 - **`verify --fab-out` writes `fab/sentinel-03/package/` from `examples/sentinel-03.json`** with every clause met. It refuses a deleted gate key, a hwdef refusal, and an unacknowledged condition, each with its test.
 - **J4 opens off the board** by its table fact. Every connector and power-in row states its mating side with a page. A planted wrong rotation is refused.
-- **4S, the crystal, A6, A13 and (9)** each hold with their tests. A copy with `cells.max` 6 is refused for want of a clamp.
+- **4S, the crystal, A6, A13, (9) and (10)** each hold with their tests. A copy with `cells.max` 6 is refused for want of a clamp.
 - **No committed board other than Sentinel-03 moves a pin.** `ORDERED.sha256`'s test stays green.
 - **The CLAUDE.md gates pass, and CI is green.**
 
 ## 3. Fences
 
 - **Fence:** `crates/aethelgard-ir` (power, connectors, `clock.rs`'s citation, validate, versions, held data, README, tests); `crates/aethelgard-eda` (connector placement, the mating fact, the thermal measure or pours); `cli/src/verify.rs` (the precondition), and the tests and scenarios that name Sentinel-03; `examples/sentinel-03.json`; `fab/sentinel-03/` and `fab/sentinel-01-bench/package/MANIFEST.json`'s hash lines, by dispatch only; `ci.yml`'s one new step; `spike/4300k/` and FEEDBACK.
-- **Not:** hwdef and pincheck (`4410`'s); svd-hal (Sentinel-03's firmware moves by its generator only); the twin, chaos; the ran-or-not table (`1609`); the clamp, the TVS, 6S (L1123); an input-protection design; anything above `ORDERED.sha256`'s first ruling block; roadmap L1022's sentence (the architect's edit: FEEDBACK only).
+- **Not:** hwdef and pincheck (`4410`'s); svd-hal (Sentinel-03's firmware moves by its generator only); the twin, chaos; the ran-or-not table (`1609`); the clamp, the TVS, 6S (L1123); anything above `ORDERED.sha256`'s first ruling block; roadmap L1022's sentence (the architect's edit: FEEDBACK only).
 - **Running beside you:** the backlog in roadmap §5. Merge `main` before READY.
 - One PR, left unmerged. Write `~/.cache/aet-4300k/pr-title-body.md`.
 

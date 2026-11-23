@@ -286,7 +286,10 @@ fn the_reference_rows_carry_the_solved_values() {
     // §8.5.10 step c), 1 once a D2 peripheral is enabled.
     let d2 = rows
         .iter()
-        .find(|r| r.id() == "RCC.CR.D2CKRDY")
+        // `AET-WO-4240e`: the kernel-clock switch writes `RCC_CR` whole, so the
+        // read-only flag also has a written row (0); the dependency is the
+        // reset row's.
+        .find(|r| r.id() == "RCC.CR.D2CKRDY" && r.access == FieldAccess::Reset)
         .expect("RCC.CR.D2CKRDY");
     assert_eq!(
         (d2.access, d2.value, d2.pos, d2.width, d2.offset),

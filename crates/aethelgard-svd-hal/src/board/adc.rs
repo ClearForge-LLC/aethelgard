@@ -61,7 +61,8 @@ pub(super) const CONVERSION_POLLS: u32 = 2 * 81_925 * 8 / 100;
 /// `ADC_SMPRx.SMPy` `111`: 810.5 ADC cycles (RM0433 Rev 9 pp. 1019–1020).
 const SMP_LONGEST: u32 = 0b111;
 /// `ADCx_CCR.CKMODE` `11`: adc_sclk / 4 (RM0433 Rev 9 p. 1039).
-const CKMODE_SCLK_DIV4: u32 = 0b11;
+/// The topology's `clock.adc.ckmode` must equal it (`AET-WO-4240e`).
+pub(super) const CKMODE_SCLK_DIV4: u32 = 0b11;
 /// `ADC_CR.BOOST` `01` (bit 8 alone).
 const BOOST_01: u32 = 0b01;
 /// The most inputs one ADC converts at bring-up: `SQ1`–`SQ4`, all in

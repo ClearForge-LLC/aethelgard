@@ -892,7 +892,15 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
         // whose `pll1_q_ck` or APB clock the selects give at reset.
         ", &clock"
     } else {
-        s.push_str("    let kernels = rcc.select_spi_kernels(&mut r, &clock);\n");
+        s.push_str(if plan.switch.is_some() {
+            SELECT_WITH_SWITCH
+        } else {
+            "    let Ok(kernels) = rcc.select_spi_kernels(&mut r, &clock, 0) else {\n        \
+             loop {\n            \
+             core::hint::spin_loop();\n        \
+             }\n    \
+             };\n"
+        });
         ", &kernels"
     };
     for port in &plan.ports {
@@ -1198,7 +1206,19 @@ fn main_rs(plan: &Plan, speeds: &Speeds, reads: &[Read]) -> String {
 /// copies, and the three waits' bounds in reads, at HSI's fastest.
 fn hse_consts(plan: &Plan) -> String {
     let Some(h) = &plan.hse else {
-        return String::new();
+        return plan.switch.as_ref().map_or_else(String::new, |k| {
+            format!(
+                "/// What the kernel-clock switch writes instead when PLL1 does not lock\n\
+                 /// (AET-WO-4240e): the judge's `aethelgard_twin::boot` word, as on an HSE board.\n\
+                 const BOOT_PLL1_NOT_LOCKED: u32 = {BOOT_PLL1_NOT_LOCKED:#010x};\n\
+                 /// The reads of `RCC_CR` the switch's `PLL1RDY` wait makes: {lock} us (DS12117\n\
+                 /// Rev 10 Table 39) at HSI's fastest.\n\
+                 const PLL_POLLS: u32 = {pll};\n\
+                 \n",
+                pll = k.pll_polls,
+                lock = super::PLL_LOCK_US,
+            )
+        });
     };
     format!(
         "/// What the clock bring-up's faults and the CSS NMI write instead (AET-WO-4240b):\n\
@@ -1262,6 +1282,20 @@ const NMI_HANDLER: &str = "/// The CSS NMI (AET-WO-4240b): the HSE failed, so th
      css_hold(&mut unsafe { Mmio::new() })\n\
      }\n\
      \n";
+
+/// The kernel-clock selection with the switch's PLL1 (`AET-WO-4240e` D6): a
+/// lock that does not come writes its boot word and parks, nothing written
+/// after it.
+const SELECT_WITH_SWITCH: &str = "    // PLL1 from the HSI across the selects, then stopped (AET-WO-4240e). A lock\n    \
+     // that does not come writes its own boot word and parks.\n    \
+     let Ok(kernels) = rcc.select_spi_kernels(&mut r, &clock, PLL_POLLS) else {\n        \
+     // SAFETY: the boot word, in RAM the linker script placed; the fixed point\n        \
+     // below, which writes it otherwise, is never reached.\n        \
+     unsafe { (&raw mut AETHELGARD_BOOT).cast::<u32>().write_volatile(BOOT_PLL1_NOT_LOCKED) };\n        \
+     loop {\n            \
+     core::hint::spin_loop();\n        \
+     }\n    \
+     };\n";
 
 /// The reset-clock check, first in the bring-up (`AET-WO-4230` D6).
 const CLOCK_CHECK: &str = "    // Every value below was solved for the reset clock: read it before any write\n    \
