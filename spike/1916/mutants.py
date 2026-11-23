@@ -5,17 +5,20 @@ Runs in a `git archive` copy of the commit (`tree`). Each mutant is one exact re
 run, then restored from the pristine bytes before the next. `host` mutants run `cargo test` on the host (tier 1);
 `image` mutants run in the pinned image through ~/.cache/aet-1916/img.sh and t2.sh (tier 2, `--features with-tools`).
 A mutant is KILLED only when its named test fails and the failure names the expected assertion message; any other
-outcome is reported as it is. `PRISTINE` runs each binary unmutated first: it must pass.
+outcome is reported as it is. (The exit status is not the judge: t2.sh exits 0 whatever its tests do.) `PRISTINE` runs
+each binary unmutated first: it must pass.
 
-Usage: mutants.py <tree> <log dir> [ID...]
+Usage: mutants.py <tree> <log dir> [ID...]      run
+       mutants.py --judge <log dir>             judge the logs a run left, without running
 """
 import os
 import re
 import subprocess
 import sys
 
-tree, logs = sys.argv[1:3]
-only = set(sys.argv[3:])
+if sys.argv[1] != "--judge":
+    tree, logs = sys.argv[1:3]
+    only = set(sys.argv[3:])
 KIT = os.path.expanduser("~/.cache/aet-1916")
 CLI = "crates/aethelgard-cli"
 
@@ -40,6 +43,14 @@ MUTANTS = [
     ("MB4", f"{CLI}/src/verify.rs",
      '            state_sequence_hash: text("state_sequence_hash"),',
      '            state_sequence_hash: text("run_id"),',
+     *V2K2[:2], "verify_binds_the_reference_and_two_runs_print_the_same_bytes",
+     "verify's state hash is the one campaign gives the ELF directly"),
+    # MB4 is caught by verify's own attribute binding (BindingMismatch) before the test's direct comparison: the
+    # wrong reason. MB4b moves only the reported state hash of a run no attribute gate re-reads.
+    ("MB4b", f"{CLI}/src/verify.rs",
+     '    report.campaign = Some(out);',
+     '    report.campaign = Some(out.into_iter().map(|mut r| { if r.scenario == "pullup-3k3" '
+     '{ r.state_sequence_hash = r.run_id.clone(); } r }).collect());',
      *V2K2[:2], "verify_binds_the_reference_and_two_runs_print_the_same_bytes",
      "verify's state hash is the one campaign gives the ELF directly"),
     ("MB5", f"{CLI}/src/verify.rs",
@@ -72,6 +83,7 @@ MUTANTS = [
      "host", "cli_backlog_tier1", "the_drc_and_support_verdicts_carry_the_banner_of_their_spec",
      "the_drc_and_support_verdicts_carry_the_banner_of_their_spec"),
     ("MF3", f"{CLI}/src/main.rs",
+     '    // Pinned as `check drc` and `check erc` are (`AET-WO-1607` (1), `1311` F4).\n'
      '    let version = kicad::pinned(version(invocation(\n        run::args(["version"]),\n        "status-version",\n    ))?)?;',
      '    let version = version(invocation(run::args(["version"]), "status-version"))?;',
      "host", "cli_backlog_tier1", "check_support_runs_only_the_pinned_kicad",
@@ -124,13 +136,34 @@ def main():
             code, text = run(where, binary, test, f"{logs}/{mid}.log")
         finally:
             open(full, "w").write(src)
-        failed = re.findall(r"^test (\S+) \.\.\. FAILED$", text, re.M)
-        killed = code != 0 and test in failed and message in text
-        results.append(f"{mid}: {'KILLED' if killed else 'SURVIVED or wrong reason'} by {test} "
-                       f"(exit {code}; failed {failed}; message {'found' if message in text else 'MISSING'})")
+        results.append(judge(mid, test, message, text))
         print(results[-1], flush=True)
     open(f"{logs}/result.txt", "w").write("\n".join(results) + "\n")
 
 
+def judge(mid, test, message, text):
+    failed = sorted(set(re.findall(r"^test (\S+) \.\.\. FAILED$", text, re.M)))
+    killed = test in failed and message in text
+    return (f"{mid}: {'KILLED' if killed else 'SURVIVED or wrong reason'} by {test} "
+            f"(failed {failed}; message {'found' if message in text else 'MISSING'})")
+
+
+def rejudge(logs):
+    out = []
+    for mid, _, _, _, where, binary, test, message in MUTANTS:
+        log = f"{logs}/{mid}.log"
+        if not os.path.exists(log):
+            continue
+        text = open(log, errors="replace").read()
+        inner = f"{KIT}/t2/{mid}.log"
+        if where == "image" and os.path.exists(inner):
+            text += open(inner, errors="replace").read()
+        out.append(judge(mid, test, message, text))
+    print("\n".join(out))
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1] == "--judge":
+        rejudge(sys.argv[2])
+    else:
+        main()

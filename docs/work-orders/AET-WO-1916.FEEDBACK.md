@@ -1,15 +1,170 @@
-# AET-WO-1916 — FEEDBACK: CI's fourth refit, STOPPED at §7 (the rule cannot be met by rows, splits or shares)
+# AET-WO-1916 — FEEDBACK: CI's fourth refit, built to the ruling of 2026-11-23 06:35Z (after the §7 STOP)
 
-**Status: STOPPED at §7's first condition, before the build.**
-- Nothing outside `spike/1916/` and this file changes. No row, test, `ci/` file, crate or workflow is touched, so no `fab/` byte
-  can move.
-- One PR, as the record, left unmerged.
+**Status: READY FOR REVIEW at this PR's last push.** One PR, left unmerged.
+- The measurement STOPPED the work order at §7 (`bc0f63e9`; its record is kept below).
+- The architect ruled D1–D6 on the bus at 06:35Z, and this PR builds that ruling.
+- One deviation, D2 (ii), was flagged on the bus before it was built (below). {{RULING-ON-DEVIATION}}
 
-**Base:** `main` `aaad1555`. **Branch:** `wo/aet-1916-ci-refit`.
-**Predictions:** `spike/1916/predictions.md`, committed at `33405d92` before the two newest `main` runs were read.
-**The measurement:** `spike/1916/measurement.md`.
+**Base:** `main` `aaad1555`. `main` was merged twice: `057e7d8b` (1915) and `7fbe5d11` (4300i, with docs).
+**Branch:** `wo/aet-1916-ci-refit`.
+**Predictions:** `spike/1916/predictions.md` (`33405d92`). **The measurement:** `spike/1916/measurement.md`.
+**Fence:**
+- `ci/` (`shard.sh`'s REFIT RULE and `LOCKED`, `test-weights.tsv`, `colocate.tsv`);
+- `verify_2k2_tier2.rs`, `cli_backlog_tier1.rs` and `with_tools.rs` (D2 (ii), flagged);
+- `spike/1916/`;
+- this file.
+
+Not touched: any `src/`, any workflow, `ci/SHARDS`, `fab/`, and every `2310` file (`campaign_tier1/2`, `twin_tier2`,
+`board_tier2`, `fab_tier1`, `verify.rs`'s tests), whose rows alone moved, as ruled.
 
 ## Answer first
+
+1. **D1, the REFIT RULE's spread clause, is rewritten** in `ci/shard.sh`, the one place that states it.
+   - The new clause: over three runs of one plan, a shard's mean of ln(step / the run's median step) passes ln 1.25.
+   - Its model figures sit beside it. On noise alone it fires with P 0.06–0.09. It catches a shard 20 % heavy with P 0.30–0.33,
+     30 % heavy with P 0.61, and 40 % heavy with P 0.84–0.85.
+   - The 20-minute clause is kept.
+   - `spike/1916/measure.py clause` applies it to held runs. On `main`'s last three runs of one plan it reads ×1.19 at most
+     (shard 8), so it does not fire.
+   - `docs/roadmap.md:857` paraphrases the old clause. That file is protected, so the row is here (F6).
+2. **D2 (i), `1909` B, is built.**
+   - `verify_2k2_tier2`'s two tests read one shared pair of runs, made once: `verify` of the reference with the seeded set,
+     `--against` the committed tree and `--fab-out` at two paths. That is 4 verifies → 2.
+   - `verify_binds…` asserts the seeded run whole, at equal or greater strength:
+     - every gate, in order (now with the two `attribute` gates);
+     - which faults are attributed, in order;
+     - each `attribute` gate's absent uid boundary;
+     - all five campaign runs, in `SEEDED`'s order, each with its verdict, `expect` and `matched`;
+     - every run's id and state hash against `campaign` run directly on the same ELF. The original checked one run.
+   - `verify_fab_out…` keeps every assertion. Its manifest is checked against its own run's line, which carries `against`
+     (B as ruled). Its BOM is compared with the `--against` tree's, which `emit` wrote, instead of a second `emit`.
+   - On Furnace the binary went from 571 s (1909's two unshared tests) to 280 s. On CI the block is 566.42 s on one shard,
+     against 537 + 458 s on two.
+3. **D2 (ii), the LP1 guard: built otherwise than ruled, flagged first.**
+   - The ruled path, a stub `kicad-cli` on a tool-less tier-1 run, cannot see LP1. `verify` prints the report that carries
+     `against` only from `conclude`, after every gate has run. Every halt after `--against` is a `Refusal` with no report:
+     `gate`'s 2–5 arm (`verify.rs:556`), `mismatch` (`:481`) and `stopped`.
+   - Built instead: `with_tools`' `a_board_not_drawn_runs_its_gates_and_is_never_verified` now also runs `--against` the tree
+     `generate` writes, with no fab flag, and asserts `against: "identical"` and no `fab` key.
+     - It reaches `conclude` (exit 7). Its other assertions stand, because `--against` changes no gate input (`1909`'s
+       independence argument).
+     - The cost is one `generate`.
+   - The LP1 mutant ML1 is killed there.
+4. **D2, `1607` F-L, is built.**
+   - `cli_backlog_tier1`'s `check support`, `emit` and `drc`/support tests share one `emit` per specification (`Shared`,
+     three cells): 7 emits → 3.
+   - The binary is one colocated block of 52.75 s on CI.
+5. **Every share and rewritten assertion has a mutant, and every mutant is killed at its own assertion** (below): 11 of 11 (MB1–MB3, MB4b, MB5, MB6, ML1, MF1–MF3), each failing its named test with that assertion's message; MB4 was caught by `verify` itself first and was replaced by MB4b.
+6. **D6: the stale Furnace-estimate rows are re-weighed from CI's own timings.**
+   - The six still-estimated rows come from a throwaway alone pass (REFIT RULE 1, run 45126254602, reverted at `5d257694`),
+     taking the worse of two runners. `with_tools`' CPU-heavy test takes its worst in-shard time (rule 5).
+   - `campaign_tier2`'s block (it carried `1211c`'s estimate) takes its worst `finished in` over nine runs.
+   - The two new blocks take their first CI run's `finished in`.
+7. **D3: no `four_layer` split. D4: no shard-count change** (`ci/SHARDS` stays 12). **D5:** setup's share is the architect's
+   backlog row.
+8. **Gates and CI:** {{GATES-CI}}
+
+## The build
+
+| ruling | what changed | where |
+|---|---|---|
+| D1 | the REFIT RULE's spread clause becomes the persistent-shard clause, with its model figures; the 20-minute clause kept | `ci/shard.sh:47-53` |
+| D2 (i) | one shared pair of seeded `verify --against --fab-out` runs; `verify_binds…` asserts the seeded run whole; `ONE_AT_A_TIME` and the `Flag` enum removed; the binary a colocated block, out of `LOCKED` (colocated binaries are exempt) and out of REFIT RULE 5's lock list | `verify_2k2_tier2.rs`, `ci/colocate.tsv`, `ci/shard.sh` |
+| D2 (ii) | LP1 guard: `--against generate's tree` on the board-not-drawn `verify` | `with_tools.rs` |
+| D2, F-L | one `emit` per specification, shared; the binary a colocated block | `cli_backlog_tier1.rs`, `ci/colocate.tsv` |
+| D6 | rows re-weighed from CI, below | `ci/test-weights.tsv`, `ci/colocate.tsv` |
+
+**D6's rows**, all from run 45126254602 (head `9c7c6cb8`, the throwaway, reverted) unless named:
+
+| row | was | now | from |
+|---|---|---|---|
+| `board_tier2` `d1_s_pin_device_generates_builds_and_proves` | 269.332 (estimate) | 148.30 | alone, 148.30 / 127.08 |
+| `board_tier2` `build_names_the_rustc_cargo_ran` | 1.12 (estimate) | 0.37 | alone, 0.37 / 0.36 (lock-serialised binary, so it keeps a row) |
+| `fab_tier1` `a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name` | 2.6 (estimate) | 2.71 | alone, 2.71 / 2.13 |
+| `main.rs` `verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode` | 1.4 (estimate) | 1.40 | alone, 1.40 / 1.08 |
+| `bounds.rs` `the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib` | 16.2 (estimate) | 7.95 | alone, 7.95 / 7.93 |
+| `with_tools` `a_board_not_drawn_runs_its_gates_and_is_never_verified` | 345.324 (estimate) | 244.010 | worst in-shard (rule 5) over six runs, 173.7–244.0; alone 198.14 / 215.83 |
+| block `campaign_tier2` | 116 (83 + `1211c`'s 32.228 estimate) | 98 | worst `finished in` over nine runs, 56.3–97.0 |
+| block `verify_2k2_tier2` | (new; predicted 572) | 567 | 566.42, its first run |
+| block `cli_backlog_tier1` | (new; predicted 70) | 53 | 52.75, its first run |
+| `cli_backlog_tier1`'s 7 rows, `verify_2k2_tier2`'s 2 | removed | — | their binaries are blocks now |
+
+- The throwaway's runners carried five CPU models (AMD EPYC 7763, 9V45 and 9V74; Intel Xeon 6975P-C and Platinum 8573C). That
+  corroborates D1's finding that the noise is the runner's.
+
+## Mutants (`spike/1916/mutants.py`)
+
+- Each mutant is one exact edit to an archive copy of `b02332d9`, run against the test it targets. Tier 2 runs in the pinned
+  image (16 GiB, swap 0, read back), and tier 1 on the host.
+- A mutant counts as killed only when its named test fails with that assertion's message. The driver first judged by exit
+  status, but `t2.sh` exits 0 whatever its tests do. That rule is fixed, and `--judge` re-reads the logs.
+- Every binary passes unmutated (the six PRISTINE runs).
+
+| id | the defect | the guard it tests | result |
+|---|---|---|---|
+| MB1 | `verify.rs` `against` "identical" → "same" (`1909`'s Y) | `verify_binds…` "--against finds the committed tree identical" | killed |
+| MB2 | `eda/fab.rs` FAB-NOTES "plated via, drilled" → "plated via drilled" (`1909`'s X) | `verify_fab_out…` "FAB-NOTES.md states plated via, drilled 0.3 mm" | killed |
+| MB3 | the campaign's runs reported in reverse | `verify_binds…` "the campaign ran every seeded scenario, in order, each as it declares" | killed |
+| MB4 | each run's state hash recorded as its run id | (aimed at the direct-`campaign` check) | **caught for another reason**: `verify`'s own `attribute` binding refuses the run (BindingMismatch) before the test compares; replaced by MB4b |
+| MB4b | `pullup-3k3`'s reported state hash moved (no `attribute` gate re-reads it) | `verify_binds…` "verify's state hash is the one campaign gives the ELF directly" | killed (`verify_2k2_tier2.rs:361`) |
+| MB5 | `attribute` gate reports `uid_boundary: false` | `verify_binds…` "attribute reports no uid boundary" | killed |
+| MB6 | an `attribute` gate pushed first | `verify_binds…` "every gate runs, in order, and passes" | killed |
+| ML1 | LP1: `against` "same" when no fab flag is given | `with_tools` "--against with no fab flag finds generate's tree identical" | killed |
+| MF1 | `emit`'s verdict loses the banner | `the_emit_verdict_carries_the_banner…` | killed |
+| MF2 | `check support`'s verdict loses the banner | `the_drc_and_support_verdicts_carry_the_banner…` | killed |
+| MF3 | `check support` unpinned (`1607`'s M1) | `check_support_runs_only_the_pinned_kicad` | killed (`cli_backlog_tier1.rs:214`; re-anchored: its first text matched both pins in `main.rs`) |
+
+## Adversarial pass (targeted, §5)
+
+- **A split that loses a setup step.** No split was built (D3).
+  - The share's restructure was checked step by step. Every step the original runs made is still made: the committed board
+    copied, `emit` into the tree, `build`, and `campaign`.
+  - One step changed shape: `verify_fab_out…`'s second `emit`, used for the BOM, is replaced by the tree's `emit`. Same
+    command, same specification; `--against` found that tree identical.
+  - The plain `--fab-out` pass path (no `--against`) is still exercised by `against_fab_tier2`'s and `four_layer_fab_tier2`'s
+    shared packages.
+- **A shared run that hides one test's failure behind the other's.**
+  - Each test checks the shared runs' exit codes itself; the maker records them but asserts none.
+  - Poison (A2): the NRND `emit` was made to fail in `cli_backlog_tier1`. Its three readers all failed at once, each naming
+    its own property and "the shared run `emit of the NRND reference` failed once". No hang, and the other six tests passed
+    (`~/.cache/aet-1916/adv/a2.log`). `Shared` is `1909`'s, whose poison was measured for the verify cells.
+  - Read-only (A1): after a full run of the binary, each of the three shared `emit` directories was byte-identical to a fresh
+    `emit` of its specification, so no reader writes into what the others read.
+  - Mutants: every reader still fails on its own defect (MB1–MB6, MF1–MF3), and only that reader is named.
+- **Found and fixed:** the mutant driver's verdict rule (above), and MB4's wrong reason (above).
+
+## Reduction pass
+
+Removed:
+- `verify_2k2_tier2`'s `ONE_AT_A_TIME`, the `Flag` enum, the per-test `two_runs`, one `emit` per run, and two verifies;
+- four `emit` calls in `cli_backlog_tier1`;
+- `verify_2k2_tier2` from `LOCKED`;
+- nine rows.
+
+The REFIT RULE's text grew by five lines, because the ruling asks for the model figures beside the clause. Nothing labelled
+`belt-and-suspenders:` was touched. `spike/1916/` is the work order's record.
+
+## Gates and CI
+
+{{GATES-CI-DETAIL}}
+
+## Findings for the architect
+
+- **F1** (D2 (ii)): the ruled LP1 path cannot exist, as measured from source (above). The guard is built in `with_tools.rs`,
+  outside the named fence, and was flagged first. {{RULING-ON-DEVIATION}}
+- **F2:** each share's directory outlives its process: statics are never dropped (`1909`'s note, now also for three `emit`s
+  of about 1 MB each, in `TMPDIR`).
+- **F3** (MB4): a state hash that disagrees with the archive is refused by `verify` itself, before any test can see it. That
+  is a defence, not a gap, and it is why MB4b targets a run no `attribute` gate re-reads.
+- **F4:** shard 8 reads ×1.19 over `main`'s last three runs of the old plan, near the new clause's ×1.25. The old plan's
+  shard 8 held `against_fab_tier2` and `escape_tier1`. This PR's rows change the plan, so the count restarts. Watch it.
+- **F5:** one CI run is thin ground for a new block (`verify_2k2_tier2` 566.42, `cli_backlog_tier1` 52.75). The next refit
+  should re-weigh both, by the new clause or by rule 3.
+- **F6** (protected file): `docs/roadmap.md:857` still states the old "spread past 6 minutes twice" clause.
+
+## Record: the measurement and the STOP (`bc0f63e9`)
+
+### Answer first
 
 1. **The REFIT RULE fired again on `main`, on the two runs this work order waited for.**
    - The spreads were 7.1 min (45117816997, `c7a62975`) and 6.7 min (45118544871, `aaad1555`).
@@ -34,7 +189,7 @@
    - The claim the stop rests on is measured directly instead: the 72–89 % share in (2).
 5. **Two of the build's own steps need rulings anyway** (D2): `1909` B's run no longer has one scenario, and LP1 has no guard.
 
-## The plan: decisions for the architect
+### The plan: decisions for the architect
 
 **D1, the spread clause (lean: (a)).** The rule's 6 minutes is an absolute line. The noise it reads scales with the mean step,
 so on noise alone the rule fires (two in a row over 6 min) with P 0.49–0.57.
@@ -104,7 +259,7 @@ The REFIT RULE's text is in `ci/shard.sh`, outside this fence's listed files. Re
   - `cli_backlog_tier1`'s 92 / 47 / 45 rows run 45–65 / 20–34 / 25–30 s.
 - They are ready for a weights-only ruling. By the bound in (2), none of them moves the spread.
 
-## What was done
+### What was done
 
 - **Held runs:**
   - five `main` runs: 45105438499, 45111449629, 45111922226, 45117816997 and 45118544871;
@@ -134,7 +289,7 @@ The REFIT RULE's text is in `ci/shard.sh`, outside this fence's listed files. Re
   is kept. It is the evidence that `board_tier2`'s and `twin_tier2`'s per-test P3 times are lock queue time (`1913`'s lesson),
   so they are not rows to raise.
 
-## Findings for the architect
+### Findings for the architect
 
 - **F1** (D1): the REFIT RULE's spread clause fires on runner noise about every other pair of runs, and no refit can answer it.
 - **F2** (D2 (i)): `1909` B's premise, one scenario for both tests, was overtaken by `3303` D1's seeded set.
