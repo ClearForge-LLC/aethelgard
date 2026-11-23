@@ -1169,21 +1169,25 @@ mod tests {
             );
             // `AET-WO-4240v` §1.7: the PWR and FLASH.ACR acknowledgements are
             // listed first, before the brown-out row, and nothing else moves.
-            let added: String = spec
-                .acknowledge_unwitnessed
-                .iter()
-                .filter(|a| a.reason.contains("AET-WO-4240v"))
-                .map(|a| {
-                    let fields: Vec<String> = a.fields.iter().map(|f| format!("`{f}`")).collect();
-                    format!(
-                        "- `{}` ({}): {}. {}\n",
-                        a.register,
-                        a.class,
-                        fields.join(", "),
-                        a.reason
-                    )
-                })
-                .collect();
+            // Each acknowledgement a work order added, as the notes list it.
+            let added_by = |wo: &str| -> String {
+                spec.acknowledge_unwitnessed
+                    .iter()
+                    .filter(|a| a.reason.contains(wo))
+                    .map(|a| {
+                        let fields: Vec<String> =
+                            a.fields.iter().map(|f| format!("`{f}`")).collect();
+                        format!(
+                            "- `{}` ({}): {}. {}\n",
+                            a.register,
+                            a.class,
+                            fields.join(", "),
+                            a.reason
+                        )
+                    })
+                    .collect()
+            };
+            let added = added_by("AET-WO-4240v");
             let golden = golden.replacen(
                 "- `FLASH.OPTSR_CUR`",
                 &format!("{added}- `FLASH.OPTSR_CUR`"),
@@ -1191,21 +1195,7 @@ mod tests {
             );
             // `AET-WO-4240e` Q8: `RCC.CR` `PLL1RDY`'s acknowledgement, after
             // `RCC.CR`'s other entry.
-            let switch: String = spec
-                .acknowledge_unwitnessed
-                .iter()
-                .filter(|a| a.reason.contains("AET-WO-4240e"))
-                .map(|a| {
-                    let fields: Vec<String> = a.fields.iter().map(|f| format!("`{f}`")).collect();
-                    format!(
-                        "- `{}` ({}): {}. {}\n",
-                        a.register,
-                        a.class,
-                        fields.join(", "),
-                        a.reason
-                    )
-                })
-                .collect();
+            let switch = added_by("AET-WO-4240e");
             let golden: String = golden
                 .split_inclusive('\n')
                 .flat_map(|l| {

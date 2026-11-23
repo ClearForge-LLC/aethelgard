@@ -5889,12 +5889,6 @@ fn emit_hse_proof(w: &mut String, plan: &Plan, h: &HsePlan, rcc_words: u32) {
     let _ = plan;
 }
 
-// belt-and-suspenders: the oracle's places for the kernel-clock switch
-// (`AET-WO-4240e`), written from RM0433 Rev 9 (`RCC_PLLCKSELR` §8.7.11 0x028,
-// `RCC_PLLCFGR` §8.7.12 0x02C, `RCC_PLL1DIVR` §8.7.13 0x030); the code's come
-// from the header ([`HseFacts`]), so an error in either fails the proof.
-const ORACLE_RCC_SWITCH_WORDS: [u32; 3] = [0x028, 0x02C, 0x030];
-
 /// The switch's own harness (`AET-WO-4240e` D1 (a), the order's consistency
 /// judge the architect named): every write held to the contract's, in order,
 /// the PLL words being the topology's (`clock.kernel_switch`, which
@@ -5906,8 +5900,10 @@ const ORACLE_RCC_SWITCH_WORDS: [u32; 3] = [0x028, 0x02C, 0x030];
 fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32) {
     let selects = oracle_selects(plan);
     let last = selects.keys().next_back().copied().unwrap_or(0);
-    let mut expect: Vec<(u32, u32)> = ORACLE_RCC_SWITCH_WORDS
-        .into_iter()
+    let mut expect: Vec<(u32, u32)> = // The PLL words' places, the oracle's (`ORACLE_RCC_HSE_WORDS`' last three).
+    ORACLE_RCC_HSE_WORDS[2..]
+        .iter()
+        .copied()
         .zip([k.pllckselr, k.pllcfgr, k.pll1divr])
         .collect();
     // `RCC_CR`'s two writes are read-modify-writes of `PLL1ON` alone: each
