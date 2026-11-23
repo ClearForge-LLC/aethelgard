@@ -1,0 +1,76 @@
+{
+ "samples": 3,
+ "wall_s": 2.0,
+ "memory_peak_gib": 0.09,
+ "current_max_gib": 0.049,
+ "current_max_at": 2.0,
+ "anon_max_gib": 0.038,
+ "anon_max_at": 2.0,
+ "file_max_gib": 0.004,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 48.9,
+ "stops": 0,
+ "at_anon_peak": [],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 2.0,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 2.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 2.0,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 2.0
+  },
+  "prove flash_option_status_is_one_read": {
+   "first": 0.0,
+   "last": 2.0,
+   "rss_max_gib": 0.028,
+   "hwm_max_gib": 0.053,
+   "at": 2.0
+  }
+ },
+ "classes": {
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.0,
+   "phase": "prove flash_option_status_is_one_read"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "kani-driver": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 2.0,
+   "phase": "prove flash_option_status_is_one_read"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.007,
+   "at": 2.0,
+   "phase": "prove flash_option_status_is_one_read"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 2.0,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 2.1,
+ "inner_memory_peak_gib": 0.09
+}

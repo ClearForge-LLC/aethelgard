@@ -1,0 +1,110 @@
+{
+ "samples": 69,
+ "wall_s": 68.017,
+ "memory_peak_gib": 3.492,
+ "current_max_gib": 3.406,
+ "current_max_at": 67.017,
+ "anon_max_gib": 3.387,
+ "anon_max_at": 67.017,
+ "file_max_gib": 0.008,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 45.8,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_spi1",
+   "rss_gib": 3.351,
+   "hwm_gib": 3.356,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_spi1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 68.017,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 68.017
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 68.017,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 68.017
+  },
+  "prove every_valid_sequence_spi1": {
+   "first": 0.0,
+   "last": 68.017,
+   "rss_max_gib": 3.378,
+   "hwm_max_gib": 3.429,
+   "at": 67.017
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 3.351,
+   "hwm_max_gib": 3.429,
+   "at": 67.017,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cbmc": {
+   "rss_max_gib": 1.082,
+   "hwm_max_gib": 1.136,
+   "at": 52.013,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.146,
+   "hwm_max_gib": 0.256,
+   "at": 2.001,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "goto": {
+   "rss_max_gib": 0.035,
+   "hwm_max_gib": 0.125,
+   "at": 3.001,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.001,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 2.001,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 68.017,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   65.016,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 68.4,
+ "inner_memory_peak_gib": 3.492
+}

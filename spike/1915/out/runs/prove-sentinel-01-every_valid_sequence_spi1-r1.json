@@ -1,0 +1,98 @@
+{
+ "samples": 60,
+ "wall_s": 59.013,
+ "memory_peak_gib": 3.476,
+ "current_max_gib": 3.447,
+ "current_max_at": 59.013,
+ "anon_max_gib": 3.428,
+ "anon_max_at": 59.013,
+ "file_max_gib": 0.008,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 47.2,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_spi1",
+   "rss_gib": 3.39,
+   "hwm_gib": 3.423,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_spi1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 59.013,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 59.013
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 59.013,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 59.013
+  },
+  "prove every_valid_sequence_spi1": {
+   "first": 0.0,
+   "last": 59.013,
+   "rss_max_gib": 3.417,
+   "hwm_max_gib": 3.423,
+   "at": 59.013
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 3.39,
+   "hwm_max_gib": 3.423,
+   "at": 59.013,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cbmc": {
+   "rss_max_gib": 1.078,
+   "hwm_max_gib": 1.131,
+   "at": 45.01,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "goto": {
+   "rss_max_gib": 0.035,
+   "hwm_max_gib": 0.043,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 59.013,
+   "phase": "(podman)"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 59.013,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   57.012,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 59.6,
+ "inner_memory_peak_gib": 3.476
+}

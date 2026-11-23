@@ -1,0 +1,90 @@
+{
+ "samples": 27,
+ "wall_s": 26.005,
+ "memory_peak_gib": 2.037,
+ "current_max_gib": 2.037,
+ "current_max_at": 26.005,
+ "anon_max_gib": 2.021,
+ "anon_max_at": 26.005,
+ "file_max_gib": 0.007,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 47.8,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_i2c1",
+   "rss_gib": 1.984,
+   "hwm_gib": 1.989,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_i2c1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 26.005,
+   "rss_max_gib": 0.011,
+   "hwm_max_gib": 0.043,
+   "at": 0.0
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 26.005,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 26.005
+  },
+  "prove every_valid_sequence_i2c1": {
+   "first": 0.0,
+   "last": 26.005,
+   "rss_max_gib": 2.01,
+   "hwm_max_gib": 1.989,
+   "at": 26.005
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 1.984,
+   "hwm_max_gib": 1.989,
+   "at": 26.005,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.499,
+   "hwm_max_gib": 0.523,
+   "at": 18.004,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 26.005,
+   "phase": "(podman)"
+  },
+  "goto": {
+   "rss_max_gib": 0.006,
+   "hwm_max_gib": 0.013,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 26.005,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 26.6,
+ "inner_memory_peak_gib": 2.156
+}

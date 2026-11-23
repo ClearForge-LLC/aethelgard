@@ -1,0 +1,96 @@
+{
+ "samples": 28,
+ "wall_s": 27.006,
+ "memory_peak_gib": 2.227,
+ "current_max_gib": 1.766,
+ "current_max_at": 27.006,
+ "anon_max_gib": 1.731,
+ "anon_max_at": 27.006,
+ "file_max_gib": 0.008,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 48.8,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_i2c1",
+   "rss_gib": 1.657,
+   "hwm_gib": 2.178,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_i2c1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 27.006,
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 27.006
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 27.006,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 27.006
+  },
+  "prove every_valid_sequence_i2c1": {
+   "first": 0.0,
+   "last": 27.006,
+   "rss_max_gib": 1.684,
+   "hwm_max_gib": 2.178,
+   "at": 27.006
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 1.657,
+   "hwm_max_gib": 2.178,
+   "at": 27.006,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "cbmc": {
+   "rss_max_gib": 0.507,
+   "hwm_max_gib": 0.53,
+   "at": 19.004,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.129,
+   "hwm_max_gib": 0.247,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.025,
+   "hwm_max_gib": 0.053,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.043,
+   "at": 0.0,
+   "phase": "(podman)"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 2.0,
+   "phase": "prove every_valid_sequence_i2c1"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 27.006,
+   "phase": "(no gate)"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 27.2,
+ "inner_memory_peak_gib": 2.227
+}

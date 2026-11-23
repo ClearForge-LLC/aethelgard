@@ -1,0 +1,243 @@
+{
+ "samples": 316,
+ "wall_s": 315.066,
+ "memory_peak_gib": 16.0,
+ "current_max_gib": 15.155,
+ "current_max_at": 314.066,
+ "anon_max_gib": 15.106,
+ "anon_max_at": 314.066,
+ "file_max_gib": 0.018,
+ "shmem_max_gib": 0.0,
+ "oom_events": 1,
+ "host_avail_min_gib": 32.8,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_spi1",
+   "rss_gib": 15.078,
+   "hwm_gib": 15.084,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_spi1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 315.066,
+   "rss_max_gib": 0.011,
+   "hwm_max_gib": 0.044,
+   "at": 94.017
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 314.066,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 314.066
+  },
+  "prove every_valid_sequence_spi1": {
+   "first": 0.0,
+   "last": 314.066,
+   "rss_max_gib": 15.098,
+   "hwm_max_gib": 15.084,
+   "at": 314.066
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 15.078,
+   "hwm_max_gib": 15.084,
+   "at": 314.066,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cbmc": {
+   "rss_max_gib": 3.32,
+   "hwm_max_gib": 3.362,
+   "at": 254.053,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "goto": {
+   "rss_max_gib": 1.215,
+   "hwm_max_gib": 1.224,
+   "at": 3.001,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.018,
+   "hwm_max_gib": 0.047,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 240.051,
+   "phase": "(podman)"
+  },
+  "other:cc1": {
+   "rss_max_gib": 0.002,
+   "hwm_max_gib": 0.008,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 314.066,
+   "phase": "(no gate)"
+  },
+  "other:gcc": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.002,
+   "at": 1.0,
+   "phase": "prove every_valid_sequence_spi1"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   271.056,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   272.056,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   273.056,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   274.057,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   275.057,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   276.057,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   277.057,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   278.057,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   279.058,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   280.058,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   281.058,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   282.058,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   283.059,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   284.059,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   285.059,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   286.059,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   287.06,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   288.06,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   289.06,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ],
+  [
+   290.06,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 143,
+ "ctl_wall_s": 315.0,
+ "inner_memory_peak_gib": 16.0
+}

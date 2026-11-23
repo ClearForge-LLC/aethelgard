@@ -1,0 +1,7 @@
+tag=prove-sentinel-01-usart1_start_writes_the_solved_values-r1 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T04:39:46+00:00
+host_avail_kB=51982188
+cmd: bash /repo/spike/1915/tools/ctl.sh prove boards/sentinel-01 examples/sentinel-01-minimal.json usart1_start_writes_the_solved_values
+exit=0
+end=2026-11-23T04:39:53+00:00

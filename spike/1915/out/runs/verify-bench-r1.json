@@ -1,0 +1,251 @@
+{
+ "samples": 182,
+ "wall_s": 181.036,
+ "memory_peak_gib": 3.523,
+ "current_max_gib": 3.295,
+ "current_max_at": 111.021,
+ "anon_max_gib": 3.261,
+ "anon_max_at": 111.021,
+ "file_max_gib": 0.096,
+ "shmem_max_gib": 0.0,
+ "oom_events": 0,
+ "host_avail_min_gib": 47.1,
+ "stops": 0,
+ "at_anon_peak": [
+  {
+   "class": "kani-driver",
+   "phase": "prove every_valid_sequence_spi1",
+   "rss_gib": 3.199,
+   "hwm_gib": 3.204,
+   "cmd": "cargo-kani kani --harness proofs::every_valid_sequence_spi1 --exact"
+  }
+ ],
+ "phases": {
+  "(podman)": {
+   "first": 0.0,
+   "last": 181.036,
+   "rss_max_gib": 0.011,
+   "hwm_max_gib": 0.044,
+   "at": 120.023
+  },
+  "(no gate)": {
+   "first": 0.0,
+   "last": 181.036,
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 181.036
+  },
+  "verify": {
+   "first": 0.0,
+   "last": 181.036,
+   "rss_max_gib": 0.041,
+   "hwm_max_gib": 0.057,
+   "at": 181.036
+  },
+  "check erc": {
+   "first": 2.0,
+   "last": 2.0,
+   "rss_max_gib": 0.139,
+   "hwm_max_gib": 0.215,
+   "at": 2.0
+  },
+  "check support": {
+   "first": 3.001,
+   "last": 3.001,
+   "rss_max_gib": 0.002,
+   "hwm_max_gib": 0.019,
+   "at": 3.001
+  },
+  "prove every_valid_sequence_i2c1": {
+   "first": 4.001,
+   "last": 29.005,
+   "rss_max_gib": 1.82,
+   "hwm_max_gib": 1.799,
+   "at": 29.005
+  },
+  "prove every_valid_sequence_i2c2": {
+   "first": 30.005,
+   "last": 53.01,
+   "rss_max_gib": 2.106,
+   "hwm_max_gib": 2.089,
+   "at": 53.01
+  },
+  "prove every_valid_sequence_spi1": {
+   "first": 54.01,
+   "last": 111.021,
+   "rss_max_gib": 3.226,
+   "hwm_max_gib": 3.204,
+   "at": 111.021
+  },
+  "prove i2c1_transfer_is_bounded_and_ordered": {
+   "first": 112.022,
+   "last": 120.023,
+   "rss_max_gib": 0.388,
+   "hwm_max_gib": 0.233,
+   "at": 120.023
+  },
+  "prove i2c2_transfer_is_bounded_and_ordered": {
+   "first": 121.024,
+   "last": 129.025,
+   "rss_max_gib": 0.377,
+   "hwm_max_gib": 0.233,
+   "at": 129.025
+  },
+  "prove spi1_transfer_is_bounded_and_ordered": {
+   "first": 130.026,
+   "last": 142.029,
+   "rss_max_gib": 0.9,
+   "hwm_max_gib": 0.878,
+   "at": 142.029
+  },
+  "prove spi1_transfer_refuses_too_many_frames": {
+   "first": 143.029,
+   "last": 148.03,
+   "rss_max_gib": 0.283,
+   "hwm_max_gib": 0.169,
+   "at": 148.03
+  },
+  "prove reset_clock_is_ok_exactly_at_reset": {
+   "first": 149.03,
+   "last": 150.03,
+   "rss_max_gib": 0.049,
+   "hwm_max_gib": 0.089,
+   "at": 150.03
+  },
+  "prove usart1_start_writes_the_solved_values": {
+   "first": 151.031,
+   "last": 158.032,
+   "rss_max_gib": 0.441,
+   "hwm_max_gib": 0.42,
+   "at": 158.032
+  },
+  "prove flash_option_status_is_one_read": {
+   "first": 159.032,
+   "last": 160.033,
+   "rss_max_gib": 0.034,
+   "hwm_max_gib": 0.053,
+   "at": 160.033
+  },
+  "prove pwr_scale2_is_once_in_order_and_bounded": {
+   "first": 161.033,
+   "last": 162.033,
+   "rss_max_gib": 0.043,
+   "hwm_max_gib": 0.063,
+   "at": 162.033
+  },
+  "simulate": {
+   "first": 163.033,
+   "last": 165.034,
+   "rss_max_gib": 0.299,
+   "hwm_max_gib": 0.357,
+   "at": 165.034
+  },
+  "campaign": {
+   "first": 166.034,
+   "last": 180.036,
+   "rss_max_gib": 0.326,
+   "hwm_max_gib": 0.381,
+   "at": 173.035
+  }
+ },
+ "classes": {
+  "kani-driver": {
+   "rss_max_gib": 3.199,
+   "hwm_max_gib": 3.204,
+   "at": 111.021,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cbmc": {
+   "rss_max_gib": 1.082,
+   "hwm_max_gib": 1.136,
+   "at": 97.019,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "renode": {
+   "rss_max_gib": 0.303,
+   "hwm_max_gib": 0.381,
+   "at": 173.035,
+   "phase": "campaign"
+  },
+  "kicad": {
+   "rss_max_gib": 0.132,
+   "hwm_max_gib": 0.215,
+   "at": 2.0,
+   "phase": "check erc"
+  },
+  "goto": {
+   "rss_max_gib": 0.117,
+   "hwm_max_gib": 0.125,
+   "at": 56.011,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "aethelgard": {
+   "rss_max_gib": 0.027,
+   "hwm_max_gib": 0.055,
+   "at": 161.033,
+   "phase": "prove pwr_scale2_is_once_in_order_and_bounded"
+  },
+  "kani-compiler": {
+   "rss_max_gib": 0.018,
+   "hwm_max_gib": 0.089,
+   "at": 150.03,
+   "phase": "prove reset_clock_is_ok_exactly_at_reset"
+  },
+  "podman/conmon": {
+   "rss_max_gib": 0.01,
+   "hwm_max_gib": 0.044,
+   "at": 181.036,
+   "phase": "(podman)"
+  },
+  "rustc": {
+   "rss_max_gib": 0.005,
+   "hwm_max_gib": 0.024,
+   "at": 55.01,
+   "phase": "prove every_valid_sequence_spi1"
+  },
+  "cargo": {
+   "rss_max_gib": 0.003,
+   "hwm_max_gib": 0.018,
+   "at": 162.033,
+   "phase": "prove pwr_scale2_is_once_in_order_and_bounded"
+  },
+  "other:cc1": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 153.031,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  },
+  "ngspice": {
+   "rss_max_gib": 0.001,
+   "hwm_max_gib": 0.006,
+   "at": 169.034,
+   "phase": "campaign"
+  },
+  "other:bash": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.003,
+   "at": 181.036,
+   "phase": "(no gate)"
+  },
+  "other:gcc": {
+   "rss_max_gib": 0.0,
+   "hwm_max_gib": 0.002,
+   "at": 153.031,
+   "phase": "prove usart1_start_writes_the_solved_values"
+  }
+ },
+ "cbmc_beside_build_samples": [],
+ "two_procs_over_1gib": [
+  [
+   110.021,
+   [
+    "kani-driver@prove every_valid_sequence_spi1",
+    "cbmc@prove every_valid_sequence_spi1"
+   ]
+  ]
+ ],
+ "orphans": [],
+ "ctl_rc": 0,
+ "ctl_wall_s": 182.0,
+ "inner_memory_peak_gib": 3.523
+}
