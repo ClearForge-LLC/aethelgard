@@ -50,8 +50,8 @@ def table(s, setups):
     n = 20000
     print(f"\nspeed sd {s:.3f}")
     print("shards\tmean step s\tP(spread <= 6 min)\tP(two in a row <= 6)\tmedian spread min\tP(slowest > 20 min)")
-    for shards, m in [(12, 790), (12, 720), (12, 700), (12, 650), (12, 600), (12, 550), (12, 500),
-                      (14, 720 * 12 / 14), (16, 720 * 12 / 16)]:
+    for shards, m in [(12, 790), (12, 744), (12, 703), (12, 650), (12, 600), (12, 550), (12, 500),
+                      (14, 744 * 12 / 14), (16, 744 * 12 / 16)]:
         ok = over20 = 0
         spreads = []
         for _ in range(n):
@@ -62,12 +62,12 @@ def table(s, setups):
             over20 += max(jobs) > 1200
         p = ok / n
         print(f"{shards}\t{m:.0f}\t{p:.2f}\t{p * p:.2f}\t{st.median(spreads):.1f}\t{over20 / n:.2f}")
-    # At 12 shards and the held mean step (700 s): how often the rule fires (two runs in a row over X min).
+    # At 12 shards and the mean step of the four runs since 1607 (744 s): how often the rule fires (two runs in a row over X min).
     spreads = []
     for _ in range(n):
-        jobs = [rng.choice(setups) + 700 * math.exp(rng.gauss(0, s)) + 4 for _ in range(12)]
+        jobs = [rng.choice(setups) + 744 * math.exp(rng.gauss(0, s)) + 4 for _ in range(12)]
         spreads.append((max(jobs) - min(jobs)) / 60)
-    print("12 shards, 700 s: X min, P(spread > X), P(fires: two in a row > X) = "
+    print("12 shards, 744 s: X min, P(spread > X), P(fires: two in a row > X) = "
           + "; ".join(f"{x}: {sum(v > x for v in spreads) / n:.2f}, {(sum(v > x for v in spreads) / n) ** 2:.2f}"
                       for x in (6, 7, 8, 9, 10)))
 

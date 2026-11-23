@@ -7,6 +7,7 @@
   measure.py shards RUNDIR...            per shard: job, setup, step, after, planned (minutes / seconds)
   measure.py tests ROWS COLO RUNDIR...   per test of 10 s or more: samples, worst, row
   measure.py blocks ROWS COLO RUNDIR...  per run, shard and binary: wall against planned seconds
+  measure.py check BLOCKS SHARDS BASE NEW,NEW RUN,RUN,...   predictions.md P1-P3
 """
 import datetime as dt
 import re
@@ -138,6 +139,48 @@ def blocks(rows_path, colo_path, runs):
                 print(f"{run.name}\t{k}\t{b}\t{len(names)}\t{w:.1f}\t{planned:.1f}\t{w - planned:+.1f}")
 
 
+def check(blocks_path, shards_path, base, news, plan_runs):
+    """predictions.md P1-P3 over `blocks` and `shards` output."""
+    import math
+    import statistics as st
+    planned, steps = {}, {}
+    rid = None
+    for line in Path(shards_path).read_text().splitlines():
+        if line.startswith("## "):
+            rid = line.split()[1]
+        elif line and line[0].isdigit():
+            f = line.split("\t")
+            planned[(rid, int(f[0]))] = f[5]
+            steps[(rid, int(f[0]))] = float(f[3])
+    for n in news:
+        same = all(planned[(n, k)] == planned[(base, k)] for k in range(12))
+        print(f"P1 {n}: planned equal to {base}'s on every shard: {same}")
+    wall = {}
+    for line in Path(blocks_path).read_text().splitlines()[1:]:
+        r, k, b, _, w, _, _ = line.split("\t")
+        wall[(r, int(k), b)] = float(w)
+    for n in news:
+        agree = total = 0
+        factors = []
+        for k in range(12):
+            lr = [math.log(wall[(n, k, b)] / wall[(base, k, b)]) for (r, kk, b) in wall
+                  if r == n and kk == k and (base, k, b) in wall and wall[(n, k, b)] >= 40 and wall[(base, k, b)] >= 40]
+            if len(lr) >= 2:
+                total += 1
+                agree += max(lr) - min(lr) <= 0.15
+                factors.append(st.mean(lr))
+                print(f"   shard {k}: " + " ".join(f"{x:+.2f}" for x in lr))
+        print(f"P2 {n} against {base}: {agree} of {total} shards within 0.15; shard factors "
+              f"{min(factors):+.2f} to {max(factors):+.2f}")
+    vec = {r: [steps[(r, k)] for k in range(12)] for r in plan_runs}
+    rs = []
+    for i, a in enumerate(plan_runs):
+        for b in plan_runs[i + 1:]:
+            rs.append(st.correlation(vec[a], vec[b]))
+            print(f"   r({a}, {b}) = {rs[-1]:+.2f}")
+    print(f"P3 mean pairwise correlation over {len(plan_runs)} runs: {st.mean(rs):+.2f}")
+
+
 if __name__ == "__main__":
     if sys.argv[1] == "shards":
         shards(sys.argv[2:])
@@ -145,5 +188,7 @@ if __name__ == "__main__":
         tests(sys.argv[2], sys.argv[3], sys.argv[4:])
     elif sys.argv[1] == "blocks":
         blocks(sys.argv[2], sys.argv[3], sys.argv[4:])
+    elif sys.argv[1] == "check":
+        check(sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5].split(","), sys.argv[6].split(","))
     else:
         sys.exit(__doc__)
