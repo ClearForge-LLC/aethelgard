@@ -2937,52 +2937,10 @@ fn an_undeclared_path_or_esc_halts_a_battery_sag_by_name() {
     assert_eq!(v["error"]["id"], "MOTOR3", "{v}");
 }
 
-/// A chain answer from the deck, as `--chain` writes it, with U10's
-/// crossing at `at` (or none) and the minimum `min`.
-macro_rules! chain_stub {
-    ($min:literal, $at:literal) => {
-        concat!(
-            "#!/bin/sh\n[ \"$1\" = --chain ] || exit 9\nprintf '%s\\n' '{\"accepted_points\":1,\"chain\":\"solved\",\"final_microvolts\":",
-            $min,
-            ",\"initial_microvolts\":8998361,\"minimum_at_ns\":100000000,\"minimum_microvolts\":",
-            $min,
-            ",\"ngspice\":\"44.2\",\"sinks\":[{\"at_ps\":",
-            $at,
-            ",\"floor_microvolts\":7000000,\"name\":\"U10\"},{\"at_ps\":null,\"floor_microvolts\":3800000,\"name\":\"U11\"}],\"step_ns\":10000}'\n"
-        )
-    };
-}
-
-/// §1.8: a floor the deck's solve crosses refuses the run by name
-/// (`BatterySagSolvedBelowFloor`), the dynamic counterpart of the static
-/// clauses; a solved minimum off the static point (8,088,035 µV at 500 mΩ) by
-/// more than 1 mV is an internal error (exit 70), never a verdict; and an
-/// answer that is not the chain's stops the call.
-#[test]
-fn the_deck_s_answer_is_judged_before_any_run() {
-    let spec = s03();
-    let o = json!([sag(500, 10_000_000)]);
-    let (out, made) = sag_campaign(
-        &spec,
-        o.clone(),
-        Some(chain_stub!("6999999", "10395072253")),
-    );
-    let v = expect_refusal(&out, 2, "BatterySagSolvedBelowFloor");
-    assert_eq!(v["error"]["id"], "U10", "{v}");
-    assert!(!made);
-    // Below the floor with no crossing named: refused all the same.
-    let (out, _) = sag_campaign(&spec, o.clone(), Some(chain_stub!("6999999", "null")));
-    expect_refusal(&out, 2, "BatterySagSolvedBelowFloor");
-    let (out, made) = sag_campaign(&spec, o.clone(), Some(chain_stub!("8087034", "null")));
-    assert_eq!(out.status.code(), Some(70), "{:?}", out);
-    assert!(out.stdout.is_empty() && !made);
-    let (out, _) = sag_campaign(
-        &spec,
-        o,
-        Some("#!/bin/sh\nprintf '%s\\n' '{\"chain\":\"solved\"}'\n"),
-    );
-    expect_refusal(&out, 5, "ToolError");
-}
+// `AET-WO-2304b` §1.8's deck answers are judged after the sag's boot since
+// `AET-WO-2310` (its instant is placed from that boot's word), and no stub
+// here boots a power-tree board: `campaign_tier2`'s
+// `a_battery_sag_s_deck_answer_is_judged_after_its_boot` holds them.
 
 /// §1.7: a rail out of band is refused on the MCU's supply, on an unknown
 /// domain, on a rail with no consumer a judge observes (the power fixture's
