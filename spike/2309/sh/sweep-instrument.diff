@@ -22,15 +22,20 @@ index ab1ed43..6f7f346 100644
      // a symlinked run directory.
      let dir: PathBuf = dir.components().collect();
 diff --git a/crates/aethelgard-chaos/src/campaign.rs b/crates/aethelgard-chaos/src/campaign.rs
-index dfd4236..b54de40 100644
+index dfd4236..f67312e 100644
 --- a/crates/aethelgard-chaos/src/campaign.rs
 +++ b/crates/aethelgard-chaos/src/campaign.rs
-@@ -1006,6 +1006,12 @@ pub struct RunSummary {
+@@ -1006,6 +1006,17 @@ pub struct RunSummary {
  /// output's (kind 37) sit with the motor witnesses (kind 26), in any order
  /// among them.
  pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
 +    let r = check_run_inner(records);
-+    crate::sweep2309::log("check_run", format!("{records:?}").as_bytes(), &format!("{r:?}"));
++    let outcome = format!(
++        "{} {} {r:?}",
++        std::thread::current().name().unwrap_or("?").replace(' ', "_"),
++        crate::sweep2309::candidates(records),
++    );
++    crate::sweep2309::log("check_run", format!("{records:?}").as_bytes(), &outcome);
 +    r
 +}
 +
@@ -52,10 +57,10 @@ index bd61f6e..917f029 100644
  pub use event::{Event, Header, Manifest};
 diff --git a/crates/aethelgard-chaos/src/sweep2309.rs b/crates/aethelgard-chaos/src/sweep2309.rs
 new file mode 100644
-index 0000000..473601b
+index 0000000..eb1d84e
 --- /dev/null
 +++ b/crates/aethelgard-chaos/src/sweep2309.rs
-@@ -0,0 +1,45 @@
+@@ -0,0 +1,96 @@
 +//! AET-WO-2309 sweep C instrumentation, applied to a scratch copy only (never committed into
 +//! `crates/`): with `AET_2309_SWEEP` set to a file, each `replay_dir` and `check_run` call appends
 +//! one line, `<what> <sha256 of its input> <outcome>`.
@@ -100,4 +105,55 @@ index 0000000..473601b
 +        }
 +    }
 +    key
++}
++
++/// The candidate rules of `AET-WO-2309`, judged on the records `check_run` was given, each `ok` or
++/// `REFUSES`: `motor` (a booted run's every kind 24 has a kind 26), `full` (kinds 11, 12 and 21,
++/// value and status, read exactly when kind 10 is; 13 and 22 unread with it) and `status` (as
++/// `full`, but kinds 12 and 21 bound both ways by their status, their value one way).
++pub fn candidates(records: &[crate::record::Record]) -> String {
++    use crate::record::Record;
++    let boot = records.iter().find_map(|r| match r {
++        Record::BootObserved { boot_word, .. } => Some(boot_word),
++        _ => None,
++    });
++    let read = boot.is_some_and(|b| b.observed.is_some());
++    let booted = boot.is_some_and(|b| b.observed == Some(b.expected));
++    let witnesses = |r: &Record| match r {
++        Record::I2cWitness { observed, absent, .. } => read || (observed.is_none() && absent.is_empty()),
++        Record::SpiWitness { observed, unrouted, .. } => {
++            read || (observed.is_none() && unrouted.is_empty())
++        }
++        Record::RegisterObserved { reading, .. } => reading.observed.is_some() == read,
++        _ => true,
++    };
++    let full = records.iter().all(|r| match r {
++        Record::I2cCheck { observed, status, .. } | Record::SpiCheck { observed, status, .. } => {
++            observed.is_some() == read && status.is_some() == read
++        }
++        r => witnesses(r),
++    });
++    let status = records.iter().all(|r| match r {
++        Record::I2cCheck { observed, status, .. } | Record::SpiCheck { observed, status, .. } => {
++            status.is_some() == read && (read || observed.is_none())
++        }
++        r => witnesses(r),
++    });
++    let solved: std::collections::BTreeSet<&str> = records
++        .iter()
++        .filter_map(|r| match r {
++            Record::MotorOutputSolved { label, .. } => Some(label.as_str()),
++            _ => None,
++        })
++        .collect();
++    let witnessed: std::collections::BTreeSet<&str> = records
++        .iter()
++        .filter_map(|r| match r {
++            Record::MotorWitness { label, .. } => Some(label.as_str()),
++            _ => None,
++        })
++        .collect();
++    let motor = !booted || solved.is_subset(&witnessed);
++    let w = |b: bool| if b { "ok" } else { "REFUSES" };
++    format!("motor={} full={} status={}", w(motor), w(full), w(status))
 +}

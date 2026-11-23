@@ -1,0 +1,96 @@
+check_run calls logged: 1229 distinct (input, test) pairs; 1182 distinct inputs
+
+## motor: refuses 2 distinct inputs
+accepted before, refused after: 0 (input, test) pairs in 0 tests
+refused before already, by main's reason: 2 (input, test) pairs in 1 tests
+  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness is not its output's pin's observer, or is there twice")
+  a_motor_record_that_joins_no_solved_output_is_refused: 1 x Err("a motor witness names no solved output")
+
+## full: refuses 155 distinct inputs
+accepted before, refused after: 43 (input, test) pairs in 20 tests
+  a_boot_that_read_nothing_names_its_bound: 5
+  a_device_with_three_steps_round_trips_and_replays: 1
+  a_failing_run_expecting_to_pass_does_not_match: 1
+  a_held_low_run_is_ok_and_matches: 1
+  a_line_bound_only_by_another_bus_or_another_line_is_refused: 1
+  a_record_judged_without_the_boot_word_is_refused: 11
+  a_register_with_nothing_observed_is_no_evidence: 1
+  a_run_expecting_fewer_kinds_does_not_match: 1
+  a_run_expecting_more_kinds_does_not_match: 1
+  a_witness_must_name_a_solved_device_on_its_own_controller: 1
+  boot_word_missing_is_named_exactly_when_the_word_is_wrong: 1
+  info_findings_never_count_toward_a_match: 1
+  pc_outside_firmware_is_exactly_a_pc_outside_the_archived_segments: 4
+  several_configurations_each_by_its_own_name_replay_in_order: 1
+  the_47k_shaped_run_matches_what_it_expects: 1
+  the_boot_read_is_whole_and_the_pc_findings_are_the_judges: 1
+  the_brown_out_findings_are_exactly_what_kind_10_shows: 7
+  the_good_run_carries_one_solved_bus_and_passes_the_joins: 1
+  two_devices_on_one_controller_have_two_witnesses: 1
+  two_solved_records_for_one_bus_or_unsorted_buses_are_refused: 1
+refused before already, by main's reason: 116 (input, test) pairs in 43 tests
+  a_boot_that_read_nothing_names_its_bound: 17 x Err("a boot that read nothing does not name once why (a bound or a load error), or a read one does")
+  a_boot_that_read_nothing_names_its_bound: 1 x Err("a solved line has no computed rise, stuck-high record or held-low fault, or more than one")
+  a_boot_that_read_nothing_names_its_bound: 1 x Err("the verdict's boot_word_missing does not match the boot word")
+  a_device_on_two_solved_buses_is_refused: 1 x Err("a device is on two solved buses")
+  a_dropped_bus_fault_is_refused: 1 x Err("a measurement past its ceiling faulted no bus")
+  a_fault_covering_only_one_of_two_failing_lines_is_refused: 1 x Err("a measurement past its ceiling faulted no bus")
+  a_fault_on_the_wrong_bus_is_refused: 1 x Err("a bus fault names a net with no measurement past its ceiling")
+  a_fault_on_the_wrong_bus_is_refused: 1 x Err("an analog record or a bus fault names a bus no kind 15 solves")
+  a_fault_with_no_analog_record_is_refused: 1 x Err("a bus fault names a net with no measurement past its ceiling")
+  a_finding_at_info_severity_does_not_satisfy_the_analog_count: 1 x Err("the verdict's analog and held-low findings do not match the records")
+  a_held_low_fault_mixed_with_another_cause_is_refused: 1 x Err("a held-low fault names no held-low override of its bus")
+  a_held_low_fault_on_another_bus_is_refused: 1 x Err("a held-low fault names no held-low override of its bus")
+  a_held_low_fault_on_another_bus_is_refused: 1 x Err("an analog record or a bus fault names a bus no kind 15 solves")
+  a_held_low_fault_with_no_override_is_refused: 1 x Err("a held-low fault names no held-low override of its bus")
+  a_held_low_override_with_no_fault_is_refused: 1 x Err("a held-low override faulted no bus, or one bus twice")
+  a_line_bound_only_by_another_bus_or_another_line_is_refused: 1 x Err("a held-low fault names no held-low override of its bus")
+  a_line_bound_only_by_another_bus_or_another_line_is_refused: 3 x Err("a solved line has no computed rise, stuck-high record or held-low fault, or more than one")
+  a_line_measured_twice_or_a_device_read_or_witnessed_twice_is_refused: 3 x Err("a line measured twice, or a device step read or witnessed twice")
+  a_measurement_on_an_unsolved_bus_or_net_is_refused_even_without_a_fault: 1 x Err("an analog record or a bus fault names a bus no kind 15 solves")
+  a_measurement_on_an_unsolved_bus_or_net_is_refused_even_without_a_fault: 1 x Err("an analog record or a bus fault names a net that is not a line of its bus")
+  a_measurement_or_fault_on_a_net_that_is_not_its_buss_line_is_refused: 1 x Err("an analog record or a bus fault names a net that is not a line of its bus")
+  a_record_judged_without_the_boot_word_is_refused: 10 x Err("the verdict judges an identity read's record of a boot without its boot word")
+  a_rise_and_a_stuck_high_on_one_line_are_two_measurements: 1 x Err("a line measured twice, or a device step read or witnessed twice")
+  a_run_with_its_rises_dropped_is_refused: 2 x Err("a solved line has no computed rise, stuck-high record or held-low fault, or more than one")
+  a_run_with_no_boot_record_is_refused: 1 x Err("a run holds exactly one scenario, topology, boot and verdict")
+  a_run_with_no_verdict_or_no_scenario_or_no_topology_is_refused: 3 x Err("a run holds exactly one scenario, topology, boot and verdict")
+  a_run_without_its_solved_bus_is_refused: 1 x Err("an analog record or a bus fault names a bus no kind 15 solves")
+  a_step_given_twice_or_out_of_order_is_refused_by_replay: 3 x Err("a device's steps are not in the order identity, configure, data")
+  a_step_given_twice_or_out_of_order_is_refused_by_replay: 2 x Err("a line measured twice, or a device step read or witnessed twice")
+  a_step_given_twice_or_out_of_order_is_refused_by_replay: 1 x Err("a step's read without its witness, or a witness without its read")
+  a_verdict_flipped_to_pass_is_refused: 1 x Err("the verdict's analog and held-low findings do not match the records")
+  a_witness_device_must_end_with_its_references_lowercased: 1 x Err("a witness's model path is not its device's emitted name")
+  a_witness_must_name_a_solved_device_on_its_own_controller: 1 x Err("a witness is not on its device's solved bus")
+  a_witness_must_name_a_solved_device_on_its_own_controller: 1 x Err("a witness names no device of a solved bus")
+  an_analog_ceiling_below_or_above_its_lines_is_refused: 2 x Err("an analog record's ceiling is not its solved line's")
+  an_analog_finding_count_that_does_not_match_is_refused: 3 x Err("the verdict's analog and held-low findings do not match the records")
+  an_identity_read_of_no_solved_device_or_at_another_address_is_refused: 2 x Err("an identity read names no device of a solved bus at its address")
+  boot_word_missing_is_named_exactly_when_the_word_is_wrong: 5 x Err("the verdict's boot_word_missing does not match the boot word")
+  each_identity_read_has_a_witness_and_each_witness_a_read: 1 x Err("a step's read without its witness, or a witness without its read")
+  every_net_of_a_bus_fault_must_be_a_line_of_its_bus: 1 x Err("an analog record or a bus fault names a net that is not a line of its bus")
+  one_held_low_override_faulting_twice_is_refused: 1 x Err("a held-low override faulted no bus, or one bus twice")
+  pc_outside_firmware_is_exactly_a_pc_outside_the_archived_segments: 2 x Err("the verdict's pc_outside_firmware does not match the boot's pc and segments")
+  records_out_of_order_are_refused: 4 x Err("the records are not in the campaign's order")
+  several_configurations_each_by_its_own_name_replay_in_order: 2 x Err("a device's steps are not in the order identity, configure, data")
+  several_configurations_each_by_its_own_name_replay_in_order: 1 x Err("a line measured twice, or a device step read or witnessed twice")
+  several_configurations_each_by_its_own_name_replay_in_order: 3 x Err("a step is not identity, a configuration or data")
+  the_boot_read_is_whole_and_the_pc_findings_are_the_judges: 1 x Err("the verdict names pc_not_on_self_loop for a pc outside the firmware or unread")
+  the_boot_read_is_whole_and_the_pc_findings_are_the_judges: 3 x Err("the verdict's pc_outside_firmware does not match the boot's pc and segments")
+  the_brown_out_findings_are_exactly_what_kind_10_shows: 7 x Err("the verdict's brown-out and flash controller findings do not match the boot's")
+  two_buses_on_one_controller_are_refused_even_on_their_own_pins: 1 x Err("two solved buses share a net, a pin or a controller")
+  two_buses_sharing_a_net_a_pin_or_a_controller_are_refused: 3 x Err("two solved buses share a net, a pin or a controller")
+  two_devices_at_one_address_on_one_bus_are_refused: 1 x Err("two devices on one solved bus share an address")
+  two_devices_on_one_controller_have_two_witnesses: 1 x Err("a step's read without its witness, or a witness without its read")
+  two_solved_records_for_one_bus_or_unsorted_buses_are_refused: 2 x Err("the solved buses are not sorted by unique bus")
+  two_verdicts_are_refused: 1 x Err("a run holds exactly one scenario, topology, boot and verdict")
+
+## status: refuses 21 distinct inputs
+accepted before, refused after: 6 (input, test) pairs in 2 tests
+  a_boot_that_read_nothing_names_its_bound: 5
+  a_register_with_nothing_observed_is_no_evidence: 1
+refused before already, by main's reason: 15 (input, test) pairs in 2 tests
+  a_boot_that_read_nothing_names_its_bound: 12 x Err("a boot that read nothing does not name once why (a bound or a load error), or a read one does")
+  a_boot_that_read_nothing_names_its_bound: 1 x Err("a solved line has no computed rise, stuck-high record or held-low fault, or more than one")
+  a_boot_that_read_nothing_names_its_bound: 1 x Err("the verdict's boot_word_missing does not match the boot word")
+  a_run_with_no_boot_record_is_refused: 1 x Err("a run holds exactly one scenario, topology, boot and verdict")
