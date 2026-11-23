@@ -129,7 +129,12 @@ None stop the work order. Two choices, both inside the fence:
 
 ## 7. Gates, fence, reduction pass
 
-- **Gates:** see below (filled at the last push).
+- **Gates at `c2a4d3a7`** (target in the repository, as CI builds it, in a capped scope: `MemoryMax=32G`, swap 0):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace --no-fail-fast`: **2860 passed, 0 failed**, in 163 `test result` lines.
+- **The final head's bytes:** `c2a4d3a7` against `29d137c0`'s output: `identical: 280 files`, `d4diff identical: 277 cases, 926 files`, `d1319 identical: 84 cases, 327 files`, `bulk.sh` both identical. So against base, only (4)'s refusal text differs (§2).
+- **CI:** recorded in the READY commit.
 - **Fence:**
   - `crates/aethelgard-eda` (`board.rs`, `strict.rs`, `route.rs` tests, `route/read.rs`, `schematic.rs`, `schematic_arms.rs`, `schematic_power.rs`, `pcb.rs`, `tests/prepare_read_memory.rs`);
   - `spike/1319/harness/mutants.sh`;
