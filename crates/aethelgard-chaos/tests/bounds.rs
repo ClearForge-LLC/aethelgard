@@ -279,3 +279,81 @@ fn a_run_over_the_record_bound_is_refused_while_folding() {
         Err(E::TooManyRecords { limit, .. }) if limit == MAX_RECORDS
     ));
 }
+
+/// One fault event whose detail is `len` bytes: up to 1,024, about 1.1 KB
+/// encoded, so 256 MiB of them never meets the record bound.
+fn fault_of(timestamp: u64, len: usize) -> Event {
+    Event::FaultInjected {
+        timestamp,
+        scenario: "fill".into(),
+        detail: "x".repeat(len),
+    }
+}
+
+fn encoded(e: &Event) -> u64 {
+    cbor::to_bytes(&e.to_value()).len() as u64
+}
+
+/// `AET-WO-2309` (`AET-WO-2303` F3): the writer refuses, by name, an event
+/// that would take the trace past `MAX_TRACE_BYTES`, before folding it. It
+/// writes a trace of exactly the bound, which commits and replays, and
+/// nothing past it.
+#[test]
+fn the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib() {
+    let dir = scratch("trace-full").join("run");
+    let header = aethelgard_chaos::synthetic::header(0x2309);
+    let mut w = aethelgard_chaos::TraceWriter::create(&dir, &header).unwrap();
+    let start = Instant::now();
+    let big = encoded(&fault_of(0, 1024));
+    let mut bytes = cbor::to_bytes(&header.to_value()).len() as u64;
+    let mut count = 0u64;
+    while MAX_TRACE_BYTES - bytes >= 2 * big {
+        w.append(&fault_of(0, 1024)).unwrap();
+        bytes += big;
+        count += 1;
+    }
+    // Two events that end exactly at the bound, the second short.
+    let left = MAX_TRACE_BYTES - bytes;
+    let (a, b) = (0..=1024)
+        .rev()
+        .find_map(|a| {
+            (0..=1024)
+                .find(|&b| encoded(&fault_of(0, a)) + encoded(&fault_of(0, b)) == left)
+                .map(|b| (a, b))
+        })
+        .expect("two fault events fill what is left");
+    w.append(&fault_of(0, a)).unwrap();
+    count += 1;
+    // One event too large for what is left, by many bytes, is refused whole,
+    // and so is one larger by a single byte.
+    let tail = encoded(&fault_of(0, b));
+    for len in [1024, b + 1] {
+        let e = fault_of(0, len);
+        let refused = w.append(&e).unwrap_err();
+        assert!(
+            matches!(&refused, E::TraceFull { index, bytes, limit }
+                if *index == count && *bytes == MAX_TRACE_BYTES - tail + encoded(&e) && *limit == MAX_TRACE_BYTES),
+            "{refused:?}"
+        );
+        assert_eq!(refused.kind(), "TraceFull");
+    }
+    // Exactly at the bound is accepted, as the reader accepts it; then even
+    // the smallest event is refused.
+    w.append(&fault_of(0, b)).unwrap();
+    count += 1;
+    assert!(matches!(
+        w.append(&fault_of(0, 0)),
+        Err(E::TraceFull { index, .. }) if index == count
+    ));
+    let manifest = w.commit().unwrap();
+    assert_eq!(manifest.trace_bytes, MAX_TRACE_BYTES);
+    assert_eq!(manifest.event_count, count);
+    let replayed = replay_dir(&dir).unwrap();
+    assert_eq!(replayed.manifest, manifest);
+    eprintln!(
+        "ANSWER 2309: {count} events, {} B, written and replayed in {:.2} s",
+        manifest.trace_bytes,
+        start.elapsed().as_secs_f64()
+    );
+    fs::remove_dir_all(dir.parent().unwrap()).unwrap();
+}

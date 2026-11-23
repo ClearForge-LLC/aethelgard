@@ -66,6 +66,7 @@
 # AET-WO-1211b: board_tier2's d1_s_pin_device_generates_builds_and_proves is a Furnace estimate, not a run: 96.19 s in the pinned image on Furnace (libtest `finished in`: D1's build, three harnesses and one seeded proof), times 2.8 (AET-WO-1310's factor), 269.332; replace it at the next refit.
 # AET-WO-1606: board_tier2's build_names_the_rustc_cargo_ran is a Furnace estimate, not a run: 0.40 s in the pinned image on Furnace (libtest `finished in`, alone), times 2.8 (AET-WO-1310's factor), 1.12; replace it at the next refit.
 # AET-WO-2308: fab_tier1's a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name and main.rs's verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode are Furnace estimates, not runs (AET-WO-2302's rule): the worst of three alone in the pinned image on Furnace, 2.147 s and 1.115 s, times 1.2, rounded up; replace them at the next refit.
+# AET-WO-2309: bounds.rs's the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib, a Furnace estimate (worst 5.78 s in a debug build, times 2.8, as AET-WO-1310's), not a run; the next refit replaces it.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.61
@@ -192,6 +193,7 @@ tests/boot_tier1.rs	three_agreeing_witnesses_pass	1.100
 tests/boot_tier1.rs	two_devices_witness_their_own_reads_in_either_order	2.000
 tests/boot_tier1.rs	word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both	1.200
 tests/bounds.rs	replay_is_linear_in_events	0.800
+tests/bounds.rs	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib	16.200
 tests/campaign_tier1.rs	a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1	3.100
 tests/campaign_tier1.rs	a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays	9.540
 tests/campaign_tier1.rs	a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time	0.700

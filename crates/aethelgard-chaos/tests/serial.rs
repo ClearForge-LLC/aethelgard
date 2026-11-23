@@ -1802,3 +1802,19 @@ fn a2_5_replay_binds_an_anchor_after_the_boot_word() {
     wire[n] = verdict(&[("boot_word_missing", 1), (SERIAL_WIRE_PAST_RUN_FINDING, 1)]);
     assert_eq!(check_run(&wire).unwrap_err(), INSTANT_REFUSED);
 }
+
+/// `AET-WO-2309` (ruled D3): a boot that read nothing holds no serial witness
+/// (kind 29), which only a boot Renode read gives.
+#[test]
+fn a_boot_that_read_nothing_holds_no_serial_witness() {
+    let killed = |keep: bool| {
+        let mut r = run();
+        unread_boot(&mut r);
+        if !keep {
+            r.retain(|x| !matches!(x, Record::SerialWitness { .. }));
+        }
+        check_run(&judged(r, &[("cpu_aborted", 1)])).map(|_| ())
+    };
+    assert_eq!(killed(false), Ok(()));
+    assert_eq!(killed(true), Err(RENODE_READ));
+}

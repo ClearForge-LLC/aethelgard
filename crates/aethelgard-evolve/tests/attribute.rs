@@ -1577,13 +1577,49 @@ fn each_part_of_a_sound_witness_is_required() {
     assert_eq!(unwitnessed(&|_, o| *o = None), Rule::I4);
 }
 
+/// `AET-WO-2309`: replay refuses a register unread beside a read boot, so a
+/// register holds nothing observed only in a boot that read nothing. The
+/// shape is the wrong-register run killed before its reads, as the judge
+/// archives it: none of its registers is evidence.
 #[test]
 fn a_register_with_nothing_observed_is_no_evidence() {
     let mut r = healthy();
     wrong_register(&mut r);
-    set_register(&mut r, "GPIOB.AFRL", |g| g.observed = None);
+    for x in &mut r {
+        match x {
+            Record::BootObserved {
+                boot_word,
+                instructions_observed,
+                pc,
+                brown_out,
+                flash_access,
+                ..
+            } => {
+                boot_word.observed = None;
+                *instructions_observed = None;
+                *pc = None;
+                brown_out.observed = None;
+                *flash_access = None;
+            }
+            Record::RegisterObserved { reading, .. } => reading.observed = None,
+            Record::I2cCheck {
+                observed, status, ..
+            } => {
+                *observed = None;
+                *status = None;
+            }
+            Record::I2cWitness {
+                observed, absent, ..
+            } => {
+                *observed = None;
+                absent.clear();
+            }
+            _ => {}
+        }
+    }
+    replace(&mut r, is_verdict, verdict(&[("cpu_aborted", 1)]));
     let a = attributed(&r);
-    assert_eq!(kinds(&a.evidence), [7, 7, 13]);
+    assert_eq!((a.rule, kinds(&a.evidence)), (Rule::I1, vec![]), "{a:?}");
 }
 
 #[test]

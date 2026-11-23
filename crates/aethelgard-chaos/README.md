@@ -156,7 +156,9 @@ Writer (`TraceWriter`): create the run directory (refused if it exists); create
 buffered writer; flush and `sync_all` the trace; write `manifest.cbor.tmp` with
 `create_new`, `sync_all` it, rename it to `manifest.cbor`, `sync_all` the
 directory. The writer refuses an event or header its own reader would refuse,
-and a timestamp that goes backwards.
+a timestamp that goes backwards, and an event that would take the trace past
+256 MiB (`TraceFull`, before the event is folded, so what came before it
+still commits; `AET-WO-2309`).
 
 Reader (`replay_dir`) checks in this order, each refusal its own
 `ArchiveError` variant:
@@ -399,6 +401,17 @@ refuses:
   bound: `cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`; or not
   loaded: `platform_load_error` or `firmware_load_error`), or a read boot that
   names one (`AET-WO-3201` B2);
+- a register (kind 11) or an identity read's value or status (kinds 12 and
+  21) read when kind 10 is unread, or unread when it is read; a witness
+  (kinds 13 and 22) holding observed lines, absent addresses or unrouted
+  lines beside an unread kind 10 (a read boot may hold an unread witness:
+  its log passed the filter's budget); or a boot that read nothing holding a
+  motor, serial, pin or level witness, or a judge's stop (kinds 26, 29, 30,
+  34, 36 and 37), which only a boot Renode read gives (`AET-WO-2309`, from
+  `AET-WO-3201` adversarial 5.8);
+- a booted run in which a solved motor output (kind 24) has no witness
+  (kind 26): a run holds at most one per output, and a booted run exactly
+  one (`AET-WO-2309`, from `AET-WO-2302` A2-2);
 - a verdict that judges an identity read's record (a mismatch of any step,
   `*_record_invalid`, `*_transaction_unwitnessed`) of a boot without its boot
   word: the judge names a record before the fixed point only by its timeout

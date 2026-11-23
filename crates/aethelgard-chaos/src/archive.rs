@@ -21,8 +21,9 @@ pub const MIRROR: &str = "mirror.cbor";
 /// The mirror step's temporary file. Replay ignores it, as it ignores `mirror.cbor`.
 pub const MIRROR_TMP: &str = "mirror.cbor.tmp";
 
-/// A manifest declaring a longer trace is refused before the trace is read
-/// (`OQ-03` revisits the number when P2 measures real volume).
+/// A manifest declaring a longer trace is refused before the trace is read,
+/// and the writer refuses to write one (`OQ-03` revisits the number when P2
+/// measures real volume).
 pub const MAX_TRACE_BYTES: u64 = 256 << 20;
 /// The most a manifest may be: it holds a handful of integers and a hash.
 pub const MAX_MANIFEST_BYTES: u64 = 1 << 20;
@@ -157,7 +158,9 @@ impl TraceWriter {
     }
 
     /// Append one event. Refuses what the reader would refuse, and a
-    /// timestamp earlier than the last one.
+    /// timestamp earlier than the last one. An event that would take the
+    /// trace past [`MAX_TRACE_BYTES`] is refused whole, before it is folded,
+    /// so the run commits what came before it (`AET-WO-2303` F3).
     pub fn append(&mut self, event: &Event) -> Result<(), ArchiveError> {
         let index = self.replayer.event_count();
         event
@@ -171,6 +174,15 @@ impl TraceWriter {
             return Err(ArchiveError::InvalidEvent {
                 index,
                 reason: "event is over 4096 bytes",
+            });
+        }
+        let bytes = self.bytes + scratch.len() as u64;
+        if bytes > MAX_TRACE_BYTES {
+            self.scratch = scratch;
+            return Err(ArchiveError::TraceFull {
+                index,
+                bytes,
+                limit: MAX_TRACE_BYTES,
             });
         }
         self.replayer.apply(event)?;

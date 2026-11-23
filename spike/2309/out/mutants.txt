@@ -1,0 +1,115 @@
+w-gone: KILLED
+    the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib --- FAILED
+    thread 'the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib' (3636224) panicked at crates/aethelgard-chaos/tests/bounds.rs:332:36:
+w-at-bound: KILLED
+    the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib --- FAILED
+    thread 'the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib' (3638175) panicked at crates/aethelgard-chaos/tests/bounds.rs:342:31:
+w-after-fold: KILLED
+    the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib --- FAILED
+    thread 'the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib' (3640239) panicked at crates/aethelgard-chaos/tests/bounds.rs:333:9:
+m-gone: KILLED
+    a_booted_run_holds_exactly_one_witness_per_solved_output --- FAILED
+    thread 'a_booted_run_holds_exactly_one_witness_per_solved_output' (3643470) panicked at crates/aethelgard-chaos/tests/motor.rs:373:5:
+    assertion `left == right` failed
+      left: Ok(())
+     right: Err("a booted run's solved motor output has no witness")
+m-unbooted-too: KILLED
+    a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop --- FAILED
+    a_booted_run_holds_exactly_one_witness_per_solved_output --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop' (3645509) panicked at crates/aethelgard-chaos/tests/motor.rs:1437:5:
+    assertion `left == right` failed
+      left: Err("a booted run's solved motor output has no witness")
+     right: Ok(())
+r-gone: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3650144) panicked at crates/aethelgard-chaos/tests/campaign.rs:3314:9:
+    assertion `left == right` failed: kind 11
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+    a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop --- FAILED
+r-11: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3652138) panicked at crates/aethelgard-chaos/tests/campaign.rs:3314:9:
+    assertion `left == right` failed: kind 11
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-12-21-value: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3667875) panicked at crates/aethelgard-chaos/tests/campaign.rs:3314:9:
+    assertion `left == right` failed: kind 12 value
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-12-21-status: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3669860) panicked at crates/aethelgard-chaos/tests/campaign.rs:3314:9:
+    assertion `left == right` failed: kind 12 status
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-13-lines: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3671854) panicked at crates/aethelgard-chaos/tests/campaign.rs:3377:9:
+    assertion `left == right` failed: kind 13 lines
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-13-absent: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3673861) panicked at crates/aethelgard-chaos/tests/campaign.rs:3377:9:
+    assertion `left == right` failed: kind 13 absent
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-22-lines: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3675967) panicked at crates/aethelgard-chaos/tests/campaign.rs:3377:9:
+    assertion `left == right` failed: kind 22 lines
+      left: Ok(())
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-22-unrouted: KILLED
+    a_boots_reads_are_all_read_or_all_unread --- FAILED
+    thread 'a_boots_reads_are_all_read_or_all_unread' (3677960) panicked at crates/aethelgard-chaos/tests/campaign.rs:3377:9:
+    assertion `left == right` failed: kind 22 unrouted
+      left: Err("an SPI witness carries a line that is not its multiplexer's")
+     right: Err("the boot's registers, identity reads and witnesses are not all read or all unread with its boot word")
+r-renode-gone: KILLED
+    a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop' (3680165) panicked at crates/aethelgard-chaos/tests/motor.rs:1439:9:
+    assertion `left == right` failed: kind 26
+      left: Ok(())
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+    a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness --- FAILED
+r-k26: KILLED
+    a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop' (3682217) panicked at crates/aethelgard-chaos/tests/motor.rs:1439:9:
+    assertion `left == right` failed: kind 26
+      left: Ok(())
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+    a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness --- FAILED
+r-k29: KILLED
+    a_boot_that_read_nothing_holds_no_serial_witness --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_serial_witness' (3684240) panicked at crates/aethelgard-chaos/tests/serial.rs:1819:5:
+    assertion `left == right` failed
+      left: Err("a serial witness's echo is not what its capture and its RX pin give")
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+r-k30: KILLED
+    a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop' (3686819) panicked at crates/aethelgard-chaos/tests/motor.rs:1439:9:
+    assertion `left == right` failed: kind 30
+      left: Err("a judge's stop is not at its timer's witnesses' anchor plus DSHOT_WINDOW_NS, inside the boot")
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+r-k34: KILLED
+    a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness' (3689642) panicked at crates/aethelgard-chaos/tests/pin_devices.rs:1784:9:
+    assertion `left == right` failed: kind 34
+      left: Ok(())
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+r-k36: KILLED
+    a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness' (3692070) panicked at crates/aethelgard-chaos/tests/pin_devices.rs:1784:9:
+    assertion `left == right` failed: kind 36
+      left: Ok(())
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")
+r-k37: KILLED
+    a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness --- FAILED
+    thread 'a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness' (3694064) panicked at crates/aethelgard-chaos/tests/pin_devices.rs:1784:9:
+    assertion `left == right` failed: kind 37
+      left: Err("a level witness names no kind 26 judged by level, or one twice")
+     right: Err("a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop")

@@ -1753,3 +1753,34 @@ fn a_mismatch_reads_other_than_its_declaration() {
         "an input's mismatch reads no level, or the driven one"
     );
 }
+
+/// `AET-WO-2309` (ruled D3): a boot that read nothing holds none of what only
+/// a boot Renode read gives. Unread whole and naming its bound, the run
+/// replays without them; any one kind of 26, 34, 36 and 37 put back beside
+/// it is refused by name.
+#[test]
+fn a_boot_that_read_nothing_holds_no_pin_motor_or_level_witness() {
+    let killed = |keep: Option<u64>| {
+        let mut r = base();
+        unread_boot(&mut r);
+        r.retain(|x| {
+            !matches!(
+                x,
+                Record::MotorWitness { .. }
+                    | Record::PinGpioWitness { .. }
+                    | Record::PinAdcWitness { .. }
+                    | Record::MotorLevelWitness { .. }
+            ) || Some(x.kind()) == keep
+        });
+        let last = r.len() - 1;
+        r[last] = Record::Verdict {
+            pass: false,
+            findings: vec![("cpu_aborted".into(), "error".into(), 1)],
+        };
+        check_run(&r).map(|_| ())
+    };
+    assert_eq!(killed(None), Ok(()));
+    for kind in [26, 34, 36, 37] {
+        assert_eq!(killed(Some(kind)), Err(RENODE_READ), "kind {kind}");
+    }
+}
