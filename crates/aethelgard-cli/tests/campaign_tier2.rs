@@ -636,7 +636,7 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     let tolerated = records(&run_dir(line(&a, "droop-tolerated")));
     assert_eq!(
         reference(&tolerated),
-        [want_reference.clone()],
+        std::slice::from_ref(&want_reference),
         "the tolerated droop holds the same undisturbed boot word as its reference"
     );
     assert_eq!(

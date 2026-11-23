@@ -166,4 +166,9 @@ All as stated in §1. Q-F's grants as used:
 - **Weights (P3):**
   - `twin_tier2`'s renamed A8 row at 18 (14.24 s in the image × 1.2);
   - `campaign_tier2`'s new 28 s test is inside its `ci/colocate.tsv` block, which counts as weighed (§8).
+- **CI, first run** (45120841792 and siblings, on `82cfda94`):
+  - every tools shard failed at "plan": `test-weights.tsv` still named the tier-1 droop test I had renamed (§3). Fixed in `89cb1981`; `ci/shard.sh`'s parse, assign and guard then passed in the image (3,057 tests, 12 shards).
+  - `gates` and `bench-package` failed only on the package (it "differs"; every verify gate passed and every campaign matched). They wait on the dispatch.
+  - Every other job passed: cli, pinned, pinout, image, foreign, the ArduPilot seeds, generated, source.
+- **CI, second run** (on `88f87e50`, main `aaad1555` merged): shard 0's clippy, run with `--features aethelgard-cli/with-tools`, flagged a `clone` in `campaign_tier2` (`cloned_ref_to_slice_refs`). My host clippy had run without the feature, so it never compiled the tier-2 tests. Fixed, and clippy with the feature is clean on the host. **Lesson:** run the gate's clippy with every feature CI enables.
 - **CI and the package:** FINAL_CI
