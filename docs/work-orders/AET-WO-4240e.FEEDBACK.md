@@ -1,6 +1,6 @@
 # AET-WO-4240e — FEEDBACK: the generated firmware never switches a kernel-clock mux away from a dead input
 
-**Builder:** Claude (Opus 5.5), Furnace, 2026-11-23. Branch `wo/aet-4240e-kernel-clock-switch` from `main` `465bd860`, with `main` `8d727980` merged. PR #372, left unmerged.
+**Builder:** Claude (Opus 5.5), Furnace, 2026-11-23. Branch `wo/aet-4240e-kernel-clock-switch` from `main` `465bd860`, with `main` `8d727980` and `e5984c86` merged. PR #372, left unmerged. **READY.**
 
 **The answer:**
 - **Before:** 26 of the 32 committed specifications that generate started SPI1–3 with no kernel clock. That is every board on the HSI with SPI on `SPI123SEL`. The firmware wrote `SPI123SEL` = `per_ck` while the mux's input, `pll1_q_ck`, had never run (RM0433 Rev 9 pp. 371–372).
@@ -28,9 +28,13 @@
 | `0a777ce3` | the bench package from dispatch `45252001498`; CI then red on four tier-2 tests |
 | `a5eea862` | two tier-2 pins (the switch's `prove`; the campaign's droop plant) |
 | `04813286` | Q11 (a), whole `RCC_CR` words and their acknowledgements; Q12, the bound to 40; the bench sheet's read-only rule |
+| `de19b90b` | the tier-2 pins for whole words; FEEDBACK |
+| `ea834e95` | the bench package from dispatch `45270122078` |
+| `df37f064` | `main` `e5984c86` (1608) merged |
+| (this) | READY: the CI line |
 | `9666fa12` | the reduction pass |
 | `2f3184b4` | the measurement re-run |
-| (this) | BENCH's `L…` citations moved with their lines (D6; 29 remapped, each to the identical line); FEEDBACK |
+| `5dfd003b` | BENCH's `L…` citations moved with their lines (D6; 29 remapped, each to the identical line); FEEDBACK |
 
 **Who wrote what:**
 - I wrote the measurement, the generator, the IR's solved facts, the twin and CLI wiring, the goldens, and the review's fixes.
@@ -184,11 +188,10 @@ Two earlier forms went wrong. The first compared each `RCC_CR` write with the la
 
 ## 6. Gates, CI, package
 
-- **Local, at `2f3184b4` (BENCH's citations re-run after, `bench_board_tier1` 6 of 7):**
+- **Local, at `df37f064`** (`main` `e5984c86` merged, with the package):
   - `cargo fmt --all -- --check`: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-  - `cargo test --workspace`, in a capped scope: 2,987 passed and 1 failed.
-  - The one expected failure is `bench_board_tier1::the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: the package's `MANIFEST.json` still names `main`'s ELF and specification. It waits for the dispatch.
+  - `cargo test --workspace`, in a capped scope: 3,005 passed, 0 failed.
 - **In the tools image (Kani 0.68.0, Renode 1.17.0):**
   - **prove** on `boards/sentinel-01-bench`, each passing: `spi_kernel_switch_is_in_order_bounded_and_named`, `spi1_transfer_is_bounded_and_ordered`, `spi1_transfer_refuses_too_many_frames`, `every_valid_sequence_spi1`.
   - **simulate:** `sentinel-01-bench` (ELF `eb1d9bfe…`) and `d1-drv8876` (ELF `441a7ee7…`) pass, boot word `0x2100B007`.
@@ -197,4 +200,7 @@ Two earlier forms went wrong. The first compared each `RCC_CR` write with the la
   - `MANIFEST.json`: its ELF and `FAB-NOTES.md` hashes, and the specification (`0cf10573…`), topology (`1f04dae2…`) and verdict (`59e26a4b…`) hashes;
   - `FAB-NOTES.md`: the specification hash (L4) and its `RCC.CR` acknowledgement lines (Q8, Q11), which the notes list like every other.
   `BENCH.md` L5 names the new ELF. Every file `ORDERED.sha256` lists is byte-identical (`sha256sum -c` on the artifact), and so are the other ten files.
-- **CI:** TODO.
+- **CI:**
+  - green at `df37f064`: `ci` run `45276505320`, every job, all 12 tools shards and `bench-package`;
+  - green at `ea834e95` too, the package commit before `main` was merged: `ci` `45271847684`, `engine-image` `45271847618`, `ardupilot-image` `45271847669`;
+  - red at `0a777ce3` (`45253373975`), the four tier-2 tests answered by Q11 and Q12 and the two pins (§3, §4).
