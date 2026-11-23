@@ -192,11 +192,12 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - D2's tier-2 test in `with_tools.rs`, with its `ci/test-weights.tsv` row, which §3 allows. It is a Furnace estimate: 123.33 s alone in the image, times 2.8, gives 345.324.
   - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
   - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
-- **`main` merged three times:**
+- **`main` merged four times:**
   - `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`.
   - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`.
   - `15798f91` (2309's chaos change, 4407's images, and `docs/`), at `ff708b3a`. One conflict: `ci/test-weights.tsv`, where each side added a header line, and both are kept. On the merged tree: fmt and clippy clean, `cargo test --workspace` **2802 passed, 0 failed** (`m/ws-merged.log`), and `ci/test-shard.sh` 126 PASS.
   - `29a34afa` (1914: the shard planner's P3, which refuses a test of 10 s or more with no row), at `b280f37b`. It changes only `ci/` and `docs/`, so no crate gate moves. One conflict, again a header line in `ci/test-weights.tsv`; both are kept. `ci/test-shard.sh`: 137 PASS.
+  - `57b62195` (docs only: `docs/roadmap.md` and `AET-WO-1915.md`). `readme_status` passes on the merged tree.
   - As the architect's 04:30Z note asks, **every new tier-1 test of 0.5 s or more now has a row**, measured on Furnace alone (the worst of three, one thread, debug host build), times 2.8:
     - `the_prove_verdict_…` 32.86 s → 92.008;
     - `the_drc_and_support_…` 16.94 → 47.432;
