@@ -2013,8 +2013,7 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
         report.campaign.as_deref().unwrap_or_default(),
     );
     let drawn = t.spec.board.drawn;
-    let code;
-    (report.ok, report.verdict, report.reason, code) =
+    (report.ok, report.verdict, report.reason) =
         outcome(passes(&report.findings, &report.gates, drawn), drawn);
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
@@ -2055,25 +2054,31 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             f.preconditions = pre;
         }
     }
-    Ok(code)
+    // Read after the package: `--against-fab` fails a verdict whose
+    // package differs (`package`).
+    Ok(exit_code(report.ok, report.verdict))
 }
 
-/// The verdict, its reason and the exit code, from whether every gate
-/// passed and whether the board is drawn (`AET-WO-1607` D2, ruled):
-/// `INV-03`'s "verified" needs ERC, so a board not drawn is never `pass`.
-/// Its run is `not_verified`, reason `DrawsNoBoard`, exit
-/// [`EXIT_NOT_VERIFIED`], when every gate that could run passed; a gate
-/// that failed is `fail`, exit [`EXIT_FAIL`], drawn or not.
-fn outcome(passed: bool, drawn: bool) -> (bool, &'static str, Option<&'static str>, u8) {
+/// The verdict and its reason, from whether every gate passed and whether
+/// the board is drawn (`AET-WO-1607` D2, ruled): `INV-03`'s "verified" needs
+/// ERC, so a board not drawn is never `pass`. Its run is `not_verified`,
+/// reason `DrawsNoBoard`, when every gate that could run passed; a gate that
+/// failed is `fail`, drawn or not.
+fn outcome(passed: bool, drawn: bool) -> (bool, &'static str, Option<&'static str>) {
     match (passed, drawn) {
-        (true, true) => (true, "pass", None, 0),
-        (true, false) => (
-            false,
-            "not_verified",
-            Some("DrawsNoBoard"),
-            EXIT_NOT_VERIFIED,
-        ),
-        (false, _) => (false, "fail", None, EXIT_FAIL),
+        (true, true) => (true, "pass", None),
+        (true, false) => (false, "not_verified", Some("DrawsNoBoard")),
+        (false, _) => (false, "fail", None),
+    }
+}
+
+/// The exit code of the verdict as it is finally stated: `0` on a pass,
+/// [`EXIT_NOT_VERIFIED`] on `not_verified`, and [`EXIT_FAIL`] otherwise.
+fn exit_code(ok: bool, verdict: &str) -> u8 {
+    match (ok, verdict) {
+        (true, _) => 0,
+        (false, "not_verified") => EXIT_NOT_VERIFIED,
+        (false, _) => EXIT_FAIL,
     }
 }
 
@@ -2627,22 +2632,23 @@ mod tests {
     #[test]
     fn a_board_not_drawn_never_exits_0() {
         for passed in [true, false] {
-            let (ok, verdict, _, code) = outcome(passed, false);
-            assert!(!ok && verdict != "pass" && code != 0, "{passed}");
+            let (ok, verdict, _) = outcome(passed, false);
+            assert!(!ok && verdict != "pass", "{passed}");
+            assert_ne!(exit_code(ok, verdict), 0, "{passed}");
         }
         assert_eq!(
             outcome(true, false),
-            (
-                false,
-                "not_verified",
-                Some("DrawsNoBoard"),
-                EXIT_NOT_VERIFIED
-            )
+            (false, "not_verified", Some("DrawsNoBoard"))
         );
-        assert_eq!(outcome(false, false), (false, "fail", None, EXIT_FAIL));
+        assert_eq!(exit_code(false, "not_verified"), EXIT_NOT_VERIFIED);
+        assert_eq!(outcome(false, false), (false, "fail", None));
         assert_ne!(EXIT_NOT_VERIFIED, EXIT_FAIL);
-        assert_eq!(outcome(true, true), (true, "pass", None, 0));
-        assert_eq!(outcome(false, true), (false, "fail", None, EXIT_FAIL));
+        assert_eq!(outcome(true, true), (true, "pass", None));
+        assert_eq!(exit_code(true, "pass"), 0);
+        assert_eq!(outcome(false, true), (false, "fail", None));
+        // A pass that `--against-fab` turned into a fail exits 1 (the
+        // `four_layer_fab_tier2` and `against_fab_tier2` cases).
+        assert_eq!(exit_code(false, "fail"), EXIT_FAIL);
     }
 
     /// `AET-WO-1607` (5): a board gate reports `not_applicable` with its
