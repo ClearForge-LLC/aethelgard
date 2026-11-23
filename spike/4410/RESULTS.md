@@ -1,6 +1,6 @@
 # AET-WO-4410 — §1.1 measurement
 
-Measured 2026-11-23 on `465bd860` + `f6106fae` (the predictions). Binary: `target/debug/aethelgard` built from this branch. ArduPilot: the pinned image `aethelgard-ardupilot@sha256:e1809b90…` (`container/ARDUPILOT-IMAGE`), its `/opt/ardupilot` copied out with `podman cp` (no run) to the kit, `fb773567` with ChibiOS `d103983f`. Every ArduPilot citation below is a path in that tree at that tag, read there.
+Measured 2026-11-23 on `465bd860` + `f6106fae` (the predictions). Binary: `target/debug/aethelgard` built from this branch's clean tree. Every result below was re-taken on a rebuild after the scratch builds: `generate.sh`'s table, and every topology and `hwdef.dat` it wrote, are byte-identical, and so are the `check pinout` results. ArduPilot: the pinned image `aethelgard-ardupilot@sha256:e1809b90…` (`container/ARDUPILOT-IMAGE`), its `/opt/ardupilot` copied out with `podman cp` (no run) to the kit, `fb773567` with ChibiOS `d103983f`. Every ArduPilot citation below is a path in that tree at that tag, read there.
 
 ## M1 · `generate hwdef` on every committed specification
 
@@ -40,16 +40,17 @@ A scratch build gated `SenseNotEmitted` and `OscillatorNotCited` behind environm
 - Fields written: PA13 `ALTERNATE`, AF0, `PUSHPULL`, `OSPEED_MEDIUM`, **`PULLUP`**, ODR high; PA14 the same with **`PULLDOWN`**.
 - `check pinout` on that ELF with its `hwdef.h`, against `sentinel-01-minimal`'s topology: **ok, no finding**. PA13 and PA14 are at their reset decode (alternate AF0), so they are not in `configured`.
 
-- **The text is ArduPilot's own:** 196 uncommented lines each in the tree's `hwdef.dat` files (103 each on boards whose own MCU line is H7). No SWD line in the tree carries a pull token (`source-A.md` §2).
-- **The label alone picks the AF:** `JT` is in `af_labels` (`chibios_hwdef.py:33`); `get_alt_function` (`:151-179`) finds `PA13:JTMS-SWDIO` and `PA14:JTCK-SWCLK` at AF0 (`scripts/STM32H753xx.py:247`, `:249`). `SWD` is a type `valid_type` accepts (`:2792`). Its pulls are the script's defaults for those labels (`:407-413`), and they are RM0433's reset pulls for PA13 and PA14.
+- **The text is ArduPilot's own:** `grep -h '^PA13 JTMS-SWDIO SWD *$' */hwdef.dat` counts 197 (186, and 11 with a trailing space), and PA14's line the same. 98 boards whose own `MCU` line is H7 carry it. **No SWD line in the tree carries a pull or `FLOATING` token** (0 of 394). (`source-A.md` §2 counted 196 and 103 by another method.)
+- **The label alone picks the AF:** `JT` is in `af_labels` (`chibios_hwdef.py:33`); `get_alt_function` (`:151-179`) finds `PA13:JTMS-SWDIO` and `PA14:JTCK-SWCLK` at AF0 (`scripts/STM32H753xx.py:247`, `:249`). `SWD` is a type `valid_type` accepts (`:2792`). Its pulls are the script's defaults for those labels (`:407-413`), and they equal RM0433's reset pulls (Rev 9 §11.4.4 p. 542: `GPIOA_PUPDR` resets to `0x6400 0000`, PA13 up and PA14 down; held text line 21320, as `ir/pin_devices.rs:59` cites).
 - **An unlisted pin is `INPUT FLOATING`** (`chibios_hwdef.py:47`, `:145`): today's boards turn SWD off at boot, as A11 says.
 - **No define turns SWD off** (searched `SWD`, `JTMS`, `SWCLK`, `DBGMCU` in the HAL and `hwdef/common`).
+- **Every CI board, with the two lines:** the four hand boards (`pincheck/fixtures/{step-g,seed-pin,seed-af,seed-pkg}`) and the five generated ones (`sentinel-01`, `sentinel-02`, `serial-dshot-9600`, `four-port`, `sentinel-02-noimu`, from this branch's goldens, each byte-identical to `generate`'s output) each had the two lines appended. All nine were built in one capped container (`sh/ap.sh`, 22–46 s each), and every build passed. CI's own `container/ardupilot-pinout.sh` over the eight it judges, against `sentinel-01-minimal`'s solved topology and `step-g.allow.json`: **exit 0, no `::error::`**. Each hand board fails with exactly its expected findings, and each generated board passes, as on `main`. **The SWD §7 condition does not fire.**
 - **Also built:** `PA13 JTMS-SWDIO SWD PULLUP` and `PA14 JTCK-SWCLK SWD PULLDOWN` (the pulls written out, the house style of every other line) build and judge the same (`s03adc1`, below).
 
 ### (1) The battery monitor — read, then built
 
 Source (`source-A.md` §1; spot-checked lines marked ✓):
-- **Pin line:** `<pin> BATT_VOLTAGE_SENS ADC<n> SCALE(1)`. `ADC1`, `ADC2` and `ADC3` are all parsed (`chibios_hwdef.py:2191-2202` ✓). 52 boards write `PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)` (CubeOrange `hwdef.dat:72`).
+- **Pin line:** `<pin> BATT_VOLTAGE_SENS ADC<n> SCALE(1)`. `ADC1`, `ADC2` and `ADC3` are all parsed (`chibios_hwdef.py:2191-2202` ✓). 56 boards write `PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)` (my grep; CubeOrange `hwdef.dat:72`).
 - **The analog pin number is the named ADC's channel,** with no offset for ADC3 (`chibios_hwdef.py:2204` ✓ `analog = p.extra_value('ANALOG', type=int, default=chan)`; NWBLUE_PROH757 `hwdef.dat:105`, `:179` ✓: `PF3 … ADC3`, `HAL_BATT_VOLT_PIN 5`).
 - **`SCALE(n)` is the pin's own multiplier** in `HAL_ANALOG_PINS` (`{chan, analog, n*3.30/4096}`), not the divider. With `SCALE(1)` the row is `3.30/4096`.
 - **The defines are written by hand as `define` lines** (the script writes none). `HAL_BATT_VOLT_PIN` without `HAL_BATT_VOLT_SCALE` is a compile `#error` (`AP_BattMonitor_Analog.cpp:30-36` ✓). `HAL_BATT_VOLT_SCALE` becomes `AP_BATT_VOLTDIVIDER_DEFAULT`, the `VOLT_MULT` default; ArduPilot computes `(pin volts − offset) × VOLT_MULT` (`:160`). So with `SCALE(1)`, **`HAL_BATT_VOLT_SCALE` is `(top + bottom) / bottom`** exactly.
@@ -65,13 +66,15 @@ Built in the pinned image (scratch Sentinel-03: its generated file with U5's ori
 | `s03adc1` | `PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)` (an ADC1 pin, scratch) | `HAL_BATT_VOLT_PIN 10`, `HAL_BATT_VOLT_SCALE 11.0`, `HAL_BATT_MONITOR_DEFAULT 3` | ok | **ok, no finding** |
 | `s03quot` | as `s03adc1` | `HAL_BATT_VOLT_SCALE (109090.0f/9090.0f)` | ok | — |
 
-- **An ADC3-only board does not build at the tag.** `s03batt` stops at `modules/ChibiOS/os/hal/ports/STM32/LLD/ADCv4/hal_adc_lld.h:339` `#error "STM32_ADC_ADC12_DMA_STREAM not defined"`.
+- **An ADC3-only board did not build at the tag, in either of two probes.** `s03batt` stops at `modules/ChibiOS/os/hal/ports/STM32/LLD/ADCv4/hal_adc_lld.h:339` `#error "STM32_ADC_ADC12_DMA_STREAM not defined"`.
   - ArduPilot's H7 mcuconf enables ADC12 unconditionally (`stm32h7_mcuconf.h:420` `#define STM32_ADC_USE_ADC12 TRUE`) and takes its DMA stream from an ADC1 or ADC2 pin (`:433-438`).
   - `s03adc3b`'s workaround is refused too: `stm32h7_mcuconf.h:420: error: "STM32_ADC_USE_ADC12" redefined [-Werror]`, and the stream is still missing.
   - **No board in the tree is ADC3-only.** Every `hwdef.dat` with an `ADC3` pin also has an `ADC1` pin (NWBLUE_PROH757: `PC2 … ADC1`, `hwdef.dat:106`).
 - **The work order's §5 case is live on Sentinel-03:** its sense is solved to `PF3`, `ADC3_INP5` only (`adc_inputs.VBAT_SENSE`: `{PF3, ADC3, INP5}`), because the solver takes ADC1 or ADC3 (`ir/src/pin_devices.rs:2119` `MODELLED_ADCS`, `1211` Q8).
 - **With an ADC1-only rule** (scratch: `MODELLED_ADCS = ["ADC1"]`, reverted), Sentinel-03's sense is solved to **`PC0`** (position 26, `ADC1_INP10`). Only `power.sense` and `adc_inputs` differ; no other pin moves. That is still a pin move.
 - `s03adc1`'s `hwdef.h`: `HAL_ANALOG_PINS { 10, 10, 3.30/4096 }, /* PC0 BATT_VOLTAGE_SENS */`.
+- **`s03adc1`'s clean verdict is not a confirmation of the sense.** It was judged against the topology whose sense is on PF3, while the board put it on PC0, and no finding named it: **today's judge does not see a sense pin at all** (an analog pin decodes as reset, and the topology's `power.sense` is never read). The verdict confirms the SWD lines, the rest of the board and the build only.
+- **The `reserved_pins` route,** scratch: reserving Sentinel-03's ADC3-only pins one at a time moves the sense PF3 → PF4 → … → PF10 → **PC0** after eight reservations (PF3–PF10). Only `power.sense` and `adc_inputs` differ. `power.sense` has no pin key (`ir/src/power.rs:329-336`; "a sense is never pinned", `pin_devices.rs`).
 
 ### (2) The 16 MHz clock tree — read
 
@@ -100,6 +103,7 @@ ChibiOS formula lines (`hal_lld_type1.h` ✓): `PLLCLKIN` `:1541-1546`; `PLL2_RE
 - Each is a masked read-modify-write of bit 25 (PA1SO) and bits 23:21 (EPIS). None touches PC2SO (bit 26) or PC3SO (bit 27).
 - No other `PMCR`, `PC2SO` or `PC3SO` appears in `libraries/`, in ChibiOS outside the ST headers, or in either hwdef generator script (`grep -rn`, the reports in the kit).
 - What `check pinout` reads: from the ELF, `gpio_default_config` and the identity tables (`_serial_tab`, `var_info` rows, parameter defaults); from `hwdef.h`, the 33 `VAL_GPIOx_{MODER,AFRL,AFRH}` macros and, through `Preprocessed::value`, the identity judge's device lists. **None holds a PMCR value**: the writer's operands are instruction immediates, and no macro in `hwdef.h` carries one.
+- Also searched, nothing found: raw-address stores (`0x58000400`–`0x5800040f`) in C, C++, assembly, Python and Lua; any `PMCR` or `SYSCFG` in `.S`/`.s` files; `PMCR` in Lua scripts. **Not covered:** a write at run time through a generic memory interface, which no source text names.
 - The nearest readable fact is `HAL_USE_MAC` (written by `chibios_hwdef.py:952-954` only when ETH1 is present): it says whether the one writer is linked, not what PC2SO holds.
 
 ## M4 · (6) F4, today's order
@@ -112,11 +116,14 @@ ChibiOS formula lines (`hal_lld_type1.h` ✓): `PLLCLKIN` `:1541-1546`; `PLL2_RE
 
 ## M6 · 2311 F1, SERIAL0's pull
 
-`AP_SerialManager::init` calls `set_options(i)` for SERIAL1 up (`AP_SerialManager.cpp:451-457`), but **SERIAL0 reaches `UARTDriver::set_options` too**: `find_serial` sets a port's options "before any user does begin()" (`:632-656`, `port->set_options(_state->options)` at `:656`), and GCS looks up every MAVLink port through it (`GCS_Common.cpp:2848`). With RXINV and TXINV clear, `set_options` pulls both lines up (`UARTDriver.cpp:1611`, `:1624`).
+`AP_SerialManager::init` calls `set_options(i)` for SERIAL1 up (`AP_SerialManager.cpp:451-457`), but **SERIAL0 reaches `UARTDriver::set_options` too**: `GCS::setup_console` asks for MAVLink instance 0 (`GCS_Common.cpp:2808-2810`). `find_protocol_instance` searches from SERIAL0 (`AP_SerialManager.cpp:605`), and MAVLink2, SERIAL0's protocol, matches MAVLink (`:781-783`). `find_serial` then sets the port's options "before any user does begin()" (`:632-656`, `port->set_options(_state->options)` at `:656`). With RXINV and TXINV clear, `set_options` pulls both lines up (`UARTDriver.cpp:1611`, `:1624`).
 
 ## M7 · Which committed bytes would move (read; nothing built yet)
 
-- **`fab/`:** only `sentinel-01-bench/package/MANIFEST.json`. Its `topology_sha256` (line 4) moves, and so does each scenario's `sha256`, because a campaign verdict carries the topology's hash (`cli/src/campaign.rs:1191`, `:1279`). Its other lines are hashes too. `FAB-NOTES.md` holds no topology hash (`grep 857ca021 -r fab` finds MANIFEST only). The ELF's provenance names the specification's hash (`svd-hal/src/board/firmware.rs:191`), which does not move. `SOLVED_SCHEMA_VERSION` appears in svd-hal only under `#[cfg(test)]` (`board.rs:8593`, after `:8572`). **No Gerber, drill, BOM, CPL or ELF byte moves.** Confirmed by the dispatch, after `4240e`.
+- **`fab/`:** only `sentinel-01-bench/package/MANIFEST.json`, two lines, by reading `fab.rs:680-760`:
+  - `topology_sha256` (line 4);
+  - `verdict_sha256`, the sha256 of the `verify` verdict line, which carries the topology's hash (`verify.rs:77`).
+  - **The scenarios' `sha256` do not move:** each is the `--scenarios` input file's hash (`fab.rs:690-691`, `:725-729`), and no scenario file changes. The `files` map moves only if a file does. `FAB-NOTES.md` holds no topology hash (`grep 857ca021 -r fab` finds MANIFEST only). The ELF's provenance names the specification's hash (`svd-hal/src/board/firmware.rs:191`), which does not move. `SOLVED_SCHEMA_VERSION` appears in svd-hal only under `#[cfg(test)]` (`board.rs:8593`, after `:8572`). **No Gerber, drill, BOM, CPL or ELF byte moves.** Confirmed by the dispatch, after `4240e`.
 - **hwdef goldens:** there are **five** `hwdef/tests/fixtures/*.hwdef.dat`, not four (`four-port`, `sentinel-01`, `sentinel-02`, `serial-dshot-9600`, `serial-dshot-9600-open`). Each moves by the two SWD lines, plus 2311 F1's sentence where a `DEFAULT_SERIALn_PROTOCOL` is emitted. None moves by (1), since none has a sense.
 - **The four hand-written CI boards** (`pincheck/fixtures/{step-g,seed-af,seed-pin,seed-pkg}.hwdef.dat`) must gain the SWD lines too. Otherwise their ELFs leave PA13 and PA14 as inputs, and the new SWD finding names every one in CI's `ardupilot (…)` jobs. Q5 rewords their first lines in the same edit. The prediction (P13) missed them.
 - **Topologies:** the eight committed `SolvedTopology` files move by `schema_version` (P12), and `pincheck/tests/common/topology.json` is regenerated (R9, M5).
@@ -134,4 +141,4 @@ ChibiOS formula lines (`hal_lld_type1.h` ✓): `PLLCLKIN` `:1541-1546`; `PLL2_RE
 | P8 | battery text; `HAL_BATT_MONITOR_DEFAULT 4` | the text, yes; **`4` is wrong, voltage only is `3`** |
 | P9 | SPI1–3 80 MHz at 16 MHz; SPI4/5 may differ | yes; SPI4–6 **100 MHz** |
 | P10 | no witness for PC2SO/PC3SO | yes: one writer, which never touches them |
-| P11–P15 | the moves | as M7; P13 missed the four CI hand boards |
+| P11–P15 | the moves | as M7; P13 missed the four CI hand boards; P14's "each scenario's sha256" is wrong, `verdict_sha256` moves instead |

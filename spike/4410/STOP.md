@@ -6,7 +6,7 @@ Stopped 2026-11-23 with the measurement (`RESULTS.md`), the line texts, (1)'s fi
 
 ### S1 · (7) has no witness that `check pinout` reads — §7 "stop with the source lines"
 
-- One writer of `SYSCFG->PMCR` exists at the tag: ChibiOS's `mac_lld_init` (`hal_mac_lld.c:306`, `:308`, `:310`). It is a masked read-modify-write of PA1SO (bit 25) and EPIS (bits 23:21). **Nothing at the tag writes PC2SO or PC3SO.**
+- One writer of `SYSCFG->PMCR` exists at the tag, in source text (no raw-address store, assembly or Lua writer either; a run-time write through a generic memory interface is not covered): ChibiOS's `mac_lld_init` (`hal_mac_lld.c:306`, `:308`, `:310`). It is a masked read-modify-write of PA1SO (bit 25) and EPIS (bits 23:21). **Nothing at the tag writes PC2SO or PC3SO.**
 - What `check pinout` reads holds no PMCR value. The writer's operands are instruction immediates, and no `hwdef.h` macro carries one (RESULTS M3).
 - **D1 — what row L1129 becomes.** Options:
   - **(i) Lean.** Record it as a source fact: the pincheck README names the one writer and its bits at `fb773567`, with the re-read due on any ArduPilot re-pin. The row closes as "no writer at the tag; nothing to judge from the image". No code.
@@ -19,18 +19,20 @@ Stopped 2026-11-23 with the measurement (`RESULTS.md`), the line texts, (1)'s fi
 - The solver puts `VBAT_SENSE` on **`PF3`, whose only channel is `ADC3_INP5`** (`adc_inputs`; the solver takes ADC1, then ADC3, `pin_devices.rs:2119`, `1211` Q8).
 - ArduPilot parses `PF3 BATT_VOLTAGE_SENS ADC3 SCALE(1)`, but the build fails. Its H7 mcuconf enables ADC12 unconditionally (`stm32h7_mcuconf.h:420`), and ChibiOS then needs an ADC12 DMA stream, which the script allocates only from an ADC1 or ADC2 pin (`hal_adc_lld.h:339` `#error`, measured).
 - Redefining `STM32_ADC_USE_ADC12 FALSE` is itself an error (`-Werror`, measured). No board in the tree is ADC3-only.
-- On an ADC1 pin it builds, and `check pinout` passes (`s03adc1`).
+- On an ADC1 pin it builds (`s03adc1`). Its clean `check pinout` verdict says nothing about the sense: **today's judge does not see a sense pin**. (1)'s judge adds that: the `HAL_ANALOG_PINS` row and `HAL_BATT_VOLT_PIN` against the topology's `adc_inputs`.
 - An ADC1-only rule, scratch, moves Sentinel-03's sense `PF3` → **`PC0`** (`ADC1_INP10`, position 26). Nothing else moves.
-- **D2 — where the pin moves, and who moves it.** Options:
-  - **(a) Lean.** `hwdef` refuses by name any topology whose emitted ADC lines include no `ADC1` line (a new refusal, say `AdcWithoutAdc1`, citing `stm32h7_mcuconf.h:420` and `hal_adc_lld.h:339`). Sentinel-03 pins its sense to an ADC1 pin in its own specification, in `4300k`, which owns that file.
-  - (b) The same refusal, plus the solver's sense rule takes ADC1 only. This is an IR touch outside this fence (`solve.rs`, `pin_devices.rs`). It moves `sentinel-03` and `sentinel-02-power` to `PC0`, and it ties a vendor-neutral solver to one firmware.
-  - (c) hwdef emits a second, unsolved ADC1 line to obtain the DMA stream. Rejected: that is a fact with no source (`INV-06`).
+- **A specification cannot pin a sense today:** `power.sense` has no pin key (`power.rs:329-336`), and the solver says "a sense is never pinned".
+- **D2 — where the pin moves, and who moves it.** In every option, `hwdef` refuses by name, in 4410, any topology whose emitted ADC lines include no `ADC1` line: a new refusal, say `AdcWithoutAdc1`, citing `stm32h7_mcuconf.h:420` and `hal_adc_lld.h:339`. The options differ in how Sentinel-03 then reaches an ADC1 pin:
+  - **(a) Lean.** The solver's sense rule prefers the lowest-position free pin **with an ADC1 channel**, and falls back to ADC3 as today. This is an IR touch outside this fence (`solve.rs`, `pin_devices.rs`), for an IR work order or a fence widening. It moves `sentinel-03`'s and `sentinel-02-power`'s sense to `PC0` (scratch, measured: nothing else moves). No specification key is added. It is the order `choose_channel` already prefers, applied to the pin.
+  - (b) A new specification key, `power.sense[].pin`, and Sentinel-03 declares an ADC1 pin. That is a specification schema bump, which this fence excludes.
+  - (c) `4300k` reserves Sentinel-03's eight ADC3-only pins PF3–PF10 in `mcu.reserved_pins`. No schema change, but eight reservations to steer one net (measured: it lands on PC0).
+  - (d) hwdef emits a second, unsolved ADC1 line to obtain the DMA stream. Rejected: that is a fact with no source (`INV-06`).
 
 ## What §2's acceptance meets
 
 - **D3 — Sentinel-03 also needs two specification keys.** With the sense bypassed, Sentinel-03 is refused `ImuOrientationUndeclared` (`U5`). It declares no `orientation` and no `board.forward`. Adding `{x: right, z: up}` (as `sentinel-02-own` declares) and `forward: top` in a scratch copy, it generates, and no pin moves.
-  - Both keys, and the sense pin of D2 (a), are specification keys, which this fence excludes. U5's real orientation is a fact of the drawn board, not mine to choose.
-  - **Lean:** `4300k` declares all three. Until then, 4410 proves "Sentinel-03's hwdef generates" on a test-derived copy built in memory: the committed specification plus the three keys, solved, never written. The committed Sentinel-03 generates when `4300k` lands. Alternatively, the architect widens this fence to those three keys of `sentinel-03.json`.
+  - Both are specification keys, which this fence excludes. U5's real orientation is a fact of the drawn board, not mine to choose.
+  - **Lean:** `4300k` declares both. Until then, 4410 proves "Sentinel-03's hwdef generates" on a test-derived copy built in memory: the committed specification plus the two keys, solved under D2's rule, never written. The committed Sentinel-03 generates when D2's pin and `4300k`'s keys land. Alternatively, the architect widens this fence to those two keys of `sentinel-03.json`.
 - **D4 — `hse-crystal-16` cannot generate after (2):** it declares no console (`NoConsole`). **Lean:** the "16 MHz topology generates" test copies `hse-crystal-16`'s `mcu.hse.crystal` into `serial-dshot-9600` in memory and solves it. No new specification file is added.
 - **D5 — the WO's `HAL_BATT_MONITOR_DEFAULT 4` is current sensing.** Voltage only is `3` (`AP_BattMonitor_Params.h:17-18`). **Lean:** `3`.
 
@@ -57,10 +59,11 @@ Stopped 2026-11-23 with the measurement (`RESULTS.md`), the line texts, (1)'s fi
   - `0`: SPI1–3 80 MHz, SPI4–6 72 MHz (cited as today, plus the PLL2 lines the SPI4 row lacks).
   - `16000000`: SPI1–3 80 MHz, SPI4–6 **100 MHz** (RESULTS (2)).
   - `OscillatorNotCited` then names the oscillator and the list of cited ones. hwdef picks the entry by `clock.hse_hz` exactly, so a 16 MHz topology is never judged against the `0` row's kernel clocks, nor the reverse (§5).
-- **D7 — (3) text.** **Lean:** `PA13 JTMS-SWDIO SWD PULLUP` and `PA14 JTCK-SWCLK SWD PULLDOWN`: the pulls written out, as every other line states its pull. Both forms build and judge clean. ArduPilot's own 196 lines are bare.
+- **D7 — (3) text.** **Lean:** `PA13 JTMS-SWDIO SWD PULLUP` and `PA14 JTCK-SWCLK SWD PULLDOWN`: the pulls written out, as every other line states its pull. Both forms build and judge clean. ArduPilot's own 197 lines each are bare: no SWD line in the tree writes a pull.
   - Pincheck judges mode and AF only (alternate AF0, RM0433's reset), from its own reset table.
   - A topology or allow-list naming PA13 or PA14 is refused, never overwritten (§5).
   - The four CI hand boards (`pincheck/fixtures`) gain the same two lines (RESULTS M7).
+  - **Measured on all nine CI boards** (four hand, five generated): every build passes, and CI's `ardupilot-pinout.sh` exits 0 with every verdict as on `main`. The SWD §7 condition does not fire.
 
 ## Findings beside the fence (for FEEDBACK)
 
@@ -71,5 +74,5 @@ Stopped 2026-11-23 with the measurement (`RESULTS.md`), the line texts, (1)'s fi
 ## Taken when ruled (no stop; measured)
 
 - **R9.** Regenerating `pincheck/tests/common/topology.json` turns 9 of 24 `check.rs` tests red, each by the console's PA9 and PA10 read as inputs (RESULTS M5). The test ELFs gain the console's pins.
-- **2311 F1.** SERIAL0 is pulled up through `find_serial` (`AP_SerialManager.cpp:632-656`, `GCS_Common.cpp:2848`). The sentence will say every port ArduPilot opens.
+- **2311 F1.** SERIAL0 is pulled up through `GCS::setup_console` → `find_serial` (`GCS_Common.cpp:2810`, `AP_SerialManager.cpp:605`, `:656`, `:781-783`). The sentence will say every port ArduPilot opens.
 - **(4)–(6), (8)** need no ruling. (6) is reproduced: `GpioNotJudged` is hidden behind `Truncated` and `UnreadableInput`.
