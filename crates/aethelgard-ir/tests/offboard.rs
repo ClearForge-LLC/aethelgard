@@ -248,6 +248,16 @@ fn a_blank_source_or_reference_is_refused_by_the_house_rules() {
             "InvalidIdentifier",
             "motor_outputs[0].pull.resistor.reference",
         ),
+        (
+            |v: &mut Value| v["motor_outputs"][0]["pull"]["resistor"]["part"] = json!(""),
+            "InvalidIdentifier",
+            "motor_outputs[0].pull.resistor.part",
+        ),
+        (
+            |v: &mut Value| v["motor_outputs"][0]["pull"]["resistor"]["to"] = json!(""),
+            "InvalidIdentifier",
+            "motor_outputs[0].pull.resistor.to",
+        ),
     ] {
         let mut v = d1();
         edit(&mut v);
@@ -306,6 +316,18 @@ fn a_pin_reserved_twice_is_refused() {
             Some("PD2"),
             Some("mcu.reserved_pins[1].pin")
         ),
+        "{e}"
+    );
+}
+
+#[test]
+fn a_blank_reserved_pin_is_refused() {
+    let mut v = d1();
+    reserve(&mut v, "", "test");
+    let e = refused(&v);
+    assert_eq!(
+        (e.kind(), e.path()),
+        ("InvalidIdentifier", Some("mcu.reserved_pins[0].pin")),
         "{e}"
     );
 }

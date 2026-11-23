@@ -41,6 +41,10 @@ M = [
  ("M30", SO, "ft.order(cs.net, keys, |p| p)", "ft.order(\"\", keys, |p| p)", "offboard", "a_connector_facing_chip_select"),
  ("M31", PD, "ft.order(&a.net, free, |(n, _)| n);", "ft.order(\"\", free, |(n, _)| n);", "offboard", "a_connector_facing_adc_input"),
  ("M32", PD, ".order(\n                        &s.net,", ".order(\n                        \"\",", "offboard", "a_connector_facing_device_signal"),
+ ("M34", LIB, "plain(&r.pin, || format!(\"mcu.reserved_pins[{i}].pin\"))?;", "", "offboard", "a_blank_reserved_pin"),
+ ("M35", LIB, "identifier(IdentifierKind::Reference, &r.reference, || {\n                format!(\"{at}.resistor.reference\")\n            })?;", "", "offboard", "a_blank_source_or_reference"),
+ ("M36", LIB, "plain(&r.part, || format!(\"{at}.resistor.part\"))?;", "", "offboard", "a_blank_source_or_reference"),
+ ("M37", LIB, "plain(&r.to, || format!(\"{at}.resistor.to\"))?;", "", "offboard", "a_blank_source_or_reference"),
  ("M33", SI, "(Some(_), _) => 0,", "(Some(_), _) => PUPDR_PULL_DOWN,", "offboard", "a_motor_net_has_no_internal_pull"),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=os.path.expanduser("~/.cache/aet-4300i/target"),
