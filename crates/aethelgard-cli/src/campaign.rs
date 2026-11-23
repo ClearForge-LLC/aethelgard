@@ -1543,8 +1543,11 @@ fn toolchain_entry(scratch: &Scratch) -> Result<(String, Option<[u8; 32]>), run:
 /// by its path relative to `root` (byte order, `/`): for a regular file, the
 /// path, one 0x00 byte, its length as 8 bytes little-endian, then its bytes;
 /// for a symlink, the path, one 0x01 byte, its target's length as 8 bytes
-/// little-endian, then the target. Directories are walked, never followed
-/// through a link; any other kind of entry is refused.
+/// little-endian, then the target, then, when it resolves to a regular file
+/// (inside the tree or not), that file's bytes as a regular file's are
+/// hashed, so a link cannot carry changed bytes past the digest.
+/// Directories are walked, never followed through a link; any other kind
+/// of entry is refused.
 pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
     use std::io::Read;
     use std::os::unix::ffi::OsStrExt;
@@ -1584,20 +1587,11 @@ pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
     rel.sort();
     let mut hash = Sha256::new();
     let mut buf = vec![0u8; 1 << 20];
-    for (r, p) in rel {
-        let meta = fs::symlink_metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-        hash.update(&r);
-        if meta.file_type().is_symlink() {
-            let target = fs::read_link(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-            let t = target.as_os_str().as_bytes();
-            hash.update([1u8]);
-            hash.update((t.len() as u64).to_le_bytes());
-            hash.update(t);
-            continue;
-        }
-        let mut f = fs::File::open(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+    // A regular file's bytes: 0x00, its length, then the bytes.
+    let mut file = |hash: &mut Sha256, p: &Path, len: u64| -> Result<(), String> {
+        let mut f = fs::File::open(p).map_err(|e| format!("{}: {e}", p.display()))?;
         hash.update([0u8]);
-        hash.update(meta.len().to_le_bytes());
+        hash.update(len.to_le_bytes());
         let mut read = 0u64;
         loop {
             let n = f
@@ -1609,9 +1603,29 @@ pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
             hash.update(&buf[..n]);
             read += n as u64;
         }
-        if read != meta.len() {
+        if read != len {
             return Err(format!("{} changed while it was read", p.display()));
         }
+        Ok(())
+    };
+    for (r, p) in rel {
+        let meta = fs::symlink_metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        hash.update(&r);
+        if meta.file_type().is_symlink() {
+            let target = fs::read_link(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            let t = target.as_os_str().as_bytes();
+            hash.update([1u8]);
+            hash.update((t.len() as u64).to_le_bytes());
+            hash.update(t);
+            // The bytes a link resolves to, inside the tree or not.
+            if let Ok(resolved) = fs::metadata(&p).map(|m| (m.is_file(), m.len())) {
+                if resolved.0 {
+                    file(&mut hash, &p, resolved.1)?;
+                }
+            }
+            continue;
+        }
+        file(&mut hash, &p, meta.len())?;
     }
     Ok(hash.finalize().into())
 }
@@ -2605,6 +2619,51 @@ mod tests {
     /// against a device's witness; with no I2C or SPI witness record (no
     /// identity read on the boot) the count is 0 and says so; with no
     /// release there is no observation and no field.
+    /// `AET-WO-2310` adversarial: the toolchain digest changes whenever a byte
+    /// the toolchain runs does, a link's target's included, and is the same
+    /// for the same tree.
+    #[test]
+    fn the_tree_digest_moves_with_every_byte_name_and_link_target() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("aet-2310-tree-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (tree, outside) = (base.join("tree"), base.join("outside"));
+        fs::create_dir_all(tree.join("lib")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(tree.join("bin-rustc"), b"stub").unwrap();
+        fs::write(tree.join("lib/librustc_driver.so"), b"the compiler").unwrap();
+        fs::write(outside.join("libLLVM.so"), b"llvm").unwrap();
+        symlink(outside.join("libLLVM.so"), tree.join("lib/libLLVM.so")).unwrap();
+        let d = || super::tree_sha256(&tree).unwrap();
+        let first = d();
+        assert_eq!(d(), first, "the same tree, the same digest");
+        let mut seen = vec![first];
+        let mut moved = |what: &str, edit: &dyn Fn()| {
+            edit();
+            let now = d();
+            assert!(!seen.contains(&now), "{what} did not move the digest");
+            seen.push(now);
+        };
+        moved("a byte of the compiler", &|| {
+            fs::write(tree.join("lib/librustc_driver.so"), b"the compilex").unwrap()
+        });
+        moved("the bytes behind a link", &|| {
+            fs::write(outside.join("libLLVM.so"), b"LLVM").unwrap()
+        });
+        moved("a name", &|| {
+            fs::rename(tree.join("bin-rustc"), tree.join("bin-rustd")).unwrap()
+        });
+        moved("an empty file", &|| {
+            fs::write(tree.join("lib/empty"), b"").unwrap()
+        });
+        moved("a link's target", &|| {
+            fs::remove_file(tree.join("lib/libLLVM.so")).unwrap();
+            symlink(tree.join("lib/empty"), tree.join("lib/libLLVM.so")).unwrap();
+        });
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn a_droop_observation_with_no_device_witness_says_so() {
         let reset = |released| Record::ResetRendered {

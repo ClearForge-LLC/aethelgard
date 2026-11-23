@@ -3086,6 +3086,11 @@ fn a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it() {
         fs::read_dir(&work.archive).unwrap().next().is_none(),
         "a run was archived"
     );
+    // Past the run, placed: refused by name before its droop is checked.
+    let out = scenario("past.json", 100_000_010);
+    let v = expect_refusal(&out, 2, "PlantedEventUnplaced");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("past the run's 100000000 ns"), "{message}");
     // Before reset: refused by name, never planted at 0.
     let out = scenario("before.json", 0);
     let v = expect_refusal(&out, 2, "PlantedEventUnplaced");

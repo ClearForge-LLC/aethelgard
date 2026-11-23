@@ -5854,6 +5854,61 @@ mod tests {
     /// in the boot, `CR1` is expected set and `judge_stop_missing` named;
     /// past the filter's budget nothing of ours is read, every output is
     /// unreadable, and no anchor finding is named (fail closed, never absent).
+    /// `AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10 on purpose
+    /// (`2302` Q1): a boot that wrote its boot word and executed fewer
+    /// instructions than the run holds is the run's `cpu_halted`, an error
+    /// of the firmware, never a stop of the campaign (exit 5); with every
+    /// instruction executed it names none.
+    #[test]
+    fn a_booted_core_that_executed_fewer_instructions_is_cpu_halted_not_a_stop() {
+        let image = image();
+        let p = plan(&image, &[]);
+        let flash = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0";
+        let judged = |instructions: u64| {
+            let mut text = format!("{flash}\nAETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(aethelgard_twin::boot::BOOT_MAGIC),
+                    Read::Instructions => instructions,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = output(text.into_bytes(), 0);
+            let (f, _, _) = judge_boot(0, &out, &p, &Captured::default())
+                .unwrap_or_else(|s| panic!("{instructions}: a stop, {}: {}", s.kind, s.message));
+            f.iter().map(|f| f.kind.clone()).collect::<Vec<_>>()
+        };
+        for (instructions, halted) in [(10_000_000, false), (9_999_990, true)] {
+            let kinds = judged(instructions);
+            assert_eq!(
+                kinds
+                    .iter()
+                    .any(|k| k == aethelgard_chaos::campaign::HALTED_FINDING),
+                halted,
+                "{instructions}: {kinds:?}"
+            );
+            assert!(
+                !kinds
+                    .iter()
+                    .any(|k| k == aethelgard_chaos::campaign::BOOT_WORD_FINDING),
+                "{instructions}: {kinds:?}"
+            );
+        }
+    }
+
     #[test]
     fn judge_boot_reads_a_dshot_boot_s_window_and_stop() {
         let (image, motors) = dshot_parts();

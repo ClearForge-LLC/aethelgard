@@ -47,14 +47,23 @@ leaves behind; it must not orphan a committed run).
 
 - **`trace.cbor`**, a CBOR sequence (RFC 8742): the header, then one item per
   event, no enclosing array, so it can be appended to.
-  - Header: `["aethelgard-trace", 13, run_id, "ns", artifacts, tools]`. `run_id`
+  - Header: `["aethelgard-trace", 19, run_id, "ns", artifacts, tools]`. `run_id`
     is 16 bytes. `artifacts` is `[name, sha256]` pairs sorted by name, names
     unique, each hash 32 bytes: what the run judged (`INV-03`). An artifact name
     is 1 to 1,024 bytes of printable ASCII, space allowed. `tools` is `[name,
-    version]` pairs sorted by name, names unique: what judged the run, each
-    version as the tool reported it (`AET-WO-2205` §1.1). A tool name is 1 to 64
-    printable ASCII bytes with no space, a version 1 to 256 with spaces allowed.
-    Replay reports them and never compares them with the replaying host's.
+    version, hash]` triples sorted by name, names unique: what judged the run,
+    each version as the tool reported it (`AET-WO-2205` §1.1), and `hash` `[]`
+    or `[sha256]`, the bytes the tool ran (`AET-WO-2310`; the profile's optional,
+    as every other in the trace, since RUL-06 admits no null). A campaign run
+    hashes exactly two: `ngspice`, the library file the bridge's loader mapped
+    (named by `dladdr`, hashed by the CLI), and `rust-toolchain`, the host's
+    active sysroot (`rustc --print sysroot`, every file, link and length,
+    `bridge/build.rs`'s recipe). **The toolchain is the host's, not proven to be
+    the one that built the ELF:** a campaign judges an ELF it did not build; on a
+    host with none it is `["rust-toolchain", "absent", []]`. A tool name is 1 to
+    64 printable ASCII bytes with no space, a version 1 to 256 with spaces
+    allowed. Replay reports them and never compares them with the replaying
+    host's.
   - Event: `[kind, timestamp, …payload]`. Timestamps are unsigned, in
     nanoseconds, and never decrease; equal timestamps are allowed and file order
     decides. Events are never re-sorted.
@@ -79,7 +88,10 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 18. `AET-WO-2300` added kinds 5 to 14 at
+The trace header carries version 19; every version from 2 and what it
+changed is a row of `event::TRACE_CHANGES`, and an older trace is refused
+`UnknownVersion` with the rows since it (`AET-WO-2310`, `AET-WO-1215`'s
+pattern). `AET-WO-2300` added kinds 5 to 14 at
 version 2, `AET-WO-3100` kind 15 and the run rules that join to it at version
 3, `AET-WO-2301` kinds 16 to 20, a declared supply droop, at version 4, and
 `AET-WO-2204` kind 13's device log at version 5; each time the golden trace's
@@ -113,8 +125,14 @@ signals before the boot, kinds 34 and 36 witness them after it, kind 37
 witnesses a motor output held at a static level (its kind 26 then says
 `level`), and a scenario's overrides take tags 8 (`pin_held`) and 9
 (`analog_value`); the golden trace's bytes changed in the version byte
-only. An older trace is refused by name
-(`event::TRACE_VERSION`), never read under version 18's rules. The mirror record
+only. Version 19 (`AET-WO-2310`) gave each header tool its content hash
+(above); planted overrides 3 (`droop`) and 6 (`battery_sag`) carry their
+instant `from_boot_word_ns`, signed from the undisturbed boot word, and the
+droop no BOR level; kinds 16 and 31 carry the resolved instant, kind 16 the
+specification's level (judged against kind 10's), and kind 32, the
+reference, is archived for every planted run; the golden trace's bytes
+changed in the version byte only. An older trace is refused by name
+(`event::TRACE_VERSION`), never read under version 19's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -214,7 +232,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 
 | kind | record | payload |
 |---|---|---|
-| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps, bor_level]` (a droop), `[4, reference]` (an absent SPI device) `[5, port]` (an open serial RX line, `AET-WO-2302` D5), `[6, series_milliohms, start_ns]` (a battery sag) or `[7, domain]` (a rail out of band), both `AET-WO-2304b`; since trace 18 (`AET-WO-1211c`) `[8, net, level]` (a GPIO input held, `level` 0 low or 1 high) or `[9, net, millivolts]` (an ADC input driven, 0 to `ANALOG_MAX_MILLIVOLTS` = 3300) |
+| 5 | scenario | `name`, `sha256` (32 bytes, of the file), `expect_pass`, `[finding kind…]` (sorted; empty exactly when `expect_pass`), `[override…]`: `[0, bus, ohms]`, `[1, net, femtofarads]`, `[2, bus, line]` (0 SDA, 1 SCL), `[3, domain, floor_millivolts, from_boot_word_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps]` (a droop; the offset signed, since trace 19), `[4, reference]` (an absent SPI device) `[5, port]` (an open serial RX line, `AET-WO-2302` D5), `[6, series_milliohms, from_boot_word_ns]` (a battery sag; the offset signed, since trace 19) or `[7, domain]` (a rail out of band), both `AET-WO-2304b`; since trace 18 (`AET-WO-1211c`) `[8, net, level]` (a GPIO input held, `level` 0 low or 1 high) or `[9, net, millivolts]` (an ADC input driven, 0 to `ANALOG_MAX_MILLIVOLTS` = 3300) |
 | 6 | solved | `specification_sha256`, `topology_sha256` (32 bytes each) |
 | 7 | `analog.rise_time_computed` (from declared values, `RUL-19` (1)) | `bus`, `net`, `rise_30_70_ps`, `complete`, `ceiling_ps`, `exceeds` (which must equal `!complete \|\| rise > ceiling`), `window` `[deck_hz, declared_hz]`: the deck's 400 kHz window beside the bus's declared speed, both above 0 |
 | 8 | `analog.line_stuck_high` | `bus`, `net`, `microvolts_at_release`, `ceiling_ps`, `window` as kind 7's |
@@ -225,7 +243,7 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 13 | an I2C device witness (`AET-WO-2204`) | `peripheral`, `reference`, `device`, `[expected line…]`, `[observed line…]?`, `[absent address…]` (at most 16 lines, each 1–256 printable bytes) |
 | 14 | the verdict | `pass`, `[[kind, severity, count]…]` (sorted, unique by kind and severity; each severity exactly `error` or `info`, refused otherwise on write and on read, `AET-WO-3201`; `pass` exactly when every severity is `info`) |
 | 15 | a solved I2C bus (`AET-WO-3100`) | `bus`, `peripheral`, `[line…]`: exactly two, SCL then SDA, each `[signal, net, pin, alternate_function, ceiling_ps]` (`signal` is the peripheral's name then `_SCL` or `_SDA`; the two nets and pins differ), `[[reference, address]…]` (sorted, unique by reference). A `pin` is `P`, a capital letter and 0 to 15 with no leading zero (`record::split_pin`); an `alternate_function` is at most 15 |
-| 16 | `analog.rail_declared` (`AET-WO-2301`) | the droop's own values (`domain`, `floor_millivolts`, `start_ns`, `fall_ns`, `hold_ns`, `rise_ns`, `source_milliohms`, `load_milliamps`, `bor_level`), then the domain's `nominal_millivolts` and `tolerance_permille` and the emitter's `decoupling_picofarads`: everything the rail is computed from |
+| 16 | `analog.rail_declared` (`AET-WO-2301`) | the droop's own values (`domain`, `floor_millivolts`, `from_boot_word_ns`, `fall_ns`, `hold_ns`, `rise_ns`, `source_milliohms`, `load_milliamps`), then the resolved `start_ns` (kind 32's boot word plus the offset) and `bor_level` (the specification's, 0 to 3, which kind 10's brown-out reading declares under its own mask), then the domain's `nominal_millivolts` and `tolerance_permille` and the emitter's `decoupling_picofarads`: everything the rail is computed from (`AET-WO-2310`) |
 | 17 | `analog.rail_crossing_computed` | `domain`, `level` (`VBOR3_falling`…), `microvolts`, `at_ps`, `falling`: one crossing ngspice computed |
 | 18 | `bridge.reset_rendered` | `at_ns`, `released`, `[cause…]` (sorted threshold names), `rendering` (the monitor recipe that stood in for the supervisor: the model's rendering, never a measured reset) |
 | 19 | `firmware.observed` | `at_ns`, then the boot word's, the identity record's status and value, and the first identity read's witness lines since the release (`[line…]?`), read at the release, its nudge and kind 32's bound (`power::probe_ns`); the lines must begin with the first device's identity read and continue only with that device's own later steps (`power::witness_recovers`, `AET-WO-2305`) |
@@ -240,8 +258,8 @@ refuses an event over 4,096 encoded bytes, as the reader does.
 | 28 | a port's static framing judgement | `label`; silicon's `kernel_hz`, `brr`, `actual_millibaud`, `error_ppm`, `tolerance?` `[table, m_bits, tolerance_ppm]`, `holds`; the twin's `[tag needed…]` and `tags?` `[writes, [missing…], [unexpected…]]` |
 | 29 | a port's twin witness | `label`, `capture?` `[patterns, cut, echoed, stray, len]`, `frame` (8 bytes), `echo`, `rx_at_injection?`, `tx_at_end?`, `tx_at_send?` (each `[mode, af]`); since trace 13 `injected_ns?`, the first frame byte's instant, present exactly when `rx_at_injection` is |
 | 30 | a judge's stop (`AET-WO-2302` D2) | `timer`, `anchor_ns`, `at_ns` (`anchor_ns` + `DSHOT_WINDOW_NS`), `[reading…]` (the timer's solved registers read back before `CEN` is cleared, 1 to 32: exactly kind 11's registers of the timer, in its order, each at its address, under its mask, against its expected value, `CR1`'s with `CEN` set where kind 11's is cleared by the stop), `cr1_after?` |
-| 31 | a battery sag's declared chain (`AET-WO-2304b`) | `series_milliohms`, `start_ns` (the sag), `v_open_microvolts`, `healthy_milliohms`, `[[name, input_milliwatts, shutdown_millivolts, regulation_millivolts]…]` (each battery-fed sink), `capacitance_picofarads`, `static_microvolts`, `solved_minimum_microvolts`, `binding` (the sink whose floor binds); re-judged by `battery::check_battery_sag` |
-| 32 | a droop's recovery bound (`AET-WO-2305`) | `boot_word_ns?` (the instant the same boot, run first with no reset, wrote its boot word, counted from 0; absent when it wrote none or its log was not read whole), `margin_ns` (exactly `power::RECOVERY_MARGIN_NS`, one quantum), `bound_ns?` (exactly `boot_word_ns` + `margin_ns`, absent with it): archived before the boot beside kind 16, once exactly when the droop releases a reset |
+| 31 | a battery sag's declared chain (`AET-WO-2304b`) | `series_milliohms`, `from_boot_word_ns` (the sag), `start_ns` (kind 32's boot word plus it, `AET-WO-2310`), `v_open_microvolts`, `healthy_milliohms`, `[[name, input_milliwatts, shutdown_millivolts, regulation_millivolts]…]` (each battery-fed sink), `capacitance_picofarads`, `static_microvolts`, `solved_minimum_microvolts`, `binding` (the sink whose floor binds); re-judged by `battery::check_battery_sag` |
+| 32 | a planted run's reference and a droop's recovery bound (`AET-WO-2305`, `AET-WO-2310`) | `boot_word_ns?` (the instant the same boot, run with nothing planted, wrote its boot word, counted from 0: a droop's boot run first undisturbed, a battery sag's own boot, which the sag never reaches), `margin_ns` (exactly `power::RECOVERY_MARGIN_NS`, one quantum), `bound_ns?` (exactly `boot_word_ns` + `margin_ns`): archived before the boot beside kind 16 or 31, once exactly for every run with a droop or a battery sag, and never for another; its word present (a planted run whose undisturbed boot wrote none is refused before it is archived) |
 | 33 | a pin device's GPIO signal, declared (`AET-WO-1211c`) | `net`, `pin` (a solved pin), `output`, `level` (0 or 1), `active?` (0 or 1), `held`. An output: `level` is its declared initial level, `active` absent, `held` 0. An input: `level` is the level the twin drives it at this run, `active` its declared active level, `held` 1 exactly when a `pin_held` override set `level` (else it is the declared pull's) |
 | 34 | a GPIO signal's twin witness | `net`, `status` (`witnessed`, `mismatch`, `unwitnessed`, `unreadable`: `GPIO_STATUSES`), `bsrr?`, `ordered?`, `level?`. An output's: `bsrr` the first `BSRR` word the firmware wrote touching the pin's set or reset bit, `ordered` whether it came before the first `MODER` write making the pin an output, `level` absent. An input's: `level` the pin's `IDR` bit at the boot's end, the others absent. `unreadable` holds none of them |
 | 35 | a pin device's ADC input, declared (`AET-WO-1211c`) | `net`, `pin`, `peripheral` (`ADC1` or `ADC3`), `channel` (0 to 19), `bits` (exactly 12, the one resolution measured in the twin), `microvolts` (at most `ANALOG_MAX_MILLIVOLTS` × 1000), `held` (an `analog_value` override set it), `code` (exactly `record::adc_code(microvolts, bits)`: round-half-up of `microvolts` × (2^`bits` − 1) / 3,300,000 in integers, the conversion Renode's model applies) |
@@ -270,12 +288,21 @@ apart from anything generated (`INV-07`):
 
 - Every key is required (but `expect_counts`) and no other is allowed, at
   either level; a duplicate key, a positional array or `null` in a key an
-  override does not use is refused. `schema_version` is 1 to 5, and a file
+  override does not use is refused. `schema_version` is 1 to 6, and a file
   may use only what its version admits (`SchemaViolation` otherwise): version
-  2 (`AET-WO-2301`, `AET-WO-4200`) admits `droop`, `spi_device_absent` and
+  2 (`AET-WO-2301`, `AET-WO-4200`) admits `spi_device_absent` and
   `expect_counts`; version 3 (`AET-WO-2302` D5) also admits `serial_rx_open`;
-  version 4 (`AET-WO-2304b`) also admits `battery_sag` (`{series_milliohms,
-  start_ns}`, one per scenario and never beside a droop: `BatterySagRefused`)
+  version 4 (`AET-WO-2304b`) also admits `rail_out_of_band` (below). Since
+  version 6 (`AET-WO-2310`) a `droop` or a `battery_sag` is read at version 6
+  only, older ones refused by name with what changed
+  (`PlantedEventNeedsVersion6`): each plants its instant `from_boot_word_ns`,
+  signed ns from the undisturbed boot word, a multiple of 10 within ±100 ms,
+  in place of `start_ns` from reset, and a droop states no `bor_level`, the
+  specification's `mcu.bor_level` being the level. Before the boot only the
+  offset is judged, and a refusal says so; once the boot word places it, an
+  instant at or before reset or past the run, or a run whose undisturbed boot
+  wrote no word, is `PlantedEventUnplaced`. A `battery_sag`
+  (`{series_milliohms, from_boot_word_ns}`) is one per scenario and never beside a droop: `BatterySagRefused`)
   and `rail_out_of_band` (a domain, one per scenario, beside exactly the
   `serial_rx_open` and `spi_device_absent` overrides it renders and nothing
   else: `RailOutOfBandRefused`).
@@ -294,10 +321,11 @@ apart from anything generated (`INV-07`):
   `Scenario::pins_held` and `Scenario::analog_values` list them.
 - An override is exactly `{bus, pull_up_ohms}` (a `u32`),
   `{net, max_capacitance_femtofarads}` (a `u64`), or `{bus, line_held_low}`
-  (`"sda"` or `"scl"`); in version 2 or 3, `{droop: {domain, floor_millivolts,
-  start_ns, fall_ns, hold_ns, rise_ns, source_milliohms, load_milliamps,
-  bor_level}}`, every field required and bounded, or `{spi_device_absent:
-  reference}`; in version 3, `{serial_rx_open: port}`, a serial port's label.
+  (`"sda"` or `"scl"`); in version 6, `{droop: {domain, floor_millivolts,
+  from_boot_word_ns, fall_ns, hold_ns, rise_ns, source_milliohms,
+  load_milliamps}}`, every field required and bounded; from version 2,
+  `{spi_device_absent: reference}`; from version 3, `{serial_rx_open: port}`,
+  a serial port's label.
   Every id is 1 to 64 bytes of `0x21`–`0x7E`. Two overrides of one thing
   (one bus's pull-up, one net, one line, one device, one port), or two
   droops, are refused (`DuplicateOverride`); at most 32 overrides and 16
@@ -416,6 +444,21 @@ refuses:
   `*_record_invalid`, `*_transaction_unwitnessed`) of a boot without its boot
   word: the judge names a record before the fixed point only by its timeout
   (`AET-WO-3201`, adversarial F2);
+- a booted run whose verdict does not name `cpu_halted` once, as an error,
+  exactly when kind 10 counts fewer instructions than the run holds: the core
+  slept or stopped after writing its boot word, the run's finding and never a
+  stop of the campaign (`AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10,
+  `AET-WO-2302` Q1);
+- a booted run with an `ok` kind 12 (21) whose own kind 13 (22) witness, by
+  reference and step, is unread, and fewer `i2c_transaction_unwitnessed`
+  (`spi_…`) than such reads: the judge names each (`AET-WO-2310`, from
+  `AET-WO-2309` §5);
+- a planted run (a droop or a battery sag) without exactly one kind 32 holding
+  its word, or with a kind 16 (31) instant other than that word plus the
+  override's offset, or a kind 16 level other than kind 10's; a run with
+  nothing planted holding a kind 32 (`AET-WO-2310`);
+- a header whose tool hashes are not exactly ngspice's (whenever it judged)
+  and `rust-toolchain`'s (unless `absent`) (`AET-WO-2310`);
 - a verdict whose anchors' or judge's stop's findings (`AET-WO-2302`) the
   records do not give, once the boot word is set, and any before it:
   `motor_anchor_unobserved` once per kind 26 `unanchored`;
