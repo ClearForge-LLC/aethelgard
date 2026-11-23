@@ -3,6 +3,12 @@
 //! copy of the carrying footprint's name per child took 3.0 GB for a 10 kB
 //! reference over 300 000 children, and a 100 kB one was killed at 24 GB).
 //!
+//! A refusal writes at most about 230 bytes of each name (`strict::shown`),
+//! so what a copy per child would grow is the carrying chain: here 10
+//! footprints nested, each named by a 10 kB reference, about 2.3 kB of
+//! chain under each of 15 000 pads (35 MB), and before the bound 100 kB
+//! (1.5 GB). It is sized so that a regression costs about that, no more.
+//!
 //! The test is alone in its binary, so the process's peak resident memory
 //! (`VmHWM`, Linux) is this test's own.
 
@@ -22,23 +28,30 @@ fn peak_kib() -> u64 {
 }
 
 #[test]
-fn a_10_kb_reference_over_100_000_pads_stays_bounded() {
-    const PADS: usize = 100_000;
+fn a_10_kb_reference_over_15_000_pads_stays_bounded() {
+    const PADS: usize = 15_000;
+    const NESTED: usize = 10;
     let reference = "R".repeat(10_000);
-    let mut text = format!("(kicad_pcb (footprint \"X\" (property \"Reference\" \"{reference}\")");
+    let mut text = "(kicad_pcb".to_owned();
+    for _ in 0..NESTED {
+        text.push_str(&format!(
+            " (footprint \"X\" (property \"Reference\" \"{reference}\")"
+        ));
+    }
     for _ in 0..PADS {
         text.push_str(" (pad \"1\" smd rect)");
     }
-    text.push_str("))\n");
+    text.push_str(&")".repeat(NESTED + 1));
+    text.push('\n');
     let tree = board::read(&text).unwrap();
     let before = peak_kib();
     let out = board::prepare_read(&tree, &text, SETUP).unwrap();
     let grown = peak_kib().saturating_sub(before);
     assert!(out.contains(SETUP));
-    // A copy per pad is 100 000 x 10 kB, about 1 GB; holding the name once
-    // leaves the stack's entries and the output, a few MB.
+    // Holding each label once leaves the stack's entries and the output,
+    // under 1 MB.
     assert!(
-        grown < 64 * 1024,
+        grown < 16 * 1024,
         "prepare_read grew the peak by {grown} KiB over {before} KiB"
     );
 }

@@ -22,7 +22,7 @@ M = {
     # (2) prepare_read: a copy of the carrying chain per child.
     "B1": (E + "board.rs", "            stack.push((child, here.clone()));",
            "            stack.push((child, here.as_ref().map(|w| Rc::new(Within { label: render(Some(&**w)), footprint: w.footprint, parent: None }))));",
-           "-p aethelgard-eda --test prepare_read_memory -- a_10_kb_reference_over_100_000_pads_stays_bounded"),
+           "-p aethelgard-eda --test prepare_read_memory -- a_10_kb_reference_over_15_000_pads_stays_bounded"),
     # (3) board.rs names: the reference unbounded.
     "B2": (E + "board.rs", 'Some(format!("footprint {}", shown(reference)))',
            'Some(format!("footprint {reference}"))', lib + "strict::tests::a_long_name_reaches_no_refusal_whole"),
