@@ -1,0 +1,15 @@
+board	phase	parts	segments	vias	outline
+driver-judges-nothing	phaseA (HEAD 9c35dc1f)	28	456	93	48.05x39.40
+hse-crystal-16	phaseA (HEAD 9c35dc1f)	51	1085	190	63.60x46.60
+motors-dshot600	phaseA (HEAD 9c35dc1f)	38	614	129	49.00x48.50
+motors-pwm	phaseA (HEAD 9c35dc1f)	38	614	129	49.00x48.50
+sentinel-02-shaped	phaseA (HEAD 9c35dc1f)	48	895	184	63.60x51.35
+sentinel-03	phaseA (HEAD 9c35dc1f)	102	1307	316	96.25x67.60
+serial-dshot-9600	phaseA (HEAD 9c35dc1f)	39	674	160	49.00x48.50
+driver-judges-nothing	b2	32	478	93	48.05x39.75
+hse-crystal-16	b2	55	1014	201	63.60x47.10
+motors-dshot600	b2	42	640	128	50.00x48.50
+motors-pwm	b2	42	640	128	50.00x48.50
+sentinel-02-shaped	b2	52	925	185	63.60x51.35
+sentinel-03	b2	106	1359	352	95.80x69.10
+serial-dshot-9600	b2	43	723	147	50.00x48.50

@@ -17,9 +17,10 @@ fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
-/// The three CI boards: (fixture name in `aethelgard-hwdef/tests/fixtures`,
-/// specification).
-const BOARDS: [(&str, &str); 3] = [
+/// The three CI boards, and `serial-dshot-9600` with every motor pull `open`
+/// (`AET-WO-4300j` D8, a source under `spike/` that no sweep reads): (fixture
+/// name in `aethelgard-hwdef/tests/fixtures`, specification).
+const BOARDS: [(&str, &str); 4] = [
     ("sentinel-01", "examples/sentinel-01-minimal.json"),
     (
         "sentinel-02",
@@ -28,6 +29,10 @@ const BOARDS: [(&str, &str); 3] = [
     (
         "serial-dshot-9600",
         "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+    ),
+    (
+        "serial-dshot-9600-open",
+        "spike/4300j/open/serial-dshot-9600-open.json",
     ),
 ];
 

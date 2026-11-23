@@ -672,3 +672,26 @@ fn a_reseeded_placement_is_deterministic_and_name_free() {
         assert_eq!(name_free(&place(&renamed)), want, "seed {seed}");
     }
 }
+
+#[test]
+fn zz_b2_measure() {
+    use sha2::{Digest, Sha256};
+    let (_, _, _, e) = emitted("the fixture places at the spike's outline with every gap kept");
+    let o = outline_nm(&e.board);
+    let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    eprintln!("MEASURE fixture {} {} {digest}", o.x1 - o.x0, o.y1 - o.y0);
+    for len in [1, 2, 6, 8] {
+        let v = rename::sized(&fixture(), len);
+        let (spec, solved, table) = solved(&v);
+        match schematic::emit(&spec, &solved, &table) {
+            Ok(e) => {
+                let o = outline_nm(&e.board);
+                eprintln!("MEASURE {len} {} {}", o.x1 - o.x0, o.y1 - o.y0);
+            }
+            Err(e) => eprintln!("MEASURE {len} ERR {} {e}", e.kind()),
+        }
+    }
+}
