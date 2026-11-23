@@ -313,9 +313,9 @@ fn finish(
     }
 }
 
-const KICAD_PINNED: [&str; 3] = ["check drc", "check erc", "verify"];
-
-/// `kicad-cli version`, as `check drc` and `check erc` ask and pin it.
+/// `kicad-cli version`, as every subcommand that runs it asks and pins it:
+/// an unpinned version blocks all of [`KICAD`] (`check support` since
+/// `AET-WO-1607` (1)).
 fn kicad_cli(missing: &mut Vec<Missing>) -> ToolLine {
     let tool = match run::Tool::find("kicad-cli") {
         Ok(t) => t,
@@ -342,7 +342,7 @@ fn kicad_cli(missing: &mut Vec<Missing>) -> ToolLine {
         &tool,
         probed,
         |v, _| pin(v),
-        (&KICAD, &KICAD_PINNED),
+        (&KICAD, &KICAD),
         missing,
     )
 }

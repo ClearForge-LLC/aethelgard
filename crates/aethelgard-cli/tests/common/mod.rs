@@ -193,24 +193,54 @@ impl Drop for Scratch {
     }
 }
 
-/// A directory the CLI accepts as `TMPDIR` (`AET-WO-1601` §1.4), under the
-/// base it uses itself when `TMPDIR` is unset: `/var/lib/aethelgard` as root,
-/// `$HOME/.cache/aethelgard` otherwise, so no other user can write any of its
-/// ancestors. As root it is searchable by the tool uid. Removed on drop.
+/// A directory the CLI accepts as `TMPDIR` (`AET-WO-1601` §1.4), outside
+/// `$HOME` (`AET-WO-1607` (2), `1603` F2): cargo reads `~/.cargo/config.toml`
+/// in every ancestor of a crate it builds, so `build` and `prove` refuse a
+/// scratch directory under a home that holds one (`CargoConfigRefused`).
+/// As root, `/var/lib/aethelgard`, searchable by the tool uid; otherwise the
+/// user's runtime directory `/run/user/<euid>`, derived from the uid and
+/// never from an environment variable. Each has only root's and this user's
+/// directories above it, so no other user can write any of its ancestors.
+/// Panics, naming why, if the base is missing or resolves under `$HOME`.
+/// Removed on drop.
 pub fn private_tmp(label: &str) -> Scratch {
     use std::os::unix::fs::DirBuilderExt;
-    let root = rustix::process::geteuid().is_root();
-    let (base, mode) = if root {
+    let euid = rustix::process::geteuid();
+    let (base, mode) = if euid.is_root() {
+        std::fs::DirBuilder::new()
+            .recursive(true)
+            .mode(0o711)
+            .create("/var/lib/aethelgard")
+            .unwrap();
         (PathBuf::from("/var/lib/aethelgard"), 0o711)
     } else {
-        let home = std::env::var_os("HOME").expect("HOME is set");
-        (PathBuf::from(home).join(".cache/aethelgard"), 0o700)
+        let run = PathBuf::from(format!("/run/user/{}", euid.as_raw()));
+        let base = run.join("aethelgard-tests");
+        if let Err(e) = std::fs::DirBuilder::new().mode(0o700).create(&base)
+            && e.kind() != std::io::ErrorKind::AlreadyExists
+        {
+            panic!(
+                "no private test scratch outside $HOME: cannot create {} ({e}); \
+                 the tier-1 tests need the user's runtime directory {}",
+                base.display(),
+                run.display()
+            );
+        }
+        (base, 0o700)
     };
-    std::fs::DirBuilder::new()
-        .recursive(true)
-        .mode(mode)
-        .create(&base)
-        .unwrap();
+    let base = std::fs::canonicalize(&base).unwrap();
+    // A home of `/` holds every path, so nothing could be outside it.
+    if let Some(home) = std::env::var_os("HOME")
+        .and_then(|h| std::fs::canonicalize(h).ok())
+        .filter(|h| h.parent().is_some())
+    {
+        assert!(
+            !base.starts_with(&home),
+            "test scratch {} resolves under $HOME {}",
+            base.display(),
+            home.display()
+        );
+    }
     let p = base.join(format!("tests-{}-{label}", std::process::id()));
     let _ = std::fs::remove_dir_all(&p);
     std::fs::DirBuilder::new().mode(mode).create(&p).unwrap();
