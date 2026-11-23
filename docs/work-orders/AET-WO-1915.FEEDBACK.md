@@ -23,16 +23,18 @@
    - kicad-cli: ≤ 0.28 GiB;
    - Renode: 0.38 GiB;
    - the whole campaign alone, Renode and ngspice in the bridge included: 0.35 GiB.
-4. **The 9–13 GB ground came from the unsplit schedule harness. `AET-WO-3303b` (`52a2d62e`, 2026-11-20) split it per bus.**
-   - Both grounds, `3304` F3 and `4201` F4, were measured on 2026-11-19, the day before.
+4. **The WO's two cited grounds (`3304` F3, `4201` F4) came from the unsplit schedule harness. `AET-WO-3303b` (`52a2d62e`, 2026-11-20) split it per bus.**
+   - Both were measured on 2026-11-19, the day before.
    - **The candidate, measured from a scratch copy** (one variable: the bench crate at `62e1bafb` against `52a2d62e`, where only `src/proofs.rs` differs):
      - whole: **11.30 GiB, 1,046 s**;
      - split: largest part **2.63 GiB**, all three parts **81 s**.
      - So the split cuts the peak by 77 % and the wall time by 92 %.
    - **The old peak was concurrent inside one Kani run:** CBMC at 4.25 GiB was still resident while kani-driver grew to 7.00 GiB.
+   - **The term common to every peak here:** kani-driver is the largest holder in the old whole harness (7.0 of 11.3 GiB), on today's boards, and on hse8 (item 7).
+   - **The candidate was a single run per side.** The whole side matches 3303b's own figure.
 5. **The lean:**
-   - **The change that brings the peak under 8 GiB exists, and is on `main`.**
-     - Close `roadmap.md` §7.1's row at L1036 on this record (D1).
+   - **For the committed boards, the change that brings the peak under 8 GiB exists, and is on `main`.**
+     - Close the §7.1 row citing `3304` F3 and `4201` F4 on this record (D1).
      - Local `capped-run` callers can go back to `--mem 8G` for `verify` and `prove` on the committed boards (D2).
    - **Nothing in a crate, workflow or CI file is asked for.** Then stop.
 6. **The declared extra:** `examples/sentinel-02-bench.json`, `3304`'s ground, which has no `boards/` directory.
@@ -42,7 +44,8 @@
    - Its `every_valid_sequence_spi1` was OOM-killed at 16G twice, at 315 and 313 s.
    - At the kill, **kani-driver alone held 15.1–15.3 GiB, still growing at about 1.25 GiB/s. CBMC had peaked at 3.3 GiB and already exited.**
    - So `1607`'s 16.5 GiB is the same process and shape as every board here, only larger.
-   - No formula change (unwind, solver, `--jobs`, a further split) acts on that process. The next candidate is kani-driver's handling of CBMC's results (D4). This WO has measured its one candidate, so it stops.
+   - No formula change (unwind, solver, `--jobs`, a further split) acts on that process. The next candidate is kani-driver's handling of CBMC's results (D4).
+   - **When the candidate was chosen:** the 3303b split was chosen before this row reached my base. I found it only when checking `main` at close. This WO has measured its one candidate, so it stops.
 
 ## 1. What was measured, and how
 
@@ -68,17 +71,30 @@
 
 ## 2. Decisions for the architect
 
-- **D1. Close the §7.1 row at L1036 ("needs more than 8 GiB … until the peak is measured to its source") on this record.**
-  - The source is measured: the unsplit schedule harness, removed by 3303b.
-  - The row at L1050 (`4600` F11, "a board whose schedule harness is unsplit (no timer)… ruled meanwhile: `prove` at 16G on any board without a timer") also describes the state before 3303b. Today `board.rs` L5330 splits whenever `parts` yields two or more, timers or not.
-  - **Lean:** close both, citing `spike/1915/results.md` §4. Both rows are yours: `docs/` is outside this fence.
+- **D1. The §7.1 row "`verify` and `prove` on a board with Kani harnesses need more than 8 GiB … until the peak is measured to its source" (`3304` F3, `4201` F4).**
+  - **For its two grounds, the source is measured:** the unsplit schedule harness, removed by 3303b. On today's committed boards the peak is 3.5 GiB, and `verify` passes at 8G.
+  - **It is not closed for every board:** `sentinel-02-bench-hse8`, split, still needs more than 16 GiB (D4).
+  - **Lean:** close the row for the committed boards citing `spike/1915/results.md` §2–§4, and carry hse8 as D4's row.
+  - **The row citing `4600` F11** ("a board whose schedule harness is unsplit (no timer) needs more than 8 GiB to `prove`: 13 GB measured on an I2C+SPI logger. Its cost is the SPI part"):
+    - **Inferred, not measured:** it now describes the state before 3303b. Today `board.rs` splits whenever `parts` yields two or more, timers or not.
+    - **Why only inferred:** I did not re-run that logger, and the row says its cost is the SPI part. On hse8 that part alone exceeds 16 GiB.
+    - **No lean to close it.**
+  - Both rows are yours: `docs/` is outside this fence.
 - **D2. The 16G advice for local callers.** This WO's kickoff says "verify can need more than 8 GiB: use --mem 16G".
-  - **Measured:** `verify` passes at 8G on both committed boards, and `sentinel-02-bench`'s heaviest harness passes at 8G.
+  - **Measured:**
+    - `verify` passes at 8G on both committed boards;
+    - `prove` of `sentinel-02-bench`'s heaviest harness passes at 8G.
+  - **Inferred:** `verify` on `sentinel-02-bench` at 8G. Its gates run serially and its other gates are small, but it was not run.
   - **Lean:**
-    - 8G again for `verify` and `prove` on the committed boards and on `sentinel-02-bench`.
+    - 8G again for `verify` and `prove` on the committed boards, and for `prove` on `sentinel-02-bench`.
     - 32G for `sentinel-02-bench-hse8`, which needs more than 16 GiB (D4).
     - 16G for a new board, until its heaviest `every_valid_sequence_*` has been proved once.
   - The kickoff template and CLAUDE.md's `capped-run` line are yours.
+- **D3. Watch the heaviest schedule part (lean: backlog only, by the scope test).**
+  - The bench's `every_valid_sequence_spi1` grew from 2.63 GiB at 3303b to 3.48 GiB now (+32 %). The generated board content since, `1211b` onward, is the likely cause [inferred].
+  - `sentinel-02-bench`'s is 6.53 GiB.
+  - CI's 16 GB runners hold all of it, and nothing fails today.
+  - A cheap guard, if wanted later: `prove` reports its scope's `memory.peak` beside its wall time, or a tier-2 test bounds the largest part.
 - **D4. `sentinel-02-bench-hse8`: the next candidate is kani-driver, not the formula.**
   - **Measured:** kani-driver alone, after CBMC exits, holds the whole peak (§Answer 7, `results.md` §4.1a).
   - **Proposed, for a follow-up spike:** measure kani-driver's peak against what it reads.
@@ -86,14 +102,10 @@
     - Then one Kani option measured from a scratch copy that changes what CBMC hands the driver, if 0.68 has one. Which options exist is not checked here [not measured].
     - It needs a cap above 16G for the passing side, which is outside this WO's fence and Furnace's one-16G rule.
   - **Lean:**
-    - A follow-up spike at `--mem 32G` when Furnace has the headroom, one container, with the 12 GiB floor kept: it needs 44 GiB available to start.
+    - **Within 16G:** the kani-driver candidate can be measured on `sentinel-02-bench`'s spi1 harness (6.5 GiB, the same shape: CBMC 1.75 GiB, then kani-driver alone). Not run here: it would be a second candidate.
+    - **Only hse8's passing side needs `--mem 32G`:** one container, when Furnace has the headroom, with the 12 GiB floor kept. It needs 44 GiB available to start.
     - Until then, hse8 stays a 32G board for any caller, as `1607` F-H says.
     - CI runs no `verify` of it, so no gate is affected.
-- **D3. Watch the heaviest schedule part (lean: backlog only, by the scope test).**
-  - The bench's `every_valid_sequence_spi1` grew from 2.63 GiB at 3303b to 3.48 GiB now (+32 %). The generated board content since, `1211b` onward, is the likely cause [inferred].
-  - `sentinel-02-bench`'s is 6.53 GiB.
-  - CI's 16 GB runners hold all of it, and nothing fails today.
-  - A cheap guard, if wanted later: `prove` reports its scope's `memory.peak` beside its wall time, or a tier-2 test bounds the largest part.
 
 ## 3. Adversarial pass, targeted (§5)
 
@@ -103,7 +115,7 @@
     - by 0.03–0.29 GiB on `verify`.
   - The cause is kani-driver's last 1–2 s, which grow at about 1 GiB/s.
   - **Example:** the same harness sampled 3.447 and then 2.796 GiB, against a `memory.peak` of 3.476 both times.
-  - So every peak in the record is `memory.peak`, and the samples only say whose it is. The same shape fooled P10 (F5).
+  - So every peak in the record is `memory.peak`, and the samples only say whose it is (F5). P10 holds on its own falsifier, every gap being under 1.5 GiB. Only its guess at the cause (page cache) was wrong.
 - **A process in the wrong phase: not found.**
   - No sample in 72 runs has a `cargo`, `rustc` or `kani-compiler` process alive beside CBMC.
   - No `verify` sample has two gates' processes alive at once.
@@ -128,7 +140,8 @@
 
 ## 4. Gates
 
-- **The CLAUDE.md gates were not run.** `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test --workspace` do not apply: the WO grants the exception, and this branch changes no crate, workflow or `ci/` file (`git diff --stat main` lists only `spike/1915/` and this file).
+- **The CLAUDE.md gates were not run.** `cargo fmt --check`, `cargo clippy -D warnings` and `cargo test --workspace` do not apply: the WO grants the exception, and this branch changes no crate, workflow or `ci/` file (against the merge base `57b62195`, `git diff --name-only` lists only `spike/1915/` and this file).
+- **`main` moved during the spike, to `aaad1555`** (`1607` #342 and a docs commit). It changes no file under `crates/aethelgard-svd-hal`, `boards/`, `crates/aethelgard-cli/src/kani.rs` or `container/`: no generator, board, Kani or image change. So the measurements stand on it. Its roadmap gained hse8's row, measured in Answer 7.
 - **Mutations:** none. The WO adds or changes no guard in the repository. The spike's own guards were tested live (§3).
 - **Reduction pass (diff): nothing to remove** · 0 duplicates · 0 dead paths removed · 0 protected · 3 findings (F9).
 
@@ -156,7 +169,7 @@
   - Measured. Worth a line in furnace777's `capped-run` notes; outside this fence.
 - **F8. The WO's "9–13 GB" combines two boards:**
   - 9.1 GiB from `3304` (`sentinel-02-bench`, before the split);
-  - 13 GB from `4600` F11 (an I2C+SPI logger, roadmap L1050).
+  - 13 GB from `4600` F11 (an I2C+SPI logger; the roadmap row citing it).
   - The bench board's own whole harness measures 11.30 GiB here.
 - **F9. Reduction findings, not edits.** The spike's tools have no suite, and they produced the committed data, so a removal is a finding:
   - `sample.py` records four fields nothing reads: `VmRSS`, `RssFile`, `file_dirty` and `file_writeback`;

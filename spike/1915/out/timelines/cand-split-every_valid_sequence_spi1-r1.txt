@@ -1,45 +1,45 @@
-     0.0 anon= 0.022 file= 0.003 cur= 0.030 top=podman/conmon@None 0.010
-     1.0 anon= 0.052 file= 0.014 cur= 0.071 top=cbmc@prove every_valid_sequence_spi1 0.037
-     2.0 anon= 0.163 file= 0.014 cur= 0.181 top=cbmc@prove every_valid_sequence_spi1 0.148
-     3.0 anon= 0.246 file= 0.014 cur= 0.264 top=cbmc@prove every_valid_sequence_spi1 0.231
-     4.0 anon= 0.314 file= 0.014 cur= 0.332 top=cbmc@prove every_valid_sequence_spi1 0.299
-     5.0 anon= 0.371 file= 0.014 cur= 0.390 top=cbmc@prove every_valid_sequence_spi1 0.356
-     6.0 anon= 0.420 file= 0.014 cur= 0.439 top=cbmc@prove every_valid_sequence_spi1 0.405
-     7.0 anon= 0.466 file= 0.014 cur= 0.485 top=cbmc@prove every_valid_sequence_spi1 0.451
-     8.0 anon= 0.623 file= 0.014 cur= 0.642 top=cbmc@prove every_valid_sequence_spi1 0.608
-     9.0 anon= 0.673 file= 0.014 cur= 0.692 top=cbmc@prove every_valid_sequence_spi1 0.658
-    10.0 anon= 0.674 file= 0.014 cur= 0.693 top=cbmc@prove every_valid_sequence_spi1 0.659
-    11.0 anon= 0.676 file= 0.014 cur= 0.695 top=cbmc@prove every_valid_sequence_spi1 0.661
-    12.0 anon= 0.679 file= 0.014 cur= 0.697 top=cbmc@prove every_valid_sequence_spi1 0.663
-    13.0 anon= 0.691 file= 0.014 cur= 0.709 top=cbmc@prove every_valid_sequence_spi1 0.675
-    14.0 anon= 0.702 file= 0.014 cur= 0.720 top=cbmc@prove every_valid_sequence_spi1 0.686
-    15.0 anon= 0.714 file= 0.014 cur= 0.732 top=cbmc@prove every_valid_sequence_spi1 0.699
-    16.0 anon= 0.725 file= 0.014 cur= 0.743 top=cbmc@prove every_valid_sequence_spi1 0.709
-    17.0 anon= 0.735 file= 0.014 cur= 0.753 top=cbmc@prove every_valid_sequence_spi1 0.719
-    18.0 anon= 0.745 file= 0.014 cur= 0.763 top=cbmc@prove every_valid_sequence_spi1 0.730
-    19.0 anon= 0.755 file= 0.014 cur= 0.773 top=cbmc@prove every_valid_sequence_spi1 0.740
-    20.0 anon= 0.765 file= 0.014 cur= 0.783 top=cbmc@prove every_valid_sequence_spi1 0.750
-    21.0 anon= 0.774 file= 0.014 cur= 0.792 top=cbmc@prove every_valid_sequence_spi1 0.759
-    22.0 anon= 0.782 file= 0.014 cur= 0.800 top=cbmc@prove every_valid_sequence_spi1 0.767
-    23.0 anon= 0.791 file= 0.014 cur= 0.810 top=cbmc@prove every_valid_sequence_spi1 0.776
-    24.0 anon= 0.800 file= 0.014 cur= 0.819 top=cbmc@prove every_valid_sequence_spi1 0.785
-    25.0 anon= 0.812 file= 0.014 cur= 0.831 top=cbmc@prove every_valid_sequence_spi1 0.797
-    26.0 anon= 0.823 file= 0.014 cur= 0.841 top=cbmc@prove every_valid_sequence_spi1 0.808
-    27.0 anon= 0.835 file= 0.014 cur= 0.854 top=cbmc@prove every_valid_sequence_spi1 0.820
-    28.0 anon= 0.845 file= 0.014 cur= 0.863 top=cbmc@prove every_valid_sequence_spi1 0.830
-    29.0 anon= 0.856 file= 0.014 cur= 0.874 top=cbmc@prove every_valid_sequence_spi1 0.840
-    30.0 anon= 0.867 file= 0.014 cur= 0.885 top=cbmc@prove every_valid_sequence_spi1 0.851
-    31.0 anon= 0.877 file= 0.014 cur= 0.895 top=cbmc@prove every_valid_sequence_spi1 0.862
-    32.0 anon= 0.884 file= 0.014 cur= 0.902 top=cbmc@prove every_valid_sequence_spi1 0.869
-    33.0 anon= 0.896 file= 0.014 cur= 0.915 top=cbmc@prove every_valid_sequence_spi1 0.881
-    34.0 anon= 0.892 file= 0.014 cur= 0.911 top=cbmc@prove every_valid_sequence_spi1 0.877
-    35.0 anon= 0.883 file= 0.014 cur= 0.901 top=cbmc@prove every_valid_sequence_spi1 0.867
-    36.0 anon= 0.917 file= 0.014 cur= 0.936 top=cbmc@prove every_valid_sequence_spi1 0.867
-    37.0 anon= 1.024 file= 0.014 cur= 1.043 top=cbmc@prove every_valid_sequence_spi1 0.867
-    38.0 anon= 1.130 file= 0.014 cur= 1.149 top=cbmc@prove every_valid_sequence_spi1 0.867
-    39.0 anon= 1.237 file= 0.014 cur= 1.257 top=cbmc@prove every_valid_sequence_spi1 0.867
-    40.0 anon= 1.346 file= 0.014 cur= 1.366 top=cbmc@prove every_valid_sequence_spi1 0.867
-    41.0 anon= 1.456 file= 0.014 cur= 1.476 top=cbmc@prove every_valid_sequence_spi1 0.867
-    42.0 anon= 1.561 file= 0.014 cur= 1.582 top=cbmc@prove every_valid_sequence_spi1 0.867
-    43.0 anon= 1.816 file= 0.014 cur= 1.837 top=kani-driver@prove every_valid_sequence_spi1 1.803
-    44.0 anon= 2.416 file= 0.014 cur= 2.438 top=kani-driver@prove every_valid_sequence_spi1 2.396
+     0.0 anon= 0.022 file= 0.003 cbmc= 0.000 kani-driver= 0.001 cur= 0.030 top=podman/conmon@None 0.010
+     1.0 anon= 0.052 file= 0.014 cbmc= 0.037 kani-driver= 0.001 cur= 0.071 top=cbmc@prove every_valid_sequence_spi1 0.037
+     2.0 anon= 0.163 file= 0.014 cbmc= 0.148 kani-driver= 0.001 cur= 0.181 top=cbmc@prove every_valid_sequence_spi1 0.148
+     3.0 anon= 0.246 file= 0.014 cbmc= 0.231 kani-driver= 0.001 cur= 0.264 top=cbmc@prove every_valid_sequence_spi1 0.231
+     4.0 anon= 0.314 file= 0.014 cbmc= 0.299 kani-driver= 0.001 cur= 0.332 top=cbmc@prove every_valid_sequence_spi1 0.299
+     5.0 anon= 0.371 file= 0.014 cbmc= 0.356 kani-driver= 0.001 cur= 0.390 top=cbmc@prove every_valid_sequence_spi1 0.356
+     6.0 anon= 0.420 file= 0.014 cbmc= 0.405 kani-driver= 0.001 cur= 0.439 top=cbmc@prove every_valid_sequence_spi1 0.405
+     7.0 anon= 0.466 file= 0.014 cbmc= 0.451 kani-driver= 0.001 cur= 0.485 top=cbmc@prove every_valid_sequence_spi1 0.451
+     8.0 anon= 0.623 file= 0.014 cbmc= 0.608 kani-driver= 0.001 cur= 0.642 top=cbmc@prove every_valid_sequence_spi1 0.608
+     9.0 anon= 0.673 file= 0.014 cbmc= 0.658 kani-driver= 0.001 cur= 0.692 top=cbmc@prove every_valid_sequence_spi1 0.658
+    10.0 anon= 0.674 file= 0.014 cbmc= 0.659 kani-driver= 0.001 cur= 0.693 top=cbmc@prove every_valid_sequence_spi1 0.659
+    11.0 anon= 0.676 file= 0.014 cbmc= 0.661 kani-driver= 0.001 cur= 0.695 top=cbmc@prove every_valid_sequence_spi1 0.661
+    12.0 anon= 0.679 file= 0.014 cbmc= 0.663 kani-driver= 0.001 cur= 0.697 top=cbmc@prove every_valid_sequence_spi1 0.663
+    13.0 anon= 0.691 file= 0.014 cbmc= 0.675 kani-driver= 0.001 cur= 0.709 top=cbmc@prove every_valid_sequence_spi1 0.675
+    14.0 anon= 0.702 file= 0.014 cbmc= 0.686 kani-driver= 0.001 cur= 0.720 top=cbmc@prove every_valid_sequence_spi1 0.686
+    15.0 anon= 0.714 file= 0.014 cbmc= 0.699 kani-driver= 0.001 cur= 0.732 top=cbmc@prove every_valid_sequence_spi1 0.699
+    16.0 anon= 0.725 file= 0.014 cbmc= 0.709 kani-driver= 0.001 cur= 0.743 top=cbmc@prove every_valid_sequence_spi1 0.709
+    17.0 anon= 0.735 file= 0.014 cbmc= 0.719 kani-driver= 0.001 cur= 0.753 top=cbmc@prove every_valid_sequence_spi1 0.719
+    18.0 anon= 0.745 file= 0.014 cbmc= 0.730 kani-driver= 0.001 cur= 0.763 top=cbmc@prove every_valid_sequence_spi1 0.730
+    19.0 anon= 0.755 file= 0.014 cbmc= 0.740 kani-driver= 0.001 cur= 0.773 top=cbmc@prove every_valid_sequence_spi1 0.740
+    20.0 anon= 0.765 file= 0.014 cbmc= 0.750 kani-driver= 0.001 cur= 0.783 top=cbmc@prove every_valid_sequence_spi1 0.750
+    21.0 anon= 0.774 file= 0.014 cbmc= 0.759 kani-driver= 0.001 cur= 0.792 top=cbmc@prove every_valid_sequence_spi1 0.759
+    22.0 anon= 0.782 file= 0.014 cbmc= 0.767 kani-driver= 0.001 cur= 0.800 top=cbmc@prove every_valid_sequence_spi1 0.767
+    23.0 anon= 0.791 file= 0.014 cbmc= 0.776 kani-driver= 0.001 cur= 0.810 top=cbmc@prove every_valid_sequence_spi1 0.776
+    24.0 anon= 0.800 file= 0.014 cbmc= 0.785 kani-driver= 0.001 cur= 0.819 top=cbmc@prove every_valid_sequence_spi1 0.785
+    25.0 anon= 0.812 file= 0.014 cbmc= 0.797 kani-driver= 0.001 cur= 0.831 top=cbmc@prove every_valid_sequence_spi1 0.797
+    26.0 anon= 0.823 file= 0.014 cbmc= 0.808 kani-driver= 0.001 cur= 0.841 top=cbmc@prove every_valid_sequence_spi1 0.808
+    27.0 anon= 0.835 file= 0.014 cbmc= 0.820 kani-driver= 0.001 cur= 0.854 top=cbmc@prove every_valid_sequence_spi1 0.820
+    28.0 anon= 0.845 file= 0.014 cbmc= 0.830 kani-driver= 0.001 cur= 0.863 top=cbmc@prove every_valid_sequence_spi1 0.830
+    29.0 anon= 0.856 file= 0.014 cbmc= 0.840 kani-driver= 0.001 cur= 0.874 top=cbmc@prove every_valid_sequence_spi1 0.840
+    30.0 anon= 0.867 file= 0.014 cbmc= 0.851 kani-driver= 0.001 cur= 0.885 top=cbmc@prove every_valid_sequence_spi1 0.851
+    31.0 anon= 0.877 file= 0.014 cbmc= 0.862 kani-driver= 0.001 cur= 0.895 top=cbmc@prove every_valid_sequence_spi1 0.862
+    32.0 anon= 0.884 file= 0.014 cbmc= 0.869 kani-driver= 0.001 cur= 0.902 top=cbmc@prove every_valid_sequence_spi1 0.869
+    33.0 anon= 0.896 file= 0.014 cbmc= 0.881 kani-driver= 0.001 cur= 0.915 top=cbmc@prove every_valid_sequence_spi1 0.881
+    34.0 anon= 0.892 file= 0.014 cbmc= 0.877 kani-driver= 0.001 cur= 0.911 top=cbmc@prove every_valid_sequence_spi1 0.877
+    35.0 anon= 0.883 file= 0.014 cbmc= 0.867 kani-driver= 0.001 cur= 0.901 top=cbmc@prove every_valid_sequence_spi1 0.867
+    36.0 anon= 0.917 file= 0.014 cbmc= 0.867 kani-driver= 0.035 cur= 0.936 top=cbmc@prove every_valid_sequence_spi1 0.867
+    37.0 anon= 1.024 file= 0.014 cbmc= 0.867 kani-driver= 0.142 cur= 1.043 top=cbmc@prove every_valid_sequence_spi1 0.867
+    38.0 anon= 1.130 file= 0.014 cbmc= 0.867 kani-driver= 0.248 cur= 1.149 top=cbmc@prove every_valid_sequence_spi1 0.867
+    39.0 anon= 1.237 file= 0.014 cbmc= 0.867 kani-driver= 0.355 cur= 1.257 top=cbmc@prove every_valid_sequence_spi1 0.867
+    40.0 anon= 1.346 file= 0.014 cbmc= 0.867 kani-driver= 0.464 cur= 1.366 top=cbmc@prove every_valid_sequence_spi1 0.867
+    41.0 anon= 1.456 file= 0.014 cbmc= 0.867 kani-driver= 0.575 cur= 1.476 top=cbmc@prove every_valid_sequence_spi1 0.867
+    42.0 anon= 1.561 file= 0.014 cbmc= 0.867 kani-driver= 0.680 cur= 1.582 top=cbmc@prove every_valid_sequence_spi1 0.867
+    43.0 anon= 1.816 file= 0.014 cbmc= 0.000 kani-driver= 1.803 cur= 1.837 top=kani-driver@prove every_valid_sequence_spi1 1.803
+    44.0 anon= 2.416 file= 0.014 cbmc= 0.000 kani-driver= 2.396 cur= 2.438 top=kani-driver@prove every_valid_sequence_spi1 2.396

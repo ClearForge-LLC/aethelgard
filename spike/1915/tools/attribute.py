@@ -123,7 +123,11 @@ def main():
             two_big.append((s["t"], big))
         if timeline:
             top = max(s["procs"], key=mem)
+            by_k = {}
+            for p in s["procs"]:
+                by_k[klass(p)] = by_k.get(klass(p), 0) + mem(p)
             lines.append(f"{s['t']:8.1f} anon={s['stat'].get('anon', 0) / GIB:6.3f} file={s['stat'].get('file', 0) / GIB:6.3f} "
+                         f"cbmc={by_k.get('cbmc', 0) / GIB:6.3f} kani-driver={by_k.get('kani-driver', 0) / GIB:6.3f} "
                          f"cur={s['current'] / GIB:6.3f} top={klass(top)}@{gate_of(top, by_pid)} {mem(top) / GIB:.3f}")
     at = best["anon"]
     by_pid = {p["pid"]: p for p in at["procs"]}

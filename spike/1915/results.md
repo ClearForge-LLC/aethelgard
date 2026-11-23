@@ -12,7 +12,7 @@ Measured 2026-11-23 on Furnace. Base is `main` `57b62195`, from a scratch tree e
 - **The peak is one process: Kani's driver (`kani-driver`), at the end of the `every_valid_sequence_spi1` harness.**
   - It is not CBMC or the solver. kani-driver grows only as CBMC finishes, and peaks at about 3× CBMC's own peak.
   - It is serial: no cargo job is alive beside CBMC in any sample of any run, and the gates run one after another.
-- **The 9–13 GB ground came from the unsplit schedule harness, which `AET-WO-3303b` (`52a2d62e`, 2026-11-20) split per bus.**
+- **The WO's two cited grounds (`3304` F3, `4201` F4) came from the unsplit schedule harness, which `AET-WO-3303b` (`52a2d62e`, 2026-11-20) split per bus.** A split board can still exceed 16 GiB (§4.1a). There, too, the peak is kani-driver.
   - Both grounds, `3304` F3 and `4201` F4, were measured on 2026-11-19, before the split.
   - Measured here from a scratch copy, the bench crate's whole harness takes **11.30 GiB and 1,046 s**. Split, its largest part takes **2.63 GiB** and the three parts **81 s** in all (§4).
 - **The lean:**
@@ -160,7 +160,7 @@ So the whole campaign phase, Renode included, stays under 0.35 GiB: one tenth of
 
 **Two of my own claims were tested and held:**
 - **4201's OOM** was on a scratch variant (U2 a BMP581), not on the committed board, and before the split. It has not been run on today's `main`, so "predates the split" is inferred for it.
-- **The roadmap row at L1050** ("a board whose schedule harness is unsplit (no timer) needs more than 8 GiB") describes the state before 3303b. Today `board.rs` (L5330) splits whenever `parts` yields two or more, timers or not. A one-part board's "whole" harness is that one part.
+- **The roadmap row citing `4600` F11** ("a board whose schedule harness is unsplit (no timer) needs more than 8 GiB … 13 GB … Its cost is the SPI part") **describes the state before 3303b, inferred, not measured.** Today `board.rs` (L5330) splits whenever `parts` yields two or more, timers or not. That logger was not re-run, and hse8 shows that a split SPI part alone can exceed 16 GiB.
 
 ## 6. Predictions against the measurements
 
@@ -175,7 +175,7 @@ So the whole campaign phase, Renode included, stays under 0.35 GiB: one tenth of
 | P7 | Holds | bench 3.49 against reference 3.48 GiB, 0.5 % apart |
 | P8 | Holds | `verify` 3.50–3.54 against the worst `prove` at 3.48–3.49 GiB |
 | P9 | Holds for every run of 1 GiB or more (≤ 0.6 %) | runs under 1 GiB vary by up to 0.16 GiB in absolute terms |
-| P10 | **Wrong in direction.** `memory.peak` sits above the largest sample by 0–0.72 GiB, but because of growth between samples, not page cache (file ≤ 0.10 GiB) | §5 |
+| P10 | **Holds on its falsifier:** `memory.peak` sits 0–0.72 GiB above the largest sample, always under 1.5 GiB. Wrong on the cause: it is growth between samples, not page cache (file ≤ 0.10 GiB) | §5 |
 | P11 | Moot | the change that brings the peak under 8 GiB already exists (3303b's split). No flag was needed on the committed boards |
 
 ## 7. Furnace's memory

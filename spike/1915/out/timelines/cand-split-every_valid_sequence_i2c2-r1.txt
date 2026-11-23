@@ -1,18 +1,18 @@
-     0.0 anon= 0.020 file= 0.000 cur= 0.024 top=podman/conmon@None 0.010
-     1.0 anon= 0.063 file= 0.005 cur= 0.073 top=cbmc@prove every_valid_sequence_i2c2 0.048
-     2.0 anon= 0.160 file= 0.005 cur= 0.169 top=cbmc@prove every_valid_sequence_i2c2 0.144
-     3.0 anon= 0.277 file= 0.005 cur= 0.287 top=cbmc@prove every_valid_sequence_i2c2 0.262
-     4.0 anon= 0.279 file= 0.005 cur= 0.289 top=cbmc@prove every_valid_sequence_i2c2 0.264
-     5.0 anon= 0.282 file= 0.005 cur= 0.293 top=cbmc@prove every_valid_sequence_i2c2 0.268
-     6.0 anon= 0.288 file= 0.005 cur= 0.297 top=cbmc@prove every_valid_sequence_i2c2 0.273
-     7.0 anon= 0.295 file= 0.005 cur= 0.304 top=cbmc@prove every_valid_sequence_i2c2 0.279
-     8.0 anon= 0.310 file= 0.005 cur= 0.319 top=cbmc@prove every_valid_sequence_i2c2 0.295
-     9.0 anon= 0.326 file= 0.005 cur= 0.335 top=cbmc@prove every_valid_sequence_i2c2 0.311
-    10.0 anon= 0.342 file= 0.005 cur= 0.351 top=cbmc@prove every_valid_sequence_i2c2 0.327
-    11.0 anon= 0.360 file= 0.005 cur= 0.369 top=cbmc@prove every_valid_sequence_i2c2 0.345
-    12.0 anon= 0.391 file= 0.005 cur= 0.401 top=cbmc@prove every_valid_sequence_i2c2 0.350
-    13.0 anon= 0.477 file= 0.005 cur= 0.489 top=cbmc@prove every_valid_sequence_i2c2 0.350
-    14.0 anon= 0.564 file= 0.005 cur= 0.576 top=cbmc@prove every_valid_sequence_i2c2 0.350
-    15.0 anon= 0.651 file= 0.005 cur= 0.663 top=cbmc@prove every_valid_sequence_i2c2 0.350
-    16.0 anon= 0.741 file= 0.005 cur= 0.753 top=kani-driver@prove every_valid_sequence_i2c2 0.377
-    17.0 anon= 1.427 file= 0.005 cur= 1.440 top=kani-driver@prove every_valid_sequence_i2c2 1.413
+     0.0 anon= 0.020 file= 0.000 cbmc= 0.000 kani-driver= 0.001 cur= 0.024 top=podman/conmon@None 0.010
+     1.0 anon= 0.063 file= 0.005 cbmc= 0.048 kani-driver= 0.001 cur= 0.073 top=cbmc@prove every_valid_sequence_i2c2 0.048
+     2.0 anon= 0.160 file= 0.005 cbmc= 0.144 kani-driver= 0.001 cur= 0.169 top=cbmc@prove every_valid_sequence_i2c2 0.144
+     3.0 anon= 0.277 file= 0.005 cbmc= 0.262 kani-driver= 0.001 cur= 0.287 top=cbmc@prove every_valid_sequence_i2c2 0.262
+     4.0 anon= 0.279 file= 0.005 cbmc= 0.264 kani-driver= 0.001 cur= 0.289 top=cbmc@prove every_valid_sequence_i2c2 0.264
+     5.0 anon= 0.282 file= 0.005 cbmc= 0.268 kani-driver= 0.001 cur= 0.293 top=cbmc@prove every_valid_sequence_i2c2 0.268
+     6.0 anon= 0.288 file= 0.005 cbmc= 0.273 kani-driver= 0.001 cur= 0.297 top=cbmc@prove every_valid_sequence_i2c2 0.273
+     7.0 anon= 0.295 file= 0.005 cbmc= 0.279 kani-driver= 0.001 cur= 0.304 top=cbmc@prove every_valid_sequence_i2c2 0.279
+     8.0 anon= 0.310 file= 0.005 cbmc= 0.295 kani-driver= 0.001 cur= 0.319 top=cbmc@prove every_valid_sequence_i2c2 0.295
+     9.0 anon= 0.326 file= 0.005 cbmc= 0.311 kani-driver= 0.001 cur= 0.335 top=cbmc@prove every_valid_sequence_i2c2 0.311
+    10.0 anon= 0.342 file= 0.005 cbmc= 0.327 kani-driver= 0.001 cur= 0.351 top=cbmc@prove every_valid_sequence_i2c2 0.327
+    11.0 anon= 0.360 file= 0.005 cbmc= 0.345 kani-driver= 0.001 cur= 0.369 top=cbmc@prove every_valid_sequence_i2c2 0.345
+    12.0 anon= 0.391 file= 0.005 cbmc= 0.350 kani-driver= 0.027 cur= 0.401 top=cbmc@prove every_valid_sequence_i2c2 0.350
+    13.0 anon= 0.477 file= 0.005 cbmc= 0.350 kani-driver= 0.113 cur= 0.489 top=cbmc@prove every_valid_sequence_i2c2 0.350
+    14.0 anon= 0.564 file= 0.005 cbmc= 0.350 kani-driver= 0.200 cur= 0.576 top=cbmc@prove every_valid_sequence_i2c2 0.350
+    15.0 anon= 0.651 file= 0.005 cbmc= 0.350 kani-driver= 0.287 cur= 0.663 top=cbmc@prove every_valid_sequence_i2c2 0.350
+    16.0 anon= 0.741 file= 0.005 cbmc= 0.350 kani-driver= 0.377 cur= 0.753 top=kani-driver@prove every_valid_sequence_i2c2 0.377
+    17.0 anon= 1.427 file= 0.005 cbmc= 0.000 kani-driver= 1.413 cur= 1.440 top=kani-driver@prove every_valid_sequence_i2c2 1.413
