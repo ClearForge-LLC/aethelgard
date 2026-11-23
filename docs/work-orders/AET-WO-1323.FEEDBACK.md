@@ -258,3 +258,11 @@ The serial path's memory is base's again (it was 785 MB before the fix); the thr
 **Fence crossings, told here:** `crates/aethelgard-eda/src/pcb.rs` (`unroutable`'s one new arm for `RouterWorkExceeded`, and that function's shape test); its placement is not touched. `ci/test-weights.tsv`: five rows (the fence allows weight rows).
 
 **Backlog rows for the docs PR:** the roadmap's `1310` A7 row rewords to what was built (a keepout refused outside its footprint, not admitted anywhere); A2 (D6); K2 (a circular courtyard's keepout is judged against the circle's square).
+
+## 9. Merges, gates, close
+
+- **`main` merged twice:** `7dec1d7b` (1916, docs) as `7bddbe3b` before the build, and `75da8053` (4408: a four-port board, the tools image re-pinned; the roadmap) as `2ed704f1`. Neither changes an `eda` file. 4408 adds a committed specification, `cli/…/fixtures/four-port.json`: base and head emit it byte-identical (release, 1.3 s each, far under the bound), so §5.1's movers stand. The tier-2 pre-check of §5.1 ran in the image before the re-pin; CI runs the new one.
+- **No tier-2 test added:** `TIER2_MIN` unchanged.
+- **Gates on the head** (after both merges, from a clean target; the worktree's copied `target/` had stale test binaries baked with `~/aethelgard-1322`'s path, which failed 28 unrelated tests until `cargo clean`): `cargo fmt --all -- --check` passes; `cargo clippy --workspace --all-targets -- -D warnings` passes, and with `--features aethelgard-cli/with-tools`; `cargo test --workspace`: **2 902 passed, 0 failed** (15 min 22 s, in a capped scope).
+- **Disk:** the measurement's build trees removed at the architect's 10:58Z note (43 GB to under 1 GB); `~/.cache/aet-1323` keeps the logs, outputs and binaries this file cites.
+- **Title and body** for the architect: `~/.cache/aet-1323/pr-title-body.md`.
