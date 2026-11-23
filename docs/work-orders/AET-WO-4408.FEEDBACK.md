@@ -220,4 +220,4 @@ Earlier heads, for the record:
 - **Departure:** one departure from D1 (a)'s literal `#[ignore]`, forced by `ci/shard.sh` (§3 A4, Q6).
 - **Untouched:** no crate `src/`, `ci/`, `fab/` or `examples/` byte changes.
 
-The architect merges. This READY commit is the last push.
+After that CI, `main` `7dec1d7b` (1916, CI's fourth refit) was merged into the READY head. It touches `ci/` and three CLI tests and none of this branch's files, and `bash ci/test-shard.sh` passes on the merge (its `ignored` refusal is unchanged, now at `shard.sh:315`). The READY head's CI result goes on the bus. The architect merges. This READY push is the last.
