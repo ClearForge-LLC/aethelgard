@@ -1355,6 +1355,16 @@ pub struct RccRule {
     /// [`Self::selects`] and [`Self::spi_gates`] empty, since no select is
     /// written there. Empty on every other board.
     pub clock_owned: Vec<u32>,
+    /// On a board with the kernel-clock switch (`AET-WO-4240e` D1 (a)), its
+    /// writes in order, (offset, word): the topology's `clock.kernel_switch`
+    /// words (`PLLCKSELR`, `PLLCFGR`, `PLL1DIVR`), then `RCC_CR` whole from
+    /// its reset `HSION` ([`crate::hse::RCC_CR_RESET`], p. 383) with `PLL1ON`
+    /// (the header's position), then `HSION` alone (Q11 ruled: as the HSE
+    /// bring-up, every word whole); never from the generator. Each select is
+    /// written between the two `RCC_CR` words, with PLL1 running, since a
+    /// kernel mux moves only while both its inputs run (RM0433 Rev 9
+    /// pp. 371–372). Empty on every other board.
+    pub switch: Vec<(u32, u32)>,
 }
 
 /// The RCC rule of a port on `peripheral` (its USART) with `pins`, on
@@ -1407,7 +1417,20 @@ pub fn rcc_rule(
             selects,
             spi_gates,
             clock_owned: crate::hse::owned_offsets(&clock),
+            switch: Vec::new(),
         });
+    }
+    let mut switch = Vec::new();
+    if let Some(k) = &topology.clock.kernel_switch {
+        let on = 1 << f.position("RCC_CR_PLL1ON_Pos")?;
+        let cr = rcc.offset("CR", 0)?;
+        switch = vec![
+            (rcc.offset("PLLCKSELR", 0)?, k.pllckselr),
+            (rcc.offset("PLLCFGR", 0)?, k.pllcfgr),
+            (rcc.offset("PLL1DIVR", 0)?, k.pll1divr),
+            (cr, crate::hse::RCC_CR_RESET | on),
+            (cr, crate::hse::RCC_CR_RESET),
+        ];
     }
     for p in topology.spi_controllers.keys() {
         let words =
@@ -1428,6 +1451,7 @@ pub fn rcc_rule(
         selects,
         spi_gates,
         clock_owned: Vec::new(),
+        switch,
     })
 }
 
@@ -1447,7 +1471,14 @@ pub fn rcc_rule(
 ///   the solved one, or after a solved SPI's gate was set; and a solved
 ///   SPI's gate set before its select register was written (`AET-WO-4230`
 ///   §1.1: on silicon `SPI123SEL` at reset selects `pll1_q_ck`, which is
-///   off).
+///   off);
+/// - with the kernel-clock switch ([`RccRule::switch`], `AET-WO-4240e`), a
+///   write to one of its registers that is not its next word in order
+///   (`RCC.CR 0x1 written, not the kernel switch's next word`), a select
+///   written outside its PLL1 window (`RCC.D2CCIP1R written while PLL1 was
+///   not running for the switch`), and a boot that ends with the switch
+///   begun and not finished (`the kernel switch stopped after 3 of its 5
+///   words`).
 pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut note = |x: String| {
@@ -1465,6 +1496,8 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
         let mut set = vec![false; rule.gates.len()];
         let mut spi_set = vec![false; rule.spi_gates.len()];
         let mut selected = vec![false; rule.selects.len()];
+        // The switch's words written so far, in order.
+        let mut switched = 0;
         for a in boot.iter().filter(|a| a.write && a.source == RCC_RENODE) {
             let value = u32::try_from(a.value).unwrap_or(u32::MAX);
             if a.bits != 32 || a.offset % 4 != 0 {
@@ -1478,8 +1511,28 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
             if rule.clock_owned.contains(&a.offset) {
                 continue;
             }
+            if rule.switch.iter().any(|s| s.0 == a.offset) {
+                let next = rule.switch.get(switched).map(|&w| w == (a.offset, value));
+                if next == Some(true) {
+                    switched += 1;
+                } else {
+                    note(format!(
+                        "RCC.{} {value:#X} written, not the kernel switch's next word",
+                        name(a.offset)
+                    ));
+                }
+                continue;
+            }
             if let Some(i) = rule.selects.iter().position(|s| s.0 == a.offset) {
                 let (at, word) = rule.selects[i];
+                // Inside the window: PLL1 on (the fourth word) and not yet
+                // off (the fifth).
+                if !rule.switch.is_empty() && switched != rule.switch.len() - 1 {
+                    note(format!(
+                        "RCC.{} written while PLL1 was not running for the switch",
+                        name(at)
+                    ));
+                }
                 if selected[i] {
                     note(format!("RCC.{} written twice in a boot", name(at)));
                 } else if value != word {
@@ -1540,6 +1593,14 @@ pub fn judge_rcc(rule: &RccRule, boots: &[Vec<Access>]) -> Vec<String> {
                     ));
                 }
             }
+        }
+        // A switch begun and not finished; one never begun shows by its
+        // select instead (outside the window, or after the gate).
+        if switched != 0 && switched != rule.switch.len() {
+            note(format!(
+                "the kernel switch stopped after {switched} of its {} words",
+                rule.switch.len()
+            ));
         }
     }
     out
@@ -2866,7 +2927,11 @@ mod tests {
     /// GPIO ports once set in that boot.
     #[test]
     fn adversarial_3_adv3_1_the_rcc_writes_only_enable_registers() {
-        let rule = rcc_rule(&crate::tests::bare(), "USART1", &["PA9", "PA10"]).unwrap();
+        // The enable-register rule alone, as measured before the kernel-clock
+        // switch (`AET-WO-4240e`, tested on its own).
+        let mut reference = crate::tests::bare();
+        reference.clock.kernel_switch = None;
+        let rule = rcc_rule(&reference, "USART1", &["PA9", "PA10"]).unwrap();
         let gates: Vec<(&str, &str, u32, u32)> = rule
             .gates
             .iter()
@@ -2972,6 +3037,97 @@ mod tests {
         assert_eq!(g, [(0xE8, 1 << 31), (0xE0, 1 << 4)]);
     }
 
+    /// `AET-WO-4240e` D1 (a): with the topology's `clock.kernel_switch`, the
+    /// RCC takes PLL1's three words as solved, then `RCC_CR` as last read with
+    /// `PLL1ON` (bit 24, the header's) set, the select, then `RCC_CR` as last
+    /// read with it cleared; each once per boot, in order, and the select only
+    /// between the two `RCC_CR` writes (RM0433 Rev 9 pp. 371–372). Renode's
+    /// `RCC_CR` reads `0x25` from reset (`HSION`, `HSIRDY`, `HSIDIVF`,
+    /// measured, `hse.rs`) and `PLL1RDY` with `PLL1ON`.
+    #[test]
+    fn the_rcc_takes_the_kernel_switch_in_order_around_the_select() {
+        let reference = crate::tests::bare();
+        let k = reference
+            .clock
+            .kernel_switch
+            .clone()
+            .expect("the reference has SPI1 on per_ck");
+        let rule = rcc_rule(&reference, "USART1", &["PA9", "PA10"]).unwrap();
+        assert_eq!(
+            rule.switch,
+            [
+                (0x28, k.pllckselr),
+                (0x2C, k.pllcfgr),
+                (0x30, k.pll1divr),
+                (0x00, 0x0100_0001),
+                (0x00, 0x0000_0001),
+            ]
+        );
+        let words: Vec<Access> = rule.switch[..3]
+            .iter()
+            .map(|(o, v)| w("rcc", *o, *v))
+            .collect();
+        let pll_on = [w("rcc", 0x00, 0x0100_0001)];
+        let pll_off = [w("rcc", 0x00, 0x0000_0001)];
+        let select = w("rcc", 0x50, 0x4000);
+        let spi1 = w("rcc", 0xF0, 0x1000);
+        let boot = |order: &[&[Access]]| judge_rcc(&rule, &[order.concat()]);
+        let good = [
+            &words[..],
+            &pll_on,
+            std::slice::from_ref(&select),
+            &pll_off,
+            std::slice::from_ref(&spi1),
+        ];
+        assert!(boot(&good).is_empty(), "{:?}", boot(&good));
+        assert!(judge_rcc(&rule, &[good.concat(), good.concat()]).is_empty());
+        // The select before PLL1 runs: the scar, and the firmware before 4240e.
+        assert_eq!(
+            boot(&[std::slice::from_ref(&select), std::slice::from_ref(&spi1)]),
+            ["RCC.D2CCIP1R written while PLL1 was not running for the switch"]
+        );
+        // The select after PLL1 is stopped.
+        assert_eq!(
+            boot(&[
+                &words[..],
+                &pll_on,
+                &pll_off,
+                std::slice::from_ref(&select),
+                std::slice::from_ref(&spi1)
+            ]),
+            ["RCC.D2CCIP1R written while PLL1 was not running for the switch"]
+        );
+        // PLL1ON before the words; a CR word that clears HSION; a PLL word
+        // changed.
+        assert_eq!(
+            boot(&[&pll_on, &words[..]])[0],
+            "RCC.CR 0x1000001 written, not the kernel switch's next word"
+        );
+        assert_eq!(
+            boot(&[&words[..], &[w("rcc", 0x00, 0x0100_0000)]])[0],
+            "RCC.CR 0x1000000 written, not the kernel switch's next word"
+        );
+        let mut changed = words.clone();
+        changed[1] = w("rcc", 0x2C, k.pllcfgr & !(1 << 17));
+        assert_eq!(
+            boot(&[&changed[..]])[0],
+            format!(
+                "RCC.PLLCFGR {:#X} written, not the kernel switch's next word",
+                k.pllcfgr & !(1 << 17)
+            )
+        );
+        // PLL1 left running: the switch stops at its fourth word.
+        assert_eq!(
+            boot(&[
+                &words[..],
+                &pll_on,
+                std::slice::from_ref(&select),
+                std::slice::from_ref(&spi1)
+            ]),
+            ["the kernel switch stopped after 4 of its 5 words"]
+        );
+    }
+
     /// `AET-WO-4230` §1.1 (FEEDBACK §2, last bullet): beside the enable
     /// registers, the RCC takes exactly one whole-word write of each solved
     /// kernel select, the word `aethelgard_ir::silicon::spi_words` gives,
@@ -2979,7 +3135,10 @@ mod tests {
     /// read-back) is no write. `D3CCIPR` only with SPI6 solved.
     #[test]
     fn the_rcc_takes_each_solved_spi_select_once_before_the_spi_clock() {
-        let reference = crate::tests::bare();
+        // The select rules alone: the kernel-clock switch (`AET-WO-4240e`)
+        // has its own test below.
+        let mut reference = crate::tests::bare();
+        reference.clock.kernel_switch = None;
         let rule = rcc_rule(&reference, "USART1", &["PA9", "PA10"]).unwrap();
         // SPI123SEL (bits 14:12) = 100, per_ck (RM0433 Rev 9 §8.7.20, p. 414).
         assert_eq!(rule.selects, [(0x50, 0x4000)]);

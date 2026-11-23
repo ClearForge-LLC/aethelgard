@@ -1169,26 +1169,43 @@ mod tests {
             );
             // `AET-WO-4240v` §1.7: the PWR and FLASH.ACR acknowledgements are
             // listed first, before the brown-out row, and nothing else moves.
-            let added: String = spec
-                .acknowledge_unwitnessed
-                .iter()
-                .filter(|a| a.reason.contains("AET-WO-4240v"))
-                .map(|a| {
-                    let fields: Vec<String> = a.fields.iter().map(|f| format!("`{f}`")).collect();
-                    format!(
-                        "- `{}` ({}): {}. {}\n",
-                        a.register,
-                        a.class,
-                        fields.join(", "),
-                        a.reason
-                    )
-                })
-                .collect();
+            // Each acknowledgement a work order added, as the notes list it.
+            let added_by = |wo: &str| -> String {
+                spec.acknowledge_unwitnessed
+                    .iter()
+                    .filter(|a| a.reason.contains(wo))
+                    .map(|a| {
+                        let fields: Vec<String> =
+                            a.fields.iter().map(|f| format!("`{f}`")).collect();
+                        format!(
+                            "- `{}` ({}): {}. {}\n",
+                            a.register,
+                            a.class,
+                            fields.join(", "),
+                            a.reason
+                        )
+                    })
+                    .collect()
+            };
+            let added = added_by("AET-WO-4240v");
             let golden = golden.replacen(
                 "- `FLASH.OPTSR_CUR`",
                 &format!("{added}- `FLASH.OPTSR_CUR`"),
                 1,
             );
+            // `AET-WO-4240e` Q8 and Q11: `RCC.CR`'s two acknowledgements, where
+            // its one entry was.
+            let switch = added_by("AET-WO-4240e");
+            let golden: String = golden
+                .split_inclusive('\n')
+                .map(|l| {
+                    if l.starts_with("- `RCC.CR` (ignored-by-model)") {
+                        switch.as_str()
+                    } else {
+                        l
+                    }
+                })
+                .collect();
             for n in [1, 64] {
                 assert_eq!(
                     notes(

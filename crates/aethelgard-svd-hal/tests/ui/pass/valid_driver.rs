@@ -15,7 +15,7 @@ fn firmware() {
     let mut rcc = board.rcc;
     let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
     let _optsr: u32 = board.flash.option_status(&mut r);
-    let kernels = rcc.select_spi_kernels(&mut r, &clock);
+    let kernels = rcc.select_spi_kernels(&mut r, &clock, 9744).unwrap();
     let a = rcc.enable_gpioa(&mut r, board.gpioa, scale2).split(&mut r);
     let b = rcc.enable_gpiob(&mut r, board.gpiob, scale2).split(&mut r);
     let scl = b.pb6.into_i2c1_scl(&mut r);

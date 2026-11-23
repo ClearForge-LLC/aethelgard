@@ -168,7 +168,45 @@ pub struct CelsiusRange {
     pub max: i32,
 }
 
-crate::object_only!(HseCrystal, HseExternal, CelsiusRange, SolvedHse);
+crate::object_only!(
+    HseCrystal,
+    HseExternal,
+    CelsiusRange,
+    SolvedHse,
+    SolvedKernelSwitch,
+    SolvedAdcClock
+);
+
+/// PLL1 started from the HSI for the kernel-clock switch alone
+/// (`AET-WO-4240e` D1 (a), ruled): a kernel mux moves to a new input only
+/// while its current input and the new one both run, and gives no clock
+/// otherwise (RM0433 Rev 9 §8.5.10, pp. 371–372). `SPI123SEL` resets to
+/// `pll1_q_ck` (p. 414), so on a board with no HSE tree the bring-up runs
+/// PLL1 from the HSI across the select writes: its three words written with
+/// PLL1 off, `PLL1ON`, `PLL1RDY` read 1, the selects, then `PLL1ON` cleared.
+/// No other clock is taken from PLL1, so it stops when the selects are done.
+/// Absent when no select leaves a reset input that is a PLL1 output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedKernelSwitch {
+    /// `RCC_PLLCKSELR` (§8.7.11, offset 0x028): `PLLSRC` `00` (`hsi_ck`).
+    pub pllckselr: u32,
+    /// `RCC_PLLCFGR` (§8.7.12, offset 0x02C): `DIVQ1EN` set.
+    pub pllcfgr: u32,
+    /// `RCC_PLL1DIVR` (§8.7.13, offset 0x030).
+    pub pll1divr: u32,
+}
+
+/// The clock the ADCs convert on (`AET-WO-4240e`, the architect's ruling on
+/// the ADC): `ADCx_CCR.CKMODE`, written before the ADC is enabled. `00`
+/// takes `adc_ker_ck_input` through `RCC_D3CCIPR.ADCSEL`; any other code
+/// takes `adc_sclk` divided by 1, 2 or 4, and not the kernel clock (RM0433
+/// Rev 9 §25.4.3, p. 920; `CKMODE` p. 1039). Absent when no ADC is enabled.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedAdcClock {
+    pub ckmode: u32,
+}
 
 /// The HSE tree as solved (`AET-WO-4240a`): the declaration, copied by
 /// `solve` (`RUL-16`), the budget it gives, and the three PLL words the

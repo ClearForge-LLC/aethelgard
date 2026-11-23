@@ -1,0 +1,2595 @@
+[
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/bor-recovery/ext-bmp581-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/bor-recovery/logger-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/bor-recovery/s02-shaped-droop.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/connectors.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "169:reset_clock",
+   "180:select",
+   "190:enable(i2c1)",
+   "191:enable(spi1)",
+   "192:enable(spi2)",
+   "203:start(spi1)",
+   "204:start(spi2)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L180 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L190 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L203 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L204 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   },
+   "D3CCIPR": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "172:reset_clock",
+   "183:select",
+   "194:enable(i2c1)",
+   "195:enable(i2c2)",
+   "196:enable(i2c3)",
+   "197:enable(i2c4)",
+   "198:enable(spi1)",
+   "215:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L183 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L194 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L195 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c3": {
+    "at": "L196 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c4": {
+    "at": "L197 enable",
+    "clocked": true,
+    "why": "I2C4SEL = rcc_pclk4"
+   },
+   "spi1": {
+    "at": "L215 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00034000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   },
+   "D3CCIPR": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "176:reset_clock",
+   "187:select",
+   "199:enable(i2c1)",
+   "200:enable(i2c2)",
+   "201:enable(i2c3)",
+   "202:enable(i2c4)",
+   "203:enable(spi1)",
+   "204:enable(spi2)",
+   "205:enable(spi3)",
+   "206:enable(spi4)",
+   "243:start(spi1)",
+   "244:start(spi2)",
+   "245:start(spi3)",
+   "246:start(spi4)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L187 SPI123SEL pll1_q_ck->per_ck: switched",
+   "L187 SPI45SEL rcc_pclk2->hsi_ker_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L199 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L200 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c3": {
+    "at": "L201 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c4": {
+    "at": "L202 enable",
+    "clocked": true,
+    "why": "I2C4SEL = rcc_pclk4"
+   },
+   "spi1": {
+    "at": "L243 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L244 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi3": {
+    "at": "L245 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi4": {
+    "at": "L246 start",
+    "clocked": true,
+    "why": "SPI45SEL = hsi_ker_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json",
+  "hse": false,
+  "select_writes": [],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "144:reset_clock",
+   "157:enable(usart1)",
+   "164:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [],
+  "peripherals": {
+   "usart1": {
+    "at": "L164 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer-3k3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer-droop.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer-power.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "168:reset_clock",
+   "179:select",
+   "189:enable(i2c1)",
+   "190:enable(spi1)",
+   "198:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L179 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L189 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L198 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer-spi-absent.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-layer.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "168:reset_clock",
+   "179:select",
+   "189:enable(i2c1)",
+   "190:enable(spi1)",
+   "198:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L179 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L189 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L198 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/four-port.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "179:reset_clock",
+   "190:select",
+   "200:enable(i2c1)",
+   "201:enable(spi1)",
+   "202:enable(uart4)",
+   "203:enable(usart1)",
+   "204:enable(usart2)",
+   "205:enable(usart3)",
+   "221:start(spi1)",
+   "222:start(usart1)",
+   "223:start(usart2)",
+   "224:start(usart3)",
+   "225:start(uart4)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L190 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L200 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L221 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "uart4": {
+    "at": "L225 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart1": {
+    "at": "L222 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   },
+   "usart2": {
+    "at": "L223 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L224 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json",
+  "hse": true,
+  "select_writes": [],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "pllcfgr": "0x00030004",
+  "order": [
+   "215:reset_clock",
+   "222:hse_start",
+   "245:enable(i2c1)",
+   "246:enable(spi1)",
+   "247:enable(spi2)",
+   "250:enable(usart2)",
+   "251:enable(usart3)",
+   "271:start(spi1)",
+   "272:start(spi2)",
+   "273:start(usart2)",
+   "274:start(usart3)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [],
+  "peripherals": {
+   "i2c1": {
+    "at": "L245 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L271 start",
+    "clocked": true,
+    "why": "SPI123SEL = pll1_q_ck"
+   },
+   "spi2": {
+    "at": "L272 start",
+    "clocked": true,
+    "why": "SPI123SEL = pll1_q_ck"
+   },
+   "usart2": {
+    "at": "L273 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L274 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/hse-external-8.json",
+  "hse": true,
+  "select_writes": [],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "pllcfgr": "0x00030002",
+  "order": [
+   "215:reset_clock",
+   "222:hse_start",
+   "245:enable(i2c1)",
+   "246:enable(spi1)",
+   "247:enable(spi2)",
+   "250:enable(usart2)",
+   "251:enable(usart3)",
+   "271:start(spi1)",
+   "272:start(spi2)",
+   "273:start(usart2)",
+   "274:start(usart3)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [],
+  "peripherals": {
+   "i2c1": {
+    "at": "L245 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L271 start",
+    "clocked": true,
+    "why": "SPI123SEL = pll1_q_ck"
+   },
+   "spi2": {
+    "at": "L272 start",
+    "clocked": true,
+    "why": "SPI123SEL = pll1_q_ck"
+   },
+   "usart2": {
+    "at": "L273 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L274 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "184:reset_clock",
+   "195:select",
+   "205:enable(i2c1)",
+   "206:enable(spi1)",
+   "215:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L195 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L205 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L215 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/logger-4600.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "192:reset_clock",
+   "203:select",
+   "213:enable(i2c1)",
+   "214:enable(i2c2)",
+   "215:enable(spi1)",
+   "216:enable(usart1)",
+   "229:start(spi1)",
+   "230:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L203 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L213 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L214 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L229 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L230 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/motors-dshot600.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "169:reset_clock",
+   "180:select",
+   "190:enable(i2c1)",
+   "191:enable(spi1)",
+   "204:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L180 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L190 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L204 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "169:reset_clock",
+   "180:select",
+   "190:enable(i2c1)",
+   "191:enable(spi1)",
+   "204:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L180 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L190 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L204 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/pair-standin.json",
+  "hse": false,
+  "select_writes": [
+   "D3CCIPR=0x30000000"
+  ],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   },
+   "D3CCIPR": {
+    "read": 1,
+    "write": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "161:reset_clock",
+   "170:select",
+   "177:enable(i2c1)",
+   "178:enable(spi6)",
+   "186:start(spi6)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L170 SPI6SEL rcc_pclk4->hsi_ker_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L177 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi6": {
+    "at": "L186 start",
+    "clocked": true,
+    "why": "SPI6SEL = hsi_ker_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "176:reset_clock",
+   "187:select",
+   "197:enable(i2c1)",
+   "198:enable(spi1)",
+   "199:enable(usart1)",
+   "209:start(spi1)",
+   "210:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L187 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L197 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L209 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L210 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "192:reset_clock",
+   "203:select",
+   "213:enable(i2c1)",
+   "214:enable(spi1)",
+   "215:enable(spi2)",
+   "216:enable(usart1)",
+   "230:start(spi1)",
+   "231:start(spi2)",
+   "232:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L203 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L213 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L230 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L231 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L232 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "194:reset_clock",
+   "205:select",
+   "215:enable(i2c1)",
+   "216:enable(spi1)",
+   "217:enable(spi2)",
+   "219:enable(usart2)",
+   "220:enable(usart3)",
+   "240:start(spi1)",
+   "241:start(spi2)",
+   "242:start(usart2)",
+   "243:start(usart3)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L205 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L215 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L240 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L241 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart2": {
+    "at": "L242 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L243 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "198:reset_clock",
+   "209:select",
+   "221:enable(i2c1)",
+   "222:enable(i2c2)",
+   "223:enable(spi1)",
+   "224:enable(spi2)",
+   "226:enable(usart1)",
+   "227:enable(usart2)",
+   "228:enable(usart3)",
+   "253:start(spi1)",
+   "254:start(spi2)",
+   "255:start(usart1)",
+   "256:start(usart2)",
+   "257:start(usart3)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L209 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L221 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L222 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L253 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L254 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L255 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   },
+   "usart2": {
+    "at": "L256 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L257 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "177:reset_clock",
+   "188:select",
+   "198:enable(i2c1)",
+   "199:enable(spi1)",
+   "201:enable(usart1)",
+   "215:start(spi1)",
+   "216:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L188 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L198 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L215 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L216 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/serial-four.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "179:reset_clock",
+   "190:select",
+   "200:enable(i2c1)",
+   "201:enable(spi1)",
+   "202:enable(uart4)",
+   "203:enable(usart1)",
+   "204:enable(usart2)",
+   "205:enable(usart3)",
+   "221:start(spi1)",
+   "222:start(usart1)",
+   "223:start(usart2)",
+   "224:start(usart3)",
+   "225:start(uart4)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L190 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L200 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L221 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "uart4": {
+    "at": "L225 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart1": {
+    "at": "L222 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   },
+   "usart2": {
+    "at": "L223 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   },
+   "usart3": {
+    "at": "L224 start",
+    "clocked": true,
+    "why": "USART234578SEL = rcc_pclk1"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/solve/infeasible-shared.json",
+  "skipped": "generate exit 2: {\"ok\":false,\"error\":{\"kind\":\"Infeasible\",\"id\":null,\"claimants\":[\"I2C_BUS_0\",\"I2C_BUS_2\",\"I2C_BUS_3\"],\"message\":\"buses `I2C_BUS_0`, `I2C_BUS_2`, `I2C_BUS_3` cannot all be placed at once (a minimal set:"
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/solve/pigeonhole-spi.json",
+  "skipped": "generate exit 2: {\"ok\":false,\"error\":{\"kind\":\"Infeasible\",\"id\":null,\"claimants\":[\"SPI_BUS_0\",\"SPI_BUS_1\",\"SPI_BUS_2\",\"SPI_BUS_3\",\"SPI_BUS_4\",\"SPI_BUS_5\",\"SPI_BUS_6\"],\"message\":\"buses `SPI_BUS_0`, `SPI_BUS_1`, `SPI_BUS"
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/solve/stress.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00034000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   },
+   "D3CCIPR": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "176:reset_clock",
+   "187:select",
+   "199:enable(i2c1)",
+   "200:enable(i2c2)",
+   "201:enable(i2c3)",
+   "202:enable(i2c4)",
+   "203:enable(spi1)",
+   "204:enable(spi2)",
+   "205:enable(spi3)",
+   "206:enable(spi4)",
+   "239:start(spi1)",
+   "240:start(spi2)",
+   "241:start(spi3)",
+   "242:start(spi4)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L187 SPI123SEL pll1_q_ck->per_ck: switched",
+   "L187 SPI45SEL rcc_pclk2->hsi_ker_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L199 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L200 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c3": {
+    "at": "L201 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c4": {
+    "at": "L202 enable",
+    "clocked": true,
+    "why": "I2C4SEL = rcc_pclk4"
+   },
+   "spi1": {
+    "at": "L239 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L240 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi3": {
+    "at": "L241 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi4": {
+    "at": "L242 start",
+    "clocked": true,
+    "why": "SPI45SEL = hsi_ker_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/solve/thrash-pins.json",
+  "skipped": "generate exit 2: {\"ok\":false,\"error\":{\"kind\":\"Infeasible\",\"id\":null,\"claimants\":[\"SPI_BUS_3\",\"SPI_BUS_4\",\"SPI_BUS_5\"],\"message\":\"buses `SPI_BUS_3`, `SPI_BUS_4`, `SPI_BUS_5` cannot all be placed at once (a minimal set:"
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/spi-absent-u4-one-kind.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/spi-only-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/spi-only.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "168:reset_clock",
+   "179:select",
+   "189:enable(i2c1)",
+   "190:enable(spi1)",
+   "198:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L179 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L189 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L198 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/two-bme-collide.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/two-bme-held-low-sda.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/two-bme-i2c-timeout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-cli/tests/fixtures/two-bme.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "168:reset_clock",
+   "179:select",
+   "189:enable(i2c1)",
+   "190:enable(spi1)",
+   "198:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L179 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L189 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L198 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/four-port.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/sentinel-01-full.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/sentinel-01.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/sentinel-02.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/serial-dshot-9600-open.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-hwdef/tests/fixtures/serial-dshot-9600.topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-ir/data/output-speeds.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "crates/aethelgard-ir/data/parts.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 13, not 29; it lacks 16 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-ir/data/power-parts.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
+  "hse": false,
+  "select_writes": [],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "146:reset_clock",
+   "160:enable(usart1)",
+   "161:enable(adc3)",
+   "169:start(usart1)",
+   "176:start(adc3)"
+  ],
+  "adc_ckmode": "11",
+  "mux_events": [],
+  "peripherals": {
+   "usart1": {
+    "at": "L169 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   },
+   "adc3": {
+    "at": "L176 start",
+    "clocked": true,
+    "why": "adc_sclk (CKMODE 11); ADCSEL input pll2_p_ck unused"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-ir/tests/fixtures/d2-drv8833.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"PartLimitUndeclared\",\"id\":\"U2\",\"path\":\"pin_devices[0].part_limits.input_pwm_max_hz\",\"message\":\"`pin_devices[0].part_limits.input_pw"
+ },
+ {
+  "spec": "crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "185:reset_clock",
+   "196:select",
+   "206:enable(i2c1)",
+   "207:enable(spi1)",
+   "208:enable(spi2)",
+   "220:start(spi1)",
+   "221:start(spi2)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L196 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L206 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L220 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "spi2": {
+    "at": "L221 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "crates/aethelgard-pincheck/tests/common/topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-svd-hal/tests/ui/motors-pwm-open/topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "crates/aethelgard-svd-hal/tests/ui/motors-pwm/topology.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "docs/work-orders/AET-WO-1200.repro/core-infeasible.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "docs/work-orders/AET-WO-1200.repro/fuzz-natural-6spi.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "examples/invalid-zero-domain.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"ZeroNominalVoltage\",\"id\":\"VDD_3V3\",\"message\":\"voltage domain `VDD_3V3` has nominal_millivolts 0\"}}"
+ },
+ {
+  "spec": "examples/sentinel-01-ext-bmp581.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "192:reset_clock",
+   "203:select",
+   "213:enable(i2c1)",
+   "214:enable(i2c2)",
+   "215:enable(spi1)",
+   "216:enable(usart1)",
+   "229:start(spi1)",
+   "230:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L203 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L213 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L214 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L229 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L230 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "examples/sentinel-01-minimal.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "176:reset_clock",
+   "187:select",
+   "197:enable(i2c1)",
+   "198:enable(spi1)",
+   "199:enable(usart1)",
+   "209:start(spi1)",
+   "210:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L187 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L197 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L209 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L210 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "examples/sentinel-01.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "177:reset_clock",
+   "188:select",
+   "198:enable(i2c1)",
+   "199:enable(i2c2)",
+   "200:enable(spi1)",
+   "201:enable(usart1)",
+   "214:start(spi1)",
+   "215:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L188 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L198 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "i2c2": {
+    "at": "L199 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L214 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L215 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "examples/sentinel-02-bench-hse8.json",
+  "hse": true,
+  "select_writes": [],
+  "switch_writes": [],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "pllcfgr": "0x00030002",
+  "order": [
+   "203:reset_clock",
+   "210:hse_start",
+   "234:enable(i2c1)",
+   "235:enable(spi1)",
+   "243:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [],
+  "peripherals": {
+   "i2c1": {
+    "at": "L234 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L243 start",
+    "clocked": true,
+    "why": "SPI123SEL = pll1_q_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "examples/sentinel-02-bench.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "183:reset_clock",
+   "194:select",
+   "205:enable(i2c1)",
+   "206:enable(spi1)",
+   "214:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L194 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L205 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L214 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "scenarios/motors/dshot600-droop.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/motors/dshot600.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01-bench/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01-bench/pullup-2k2.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01-bench/pullup-3k3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01-bench/spi-absent-u4.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/droop-tolerated.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/pullup-2k2.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/pullup-47k.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/cap-220p-2k2.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/cap-390p-sda-2k2.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/cases.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/held-low-scl.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/held-low-sda.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/motors-pwm.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/pullup-100k.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/pullup-10k.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/pullup-3k3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/pullup-3k9.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/pullup-4k7.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/serial-rx-dead.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-01/seeded/spi-absent-u4.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-02-power/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-02-power/battery-sag-tolerated.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-02-power/vdd1v8-out-of-band.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 4, not 29; it lacks 25 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/battery-sag-tolerated.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/droop-tolerated.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 6, not 29; it lacks 23 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/held-low-sda.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/serial-rx-open-console.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/serial-rx-open-crsf.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/serial-rx-open-mavlink.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/spi-absent-u4.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/spi-absent-u5.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/sentinel-03/vdd5v-out-of-band.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 4, not 29; it lacks 25 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/serial/serial-four-open-crsf.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/serial/serial-four-open-mavlink.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "scenarios/serial/serial-four.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1211/fixtures/d1-drv8876.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"SchemaViolation\",\"id\":null,\"message\":\"invalid type: string \\\"22-or-23\\\", expected u32 at line 2 column 30\"}}"
+ },
+ {
+  "spec": "spike/1211/fixtures/d2-drv8833.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"SchemaViolation\",\"id\":null,\"message\":\"invalid type: string \\\"22-or-23\\\", expected u32 at line 2 column 30\"}}"
+ },
+ {
+  "spec": "spike/1211d/adv/d1_vref_gnd.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 23, not 29; it lacks 6 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1211d/adv/d1_vref_low.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 23, not 29; it lacks 6 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1211d/adv/nfault_to_vmotor.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 23, not 29; it lacks 6 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1211f/d1-drawn.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 24, not 29; it lacks 5 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1215/in/v0.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 0, not 29\"}}"
+ },
+ {
+  "spec": "spike/1215/in/v1-sentinel-01.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1215/in/v20-sentinel-01.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 20, not 29; it lacks 9 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1215/in/v24-newer.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 24, not 29; it lacks 5 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/1314b/logger-spi-only-cap-tol.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 17, not 29; it lacks 12 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/1314b/logger-spi-only-cap.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 17, not 29; it lacks 12 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/2303/scenarios/s02-baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2303/scenarios/s02-droop.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/dshot600-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/ext-bmp581-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/ext-bmp581-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/four-layer-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/logger-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/logger-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-0.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-12340.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-37770.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-50000.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-81230.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/logger-99990.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-0.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-12340.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-37770.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-50000.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-81230.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/phase/s01min-99990.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/s01bench-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/s01min-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/s02-droop.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/s02-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/s03-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/2305/scenarios/spi-only-undisturbed.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/3305/verify/two-bme-baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 1, not 29; it lacks 28 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/3306/spec/bme-bmp.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/3307/spec/bme-bmp.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 27, not 29; it lacks 2 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4201/scenarios/s02-droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 2, not 29; it lacks 27 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4241/spec/sentinel-01-minimal-no-u3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 19, not 29; it lacks 10 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4300j/open/motors-pwm-open.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "169:reset_clock",
+   "180:select",
+   "190:enable(i2c1)",
+   "191:enable(spi1)",
+   "204:start(spi1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L180 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L190 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L204 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "spike/4300j/open/serial-dshot-9600-open.json",
+  "hse": false,
+  "select_writes": [
+   "D2CCIP1R=0x00004000"
+  ],
+  "switch_writes": [
+   "0x028=0x00000050",
+   "0x02c=0x0002000c",
+   "0x030=0x0101020f",
+   "0x000=0x01000000",
+   "0x000=0x00000000"
+  ],
+  "ccipr_accesses": {
+   "D1CCIPR": {
+    "read": 1
+   },
+   "D2CCIP1R": {
+    "read": 9,
+    "write": 1
+   },
+   "D2CCIP2R": {
+    "read": 1
+   }
+  },
+  "unclassified_enables": [],
+  "order": [
+   "177:reset_clock",
+   "188:select",
+   "198:enable(i2c1)",
+   "199:enable(spi1)",
+   "201:enable(usart1)",
+   "215:start(spi1)",
+   "216:start(usart1)"
+  ],
+  "adc_ckmode": null,
+  "mux_events": [
+   "L188 SPI123SEL pll1_q_ck->per_ck: switched"
+  ],
+  "peripherals": {
+   "i2c1": {
+    "at": "L198 enable",
+    "clocked": true,
+    "why": "I2C123SEL = rcc_pclk1"
+   },
+   "spi1": {
+    "at": "L215 start",
+    "clocked": true,
+    "why": "SPI123SEL = per_ck"
+   },
+   "usart1": {
+    "at": "L216 start",
+    "clocked": true,
+    "why": "USART16SEL = rcc_pclk2"
+   }
+  },
+  "unclocked": []
+ },
+ {
+  "spec": "spike/4600/driver-idle-zero.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/driver-tree.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/driver.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-1s-u50.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-1s.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-i2c-only.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-offboard.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-spi-only-cap.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger-spi-only.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/logger.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 16, not 29; it lacks 13 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/driver-tree/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/driver.stage1/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/logger-i2c-only/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/logger-offboard/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/logger-spi-only-cap/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/logger-spi-only/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/out/logger.stage1/solve.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 10, not 29; it lacks 19 version change(s), each named by path, and"
+ },
+ {
+  "spec": "spike/4600/scenarios/driver-tree/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/driver-tree/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/driver-tree/serial-rx-open-cmd.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/driver/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/driver/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/driver/serial-rx-open-cmd.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-i2c-only/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-i2c-only/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-i2c-only/pullup-3k3-baro.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-i2c-only/pullup-3k3-temp.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-i2c-only/serial-rx-open-readout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/pullup-3k3-baro.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/pullup-3k3-temp.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/serial-rx-open-readout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-offboard/spi-absent-u30.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only-cap/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only-cap/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only-cap/serial-rx-open-readout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u30.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only-cap/spi-absent-u40.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only/serial-rx-open-readout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only/spi-absent-u30.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger-spi-only/spi-absent-u40.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/baseline.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/droop-bor3.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/pullup-3k3-baro.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/pullup-3k3-temp.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/serial-rx-open-readout.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ },
+ {
+  "spec": "spike/4600/scenarios/logger/spi-absent-u30.json",
+  "skipped": "validate exit 2: {\"ok\":false,\"error\":{\"kind\":\"UnsupportedSchemaVersion\",\"id\":null,\"message\":\"schema_version is 3, not 29; it lacks 26 version change(s), each named by path, and "
+ }
+]

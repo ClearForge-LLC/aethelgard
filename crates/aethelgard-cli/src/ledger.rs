@@ -261,6 +261,10 @@ pub struct Entry {
     /// to; required for `observed` and `ignored-by-model`.
     pub source: String,
     pub note: String,
+    /// A read-only field inside a whole word the firmware writes: what it
+    /// writes there is not what reads back, so its written row predicts
+    /// nothing on the bench (`AET-WO-4240e`; RM0433 Rev 9 p. 383).
+    pub read_only: bool,
 }
 
 /// Whether `e` may be used: every entry names its judge, and every
@@ -336,7 +340,10 @@ const SPI_CS: &str = "STM32H7_SPI.cs";
 const ORACLE_ONLY: &str = "the generated oracle only";
 
 const SPI_RULE: &str = "aethelgard_ir::silicon::spi_words, held by silicon::check_spi before generation (svd-hal check_silicon); the proof's expected CR1, CFG1 and CFG2 are the rule's words (board.rs oracle_spi)";
-const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): the whole select word, the solved controllers' codes and every other field at reset, held by silicon::check_spi; the proof's expected word is the rule's";
+const SELECT_RULE: &str = "aethelgard_ir::silicon::spi_words (kernel_select): the whole select word, the solved controllers' codes and every other field at reset, held by silicon::check_spi; the proof's expected word is the rule's; that the mux takes it, judged by aethelgard_ir::kernel_clock::check (RM0433 Rev 9 pp. 371-372: the old and the new input both run across the select; AET-WO-4240e), which refuses generation and the verdict";
+/// `AET-WO-4240e` D1 (a): the kernel-clock switch's PLL1 on a board with no
+/// HSE tree.
+const SWITCH_RULE: &str = "on a board with no HSE tree, aethelgard_ir::kernel_clock::check (AET-WO-4240e): the topology's clock.kernel_switch words judged against RM0433 Rev 9 pp. 399-403 and DS12117 Rev 10 Table 39 across the HSI's band, refusing generation and the verdict; the switch's Kani harness (spi_kernel_switch_is_in_order_bounded_and_named) takes the topology's words";
 const I2C_CR1_RULE: &str = "aethelgard_ir::silicon::i2c_cr1, held by silicon::check_i2c before generation; the proof's expected CR1 is the rule's word (and the rule's word with PE for the enable)";
 const TIMINGR_RULE: &str = "aethelgard_ir::silicon::check_timingr (through check_i2c), a decode and inequalities at HSI's worst case, which refuses generation when it fails; the proof's expected word is the topology's, which that rule held, for the mode aethelgard_ir::silicon::i2c_start_mode gives the declared speed where the schedule starts the bus (the adversarial pass's F3)";
 const BRR_RULE: &str = "aethelgard_ir::silicon::check_brr (AET-WO-4230 R3, the architect's ruling on Q-H): 2*|BRR*baud - kernel| <= baud and 16 <= BRR <= 0xFFFF in exact integers, sharing nothing with serial::solve_brr, on the rule's own kernel clock (silicon::usart_kernel_hz: RM0433 Rev 9 §8.7.21, USART16SEL and USART234578SEL at reset 000, rcc_pclk2 and rcc_pclk1 from the solved clock's prescalers), which the topology's must equal (the adversarial pass's F1, never serial::kernel_hz); generation refuses a BRR it does not hold (svd-hal check_silicon, SiliconRuleFails) and the verdict's silicon findings judge every USART again; the proof's expected BRR is the topology's, which that rule held";
@@ -426,6 +433,7 @@ fn e(
         judge: judge.to_owned(),
         source: source.to_owned(),
         note: note.to_owned(),
+        read_only: false,
     }
 }
 
@@ -744,7 +752,10 @@ fn table() -> Vec<Entry> {
     // board only. Field names are the header's (`CSSHSEON` is RM0433's
     // `HSECSSON`). Renode measured in `spike/4240b/renode/results.md`.
     let clock_rule = "the twin's HSE clock rule (aethelgard_twin::hse::judge_clock, clock_access): each RCC_CR word is RM0433 Rev 9's reset 0x0000_0001 (p. 383) with the header's bits set in the contract's order, each written once, in order, with the HSERDY, PLL1RDY and SWS reads between; the Kani oracle's RCC clause takes the same words";
-    let pll_rule = "aethelgard_ir::clock::judge_tree (shares no code with the solver's choice of words; refuses validate and solve when it fails), held again by the twin's HSE clock rule (clock_access: the topology's word, once, in order) and by the Kani oracle's RCC clause, whose expected word is the topology's";
+    let pll_rule = format!(
+        "aethelgard_ir::clock::judge_tree, on an HSE board (shares no code with the solver's choice of words; refuses validate and solve when it fails), held again by the twin's HSE clock rule (clock_access: the topology's word, once, in order) and by the Kani oracle's RCC clause, whose expected word is the topology's; {SWITCH_RULE}"
+    );
+    let pll_rule = pll_rule.as_str();
     let hse_measured =
         "AET-WO-4240b FEEDBACK (spike/4240b/renode/results.md, Renode 1.17.0 measured)";
     for (field, class, source, note) in [
@@ -774,7 +785,7 @@ fn table() -> Vec<Entry> {
             format!(
                 "{RCC_CS} L197 (PLL1RDY reads PLL1ON); {hse_measured}: CR reads 0x030B0025 after PLL1ON, sys_ck 64,000,000 Hz after SW"
             ),
-            "PLL1's enable; the model's PLL1RDY follows it at once",
+            "PLL1's enable; the model's PLL1RDY follows it at once. On a board with no HSE tree, the kernel-clock switch's (AET-WO-4240e): set then cleared around the selects, its order held by the switch's Kani harness, not the twin's HSE clock rule",
         ),
     ] {
         let judge = format!("{clock_rule}; the model: {source}");
@@ -866,7 +877,7 @@ fn table() -> Vec<Entry> {
     // and acts on it, `ignored-by-model` where Renode drops the written bit
     // (a tag, or a read-only field), and `PLLSRC`'s two bits (the header's
     // overlapping masks) the topology's word that `judge_tree` holds.
-    let word = "a field of the whole word the HSE bring-up writes";
+    let word = "a field of the whole word the HSE bring-up, or the kernel-clock switch (AET-WO-4240e), writes";
     let held = "the twin's clock rule (aethelgard_twin::hse::judge_clock) holds the whole word as written, a twin-side rule, not an aethelgard-ir one (RUL-20 (1))";
     let dropped =
         |line: &str, how: &str| format!("{RCC_CS} L{line} ({how}): the written bit is dropped");
@@ -1007,16 +1018,19 @@ fn table() -> Vec<Entry> {
         ("CFGR", "MCO#", Ign, dropped("234, L236", "tags"), "reset 0"),
     ] {
         let judge = format!("{held}; the model: {source}");
-        t.push(e(
-            "RCC",
-            register,
-            field,
-            W,
-            class,
-            &judge,
-            &source,
-            &format!("{word}, {what}; {held} (RM0433 Rev 9 pp. 383, 393, 399)"),
-        ));
+        t.push(Entry {
+            read_only: what.starts_with("read-only"),
+            ..e(
+                "RCC",
+                register,
+                field,
+                W,
+                class,
+                &judge,
+                &source,
+                &format!("{word}, {what}; {held} (RM0433 Rev 9 pp. 383, 393, 399)"),
+            )
+        });
     }
     for (field, what) in [
         ("PLLSRC_CSI", "PLLSRC's low bit, 0: PLLSRC 10 is the HSE"),
@@ -2629,6 +2643,9 @@ pub struct Silicon {
     pub spi: Vec<SpiFinding>,
     pub i2c: Vec<I2cFinding>,
     pub usart: Vec<UsartFinding>,
+    /// `aethelgard_ir::kernel_clock::check`'s refusals (`AET-WO-4240e`):
+    /// each enabled peripheral with no running kernel clock at its start.
+    pub kernel_clock: Vec<aethelgard_ir::kernel_clock::KernelClockRefusal>,
     pub holds: bool,
 }
 
@@ -2667,13 +2684,16 @@ pub fn silicon(topology: &SolvedTopology) -> Silicon {
             ),
         })
         .collect();
+    let kernel_clock = aethelgard_ir::kernel_clock::check(topology);
     let holds = spi.iter().all(|f| f.holds)
         && i2c.iter().all(|f| f.holds)
-        && usart.iter().all(|f| f.brr.holds);
+        && usart.iter().all(|f| f.brr.holds)
+        && kernel_clock.is_empty();
     Silicon {
         spi,
         i2c,
         usart,
+        kernel_clock,
         holds,
     }
 }
@@ -2742,6 +2762,12 @@ pub fn silicon_failures(s: &Silicon) -> Vec<String> {
             f.brr.in_range
         )
     }));
+    out.extend(s.kernel_clock.iter().map(|r| {
+        format!(
+            "aethelgard_ir::kernel_clock::check refuses ({}): {r}",
+            r.kind()
+        )
+    }));
     out
 }
 
@@ -2759,12 +2785,29 @@ const WRITE_ONLY: [&str; 4] = ["BSRR", "ICR", "IFCR", "EGR"];
 /// can read. The bench reads after the boot, so a reset row of a field the
 /// firmware then writes is left out (its written row stands for it).
 pub fn on_the_bench(ledger: &Ledger, r: &LedgerRow) -> bool {
+    // A read-only field written inside a whole word (`AET-WO-4240e`): its
+    // written value is not what reads back, so that row predicts nothing,
+    // and the field's reset row, if any, keeps the bench's prediction.
+    let read_only = |w: &LedgerRow| {
+        w.access == "written"
+            && w.register.split_once('.').is_some_and(|(_, reg)| {
+                classify(
+                    &TABLE,
+                    &w.family,
+                    reg,
+                    &w.field,
+                    FieldAccess::Written,
+                    &w.id,
+                )
+                .is_ok_and(|e| e.read_only)
+            })
+    };
     let rewritten = r.access == "reset"
-        && ledger
-            .rows
-            .iter()
-            .any(|w| w.access == "written" && w.register == r.register && w.field == r.field);
+        && ledger.rows.iter().any(|w| {
+            w.access == "written" && w.register == r.register && w.field == r.field && !read_only(w)
+        });
     !rewritten
+        && !read_only(r)
         && !r.class.judged()
         && r.address.is_some()
         && r.value.is_some()
