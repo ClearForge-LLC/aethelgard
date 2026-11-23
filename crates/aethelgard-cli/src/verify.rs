@@ -2591,6 +2591,39 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    /// `AET-WO-1607` (5): a board gate reports `not_applicable` with its
+    /// reason and nothing it did not measure. The verdict may pass with the
+    /// four board gates `not_applicable` only on a board not drawn; on a
+    /// drawn board, or for any other gate, it fails.
+    #[test]
+    fn a_board_gate_is_not_applicable_only_on_a_board_not_drawn() {
+        let v = serde_json::to_value(not_applicable("erc")).unwrap();
+        assert_eq!(
+            v,
+            json!({"gate": "erc", "verdict": "not_applicable", "reason": NO_BOARD,
+                   "exit_code": null, "tool_version": null, "uid_boundary": null,
+                   "input_sha256": null, "findings": []})
+        );
+        assert!(
+            serde_json::to_value(not_run("erc"))
+                .unwrap()
+                .get("reason")
+                .is_none()
+        );
+        let passed = |name| Gate {
+            verdict: "pass",
+            ..not_run(name)
+        };
+        let board: Vec<Gate> = BOARD_GATES.into_iter().map(not_applicable).collect();
+        let mut gates = board;
+        gates.extend(["prove", "build", "simulate"].map(passed));
+        assert!(passes(&[], &gates, false));
+        assert!(!passes(&[], &gates, true), "a drawn board's gates must run");
+        let mut prove = BOARD_GATES.map(passed).into_iter().collect::<Vec<_>>();
+        prove.push(not_applicable("prove"));
+        assert!(!passes(&[], &prove, false), "only a board gate is excused");
+    }
+
     /// `AET-WO-4230` §1.7: a controller whose independent rule does not hold
     /// fails the verdict by name, every gate passing; one that holds adds
     /// nothing. A hand-edited controller (MBR one too fast), since `generate`
@@ -3467,6 +3500,7 @@ mod tests {
 
     fn want() -> Want<'static> {
         Want {
+            drawn: true,
             sch: "sch",
             pcb: "pcb",
             repl: "repl",
