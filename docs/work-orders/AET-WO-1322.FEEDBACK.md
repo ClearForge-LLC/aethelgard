@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1322-eda-hardening` from `main` `7fbe5d11`. **Builder:** Claude (Opus 5.5 orchestrating), with two Sonnet subagents for read-only inventories (guards, echo sites) and one fresh Opus subagent for the targeted adversarial pass. Each report was spot-checked against the code before use. Written 2026-11-23.
 
-**Status: READY** once CI is green on the last push (§7). **The answer:**
+**Status: READY.** CI is green on `a13566df` (§7); this READY commit adds `main` `94d6697a` (docs only) and this record. **The answer:**
 - **(1) Guards.** `validate` runs in `place()` (`emit`, `emit_moved`, `placement`), not in `design()`. So `Drawing::of`, `decoupling_picofarads` and the `extract`/`loops`/`supply` paths still reach every guard that `validate` shadows.
   - Those guards are **labelled** `belt-and-suspenders:`, each with a test that reaches it directly.
   - Only `crossing`'s two lookups were dead, by code order. They are folded into one `device_on`, shared with `behind`, or made `Internal` with the reason stated.
@@ -134,7 +134,8 @@ None stop the work order. Two choices, both inside the fence:
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
   - `cargo test --workspace --no-fail-fast`: **2860 passed, 0 failed**, in 163 `test result` lines.
 - **The final head's bytes:** `c2a4d3a7` against `29d137c0`'s output: `identical: 280 files`, `d4diff identical: 277 cases, 926 files`, `d1319 identical: 84 cases, 327 files`, `bulk.sh` both identical. So against base, only (4)'s refusal text differs (§2).
-- **CI:** recorded in the READY commit.
+- **CI on `a13566df` (PR #354): green.** Runs 45136024196 (`ci`), 45136024252 (`ardupilot-image`) and 45136024357 (`engine-image`), all `success`; every check passes and `quickstart`/`publish` are skipped by the workflow. The tier-2 guard reports `tier2_tests_passed=205 floor=205`; `TIER2_MIN` is unchanged.
+- **After CI:** `main` `94d6697a` was merged in. It changes `docs/roadmap.md` and adds three work orders, and touches no specification, crate, `ci/` or workflow. The tests that read `docs/` (`strict_fence`, `workspace_shape`, `readme_status`, `board_names`, `readme_versions`, `versions`) pass at the merged head.
 - **Fence:**
   - `crates/aethelgard-eda` (`board.rs`, `strict.rs`, `route.rs` tests, `route/read.rs`, `schematic.rs`, `schematic_arms.rs`, `schematic_power.rs`, `pcb.rs`, `tests/prepare_read_memory.rs`);
   - `spike/1319/harness/mutants.sh`;
