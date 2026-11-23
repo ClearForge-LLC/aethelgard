@@ -1,0 +1,25 @@
+run	json_path	pin	net	spec_pin_hand_or_solved
+# baseline: 0 value hits; raw-text hits of PA11/PA12/PC9: 0
+# pa8_copy: 0 value hits; raw-text hits of PA11/PA12/PC9: 0
+
+# other boards whose solve output carries PA11/PA12/PC9 (informational)
+other:connectors	/assignments/EXT_SCK/pin	PA12	-	-
+other:d1-24-i2c	/assignments/SDA2/pin	PC9	-	-
+other:d1-drv8876	/gpio/DRV_NFAULT/pin	PA11	-	-
+other:d3-24-i2c-12-spi	/assignments/SCK1/pin	PA12	-	-
+other:d3-24-i2c-12-spi	/assignments/SDA2/pin	PC9	-	-
+other:d3-24-i2c-12-spi	/gpio/CS1_0/pin	PA11	-	-
+other:hse-crystal-16	/assignments/IMU_SCK/pin	PA12	-	-
+other:hse-crystal-16	/gpio/IMU_CS/pin	PA11	-	-
+other:hse-external-8	/assignments/IMU_SCK/pin	PA12	-	-
+other:hse-external-8	/gpio/IMU_CS/pin	PA11	-	-
+other:motors-dshot600	/assignments/MOTOR4/pin	PA11	-	-
+other:motors-pwm	/assignments/MOTOR4/pin	PA11	-	-
+other:sentinel-02-power	/assignments/IMU_SCK/pin	PA12	-	-
+other:sentinel-02-shaped	/assignments/IMU_SCK/pin	PA12	-	-
+other:sentinel-02-shaped	/assignments/MOTOR4/pin	PA11	-	-
+other:serial-dshot-9600	/assignments/MOTOR4/pin	PA11	-	-
+other:serial-four	/gpio/FLASH_CS/pin	PA11	-	-
+other:solve-stress	/assignments/I2C2_SDA_NET/pin	PC9	-	-
+other:solve-stress	/assignments/SPI1_SCK_NET/pin	PA12	-	-
+other:solve-stress	/gpio/SPI_BUS_1_CS1_NET/pin	PA11	-	-

@@ -1,0 +1,6 @@
+section	net	baseline	after
+assignments	MOTOR1	{"alternate_function": 1, "peripheral": "TIM1", "pin": "PE9", "signal": "TIM1_CH1"}	{"alternate_function": 1, "peripheral": "TIM1", "pin": "PA8", "signal": "TIM1_CH1"}
+
+# full JSON-level diff: path	baseline	after
+/assignments/MOTOR1/pin	"PE9"	"PA8"
+/specification_sha256	"078fd7f35e995676831732f2bdce9d1d1050b111b06b49d77d10fb078ac36ba9"	"d117a47f20152af6a16cee73bddf2dd96790334e87c96794ef72d04ef91ef92b"
