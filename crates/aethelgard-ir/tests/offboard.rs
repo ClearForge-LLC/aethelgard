@@ -644,6 +644,27 @@ fn a_connector_facing_device_signal_whose_only_pin_is_tt_is_refused() {
     assert_eq!(pin_of(&solved(&control, &t).unwrap(), "DRV_NFAULT"), "PC4");
 }
 
+/// A pin with no held structure counts as non-FT: `PI0` (no LQFP144 pin,
+/// so DS12117 Table 8 holds none for it) is `DRV_NFAULT`'s only free pin.
+#[test]
+fn a_pin_with_no_held_structure_is_withheld_at_a_connector() {
+    let t = d1_table(&[("PI0", 46, &[], &[])]);
+    let mut v = d1();
+    for p in ["PD0", "PD1", "PD2", "PE13"] {
+        reserve(&mut v, p, "test");
+    }
+    let control = v.clone();
+    face(&mut v, "DRV_NFAULT", false);
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(e.kind(), "NoFreePin", "{e}");
+    let m = e.to_string();
+    assert!(
+        m.contains(&format!("`PI0` (no held structure) {WITHHELD}")),
+        "{m}"
+    );
+    assert_eq!(pin_of(&solved(&control, &t).unwrap(), "DRV_NFAULT"), "PI0");
+}
+
 /// A pin device's ADC input: `PB1` (`TT_a`) has the lowest position.
 #[test]
 fn a_connector_facing_adc_input_is_offered_ft_pins_only() {
