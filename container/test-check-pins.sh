@@ -11,11 +11,18 @@ set -euo pipefail
 
 check=${1:-container/check-pins.sh}
 fail=0
-for f in container/fixtures/check-pins/*.Dockerfile; do
+# Every fixture runs under C and, when the host has it, en_US.UTF-8, where
+# [0-9a-f] and [[:space:]] reach past ASCII (AET-WO-4402, 4407). A fixture in
+# a directory of its own has its own *.sources beside it.
+locales=$(locale -a 2>/dev/null || true)
+utf8=$(grep -ixm1 'en_US\.utf-\?8' <<< "$locales" || echo C.UTF-8)
+for loc in C "$utf8"; do
+echo "under LC_ALL=$loc"
+for f in container/fixtures/check-pins/*.Dockerfile container/fixtures/check-pins/*/*.Dockerfile; do
   mapfile -t want < <(sed -n 's/^# expect: //p' "$f")
   [ "${#want[@]}" -gt 0 ] || { echo "FAIL $f: no expect line"; fail=1; continue; }
   set +e
-  out=$(bash "$check" "$f" 2>&1 >/dev/null)
+  out=$(LC_ALL=$loc bash "$check" "$f" 2>&1 >/dev/null)
   rc=$?
   set -e
   mapfile -t got < <(grep '^check-pins: ' <<< "$out" || true)
@@ -34,6 +41,7 @@ for f in container/fixtures/check-pins/*.Dockerfile; do
     printf '       %s\n' "${got[@]}"
     fail=1
   fi
+done
 done
 
 for f in container/Dockerfile container/engine.Dockerfile container/ardupilot.Dockerfile; do

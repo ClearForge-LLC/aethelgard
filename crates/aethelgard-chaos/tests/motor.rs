@@ -355,6 +355,32 @@ fn a_motor_record_that_joins_no_solved_output_is_refused() {
     );
 }
 
+/// `AET-WO-2309` (`AET-WO-2302` A2-2): a booted run holds exactly one
+/// witness per solved output, so one dropped with its finding, or every one,
+/// is refused by name (two of one output already were). A run without its
+/// boot word may hold none.
+#[test]
+fn a_booted_run_holds_exactly_one_witness_per_solved_output() {
+    const NO_WITNESS: &str = "a booted run's solved motor output has no witness";
+    let dropped = |booted: bool, labels: &[&str], findings| {
+        let mut r = run("witnessed", true, booted, findings);
+        r.retain(
+            |x| !matches!(x, Record::MotorWitness { label, .. } if labels.contains(&label.as_str())),
+        );
+        check_run(&r).map(|_| ())
+    };
+    assert_eq!(dropped(true, &[], vec![]), Ok(()));
+    assert_eq!(dropped(true, &["M2"], vec![]), Err(NO_WITNESS));
+    assert_eq!(dropped(true, &["M1", "M2"], vec![]), Err(NO_WITNESS));
+    for labels in [&[][..], &["M2"], &["M1", "M2"]] {
+        assert_eq!(
+            dropped(false, labels, vec![("boot_word_missing", "error", 1)]),
+            Ok(()),
+            "{labels:?}"
+        );
+    }
+}
+
 #[test]
 fn the_field_rules_hold_on_write_and_read() {
     let bad = [
@@ -1387,4 +1413,29 @@ fn replay_re_derives_the_static_check_from_the_declared_idle() {
     assert!(judged(&at_idle(MotorIdle::Low, 0, 1)).is_some());
     assert!(judged(&at_idle(MotorIdle::High, 2500, 0)).is_some());
     assert!(judged(&at_idle(MotorIdle::PulseUs(1000), 1000, 0)).is_some());
+}
+
+/// `AET-WO-2309` (ruled D3): a boot that read nothing holds no motor witness
+/// (kind 26) and no judge's stop (kind 30), which only a boot Renode read
+/// gives.
+#[test]
+fn a_boot_that_read_nothing_holds_no_motor_witness_or_judges_stop() {
+    let killed = |keep: Option<u64>| {
+        let mut r = dshot_run(Some(DSHOT_LEAD), Some((DSHOT_LEAD + 2_000_000, 0)), vec![]);
+        unread_boot(&mut r);
+        r.retain(|x| {
+            !matches!(x, Record::MotorWitness { .. } | Record::JudgeStop { .. })
+                || Some(x.kind()) == keep
+        });
+        let last = r.len() - 1;
+        r[last] = Record::Verdict {
+            pass: false,
+            findings: vec![("cpu_aborted".into(), "error".into(), 1)],
+        };
+        check_run(&r).map(|_| ())
+    };
+    assert_eq!(killed(None), Ok(()));
+    for kind in [26, 30] {
+        assert_eq!(killed(Some(kind)), Err(RENODE_READ), "kind {kind}");
+    }
 }

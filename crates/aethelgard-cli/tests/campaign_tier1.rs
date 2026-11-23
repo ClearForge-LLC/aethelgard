@@ -2096,11 +2096,10 @@ fn a_generator_report_names_each_generator_once_in_order() {
                     Record::RegisterObserved { name, reading } if name == "GPIOB.AFRL" => {
                         reading.observed = Some(0x4500_0000)
                     }
-                    Record::I2cCheck {
-                        status, observed, ..
-                    } => {
+                    // The record's value word stays read beside its timeout
+                    // status, as the judge archives it (`AET-WO-2309`).
+                    Record::I2cCheck { status, .. } => {
                         *status = Some("timeout_txis".into());
-                        *observed = None;
                     }
                     Record::I2cWitness { observed, .. } => {
                         *observed = Some(vec!["[NOISY] i2c1.u2: Write D1".to_owned()]);

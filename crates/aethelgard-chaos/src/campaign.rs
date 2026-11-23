@@ -1083,11 +1083,12 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if let Record::Scenario { overrides, .. } = &records[0] {
         check_rail_out_of_band(overrides)?;
     }
-    check_joins(records)?;
     let booted = records.iter().any(|r| {
         matches!(r, Record::BootObserved { boot_word, .. }
             if boot_word.observed == Some(boot_word.expected))
     });
+    check_read_with_the_boot(records)?;
+    check_joins(records, booted)?;
     check_serial_joins(records, booted)?;
     let Record::Scenario {
         name,
@@ -1461,6 +1462,60 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
         failing_kinds,
         matched,
     })
+}
+
+/// Kind 10's "all read or all unread" across the boot's reads (`AET-WO-2309`,
+/// from `AET-WO-3201` adversarial 5.8): the judge reads every solved register
+/// (kind 11) and every identity read's record (kinds 12 and 21, its value and
+/// its status) in the read that reads the boot, so each is read exactly when
+/// the boot is. A witness's log lines and its attribution evidence (kinds 13
+/// and 22) are unread when the boot is; a read boot may still hold a witness
+/// unread, when Renode's log passed the filter's budget (`AET-WO-2204` D2).
+/// And what only a boot Renode read can give, its motor, serial, pin and
+/// level witnesses and its judge's stops (kinds 26, 29, 30, 34, 36 and 37),
+/// a boot that read nothing never holds (ruled D3).
+fn check_read_with_the_boot(records: &[Record]) -> Result<(), &'static str> {
+    let read = records.iter().any(
+        |r| matches!(r, Record::BootObserved { boot_word, .. } if boot_word.observed.is_some()),
+    );
+    let together = records.iter().all(|r| match r {
+        Record::RegisterObserved { reading, .. } => reading.observed.is_some() == read,
+        Record::I2cCheck {
+            observed, status, ..
+        }
+        | Record::SpiCheck {
+            observed, status, ..
+        } => observed.is_some() == read && status.is_some() == read,
+        Record::I2cWitness {
+            observed, absent, ..
+        } => read || (observed.is_none() && absent.is_empty()),
+        Record::SpiWitness {
+            observed, unrouted, ..
+        } => read || (observed.is_none() && unrouted.is_empty()),
+        _ => true,
+    });
+    if !together {
+        return Err(
+            "the boot's registers, identity reads and witnesses are not all read or all unread with its boot word",
+        );
+    }
+    let renode_read = records.iter().any(|r| {
+        matches!(
+            r,
+            Record::MotorWitness { .. }
+                | Record::SerialWitness { .. }
+                | Record::JudgeStop { .. }
+                | Record::PinGpioWitness { .. }
+                | Record::PinAdcWitness { .. }
+                | Record::MotorLevelWitness { .. }
+        )
+    });
+    if !read && renode_read {
+        return Err(
+            "a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop",
+        );
+    }
+    Ok(())
 }
 
 /// `AET-WO-3100` R2: every bus, net, device and controller the other records
@@ -2987,8 +3042,9 @@ fn dshot_timer_findings(records: &[Record]) -> Vec<(&'static str, u64)> {
 
 /// Kinds 25 and 26 each join one solved motor output (kind 24) by label,
 /// every output has exactly one static check and at most one witness, and
-/// a witness's observer is its output's pin's (`AET-WO-4300a`).
-fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
+/// exactly one in a booted run (`AET-WO-2302` A2-2), and a witness's
+/// observer is its output's pin's (`AET-WO-4300a`).
+fn check_motor_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
     let mut solved: BTreeMap<&str, &Record> = BTreeMap::new();
     for r in records {
         if let Record::MotorOutputSolved { label, .. } = r
@@ -3097,6 +3153,9 @@ fn check_motor_joins(records: &[Record]) -> Result<(), &'static str> {
     }
     if checked.len() != solved.len() {
         return Err("a solved motor output has no static timing check");
+    }
+    if booted && witnessed.len() != solved.len() {
+        return Err("a booted run's solved motor output has no witness");
     }
     // Each judge's stop (kind 30): a DShot timer's, once, at its witnesses'
     // anchor plus `DSHOT_WINDOW_NS`, inside the boot.
@@ -3419,8 +3478,8 @@ pub fn witness_continuous(w: &Record) -> bool {
     spaced && alternating
 }
 
-fn check_joins(records: &[Record]) -> Result<(), &'static str> {
-    check_motor_joins(records)?;
+fn check_joins(records: &[Record], booted: bool) -> Result<(), &'static str> {
+    check_motor_joins(records, booted)?;
     /// A kind 15's bus, peripheral, lines and devices.
     type Solved<'a> = (&'a str, &'a str, &'a [BusLine], &'a [(String, u8)]);
     let solved: Vec<Solved> = records

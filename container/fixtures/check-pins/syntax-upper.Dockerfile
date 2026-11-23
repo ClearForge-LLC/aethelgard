@@ -1,0 +1,4 @@
+#SYNTAX = docker/dockerfile:1
+# Adversarial: no space after #, upper case, spaces round =; BuildKit reads it.
+# expect: syntax directive
+FROM debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2

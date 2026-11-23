@@ -1,0 +1,10 @@
+# reshape copy (full rule-3 patch, good() kind 12 value Some(0)), tests/campaign.rs + tests/motor.rs probes
+PROBE2309 check: Err("the boot word, the instruction count, pc and the brown-out word are not all read or all unread")
+PROBE2309 writer: Err(InvalidEvent { index: 0, reason: "the boot word, the instruction count, pc and the brown-out word are not all read or all unread" })
+PROBE2309 unread boot, witnesses kept=true: Ok(())
+PROBE2309 unread boot, witnesses kept=false: Ok(())
+# build12 copy (rules-1-2.diff), tests/motor.rs probe
+PROBE2309 duplicate for dropped: Err("a motor witness is not its output's pin's observer, or is there twice")
+PROBE2309 read, unbooted, no witness: Ok(())
+PROBE2309 dshot base: Ok(())
+PROBE2309 dshot, witnesses and stop dropped: Err("a booted run's solved motor output has no witness")
