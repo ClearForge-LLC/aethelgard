@@ -1,0 +1,10 @@
+min run 1 boot_word_ns 3627610 instructions 10000000 verdict pass
+min run 2 boot_word_ns 3627610 instructions 10000000 verdict pass
+s01 run 1 boot_word_ns 3630040 instructions 10000000 verdict pass
+s01 run 2 boot_word_ns 3630040 instructions 10000000 verdict pass
+dshot run 1 boot_word_ns 3623630 instructions 10000000 verdict pass
+dshot run 2 boot_word_ns 3623630 instructions 10000000 verdict pass
+s03 run 1 boot_word_ns 43929480 instructions 10000000 verdict pass
+s03 run 2 boot_word_ns 43929480 instructions 10000000 verdict pass
+pow run 1 boot_word_ns 81602740 instructions 10000000 verdict pass
+pow run 2 boot_word_ns 81602740 instructions 10000000 verdict pass
