@@ -48,12 +48,12 @@ MUTANTS = [
      '        if let Some(n) = named.iter().find(|n| !phases.contains_key(n) && false) {',
      "readme_status", "a_stale_status_line_or_an_unmarked_phase_is_caught"),
     ("M6", "src/verify.rs",
-     '        !drawn && g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate)',
-     '        g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate)',
+     '|g: &Gate| !drawn && g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate);',
+     '|g: &Gate| g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate);',
      "--bin", "a_board_gate_is_not_applicable_only_on_a_board_not_drawn"),
     ("M6b", "src/verify.rs",
-     '        !drawn && g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate)',
-     '        !drawn && g.verdict == "not_applicable"',
+     '|g: &Gate| !drawn && g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate);',
+     '|g: &Gate| !drawn && g.verdict == "not_applicable";',
      "--bin", "a_board_gate_is_not_applicable_only_on_a_board_not_drawn"),
     ("M7", "src/verify.rs",
      '    if fab_mode.is_some()\n        && let Err(r) = crate::draws_a_board(&spec, command)',
@@ -87,6 +87,14 @@ MUTANTS = [
      '        lifecycle: topology.lifecycle_banner().unwrap_or_default(),\n        topology_sha256',
      '        lifecycle: Vec::new(),\n        topology_sha256',
      "cli_backlog_tier1", "the_pinout_verdict_carries_the_banner_of_its_topology"),
+    ("M16", "tests/tools_tier1.rs",
+     '        .env("TMPDIR", &tmp.0)\n        .env("PATH", path)',
+     '        .env("PATH", path)',
+     "tools_tier1", "prove_pass_reports_the_harness"),
+    ("M17", "tests/generate_tier1.rs",
+     '        .env("TMPDIR", &tmp.0)\n        .stdin(Stdio::null());',
+     '        .stdin(Stdio::null());',
+     "generate_tier1", "build_and_prove_refuse_what_cargo_would_run_before_any_tool"),
     ("M15", "src/doctor.rs",
      '        (&KICAD, &KICAD),',
      '        (&KICAD, &["check drc", "check erc", "verify"]),',
@@ -127,6 +135,12 @@ def run(args, log):
                            cwd=tree, env=env, stdout=f, stderr=subprocess.STDOUT)
     return r.returncode
 
+
+for m in MUTANTS:
+    n = open(path(m[1])).read().count(m[2])
+    assert n == 1, f"{m[0]}: its text occurs {n} times in {m[1]}"
+if os.environ.get("CHECK_ONLY"):
+    sys.exit(0)
 
 results = []
 for m in MUTANTS:
