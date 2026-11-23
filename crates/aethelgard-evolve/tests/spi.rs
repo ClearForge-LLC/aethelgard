@@ -315,6 +315,19 @@ fn archived(records: &[Record]) -> Replayed {
             .iter()
             .map(|n| ((*n).to_owned(), "test".to_owned()))
             .collect(),
+        // `AET-WO-2310`: the header hashes ngspice's library and the toolchain's
+        // sysroot whenever they judged the run; a fixed hash stands in.
+        tool_sha256: aethelgard_chaos::campaign::tools_of(records)
+            .iter()
+            .filter(|n| {
+                [
+                    aethelgard_chaos::campaign::NGSPICE,
+                    aethelgard_chaos::campaign::RUST_TOOLCHAIN,
+                ]
+                .contains(n)
+            })
+            .map(|n| ((*n).to_owned(), [7; 32]))
+            .collect(),
     };
     let mut w = TraceWriter::create(&dir, &header).unwrap();
     for record in records.iter().cloned() {
