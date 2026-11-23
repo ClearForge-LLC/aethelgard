@@ -24,7 +24,7 @@
 > - **Each changed test comes with a mutant it kills** (the old constant restored).
 >
 > It is NOT:
-> - the wall bound;
+> - the wall bound, and the bridge's 1 GiB (`cli/src/analog.rs`), which stays;
 > - the campaign's or the foreign judge's own logic;
 > - Tviburi's relative budget (Tviburi's work order);
 > - the `HardFault` under `2311`'s access log that peaks at 2.59 GB (a §7.1 row; still over the new bound, still failing closed).
@@ -57,5 +57,5 @@
 
 ## 7. Flag-and-stop conditions
 
-- **The bound is stated in a steering document** (the architect's to change). Name it; do not edit it.
+- **The bound is stated in a steering document** other than `RUL-13` (amended by the architect with this work order). Name it; do not edit it.
 - **A test or a verdict depends on the 1 GiB value** in a way the new cap would weaken a judgement. Stop with it.
