@@ -13,7 +13,10 @@
   - an open phase must be named, and never called done;
   - no phase §5 lacks may be named.
   **Today's README passes.**
-- **(5)** Plain `verify` on a `board.drawn: false` specification runs. `erc`, `drc`, `support` and `extract` are `not_applicable`, with a reason, and the verdict follows the gates that ran. Measured in the image: `d1-drv8876` gives `pass` with ten `prove` runs, `build` and `simulate`. Both fab flags still refuse with `DrawsNoBoard`.
+- **(5)** Plain `verify` on a `board.drawn: false` specification runs every gate it can. `erc`, `drc`, `support` and `extract` are `not_applicable`, with a reason.
+  - **Never `pass` (D2, ruled 02:15Z):** with every other gate passed, the verdict is `not_verified`, `reason` `DrawsNoBoard`, **exit 7**. A failed gate is still `fail`, exit 1.
+  - Measured in the image on `d1-drv8876`: ten `prove` runs, `build` and `simulate` pass. The tier-2 test asserts the whole outcome (§7).
+  - Both fab flags still refuse with `DrawsNoBoard`.
 - **(6)** The banner is on the `emit`, `check drc --spec`, `check support`, `prove --spec` and `check pinout` verdicts, equal to `validate`'s, `eol` as `nrnd`. It is on `solve`'s stderr (D1 (b)), and `solve`'s stdout stays the topology alone.
 - **No emitted file and no `fab/` byte moved.** Over the null sweep of 34 specifications, the only lines that move are the ones (6) names (§2). `TIER2_MIN` is unchanged, and no test was weakened.
 
@@ -47,6 +50,7 @@
   - `DrawsNoBoard` is refused only with a fab flag;
   - `run_gates` runs `board_gates` on a drawn board, or pushes `BOARD_GATES` as `not_applicable` with `reason`;
   - `passes(…, drawn)` excuses `not_applicable` only for those four gates and only when not drawn;
+  - `outcome(passed, drawn)` decides the verdict, `reason` and code in one place: `pass`/0 only on a drawn board, `not_verified`/`DrawsNoBoard`/7 on a board not drawn whose gates passed, `fail`/1 otherwise. `Report` gains `reason`, skipped when absent, and `main.rs` gains `EXIT_NOT_VERIFIED = 7`;
   - a board file's hash is read with `get`, falling back to `""`, which never matches a hash (`BindingMismatch`), and the BOM is read only on the fab path.
   - `Gate` gains `reason`, skipped when absent, so a drawn board's verdict is byte-identical.
   - `emit_tier1`'s stand-in test drops its plain-`verify` row (out-of-list edit (c), accepted).
@@ -79,10 +83,18 @@
 ## 3. Decisions
 
 - **D1, ruled (b):** `solve` prints the banner on stderr. Measured: a `lifecycle` key on `solve`'s stdout is refused by `generate hwdef --topology` and `check pinout --topology` (`SchemaViolation`, exit 2), which CI pipes it into (`ardupilot-image.yml` 288–289, 410). **(a) remains a later row**, as ruled: a strict topology reader that accepts a `lifecycle` key and refuses it unless it equals the banner recomputed from the topology. The architect adds it to the roadmap.
-- **D2, for the architect — `INV-03`.** A no-board `verify` can now say `verdict: pass` with its four board gates `not_applicable`. Measured: `d1-drv8876` does.
-  - `INV-03`'s "verified" needs ERC, the proof and the campaign on the same pair. No package can follow from this, because both fab flags still refuse.
-  - The verdict states each board gate's `not_applicable` and its reason, so it never claims ERC ran.
-  - **Lean:** keep it. The alternative is a verdict that can never pass on a stand-in, which makes plain `verify` useless there.
+- **D2, ruled 02:15Z, not as I leaned.**
+  - What I raised: the first build let a no-board `verify` say `pass`. Measured: `d1-drv8876` did. I leaned to keep it.
+  - The ruling: `INV-03`'s "verified" needs ERC, which a board not drawn never has, so it is never verified.
+  - Built as ruled: the run reports every gate it could run, and with all of them passed its verdict is `not_verified` with `reason` `DrawsNoBoard`, `ok: false`, exit **7**.
+  - **Why 7:** it is the next free code in the CLI's scheme.
+    - `0`–`5` are pass, fail, invalid specification, unreadable input, tool unusable and tool error.
+    - `6` is `propose`'s generator report. Reusing it would give one code two meanings.
+    - `64` and `70` are usage and internal errors.
+    - `7` is distinct from `1`, so a caller can tell "not verifiable" from "a gate failed".
+  - A run with a failed gate stays `fail`, exit 1: a failure is still a failure, and it says more.
+  - The CLI README's exit-code table has the row.
+  - **Tests:** `verify::tests::a_board_not_drawn_never_exits_0` (all four combinations; mutant M19), and the tier-2 `with_tools::a_board_not_drawn_runs_its_gates_and_is_never_verified` (exit 7, `not_verified`, the four board gates `not_applicable`, every other gate `pass`).
 - **D3, `reason`:** a new optional field on a gate entry, present only on a `not_applicable` gate. Built without asking: the WO says "report the board gates as not applicable", and a bare verdict word would not say why.
 
 ## 4. Predictions against results
@@ -132,4 +144,28 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 
 ## 7. Gates, fence, reduction pass, mutants
 
-- FILLED AT READY.
+- **Gates at `8ff08248`** (the code head; later commits are `docs/` and `spike/` only):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace` (target in the repository, `TMPDIR` unset, as CI's host job): **2794 passed, 0 failed, 0 ignored**, 161 `test result` lines (`m/ws-final.log`).
+- **CI on `f6372ddd` (PR #342): green.**
+  - Runs: `ci` 45095787493, `engine-image` 45095787593 and `ardupilot-image` 45095787549. 33 checks pass; 3 are skipped by the workflow.
+  - The tier-2 guard reports `tier2_tests_passed=204 floor=203`. `TIER2_MIN` and `ci/test-weights.tsv` are unchanged; no tier-2 test was added.
+  - **F2, settled:** CI's host `gates` job runs as the runner user, not root. There `cli_backlog_tier1::the_private_scratch_is_outside_home` and every `private_tmp` caller pass, so the runner has `/run/user/<uid>`.
+- **Mutants** (`spike/1607/mutants.py`; 22, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
+  - **22 of 22 killed at `d2a5737a`, and again at `8ff08248` after the reduction**, each by its named test. Every selection passes on the pristine tree (`mut/result-final.txt`).
+  - The groups: M1 (pin); M2 (scratch under `$HOME`, with M2b, its assertion off); M3 (`fab_tier1` scratch); M4, M5, M5b, M5c, M5d (`readme_status`); M6, M6b, M7, M8, M9 (`verify`); M10–M14 and M18 (each banner site); M15 (`doctor`); M16, M17 (the two runners' `TMPDIR`).
+- **Fence:** §3's files, plus the three out-of-list edits accepted at 01:15Z:
+  - (a) `doctor.rs` `KICAD_PINNED`, its `doctor_tier1` assertion, and the CLI README;
+  - (b) `tools_tier1.rs` and `generate_tier1.rs`, on `private_tmp`;
+  - (c) `emit_tier1.rs`'s plain-`verify` row.
+  - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
+  - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
+- **`main` merged:** `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`. `readme_status` passes on the merged tree.
+- **Reduction pass (diff): +807 net in `crates/` (+927 −120) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
+  - **Removed:** `doctor`'s `KICAD_PINNED`, equal to `KICAD` once (1) landed.
+  - **Removed:** the banner-to-lines conversion, written twice in `cli_backlog_tier1` (now `banner_lines`).
+  - **Removed:** `generate_tier1`'s re-derivation of `private_tmp`'s root and non-root mode, and its probe scratch.
+  - **Also:** `tools_tier1`'s second load of `common/stub.rs` (clippy's `duplicate_mod`).
+  - **Proof:** the suites stay green and all 22 mutants are still killed at `8ff08248`.
+  - Run inline over the diff: the adversary had already read all of it.
