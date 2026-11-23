@@ -21,7 +21,7 @@ Written 2026-11-23.
   - every `# syntax=` spelling BuildKit reads, and a byte-order mark.
 - **GtkSharp's source at `964cb9c` is mirrored** by sha256 beside the tools image. A pull-request rehearsal runs the push and the fetch first.
 - **The revision label** is set in tools `publish` and checked before the push. **ArduPilot's `publish`** reads its digest through `check-ardupilot-pin.sh`. **The pin-check echo** is cut to 200 bytes and escaped with `%q`.
-- **Adversarial, found and fixed:** under `en_US.UTF-8`, `check-pins.sh` accepted a fullwidth digit in a `FROM` digest. It now runs under `LC_ALL=C`. Mutation: 10/10 killed.
+- **Adversarial, found and fixed:** under `en_US.UTF-8`, `check-pins.sh` accepted a fullwidth digit in a `FROM` digest. It now runs under `LC_ALL=C`. BuildKit also trims any Unicode space after `#`, so a no-break space hid `syntax` and `escape`; both rules now allow any non-letter there. Mutation: 13/13 killed.
 
 ## 1. The measurement and the stop
 
@@ -40,8 +40,8 @@ Measured on Furnace, 2026-11-23 00:20–01:10 UTC; full record in `spike/4407/RE
 | WO item | Change | Test that can fail |
 |---|---|---|
 | (1) revision label | `tools-image.yml` `publish`: `org.opencontainers.image.revision=${{ github.sha }}`, and a step `the revision label is the commit published` before any push | that step, on `main` (it cannot run on a pull request: nothing there sets the label) |
-| (2) `# syntax=` | `check-pins.sh` refuses `(#\|//)\s*syntax\s*=` in any case, on any line, and a UTF-8 BOM anywhere, which also uncovers a BOM-hidden `# escape=` | fixtures `syntax-directive`, `syntax-upper`, `syntax-slashes`, `syntax-shebang`, `bom-syntax`, `bom-escape` |
-| (3) apt from one snapshot | `container/debian-trixie.sources` and `debian-bookworm.sources` (deb822, `http://snapshot.debian.org/archive/debian[-security]/20261117T120000Z`, `Check-Valid-Until: no`), `COPY`ed over the base's `debian.sources` in all three apt stages (tools, its `renode-nvic` stage, ArduPilot); `check-pins.sh` enforces the shape (above); `TOOLS-DEBIAN-GPL2.tsv` `linux` rows → `6.12.117-1` | fixtures `apt-moving`, `apt-stage-skips`, `apt-second-source`, `apt-config-env`, `apt-sources-missing`, `apt-moving-sources/`, `apt-two-dates/`; the fresh builds (§2.1); CI's `check-sources inside` |
+| (2) `# syntax=` | `check-pins.sh` refuses `(#\|//)[^a-z]*syntax\s*=` in any case, on any line, and a UTF-8 BOM anywhere, which also uncovers a BOM-hidden `# escape=`; the escape rule takes the same `[^a-z]*` | fixtures `syntax-directive`, `syntax-upper`, `syntax-slashes`, `syntax-shebang`, `syntax-nbsp`, `bom-syntax`, `bom-escape`, `escape-ideographic` |
+| (3) apt from one snapshot | `container/debian-trixie.sources` and `debian-bookworm.sources` (deb822, `http://snapshot.debian.org/archive/debian[-security]/20261117T120000Z`, `Check-Valid-Until: no`), `COPY`ed over the base's `debian.sources` in all three apt stages (tools, its `renode-nvic` stage, ArduPilot); `check-pins.sh` enforces the shape (above); `TOOLS-DEBIAN-GPL2.tsv` `linux` rows → `6.12.117-1` | fixtures `apt-moving`, `apt-stage-skips`, `apt-second-source`, `apt-etc-paths`, `apt-config-env`, `apt-sources-missing`, `apt-moving-sources/`, `apt-two-dates/`; the fresh builds (§2.1); CI's `check-sources inside` |
 | (4) GtkSharp source | `container/gtksharp-source.manifest.json` (one layer: GitHub's archive of `964cb9c`, sha256 `7e1e6bc4…`, 2 200 493 bytes) and `container/gtksharp-source.sh` (`fetch`, `publish`, on `oci-mirror.sh`); push in tools `publish`, anonymous fetch in `source`, a new `source-rehearsal` job on pull requests; `TOOLS-SOURCES.md`'s GTK# row names the pin `ghcr.io/clearforge-llc/aethelgard-tools@sha256:03cf1db8…` | the rehearsal job (publish twice, the second pushes nothing; `TOOLS-SOURCES.md` must name the pin); the `source` job on `main` |
 | (5) one pin regex | ArduPilot `publish` writes the pushed digest to a file and reads it through `check-ardupilot-pin.sh` | `test-check-ardupilot-pin.sh` (the script's fixtures); the step itself on `main` |
 | (6) bounded, escaped echo | `check-ardupilot-pin.sh` quotes at most 200 bytes with `printf %q`, and says how many bytes there were; the tools revision step does the same | fixtures `workflow-command`, `carriage-return`, `long-line`; every `form` fixture must now give one stderr line of at most 1 024 bytes |
@@ -65,13 +65,25 @@ The layer digests differ between A and B, except the base's and the plain `COPY`
 
 - **An apt fetch that still reaches the moving index:**
   - A stage with no snapshot `COPY` is refused (`apt-moving`), including a later stage after an earlier one that had it (`apt-stage-skips`; a stage `FROM` an earlier one is refused too, conservatively).
-  - A second `apt-get update` in a snapshotted stage still reads the snapshot, because nothing else may touch `/etc/apt`. These are refused, read on whole instructions with quotes spliced:
-    - an `echo > /etc/ap''t/…` (`apt-second-source`);
+  - A second `apt-get update` in a snapshotted stage still reads the snapshot, because no other instruction may name an `etc` path component or `APT_CONFIG`. This is read on whole instructions, with quotes spliced. Refused:
+    - `echo > /etc/ap''t/…` (`apt-second-source`);
+    - `/etc//apt`, `cd /etc && … > apt/…`, `WORKDIR /etc`, `/etc/ap*/` and `cd / && … > etc/apt/…` (`apt-etc-paths`);
     - `ENV APT_CONFIG` (`apt-config-env`);
-    - `COPY --from`, `--mount` and `ADD` onto `/etc/apt`.
+    - `COPY --from`, `--mount` and `ADD` onto `/etc/apt` (probed).
+
+    `fetch` is not an `etc` component.
+  - **Residual:** a path made at run time, such as `/e*/apt` or `$(printf …)`, belongs to the same class as A7's run-time command names, which the script's header leaves to review.
   - A sources file with any non-snapshot line, or a second timestamp, is refused (`apt-moving-sources/`, `apt-two-dates/`).
   - **Residual:** a base image's own `/etc/apt/sources.list` or `apt.conf.d` would still be read. The three bases are pinned by digest and were read: each has only `sources.list.d/debian.sources`, which the `COPY` replaces.
-- **A `# syntax=` spelling the check misses.** The spellings come from how BuildKit reads it: it skips a BOM, skips a shebang line, and reads `#` or `//`, key case-insensitive, `\s*` around `=`.
+- **A `# syntax=` spelling the check misses.** I read BuildKit's `frontend/dockerfile/parser/directives.go` at `master` `dd75b495` (2026-11-20) **[read]**. It:
+  - drops a leading BOM (`discardBOM`), then a `#!` first line (`discardShebang`);
+  - requires `#`, or `//` for `syntax` only, at column 0, so leading whitespace is not a directive;
+  - trims `unicode.IsSpace` after the comment mark;
+  - matches `[a-zA-Z][a-zA-Z0-9]*\s*=\s*(.+?)` with the key lowercased;
+  - for `syntax` only, falls back to a whole-file JSON `{"syntax": …}`.
+
+  Two findings:
+  - **Found and fixed:** a no-break or ideographic space after `#` hid `syntax` and also `escape` from `[[:space:]]` under `LC_ALL=C`. Both rules now take `[^a-z]*` there (`syntax-nbsp`, `escape-ideographic`).
   - Case, spaces, `//`, a shebang before the directive and a BOM are each refused.
   - Every fixture runs under `C` and `en_US.UTF-8`.
   - A whole-file JSON form has no `FROM` line, so it is already refused.
@@ -83,7 +95,7 @@ The layer digests differ between A and B, except the base's and the plain `COPY`
   - `check-pins.sh` still echoes a refused Dockerfile line whole, but always after a `check-pins: line N:` prefix, so no line it prints starts with `::`. A Dockerfile line holds no newline. Its length is the committed file's.
   - The eda reader's echo is the later work order's, per the WO.
 
-**Mutation (one mutant per guard this WO adds, against its own suite): 10/10 killed.**
+**Mutation (one mutant per guard this WO adds or changes, against its own suite): 13/13 killed.**
 
 | Mutant | Killed by |
 |---|---|
@@ -97,18 +109,23 @@ The layer digests differ between A and B, except the base's and the plain `COPY`
 | m8, the `COPY`'d file not checked | `apt-sources-missing` |
 | m9, the echo not escaped | `two-lines` and 10 more |
 | m10, the echo not bounded | `two-lines`, `long-line` |
+| m11, `escape` after ASCII space only | `escape-ideographic` |
+| m12, `syntax` after ASCII space only | `syntax-nbsp` |
+| m13, a literal `/etc/apt` match | `apt-etc-paths` |
 
 ## 4. Reduction pass (diff)
 
 - **Cut:** a test block in `test-check-pins.sh` that re-checked "one timestamp for every Dockerfile". `check-pins.sh` already refuses that over every `*.sources` beside the Dockerfile.
 - **Cut:** a URL/title regex in `gtksharp-source.sh`. The layer's sha256 and size pin the bytes, and `oci-mirror.sh` checks the title and refuses any other file before a push.
-- **Kept:** `gtksharp-source.sh` instead of generalising `gcc-source.sh`. `gcc-source.sh` is ArduPilot-bound and outside the fence; its seeding path has no GtkSharp counterpart. Merging the two is a candidate for the next container work order.
+- **Kept:** `gtksharp-source.sh` instead of generalising `gcc-source.sh`. `gcc-source.sh` is ArduPilot-bound and outside the fence; its seeding path (from the published mirror) has no GtkSharp counterpart yet (Q4). Merging the two is a candidate for the next container work order.
 - No `belt-and-suspenders:` code was touched.
 
 ## 5. Questions for the architect
 
 - **Q1, a trigger gap (outside the fence).** `ardupilot-image.yml`'s `paths:` lists do not include `container/debian-trixie.sources`. A later PR that only moves the snapshot date would rebuild the tools image (`container/**`) but not the ArduPilot image, so ArduPilot's table would not be judged at the new date. The fix is one line in each of its two `paths:` lists.
 - **Q2, moving the date.** Moving it is now one edit to both `*.sources` files (check-pins refuses a mismatch), plus regenerating whichever table rows move. Regenerate with `debian-src.py table` from a snapshot build: any machine now reproduces CI's layer, so 1605's "only from CI" lesson no longer binds.
+- **Q4, the rehearsal's source.** `source-rehearsal` downloads GitHub's archive on every container PR. `gcc-source.sh` instead seeds from the published mirror once main has it. GitHub does not promise byte-stable archives: the sha256 held over two downloads here, and `oci-mirror.sh` refuses a changed one before any push. Once main has published the mirror, should the rehearsal seed from it, and `publish` too, on the GCC pattern?
+- **Q5, the fence.** I also edited two files the fence does not name: `container/test-check-pins.sh` (nested fixtures, two locales) and `container/fixtures/README.md` (the new fixtures). Both sit beside check-pins' fixtures; flagged here.
 - **Q3, the re-pin.** `container/IMAGE` still pins `e5fc7ddb`, whose `linux-libc-dev` is `6.12.115-2`. After main publishes this PR, the re-pin picks up `6.12.117-1`, the GtkSharp mirror and the revision label. Main's `publish` also mirrors `linux 6.12.117-1` beside `aethelgard-tools` (about 154 MB).
 
 ## 6. Gates

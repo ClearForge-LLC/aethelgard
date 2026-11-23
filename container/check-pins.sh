@@ -30,7 +30,7 @@
 #     spacing, after `#` or `//`), no byte-order mark, no carriage return, and no COPY of
 #     a script (a #! line, an executable bit or a .sh/.bash/.py/.pl name): the
 #     check reads only this file and the hashed requirements.
-# What is left of A7: a command name assembled at run time (`${G}t fetch`,
+# What is left of A7: a command name or path assembled at run time (`${G}t fetch`,
 # `$(printf '\x67it')`), a plain file copied in and run by an interpreter
 # (`sh /x.txt`), and installers this list does not name (uvx, conda). This
 # script stops accidental drift, not an attacker; those are left to review.
@@ -116,8 +116,12 @@ for n in "${!logical[@]}"; do
   t=${t//[\"\'\\]/}
   t=${t//[\(\)\`\$\{\}\[\],<>]/ }
   read -ra w <<< "$t"
-  # Only the snapshot COPY writes apt's configuration (AET-WO-4407).
-  if [[ "$t" == *"/etc/apt"* || "$t" == *APT_CONFIG* ]] && ! [[ "${logical[$n]}" =~ $snapcopy ]]; then
+  # Only the snapshot COPY writes apt's configuration (AET-WO-4407). It lives
+  # under /etc, so any `etc` path component is refused (/etc//apt, cd /etc,
+  # WORKDIR /etc, etc/apt from /), as is APT_CONFIG; a path made at run time
+  # (a glob, $(printf ...)) is left to review, as above.
+  if { [[ "$t" =~ (^|[^A-Za-z0-9_.-])etc([^A-Za-z0-9_.-]|$) ]] || [[ "$t" == *APT_CONFIG* ]]; } \
+    && ! [[ "${logical[$n]}" =~ $snapcopy ]]; then
     refuse "${starts[$n]}" "only 'COPY NAME.sources /etc/apt/sources.list.d/debian.sources' may change apt's configuration: ${logical[$n]}"
   fi
   for k in "${!w[@]}"; do
@@ -175,11 +179,14 @@ for i in "${!lines[@]}"; do
   line=${lines[$i]}
   # A parser directive: `escape` changes the continuation character, so the
   # joining above would no longer be Docker's.
-  [[ "${line,,}" =~ ^#[[:space:]]*escape[[:space:]]*= ]] && refuse "$i" "an escape directive changes how lines join: $line"
+  # BuildKit trims any Unicode space after the `#` (parser/directives.go,
+  # read at master dd75b495, AET-WO-4407), so anything but a letter may stand
+  # between `#` and the key.
+  [[ "${line,,}" =~ ^#[^a-z]*escape[[:space:]]*= ]] && refuse "$i" "an escape directive changes how lines join: $line"
   # BuildKit reads `syntax` after `#` or `//`, in any case and spacing, and
   # pulls that frontend image by tag (AET-WO-4407; 4401 Q2). It skips a
   # byte-order mark first, so a BOM would hide either directive from this check.
-  [[ "${line,,}" =~ ^(#|//)[[:space:]]*syntax[[:space:]]*= ]] && refuse "$i" "a syntax directive pulls a BuildKit frontend by tag: $line"
+  [[ "${line,,}" =~ ^(#|//)[^a-z]*syntax[[:space:]]*= ]] && refuse "$i" "a syntax directive pulls a BuildKit frontend by tag: $line"
   [[ "$line" == *$'\xef\xbb\xbf'* ]] && refuse "$i" "a byte-order mark, which hides a parser directive from this check"
   # A carriage return: whether Docker then joins on `\` is not this check's to guess.
   [[ "$line" == *$'\r'* ]] && refuse "$i" "a carriage return (CRLF line ends)"
