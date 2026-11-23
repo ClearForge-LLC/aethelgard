@@ -1,11 +1,13 @@
-//! `verify` on the reference with the 2.2 kΩ scenario, each test with its own
-//! two runs (`AET-WO-1909`, ruled on PR #115): `AET-WO-3301`'s binding and
-//! byte-identity with `--against`, and `AET-WO-3300`'s package at two paths
-//! with `--fab-out`. B (one pair of runs carrying both flags) was ruled on a
-//! byte comparison that `--fab-out`'s verdict did not meet (its
-//! `MANIFEST.json` names a verdict line that carries `against`), so each test
-//! keeps its own invocation (`AET-WO-1909` FEEDBACK). The runs go one at a
-//! time: each `verify` peaks at about 3.5 GB.
+//! `verify` on the reference with its seeded set, `--against` the committed
+//! tree and `--fab-out`, two runs at two paths made once and read by both
+//! tests (`AET-WO-1916` D2 (i), ruled 2026-11-23 06:35Z; `AET-WO-1909` B):
+//! `AET-WO-3301`'s binding and byte-identity, and `AET-WO-3300`'s package at
+//! two paths. A package needs the seeded set (`AET-WO-3303` D1), so the
+//! binding is asserted against the seeded run: every gate in order, every
+//! campaign run in `SEEDED`'s order, and each run's id and state hash against
+//! `campaign` run directly. `--against` alone, with no fab flag, is guarded by
+//! `with_tools`' board-not-drawn test (LP1). Each test reads what it checks
+//! from the shared runs and never writes into them.
 
 #![cfg(feature = "with-tools")]
 
@@ -13,26 +15,15 @@ mod common;
 
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
 
 use common::verify::{
-    SEEDED, SPEC, aethelgard, board, build, copy_tree, gate_reads, one, package_files, root,
-    scratch, sha,
+    SEEDED, SPEC, Shared, aethelgard, board, build, copy_tree, gate_reads, one, package_files,
+    root, scratch, sha,
 };
 use serde_json::Value;
 
-static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
-
-/// Which flag a test's two runs carry.
-enum Flag {
-    /// `--against` the committed tree (`emit`'s KiCad files beside the board).
-    Against,
-    /// `--fab-out`, at two paths of different lengths.
-    FabOut,
-}
-
-/// Two runs: their exit codes and stdout, the `--against` tree, and the two
-/// `--fab-out` directories (each used by the flag that names it).
+/// The two runs: their exit codes and stdout, the `--against` tree, and the
+/// two `--fab-out` directories, at paths of different lengths.
 struct Runs {
     base: PathBuf,
     tree: PathBuf,
@@ -43,12 +34,17 @@ struct Runs {
     second: String,
 }
 
-fn two_runs(label: &str, flag: &Flag) -> Runs {
-    let base = scratch(label);
-    let tree = base.join("against");
-    let a = base.join("a");
-    let b = base.join("a-much/longer/path/b");
-    if let Flag::Against = flag {
+static RUNS: Shared<Runs> =
+    Shared::new("verify, seeded set, --against and --fab-out, at two paths");
+
+/// The shared runs, made by the first test to ask; `property` is what the
+/// calling test checks, named if the runs failed.
+fn runs(property: &str) -> &'static Runs {
+    RUNS.get(property, || {
+        let base = scratch("verify-2k2");
+        let tree = base.join("against");
+        let a = base.join("a");
+        let b = base.join("a-much/longer/path/b");
         copy_tree(&board(), &tree.join("board"));
         let kicad = tree.join("kicad");
         let (code, stdout) =
@@ -58,44 +54,48 @@ fn two_runs(label: &str, flag: &Flag) -> Runs {
             Some(0),
             "emit writes the --against tree's KiCad files: {stdout}"
         );
-    }
-    let run = |fab: &PathBuf| {
-        let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
-        // A package needs the seeded set (`AET-WO-3303` D1, ruled).
-        match flag {
-            Flag::Against => args.extend([
-                "scenarios/sentinel-01/pullup-2k2.json",
-                "--against",
-                tree.to_str().unwrap(),
-            ]),
-            Flag::FabOut => {
-                args.extend(SEEDED);
-                args.extend(["--fab-out", fab.to_str().unwrap()]);
-            }
+        let run = |fab: &PathBuf| {
+            let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
+            args.extend(SEEDED);
+            args.extend(["--against", tree.to_str().unwrap()]);
+            args.extend(["--fab-out", fab.to_str().unwrap()]);
+            aethelgard(&args)
+        };
+        let (code_a, first) = run(&a);
+        let (code_b, second) = run(&b);
+        Runs {
+            base,
+            tree,
+            a,
+            b,
+            codes: [code_a, code_b],
+            first,
+            second,
         }
-        aethelgard(&args)
-    };
-    let (code_a, first) = run(&a);
-    let (code_b, second) = run(&b);
-    Runs {
-        base,
-        tree,
-        a,
-        b,
-        codes: [code_a, code_b],
-        first,
-        second,
-    }
+    })
 }
 
-/// §3.2 and §3.4 of `AET-WO-3301`: `verify` with the 2.2 kΩ scenario and
+/// Each seeded scenario's `name`, in `SEEDED`'s order.
+fn seeded_names() -> Vec<String> {
+    SEEDED
+        .iter()
+        .map(|f| {
+            let bytes = fs::read(root().join(f)).unwrap();
+            serde_json::from_slice::<Value>(&bytes).unwrap()["name"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect()
+}
+
+/// §3.2 and §3.4 of `AET-WO-3301`: `verify` with the seeded set and
 /// `--against` the committed board passes; its verdict names every file's
-/// hash, the ELF's, every gate's result and the run; two runs print the same
-/// bytes.
+/// hash, the ELF's, every gate's result and every run; two runs print the
+/// same bytes.
 #[test]
 fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let r = two_runs("verify-binds", &Flag::Against);
+    let r = runs("verify binds the reference and two runs print the same bytes");
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the first run passes: {v}");
     assert_eq!(r.codes[1], Some(0), "the second run passes: {}", r.second);
@@ -175,9 +175,25 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             ("prove", "pass"),
             ("build", "pass"),
             ("simulate", "pass"),
+            // The seeded set's two faults detected by their mechanisms
+            // (`AET-WO-3303` D1, `AET-WO-2302` D5), one gate each.
+            ("attribute", "pass"),
+            ("attribute", "pass"),
             ("campaign", "pass"),
         ],
         "every gate runs, in order, and passes"
+    );
+    let attributed: Vec<&str> = v["gates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|g| g["gate"] == "attribute")
+        .map(|g| g["scenario"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        attributed,
+        ["spi-absent-u4", "serial-rx-open-console"],
+        "each fault the seeded set detects by its mechanism is an attribute gate, in order"
     );
     // `AET-WO-3303b` §1.2: a board without a timer proves its schedule in
     // parts, each a gate; the whole harness is no longer a proof, so it is no
@@ -223,6 +239,20 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
                 "the campaign names its runs' Renode build: {g}"
             );
         }
+        // An attribute gate judges the campaign's records and runs no tool,
+        // so it has no uid boundary to report (null, never a value).
+        if g["gate"] == "attribute" {
+            assert_eq!(
+                g["uid_boundary"],
+                Value::Null,
+                "attribute reports no uid boundary: {g}"
+            );
+            assert!(
+                g.get("uid_boundary_unmet").is_none(),
+                "attribute reports no unmet uid boundary: {g}"
+            );
+            continue;
+        }
         // `AET-WO-1305`: extract is bound to the generated board, and runs no
         // tool, so it has no uid boundary to report (null, never a value).
         if g["gate"] == "extract" {
@@ -260,51 +290,92 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
         sha(&bytes),
         "the verdict's ELF is the one build gives"
     );
+    // The campaign ran every seeded scenario, in `SEEDED`'s order: the
+    // tolerated faults and the baseline pass; the two detected faults fail as
+    // each declares, and so match.
     let runs = v["campaign"].as_array().unwrap();
-    assert_eq!(runs.len(), 1, "the campaign ran one scenario: {v}");
+    let ran: Vec<(&str, &str, &str, bool)> = runs
+        .iter()
+        .map(|run| {
+            (
+                run["scenario"].as_str().unwrap(),
+                run["verdict"].as_str().unwrap(),
+                run["expect"].as_str().unwrap(),
+                run["matched"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    let names = seeded_names();
     assert_eq!(
-        runs[0]["scenario"], "pullup-2k2",
-        "the campaign ran pullup-2k2: {v}"
+        ran,
+        [
+            (names[0].as_str(), "pass", "pass", true),
+            (names[1].as_str(), "pass", "pass", true),
+            (names[2].as_str(), "fail", "fail", true),
+            (names[3].as_str(), "pass", "pass", true),
+            (names[4].as_str(), "fail", "fail", true),
+        ],
+        "the campaign ran every seeded scenario, in order, each as it declares: {v}"
     );
-    assert_eq!(runs[0]["verdict"], "pass", "the campaign's run passes: {v}");
     assert_eq!(
-        runs[0]["run_id"].as_str().unwrap().len(),
-        32,
-        "the campaign's run id is 32 characters: {v}"
+        names[3], "pullup-2k2",
+        "the 2.2 kΩ baseline is seeded: {names:?}"
     );
-    // The same run id `campaign` gives that ELF and scenario directly.
+    for run in runs {
+        assert_eq!(
+            run["run_id"].as_str().unwrap().len(),
+            32,
+            "each campaign run id is 32 characters: {run}"
+        );
+    }
+    // The same run ids `campaign` gives that ELF and the seeded set directly.
     let archive = r.base.join("archive");
-    let (_, lines) = aethelgard(&[
-        "campaign",
-        "--scenarios",
-        "scenarios/sentinel-01/pullup-2k2.json",
+    let mut args = vec!["campaign", "--scenarios"];
+    args.extend(SEEDED);
+    args.extend([
         "--firmware",
         elf.to_str().unwrap(),
         "--archive",
         archive.to_str().unwrap(),
     ]);
-    let line: Value = serde_json::from_str(lines.lines().next().unwrap()).unwrap();
+    let (_, lines) = aethelgard(&args);
+    let direct: Vec<Value> = lines
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .filter(|l| l.get("scenario").is_some())
+        .collect();
     assert_eq!(
-        runs[0]["run_id"], line["run_id"],
-        "verify's run id is the one campaign gives the ELF directly"
+        direct.len(),
+        runs.len(),
+        "campaign gives one line per seeded scenario: {lines}"
     );
-    assert_eq!(
-        runs[0]["state_sequence_hash"], line["state_sequence_hash"],
-        "verify's state hash is the one campaign gives the ELF directly"
-    );
+    for (run, line) in runs.iter().zip(&direct) {
+        assert_eq!(
+            run["scenario"], line["scenario"],
+            "campaign runs the seeded set in verify's order"
+        );
+        assert_eq!(
+            run["run_id"], line["run_id"],
+            "verify's run id is the one campaign gives the ELF directly: {run}"
+        );
+        assert_eq!(
+            run["state_sequence_hash"], line["state_sequence_hash"],
+            "verify's state hash is the one campaign gives the ELF directly: {run}"
+        );
+    }
 }
 
-/// `AET-WO-3300` §3, the reference probe: `verify --fab-out` with the 2.2 kΩ
-/// scenario passes and writes the package; the verdict's `fab` hashes equal
-/// the files' sha256; two runs at two paths print the same verdict and write
-/// the same bytes; the ELF is the one the campaign ran and the BOM is
-/// `emit`'s; the manifest names the verdict the call prints without
-/// `--fab-out`; B.Cu carries the GND pour and no Gerber carries KiCad's
-/// clock (ruling on PR #103). `--against-fab` is `against_fab_tier2.rs`.
+/// `AET-WO-3300` §3, the reference probe: `verify --fab-out` with the seeded
+/// set passes and writes the package; the verdict's `fab` hashes equal the
+/// files' sha256; two runs at two paths print the same verdict and write the
+/// same bytes; the ELF is the one the campaign ran and the BOM is `emit`'s;
+/// the manifest names the verdict line its own run printed, without its `fab`
+/// key (that line carries `against`, as the run does: `AET-WO-1909` B, ruled
+/// acceptable); B.Cu carries the GND pour and no Gerber carries KiCad's clock
+/// (ruling on PR #103). `--against-fab` is `against_fab_tier2.rs`.
 #[test]
 fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
-    let r = two_runs("verify-fab-out", &Flag::FabOut);
+    let r = runs("verify --fab-out writes the package its verdict names at any path");
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the run at the first path passes: {v}");
     assert_eq!(
@@ -414,13 +485,11 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         v["campaign"][0]["verdict"], "pass",
         "the packaged ELF's campaign passed: {v}"
     );
-    // The BOM is `emit`'s, byte for byte.
-    let emitted = r.base.join("emit");
-    let (code, out) = aethelgard(&["emit", "--file", SPEC, "--out", emitted.to_str().unwrap()]);
-    assert_eq!(code, Some(0), "emit writes the BOM to compare: {out}");
+    // The BOM is `emit`'s, byte for byte: the one the shared runs' `--against`
+    // tree holds, which `emit` wrote and `--against` found identical.
     assert_eq!(
         package["sentinel-01.bom.csv"],
-        fs::read(emitted.join("sentinel-01.bom.csv")).unwrap(),
+        fs::read(r.tree.join("kicad/sentinel-01.bom.csv")).unwrap(),
         "the packaged BOM is emit's, byte for byte"
     );
     // `AET-WO-1604` §1.3: the JLCPCB files are the package's own BOM and
@@ -458,8 +527,8 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             && text("FAB-NOTES.md").ends_with(&format!("- U4 (W25Q64JVSSIQ): {standin}\n")),
         "FAB-NOTES lists U4 last"
     );
-    // The manifest: every other file, and the verdict without its `fab` key,
-    // which is the line the same call prints without `--fab-out`.
+    // The manifest: every other file, and the verdict line this run printed
+    // without its `fab` key (`AET-WO-1916` D2: derived from its own line).
     let manifest: Value = serde_json::from_slice(&package["MANIFEST.json"]).unwrap();
     let line = r.first.trim_end();
     let without = format!("{}}}", &line[..line.rfind(",\"fab\":").unwrap()]);

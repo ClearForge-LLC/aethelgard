@@ -53,3 +53,10 @@ tests/via_ring_tier1.rs	61
 # 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39 in
 # two modes, its cause not measured, AET-WO-1912 FEEDBACK F2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
 # AET-WO-1913 (REFIT RULE 3 and 5; WO §1 step 3): four_layer_fab_tier2 and verify_47k_tier2 raised to their worst `finished in` over the five green main runs above, the throwaway run 44787324803 (its normal pass and each binary run whole alone) and AET-WO-1912's measured 740.63 and 277.29, rounded up: 741 and 278. The other blocks are within 25 % of their worst and keep their rows.
+# AET-WO-1916 D2 (ruled 2026-11-23 06:35Z): two binaries whose tests now share one run in one process, so each is a block.
+# verify_2k2_tier2 (1909 B): both tests read one pair of `verify --against --fab-out` runs of the seeded set (4 verifies -> 2);
+# cli_backlog_tier1 (1607 F-L): one `emit` per specification, read by three tests. PREDICTED weights, replaced from this PR's first
+# CI run by REFIT RULE 3 and 5 (each block's libtest `finished in`): verify_2k2_tier2 the old fab-out test's worst in-shard 541.6 s
+# (two seeded verifies) plus the five-scenario direct campaign (~30 s); cli_backlog_tier1 its prove test's worst in-shard 64.7 s.
+tests/verify_2k2_tier2.rs	572
+tests/cli_backlog_tier1.rs	70
