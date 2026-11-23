@@ -910,26 +910,14 @@ pub fn options(topology: &SolvedTopology) -> Result<Vec<Options>, TwinError> {
         .serial_ports_in_order()
         .into_iter()
         .map(|(label, p, tx, rx)| {
-            let rc = matches!(
-                p.role,
-                aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus
-            );
-            let line = if p.framing.inverted {
-                Expect::Set
-            } else {
-                Expect::Clear
-            };
+            let [s, t, r] = expected(p.role, p.framing.inverted);
             Ok(Options {
                 label: label.to_owned(),
                 peripheral: p.peripheral.clone(),
                 renode: renode_name(&p.peripheral)?,
                 role: p.role,
                 inverted: p.framing.inverted,
-                bits: [
-                    ("SWAP", swap, Expect::Clear),
-                    ("TXINV", txinv, if rc { Expect::Clear } else { line }),
-                    ("RXINV", rxinv, if rc { Expect::Unjudged } else { line }),
-                ],
+                bits: [("SWAP", swap, s), ("TXINV", txinv, t), ("RXINV", rxinv, r)],
                 cr1: layout.offset("CR1", 0)?,
                 cr2: layout.offset("CR2", 0)?,
                 ue: bit("CR1_UE")?,
@@ -938,6 +926,18 @@ pub fn options(topology: &SolvedTopology) -> Result<Vec<Options>, TwinError> {
             })
         })
         .collect()
+}
+
+/// `SWAP`, `TXINV` and `RXINV` as a port of `role`, declared `inverted` or
+/// not, must leave them ([`Options`]).
+pub fn expected(role: aethelgard_ir::SerialRole, inverted: bool) -> [Expect; 3] {
+    let line = if inverted { Expect::Set } else { Expect::Clear };
+    match role {
+        aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus => {
+            [Expect::Clear, Expect::Clear, Expect::Unjudged]
+        }
+        _ => [Expect::Clear, line, line],
+    }
 }
 
 /// What a port's `CR1` and `CR2` writes show against its [`Options`]
@@ -2441,11 +2441,7 @@ mod tests {
     fn opts(role: aethelgard_ir::SerialRole, inverted: bool) -> Options {
         let f = cmsis::register_facts().unwrap();
         let bit = |n: &str| 1u32 << f.position(&format!("USART_{n}_Pos")).unwrap();
-        let rc = matches!(
-            role,
-            aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus
-        );
-        let line = if inverted { Expect::Set } else { Expect::Clear };
+        let [s, t, r] = expected(role, inverted);
         Options {
             label: "P".into(),
             peripheral: "USART3".into(),
@@ -2453,17 +2449,9 @@ mod tests {
             role,
             inverted,
             bits: [
-                ("SWAP", bit("CR2_SWAP"), Expect::Clear),
-                (
-                    "TXINV",
-                    bit("CR2_TXINV"),
-                    if rc { Expect::Clear } else { line },
-                ),
-                (
-                    "RXINV",
-                    bit("CR2_RXINV"),
-                    if rc { Expect::Unjudged } else { line },
-                ),
+                ("SWAP", bit("CR2_SWAP"), s),
+                ("TXINV", bit("CR2_TXINV"), t),
+                ("RXINV", bit("CR2_RXINV"), r),
             ],
             cr1: 0,
             cr2: 4,

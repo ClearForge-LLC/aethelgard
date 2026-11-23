@@ -1128,12 +1128,8 @@ fn judge_serial(
     let registers = pull_registers(serial);
     for o in serial {
         for (line, pin) in [("TX", &o.tx), ("RX", &o.rx)] {
-            let Some(k) = registers.iter().position(|r| *r == pin.pupdr()) else {
-                continue;
-            };
-            let Some(&word) = pulls.get(k) else {
-                continue;
-            };
+            let k = registers.iter().position(|r| *r == pin.pupdr());
+            let word = pulls[k.expect("pull_registers holds every serial pin's PUPDR")];
             let field = pin.config_fields([0, 0, word]).2;
             out.push(Finding::info(
                 PULL,
@@ -2027,7 +2023,7 @@ mod tests {
 
     fn failing(f: &[Finding]) -> Vec<(String, String)> {
         f.iter()
-            .filter(|f| f.kind != PULL)
+            .filter(|f| f.severity != "info")
             .map(|f| (f.kind.clone(), f.message.clone()))
             .collect()
     }
