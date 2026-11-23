@@ -188,7 +188,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "foreign_panic",
         "added (AET-WO-1609)",
-        "an execution hook on AP_HAL::panic, found by its symbol in the ELF (a firmware whose symbol table does not name it is refused, ForeignPanicSymbolMissing), fails a run that enters it, whenever it did, with each entry's virtual time in boot.panic. Weakens: a fault, a hang or a reset that never calls it is judged only by the rules above (a thread-mode hang after the last witness passes; spike/1609)",
+        "an execution hook on AP_HAL::panic, found by its symbol in the ELF (a firmware whose symbol table does not name it is refused, ForeignPanicSymbolMissing), fails a run that enters it, whenever it did, with each entry's virtual time in boot.panic. Weakens: a fault, a hang or a reset that never calls it is judged only by the rules above (a thread-mode hang after the last witness passes; spike/1609); the symbol table that locates the hook is the judged ELF's own, so one that names a decoy function in place of the panic hides it (INV-07: it locates the hook, it sets no pass criterion)",
     ),
 ];
 
@@ -374,7 +374,9 @@ pub struct ForeignBoot {
 pub struct PanicReport {
     pub symbol: &'static str,
     pub address: String,
-    pub entered_ns: Vec<Option<u64>>,
+    /// `null` until the judge has read the run's log (a run ended at a
+    /// bound is never read), so "not read" is never "no entry".
+    pub entered_ns: Option<Vec<Option<u64>>>,
 }
 
 /// ArduPilot's panic, `AP_HAL::panic(const char*, ...)` (`AP_HAL/system.h`;
@@ -589,6 +591,15 @@ pub fn regions_report(
 /// The foreign boot's log filter (D7 (a)): today's, with Renode's own
 /// `Unhandled write` warnings summarised by [`unhandled_write_key`].
 pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
+    keep: &[
+        ABORTED,
+        LOAD_ERROR,
+        LOG_ERROR,
+        LOCKED[0],
+        LOCKED[1],
+        MODEL_LOAD_ERROR,
+        PANIC_MARK,
+    ],
     summarise: unhandled_write_key,
     ..LOG_FILTER
 };
@@ -1249,7 +1260,7 @@ pub fn report(
         panic: PanicReport {
             symbol: PANIC_SYMBOL,
             address: format!("{panic:#010x}"),
-            entered_ns: Vec::new(),
+            entered_ns: None,
         },
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
@@ -1770,11 +1781,15 @@ pub fn judge(
     // a run that panicked fails by name, whenever it panicked.
     let address = u64::from_str_radix(report.panic.address.trim_start_matches("0x"), 16)
         .map_err(|_| untrusted(format!("the panic hook's address {}", report.panic.address)))?;
-    report.panic.entered_ns = run_log
+    // Every line, not only the run's log before the begin marker: only the
+    // CPU writes the hook's line, so one Renode printed late still counts
+    // (adversarial review, finding 3). The first is kept past the log budget
+    // (`FOREIGN_LOG_FILTER`).
+    let entered: Vec<Option<u64>> = lines
         .iter()
         .filter_map(|line| panic_entry(line, address))
         .collect();
-    if let Some(first) = report.panic.entered_ns.first() {
+    if let Some(first) = entered.first() {
         let last_witness = report.devices.iter().filter_map(|d| d.observed_ns).max();
         let at =
             |ns: &Option<u64>| ns.map_or("an unstamped time".to_owned(), |n| format!("{n} ns"));
@@ -1783,12 +1798,13 @@ pub fn judge(
             format!(
                 "the firmware entered {PANIC_SYMBOL} at {:#010x} {} time(s), first at {}, the last device witness at {}",
                 address,
-                report.panic.entered_ns.len(),
+                entered.len(),
                 at(first),
                 at(&last_witness),
             ),
         ));
     }
+    report.panic.entered_ns = Some(entered);
     Ok((findings, Some(machine), report))
 }
 
@@ -2311,6 +2327,12 @@ mod tests {
             Some(None),
             "an unstamped entry still counts"
         );
+        // Past the log budget, the first entry is still kept (review
+        // finding 4); every other kind the default filter keeps stays kept.
+        assert!(FOREIGN_LOG_FILTER.keep.contains(&PANIC_MARK));
+        for k in LOG_FILTER.keep {
+            assert!(FOREIGN_LOG_FILTER.keep.contains(k), "{k}");
+        }
     }
 
     /// D2: each declared USART's accesses are logged once, and each serial

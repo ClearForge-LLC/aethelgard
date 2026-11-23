@@ -896,15 +896,20 @@ fn drc_parts(
 /// A generated `simulate`'s part (`AET-WO-1609`, ruled D3): the HSE clock
 /// rule ([`aethelgard_twin::hse::clock_rule`]), set only for a topology with
 /// an HSE, so `mcu.hse` turns it on, and judged, once, only after the boot
-/// word, as `renode::judge` reads the clock's accesses then.
-fn simulate_parts(clock: bool, booted: bool) -> Vec<verdict::Ran> {
+/// word, as `renode::judge` reads the clock's accesses then. `booted` is
+/// `None` when the run's end was never read (it ended at a bound).
+fn simulate_parts(clock: bool, booted: Option<bool>) -> Vec<verdict::Ran> {
     use verdict::Ran;
     vec![match (clock, booted) {
         (false, _) => Ran::off("simulate.hse_clock", "mcu.hse"),
-        (true, true) => Ran::judged("simulate.hse_clock", 1),
-        (true, false) => Ran::not_reached(
+        (true, Some(true)) => Ran::judged("simulate.hse_clock", 1),
+        (true, Some(false)) => Ran::not_reached(
             "simulate.hse_clock",
             "the firmware never wrote its boot word",
+        ),
+        (true, None) => Ran::not_reached(
+            "simulate.hse_clock",
+            "the run ended at a bound, so its end was never read",
         ),
     }]
 }
@@ -2315,7 +2320,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                     plan.clock.is_some(),
                     observed
                         .as_ref()
-                        .is_some_and(|o| o.boot_word == aethelgard_twin::boot::BOOT_MAGIC),
+                        .map(|o| o.boot_word == aethelgard_twin::boot::BOOT_MAGIC),
                 );
             }
         }
@@ -3508,22 +3513,22 @@ mod tests {
     #[test]
     fn the_hse_clock_row_is_off_judged_or_not_reached() {
         use verdict::Ran;
+        for booted in [Some(true), Some(false), None] {
+            assert_eq!(
+                simulate_parts(false, booted),
+                [Ran::off("simulate.hse_clock", "mcu.hse")]
+            );
+        }
         assert_eq!(
-            simulate_parts(false, true),
-            [Ran::off("simulate.hse_clock", "mcu.hse")]
-        );
-        assert_eq!(
-            simulate_parts(false, false),
-            [Ran::off("simulate.hse_clock", "mcu.hse")]
-        );
-        assert_eq!(
-            simulate_parts(true, true),
+            simulate_parts(true, Some(true)),
             [Ran::judged("simulate.hse_clock", 1)]
         );
-        assert!(matches!(
-            simulate_parts(true, false)[0].state,
-            verdict::RanState::NotReached(_)
-        ));
+        let why = |booted| match &simulate_parts(true, booted)[0].state {
+            verdict::RanState::NotReached(w) => w.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert!(why(Some(false)).contains("boot word"));
+        assert!(why(None).contains("bound"));
     }
 
     /// The HSE row reads `mcu.hse`; the twin sets its rule exactly when the

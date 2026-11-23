@@ -1000,12 +1000,34 @@ fn ran_table(gates: &[Gate]) -> Result<Vec<Row>, String> {
     Ok(out)
 }
 
+/// Why no gate ran when `--against` found a difference (`AET-WO-1609`).
+const AGAINST_DIFFERS: &str =
+    "--against found the directory differs from the generated tree, so no gate ran";
+
+/// The table of a verdict printed before any gate ran: every gate of
+/// [`GATES`] not reached, for `why` (adversarial review, finding 1).
+fn none_ran(why: &str) -> Vec<Row> {
+    GATES
+        .iter()
+        .map(|(name, _)| Row::not_reached(name, why))
+        .collect()
+}
+
+/// The gates whose own line states its parts' rows: one that ran and
+/// states none is refused, so a part never vanishes unseen (adversarial
+/// review, finding 5).
+const PARTED: [&str; 3] = ["extract", "drc", "simulate"];
+
 /// The rows a gate's own line states for its parts (`extract`, `drc`,
 /// `simulate`), each named `<gate>.<part>` with exactly one of `judged`,
 /// `off` or `not_reached`.
 fn parts(g: &Gate) -> Result<Vec<Row>, String> {
+    let ran = matches!(g.verdict, "pass" | "fail");
     let Some(rows) = g.parts.as_array() else {
         return match &g.parts {
+            Value::Null if ran && PARTED.contains(&g.gate) => {
+                Err(format!("gate `{}` ran and states no part's row", g.gate))
+            }
             Value::Null => Ok(Vec::new()),
             other => Err(format!("gate `{}` states `ran` as {other}", g.gate)),
         };
@@ -2064,6 +2086,7 @@ pub fn verify(
             if let Some(mode) = fab_mode {
                 not_packaged(&mut report, mode);
             }
+            report.ran = none_ran(AGAINST_DIFFERS);
             return crate::emit(&report, EXIT_FAIL);
         }
         report.against = Some("identical");
@@ -4464,6 +4487,17 @@ mod tests {
         assert_eq!(row("adc").state, Off("pin_devices[].analog".into()));
     }
 
+    /// A verdict printed before any gate ran still lists every gate, each
+    /// not reached with the reason (review finding 1: `--against` differs).
+    #[test]
+    fn a_verdict_before_any_gate_lists_every_gate_not_reached() {
+        let rows = none_ran(AGAINST_DIFFERS);
+        assert_eq!(rows.len(), GATES.len());
+        for ((name, _), row) in GATES.iter().zip(&rows) {
+            assert_eq!(row, &Row::not_reached(name, AGAINST_DIFFERS));
+        }
+    }
+
     /// A part row the gate's line states malformed is refused: two states,
     /// none, another gate's prefix, or a count that is not a number.
     #[test]
@@ -4477,6 +4511,7 @@ mod tests {
             json!([{"gate": "extract.lines", "judged": "8"}]),
             json!([{"gate": "extract.lines", "judged": 8, "harness": "h"}]),
             json!({"gate": "extract.lines", "judged": 8}),
+            Value::Null,
         ] {
             let mut gates = drawn_run();
             gates[3].parts = bad.clone();

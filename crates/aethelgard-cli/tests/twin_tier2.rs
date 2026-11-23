@@ -4781,7 +4781,13 @@ fn foreign_boot(label: &str, segments: &[(u32, Vec<u8>, u32)]) -> (Option<i32>, 
     let dir = std::env::temp_dir().join(format!("aet-t2-{}-{label}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let elf = dir.join(format!("{label}.elf"));
-    fs::write(&elf, foreign_elf(segments)).unwrap();
+    // ArduPilot's panic named at `0x08000100`, in the first segment's
+    // never-run zeros: the judge hooks it (`AET-WO-1609`).
+    fs::write(
+        &elf,
+        common::foreign::with_panic(foreign_elf(segments), 0x0800_0100),
+    )
+    .unwrap();
     // The reference board with a foreign clock declared at the reset
     // clock's figures, and its platform (`AET-WO-4400g`).
     let (spec, platform) = common::foreign::write(&dir);

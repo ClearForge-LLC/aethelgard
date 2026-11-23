@@ -297,7 +297,7 @@ def mov32(rd, v):
     return half(0xF240, v & 0xFFFF) + half(0xF2C0, v >> 16)
 panic, _, panic_name = symbol(b"_ZN6AP_HAL5panicEPKcz")
 if how == "panic-unnamed":
-    data[panic_name + 7] = ord("q")  # _ZN6AP_HAL5panic -> _ZN6AP_HAL5qanic
+    data[panic_name + len(b"_ZN6AP_HAL5")] = ord("q")  # _ZN6AP_HAL5panic -> _ZN6AP_HAL5qanic
     open(dst, "wb").write(data)
     print("ANSWER 1609: panic-unnamed: the panic's symbol renamed")
     sys.exit()
