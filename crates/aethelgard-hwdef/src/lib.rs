@@ -16,6 +16,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 
+use aethelgard_ir::motor::PullFitment;
 use aethelgard_ir::orientation::{Orientation, Toward};
 use aethelgard_ir::parts::{self, ArduPilotKind};
 use aethelgard_ir::power_parts::{self, Kind as PowerKind, McuArduPilot};
@@ -238,12 +239,21 @@ pub struct Hwdef {
     pub not_emitted: Vec<String>,
 }
 
-/// One emitted line: the `hwdef.dat` text and its source comment.
+/// One emitted line: the `hwdef.dat` text and its source comment. A line
+/// that is itself a comment (`#`, whose text ArduPilot's parser discards,
+/// `libraries/AP_HAL/hwdef/scripts/hwdef.py:209-212`) has no source, and is
+/// written as it is.
 struct Lines(Vec<(String, String)>);
 
 impl Lines {
     fn push(&mut self, line: impl Into<String>, source: impl Into<String>) {
         self.0.push((line.into(), source.into()));
+    }
+
+    /// A comment line, written verbatim between the emitted lines: its text
+    /// names its own source.
+    fn comment(&mut self, text: impl AsRef<str>) {
+        self.0.push((format!("# {}", text.as_ref()), String::new()));
     }
 }
 
@@ -500,21 +510,50 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
     i2c(t, parts_table, &mut l, &mut not_emitted, speed);
     spi(t, parts_table, ap, &mut l, &mut not_emitted, speed)?;
 
-    // Motor outputs, in the specification's order. Each line is `FLOATING`,
-    // no internal pull: its pull-down is the declared external resistor
-    // (`motor_outputs[].pull`; `AET-WO-4300i`, ruled D0 `external`, which
-    // reverses `4400b` D3's `PULLDOWN`). `FLOATING` is ArduPilot's default
-    // for a PWM line with no pull token (`chibios_hwdef.py:387-427`, at the
-    // pinned tag); it is written, as on every other line here, so the line
-    // states the fact rather than leaning on the default.
+    // Motor outputs, in the specification's order. Each line's pull follows
+    // the output's declared fitment (`AET-WO-4300j` D6): `fitted`, `FLOATING`,
+    // no internal pull, since the declared external resistor holds the line
+    // (`AET-WO-4300i`, ruled D0 `external`, which reversed `4400b` D3's
+    // `PULLDOWN`); `open`, the link not fitted, `PULLDOWN`, the firmware's
+    // pull. `FLOATING` is ArduPilot's default for a PWM line with no pull
+    // token (`chibios_hwdef.py:387-427`, at the pinned tag); it is written,
+    // as on every other line here, so the line states the fact rather than
+    // leaning on the default. A comment line above each names the fitment
+    // and the bound its resistor was judged against (`AET-WO-4300j` §1 (4)),
+    // so whoever reads the file sees why BLHeli passthrough is safe. No
+    // `HAL_SERIAL_ESC_COMM_ENABLED` is written.
     let mut motors: Vec<(&String, &aethelgard_ir::SolvedMotorOutput)> =
         t.motor_outputs.iter().collect();
     motors.sort_by_key(|(_, m)| m.index);
     for (net, m) in &motors {
         let a = &t.assignments[*net];
+        let p = &m.pull;
+        // `to` is `GND`: `validate` refuses any other (`MotorPullNotDown`).
+        let (pull, source) = match p.fitment {
+            PullFitment::Fitted => {
+                l.comment(format!(
+                    "{net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, checked for BLHeli passthrough idle with it fitted, the ESC threshold a stand-in (AET-WO-4300j R1)",
+                    p.resistor, p.ohms, p.link, p.floor_ohms, p.ceiling_ohms
+                ));
+                (
+                    "FLOATING",
+                    "no internal pull: the pull-down is the declared resistor (4300i D0)",
+                )
+            }
+            PullFitment::Open => {
+                l.comment(format!(
+                    "{net} pull: open (link {} not fitted), PULLDOWN in firmware; {} {} ohm, bound {}..{} ohm (AET-WO-4300j)",
+                    p.link, p.resistor, p.ohms, p.floor_ohms, p.ceiling_ohms
+                ));
+                (
+                    "PULLDOWN",
+                    "pull.fitment open: the link is not fitted, so the firmware pulls down (4300j D6)",
+                )
+            }
+        };
         l.push(
             format!(
-                "{} {} {} PWM({}) {} PUSHPULL FLOATING",
+                "{} {} {} PWM({}) {} PUSHPULL {pull}",
                 a.pin,
                 a.signal,
                 a.peripheral,
@@ -522,7 +561,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
                 speed(net)
             ),
             format!(
-                "[T] motor_outputs.{net} (index {}), assignments, pin_speeds; no internal pull: the pull-down is the declared resistor (4300i D0)",
+                "[T] motor_outputs.{net} (index {}), assignments, pin_speeds; {source}",
                 m.index
             ),
         );
@@ -1129,9 +1168,19 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
     }
     let mut out = header.join("\n");
     out.push_str("\n\n");
-    let width = l.0.iter().map(|(line, _)| line.len()).max().unwrap_or(0);
+    // A comment line is written as it is, and sets no width.
+    let width =
+        l.0.iter()
+            .filter(|(_, source)| !source.is_empty())
+            .map(|(line, _)| line.len())
+            .max()
+            .unwrap_or(0);
     for (line, source) in &l.0 {
-        let _ = writeln!(out, "{line:width$}  # {source}");
+        if source.is_empty() {
+            let _ = writeln!(out, "{line}");
+        } else {
+            let _ = writeln!(out, "{line:width$}  # {source}");
+        }
     }
     out
 }

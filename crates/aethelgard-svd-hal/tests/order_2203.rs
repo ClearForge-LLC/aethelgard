@@ -255,18 +255,23 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `732658ad…3897`, each hashes to the digest before, `6ecb73f2…50ee`,
 /// `d47abe5e…3087` and `fdd08fd6…ff1b`, measured by
 /// `spike/4300i/order_back.rs`); the boot image did not move.
+/// Moved in `AET-WO-4300j` (specification 29) the same way: with the
+/// specification-28 document's sha `732658ad…3897` put back for
+/// `39db0635…279b`, each hashes to the digest before, `7df27b59…ec96`,
+/// `871c2296…1453` and `6962b767…618a`, measured by
+/// `spike/4300j/order_back.rs`; the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "7df27b590463f4ddfaf0ed1cb66b14c1ad4d6e6560c0ba7f49dcc6c95b1dec96",
+        "5dbf904ca3e16cc168ee4319c871727be0e72ec677194f1c8c397e300127ca39",
     ),
     (
         "platform",
-        "871c2296278a066957d0e94cf079c0a8847eef06c52343da26ecc50f58bc1453",
+        "39f2aedd54bb00c239749bed966049a6c91e32060e21d5f0336cc01b59465f04",
     ),
     (
         "platform faulted",
-        "6962b767b3268b825f3cebb9aa51d38f507b3450c5c9ad07334acf2f0e88618a",
+        "30f151af6a07a8dd803ca989267ae7d791cd55e803d352b0ae732307c92fc656",
     ),
     (
         "boot image",

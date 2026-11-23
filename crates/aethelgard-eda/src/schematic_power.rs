@@ -185,6 +185,8 @@ pub(super) fn two_pin(
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
+        dnp: false,
+        beside: None,
     });
     Ok(())
 }
@@ -250,6 +252,8 @@ fn ic(
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
+        dnp: false,
+        beside: None,
     });
     Ok(())
 }
@@ -416,6 +420,8 @@ pub(crate) fn draw(
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
+        dnp: false,
+        beside: None,
     });
     Ok(())
 }
@@ -499,6 +505,8 @@ fn hot_plug(
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         });
         if let Some((u, vin, gnd)) = &pads {
             anchor(

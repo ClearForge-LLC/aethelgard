@@ -6,8 +6,14 @@
 //! specification with the net taken off its connector (the control), which
 //! takes the TT pin; no motor output on a reset pull (F2), and an
 //! idle-high one pulled down like any other (F3 reverted); the motor pull's
-//! parse and its row; `silicon::implied_pupd` on a motor net; and the
-//! power-parts row's `io.weak_pull_down_ohms`.
+//! parse and its row; `silicon::implied_pupd` on a motor net by fitment;
+//! and the power-parts rows `io.motor_pull_bound` and `CRCW0402_Z_0`.
+//!
+//! `AET-WO-4300j`: the bound on `mcu.supply` (D1 (a), D3 (a)), each edge
+//! planted from both sides with integers worked out outside the engine (exact
+//! fractions, `spike/4300j/DERIVATION.md` §4, §5a): on 3300 mV +/-50
+//! permille the floor is 17 325 000 / 41 = 422 560.97... ohm and the ceiling
+//! 6 270 000 / 7 = 895 714.28... ohm; the link and the fitment (D4–D6).
 //!
 //! D1 is `tests/fixtures/d1-drv8876.json` on `pin_devices_solve.rs`'s small
 //! synthetic table: `DRV_EN` and `DRV_PH` drive the bridge only, `SERVO1`
@@ -183,35 +189,125 @@ fn a_pull_whose_part_is_not_a_resistor_row_is_refused() {
     }
 }
 
+/// `ohms` on output 1 (`DRV_PH`) of the committed `d1-drv8876`, on its
+/// rail, `VDD_3V3` 3300 mV +/-50 permille: what `validate` says. The bound
+/// on other rails is `motor.rs`'s.
+fn judged(ohms: u32) -> Result<(), IrValidationError> {
+    let mut v = d1();
+    v["motor_outputs"][1]["pull"]["resistor"]["ohms"] = json!(ohms);
+    spec(&v).validate()
+}
+
+fn outside(ohms: u32) -> String {
+    let e = judged(ohms).expect_err("refused");
+    assert_eq!(
+        (e.kind(), e.id(), e.path()),
+        (
+            "MotorPullOutsideBound",
+            Some("DRV_PH"),
+            Some("motor_outputs[1].pull.resistor.ohms")
+        ),
+        "{ohms}: {e}"
+    );
+    e.to_string()
+}
+
+/// D3 (a) with F3 (ruled 12:25Z): the band, `CRCW0603_F_K`'s +/-1 % and
+/// +/-2 % drift, is judged against the bound on the committed rail, 3300 mV
+/// +/-50: window 17 325 000 / 41 to 6 270 000 / 7, so the band admits
+/// 435 630 (low corner 422 561.1) to 869 625 (high corner 895 713.75).
+/// 435 629 and 869 626 are refused; so are the window's own edges, 422 561
+/// and 895 714, whose corners fall outside it, and 432 000, whose low corner
+/// is 419 040. The ruled 442 000 is admitted.
 #[test]
-fn a_pull_outside_rpd_is_refused_and_its_edges_are_held() {
-    for ohms in [29_999, 50_001] {
-        let mut v = d1();
-        v["motor_outputs"][1]["pull"]["resistor"]["ohms"] = json!(ohms);
-        let e = refused(&v);
+fn a_pull_outside_the_bound_is_refused_at_both_edges() {
+    for ohms in [435_629, 869_626, 432_000, 422_561, 895_714, 40_200, 0] {
+        let m = outside(ohms);
+        assert!(m.contains("422561 to 895714 ohm"), "{m}");
+        assert!(m.contains("`VDD_3V3` (3300 mV +/-50 permille)"), "{m}");
+        for cited in [
+            "Table 49 p. 137",
+            "Table 146 p. 241",
+            "VIH min 0.7 VDD",
+            "FT_u +/-350 nA",
+            "a stand-in (S2)",
+            "10 % of VDD at each threshold",
+            "peer rail 3300 mV +/-50 permille",
+            "DS70005664A p. 16",
+            "(30000 ppm)",
+        ] {
+            assert!(m.contains(cited), "{cited}: {m}");
+        }
+    }
+    assert!(outside(432_000).contains("its band 419040 to 444960 ohm"));
+    for ohms in [435_630, 442_000, 869_625] {
+        judged(ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+}
+
+/// The window `solve` copies is the bound `validate` judges the band by: on
+/// the committed rail its edges are the exact bound's whole ohms, and the
+/// least and most declared values `validate` admits are those edges widened
+/// by the row's 3 % band, rounded inward.
+#[test]
+fn the_window_is_what_validate_admits() {
+    let w = aethelgard_ir::offboard::motor_pull_window(&spec(&d1())).unwrap();
+    assert_eq!((w.floor_ohms, w.ceiling_ohms), (422_561, 895_714));
+    let least = (u64::from(w.floor_ohms) * 1_000_000).div_ceil(970_000);
+    let most = u64::from(w.ceiling_ohms) * 1_000_000 / 1_030_000;
+    assert_eq!((least, most), (435_630, 869_625));
+    judged(u32::try_from(least).unwrap()).unwrap();
+    judged(u32::try_from(most).unwrap()).unwrap();
+    outside(u32::try_from(least - 1).unwrap());
+    outside(u32::try_from(most + 1).unwrap());
+}
+
+/// A solved committed motor board (`d1-drv8876`) carries each output's
+/// declared pull: its fitment, 442 000 ohm, both references, and the
+/// window's edges (`AET-WO-4300j` D6, D9).
+#[test]
+fn solve_copies_the_pull_with_its_bound() {
+    let s = solved(&d1(), &d1_table(&[])).unwrap();
+    s.validate().unwrap();
+    for (net, resistor, link) in [
+        ("DRV_EN", "R4", "R7"),
+        ("DRV_PH", "R5", "R8"),
+        ("SERVO1", "R6", "R9"),
+    ] {
+        let p = &s.motor_outputs[net].pull;
         assert_eq!(
-            (e.kind(), e.id(), e.path()),
             (
-                "MotorPullOutsideRpd",
-                Some("DRV_PH"),
-                Some("motor_outputs[1].pull.resistor.ohms")
+                p.fitment,
+                p.resistor.as_str(),
+                p.ohms,
+                p.link.as_str(),
+                p.floor_ohms,
+                p.ceiling_ohms
             ),
-            "{ohms}: {e}"
-        );
-        let m = e.to_string();
-        assert!(m.contains("30000 to 50000"), "{m}");
-        assert!(
-            m.contains("Table 49 p. 137") && m.contains("Table 146 p. 241"),
-            "{m}"
+            (
+                aethelgard_ir::motor::PullFitment::Fitted,
+                resistor,
+                442_000,
+                link,
+                422_561,
+                895_714
+            ),
+            "{net}"
         );
     }
-    for ohms in [30_000, 50_000] {
-        let mut v = d1();
-        v["motor_outputs"][1]["pull"]["resistor"]["ohms"] = json!(ohms);
-        spec(&v)
-            .validate()
-            .unwrap_or_else(|e| panic!("{ohms}: {e}"));
-    }
+    let mut v = d1();
+    v["motor_outputs"][2]["pull"]["fitment"] = json!("open");
+    let s = solved(&v, &d1_table(&[])).unwrap();
+    assert_eq!(
+        s.motor_outputs["SERVO1"].pull.fitment,
+        aethelgard_ir::motor::PullFitment::Open
+    );
+    // The topology's text carries it, in its key order.
+    let text = serde_json::to_string(&s.motor_outputs["SERVO1"].pull).unwrap();
+    assert_eq!(
+        text,
+        r#"{"fitment":"open","resistor":"R6","ohms":442000,"link":"R9","floor_ohms":422561,"ceiling_ohms":895714}"#
+    );
 }
 
 #[test]
@@ -231,6 +327,108 @@ fn a_missing_or_null_pull_is_refused_at_parse() {
     v["motor_outputs"][0]["pull"]["mcu"] = json!("down");
     let e = serde_json::from_value::<Specification>(v).unwrap_err();
     assert!(e.to_string().contains("unknown field `mcu`"), "{e}");
+}
+
+/// `fitment` and `link` are required in both fitments, never defaulted
+/// (`INV-06`): missing, `null` or an unknown value is refused at parse.
+#[test]
+fn a_missing_null_or_unknown_fitment_or_link_is_refused_at_parse() {
+    let parse = |edit: &dyn Fn(&mut Value)| {
+        let mut v = d1();
+        edit(&mut v);
+        serde_json::from_value::<Specification>(v)
+            .expect_err("refused")
+            .to_string()
+    };
+    let e = parse(&|v| {
+        v["motor_outputs"][1]["pull"]
+            .as_object_mut()
+            .unwrap()
+            .remove("fitment");
+    });
+    assert!(e.contains("missing field `fitment`"), "{e}");
+    let e = parse(&|v| v["motor_outputs"][1]["pull"]["fitment"] = Value::Null);
+    assert!(e.contains("invalid type: null"), "{e}");
+    for bad in ["Fitted", "cut", "", "dnp"] {
+        let e = parse(&|v| v["motor_outputs"][1]["pull"]["fitment"] = json!(bad));
+        assert!(e.contains("unknown variant"), "{bad}: {e}");
+    }
+    let e = parse(&|v| {
+        v["motor_outputs"][1]["pull"]
+            .as_object_mut()
+            .unwrap()
+            .remove("link");
+    });
+    assert!(e.contains("missing field `link`"), "{e}");
+    let e = parse(&|v| v["motor_outputs"][1]["pull"]["link"] = Value::Null);
+    assert!(e.contains("invalid type: null"), "{e}");
+    let e = parse(&|v| {
+        v["motor_outputs"][1]["pull"]["link"]
+            .as_object_mut()
+            .unwrap()
+            .remove("part");
+    });
+    assert!(e.contains("missing field `part`"), "{e}");
+    let e = parse(&|v| v["motor_outputs"][1]["pull"]["link"]["ohms"] = json!(0));
+    assert!(e.contains("unknown field `ohms`"), "{e}");
+}
+
+/// The link's part is a jumper row (D4): a resistor row or no row is
+/// `PowerPartUnknown` at `pull.link.part`.
+#[test]
+fn a_link_whose_part_is_not_a_jumper_row_is_refused() {
+    for part in ["CRCW0603_F_K", "NOT_A_PART"] {
+        let mut v = d1();
+        v["motor_outputs"][2]["pull"]["link"]["part"] = json!(part);
+        let e = refused(&v);
+        assert_eq!(
+            (e.kind(), e.id(), e.path()),
+            (
+                "PowerPartUnknown",
+                Some("SERVO1"),
+                Some("motor_outputs[2].pull.link.part")
+            ),
+            "{part}: {e}"
+        );
+        assert!(e.to_string().contains("is not a jumper row"), "{e}");
+    }
+    // And the resistor's part is not the jumper row.
+    let mut v = d1();
+    v["motor_outputs"][2]["pull"]["resistor"]["part"] = json!("CRCW0402_Z_0");
+    let e = refused(&v);
+    assert_eq!(
+        (e.kind(), e.path()),
+        (
+            "PowerPartUnknown",
+            Some("motor_outputs[2].pull.resistor.part")
+        ),
+        "{e}"
+    );
+}
+
+/// D5: `<label>_PD` is the engine's own net, so a declared net of that
+/// name, in any case, is `ReservedName`. A second motor output labelled
+/// `SERVO1_PD` (or `servo1_pd`) spells it.
+#[test]
+fn a_declared_net_named_for_a_pull_net_is_refused() {
+    for label in ["SERVO1_PD", "servo1_pd", "Servo1_Pd"] {
+        let mut v = d1();
+        let mut extra = v["motor_outputs"][2].clone();
+        extra["label"] = json!(label);
+        extra["pin"] = Value::Null;
+        extra["pull"]["resistor"]["reference"] = json!("R90");
+        extra["pull"]["link"]["reference"] = json!("R91");
+        v["motor_outputs"].as_array_mut().unwrap().push(extra);
+        let e = refused(&v);
+        assert_eq!(e.kind(), "ReservedName", "{label}: {e}");
+        assert!(e.to_string().contains("SERVO1_PD"), "{label}: {e}");
+    }
+    assert!(
+        aethelgard_ir::names::own_nets(&spec(&d1()))
+            .unwrap()
+            .iter()
+            .any(|n| n == "SERVO1_PD")
+    );
 }
 
 #[test]
@@ -261,6 +459,16 @@ fn a_blank_source_or_reference_is_refused_by_the_house_rules() {
             "InvalidIdentifier",
             "motor_outputs[0].pull.resistor.to",
         ),
+        (
+            |v: &mut Value| v["motor_outputs"][0]["pull"]["link"]["reference"] = json!(""),
+            "InvalidIdentifier",
+            "motor_outputs[0].pull.link.reference",
+        ),
+        (
+            |v: &mut Value| v["motor_outputs"][0]["pull"]["link"]["part"] = json!(""),
+            "InvalidIdentifier",
+            "motor_outputs[0].pull.link.part",
+        ),
     ] {
         let mut v = d1();
         edit(&mut v);
@@ -279,12 +487,28 @@ fn a_pull_reference_another_part_holds_is_refused() {
     let mut v = d1();
     v["motor_outputs"][2]["pull"]["resistor"]["reference"] = json!("R4");
     assert_eq!(refused(&v).kind(), "DuplicateReference");
+    // A link on another part's reference, its own resistor's, another
+    // link's, or one of those in another case (`AET-WO-4300j` D5).
+    for reference in ["R3", "R6", "R7", "r7", "R07"] {
+        let mut v = d1();
+        v["motor_outputs"][2]["pull"]["link"]["reference"] = json!(reference);
+        assert_eq!(refused(&v).kind(), "DuplicateReference", "{reference}");
+    }
 }
 
+/// D6: a `fitted` motor net has no internal pull (`00`), and an `open`
+/// one the internal pull-down (`10`, RM0433 Rev 9 §11.4.4).
 #[test]
-fn a_motor_net_has_no_internal_pull() {
+fn a_motor_net_is_pulled_internally_only_when_open() {
     let s = solved(&d1(), &d1_table(&[])).unwrap();
     for net in ["DRV_EN", "DRV_PH", "SERVO1"] {
+        assert_eq!(aethelgard_ir::silicon::implied_pupd(&s, net), 0, "{net}");
+    }
+    let mut v = d1();
+    v["motor_outputs"][1]["pull"]["fitment"] = json!("open");
+    let s = solved(&v, &d1_table(&[])).unwrap();
+    assert_eq!(aethelgard_ir::silicon::implied_pupd(&s, "DRV_PH"), 0b10);
+    for net in ["DRV_EN", "SERVO1"] {
         assert_eq!(aethelgard_ir::silicon::implied_pupd(&s, net), 0, "{net}");
     }
 }
@@ -859,9 +1083,18 @@ fn the_chip_select_and_the_sense_never_take_a_declared_reservation() {
 /// motor output pinned on one is refused (`AET-WO-4300i` F2).
 #[test]
 fn a_motor_pinned_on_a_reset_pull_is_refused_by_name() {
-    for pin in ["PB4", "PA15", "PA14"] {
+    // In both fitments (`AET-WO-4300j` D6): an `open` line is pulled down by
+    // the firmware only from its first write.
+    for (pin, fitment) in [
+        ("PB4", "fitted"),
+        ("PA15", "fitted"),
+        ("PA14", "fitted"),
+        ("PB4", "open"),
+        ("PA14", "open"),
+    ] {
         let mut v = d1();
         v["motor_outputs"][0]["pin"] = json!(pin);
+        v["motor_outputs"][0]["pull"]["fitment"] = json!(fitment);
         let e = refused(&v);
         assert_eq!(
             (e.kind(), e.id(), e.path()),
@@ -870,7 +1103,7 @@ fn a_motor_pinned_on_a_reset_pull_is_refused_by_name() {
                 Some("DRV_EN"),
                 Some("motor_outputs[0].pin")
             ),
-            "{pin}: {e}"
+            "{pin} {fitment}: {e}"
         );
         assert!(e.to_string().contains("RM0433 Rev 9 p. 542"), "{e}");
     }
@@ -904,46 +1137,213 @@ fn a_motor_idling_high_validates_pulled_down() {
 
 // ------------------------------------------------------ the power-parts row
 
+fn row_of(t: &Value, part: &str) -> usize {
+    t["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .position(|p| p["part"] == part)
+        .unwrap()
+}
+
+/// `io.motor_pull_bound` (power-parts 10, `AET-WO-4300j` D3 (a)): the four
+/// DS12117 figures cited, the two rulings with their basis; and the reader
+/// refuses each field missing, unknown, zero or negative, an uncited figure,
+/// a cited ruling, and a margin that leaves a threshold at or below zero.
 #[test]
-fn the_mcu_row_holds_rpd_cited_and_refuses_it_malformed() {
+fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
     use aethelgard_ir::power_parts::{Kind, POWER_PARTS_JSON, parse_power_parts, table};
     let Some(Kind::Mcu(m)) = table().unwrap().get("STM32H753ZITx").map(|r| &r.kind) else {
         panic!("the MCU row");
     };
-    let w = &m.io.weak_pull_down_ohms;
-    assert_eq!((w.min, w.typical, w.max), (30_000, 40_000, 50_000));
-    assert_eq!(w.at.document, "DS12117");
-    assert!(w.at.section.contains("RPD"), "{}", w.at.section);
-    let row = |t: &Value| {
-        t["parts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|p| p["part"] == "STM32H753ZITx")
-            .unwrap()
-    };
-    let at = json!({"document": "DS12117", "section": "test"});
-    for bad in [
-        json!({"min": 0, "typical": 40000, "max": 50000, "at": at}),
-        json!({"min": 45000, "typical": 40000, "max": 50000, "at": at}),
-        json!({"min": 30000, "typical": 55000, "max": 50000, "at": at}),
-        json!({"min": 30000, "typical": 40000, "max": 50000,
-               "at": {"document": "NOT_HELD", "section": "test"}}),
-        json!({"min": 30000, "typical": 40000, "max": 50000, "at": at, "extra": 1}),
-        json!({"min": 30000, "max": 50000, "at": at}),
+    let b = &m.io.motor_pull_bound;
+    assert_eq!(
+        (
+            b.pull_up_max_ohms.value,
+            b.input_high_min_permille.value,
+            b.input_low_max_permille.value,
+            b.leakage_max_nanoamps.value,
+            b.peer_input_current_nanoamps.value,
+            b.margin_permille.value,
+            b.peer_rail_millivolts.value,
+            b.peer_rail_tolerance_permille.value
+        ),
+        (50_000, 700, 300, 350, 350, 100, 3300, 50)
+    );
+    for (at, says) in [
+        (&b.pull_up_max_ohms.at, "RPU"),
+        (&b.input_high_min_permille.at, "VIH min 0.7 VDD"),
+        (&b.input_low_max_permille.at, "VIL max 0.3 VDD"),
+        (&b.leakage_max_nanoamps.at, "FT_u +/-350 nA"),
     ] {
-        let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
-        let r = row(&t);
-        t["parts"][r]["kind"]["mcu"]["io"]["weak_pull_down_ohms"] = bad.clone();
-        assert!(parse_power_parts(&t.to_string()).is_err(), "{bad}");
+        assert_eq!(at.document, "DS12117");
+        assert!(at.section.contains(says), "{}", at.section);
     }
-    let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
-    let r = row(&t);
-    t["parts"][r]["kind"]["mcu"]["io"]
-        .as_object_mut()
+    assert!(
+        b.peer_input_current_nanoamps
+            .basis
+            .contains("ruled 2026-11-23T10:11Z")
+    );
+    assert!(b.margin_permille.basis.contains("ruled 2026-11-23T10:11Z"));
+    // F2 (ruled 12:25Z): the ESC's own rail, a stand-in on DS70005664A p. 16.
+    for c in [&b.peer_rail_millivolts, &b.peer_rail_tolerance_permille] {
+        assert!(c.basis.contains("(S1)"), "{}", c.basis);
+        assert!(c.basis.contains("ruled 2026-11-23T12:25Z"), "{}", c.basis);
+    }
+    assert!(b.peer_rail_millivolts.basis.contains("DS70005664A p. 16"));
+
+    let edited = |path: &[&str], value: Option<Value>| {
+        let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
+        let r = row_of(&t, "STM32H753ZITx");
+        let mut at = &mut t["parts"][r]["kind"]["mcu"]["io"]["motor_pull_bound"];
+        for k in &path[..path.len() - 1] {
+            at = &mut at[*k];
+        }
+        let last = path[path.len() - 1];
+        match value {
+            Some(v) => at[last] = v,
+            None => {
+                at.as_object_mut().unwrap().remove(last);
+            }
+        }
+        parse_power_parts(&t.to_string())
+    };
+    let fields = [
+        "pull_up_max_ohms",
+        "input_high_min_permille",
+        "input_low_max_permille",
+        "leakage_max_nanoamps",
+        "peer_input_current_nanoamps",
+        "margin_permille",
+        "peer_rail_millivolts",
+        "peer_rail_tolerance_permille",
+    ];
+    for f in fields {
+        assert!(edited(&[f], None).is_err(), "{f} missing");
+        assert!(edited(&[f, "value"], None).is_err(), "{f}.value missing");
+        for bad in [0, -1] {
+            assert!(
+                edited(&[f, "value"], Some(json!(bad))).is_err(),
+                "{f} {bad}"
+            );
+        }
+        assert!(edited(&[f, "extra"], Some(json!(1))).is_err(), "{f} extra");
+    }
+    for f in &fields[..4] {
+        assert!(edited(&[f, "at"], None).is_err(), "{f} uncited");
+        assert!(
+            edited(&[f, "at", "document"], Some(json!("NOT_HELD"))).is_err(),
+            "{f} not held"
+        );
+        assert!(
+            edited(&[f, "basis"], Some(json!("x"))).is_err(),
+            "{f} basis"
+        );
+    }
+    for f in &fields[4..] {
+        assert!(edited(&[f, "basis"], None).is_err(), "{f} no basis");
+        assert!(edited(&[f, "basis"], Some(json!(""))).is_err(), "{f} blank");
+        assert!(
+            edited(
+                &[f, "at"],
+                Some(json!({"document": "DS12117", "section": "x"}))
+            )
+            .is_err(),
+            "{f} cited"
+        );
+    }
+    assert!(edited(&["extra"], Some(json!(1))).is_err());
+    // The peer rail's tolerance is below 1000 permille, so its minimum is
+    // above zero.
+    let tol = ["peer_rail_tolerance_permille", "value"];
+    assert!(edited(&tol, Some(json!(1000))).is_err(), "tolerance 1000");
+    assert!(edited(&tol, Some(json!(999))).is_ok(), "tolerance 999");
+    // The thresholds and the margin: each leaves both thresholds inside
+    // (0, 1000) permille. The edges are admitted one step inside.
+    for (f, bad, good) in [
+        // low - margin > 0, alone: input low 100 against the margin 100
+        // (high + margin stays 800).
+        ("input_low_max_permille", 100, 101),
+        // high + margin < 1000
+        ("input_high_min_permille", 900, 899),
+        // low < high
+        ("input_low_max_permille", 700, 699),
+    ] {
+        assert!(
+            edited(&[f, "value"], Some(json!(bad))).is_err(),
+            "{f} {bad} admitted"
+        );
+        edited(&[f, "value"], Some(json!(good))).unwrap_or_else(|e| panic!("{f} {good}: {e}"));
+    }
+    assert!(edited(&["input_high_min_permille", "value"], Some(json!(1000))).is_err());
+    // RPD's band is gone, not kept beside it.
+    assert!(edited(&["weak_pull_down_ohms"], Some(json!({}))).is_err());
+}
+
+/// The jumper row (power-parts 10, `AET-WO-4300j` D4): its figures cited to
+/// VISHAY_20035 p. 2, the 0402 footprint, and the reader refusing each field
+/// missing, zero or unknown, and a resistor field.
+#[test]
+fn the_jumper_row_is_held_and_refuses_it_malformed() {
+    use aethelgard_ir::power_parts::{Kind, POWER_PARTS_JSON, parse_power_parts, table};
+    let row = table()
         .unwrap()
-        .remove("weak_pull_down_ohms");
-    assert!(parse_power_parts(&t.to_string()).is_err());
+        .get("CRCW0402_Z_0")
+        .expect("the jumper row");
+    let Kind::Jumper(j) = &row.kind else {
+        panic!("a jumper row");
+    };
+    assert_eq!((j.max_milliohms.value, j.max_milliamps.value), (20, 1500));
+    assert_eq!(row.kind.name(), "jumper");
+    assert_eq!(
+        (row.symbol.as_str(), row.footprint.as_str()),
+        ("Device:R", "Resistor_SMD:R_0402_1005Metric")
+    );
+    assert_eq!(
+        (
+            row.temperature_celsius.range.min,
+            row.temperature_celsius.range.max
+        ),
+        (-55, 155)
+    );
+    for l in [&j.max_milliohms, &j.max_milliamps] {
+        assert_eq!(l.at.document, "VISHAY_20035");
+        assert!(
+            l.at.section
+                .contains("p. 2, D10/CRCW0402 e3: Jumper, Imax. = 1.5 A, <= 20 mOhm")
+        );
+    }
+    let edited = |edit: &dyn Fn(&mut Value)| {
+        let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
+        let r = row_of(&t, "CRCW0402_Z_0");
+        edit(&mut t["parts"][r]["kind"]["jumper"]);
+        parse_power_parts(&t.to_string())
+    };
+    edited(&|_| {}).unwrap();
+    for f in ["max_milliohms", "max_milliamps"] {
+        assert!(
+            edited(&|j| {
+                j.as_object_mut().unwrap().remove(f);
+            })
+            .is_err(),
+            "{f} missing"
+        );
+        assert!(edited(&|j| j[f]["value"] = json!(0)).is_err(), "{f} zero");
+        assert!(
+            edited(&|j| {
+                j[f].as_object_mut().unwrap().remove("at");
+            })
+            .is_err(),
+            "{f} uncited"
+        );
+    }
+    assert!(
+        edited(&|j| {
+            j["tolerance_ppm"] =
+                json!({"value": 0, "at": {"document": "VISHAY_20035", "section": "x"}})
+        })
+        .is_err()
+    );
 }
 
 /// A specification without `mcu.reserved_pins`, or with it `null`, is

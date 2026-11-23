@@ -149,8 +149,13 @@ use sha2::{Digest, Sha256};
 /// reference's output hashes to `e29d0b72…fd24`, and with `e5c2e247…0f5c`
 /// the stress fixture's to `6a30b8c3…a0d5`, the digests before, exactly
 /// (measured).
-const REFERENCE_DIGEST: &str = "81246f99e5e303b37e155322d7aa5bead8b8523e7ebfd7f1cbb0dc5917fb3a22";
-const STRESS_DIGEST: &str = "8eb15a7f8540e3eb5ce6cc6a5221189d02903fc3b0c30b7809daa2f7156848de";
+/// Moved by `AET-WO-4300j` (specification 29, solved 18), which moved the
+/// specification's sha256 and the topology's `schema_version` (neither file
+/// has a motor output): with `"schema_version":17` and each file's
+/// specification-24 sha256 put back, each still hashes to `1211c`'s digest,
+/// which the test holds. Before: `81246f99…3a22` and `8eb15a7f…48de`.
+const REFERENCE_DIGEST: &str = "17515df2b4367fba34bd54792e264568875616dc18e694f07171fd89c39a1ce7";
+const STRESS_DIGEST: &str = "2c4cb5574c7f962b9995d5eb8a1f09a841e8e8d44f9c9fcdce77e3f14300890e";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
@@ -297,7 +302,11 @@ fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
-        let back = a.replacen(&t.specification_sha256, sha_24, 1);
+        let back = a.replacen(&t.specification_sha256, sha_24, 1).replacen(
+            "\"schema_version\":18",
+            "\"schema_version\":17",
+            1,
+        );
         assert_eq!(hex(back.as_bytes()), digest_24, "{}", file.display());
     }
 }

@@ -152,7 +152,7 @@ fn a_pin_device_pull_to_a_leading_rail_is_judged() {
             .unwrap();
         s["pin"] = json!("PA1");
         s["pull"] = json!({
-            "resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 10000, "to": id},
+            "resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 10000, "to": id},
             "source": "AET-WO-1216b test: a declared pull-up"
         });
         v["pin_devices"][0]["temperature_celsius"] =
