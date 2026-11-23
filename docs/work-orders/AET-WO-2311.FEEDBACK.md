@@ -247,14 +247,26 @@ It also gains `serial_pulls`, per line: the label, TX or RX, the pin and the pul
 
 ## 7. The four-port runs, on the merged head (local, tools image `1e0ab105`, ELFs built here in `e1809b90`)
 
-FINAL_RUNS
+| Run | Specification | ELF | Exit | Verdict | Failing kinds |
+|---|---|---|---|---|---|
+| `four-port` | four-port + clock | unmodified | 0 | pass | none; 4 ports judged, 8 `serial_pull` info, log kept 274,070 bytes, none dropped |
+| `four-swap` | four-port + clock | `1_OPTIONS` 8 | 1 | fail | `serial_swap_set` (GPS, USART2) |
+| `four-rc-txinv` | four-port + clock | `2_OPTIONS` 2 | 1 | fail | `serial_txinv_wrong` (CRSF, USART3) |
+| `four-inverted-declared` | GPS declared inverted | unmodified | 1 | fail | `serial_txinv_wrong`, `serial_rxinv_wrong` |
+| `four-inverted` | GPS declared inverted | `1_OPTIONS` 3 | 0 | pass | none; GPS's pins pulled down |
+
+The whole script exits 0 in 97 s (15 runs).
 
 The existing sentinel-02 runs keep their kinds: `window-before-u5-data` reads `core_in_exception` as `main`'s CI run
 45179832134 does.
 
 ## 8. Gates and mutants
 
-GATES_LINE
+- **The CLAUDE.md gates on the merged head** (`main` `34f48d61`): `cargo fmt --all -- --check` clean;
+  `cargo clippy --workspace --all-targets -- -D warnings` clean; `cargo test --workspace` 2,925 passed, 0 failed.
+  - One `#[allow(clippy::too_many_arguments)]` on `foreign::judge` (eight inputs; five precedents in the workspace).
+  - Lesson: a relative `CARGO_TARGET_DIR` makes svd-hal's trybuild write `crates/aethelgard-svd-hal/target/`, which
+    `workspace_shape` refuses. The gates ran with an absolute path.
 - **Mutants** (`spike/2311/mutants.py`; one per guard this WO adds, each against the suites it lives in): **16 of 16
   killed**, each by a named test. The SWAP check removed; TXINV and RXINV exchanged (masks, and kinds); the first
   `UE`-clear write judged in place of the last; `UE` ignored; the ignored-write rule dropped or widened to unjudged
