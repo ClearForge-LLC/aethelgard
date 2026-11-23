@@ -1609,8 +1609,16 @@ pub enum IrValidationError {
         "diff pair `{id}` names `{net}`, a voltage domain or `GND`: a rail, a plane or ground is not a coupled conductor"
     )]
     PairOnRail { id: String, net: String },
-    #[error("`{path}` is not an identifier: {rule}")]
-    InvalidIdentifier { path: String, rule: &'static str },
+    /// `rule` is the broadest rule broken; the message then ends with the
+    /// key and the whole shape of `family`, every rule of it at once, so a
+    /// value written to that shape passes the identifier check
+    /// (`AET-WO-1608` D3).
+    #[error("`{path}` is not an identifier: {rule}; the fix: {}", identifier_fix(.path, *.family))]
+    InvalidIdentifier {
+        path: String,
+        rule: &'static str,
+        family: IdentifierKind,
+    },
     #[error("voltage_domains is empty")]
     NoVoltageDomain,
     #[error("voltage domain id `{id}` appears more than once")]
@@ -2871,6 +2879,36 @@ pub enum IdentifierKind {
     Reference,
 }
 
+impl IdentifierKind {
+    /// Every rule [`check_identifier`] holds an identifier of this kind to,
+    /// in one phrase: a value of this shape passes it whole (`AET-WO-1608`).
+    pub const fn shape(self) -> &'static str {
+        match self {
+            Self::Plain => {
+                "1 to 64 bytes of printable ASCII 0x21-0x7E, none of / { } $ [ ] \" % * , or \\, with no date shape dddd-dd-dd or time shape dd:dd:dd"
+            }
+            Self::Project => {
+                "1 to 58 bytes of a-z, 0-9 and -, a letter first, not ending with -, with no -- and no date shape dddd-dd-dd, and not a Windows device name (con, prn, aux, nul, com0 to com9, lpt0 to lpt9)"
+            }
+            Self::Reference => {
+                "1 to 64 bytes, a letter then letters, digits and _, in any case neither a name the Renode platform holds (RESERVED_REFERENCES) nor p, a port a to k, a pin 0 to 15 and obs (pa8obs)"
+            }
+        }
+    }
+}
+
+/// The end of an `InvalidIdentifier` message: the field's own key and the
+/// shape its value takes, as JSON a person can paste. A path ending in an
+/// array element (`reserved_pins[0]`) quotes the array's key.
+pub fn identifier_fix(path: &str, family: IdentifierKind) -> String {
+    let last = path.rsplit('.').next().unwrap_or(path);
+    let shape = family.shape();
+    match last.split_once('[') {
+        Some((key, _)) => format!("\"{key}\": [..., \"<{shape}>\"]"),
+        None => format!("\"{last}\": \"<{shape}>\""),
+    }
+}
+
 /// The base set, for every kind: 1 to 64 bytes of printable ASCII
 /// `0x21`-`0x7E`, so two identifiers that look alike are the same bytes.
 /// Refused beyond that, each measured: `/`, `{`, `}`, `$`, `[` and `]`, which
@@ -3096,8 +3134,11 @@ pub(crate) fn identifier(
     value: &str,
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
-    check_identifier(kind, value)
-        .map_err(|rule| IrValidationError::InvalidIdentifier { path: path(), rule })
+    check_identifier(kind, value).map_err(|rule| IrValidationError::InvalidIdentifier {
+        path: path(),
+        rule,
+        family: kind,
+    })
 }
 
 pub(crate) fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {

@@ -13,6 +13,7 @@ mod extract;
 mod fab;
 mod firmware;
 mod hwdef;
+mod init;
 mod input;
 mod kani;
 mod kicad;
@@ -73,6 +74,15 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
+    /// Write one specification from a template held in this binary to a new file. Every value a person must own (the project name, every citation) is left empty, which validate refuses by name and path until it is filled. Never overwrites.
+    Init {
+        /// The template: i2c-spi-bench (examples/sentinel-02-bench.json: a 2-layer STM32H753 board with one I2C sensor and one SPI sensor).
+        #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(init::TEMPLATES.map(|t| t.name)))]
+        template: String,
+        /// The file to write; it must not exist (a file, directory, FIFO or symlink there is refused). No directory is created.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Validate one JSON Specification read from stdin, or from --file.
     Validate {
         /// Read the specification from this file instead of stdin.
@@ -444,6 +454,7 @@ fn main() -> ExitCode {
     }
 
     let judged = match cli.command {
+        Command::Init { template, out } => return init::init(&template, &out),
         Command::Validate { file } => return validate(file.as_deref()),
         Command::Solve { file } => return solve(&file),
         Command::Emit { file, out } => return emit_design(&file, &out),
