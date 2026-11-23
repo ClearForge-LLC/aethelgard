@@ -34,6 +34,7 @@ on:
     paths:
       - "container/ardupilot*"
       - "container/ARDUPILOT-IMAGE"
+      - "container/debian-trixie.sources"
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"
@@ -67,6 +68,7 @@ on:
     paths:
       - "container/ardupilot*"
       - "container/ARDUPILOT-IMAGE"
+      - "container/debian-trixie.sources"
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"

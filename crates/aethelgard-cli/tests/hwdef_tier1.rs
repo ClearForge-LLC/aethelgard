@@ -29,7 +29,10 @@ const BOARDS: [(&str, &str); 4] = [
         "serial-dshot-9600",
         "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
     ),
-    ("four-port", "crates/aethelgard-cli/tests/fixtures/four-port.json"),
+    (
+        "four-port",
+        "crates/aethelgard-cli/tests/fixtures/four-port.json",
+    ),
 ];
 
 fn scratch(name: &str) -> PathBuf {
