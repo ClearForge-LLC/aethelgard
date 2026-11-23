@@ -40,7 +40,7 @@ It replays byte-identically under main's CLI and under the branch's full patch, 
 - main's result;
 - what each candidate rule would say of the same records.
 
-Nothing panics, so every fixture of every test is judged. `cargo test --workspace --no-fail-fast`, with the target inside the copy (a target outside it makes `fab_tier1`'s `BaseOutsideRoot` fail on main: an artefact of the sweep, not of main). `sh/sweep-c.py` reads the log. Its output is `out/sweep-c.txt`.
+Nothing panics, so every fixture of every test is judged. The first run used v2 of the patch. The CLI tests spawn the CLI under `env_clear()`, so v2 missed the spawned CLI's own calls. v3 (the committed diff) logs those through a marker under `$HOME` and adds two candidates, and reran chaos, evolve and the four CLI binaries that spawn `campaign`, `replay`, `attribute` or `propose`: `out/sweep-c-v3.txt`. The rerun adds one full-reading fixture, `cli/tests/campaign_tier1.rs:2081`, a resealed run with `good()`'s shape. It measures `unlisted` (D3) at 0 fixtures and `motor_read` (D4) at 1 (`serial.rs:1750`). Its inputs: 860 read and booted, 323 read and not booted, 25 unread. `cargo test --workspace --no-fail-fast`, with the target inside the copy (a target outside it makes `fab_tier1`'s `BaseOutsideRoot` fail on main: an artefact of the sweep, not of main). `sh/sweep-c.py` reads the log. Its output is `out/sweep-c.txt`.
 
 The candidates:
 - **motor**: rule (2) as the work order says it;
@@ -87,11 +87,11 @@ The 20 tests whose accepted fixtures the full reading refuses:
 |---|---|---|---|
 | P1 | Sweep A vacuous, identical | four `UnknownVersion`, identical | held |
 | P2 | Sweep B 60–80 archives, all identical | 64, all identical | held |
-| P3 | Read boots read every 11, 12, 21; unread boots none | read half: held on 64 runs. **Unread half: no unread archive in sweep B**; it rests on `main.rs` `boot_report` (every value is `observed.map(..)`) and on the tier-1 fixtures | half measured |
+| P3 | Read boots read every 11, 12, 21; unread boots none | read half: held on 64 runs. Unread half: no unread archive in sweep B; measured on the 25 unread tier-1 inputs of sweep C's rerun (the status reading refuses only `unread()` among them) | held, unread half on fixtures only |
 | P4 | Unread witnesses only with an unread boot, or past the budget | held: none in sweep B; the flooded run is the one | held |
 | P5 | One kind 26 per kind 24 in every read run | held on the 15 booted motor runs; **no read-unbooted run holds a motor output**, so the unbooted half is unmeasured | half measured |
 | P6 | Largest trace under 64 KiB | 9,056 B | held |
-| P7 | Sweep C: every main outcome unchanged | **missed** (the §7 stop, below) | missed |
+| P7 | Sweep C: every main outcome unchanged | **missed**: the §7 stop (FEEDBACK §2) | missed |
 | P8 | The flooded read boot replays after | measured, replays identically | held |
 | P9 | The writer's 256 MiB test under 10 s | not measured: no test was written before the stop | open |
 | P10 | One mutant each, killed by name | not run: the stop came first | open |

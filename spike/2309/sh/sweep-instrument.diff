@@ -57,10 +57,10 @@ index bd61f6e..917f029 100644
  pub use event::{Event, Header, Manifest};
 diff --git a/crates/aethelgard-chaos/src/sweep2309.rs b/crates/aethelgard-chaos/src/sweep2309.rs
 new file mode 100644
-index 0000000..eb1d84e
+index 0000000..da07e51
 --- /dev/null
 +++ b/crates/aethelgard-chaos/src/sweep2309.rs
-@@ -0,0 +1,96 @@
+@@ -0,0 +1,129 @@
 +//! AET-WO-2309 sweep C instrumentation, applied to a scratch copy only (never committed into
 +//! `crates/`): with `AET_2309_SWEEP` set to a file, each `replay_dir` and `check_run` call appends
 +//! one line, `<what> <sha256 of its input> <outcome>`.
@@ -70,8 +70,20 @@ index 0000000..eb1d84e
 +use sha2::{Digest, Sha256};
 +
 +pub fn log(what: &str, key: &[u8], outcome: &str) {
-+    let Some(path) = std::env::var_os("AET_2309_SWEEP") else {
-+        return;
++    // A CLI the tests spawn runs under `env_clear` with `HOME` kept: it logs to the marker's
++    // sibling while `~/.cache/aet-2309/sweep-on` exists.
++    let path = match std::env::var_os("AET_2309_SWEEP") {
++        Some(p) => std::path::PathBuf::from(p),
++        None => {
++            let Some(home) = std::env::var_os("HOME") else {
++                return;
++            };
++            let dir = std::path::Path::new(&home).join(".cache/aet-2309");
++            if !dir.join("sweep-on").exists() {
++                return;
++            }
++            dir.join("sweep-subprocess.log")
++        }
 +    };
 +    let hex: String = Sha256::digest(key).iter().map(|b| format!("{b:02x}")).collect();
 +    let line = format!("{what} {hex} {}\n", outcome.replace('\n', " "));
@@ -154,6 +166,27 @@ index 0000000..eb1d84e
 +        })
 +        .collect();
 +    let motor = !booted || solved.is_subset(&witnessed);
++    let motor_read = !read || solved.is_subset(&witnessed);
++    // D3: an unread boot holds nothing Renode reads (kinds 26, 29, 30, 34, 36, 37).
++    let unlisted = read
++        || !records.iter().any(|r| {
++            matches!(
++                r,
++                Record::MotorWitness { .. }
++                    | Record::SerialWitness { .. }
++                    | Record::JudgeStop { .. }
++                    | Record::PinGpioWitness { .. }
++                    | Record::PinAdcWitness { .. }
++                    | Record::MotorLevelWitness { .. }
++            )
++        });
 +    let w = |b: bool| if b { "ok" } else { "REFUSES" };
-+    format!("motor={} full={} status={}", w(motor), w(full), w(status))
++    format!(
++        "motor={} full={} status={} unlisted={} motor_read={} read={read} booted={booted}",
++        w(motor),
++        w(full),
++        w(status),
++        w(unlisted),
++        w(motor_read)
++    )
 +}

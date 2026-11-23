@@ -1,31 +1,43 @@
 #!/usr/bin/env python3
-"""AET-WO-2309 §1.1 sweep C: read the v2 instrumentation log (sh/sweep-instrument.diff applied to main,
-`cargo test --workspace --no-fail-fast`). Each `check_run` line is
-`check_run <input sha256> <test thread> motor=.. full=.. status=.. <main's Ok/Err>`.
-For each candidate rule, lists the distinct inputs it refuses, split into those main accepted
-("accepted before, refused after") and those main refused already, by test.
+"""AET-WO-2309 §1.1 sweep C: read the instrumentation logs (sh/sweep-instrument.diff applied to main).
+Each `check_run` line is `check_run <input sha256> <test thread> <name>=<value>... <main's Ok/Err>`,
+where the names are the candidate rules (`ok` or `REFUSES`) and the input's `read` and `booted`.
+A CLI the tests spawn logs with thread `main`. For each candidate rule, lists the distinct inputs it
+refuses, split into those main accepted ("accepted before, refused after") and those main already
+refused, by test; then the inputs by read and booted.
 
-Usage: sweep-c.py LOG
+Usage: sweep-c.py LOG...
 """
 import collections
+import re
 import sys
 
 rows = set()
-for line in open(sys.argv[1]):
-    parts = line.rstrip("\n").split(" ", 6)
-    if parts[0] != "check_run":
-        continue
-    _, key, thread, motor, full, status, result = parts
-    rows.add((key, thread, motor, full, status, result))
+for log in sys.argv[1:]:
+    for line in open(log):
+        tok = line.rstrip("\n").split(" ")
+        if tok[0] != "check_run":
+            continue
+        key, thread, i, fields = tok[1], tok[2], 3, {}
+        while i < len(tok) and re.match(r"^[a-z_]+=", tok[i]):
+            k, v = tok[i].split("=", 1)
+            fields[k] = v
+            i += 1
+        rows.add((key, thread, tuple(sorted(fields.items())), " ".join(tok[i:])))
 inputs = {r[0] for r in rows}
-print(f"check_run calls logged: {len(rows)} distinct (input, test) pairs; {len(inputs)} distinct inputs")
-for i, name in [(2, "motor"), (3, "full"), (4, "status")]:
-    refused = [r for r in rows if r[i].endswith("REFUSES")]
-    acc = collections.Counter(r[1] for r in refused if r[5].startswith("Ok"))
+print(f"check_run: {len(rows)} distinct (input, test) pairs; {len(inputs)} distinct inputs; "
+      f"{sum(1 for r in rows if r[1] == 'main')} pairs from a spawned CLI")
+by_input = {r[0]: dict(r[2]) for r in rows}
+rb = collections.Counter((f.get("read"), f.get("booted")) for f in by_input.values())
+print("distinct inputs by (read, booted):", dict(rb))
+names = sorted({k for r in rows for k, _ in r[2]} - {"read", "booted"})
+for name in names:
+    refused = [r for r in rows if dict(r[2]).get(name) == "REFUSES"]
+    acc = collections.Counter(r[1] for r in refused if r[3].startswith("Ok"))
     rej = collections.defaultdict(collections.Counter)
     for r in refused:
-        if not r[5].startswith("Ok"):
-            rej[r[1]][r[5]] += 1
+        if not r[3].startswith("Ok"):
+            rej[r[1]][r[3]] += 1
     print(f"\n## {name}: refuses {len({r[0] for r in refused})} distinct inputs")
     print(f"accepted before, refused after: {sum(acc.values())} (input, test) pairs in {len(acc)} tests")
     for t, n in sorted(acc.items()):
