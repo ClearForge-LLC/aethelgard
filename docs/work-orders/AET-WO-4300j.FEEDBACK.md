@@ -1,6 +1,6 @@
 # AET-WO-4300j — FEEDBACK: the motor pull-down weakened to a derived 442 kΩ, switchable by a drawn link (specification 29)
 
-**Branch:** `wo/aet-4300j-motor-pull-fitment`, from `main` `cd79024c`. Main is merged in three times: `3b59fa8d` (docs), `75da8053` (4408, 1916), and `4b466f03` (2312 and docs; chaos and evolve tests pass, and the package is unchanged by it).
+**Branch:** `wo/aet-4300j-motor-pull-fitment`, from `main` `cd79024c`. Main is merged in four times: `3b59fa8d` (docs), `75da8053` (4408, 1916), `4b466f03` (2312 and docs), and `34f48d61` (1323's router, 3308's ORDERED.sha256). None conflicted with this work, and none moved the package.
 
 **Builder:** Claude (Opus 5.5) as project manager. The workers:
 - Phase A, the IR and the specifications: one Opus worker, single-threaded;
@@ -158,7 +158,7 @@ The report and its probes are in `~/.cache/aet-4300j/adv/`.
 | solved topology | 17 | **18** (ruled D9) |
 | power-parts schema | 9 | **10** |
 
-**The null sweep** (`out/null-sweep.tsv`) passes 34/34:
+**The null sweep** (`out/null-sweep.tsv`) was re-run at the final merge against a fresh baseline of main `34f48d61` (`out/baseline-34f48d61.tsv`). 1323 had moved emitted bytes on boards with no motor, so the old baseline would have charged those moves to this work order. It passes **35/35**, `four-port` included, and the first run, against `cd79024c`, passed 34/34. In both runs:
 - exit codes and kinds are unchanged;
 - no `/assignments/*/pin` moved;
 - solves moved only in `schema_version`, `specification_sha256` and the `pull` objects;
@@ -221,7 +221,9 @@ The report and its probes are in `~/.cache/aet-4300j/adv/`.
 
 ## 7. Gates, CI, package
 
-**Gates, on the merged head `2fa78bba`, from a clean target** (R11), plus the fix below:
+**Gates at the final merge `08cc46fa`:** fmt and clippy are clean, and `cargo test --workspace --no-fail-fast` gives **2,936 passed, 0 failed**. That includes `bench_board_tier1` on the committed package, and 3308's `ORDERED.sha256` tests.
+
+**Earlier, on `2fa78bba`, from a clean target** (R11), plus the fix below:
 - `cargo fmt --all -- --check`: clean.
 - `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `cargo test --workspace --no-fail-fast`: 2,913 passed, 2 failed.

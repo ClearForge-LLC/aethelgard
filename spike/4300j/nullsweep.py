@@ -25,7 +25,9 @@ def load(p):
     return {r["name"]: r for r in csv.DictReader(open(p), delimiter="\t")}
 
 
-b = load(f"{here}/out/baseline.tsv")
+# BASELINE names another baseline table, e.g. out/baseline-34f48d61.tsv
+# after main moved under the branch (its scratch is the first argument).
+b = load(os.environ.get("BASELINE", f"{here}/out/baseline.tsv"))
 a = load(f"{here}/out/after/baseline.tsv")
 motor = {r["board"] for r in csv.DictReader(open(f"{here}/out/motors.tsv"), delimiter="\t")}
 keys = ["validate_rc", "validate_kind", "solve_rc", "solve_kind", "emit_rc", "emit_kind", "emit_files"]

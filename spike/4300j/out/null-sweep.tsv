@@ -7,6 +7,7 @@ d3-24-i2c-12-spi	yes	2	-	-	same	no	yes	ok
 driver-judges-nothing	yes	26	-	-	moved	yes	yes	ok
 four-layer	yes	2	-	-	same	no	yes	ok
 four-layer-power	yes	2	-	-	same	no	yes	ok
+four-port	yes	2	-	-	same	no	yes	ok
 hse-crystal-16	yes	26	-	-	moved	yes	yes	ok
 hse-external-8	yes	26	-	-	same	yes	yes	ok
 imu-baro-1v8	yes	2	-	-	same	no	yes	ok
