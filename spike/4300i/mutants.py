@@ -37,7 +37,7 @@ M = [
  ("M36", LIB, "plain(&r.part, || format!(\"{at}.resistor.part\"))?;", "", "offboard", "a_blank_source_or_reference"),
  ("M37", LIB, "plain(&r.to, || format!(\"{at}.resistor.to\"))?;", "", "offboard", "a_blank_source_or_reference"),
  ("M33", SI, "(Some(_), _) => 0,", "(Some(_), _) => PUPDR_PULL_DOWN,", "offboard", "a_motor_net_has_no_internal_pull"),
- # Adversarial-pass fixes (F1, F2, F3, F8), on the committed fix tree. M13 and M26-M32 are retired: ft_first is removed.
+ # Adversarial-pass fixes (F1, F2, F8), on the committed fix tree. M13 and M26-M32 are retired: ft_first is removed. A13 (F3) is retired: F3 reverted by the PM.
  ("A1", SO, "let order: Vec<(&'t str, u8)> = model.offered(inst, sig).collect();", "let order: Vec<(&'t str, u8)> = model.pins_for(inst, sig.name).to_vec();", "offboard", "a_connector_facing_bus"),
  ("A2", SO, "        self.model\n            .offered(inst, sig)\n            .map(|(pin, _)| pin)", "        self.model\n            .pins_for(inst, sig.name)\n            .iter()\n            .map(|(pin, _)| *pin)", "offboard", "a_connector_facing_bus"),
  ("A3", SO, "            self.model\n                .offered(p, sig)\n                .filter(|(pin, _)|", "            self.model\n                .pins_for(p, sig.name)\n                .iter()\n                .copied()\n                .filter(|(pin, _)|", "offboard", "a_connector_facing_port"),
@@ -50,7 +50,6 @@ M = [
  ("A10", OB, "self.structure(pin).is_some_and(is_ft)", "self.structure(pin).is_none_or(is_ft)", "offboard", "a_pin_with_no_held_structure"),
  ("A11", SO, "                    && !reset_pull(pin)\n", "", "offboard", "the_solver_never_offers_a_motor_a_reset_pull"),
  ("A12", OB, "if let Some(pin) = m.pin.as_deref().filter(|p| {", "if let Some(pin) = m.pin.as_deref().filter(|p| false && {", "offboard", "a_motor_pinned_on_a_reset_pull"),
- ("A13", OB, "        if m.pwm.as_ref().map(|p| p.idle)\n", "        if false && m.pwm.as_ref().map(|p| p.idle)\n", "offboard", "a_motor_idling_high"),
  ("A14", OB, ".filter(|(_, net, _)| facing.contains(net))", ".filter(|(_, net, p)| facing.contains(net) && p.is_some())", "offboard", "an_mcu_with_no_row"),
 ]
 env = dict(os.environ, CARGO_TARGET_DIR=os.path.expanduser("~/.cache/aet-4300i/target"),

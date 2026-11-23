@@ -283,7 +283,6 @@ pub const CHANGES: &[VersionChange] = &[
         &[
             "ConnectorPinNotFt",
             "McuPinStructureUnheld",
-            "MotorIdleHighPulledDown",
             "MotorPinResetPull",
             "PowerPartUnknown",
         ],

@@ -139,8 +139,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `mcu.reserved_pins`, each pin the board keeps with its reason; a hand
 /// pin at a connector is FT (`ConnectorPinNotFt`), and the solver offers a
 /// connector-facing net FT pins only; a motor output is never on a pin with
-/// a reset pull (`MotorPinResetPull`) and never idles high
-/// (`MotorIdleHighPulledDown`).
+/// a reset pull (`MotorPinResetPull`).
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
 pub const SPECIFICATION_SCHEMA_VERSION: u32 = 28;

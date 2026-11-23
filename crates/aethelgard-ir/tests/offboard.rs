@@ -4,8 +4,8 @@
 //! F1): each branch never takes a TT pin there, and is refused naming the
 //! pins it withheld when only TT pins are free, each shown against the same
 //! specification with the net taken off its connector (the control), which
-//! takes the TT pin; no motor output on a reset pull (F2) or idling high
-//! (F3); the motor pull's
+//! takes the TT pin; no motor output on a reset pull (F2), and an
+//! idle-high one pulled down like any other (F3 reverted); the motor pull's
 //! parse and its row; `silicon::implied_pupd` on a motor net; and the
 //! power-parts row's `io.weak_pull_down_ohms`.
 //!
@@ -890,24 +890,16 @@ fn the_solver_never_offers_a_motor_a_reset_pull() {
     assert_eq!(pin_of(&solved(&d1(), &t).unwrap(), "SERVO1"), "PC6");
 }
 
-/// A PWM output whose idle is high is pulled down against it (`AET-WO-4300i`
-/// F3, D0, ruled I); low and a pulse idle validate.
+/// An idle-high output validates and solves with its pull to `GND` and no
+/// internal pull (F3 reverted by the PM, 2026-11-23): D0 holds every motor
+/// line low from power-up, whatever its idle.
 #[test]
-fn a_motor_idling_high_is_refused_by_name() {
+fn a_motor_idling_high_validates_pulled_down() {
     let mut v = d1();
     v["motor_outputs"][2]["pwm"]["idle"] = json!({"level": "high"});
-    let e = refused(&v);
-    assert_eq!(
-        (e.kind(), e.id(), e.path()),
-        (
-            "MotorIdleHighPulledDown",
-            Some("SERVO1"),
-            Some("motor_outputs[2].pwm.idle")
-        ),
-        "{e}"
-    );
-    v["motor_outputs"][2]["pwm"]["idle"] = json!({"level": "low"});
-    spec(&v).validate().unwrap();
+    assert_eq!(v["motor_outputs"][2]["pull"]["resistor"]["to"], "GND");
+    let s = solved(&v, &d1_table(&[])).unwrap();
+    assert_eq!(aethelgard_ir::silicon::implied_pupd(&s, "SERVO1"), 0);
 }
 
 // ------------------------------------------------------ the power-parts row

@@ -13,14 +13,13 @@
 //!   once (`ReservedPinTwice`) and none the engine already reserves
 //!   (`ReservedPinEngineReserved`, [`crate::reserved_pins`]); whether each is
 //!   a pin of the table is `solve`'s (`UnknownPin`), which holds the table.
-//! - **Off the reset pulls** (adversarial pass F2, F3): a motor output's
-//!   hand pin holds no internal pull from reset (`MotorPinResetPull`,
+//! - **Off the reset pulls** (adversarial pass F2): a motor output's hand
+//!   pin holds no internal pull from reset (`MotorPinResetPull`,
 //!   [`crate::pin_devices::MCU_RESET_PULL_UPS`] and `MCU_RESET_PULL_DOWNS`,
-//!   RM0433 Rev 9 p. 542), and the solver never offers it one; a PWM output
-//!   whose idle is `{"level": "high"}` is refused (`MotorIdleHighPulledDown`):
-//!   its pull goes to `GND` only (ruled I), so the line would sit low against
-//!   its idle until `start_outputs`, and an idle-high output waits for a
-//!   ruling.
+//!   RM0433 Rev 9 p. 542), and the solver never offers it one. An idle-high
+//!   output validates (F3 reverted by the PM, 2026-11-23): D0 holds every
+//!   motor line low from power-up, whatever its idle, and the timer drives
+//!   the idle from `start_outputs`.
 //! - **FT at connectors** (D1 (a), D5): a net some `connectors[].pins[].net`
 //!   names is connector-facing. A hand pin on one must have a held `FT`
 //!   structure (`ConnectorPinNotFt`), and one with no held structure is
@@ -51,7 +50,6 @@ pub enum OffboardKind {
     ConnectorPinNotFt,
     McuPinStructureUnheld,
     MotorPinResetPull,
-    MotorIdleHighPulledDown,
 }
 
 impl OffboardKind {
@@ -65,7 +63,6 @@ impl OffboardKind {
             Self::ConnectorPinNotFt => "ConnectorPinNotFt",
             Self::McuPinStructureUnheld => "McuPinStructureUnheld",
             Self::MotorPinResetPull => "MotorPinResetPull",
-            Self::MotorIdleHighPulledDown => "MotorIdleHighPulledDown",
         }
     }
 }
@@ -271,7 +268,7 @@ fn claimants(spec: &Specification) -> Vec<Claimant<'_>> {
 }
 
 /// Step 26, in this order: the reservations, the MCU row where needed, each
-/// motor output's pull, hand pin and idle, then each hand pin on a
+/// motor output's pull and hand pin, then each hand pin on a
 /// connector-facing net.
 pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     use OffboardKind as K;
@@ -363,19 +360,6 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 format!("motor_outputs[{i}].pin"),
                 format!(
                     "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull (`AET-WO-4300i` D0), and a pull-up fights the declared pull-down from power-up until the timer takes the pin; pin it elsewhere",
-                    m.label
-                ),
-            ));
-        }
-        if m.pwm.as_ref().map(|p| p.idle)
-            == Some(crate::motor::Idle::Level(crate::motor::Level::High))
-        {
-            return Err(refuse(
-                K::MotorIdleHighPulledDown,
-                &m.label,
-                format!("motor_outputs[{i}].pwm.idle"),
-                format!(
-                    "`{}` idles high, and its line is pulled down: the motor pull goes to `GND` only (`AET-WO-4300i` D0, ruled I), so the line sits low against its idle until `start_outputs`; an idle-high output waits for a ruling",
                     m.label
                 ),
             ));

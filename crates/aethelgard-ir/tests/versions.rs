@@ -95,7 +95,7 @@ fn a_version_20_file_lists_21_to_28_with_their_work_orders() {
     assert!(m.contains("mcu.reserved_pins"), "{m}");
     assert!(
         m.contains(
-            "refuses by [ConnectorPinNotFt, McuPinStructureUnheld, MotorIdleHighPulledDown, MotorPinResetPull, PowerPartUnknown]"
+            "refuses by [ConnectorPinNotFt, McuPinStructureUnheld, MotorPinResetPull, PowerPartUnknown]"
         ),
         "{m}"
     );

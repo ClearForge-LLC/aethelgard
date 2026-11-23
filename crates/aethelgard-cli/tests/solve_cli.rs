@@ -553,7 +553,8 @@ fn two_buses_on_one_hand_set_instance_are_refused() {
 fn an_unknown_part_is_exit_2() {
     let dir = Dir::new("unknown-part");
     let file = edited(&dir, |d| d["mcu"]["part"] = "STM32F103C8Tx".into());
-    let report = refused(&file, "UnknownPart");
+    // Step 26 (`AET-WO-4300i` F8) now refuses a rowless MCU part at validate, before the pin table.
+    let report = refused(&file, "PowerPartUnknown");
     assert_eq!(report["error"]["id"], "STM32F103C8Tx");
 }
 
