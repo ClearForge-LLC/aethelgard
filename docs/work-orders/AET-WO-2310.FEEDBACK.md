@@ -20,8 +20,8 @@ Each statement is labelled where it matters:
 
 - **Trace 19.** Each header tool is `[name, version, [] | [sha256]]`, with ngspice's library and `rust-toolchain`'s sysroot. `TRACE_CHANGES` is one row per version, and an older trace is refused `UnknownVersion` with the rows since it (the 1215 pattern). Overrides 3 and 6 plant `from_boot_word_ns`, signed, and the droop states no BOR level. Kinds 16 and 31 carry the resolved instant, and kind 16 the specification's level. Kind 32, the reference, is in every planted run.
 - **Scenario 6.** A droop or a battery sag is read at version 6 only (`PlantedEventNeedsVersion6`, naming what changed). Versions 1–5 read as before. The eight committed planted scenarios moved by their measured offsets, by hand: no generator writes a scenario (`INV-07`). 33 of 41 files are byte-identical.
-- **No committed verdict moves (measured).** The branch's sweep B covered 64 archives over every committed scenario group and the seeded and address mutants. Each campaign line keeps every verdict field. `window` is removed from all 64, and nothing else moved. All eight planted instants, and every reset, are where they were on `main`.
-- **(1)–(7) closed,** each by a test that fails without it: 22 mutants, one per guard, all killed by the guard's own test (§4).
+- **No committed verdict moves (measured, twice: at `cd3f5a26` and at `5a979c42`, after main and 1607 were merged; `out/compare-branch.txt`, `out/compare-final.txt`).** The branch's sweep B covered 64 archives over every committed scenario group and the seeded and address mutants. Each campaign line keeps every verdict field. `window` is removed from all 64, and nothing else moved. All eight planted instants, and every reset, are where they were on `main`.
+- **(1)–(7) closed,** each by a test that fails without it: 24 mutants, one per guard, all killed by the guard's own test (§4).
 
 ## 1. As built
 
@@ -94,7 +94,9 @@ The committed scenarios use the stop's measured offsets (`spike/2310/results.md`
   - bridge: the six-field identity.
 - **Mutants** (`spike/2310/sh/mutants.py`, `out/mutants.txt`): 22 at first, one per guard; four repointed after the reduction pass (§7). Each is killed by its guard's own test.
   - **A harness flaw, found and fixed.** The CLI unit suite then carried six `verify.rs` failures, held until 1607 merged (§8), so a CLI-unit mutant read as killed whatever happened. Those mutants now run with `--skip verify::` (`out/mutants-2.txt`).
-  - **The rerun showed the first pass overstated one:** `library-canonical` survived. The test's non-canonical case was a directory, which the regular-file clause refuses anyway. It now has a `..` path to the same regular file (a `.` path would not do: `Path` equality ignores `.`). The test passes unmutated and kills the mutant. **So: 23 mutants, 23 killed by their own tests, one of them only after that test was fixed.**
+  - **The rerun showed the first pass overstated one:** `library-canonical` survived. The test's non-canonical case was a directory, which the regular-file clause refuses anyway. It now has a `..` path to the same regular file (a `.` path would not do: `Path` equality ignores `.`). The test passes unmutated and kills the mutant.
+  - **The final pass** (`out/mutants-3.txt`, a fresh copy of `5a979c42`) adds `mips-speed`, §5's new guard, and reruns the three CLI-unit mutants whose lines moved.
+  - **So: 24 mutants, 24 killed by their own tests, one of them only after that test was fixed.**
 
 ## 5. Adversarial pass (§5, full)
 
@@ -152,4 +154,16 @@ All as stated in §1. Q-F's grants as used:
 
 ## 9. Gates, merge and CI
 
-(To be completed at READY: main merged; `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace`; CI; the bench package from its dispatch; weights rows.)
+- **Main merged:** `c7a62975` (1607), on the workspace that holds every change above.
+- **Host gates** (a capped user scope, nice 10):
+  - `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace --no-fail-fast`: 2,821 passed, 3 failed.
+    - The two `boot_tier1` failures are §5's MIPS finding, fixed in `5a979c42`, after which `boot_tier1` is 61/0.
+    - The third is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`. The package's manifest pins `scenarios/sentinel-01-bench/droop-bor3.json`'s sha256 (`5e35634c…` → `c310ade1…`), and `fab/` moves only by its dispatch. It is green when the dispatch's package is committed.
+- **Tier 2 in the image** (`out/tier2.txt`), every test this branch changed or whose fixture it moved:
+  - campaign_tier2 5/5, twin_tier2 8/8, board_tier2 2/2, four_layer_fab_tier2 2/2;
+  - the bridge's own suites: 25, 7, 2 and 5, all passing.
+- **Weights (P3):**
+  - `twin_tier2`'s renamed A8 row at 18 (14.24 s in the image × 1.2);
+  - `campaign_tier2`'s new 28 s test is inside its `ci/colocate.tsv` block, which counts as weighed (§8).
+- **CI and the package:** FINAL_CI
