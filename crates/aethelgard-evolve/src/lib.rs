@@ -651,12 +651,7 @@ struct Run<'a> {
 /// model logs them (each byte in upper-case hexadecimal, joined by spaces),
 /// first byte most significant, with their count; `None` for any other line.
 fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
-    let rest = line
-        .strip_prefix("[NOISY] ")?
-        .strip_prefix(device)?
-        .strip_prefix(": ")?
-        .strip_prefix(what)?
-        .strip_prefix(' ')?;
+    let rest = noisy(line, device)?.strip_prefix(what)?.strip_prefix(' ')?;
     let bytes: Vec<u8> = rest
         .split(' ')
         .map(|b| {
@@ -666,6 +661,13 @@ fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
         })
         .collect::<Option<_>>()?;
     packed(&bytes)
+}
+
+/// What a `[NOISY]` line of `device`'s model says, after `{device}: `.
+fn noisy<'l>(line: &'l str, device: &str) -> Option<&'l str> {
+    line.strip_prefix("[NOISY] ")?
+        .strip_prefix(device)?
+        .strip_prefix(": ")
 }
 
 /// Bytes as one value, first byte most significant, with their count;
@@ -691,11 +693,7 @@ fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
             .then(|| u8::from_str_radix(d, 16).ok())
             .flatten()
     };
-    let rest = line
-        .strip_prefix("[NOISY] ")?
-        .strip_prefix(device)?
-        .strip_prefix(": ")?;
-    let (verb, rest) = rest.split_once(' ')?;
+    let (verb, rest) = noisy(line, device)?.split_once(' ')?;
     let (pointer, rest) = rest.split_once(' ')?;
     let (arrow, rest) = rest.split_once(' ')?;
     let pointer = byte(pointer).filter(|&p| p <= 0x7F)?;
