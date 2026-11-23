@@ -1399,6 +1399,11 @@ pub(crate) fn design(
         .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
         .chain(spec.declared_test_points().iter().map(|t| &t.reference))
         .chain(arms::references(spec.declared_pin_devices()))
+        .chain(
+            spec.motor_outputs
+                .iter()
+                .map(|m| &m.pull.resistor.reference),
+        )
     {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
@@ -1637,7 +1642,35 @@ pub(crate) fn design(
     )?;
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
+    motor_pulls(&mut b)?;
     Ok((b.parts, b.rails))
+}
+
+/// Each motor output's declared pull-down (`AET-WO-4300i`, ruled D0
+/// `external`), in document order: its resistor from the output's net to
+/// its `to` (`GND`, held there by `validate`'s `MotorPullNotDown`), drawn as
+/// a pin device's signal pull is, valued `<ohms> <part>` with its
+/// power-parts row's symbol and footprint. It is placed as that pull is,
+/// unanchored: beside the one IC on its net, the MCU, at the motor pin's
+/// pad. Drawn after every other part, so no other part's reference or
+/// schematic position moves.
+fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
+    let spec = b.spec;
+    for m in &spec.motor_outputs {
+        let r = &m.pull.resistor;
+        let to = b.declared(&r.to);
+        power::resistor(
+            b,
+            &aethelgard_ir::power::Resistor {
+                reference: r.reference.clone(),
+                part: r.part.clone(),
+                ohms: r.ohms,
+            },
+            Conn::Net(m.label.clone()),
+            to,
+        )?;
+    }
+    Ok(())
 }
 
 /// Whether pin `number` of symbol `lib_id` is a `power_in` pin.
