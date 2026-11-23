@@ -515,7 +515,7 @@ The record is `docs/work-orders/AET-WO-1303b.FEEDBACK.md` (PR #222).
                        └──────────────► back to the specification
 ```
 
-Nine workspace members, and `bridge/` outside the workspace for its `unsafe` FFI (`RUL-17`); corrected 2026-11-12 (review A8.4) and 2026-11-15 (review 2, D4). The table lists all nine; `AET-WO-4220`'s build adds `models/renode/`, a data-only crate (`RUL-12`):
+Eleven workspace members: the ten crates in the table, and `models/renode/`, a data-only crate added by `AET-WO-4220` (`RUL-12`). `bridge/` stays outside the workspace for its `unsafe` FFI (`RUL-17`). Corrected 2026-11-12 (review A8.4), 2026-11-15 (review 2, D4) and 2026-11-23 (review 3, A14: the text said nine while `Cargo.toml` had eleven):
 
 | Part | Owns | Never touches |
 |---|---|---|
