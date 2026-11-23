@@ -97,9 +97,13 @@ See `spike/1917/measurement.md`. Against the predictions:
 - It scans every crate's `tests/*.rs` and the bridge's for a `feature = "with-tools"` cfg outside `//` comments, spaces squeezed.
 - Both directions fail by name, each planted.
 
-### 2.7 Edits beside the named fence
+### 2.7 Edits beside the named fence (flagged)
 
-There are none beyond the D1 widening: the fixture pair and the two `BOARDS` rows.
+- **The D1 widening:** the fixture pair and the two `BOARDS` rows.
+- **The `pinout` job's one step in `ardupilot-image.yml`.** The fence names "`paths:` and the generated matrix only". D5 needs the judge to read the workflow, so the step passes `.github/workflows/ardupilot-image.yml` as a fifth argument, with a three-line comment.
+  - The alternative was to default the path inside the script and leave the step alone. I chose the explicit argument: the step then shows which file the judge reads.
+  - If you would rather not have it, it reverts with a one-line default.
+- **`ci/fixtures/p3-45198295391-shard-5.log`,** a new fixture beside `ci/test-shard.sh`. The acceptance's "`45198295391`'s shard-5 log times all 11 tests" needs the real log, and `p3-d09a5187-shard-4.log` is the precedent.
 
 ## 3. Adversarial pass, targeted (§5)
 
@@ -110,10 +114,12 @@ There are none beyond the D1 widening: the fixture pair and the two `BOARDS` row
 | A3 | A tally that counts a tool line as a test | Held (reasoned):<br>- `tally()` counts only `test result:` lines.<br>- A tool's fake `test result:` line with no `running` before it is refused by `times()` ("a result with no `running` line").<br>- One that lands inside an open binary is refused as "timed n of m".<br>- A tool's lone `ok` with a name pending could close it early: the time is early, never a pass (`n` and the tally are unchanged). This residual is named in `measurement.md`. |
 | A4 | A path the measurement missed: a script a job sources, a fixture a container mounts | The readers now derive these. Building the test found two faults in my own reader, both fixed before commit:<br>- `-v "$PWD/container:…"` has no `/` after the prefix, so it was missed;<br>- `"$boards/$name"` leaves a bare `boards/`, which pulled in all of `boards/**`.<br>Each now has a planted case or a real-tree assertion, and its mutant is killed. |
 | A5 | A path the derivation cannot see | Residual, named in the test's header: a path a script builds from a variable or a glob (`check-pins.sh`'s `*.sources`). Every such case today is under `container/`, which is listed whole. |
-| A6 | `D5` against what `pinout` really receives | `download-artifact` with `merge-multiple` puts `NAME/` directories in one place, and a top-level file would be refused as an extra board. The `mutant-*` pattern is not downloaded. |
+| A6 | Not run locally: the judge's main mode past the set check | No test runs the two judging loops, which need `aethelgard`, `jq` and the ArduPilot ELFs. A mutant that deletes either loop survives every local suite.<br>- CI's `pinout` job is the proof. Its log must show nine `NAME: exit N` lines: four hand boards at exit 1 and five generated at exit 0, `sentinel-01-full` among them.<br>- That run is also the first with `jq` of the `OWN` line `"$defaults${OWN[$name]:+$'\n'${OWN[$name]}}"`. A stubbed run on Furnace's bash proved it gives byte-identical expectations.<br>- I read that log before READY (the bus note). |
+| A7 | The awk the checks run under | CI runs `times()` and the Rust tests (which run the judge's modes) in the tools image, whose awk is **mawk** 1.3.4; Furnace's default is gawk 5.3.2.<br>- In the image: `times` on the new fixture gives 269 rows (11 for `attribute_seeded.rs`), and the `hand`/`generated` modes read 4 and 5 boards.<br>- On the host under mawk through a PATH shim: `test-route.sh` 0 FAIL, `test-shard.sh` 0 FAIL (it prints `== awk: mawk 1.3.4`), `route.sh check` unchanged. |
+| A8 | `D5` against what `pinout` really receives | `download-artifact` with `merge-multiple` puts `NAME/` directories in one place, and a top-level file would be refused as an extra board. The `mutant-*` pattern is not downloaded. |
 
 **Mutants: one per guard, each killed by its own suite.**
-- 20 of mine (D2 ×9, D4 ×5, D5 ×6), plus the dead-glob check and the `OWN` membership check after the reduction (22 in all).
+- 21 of mine, re-run on the head after rustfmt and the reduction (D2 ×10 with the dead-glob check, D4 ×5, D5 ×6 with the `OWN` membership check). All 21 were killed, and the tree was clean after each.
 - (4): 21 in all, two of them argued equivalent (the subagent's table, with the arguments below).
 - (6): 6.
 - **(4)'s two equivalent survivors:**
@@ -149,7 +155,7 @@ Reduction pass (diff): −4 net (in the pass itself) · 1 duplicate removed · 0
 ## 6. Gates
 
 - `cargo fmt --all -- --check`: pass.
-- `cargo clippy --workspace --all-targets --locked --features aethelgard-cli/with-tools -- -D warnings`: pass. Run on the host, clean target dir, capped scope.
+- `cargo clippy --workspace --all-targets --locked --features aethelgard-cli/with-tools -- -D warnings`: pass on the head. Run on the host, capped scope.
 - `cargo test --workspace --locked --no-fail-fast`: **2,934 passed, 0 failed**. Run on the host, from a clean target dir, before the dead-glob check and the reduction; the targets those changed were re-run after.
 - `bash ci/test-route.sh`: 77 passed. `bash ci/test-shard.sh`: 150 passed. `bash ci/route.sh check ci/docs-tests.tsv`: 9 rows, unchanged.
 - No weight rows: every new test runs in under 0.1 s.
