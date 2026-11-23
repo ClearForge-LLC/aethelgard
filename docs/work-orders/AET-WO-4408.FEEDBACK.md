@@ -148,6 +148,11 @@ Each one is needed for something inside the fence to be checked at all:
 **A3 (found while building).**
 - The ArduPilot `pinout` list of generated boards is hard-coded, so a matrix board missing from it builds and is never judged. I added four-port there and did not generalise. §5 Q4 has the one-line generalisation.
 
+**A4. `ci/shard.sh`'s timer refuses an ignore reason (found by CI on `0b102fd4`).**
+- `#[ignore = "…"]` makes libtest print `test x ... ignored, <reason>`. The P3 timer (`times`) matches only a result line that ends in `ok|FAILED|ignored`. It counted 1 of the binary's 2 tests and failed shard 11 closed: "tests/pin_table_sources.rs: timed 1 of its 2 tests".
+- **Fixed in my file:** a bare `#[ignore]`, with its reason in a comment. Checked with `bash ci/shard.sh times` on a stamped log of the binary: 8/8 timed, rc 0.
+- This was the workspace's only `#[ignore = …]`, so the trap was latent until now. `ci/` is outside the fence, so the parser was not changed (§5 Q6).
+
 ## 4. Reduction pass (diff)
 
 - **Cut:**
@@ -164,6 +169,7 @@ Each one is needed for something inside the fence to be checked at all:
 2. **The roadmap row (`4404` draft) for the run-time serial pull-ups and `USART_CR2`**, assigned to 4408 at roadmap L1054 and L1056, is not in this WO's text. It is not built here. Four-port's generated header carries 4404's "Serial pulls" line.
 3. **PC2SO/PC3SO.** A board on PC2 or PC3 depends on `SYSCFG_PMCR`'s package-dependent reset. A rule that no generated firmware writes `PC2SO`/`PC3SO`, or a twin row for `PMCR`, would close it. Today no committed board uses PC2 or PC3 [not measured beyond the CI boards'].
 4. **`ardupilot-pinout.sh`** could judge every `generated-*` artifact it is given instead of a fixed list. It is one loop, deferred as outside this WO.
+6. **`ci/shard.sh` `times`** could accept libtest's `ignored, <reason>` form, so that the next `#[ignore = "…"]` does not fail a shard by surprise (§3 A4). It is a one-line change to the regex; `ci/` is outside this fence.
 5. **F7's third item**, `examples/sentinel-01.json` in the ArduPilot matrix (roadmap L1057), is not in the WO text, and is not built.
 
 ## 6. Gates

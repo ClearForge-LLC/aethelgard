@@ -267,7 +267,10 @@ fn st_afs_equal_ds12117_in_the_solver_families() {
 }
 
 #[test]
-#[ignore = "reads ArduPilot's STM32H753xx.py, which is not committed; ardupilot-image.yml runs it (AET-WO-4408)"]
+// Reads ArduPilot's STM32H753xx.py, which is not committed; ardupilot-image.yml
+// runs it. A bare `#[ignore]`: libtest prints a reason after `ignored,`, and
+// ci/shard.sh's timer reads only a result line that ends in `ignored`.
+#[ignore]
 fn st_afs_equal_ardupilot() {
     let path = std::env::var(ARDUPILOT_ENV)
         .unwrap_or_else(|_| panic!("{ARDUPILOT_ENV} names no file: set it to STM32H753xx.py"));
