@@ -11,7 +11,7 @@
 
 Every worker's summary was spot-checked against the artifact before it was adopted. Written 2026-11-23.
 
-**Status: built; gates green except the bench package, which waits for the architect's dispatch** (§7).
+**Status: READY** once CI on the package commit is green (§7).
 
 **The answer, in six lines:**
 - **The bound.** It follows AN4899 Rev 4 §5.1.5 (p. 18), mirrored for a pull-down. The mirroring is my derivation, labelled as such in `spike/4300j/DERIVATION.md`.
@@ -228,7 +228,18 @@ The report and its probes are in `~/.cache/aet-4300j/adv/`.
   - **`hwdef` `each_motor_line_s_pull_follows_its_fitment`:** my merge put main's `four-port` at index 3 of `BOARDS`, so the test's index for the `open` fixture went stale. It now finds both fixtures by name, and `cargo test -p aethelgard-hwdef` gives 20 passed.
   - **`bench_board_tier1` `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`:** the committed package's specification sha is the old one. It waits for the dispatch.
 
-**CI:** (after push)
+**CI on `b62db44f`:** 30 pass. The only failures were `bench_board_tier1`'s package binding, in three jobs:
+- `bench-package`;
+- `gates`;
+- `tools-shard (4)`.
+
+`tools-shard (11)` passed late. No P3 weight complaint was raised.
+
+**The package:** dispatch run 45186428847 (architect, 13:44Z, `b62db44f`).
+- Its `bench-package` artifact is committed into `fab/sentinel-01-bench/package` byte for byte. `diff -r` against the artifact is empty.
+- Only `FAB-NOTES.md` and `MANIFEST.json` moved, and only in their hash lines: the specification `e635e940…` → `0a568833…`, the topology `87884e33…` → `857ca021…`, the verdict, and the FAB-NOTES digest.
+- No Gerber, BOM, placement or ELF byte moved (P17).
+- `bench_board_tier1` passes locally on the committed package.
 
 **Reduction pass (diff):** −42 net · 2 duplicates removed · 1 dead path removed · 4 protected kept · 5 findings below.
 - **The duplicates:** `PullFitment::name` (its single caller restated serde's names), and the jumper test's copy of a row lookup.
