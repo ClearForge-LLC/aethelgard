@@ -74,7 +74,7 @@ Measured by sweep C (`spike/2309/out/sweep-c.txt`, the workspace; `out/sweep-c-v
 | **full** (as the patch is built: kinds 11, 12 and 21 value and status read exactly when kind 10 is) | 44 pairs | 21: 19 in `chaos/tests/campaign.rs`, 1 in `evolve/tests/attribute.rs`, 1 in `cli/tests/campaign_tier1.rs` |
 | **status** (kinds 12 and 21 bound both ways by their status, their value one way) | 6 pairs | 2: `chaos/tests/campaign.rs:3073` `a_boot_that_read_nothing_names_its_bound` (5) and **`evolve/tests/attribute.rs:1581` `a_register_with_nothing_observed_is_no_evidence`** (1) |
 
-The full reading's 20 tests:
+The full reading's 21 tests:
 - `aethelgard-chaos/tests/campaign.rs:1064` `the_47k_shaped_run_matches_what_it_expects`
 - `aethelgard-chaos/tests/campaign.rs:1073` `a_run_expecting_fewer_kinds_does_not_match`
 - `aethelgard-chaos/tests/campaign.rs:1082` `a_run_expecting_more_kinds_does_not_match`
@@ -200,7 +200,8 @@ The tables and every file are in `spike/2309/results.md`.
    - The judge writes kind 26, and likewise kinds 29, 34, 36 and 37 (and kind 30's read-back), only once Renode has read: `cli/src/campaign.rs` `continue`s on an unread witness.
    - So a forger can put witness evidence beside an unread boot.
    - Rule (3) as worded listed 10–13, 21 and 22 only. **Closed by D3 as built**: the probe's run is now refused by name (the D3 tests).
-   - Re-run on the build, every kind the judge reads at the boot is now bound to kind 10: 10, 11, 12, 13, 19, 21, 22, 26, 29, 30, 34, 36 and 37. The rest are decided before the boot (kinds 5, 6, 15, 16, 20, 23, 24, 25, 27, 28, 31 to 33, 35) or by ngspice and the bridge (kinds 7, 8, 9, 17, 18).
+   - The probe files under `spike/2309/adversarial/` were not re-run on the built tree. The D3 tests are the evidence, built from the probe's shape, with a mutant of each kind killed. Read at source on the build, every kind the judge reads at the boot is now bound to kind 10: 10, 11, 12, 13, 19, 21, 22, 26, 29, 30, 34, 36 and 37. The rest are decided before the boot (kinds 5, 6, 15, 16, 20, 23, 24, 25, 27, 28, 31 to 33, 35) or by ngspice and the bridge (kinds 7, 8, 9, 17, 18).
+   - **A residual older than this work order:** a read boot whose witness (kind 13 or 22) is blanked to unread, without the verdict's `*_transaction_unwitnessed`, still replays. No run rule ties that finding to an unread witness beside an `ok` record (the names appear only in `BOOTED_READ_FINDINGS`). The flooded shape is legitimate only with its finding. The rule would be a verdict rule, outside rule (3)'s scope: §8.
    - Not closed, by design: a run forged whole into a consistent "killed before its reads" (everything unread, a bound named) cannot be told from a real one by its records. That claim says the run never booted, which the verdict then carries.
 
 ## 6. Rulings (architect, 2026-11-23T01:15Z), as built
@@ -212,7 +213,7 @@ The tables and every file are in `spike/2309/results.md`.
 
 ## 7. Reduction pass
 
-`Reduction pass (diff): −2 files (the two patches), −11 lines (FEEDBACK §3 at the STOP), −49 lines (two unread-boot loops in chaos tests/campaign.rs folded into tests/common's unread_boot) · 4 duplicates removed · 0 dead paths removed · 1 kept by reason · 1 finding below`.
+`Reduction pass (diff): −2 files (the two patches), −11 lines (FEEDBACK §3 at the STOP), −51 lines in chaos `tests/campaign.rs` (the fold commit `8ae3b18a`: 8 added, 59 removed, clippy's 3-line type alias included). The two unread-boot loops are now the one `tests/common` helper, whose 54 lines arrived with the D3 tests that also use it · 4 duplicates removed · 0 dead paths removed · 1 kept by reason · 1 finding below`.
 
 Hand-run with the `reduction-pass` skill's four questions over the whole diff (`crates/`, one `ci/` row, `spike/2309/`, this file):
 - **Duplicates removed:**
@@ -227,6 +228,8 @@ Hand-run with the `reduction-pass` skill's four questions over the whole diff (`
 - **Finding, outside the fence:** evolve's attribution still has a path for a read boot's register with nothing observed. `a_register_with_nothing_observed_is_no_evidence` used to pin it, and replay now refuses that input first, so the path is unreachable through `attribute`. It is for evolve's owner to remove or label.
 
 ## 8. For the backlog
+
+- **A read boot's unread witness without its finding** (§5 item 3). Replay could require `*_transaction_unwitnessed` once per `ok` record whose witness is unread, as the judge's `witness_finding` names it. It is older than this work order and is a verdict rule.
 
 - **Tier-1 tests call `check_run` on records that the field rules would refuse** (`unread()`'s kind 10). A shared fixture constructor that runs `Record::check` would stop a check_run-only shape from standing in for a trace.
 - **Sweep A is vacuous until the committed archives are current.** The flooded run added here is the first trace-18 archive; the four 3305 archives stay version 14.
