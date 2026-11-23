@@ -518,7 +518,15 @@ fn solve_inner(
         }
     }
     // The motor outputs, placed inside the search after the buses: each on
-    // its timer channel's pin, with the timing solved for the reset clock.
+    // its timer channel's pin, with the timing solved for the reset clock,
+    // and its pull copied with the bound step 26 judged it against
+    // (`AET-WO-4300j` D6, D9: one computation, `offboard::motor_pull_window`).
+    let window = match spec.motor_outputs.is_empty() {
+        true => None,
+        false => Some(
+            crate::offboard::motor_pull_window(spec).map_err(SolveError::InvalidSpecification)?,
+        ),
+    };
     for (i, m) in model.motors.iter().enumerate() {
         let (timer, channel, pin, af) = search.motor_chosen[i].expect("every motor placed");
         out.assignments.insert(
@@ -540,6 +548,18 @@ fn solve_inner(
                 psc,
                 arr,
                 ccr,
+                pull: {
+                    let p = &spec.motor_outputs[i].pull;
+                    let w = window.expect("computed when a motor output is declared");
+                    crate::motor::SolvedMotorPull {
+                        fitment: p.fitment,
+                        resistor: p.resistor.reference.clone(),
+                        ohms: p.resistor.ohms,
+                        link: p.link.reference.clone(),
+                        floor_ohms: w.floor_ohms,
+                        ceiling_ohms: w.ceiling_ohms,
+                    }
+                },
             },
         );
     }

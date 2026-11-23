@@ -97,7 +97,9 @@ fn emitter_numbered(key: &str, mcu: &str) -> bool {
 /// Every reference the specification declares, in the order the schematic
 /// emitter claims them: I2C devices, SPI devices, connectors, the power
 /// tree's, the test points (`AET-WO-1312`), the pin devices'
-/// (`AET-WO-1211a`), then the motor pulls' (`AET-WO-4300i`).
+/// (`AET-WO-1211a`), the motor pulls' resistors (`AET-WO-4300i`), then
+/// their links (`AET-WO-4300j` D5), after every resistor so that no earlier
+/// reference's place moves.
 pub fn references(spec: &Specification) -> Vec<&str> {
     declared(spec, true)
 }
@@ -142,6 +144,11 @@ fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
                 .iter()
                 .map(|m| m.pull.resistor.reference.as_str()),
         )
+        .chain(
+            spec.motor_outputs
+                .iter()
+                .map(|m| m.pull.link.reference.as_str()),
+        )
         .collect()
 }
 
@@ -172,8 +179,9 @@ pub fn oscillator_nets(spec: &Specification) -> Vec<String> {
 /// group the row has, `BOOT0` drawn only when a connector or test point
 /// carries it (`AET-WO-1312`), and `<mcu>_VCAP<n>` for each `VCAP` pin, `AET-WO-4300g`), the
 /// [`oscillator_nets`] beside a declared crystal (`AET-WO-4240c`), each
-/// device's [`device_nets`], each buck's [`BUCK_NETS`], and each crossing's
-/// four translated lines. The emitter refuses to name a net this list lacks.
+/// device's [`device_nets`], each buck's [`BUCK_NETS`], each crossing's
+/// four translated lines, and each motor output's [`motor_pull_net`]
+/// (`AET-WO-4300j` D5). The emitter refuses to name a net this list lacks.
 pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
     let mut out = vec![GND.to_owned()];
     if spec.power.is_some() {
@@ -242,7 +250,14 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
                 .map(|(pin, _)| format!("{}_{pin}", d.reference)),
         );
     }
+    out.extend(spec.motor_outputs.iter().map(|m| motor_pull_net(&m.label)));
     Ok(out)
+}
+
+/// The net between a motor output's link and its pull-down resistor
+/// (`AET-WO-4300j` D5): `<label>_PD`.
+pub fn motor_pull_net(label: &str) -> String {
+    format!("{label}_PD")
 }
 
 /// Every net and domain name the specification gives, in document order:

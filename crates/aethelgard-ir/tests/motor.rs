@@ -56,12 +56,15 @@ fn table() -> PinTable {
     }
 }
 
-/// An output's declared pull-down (specification 28, `AET-WO-4300i`), its
-/// reference named after the output.
+/// An output's declared pull-down (specification 28, `AET-WO-4300i`), with
+/// its link and fitment (specification 29, `AET-WO-4300j`), its references
+/// named after the output.
 fn pull(label: &str) -> Value {
     json!({"resistor": {"reference": format!("RPD_{label}"), "part": "CRCW0603_F_K",
-        "ohms": 40200, "to": "GND"},
-        "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm (test)"})
+        "ohms": 442000, "to": "GND"},
+        "link": {"reference": format!("RLK_{label}"), "part": "CRCW0402_Z_0"},
+        "fitment": "fitted",
+        "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm (test)"})
 }
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
@@ -128,6 +131,122 @@ fn with_spi(motors: Vec<Value>, sck: Option<&str>) -> Specification {
 
 fn refused(motors: Vec<Value>) -> IrValidationError {
     spec(motors).validate().expect_err("refused")
+}
+
+/// `M1`, a DShot output whose pull declares `ohms`, on `VDD_3V3` at
+/// `nominal` mV +/- `tol` permille: what `validate` says (`AET-WO-4300j` D3
+/// (a), the bound computed on the board's rail). Every edge below was worked
+/// out outside the engine in exact fractions.
+fn on_rail(nominal: u32, tol: u32, ohms: u32) -> Result<(), IrValidationError> {
+    let mut m = dshot("M1", None);
+    m["pull"]["resistor"]["ohms"] = json!(ohms);
+    let mut v = spec_json(vec![m]);
+    v["voltage_domains"][0]["nominal_millivolts"] = json!(nominal);
+    v["voltage_domains"][0]["tolerance_permille"] = json!(tol);
+    serde_json::from_value::<Specification>(v)
+        .expect("a specification")
+        .validate()
+}
+
+fn outside_on(nominal: u32, tol: u32, ohms: u32) -> String {
+    let e = on_rail(nominal, tol, ohms).expect_err("refused");
+    assert_eq!(
+        (e.kind(), e.id(), e.path()),
+        (
+            "MotorPullOutsideBound",
+            Some("M1"),
+            Some("motor_outputs[0].pull.resistor.ohms")
+        ),
+        "{nominal} +/-{tol}, {ohms}: {e}"
+    );
+    e.to_string()
+}
+
+/// The bound is the board's rail's. On the committed 3300 mV +/-50 it is
+/// 17 325 000 / 41 = 422 560.97... to 6 270 000 / 7 = 895 714.28... ohm; on
+/// 1800 mV +/-50 it is 75 600 000 / 163 = 463 803.68... to 3 420 000 / 7 =
+/// 488 571.42... ohm, so the ruled 442 000 is refused there. On 2500 mV
+/// +/-50 the floor is exactly 437 500, and on 2500 mV +/-20 the floor is
+/// exactly 272 000 and the ceiling exactly 700 000: an edge that is a whole
+/// ohm is admitted, one ohm past it refused (the rounding is exact, not a
+/// step outward).
+#[test]
+fn the_bound_moves_with_the_rail() {
+    on_rail(3300, 50, 442_000).unwrap();
+    outside_on(3300, 50, 422_560);
+    outside_on(3300, 50, 895_715);
+    let m = outside_on(1800, 50, 442_000);
+    assert!(m.contains("463804 to 488571 ohm"), "{m}");
+    assert!(m.contains("`VDD_3V3` (1800 mV +/-50 permille)"), "{m}");
+    outside_on(1800, 50, 463_803);
+    outside_on(1800, 50, 488_572);
+    for ohms in [463_804, 488_571] {
+        on_rail(1800, 50, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+    outside_on(2500, 50, 437_499);
+    on_rail(2500, 50, 437_500).unwrap();
+    let m = outside_on(2500, 20, 271_999);
+    assert!(m.contains("272000 to 700000 ohm"), "{m}");
+    outside_on(2500, 20, 700_001);
+    for ohms in [272_000, 700_000] {
+        on_rail(2500, 20, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+}
+
+/// `MOTOR1`'s pull net is `MOTOR1_PD` (`AET-WO-4300j` D5), the engine's
+/// own: a second output spelling it, in any case, is `ReservedName`.
+#[test]
+fn a_net_named_motor1_pd_is_refused_in_any_case() {
+    for label in ["MOTOR1_PD", "motor1_pd", "Motor1_Pd"] {
+        let e = refused(vec![dshot("MOTOR1", None), dshot(label, None)]);
+        assert_eq!(e.kind(), "ReservedName", "{label}: {e}");
+        assert!(e.to_string().contains("MOTOR1_PD"), "{label}: {e}");
+    }
+    spec(vec![dshot("MOTOR1", None), dshot("MOTOR2", None)])
+        .validate()
+        .unwrap();
+}
+
+/// A rail whose floor is above its ceiling admits nothing: 3300 mV +/-80
+/// gives 712 800 000 / 749 = 951 668.89... against 6 072 000 / 7 =
+/// 867 428.57... ohm. A rail on which the weakest pull-up cannot reach the
+/// threshold even with no pull-down, 3000 mV +/-105, admits nothing either:
+/// its denominator is -2 000 000 nV. 3000 +/-104 is the last tolerance with
+/// a floor, 662 400 000 / 17 = 38 964 705.88... ohm against a ceiling of
+/// exactly 768 000: empty, not unreachable. Each is refused by name, at
+/// `mcu.supply`, for every value.
+#[test]
+fn an_empty_or_unreachable_bound_admits_nothing() {
+    for (nominal, tol, kind, values) in [
+        (3300, 80, "MotorPullBoundEmpty", [442_000, 867_428, 951_669]),
+        (
+            3000,
+            104,
+            "MotorPullBoundEmpty",
+            [442_000, 768_000, 38_964_706],
+        ),
+        (
+            3000,
+            105,
+            "MotorPullFloorUnreachable",
+            [442_000, 1, u32::MAX],
+        ),
+    ] {
+        for ohms in values {
+            let e = on_rail(nominal, tol, ohms).expect_err("refused");
+            assert_eq!(
+                (e.kind(), e.id(), e.path()),
+                (kind, Some("VDD_3V3"), Some("mcu.supply")),
+                "{nominal} +/-{tol}, {ohms}: {e}"
+            );
+        }
+    }
+    let e = on_rail(3300, 80, 442_000).unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("951669 ohm, is above its ceiling, 867428 ohm"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -884,7 +1003,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 28);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 29);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -900,7 +1019,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: aethelgard_ir::versions::lacked_by(16),
                 version: 16,
-                expected: 28
+                expected: 29
             }
         );
     }

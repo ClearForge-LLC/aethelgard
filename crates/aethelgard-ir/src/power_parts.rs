@@ -39,7 +39,10 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// `analog_pads`, the pins whose pad takes only an analog input
 /// (`AET-WO-1217` F4). Version 9 gave it `weak_pull_down_ohms`, the RPD
 /// range a declared motor pull-down is held inside (`AET-WO-4300i`, D0).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 9;
+/// Version 10 replaced that with `motor_pull_bound`, the inputs the motor
+/// pull-down's bound is computed from per board (`AET-WO-4300j` D3 (a)), and
+/// added the `jumper` kind, the pull's series link (D4).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 10;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,6 +79,15 @@ pub struct Limit {
 pub struct Ranged {
     pub range: Range,
     pub at: At,
+}
+
+/// One value that is an engine choice or a stand-in, not a datasheet's
+/// figure: the value and its basis, the work order or ruling that set it
+/// (as `bound_um` beside `bound_basis`). No document is cited for it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Chosen {
+    pub value: i64,
+    pub basis: String,
 }
 
 /// A part's production state, as its maker's page states it, or `unread`
@@ -364,6 +376,15 @@ pub struct Tvs {
     pub clamp_condition: String,
 }
 
+/// A zero-ohm jumper (`AET-WO-4300j` D4): its resistance and current, each
+/// at most. A jumper has no tolerance, TCR or drift a resistor row needs
+/// (VISHAY_20035 p. 2: TCR "is not specified for 0 Ohm jumpers").
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Jumper {
+    pub max_milliohms: Limit,
+    pub max_milliamps: Limit,
+}
+
 /// One orderable inductor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Inductor {
@@ -463,21 +484,36 @@ pub struct McuIo {
     /// `ANA`): the solver offers them to no digital claimant and refuses one
     /// by hand (`AET-WO-1217` F4).
     pub analog_pads: AnalogPads,
-    /// RPD, the weak pull-down's equivalent resistor (DS12117 Rev 10 Table 49
-    /// = Table 146): the range a declared external motor pull-down is held
-    /// inside (`AET-WO-4300i`, D0 and the ruling on V).
-    pub weak_pull_down_ohms: WeakPull,
+    /// The inputs a declared external motor pull-down's bound is computed
+    /// from, per board, on `mcu.supply` (`AET-WO-4300j` D3 (a),
+    /// `crate::offboard::motor_pull_window`).
+    pub motor_pull_bound: MotorPullBound,
 }
 
-/// A weak pull's equivalent resistance, Ω: `min <= typical <= max`, each
-/// above zero, and where they are read. The typical is the value the
-/// external copy is chosen nearest; only `min` and `max` bound it.
+/// The motor pull-down's bound, held as its inputs (`AET-WO-4300j`
+/// DERIVATION.md §3, §4 and §5a, D1 (a) as ruled): the floor keeps the idle
+/// line at or above the input-high threshold plus the margin against the
+/// weakest internal pull-up in BLHeli passthrough, and the ceiling keeps it
+/// at or below the input-low threshold less the margin against the leakage
+/// at reset. The four DS12117 figures are cited; the peer's input current
+/// (a stand-in, S2) and the margin are rulings, each with its basis. The
+/// reader holds each above zero, the thresholds below 1000 permille and in
+/// order, and the margin inside both: `margin < input_low_max` and
+/// `input_high_min + margin < 1000`, so neither threshold is non-positive.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WeakPull {
-    pub min: i64,
-    pub typical: i64,
-    pub max: i64,
-    pub at: At,
+pub struct MotorPullBound {
+    /// RPU, the weak pull-up's equivalent resistor, max, Ω.
+    pub pull_up_max_ohms: Limit,
+    /// VIH min, per mille of VDD.
+    pub input_high_min_permille: Limit,
+    /// VIL max, per mille of VDD.
+    pub input_low_max_permille: Limit,
+    /// The pad's input leakage, at most, nA.
+    pub leakage_max_nanoamps: Limit,
+    /// The peer's (the ESC input's) current, nA: a stand-in.
+    pub peer_input_current_nanoamps: Chosen,
+    /// The margin at each threshold, per mille of VDD.
+    pub margin_permille: Chosen,
 }
 
 /// Pins of [`McuIo::pins`] whose pad is analog only, and where that is read.
@@ -726,6 +762,7 @@ pub enum Kind {
     BulkCapacitor(BulkCapacitor),
     Tvs(Tvs),
     Crystal(Box<Crystal>),
+    Jumper(Jumper),
 }
 
 impl Kind {
@@ -741,6 +778,7 @@ impl Kind {
             Kind::BulkCapacitor(_) => "bulk_capacitor",
             Kind::Tvs(_) => "tvs",
             Kind::Crystal(_) => "crystal",
+            Kind::Jumper(_) => "jumper",
         }
     }
 }
@@ -979,6 +1017,14 @@ enum RawKind {
     BulkCapacitor(RawBulk),
     Tvs(RawTvs),
     Crystal(Box<RawCrystal>),
+    Jumper(RawJumper),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawJumper {
+    max_milliohms: RawLimit,
+    max_milliamps: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1200,16 +1246,25 @@ struct RawMcuIo {
     pulls_off_above_supply_millivolts: RawLimit,
     absolute_maximum: RawIoAbsoluteMaximum,
     analog_pads: RawAnalogPads,
-    weak_pull_down_ohms: RawWeakPull,
+    motor_pull_bound: RawMotorPullBound,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RawWeakPull {
-    min: i64,
-    typical: i64,
-    max: i64,
-    at: RawAt,
+struct RawMotorPullBound {
+    pull_up_max_ohms: RawLimit,
+    input_high_min_permille: RawLimit,
+    input_low_max_permille: RawLimit,
+    leakage_max_nanoamps: RawLimit,
+    peer_input_current_nanoamps: RawChosen,
+    margin_permille: RawChosen,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawChosen {
+    value: i64,
+    basis: String,
 }
 
 #[derive(Deserialize)]
@@ -1888,7 +1943,8 @@ fn pin_roles(kind: &Kind) -> &'static [&'static str] {
         | Kind::Mcu(_)
         | Kind::BulkCapacitor(_)
         | Kind::Tvs(_)
-        | Kind::Crystal(_) => &[],
+        | Kind::Crystal(_)
+        | Kind::Jumper(_) => &[],
     }
 }
 
@@ -2178,6 +2234,10 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     .positive(i.dcr_max_milliohms, "kind.inductor.dcr_max_milliohms")?,
             })
         }
+        RawKind::Jumper(j) => Kind::Jumper(Jumper {
+            max_milliohms: r.positive(j.max_milliohms, "kind.jumper.max_milliohms")?,
+            max_milliamps: r.positive(j.max_milliamps, "kind.jumper.max_milliamps")?,
+        }),
         RawKind::Mcu(m) => {
             text(&m.idd_condition, "kind.mcu.idd_condition", 200)?;
             if m.bor_falling_max_millivolts.len() != 4 {
@@ -2351,28 +2411,59 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
         )?,
         absolute_maximum,
         analog_pads,
-        weak_pull_down_ohms: weak_pull(m.weak_pull_down_ohms, r)?,
+        motor_pull_bound: motor_pull_bound(m.motor_pull_bound, r)?,
     })
 }
 
-/// `kind.mcu.io.weak_pull_down_ohms`: each figure above zero, in order.
-fn weak_pull(raw: RawWeakPull, r: &mut Reader<'_>) -> Result<WeakPull, String> {
-    let field = "kind.mcu.io.weak_pull_down_ohms";
-    for v in [raw.min, raw.typical, raw.max] {
-        bounded(v, field)?;
-    }
-    if raw.min <= 0 || raw.min > raw.typical || raw.typical > raw.max {
+/// `kind.mcu.io.motor_pull_bound`: every figure above zero; the thresholds
+/// below 1000 permille, low below high; and the margin inside both, so that
+/// `input_low_max - margin` and `1000 - (input_high_min + margin)` are each
+/// above zero (`AET-WO-4300j` D3 (a)).
+fn motor_pull_bound(raw: RawMotorPullBound, r: &mut Reader<'_>) -> Result<MotorPullBound, String> {
+    let f = "kind.mcu.io.motor_pull_bound";
+    let chosen = |c: RawChosen, field: &str| -> Result<Chosen, String> {
+        let field = format!("{f}.{field}");
+        bounded(c.value, &field)?;
+        if c.value <= 0 {
+            return Err(format!("`{field}.value` is {}, not above zero", c.value));
+        }
+        text(&c.basis, &format!("{field}.basis"), 256)?;
+        Ok(Chosen {
+            value: c.value,
+            basis: c.basis,
+        })
+    };
+    let b = MotorPullBound {
+        pull_up_max_ohms: r.positive(raw.pull_up_max_ohms, &format!("{f}.pull_up_max_ohms"))?,
+        input_high_min_permille: r.positive(
+            raw.input_high_min_permille,
+            &format!("{f}.input_high_min_permille"),
+        )?,
+        input_low_max_permille: r.positive(
+            raw.input_low_max_permille,
+            &format!("{f}.input_low_max_permille"),
+        )?,
+        leakage_max_nanoamps: r.positive(
+            raw.leakage_max_nanoamps,
+            &format!("{f}.leakage_max_nanoamps"),
+        )?,
+        peer_input_current_nanoamps: chosen(
+            raw.peer_input_current_nanoamps,
+            "peer_input_current_nanoamps",
+        )?,
+        margin_permille: chosen(raw.margin_permille, "margin_permille")?,
+    };
+    let (high, low, margin) = (
+        b.input_high_min_permille.value,
+        b.input_low_max_permille.value,
+        b.margin_permille.value,
+    );
+    if high >= 1000 || low >= high || margin >= low || high + margin >= 1000 {
         return Err(format!(
-            "`{field}` is {} / {} / {}: min, typical and max are above zero and in order",
-            raw.min, raw.typical, raw.max
+            "`{f}` holds input high {high}, input low {low} and margin {margin} permille: each threshold below 1000 and low below high, and the margin leaves both above zero (low - margin > 0, 1000 - (high + margin) > 0)"
         ));
     }
-    Ok(WeakPull {
-        min: raw.min,
-        typical: raw.typical,
-        max: raw.max,
-        at: r.at(raw.at, field)?,
-    })
+    Ok(b)
 }
 
 /// Each family once, upper case, with at least one term, each above zero.

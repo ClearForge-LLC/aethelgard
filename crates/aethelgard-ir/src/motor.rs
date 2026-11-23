@@ -178,16 +178,51 @@ pub struct MotorOutput {
 
 /// The external pull-down every motor line carries from power-up
 /// (`AET-WO-4300i`, ruled D0 `external`): a resistor from the output's net
-/// to `GND`, and where its value comes from. There is no `mcu` arm: no
+/// to `GND`, through a series link from the motor net (`AET-WO-4300j` D5:
+/// `<label>` → link → `<label>_PD` → resistor → `to`), the fitment the board
+/// is built as, and where its value comes from. There is no `mcu` arm: no
 /// internal pull holds a motor line (D0 reverses Q-G for motor outputs).
-/// `validate` holds it to `GND` (`MotorPullNotDown`), to a resistor row
-/// (`PowerPartUnknown`) and to the MCU row's RPD range
-/// (`MotorPullOutsideRpd`).
+/// Every key is required, in both fitments (`INV-06`). `validate` holds it
+/// to `GND` (`MotorPullNotDown`), to a resistor row and the link to a
+/// jumper row (`PowerPartUnknown`), and the declared ohms to the bound
+/// computed on `mcu.supply` from the MCU row's `io.motor_pull_bound`
+/// (`MotorPullOutsideBound`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct MotorPull {
     pub resistor: crate::pin_devices::PullResistor,
+    pub link: MotorPullLink,
+    pub fitment: PullFitment,
     pub source: String,
+}
+
+/// The pull's series link (`AET-WO-4300j` D4, D5): a zero-ohm jumper row
+/// between the motor net and `<label>_PD`, drawn in both fitments.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct MotorPullLink {
+    pub reference: String,
+    pub part: String,
+}
+
+/// Which way a motor pull is built (`AET-WO-4300j` §3, D6): `fitted`, the
+/// link fitted and the external pull-down holding the line, so the firmware
+/// writes no internal pull; or `open`, the link not fitted (`DNP`), so the
+/// firmware writes the internal pull-down. No default (`INV-06`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PullFitment {
+    Fitted,
+    Open,
+}
+
+impl PullFitment {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fitted => "fitted",
+            Self::Open => "open",
+        }
+    }
 }
 
 /// What an output's ESC is (`AET-WO-2304` D2, `2304b` §1.2): today only
@@ -721,15 +756,36 @@ pub struct SolvedMotorOutput {
     pub psc: u32,
     pub arr: u32,
     pub ccr: u32,
+    /// The declared pull, copied by `solve` (`RUL-16`, `AET-WO-4300j` D6,
+    /// D9), with the bound `validate` judged it against.
+    pub pull: SolvedMotorPull,
+}
+
+/// A motor output's pull as the generators need it (`AET-WO-4300j` D6,
+/// D9): the declared fitment, the resistor's reference and ohms, the link's
+/// reference, and the bound on `mcu.supply`: `floor_ohms`, the least whole
+/// ohms step 26 admits, and `ceiling_ohms`, the most
+/// (`crate::offboard::motor_pull_window`, the one computation both read).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct SolvedMotorPull {
+    pub fitment: PullFitment,
+    pub resistor: String,
+    pub ohms: u32,
+    pub link: String,
+    pub floor_ohms: u32,
+    pub ceiling_ohms: u32,
 }
 
 crate::object_only!(
     PwmTiming,
     MotorOutput,
     MotorPull,
+    MotorPullLink,
     NoEsc,
     SolvedClock,
     SolvedMotorOutput,
+    SolvedMotorPull,
     ForeignClock,
     SolvedForeignClock,
     SourcedVos
@@ -1065,6 +1121,14 @@ mod tests {
             psc,
             arr,
             ccr,
+            pull: SolvedMotorPull {
+                fitment: PullFitment::Fitted,
+                resistor: "R1".to_owned(),
+                ohms: 442_000,
+                link: "R2".to_owned(),
+                floor_ohms: 422_561,
+                ceiling_ohms: 895_714,
+            },
         }
     }
 

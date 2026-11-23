@@ -140,9 +140,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// pin at a connector is FT (`ConnectorPinNotFt`), and the solver offers a
 /// connector-facing net FT pins only; a motor output is never on a pin with
 /// a reset pull (`MotorPinResetPull`).
+/// Version 29 (`AET-WO-4300j`) requires `motor_outputs[].pull.link`, the
+/// pull's series jumper, and `motor_outputs[].pull.fitment`, `fitted` or
+/// `open`; the declared ohms are judged against the bound computed on
+/// `mcu.supply` from the MCU row's `io.motor_pull_bound`
+/// (`MotorPullOutsideBound`, `MotorPullFloorUnreachable`,
+/// `MotorPullBoundEmpty`), and the link's part is a jumper row
+/// (`PowerPartUnknown`).
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 28;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 29;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -580,9 +587,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// every datasheet value is the part's row, looked up by part and mode),
 /// version 17 an input's `active` and `pulled`, a pin device's ADC input's
 /// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
-/// twin and `verify` read the solved topology alone, `RUL-16`); an older
-/// file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 17;
+/// twin and `verify` read the solved topology alone, `RUL-16`), version 18
+/// a motor output's `pull`, its fitment, references, ohms and bound
+/// (`AET-WO-4300j` D6, D9: the generators read the topology alone); an
+/// older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 18;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -4112,6 +4121,10 @@ impl Specification {
             })?;
             plain(&r.part, || format!("{at}.resistor.part"))?;
             plain(&r.to, || format!("{at}.resistor.to"))?;
+            identifier(IdentifierKind::Reference, &m.pull.link.reference, || {
+                format!("{at}.link.reference")
+            })?;
+            plain(&m.pull.link.part, || format!("{at}.link.part"))?;
             board::source(&m.pull.source, &format!("{at}.source"))?;
         }
         for (i, p) in self.serial_ports.iter().enumerate() {

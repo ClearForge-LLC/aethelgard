@@ -198,7 +198,8 @@ fn refuses_unsupported_schema_version() {
         25,
         26,
         27,
-        29,
+        28,
+        30,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -928,12 +929,14 @@ fn full_document() -> serde_json::Value {
         {"label": "M1", "pin": null, "protocol": "pwm",
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
                  "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null,
-         "pull": {"resistor": {"reference": "R91", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"},
-                  "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm"}},
+         "pull": {"resistor": {"reference": "R91", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"},
+                  "link": {"reference": "R93", "part": "CRCW0402_Z_0"}, "fitment": "fitted",
+                  "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm"}},
         {"label": "M2", "pin": null, "protocol": "dshot600", "pwm": null,
          "esc": {"none": {"source": "a bench header with no power pin"}},
-         "pull": {"resistor": {"reference": "R92", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"},
-                  "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm"}}
+         "pull": {"resistor": {"reference": "R92", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"},
+                  "link": {"reference": "R94", "part": "CRCW0402_Z_0"}, "fitment": "open",
+                  "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm"}}
     ]);
     // `AET-WO-4300b`: a port left to the solver, and one with its peripheral
     // and pins named, parity, two stop bits and inversion.
@@ -1347,8 +1350,11 @@ fn solved_refuses_version_and_hash() {
     // the file before an ADC input's `bits` and a pin device's `bridges`
     // (`AET-WO-1211b`), 16 the file before an input's `active` and `pulled`,
     // an ADC input's `transfer` and a pin device's `supplies`
-    // (`AET-WO-1211c` D7), 18 one this build does not know.
-    for version in [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18] {
+    // (`AET-WO-1211c` D7), 17 the file before a motor output's `pull`
+    // (`AET-WO-4300j` D9), 19 one this build does not know.
+    for version in [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 19,
+    ] {
         let err = solved_refusal(|t| t.schema_version = version);
         assert_refusal(err, "UnsupportedSchemaVersion", None);
     }
@@ -3730,7 +3736,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             E::UnsupportedSchemaVersion {
                 changes: _,
                 version: 12,
-                expected: 28
+                expected: 29
             }
         ),
         "{e}"

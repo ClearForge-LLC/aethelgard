@@ -1,5 +1,5 @@
 {
-  "schema_version": 28,
+  "schema_version": 29,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -449,10 +449,15 @@
         "resistor": {
           "reference": "R7",
           "part": "CRCW0603_F_K",
-          "ohms": 40200,
+          "ohms": 442000,
           "to": "GND"
         },
-        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+        "link": {
+          "reference": "R11",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
       }
     },
     {
@@ -465,10 +470,15 @@
         "resistor": {
           "reference": "R8",
           "part": "CRCW0603_F_K",
-          "ohms": 40200,
+          "ohms": 442000,
           "to": "GND"
         },
-        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+        "link": {
+          "reference": "R12",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
       }
     },
     {
@@ -481,10 +491,15 @@
         "resistor": {
           "reference": "R9",
           "part": "CRCW0603_F_K",
-          "ohms": 40200,
+          "ohms": 442000,
           "to": "GND"
         },
-        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+        "link": {
+          "reference": "R13",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
       }
     },
     {
@@ -497,10 +512,15 @@
         "resistor": {
           "reference": "R10",
           "part": "CRCW0603_F_K",
-          "ohms": 40200,
+          "ohms": 442000,
           "to": "GND"
         },
-        "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"
+        "link": {
+          "reference": "R14",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
       }
     }
   ],

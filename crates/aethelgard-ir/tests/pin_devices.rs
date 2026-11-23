@@ -263,12 +263,12 @@ fn a_strap_level_the_pin_lacks_is_refused() {
     // PMODE has no resistor level.
     let mut v = d1();
     device(&mut v)["straps"]["PMODE"] =
-        json!({"resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 20000}});
+        json!({"resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 20000}});
     assert_kind(&v, "StrapLevelInvalid");
     // IMODE's resistor levels are 18.6-21.4 and 57.6-66.4 kOhm.
     let mut v = d1();
     device(&mut v)["straps"]["IMODE"] =
-        json!({"resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 40000}});
+        json!({"resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 40000}});
     assert_kind(&v, "StrapLevelInvalid");
     // VREF tied to VMOTOR is above its 3.6 V.
     let mut v = d1();
@@ -280,7 +280,7 @@ fn a_strap_level_the_pin_lacks_is_refused() {
 fn a_resistor_strap_inside_a_level_validates() {
     let mut v = d1();
     device(&mut v)["straps"]["IMODE"] =
-        json!({"resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 20000}});
+        json!({"resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 20000}});
     spec(&v).validate().unwrap();
 }
 
@@ -852,7 +852,7 @@ fn a_pull_up_past_the_vol_test_current_is_named_as_such() {
     let mut v = d2_declared();
     device(&mut v)["temperature_celsius"] =
         json!({"min": -20, "max": 85, "source": "a declaration for this test"});
-    device(&mut v)["signals"][1]["pull"] = json!({"resistor": {"reference": "R9",
+    device(&mut v)["signals"][1]["pull"] = json!({"resistor": {"reference": "R19",
         "part": "CRCW0603_F_K", "ohms": 600, "to": "VDD_3V3"}, "source": "a declaration for this test"});
     let e = refused(&v);
     assert_eq!(e.kind(), "PullOverDrive", "{e}");
@@ -876,7 +876,7 @@ fn d2_pulled(to: &str, nominal: u32, tol: u32, pin: Value) -> Value {
     assert_eq!(s["device_pin"], "nFAULT");
     s["pin"] = pin;
     s["pull"] = json!({
-        "resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 10000, "to": to},
+        "resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 10000, "to": to},
         "source": "AET-WO-1211e test: a declared pull-up"
     });
     device(&mut v)["temperature_celsius"] = d1()["pin_devices"][0]["temperature_celsius"].clone();
