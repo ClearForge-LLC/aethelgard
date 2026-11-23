@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1607-cli-backlog` from `main` `28fba951`, with `main` `fa9d7edd` merged in. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh subagent (Opus, chosen for judgement) for the targeted adversarial pass. Its findings were checked before being adopted. Written 2026-11-23.
 
-**Status: READY** (CI green on `ff210f1d`, §7). D1 was ruled (b) at 01:15Z, and the three edits outside §3's file list were accepted with it. D2 was ruled at 02:15Z, MCP's exit 7 and `TIER2_MIN` at 03:30Z. Each is built as ruled. **The answer:**
+**Status: READY** (CI green on `ae6627cf`, the code and weights as shipped, §7). D1 was ruled (b) at 01:15Z, and the three edits outside §3's file list were accepted with it. D2 was ruled at 02:15Z, MCP's exit 7 and `TIER2_MIN` at 03:30Z. Each is built as ruled. **The answer:**
 - **(1)** `check support` refuses any KiCad but 10.0.7 through `kicad::pinned`, as `check drc` and `check erc` do.
 - **(2)** The tier-1 tests that take `build` or `prove` past the pre-flight get a `TMPDIR` outside `$HOME` (`common::private_tmp`: `/run/user/<euid>`; root keeps `/var/lib/aethelgard`).
   - **Base:** with a `~/.cargo/config.toml` and the target outside the repository, 36 tests fail `CargoConfigRefused`.
@@ -161,7 +161,7 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **F-K: the shard refit rule fires** (`ci/shard.sh` REFIT RULE: a spread above 6 minutes on two runs in a row).
   - Tools-shard spread on this PR: 6.2 min on `f6372ddd` (run 45095787493), then 7.3 min on `ff210f1d` (45107410136). The slowest shard is 17m52s, under the 20-minute line.
   - `main`'s `b22600d3` (3307) was already 7.2 min, and `d09a5187` 3.1 min.
-  - D2's 345 s row is one of the inputs. The refit is `ci/` work, outside this fence, and yours to schedule.
+  - On `ae6627cf` (after 1914 and this PR's rows) the slowest shard was 19.9 min, at the 20-minute line, with a 7.0-minute spread. D2's 345 s row and `cli_backlog_tier1`'s 185 s (F-L) are inputs. The refit is `ci/` work, outside this fence, and yours to schedule.
 
 - **F-L: three of `cli_backlog_tier1`'s tests are heavy.** Together they take about 66 s alone on Furnace, weighed 184.6 s in CI, mostly because each emits or generates the same three boards. One shared emit per specification across them (a `OnceLock`, as `common::verify::Shared` does for `verify`) would cut that to about a third. This was found at READY; it is a test-structure change that would re-open the mutant run, so it is reported, not made.
 
@@ -172,7 +172,11 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean, and again for `aethelgard-cli` with `--features with-tools`;
   - `cargo test --workspace` (target in the repository, `TMPDIR` unset, as CI's host job): **2795 passed, 0 failed, 0 ignored**, 161 `test result` lines (`m/ws-d2.log`). At `8ff08248`, before D2, it was 2794.
   - The D2 tier-2 test passed alone in the image (`t2.log`). `ci/test-shard.sh` passes with its row (126 PASS).
-- **CI on `ff210f1d` (PR #342, the final code): green.**
+- **CI on `ae6627cf` (PR #342; the code and weights as shipped, after 1914's P3): green.**
+  - Runs: `ci` 45112159401, `engine-image` 45112159359 and `ardupilot-image` 45112159421. 33 checks pass; 3 are skipped by the workflow.
+  - `tier2_tests_passed=205 floor=205`. P3 refuses no test, with the rows above.
+  - Tools shards: slowest 19.9 min, fastest 12.9 min (F-K).
+- **CI on `ff210f1d` (PR #342, the final code before the rows): green.**
   - Runs: `ci` 45107410136, `engine-image` 45107410154 and `ardupilot-image` 45107410239. 33 checks pass; 3 are skipped by the workflow.
   - The tier-2 guard reports `tier2_tests_passed=205 floor=205`.
   - `with_tools::a_board_not_drawn_runs_its_gates_and_is_never_verified`, `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` and `four_layer_fab_tier2::against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies` pass.
