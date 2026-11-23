@@ -1,0 +1,17 @@
+VDD min 3135 mV, max 3465 mV (nominal 3300, +/-50 permille)
+  at VDD 3135 mV: floor   211824.3 ohm   ceiling     895714.3 ohm
+  at VDD 3300 mV: floor   211200.0 ohm   ceiling     942857.1 ohm
+  at VDD 3465 mV: floor   210638.3 ohm   ceiling     990000.0 ohm
+BOUND over the rail: floor 211824.3 ohm (at VDD min), ceiling 895714.3 ohm (at VDD min)
+VALUE 221000 ohm: worst case 214370 .. 227630 ohm
+  passthrough idle at VDD min, R = 214370: 2513.7 mV vs VIH min 2194.5 mV
+  reset at VDD min, R = 227630: 159.3 mV vs VIL max 940.5 mV
+  4300i's 40200 ohm in passthrough at VDD min: 1381.6 mV, between VIL max 940.5 and VIH min 2194.5 mV: neither level
+
+sensitivity (not the bound): floor / ceiling at VDD min
+  margin 0                                                         121176.1    1343571.4  -> E96 127000
+  margin 5 % VDD                                                   157011.7    1119642.9  -> E96 162000
+  margin 10 % VDD (chosen)                                         211824.3     895714.3  -> E96 221000
+  leakage 250 nA each end                                          208305.6    1254000.0  -> E96 215000
+  ESC VIH 0.47 VDD + 0.25 V (note 2 row) ~ 0.546 VDD at 3.135 V     95806.9     895714.3  -> E96 100000
+  cross-rail: pull-up at VDD min, ESC VIH at VDD max               422561.0
