@@ -6,6 +6,7 @@ cand-whole-every_valid_sequence-r1	0	1046.1	11.3	11.3	11.264	0.007	0.0	0	kani-dr
 confirm8g-prove-s02-every_valid_sequence_spi1	0	155.1	6.525	6.525	6.465	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.427	0	10
 confirm8g-verify-bench	0	192.6	3.536	3.536	3.179	0.036	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.116	0	1
 confirm8g-verify-ref	0	144.4	3.503	3.503	3.238	0.011	0.0	0	kani-driver@prove every_valid_sequence_spi1:3.176	0	1
+extra-hse8-generate	None	None	None	0.018	0.013	0.002	0.0	0	None@None:None	0	0
 gate-build-sentinel-01-bench-r1	0	0.2	0.043	0.026	0.02	0.0	0.0	0	None@None:None	0	0
 gate-build-sentinel-01-bench-r2	0	0.2	0.042	0.025	0.019	0.0	0.0	0	None@None:None	0	0
 gate-build-sentinel-01-r1	0	0.2	0.044	0.024	0.019	0.0	0.0	0	None@None:None	0	0
@@ -14,6 +15,8 @@ gate-campaign-sentinel-01-bench-r1	0	17.5	0.35	0.35	0.319	0.002	0.0	0	renode@cam
 gate-campaign-sentinel-01-bench-r2	0	16.7	0.35	0.35	0.322	0.002	0.0	0	renode@campaign:0.29	0	0
 gate-campaign-sentinel-01-r1	0	17.1	0.347	0.347	0.33	0.002	0.0	0	renode@campaign:0.297	0	0
 gate-campaign-sentinel-01-r2	0	16.8	0.349	0.349	0.323	0.002	0.0	0	renode@campaign:0.289	0	0
+prove-hse8-every_valid_sequence_spi1-r1	143	315.0	16.0	16.0	15.106	0.018	0.0	1	kani-driver@prove every_valid_sequence_spi1:15.078	0	20
+prove-hse8-every_valid_sequence_spi1-r2	143	312.7	16.0	16.0	15.354	0.018	0.0	1	kani-driver@prove every_valid_sequence_spi1:15.324	0	20
 prove-s02-every_valid_sequence_i2c1-r1	0	26.6	2.156	2.037	2.021	0.007	0.0	0	kani-driver@prove every_valid_sequence_i2c1:1.984	0	0
 prove-s02-every_valid_sequence_spi1-r1	0	157.9	6.525	6.525	6.432	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.395	0	12
 prove-s02-every_valid_sequence_spi1-r2	0	149.9	6.525	6.525	6.441	0.008	0.0	0	kani-driver@prove every_valid_sequence_spi1:6.403	0	10

@@ -18,7 +18,9 @@ Measured 2026-11-23 on Furnace. Base is `main` `57b62195`, from a scratch tree e
 - **The lean:**
   - The change that brings the peak under 8 GiB has already landed (3303b).
   - Local callers can go back to `capped-run --mem 8G` for `verify` and `prove` on the committed boards (measured, §4.2).
-  - The one board in `examples/` that comes close is `sentinel-02-bench`. It has no `boards/` directory, and its `every_valid_sequence_spi1` peaks at 6.53 GiB. It passes at 8G (§4.1) with 1.47 GiB to spare.
+  - Two boards in `examples/` have no `boards/` directory and are reported separately:
+    - `sentinel-02-bench`: its `every_valid_sequence_spi1` peaks at 6.53 GiB, and passes at 8G (§4.1) with 1.47 GiB to spare.
+    - `sentinel-02-bench-hse8` (`1607` F-H, routed here mid-spike): its `every_valid_sequence_spi1` is OOM-killed at 16G (§4.1a). At the kill, kani-driver alone holds 15.1–15.3 GiB after CBMC (3.3 GiB) has exited. The lever there is kani-driver, not the formula.
 
 ## 2. `verify`, by phase (measured)
 
@@ -116,6 +118,22 @@ So the whole campaign phase, Renode included, stays under 0.35 GiB: one tenth of
   - Every other harness stays under 1 GiB.
 - **At 8G** (`confirm8g-prove-s02-every_valid_sequence_spi1`), it passes at 6.525 GiB in 155 s. That leaves 1.47 GiB of headroom, the least of any board measured.
 
+### 4.1a A ground that came in mid-spike: `sentinel-02-bench-hse8` (measured to the cap)
+
+- **The row:** `main`'s roadmap gained it after this WO was written (`aaad1555`): "Kani peaks at 16.5 GiB on `sentinel-02-bench-hse8`'s spi1 harness (`1607` F-H) → `AET-WO-1915`". `1607` measured that harness OOM-killed at 16 GiB, and passing at 32 GiB with a 16.5 GiB peak.
+- **What was run here:** `examples/sentinel-02-bench-hse8.json`, generated with this WO's CLI (`target/hse8`, 9 harnesses). Its `every_valid_sequence_spi1` was proved twice at `--mem 16G`. A larger cap is outside this WO's fence (§3) and Furnace's one-16G rule.
+
+| Run | Exit | Wall s | `memory.peak` | `oom_kill` | At the kill |
+|---|---|---|---|---|---|
+| `prove-hse8-every_valid_sequence_spi1-r1` | 143 (killed) | 315.0 | 16.00 GiB (the cap) | 1 | kani-driver 15.08 GiB, CBMC gone |
+| `prove-hse8-every_valid_sequence_spi1-r2` | 143 (killed) | 312.7 | 16.00 GiB (the cap) | 1 | kani-driver 15.32 GiB, CBMC gone |
+
+- **The shape is the same as every board here, only larger:**
+  - CBMC peaks at 3.29–3.32 GiB and exits at 305–308 s.
+  - kani-driver grows at about 0.1 GiB/s for 45 s beside it, then at about 1.25 GiB/s alone, and is killed while still growing.
+- **So `1607`'s 16.5 GiB is kani-driver, serial, after the solver has exited.** CBMC needs a fifth of it.
+- **What follows:** a change to the formula (the unwind bound, the solver, `--jobs`, a further split) does not act on the process that holds the peak. What kani-driver does with CBMC's results does. That is the next candidate (FEEDBACK D4); this WO has measured its one.
+
 ### 4.2 The confirmation at 8G
 
 `verify` on both committed boards under `capped-run --mem 8G` passes. It takes the same wall time as at 16G (144 s and 193 s against 135–152 s and 182–202 s) and reaches the same peak (3.503 and 3.536 GiB). There were no OOM events.
@@ -133,7 +151,7 @@ So the whole campaign phase, Renode included, stays under 0.35 GiB: one tenth of
 
 **A process in the wrong phase. Not found.**
 - **The two WO examples:**
-  - No sample in 69 runs has a `cargo`, `rustc` or `kani-compiler` process alive beside CBMC (`cbmc_beside_build_samples`, empty in every run).
+  - No sample in 72 runs has a `cargo`, `rustc` or `kani-compiler` process alive beside CBMC (`cbmc_beside_build_samples`, empty in every run).
   - No sample in any `verify` has two gates' processes alive at once.
 - **How a phase is assigned:** by ancestry, to the nearest `aethelgard <subcommand>` ancestor; `prove` takes its harness from `--harness`. Through the CLI's reaper and sandbox, every tool process found its gate.
 - **The only processes with no gate:** two, both the CLI's scratch guardian (`--aethelgard-internal-guard`), a few MiB, which outlives its parent for a moment by design (`main.rs` `Scratch::new`).
@@ -168,4 +186,4 @@ So the whole campaign phase, Renode included, stays under 0.35 GiB: one tenth of
 - **The guard:**
   - A run started only with 12 GiB plus its cap available.
   - The sampler SIGKILLs its own scope on any sample under 12 GiB. That was tested with a raised floor: the scope was killed within 1 s.
-- **Result:** the lowest MemAvailable seen in any sample of any run was 39.2 GiB. The guard never fired outside its test.
+- **Result:** the lowest MemAvailable seen in any sample of any run was 32.8 GiB, during the two hse8 runs at 16G. The guard never fired outside its test.

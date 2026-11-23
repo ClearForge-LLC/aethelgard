@@ -1,0 +1,7 @@
+tag=extra-hse8-generate mem=8G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T05:43:54+00:00
+host_avail_kB=49901388
+cmd: bash -c rm -rf target/hse8 && target/debug/aethelgard generate --spec examples/sentinel-02-bench-hse8.json --out target/hse8
+exit=0
+end=2026-11-23T05:43:55+00:00

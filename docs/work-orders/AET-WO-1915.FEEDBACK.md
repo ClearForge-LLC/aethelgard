@@ -4,7 +4,7 @@
 
 - **Base:** `main` `57b62195`. **Branch:** `wo/aet-1915-memory-peak`.
 - **Predictions:** `spike/1915/predictions.md`, committed alone at `7363c014` (04:32Z), before any measured run.
-- **The record:** `spike/1915/results.md`. The per-run summaries are in `spike/1915/out/`: 69 runs, each with its JSON summary and its `meta`, which holds the exact command, image, cap and exit.
+- **The record:** `spike/1915/results.md`. The per-run summaries are in `spike/1915/out/`: 72 runs, each with its JSON summary and its `meta`, which holds the exact command, image, cap and exit.
 
 ## Answer first
 
@@ -37,7 +37,12 @@
    - **Nothing in a crate, workflow or CI file is asked for.** Then stop.
 6. **The declared extra:** `examples/sentinel-02-bench.json`, `3304`'s ground, which has no `boards/` directory.
    - On today's `main` its `every_valid_sequence_spi1` peaks at **6.53 GiB**: twice at 16G, and once at 8G, where it passes.
-   - That leaves 1.47 GiB of headroom, the least measured (F3).
+   - That leaves 1.47 GiB of headroom, the least of the boards that fit (F3).
+7. **A ground routed here mid-spike: `sentinel-02-bench-hse8` (`1607` F-H, roadmap row added at `aaad1555`). Measured to this WO's 16G cap.**
+   - Its `every_valid_sequence_spi1` was OOM-killed at 16G twice, at 315 and 313 s.
+   - At the kill, **kani-driver alone held 15.1–15.3 GiB, still growing at about 1.25 GiB/s. CBMC had peaked at 3.3 GiB and already exited.**
+   - So `1607`'s 16.5 GiB is the same process and shape as every board here, only larger.
+   - No formula change (unwind, solver, `--jobs`, a further split) acts on that process. The next candidate is kani-driver's handling of CBMC's results (D4). This WO has measured its one candidate, so it stops.
 
 ## 1. What was measured, and how
 
@@ -69,8 +74,21 @@
   - **Lean:** close both, citing `spike/1915/results.md` §4. Both rows are yours: `docs/` is outside this fence.
 - **D2. The 16G advice for local callers.** This WO's kickoff says "verify can need more than 8 GiB: use --mem 16G".
   - **Measured:** `verify` passes at 8G on both committed boards, and `sentinel-02-bench`'s heaviest harness passes at 8G.
-  - **Lean:** 8G again for `verify` and `prove` on any board in the repository, with 16G kept only for a new board until its heaviest `every_valid_sequence_*` has been proved once.
+  - **Lean:**
+    - 8G again for `verify` and `prove` on the committed boards and on `sentinel-02-bench`.
+    - 32G for `sentinel-02-bench-hse8`, which needs more than 16 GiB (D4).
+    - 16G for a new board, until its heaviest `every_valid_sequence_*` has been proved once.
   - The kickoff template and CLAUDE.md's `capped-run` line are yours.
+- **D4. `sentinel-02-bench-hse8`: the next candidate is kani-driver, not the formula.**
+  - **Measured:** kani-driver alone, after CBMC exits, holds the whole peak (§Answer 7, `results.md` §4.1a).
+  - **Proposed, for a follow-up spike:** measure kani-driver's peak against what it reads.
+    - The size of CBMC's output for that harness, through Kani's `--keep-temps` and the CBMC command it prints under `--verbose`.
+    - Then one Kani option measured from a scratch copy that changes what CBMC hands the driver, if 0.68 has one. Which options exist is not checked here [not measured].
+    - It needs a cap above 16G for the passing side, which is outside this WO's fence and Furnace's one-16G rule.
+  - **Lean:**
+    - A follow-up spike at `--mem 32G` when Furnace has the headroom, one container, with the 12 GiB floor kept: it needs 44 GiB available to start.
+    - Until then, hse8 stays a 32G board for any caller, as `1607` F-H says.
+    - CI runs no `verify` of it, so no gate is affected.
 - **D3. Watch the heaviest schedule part (lean: backlog only, by the scope test).**
   - The bench's `every_valid_sequence_spi1` grew from 2.63 GiB at 3303b to 3.48 GiB now (+32 %). The generated board content since, `1211b` onward, is the likely cause [inferred].
   - `sentinel-02-bench`'s is 6.53 GiB.
@@ -87,7 +105,7 @@
   - **Example:** the same harness sampled 3.447 and then 2.796 GiB, against a `memory.peak` of 3.476 both times.
   - So every peak in the record is `memory.peak`, and the samples only say whose it is. The same shape fooled P10 (F5).
 - **A process in the wrong phase: not found.**
-  - No sample in 69 runs has a `cargo`, `rustc` or `kani-compiler` process alive beside CBMC.
+  - No sample in 72 runs has a `cargo`, `rustc` or `kani-compiler` process alive beside CBMC.
   - No `verify` sample has two gates' processes alive at once.
   - Two processes in all the runs have no gate. Both are the CLI's scratch guardian (`--aethelgard-internal-guard`, a few MiB), which outlives its parent by design.
   - kani-driver's RssAnon is 95–99 % of the cgroup's `anon` at every peak on today's `main`, so per-process sums cannot double count.
@@ -118,13 +136,13 @@
 
 - **F1. Furnace's "free memory under 12 GB" read as MemAvailable.**
   - Before my first run, the `free` column read 8–10 GB with MemAvailable about 50 GB: it is page cache.
-  - I posted this reading on the bus at the start. The lowest MemAvailable in any sample of any run was 39.2 GiB, and the guard never fired outside its test.
+  - I posted this reading on the bus at the start. The lowest MemAvailable in any sample of any run was 32.8 GiB, during the hse8 runs, and the guard never fired outside its test.
   - If another reading was meant, every run here was inside it anyway.
 - **F2. `4201` F4's wording.** It says "Sentinel-01 as ordered", but its run (`4201` FEEDBACK §4.2) was a scratch variant with U2 a BMP581. A protected document; noted, not edited.
-- **F3. `sentinel-02-bench` is the closest to 8 GiB:** 6.53 GiB, and 1.47 GiB to spare at 8G. It is the board to measure first if D3's watch is wanted.
+- **F3. Of the boards that fit, `sentinel-02-bench` is the closest to 8 GiB:** 6.53 GiB, and 1.47 GiB to spare at 8G. `sentinel-02-bench-hse8`, a twin stand-in, does not fit 16G (D4). The two are the boards to watch if D3's watch is wanted.
 - **F4. kani-driver, not CBMC, is the largest process in every heavy harness.** On today's `main` its sampled peak is 2.7–4.6× CBMC's; on the whole harness before the split it is 1.3×. Both are sampled VmHWM, so lower bounds. Its growth starts when CBMC begins to finish.
   - The cause is inferred: parsing CBMC's results, including the satisfied covers' traces at unwind 77.
-  - A Kani option measured against it would be the next candidate if the peak ever matters again. Backlog by the scope test, not built.
+  - On hse8 it does matter: it is the whole of a peak above 16 GiB (D4).
 - **F5. A method lesson for any later memory measurement here.**
   - A 1 s sampler under-reads the peak of a Kani run by up to a third; read `memory.peak`.
   - The method that works: one container per short gate, `memory.peak` read inside it as the last step, and the samples used for attribution only.
