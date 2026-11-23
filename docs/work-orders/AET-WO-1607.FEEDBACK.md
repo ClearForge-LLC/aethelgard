@@ -2,7 +2,7 @@
 
 **Branch:** `wo/aet-1607-cli-backlog` from `main` `28fba951`, with `main` `fa9d7edd` merged in. **Builder:** Claude (Opus 5.5 orchestrating), with one fresh subagent (Opus, chosen for judgement) for the targeted adversarial pass. Its findings were checked before being adopted. Written 2026-11-23.
 
-**Status: READY** (CI in §7). D1 was ruled (b) at 01:15Z and built as ruled. The three edits outside §3's file list were accepted in the same ruling. **The answer:**
+**Status: READY** (CI green on `ff210f1d`, §7). D1 was ruled (b) at 01:15Z, and the three edits outside §3's file list were accepted with it. D2 was ruled at 02:15Z, MCP's exit 7 and `TIER2_MIN` at 03:30Z. Each is built as ruled. **The answer:**
 - **(1)** `check support` refuses any KiCad but 10.0.7 through `kicad::pinned`, as `check drc` and `check erc` do.
 - **(2)** The tier-1 tests that take `build` or `prove` past the pre-flight get a `TMPDIR` outside `$HOME` (`common::private_tmp`: `/run/user/<euid>`; root keeps `/var/lib/aethelgard`).
   - **Base:** with a `~/.cargo/config.toml` and the target outside the repository, 36 tests fail `CargoConfigRefused`.
@@ -18,7 +18,7 @@
   - Measured in the image on `d1-drv8876`: ten `prove` runs, `build` and `simulate` pass. The tier-2 test asserts the whole outcome (§7).
   - Both fab flags still refuse with `DrawsNoBoard`.
 - **(6)** The banner is on the `emit`, `check drc --spec`, `check support`, `prove --spec` and `check pinout` verdicts, equal to `validate`'s, `eol` as `nrnd`. It is on `solve`'s stderr (D1 (b)), and `solve`'s stdout stays the topology alone.
-- **No emitted file and no `fab/` byte moved.** Over the null sweep of 34 specifications, the only lines that move are the ones (6) names (§2). `TIER2_MIN` is unchanged, and no test was weakened.
+- **No emitted file and no `fab/` byte moved.** Over the null sweep of 34 specifications, the only lines that move are the ones (6) names (§2). `TIER2_MIN` is raised to 205, as ruled. No test was weakened.
 
 ## 0. How it was made
 
@@ -141,7 +141,7 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **What:** D2's first build (`1a8a4364`, pushed at `ea46983a`) computed the exit code in `outcome` *before* the fab step. `--against-fab` on a differing package sets `ok: false`, `verdict: fail` inside `package`, but the code stayed the earlier 0.
 - **Caught by:** CI run 45103263052, tools shards 1 and 8. `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` and `four_layer_fab_tier2::against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies` both read `left: Some(0), right: Some(1)`.
 - **Why nothing earlier caught it:** only those two tier-2 tests reach a pass that the package then fails. The host suite, the image runs above and the 23 mutants never do. `the_exit_code_is_the_verdicts_whatever_the_fab_mode` starts from a failing gate.
-- **Fix (`5a0a1b33`):** `outcome` returns the verdict and reason only, and `exit_code(report.ok, report.verdict)` is read after the package, as `main`'s code read `report.ok`. The unit test asserts `exit_code(false, "fail") == 1`, and M21 covers `exit_code`'s `not_verified` arm. CI_FIX
+- **Fix (`5a0a1b33`):** `outcome` returns the verdict and reason only, and `exit_code(report.ok, report.verdict)` is read after the package, as `main`'s code read `report.ok`. The unit test asserts `exit_code(false, "fail") == 1`, and M21 covers `exit_code`'s `not_verified` arm. **On `ff210f1d` both tier-2 tests pass** (CI run 45107410136), as does D2's tier-2 test.
 
 ## 6. Findings, not fixed here
 
@@ -158,28 +158,35 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 
 ## 7. Gates, fence, reduction pass, mutants
 
-- **Gates at `6ea27f87`** (the code head, after D2; later commits are `docs/` and `spike/` only):
+- **Gates at `6ea27f87`** (D2's first build; the merged final code is under "`main` merged" below):
   - `cargo fmt --all -- --check`: clean;
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean, and again for `aethelgard-cli` with `--features with-tools`;
   - `cargo test --workspace` (target in the repository, `TMPDIR` unset, as CI's host job): **2795 passed, 0 failed, 0 ignored**, 161 `test result` lines (`m/ws-d2.log`). At `8ff08248`, before D2, it was 2794.
   - The D2 tier-2 test passed alone in the image (`t2.log`). `ci/test-shard.sh` passes with its row (126 PASS).
+- **CI on `ff210f1d` (PR #342, the final code): green.**
+  - Runs: `ci` 45107410136, `engine-image` 45107410154 and `ardupilot-image` 45107410239. 33 checks pass; 3 are skipped by the workflow.
+  - The tier-2 guard reports `tier2_tests_passed=205 floor=205`.
+  - `with_tools::a_board_not_drawn_runs_its_gates_and_is_never_verified`, `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` and `four_layer_fab_tier2::against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies` pass.
+- **CI on `ea46983a` (D2's first build): red**, three checks. Tools shards 1 and 8 failed, and `tools` with them: the defect in §5b.
 - **CI on `f6372ddd` (PR #342, before D2): green.**
   - Runs: `ci` 45095787493, `engine-image` 45095787593 and `ardupilot-image` 45095787549. 33 checks pass; 3 are skipped by the workflow.
   - The tier-2 guard reports `tier2_tests_passed=204 floor=203`. `TIER2_MIN` and `ci/test-weights.tsv` are unchanged; no tier-2 test was added.
   - **F2, settled:** CI's host `gates` job runs as the runner user, not root. There `cli_backlog_tier1::the_private_scratch_is_outside_home` and every `private_tmp` caller pass, so the runner has `/run/user/<uid>`.
-- **Mutants** (`spike/1607/mutants.py`; 23, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
-  - **22 of 22 killed at `d2a5737a`, and at `8ff08248` after the reduction. 23 of 23 at `1a8a4364`, with D2's M19.** Each was killed by its named test, and every selection passes on the pristine tree (`mut/result-d2.txt`).
-  - The groups: M1 (pin); M2 (scratch under `$HOME`, with M2b, its assertion off); M3 (`fab_tier1` scratch); M4, M5, M5b, M5c, M5d (`readme_status`); M6, M6b, M7, M8, M9 (`verify`); M10–M14 and M18 (each banner site); M15 (`doctor`); M16, M17 (the two runners' `TMPDIR`); M19 (a no-board run that passed mapped to `pass`/0).
+- **Mutants** (`spike/1607/mutants.py`; 25, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
+  - **22 of 22 killed at `d2a5737a`, and at `8ff08248` after the reduction. 23 of 23 at `1a8a4364`. 25 of 25 at `ff210f1d`, the final code**, with M19–M21. Each was killed by its named test, and every selection passes on the pristine tree (`mut-final/result.txt`).
+  - The groups: M1 (pin); M2 (scratch under `$HOME`, with M2b, its assertion off); M3 (`fab_tier1` scratch); M4, M5, M5b, M5c, M5d (`readme_status`); M6, M6b, M7, M8, M9 (`verify`); M10–M14 and M18 (each banner site); M15 (`doctor`); M16, M17 (the two runners' `TMPDIR`); M19 (a no-board run that passed mapped to `pass`); M20 (MCP's exit 7 an error); M21 (`exit_code`'s `not_verified` arm to 1).
 - **Fence:** §3's files, plus the three out-of-list edits accepted at 01:15Z:
   - (a) `doctor.rs` `KICAD_PINNED`, its `doctor_tier1` assertion, and the CLI README;
   - (b) `tools_tier1.rs` and `generate_tier1.rs`, on `private_tmp`;
   - (c) `emit_tier1.rs`'s plain-`verify` row.
+  - `mcp.rs`, one line, with its unit test, and `.github/workflows/ci.yml`'s `TIER2_MIN`, one line: both ruled 03:30Z.
   - D2's tier-2 test in `with_tools.rs`, with its `ci/test-weights.tsv` row, which §3 allows. It is a Furnace estimate: 123.33 s alone in the image, times 2.8, gives 345.324.
   - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
   - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
 - **`main` merged twice:**
   - `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`.
-  - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
+  - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`.
+  - `15798f91` (2309's chaos change, 4407's images, and `docs/`), at `ff708b3a`. One conflict: `ci/test-weights.tsv`, where each side added a header line, and both are kept. On the merged tree: fmt and clippy clean, `cargo test --workspace` **2802 passed, 0 failed** (`m/ws-merged.log`), and `ci/test-shard.sh` 126 PASS. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
 - **Reduction pass (diff): +807 net in `crates/` (+927 −120) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
   - **Removed:** `doctor`'s `KICAD_PINNED`, equal to `KICAD` once (1) landed.
   - **Removed:** the banner-to-lines conversion, written twice in `cli_backlog_tier1` (now `banner_lines`).
