@@ -85,6 +85,14 @@ pub const THERMAL_BRIDGE_NM: i64 = 500_000;
 pub const GROUND: &str = crate::schematic::GND;
 /// How many nets may be taken up, in all, to make way for others.
 pub const RIPUPS: usize = 500;
+/// The most work one routing may do before it is refused by name
+/// (`RouterWorkExceeded`, `AET-WO-1323` D1): each state a search expands, and
+/// each node a fill flood visits, counts one. A count, never a clock, so a
+/// board's answer cannot depend on the machine. Sized at §1.1: the heaviest
+/// routing any test makes did 170.1 M (d3 shifted, under U1), the heaviest
+/// committed specification 119.0 M (`sentinel-02-power`); `1307` A4's
+/// adversary reaches it in under a minute, where it took 203 s to [`RIPUPS`].
+pub const WORK: u64 = 350_000_000;
 
 /// Added to every reach on the grid. Two open nodes a pitch apart are each
 /// at least `R + EPS` from an obstacle, so the chord between them stays at
@@ -324,6 +332,9 @@ pub struct Unroutable {
     /// Set when the board is refused because a run of a part's pads has no
     /// escape (`AET-WO-1310` D1): the part's reference and the pads.
     pub exhausted: Option<(String, Vec<String>)>,
+    /// Set when the routing is refused for its work (`AET-WO-1323` D1): the
+    /// bound it passed.
+    pub work_bound: Option<u64>,
 }
 
 // ---- geometry ----
@@ -516,6 +527,8 @@ enum Anchor {
 enum Stuck {
     By(BTreeSet<usize>),
     Unroutable(String),
+    /// The routing's work passed its bound ([`WORK`]).
+    Work,
 }
 
 struct Router<'a> {
@@ -568,6 +581,9 @@ struct Router<'a> {
     escapes: BTreeMap<BoxKey, Escape>,
     /// The first run of pads that has no escape, if any: the board is refused.
     exhausted: Option<(String, Vec<String>)>,
+    /// The work done so far, and the most this routing may do ([`WORK`]).
+    work: u64,
+    limit: u64,
     // The search's scratch, stamped per search.
     stamp: Vec<u16>,
     cost: Vec<u32>,
@@ -1074,6 +1090,8 @@ impl<'a> Router<'a> {
             fixed: vec![false; count],
             escapes,
             exhausted,
+            work: 0,
+            limit: WORK,
             stamp: vec![0; 2 * n * 5],
             cost: vec![0; 2 * n * 5],
             prev: vec![0; 2 * n * 5],
@@ -1104,6 +1122,11 @@ impl<'a> Router<'a> {
     /// The rule `net` is laid by.
     fn rule(&self, net: usize) -> Rule {
         self.kinds[self.kind[net]]
+    }
+
+    /// Whether this routing has done more work than it may.
+    fn over(&self) -> bool {
+        self.work > self.limit
     }
 
     /// Whether `net` may centre a track at `node` on `layer`: by every
@@ -1153,8 +1176,11 @@ impl<'a> Router<'a> {
     /// Two vias of one path closer than the hole gap cannot straddle
     /// foreign copper, which would hold them 1.2 mm apart; so the hop
     /// between them goes on the layer it left, where that layer is open.
-    /// Otherwise the second via's node is banned and `None` returned.
-    fn unhop(&mut self, net: usize, path: &mut Vec<Node>) -> Option<()> {
+    /// A `soft` search's path is judged as that search judged it, on the
+    /// hard maps (pads, fields and the edge alone: `1310` D3's U1,
+    /// `AET-WO-1323` D2), since its foreign copper only names who is in the
+    /// way. Otherwise the second via's node is banned and `None` returned.
+    fn unhop(&mut self, net: usize, path: &mut Vec<Node>, soft: bool) -> Option<()> {
         while let Some((i, j)) = self.close_vias(net, path) {
             let outer = path[i].0;
             // path[i] and path[j] are the hop's ends on the outer layer;
@@ -1163,7 +1189,14 @@ impl<'a> Router<'a> {
                 .iter()
                 .map(|&(_, n)| (outer, n))
                 .collect();
-            if flat.iter().all(|&(l, n)| self.open(l, n, net)) {
+            let open = |l: Layer, n: usize| {
+                if soft {
+                    self.hard_open(l, n, net)
+                } else {
+                    self.open(l, n, net)
+                }
+            };
+            if flat.iter().all(|&(l, n)| open(l, n)) {
                 let tail = path.split_off(j);
                 path.truncate(i + 1);
                 path.extend(flat);
@@ -1222,6 +1255,9 @@ impl<'a> Router<'a> {
         window: (usize, usize, usize, usize),
         soft: bool,
     ) -> Option<Vec<Node>> {
+        if self.over() {
+            return None;
+        }
         let n = self.grid.len();
         self.generation = self.generation.wrapping_add(1);
         if self.generation == 0 {
@@ -1263,6 +1299,10 @@ impl<'a> Router<'a> {
             let c = self.cost[s];
             if f != c + h(node) {
                 continue;
+            }
+            self.work += 1;
+            if self.over() {
+                return None;
             }
             if goal(l, node) {
                 let mut path = vec![(l, node)];
@@ -1378,14 +1418,20 @@ impl<'a> Router<'a> {
             for (margin, soft) in tries {
                 let w = self.window(ends, margin);
                 let mut found = self.search(net, sources, goal, h, b_moves, w, soft);
+                if self.over() {
+                    return Err(Stuck::Work);
+                }
                 for ban in 0..=BANS {
                     let Some(mut p) = found.take() else { break };
-                    if self.unhop(net, &mut p).is_some() {
+                    if self.unhop(net, &mut p, soft).is_some() {
                         found = Some(p);
                         break;
                     }
                     if ban < BANS {
                         found = self.search(net, sources, goal, h, b_moves, w, soft);
+                        if self.over() {
+                            return Err(Stuck::Work);
+                        }
                     }
                 }
                 if let Some(p) = found {
@@ -1613,6 +1659,12 @@ impl<'a> Router<'a> {
         self.edges[net] = Default::default();
         self.vias.retain(|_, n| *n != net);
         self.release(net, false);
+        self.remap();
+    }
+
+    /// The routed maps again, from the bare ones and every net's edges and
+    /// vias.
+    fn remap(&mut self) {
         self.track = self.hard_track.clone();
         self.via = self.hard_via.clone();
         for other in 0..self.edges.len() {
@@ -1627,6 +1679,58 @@ impl<'a> Router<'a> {
         let vias: Vec<(usize, usize)> = self.vias.iter().map(|(&n, &v)| (n, v)).collect();
         for (node, other) in vias {
             self.claim_via(other, node);
+        }
+    }
+
+    /// Takes off every end of `net`'s copper that lies in none of its pads
+    /// and is no escape's far end (a node met by one edge, with no via),
+    /// until none is left; true if any was. The maps are the caller's to
+    /// rebuild ([`Router::remap`]).
+    fn prune(&mut self, net: usize) -> bool {
+        let reach: Vec<Rect> = self
+            .board
+            .parts
+            .iter()
+            .flat_map(|p| &p.pads)
+            .filter(|p| p.net.as_deref() == Some(self.nets[net].as_str()))
+            .map(|p| p.reach())
+            .collect();
+        // An escaped pad is joined at its escape's end, off the pad.
+        let escaped: BTreeSet<usize> = self
+            .escapes
+            .values()
+            .filter(|e| e.net == net)
+            .map(|e| e.end)
+            .collect();
+        let mut any = false;
+        loop {
+            let mut cut = false;
+            for layer in &mut self.edges[net] {
+                let mut degree: BTreeMap<usize, usize> = BTreeMap::new();
+                for &(a, b) in layer.iter() {
+                    *degree.entry(a).or_default() += 1;
+                    *degree.entry(b).or_default() += 1;
+                }
+                let ends: BTreeSet<usize> = degree
+                    .into_iter()
+                    .filter(|&(n, d)| {
+                        let (x, y) = self.grid.at(n);
+                        d == 1
+                            && !self.vias.contains_key(&n)
+                            && !escaped.contains(&n)
+                            && !reach.iter().any(|r| r.contains(Rect::point(x, y)))
+                    })
+                    .map(|(n, _)| n)
+                    .collect();
+                if !ends.is_empty() {
+                    layer.retain(|(a, b)| !ends.contains(a) && !ends.contains(b));
+                    cut = true;
+                }
+            }
+            if !cut {
+                return any;
+            }
+            any = true;
         }
     }
 
@@ -1717,7 +1821,10 @@ impl<'a> Router<'a> {
         // copper already laid leaves it.
         let core = self.zone_core(net);
         let all: Vec<usize> = (0..core.len()).collect();
-        let labels = components(&self.grid, &core, &all);
+        let labels = components(&self.grid, &core, &all, &mut self.work);
+        if self.over() {
+            return Err(Stuck::Work);
+        }
         let main = main_label(&labels);
         let zone: Vec<bool> = labels.iter().map(|l| l.is_some() && *l == main).collect();
         let mut joined: BTreeSet<usize> = BTreeSet::new();
@@ -1775,7 +1882,7 @@ impl<'a> Router<'a> {
             .map(|(&n, _)| n)
             .collect();
         seeds.extend(self.anchor_seeds(ground, &core)?);
-        let labels = components(&self.grid, &core, &seeds);
+        let labels = components(&self.grid, &core, &seeds, &mut self.work);
         // The piece holding the most ground vias, then the first, is the zone.
         let main = main_label(&labels);
         if labels.iter().all(|l| l.is_some() && *l == main) {
@@ -1790,6 +1897,7 @@ impl<'a> Router<'a> {
             // Flood the island; its rim is the fence.
             let mut stack = vec![seed];
             while let Some(n) = stack.pop() {
+                self.work += 1;
                 if std::mem::replace(&mut seen[n], true) {
                     continue;
                 }
@@ -2067,7 +2175,7 @@ fn main_label(labels: &[Option<usize>]) -> Option<usize> {
 
 /// The connected parts of `core` holding each of `seeds`: a label per seed,
 /// `None` where the seed is not in the core.
-fn components(grid: &Grid, core: &[bool], seeds: &[usize]) -> Vec<Option<usize>> {
+fn components(grid: &Grid, core: &[bool], seeds: &[usize], work: &mut u64) -> Vec<Option<usize>> {
     let mut label = vec![usize::MAX; grid.len()];
     let mut out = Vec::new();
     let mut next = 0;
@@ -2080,6 +2188,7 @@ fn components(grid: &Grid, core: &[bool], seeds: &[usize]) -> Vec<Option<usize>>
             let mut stack = vec![s];
             label[s] = next;
             while let Some(n) = stack.pop() {
+                *work += 1;
                 for d in 0..4 {
                     if let Some(m) = grid.step(n, d)
                         && core[m]
@@ -2137,10 +2246,25 @@ pub fn route(board: &Board) -> Result<Routed, Unroutable> {
 
 /// [`route`] at one rung of the capacitance ladder.
 pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
+    route_measured(board, rung, WORK).map(|(routed, _)| routed)
+}
+
+/// [`route_with`] under `limit` units of work in place of [`WORK`], and the
+/// work it did: how a test sizes the bound and plants a board one unit over.
+pub fn route_measured(board: &Board, rung: Rung, limit: u64) -> Result<(Routed, u64), Unroutable> {
     let fail = |net: &str, why: String| Unroutable {
         net: net.to_owned(),
         why,
         exhausted: None,
+        work_bound: None,
+    };
+    let over = |net: &str, work: u64| Unroutable {
+        net: net.to_owned(),
+        why: format!(
+            "the router's work passed its bound, {limit} search steps and fill nodes, while routing {net} ({work} done)"
+        ),
+        exhausted: None,
+        work_bound: Some(limit),
     };
     let grid = Grid::new(board.outline).ok_or_else(|| {
         fail(
@@ -2191,6 +2315,7 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
     let arrays = arrays(board).map_err(|why| fail("", why))?;
     let index = |name: &str| nets.iter().position(|n| n == name);
     let mut r = Router::new(board, grid, nets.clone(), &arrays);
+    r.limit = limit;
     for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
         if board.stack.bounded.iter().any(|b| b == net) {
             *cost = rung.bounded_via_cost;
@@ -2212,6 +2337,7 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
                 pads.join(", ")
             ),
             exhausted: Some((reference, pads)),
+            work_bound: None,
         });
     }
     // Each declared pair first, whole, on the bare board (`AET-WO-1308`):
@@ -2227,11 +2353,30 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
         };
         r.release(p, true);
         r.release(n, true);
-        r.route_pair(pair, (p, n), [&pads[p], &pads[n]])
-            .map_err(|why| fail(&pair.nets[0], why))?;
+        if let Err(why) = r.route_pair(pair, (p, n), [&pads[p], &pads[n]]) {
+            return Err(if r.over() {
+                over(&pair.nets[0], r.work)
+            } else {
+                fail(&pair.nets[0], why)
+            });
+        }
         r.fixed[p] = true;
         r.fixed[n] = true;
         paired.extend([p, n]);
+    }
+    // The pairs' own copper judged now, before any other net is laid
+    // (`AET-WO-1323` D4): a pair the judge refuses is refused by its name,
+    // never by what a later net or `connectivity` meets first.
+    if !board.stack.pairs.is_empty() {
+        let laid = Routed {
+            segments: r
+                .segments()
+                .into_iter()
+                .filter(|s| board.stack.pairs.iter().any(|p| p.nets.contains(&s.net)))
+                .collect(),
+            ..Routed::default()
+        };
+        pairs(board, &laid).map_err(|why| fail("", why))?;
     }
     let mut queue: VecDeque<usize> = order
         .iter()
@@ -2252,6 +2397,7 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
                 let by = match result {
                     Ok(()) => break,
                     Err(Stuck::Unroutable(why)) => return Err(fail(&nets[net], why)),
+                    Err(Stuck::Work) => return Err(over(&nets[net], r.work)),
                     Err(Stuck::By(by)) => by,
                 };
                 ripups += by.len();
@@ -2278,6 +2424,9 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
         for &g in &stitched {
             if r.vias.values().any(|v| *v == g) || !r.anchors[g].is_empty() {
                 let by = r.zone_blockers(g).map_err(|why| fail(&nets[g], why))?;
+                if r.over() {
+                    return Err(over(&nets[g], r.work));
+                }
                 if let Some(by) = by {
                     split = Some((g, by));
                     break;
@@ -2348,7 +2497,7 @@ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
     check(board, &routed).map_err(|why| fail("", why))?;
     connectivity(board, &routed).map_err(|why| fail("", why))?;
     pairs(board, &routed).map_err(|why| fail("", why))?;
-    Ok(routed)
+    Ok((routed, r.work))
 }
 
 // ---- escapes for pads the grid cannot reach (`AET-WO-1310`) ----
@@ -3459,6 +3608,14 @@ impl<'a> Router<'a> {
                     .map_err(|_| what.clone())?;
                 self.commit(net, &path);
             }
+            // A breakout may meet its own run past the run's first node and
+            // walk back along it to reach it (`1311` F2): the run's head is
+            // then a stub. Each conductor's copper loses every such end.
+            let cut_p = self.prune(p);
+            let cut_n = self.prune(n);
+            if cut_p || cut_n {
+                self.remap();
+            }
             Ok(())
         })();
         self.no_vias = false;
@@ -4264,7 +4421,8 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
         }
         let mut all_seeds = seeds.clone();
         all_seeds.extend(anchors.iter().map(|&(_, n)| n));
-        let labels = components(&grid, &core, &all_seeds);
+        // The judge's flood is not the router's work.
+        let labels = components(&grid, &core, &all_seeds, &mut 0);
         let main = labels.first().copied().flatten();
         for (k, &(item, node)) in anchors.iter().enumerate() {
             let label = labels[stitched.len() + k];
@@ -5430,5 +5588,300 @@ mod tests {
         ))
         .unwrap_err();
         assert!(e.contains("padstack"), "{e}");
+    }
+
+    // ---- `AET-WO-1323` ----
+
+    /// D1: a routing that does `w` units of work routes under a bound of `w`
+    /// and is refused by name, with the bound, at `w - 1`. One board routes
+    /// signals only; the other stitches ground, so a fill flood counts too.
+    #[test]
+    fn a_routing_one_unit_over_its_bound_is_refused_by_name() {
+        let board = |b: &str| Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts: vec![
+                resistor("R1", 5 * MM, "/A", b),
+                resistor("R2", 15 * MM, b, "/A"),
+            ],
+            stack: crate::stack::reference(),
+        };
+        for b in ["/B", GROUND] {
+            let board = board(b);
+            let (routed, w) = route_measured(&board, Rung::TODAY, WORK).unwrap();
+            assert!(w > 0, "{b}");
+            let (again, at_w) = route_measured(&board, Rung::TODAY, w).unwrap();
+            assert_eq!((again, at_w), (routed, w), "{b}");
+            let e = route_measured(&board, Rung::TODAY, w - 1).unwrap_err();
+            assert_eq!(e.work_bound, Some(w - 1), "{b}: {e:?}");
+            assert!(!e.net.is_empty(), "{b}: {e:?}");
+            assert!(
+                e.why
+                    .contains(&format!("its bound, {} search steps", w - 1)),
+                "{b}: {e:?}"
+            );
+        }
+    }
+
+    /// `1307` A4's adversary, reconstructed (`spike/1323/adv1307.rs`): a
+    /// 249 mm board, four LQFP-144 (the vendored footprint's pads, its
+    /// courtyard as the ±11.65 mm square) and 288 two-pad nets, a random
+    /// matching of the 576 pads from a fixed seed. It took 203 s to
+    /// `RIPUPS`; under [`WORK`] it is refused by name.
+    fn adversary(seed: u64) -> Board {
+        let mut order: Vec<usize> = (0..576).collect();
+        let mut s = seed;
+        let mut next = || {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            s >> 33
+        };
+        for i in (1..order.len()).rev() {
+            let j = (next() % (i as u64 + 1)) as usize;
+            order.swap(i, j);
+        }
+        let mut nets: Vec<Option<String>> = vec![None; 576];
+        for (k, w) in order.chunks(2).enumerate() {
+            for &p in w {
+                nets[p] = Some(format!("/N{k:03}"));
+            }
+        }
+        let lqfp = |i: usize, cx: i64, cy: i64| {
+            let (far, step, first) = (10_662_500, 500_000, -8_750_000);
+            let pads = (0..144usize)
+                .map(|k| {
+                    let along = first + (k % 36) as i64 * step;
+                    let (x, y, w, h) = match k / 36 {
+                        0 => (-far, along, 1_475_000, 300_000),
+                        1 => (along, far, 300_000, 1_475_000),
+                        2 => (far, -along, 1_475_000, 300_000),
+                        _ => (-along, -far, 300_000, 1_475_000),
+                    };
+                    let (x, y) = (cx + x, cy + y);
+                    Pad {
+                        corner_nm: 75_000,
+                        ..pad(
+                            &(k + 1).to_string(),
+                            nets[i * 144 + k].as_deref(),
+                            rect(x - w / 2, y - h / 2, x + w / 2, y + h / 2),
+                        )
+                    }
+                })
+                .collect();
+            let c = 11_650_000;
+            let q = [
+                (cx - c, cy - c),
+                (cx + c, cy - c),
+                (cx + c, cy + c),
+                (cx - c, cy + c),
+            ];
+            Part {
+                reference: format!("U{}", i + 1),
+                rotation: 0,
+                pads,
+                courtyard: (0..4).map(|k| (q[k], q[(k + 1) % 4])).collect(),
+                keepouts: Vec::new(),
+            }
+        };
+        let parts = [(62, 62), (187, 62), (62, 187), (187, 187)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y))| lqfp(i, x * MM, y * MM))
+            .collect();
+        Board {
+            outline: rect(0, 0, 249 * MM, 249 * MM),
+            parts,
+            stack: crate::stack::reference(),
+        }
+    }
+
+    /// D1, the acceptance: the adversary is refused by the work bound, by
+    /// name and with the net it was routing, long before `RIPUPS`.
+    #[test]
+    fn the_1307_adversary_is_refused_by_the_work_bound() {
+        let e = route(&adversary(1307)).unwrap_err();
+        assert_eq!(e.work_bound, Some(WORK), "{e:?}");
+        assert!(e.net.starts_with("/N"), "{e:?}");
+        assert!(
+            e.why
+                .contains("the router's work passed its bound, 350000000"),
+            "{e:?}"
+        );
+    }
+
+    /// D3 (`1310` A7): a footprint keepout must lie inside the footprint's
+    /// courtyard outline or its pad field, edges included, at any turn; one
+    /// outside both is refused at read, by the part's name.
+    #[test]
+    fn a_keepout_outside_its_own_footprint_is_refused_at_read() {
+        let zone = |(x0, y0, x1, y1): (f64, f64, f64, f64)| {
+            format!(
+                "(zone (layer \"F.Cu\") (keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints allowed)) (polygon (pts (xy {x0} {y0}) (xy {x1} {y0}) (xy {x1} {y1}) (xy {x0} {y1}))))"
+            )
+        };
+        let fp = |at: &str, yard: &str, pad: &str, z: &str| {
+            part_of(
+                &crate::sexpr::parse(&format!(
+                    "(footprint \"x\" (at {at}) (property \"Reference\" \"K1\") {pad} {yard} {z})"
+                ))
+                .unwrap(),
+            )
+        };
+        let small = "(pad \"1\" smd rect (at 0 0) (size 0.2 0.2) (layers \"F.Cu\"))";
+        let wide = "(fp_rect (start -2 -1) (end 2 1) (layer \"F.CrtYd\"))";
+        let refused = "K1's keepout on F.Cu lies outside its own courtyard and pad field";
+        // On the courtyard's edge, whole: read. Moved off the part: refused.
+        assert!(fp("5 5", wide, small, &zone((3.0, 4.0, 7.0, 6.0))).is_ok());
+        assert_eq!(
+            fp("5 5", wide, small, &zone((13.0, 4.0, 17.0, 6.0))).unwrap_err(),
+            refused
+        );
+        assert_eq!(
+            fp("5 5", wide, small, &zone((3.0, 4.0, 7.1, 6.0))).unwrap_err(),
+            refused
+        );
+        // Turned 90°: the courtyard stands 2 wide and 4 tall on the board.
+        assert!(fp("5 5 90", wide, small, &zone((4.0, 3.0, 6.0, 7.0))).is_ok());
+        assert_eq!(
+            fp("5 5 90", wide, small, &zone((3.0, 4.0, 7.0, 6.0))).unwrap_err(),
+            refused
+        );
+        // An L-shaped courtyard: a keepout in either leg is read; one across
+        // the notch, inside the L's box, is not.
+        let ell = "(fp_poly (pts (xy -2 -2) (xy 2 -2) (xy 2 0) (xy 0 0) (xy 0 2) (xy -2 2)) (layer \"F.CrtYd\"))";
+        assert!(fp("5 5", ell, small, &zone((3.0, 3.0, 7.0, 5.0))).is_ok());
+        assert!(fp("5 5", ell, small, &zone((3.0, 3.0, 5.0, 7.0))).is_ok());
+        assert_eq!(
+            fp("5 5", ell, small, &zone((4.0, 4.0, 6.0, 6.0))).unwrap_err(),
+            refused
+        );
+        // Beyond a small courtyard but inside the pad field: read.
+        let tiny = "(fp_rect (start -0.2 -0.2) (end 0.2 0.2) (layer \"F.CrtYd\"))";
+        let big = "(pad \"1\" smd rect (at 0 0) (size 2 2) (layers \"F.Cu\"))";
+        assert!(fp("5 5", tiny, big, &zone((4.2, 4.2, 5.8, 5.8))).is_ok());
+        assert_eq!(
+            fp("5 5", tiny, small, &zone((4.2, 4.2, 5.8, 5.8))).unwrap_err(),
+            refused
+        );
+    }
+
+    /// `paired(12 mm)` with a part `S` whose two `/S` pads stand at
+    /// (x, y1) and (x, y2), in µm (`1311` F2).
+    fn with_s(x: i64, y1: i64, y2: i64) -> Board {
+        let at = |x: i64, y: i64| rect(x - 150_000, y - 150_000, x + 150_000, y + 150_000);
+        let mut board = paired(12 * MM);
+        board.parts.push(Part {
+            rotation: 0,
+            reference: "S".into(),
+            pads: vec![
+                pad("1", Some("/S"), at(x * 1000, y1 * 1000)),
+                pad("2", Some("/S"), at(x * 1000, y2 * 1000)),
+            ],
+            courtyard: Vec::new(),
+            keepouts: Vec::new(),
+        });
+        board
+    }
+
+    /// D4 (`1311` F2): the breakout that met its own run three pitches in
+    /// and walked back along it left the run's head a stub, which
+    /// `connectivity` refused ("joined to nothing"). Pruned, the board routes.
+    #[test]
+    fn a_pairs_breakout_leaves_no_stub() {
+        let board = with_s(7000, 3000, 8000);
+        let routed = route(&board).unwrap();
+        connectivity(&board, &routed).unwrap();
+        let report = pairs(&board, &routed).unwrap();
+        assert_eq!(report.len(), 1);
+    }
+
+    /// D4, swept as `1307` B6 swept placements: `S` at every x from 0.5 to
+    /// 19.5 mm by 0.5 mm and each (y1, y2) of {1, 2, 3, 4} × {6.5, 7, 8, 9}
+    /// mm. None reaches `connectivity`'s "joined to nothing"; each routes or
+    /// is refused by a name before it.
+    #[test]
+    fn no_placement_of_a_crossing_part_leaves_a_pair_stub() {
+        let mut routed = 0;
+        for xi in 0..39 {
+            for y1 in [1000, 2000, 3000, 4000] {
+                for y2 in [6500, 7000, 8000, 9000] {
+                    let x = 500 + 500 * xi;
+                    match route(&with_s(x, y1, y2)) {
+                        Ok(_) => routed += 1,
+                        Err(e) => assert!(
+                            !e.why.contains("joined to nothing"),
+                            "{x}, {y1}, {y2}: {e:?}"
+                        ),
+                    }
+                }
+            }
+        }
+        assert!(routed > 0);
+    }
+
+    /// D4, the adversarial pass's A1: a pair whose pads the grid cannot
+    /// reach is joined at each escape's far end, outside the pad; `prune`
+    /// keeps that end, as it keeps an end in a pad. Two SOIC-like parts,
+    /// 8 pads a side at 0.4 mm, 0.15 mm wide, `/P` and `/N` two pads apart.
+    #[test]
+    fn a_pair_on_escaped_pads_keeps_its_breakouts() {
+        let side = |k: usize| match k {
+            2 => Some("/P"),
+            4 => Some("/N"),
+            _ => None,
+        };
+        let soic = |reference: &str, cx: i64, nets: [fn(usize) -> Option<&'static str>; 2]| {
+            let mut pads = Vec::new();
+            for (col, net) in [-1, 1].into_iter().zip(nets) {
+                for k in 0..8 {
+                    let (x, y) = (cx + col * 2 * MM, 6 * MM + k as i64 * 400_000 - 1_400_000);
+                    let number = (pads.len() + 1).to_string();
+                    pads.push(pad(
+                        &number,
+                        net(k),
+                        rect(x - MM / 2, y - 75_000, x + MM / 2, y + 75_000),
+                    ));
+                }
+            }
+            Part {
+                rotation: 0,
+                reference: reference.into(),
+                pads,
+                courtyard: Vec::new(),
+                keepouts: Vec::new(),
+            }
+        };
+        let none: fn(usize) -> Option<&'static str> = |_| None;
+        let mut stack = crate::stack::reference();
+        stack.pairs.push(crate::stack::Pair {
+            name: "X".into(),
+            nets: ["/P".into(), "/N".into()],
+            gap_nm: 300_000,
+            width_nm: 200_000,
+        });
+        let board = Board {
+            outline: rect(0, 0, 24 * MM, 12 * MM),
+            parts: vec![
+                soic("A", 5 * MM, [none, side]),
+                soic("B", 19 * MM, [side, none]),
+            ],
+            stack,
+        };
+        let routed = route(&board).unwrap();
+        connectivity(&board, &routed).unwrap();
+    }
+
+    /// D4: the pairs' copper is judged right after the pair loop. Here the
+    /// pruned run's gap breaks, which the pair judge names; without the
+    /// early judge, `/S` is refused first, for the pair's copper in its way.
+    #[test]
+    fn a_pair_the_judge_refuses_is_refused_by_its_own_name_first() {
+        let e = route(&with_s(10_750, 1000, 6500)).unwrap_err();
+        assert_eq!(e.net, "", "{e:?}");
+        assert!(
+            e.why
+                .starts_with("pair `X`: `/P`: the coupled run breaks at"),
+            "{e:?}"
+        );
     }
 }

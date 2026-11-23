@@ -2420,9 +2420,16 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
     out
 }
 
-/// The router's refusal as the emitter's: a run with no escape by its part
-/// and pads (`AET-WO-1310` D1), else the net, else the board.
+/// The router's refusal as the emitter's: its work past the bound
+/// (`AET-WO-1323` D1), a run with no escape by its part and pads
+/// (`AET-WO-1310` D1), else the net, else the board.
 fn unroutable(e: route::Unroutable) -> EmitError {
+    if e.work_bound.is_some() {
+        return EmitError::RouterWorkExceeded {
+            net: e.net,
+            why: e.why,
+        };
+    }
     match (e.exhausted, e.net.is_empty()) {
         (Some((reference, pads)), _) => EmitError::PadEscapeExhausted { reference, pads },
         (None, true) => EmitError::BoardUnroutable(e.why),
@@ -3683,6 +3690,7 @@ mod tests {
             net: "N".into(),
             why: "w".into(),
             exhausted: Some(("U1".into(), vec!["7".into(), "8".into(), "9".into()])),
+            work_bound: None,
         });
         assert_eq!(e.kind(), "PadEscapeExhausted");
         assert_eq!(e.id(), Some("U1"));
@@ -3694,13 +3702,24 @@ mod tests {
             net: "N".into(),
             why: "w".into(),
             exhausted: None,
+            work_bound: None,
         });
         assert_eq!((e.kind(), e.id()), ("Unroutable", Some("N")));
         let e = unroutable(route::Unroutable {
             net: String::new(),
             why: "w".into(),
             exhausted: None,
+            work_bound: None,
         });
         assert_eq!((e.kind(), e.id()), ("Unroutable", None));
+        // `AET-WO-1323` D1: the work bound, by its own kind and the net.
+        let e = unroutable(route::Unroutable {
+            net: "N".into(),
+            why: "w".into(),
+            exhausted: None,
+            work_bound: Some(route::WORK),
+        });
+        assert_eq!((e.kind(), e.id()), ("RouterWorkExceeded", Some("N")));
+        assert_eq!(e.to_string(), "the router gave up on net `N`: w");
     }
 }

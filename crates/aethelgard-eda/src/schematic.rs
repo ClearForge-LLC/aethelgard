@@ -97,6 +97,10 @@ pub enum EmitError {
     Unroutable { net: String, why: String },
     #[error("the router cannot complete the board: {0}")]
     BoardUnroutable(String),
+    /// `AET-WO-1323` D1: a routing that did more work than
+    /// [`crate::route::WORK`] allows, refused by name, never left to run.
+    #[error("the router gave up on net `{net}`: {why}")]
+    RouterWorkExceeded { net: String, why: String },
     /// `AET-WO-1310` D1: a run of adjacent connected pads with no lane to the
     /// grid. Never left to chance.
     #[error("`{reference}` pads {} have no escape: no lane on which this run of adjacent connected pads reaches the grid at its width and clearance", pads.join(", "))]
@@ -244,6 +248,7 @@ impl EmitError {
             Self::DuplicateReference(_) => "DuplicateReference",
             Self::Unroutable { .. } | Self::BoardUnroutable(_) => "Unroutable",
             Self::PadEscapeExhausted { .. } => "PadEscapeExhausted",
+            Self::RouterWorkExceeded { .. } => "RouterWorkExceeded",
             Self::OutlineTooSmall { .. } => "OutlineTooSmall",
             Self::OutlineUnreachable { .. } => "OutlineUnreachable",
             Self::CompactionUnbounded { .. } => "CompactionUnbounded",
@@ -278,7 +283,9 @@ impl EmitError {
             Self::UnsolvedNet(id) | Self::ReservedName(id) | Self::DuplicateReference(id) => {
                 Some(id)
             }
-            Self::UnknownPin { net, .. } | Self::Unroutable { net, .. } => Some(net),
+            Self::UnknownPin { net, .. }
+            | Self::Unroutable { net, .. }
+            | Self::RouterWorkExceeded { net, .. } => Some(net),
             Self::FabToleranceUndeclared(path) => Some(path),
             Self::ViaRingUnheld { class, .. } => Some(class),
             Self::CapacitanceOverBound { over } => over.first().map(|(n, _, _)| n.as_str()),

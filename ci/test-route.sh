@@ -17,7 +17,7 @@ base() {
   rm -rf "$tmp/r"; mkdir -p "$tmp/r"; cd "$tmp/r" || exit 1
   git_ init -q .
   mkdir -p docs fab/b/package crates/x/src crates/x/tests examples
-  echo a >docs/a.md; echo r >README.md; echo l >LICENSE-MIT; echo b >fab/b/BENCH.md; echo p >fab/b/package/FAB-NOTES.md
+  echo a >docs/a.md; echo r >README.md; echo l >LICENSE-MIT; echo b >fab/b/BENCH.md; echo o >fab/b/ORDER.md; echo p >fab/b/package/FAB-NOTES.md
   echo s >crates/x/src/lib.rs; echo c >crates/x/README.md; echo e >examples/e.json
   git_ add -A; git_ commit -qm base
 }
@@ -32,7 +32,9 @@ class() {
 
 base; echo more >>docs/a.md; class "a document edited" docs
 base; echo more >>README.md; echo x >CLAUDE.md; echo m >>LICENSE-MIT; class "root README, a new root .md, a root LICENSE" docs
-base; echo more >>fab/b/BENCH.md; class "fab/**/*.md outside package/" docs
+base; echo more >>fab/b/ORDER.md; class "fab/**/*.md outside package/" docs
+base; echo more >>fab/b/BENCH.md; class "a bench sheet is code (AET-WO-3308: a test binds its ELF)" code
+base; echo h >fab/b/ORDERED.sha256; class "an ordered-files list is code" code
 base; git rm -q docs/a.md; class "a document deleted" docs
 base; mkdir -p "docs/with space"; printf 'n\n' >"docs/with space/new
 line.md"; class "a document whose path holds a space and a newline" docs
@@ -111,7 +113,7 @@ inv; printf 'fn h() { let _ = cr"x\\"; let _ = "docs\\x2fa.md"; let _ = "\\u{64}
 expect "escapes decoded, cr raw strings: \\x2f and \\u{64} found" refused "demo esc docs/a.md 2"
 inv; printf 'fn h() { let _ = "../../do\\\n     cs/a.md"; }\n' >crates/d/tests/cont.rs
 expect "a line continuation joined" refused "demo cont ../../docs/a.md"
-inv; mkdir -p fab/b; echo b >fab/b/BENCH.md; printf 'fn h() { let _ = std::fs::read_dir("../../fab/b"); }\n' >crates/d/tests/walkfab.rs
+inv; mkdir -p fab/b; echo o >fab/b/ORDER.md; printf 'fn h() { let _ = std::fs::read_dir("../../fab/b"); }\n' >crates/d/tests/walkfab.rs
 expect "a walker of a fab directory holding a document is refused" refused "demo walkfab ../../fab/b"
 inv; mkdir -p boards/x/src; printf 'const R: &str = include_str!("../../../README.md");\n' >boards/x/src/lib.rs
 expect "a Rust source outside crates/ naming a document is refused" refused "boards/x/src/lib.rs" "no docs-only run can judge"

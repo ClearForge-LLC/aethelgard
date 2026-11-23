@@ -1,0 +1,32 @@
+--- base/crates/aethelgard-eda/src/route.rs	2026-11-23 09:21:04.000000000 +0000
++++ u1/crates/aethelgard-eda/src/route.rs	2026-11-23 09:37:49.711093824 +0000
+@@ -1154,7 +1154,7 @@
+     /// foreign copper, which would hold them 1.2 mm apart; so the hop
+     /// between them goes on the layer it left, where that layer is open.
+     /// Otherwise the second via's node is banned and `None` returned.
+-    fn unhop(&mut self, net: usize, path: &mut Vec<Node>) -> Option<()> {
++    fn unhop(&mut self, net: usize, path: &mut Vec<Node>, soft: bool) -> Option<()> {
+         while let Some((i, j)) = self.close_vias(net, path) {
+             let outer = path[i].0;
+             // path[i] and path[j] are the hop's ends on the outer layer;
+@@ -1163,7 +1163,10 @@
+                 .iter()
+                 .map(|&(_, n)| (outer, n))
+                 .collect();
+-            if flat.iter().all(|&(l, n)| self.open(l, n, net)) {
++            if flat
++                .iter()
++                .all(|&(l, n)| self.open(l, n, net) || (soft && self.hard_open(l, n, net)))
++            {
+                 let tail = path.split_off(j);
+                 path.truncate(i + 1);
+                 path.extend(flat);
+@@ -1380,7 +1383,7 @@
+                 let mut found = self.search(net, sources, goal, h, b_moves, w, soft);
+                 for ban in 0..=BANS {
+                     let Some(mut p) = found.take() else { break };
+-                    if self.unhop(net, &mut p).is_some() {
++                    if self.unhop(net, &mut p, soft).is_some() {
+                         found = Some(p);
+                         break;
+                     }

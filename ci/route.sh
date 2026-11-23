@@ -28,6 +28,8 @@ readable() { [ -r "$1" ] || die "cannot read $1"; }
 is_docs() {
   case $1 in
     fab/package/* | fab/*/package/*) return 1 ;;
+    # AET-WO-3308: a bench sheet's predictions are bound to the package's ELF by a tier-1 test.
+    fab/*/BENCH.md) return 1 ;;
     docs/*) return 0 ;;
     fab/*.md) return 0 ;;
     */*) return 1 ;;

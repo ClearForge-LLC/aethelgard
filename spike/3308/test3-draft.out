@@ -1,0 +1,15 @@
+failures:
+
+---- draft_bench_sheet_names_the_package_elf stdout ----
+
+thread 'draft_bench_sheet_names_the_package_elf' (2412) panicked at crates/aethelgard-cli/tests/bench_board_tier1.rs:172:5:
+BENCH.md must state exactly one full ELF hash, MANIFEST.json's f3e871bb4a16678a77ac1b81bf2f9b53e463b3c9aee435dd45010a1fde7452c4; full hashes found: []; abbreviated hashes found: ["L5: 008a2a59…", "L92: f3e871bb…", "L97: 78212e91…", "L224: e4e24372…", "L259: 452d906c…"]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    draft_bench_sheet_names_the_package_elf
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p aethelgard-cli --test bench_board_tier1`

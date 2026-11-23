@@ -1,0 +1,369 @@
+--- base/crates/aethelgard-eda/src/route.rs	2026-11-23 09:21:04.000000000 +0000
++++ all/crates/aethelgard-eda/src/route.rs	2026-11-23 09:42:19.954399919 +0000
+@@ -65,6 +65,28 @@
+ use crate::rules::FLOOR_NM;
+ use crate::stack::Rule;
+ 
++
++/// AET-WO-1323 measuring shim (never committed).
++pub mod spike_work {
++    use std::cell::Cell;
++    thread_local! {
++        pub static SEARCH: Cell<u64> = const { Cell::new(0) };
++        pub static PAIR: Cell<u64> = const { Cell::new(0) };
++        pub static FLOOD: Cell<u64> = const { Cell::new(0) };
++        pub static SEARCH_NS: Cell<u128> = const { Cell::new(0) };
++    }
++    pub fn bump(c: &'static std::thread::LocalKey<Cell<u64>>) {
++        c.with(|v| v.set(v.get() + 1));
++    }
++    pub fn log(line: &str) {
++        if let Some(p) = std::env::var_os("AET1323_WORK_LOG") {
++            use std::io::Write;
++            let mut f = std::fs::OpenOptions::new().create(true).append(true).open(p).unwrap();
++            f.write_all(line.as_bytes()).unwrap();
++        }
++    }
++}
++
+ /// The grid's pitch.
+ pub const PITCH_NM: i64 = 125_000;
+ /// The gate's Default net class via: 0.6 mm, drilled 0.3 mm.
+@@ -1154,7 +1176,7 @@
+     /// foreign copper, which would hold them 1.2 mm apart; so the hop
+     /// between them goes on the layer it left, where that layer is open.
+     /// Otherwise the second via's node is banned and `None` returned.
+-    fn unhop(&mut self, net: usize, path: &mut Vec<Node>) -> Option<()> {
++    fn unhop(&mut self, net: usize, path: &mut Vec<Node>, soft: bool) -> Option<()> {
+         while let Some((i, j)) = self.close_vias(net, path) {
+             let outer = path[i].0;
+             // path[i] and path[j] are the hop's ends on the outer layer;
+@@ -1163,7 +1185,10 @@
+                 .iter()
+                 .map(|&(_, n)| (outer, n))
+                 .collect();
+-            if flat.iter().all(|&(l, n)| self.open(l, n, net)) {
++            if flat
++                .iter()
++                .all(|&(l, n)| self.open(l, n, net) || (soft && self.hard_open(l, n, net)))
++            {
+                 let tail = path.split_off(j);
+                 path.truncate(i + 1);
+                 path.extend(flat);
+@@ -1222,6 +1247,23 @@
+         window: (usize, usize, usize, usize),
+         soft: bool,
+     ) -> Option<Vec<Node>> {
++        let t0 = std::time::Instant::now();
++        let r = self.search_inner(net, sources, goal, h, b_moves, window, soft);
++        spike_work::SEARCH_NS.with(|v| v.set(v.get() + t0.elapsed().as_nanos()));
++        r
++    }
++
++    #[allow(clippy::too_many_arguments)]
++    fn search_inner(
++        &mut self,
++        net: usize,
++        sources: &[Node],
++        goal: &dyn Fn(Layer, usize) -> bool,
++        h: &dyn Fn(usize) -> u32,
++        b_moves: bool,
++        window: (usize, usize, usize, usize),
++        soft: bool,
++    ) -> Option<Vec<Node>> {
+         let n = self.grid.len();
+         self.generation = self.generation.wrapping_add(1);
+         if self.generation == 0 {
+@@ -1264,6 +1306,7 @@
+             if f != c + h(node) {
+                 continue;
+             }
++            spike_work::bump(&spike_work::SEARCH);
+             if goal(l, node) {
+                 let mut path = vec![(l, node)];
+                 let (mut at, mut al, mut ad) = (node, l, d);
+@@ -1380,7 +1423,7 @@
+                 let mut found = self.search(net, sources, goal, h, b_moves, w, soft);
+                 for ban in 0..=BANS {
+                     let Some(mut p) = found.take() else { break };
+-                    if self.unhop(net, &mut p).is_some() {
++                    if self.unhop(net, &mut p, soft).is_some() {
+                         found = Some(p);
+                         break;
+                     }
+@@ -1609,6 +1652,69 @@
+     }
+ 
+     /// Takes `net`'s copper up and makes its corridors pending again.
++    /// AET-WO-1323 prototype: take off every end of `net`'s copper that is
++    /// in none of its pads (a leaf of its edges, no via there), until none is
++    /// left. True if any was taken.
++    fn prune(&mut self, net: usize) -> bool {
++        let reach: Vec<Rect> = self
++            .board
++            .parts
++            .iter()
++            .flat_map(|p| &p.pads)
++            .filter(|p| p.net.as_deref() == Some(self.nets[net].as_str()))
++            .map(|p| p.reach())
++            .collect();
++        let mut any = false;
++        loop {
++            let mut cut = false;
++            for li in 0..2 {
++                let mut degree: BTreeMap<usize, usize> = BTreeMap::new();
++                for &(a, b) in &self.edges[net][li] {
++                    *degree.entry(a).or_default() += 1;
++                    *degree.entry(b).or_default() += 1;
++                }
++                let leaves: Vec<usize> = degree
++                    .iter()
++                    .filter(|&(&n, &d)| {
++                        let (x, y) = self.grid.at(n);
++                        d == 1
++                            && !self.vias.contains_key(&n)
++                            && !reach.iter().any(|r| r.contains(Rect::point(x, y)))
++                    })
++                    .map(|(&n, _)| n)
++                    .collect();
++                for leaf in leaves {
++                    self.edges[net][li].retain(|&(a, b)| a != leaf && b != leaf);
++                    cut = true;
++                }
++            }
++            if !cut {
++                break;
++            }
++            any = true;
++        }
++        any
++    }
++
++    /// The maps again from every net's edges and vias, as `rip` makes them.
++    fn remap(&mut self) {
++        self.track = self.hard_track.clone();
++        self.via = self.hard_via.clone();
++        for other in 0..self.edges.len() {
++            for l in [Layer::F, Layer::B] {
++                let edges: Vec<(usize, usize)> =
++                    self.edges[other][l.index()].iter().copied().collect();
++                for (a, b) in edges {
++                    self.claim_edge(other, l, a, b);
++                }
++            }
++        }
++        let vias: Vec<(usize, usize)> = self.vias.iter().map(|(&n, &v)| (n, v)).collect();
++        for (node, other) in vias {
++            self.claim_via(other, node);
++        }
++    }
++
+     fn rip(&mut self, net: usize) {
+         self.edges[net] = Default::default();
+         self.vias.retain(|_, n| *n != net);
+@@ -1790,6 +1896,7 @@
+             // Flood the island; its rim is the fence.
+             let mut stack = vec![seed];
+             while let Some(n) = stack.pop() {
++                spike_work::bump(&spike_work::FLOOD);
+                 if std::mem::replace(&mut seen[n], true) {
+                     continue;
+                 }
+@@ -2080,6 +2187,7 @@
+             let mut stack = vec![s];
+             label[s] = next;
+             while let Some(n) = stack.pop() {
++                spike_work::bump(&spike_work::FLOOD);
+                 for d in 0..4 {
+                     if let Some(m) = grid.step(n, d)
+                         && core[m]
+@@ -2137,6 +2245,52 @@
+ 
+ /// [`route`] at one rung of the capacitance ladder.
+ pub fn route_with(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
++    for c in [&spike_work::SEARCH, &spike_work::PAIR, &spike_work::FLOOD] {
++        c.with(|v| v.set(0));
++    }
++    spike_work::SEARCH_NS.with(|v| v.set(0));
++    let t0 = std::time::Instant::now();
++    let r = route_with_inner(board, rung);
++    let wall = t0.elapsed().as_millis();
++    let get = |c: &'static std::thread::LocalKey<std::cell::Cell<u64>>| c.with(|v| v.get());
++    let nets = net_pads(board).len();
++    let (outcome, ripups, why) = match &r {
++        Ok(routed) => ("ok", routed.ripups.to_string(), String::new()),
++        Err(e) => ("err", "-".to_owned(), {
++            let mut w = format!("{}: {}", e.net, e.why).replace(['\t', '\n'], " ");
++            if w.len() > 160 {
++                let mut k = 160;
++                while !w.is_char_boundary(k) {
++                    k -= 1;
++                }
++                w.truncate(k);
++            }
++            w
++        }),
++    };
++    let o = board.outline;
++    spike_work::log(&format!(
++        "{}\t{}/{}\t{}x{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
++        std::thread::current().name().unwrap_or("-"),
++        rung.bounded_via_cost,
++        rung.bounded_first,
++        (o.x1 - o.x0) / 1_000_000,
++        (o.y1 - o.y0) / 1_000_000,
++        board.parts.len(),
++        nets,
++        outcome,
++        get(&spike_work::SEARCH),
++        get(&spike_work::PAIR),
++        get(&spike_work::FLOOD),
++        wall,
++        spike_work::SEARCH_NS.with(|v| v.get()) / 1_000_000,
++        ripups,
++        why
++    ));
++    r
++}
++
++fn route_with_inner(board: &Board, rung: Rung) -> Result<Routed, Unroutable> {
+     let fail = |net: &str, why: String| Unroutable {
+         net: net.to_owned(),
+         why,
+@@ -2233,6 +2387,17 @@
+         r.fixed[n] = true;
+         paired.extend([p, n]);
+     }
++    if !board.stack.pairs.is_empty() {
++        let laid = Routed {
++            segments: r
++                .segments()
++                .into_iter()
++                .filter(|s| board.stack.pairs.iter().any(|p| p.nets.contains(&s.net)))
++                .collect(),
++            ..Routed::default()
++        };
++        pairs(board, &laid).map_err(|why| fail("", why))?;
++    }
+     let mut queue: VecDeque<usize> = order
+         .iter()
+         .copied()
+@@ -3248,6 +3413,7 @@
+             }
+         }
+         while let Some(Reverse((f, done, s, node))) = heap.pop() {
++            spike_work::bump(&spike_work::PAIR);
+             let (d, steps) = ((s / (gate + 1)) % 4, s % (gate + 1));
+             if done {
+                 // The cheapest run with both breakouts priced: walk it back.
+@@ -3459,6 +3625,11 @@
+                     .map_err(|_| what.clone())?;
+                 self.commit(net, &path);
+             }
++            let a = self.prune(p);
++            let b = self.prune(n);
++            if a || b {
++                self.remap();
++            }
+             Ok(())
+         })();
+         self.no_vias = false;
+@@ -4367,6 +4538,10 @@
+ }
+ 
+ mod read;
++#[cfg(test)]
++mod adv1307;
++#[cfg(test)]
++mod stub1323;
+ pub use read::*;
+ 
+ #[cfg(test)]
+--- base/crates/aethelgard-eda/src/supply.rs	2026-11-23 09:21:04.000000000 +0000
++++ all/crates/aethelgard-eda/src/supply.rs	2026-11-23 09:42:19.939693417 +0000
+@@ -1158,6 +1158,7 @@
+             ));
+         }
+     }
++    let tb = std::time::Instant::now();
+     let h = nc.h_nm;
+     let mut net = Network::default();
+     let src = net.node();
+@@ -1223,9 +1224,12 @@
+     for s in sheets.into_iter().flatten() {
+         s.finish(&mut net);
+     }
++    spike_time(&format!("build {}", sink.number), tb);
++    let ts = std::time::Instant::now();
+     let b = net
+         .bound(src, snk, max_iter, 1e-10)
+         .map_err(Refusal::Flow)?;
++    spike_time(&format!("solve {}", sink.number), ts);
+     let via_transfer = ports
+         .into_iter()
+         .map(|(at, per_layer)| {
+@@ -1340,6 +1344,16 @@
+ /// Each domain the specification limits, judged on the read board. A
+ /// specification with no `power.drop_limits` gives none, and nothing about
+ /// its verdict changes.
++
++/// AET-WO-1323 measuring shim (never committed).
++pub fn spike_time(what: &str, t0: std::time::Instant) {
++    if let Some(p) = std::env::var_os("AET1323_TIME_LOG") {
++        use std::io::Write;
++        let mut f = std::fs::OpenOptions::new().create(true).append(true).open(p).unwrap();
++        writeln!(f, "{}\t{what}\t{}", std::process::id(), t0.elapsed().as_micros()).unwrap();
++    }
++}
++
+ pub fn supplies(
+     spec: &aethelgard_ir::Specification,
+     solved: &aethelgard_ir::SolvedTopology,
+@@ -1593,7 +1607,9 @@
+          -> Result<(Vec<PinResult>, Vec<String>), crate::extract::Refused> {
+             let mut terminals = vec![from];
+             terminals.extend(sinks.iter().copied());
++            let tc = std::time::Instant::now();
+             let nc = copper(board, &read.routed, net, &terminals, &model).map_err(to_refused)?;
++            spike_time(&format!("copper {net}"), tc);
+             let notes = nc.notes.iter().map(|n| format!("`{net}`: {n}")).collect();
+             let results = sinks
+                 .iter()
+--- base/crates/aethelgard-cli/src/extract.rs	2026-11-23 09:21:04.000000000 +0000
++++ all/crates/aethelgard-cli/src/extract.rs	2026-11-23 09:42:19.939817529 +0000
+@@ -195,6 +195,14 @@
+ 
+ /// `aethelgard extract --board <pcb> --spec <spec>`.
+ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
++    let t_all = std::time::Instant::now();
++    let r = extract_inner(board_path, spec_path);
++    aethelgard_eda::supply::spike_time("extract total", t_all);
++    r
++}
++
++fn extract_inner(board_path: &Path, spec_path: &Path) -> ExitCode {
++    let t_pre = std::time::Instant::now();
+     let (spec, spec_sha256) = match crate::read_spec(Some(spec_path)) {
+         Ok(s) => s,
+         Err((r, code)) => return crate::emit(&r, code),
+@@ -239,8 +247,12 @@
+             return crate::emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code);
+         }
+     };
++    aethelgard_eda::supply::spike_time("spec, solve, lines", t_pre);
++    let t_b = std::time::Instant::now();
+     let bounded = bound::read(text, &stack)
+         .and_then(|read| bound::bound(&read, &wanted).map(|lines| (read, lines)));
++    aethelgard_eda::supply::spike_time("read and capacitance bound", t_b);
++    let t_s = std::time::Instant::now();
+     let (read, lines) = match bounded {
+         Ok(l) => l,
+         Err(r) => {
+@@ -254,6 +266,7 @@
+         Ok(g) => g,
+         Err(r) => return refuse(r.kind, r.message, EXIT_INVALID_SPEC),
+     };
++    aethelgard_eda::supply::spike_time("supplies", t_s);
+     // The oscillator nets beside a declared crystal (`AET-WO-4240c` §1.4 (b),
+     // §1.6, ruled A7): reported, and a via on one is a finding; none for a
+     // specification that declares no crystal, whose report is unchanged.

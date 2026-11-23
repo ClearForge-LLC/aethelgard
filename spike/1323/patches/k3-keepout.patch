@@ -1,0 +1,30 @@
+--- base/crates/aethelgard-eda/src/route/read.rs	2026-11-23 09:21:04.000000000 +0000
++++ k3/crates/aethelgard-eda/src/route/read.rs	2026-11-23 09:38:44.064061416 +0000
+@@ -263,6 +263,27 @@
+     for z in fp.all("zone") {
+         keepouts.push(keepout(&z, &named)?);
+     }
++    // AET-WO-1323 prototype (3): each keepout inside its own courtyard's box
++    // or its pad field's box.
++    let bbox = |pts: &mut dyn Iterator<Item = (i64, i64)>| {
++        pts.fold(None, |b: Option<(i64, i64, i64, i64)>, (x, y)| {
++            Some(b.map_or((x, y, x, y), |(x0, y0, x1, y1)| (x0.min(x), y0.min(y), x1.max(x), y1.max(y))))
++        })
++    };
++    let cy = bbox(&mut courtyard.iter().flat_map(|&(a, b)| [a, b]));
++    let field = bbox(&mut pads.iter().flat_map(|p| [(p.rect.x0, p.rect.y0), (p.rect.x1, p.rect.y1)]));
++    for k in &keepouts {
++        let r = k.rect;
++        let inside = |b: Option<(i64, i64, i64, i64)>| {
++            b.is_some_and(|(x0, y0, x1, y1)| x0 <= r.x0 && y0 <= r.y0 && r.x1 <= x1 && r.y1 <= y1)
++        };
++        if std::env::var_os("AET1323_K3_LOG").is_some() {
++            eprintln!("K3 {named} {:?} keepout {:?} courtyard {cy:?} field {field:?} in_cy {} in_field {}", k.layer, (r.x0, r.y0, r.x1, r.y1), inside(cy), inside(field));
++        }
++        if !inside(cy) && !inside(field) {
++            return Err(format!("{named}'s keepout lies outside its own courtyard and pad field"));
++        }
++    }
+     Ok(Part {
+         reference,
+         rotation: theta,
