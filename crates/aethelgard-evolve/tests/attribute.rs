@@ -2224,16 +2224,11 @@ fn the_surplus_is_shown_on_the_witness_its_first_line_went_to() {
     assert_eq!(attributed(&r).rule, Rule::S1);
 }
 
-/// `AET-WO-3306` F1 (ruled 12:22Z: a §7.1 row, not this order's): U2's
-/// identity read sent to 0x47, where U5, a BMP581, answers. These are the
-/// records measured on `spike/3306/spec/bme-bmp.json` (`spike/3306/out`).
-/// The run stays I4 because no BMP581 witness is evidence: our model logs
-/// `read 0xRR -> 0xVV` and `write 0xRR <- …`, a format `witness_fields`
-/// does not read, and U5's log also holds a warning, a wrong transaction
-/// rather than an extra one. The row that teaches attribution the BMP581's
-/// format flips this test.
-#[test]
-fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
+/// Two-bme with U5 a BMP581 at 0x47 (`spike/3306/spec/bme-bmp.json`), its
+/// three steps' checks claiming `ok`: `u2` edits U2's records, and `u5` is
+/// each of U5's witnesses' observed lines, whole. Its script is our model's
+/// (`BMP581.cs` `FinishTransmission`).
+fn bme_bmp(u2: impl Fn(&mut Vec<Record>), u5: [&[&str]; 3]) -> Vec<Record> {
     let mut r = two_bme(&[], |_| {});
     let i = find(&r, |x| matches!(x, Record::I2cBusSolved { .. }));
     r[i] = solved(
@@ -2246,9 +2241,10 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
     r.retain(|x| {
         !matches!(x, Record::I2cCheck { reference, .. } | Record::I2cWitness { reference, .. } if reference == "U5")
     });
-    replace(&mut r, is_check, check("ok", 0));
-    observe(&mut r, "U2", &[]);
+    u2(&mut r);
     let line = |l: &str| format!("[NOISY] i2c1.u5: {l}");
+    let [identity, configure, data] =
+        u5.map(|lines| lines.iter().map(|l| (*l).to_owned()).collect::<Vec<_>>());
     for (step, write, width, expected, mask, script, observed) in [
         (
             "identity",
@@ -2257,7 +2253,7 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
             0x50,
             0xFF,
             vec![line("read 0x01 -> 0x50")],
-            vec!["[WARNING] i2c1.u5: access to unmodelled register 0x50".to_owned()],
+            identity,
         ),
         (
             "configure",
@@ -2266,7 +2262,7 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
             0,
             0,
             vec![line("write 0x36 <- 0x40 0x81")],
-            vec![line("read 0x50 -> 0x00")],
+            configure,
         ),
         (
             "data",
@@ -2275,11 +2271,7 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
             423_687_010,
             0xFFFF_FFFF_FFFF,
             vec![line("read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62")],
-            vec![
-                line("read 0x01 -> 0x50"),
-                line("write 0x36 <- 0x40 0x81"),
-                line("read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"),
-            ],
+            data,
         ),
     ] {
         insert_after_last(
@@ -2311,6 +2303,37 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
             },
         );
     }
+    r
+}
+
+/// `AET-WO-3306` F1, which `AET-WO-3307` answers: U2's identity read sent
+/// to 0x47, where U5, a BMP581, answers. These are the records measured on
+/// `spike/3306/spec/bme-bmp.json` (`spike/3306/out`; `spike/3307/out` on
+/// `main` at `28fba951`). Our model logs a transaction as one line, `read
+/// 0xRR -> 0xVV` or `write 0xRR <- …` (`BMP581.cs` `FinishTransmission`),
+/// which `witness_fields` now reads. U5's configure witness holds U2's
+/// transfer (`read 0x50 -> 0x00`: the model masks the pointer `0xD0` to 7
+/// bits), not its own `write 0x36 <- 0x40 0x81`, so it is the software's
+/// evidence beside U2's silent one, and the run is S1. Its identity witness
+/// holds only a warning, which is no line it reads: sound, and nothing in it
+/// wrong. Its data witness reads 6 bytes, wider than a witness judges.
+#[test]
+fn a_collide_onto_a_bmp581_is_software_by_its_witness() {
+    let mut r = bme_bmp(
+        |r| {
+            replace(r, is_check, check("ok", 0));
+            observe(r, "U2", &[]);
+        },
+        [
+            &["[WARNING] i2c1.u5: access to unmodelled register 0x50"],
+            &["[NOISY] i2c1.u5: read 0x50 -> 0x00"],
+            &[
+                "[NOISY] i2c1.u5: read 0x01 -> 0x50",
+                "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81",
+                "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62",
+            ],
+        ],
+    );
     replace(
         &mut r,
         is_verdict,
@@ -2320,20 +2343,145 @@ fn a_collide_onto_a_bmp581_stays_i4_because_no_bmp581_witness_is_evidence() {
         ]),
     );
     let a = attributed(&r);
+    let [identity, configure, data] = ["identity", "configure", "data"].map(|s| {
+        find(
+            &r,
+            |x| matches!(x, Record::I2cWitness { reference, step, .. } if reference == "U5" && step == s),
+        )
+    });
+    let u2 = witness_index(&r, "U2");
+    assert_eq!((a.domain, a.rule), (Domain::Software, Rule::S1), "{a:?}");
+    let mut evidence: Vec<usize> = a.evidence.iter().map(|e| e.index as usize).collect();
+    evidence.retain(|&i| r[i].kind() == 13);
+    evidence.sort_unstable();
+    let mut want = vec![u2, configure];
+    want.sort_unstable();
+    assert_eq!(evidence, want, "{a:?}");
+    assert_eq!(kinds(&a.evidence), [7, 7, 13, 13], "{a:?}");
+    assert!(a.masked.is_empty(), "{a:?}");
     assert_eq!(
-        (a.domain, a.rule),
-        (Domain::Indeterminate, Rule::I4),
-        "{a:?}"
+        fields_of(&r, configure),
+        [
+            ("i2c1.u5.address".to_owned(), 0x47, 0x47, None, false),
+            (
+                "i2c1.u5.Write".to_owned(),
+                0x47,
+                0x36_4081,
+                Some(0x50),
+                true
+            ),
+        ]
     );
-    assert_eq!(kinds(&a.evidence), [7, 7], "{a:?}");
-    for (i, x) in r.iter().enumerate() {
-        if matches!(x, Record::I2cWitness { reference, .. } if reference == "U5") {
-            assert!(
-                fields_of(&r, i).is_empty(),
-                "a BMP581 witness is no evidence either way: its lines are not `Write`/`Read`"
-            );
-        }
+    assert_eq!(
+        fields_of(&r, identity),
+        [
+            ("i2c1.u5.address".to_owned(), 0x47, 0x47, None, false),
+            ("i2c1.u5.Write".to_owned(), 0x47, 0x01, None, false),
+            ("i2c1.u5.Read".to_owned(), 0x47, 0x50, None, false),
+        ]
+    );
+    assert!(
+        fields_of(&r, data).is_empty(),
+        "a 6-byte read is no evidence"
+    );
+}
+
+/// `AET-WO-3307` §5, targeted: a BMP581 witness reads only its own model's
+/// lines, whole. U5's identity witness on two-bme with U5 a BMP581: our
+/// model's line with a wrong register or value is the software's. Every
+/// other line is none it reads, so the witness shows nothing wrong, each
+/// line below carrying a wrong register or value: a line another model
+/// writes (the ICM42688P's `bank 0` line, the BME280's `Write`/`Read`), a
+/// warning or another device's line, and a malformed one. A script in no
+/// form it reads is no evidence at all.
+#[test]
+fn a_bmp581_witness_reads_only_its_models_lines_whole() {
+    let identity = |r: &[Record]| {
+        find(
+            r,
+            |x| matches!(x, Record::I2cWitness { reference, step, .. } if reference == "U5" && step == "identity"),
+        )
+    };
+    let shown = |line: &str| {
+        let r = bme_bmp(
+            |_| {},
+            [
+                &[line],
+                &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+                &["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"],
+            ],
+        );
+        fields_of(&r, identity(&r))
+    };
+    let wrong = |line: &str| -> Vec<(String, Option<u64>)> {
+        shown(line)
+            .into_iter()
+            .filter(|f| f.4)
+            .map(|f| (f.0, f.3))
+            .collect()
+    };
+    assert!(wrong("[NOISY] i2c1.u5: read 0x01 -> 0x50").is_empty());
+    for (line, field, observed) in [
+        ("[NOISY] i2c1.u5: read 0x01 -> 0x51", "Read", 0x51),
+        ("[NOISY] i2c1.u5: read 0x02 -> 0x50", "Write", 0x02),
+        ("[NOISY] i2c1.u5: write 0x02 <- (none)", "Write", 0x02),
+        // A write of 0x01 then 0x50, shown under the step's one-byte mask.
+        ("[NOISY] i2c1.u5: write 0x01 <- 0x50", "Write", 0x50),
+    ] {
+        assert_eq!(
+            wrong(line),
+            [(format!("i2c1.u5.{field}"), Some(observed))],
+            "{line}"
+        );
     }
+    for line in [
+        // Another model's line, or another form.
+        "[NOISY] i2c1.u5: bank 0 read 0x01 -> 0x51",
+        "[NOISY] i2c1.u5: Write 02",
+        "[NOISY] i2c1.u5: Read 51",
+        "[NOISY] i2c1.u5: write to read-only register 0x02 ignored",
+        "[NOISY] i2c1.u5: INT set",
+        // Not this device's model's, at its level.
+        "[WARNING] i2c1.u5: read 0x01 -> 0x51",
+        "[NOISY] i2c1.u55: read 0x01 -> 0x51",
+        "[NOISY] i2c1.u4: read 0x01 -> 0x51",
+        // Malformed.
+        "[NOISY] i2c1.u5: read 0x01 -> 0x5a",
+        "[NOISY] i2c1.u5: read 0x01 -> 0x5",
+        "[NOISY] i2c1.u5: read 0x01 -> 51",
+        "[NOISY] i2c1.u5: read 0x01 -> 0X51",
+        "[NOISY] i2c1.u5: read 0x001 -> 0x51",
+        "[NOISY] i2c1.u5: read 0x01 -> (none)",
+        "[NOISY] i2c1.u5: read 0x01 -> ",
+        "[NOISY] i2c1.u5: read 0x01 ->",
+        "[NOISY] i2c1.u5: read 0x01 -> 0x51 ",
+        "[NOISY] i2c1.u5: read 0x01 -> 0x51  0x00",
+        "[NOISY] i2c1.u5: read 0x81 -> 0x51",
+        "[NOISY] i2c1.u5: read 0x02 <- 0x50",
+        "[NOISY] i2c1.u5: write 0x02 -> 0x50",
+        "[NOISY] i2c1.u5: Read 0x01 -> 0x51",
+        "[NOISY] i2c1.u5: read 0x01 -> 0x51 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
+        "[NOISY] i2c1.u5: write 0x02 <- 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
+    ] {
+        let f = shown(line);
+        assert!(
+            f.len() == 3 && f.iter().all(|f| !f.4 && f.3.is_none()),
+            "{line}: {f:?}"
+        );
+    }
+    let mut r = bme_bmp(
+        |_| {},
+        [
+            &["[NOISY] i2c1.u5: read 0x02 -> 0x51"],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+            &["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"],
+        ],
+    );
+    let i = identity(&r);
+    if let Record::I2cWitness { expected, .. } = &mut r[i] {
+        *expected = vec!["[NOISY] i2c1.u5: read 0x01 -> 0x5".to_owned()];
+    }
+    assert!(fields_of(&r, i).is_empty(), "a malformed script");
 }
 
 /// Adversarial F1 (`AET-WO-3306` §6): a step is named as sent to the
