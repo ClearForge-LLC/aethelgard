@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # AET-WO-4300i R1: validate, solve, emit (each twice) every committed board.
-# usage: run.sh <aethelgard binary> <scratch dir>
+# usage: [OUT=<dir under spike/4300i>] run.sh <aethelgard binary> <scratch dir>  (OUT defaults to out)
 set -uo pipefail
 AE=$1; W=$2
 here=$(cd "$(dirname "$0")" && pwd); root=$(git -C "$here" rev-parse --show-toplevel)
-mkdir -p "$here/out/emit-files" "$W/solve" "$W/emit" "$W/val"
-printf 'name\tpath\tvalidate_rc\tvalidate_kind\tsolve_rc\tsolve_kind\tsolve_sha256\temit_rc\temit_kind\temit_files\temit_tree_sha256\trepeat_identical\n' > "$here/out/baseline.tsv"
+mkdir -p "$here/${OUT:-out}/emit-files" "$W/solve" "$W/emit" "$W/val"
+printf 'name\tpath\tvalidate_rc\tvalidate_kind\tsolve_rc\tsolve_kind\tsolve_sha256\temit_rc\temit_kind\temit_files\temit_tree_sha256\trepeat_identical\n' > "$here/${OUT:-out}/baseline.tsv"
 kind() { python3 -I -c 'import json,sys
 try: print(json.load(sys.stdin).get("error",{}).get("kind","?"))
 except Exception: print("?")' 2>/dev/null; }
@@ -29,12 +29,12 @@ bash "$here/universe.sh" | while IFS=$'\t' read -r n f; do
   e2=$(cd "$W/emit" && nice -n 10 "$AE" emit --file "$spec" --out "$n.b" 2>&1); erc2=$?
   [ $erc -eq $erc2 ] || same=no
   if [ $erc -ne 0 ]; then ek=$(printf '%s' "$e1" | kind); fi
-  : > "$here/out/emit-files/$n.sha"
+  : > "$here/${OUT:-out}/emit-files/$n.sha"
   if [ -d "$W/emit/$n.a" ]; then
-    (cd "$W/emit/$n.a" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while read -r p; do printf '%s  %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "$p"; done) > "$here/out/emit-files/$n.sha"
-    cnt=$(wc -l < "$here/out/emit-files/$n.sha"); tree=$(sha256sum < "$here/out/emit-files/$n.sha" | cut -d' ' -f1)
+    (cd "$W/emit/$n.a" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while read -r p; do printf '%s  %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "$p"; done) > "$here/${OUT:-out}/emit-files/$n.sha"
+    cnt=$(wc -l < "$here/${OUT:-out}/emit-files/$n.sha"); tree=$(sha256sum < "$here/${OUT:-out}/emit-files/$n.sha" | cut -d' ' -f1)
     if [ -d "$W/emit/$n.b" ]; then
-      (cd "$W/emit/$n.b" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while read -r p; do printf '%s  %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "$p"; done) | cmp -s - "$here/out/emit-files/$n.sha" || same=no
+      (cd "$W/emit/$n.b" && find . -type f | sed 's|^\./||' | LC_ALL=C sort | while read -r p; do printf '%s  %s\n' "$(sha256sum "$p" | cut -d' ' -f1)" "$p"; done) | cmp -s - "$here/${OUT:-out}/emit-files/$n.sha" || same=no
     else same=no; fi
     [ -d "$W/emit/$n.a" ] && mv "$W/emit/$n.a" "$W/emit/$n"
     rm -rf "$W/emit/$n.b"
@@ -42,5 +42,5 @@ bash "$here/universe.sh" | while IFS=$'\t' read -r n f; do
     cnt=0; tree=$(sha256sum < /dev/null | cut -d' ' -f1)
   fi
   [ $erc -eq 0 ] || [ $erc -ne 0 ] ; 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$f" "$vrc" "$vk" "$src" "$sk" "$sh" "$erc" "$ek" "$cnt" "$tree" "$same" >> "$here/out/baseline.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$n" "$f" "$vrc" "$vk" "$src" "$sk" "$sh" "$erc" "$ek" "$cnt" "$tree" "$same" >> "$here/${OUT:-out}/baseline.tsv"
 done
