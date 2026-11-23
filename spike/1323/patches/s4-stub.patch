@@ -1,0 +1,144 @@
+--- base/crates/aethelgard-eda/src/route.rs	2026-11-23 09:21:04.000000000 +0000
++++ s4/crates/aethelgard-eda/src/route.rs	2026-11-23 09:37:01.108307159 +0000
+@@ -1546,6 +1546,9 @@
+ 
+     /// Lays `path` down as `net`'s copper.
+     fn commit(&mut self, net: usize, path: &[Node]) {
++        if std::env::var_os("AET1323_STUB_DUMP").is_some() {
++            eprintln!("COMMIT {} fixed {} {:?}", self.nets[net], self.fixed[net], path.iter().map(|&(l, n)| (l.name(), self.grid.at(n))).collect::<Vec<_>>());
++        }
+         for w in path.windows(2) {
+             let ((la, a), (lb, b)) = (w[0], w[1]);
+             if a == b && la == lb {
+@@ -1609,7 +1612,76 @@
+     }
+ 
+     /// Takes `net`'s copper up and makes its corridors pending again.
++    /// AET-WO-1323 prototype: take off every end of `net`'s copper that is
++    /// in none of its pads (a leaf of its edges, no via there), until none is
++    /// left. True if any was taken.
++    fn prune(&mut self, net: usize) -> bool {
++        let reach: Vec<Rect> = self
++            .board
++            .parts
++            .iter()
++            .flat_map(|p| &p.pads)
++            .filter(|p| p.net.as_deref() == Some(self.nets[net].as_str()))
++            .map(|p| p.reach())
++            .collect();
++        let mut any = false;
++        loop {
++            let mut cut = false;
++            for li in 0..2 {
++                let mut degree: BTreeMap<usize, usize> = BTreeMap::new();
++                for &(a, b) in &self.edges[net][li] {
++                    *degree.entry(a).or_default() += 1;
++                    *degree.entry(b).or_default() += 1;
++                }
++                let leaves: Vec<usize> = degree
++                    .iter()
++                    .filter(|&(&n, &d)| {
++                        let (x, y) = self.grid.at(n);
++                        d == 1
++                            && !self.vias.contains_key(&n)
++                            && !reach.iter().any(|r| r.contains(Rect::point(x, y)))
++                    })
++                    .map(|(&n, _)| n)
++                    .collect();
++                for leaf in leaves {
++                    self.edges[net][li].retain(|&(a, b)| a != leaf && b != leaf);
++                    cut = true;
++                }
++            }
++            if !cut {
++                break;
++            }
++            any = true;
++        }
++        if any && std::env::var_os("AET1323_STUB_DUMP").is_some() {
++            eprintln!("PRUNED {}", self.nets[net]);
++        }
++        any
++    }
++
++    /// The maps again from every net's edges and vias, as `rip` makes them.
++    fn remap(&mut self) {
++        self.track = self.hard_track.clone();
++        self.via = self.hard_via.clone();
++        for other in 0..self.edges.len() {
++            for l in [Layer::F, Layer::B] {
++                let edges: Vec<(usize, usize)> =
++                    self.edges[other][l.index()].iter().copied().collect();
++                for (a, b) in edges {
++                    self.claim_edge(other, l, a, b);
++                }
++            }
++        }
++        let vias: Vec<(usize, usize)> = self.vias.iter().map(|(&n, &v)| (n, v)).collect();
++        for (node, other) in vias {
++            self.claim_via(other, node);
++        }
++    }
++
+     fn rip(&mut self, net: usize) {
++        if std::env::var_os("AET1323_STUB_DUMP").is_some() {
++            eprintln!("RIP {} fixed {}", self.nets[net], self.fixed[net]);
++        }
+         self.edges[net] = Default::default();
+         self.vias.retain(|_, n| *n != net);
+         self.release(net, false);
+@@ -2233,6 +2305,19 @@
+         r.fixed[n] = true;
+         paired.extend([p, n]);
+     }
++
++    if std::env::var_os("AET1323_EARLY").is_some() && !board.stack.pairs.is_empty() {
++        let laid = Routed {
++            segments: r.segments().into_iter().filter(|s| board.stack.pairs.iter().any(|p| p.nets.contains(&s.net))).collect(),
++            ..Routed::default()
++        };
++        pairs(board, &laid).map_err(|why| fail("", why))?;
++    }
++    if std::env::var_os("AET1323_STUB_DUMP").is_some() {
++        for s in r.segments().iter().filter(|s| s.net == "/P" || s.net == "/N") {
++            eprintln!("PAIR-LAID {s:?}");
++        }
++    }
+     let mut queue: VecDeque<usize> = order
+         .iter()
+         .copied()
+@@ -2342,6 +2427,11 @@
+         arrays,
+         ripups,
+     };
++    if std::env::var_os("AET1323_STUB_DUMP").is_some() {
++        for s in routed.segments.iter() {
++            eprintln!("FINAL {s:?}");
++        }
++    }
+     // belt-and-suspenders: the grid's margins already keep the copper clear
+     // and joined (no tested board reaches these); the exact judges stand
+     // behind them, so a router defect fails closed rather than ships.
+@@ -3459,6 +3549,13 @@
+                     .map_err(|_| what.clone())?;
+                 self.commit(net, &path);
+             }
++            if std::env::var_os("AET1323_PRUNE").is_some() {
++                let a = self.prune(p);
++                let b = self.prune(n);
++                if a || b {
++                    self.remap();
++                }
++            }
+             Ok(())
+         })();
+         self.no_vias = false;
+@@ -4367,6 +4464,8 @@
+ }
+ 
+ mod read;
++#[cfg(test)]
++mod stub1323;
+ pub use read::*;
+ 
+ #[cfg(test)]
