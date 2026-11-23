@@ -1,8 +1,8 @@
 # AET-WO-1914 — FEEDBACK: the shard planner's P3, and refusal fixtures that check their reason
 
-**Status: CI pending; READY once it is green and P3 is read back from this PR's own shard logs (§5).** One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
+**Status: READY FOR REVIEW at this PR's last push** (the merge of `main` `9958f594`). D1 and D2 are ruled (architect, bus, 03:30Z): both leans, as built. One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
 
-**Base:** `main` `d09a5187` (verified live after the build: `origin/main` has not moved). **Branch:** `wo/aet-1914-planner-p3`.
+**Base:** `main` `d09a5187`; `main` `9958f594` (`2309` #340, `4407` #339) merged in at `27f07acd`. **Branch:** `wo/aet-1914-planner-p3`.
 **Predictions:** `spike/1914/predictions.md`, committed `f164d606` before any `main` CI log was read for this work order.
 **The measurement:** `spike/1914/measurement.md`.
 
@@ -30,8 +30,7 @@
      - P3's own first draft passed the old `result` fixtures on "no time stamp".
 5. **The awk** is gawk on the runner (`ubuntu-26.04`) and on Furnace, which print the warning, and mawk in the image, which does
    not. The warning printed in exactly the fixtures predicted.
-6. **Decisions for the architect:** D1 (P3's scope) and D2 (the margin rows). Both are built on my lean, posted on the bus at
-   02:38Z. No ruling yet.
+6. **Decisions:** D1 (P3's scope) and D2 (the margin rows), both ruled to my lean by the architect (bus, 03:30Z), as built.
 
 ## 1. What was built
 
@@ -73,11 +72,11 @@ reproduces CI's own shard 0 byte for byte.
 
 ## 2. Decisions
 
-- **D1, P3's scope. Built: every test a shard runs, as P2.**
+- **D1, P3's scope. Ruled (03:30Z): every test a shard runs, as P2.** As built.
   - The WO's §1.1 says "tier-2 tests". The one test P3 must weigh is tier 1, and so were all 17 of `1910`'s.
   - A P3 that judged only `TIER2_RE` would refuse nothing on `main` today.
   - Narrowing it is one `awk` condition on the binary. The fixtures name binaries outside `TIER2_RE`, so they would change too.
-- **D2, the margin rows. Built: two rows.**
+- **D2, the margin rows. Ruled (03:30Z): weigh the two at their worst over the held runs, named; the 2.52× spread is the reason.** As built.
   - Across seven `main` runs, the in-shard time of one test (outside the lock-serialised and colocated binaries) varied by up to
     2.52× (median 1.50, p90 1.90).
   - So an unweighted test whose worst is 4 s or more can reach 10 s on a slow runner and fail someone else's CI. Exactly two do.
@@ -88,7 +87,7 @@ reproduces CI's own shard 0 byte for byte.
 
 | # | attack | result |
 |---|---|---|
-| A1 | a test whose time straddles 10 s across runners | **Real; handled by D2.** The spread is up to 2.52×, so the margin rows cover every unweighted test of 4 s or more. Residual: adding rows re-plans, so a test meets new neighbours, and the spread was measured on one plan. This PR's own CI run is the first measurement on the new plan. |
+| A1 | a test whose time straddles 10 s across runners | **Real; handled by D2.** The spread is up to 2.52×, so the margin rows cover every unweighted test of 4 s or more. Residual: adding rows re-plans, so a test meets new neighbours, and the spread was measured on one plan. Measured on the new plan (this PR's CI run 45103235118, c08dc221): the heaviest unweighted test is `board.rs the_unmodelled_read_moves_no_modelled_step` at 3.27 s (2.96 s worst over the seven held runs), under the 4 s line. |
 | A2 | a test that straddles 60 s | **Moot for an unweighted test:** P3 has no upper bound, so it refuses one at 10 s before 60 s matters. A weighted test is not judged. The lock-serialised binaries' tests all carry rows (P2's rule). |
 | A3 | a log line without a time stamp that P3 silently skips | **Held: refused, by line number** (fixture). So are a stamp that goes back, a result line P3 cannot read (the binary's timed count falls short of its `running N tests`), and a log that ends inside a binary. All are mutated. |
 | A4 | a tool line that looks like a result (`trybuild` prints `test tests/ui/x.rs ... ok`) | **Held:** a result names a Rust path (`[A-Za-z0-9_:]+`). Anything else is not timed, and if it was a real result the count check refuses it. In the 36 held logs, no result-like line names anything but a Rust path (grep). |
@@ -129,7 +128,19 @@ Two survived on the first sweep, and both were fixed:
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
 - `cargo test --workspace`: 2,785 passed, 0 failed, 0 ignored (Furnace, capped scope, 6 threads). No crate changed.
 - `bash ci/test-shard.sh`: 137 passed, 0 failed, under gawk and mawk.
-- CI: pending on the PR.
+- **CI on c08dc221 (run 45103235118): 17 of 17 checks green.**
+  - The runner's awk, from the suite's own first line: GNU Awk 5.3.2. No awk warning; 137 checks passed.
+  - **P3 read back end to end, on bash's own stamps** (`held.sh stamp` keeps `run`'s stamps):
+    - 3,023 of 3,023 tests timed, equal to the shards' `passed`;
+    - 48 libtest 60 s lines agree with P3's start to within 8 ms;
+    - no shard refused (P2 or P3).
+  - The aggregate: 3,023 passed, tier 2 204 against the floor 203.
+- **After merging `main` 9958f594:**
+  - The merged `ci/test-weights.tsv` differs from `main`'s by exactly this PR's four lines.
+  - `ci/test-shard.sh`: 137 under gawk and mawk.
+  - The planner on the merged list (3,029 tests: `2309`'s last CI run, 45100925891; `4407` changed no crate): P1 and the guard pass, and it plans 848 s per shard on `main`'s weights, 851 on the merged weights.
+  - P3 over that run's 12 shard logs with the merged weights: no unweighted test reaches 3 s. `2309`'s one heavy test (8.4 s) carries its own 16.2 row.
+  - CI on the merged head: this PR's latest run (READY on the bus once green).
 - **Reduction pass (diff):** −11 lines net (`ci/shard.sh` −2 against the first draft, the label included; `ci/test-shard.sh` −9 greps) · 2 duplicates removed · 1 dead path removed ·
   1 protected kept · 2 findings below.
   - Duplicates:

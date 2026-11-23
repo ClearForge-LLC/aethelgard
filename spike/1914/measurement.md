@@ -57,7 +57,8 @@ one of their tests carries a row (P2's rule), so P3 never judges them.
     "result: a failed test", in each of the 4, 5 and 7-shard suites (9);
   - as the first line of "P2: result refuses an unweighted test past 60 s", whose next check names its reason (1);
   - to the console from the `tally` doc-test check (3).
-  The message's form is gawk's. This PR's CI prints the runner's awk by name (`== awk:`, the suite's first line).
+  The message's form is gawk's, and this PR's CI confirms it: the suite's first line on the runner (run 45103235118) reads
+  `== awk: GNU Awk 5.3.2, API 4.0, PMA Avon 8-g1, (GNU MPFR 4.2.2, GNU MP 6.3.0)`.
 - **Furnace:** `awk` is gawk 5.3.2 (`update-alternatives`; `nawk` is gawk too): the warning prints. The triage's "not
   reproduced" (`docs/reviews/2026-11-23-backlog-triage.md` row 843) does not hold here: `bash ci/test-shard.sh` on `d09a5187`
   prints it in the same 13 places. Why the triage saw none is not known; inside the image it would not print.
