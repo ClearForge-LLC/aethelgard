@@ -8,6 +8,11 @@
 #     `&& echo "<64 hex>  PATH" | sha256sum -c -`, the only pipe allowed;
 #   - apt runs only as `apt-get update` and one `apt-get install -y
 #     --no-install-recommends` block whose every package is name=version;
+#   - every stage that runs `apt-get update` first has `COPY NAME.sources
+#     /etc/apt/sources.list.d/debian.sources`, NAME.sources beside this file;
+#     every *.sources there names only snapshot.debian.org, all at one
+#     timestamp; nothing else touches /etc/apt or sets APT_CONFIG
+#     (AET-WO-4407: a build with no cache resolves what the tables name);
 #   - `cargo install` is --locked with a --version, and rustup installs a
 #     numbered toolchain;
 #   - nothing is swallowed with `||`, and the common fetchers outside the curl
@@ -21,7 +26,8 @@
 #     /path/to/git);
 #   - a `-m venv` takes Debian's pip, so python3-pip-whl must be pinned in the
 #     apt block;
-#   - no heredoc, no `# escape=` directive, no carriage return, and no COPY of
+#   - no heredoc, no `# escape=` or `# syntax=` directive (in any case or
+#     spacing, after `#` or `//`), no byte-order mark, no carriage return, and no COPY of
 #     a script (a #! line, an executable bit or a .sh/.bash/.py/.pl name): the
 #     check reads only this file and the hashed requirements.
 # What is left of A7: a command name assembled at run time (`${G}t fetch`,
@@ -47,11 +53,33 @@ bad=0
 from_seen=0
 arg_seen=0
 in_apt=0
+snapped=0
 stages=" "
 refuse() {
   echo "check-pins: line $(($1 + 1)): $2" >&2
   bad=1
 }
+
+# The apt sources (AET-WO-4407): each *.sources beside this file holds only
+# comments, blank lines and these deb822 fields, and every URIs line names
+# snapshot.debian.org at the one timestamp all of them share.
+snapshot=''
+for s in "$(dirname "$file")"/*.sources; do
+  [ -f "$s" ] || continue
+  n=0
+  while IFS= read -r l || [ -n "$l" ]; do
+    n=$((n + 1))
+    [[ "$l" =~ ^(#.*)?$ ]] && continue
+    if [[ "$l" =~ ^URIs:\ http://snapshot\.debian\.org/archive/debian(-security)?/([0-9]{8}T[0-9]{6}Z)$ ]]; then
+      [ -n "$snapshot" ] || snapshot=${BASH_REMATCH[2]}
+      [ "${BASH_REMATCH[2]}" = "$snapshot" ] \
+        || refuse -1 "$s:$n: snapshot ${BASH_REMATCH[2]}, not $snapshot: every *.sources here names one timestamp"
+    elif ! [[ "$l" =~ ^(Types:\ deb|Suites:\ [a-z]+(-updates|-security)?(\ [a-z]+(-updates|-security)?)*|Components:\ main|Signed-By:\ /usr/share/keyrings/debian-archive-keyring\.(pgp|gpg)|Check-Valid-Until:\ no)$ ]]; then
+      refuse -1 "$s:$n: not a snapshot.debian.org source line: $l"
+    fi
+  done < "$s"
+done
+snapcopy='^COPY ([a-z0-9][a-z0-9.-]*\.sources) /etc/apt/sources\.list\.d/debian\.sources$'
 
 # Whole instructions (AET-WO-4401). Docker drops a trailing `\` (spaces and
 # tabs may follow it) with its newline and joins the next line as it stands,
@@ -85,6 +113,10 @@ for n in "${!logical[@]}"; do
   t=${t//[\"\'\\]/}
   t=${t//[\(\)\`\$\{\}\[\],<>]/ }
   read -ra w <<< "$t"
+  # Only the snapshot COPY writes apt's configuration (AET-WO-4407).
+  if [[ "$t" == *"/etc/apt"* || "$t" == *APT_CONFIG* ]] && ! [[ "${logical[$n]}" =~ $snapcopy ]]; then
+    refuse "${starts[$n]}" "only 'COPY NAME.sources /etc/apt/sources.list.d/debian.sources' may change apt's configuration: ${logical[$n]}"
+  fi
   for k in "${!w[@]}"; do
     name=${w[$k]##*=}
     [[ "$name" == -m?* ]] && name=${name#-m}
@@ -141,6 +173,11 @@ for i in "${!lines[@]}"; do
   # A parser directive: `escape` changes the continuation character, so the
   # joining above would no longer be Docker's.
   [[ "${line,,}" =~ ^#[[:space:]]*escape[[:space:]]*= ]] && refuse "$i" "an escape directive changes how lines join: $line"
+  # BuildKit reads `syntax` after `#` or `//`, in any case and spacing, and
+  # pulls that frontend image by tag (AET-WO-4407; 4401 Q2). It skips a
+  # byte-order mark first, so a BOM would hide either directive from this check.
+  [[ "${line,,}" =~ ^(#|//)[[:space:]]*syntax[[:space:]]*= ]] && refuse "$i" "a syntax directive pulls a BuildKit frontend by tag: $line"
+  [[ "$line" == *$'\xef\xbb\xbf'* ]] && refuse "$i" "a byte-order mark, which hides a parser directive from this check"
   # A carriage return: whether Docker then joins on `\` is not this check's to guess.
   [[ "$line" == *$'\r'* ]] && refuse "$i" "a carriage return (CRLF line ends)"
   [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
@@ -181,6 +218,7 @@ for i in "${!lines[@]}"; do
 
   if [[ "${line,,}" =~ ^[[:space:]]*from[[:space:]] ]]; then
     from_seen=1
+    snapped=0
     read -ra words <<< "$line"
     image=
     for k in "${!words[@]}"; do
@@ -276,11 +314,21 @@ for i in "${!lines[@]}"; do
     refuse "$i" "pipe other than a sha256 check: $line"
   fi
 
+  if [[ "$line" =~ $snapcopy ]]; then
+    if [ -n "$snapshot" ] && [ -f "$(dirname "$file")/${BASH_REMATCH[1]}" ]; then
+      snapped=1
+    else
+      refuse "$i" "no snapshot sources beside this file: ${BASH_REMATCH[1]}"
+    fi
+  fi
+
   if [[ "$line" =~ (^|[^a-z-])apt(-get)?[[:space:]] ]]; then
     if [[ "$line" =~ ^[[:space:]]*\&\&\ apt-get\ install\ -y\ --no-install-recommends\ \\$ ]]; then
       in_apt=1
     elif ! [[ "$line" =~ ^RUN\ apt-get\ update\ \\$ ]]; then
       refuse "$i" "apt used outside the pinned install block: $line"
+    elif [ "$snapped" -eq 0 ]; then
+      refuse "$i" "apt-get update in a stage with no snapshot source COPYed above it: it would read Debian's moving index"
     fi
   fi
 

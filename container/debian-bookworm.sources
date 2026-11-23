@@ -1,0 +1,20 @@
+# Debian bookworm from snapshot.debian.org at one timestamp (AET-WO-4407), COPYed
+# over the base image's /etc/apt/sources.list.d/debian.sources before its
+# apt-get update, so a build with no cache resolves the same packages as the
+# committed *-DEBIAN-GPL2.tsv tables. check-pins.sh refuses any other source,
+# and any timestamp but the one every *.sources file here names. Plain http:
+# apt checks the signed InRelease, and trixie-slim has no CA bundle yet.
+# A snapshot's Valid-Until has passed, so it is not checked.
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian/20261117T120000Z
+Suites: bookworm bookworm-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Check-Valid-Until: no
+
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian-security/20261117T120000Z
+Suites: bookworm-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.gpg
+Check-Valid-Until: no

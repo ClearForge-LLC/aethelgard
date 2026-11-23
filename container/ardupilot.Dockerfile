@@ -26,7 +26,10 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # python3-pip-whl is the wheel `python3 -m venv` installs as the venv's pip; a
 # dependency of python3-venv, so it is named here to pin it (AET-WO-4401,
 # 4400a A7; 25.1.1+dfsg-1 read in the image published from 8030fa5).
-# Exact versions from trixie and trixie-security.
+# Exact versions from trixie and trixie-security at one snapshot.debian.org
+# timestamp (AET-WO-4407), the tools image's, so a build with no cache
+# installs what ARDUPILOT-DEBIAN-GPL2.tsv names.
+COPY debian-trixie.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419+deb13u1 \
