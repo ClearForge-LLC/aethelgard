@@ -1,0 +1,7 @@
+tag=gate-campaign-sentinel-01-r1 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T05:38:44+00:00
+host_avail_kB=51690640
+cmd: bash /repo/spike/1915/tools/ctl.sh cmd target/debug/aethelgard campaign --scenarios scenarios/sentinel-01/seeded/pullup-3k3.json scenarios/sentinel-01/droop-bor3.json scenarios/sentinel-01/seeded/spi-absent-u4.json scenarios/sentinel-01/pullup-2k2.json scenarios/sentinel-01/seeded/serial-rx-open-console.json --firmware target/elf-sentinel-01-r1.elf --archive target/arch-sentinel-01-r1
+exit=0
+end=2026-11-23T05:39:02+00:00

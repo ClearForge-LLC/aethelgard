@@ -1,7 +1,7 @@
 #!/bin/bash
 # AET-WO-1915: every run's attribution into spike/1915/out/: one JSON per run
 # (attribute.py's summary), runs.tsv (one row per run) and, for each verify and
-# each candidate run, its 1 s timeline. The raw samples stay in ~/.cache/aet-1915/runs.
+# each candidate run, its 1 s timeline, and each run's meta (command, image, cap, exit). The raw samples stay in ~/.cache/aet-1915/runs.
 set -u
 H=$(dirname "$(readlink -f "$0")"); O=$H/../out; R=$HOME/.cache/aet-1915/runs
 mkdir -p "$O/runs" "$O/timelines"
@@ -11,6 +11,7 @@ for d in "$R"/*/; do
   case "$t" in selftest-*|build-*|extra-s02-generate) continue;; esac
   [ -s "$d/samples.jsonl" ] || continue
   python3 -I "$H/attribute.py" "$d/samples.jsonl" > "$O/runs/$t.json"
+  cp "$d/meta" "$O/runs/$t.meta"  # the exact command, image, cap and exit
   python3 -I "$H/attribute.py" "$d/samples.jsonl" --table >> "$O/runs.tsv"
   case "$t" in verify-*|cand-*) python3 -I "$H/attribute.py" "$d/samples.jsonl" --timeline | sed -n '/^ *[0-9.]* anon=/p' > "$O/timelines/$t.txt";; esac
 done

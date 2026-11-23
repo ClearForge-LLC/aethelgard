@@ -1,0 +1,7 @@
+tag=prove-board-every_valid_sequence_i2c1-r1 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T05:04:32+00:00
+host_avail_kB=52570696
+cmd: bash /repo/spike/1915/tools/ctl.sh prove target/s02/board examples/sentinel-02-bench.json every_valid_sequence_i2c1
+exit=0
+end=2026-11-23T05:04:59+00:00

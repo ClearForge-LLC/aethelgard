@@ -1,0 +1,7 @@
+tag=verify-bench-r1 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T04:47:04+00:00
+host_avail_kB=52208200
+cmd: bash /repo/spike/1915/tools/ctl.sh verify examples/sentinel-01.json bench-r1 scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json scenarios/sentinel-01-bench/serial-rx-open-console.json
+exit=0
+end=2026-11-23T04:50:06+00:00
