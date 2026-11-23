@@ -1057,3 +1057,88 @@ fn an_esc_is_null_or_none_with_a_source() {
         assert!(with(bad.clone()).is_err(), "{bad}");
     }
 }
+
+/// M2's solved pull, to edit.
+fn solved_pull(t: &mut SolvedTopology) -> &mut aethelgard_ir::motor::SolvedMotorPull {
+    &mut t.motor_outputs.get_mut("M2").unwrap().pull
+}
+
+/// `AET-WO-4300j` adversarial F1: the solved pull's strings reach hwdef's
+/// comment line verbatim, and its window and value are written there as the
+/// bound checked, so a topology is refused when any of them is not a
+/// reference or disagrees with itself.
+#[test]
+fn the_topology_refuses_a_pull_that_is_not_references_or_disagrees_with_its_window() {
+    let kind = |edit: &dyn Fn(&mut SolvedTopology)| {
+        let mut t = topology();
+        edit(&mut t);
+        t.validate().map_err(|e| e.kind())
+    };
+    assert_eq!(kind(&|_| {}), Ok(()));
+    // The injection the adversary planted: a live hwdef line in the link.
+    assert_eq!(
+        kind(&|t| {
+            solved_pull(t).link = "R10\nPA8 TIM1_CH1 TIM1 PWM(1) SPEED_VERYLOW PUSHPULL PULLUP\ndefine HAL_SERIAL_ESC_COMM_ENABLED 1\n#".into();
+        }),
+        Err("InvalidIdentifier")
+    );
+    assert_eq!(
+        kind(&|t| solved_pull(t).resistor = "R 6".into()),
+        Err("InvalidIdentifier")
+    );
+    // The link the resistor's own reference, in any case; or another
+    // output's link.
+    assert_eq!(
+        kind(&|t| {
+            let r = solved_pull(t).resistor.to_lowercase();
+            solved_pull(t).link = r;
+        }),
+        Err("DuplicateReference")
+    );
+    assert_eq!(
+        kind(&|t| {
+            let other = t.motor_outputs["M1"].pull.link.clone();
+            solved_pull(t).link = other;
+        }),
+        Err("DuplicateReference")
+    );
+    // The window: at least 1, ordered, and the value inside it, both edges.
+    let mismatch = Err("MotorPullMismatch");
+    assert_eq!(kind(&|t| solved_pull(t).floor_ohms = 0), mismatch);
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).floor_ohms = c + 1;
+        }),
+        mismatch
+    );
+    assert_eq!(kind(&|t| solved_pull(t).ohms = 40_200), mismatch);
+    assert_eq!(
+        kind(&|t| {
+            let f = solved_pull(t).floor_ohms;
+            solved_pull(t).ohms = f - 1;
+        }),
+        mismatch
+    );
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).ohms = c + 1;
+        }),
+        mismatch
+    );
+    assert_eq!(
+        kind(&|t| {
+            let f = solved_pull(t).floor_ohms;
+            solved_pull(t).ohms = f;
+        }),
+        Ok(())
+    );
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).ohms = c;
+        }),
+        Ok(())
+    );
+}

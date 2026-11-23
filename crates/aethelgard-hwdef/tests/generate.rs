@@ -614,7 +614,7 @@ fn a_comment_line_above_each_motor_line_names_its_fitment_and_bound() {
             let p = &m.pull;
             let want = match p.fitment {
                 aethelgard_ir::motor::PullFitment::Fitted => format!(
-                    "# {net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, BLHeli passthrough safe with it fitted (AET-WO-4300j)",
+                    "# {net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, checked for BLHeli passthrough idle with it fitted, the ESC threshold a stand-in (AET-WO-4300j R1)",
                     p.resistor, p.ohms, p.link, p.floor_ohms, p.ceiling_ohms
                 ),
                 aethelgard_ir::motor::PullFitment::Open => format!(
@@ -637,7 +637,11 @@ fn a_comment_line_above_each_motor_line_names_its_fitment_and_bound() {
         }
         let comments = lines
             .iter()
-            .filter(|l| l.contains(" pull: ") && l.ends_with("(AET-WO-4300j)"))
+            .filter(|l| {
+                l.starts_with("# ")
+                    && l.contains(" pull: ")
+                    && (l.ends_with("(AET-WO-4300j)") || l.ends_with("(AET-WO-4300j R1)"))
+            })
             .count();
         assert_eq!(comments, t.motor_outputs.len(), "{name}");
         // Every line with a source shares one width, its longest line's: no

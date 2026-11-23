@@ -1931,6 +1931,10 @@ pub enum IrValidationError {
         "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR - 1, so a fall never meets the next update)"
     )]
     MotorOutputMismatch { id: String },
+    #[error(
+        "motor output `{id}`'s solved pull disagrees with itself: `floor_ohms` is at least 1 and `ohms` lies between `floor_ohms` and `ceiling_ohms` (so the window is not empty) (`AET-WO-4300j` adversarial F1: hwdef writes these into its comment line)"
+    )]
+    MotorPullMismatch { id: String },
     #[error("serial port `{id}` is declared twice (labels are compared with case folded)")]
     DuplicateSerialLabel { id: String },
     #[error(
@@ -2542,6 +2546,7 @@ impl IrValidationError {
             Self::PulseExceedsPeriod { .. } => "PulseExceedsPeriod",
             Self::UnjudgedMotorConstraint { .. } => "UnjudgedMotorConstraint",
             Self::MotorOutputMismatch { .. } => "MotorOutputMismatch",
+            Self::MotorPullMismatch { .. } => "MotorPullMismatch",
             Self::DuplicateSerialLabel { .. } => "DuplicateSerialLabel",
             Self::SerialPeripheralLpuart { .. } => "SerialPeripheralLpuart",
             Self::UnknownSerialPeripheral { .. } => "UnknownSerialPeripheral",
@@ -2742,6 +2747,7 @@ impl IrValidationError {
             | Self::PulseExceedsPeriod { id, .. }
             | Self::UnjudgedMotorConstraint { id }
             | Self::MotorOutputMismatch { id }
+            | Self::MotorPullMismatch { id }
             | Self::TimerShared { id }
             | Self::DuplicateSerialLabel { id }
             | Self::SerialPeripheralLpuart { id, .. }
@@ -4426,15 +4432,27 @@ impl SolvedTopology {
             })?;
             plain(&d.cs, || format!("spi_devices.{reference}.cs"))?;
         }
+        // `AET-WO-4300j` adversarial F1: the pull's references reach hwdef's
+        // comment line verbatim, so each is an identifier, as every other
+        // reference here is, and none repeats another reference.
+        for (net, m) in &self.motor_outputs {
+            plain(net, || format!("motor_outputs.{net}"))?;
+            plain(&m.pull.resistor, || {
+                format!("motor_outputs.{net}.pull.resistor")
+            })?;
+            plain(&m.pull.link, || format!("motor_outputs.{net}.pull.link"))?;
+        }
         references_distinct(
             self.i2c_devices
                 .keys()
                 .chain(self.spi_devices.keys())
-                .map(String::as_str),
+                .map(String::as_str)
+                .chain(
+                    self.motor_outputs
+                        .values()
+                        .flat_map(|m| [m.pull.resistor.as_str(), m.pull.link.as_str()]),
+                ),
         )?;
-        for net in self.motor_outputs.keys() {
-            plain(net, || format!("motor_outputs.{net}"))?;
-        }
         for (label, p) in &self.serial_ports {
             plain(label, || format!("serial_ports.{label}"))?;
             plain(&p.peripheral, || format!("serial_ports.{label}.peripheral"))?;
@@ -4754,6 +4772,10 @@ impl SolvedTopology {
         let mut channels = BTreeSet::new();
         let mut timers: BTreeMap<u32, (motor::TimerKey, u32, u32)> = BTreeMap::new();
         for (net, m) in &self.motor_outputs {
+            let p = &m.pull;
+            if p.floor_ohms == 0 || !(p.floor_ohms..=p.ceiling_ohms).contains(&p.ohms) {
+                return Err(E::MotorPullMismatch { id: net.clone() });
+            }
             let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
             let Some((timer, channel)) = motor::timer_channel(&a.signal) else {
                 return Err(mismatch(net));

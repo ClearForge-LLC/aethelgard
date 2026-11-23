@@ -532,7 +532,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         let (pull, source) = match p.fitment {
             PullFitment::Fitted => {
                 l.comment(format!(
-                    "{net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, BLHeli passthrough safe with it fitted (AET-WO-4300j)",
+                    "{net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, checked for BLHeli passthrough idle with it fitted, the ESC threshold a stand-in (AET-WO-4300j R1)",
                     p.resistor, p.ohms, p.link, p.floor_ohms, p.ceiling_ohms
                 ));
                 (

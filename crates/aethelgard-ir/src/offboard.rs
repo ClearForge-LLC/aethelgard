@@ -495,7 +495,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 &m.label,
                 format!("motor_outputs[{i}].pin"),
                 format!(
-                    "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull (`AET-WO-4300i` D0), and a pull-up fights the declared pull-down from power-up until the timer takes the pin; pin it elsewhere",
+                    "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull from reset (`AET-WO-4300i` D0; an `open` output's firmware pull-down is written only at init, `AET-WO-4300j`), and a pull-up fights the pull-down from power-up until the timer takes the pin; pin it elsewhere",
                     m.label
                 ),
             ));
