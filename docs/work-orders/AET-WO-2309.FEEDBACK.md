@@ -18,7 +18,7 @@
 - **No real archive moves:**
   - all 64 CLI-made archives and the flooded run replay byte-identically under the built branch;
   - the five committed archives give identical output under main's CLI and the branch's.
-- **8 new tests, 20 mutants (one per guard), all killed by the new tests' named refusals.** Gates and CI in §9.
+- **6 new tests, 20 mutants (one per guard), all killed by the new tests' named refusals.** Gates and CI in §9.
 
 ## 0. How it was made
 
@@ -233,4 +233,9 @@ Hand-run with the `reduction-pass` skill's four questions over the whole diff (`
 
 ## 9. Gates, merge and CI
 
-GATES-RESULT
+- **Main:** `fa9d7edd` is merged in, and main has not moved since (checked before the push).
+- **Gates on the pushed tree, on Furnace:**
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace`: **2,790 passed, 0 failed**. That is main's 2,784 plus the 6 new tests.
+- **CI:** CI-LINE
