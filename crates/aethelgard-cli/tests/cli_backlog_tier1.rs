@@ -72,16 +72,18 @@ fn banner(rel: &str) -> Value {
     v["lifecycle"].clone()
 }
 
+/// [`banner`]'s lines; none when it carries none.
+fn banner_lines(rel: &str) -> Vec<String> {
+    banner(rel)
+        .as_array()
+        .map(|a| a.iter().map(|l| l.as_str().unwrap().to_owned()).collect())
+        .unwrap_or_default()
+}
+
 #[test]
 fn the_three_specifications_carry_the_banners_they_are_chosen_for() {
-    let lines = |rel| -> Vec<String> {
-        banner(rel)
-            .as_array()
-            .map(|a| a.iter().map(|l| l.as_str().unwrap().to_owned()).collect())
-            .unwrap_or_default()
-    };
     let starts = |rel| -> Vec<String> {
-        lines(rel)
+        banner_lines(rel)
             .iter()
             .map(|l| l.split(" (").next().unwrap().to_owned())
             .collect()
@@ -91,7 +93,7 @@ fn the_three_specifications_carry_the_banners_they_are_chosen_for() {
         starts(EOL),
         ["LIFECYCLE NRND: W25Q64JVxIQ", "LIFECYCLE EOL: ICM20948"]
     );
-    assert!(lines(ACTIVE).is_empty());
+    assert!(banner_lines(ACTIVE).is_empty());
 }
 
 /// A toolbox directory of `#!/bin/sh` stubs.
@@ -439,11 +441,11 @@ fn solve_prints_the_banner_on_stderr_and_the_topology_alone_on_stdout() {
             .unwrap();
         assert!(out.status.success(), "{rel}");
         let stderr = String::from_utf8(out.stderr).unwrap();
-        let want: Vec<String> = banner(rel)
-            .as_array()
-            .map(|a| a.iter().map(|l| l.as_str().unwrap().to_owned()).collect())
-            .unwrap_or_default();
-        assert_eq!(stderr.lines().collect::<Vec<_>>(), want, "{rel}");
+        assert_eq!(
+            stderr.lines().collect::<Vec<_>>(),
+            banner_lines(rel),
+            "{rel}"
+        );
         let topology: Value = serde_json::from_slice(&out.stdout).unwrap();
         assert!(topology.get("lifecycle").is_none(), "{rel}");
         let file = dir.0.join("topology.json");

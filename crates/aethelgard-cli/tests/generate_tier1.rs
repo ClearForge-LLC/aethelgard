@@ -845,29 +845,18 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
     use std::os::unix::fs::DirBuilderExt;
     let dir = reference("above");
     let board = dir.join("board");
-    // Under `common::private_tmp`'s base, outside `$HOME` and with no
-    // ancestor another user can write (`AET-WO-1601` §1.4, `AET-WO-1607`
-    // (2)); as root, searchable by the tool uid.
-    let probe = common::private_tmp("above-base");
-    let base = probe.0.parent().unwrap().to_path_buf();
-    let mode = if rustix::process::geteuid().is_root() {
-        0o711
-    } else {
-        0o700
-    };
     for (rel, kind) in [
         (".cargo/config.toml", "CargoConfigRefused"),
         ("rust-toolchain.toml", "ToolchainFileRefused"),
         ("Cargo.toml", "WorkspaceAboveCrate"),
     ] {
-        let parent = base.join(format!("tests-{}-above-{kind}", std::process::id()));
-        let _ = fs::remove_dir_all(&parent);
+        // `common::private_tmp`: outside `$HOME`, with no ancestor another
+        // user can write (`AET-WO-1601` §1.4, `AET-WO-1607` (2)); `tmp` in it
+        // is searchable by the tool uid, as root needs.
+        let scratch = common::private_tmp(&format!("above-{kind}"));
+        let parent = &scratch.0;
         let tmp = parent.join("tmp");
-        fs::DirBuilder::new()
-            .recursive(true)
-            .mode(mode)
-            .create(&tmp)
-            .unwrap();
+        fs::DirBuilder::new().mode(0o711).create(&tmp).unwrap();
         put(parent.join(rel), "[build]\n");
         for args in [
             vec![
@@ -892,6 +881,5 @@ fn a_configuration_above_the_scratch_directory_is_refused_by_name() {
             assert_eq!(v["error"]["kind"], kind, "{rel}: {v}");
             assert_eq!(v["error"]["id"], s(&parent.join(rel)), "{rel}: {v}");
         }
-        fs::remove_dir_all(&parent).unwrap();
     }
 }

@@ -7,8 +7,8 @@
 //! where it is told to (`-o <report>` for KiCad).
 
 mod common;
-#[path = "common/stub.rs"]
-mod stub;
+
+use common::stub;
 
 use std::ffi::OsStr;
 use std::fs;
