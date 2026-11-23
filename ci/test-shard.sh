@@ -220,6 +220,49 @@ refuses "P3: main d09a5187's shard 4 against its own weights" "the REFIT RULE): 
 [ "$(grep -c 'a_power_sense_input_is_not_generated 20.971;$' "$tmp/out")" -eq 1 ] && ok "P3: it names that test alone" || bad "P3: d09a5187: $(tail -1 "$tmp/out")"
 { cat "$fx/p3-d09a5187-weights.tsv"; printf 'tests/pin_device_refusals.rs\ta_power_sense_input_is_not_generated\t20.971\n'; } >"$tmp/w-d09.tsv"
 accepts "P3: the same shard with the row AET-WO-1914 adds" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$tmp/w-d09.tsv" "$fx/p3-d09a5187-colocate.tsv"
+# AET-WO-1917 D6: libtest's `test NAME ... ` and its result are two writes, so another process's output can land between
+# them. 45198295391's shard 5 (frozen beside it: GitHub's prefixes removed, run's stamps kept) holds
+# `test a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant ... ANSWER 3200: ...` then `ok` on the next line.
+"${py[@]}" times "$fx/p3-45198295391-shard-5.log" 4 >"$tmp/s5" 2>&1 \
+  && [ "$(grep -c '^tests/attribute_seeded.rs	' "$tmp/s5")" -eq 11 ] \
+  && [ "$(wc -l <"$tmp/s5")" -eq "$(awk -F'\t' '$2 ~ /^running [0-9]+ tests?$/ { split($2, r, " "); n += r[2] } END { print n }' "$fx/p3-45198295391-shard-5.log")" ] \
+  && grep -q '^tests/attribute_seeded.rs	a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant	' "$tmp/s5" \
+  && ok "P3: 45198295391's shard-5 log times all 11 tests of attribute_seeded.rs, and every test of the log" || bad "P3: 45198295391: $(head -1 "$tmp/s5")"
+# Planted: three tests on two threads, a and b start at 100, c when a finishes. A body line is `stamp<TAB>text`.
+pl() { # body lines on stdin, then the result line
+  printf '100.000000\t     Running unittests src/lib.rs (target/debug/deps/a-1)\n100.000000\t\n100.000000\trunning 3 tests\n'
+  cat
+  printf '109.000000\ttest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9s\n'
+}
+tm() { env RUST_TEST_THREADS=2 "${py[@]}" times "$tmp/pl.log" 2; }
+rows() { tm | awk -F'\t' '{ printf "%s=%s;", $2, $3 }'; }
+printf '101.000000\ttest a ... TOOL OUTPUT\n102.000000\tok\n103.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(rows)" = "a=2.000;b=3.000;c=2.000;" ] && ok "P3: form (b), a name then a tool's text, the result on the next line (that line's stamp)" || bad "P3: form (b): $(rows)"
+printf '101.000000\tTOOL BEFORE test a ... TOOL AFTER\n102.000000\tok\n103.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(rows)" = "a=2.000;b=3.000;c=2.000;" ] && ok "P3: form (c), tool text on both sides of the name" || bad "P3: form (c): $(rows)"
+printf '101.000000\ttest a ... TOOL OUTPUT\n101.500000\tthe tool says all ok\n102.000000\tok\n103.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(rows)" = "a=2.000;b=3.000;c=2.000;" ] && ok "P3: form (b) with a tool line between the name and its result" || bad "P3: form (b) between: $(rows)"
+printf '101.000000\ttest a ... ok\n103.000000\ttest b ... TOOL\n105.000000\tFAILED\n106.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(rows)" = "a=1.000;b=5.000;c=5.000;" ] && ok "P3: FAILED closes a pending name as ok does" || bad "P3: FAILED: $(rows)"
+# trybuild's lone `ok` (the real lines 1667-1668 of that log): its names hold a `/`, so they are not libtest names, and a
+# result with nothing pending is no test.
+printf '101.000000\ttest a ... ok\n101.100000\ttest tests/ui/fail/foreign_speed.rs [should fail to compile] ... test misuse_does_not_compile_and_the_driver_does has been running for over 60 seconds\n101.200000\tok\n103.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(rows)" = "a=1.000;b=3.000;c=3.000;" ] && [ "$(tm | wc -l)" -eq 3 ] && ok "P3: trybuild's lone ok with nothing pending is not counted, every real test is timed" || bad "P3: trybuild: $(rows)"
+printf '101.000000\ttest a ... ok\n101.200000\tok\n103.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+[ "$(tm | wc -l)" -eq 3 ] && ok "P3: a lone ok after a completed result is not a second result" || bad "P3: lone ok after a result"
+# Fail closed, by name.
+printf '101.000000\ttest a ... TOOL\n102.000000\ttest b ... TOOL\n103.000000\tok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+refuses "P3: a second name opened while one is pending" "pl.log:5: b opened while a is awaiting its result" tm
+printf '101.000000\ttest a ... TOOL\n102.000000\ttest b ... ok\n104.000000\ttest c ... ok\n' | pl >"$tmp/pl.log"
+refuses "P3: a name with its result on one line while one is pending" "pl.log:5: b opened while a is awaiting its result" tm
+printf '101.000000\ttest a ... ok\n102.000000\ttest b ... ok\n104.000000\ttest c ... TOOL\n' | pl >"$tmp/pl.log"
+refuses "P3: a test result line while one is pending" "pl.log:7: a \`test result:\` line while c is awaiting its result" tm
+printf '100.000000\t     Running unittests src/lib.rs (target/debug/deps/a-1)\n100.000000\trunning 3 tests\n101.000000\ttest a ... ok\n102.000000\ttest b ... ok\n104.000000\ttest c ... TOOL\n' >"$tmp/pl.log"
+refuses "P3: the log ends while one is pending" "pl.log:5: the log ends while c is awaiting its result" tm
+printf '101.000000\ttest a ... ok\n102.000000\ttest b ... ok\n104.000000\ttest c ... TOOLPARTIALok\n' | pl >"$tmp/pl.log"
+refuses "P3: a result glued to a tool's text is not read" "is awaiting its result" tm
+printf '101.000000\ttest a ... ok\n102.000000\ttest b ... ok\n104.000000\ttest c ...ok\n' | pl >"$tmp/pl.log"
+refuses "P3: a result with no space before it is not read (the count check)" "timed 2 of its 3 tests" tm
 # The gates split (ci/gates.sh): the complement of tools-only by name; refused by name otherwise.
 gs=(bash "$here/gates.sh")
 meta() { # extra-target-json

@@ -11,7 +11,7 @@ use aethelgard_hwdef::{Refusal, generate};
 use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 
-const BOARDS: [(&str, &str, &str); 5] = [
+const BOARDS: [(&str, &str, &str); 6] = [
     (
         "sentinel-01",
         include_str!("fixtures/sentinel-01.topology.json"),
@@ -37,6 +37,12 @@ const BOARDS: [(&str, &str, &str); 5] = [
         "serial-dshot-9600-open",
         include_str!("fixtures/serial-dshot-9600-open.topology.json"),
         include_str!("fixtures/serial-dshot-9600-open.hwdef.dat"),
+    ),
+    // AET-WO-1917: Sentinel-01's full specification, with its second I2C bus.
+    (
+        "sentinel-01-full",
+        include_str!("fixtures/sentinel-01-full.topology.json"),
+        include_str!("fixtures/sentinel-01-full.hwdef.dat"),
     ),
 ];
 
