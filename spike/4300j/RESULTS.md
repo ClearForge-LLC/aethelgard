@@ -40,14 +40,14 @@ Measured 2026-11-23 on `main` `cd79024c`, after the predictions were committed (
 - **All 40 outputs declare `CRCW0603_F_K`, 40 200 Ω, to `GND`** (P6).
 - **All 10 boards' `mcu.supply` is `VDD_3V3`, at 3300 mV ±50 ‰** (P7). So the bound at VDD min 3135 mV is the same on every committed board.
 
-## M3 · the derivation (P8–P10): computed
+## M3 · the derivation (P8–P10): computed, then revised at the STOP
 
 See `DERIVATION.md` and `derive.out`.
 
-- floor 211 824 Ω, and ceiling 895 714 Ω, both at VDD min;
-- the value is 221 kΩ `CRCW0603_F_K`, worst case 214 370 to 227 630 Ω.
-
-No E96 stop: the window holds every E96 value from 221 k to 866 k.
+- **As predicted (same-rail):** floor 211 824 Ω and ceiling 895 714 Ω, both at VDD min. The value is 221 kΩ `CRCW0603_F_K`, worst case 214 370 to 227 630 Ω. The window holds every E96 value from 221 k to 866 k.
+- **Revised:** reading DS70005664A p. 16 (M4) showed the ESC on its own rail. P8–P10 assumed one rail shared with the FC. Under the cross-rail case (`DERIVATION.md` §5a) the floor is 422 561 Ω. The value is then **442 kΩ**, and the window holds 442 k to 866 k.
+- `STOP.md` leans to the cross-rail reading, D1(a), and keeps same-rail as D1(b).
+- No E96 stop under either reading.
 
 ## M4 · the held pages, read rendered
 
@@ -57,9 +57,18 @@ Each page was rendered with PyMuPDF, read as an image, and checked against the f
 - DS70005664A p. 7 and p. 16. J2 was read cropped at 400 dpi;
 - VISHAY_20035 p. 1, p. 2 and p. 3.
 
-Every document's sha256 matches its record. **No held-page stop fires:** every number the bound needs is on a held page. The ESC's own thresholds are not held, and they stand in under S1–S2, as the WO directs.
+Every document's sha256 matches its record. **Every MCU number the bound needs is on a held page.**
 
-**One fact on the ESC reference page that the WO's grounds do not mention:** `C4`, 0.1 µF from the signal line to GND, beside the 0 Ω `R11` (DS70005664A p. 16). It does not touch either DC bound. It bears on (b), the off-board drive bound, and goes to FEEDBACK as a row.
+**The ESC's numbers are not held,** and stand in under S1 and S2:
+- its VIL, which the WO directs;
+- its VIH, its input current and, under D1(a), its rail's tolerance, which go beyond that.
+
+`STOP.md` names this as a near-stop, with the document a ruling would need.
+
+**Two facts on the ESC reference page that the WO's grounds do not mention:**
+
+- **The ESC's own rail.** Figure 3-3, "Power Supply": the ESC's `VDD` comes from `VREG` through `R54` 0R, or from `+3.3V_EXT`, and J2 pin 2 is that `VDD`. This revises S1 (M3).
+- **The input capacitor:** `C4`, 0.1 µF from the signal line to GND, beside the 0 Ω `R11` (DS70005664A p. 16). It does not touch either DC bound. It bears on (b), the off-board drive bound, and goes to FEEDBACK as a row.
 
 ## Not measured until the build: P11–P18
 

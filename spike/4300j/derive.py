@@ -25,7 +25,8 @@ VIL_MAX_RATIO = F(3, 10)  # VIL max = 0.3 VDD
 ILKG_MAX_NA = 350
 # Vishay D/CRCW e3 (VISHAY_20035, 14-Apr-2026), p. 2, CRCW0603 e3, +/-100 ppm/K row:
 # tolerance +/-1 %, E24; E96, 1 ohm to 10 Mohm. p. 2, "max. resistance change
-# at P70 ... 8000 h <= 2 %" (stability class 1, held on the row as drift_ppm).
+# at P70 ... 8000 h <= 2 %" (stability class 1, held on the row as drift_ppm),
+# a magnitude: taken as +/-2 %.
 TOL = F(1, 100)
 DRIFT = F(2, 100)
 
@@ -107,11 +108,25 @@ def main():
     ]:
         fl, ce = bound(vmin, **kw)
         print(f"  {name:62s} {float(fl):10.1f} {float(ce):12.1f}  -> E96 {pick(fl, ce)}")
-    # cross-rail: FC pull-up at VDD min, ESC threshold at VDD max (not the bound)
+    # cross-rail (D1(b)): the ESC on its own 3.3 V rail (DS70005664A p. 16,
+    # VREG -> R54 0R -> VDD), taken at the board's declared +/-50 permille
+    # (stand-in): FC pull-up at VDD min, ESC VIH at VDD max.
+    print()
+    print("cross-rail: FC pull-up at VDD min, ESC VIH at VDD max (ESC rail tolerance a stand-in)")
     vfc, vesc = F(vmin, 1000), F(vmax, 1000)
-    v_hi = (VIH_MIN_RATIO + MARGIN_RATIO) * vesc
-    fl = v_hi / ((vfc - v_hi) / RPU_MAX - F(700, 10**9))
-    print(f"  {'cross-rail: pull-up at VDD min, ESC VIH at VDD max':62s} {float(fl):10.1f}")
+    i = F(ILKG_MAX_NA + IIH_ESC_NA, 10**9)
+    for m in (F(0), MARGIN_RATIO):
+        v_hi = (VIH_MIN_RATIO + m) * vesc
+        fl = v_hi / ((vfc - v_hi) / RPU_MAX - i)
+        ce = bound(vmin, margin=m)[1]
+        r = pick(fl, ce)
+        print(f"  margin {float(m)*100:4.0f} % VDD: floor {float(fl):10.1f}  ceiling {float(ce):12.1f}  -> E96 {r}")
+        for rv in (221_000, r):
+            lo = rv * (1 - TOL - DRIFT)
+            v_idle = (vfc / RPU_MAX - i) / (1 / F(RPU_MAX) + 1 / lo)
+            print(f"    {rv} ohm (low corner {float(lo):.0f}): idle {float(v_idle)*1000:.1f} mV vs ESC VIH min {float(VIH_MIN_RATIO*vesc)*1000:.1f} mV"
+                  f" ({'clears' if v_idle >= VIH_MIN_RATIO*vesc else 'FAILS'}), vs VIH + margin {float((VIH_MIN_RATIO+m)*vesc)*1000:.1f} mV"
+                  f" ({'clears' if v_idle >= (VIH_MIN_RATIO+m)*vesc else 'fails'})")
 
 
 if __name__ == "__main__":

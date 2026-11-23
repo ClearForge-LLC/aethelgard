@@ -14,4 +14,11 @@ sensitivity (not the bound): floor / ceiling at VDD min
   margin 10 % VDD (chosen)                                         211824.3     895714.3  -> E96 221000
   leakage 250 nA each end                                          208305.6    1254000.0  -> E96 215000
   ESC VIH 0.47 VDD + 0.25 V (note 2 row) ~ 0.546 VDD at 3.135 V     95806.9     895714.3  -> E96 100000
-  cross-rail: pull-up at VDD min, ESC VIH at VDD max               422561.0
+
+cross-rail: FC pull-up at VDD min, ESC VIH at VDD max (ESC rail tolerance a stand-in)
+  margin    0 % VDD: floor   179799.9  ceiling    1343571.4  -> E96 187000
+    221000 ohm (low corner 214370): idle 2513.7 mV vs ESC VIH min 2425.5 mV (clears), vs VIH + margin 2425.5 mV (clears)
+    187000 ohm (low corner 181390): idle 2430.1 mV vs ESC VIH min 2425.5 mV (clears), vs VIH + margin 2425.5 mV (clears)
+  margin   10 % VDD: floor   422561.0  ceiling     895714.3  -> E96 442000
+    221000 ohm (low corner 214370): idle 2513.7 mV vs ESC VIH min 2425.5 mV (clears), vs VIH + margin 2772.0 mV (fails)
+    442000 ohm (low corner 428740): idle 2776.2 mV vs ESC VIH min 2425.5 mV (clears), vs VIH + margin 2772.0 mV (clears)
