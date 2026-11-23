@@ -54,7 +54,10 @@ use crate::input::hex;
 use crate::run;
 use crate::tree::{self, Difference};
 use crate::verdict::Scope;
-use crate::{EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_TOOL_ERROR, EXIT_UNREADABLE};
+use crate::{
+    EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_NOT_VERIFIED, EXIT_TOOL_ERROR,
+    EXIT_UNREADABLE,
+};
 
 /// `RUL-19` (1), in the verdict itself.
 const RISE_TIMES: &str = "computed from declared values";
@@ -62,7 +65,11 @@ const RISE_TIMES: &str = "computed from declared values";
 #[derive(Serialize)]
 struct Report {
     ok: bool,
+    /// `pass`, `fail`, or `not_verified` (see [`outcome`]).
     verdict: &'static str,
+    /// Why a verdict is `not_verified`; absent on every other.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
     check: &'static str,
     engine_version: &'static str,
     project_name: String,
@@ -1716,6 +1723,7 @@ pub fn verify(
     let mut report = Report {
         ok: false,
         verdict: "fail",
+        reason: None,
         check: "verify",
         engine_version: env!("CARGO_PKG_VERSION"),
         project_name: project.clone(),
@@ -1996,7 +2004,7 @@ struct Tail<'a> {
 
 /// `verify`'s last steps once its gates have run: the verdict, then the
 /// package for a fab flag, then the exit code to print the verdict with.
-/// The code is the verdict's alone, `0` on a pass and `EXIT_FAIL` on a fail,
+/// The code is the verdict's alone ([`outcome`]),
 /// whatever the fab mode (`AET-WO-2308` LP2, `AET-WO-1909` LP2); `Err` is a
 /// refusal already printed.
 fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Result<u8, ExitCode> {
@@ -2004,8 +2012,10 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
         &report.gates,
         report.campaign.as_deref().unwrap_or_default(),
     );
-    report.ok = passes(&report.findings, &report.gates, t.spec.board.drawn);
-    report.verdict = if report.ok { "pass" } else { "fail" };
+    let drawn = t.spec.board.drawn;
+    let code;
+    (report.ok, report.verdict, report.reason, code) =
+        outcome(passes(&report.findings, &report.gates, drawn), drawn);
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
         let lifecycle: Vec<String> = report
@@ -2045,7 +2055,26 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             f.preconditions = pre;
         }
     }
-    Ok(if report.ok { 0 } else { EXIT_FAIL })
+    Ok(code)
+}
+
+/// The verdict, its reason and the exit code, from whether every gate
+/// passed and whether the board is drawn (`AET-WO-1607` D2, ruled):
+/// `INV-03`'s "verified" needs ERC, so a board not drawn is never `pass`.
+/// Its run is `not_verified`, reason `DrawsNoBoard`, exit
+/// [`EXIT_NOT_VERIFIED`], when every gate that could run passed; a gate
+/// that failed is `fail`, exit [`EXIT_FAIL`], drawn or not.
+fn outcome(passed: bool, drawn: bool) -> (bool, &'static str, Option<&'static str>, u8) {
+    match (passed, drawn) {
+        (true, true) => (true, "pass", None, 0),
+        (true, false) => (
+            false,
+            "not_verified",
+            Some("DrawsNoBoard"),
+            EXIT_NOT_VERIFIED,
+        ),
+        (false, _) => (false, "fail", None, EXIT_FAIL),
+    }
 }
 
 /// Every condition the campaign's runs name, each once, in the order the
@@ -2590,6 +2619,31 @@ fn proof_and_boot_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// `AET-WO-1607` D2, ruled: a run on a board not drawn never exits 0
+    /// and is never `pass`. With every gate passed it is `not_verified`
+    /// (`DrawsNoBoard`, exit 7), and with one failed it is `fail` (exit 1).
+    /// A drawn board's outcome is unchanged.
+    #[test]
+    fn a_board_not_drawn_never_exits_0() {
+        for passed in [true, false] {
+            let (ok, verdict, _, code) = outcome(passed, false);
+            assert!(!ok && verdict != "pass" && code != 0, "{passed}");
+        }
+        assert_eq!(
+            outcome(true, false),
+            (
+                false,
+                "not_verified",
+                Some("DrawsNoBoard"),
+                EXIT_NOT_VERIFIED
+            )
+        );
+        assert_eq!(outcome(false, false), (false, "fail", None, EXIT_FAIL));
+        assert_ne!(EXIT_NOT_VERIFIED, EXIT_FAIL);
+        assert_eq!(outcome(true, true), (true, "pass", None, 0));
+        assert_eq!(outcome(false, true), (false, "fail", None, EXIT_FAIL));
+    }
 
     /// `AET-WO-1607` (5): a board gate reports `not_applicable` with its
     /// reason and nothing it did not measure. The verdict may pass with the
@@ -3896,6 +3950,7 @@ mod tests {
         let fresh = |gates: Vec<Gate>| Report {
             ok: false,
             verdict: "fail",
+            reason: None,
             check: "verify",
             engine_version: env!("CARGO_PKG_VERSION"),
             project_name: spec.project_name.clone(),

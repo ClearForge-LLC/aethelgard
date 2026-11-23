@@ -53,6 +53,11 @@ const EXIT_TOOL_ERROR: u8 = 5;
 /// `propose`: the run's failure is a generator defect, and a generator report
 /// was written (`AET-WO-3200`).
 const EXIT_GENERATOR_REPORT: u8 = 6;
+/// `verify` only: every gate that could run passed, but the specification
+/// declares `board.drawn: false`, so it has no ERC and is never verified
+/// (`INV-03`; `AET-WO-1607` D2, ruled 02:15Z). Distinct from `1`, a gate
+/// failure.
+const EXIT_NOT_VERIFIED: u8 = 7;
 /// The subcommands that print one JSON line per record, then their verdict's
 /// line; every other prints exactly one. `mcp` reads this, not a name of its own.
 const LINE_PER_RECORD: [&str; 1] = ["campaign"];
