@@ -266,3 +266,9 @@ The serial path's memory is base's again (it was 785 MB before the fix); the thr
 - **Gates on the head** (after both merges, from a clean target; the worktree's copied `target/` had stale test binaries baked with `~/aethelgard-1322`'s path, which failed 28 unrelated tests until `cargo clean`): `cargo fmt --all -- --check` passes; `cargo clippy --workspace --all-targets -- -D warnings` passes, and with `--features aethelgard-cli/with-tools`; `cargo test --workspace`: **2 902 passed, 0 failed** (15 min 22 s, in a capped scope).
 - **Disk:** the measurement's build trees removed at the architect's 10:58Z note (43 GB to under 1 GB); `~/.cache/aet-1323` keeps the logs, outputs and binaries this file cites.
 - **Title and body** for the architect: `~/.cache/aet-1323/pr-title-body.md`.
+
+## 10. D7 and D6, ruled (bus 13:10Z), and applied
+
+- **D7: the threads dropped, the per-pin conversion kept.** `main`'s own loop in `supplies` already converts each pin's bound to its `PinResult` as it is made, which is why base peaks at 568 MB, so keeping the conversion and dropping the threads is `supply.rs` exactly as on `main`. `bound_all`, `SOLVE_THREADS`, the byte-identity test, `PinBound`'s `Debug` (added for that test), its weight row and mutant T1 all go. **(5) therefore changes nothing in the build:** the measurement (RESULTS §6) found no bit-identical cut but threads, and threads buy about 5 % on a 4-CPU runner for ×4 peak memory (§8). `supply_tier1`'s time is base's.
+- **D6:** the architect adds the §7.1 row (a 1 600-pad unstitched net takes 130 s at 0.1 % of `WORK`).
+- **`main` `cc99de04` merged** (2312: chaos, evolve and the CLI's campaign; no `eda`, specification or `ci/` file), so §5.1's bytes stand, and `route.rs`/`read.rs` are as at `dfb304ae`, so §5.2's mutants W1–S3 stand (8 of 8).
