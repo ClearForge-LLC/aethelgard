@@ -45,7 +45,12 @@ TAB=$(printf '\t')
 DEFAULT_WEIGHT=0.05
 #
 # REFIT RULE (AET-WO-1908 §8): refresh the weights when any tools-shard job passes 20 minutes, start to end,
-# or when the spread (slowest shard minus fastest) passes 6 minutes on two runs in a row.
+# or when ONE SHARD IS PERSISTENTLY HEAVY (AET-WO-1916 D1, ruled 2026-11-23 06:35Z): over three runs of one plan (the same
+# `planned` line for every shard), that shard's mean of ln(step / the run's median step) passes ln 1.25, where `step` is the
+# shard's `shard.sh run` step, start to end. It replaced "the spread passes 6 minutes on two runs in a row", which fired on
+# runner noise: a runner's speed moves every test it runs together (sd about 0.155 in ln), and on noise alone that clause fired
+# with P 0.49-0.57 at a 744 s mean step. Modelled from seven runs (spike/1916/persist.py, measurement.md): on noise alone this
+# clause fires with P 0.06-0.09; it catches a shard 20 % heavy with P 0.30-0.33, 30 % with P 0.61, 40 % with P 0.84-0.85.
 #  1. In a throwaway commit on the PR, change `run` so each name runs in its own invocation:
 #       RUSTC_BOOTSTRAP=1 cargo test ... -- -Z unstable-options --report-time --test-threads=1 --exact NAME
 #     (RUSTC_BOOTSTRAP=1 lets the pinned stable toolchain take libtest's nightly-only flag; it makes
@@ -70,7 +75,7 @@ DEFAULT_WEIGHT=0.05
 #     board_tier2, the colocated blocks, twin_tier2's timing test) is weighed at its WORST IN-SHARD time over the
 #     measured normal runs, not its alone time: cargo runs test binaries one after another and a binary's tests in
 #     parallel threads, so a block's in-shard time is its libtest `finished in`; a test serialized behind a lock
-#     (board_tier2, verify_2k2_tier2 ONE_AT_A_TIME) is its `ok` timestamp less the previous lock-holder's; any other
+#     (board_tier2, against_fab_tier2 ONE_AT_A_TIME) is its `ok` timestamp less the previous lock-holder's; any other
 #     CPU-heavy test is its `ok` timestamp less its binary's `Running` line (an upper bound).
 #     The clause: plan every shard's test step at or under 1006 s, and the head's final run green with every shard
 #     under 20 min; if one shard is over while the plan holds, ONE re-run of the same head decides; a shard over on
@@ -372,7 +377,7 @@ EPOCH=946684800
 # Canary files (AET-WO-1900): the tier-2 test binaries, as cargo prints them.
 TIER2_RE='^tests/(with_tools|twin_tier2|board_tier2|verify_2k2_tier2|against_fab_tier2|four_layer_fab_tier2|verify_47k_tier2|campaign_tier2|models_tier2|attribute_seeded|adversarial_1301_tools|adversarial_1302_tools)[.]rs$'
 # The binaries whose tests serialise on one lock (ONE_AT_A_TIME, RENODE_TURN): every test of one carries a weight row (AET-WO-1910 D6).
-LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/verify_2k2_tier2.rs tests/twin_tier2.rs'
+LOCKED='tests/board_tier2.rs tests/against_fab_tier2.rs tests/twin_tier2.rs'
 # Fixed work shard 0 does besides tests (the in-image cargo fmt and clippy), in seconds, measured on CI: 30-37 s over the four
 # 12-shard runs of AET-WO-1911 (44585686986, 44605214137, 44605212605, 44605218028), weighed at the worst.
 BASE0=${SHARD0_FIXED_SECONDS:-37}
