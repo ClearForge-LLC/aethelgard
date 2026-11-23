@@ -1,6 +1,6 @@
 # AET-WO-4300j — FEEDBACK: the motor pull-down weakened to a derived 442 kΩ, switchable by a drawn link (specification 29)
 
-**Branch:** `wo/aet-4300j-motor-pull-fitment`, from `main` `cd79024c`. Main is merged in four times: `3b59fa8d` (docs), `75da8053` (4408, 1916), `4b466f03` (2312 and docs), and `34f48d61` (1323's router, 3308's ORDERED.sha256). None conflicted with this work, and none moved the package.
+**Branch:** `wo/aet-4300j-motor-pull-fitment`, from `main` `cd79024c`. Main is merged in five times: `3b59fa8d` (docs), `75da8053` (4408, 1916), `4b466f03` (2312 and docs), `34f48d61` (1323's router, 3308's ORDERED.sha256), and `7373becf` (2311's foreign judge and docs). None conflicted with this work, and none moved the package. At the last merge, gates give 2,948 passed and 0 failed, and the null sweep's tables are byte-identical.
 
 **Builder:** Claude (Opus 5.5) as project manager. The workers:
 - Phase A, the IR and the specifications: one Opus worker, single-threaded;
