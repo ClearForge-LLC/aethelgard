@@ -1,21 +1,24 @@
-# AET-WO-2309 — FEEDBACK: replay and the trace writer hold their own bounds (STOPPED at §7)
+# AET-WO-2309 — FEEDBACK: replay and the trace writer hold their own bounds
 
-**Branch:** `wo/aet-2309-replay-bounds` from `main` `28fba951`. Main `fa9d7edd` was merged in before the push. It changes docs only (`docs/reviews/`, one roadmap line), so every sweep stands.
+**Branch:** `wo/aet-2309-replay-bounds` from `main` `28fba951`; main merged in before READY (§9).
 **Builder:** Claude (Opus 5.5), single-threaded: the work is gate logic in one file. Written 2026-11-23.
 
-**Status: STOPPED at §7, "a committed archive or trace fixture fails the stricter replay".** Rule (3) as the work order states it refuses tier-1 trace fixtures that main accepts. No byte of `crates/`, `fab/`, a workflow or `ci/` changes on this branch. The only changes are `spike/2309/` and this file.
-
-The three rules are built and measured as patches under `spike/2309/patches/`:
-- `rules-1-2.diff`: rules (1) and (2) with their tests. fmt is clean, and clippy and the suite pass on `aethelgard-chaos`. The workspace suite was not run with it, but sweep C shows that rule (2) refuses no input main accepts in any crate;
-- `rules-full-reading.diff`: all three rules, no new tests.
+**Status: READY, built to the architect's ruling of 01:15Z on the §7 stop.** The stop is PR #340's record at `41a30f0a` (CI green). The ruling:
+- **D1:** the full reading;
+- **D2:** all three rules in one PR;
+- **D3:** kinds 26, 29, 30, 34, 36 and 37 bound too;
+- **D4:** booted;
+- **fence:** widened to the named fixtures only.
 
 **The answer, in six lines:**
-- **Rule (3) refuses fixtures main accepts, under every two-way reading.** Under the full reading it refuses 44 (input, test) pairs in 21 tests, two of them outside the fence (evolve and the CLI). Under the narrowest two-way reading it refuses 6 pairs in 2 tests, one of them outside the fence (`aethelgard-evolve/tests/attribute.rs`). Named in §2.
-- **Every refused fixture is a shape the judge never writes.** `cli/src/main.rs` `boot_report` fills every kind 11 value, kind 12 and 21 value and status, and kind 13 and 22 line set with the same `observed.map(..)`. So they are read together.
-- **No real archive moves.** The four committed archives are trace 14, refused `UnknownVersion` before any rule, identically before and after. All 64 current-version archives made by main's CLI over 3306's groups replay byte-identically under the full patch. So does a flooded-log run made for this work order.
-- **Rules (1) and (2) move nothing.** Rule (2) refuses no fixture main accepts in the whole tier-1 suite. Rule (1) is reached only by its own test. Both are ready to land with their tests and five mutants, all killed (§4), if the architect wants them ahead of the ruling.
-- **Adversarial item 3 gets through the patch as written.** A boot read as wholly unread that still holds its motor witnesses (kind 26) replays. Kinds 26, 29, 30, 34, 36 and 37 are written only once Renode has read (`cli/src/campaign.rs`), and rule (3) does not list them (§5).
-- **Rulings needed:** D1 (which reading of rule (3); its fixtures reshaped to the judge's shape; the fence widened to one evolve test, which every per-record reading that closes 5.8 refuses, and under the full reading one CLI test), D2 (rules (1) and (2) now or with (3)), D3 (the unlisted kinds). §6.
+- **(1)** `TraceWriter::append` refuses, as `ArchiveError::TraceFull`, an event that would take the trace past `MAX_TRACE_BYTES`, before it is folded. A trace of exactly 268,435,456 B is written and replays.
+- **(2)** A booted run holds exactly one kind 26 per kind 24 ("a booted run's solved motor output has no witness").
+- **(3)** Kinds 11, 12 and 21 (value and status) are read exactly when kind 10 is. Kinds 13 and 22 hold nothing beside an unread kind 10. An unread kind 10 holds no kind 26, 29, 30, 34, 36 or 37. Two refusals, each by name.
+- **The named fixtures are reshaped to what the judge writes:** four in chaos `tests/campaign.rs`, evolve `tests/attribute.rs`'s L1581 test, and the reseal in cli `tests/campaign_tier1.rs`'s L2081 test. No other test changed.
+- **No real archive moves:**
+  - all 64 CLI-made archives and the flooded run replay byte-identically under the built branch;
+  - the five committed archives give identical output under main's CLI and the branch's.
+- **8 new tests, 20 mutants (one per guard), all killed by the new tests' named refusals.** Gates and CI in §9.
 
 ## 0. How it was made
 
@@ -29,21 +32,38 @@ The three rules are built and measured as patches under `spike/2309/patches/`:
    Results: `spike/2309/results.md`.
 4. **The stop.** Sweep C showed the fixtures. The rule patch was saved under `spike/2309/patches/` and `crates/` restored to main's bytes, so this branch is green on main's own tests.
 5. **Rules (1) and (2), tests and mutants,** were built and measured in a scratch copy and saved as `rules-1-2.diff`, so the ruling costs one apply.
+6. **The ruling (01:15Z), then the build:**
+   - rules (1) and (2) from that patch;
+   - rule (3) as measured, plus D3's kinds;
+   - the named fixtures reshaped;
+   - rule (3)'s tests and mutants;
+   - sweeps A and B again on the built branch;
+   - gates, the adversarial and reduction passes, and this file.
 
-## 1. The rules, as built in the patches
+   The patches were then removed (§7).
+
+## 1. The rules, as built
 
 - **(1) `TraceWriter` refuses at `MAX_TRACE_BYTES` by name.** `append` refuses an event that would take the trace past the bound with a new `ArchiveError::TraceFull { index, bytes, limit }` (kind `TraceFull`). The check runs before the event is folded, so the writer's state hash never runs ahead of its file, and what came before commits.
   - A trace of exactly 268,435,456 B is accepted, as the reader accepts it (`>`, not `>=`).
   - A new variant, because `TraceTooLarge`'s text says "the manifest declares": that is the reader's case (R4). No crate outside `aethelgard-chaos` matches `ArchiveError` exhaustively, so no CLI edit follows.
 - **(2) Exactly one kind 26 per kind 24 in a booted run.** `check_motor_joins` already refused a second witness ("… or is there twice"). It now also refuses a booted run in which a solved output has none: "a booted run's solved motor output has no witness". `booted` is `check_run`'s own (the boot word read as the firmware's), now computed before `check_joins` and passed down.
-- **(3) All read or all unread across kinds 10–13, 21 and 22:** `check_read_with_the_boot`, called in `check_run` before the joins.
+- **(3) All read or all unread across kinds 10–13, 21 and 22, and D3's kinds:** `check_read_with_the_boot`, called in `check_run` before the joins.
   - The kind 11 value, and the kind 12 and 21 value and status, are read exactly when kind 10 is.
   - A kind 13 or 22 beside an unread kind 10 holds no observed lines and no `absent` or `unrouted` evidence.
   - A read boot may hold an unread witness (R2): measured, §3.
+  - Refused as "the boot's registers, identity reads and witnesses are not all read or all unread with its boot word".
+  - **D3:** an unread kind 10 beside a kind 26, 29, 30, 34, 36 or 37, which the CLI writes only once Renode has read. Refused as "a boot that read nothing holds a motor, serial, pin or level witness, or a judge's stop". Kind 19 already had its rule ("a boot that read nothing holds an observation").
 
-R1, the fence: rules (2) and (3) are archive rules, so they sit in `campaign.rs`'s `check_run` and `check_motor_joins`, beside the "at most one" they tighten. The scenario format is untouched. **Both patches also touch two files the fence's list does not name:** `src/lib.rs` (the `TraceFull` variant and its `kind()` row) and the crate's `README.md` (the writer's refusal and the run rules). D2's ruling should cover them. `Replayer` is also driven by the writer and by non-campaign streams (golden's every-kind trace), so a fold-time rule would refuse those.
+R1, the fence: rules (2) and (3) are archive rules, so they sit in `campaign.rs`'s `check_run` and `check_motor_joins`, beside the "at most one" they tighten. The scenario format is untouched. Beyond `archive.rs` and `campaign.rs`, the build touches:
+- `src/lib.rs`: the `TraceFull` variant and its `kind()` row;
+- the crate's `README.md`: the writer's refusal and the two run rules;
+- `tests/common/mod.rs`: one shared helper, `unread_boot`;
+- one `ci/test-weights.tsv` row, as the fence allows (§4).
 
-## 2. The §7 stop: the fixtures rule (3) refuses
+The CLI reports a writer refusal as `ArchiveWriteFailed`, carrying `TraceFull`'s text, which names `MAX_TRACE_BYTES`. No CLI change was needed. `Replayer` is also driven by the writer and by non-campaign streams (golden's every-kind trace), so a fold-time rule would refuse those.
+
+## 2. The §7 stop (the record at `41a30f0a`), and the fixtures as reshaped
 
 Measured by sweep C (`spike/2309/out/sweep-c.txt`, the workspace; `out/sweep-c-v3.txt`, the rerun below). Each `check_run` input main's tier-1 suite builds is judged by main and by each candidate rule. Main's suite passes 2,784 tests, 0 failed.
 
@@ -107,53 +127,68 @@ The judge reads all of them in the read that reads the boot, or none. The fixtur
 
 These are the step helpers' and `unread()`'s shapes.
 
+**Reshaped as ruled (D1).** Each is now a shape the judge writes, and every assertion in the edited tests keeps its original outcome:
+- `good()` (chaos L901): kind 12's value is `Some(0)` beside `timeout_txis`.
+- `i2c_step_check` (L2538): a configure step's value is `Some(0)`.
+- The two-device test (L2265): its second kind 12's value is `Some(0)`.
+- `unread()` in `a_boot_that_read_nothing_names_its_bound`: unread whole, its brown-out word and flash accesses, register, record and witness lines included. Its `BOUND`, `UNBOUND` and `BOOT_WORD` assertions are unchanged.
+- Evolve `a_register_with_nothing_observed_is_no_evidence`: a register holds nothing observed only in a boot that read nothing. So the test's shape is the wrong-register run killed before its reads, naming `cpu_aborted`. It now pins `I1` with no evidence, and none of its registers is evidence. That is the test's claim, on a shape the writer can produce. No other line of the file changed (3307 is editing it).
+- CLI `a_generator_report_names_each_generator_once_in_order`: its reseal keeps the record's value beside `timeout_txis`, as the judge does. Attribution is `S1`, and the generator report is unchanged.
+
 ## 3. Sweeps A, B and C
 
-The tables and every file are in `spike/2309/results.md`. What the rulings need:
-- **A.** The four committed archives are trace 14: `UnknownVersion`, exit 3, byte-identical before and after. The sweep is vacuous (P1).
-  - The committed outputs list those four. This branch commits a fifth archive, the flooded run, so a re-run of `sh/sweep-a.sh` on the pushed tree lists five.
-- **B.** 64 archives made once by main's CLI, plus the flooded run: all byte-identical under the full patch.
-  - The census has 0 unread boots and 1 read but unbooted run, which has no motor output.
+The tables and every file are in `spike/2309/results.md`.
+
+**Before the build** (the STOP):
+- **A:** the four committed archives were trace 14: `UnknownVersion`, exit 3, identical.
+- **B:** 64 archives made once by main's CLI, plus the flooded run, all byte-identical under the full rule.
+  - The census has 0 unread boots and 1 read but unbooted run without motor outputs.
   - The flooded run is read with kinds 13 and 22 unread, so witnesses bind one way only (P8).
-- **C.** Rule (2) refuses no accepted input. Across the 1,208 distinct inputs of the rerun:
-  - 860 are read and booted, 323 read and not booted, and **25 unread**.
-  - P3's unread half is measured on tier-1 fixtures, not on sweep B.
-- **Still unmeasured:** P5's unbooted half (no read but unbooted run anywhere holds a motor output beside its witnesses, except the `a2_5` fixture, §4).
+- **C:** rule (2) refused no accepted input.
 
-## 4. Rules (1) and (2): tests and mutants (`patches/rules-1-2.diff`)
+**After the build** (`out/sweep-a-built-*.txt`, `out/sweep-b-built.txt`):
+- **A** now lists five committed archives, since this branch commits the flooded run. Main's CLI and the built branch's give identical output for all five: four `UnknownVersion`, and the flooded run accepted.
+- **B:** all 64 archives exit 0 with byte-identical output under main's CLI and the built branch's.
+- **No real archive fails the stricter replay.**
 
-**Gates on the patched copy:**
-- `cargo fmt --all -- --check` clean;
-- clippy on `aethelgard-chaos --all-targets -D warnings` clean;
-- the chaos suite: 358 passed, 0 failed.
+**Unmeasured, said plainly (erratum applied):**
+- No real archive of a read but unbooted run with motor outputs exists.
+  - The tier-1 fixtures do hold that shape (`motor.rs` `run(.., booted = false, ..)`), and it replays.
+  - So D4's booted scope is exercised on fixtures only.
+- Tier 2 was not swept. A grep of `campaign_tier2`, `twin_tier2` and `attribute_seeded` finds no `reseal(` and no edit that sets a value or status to `None`.
+- The tier-1 tests that spawn `verify` reach no `check_run`: they run it with `PATH=""`, so it stops at the missing tools.
 
-The workspace clippy and suite were not run with the patch: it changes only `aethelgard-chaos`, and no other crate matches `ArchiveError` exhaustively. Sweep C's motor candidate covers every crate's fixtures.
+## 4. Tests and mutants
 
-**Tests:**
+**New tests** (`aethelgard-chaos`):
 - `bounds.rs` `the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib`:
-  - fills the trace with 1,024-byte fault events (not records, so `MAX_RECORDS` never decides);
-  - ends two events short and fills exactly to 268,435,456 B;
-  - checks that an event too large by about 1,000 B, and one too large by 1 B, are each refused as `TraceFull` with their index and byte count;
-  - checks that the exact fill is accepted and the smallest event after it refused;
-  - commits and replays the result. **259,358 events, written and replayed in 5.62 s** in a debug build, under load (P9 held).
-- `motor.rs` `a_booted_run_holds_exactly_one_witness_per_solved_output`: one or both witnesses dropped from a booted run, refused by name; none, one or both dropped from an unbooted one, accepted.
+  - it fills with 1,024-byte fault events (not records, so `MAX_RECORDS` never decides) to exactly 268,435,456 B;
+  - an event too large by about 1,000 B, and one too large by 1 B, are each refused as `TraceFull` with their index and byte count;
+  - the exact fill is accepted, then the smallest event is refused;
+  - the result commits and replays: 259,358 events in 5.6–5.8 s in a debug build on Furnace (P9 held).
+- `motor.rs` `a_booted_run_holds_exactly_one_witness_per_solved_output`: one or both witnesses dropped from a booted run are refused by name; from an unbooted one, accepted.
+- `campaign.rs` `a_boots_reads_are_all_read_or_all_unread`, on `good()` plus a read SPI device (kinds 23, 21 and 22):
+  - accepted as is, and with its witnesses unread (the flooded shape);
+  - refused by name for each of kind 11, kind 12's value, its status, kind 21's value and its status set unread beside the read boot;
+  - the same run unread whole, naming `cpu_aborted`, is accepted;
+  - refused for each of nine read things put back alone: those five, kind 13's lines and `absent`, and kind 22's lines and `unrouted`.
+- D3, in each kind's own fixtures (`pin_devices.rs` covers 26, 34, 36 and 37; `serial.rs` covers 29; `motor.rs`'s DShot run covers 26 and 30). Unread whole and naming its bound, the run replays without those kinds, and each one put back alone is refused by name.
 
-**Mutants** (`spike/2309/sh/mutants.py`, one per guard, against the chaos suite; `spike/2309/out/mutants-1-2.txt`). All five killed by the new tests' named refusals:
-- `w-gone`, the guard removed;
-- `w-at-bound`, `>` to `>=`, killed at the exact-fill append;
-- `w-after-fold`, the check moved after the fold, killed by the second refusal's index;
-- `m-gone`;
-- `m-unbooted-too`, the `booted &&` dropped. It also kills `serial.rs` `a2_5_replay_binds_an_anchor_after_the_boot_word`, whose unbooted run holds kind 24 and no kind 26. So "booted", not "read", is what keeps that fixture (R3).
+**Mutants** (`spike/2309/sh/mutants.py`, one per guard, against the chaos suite; `out/mutants.txt`). **20 of 20 killed, each by its own new test's named refusal:**
+- the writer: removed; `>` to `>=` (killed at the exact fill); the check after the fold (killed by the second refusal's index);
+- rule (2): removed; `booted &&` dropped (also kills `serial.rs` `a2_5_…`, so "booted" is load-bearing, D4);
+- rule (3): the call removed; each of the seven clauses (11; 12/21 value; 12/21 status; 13 lines; 13 `absent`; 22 lines; 22 `unrouted`); the D3 guard; and each of D3's six kinds dropped from its list.
 
-**Test weights:** not touched. `bounds.rs` gains about 5–6 s. The fence allows a test-weights row; none was written, since nothing lands.
+**Test weights:** one row, `tests/bounds.rs` `the_writer_refuses_…` at 16.2 s. It is a Furnace estimate (5.78 s × 2.8, as `1310`'s was), labelled so in the file's header; the next refit replaces it. `ci/test-shard.sh` passes.
 
-## 5. Targeted adversarial pass (§5), self-run, probes in scratch copies
+## 5. Targeted adversarial pass (§5), self-run
 
 `spike/2309/adversarial/` holds each probe's source and output.
 
 1. **A writer that crosses the bound in one large record.**
    - The check is the sum of the bytes written and the encoded event, compared with the bound before the fold. An event's size cannot change that comparison: the event bound is 4,096 B, so no overflow is possible.
    - The test refuses an event about 1,000 B over the remainder, and one 1 B over it.
+   - The CLI names it too: `ArchiveWriteFailed` carries `TraceFull`'s text.
    - **Held.**
 2. **A booted run with kind 24 and no kind 26, or two of kind 26, that still replays.**
    - Dropped witnesses: refused by the new rule. A second witness: refused by the old one.
@@ -164,32 +199,38 @@ The workspace clippy and suite were not run with the patch: it changes only `aet
    - **Found:** under the full patch, a boot read as wholly unread (kind 10's four all `None`, the verdict naming `cpu_aborted`) that still holds its kind 26 witnesses replays as accepted. So does the same run without them.
    - The judge writes kind 26, and likewise kinds 29, 34, 36 and 37 (and kind 30's read-back), only once Renode has read: `cli/src/campaign.rs` `continue`s on an unread witness.
    - So a forger can put witness evidence beside an unread boot.
-   - Rule (3) as worded lists 10–13, 21 and 22 only. This is D3.
+   - Rule (3) as worded listed 10–13, 21 and 22 only. **Closed by D3 as built**: the probe's run is now refused by name (the D3 tests).
+   - Re-run on the build, every kind the judge reads at the boot is now bound to kind 10: 10, 11, 12, 13, 19, 21, 22, 26, 29, 30, 34, 36 and 37. The rest are decided before the boot (kinds 5, 6, 15, 16, 20, 23, 24, 25, 27, 28, 31 to 33, 35) or by ngspice and the bridge (kinds 7, 8, 9, 17, 18).
+   - Not closed, by design: a run forged whole into a consistent "killed before its reads" (everything unread, a bound named) cannot be told from a real one by its records. That claim says the run never booted, which the verdict then carries.
 
-## 6. Decisions needed
+## 6. Rulings (architect, 2026-11-23T01:15Z), as built
 
-- **D1 (architect): which reading of rule (3), and its fixtures.**
-  - (a) Full: value and status both ways for 11, 12 and 21; witnesses one way. It refuses 21 tests' fixtures. Building it means reshaping `good()`, the step helpers and `unread()` to the judge's shape (chaos test edits, inside the fence), plus two tests outside it: evolve's `a_register_with_nothing_observed_is_no_evidence` and the CLI's `a_generator_report_names_each_generator_once_in_order` (its reseal gives kind 12 a value).
-  - (b) Status: kinds 12 and 21 bound both ways by their status, their value one way. It refuses 2 tests' fixtures: `unread()` (chaos) and the evolve test (outside the fence).
-  - (c) One way only (a read boot reads everything, by status). It is not "all read or all unread", and it leaves the converse open. It still refuses the evolve fixture, a read boot with a register unread: **any per-record rule that closes 5.8 refuses that fixture, because it is 5.8's shape.** So no reading avoids an evolve test change.
-  - **Lean: (a), with the fence widened to those two tests.** It is the judge's own shape, so it is the strictest rule that no real archive breaks, and the reshape is mechanical. (b) leaves a read boot's value free beside its status, which the judge never writes. The evolve test then becomes a replay refusal, or is removed: attribution can no longer meet its input.
-- **D2 (architect): rules (1) and (2) now, or with (3).** `rules-1-2.diff` is green and its mutants killed. It can land under this work order once (3) is ruled, or alone first. **Lean:** with (3), one PR, as the work order is written.
-- **D3 (architect): the unlisted kinds (§5 item 3).** Add "an unread boot holds no kind 26, 29, 30, 34, 36 or 37" to rule (3). Kind 19 is already bound ("a boot that read nothing holds an observation"). The slip is measured on kind 26; the other kinds are read at source. **Fixture cost, measured (sweep C rerun, candidate `unlisted`): 0** of the 25 unread inputs, in chaos, evolve and the four CLI binaries. It moves no sweep B archive either. **Lean:** yes, in the same rule.
-- **D4 (architect, note only): "booted" or "read" for rule (2).** Built as the work order says, booted. Read would close §5 item 2's residual. **Fixture cost, measured (candidate `motor_read`): 1 accepted input**, `chaos/tests/serial.rs:1750` `a2_5_replay_binds_an_anchor_after_the_boot_word`, a §7 fixture. No lean beyond the work order's wording.
+- **D1:** the full reading; the fixtures reshaped, the fence widened to them alone (§2).
+- **D2:** rules (1), (2) and (3) in one PR.
+- **D3:** kinds 26, 29, 30, 34, 36 and 37 bound; 0 fixtures moved, as measured.
+- **D4:** booted; `serial.rs` untouched.
 
 ## 7. Reduction pass
 
-`Reduction pass (diff): −11 lines in §3 (23 to 12) and one scratch file never committed · 2 duplicates removed · 0 dead paths removed · 1 kept by reason · 0 findings below`.
+`Reduction pass (diff): −2 files (the two patches), −11 lines (FEEDBACK §3 at the STOP), −49 lines (two unread-boot loops in chaos tests/campaign.rs folded into tests/common's unread_boot) · 4 duplicates removed · 0 dead paths removed · 1 kept by reason · 1 finding below`.
 
-Hand-run with the `reduction-pass` skill's four questions, not by a fresh subagent: the diff is `spike/2309/` and this file, with no code under test.
+Hand-run with the `reduction-pass` skill's four questions over the whole diff (`crates/`, one `ci/` row, `spike/2309/`, this file):
 - **Duplicates removed:**
-  - the status-reading delta file, a diff of two diffs; `results.md` states its one line;
-  - §3's restatement of `results.md`'s sweep tables, now a pointer plus what the rulings need.
-- **Kept by reason:** `rules-full-reading.diff` and `rules-1-2.diff` overlap in rules (1) and (2). One is what the sweeps measured, the other what would land.
-- `sh/sweep-instrument.diff` is v3, a superset of the v2 that produced the workspace numbers: it adds the `unlisted` and `motor_read` candidates and the spawned-CLI log. One diff, not three.
-- Nothing is labelled `belt-and-suspenders:` in the diff.
+  - `spike/2309/patches/` (both diffs), now stated by `crates/` itself;
+  - the status-reading delta file;
+  - the STOP's restatement of `results.md` in §3;
+  - the "judge's unread boot" loops in `a_boot_that_read_nothing_names_its_bound` and `a_boots_reads_…`. Both now call `tests/common`'s `unread_boot`, the one statement of that shape for four test files.
+
+  All 20 mutants were re-run after the fold: still all killed (`out/mutants.txt`).
+- **Kept by reason:** rule (3)'s two refusals stay two. They name different things (a read set split from its boot, against Renode-read evidence beside an unread boot), and a mutant of each is killed by its own test.
+- Nothing in the diff is labelled `belt-and-suspenders:`.
+- **Finding, outside the fence:** evolve's attribution still has a path for a read boot's register with nothing observed. `a_register_with_nothing_observed_is_no_evidence` used to pin it, and replay now refuses that input first, so the path is unreachable through `attribute`. It is for evolve's owner to remove or label.
 
 ## 8. For the backlog
 
 - **Tier-1 tests call `check_run` on records that the field rules would refuse** (`unread()`'s kind 10). A shared fixture constructor that runs `Record::check` would stop a check_run-only shape from standing in for a trace.
 - **Sweep A is vacuous until the committed archives are current.** The flooded run added here is the first trace-18 archive; the four 3305 archives stay version 14.
+
+## 9. Gates, merge and CI
+
+GATES-RESULT

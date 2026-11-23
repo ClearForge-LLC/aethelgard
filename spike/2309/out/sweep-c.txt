@@ -1,5 +1,4 @@
 check_run: 1229 distinct (input, test) pairs; 1182 distinct inputs; 0 pairs from a spawned CLI
-distinct inputs by (read, booted): {(None, None): 1182}
 
 ## full: refuses 155 distinct inputs
 accepted before, refused after: 43 (input, test) pairs in 20 tests

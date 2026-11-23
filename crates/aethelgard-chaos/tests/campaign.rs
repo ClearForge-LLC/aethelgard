@@ -3079,32 +3079,8 @@ fn a_boot_that_read_nothing_names_its_bound() {
     // kind 10's four, its flash accesses, and every register, record and
     // witness line beside it (`AET-WO-2309`: all read or all unread).
     let unread = || {
-        let mut r = good_with_boot(|w, n, pc| {
-            w.observed = None;
-            *n = None;
-            *pc = None;
-        });
-        for x in &mut r {
-            match x {
-                Record::BootObserved {
-                    brown_out,
-                    flash_access,
-                    ..
-                } => {
-                    brown_out.observed = None;
-                    *flash_access = None;
-                }
-                Record::RegisterObserved { reading, .. } => reading.observed = None,
-                Record::I2cCheck {
-                    observed, status, ..
-                } => {
-                    *observed = None;
-                    *status = None;
-                }
-                Record::I2cWitness { observed, .. } => *observed = None,
-                _ => {}
-            }
-        }
+        let mut r = good();
+        unread_boot(&mut r);
         r
     };
     let others = [
@@ -3243,6 +3219,9 @@ fn a_record_judged_without_the_boot_word_is_refused() {
     }
 }
 
+/// One edit of a run, named for the assertion's message.
+type Case<'a> = (&'a str, &'a dyn Fn(&mut Record));
+
 const NOT_TOGETHER: &str = "the boot's registers, identity reads and witnesses are not all read or all unread with its boot word";
 
 /// `good()` with U4 on SPI1 (kinds 23, 21 and 22) read as the judge reads it.
@@ -3304,7 +3283,7 @@ fn a_boots_reads_are_all_read_or_all_unread() {
         Ok(())
     );
     // 5.8, one record at a time, beside a read boot.
-    let unread_in_read: [(&str, &dyn Fn(&mut Record)); 5] = [
+    let unread_in_read: [Case; 5] = [
         ("kind 11", &|x| {
             if let Record::RegisterObserved { reading, .. } = x {
                 reading.observed = None;
@@ -3336,38 +3315,8 @@ fn a_boots_reads_are_all_read_or_all_unread() {
     }
     // The same run read as a boot killed before its reads: accepted whole,
     // then each read thing put back alone is refused.
-    let unread_all = |x: &mut Record| match x {
-        Record::BootObserved {
-            boot_word,
-            instructions_observed,
-            pc,
-            brown_out,
-            flash_access,
-            ..
-        } => {
-            boot_word.observed = None;
-            *instructions_observed = None;
-            *pc = None;
-            brown_out.observed = None;
-            *flash_access = None;
-        }
-        Record::RegisterObserved { reading, .. } => reading.observed = None,
-        Record::I2cCheck {
-            observed, status, ..
-        }
-        | Record::SpiCheck {
-            observed, status, ..
-        } => {
-            *observed = None;
-            *status = None;
-        }
-        Record::I2cWitness { observed, .. } | Record::SpiWitness { observed, .. } => {
-            *observed = None
-        }
-        _ => {}
-    };
     let mut killed = base.clone();
-    killed.iter_mut().for_each(unread_all);
+    unread_boot(&mut killed);
     let killed = with_findings(
         killed,
         &[
@@ -3377,7 +3326,7 @@ fn a_boots_reads_are_all_read_or_all_unread() {
         ],
     );
     assert_eq!(check_run(&killed).map(|_| ()), Ok(()));
-    let read_in_unread: [(&str, &dyn Fn(&mut Record)); 9] = [
+    let read_in_unread: [Case; 9] = [
         ("kind 11", &|x| {
             if let Record::RegisterObserved { reading, .. } = x {
                 reading.observed = Some(0x12);

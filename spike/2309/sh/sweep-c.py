@@ -28,8 +28,10 @@ inputs = {r[0] for r in rows}
 print(f"check_run: {len(rows)} distinct (input, test) pairs; {len(inputs)} distinct inputs; "
       f"{sum(1 for r in rows if r[1] == 'main')} pairs from a spawned CLI")
 by_input = {r[0]: dict(r[2]) for r in rows}
-rb = collections.Counter((f.get("read"), f.get("booted")) for f in by_input.values())
-print("distinct inputs by (read, booted):", dict(rb))
+# v2 logs carry no `read` or `booted` (v3 added them): printed only when every input has them.
+if all("read" in f and "booted" in f for f in by_input.values()):
+    rb = collections.Counter((f["read"], f["booted"]) for f in by_input.values())
+    print("distinct inputs by (read, booted):", dict(rb))
 names = sorted({k for r in rows for k, _ in r[2]} - {"read", "booted"})
 for name in names:
     refused = [r for r in rows if dict(r[2]).get(name) == "REFUSES"]

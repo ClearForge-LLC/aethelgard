@@ -1,6 +1,6 @@
 # AET-WO-2309 §1.1 — results, measured after the predictions (`4a84ce75`)
 
-Main is `28fba951`. The rules were built in the worktree as `patches/rules-full-reading.diff`, measured, then taken out of `crates/`. **This branch changes no byte of `crates/` or `fab/`.** The work order stops at §7 (FEEDBACK, "§7 stop").
+Main is `28fba951`. The STOP: the rules were built in the worktree as patches, measured, and taken out of `crates/` (PR #340 at `41a30f0a`). The architect ruled at 01:15Z, and the rules were then built into `crates/` (FEEDBACK §1). The patches are removed, since `crates/` states them. **No byte of `fab/` changes.**
 
 ## Sweep A: the committed archives
 
@@ -95,3 +95,10 @@ The 20 tests whose accepted fixtures the full reading refuses:
 | P8 | The flooded read boot replays after | measured, replays identically | held |
 | P9 | The writer's 256 MiB test under 10 s | not measured: no test was written before the stop | open |
 | P10 | One mutant each, killed by name | not run: the stop came first | open |
+
+## After the build (the 01:15Z ruling)
+
+- **Sweep A**, five committed archives: the four 3305 archives (trace 14) and the flooded run committed here. Main's CLI and the built branch's give identical output (`out/sweep-a-built-main.txt`, `out/sweep-a-built-branch.txt`): four `UnknownVersion`, and one accepted.
+- **Sweep B**, the same 64 archives: exit 0 and byte-identical under main's CLI and the built branch's (`out/sweep-b-built.txt`). The flooded run is identical too.
+- **Mutants:** 20 of 20 killed (`out/mutants.txt`).
+- **P10** (one mutant per guard, killed by name): held.
