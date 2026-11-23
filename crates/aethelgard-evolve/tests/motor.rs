@@ -15,7 +15,7 @@ use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use std::collections::BTreeMap;
 
 use aethelgard_evolve::propose::{self, BusFacts, Input, Outcome, Rules};
-use aethelgard_evolve::{Attribution, Domain, Evidence, Rule, attribute, view};
+use aethelgard_evolve::{AttributeError, Attribution, Domain, Evidence, Rule, attribute, view};
 
 fn reading(address: u32, mask: u32, expected: u32, observed: u32) -> Reading {
     Reading {
@@ -399,7 +399,8 @@ fn adversarial_4_no_register_evidence_is_never_a_guess() {
 #[test]
 fn adversarial_4_a_rewritten_verdict_cannot_move_the_domain() {
     // The register is wrong but the verdict names only the dead output: the
-    // register's event shows a failure the verdict does not name.
+    // register's event shows a failure the verdict does not name, so replay
+    // refuses it by that kind, and attribute with it (`AET-WO-2312`).
     let r = run(
         &Wrong {
             afrh: Some(0x2),
@@ -409,10 +410,26 @@ fn adversarial_4_a_rewritten_verdict_cannot_move_the_domain() {
         true,
         &[(MOTOR_UNWITNESSED_FINDING, 1)],
     );
-    // check_run does not re-derive register_mismatch; attribution refuses
-    // to explain the run.
-    let a = attribute(&archived(&r)).unwrap();
-    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert_eq!(
+        attribute(&archived(&r)),
+        Err(AttributeError::NotACampaignRun(refusal(
+            "register_mismatch"
+        )))
+    );
+    assert_eq!(
+        campaign::check_run(&r).unwrap_err(),
+        refusal("register_mismatch")
+    );
+}
+
+/// The reason `replay` refuses a verdict whose count of `kind` its records
+/// do not bound (`aethelgard_chaos::campaign::SHOWN`, `AET-WO-2312`).
+fn refusal(kind: &str) -> &'static str {
+    campaign::SHOWN
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, why)| *why)
+        .unwrap()
 }
 
 /// `propose` answers S4 with a generator report naming the board crate's

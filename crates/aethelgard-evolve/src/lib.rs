@@ -20,7 +20,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub mod propose;
 
 use aethelgard_chaos::Replayed;
-use aethelgard_chaos::campaign::{self, HELD_LOW};
+use aethelgard_chaos::campaign::{self, Bound};
 use aethelgard_chaos::record::{BusLine, Override, Reading, Record, split_pin};
 use aethelgard_svd_hal::cmsis::{self, RegisterError, RegisterFacts};
 
@@ -452,7 +452,17 @@ pub enum AttributeError {
     NotACampaignRun(&'static str),
     /// The vendored ST header cannot give a register fact the run names.
     RegisterFacts(RegisterError),
+    /// The run holds more records than attribution is bounded for
+    /// ([`MAX_ATTRIBUTE_RECORDS`], `AET-WO-2312`): its cost grows with the
+    /// product of symptoms, buses and records, and it is an MCP tool.
+    TooManyRecords { records: usize, limit: usize },
 }
+
+/// The most records a run may hold to be attributed (`AET-WO-2312`, review
+/// round 3 A15). The largest campaign run measured holds 113
+/// (`spike/2312/results.md`); at this bound the slowest shape measured
+/// attributes in under a second, where 4,604 records took 14 s.
+pub const MAX_ATTRIBUTE_RECORDS: usize = 1_024;
 
 impl From<RegisterError> for AttributeError {
     fn from(e: RegisterError) -> Self {
@@ -640,7 +650,6 @@ struct Run<'a> {
     buses: Vec<Bus<'a>>,
     motors: Vec<Motor<'a>>,
     serial: Vec<Serial<'a>>,
-    rcc: (u32, u32),
     /// The boot word is set: the judge read the serial witnesses and tags.
     booted: bool,
     /// The resets the run rendered and released.
@@ -759,54 +768,6 @@ fn step_shape(write: &[u8], width: u8) -> (Option<(u64, usize)>, usize) {
     let value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
     (Some((value, write.len())), usize::from(width))
 }
-
-/// A step's read as its check records it (`AET-WO-4210`), as the judge holds
-/// it (`aethelgard_twin::boot::StepCheck::judge`): a value was observed, no
-/// bit of it lies above the read's `width` bytes (so a configuration's is 0),
-/// and it equals the expected one under the mask.
-fn read_matches(width: u8, expected: u64, mask: u64, observed: Option<u64>) -> bool {
-    // The bits a read of `width` bytes can set, as the judge holds them
-    // (`aethelgard_ir::parts::width_mask`, which evolve does not depend on): none for a configuration.
-    let read = match width {
-        0 => 0,
-        8.. => u64::MAX,
-        w => (1u64 << (8 * u32::from(w))) - 1,
-    };
-    observed.is_some_and(|o| o & !read == 0 && o & mask == expected & mask)
-}
-
-/// The finding kinds that each select their own events, one finding each.
-const PER_EVENT: [&str; 29] = [
-    campaign::PAST_CEILING_FINDING,
-    campaign::STUCK_HIGH_FINDING,
-    campaign::HELD_LOW_FINDING,
-    "i2c_timeout",
-    "i2c_record_invalid",
-    "i2c_identity_mismatch",
-    "i2c_configure_mismatch",
-    "i2c_data_mismatch",
-    "i2c_transaction_unwitnessed",
-    "spi_timeout",
-    "spi_record_invalid",
-    "spi_identity_mismatch",
-    "spi_configure_mismatch",
-    "spi_data_mismatch",
-    "spi_transaction_unwitnessed",
-    "register_mismatch",
-    campaign::BOOT_WORD_FINDING,
-    "cpu_halted",
-    "locked_peripheral_access",
-    campaign::BROWN_OUT_FINDING,
-    campaign::FLASH_ACCESS_FINDING,
-    campaign::MOTOR_STATIC_FINDING,
-    campaign::MOTOR_UNWITNESSED_FINDING,
-    campaign::MOTOR_MISMATCH_FINDING,
-    campaign::SERIAL_STATIC_FINDING,
-    campaign::SERIAL_PATTERN_FINDING,
-    campaign::SERIAL_ECHO_FINDING,
-    campaign::SERIAL_FORGED_FINDING,
-    campaign::SERIAL_TAG_FINDING,
-];
 
 impl<'a> Run<'a> {
     fn bus_named(&self, id: &str) -> Option<usize> {
@@ -2026,137 +1987,6 @@ impl<'a> Run<'a> {
         })
     }
 
-    /// The events a failing finding kind selects, and whether their number
-    /// must equal the finding's count. `None` for a kind no event shows.
-    fn select(&self, kind: &str) -> Option<(Vec<usize>, bool)> {
-        let status_is = |r: &Record, f: &dyn Fn(&str) -> bool| matches!(r, Record::I2cCheck { status: Some(s), .. } if f(s));
-        let events = match kind {
-            campaign::PAST_CEILING_FINDING => {
-                self.indices(|r| matches!(r, Record::RiseComputed { exceeds: true, .. }))
-            }
-            campaign::STUCK_HIGH_FINDING => {
-                self.indices(|r| matches!(r, Record::LineStuckHigh { .. }))
-            }
-            campaign::HELD_LOW_FINDING => self.indices(
-                |r| matches!(r, Record::BusFault { from, .. } if from.iter().any(|f| f == HELD_LOW)),
-            ),
-            "i2c_timeout" => self.indices(|r| status_is(r, &|s| s.starts_with("timeout_"))),
-            "i2c_record_invalid" => self.indices(|r| status_is(r, &|s| s == "invalid")),
-            // A read's mismatch is named by its bus and step (`AET-WO-4210`
-            // F-B10): kind 12 is I2C's, kind 21 SPI's.
-            "i2c_identity_mismatch"
-            | "i2c_configure_mismatch"
-            | "i2c_data_mismatch"
-            | "spi_identity_mismatch"
-            | "spi_configure_mismatch"
-            | "spi_data_mismatch" => self.indices(|r| {
-                matches!(r, Record::I2cCheck { status: Some(s), expected, mask, width, observed, step, .. }
-                    | Record::SpiCheck { status: Some(s), expected, mask, width, observed, step, .. }
-                    if s == "ok" && !read_matches(*width, *expected, *mask, *observed)
-                        && mismatch_kind(if r.kind() == 12 { "i2c" } else { "spi" }, step).as_deref()
-                            == Some(kind))
-            }),
-            "i2c_transaction_unwitnessed" => self.indices(|r| match r {
-                Record::I2cWitness {
-                    reference,
-                    step,
-                    expected,
-                    observed,
-                    ..
-                } => {
-                    matches!(self.check_of(reference, step),
-                        Some(Record::I2cCheck { status: Some(s), .. }) if s == "ok")
-                        && observed.as_deref() != Some(expected.as_slice())
-                }
-                _ => false,
-            }),
-            "spi_timeout" => self.indices(
-                |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s.starts_with("timeout_")),
-            ),
-            "spi_record_invalid" => self.indices(
-                |r| matches!(r, Record::SpiCheck { status: Some(s), .. } if s == "invalid"),
-            ),
-            "spi_transaction_unwitnessed" => self.indices(|r| match r {
-                Record::SpiWitness {
-                    reference,
-                    step,
-                    expected,
-                    observed,
-                    ..
-                } => {
-                    matches!(self.spi_check_of(reference, step),
-                        Some(Record::SpiCheck { status: Some(s), .. }) if s == "ok")
-                        && observed.as_deref() != Some(expected.as_slice())
-                }
-                _ => false,
-            }),
-            campaign::MOTOR_STATIC_FINDING => {
-                self.indices(|r| matches!(r, Record::MotorTimingCheck { holds: false, .. }))
-            }
-            // A witness is judged once the boot word is set, as `check_run`
-            // binds it; before it, it shows nothing (`AET-WO-3201`).
-            campaign::MOTOR_UNWITNESSED_FINDING => self.indices(|r| {
-                self.booted
-                    && matches!(r, Record::MotorWitness { status, .. }
-                    if status == "unwitnessed" || status == "unreadable")
-            }),
-            campaign::MOTOR_MISMATCH_FINDING => self.indices(|r| {
-                self.booted
-                    && matches!(r, Record::MotorWitness { status, .. }
-                    if status == "mismatch" || status == "batched" || status == "stopped")
-            }),
-            campaign::SERIAL_STATIC_FINDING => {
-                self.indices(|r| matches!(r, Record::SerialFramingCheck { holds: false, .. }))
-            }
-            campaign::SERIAL_TAG_FINDING => self.indices(|r| self.serial_tags_failed(r)),
-            campaign::SERIAL_PATTERN_FINDING | campaign::SERIAL_ECHO_FINDING => {
-                self.indices(|r| self.serial_witness_findings(r).contains(&kind))
-            }
-            // A capture directory holding what no port wrote is forged too and
-            // names no port, so the count may pass the witnesses.
-            campaign::SERIAL_FORGED_FINDING => {
-                return Some((
-                    self.indices(|r| self.serial_witness_findings(r).contains(&kind)),
-                    false,
-                ));
-            }
-            "register_mismatch" => self.indices(
-                |r| matches!(r, Record::RegisterObserved { reading, .. } if mismatch(reading) != 0),
-            ),
-            // A boot that was read, as `check_run` binds the finding; an
-            // unread one names why it read nothing instead (adversarial F3).
-            campaign::BOOT_WORD_FINDING => self.indices(|r| {
-                matches!(r, Record::BootObserved { boot_word, .. }
-                    if boot_word.observed.is_some_and(|o| o != boot_word.expected))
-            }),
-            campaign::PC_OUTSIDE_FINDING => self.indices(pc_outside),
-            campaign::BROWN_OUT_FINDING => self.indices(brown_out_failed),
-            campaign::FLASH_ACCESS_FINDING => self.indices(flash_access_failed),
-            "cpu_halted" => self.indices(|r| {
-                matches!(r, Record::BootObserved { instructions_expected, instructions_observed, .. }
-                    if instructions_observed.is_some_and(|n| n < *instructions_expected))
-            }),
-            // One finding for every access to a gated peripheral: the RCC
-            // enable bits the boot left off are the same fact, in the archive.
-            "locked_peripheral_access" => {
-                return Some((
-                    self.indices(|r| match r {
-                        Record::RegisterObserved { reading, .. } => {
-                            (self.rcc.0..self.rcc.1).contains(&reading.address)
-                                && reading
-                                    .observed
-                                    .is_some_and(|o| reading.expected & reading.mask & !o != 0)
-                        }
-                        _ => false,
-                    }),
-                    false,
-                ));
-            }
-            _ => return None,
-        };
-        Some((events, true))
-    }
-
     /// One symptom's rule, its evidence and its masked events.
     fn decide(&self, scope: Scope) -> (Rule, Vec<usize>, Vec<usize>) {
         let all = 0..self.buses.len();
@@ -2329,18 +2159,6 @@ fn flash_access_failed(r: &Record) -> bool {
             && flash_access.as_deref() != Some(&[]))
 }
 
-/// The finding a read's mismatch is named by, from its step: `{bus}_identity_mismatch`,
-/// `{bus}_configure_mismatch` or `{bus}_data_mismatch` (`AET-WO-4210`
-/// F-B10), as the judge names it from the part's step.
-fn mismatch_kind(bus: &str, step: &str) -> Option<String> {
-    let step = match aethelgard_chaos::record::step_index(step)? {
-        0 => "identity",
-        1..=4 => "configure",
-        _ => "data",
-    };
-    Some(format!("{bus}_{step}_mismatch"))
-}
-
 /// Every bit of a read record's value words: one word for a read of up to
 /// 4 bytes, two for 5 to 8.
 fn record_words(width: u8) -> u64 {
@@ -2355,11 +2173,17 @@ fn record_words(width: u8) -> u64 {
 /// ([`campaign::check_archived`]), with every solved bus joined to the ST
 /// header; and whether its verdict passed.
 fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
+    let records = run.state.records.len();
+    if records > MAX_ATTRIBUTE_RECORDS {
+        return Err(AttributeError::TooManyRecords {
+            records,
+            limit: MAX_ATTRIBUTE_RECORDS,
+        });
+    }
     let summary = campaign::check_archived(&run.header, &run.state)
         .map_err(AttributeError::NotACampaignRun)?;
     let records = run.state.records.as_slice();
     let f = cmsis::register_facts()?;
-    let rcc = f.base("RCC")?;
     let mut buses = Vec::new();
     for (at, r) in records.iter().enumerate() {
         if let Record::I2cBusSolved {
@@ -2454,7 +2278,6 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
         buses,
         motors,
         serial,
-        rcc: (rcc, rcc + f.layout("RCC")?.size),
         booted,
         releases: campaign::released(records),
     };
@@ -2707,6 +2530,7 @@ impl RunView<'_> {
 pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     let (state, pass) = joined(run)?;
     let records = state.records;
+    let shown = campaign::shown(records);
     let Some(Record::Verdict { findings, .. }) = records.last() else {
         unreachable!("check_run puts the verdict last");
     };
@@ -2735,11 +2559,16 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
             unexplained.extend(w.missing);
             continue;
         }
-        match state.select(kind) {
-            Some((events, exact))
-                if !events.is_empty() && (!exact || events.len() as u64 == count) =>
+        // The records that show the kind are `replay`'s own
+        // ([`campaign::shown`], `AET-WO-2312`): each explains one finding,
+        // so their number is the count, except for a kind named once from
+        // a log no record holds.
+        match shown.iter().find(|s| s.kind == kind) {
+            Some(s)
+                if !s.records.is_empty()
+                    && (s.bound == Bound::AtMostOnce || s.records.len() as u64 == count) =>
             {
-                scoped.extend(events);
+                scoped.extend(s.records.iter().copied());
             }
             _ => {
                 unexplained.insert(kind.to_owned());
@@ -2749,8 +2578,8 @@ pub fn attribute(run: &Replayed) -> Result<Attribution, AttributeError> {
     // And the converse: an event that shows a failure the verdict does not
     // name is unexplained too, so rewriting the verdict alone never moves the
     // domain (`AET-WO-3100` adversarial A1).
-    for kind in PER_EVENT {
-        for i in state.select(kind).map(|s| s.0).unwrap_or_default() {
+    for s in &shown {
+        for &i in &s.records {
             if !scoped.contains(&i) {
                 unexplained.insert(format!("event {i}"));
             }

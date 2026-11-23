@@ -1,0 +1,11 @@
+k=20 big_pass bytes=663763 replay rc=0 wall_ms=152 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"e
+k=20 big_pass bytes=663763 attribute rc=0 wall_ms=315 {"ok":true,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"b1ea9efb7cb07ff9c7d91fd9c1cca1e195e88019639049fc7a9dc6f706dc6a
+k=20 big_fail bytes=499945 replay rc=0 wall_ms=58 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"fail","expect":"pass","matched":false,"findings":["i2
+k=20 big_fail bytes=499945 attribute rc=1 wall_ms=2131 {"ok":false,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"9cf4f7747a9dc9e48e73d9bb4ec76302f5bb1ea81d4d338d5dbb04eb1e619
+k=100 big_pass bytes=3315663 replay rc=0 wall_ms=2685 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"e
+k=100 big_pass bytes=3315663 attribute rc=0 wall_ms=6054 {"ok":true,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"f566728b4c40e9eab6c9351ad226ba9083a563dc46909320d2af1583ce9fcb
+k=100 big_fail bytes=2496485 replay rc=0 wall_ms=250 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"fail","expect":"pass","matched":false,"findings":["i2
+k=100 big_fail bytes=2496485 attribute rc=1 wall_ms=250962 {"ok":false,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"299e9337d1b28035db69659ea208e60abcd13d99f3adee6e5ba276094e1bd
+k=200 big_pass bytes=6630541 replay rc=0 wall_ms=10584 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"pass","expect":"pass","matched":true,"findings":[],"e
+k=200 big_pass bytes=6630541 attribute rc=0 wall_ms=23428 {"ok":true,"check":"attribute","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","state_sequence_hash":"b5e9d45ef9236c88a0fcd572d72537ecf6dce3f2d233ebb59fab99b443e3b1
+k=200 big_fail bytes=4992163 replay rc=0 wall_ms=508 {"ok":true,"check":"replay","run_id":"10019a7ca6fb9f96d75fdeaef6f47765","scenario":"pullup-2k2","verdict":"fail","expect":"pass","matched":false,"findings":["i2

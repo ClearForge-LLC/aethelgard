@@ -1409,6 +1409,9 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
         verdict(&[
             ("analog_rise_exceeds_ceiling", 1),
             ("boot_word_missing", 1),
+            // Seven of the run's instructions: the judge names the halt at
+            // any boot it read (`renode::judge_boot`; `AET-WO-2312`).
+            ("cpu_halted", 1),
             ("i2c_timeout", 1),
         ]),
     );

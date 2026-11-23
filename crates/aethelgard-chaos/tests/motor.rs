@@ -1087,6 +1087,15 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
     let left = |r: &mut Vec<Record>| {
         left_only(r);
         cr1_expected(r, 0x81);
+        // The end of the run reads CR1 as the stop left it, CEN set: kind
+        // 11 shows no mismatch the verdict leaves unnamed (`AET-WO-2312`).
+        for x in r.iter_mut() {
+            if let Record::RegisterObserved { name, reading } = x
+                && name == "TIM2.CR1"
+            {
+                reading.observed = Some(0x81);
+            }
+        }
     };
     assert_eq!(run(&left, vec![(JUDGE_STOP_MISSING_FINDING, 1)]), Ok(true));
     assert_eq!(
