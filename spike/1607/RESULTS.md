@@ -33,7 +33,7 @@ Base `aethelgard-cli` tests with `HOME` a private directory holding `.cargo/conf
   - 25 `solve` stderr files, each exactly that specification's `validate` banner, one line each. These are the 29 that solve, less the 4 that carry none.
   - `solve`'s stdout is byte-identical on all 29 (`same-head.txt`).
 - **V4, resolved by the ruling:** the banner goes to stderr, so the `hwdef` and `pinout` verdicts' `topology_sha256` do not move.
-- **V6, hit:** plain `verify` on the reference (`sentinel-01-minimal`, drawn), base binary against head binary in the image with the bridge: both `pass`, and the verdict lines are **byte-identical** (202,708 bytes; `vref/`).
+- **V6, hit:** plain `verify` on the reference (`sentinel-01-minimal`, drawn), base binary against head binary in the image with the bridge: both `pass`, and the verdict lines are **byte-identical** (202,708 bytes; `vref/`). Measured again with the D2 binary (`1a8a4364`): byte-identical to base (`vref/d2.json`), so `reason` is absent on a drawn board as designed.
 
 ## `prove` with Kani (V1 for `prove`)
 

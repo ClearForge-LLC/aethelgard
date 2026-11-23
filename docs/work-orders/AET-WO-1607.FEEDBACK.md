@@ -77,7 +77,11 @@
   - every `prove` exits 0 and passes;
   - `prove --spec` differs only by `lifecycle`, equal to `validate`'s: NRND; NRND and EOL; none on the active board;
   - plain `prove` is unchanged.
-- **(5) in the image:** FILLED BELOW.
+- **(5) in the image** (plain `verify`, 16 GiB, the bridge beside the binary, `vnb/`):
+  - **Before D2:** `d1-drv8876`, `hse-external-8` and `imu-baro-1v8` run every gate. The four board gates are `not_applicable`; every `prove`, `build` and `simulate` passes. `imu-baro-1v8`'s line carries both EOL banner lines.
+  - **After D2:** `d1-drv8876` is `not_verified`, exit 7, by the tier-2 test (§7).
+  - **`sentinel-02-bench-hse8`:** OOM-killed three times at 16 GiB. In the scope's journal, "the kernel OOM killer killed some processes in this unit", then podman's `container kill`, which is the SIGTERM and the empty output. Proved harness by harness, `every_valid_sequence_i2c1` passes in 103 s and `every_valid_sequence_spi1` dies at 355 s. At 32 GiB that harness passes in 357 s, with a 16.5 GiB peak by the scope's own accounting (F-H).
+- **V6 (a drawn board's `verify` unchanged):** plain `verify` on the reference, base binary against head, in the image, gives byte-identical lines (202,708 bytes). The same holds again with the D2 binary, so `reason` is absent on a drawn board.
 - **(2)/(3) acceptance:** CLI tests on base, with `HOME` a private directory holding `.cargo/config.toml` (`CARGO_HOME`, `RUSTUP_HOME` the real ones) and `CARGO_TARGET_DIR` outside the repository: **37 failures** (`m/base-failures.txt`). On the branch, the touched suites (207 tests) pass under the same condition. The adversary ran the whole CLI suite so: 968 passed, 0 failed. Every mutant run (§7) is made under it too.
 
 ## 3. Decisions
@@ -141,24 +145,29 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **F-E:** `doctor` still says an off-pin KiCad blocks `verify`, which a no-board `verify` no longer needs. True for every drawn board; very low.
 - **F-F:** each banner site takes `lifecycle_banner().unwrap_or_default()`, as the existing sites do. It can only swallow a failure to parse the embedded parts table, which `validate` refuses first. Read only; kept for consistency.
 - **F-G:** `cli_backlog_tier1`'s first-harness reader copies `verify::harnesses` (the bin-private parser). A test cannot reach it; reported, not removed.
+- **F-H: Kani needs more than 16 GiB for `sentinel-02-bench-hse8`'s `every_valid_sequence_spi1`**, which plain `verify` on that stand-in now reaches (base refused it with `DrawsNoBoard`). Measured above. CI runs no `verify` of it, so no gate is affected; A caller who runs one needs more than 16 GiB, measured at a 16.5 GiB peak. The kickoff's 16 GiB rule for `verify` does not cover it.
+- **F-I: MCP and exit 7.** `mcp.rs` counts only 0, 1 and 6 as successful calls. A `not_verified` run therefore returns its verdict in `structuredContent` with `isError: true`. Whether 7 is a successful call is `mcp.rs`'s question, outside this fence.
+- **F-J: `TIER2_MIN`** is in `.github/workflows/ci.yml`, outside this fence, so it stays 203 while the tier-2 count rises by one. The architect raises it.
 
 ## 7. Gates, fence, reduction pass, mutants
 
-- **Gates at `8ff08248`** (the code head; later commits are `docs/` and `spike/` only):
+- **Gates at `6ea27f87`** (the code head, after D2; later commits are `docs/` and `spike/` only):
   - `cargo fmt --all -- --check`: clean;
-  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
-  - `cargo test --workspace` (target in the repository, `TMPDIR` unset, as CI's host job): **2794 passed, 0 failed, 0 ignored**, 161 `test result` lines (`m/ws-final.log`).
-- **CI on `f6372ddd` (PR #342): green.**
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean, and again for `aethelgard-cli` with `--features with-tools`;
+  - `cargo test --workspace` (target in the repository, `TMPDIR` unset, as CI's host job): **2795 passed, 0 failed, 0 ignored**, 161 `test result` lines (`m/ws-d2.log`). At `8ff08248`, before D2, it was 2794.
+  - The D2 tier-2 test passed alone in the image (`t2.log`). `ci/test-shard.sh` passes with its row (126 PASS).
+- **CI on `f6372ddd` (PR #342, before D2): green.**
   - Runs: `ci` 45095787493, `engine-image` 45095787593 and `ardupilot-image` 45095787549. 33 checks pass; 3 are skipped by the workflow.
   - The tier-2 guard reports `tier2_tests_passed=204 floor=203`. `TIER2_MIN` and `ci/test-weights.tsv` are unchanged; no tier-2 test was added.
   - **F2, settled:** CI's host `gates` job runs as the runner user, not root. There `cli_backlog_tier1::the_private_scratch_is_outside_home` and every `private_tmp` caller pass, so the runner has `/run/user/<uid>`.
-- **Mutants** (`spike/1607/mutants.py`; 22, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
-  - **22 of 22 killed at `d2a5737a`, and again at `8ff08248` after the reduction**, each by its named test. Every selection passes on the pristine tree (`mut/result-final.txt`).
-  - The groups: M1 (pin); M2 (scratch under `$HOME`, with M2b, its assertion off); M3 (`fab_tier1` scratch); M4, M5, M5b, M5c, M5d (`readme_status`); M6, M6b, M7, M8, M9 (`verify`); M10–M14 and M18 (each banner site); M15 (`doctor`); M16, M17 (the two runners' `TMPDIR`).
+- **Mutants** (`spike/1607/mutants.py`; 23, one per guard this work order adds or changes). Each ran with a fake `HOME` holding `.cargo/config.toml` and the target outside the tree.
+  - **22 of 22 killed at `d2a5737a`, and at `8ff08248` after the reduction. 23 of 23 at `1a8a4364`, with D2's M19.** Each was killed by its named test, and every selection passes on the pristine tree (`mut/result-d2.txt`).
+  - The groups: M1 (pin); M2 (scratch under `$HOME`, with M2b, its assertion off); M3 (`fab_tier1` scratch); M4, M5, M5b, M5c, M5d (`readme_status`); M6, M6b, M7, M8, M9 (`verify`); M10–M14 and M18 (each banner site); M15 (`doctor`); M16, M17 (the two runners' `TMPDIR`); M19 (a no-board run that passed mapped to `pass`/0).
 - **Fence:** §3's files, plus the three out-of-list edits accepted at 01:15Z:
   - (a) `doctor.rs` `KICAD_PINNED`, its `doctor_tier1` assertion, and the CLI README;
   - (b) `tools_tier1.rs` and `generate_tier1.rs`, on `private_tmp`;
   - (c) `emit_tier1.rs`'s plain-`verify` row.
+  - D2's tier-2 test in `with_tools.rs`, with its `ci/test-weights.tsv` row, which §3 allows. It is a Furnace estimate: 123.33 s alone in the image, times 2.8, gives 345.324.
   - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
   - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
 - **`main` merged:** `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`. `readme_status` passes on the merged tree.
