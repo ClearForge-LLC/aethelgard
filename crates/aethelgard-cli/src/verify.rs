@@ -2822,13 +2822,18 @@ mod tests {
             .collect()
     }
 
+    /// A droop's offset in these classifications, which never place it: the
+    /// minimal board's (`AET-WO-2310`, `spike/2310/results.md`), 1 ms from reset.
+    const PLANTED: i64 = -2_627_610;
+
     fn json_scenario(
         expect_pass: bool,
         findings: &[&str],
         overrides: Value,
     ) -> aethelgard_chaos::campaign::Scenario {
         aethelgard_chaos::campaign::Scenario::parse(
-            json!({"schema_version": 3, "name": "x", "base": "b.json",
+            // 6: a droop is planted from the boot word (`AET-WO-2310`).
+            json!({"schema_version": 6, "name": "x", "base": "b.json",
                 "expect": if expect_pass { "pass" } else { "fail" },
                 "expect_findings": findings, "overrides": overrides})
             .to_string()
@@ -2852,9 +2857,8 @@ mod tests {
                 true,
                 &[],
                 json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
-                    "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
-                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
-                    "bor_level": 0}}]),
+                    "from_boot_word_ns": PLANTED, "fall_ns": 20000, "hold_ns": 200000,
+                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100}}]),
             )
         };
         assert_eq!(
@@ -2876,33 +2880,28 @@ mod tests {
     #[test]
     fn a_droop_covers_the_mcu_rail_only_by_crossing_its_bor_level() {
         let (spec, t) = solved(S1);
-        let droop = |floor: u32, bor: u8| {
+        let droop = |floor: u32| {
             json_scenario(
                 true,
                 &[],
                 json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
-                    "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000,
-                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100,
-                    "bor_level": bor}}]),
+                    "from_boot_word_ns": PLANTED, "fall_ns": 20000, "hold_ns": 200000,
+                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100}}]),
             )
         };
         let why = "`x` crosses none: at BOR level 3 a droop must cross VBOR3's falling level, 2610 mV; its loaded floor is 2850 mV";
         assert_eq!(
-            classify(&spec, &t, &droop(2900, 3)),
+            classify(&spec, &t, &droop(2900)),
             Seeded::Tolerable(vec![], vec![why.to_owned()])
         );
         assert_eq!(
-            classify(&spec, &t, &droop(2400, 3)),
+            classify(&spec, &t, &droop(2400)),
             Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
         );
-        // The board's level decides, not the droop's own field.
-        assert_eq!(
-            classify(&spec, &t, &droop(2900, 0)),
-            Seeded::Tolerable(vec![], vec![why.to_owned()])
-        );
+        // The board's level decides: since `AET-WO-2310` a droop states none.
         let (four, t4) = solved(FOUR_LAYER);
         assert_eq!(
-            classify(&four, &t4, &droop(2900, 0)),
+            classify(&four, &t4, &droop(2900)),
             Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
         );
         let s = |d: aethelgard_chaos::campaign::Scenario| {
@@ -2914,8 +2913,8 @@ mod tests {
             v.push(classify(&spec, &t, &d));
             coverage(&spec, &t, &v, None).unmet
         };
-        assert_eq!(s(droop(2900, 3)), [format!("rail `VDD_3V3` ({why})")]);
-        assert!(s(droop(2400, 3)).is_empty());
+        assert_eq!(s(droop(2900)), [format!("rail `VDD_3V3` ({why})")]);
+        assert!(s(droop(2400)).is_empty());
     }
 
     /// Adversarial 5 (`AET-WO-2304b`): a rail out of band is detected only
@@ -3150,9 +3149,9 @@ mod tests {
             true,
             &[],
             json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
-                {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
+                {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": PLANTED,
                     "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                    "source_milliohms": 500, "load_milliamps": 100, "bor_level": 0}}]),
+                    "source_milliohms": 500, "load_milliamps": 100}}]),
         );
         let absent = json_scenario(
             false,
@@ -3293,9 +3292,9 @@ mod tests {
         let droop = json_scenario(
             false,
             &["brownout_unrecovered"],
-            json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1000000,
+            json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": PLANTED,
                 "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000, "source_milliohms": 500,
-                "load_milliamps": 100, "bor_level": 3}}]),
+                "load_milliamps": 100}}]),
         );
         assert_eq!(c(&droop), Seeded::Other);
         let sda = &spec.i2c_buses[0].sda.net;
@@ -4069,6 +4068,7 @@ mod tests {
                     .iter()
                     .map(|(a, b)| ((*a).to_owned(), (*b).to_owned()))
                     .collect(),
+                tool_sha256: Vec::new(),
             };
             aethelgard_chaos::TraceWriter::create(&dir.join(hex([n; 16])), &header)
                 .unwrap()

@@ -260,8 +260,10 @@ pub enum Override {
     MaxCapacitance { net: String, femtofarads: u64 },
     /// `[2, bus, line]`, `line` 0 for SDA and 1 for SCL.
     LineHeldLow { bus: String, line: Line },
-    /// `[3, domain, floor_mv, start_ns, fall_ns, hold_ns, rise_ns,
-    /// source_milliohms, load_milliamps, bor_level]` (`AET-WO-2301`).
+    /// `[3, domain, floor_mv, from_boot_word_ns, fall_ns, hold_ns, rise_ns,
+    /// source_milliohms, load_milliamps]` (`AET-WO-2301`; trace 19,
+    /// `AET-WO-2310`: the instant signed from the undisturbed boot word, and
+    /// no BOR level, which is the specification's).
     Droop(Droop),
     /// `[4, reference]`: an SPI device left absent behind its chip select,
     /// which stays wired (`AET-WO-4200` D4).
@@ -271,9 +273,11 @@ pub enum Override {
     /// the port after it in the sequential chain goes in after the port
     /// before it instead.
     SerialRxOpen { port: String },
-    /// `[6, series_milliohms, start_ns]`: the battery's path R steps from the
-    /// specification's healthy R to this at `start_ns`, and holds to the
-    /// run's end (`AET-WO-2304b` §1.6). Scenario version 4.
+    /// `[6, series_milliohms, from_boot_word_ns]`: the battery's path R steps
+    /// from the specification's healthy R to this at its instant, and holds
+    /// to the run's end (`AET-WO-2304b` §1.6). Scenario version 4; its
+    /// instant signed from the undisturbed boot word since scenario 6
+    /// (`AET-WO-2310`).
     BatterySag(BatterySag),
     /// `[7, domain]`: the named rail held below its band for the whole run,
     /// rendered as each declared consumer's absence through the
@@ -292,11 +296,32 @@ pub enum Override {
 }
 
 /// A declared battery sag (`AET-WO-2304b` §1.6): the whole path R under the
-/// fault, mΩ, and when the path steps to it from the healthy R.
+/// fault, mΩ, and when the path steps to it from the healthy R, signed ns
+/// from the undisturbed boot word (`AET-WO-2310`; [`resolve_instant`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BatterySag {
     pub series_milliohms: u32,
-    pub start_ns: u64,
+    pub from_boot_word_ns: i64,
+}
+
+/// The bound of a planted instant's offset from the boot word, either way:
+/// a run's length (`AET-WO-2310`).
+pub const MAX_PLANT_OFFSET_NS: i64 = crate::campaign::TWIN_MAX_VIRTUAL_NS as i64;
+
+/// A planted event's offset as a scenario may state it (`AET-WO-2310`):
+/// within [`MAX_PLANT_OFFSET_NS`] either way of the boot word and a whole
+/// number of 10 ns instructions, as the boot word is.
+pub fn plant_offset_ok(v: i64) -> bool {
+    (-MAX_PLANT_OFFSET_NS..=MAX_PLANT_OFFSET_NS).contains(&v) && v % 10 == 0
+}
+
+/// A planted event's instant from reset: the undisturbed boot word's plus
+/// the signed offset (`AET-WO-2310`, ruled Q-A (a)). `None` when it lies
+/// before reset (at or before 0) or does not fit; the caller refuses either
+/// by name.
+pub fn resolve_instant(boot_word_ns: u64, from_boot_word_ns: i64) -> Option<u64> {
+    let at = i128::from(boot_word_ns) + i128::from(from_boot_word_ns);
+    u64::try_from(at).ok().filter(|&at| at > 0)
 }
 
 /// One battery-fed regulator as kind 31 carries it: a constant-power sink
@@ -324,18 +349,28 @@ impl SagSink {
 /// A declared sag of a voltage domain's source (`AET-WO-2301` P2, ruled D2
 /// and D7): from the domain's nominal down to `floor_millivolts` and back,
 /// through `source_milliohms` into the emitter's decoupling, with a constant
-/// `load_milliamps`; `bor_level` is the part's option-byte BOR level, declared
-/// because nothing else states it.
+/// `load_milliamps`, starting `from_boot_word_ns` from the undisturbed boot
+/// word, signed (`AET-WO-2310`). The BOR level is the specification's
+/// `mcu.bor_level`, never the scenario's ([`RailDroop`]).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Droop {
     pub domain: String,
     pub floor_millivolts: u32,
-    pub start_ns: u64,
+    pub from_boot_word_ns: i64,
     pub fall_ns: u64,
     pub hold_ns: u64,
     pub rise_ns: u64,
     pub source_milliohms: u32,
     pub load_milliamps: u32,
+}
+
+/// A droop as the run rendered it (kind 16, `AET-WO-2310`): the scenario's,
+/// its instant from reset ([`resolve_instant`] of the undisturbed boot word),
+/// and the specification's BOR level.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RailDroop {
+    pub droop: Droop,
+    pub start_ns: u64,
     pub bor_level: u8,
 }
 
@@ -538,7 +573,7 @@ pub enum Record {
     /// The droop's own values, then the domain's nominal and tolerance and the
     /// decoupling the emitter places on it.
     RailDeclared {
-        droop: Droop,
+        droop: RailDroop,
         nominal_millivolts: u32,
         tolerance_permille: u32,
         decoupling_picofarads: u64,
@@ -790,6 +825,9 @@ pub enum Record {
     /// binds. Archived before the boot, after the bus faults.
     BatterySagDeclared {
         sag: BatterySag,
+        /// The sag's instant from reset, resolved from the undisturbed boot
+        /// word (`AET-WO-2310`).
+        start_ns: u64,
         v_open_microvolts: u64,
         healthy_milliohms: u32,
         sinks: Vec<SagSink>,
@@ -1163,7 +1201,11 @@ fn override_value(o: &Override) -> Value {
         }
         Override::SpiDeviceAbsent { reference } => vec![u(4), t(reference)],
         Override::SerialRxOpen { port } => vec![u(5), t(port)],
-        Override::BatterySag(b) => vec![u(6), u(b.series_milliohms.into()), u(b.start_ns)],
+        Override::BatterySag(b) => vec![
+            u(6),
+            u(b.series_milliohms.into()),
+            Value::from_i64(b.from_boot_word_ns),
+        ],
         Override::RailOutOfBand { domain } => vec![u(7), t(domain)],
         Override::PinHeld { net, level } => vec![
             u(8),
@@ -1181,13 +1223,12 @@ fn droop_fields(d: &Droop) -> Vec<Value> {
     vec![
         t(&d.domain),
         u(d.floor_millivolts.into()),
-        u(d.start_ns),
+        Value::from_i64(d.from_boot_word_ns),
         u(d.fall_ns),
         u(d.hold_ns),
         u(d.rise_ns),
         u(d.source_milliohms.into()),
         u(d.load_milliamps.into()),
-        u(d.bor_level.into()),
     ]
 }
 
@@ -1196,13 +1237,12 @@ impl Fields<'_> {
         Some(Droop {
             domain: self.text()?,
             floor_millivolts: self.u32()?,
-            start_ns: self.uint()?,
+            from_boot_word_ns: self.int()?,
             fall_ns: self.uint()?,
             hold_ns: self.uint()?,
             rise_ns: self.uint()?,
             source_milliohms: self.u32()?,
             load_milliamps: self.u32()?,
-            bor_level: self.u8()?,
         })
     }
 }
@@ -1234,7 +1274,7 @@ fn override_from(v: &Value) -> Option<Override> {
         5 => Override::SerialRxOpen { port: f.text()? },
         6 => Override::BatterySag(BatterySag {
             series_milliohms: f.u32()?,
-            start_ns: f.uint()?,
+            from_boot_word_ns: f.int()?,
         }),
         7 => Override::RailOutOfBand { domain: f.text()? },
         8 => Override::PinHeld {
@@ -1521,8 +1561,10 @@ impl Record {
                 tolerance_permille,
                 decoupling_picofarads,
             } => {
-                let mut v = droop_fields(droop);
+                let mut v = droop_fields(&droop.droop);
                 v.extend([
+                    u(droop.start_ns),
+                    u(droop.bor_level.into()),
                     u((*nominal_millivolts).into()),
                     u((*tolerance_permille).into()),
                     u(*decoupling_picofarads),
@@ -1913,6 +1955,7 @@ impl Record {
             ],
             Self::BatterySagDeclared {
                 sag,
+                start_ns,
                 v_open_microvolts,
                 healthy_milliohms,
                 sinks,
@@ -1922,7 +1965,8 @@ impl Record {
                 binding,
             } => vec![
                 u(sag.series_milliohms.into()),
-                u(sag.start_ns),
+                Value::from_i64(sag.from_boot_word_ns),
+                u(*start_ns),
                 u(*v_open_microvolts),
                 u((*healthy_milliohms).into()),
                 Value::Array(
@@ -2088,7 +2132,11 @@ impl Record {
                 }
             }
             16 => Self::RailDeclared {
-                droop: f.droop()?,
+                droop: RailDroop {
+                    droop: f.droop()?,
+                    start_ns: f.uint()?,
+                    bor_level: f.u8()?,
+                },
                 nominal_millivolts: f.u32()?,
                 tolerance_permille: f.u32()?,
                 decoupling_picofarads: f.uint()?,
@@ -2364,8 +2412,9 @@ impl Record {
             31 => {
                 let sag = BatterySag {
                     series_milliohms: f.u32()?,
-                    start_ns: f.uint()?,
+                    from_boot_word_ns: f.int()?,
                 };
+                let start_ns = f.uint()?;
                 let v_open_microvolts = f.uint()?;
                 let healthy_milliohms = f.u32()?;
                 let mut sinks = Vec::new();
@@ -2384,6 +2433,7 @@ impl Record {
                 }
                 Self::BatterySagDeclared {
                     sag,
+                    start_ns,
                     v_open_microvolts,
                     healthy_milliohms,
                     sinks,
@@ -2640,9 +2690,13 @@ impl Record {
                 decoupling_picofarads,
                 ..
             } => {
-                if !name_ok(&droop.domain) {
+                if !name_ok(&droop.droop.domain) {
                     Err("a droop's domain is not 1 to 64 printable ASCII bytes")
-                } else if droop.floor_millivolts >= *nominal_millivolts
+                } else if droop.bor_level > crate::power::MAX_BOR_LEVEL {
+                    // The level is the specification's (`AET-WO-2310`); the
+                    // part has levels 0 to 3 only.
+                    Err("a declared rail's BOR level is not 0 to 3")
+                } else if droop.droop.floor_millivolts >= *nominal_millivolts
                     || *decoupling_picofarads == 0
                 {
                     Err("a declared rail's floor is not below its nominal, or it has no decoupling")

@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 6,
   "name": "four-layer-droop",
   "base": "four-layer.json",
   "expect": "pass",
@@ -9,13 +9,12 @@
       "droop": {
         "domain": "VDD_3V3",
         "floor_millivolts": 3100,
-        "start_ns": 1000000,
+        "from_boot_word_ns": -2618580,
         "fall_ns": 20000,
         "hold_ns": 200000,
         "rise_ns": 20000,
         "source_milliohms": 500,
-        "load_milliamps": 100,
-        "bor_level": 0
+        "load_milliamps": 100
       }
     }
   ]

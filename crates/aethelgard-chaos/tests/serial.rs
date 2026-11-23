@@ -1452,10 +1452,16 @@ fn an_archived_witness_must_carry_its_firmware_s_frame() {
             .zip([[5; 32], FW, SCEN, SPEC, TOPO])
             .map(|(n, h)| ((*n).to_owned(), h))
             .collect(),
+        // Every run names the host's toolchain, hashed (`AET-WO-2310`).
         tools: vec![
             ("aethelgard".into(), "0.1.0".into()),
             ("renode".into(), "1.17.0".into()),
+            (
+                aethelgard_chaos::campaign::RUST_TOOLCHAIN.into(),
+                "rustc 1.91.0".into(),
+            ),
         ],
+        tool_sha256: vec![(aethelgard_chaos::campaign::RUST_TOOLCHAIN.into(), [7; 32])],
     };
     let archived = |name: &str, frames: [[u8; 8]; 2]| {
         let mut records = run();

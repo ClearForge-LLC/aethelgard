@@ -1,0 +1,8 @@
+[package]
+name = "census2310"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[dependencies]
+aethelgard-chaos = { path = "../../../crates/aethelgard-chaos" }
+[workspace]

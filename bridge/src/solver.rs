@@ -96,6 +96,8 @@ fn pinned(log: &[String]) -> Result<Banner, String> {
 /// libngspice, in this process, stepped on this thread.
 pub struct Ngspice {
     banner: Banner,
+    /// The file the library was mapped from ([`ffi::library_path`]).
+    library: String,
     loaded: bool,
     stepped: bool,
     inputs: Vec<Pwl>,
@@ -109,8 +111,14 @@ impl Ngspice {
     pub fn start() -> Result<Self, String> {
         ffi::init()?;
         let (log, _) = host::take_log();
+        let library = ffi::library_path()?;
+        let library = library
+            .to_str()
+            .ok_or("the library's path is not UTF-8")?
+            .to_owned();
         Ok(Self {
             banner: pinned(&log)?,
+            library,
             loaded: false,
             stepped: false,
             inputs: Vec::new(),
@@ -121,6 +129,11 @@ impl Ngspice {
     /// The banner the library printed when this instance started it.
     pub fn banner(&self) -> &Banner {
         &self.banner
+    }
+
+    /// The canonical path of the file the library was mapped from.
+    pub fn library(&self) -> &str {
+        &self.library
     }
 
     /// Breakpoints, in seconds, that the next step places besides its inputs'.

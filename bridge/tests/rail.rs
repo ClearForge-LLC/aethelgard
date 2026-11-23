@@ -16,7 +16,14 @@ fn identity_ok(line: &str, loaded: bool) {
     assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
     assert_eq!(v["source_sha256"].as_str().unwrap().len(), 64);
     if loaded {
-        assert_eq!(v.as_object().unwrap().len(), 5, "{line}");
+        assert_eq!(v.as_object().unwrap().len(), 6, "{line}");
+        assert!(
+            v["ngspice_library"]
+                .as_str()
+                .unwrap()
+                .contains("libngspice.so"),
+            "{line}"
+        );
         assert_eq!(v["ngspice"], "44.2", "{line}");
         assert_eq!(
             v["ngspice_banner"], "** ngspice-44.2 shared library",

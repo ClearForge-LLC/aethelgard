@@ -37,10 +37,12 @@ struct Prepared {
     specification_sha256: [u8; 32],
     topology: SolvedTopology,
     held: Vec<HeldLow>,
-    rail: Option<crate::analog::Rail>,
-    /// A battery sag's kind 31, solved, with the tools and sandbox the deck
-    /// ran under (`AET-WO-2304b` §1.8).
-    sag: Option<SagSolved>,
+    /// A droop, checked against its domain, to be placed from the
+    /// undisturbed boot word (`AET-WO-2310`).
+    droop: Option<PreparedDroop>,
+    /// A battery sag, judged statically; its instant is placed from the boot
+    /// word and the deck solves it after the boot (`AET-WO-2310`).
+    sag: Option<SagStatic>,
     /// What its verdict does not claim (`AET-WO-2304b` §1.7, §1.11).
     conditions: Vec<String>,
     run_id: [u8; 16],
@@ -259,10 +261,6 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         chain,
         pins,
     } = effective(&scenario, &base)?;
-    let sag = match &chain {
-        Some(s) => Some(solve_battery_sag(s, &scenario.name)?),
-        None => None,
-    };
     let conditions = conditions(&scenario, &spec).map_err(|e| {
         refuse(
             e.kind,
@@ -271,8 +269,8 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
             EXIT_INVALID_SPEC,
         )
     })?;
-    let rail = match scenario.droop() {
-        Some(d) => Some(resolve_droop(d, &spec, &topology).map_err(|e| {
+    let droop = match scenario.droop() {
+        Some(d) => Some(prepare_droop(d, &spec, &topology).map_err(|e| {
             refuse(
                 e.kind,
                 e.id.as_deref(),
@@ -290,8 +288,8 @@ fn prepare(path: &Path, firmware_sha256: &[u8; 32]) -> Result<Prepared, ExitCode
         specification_sha256,
         topology,
         held,
-        rail,
-        sag,
+        droop,
+        sag: chain,
         conditions,
         run_id,
         pins,
@@ -345,6 +343,9 @@ pub(crate) fn conditions(
 #[derive(Serialize)]
 struct SagLine {
     series_milliohms: u32,
+    /// The scenario's offset from the undisturbed boot word, and the instant
+    /// it placed (`AET-WO-2310`).
+    from_boot_word_ns: i64,
     start_ns: u64,
     v_open_microvolts: u64,
     healthy_milliohms: u32,
@@ -367,6 +368,7 @@ struct SinkLine {
 fn sag_line(r: &Record) -> Option<SagLine> {
     let Record::BatterySagDeclared {
         sag,
+        start_ns,
         v_open_microvolts,
         healthy_milliohms,
         sinks,
@@ -380,7 +382,8 @@ fn sag_line(r: &Record) -> Option<SagLine> {
     };
     Some(SagLine {
         series_milliohms: sag.series_milliohms,
-        start_ns: sag.start_ns,
+        from_boot_word_ns: sag.from_boot_word_ns,
+        start_ns: *start_ns,
         v_open_microvolts: *v_open_microvolts,
         healthy_milliohms: *healthy_milliohms,
         sinks: sinks
@@ -401,27 +404,30 @@ fn sag_line(r: &Record) -> Option<SagLine> {
     })
 }
 
+/// A droop checked against its domain before the boot, to be placed from the
+/// undisturbed boot word ([`place_droop`], `AET-WO-2310`).
+struct PreparedDroop {
+    droop: aethelgard_chaos::record::Droop,
+    /// The specification's `mcu.bor_level`: the scenario states none
+    /// (`AET-WO-2310`; `AET-WO-4300d` D-B1, K8).
+    bor_level: u8,
+    nominal_millivolts: u32,
+    tolerance_permille: u32,
+    decoupling_picofarads: u64,
+}
+
 /// A droop's domain, nominal, tolerance and decoupling, resolved against the
-/// effective specification, then checked against the supervisor's table
-/// (ruled D3, D7). Only the MCU's own supply can be drooped: its supervisor is
-/// the one the campaign renders. Every refusal is the scenario's (exit 2).
-fn resolve_droop(
+/// effective specification, then checked against the supervisor's table at
+/// the specification's BOR level (ruled D3, D7), every clause but its
+/// instant's, which waits for the undisturbed boot word (`AET-WO-2310`). Only
+/// the MCU's own supply can be drooped: its supervisor is the one the
+/// campaign renders. Every refusal is the scenario's (exit 2).
+fn prepare_droop(
     droop: &aethelgard_chaos::record::Droop,
     spec: &Specification,
     topology: &SolvedTopology,
-) -> Result<crate::analog::Rail, ScenarioError> {
+) -> Result<PreparedDroop, ScenarioError> {
     let refuse = |kind: &'static str, m: String| ScenarioError::new(kind, Some(&droop.domain), m);
-    // `AET-WO-4300d` D4: the BOR level is the specification's (`mcu.bor_level`);
-    // a droop that states another is refused, so the two never disagree (K8).
-    if droop.bor_level != spec.mcu.bor_level {
-        return Err(refuse(
-            "BorLevelContradictsSpecification",
-            format!(
-                "the droop states BOR level {}, and the specification's mcu.bor_level is {}",
-                droop.bor_level, spec.mcu.bor_level
-            ),
-        ));
-    }
     if droop.domain != spec.mcu.supply {
         return Err(refuse(
             "DroopNotMcuSupply",
@@ -448,18 +454,85 @@ fn resolve_droop(
     let decoupling = aethelgard_eda::schematic::decoupling_picofarads(spec, topology, &table)
         .map_err(|e| refuse(e.kind(), format!("the emitter's decoupling: {e}")))?;
     let decoupling_picofarads = decoupling.get(&droop.domain).copied().unwrap_or(0);
-    rules::check_droop(
+    rules::check_droop_shape(
         droop,
+        spec.mcu.bor_level,
         domain.nominal_millivolts,
         decoupling_picofarads,
-        // A droop past the boot is refused with its time, never cut short.
-        aethelgard_twin::boot::MAX_VIRTUAL_NS,
     )?;
-    Ok(crate::analog::Rail {
+    Ok(PreparedDroop {
         droop: droop.clone(),
+        bor_level: spec.mcu.bor_level,
         nominal_millivolts: domain.nominal_millivolts,
         tolerance_permille: u32::from(domain.tolerance_permille),
         decoupling_picofarads,
+    })
+}
+
+/// A planted instant from the undisturbed boot word (`AET-WO-2310`, ruled
+/// Q-A (a)): before reset, past the run, or with no boot word to place it
+/// from, the run is refused by name (exit 2), never planted at a default.
+fn place(
+    scenario: &str,
+    what: &str,
+    word: Option<u64>,
+    from_boot_word_ns: i64,
+) -> Result<u64, ExitCode> {
+    let unplaced = |m: String| {
+        refuse(
+            rules::PLANTED_UNPLACED,
+            Some(scenario),
+            format!("scenario `{scenario}`: {m}"),
+            EXIT_INVALID_SPEC,
+        )
+    };
+    let Some(word) = word else {
+        return Err(unplaced(format!(
+            "its {what} is planted {from_boot_word_ns} ns from the boot word, and the undisturbed boot wrote no boot word to place it from"
+        )));
+    };
+    match aethelgard_chaos::record::resolve_instant(word, from_boot_word_ns) {
+        Some(at) if at <= aethelgard_twin::boot::MAX_VIRTUAL_NS => Ok(at),
+        _ => Err(unplaced(format!(
+            "its {what}, {from_boot_word_ns} ns from the boot word at {word} ns, lies at or before reset or past the run's {} ns",
+            aethelgard_twin::boot::MAX_VIRTUAL_NS
+        ))),
+    }
+}
+
+/// The prepared droop at its instant: the rail the boot renders, checked
+/// whole, its instant included ([`rules::check_droop`]).
+fn place_droop(
+    scenario: &str,
+    d: &PreparedDroop,
+    word: Option<u64>,
+) -> Result<crate::analog::Rail, ExitCode> {
+    let start_ns = place(scenario, "droop", word, d.droop.from_boot_word_ns)?;
+    let droop = aethelgard_chaos::record::RailDroop {
+        droop: d.droop.clone(),
+        start_ns,
+        bor_level: d.bor_level,
+    };
+    rules::check_droop(
+        &droop,
+        d.nominal_millivolts,
+        d.decoupling_picofarads,
+        // A droop past the boot is refused with its time, never cut short.
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+    )
+    .map_err(|e| {
+        refuse(
+            e.kind,
+            e.id.as_deref(),
+            format!("scenario `{scenario}`: {e}"),
+            EXIT_INVALID_SPEC,
+        )
+    })?;
+    Ok(crate::analog::Rail {
+        droop,
+        nominal_millivolts: d.nominal_millivolts,
+        tolerance_permille: d.tolerance_permille,
+        decoupling_picofarads: d.decoupling_picofarads,
     })
 }
 
@@ -837,8 +910,9 @@ pub(crate) fn resolve_battery_sag(
             .collect(),
         capacitance_picofarads: side.capacitors.iter().map(|c| c.picofarads).sum(),
     };
+    // Before the boot: every clause but the instant's (`AET-WO-2310`).
     let static_microvolts =
-        battery::check_battery_sag(sag, &chain, aethelgard_twin::boot::MAX_VIRTUAL_NS)?;
+        battery::check_battery_sag(sag, None, &chain, aethelgard_twin::boot::MAX_VIRTUAL_NS)?;
     Ok(SagStatic {
         sag: sag.clone(),
         side,
@@ -852,11 +926,27 @@ pub(crate) fn resolve_battery_sag(
 /// (`BatterySagSolvedBelowFloor`), the dynamic counterpart of the static
 /// clauses; a solved minimum off the static point by more than the stated
 /// tolerance is an internal error, never a verdict.
-fn solve_battery_sag(s: &SagStatic, scenario: &str) -> Result<SagSolved, ExitCode> {
+fn solve_battery_sag(s: &SagStatic, start_ns: u64, scenario: &str) -> Result<SagSolved, ExitCode> {
     let stop = |e: run::Stop| emit(&Refusal::new(e.kind, e.id.as_deref(), e.message), e.code);
+    // The clauses of its instant, now that the boot word placed it.
+    aethelgard_chaos::battery::check_battery_sag(
+        &s.sag,
+        Some(start_ns),
+        &s.chain,
+        aethelgard_twin::boot::MAX_VIRTUAL_NS,
+    )
+    .map_err(|e| {
+        refuse(
+            e.kind,
+            Some(scenario),
+            format!("scenario `{scenario}`: {e}"),
+            EXIT_INVALID_SPEC,
+        )
+    })?;
     let scratch = Scratch::new().map_err(stop)?;
     let solved = crate::analog::chain(
         &s.sag,
+        start_ns,
         &s.side,
         &s.chain,
         aethelgard_twin::boot::MAX_VIRTUAL_NS,
@@ -901,6 +991,7 @@ fn solve_battery_sag(s: &SagStatic, scenario: &str) -> Result<SagSolved, ExitCod
     Ok(SagSolved {
         record: Record::BatterySagDeclared {
             sag: s.sag.clone(),
+            start_ns,
             v_open_microvolts: s.chain.v_open_microvolts,
             healthy_milliohms: s.chain.healthy_milliohms,
             sinks: s.chain.sinks.clone(),
@@ -932,10 +1023,9 @@ struct ScenarioLine {
     state_sequence_hash: String,
     event_count: u64,
     trace_bytes: u64,
-    /// The boot's virtual time, its board's window, and the constant that
-    /// states it (`AET-WO-4300a` D1).
+    /// The boot's virtual time (`AET-WO-4300a` D1). The line names no window:
+    /// every board's is `MAX_VIRTUAL_NS` (`AET-WO-2310`, `2302` reduction 2).
     virtual_time_ns: u64,
-    window: &'static str,
     /// The boot's `uid_boundary` and, when false, why (`AET-WO-1601`).
     uid_boundary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1043,9 +1133,14 @@ pub fn run(scenarios: &[PathBuf], firmware: &Path, archive: &Path) -> ExitCode {
         }
     }
 
+    // The host's toolchain, once for the campaign (`AET-WO-2310`, Q-T T1).
+    let toolchain = match Scratch::new().and_then(|s| toolchain_entry(&s)) {
+        Ok(t) => t,
+        Err(s) => return emit(&Refusal::new(s.kind, s.id.as_deref(), s.message), s.code),
+    };
     let (mut matched, mut total) = (0, 0u64);
     for p in prepared {
-        let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive) {
+        let (line, ok) = match run_one(p, firmware, &firmware_sha256, archive, &toolchain) {
             Ok(done) => done,
             Err(code) => return code,
         };
@@ -1077,6 +1172,7 @@ fn run_one(
     firmware: &Path,
     firmware_sha256: &[u8; 32],
     archive: &Path,
+    toolchain: &(String, Option<[u8; 32]>),
 ) -> Result<(ScenarioLine, bool), ExitCode> {
     let stop = |s: run::Stop| {
         let code = s.code;
@@ -1106,25 +1202,52 @@ fn run_one(
     })?;
     let motors = solved_motors(&p.topology);
     let serial = solved_serial(&p.topology);
-    let verdict = crate::simulate(
-        &platform,
-        Some(Boot {
-            firmware: firmware.to_path_buf(),
-            topology: p.topology,
-            virtual_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
-            scenario: p.scenario.name.clone(),
-            held: p.held,
-            absent: absent(&p.scenario.overrides),
-            open: open(&p.scenario.overrides),
-            rail: p.rail,
-            foreign: false,
-            pins: p.pins.clone(),
-        }),
-    )
-    .map_err(stop)?;
+    let name = p.scenario.name.clone();
+    let boot = |rail: Option<crate::analog::Rail>| {
+        crate::simulate(
+            &platform,
+            Some(Boot {
+                firmware: firmware.to_path_buf(),
+                topology: p.topology.clone(),
+                virtual_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
+                scenario: name.clone(),
+                held: p.held.clone(),
+                absent: absent(&p.scenario.overrides),
+                open: open(&p.scenario.overrides),
+                rail,
+                foreign: false,
+                pins: p.pins.clone(),
+            }),
+        )
+        .map_err(stop)
+    };
+    let word_of = |v: &Verdict| v.boot.as_ref().and_then(|b| b.boot_word_ns);
+    // A planted event is placed from the undisturbed boot word (`AET-WO-2310`,
+    // ruled Q-A (a)). A droop's boot is disturbed, so the same prepared boot
+    // runs first without it; a battery sag never reaches the boot, so the
+    // run's own boot is the undisturbed one and the deck solves after it.
+    let (verdict, reference) = match &p.droop {
+        Some(d) => {
+            let word = word_of(&boot(None)?);
+            let rail = place_droop(&name, d, word)?;
+            (boot(Some(rail))?, word)
+        }
+        None => {
+            let v = boot(None)?;
+            let word = word_of(&v);
+            (v, word)
+        }
+    };
+    let sag = match &p.sag {
+        Some(s) => {
+            let at = place(&name, "battery sag", reference, s.sag.from_boot_word_ns)?;
+            Some(solve_battery_sag(s, at, &name)?)
+        }
+        None => None,
+    };
     drop(scratch);
     let mut sandbox = verdict.sandbox;
-    if let Some(s) = &p.sag {
+    if let Some(s) = &sag {
         sandbox.unmet(s.sandbox.uid_boundary_unmet);
     }
     let (uid_boundary, uid_boundary_unmet) = (sandbox.uid_boundary, sandbox.uid_boundary_unmet);
@@ -1160,10 +1283,10 @@ fn run_one(
     records.extend(motors);
     records.extend(serial);
     records.extend(pin_declared(&p.pins));
-    let mut boot = records_of(&verdict).map_err(internal)?;
+    let mut boot = records_of(&verdict, p.scenario.droop()).map_err(internal)?;
     // Kind 31 sits with the declared rail, after the analog records and the
     // bus faults, before the boot's (`check_run`'s rank 6).
-    if let Some(s) = &p.sag {
+    if let Some(s) = &sag {
         let at = boot
             .iter()
             .position(|r| {
@@ -1176,6 +1299,46 @@ fn run_one(
             })
             .unwrap_or(boot.len());
         boot.insert(at, s.record.clone());
+    }
+    // Kind 32, the reference every planted run holds (`AET-WO-2310`): a
+    // droop's boot wrote it when it released a reset, from the same boot run
+    // undisturbed, which must be the word the campaign placed from;
+    // otherwise it is that word, beside the rail or the sag.
+    if let Some(word) = reference.filter(|_| p.droop.is_some() || sag.is_some()) {
+        let want = Record::RecoveryBound {
+            boot_word_ns: Some(word),
+            margin_ns: aethelgard_chaos::power::RECOVERY_MARGIN_NS,
+            bound_ns: aethelgard_chaos::power::recovery_bound(word),
+        };
+        match boot
+            .iter()
+            .position(|r| matches!(r, Record::RecoveryBound { .. }))
+        {
+            Some(i) if boot[i] == want => {}
+            // belt-and-suspenders: the two undisturbed boots are one prepared
+            // boot run twice by a deterministic Renode, so they agree; a
+            // stub cannot make them differ under the sandbox (no state it
+            // may write), so no test reaches this. If they ever differ, the
+            // instant and the bound would come from two words: stop.
+            Some(i) => {
+                return Err(internal(format!(
+                    "the droop's undisturbed boot gave {:?}, and the campaign placed its instant from the boot word at {word} ns",
+                    boot[i]
+                )));
+            }
+            None => {
+                let at = boot
+                    .iter()
+                    .position(|r| {
+                        matches!(
+                            r,
+                            Record::RailDeclared { .. } | Record::BatterySagDeclared { .. }
+                        )
+                    })
+                    .map_or(boot.len(), |i| i + 1);
+                boot.insert(at, want);
+            }
+        }
     }
     records.extend(boot);
     // The run must pass the rules replay will judge it by before it is written.
@@ -1192,9 +1355,16 @@ fn run_one(
             ("specification".to_owned(), p.specification_sha256),
             ("topology".to_owned(), topology_sha256),
         ],
-        tools: header_tools(&verdict.tools, p.sag.as_ref().map_or(&[][..], |s| &s.tools))
-            .map_err(internal)?,
+        tools: Vec::new(),
+        tool_sha256: Vec::new(),
     };
+    let header = header_tools(
+        header,
+        &verdict.tools,
+        sag.as_ref().map_or(&[][..], |s| &s.tools),
+        toolchain,
+    )
+    .map_err(internal)?;
     let observation_witness = observation_witness(&records);
     let dir = archive.join(hex(p.run_id));
     let archived = (|| {
@@ -1214,7 +1384,7 @@ fn run_one(
         )
     })?;
     let ok = summary.matched;
-    let battery_sag = p.sag.as_ref().and_then(|s| sag_line(&s.record));
+    let battery_sag = sag.as_ref().and_then(|s| sag_line(&s.record));
     Ok((
         ScenarioLine {
             scenario: summary.name,
@@ -1231,7 +1401,6 @@ fn run_one(
             event_count: archived.event_count,
             trace_bytes: archived.trace_bytes,
             virtual_time_ns: aethelgard_twin::boot::MAX_VIRTUAL_NS,
-            window: aethelgard_twin::boot::WINDOW,
             uid_boundary,
             uid_boundary_unmet,
             battery_sag,
@@ -1242,17 +1411,22 @@ fn run_one(
     ))
 }
 
-/// The header's tools: the boot's, and the bridge and ngspice the battery
-/// chain's deck ran (`AET-WO-2304b` §1.9), sorted, each once. A tool that
-/// named two versions in one run is an internal error, never a choice.
+/// The header's tools: the boot's, the bridge and ngspice the battery chain's
+/// deck ran (`AET-WO-2304b` §1.9), and the host's toolchain, sorted, each
+/// once; ngspice's library hash and the toolchain's sysroot digest beside
+/// their names (`AET-WO-2310`). A tool that named two versions in one run,
+/// or a library hash with no ngspice, is an internal error, never a choice.
 fn header_tools(
+    mut header: Header,
     boot: &[(&'static str, String)],
     chain: &[(&'static str, String)],
-) -> Result<Vec<(String, String)>, String> {
+    toolchain: &(String, Option<[u8; 32]>),
+) -> Result<Header, String> {
     let mut tools: Vec<(String, String)> = boot
         .iter()
         .chain(chain)
         .map(|(n, v)| ((*n).to_owned(), v.clone()))
+        .chain([(rules::RUST_TOOLCHAIN.to_owned(), toolchain.0.clone())])
         .collect();
     tools.sort();
     tools.dedup();
@@ -1262,7 +1436,201 @@ fn header_tools(
             w[0].0, w[0].1, w[1].1
         ));
     }
-    Ok(tools)
+    let library = tools
+        .iter()
+        .position(|(n, _)| n == crate::analog::NGSPICE_LIBRARY)
+        .map(|i| tools.remove(i).1);
+    let ngspice = tools.iter().any(|(n, _)| n == rules::NGSPICE);
+    let mut hashes = Vec::new();
+    match (library, ngspice) {
+        (Some(hex), true) => hashes.push((rules::NGSPICE.to_owned(), unhex(&hex)?)),
+        (None, false) => {}
+        _ => return Err("ngspice and its library's hash do not come together".to_owned()),
+    }
+    if let Some(h) = toolchain.1 {
+        hashes.push((rules::RUST_TOOLCHAIN.to_owned(), h));
+    }
+    hashes.sort();
+    header.tools = tools;
+    header.tool_sha256 = hashes;
+    Ok(header)
+}
+
+/// 64 lower-case hex digits as 32 bytes.
+fn unhex(s: &str) -> Result<[u8; 32], String> {
+    let bad = || format!("`{s}` is not a sha256 in lower-case hex");
+    if s.len() != 64
+        || !s
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(bad());
+    }
+    let mut out = [0u8; 32];
+    for (i, o) in out.iter_mut().enumerate() {
+        *o = u8::from_str_radix(&s[2 * i..2 * i + 2], 16).map_err(|_| bad())?;
+    }
+    Ok(out)
+}
+
+/// The host's Rust toolchain for the header (`AET-WO-2310`, ruled Q-T T1):
+/// `rustc -V`'s version, `rustc ` cut, and [`tree_sha256`] of the sysroot
+/// `rustc --print sysroot` names, both run as `build` runs cargo (the same
+/// variables, from a scratch directory, so the same toolchain is active). It
+/// is the host's, not proven to be the one that built the ELF. On a host
+/// with no `rustc` on `PATH` or no `RUSTUP_HOME`, it is
+/// [`rules::TOOLCHAIN_ABSENT`] with no hash; any other failure stops.
+fn toolchain_entry(scratch: &Scratch) -> Result<(String, Option<[u8; 32]>), run::Stop> {
+    let absent = || Ok((rules::TOOLCHAIN_ABSENT.to_owned(), None));
+    let rustc = match run::Tool::find("rustc") {
+        Ok(t) => t,
+        Err(s) if s.kind == "ToolMissing" => return absent(),
+        Err(s) => return Err(s),
+    };
+    let Some(rustup_home) = std::env::var_os("RUSTUP_HOME").filter(|v| !v.is_empty()) else {
+        return absent();
+    };
+    let mut env = vec![
+        ("RUSTUP_HOME", rustup_home.clone()),
+        ("PATH", std::env::var_os("PATH").unwrap_or_default()),
+    ];
+    if let Some(t) = std::env::var_os("RUSTUP_TOOLCHAIN").filter(|v| !v.is_empty()) {
+        env.push(("RUSTUP_TOOLCHAIN", t));
+    }
+    let mut read_only = rustc.dirs();
+    read_only.push(PathBuf::from(&rustup_home));
+    let ask = |args: &[&str], status: &str| -> Result<String, run::Stop> {
+        let out = run::Invocation {
+            tool: &rustc,
+            args: run::args(args),
+            env: env.clone(),
+            workdir: &scratch.tool,
+            cwd: scratch.tool.clone(),
+            status: scratch.root.join(status),
+            read_only: read_only.clone(),
+            read_write: Vec::new(),
+        }
+        .run()?;
+        if out.code("rustc")? != 0 {
+            return Err(run::Stop::tool_error(
+                "rustc",
+                format!(
+                    "`rustc {}` exited non-zero: {}",
+                    args.join(" "),
+                    out.text().trim()
+                ),
+            ));
+        }
+        Ok(String::from_utf8_lossy(&out.stdout).trim().to_owned())
+    };
+    let said = ask(&["-V"], "status-rustc-version")?;
+    let version = said
+        .strip_prefix("rustc ")
+        .filter(|v| {
+            aethelgard_chaos::event::text_ok(v, 1, aethelgard_chaos::event::MAX_TOOL_VERSION_BYTES)
+        })
+        .ok_or_else(|| {
+            run::Stop::tool_error(
+                "rustc",
+                format!("`rustc -V` said `{}`", said.escape_debug()),
+            )
+        })?
+        .to_owned();
+    let sysroot = PathBuf::from(ask(&["--print", "sysroot"], "status-rustc-sysroot")?);
+    let digest = tree_sha256(&sysroot).map_err(|e| {
+        run::Stop::tool_error("rustc", format!("its sysroot {}: {e}", sysroot.display()))
+    })?;
+    Ok((version, Some(digest)))
+}
+
+/// The sha256 of a directory tree (`AET-WO-2310`), the bridge source
+/// digest's recipe (`bridge/build.rs`) over every entry under `root`, sorted
+/// by its path relative to `root` (byte order, `/`): for a regular file, the
+/// path, one 0x00 byte, its length as 8 bytes little-endian, then its bytes;
+/// for a symlink, the path, one 0x01 byte, its target's length as 8 bytes
+/// little-endian, then the target, then, when it resolves to a regular file
+/// (inside the tree or not), that file's bytes as a regular file's are
+/// hashed, so a link cannot carry changed bytes past the digest.
+/// Directories are walked, never followed through a link; any other kind
+/// of entry is refused.
+pub(crate) fn tree_sha256(root: &Path) -> Result<[u8; 32], String> {
+    use std::io::Read;
+    use std::os::unix::ffi::OsStrExt;
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+        for entry in fs::read_dir(dir).map_err(|e| format!("{}: {e}", dir.display()))? {
+            let path = entry.map_err(|e| format!("{}: {e}", dir.display()))?.path();
+            let kind = fs::symlink_metadata(&path)
+                .map_err(|e| format!("{}: {e}", path.display()))?
+                .file_type();
+            if kind.is_dir() {
+                walk(&path, out)?;
+            } else if kind.is_file() || kind.is_symlink() {
+                out.push(path);
+            } else {
+                return Err(format!(
+                    "{} is not a file, link or directory",
+                    path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+    let mut paths = Vec::new();
+    walk(root, &mut paths)?;
+    let mut rel: Vec<(Vec<u8>, PathBuf)> = paths
+        .into_iter()
+        .map(|p| {
+            let r = p
+                .strip_prefix(root)
+                .unwrap_or(&p)
+                .as_os_str()
+                .as_bytes()
+                .to_vec();
+            (r, p)
+        })
+        .collect();
+    rel.sort();
+    let mut hash = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    // A regular file's bytes: 0x00, its length, then the bytes.
+    let mut file = |hash: &mut Sha256, p: &Path, len: u64| -> Result<(), String> {
+        let mut f = fs::File::open(p).map_err(|e| format!("{}: {e}", p.display()))?;
+        hash.update([0u8]);
+        hash.update(len.to_le_bytes());
+        let mut read = 0u64;
+        loop {
+            let n = f
+                .read(&mut buf)
+                .map_err(|e| format!("{}: {e}", p.display()))?;
+            if n == 0 {
+                break;
+            }
+            hash.update(&buf[..n]);
+            read += n as u64;
+        }
+        if read != len {
+            return Err(format!("{} changed while it was read", p.display()));
+        }
+        Ok(())
+    };
+    for (r, p) in rel {
+        let meta = fs::symlink_metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+        hash.update(&r);
+        if meta.file_type().is_symlink() {
+            let target = fs::read_link(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            let t = target.as_os_str().as_bytes();
+            hash.update([1u8]);
+            hash.update((t.len() as u64).to_le_bytes());
+            hash.update(t);
+            // The bytes a link resolves to, inside the tree or not.
+            if let Ok((true, len)) = fs::metadata(&p).map(|m| (m.is_file(), m.len())) {
+                file(&mut hash, &p, len)?;
+            }
+            continue;
+        }
+        file(&mut hash, &p, meta.len())?;
+    }
+    Ok(hash.finalize().into())
 }
 
 /// Kind 15 for every solved I2C bus, sorted by bus (`AET-WO-3100` R1): its
@@ -1537,18 +1905,28 @@ fn serial_records(serial: &[crate::verdict::SerialReport]) -> Vec<Record> {
 
 /// Kinds 16 to 19 from a droop's report, the crossings, resets and
 /// observations merged in the time order replay checks (`AET-WO-2301`).
-fn droop_records(d: &crate::verdict::DroopReport) -> Result<Vec<Record>, String> {
+fn droop_records(
+    d: &crate::verdict::DroopReport,
+    droop: Option<&aethelgard_chaos::record::Droop>,
+) -> Result<Vec<Record>, String> {
     let r = &d.rail;
+    // The scenario's droop, as the report rendered it, at the instant and the
+    // level the report placed it at (`AET-WO-2310`).
+    let droop = droop
+        .filter(|o| {
+            o.domain == r.domain
+                && o.floor_millivolts == r.floor_millivolts
+                && o.fall_ns == r.fall_ns
+                && o.hold_ns == r.hold_ns
+                && o.rise_ns == r.rise_ns
+                && o.source_milliohms == r.source_milliohms
+                && o.load_milliamps == r.load_milliamps
+        })
+        .ok_or("the verdict reports a rail that is not the scenario's droop")?;
     let mut out = vec![Record::RailDeclared {
-        droop: aethelgard_chaos::record::Droop {
-            domain: r.domain.clone(),
-            floor_millivolts: r.floor_millivolts,
+        droop: aethelgard_chaos::record::RailDroop {
+            droop: droop.clone(),
             start_ns: r.start_ns,
-            fall_ns: r.fall_ns,
-            hold_ns: r.hold_ns,
-            rise_ns: r.rise_ns,
-            source_milliohms: r.source_milliohms,
-            load_milliamps: r.load_milliamps,
             bor_level: r.bor_level,
         },
         nominal_millivolts: r.nominal_millivolts,
@@ -1723,7 +2101,10 @@ fn picoseconds(ns: f64, up: bool) -> Result<u64, String> {
 }
 
 /// Every record of a `simulate --firmware` verdict, as integers (`RUL-06`).
-fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
+fn records_of(
+    v: &Verdict,
+    droop: Option<&aethelgard_chaos::record::Droop>,
+) -> Result<Vec<Record>, String> {
     let mut out = Vec::new();
     for a in v.analog.as_deref().unwrap_or_default() {
         let ceiling_ps = u64::from(a.ceiling_ns) * 1000;
@@ -1786,7 +2167,7 @@ fn records_of(v: &Verdict) -> Result<Vec<Record>, String> {
         });
     }
     if let Some(d) = &v.droop {
-        out.extend(droop_records(d)?);
+        out.extend(droop_records(d, droop)?);
     }
     let boot = v
         .boot
@@ -2022,6 +2403,9 @@ struct Replayed {
     /// The tools that judged the run, as the archive names them; never
     /// required equal to this host's (`AET-WO-2205` §1.1).
     tools: BTreeMap<String, String>,
+    /// The content hash the archive holds beside a tool's name: ngspice's
+    /// library and the host toolchain's sysroot (`AET-WO-2310`).
+    tool_sha256: BTreeMap<String, String>,
     event_count: u64,
     trace_bytes: u64,
     state_sequence_hash: String,
@@ -2092,6 +2476,12 @@ pub fn replay(dir: &Path) -> ExitCode {
                 .map(|(n, h)| (n.clone(), hex(h)))
                 .collect(),
             tools: replayed.header.tools.iter().cloned().collect(),
+            tool_sha256: replayed
+                .header
+                .tool_sha256
+                .iter()
+                .map(|(n, h)| (n.clone(), hex(h)))
+                .collect(),
             event_count: replayed.manifest.event_count,
             trace_bytes: replayed.manifest.trace_bytes,
             state_sequence_hash: hex(replayed.manifest.state_hash),
@@ -2138,7 +2528,7 @@ fn subject(r: &Record) -> String {
         | Record::I2cWitness { reference, .. }
         | Record::SpiCheck { reference, .. }
         | Record::SpiWitness { reference, .. } => format!("device:{reference}"),
-        Record::RailDeclared { droop, .. } => format!("rail:{}", droop.domain),
+        Record::RailDeclared { droop, .. } => format!("rail:{}", droop.droop.domain),
         Record::RailCrossing { domain, .. } => format!("rail:{domain}"),
         Record::RegisterObserved { name, .. } => format!("register:{name}"),
         Record::MotorOutputSolved { label, .. }
@@ -2232,6 +2622,51 @@ mod tests {
     /// against a device's witness; with no I2C or SPI witness record (no
     /// identity read on the boot) the count is 0 and says so; with no
     /// release there is no observation and no field.
+    /// `AET-WO-2310` adversarial: the toolchain digest changes whenever a byte
+    /// the toolchain runs does, a link's target's included, and is the same
+    /// for the same tree.
+    #[test]
+    fn the_tree_digest_moves_with_every_byte_name_and_link_target() {
+        use std::fs;
+        use std::os::unix::fs::symlink;
+        let base = std::env::temp_dir().join(format!("aet-2310-tree-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&base);
+        let (tree, outside) = (base.join("tree"), base.join("outside"));
+        fs::create_dir_all(tree.join("lib")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(tree.join("bin-rustc"), b"stub").unwrap();
+        fs::write(tree.join("lib/librustc_driver.so"), b"the compiler").unwrap();
+        fs::write(outside.join("libLLVM.so"), b"llvm").unwrap();
+        symlink(outside.join("libLLVM.so"), tree.join("lib/libLLVM.so")).unwrap();
+        let d = || super::tree_sha256(&tree).unwrap();
+        let first = d();
+        assert_eq!(d(), first, "the same tree, the same digest");
+        let mut seen = vec![first];
+        let mut moved = |what: &str, edit: &dyn Fn()| {
+            edit();
+            let now = d();
+            assert!(!seen.contains(&now), "{what} did not move the digest");
+            seen.push(now);
+        };
+        moved("a byte of the compiler", &|| {
+            fs::write(tree.join("lib/librustc_driver.so"), b"the compilex").unwrap()
+        });
+        moved("the bytes behind a link", &|| {
+            fs::write(outside.join("libLLVM.so"), b"LLVM").unwrap()
+        });
+        moved("a name", &|| {
+            fs::rename(tree.join("bin-rustc"), tree.join("bin-rustd")).unwrap()
+        });
+        moved("an empty file", &|| {
+            fs::write(tree.join("lib/empty"), b"").unwrap()
+        });
+        moved("a link's target", &|| {
+            fs::remove_file(tree.join("lib/libLLVM.so")).unwrap();
+            symlink(tree.join("lib/empty"), tree.join("lib/libLLVM.so")).unwrap();
+        });
+        let _ = fs::remove_dir_all(&base);
+    }
+
     #[test]
     fn a_droop_observation_with_no_device_witness_says_so() {
         let reset = |released| Record::ResetRendered {

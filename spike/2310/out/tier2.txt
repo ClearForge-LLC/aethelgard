@@ -1,0 +1,13 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p1179280-i194086933.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 96.22s
+ANSWER 2100: m1 wfi: exit=Some(1) wall_s=2.98 verdict={"analog":[{"bus":"SENSORS","ceiling_ns":300,"complete":true,"deck_hz":400000,"declared_hz":400000,"exceeds":false,"kind":"analog.rise_time_computed","method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.40139798114484,"source":"ngspice"},{"bus":"SENSORS","ceiling_ns":300,"complete":true,"deck_hz":400000,"declared_hz":400
+ANSWER 2100: m1 wfi, no boot word: exit=Some(1) wall_s=3.10 verdict={"analog":[{"bus":"SENSORS","ceiling_ns":300,"complete":true,"deck_hz":400000,"declared_hz":400000,"exceeds":false,"kind":"analog.rise_time_computed","method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.40139798114484,"source":"ngspice"},{"bus":"SENSORS","ceiling_ns":300,"complete":true,"deck_hz":400000,"de
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 88 filtered out; finished in 299.35s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 24 filtered out; finished in 262.16s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 386.49s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+peak=6874542080
+EXIT 0

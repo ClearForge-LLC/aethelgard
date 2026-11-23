@@ -283,17 +283,7 @@ pub(crate) fn behind(
 ) -> Result<BTreeMap<String, Behind>, EmitError> {
     let mut out = BTreeMap::new();
     for c in &p.crossings {
-        let devices: Vec<_> = spi.iter().filter(|d| d.bus == c.bus).collect();
-        let [device] = devices.as_slice() else {
-            return Err(refuse(
-                &c.reference,
-                format!(
-                    "bus `{}` has {} devices, and one translator carries one chip select",
-                    c.bus,
-                    devices.len()
-                ),
-            ));
-        };
+        let device = device_on(&c.reference, &c.bus, spi)?;
         let mut nets = Behind::new();
         for (line, name) in lines(&c.reference, &c.part)? {
             let net = b.own_net(format!("{}_{name}", c.reference))?;
@@ -304,7 +294,33 @@ pub(crate) fn behind(
     Ok(out)
 }
 
+/// The one SPI device on a crossing's bus. belt-and-suspenders: `validate`
+/// refuses a crossing whose bus has not exactly one device
+/// (`CrossingInvalid`), but `Drawing::of` and `decoupling_picofarads` draw
+/// without it, so the emitter refuses one too (`AET-WO-1322`, `1208` F3).
+/// [`behind`] and [`crossing`] both take the device from here.
+fn device_on<'s>(
+    reference: &str,
+    bus: &str,
+    spi: &'s [SpiDevice],
+) -> Result<&'s SpiDevice, EmitError> {
+    let devices: Vec<_> = spi.iter().filter(|d| d.bus == bus).collect();
+    match devices.as_slice() {
+        [device] => Ok(device),
+        _ => Err(refuse(
+            reference,
+            format!(
+                "bus `{bus}` has {} devices, and one translator carries one chip select",
+                devices.len()
+            ),
+        )),
+    }
+}
+
 /// Each line a translator carries, with the name of its B-side pin.
+/// belt-and-suspenders: `validate` refuses a crossing whose part is not a
+/// translator with three A-to-B channels and one B-to-A (`CrossingInvalid`);
+/// a library caller that draws without it is refused here (`AET-WO-1322`).
 fn lines(reference: &str, part: &str) -> Result<Vec<(Line, String)>, EmitError> {
     let Kind::Translator(t) = &row(reference, part)?.kind else {
         return Err(refuse(reference, format!("`{part}` is not a translator")));
@@ -746,15 +762,14 @@ fn crossing(
 ) -> Result<(), EmitError> {
     let spec = b.spec;
     let r = row(&c.reference, &c.part)?;
+    let device = device_on(&c.reference, &c.bus, spi)?;
+    // `design` drew every SPI device on its declared bus before the power
+    // tree, refusing one whose bus is not declared, so this finds it.
     let bus = spec
         .spi_buses
         .iter()
         .find(|x| x.id == c.bus)
-        .ok_or_else(|| refuse(&c.reference, format!("no SPI bus `{}`", c.bus)))?;
-    let device = spi
-        .iter()
-        .find(|d| d.bus == c.bus)
-        .ok_or_else(|| refuse(&c.reference, format!("bus `{}` has no device", c.bus)))?;
+        .ok_or_else(|| EmitError::Internal(format!("{}: no SPI bus `{}`", c.reference, c.bus)))?;
     let b_nets = behind
         .get(&device.reference)
         .ok_or_else(|| EmitError::Internal(format!("{}: no B-side nets", c.reference)))?;
@@ -784,11 +799,13 @@ fn crossing(
         Line::Miso => bus.miso.net.clone(),
         Line::Cs => device.cs.net.clone(),
     };
+    // [`behind`] read every crossing's lines first, refusing a row that is
+    // not a translator.
     let Kind::Translator(t) = &r.kind else {
-        return Err(refuse(
-            &c.reference,
-            format!("`{}` is not a translator", c.part),
-        ));
+        return Err(EmitError::Internal(format!(
+            "{}: `{}` is not a translator",
+            c.reference, c.part
+        )));
     };
     let sym = crate::library::symbol(r.symbol.as_str())?;
     let pins = super::pins(&sym).map_err(EmitError::Internal)?;
@@ -838,7 +855,7 @@ fn crossing(
 
 #[cfg(test)]
 mod tests {
-    use super::{BULK_NEGATIVE, BULK_POSITIVE, bulk, farads, henries};
+    use super::{BULK_NEGATIVE, BULK_POSITIVE, bulk, device_on, farads, henries, lines};
     use aethelgard_ir::power::{HotPlug, Side};
     use aethelgard_ir::power_parts::{POWER_PARTS_JSON, PowerPartsTable, parse_power_parts};
 
@@ -962,6 +979,51 @@ mod tests {
         let v = silk.iter().find(|s| s.0.0 == s.1.0).unwrap();
         assert!(d2(mid(h), mid(v)) < 1e-6, "{h:?} {v:?}");
         assert!(nearer(mid(h), &pads), "footprint {pads:?} {h:?}");
+    }
+
+    /// `AET-WO-1322` (1): the crossing's re-checks of what `validate`
+    /// refuses (`CrossingInvalid`), reached directly, as `Drawing::of`
+    /// reaches them: a bus with no device, and a part that is not a
+    /// translator.
+    #[test]
+    fn a_crossing_is_refused_without_one_device_or_a_translator() {
+        let on = |reference: &str, bus: &str| aethelgard_ir::SpiDevice {
+            reference: reference.into(),
+            part: "BMP581".into(),
+            supply: "VDD_3V3".into(),
+            bus: bus.into(),
+            cs: aethelgard_ir::Signal {
+                net: format!("{reference}_CS"),
+                pin: None,
+            },
+            pin_capacitance: None,
+            orientation: None,
+        };
+        let one = [on("U2", "spi1"), on("U3", "spi2")];
+        assert_eq!(device_on("U9", "spi1", &one).unwrap().reference, "U2");
+        let two = [on("U2", "spi1"), on("U3", "spi1")];
+        for (got, want) in [
+            (
+                device_on("U9", "spi1", &two).map(|_| ()),
+                "bus `spi1` has 2 devices",
+            ),
+            (
+                device_on("U9", "spi1", &[]).map(|_| ()),
+                "bus `spi1` has 0 devices",
+            ),
+            (
+                lines("U9", "GCM188R71H104KA57").map(|_| ()),
+                "`GCM188R71H104KA57` is not a translator",
+            ),
+        ] {
+            match got {
+                Err(super::EmitError::PowerNotDrawable { reference, why }) => {
+                    assert_eq!(reference, "U9");
+                    assert!(why.contains(want), "{why}");
+                }
+                other => panic!("{want}: {other:?}"),
+            }
+        }
     }
 
     #[test]

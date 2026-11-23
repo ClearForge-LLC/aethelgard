@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 6,
   "name": "motors-dshot600-droop",
   "base": "../../crates/aethelgard-cli/tests/fixtures/motors-dshot600.json",
   "expect": "pass",
@@ -18,13 +18,12 @@
       "droop": {
         "domain": "VDD_3V3",
         "floor_millivolts": 2400,
-        "start_ns": 100000,
+        "from_boot_word_ns": -3523630,
         "fall_ns": 20000,
         "hold_ns": 200000,
         "rise_ns": 20000,
         "source_milliohms": 500,
-        "load_milliamps": 100,
-        "bor_level": 3
+        "load_milliamps": 100
       }
     }
   ]

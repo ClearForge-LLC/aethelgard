@@ -105,7 +105,20 @@ fn version_names_the_banner_the_library_printed() {
     assert_eq!(identity["bridge"], "aethelgard-bridge", "{stdout}");
     assert_eq!(identity["ngspice_banner"], "** ngspice-44.2 shared library");
     assert_eq!(identity["ngspice"], "44.2");
-    assert_eq!(identity.as_object().unwrap().len(), 5, "{stdout}");
+    // `AET-WO-2310`: the file the loader mapped the library from, canonical.
+    let library = std::path::Path::new(identity["ngspice_library"].as_str().unwrap());
+    assert!(
+        library.is_absolute()
+            && std::fs::canonicalize(library).unwrap() == library
+            && library
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .starts_with("libngspice.so"),
+        "{stdout}"
+    );
+    assert_eq!(identity.as_object().unwrap().len(), 6, "{stdout}");
     let (code, stdout) = run(&["--version", "x"]);
     assert_eq!(code, Some(2), "{stdout}");
     let mut lines = stdout

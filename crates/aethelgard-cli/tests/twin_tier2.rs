@@ -2738,20 +2738,61 @@ fn m1_a_core_that_slept_without_its_boot_word_is_cpu_halted() {
     let _ = fs::remove_dir_all(&archive);
 }
 
-/// Adversarial pass 1, A8: the same sleep with the boot word written. The
-/// boot word set while the core executed fewer instructions than the run
-/// holds is exit 5 by `AET-WO-2100`'s ruled A10, unchanged; no line of the
-/// CLI's hooks is the cause any more.
+/// Adversarial pass 1, A8: the same sleep with the boot word written. It
+/// was exit 5 by `AET-WO-2100`'s ruled A10, so a firmware could abort a
+/// campaign; `AET-WO-2310` overturns A10 on purpose (`2302` Q1): the boot
+/// word set while the core executed fewer instructions than the run holds is
+/// that run's finding, `cpu_halted`, and no `boot_word_missing`. A campaign
+/// runs on past it to its next scenario, replay accepts the run (its
+/// `cpu_halted` exactly what kind 10's counts show), and `attribute` names it.
 #[test]
-fn m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement() {
-    let (code, v) = dshot_mutant("m1-wfi", |_| {}, &[(START, &wfi_before_start())]);
-    assert_eq!(code, Some(5), "{v}");
-    let m = v["error"]["message"].as_str().unwrap();
-    assert!(
-        m.starts_with("the boot word is set but the core executed"),
-        "{m}"
+fn m1_a_core_that_slept_and_wrote_its_boot_word_is_cpu_halted() {
+    let body = wfi_before_start();
+    let (platform, spec, elf) = motor_board(
+        "motors-dshot600",
+        "m1-wfi",
+        |_| {},
+        |d| {
+            edit(d, "src/main.rs", "#[panic_handler]", RAW_ADV);
+            edit(d, "src/main.rs", START, &body);
+        },
     );
-    assert!(!m.contains("AETHELGARD-"), "{m}");
+    let (code, v) = boot_on("m1 wfi", &platform, &spec, &elf, "100ms");
+    assert_eq!(code, Some(1), "{v}");
+    let k = kinds(&v);
+    assert!(
+        k.contains(&"cpu_halted") && !k.contains(&"boot_word_missing"),
+        "{v}"
+    );
+    let (archive, code, lines) = run_campaign(
+        "m1-wfi",
+        &[
+            "scenarios/motors/dshot600.json",
+            "scenarios/motors/dshot600-droop.json",
+        ],
+        &elf,
+    );
+    assert_eq!(code, Some(1), "{lines:?}");
+    assert_eq!(
+        lines.len(),
+        3,
+        "both scenarios ran, then the summary: {lines:?}"
+    );
+    for line in &lines[..2] {
+        let findings: Vec<&str> = line["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f.as_str().unwrap())
+            .collect();
+        assert!(findings.contains(&"cpu_halted"), "{line}");
+        let run = line["run"].as_str().unwrap();
+        let (code, replayed) = aethelgard(&["replay", "--archive", run]);
+        assert_eq!(code, Some(0), "{replayed}");
+        let (code, attributed) = aethelgard(&["attribute", "--archive", run]);
+        assert_eq!(code, Some(0), "{attributed}");
+    }
+    let _ = fs::remove_dir_all(&archive);
 }
 
 /// `AET-WO-4300a` §5 item 1, through Renode: PA8..PA11 driven by `BSRR`
@@ -2990,7 +3031,8 @@ fn the_dshot600_fixture_s_campaign_passes_inside_its_window() {
         assert_eq!(line["verdict"], "pass", "{line}");
         assert_eq!(line["matched"], true, "{line}");
         assert_eq!(line["virtual_time_ns"], 100_000_000, "{line}");
-        assert_eq!(line["window"], "MAX_VIRTUAL_NS", "{line}");
+        // `AET-WO-2310`: the line names no window, which was always this.
+        assert!(line.get("window").is_none(), "{line}");
         let run = line["run"].as_str().unwrap();
         let records = aethelgard_chaos::replay_dir(Path::new(run))
             .unwrap()

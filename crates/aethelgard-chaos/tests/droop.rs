@@ -5,12 +5,13 @@
 //! names the reason it expects.
 
 use aethelgard_chaos::campaign::{
-    BELOW_TOLERANCE_FINDING, RESET_FINDING, Scenario, UNRECOVERED_FINDING, check_droop, check_run,
-    droop_end_ns, rail_levels, tau_ns,
+    BELOW_TOLERANCE_FINDING, PLANTED_CHANGES, PLANTED_NEEDS_VERSION, RESET_FINDING, Scenario,
+    UNRECOVERED_FINDING, check_droop, check_droop_shape, check_run, droop_end_ns, rail_levels,
+    tau_ns,
 };
 use aethelgard_chaos::cbor::Value;
 use aethelgard_chaos::power::{self, Crossing};
-use aethelgard_chaos::record::{Droop, Override, Reading, Record};
+use aethelgard_chaos::record::{Droop, Override, RailDroop, Reading, Record, resolve_instant};
 use serde_json::{Value as J, json};
 
 // ---- the reference droop (`droop-bor3`, measured in the pinned image) ----
@@ -20,17 +21,37 @@ const TOLERANCE: u32 = 50;
 const DECOUPLING_PF: u64 = 400_000;
 const SPAN_NS: u64 = 10_000_000;
 
+/// The reference droop's instant from reset, as `droop-bor3` measured it,
+/// and its BOR level, the specification's (`AET-WO-2310`: both are the
+/// rendered rail's, kind 16's, no longer the scenario's).
+const START_NS: u64 = 1_000_000;
+const BOR_LEVEL: u8 = 3;
+/// The scenario's offset that places [`START_NS`] from the reference boot
+/// word, [`BOOT_WORD_NS`]: 1,000,000 − 3,627,610, before the word.
+const OFFSET_NS: i64 = -2_627_610;
+
+/// The scenario's droop (scenario 6): its instant signed from the
+/// undisturbed boot word, no BOR level.
 fn reference() -> Droop {
     Droop {
         domain: "VDD_3V3".into(),
         floor_millivolts: 2400,
-        start_ns: 1_000_000,
+        from_boot_word_ns: OFFSET_NS,
         fall_ns: 20_000,
         hold_ns: 200_000,
         rise_ns: 20_000,
         source_milliohms: 500,
         load_milliamps: 100,
-        bor_level: 3,
+    }
+}
+
+/// The reference droop as the run rendered it (kind 16): placed at
+/// [`START_NS`] from the boot word, at the specification's BOR level 3.
+fn reference_rail() -> RailDroop {
+    RailDroop {
+        droop: reference(),
+        start_ns: START_NS,
+        bor_level: BOR_LEVEL,
     }
 }
 
@@ -38,13 +59,12 @@ fn droop_json() -> J {
     json!({
         "domain": "VDD_3V3",
         "floor_millivolts": 2400,
-        "start_ns": 1_000_000,
+        "from_boot_word_ns": OFFSET_NS,
         "fall_ns": 20_000,
         "hold_ns": 200_000,
         "rise_ns": 20_000,
         "source_milliohms": 500,
         "load_milliamps": 100,
-        "bor_level": 3,
     })
 }
 
@@ -67,8 +87,9 @@ fn parse(v: &J) -> Result<Scenario, aethelgard_chaos::campaign::ScenarioError> {
     Scenario::parse(&serde_json::to_vec(v).unwrap())
 }
 
+/// A droop is read only at scenario 6 (`AET-WO-2310`).
 fn with_droop(d: J) -> J {
-    scenario_json(2, json!([{ "droop": d }]), None)
+    scenario_json(6, json!([{ "droop": d }]), None)
 }
 
 fn droop_refusal(d: J) -> &'static str {
@@ -77,9 +98,10 @@ fn droop_refusal(d: J) -> &'static str {
 
 // ---- 1. parsing ----
 
-/// `AET-WO-2301` §1: a valid version 2 droop scenario parses to the override.
+/// `AET-WO-2301` §1: a valid droop scenario parses to the override; since
+/// `AET-WO-2310` a droop is read at version 6 only.
 #[test]
-fn a_valid_v2_droop_scenario_parses_with_every_field() {
+fn a_valid_v6_droop_scenario_parses_with_every_field() {
     let s = parse(&with_droop(droop_json())).unwrap();
     assert_eq!(s.overrides, vec![Override::Droop(reference())]);
     assert_eq!(s.droop(), Some(&reference()));
@@ -107,10 +129,80 @@ fn expect_counts_is_parsed_and_sorted_whatever_the_file_order() {
     );
 }
 
+/// A droop below version 2 was a `SchemaViolation`; since `AET-WO-2310` a
+/// droop below version 6 is refused first, by `PlantedEventNeedsVersion6`.
 #[test]
 fn a_droop_under_schema_version_1_is_refused() {
     let v = scenario_json(1, json!([{ "droop": droop_json() }]), None);
-    assert_eq!(parse(&v).unwrap_err().kind, "SchemaViolation");
+    assert_eq!(parse(&v).unwrap_err().kind, PLANTED_NEEDS_VERSION);
+}
+
+/// `AET-WO-2310`: a droop at versions 2 to 5, in either key form, is refused
+/// by name, and the refusal says what changed.
+#[test]
+fn a_droop_under_schema_versions_2_to_5_needs_version_6() {
+    let mut old = droop_json();
+    let o = old.as_object_mut().unwrap();
+    o.remove("from_boot_word_ns");
+    o.insert("start_ns".into(), json!(START_NS));
+    o.insert("bor_level".into(), json!(BOR_LEVEL));
+    for version in 2..=5 {
+        for d in [droop_json(), old.clone()] {
+            let v = scenario_json(version, json!([{ "droop": d }]), None);
+            let e = parse(&v).unwrap_err();
+            assert_eq!(e.kind, PLANTED_NEEDS_VERSION, "{version}: {e:?}");
+            assert!(e.message.contains(PLANTED_CHANGES), "{e:?}");
+            assert!(
+                e.message
+                    .contains(&format!("schema_version {version} reads no droop")),
+                "{e:?}"
+            );
+        }
+    }
+}
+
+/// `AET-WO-2310`: at version 6 a droop states neither `start_ns` nor
+/// `bor_level`; either is an unknown key.
+#[test]
+fn a_v6_droop_with_start_ns_or_bor_level_is_refused() {
+    for (key, value) in [
+        ("start_ns", json!(START_NS)),
+        ("bor_level", json!(BOR_LEVEL)),
+    ] {
+        let mut d = droop_json();
+        d[key] = value.clone();
+        let e = parse(&with_droop(d)).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{key}");
+        assert!(e.message.contains(key), "{key}: {e:?}");
+        // Nor in place of the offset.
+        let mut d = droop_json();
+        d.as_object_mut().unwrap().remove("from_boot_word_ns");
+        d[key] = value;
+        assert_eq!(droop_refusal(d), "SchemaViolation", "{key} for the offset");
+    }
+}
+
+/// `AET-WO-2310`: the offset is signed, a multiple of 10, within ±100 ms of
+/// the boot word, judged before the boot from the offset alone.
+#[test]
+fn a_droop_offset_off_the_10_ns_grid_or_past_100_ms_is_refused_before_the_boot() {
+    for ok in [-100_000_000i64, -10, 0, 10, 100_000_000] {
+        let mut d = droop_json();
+        d["from_boot_word_ns"] = json!(ok);
+        let s = parse(&with_droop(d)).unwrap_or_else(|e| panic!("{ok}: {e:?}"));
+        assert_eq!(s.droop().map(|d| d.from_boot_word_ns), Some(ok));
+    }
+    for bad in [5i64, -5, 1, -2_627_615, 100_000_010, -100_000_010] {
+        let mut d = droop_json();
+        d["from_boot_word_ns"] = json!(bad);
+        let e = parse(&with_droop(d)).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{bad}");
+        assert!(
+            e.message
+                .contains("judged before the boot, from the offset alone"),
+            "{bad}: {e:?}"
+        );
+    }
 }
 
 #[test]
@@ -144,7 +236,7 @@ fn two_droop_overrides_are_refused_whatever_their_domains() {
     let mut other = droop_json();
     other["domain"] = json!("VDD_1V8");
     let v = scenario_json(
-        2,
+        6,
         json!([{ "droop": droop_json() }, { "droop": other }]),
         None,
     );
@@ -167,6 +259,8 @@ fn a_droop_missing_any_key_is_refused() {
     }
 }
 
+/// `-1` is refused for the signed offset too: off its 10 ns grid
+/// (`AET-WO-2310`; a negative multiple of 10 is a valid offset).
 #[test]
 fn a_droop_integer_that_is_a_float_or_negative_or_text_is_refused() {
     for key in droop_json().as_object().unwrap().keys() {
@@ -190,15 +284,15 @@ fn a_droop_integer_that_is_a_float_or_negative_or_text_is_refused() {
 /// `AET-WO-2301` §5.4: each bound is checked on its own, both ends.
 #[test]
 fn each_droop_bound_is_inclusive_and_one_outside_is_refused() {
-    let bounds: [(&str, u64, u64); 8] = [
+    // `start_ns` and `bor_level` are no longer keys (`AET-WO-2310`): the
+    // offset's bound is its own test, the BOR level the specification's.
+    let bounds: [(&str, u64, u64); 6] = [
         ("floor_millivolts", 1, 5_000),
-        ("start_ns", 1, 100_000_000),
         ("fall_ns", 1, 10_000_000),
         ("hold_ns", 1, 100_000_000),
         ("rise_ns", 1, 10_000_000),
         ("source_milliohms", 1, 1_000_000),
         ("load_milliamps", 0, 10_000),
-        ("bor_level", 0, 3),
     ];
     for (key, lo, hi) in bounds {
         for ok in [lo, hi] {
@@ -230,7 +324,7 @@ fn a_droop_mixed_with_another_override_key_is_refused() {
         for (k, v) in extra.as_object().unwrap() {
             o[k] = v.clone();
         }
-        let v = scenario_json(2, json!([o]), None);
+        let v = scenario_json(6, json!([o]), None);
         assert_eq!(parse(&v).unwrap_err().kind, "SchemaViolation", "{extra}");
     }
 }
@@ -248,36 +342,45 @@ fn a_droop_domain_must_be_1_to_64_printable_ascii_bytes() {
 }
 
 #[test]
-fn schema_version_six_is_unsupported_for_a_droop_too() {
-    let v = scenario_json(6, json!([{ "droop": droop_json() }]), None);
+fn schema_version_seven_is_unsupported_for_a_droop_too() {
+    let v = scenario_json(7, json!([{ "droop": droop_json() }]), None);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
 }
 
 // ---- 2. check_droop (ruled D3) ----
 
-fn check(d: &Droop, nominal: u32, pf: u64, span: u64) -> Result<(), String> {
-    check_droop(d, nominal, pf, span).map_err(|e| {
+/// The full rule, and (`AET-WO-2310`) its shape alone, which every refusal
+/// but the instant's shares: each refusal of a rendered rail other than past
+/// the span is `check_droop_shape`'s at the same level, word for word.
+fn check(d: &RailDroop, nominal: u32, pf: u64, span: u64) -> Result<(), String> {
+    let full = check_droop(d, nominal, pf, span).map_err(|e| {
         assert_eq!(e.kind, "DroopRefused");
-        assert_eq!(e.id.as_deref(), Some(d.domain.as_str()));
+        assert_eq!(e.id.as_deref(), Some(d.droop.domain.as_str()));
         e.message
-    })
+    });
+    let shape = check_droop_shape(&d.droop, d.bor_level, nominal, pf).map_err(|e| e.message);
+    match &full {
+        Err(m) if m.contains("past the boot's") => assert_eq!(shape, Ok(())),
+        _ => assert_eq!(shape, full),
+    }
+    full
 }
 
-fn refusal(d: &Droop, nominal: u32, pf: u64, span: u64) -> String {
+fn refusal(d: &RailDroop, nominal: u32, pf: u64, span: u64) -> String {
     check(d, nominal, pf, span).expect_err("must be refused")
 }
 
-fn with(f: impl FnOnce(&mut Droop)) -> Droop {
-    let mut d = reference();
+fn with(f: impl FnOnce(&mut RailDroop)) -> RailDroop {
+    let mut d = reference_rail();
     f(&mut d);
     d
 }
 
 /// A droop with no load, so the rail floor is the floor.
-fn unloaded(floor_millivolts: u32, bor_level: u8) -> Droop {
+fn unloaded(floor_millivolts: u32, bor_level: u8) -> RailDroop {
     with(|d| {
-        d.floor_millivolts = floor_millivolts;
-        d.load_milliamps = 0;
+        d.droop.floor_millivolts = floor_millivolts;
+        d.droop.load_milliamps = 0;
         d.bor_level = bor_level;
     })
 }
@@ -291,8 +394,8 @@ fn the_time_constant_and_rail_levels_of_the_reference_droop() {
         rail_levels(&reference(), NOMINAL_MV),
         Some((2_350_000, 3_250_000))
     );
-    let too_heavy = with(|d| d.load_milliamps = 10_000);
-    assert_eq!(rail_levels(&too_heavy, NOMINAL_MV), None);
+    let too_heavy = with(|d| d.droop.load_milliamps = 10_000);
+    assert_eq!(rail_levels(&too_heavy.droop, NOMINAL_MV), None);
 }
 
 #[test]
@@ -300,7 +403,7 @@ fn the_reference_droop_passes_the_d3_rule_even_with_its_rail_floor_in_vbor2s_ban
     // The rail floor, 2.35 V, is inside VBOR2's falling band [2.25, 2.37] V,
     // but VBOR2 is not active at BOR level 3.
     assert_eq!(
-        check(&reference(), NOMINAL_MV, DECOUPLING_PF, SPAN_NS),
+        check(&reference_rail(), NOMINAL_MV, DECOUPLING_PF, SPAN_NS),
         Ok(())
     );
 }
@@ -308,31 +411,31 @@ fn the_reference_droop_passes_the_d3_rule_even_with_its_rail_floor_in_vbor2s_ban
 #[test]
 fn a_floor_not_below_the_nominal_is_refused() {
     for floor in [NOMINAL_MV, NOMINAL_MV + 1] {
-        let d = with(|d| d.floor_millivolts = floor);
+        let d = with(|d| d.droop.floor_millivolts = floor);
         assert!(refusal(&d, NOMINAL_MV, DECOUPLING_PF, SPAN_NS).contains("not below"));
     }
 }
 
 #[test]
 fn a_domain_with_no_decoupling_is_refused() {
-    let m = refusal(&reference(), NOMINAL_MV, 0, SPAN_NS);
+    let m = refusal(&reference_rail(), NOMINAL_MV, 0, SPAN_NS);
     assert!(m.contains("no decoupling"), "{m}");
 }
 
 #[test]
 fn a_load_whose_drop_exceeds_the_floor_is_refused() {
     // 10 A through 500 mΩ is 5 V.
-    let d = with(|d| d.load_milliamps = 10_000);
+    let d = with(|d| d.droop.load_milliamps = 10_000);
     let m = refusal(&d, NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
     assert!(m.contains("I·R drop reaches the floor"), "{m}");
 }
 
 #[test]
 fn a_hold_shorter_than_ten_time_constants_is_refused_and_exactly_ten_accepted() {
-    let short = with(|d| d.hold_ns = 1_999);
+    let short = with(|d| d.droop.hold_ns = 1_999);
     let m = refusal(&short, NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
     assert!(m.contains("less than 10 τ"), "{m}");
-    let exact = with(|d| d.hold_ns = 2_000);
+    let exact = with(|d| d.droop.hold_ns = 2_000);
     assert_eq!(check(&exact, NOMINAL_MV, DECOUPLING_PF, SPAN_NS), Ok(()));
 }
 
@@ -363,20 +466,20 @@ fn the_rail_floor_is_the_floor_less_the_loads_drop() {
     // 2590 mV, still inside; 2840 mV less 50 mV is 2790 mV, above VBOR3's
     // whole hysteresis region.
     let m = refusal(
-        &with(|d| d.floor_millivolts = 2640),
+        &with(|d| d.droop.floor_millivolts = 2640),
         NOMINAL_MV,
         DECOUPLING_PF,
         SPAN_NS,
     );
     assert!(m.contains("2590000 µV"), "{m}");
-    let above = with(|d| d.floor_millivolts = 2840);
+    let above = with(|d| d.droop.floor_millivolts = 2840);
     assert_eq!(check(&above, NOMINAL_MV, DECOUPLING_PF, SPAN_NS), Ok(()));
 }
 
 #[test]
 fn a_resting_rail_not_above_an_active_falling_band_is_refused() {
     // Nominal 2650 mV less 50 mV is 2600 mV, inside VBOR3's falling band.
-    let m = refusal(&reference(), 2650, DECOUPLING_PF, SPAN_NS);
+    let m = refusal(&reference_rail(), 2650, DECOUPLING_PF, SPAN_NS);
     assert!(m.contains("not above VBOR3's falling band"), "{m}");
     // The same rest is above BOR0 alone.
     let bor0 = with(|d| d.bor_level = 0);
@@ -387,10 +490,13 @@ fn a_resting_rail_not_above_an_active_falling_band_is_refused() {
 fn a_crossed_threshold_whose_rising_band_holds_the_resting_rail_is_refused() {
     // Nominal 2780 mV less 50 mV is 2730 mV: above VBOR3's falling band, inside
     // its rising band [2630, 2780] mV, so the release is not stated.
-    let m = refusal(&reference(), 2780, DECOUPLING_PF, SPAN_NS);
+    let m = refusal(&reference_rail(), 2780, DECOUPLING_PF, SPAN_NS);
     assert!(m.contains("not above VBOR3's rising band"), "{m}");
     // Above the rising band it passes.
-    assert_eq!(check(&reference(), 2840, DECOUPLING_PF, SPAN_NS), Ok(()));
+    assert_eq!(
+        check(&reference_rail(), 2840, DECOUPLING_PF, SPAN_NS),
+        Ok(())
+    );
 }
 
 /// `AET-WO-2301` adversarial F4: a floor between the falling band and the
@@ -406,7 +512,7 @@ fn a_floor_between_the_falling_band_and_the_rising_band_is_refused() {
 
 #[test]
 fn a_droop_whose_effects_run_past_the_span_is_refused() {
-    let d = reference();
+    let d = reference_rail();
     // 1,000,000 + 20,000 + 200,000 + 20,000 + 10 τ (2,000) + tRSTTEMPO
     // (377,000) + nudge (10) + two grid steps (20); the recovery bound is
     // checked once the boot has measured it (`AET-WO-2305` §1.2).
@@ -415,6 +521,17 @@ fn a_droop_whose_effects_run_past_the_span_is_refused() {
     assert_eq!(check(&d, NOMINAL_MV, DECOUPLING_PF, end), Ok(()));
     let m = refusal(&d, NOMINAL_MV, DECOUPLING_PF, end - 1);
     assert!(m.contains("past the boot's"), "{m}");
+    // The instant is the rendered rail's (`AET-WO-2310`): the end moves with
+    // it, whatever the scenario's offset, and the refusal names it.
+    let later = with(|d| d.start_ns += 10);
+    assert_eq!(droop_end_ns(&later, DECOUPLING_PF), end + 10);
+    let m = refusal(&later, NOMINAL_MV, DECOUPLING_PF, end);
+    assert!(
+        m.contains("its instant 1000010 ns, placed from the undisturbed boot word"),
+        "{m}"
+    );
+    let moved = with(|d| d.droop.from_boot_word_ns += 10);
+    assert_eq!(droop_end_ns(&moved, DECOUPLING_PF), end);
 }
 
 #[test]
@@ -452,10 +569,12 @@ fn reading(address: u32, mask: u32, expected: u32, observed: Option<u32>) -> Rea
     }
 }
 
-/// Sentinel-01's undisturbed boot word, measured (`AET-WO-2305` §1.1), its
-/// bound with the one-quantum margin, and the reference release's probe:
-/// 1,227,980 + the 10 ns nudge + 125,700.
-const BOOT_WORD_NS: u64 = 25_700;
+/// The reference undisturbed boot word, sentinel-01-minimal's as measured
+/// for `AET-WO-2310` (the value the work order states), its bound with the
+/// one-quantum margin, and the reference release's probe: 1,227,980 + the
+/// 10 ns nudge + 3,727,610. The word places the droop (kind 16's 1,000,000 ns
+/// is the word plus the scenario's −2,627,610) and bounds the probe both.
+const BOOT_WORD_NS: u64 = 3_627_610;
 const BOUND_NS: u64 = BOOT_WORD_NS + power::RECOVERY_MARGIN_NS;
 const PROBE_NS: u64 = 1_227_980 + power::NUDGE_NS + BOUND_NS;
 
@@ -484,7 +603,7 @@ fn observation(at_ns: u64, status: u32) -> Record {
 
 fn declared() -> Record {
     Record::RailDeclared {
-        droop: reference(),
+        droop: reference_rail(),
         nominal_millivolts: NOMINAL_MV,
         tolerance_permille: TOLERANCE,
         decoupling_picofarads: DECOUPLING_PF,
@@ -607,8 +726,21 @@ fn a_new_kind_with_a_short_or_long_or_mistyped_payload_is_not_a_record() {
     assert_eq!(Record::from_fields(21, &[]), None);
 }
 
+/// The BOR level is kind 16's since `AET-WO-2310`, no longer the
+/// override's: a u8 overflow there is not a record, and an override with the
+/// old tenth field, or missing one, is not an override.
 #[test]
 fn a_droop_override_with_a_bad_bor_level_or_a_missing_field_is_not_an_override() {
+    // The rendered rail's fields: the droop's 8, then start_ns, bor_level.
+    let rail = declared().fields();
+    let bor = 9;
+    assert_eq!(rail[bor], Value::Uint(u64::from(BOR_LEVEL)));
+    let mut bad = rail.clone();
+    bad[bor] = Value::Uint(256);
+    assert_eq!(Record::from_fields(16, &bad), None, "a u8 overflow");
+    // The offset is signed on the wire: the reference's is a CBOR negative.
+    assert_eq!(rail[2], Value::from_i64(OFFSET_NS));
+    assert!(matches!(rail[2], Value::Neg(_)), "{:?}", rail[2]);
     let r = droop_records().remove(0);
     let Value::Array(overrides) = r.fields().remove(4) else {
         panic!("the overrides are the fifth field")
@@ -616,11 +748,12 @@ fn a_droop_override_with_a_bad_bor_level_or_a_missing_field_is_not_an_override()
     let Value::Array(mut droop) = overrides[0].clone() else {
         panic!()
     };
-    let bor = droop.len() - 1;
-    droop[bor] = Value::Uint(256);
     let mut fields = r.fields();
-    fields[4] = Value::Array(vec![Value::Array(droop.clone())]);
-    assert_eq!(Record::from_fields(5, &fields), None, "a u8 overflow");
+    // A version-18 override's trailing bor_level is one field too many.
+    let mut old = droop.clone();
+    old.push(Value::Uint(3));
+    fields[4] = Value::Array(vec![Value::Array(old)]);
+    assert_eq!(Record::from_fields(5, &fields), None, "the old bor_level");
     droop.pop();
     fields[4] = Value::Array(vec![Value::Array(droop)]);
     assert_eq!(Record::from_fields(5, &fields), None, "a missing field");
@@ -704,13 +837,13 @@ fn expected_counts_must_be_sorted_unique_non_empty_names() {
 
 #[test]
 fn a_declared_rail_needs_a_floor_below_its_nominal_and_decoupling_and_a_domain_name() {
-    let rail = |f: &dyn Fn(&mut Droop), nominal: u32, pf: u64| Record::RailDeclared {
+    let rail = |f: &dyn Fn(&mut RailDroop), nominal: u32, pf: u64| Record::RailDeclared {
         droop: with(f),
         nominal_millivolts: nominal,
         tolerance_permille: TOLERANCE,
         decoupling_picofarads: pf,
     };
-    let keep: &dyn Fn(&mut Droop) = &|_| {};
+    let keep: &dyn Fn(&mut RailDroop) = &|_| {};
     assert_eq!(rail(keep, NOMINAL_MV, DECOUPLING_PF).check(), Ok(()));
     let floor = Err("a declared rail's floor is not below its nominal, or it has no decoupling");
     assert_eq!(
@@ -725,7 +858,12 @@ fn a_declared_rail_needs_a_floor_below_its_nominal_and_decoupling_and_a_domain_n
     );
     assert_eq!(rail(keep, NOMINAL_MV, 0).check(), floor, "no decoupling");
     assert_eq!(
-        rail(&|d| d.domain = "bad name".into(), NOMINAL_MV, DECOUPLING_PF).check(),
+        rail(
+            &|d| d.droop.domain = "bad name".into(),
+            NOMINAL_MV,
+            DECOUPLING_PF
+        )
+        .check(),
         Err("a droop's domain is not 1 to 64 printable ASCII bytes")
     );
 }
@@ -774,11 +912,13 @@ fn boot(instructions_observed: Option<u64>) -> Record {
         instructions_observed,
         pc: (!none).then_some(0),
         executable: vec![(0, 0x1000_0000)],
+        // BOR level 3 under BOR_LEV's mask: the level kind 16 states
+        // (`AET-WO-2310`).
         brown_out: aethelgard_chaos::record::Reading {
             address: 0x2000_0004,
             mask: 0xC,
-            expected: 0,
-            observed: Some(0),
+            expected: 0xC,
+            observed: Some(0xC),
         },
         flash_access: Some(Vec::new()),
     }
@@ -916,6 +1056,9 @@ fn a_droop_record_with_no_droop_override_is_refused() {
         panic!()
     };
     overrides.clear();
+    // Its kind 32 goes with the override (`AET-WO-2310`: a run with none
+    // planted holds none; that refusal is its own test).
+    r.remove(index(&r, |x| matches!(x, Record::RecoveryBound { .. })));
     assert_eq!(refused(&r), MSG_PAIR);
     // And with the declared rail gone too, the crossings alone are refused.
     r.remove(index(&r, |x| matches!(x, Record::RailDeclared { .. })));
@@ -970,7 +1113,7 @@ fn a_declared_rail_that_differs_from_the_override_is_refused() {
     let Record::RailDeclared { droop, .. } = &mut r[3] else {
         panic!()
     };
-    droop.load_milliamps = 101;
+    droop.droop.load_milliamps = 101;
     assert_eq!(refused(&r), MSG_RAIL);
 }
 
@@ -1171,8 +1314,17 @@ fn a_second_observation_of_one_release_is_refused() {
 
 #[test]
 fn an_observation_at_the_wrong_time_is_refused() {
-    // The probe is at the release plus the recovery bound: 1,327,980 ns.
-    for at in [1_327_970, 1_327_990, 1_227_980, 2_000_000] {
+    // The probe is at the release, the nudge and the recovery bound:
+    // 4,955,600 ns (`AET-WO-2310`'s boot word; the first two are 2305's).
+    assert_eq!(PROBE_NS, 4_955_600);
+    for at in [
+        1_327_970,
+        1_327_990,
+        1_227_980,
+        2_000_000,
+        PROBE_NS - 10,
+        PROBE_NS + 10,
+    ] {
         let mut r = run();
         let k = index(&r, is_observation);
         r[k] = observation(at, 0x22020000);
@@ -1439,6 +1591,136 @@ fn a_killed_boot_that_holds_an_observation_is_refused() {
         ],
     );
     assert_eq!(refused(&r), MSG_NO_READ);
+}
+
+// ---- 4b. the planted instant and level (`AET-WO-2310`) ----
+
+const MSG_ONE_BOUND: &str =
+    "a planted run does not hold exactly one kind 32, or a run with none planted holds one";
+const MSG_NO_WORD: &str = "a planted run's reference holds no undisturbed boot word";
+const MSG_INSTANT: &str =
+    "the declared rail's instant is not the undisturbed boot word plus the scenario's offset";
+const MSG_BOR: &str = "the declared rail's BOR level is not the one kind 10 declares";
+
+fn is_bound(r: &Record) -> bool {
+    matches!(r, Record::RecoveryBound { .. })
+}
+
+#[test]
+fn the_reference_rails_instant_is_the_boot_word_plus_the_offset() {
+    assert_eq!(resolve_instant(BOOT_WORD_NS, OFFSET_NS), Some(START_NS));
+    assert_eq!(
+        aethelgard_chaos::campaign::declared_bor_level(&reading(0, 0xC, 0xC, None)),
+        Some(BOR_LEVEL)
+    );
+}
+
+/// (a) A droop's run holds exactly one kind 32, and it holds the word.
+#[test]
+fn a_droop_run_without_its_kind_32_or_with_no_word_or_two_is_refused() {
+    let mut r = run();
+    r.remove(index(&r, is_bound));
+    assert_eq!(refused(&r), MSG_ONE_BOUND, "no kind 32");
+
+    let mut r = run();
+    let k = index(&r, is_bound);
+    r[k] = Record::RecoveryBound {
+        boot_word_ns: None,
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: None,
+    };
+    assert_eq!(r[k].check(), Ok(()));
+    assert_eq!(refused(&r), MSG_NO_WORD, "kind 32 with no word");
+
+    let mut r = run();
+    let k = index(&r, is_bound);
+    r.insert(k, bound());
+    assert_eq!(refused(&r), MSG_ONE_BOUND, "two kind 32");
+}
+
+/// (b) Kind 16's instant is the word plus the scenario's offset, to the ns.
+#[test]
+fn a_declared_rails_instant_10_ns_off_the_word_plus_the_offset_is_refused() {
+    for delta in [10i64, -10] {
+        let mut r = run();
+        let k = index(&r, |x| matches!(x, Record::RailDeclared { .. }));
+        let Record::RailDeclared { droop, .. } = &mut r[k] else {
+            panic!()
+        };
+        droop.start_ns = droop.start_ns.checked_add_signed(delta).unwrap();
+        assert_eq!(refused(&r), MSG_INSTANT, "{delta}");
+    }
+    // The scenario's offset moved instead, both records agreeing: refused too.
+    let mut r = run();
+    for x in &mut r {
+        match x {
+            Record::Scenario { overrides, .. } => {
+                let Override::Droop(d) = &mut overrides[0] else {
+                    panic!()
+                };
+                d.from_boot_word_ns += 10;
+            }
+            Record::RailDeclared { droop, .. } => droop.droop.from_boot_word_ns += 10,
+            _ => {}
+        }
+    }
+    assert_eq!(refused(&r), MSG_INSTANT);
+    // And the word moved by 10, the bound with it: the rail is no longer
+    // placed from it.
+    let mut r = run();
+    let k = index(&r, is_bound);
+    r[k] = Record::RecoveryBound {
+        boot_word_ns: Some(BOOT_WORD_NS + 10),
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: Some(BOUND_NS + 10),
+    };
+    assert_eq!(refused(&r), MSG_INSTANT);
+}
+
+/// (c) Kind 16's BOR level is the one kind 10's brown-out word declares.
+#[test]
+fn a_declared_rails_bor_level_other_than_kind_10s_is_refused() {
+    let mut r = run();
+    let k = index(&r, |x| matches!(x, Record::RailDeclared { .. }));
+    let Record::RailDeclared { droop, .. } = &mut r[k] else {
+        panic!()
+    };
+    droop.bor_level = 2;
+    assert_eq!(refused(&r), MSG_BOR, "kind 16 at 2");
+    // Kind 10 at level 2 (0x8 under 0xC), read as declared: kind 16's 3 is
+    // not it.
+    let mut r = run();
+    let b = index(&r, |x| matches!(x, Record::BootObserved { .. }));
+    let Record::BootObserved { brown_out, .. } = &mut r[b] else {
+        panic!()
+    };
+    brown_out.expected = 0x8;
+    brown_out.observed = Some(0x8);
+    assert_eq!(refused(&r), MSG_BOR, "kind 10 at 2");
+}
+
+/// (e) A run with no planted override holds no kind 32.
+#[test]
+fn a_run_with_nothing_planted_that_holds_a_kind_32_is_refused() {
+    let mut r = run();
+    r.retain(|x| {
+        !matches!(
+            x,
+            Record::RailDeclared { .. }
+                | Record::RailCrossing { .. }
+                | Record::ResetRendered { .. }
+                | Record::FirmwareObserved { .. }
+                | Record::ExpectedCounts { .. }
+        )
+    });
+    let Record::Scenario { overrides, .. } = &mut r[0] else {
+        panic!()
+    };
+    overrides.clear();
+    set_verdict(&mut r, &[]);
+    assert_eq!(refused(&r), MSG_ONE_BOUND);
+    r.remove(index(&r, is_bound));
+    assert!(judged(&r).unwrap().matched);
 }
 
 // ---- 5. power::schedule beyond its unit tests ----
@@ -1736,8 +2018,36 @@ fn a_refall_inside_trsttempo_with_no_later_rise_is_never_released() {
 #[test]
 fn a_drop_exactly_equal_to_the_floor_is_refused() {
     // 100 mA through 500 mΩ is 50 mV: the floor itself.
-    let d = with(|d| d.floor_millivolts = 50);
-    assert_eq!(rail_levels(&d, NOMINAL_MV), None);
+    let d = with(|d| d.droop.floor_millivolts = 50);
+    assert_eq!(rail_levels(&d.droop, NOMINAL_MV), None);
     let m = refusal(&d, NOMINAL_MV, DECOUPLING_PF, SPAN_NS);
     assert!(m.contains("reaches the floor"), "{m}");
+}
+
+/// `AET-WO-2310`: kind 16's BOR level is the specification's, which the part
+/// bounds to 0 to 3; a rail at level 4 is refused by its own record, never
+/// read as level 0 by `power::active`.
+#[test]
+fn a_declared_rail_at_bor_level_4_is_refused_by_its_record() {
+    assert_eq!(declared().check(), Ok(()));
+    let Record::RailDeclared {
+        mut droop,
+        nominal_millivolts,
+        tolerance_permille,
+        decoupling_picofarads,
+    } = declared()
+    else {
+        unreachable!()
+    };
+    droop.bor_level = 4;
+    let four = Record::RailDeclared {
+        droop,
+        nominal_millivolts,
+        tolerance_permille,
+        decoupling_picofarads,
+    };
+    assert_eq!(
+        four.check(),
+        Err("a declared rail's BOR level is not 0 to 3")
+    );
 }

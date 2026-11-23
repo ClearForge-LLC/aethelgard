@@ -8,54 +8,119 @@ use crate::record::{self, Record};
 pub const TIME_UNIT: &str = "ns";
 /// The format version of the mirror record.
 pub const VERSION: u64 = 1;
-/// The format version of the trace header. 2 since `AET-WO-2300` added the
-/// campaign's event kinds 5 to 14 ([`Record`]); 3 since `AET-WO-3100` added
-/// kind 15, the solved I2C bus, and the run rules that join to it; 4 since
-/// `AET-WO-2301` added kinds 16 to 20, a declared supply droop; 5 since
-/// `AET-WO-2204` made kind 13 the device model's log of each identity read
-/// and kind 19 carry the same since its release; 6 since `AET-WO-2205`: the
-/// header names the tools that judged the run ([`Header::tools`]), kind 7 is
-/// `analog.rise_time_computed` and kinds 7 and 8 state the deck's window
-/// beside the bus's declared speed, kind 10 carries the firmware's executable
-/// segments, and kind 19's witness is the lines it archives; 7 since
-/// `AET-WO-4200` added kinds 21 to 23 (an SPI identity read, its witness and
-/// the solved SPI controller) and override 4 (an SPI device left absent); 8
-/// since `AET-WO-4300a` added kinds 24 to 26 (a solved motor output, its
-/// static timing check for silicon, and its twin witness); 9 since
-/// `AET-WO-4210`: kinds 12, 13, 21 and 22 are one event per step of a
-/// device's script (identity, configure, data), each naming its step, the
-/// check's write as a byte list with the read's width and mask, and a
-/// witness's lines may include the device's own `[WARNING]` and `[ERROR]`
-/// lines; kind 22's multiplexer lines are its step's chip-select window's.
-/// `4210` took 9 by the numbering rule, merging after `4300a`; 10 since
-/// `AET-WO-4220`: a device of several configuration writes names each step
-/// `configure 1` to `configure 4`, so each record and witness joins to its
-/// own step (a lone configuration is still `configure`); 11 since
-/// `AET-WO-4300b` added kinds 27 to 29 (a solved serial port, its static
-/// framing judgement, and its twin witness), renumbered from 10 by the same
-/// rule; 12 since `AET-WO-4230`: kind 10 carries the boot record's
-/// brown-out word and the flash controller's accesses (D10); 13 since
-/// `AET-WO-2302`: every board boots 100 ms with per-witness windows, so
-/// kind 26 carries its anchor beside its window's end, kind 29 its
-/// injection's instant, and kind 30 records each judge's stop. An archive of
-/// any other version is refused by name (`Fault::Version`), as 2204 refused
-/// version 4. 14 since `AET-WO-4400g`: the twin builds every timer at the
-/// solved kernel clock, so kind 26's period and high time are the ns Renode
-/// realizes at kind 25's `kernel_hz` (`record::realized_ns`), no longer
-/// 4 ns cycles of a fixed 250 MHz. 15 since `AET-WO-2304b`: kind 31 declares
-/// a battery sag's chain, and a scenario's overrides take tags 6
-/// (`battery_sag`) and 7 (`rail_out_of_band`). 16 since `AET-WO-3305`: kind
-/// 13's `absent` holds the addresses found absent during its own step, no
-/// longer during the whole run. 17 since `AET-WO-2305`: kind 32 holds a
-/// droop's recovery bound, read from the same boot undisturbed, and kind 19
-/// probes at it, no longer at a fixed 100 µs. 18 since `AET-WO-1211c`: the
-/// twin runs a pin device (its GPIO and ADC inputs, and a motor output held
-/// at a static level): kinds 33 and 35 declare a GPIO signal and an ADC
-/// input before the boot, kinds 34 and 36 witness them after it, kind 37
-/// witnesses a motor output held at a static level (its kind 26's status is
-/// then `level`), and a scenario's overrides take tags 8 (`pin_held`) and 9
-/// (`analog_value`).
-pub const TRACE_VERSION: u64 = 18;
+/// The format version of the trace header: each version from 2, what it
+/// changed, is a row of [`TRACE_CHANGES`]. An archive of any other version is
+/// refused by name (`Fault::Version`); an older one with the rows since it
+/// (`AET-WO-2310`, `AET-WO-1215`'s pattern).
+pub const TRACE_VERSION: u64 = TRACE_CHANGES[TRACE_CHANGES.len() - 1].version;
+
+/// One trace version and what it changed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TraceChange {
+    pub version: u64,
+    pub work_order: &'static str,
+    pub change: &'static str,
+}
+
+const fn row(version: u64, work_order: &'static str, change: &'static str) -> TraceChange {
+    TraceChange {
+        version,
+        work_order,
+        change,
+    }
+}
+
+/// Every trace version from 2, in order; the last is [`TRACE_VERSION`].
+pub const TRACE_CHANGES: &[TraceChange] = &[
+    row(2, "AET-WO-2300", "the campaign's event kinds 5 to 14"),
+    row(
+        3,
+        "AET-WO-3100",
+        "kind 15, the solved I2C bus, and the run rules that join to it",
+    ),
+    row(4, "AET-WO-2301", "kinds 16 to 20, a declared supply droop"),
+    row(
+        5,
+        "AET-WO-2204",
+        "kind 13 is the device model's log of each identity read, and kind 19 carries the same",
+    ),
+    row(
+        6,
+        "AET-WO-2205",
+        "the header names the tools that judged the run; kind 7 is the rise time computed; kinds 7 and 8 state the deck's window; kind 10 carries the executable segments; kind 19's witness is its lines",
+    ),
+    row(
+        7,
+        "AET-WO-4200",
+        "kinds 21 to 23 (an SPI identity read, its witness, the solved SPI controller) and override 4 (an SPI device absent)",
+    ),
+    row(
+        8,
+        "AET-WO-4300a",
+        "kinds 24 to 26 (a solved motor output, its static timing check, its twin witness)",
+    ),
+    row(
+        9,
+        "AET-WO-4210",
+        "kinds 12, 13, 21 and 22 are one event per step of a device's script",
+    ),
+    row(
+        10,
+        "AET-WO-4220",
+        "a device of several configuration writes names each step configure 1 to configure 4",
+    ),
+    row(
+        11,
+        "AET-WO-4300b",
+        "kinds 27 to 29 (a solved serial port, its static framing judgement, its twin witness)",
+    ),
+    row(
+        12,
+        "AET-WO-4230",
+        "kind 10 carries the brown-out word and the flash controller's accesses",
+    ),
+    row(
+        13,
+        "AET-WO-2302",
+        "every board boots 100 ms with per-witness windows: kind 26's anchor, kind 29's injection instant, kind 30's judge stops",
+    ),
+    row(
+        14,
+        "AET-WO-4400g",
+        "kind 26's period and high time are the ns Renode realizes at kind 25's kernel_hz",
+    ),
+    row(
+        15,
+        "AET-WO-2304b",
+        "kind 31, a battery sag's chain; overrides 6 (battery_sag) and 7 (rail_out_of_band)",
+    ),
+    row(
+        16,
+        "AET-WO-3305",
+        "kind 13's absent holds the addresses found absent during its own step",
+    ),
+    row(
+        17,
+        "AET-WO-2305",
+        "kind 32, a droop's recovery bound from the same boot undisturbed; kind 19 probes at it",
+    ),
+    row(
+        18,
+        "AET-WO-1211c",
+        "a pin device: kinds 33 to 37; overrides 8 (pin_held) and 9 (analog_value)",
+    ),
+    row(
+        19,
+        "AET-WO-2310",
+        "each header tool is [name, version, sha256 or nothing], with ngspice's library and rust-toolchain's sysroot; overrides 3 and 6 plant their instant from_boot_word_ns, signed, and the droop states no bor_level; kinds 16 and 31 carry the resolved instant, kind 16 the specification's BOR level; kind 32 is archived for every planted run",
+    ),
+];
+
+/// The rows after `found`, oldest first: what an archive of `found` lacks.
+/// Empty for a version that is not older than this reader's.
+pub fn changes_since(found: u64) -> &'static [TraceChange] {
+    &TRACE_CHANGES[TRACE_CHANGES.partition_point(|c| c.version <= found)..]
+}
 /// The manifest's version. 2 since `AET-WO-0400a`: `state_hash` chains each
 /// event's delta, not the whole state, so a version-1 manifest means a hash
 /// this reader no longer computes.
@@ -314,9 +379,21 @@ pub struct Header {
     /// B4). Replay reports them; it does not require them equal to the
     /// replaying host's.
     pub tools: Vec<(String, String)>,
+    /// `[name, sha256]` of each tool whose bytes were hashed, every name one
+    /// of [`Header::tools`], sorted, unique (`AET-WO-2310`): written as the
+    /// third item of that tool's entry, `[]` for a tool not hashed.
+    pub tool_sha256: Vec<(String, [u8; 32])>,
 }
 
 impl Header {
+    /// The sha256 the header holds for the tool `name`, if any.
+    pub fn sha256_of(&self, name: &str) -> Option<&[u8; 32]> {
+        self.tool_sha256
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, h)| h)
+    }
+
     pub fn check(&self) -> Result<(), &'static str> {
         for (name, _) in &self.artifacts {
             if !text_ok(name, 1, 1024) {
@@ -335,6 +412,16 @@ impl Header {
         }
         if self.tools.windows(2).any(|w| w[0].0 >= w[1].0) {
             return Err("tools are not sorted by unique name");
+        }
+        if self.tool_sha256.windows(2).any(|w| w[0].0 >= w[1].0) {
+            return Err("tool hashes are not sorted by unique name");
+        }
+        if !self
+            .tool_sha256
+            .iter()
+            .all(|(name, _)| self.tools.iter().any(|(n, _)| n == name))
+        {
+            return Err("a tool hash names no tool of the header");
         }
         Ok(())
     }
@@ -360,6 +447,12 @@ impl Header {
                         Value::Array(vec![
                             Value::Text(name.clone()),
                             Value::Text(version.clone()),
+                            Value::Array(
+                                self.sha256_of(name)
+                                    .map(|h| Value::Bytes(h.to_vec()))
+                                    .into_iter()
+                                    .collect(),
+                            ),
                         ])
                     })
                     .collect(),
@@ -400,19 +493,32 @@ impl Header {
             artifacts.push((name.clone(), hash));
         }
         let mut tools = Vec::with_capacity(tool_list.len());
+        let mut tool_sha256 = Vec::new();
         for entry in tool_list {
-            let Value::Array(pair) = entry else {
+            let Value::Array(triple) = entry else {
                 return malformed("tool is not an array");
             };
-            let [Value::Text(name), Value::Text(version)] = pair.as_slice() else {
-                return malformed("tool is not [name, version]");
+            let [Value::Text(name), Value::Text(version), Value::Array(hash)] = triple.as_slice()
+            else {
+                return malformed("tool is not [name, version, [] or [sha256]]");
             };
+            match hash.as_slice() {
+                [] => {}
+                [Value::Bytes(h)] => {
+                    let Ok(h) = <[u8; 32]>::try_from(h.as_slice()) else {
+                        return malformed("tool hash is not 32 bytes");
+                    };
+                    tool_sha256.push((name.clone(), h));
+                }
+                _ => return malformed("tool hash is not [] or [sha256]"),
+            }
             tools.push((name.clone(), version.clone()));
         }
         let header = Self {
             run_id,
             artifacts,
             tools,
+            tool_sha256,
         };
         match header.check() {
             Ok(()) => Ok(header),

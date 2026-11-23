@@ -270,6 +270,19 @@ fn archived(records: &[Record]) -> Replayed {
             .iter()
             .map(|n| ((*n).to_owned(), "test".to_owned()))
             .collect(),
+        // `AET-WO-2310`: the header hashes ngspice's library and the toolchain's
+        // sysroot whenever they judged the run; a fixed hash stands in.
+        tool_sha256: aethelgard_chaos::campaign::tools_of(records)
+            .iter()
+            .filter(|n| {
+                [
+                    aethelgard_chaos::campaign::NGSPICE,
+                    aethelgard_chaos::campaign::RUST_TOOLCHAIN,
+                ]
+                .contains(n)
+            })
+            .map(|n| ((*n).to_owned(), [7; 32]))
+            .collect(),
     };
     let mut w = TraceWriter::create(&dir, &header).unwrap();
     for record in records.iter().cloned() {
@@ -285,6 +298,7 @@ fn archived(records: &[Record]) -> Replayed {
 const UNBOUND: &str =
     "a solved line has no computed rise, stuck-high record or held-low fault, or more than one";
 const BOOT_WORD: &str = "the verdict's boot_word_missing does not match the boot word";
+const HALTED: &str = "the verdict's cpu_halted does not match the booted core's instruction count";
 
 /// Why `attribute` refuses `records`: a rule `replay` judges by.
 fn refused(records: &[Record]) -> &'static str {
@@ -1289,12 +1303,13 @@ fn each_finding_selects_only_the_events_that_show_it() {
         assert_eq!(attributed(&r).rule, Rule::I1, "{kind}");
     }
     // A boot word claimed missing that is there is refused by `replay`
-    // (`AET-WO-3201` B2); a halt claimed of a full run is unexplained.
+    // (`AET-WO-3201` B2); so, on a booted run, is a halt claimed of a full
+    // one (`AET-WO-2310`).
     let mut r = healthy();
     replace(&mut r, is_verdict, verdict(&[("boot_word_missing", 1)]));
     assert_eq!(refused(&r), BOOT_WORD);
     replace(&mut r, is_verdict, verdict(&[("cpu_halted", 1)]));
-    assert_eq!(attributed(&r).rule, Rule::I1);
+    assert_eq!(refused(&r), HALTED);
     // A real halt is board software.
     let mut r = healthy();
     replace(
@@ -1484,31 +1499,8 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
             Box::new(|r| set_register(r, "GPIOA.MODER", |g| g.observed = Some(0))),
         ),
         // A boot word missing with no finding is refused by `replay`
-        // since `AET-WO-3201` B2 (`a_boot_word_missing_unnamed_is_refused`).
-        (
-            "halted",
-            Box::new(|r| {
-                replace(
-                    r,
-                    |x| matches!(x, Record::BootObserved { .. }),
-                    Record::BootObserved {
-                        image_sha256: [4; 32],
-                        boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, 0x2100_B007),
-                        instructions_expected: 10_000_000,
-                        instructions_observed: Some(9_999_999),
-                        pc: Some(0x0800_0596),
-                        executable: vec![(0, 0x1000_0000)],
-                        brown_out: aethelgard_chaos::record::Reading {
-                            address: 0x2000_0004,
-                            mask: 0xC,
-                            expected: 0,
-                            observed: Some(0),
-                        },
-                        flash_access: Some(Vec::new()),
-                    },
-                )
-            }),
-        ),
+        // since `AET-WO-3201` B2 (`a_boot_word_missing_unnamed_is_refused`),
+        // and a booted halt with none since `AET-WO-2310` (below).
         (
             "locked",
             Box::new(|r| set_register(r, "RCC.AHB4ENR", |g| g.observed = Some(0x1))),
@@ -1524,6 +1516,29 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
             "{name}: {a:?}"
         );
     }
+    // A booted core that counted fewer instructions, with no `cpu_halted`,
+    // is refused by `replay` (`AET-WO-2310`), not left unexplained.
+    let mut r = healthy();
+    replace(
+        &mut r,
+        |x| matches!(x, Record::BootObserved { .. }),
+        Record::BootObserved {
+            image_sha256: [4; 32],
+            boot_word: reading(0x2000_0000, u32::MAX, 0x2100_B007, 0x2100_B007),
+            instructions_expected: 10_000_000,
+            instructions_observed: Some(9_999_999),
+            pc: Some(0x0800_0596),
+            executable: vec![(0, 0x1000_0000)],
+            brown_out: aethelgard_chaos::record::Reading {
+                address: 0x2000_0004,
+                mask: 0xC,
+                expected: 0,
+                observed: Some(0),
+            },
+            flash_access: Some(Vec::new()),
+        },
+    );
+    assert_eq!(refused(&r), HALTED);
     // Two such events of one kind are both named.
     let mut r = healthy();
     set_register(&mut r, "GPIOA.MODER", |g| g.observed = Some(0));

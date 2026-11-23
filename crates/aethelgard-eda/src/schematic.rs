@@ -321,6 +321,11 @@ fn strapped(d: &aethelgard_ir::I2cDevice, targets: &[Conn]) -> Result<Conn, Emit
     }
     match addresses.iter().position(|a| *a == d.address) {
         Some(i) => Ok(targets[i].clone()),
+        // belt-and-suspenders: `validate` refuses an address the row does
+        // not list (`I2cAddressNotOffered`, step 14) before `emit` draws;
+        // `Drawing::of` and `decoupling_picofarads` draw without it
+        // (`AET-WO-1322`, `1208` F3). Reached directly by
+        // `tests::a_strap_follows_the_parts_tables_addresses`.
         None => Err(EmitError::UnsupportedAddress {
             reference: d.reference.clone(),
             part: d.part.clone(),
@@ -1389,6 +1394,12 @@ pub(crate) fn design(
             part: d.part.clone(),
         });
     }
+    // belt-and-suspenders: the name re-checks below (`#`, a reference twice,
+    // `GND` or the battery's net spelled by the specification) are
+    // `validate`'s `names::check` again, for `Drawing::of` and the other
+    // callers of `design` that draw without it (`AET-WO-1322`, `1208` F3).
+    // `cli/tests/hot_plug_tier1.rs` reaches the first two through
+    // `Drawing::of`; no test reaches the `GND` and battery claims.
     let mut used = Taken::default();
     for r in aethelgard_ir::names::references(spec) {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
