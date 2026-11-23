@@ -446,7 +446,29 @@ type Named = BTreeMap<PinId, (String, Option<u8>)>;
 /// `hwdef.h`, so a topology refusal is never hidden behind an unreadable
 /// image. [`judge`] runs it first too.
 pub fn admit(topology: &SolvedTopology, package: &PinTable) -> Result<(), Refusal> {
-    named(topology, package).map(|_| ())
+    named(topology, package)?;
+    sensed(topology).map(|_| ())
+}
+
+/// Each battery sense pin, by pin, with its net (`AET-WO-4410` (1)): an
+/// analog pin, so in neither `assignments` nor `gpio`. A pin outside
+/// P[A-K]0-15, or an SWD pin, is refused as any topology pin is.
+fn sensed(topology: &SolvedTopology) -> Result<BTreeMap<PinId, String>, Refusal> {
+    let mut out = BTreeMap::new();
+    for (net, s) in topology.power.iter().flat_map(|p| &p.sense) {
+        let id = PinId::parse(&s.pin).ok_or_else(|| Refusal::InvalidPin {
+            net: net.clone(),
+            pin: s.pin.clone(),
+        })?;
+        if SWD.contains(&s.pin.as_str()) {
+            return Err(Refusal::SwdPinNamed {
+                net: net.clone(),
+                pin: s.pin.clone(),
+            });
+        }
+        out.insert(id, net.clone());
+    }
+    Ok(out)
 }
 
 fn named(topology: &SolvedTopology, package: &PinTable) -> Result<Named, Refusal> {
@@ -503,6 +525,7 @@ pub fn judge(
     allow: &AllowList,
 ) -> Result<Judgement, Refusal> {
     let named = named(topology, package)?;
+    let sensed = sensed(topology)?;
     if let Some(header) = header {
         cross_check(elf, header)?;
     }
@@ -516,13 +539,16 @@ pub fn judge(
             format!("{pin} is the SWD port's; the check holds it at reset"),
         );
     }
-    if let Some((pin, _)) = allow.0.iter().find(|(pin, _)| named.contains_key(pin)) {
+    if let Some((pin, net)) = allow.0.keys().find_map(|pin| {
+        named
+            .get(pin)
+            .map(|(net, _)| net)
+            .or_else(|| sensed.get(pin))
+            .map(|net| (pin, net))
+    }) {
         return allow_refusal(
             "AllowNamesTopologyPin",
-            format!(
-                "{pin} is the topology's {}; the topology judges it",
-                named[pin].0
-            ),
+            format!("{pin} is the topology's {net}; the topology judges it"),
         );
     }
 
@@ -641,6 +667,21 @@ pub fn judge(
                 );
             }
             _ => {}
+        }
+    }
+    // `AET-WO-4410` (1): a battery sense pin stays analog, ArduPilot's ADC
+    // pin mode (an `ADC` line, `chibios_hwdef.py:335-336`).
+    for (&pin, net) in &sensed {
+        let (mode, af) = elf.pin(pin);
+        if mode != Mode::Analog {
+            finding(
+                "forward",
+                "NotAnalog",
+                pin,
+                Some(net),
+                "analog".into(),
+                (mode, af),
+            );
         }
     }
     for name in SWD {

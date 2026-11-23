@@ -267,7 +267,157 @@ pub fn judge(
     serial_settings(t, &params, receivers, &mut out);
     baros(t, parts, header, &mut out)?;
     imus(t, parts, header, elf_bytes, &mut out)?;
+    battery(t, header, &mut out)?;
     Ok(out.0)
+}
+
+/// A decimal or quotient C literal as an exact fraction `(numerator,
+/// denominator)`: `11`, `11.0`, `11.0f`, `(110000.0f/10000.0f)`. `None` for
+/// anything else.
+fn fraction(text: &str) -> Option<(u128, u128)> {
+    let decimal = |d: &str| -> Option<(u128, u128)> {
+        let d = d.trim().trim_end_matches(['f', 'F']);
+        let (whole, frac) = d.split_once('.').unwrap_or((d, ""));
+        if whole.is_empty()
+            || !whole
+                .bytes()
+                .chain(frac.bytes())
+                .all(|b| b.is_ascii_digit())
+            || whole.len() + frac.len() > 30
+        {
+            return None;
+        }
+        let n: u128 = format!("{whole}{frac}").parse().ok()?;
+        Some((n, 10u128.pow(u32::try_from(frac.len()).ok()?)))
+    };
+    let t = text.trim();
+    let t = t
+        .strip_prefix('(')
+        .and_then(|r| r.strip_suffix(')'))
+        .unwrap_or(t);
+    match t.split_once('/') {
+        Some((a, b)) => {
+            let ((an, ad), (bn, bd)) = (decimal(a)?, decimal(b)?);
+            (bn != 0).then_some((an.checked_mul(bd)?, ad.checked_mul(bn)?))
+        }
+        None => decimal(t),
+    }
+}
+
+/// `AET-WO-4410` (1): ArduPilot's battery monitor against the solved sense,
+/// from `hwdef.h`, which holds each `define` verbatim (`chibios_hwdef.py:1007-1010`),
+/// and the analog table ArduPilot computes (`:2186-2266`). The expected
+/// values are the topology's, by this check's own arithmetic (`INV-07`):
+/// - `HAL_USE_ADC` is not `FALSE`, which swaps in an empty analog driver
+///   (`HAL_ChibiOS_Class.cpp:88-92`);
+/// - `HAL_BATT_VOLT_PIN` is the sense's ADC1 channel, the analog pin number
+///   (`chibios_hwdef.py:2204`), and `HAL_ANALOG_PINS` holds that channel with
+///   no multiplier (`SCALE(1)`), so the divider is applied once;
+/// - `HAL_BATT_VOLT_SCALE` equals `(top + bottom) / bottom` as an exact
+///   fraction (`AP_BattMonitor_Analog.cpp:30-36, 160`);
+/// - `HAL_BATT_MONITOR_DEFAULT` is 3, voltage only (`AP_BattMonitor_Params.h:17-18`).
+///
+/// With no sense solved, no `HAL_BATT_VOLT_PIN` may be defined.
+fn battery(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Refusal> {
+    let sense = t.power.as_ref().map(|p| &p.sense);
+    let pin = defined_number(h, "HAL_BATT_VOLT_PIN")?;
+    let Some((net, s)) = sense.and_then(|s| s.iter().next()) else {
+        if let Some(p) = pin {
+            out.push(
+                "UnexpectedBattMonitor",
+                "HAL_BATT_VOLT_PIN",
+                None,
+                "none: no battery sense is solved".into(),
+                p.to_string(),
+            );
+        }
+        return Ok(());
+    };
+    let net = Some(net.as_str());
+    let input = t.adc_inputs.get(net.unwrap_or_default());
+    let channel = input
+        .filter(|a| a.peripheral == "ADC1")
+        .and_then(|a| a.channel.strip_prefix("INP"))
+        .and_then(|n| n.parse::<u64>().ok());
+    let Some(channel) = channel else {
+        out.push(
+            "SenseNotOnAdc1",
+            &s.pin,
+            net,
+            "an ADC1 input (stm32h7_mcuconf.h:420)".into(),
+            input.map_or_else(
+                || "no ADC input".into(),
+                |a| format!("{} {}", a.peripheral, a.channel),
+            ),
+        );
+        return Ok(());
+    };
+    if h.value("HAL_USE_ADC")?.as_deref() == Some("FALSE") {
+        out.push(
+            "AdcOff",
+            "HAL_USE_ADC",
+            net,
+            "not FALSE: a battery sense is solved".into(),
+            "FALSE".into(),
+        );
+    }
+    match pin {
+        Some(p) if p == channel => {}
+        _ => out.push(
+            "WrongBattVoltPin",
+            "HAL_BATT_VOLT_PIN",
+            net,
+            format!("{channel} (ADC1 INP{channel}, {})", s.pin),
+            pin.map_or_else(|| "not defined".into(), |p| p.to_string()),
+        ),
+    }
+    let (top, bottom) = (u128::from(s.top_ohms), u128::from(s.bottom_ohms));
+    let scale = h.value("HAL_BATT_VOLT_SCALE")?;
+    let exact = scale
+        .as_deref()
+        .and_then(fraction)
+        .is_some_and(|(n, d)| n.checked_mul(bottom) == d.checked_mul(top + bottom));
+    if !exact {
+        out.push(
+            "WrongBattVoltScale",
+            "HAL_BATT_VOLT_SCALE",
+            net,
+            format!(
+                "exactly ({} / {bottom}) = (top + bottom) / bottom",
+                top + bottom
+            ),
+            scale.unwrap_or_else(|| "not defined".into()),
+        );
+    }
+    let monitor = defined_number(h, "HAL_BATT_MONITOR_DEFAULT")?;
+    if monitor != Some(3) {
+        out.push(
+            "WrongBattMonitorType",
+            "HAL_BATT_MONITOR_DEFAULT",
+            net,
+            "3, voltage only (AP_BattMonitor_Params.h:17-18)".into(),
+            monitor.map_or_else(|| "not defined".into(), |m| m.to_string()),
+        );
+    }
+    let rows = h.value("HAL_ANALOG_PINS")?.unwrap_or_default();
+    let row = rows
+        .split('{')
+        .skip(1)
+        .filter_map(|r| r.split_once('}').map(|(r, _)| args(r)))
+        .find(|a| a.first().and_then(|c| number(c)) == Some(channel));
+    let unscaled = row.as_ref().is_some_and(|a| {
+        a.len() == 3 && a.get(1).and_then(|n| number(n)) == Some(channel) && !a[2].contains('*')
+    });
+    if !unscaled {
+        out.push(
+            "WrongAnalogPin",
+            "HAL_ANALOG_PINS",
+            net,
+            format!("{{ {channel}, {channel}, <vdd>/4096 }}: SCALE(1), no multiplier"),
+            row.map_or_else(|| "no row".into(), |a| format!("{{ {} }}", a.join(", "))),
+        );
+    }
+    Ok(())
 }
 
 /// One `SPIDesc` as read: its macro, bus, chip select, mode, low and high speed.

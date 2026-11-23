@@ -663,11 +663,23 @@ fn solve_inner(
                 .copied()
                 .collect();
             // ADC1 or ADC3 (`AET-WO-1211a`, `1211` Q8): a sense is never
-            // pinned, so an ADC2-only pin is never its.
+            // pinned, so an ADC2-only pin is never its. A pin with an ADC1
+            // input first (`AET-WO-4410` S2, ruled 2026-11-23): ArduPilot's H7
+            // build enables ADC12 whatever the board holds and fails without
+            // an ADC1 pin's DMA stream (`stm32h7_mcuconf.h:420`, ChibiOS
+            // `hal_adc_lld.h:339` at `fb773567`); then ADC3, as before.
+            let adc1 = |pin: &&crate::Pin| {
+                pin.adc_channels
+                    .iter()
+                    .any(|c| c.split_once('_').is_some_and(|(p, _)| p == "ADC1"))
+            };
             let modelled = free
                 .iter()
-                .find(|(_, pin)| {
-                    crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some()
+                .find(|(_, pin)| adc1(pin))
+                .or_else(|| {
+                    free.iter().find(|(_, pin)| {
+                        crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some()
+                    })
                 })
                 .copied();
             let Some((name, pin)) = modelled else {
@@ -702,6 +714,8 @@ fn solve_inner(
                     pin: name.to_owned(),
                     position: pin.position,
                     channels: pin.adc_channels.iter().cloned().collect(),
+                    top_ohms: s.top.ohms,
+                    bottom_ohms: s.bottom.ohms,
                 },
             );
         }

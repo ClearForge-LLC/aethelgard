@@ -395,3 +395,90 @@ fn serial7_takes_no_options_and_the_header_names_the_pulls() {
     assert!(!console_only.contains(pulls) && !console_only.contains("_OPTIONS"));
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `AET-WO-4410` D3: Sentinel-03 with U5's `orientation` and `board.forward`
+/// added in a scratch copy (`AET-WO-4300k` declares both in the committed
+/// file). Its sense solves to `PC0` on ADC1 (S2), and the file writes the
+/// battery monitor from the solved divider, R50 100 kΩ over R51 10 kΩ.
+#[test]
+fn sentinel_03_derived_writes_its_battery_monitor() {
+    let dir = scratch("s03");
+    let mut spec: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap(),
+    )
+    .unwrap();
+    spec["board"]["forward"] = "top".into();
+    for d in spec["spi_devices"].as_array_mut().unwrap() {
+        if d["reference"] == "U5" {
+            d["orientation"] = serde_json::json!({"x": "right", "z": "up"});
+        }
+    }
+    let path = dir.join("sentinel-03-derived.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let topology = solve(path.to_str().unwrap());
+    let t: Value = serde_json::from_str(&topology).unwrap();
+    assert_eq!(t["power"]["sense"]["VBAT_SENSE"]["pin"], "PC0");
+    assert_eq!(t["adc_inputs"]["VBAT_SENSE"]["peripheral"], "ADC1");
+    let (code, v, text) = generate(&dir, "s03", &topology);
+    assert_eq!(code, Some(0), "{v}");
+    let lines: Vec<String> = text
+        .unwrap()
+        .lines()
+        .map(|l| l.split('#').next().unwrap().trim().to_owned())
+        .filter(|l| l.contains("BATT") || l.contains("HAL_USE_ADC"))
+        .collect();
+    assert_eq!(
+        lines,
+        [
+            "PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)",
+            "define HAL_BATT_VOLT_PIN 10",
+            "define HAL_BATT_VOLT_SCALE (110000.0f/10000.0f)",
+            "define HAL_BATT_MONITOR_DEFAULT 3",
+        ]
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `AET-WO-4410` D4, (2): a board on the 16 MHz crystal generates, writing
+/// `OSCILLATOR_HZ 16000000`: `serial-dshot-9600` (a console board) with
+/// `hse-crystal-16`'s crystal, in a scratch copy. An oscillator the MCU row
+/// does not cite (`hse-external-8`, 8 MHz) is refused by name, naming both
+/// cited.
+#[test]
+fn a_16_mhz_board_generates_and_an_uncited_oscillator_is_refused() {
+    let dir = scratch("hse");
+    let read =
+        |p: &str| -> Value { serde_json::from_slice(&fs::read(root().join(p)).unwrap()).unwrap() };
+    let crystal = read("crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json");
+    let mut spec = read("crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json");
+    // `hse_hz: 0` is the version-19 spelling of `hse: null`; replaced, not doubled.
+    spec["mcu"].as_object_mut().unwrap().remove("hse_hz");
+    spec["mcu"]["hse"] = crystal["mcu"]["hse"].clone();
+    let path = dir.join("serial-dshot-9600-hse16.json");
+    fs::write(&path, spec.to_string()).unwrap();
+    let topology = solve(path.to_str().unwrap());
+    let (code, v, text) = generate(&dir, "hse16", &topology);
+    assert_eq!(code, Some(0), "{v}");
+    assert!(
+        text.unwrap()
+            .lines()
+            .any(|l| l.starts_with("OSCILLATOR_HZ 16000000 "))
+    );
+
+    let topology = solve("crates/aethelgard-cli/tests/fixtures/hse-external-8.json");
+    let (code, v, text) = generate(&dir, "hse8", &topology);
+    assert_eq!(
+        (code, v["error"]["kind"].as_str()),
+        (Some(2), Some("OscillatorNotCited")),
+        "{v}"
+    );
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("OSCILLATOR_HZ 0 or 16000000"),
+        "{v}"
+    );
+    assert!(text.is_none());
+    fs::remove_dir_all(&dir).unwrap();
+}

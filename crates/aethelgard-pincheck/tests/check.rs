@@ -429,6 +429,58 @@ fn an_swd_pin_named_by_the_topology_or_the_allow_list_is_refused() {
     }
 }
 
+/// `AET-WO-4410` (1): a battery sense pin stays analog, its reset state, and
+/// the allow-list may not name it.
+#[test]
+fn a_battery_sense_pin_that_is_not_analog_is_named() {
+    let mut t = topology();
+    let mut v = serde_json::to_value(&t).unwrap();
+    v["power"] = serde_json::json!({
+        "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
+        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 26,
+            "channels": ["ADC1_INP10"], "top_ohms": 100000, "bottom_ohms": 10000}}
+    });
+    t = serde_json::from_value(v).unwrap();
+    let judged = |w: [[u32; 7]; 11], allow: &AllowList| {
+        let config = elf::read(
+            &Elf {
+                words: w,
+                ..Elf::default()
+            }
+            .bytes(),
+        )
+        .unwrap();
+        judge(&t, &lqfp_like(), &config, None, allow)
+    };
+    let mut w = step_g_words();
+    w[2][0] |= 0x3; // PC0 analog
+    assert!(judged(w, &allow()).unwrap().ok);
+    w[2][0] &= !0x3; // PC0 input
+    let j = judged(w, &allow()).unwrap();
+    let got: Vec<String> = j
+        .findings
+        .iter()
+        .map(|f| {
+            format!(
+                "{} {} {} {}",
+                f.kind,
+                f.pin,
+                f.net.as_deref().unwrap_or("-"),
+                f.decoded
+            )
+        })
+        .collect();
+    assert_eq!(got, ["NotAnalog PC0 VBAT_SENSE input"]);
+    let list = AllowList::parse(
+        br#"{"allow": {"PC0": {"mode": "output", "why": "a sense pin as a GPIO"}}}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        judged(w, &list).unwrap_err().kind(),
+        "AllowNamesTopologyPin"
+    );
+}
+
 /// `AET-WO-4410` D1 (ruled 2026-11-23): no writer of `SYSCFG_PMCR` in the
 /// judged ArduPilot touches PC2SO or PC3SO, so LQFP144 pads 28 and 29 stay
 /// `PC2_C` and `PC3_C` (RM0433 Rev 9 p. 549). The fact is cited source, not

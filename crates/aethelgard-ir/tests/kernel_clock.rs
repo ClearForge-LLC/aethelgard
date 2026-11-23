@@ -526,7 +526,8 @@ fn an_adc_runs_on_ckmode_and_not_on_pll2_p() {
 /// pin device's input beside it does.
 #[test]
 fn a_power_sense_input_is_not_an_enabled_adc() {
-    let sense = json!({"VBAT": {"pin": "PC0", "position": 1, "channels": ["ADC3_INP10"]}});
+    let sense = json!({"VBAT": {"pin": "PC0", "position": 1, "channels": ["ADC3_INP10"],
+        "top_ohms": 100_000, "bottom_ohms": 10_000}});
     let t = with_adc(json!({"VBAT": adc_input("ADC3")}), Some(sense.clone()));
     assert_eq!(kernel_clock::check(&t), []);
     let t = with_adc(

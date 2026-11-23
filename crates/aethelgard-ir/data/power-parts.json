@@ -1,5 +1,5 @@
 {
-  "schema_version": 10,
+  "schema_version": 11,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -1368,55 +1368,110 @@
               "document": "AP_STM32H753XX",
               "section": "the AltFunction_map the MCU line imports"
             },
-            "oscillator_hz": 0,
-            "oscillator_at": {
-              "document": "AP_STM32H7_MCUCONF",
-              "section": "lines 113-121 and 168-178: with STM32_HSECLK 0 the PLLs run from HSI, the only oscillator these clock rows hold for"
-            },
-            "spi_kernel_hz": {
-              "SPI1": {
-                "value": 80000000,
+            "oscillators": [
+              {
+                "oscillator_hz": 0,
                 "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                  "document": "AP_STM32H7_MCUCONF",
+                  "section": "lines 113-121 and 168-178: with STM32_HSECLK 0 the PLLs run from HSI, the only oscillator these clock rows hold for"
+                },
+                "spi_kernel_hz": {
+                  "SPI1": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                    }
+                  },
+                  "SPI2": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                    }
+                  },
+                  "SPI3": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
+                    }
+                  },
+                  "SPI4": {
+                    "value": 72000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
+                    }
+                  },
+                  "SPI5": {
+                    "value": 72000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
+                    }
+                  },
+                  "SPI6": {
+                    "value": 72000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 0: SPI6 on PLL2_Q (mcuconf 345); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2661; mcuconf 118, 175, 177)"
+                    }
+                  }
                 }
               },
-              "SPI2": {
-                "value": 80000000,
+              {
+                "oscillator_hz": 16000000,
                 "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
-                }
-              },
-              "SPI3": {
-                "value": 80000000,
-                "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI1-3 on PLL1_Q (mcuconf 333); HSI 64 MHz the PLL source (lines 244, 1518, 1546; mcuconf 120); 64 MHz / 4 x 50 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 117, 170, 172)"
-                }
-              },
-              "SPI4": {
-                "value": 72000000,
-                "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
-                }
-              },
-              "SPI5": {
-                "value": 72000000,
-                "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI4-5 on PLL2_Q (mcuconf 332); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2636; mcuconf 118, 175, 177)"
-                }
-              },
-              "SPI6": {
-                "value": 72000000,
-                "at": {
-                  "document": "CHIBIOS_HAL_LLD_TYPE1",
-                  "section": "OSCILLATOR_HZ 0: SPI6 on PLL2_Q (mcuconf 345); HSI 64 MHz the PLL source (lines 244, 1518, 1546); 64 MHz / 8 x 45 / 5 = 72 MHz (lines 1592, 1822, 1934, 2661; mcuconf 118, 175, 177)"
+                  "document": "AP_STM32H7_MCUCONF",
+                  "section": "lines 132-138, 184-207: STM32_HSECLK 16000000U (OSCILLATOR_HZ, AP_CHIBIOS_HWDEF line 885) runs the PLLs from the HSE (259-260), M 2/2/4, then the 8/16/32 MHz tree (HAL_CUSTOM_MCU_CLOCKRATE unset)"
+                },
+                "spi_kernel_hz": {
+                  "SPI1": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI1-3 on PLL1_Q (mcuconf 333); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 100 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 136, 194, 195)"
+                    }
+                  },
+                  "SPI2": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI1-3 on PLL1_Q (mcuconf 333); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 100 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 136, 194, 195)"
+                    }
+                  },
+                  "SPI3": {
+                    "value": 80000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI1-3 on PLL1_Q (mcuconf 333); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 100 / 10 = 80 MHz (lines 1561, 1801, 1917, 2593; mcuconf 136, 194, 195)"
+                    }
+                  },
+                  "SPI4": {
+                    "value": 100000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI4-5 on PLL2_Q (mcuconf 332); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 75 / 6 = 100 MHz (lines 1592, 1822, 1934, 2636; mcuconf 137, 200, 202)"
+                    }
+                  },
+                  "SPI5": {
+                    "value": 100000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI4-5 on PLL2_Q (mcuconf 332); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 75 / 6 = 100 MHz (lines 1592, 1822, 1934, 2636; mcuconf 137, 200, 202)"
+                    }
+                  },
+                  "SPI6": {
+                    "value": 100000000,
+                    "at": {
+                      "document": "CHIBIOS_HAL_LLD_TYPE1",
+                      "section": "OSCILLATOR_HZ 16000000: SPI6 on PLL2_Q (mcuconf 345); HSE the PLL source (lines 1410, 1542-1543; mcuconf 259-260); 16 MHz / 2 x 75 / 6 = 100 MHz (lines 1592, 1822, 1934, 2661; mcuconf 137, 200, 202)"
+                    }
+                  }
                 }
               }
-            },
+            ],
             "spi_divider_at": {
               "document": "AP_SPIDEVICE",
               "section": "lines 259-276: the bus clock / 2 halved at most 7 times to the first rate at or below the speed asked, so the slowest is the kernel / 256"

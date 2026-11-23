@@ -805,6 +805,127 @@ fn a_function_like_define_of_a_name_the_judge_reads_is_refused() {
     );
 }
 
+/// The reference topology with a battery sense on PC0, ADC1 INP10 (or the
+/// given ADC input), and the divider `top` over `bottom`.
+fn with_battery(top: u32, bottom: u32, peripheral: &str) -> SolvedTopology {
+    let mut v: Value = serde_json::to_value(topology()).unwrap();
+    v["power"] = json!({
+        "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
+        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 26,
+            "channels": ["ADC1_INP10", "ADC2_INP10", "ADC3_INP10"],
+            "top_ohms": top, "bottom_ohms": bottom}}
+    });
+    v["adc_inputs"] =
+        json!({"VBAT_SENSE": {"pin": "PC0", "peripheral": peripheral, "channel": "INP10"}});
+    serde_json::from_value(v).unwrap()
+}
+
+/// ArduPilot's battery lines in `hwdef.h` for PC0 on ADC1 INP10, as the
+/// `s03adc1` build wrote them (`spike/4410`), with `scale` as given.
+fn battery_header(scale: &str) -> String {
+    format!(
+        "{IDENTITY}#define HAL_BATT_VOLT_PIN 10\n#define HAL_BATT_VOLT_SCALE {scale}\n#define HAL_BATT_MONITOR_DEFAULT 3\n#define HAL_ANALOG_PINS \\\n{{ 10, 10,    3.30/4096 }}, /* PC0 BATT_VOLTAGE_SENS */ \\\n\n"
+    )
+}
+
+/// `AET-WO-4410` (1): the battery monitor is judged against the solved sense
+/// by the check's own arithmetic. The generated quotient passes, and so does
+/// any literal of exactly that value; each wrong fact is named.
+#[test]
+fn the_battery_monitor_is_judged_against_the_solved_sense() {
+    let t = with_battery(100_000, 10_000, "ADC1");
+    for scale in [
+        "(110000.0f/10000.0f)",
+        "11.0",
+        "11",
+        "(11.0f/1.0f)",
+        "11.000f",
+    ] {
+        assert_eq!(
+            judge(&t, &battery_header(scale), &[EMPTY]).unwrap(),
+            Vec::<String>::new(),
+            "{scale}"
+        );
+    }
+    let good = battery_header("(110000.0f/10000.0f)");
+    let cases: [(&str, &str, &str); 8] = [
+        (
+            "#define HAL_BATT_VOLT_PIN 10\n",
+            "#define HAL_BATT_VOLT_PIN 11\n",
+            "WrongBattVoltPin",
+        ),
+        ("#define HAL_BATT_VOLT_PIN 10\n", "", "WrongBattVoltPin"),
+        ("(110000.0f/10000.0f)", "11.01", "WrongBattVoltScale"),
+        (
+            "(110000.0f/10000.0f)",
+            "(110000.0f/1000.0f)",
+            "WrongBattVoltScale",
+        ),
+        (
+            "#define HAL_BATT_MONITOR_DEFAULT 3\n",
+            "#define HAL_BATT_MONITOR_DEFAULT 4\n",
+            "WrongBattMonitorType",
+        ),
+        (
+            "{ 10, 10,    3.30/4096 }",
+            "{ 10, 10, 11*3.30/4096 }",
+            "WrongAnalogPin",
+        ),
+        (
+            "{ 10, 10,    3.30/4096 }",
+            "{ 10, 11,    3.30/4096 }",
+            "WrongAnalogPin",
+        ),
+        (
+            "#define HAL_BATT_VOLT_PIN 10\n",
+            "#define HAL_BATT_VOLT_PIN 10\n#define HAL_USE_ADC FALSE\n",
+            "AdcOff",
+        ),
+    ];
+    for (from, to, kind) in cases {
+        let text = good.replacen(from, to, 1);
+        assert_ne!(text, good, "{kind}: {from}");
+        assert_eq!(kinds(&judge(&t, &text, &[EMPTY]).unwrap()), [kind], "{to}");
+    }
+}
+
+/// §5: 100 k over 9.09 k is 12.0011001100…, which no short decimal states.
+/// The quotient passes, a reduced quotient of the same value passes, and
+/// ArduPilot's customary decimal rounding is named.
+#[test]
+fn a_ratio_no_decimal_states_is_judged_exactly() {
+    let t = with_battery(100_000, 9_090, "ADC1");
+    for scale in ["(109090.0f/9090.0f)", "(10909.0f/909.0f)"] {
+        assert_eq!(
+            judge(&t, &battery_header(scale), &[EMPTY]).unwrap(),
+            Vec::<String>::new(),
+            "{scale}"
+        );
+    }
+    for scale in ["12.0011", "12.00110011", "12.0"] {
+        assert_eq!(
+            kinds(&judge(&t, &battery_header(scale), &[EMPTY]).unwrap()),
+            ["WrongBattVoltScale"],
+            "{scale}"
+        );
+    }
+}
+
+/// A battery monitor with no solved sense, and a sense on ADC3, are each named.
+#[test]
+fn a_battery_monitor_with_no_adc1_sense_is_named() {
+    let text = battery_header("(110000.0f/10000.0f)");
+    assert_eq!(
+        kinds(&judge(&topology(), &text, &[EMPTY]).unwrap()),
+        ["UnexpectedBattMonitor"]
+    );
+    let t = with_battery(100_000, 10_000, "ADC3");
+    assert_eq!(
+        kinds(&judge(&t, &text, &[EMPTY]).unwrap()),
+        ["SenseNotOnAdc1"]
+    );
+}
+
 /// `AET-WO-4404`: a topology with one port per `(role, inverted)`, in
 /// order, the first the console; port `i` on U(S)ART `i + 1`, its TX and RX
 /// on port C onwards; with the ELF's serial table to match. Since

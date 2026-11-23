@@ -594,7 +594,7 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// 19 the clock's `kernel_switch` and `adc` (`AET-WO-4240e` D7, ADC (i):
 /// each absent when unused); an older file is refused, never defaulted
 /// (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 19;
+pub const SOLVED_SCHEMA_VERSION: u32 = 20;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -778,13 +778,17 @@ pub struct SolvedPower {
 
 /// The pin a sense net was solved onto: an analog pin, so no alternate
 /// function and no entry in `assignments`. `channels` is every single-ended
-/// ADC input the pin carries, sorted.
+/// ADC input the pin carries, sorted. `top_ohms` and `bottom_ohms` are the
+/// divider `power.sense` declares (`AET-WO-4410` (1), solved version 20), so
+/// a generator that reads the topology alone (`RUL-16`) has the ratio.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct SolvedSense {
     pub pin: String,
     pub position: u16,
     pub channels: Vec<String>,
+    pub top_ohms: u32,
+    pub bottom_ohms: u32,
 }
 
 /// One domain: its regulator, the regulator's guaranteed output at the
