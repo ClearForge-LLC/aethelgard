@@ -199,7 +199,9 @@ tests/bounds.rs	replay_is_linear_in_events	0.800
 tests/bounds.rs	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib	16.200
 tests/campaign_tier1.rs	a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1	3.100
 tests/campaign_tier1.rs	a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays	9.540
-tests/campaign_tier1.rs	a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time	0.700
+# AET-WO-2310: renamed (moved to the stub-bootable minimal board) and lengthened to four scenarios behind a stub boot: a Furnace estimate (AET-WO-2302's rule:
+# 2.71 s alone on Furnace, libtest `finished in`, times 1.2, rounded up), until the refit rule measures it.
+tests/campaign_tier1.rs	a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it	3.3
 tests/campaign_tier1.rs	a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line	0.900
 tests/campaign_tier1.rs	a_failing_run_that_matches_its_expectation_exits_0	1.300
 tests/campaign_tier1.rs	a_failing_run_under_an_expect_pass_scenario_exits_1_unmatched	0.800
