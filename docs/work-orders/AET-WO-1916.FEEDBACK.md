@@ -3,9 +3,9 @@
 **Status: READY FOR REVIEW at this PR's last push.** One PR, left unmerged.
 - The measurement STOPPED the work order at §7 (`bc0f63e9`; its record is kept below).
 - The architect ruled D1–D6 on the bus at 06:35Z, and this PR builds that ruling.
-- One deviation, D2 (ii), was flagged on the bus before it was built (below). {{RULING-ON-DEVIATION}}
+- One deviation, D2 (ii), was flagged on the bus before it was built (below). No ruling on it had reached the bus at READY. If it is overruled, drop commit `4dc6fa7b` (it touches `with_tools.rs` only), and LP1 becomes an accepted trade.
 
-**Base:** `main` `aaad1555`. `main` was merged twice: `057e7d8b` (1915) and `7fbe5d11` (4300i, with docs).
+**Base:** `main` `aaad1555`. `main` was merged three times: `057e7d8b` (1915), `7fbe5d11` (4300i, with docs) and `f42a0c88` (docs).
 **Branch:** `wo/aet-1916-ci-refit`.
 **Predictions:** `spike/1916/predictions.md` (`33405d92`). **The measurement:** `spike/1916/measurement.md`.
 **Fence:**
@@ -38,7 +38,7 @@ Not touched: any `src/`, any workflow, `ci/SHARDS`, `fab/`, and every `2310` fil
      - every run's id and state hash against `campaign` run directly on the same ELF. The original checked one run.
    - `verify_fab_out…` keeps every assertion. Its manifest is checked against its own run's line, which carries `against`
      (B as ruled). Its BOM is compared with the `--against` tree's, which `emit` wrote, instead of a second `emit`.
-   - On Furnace the binary went from 571 s (1909's two unshared tests) to 280 s. On CI the block is 566.42 s on one shard,
+   - On Furnace the binary went from 571 s (1909's two unshared tests) to 280 s. On CI the block is 566.42 and 623.41 s on one shard,
      against 537 + 458 s on two.
 3. **D2 (ii), the LP1 guard: built otherwise than ruled, flagged first.**
    - The ruled path, a stub `kicad-cli` on a tool-less tier-1 run, cannot see LP1. `verify` prints the report that carries
@@ -53,16 +53,21 @@ Not touched: any `src/`, any workflow, `ci/SHARDS`, `fab/`, and every `2310` fil
 4. **D2, `1607` F-L, is built.**
    - `cli_backlog_tier1`'s `check support`, `emit` and `drc`/support tests share one `emit` per specification (`Shared`,
      three cells): 7 emits → 3.
-   - The binary is one colocated block of 52.75 s on CI.
+   - The binary is one colocated block of 52.75 and 63.46 s on CI (two runs).
 5. **Every share and rewritten assertion has a mutant, and every mutant is killed at its own assertion** (below): 11 of 11 (MB1–MB3, MB4b, MB5, MB6, ML1, MF1–MF3), each failing its named test with that assertion's message; MB4 was caught by `verify` itself first and was replaced by MB4b.
 6. **D6: the stale Furnace-estimate rows are re-weighed from CI's own timings.**
    - The six still-estimated rows come from a throwaway alone pass (REFIT RULE 1, run 45126254602, reverted at `5d257694`),
      taking the worse of two runners. `with_tools`' CPU-heavy test takes its worst in-shard time (rule 5).
    - `campaign_tier2`'s block (it carried `1211c`'s estimate) takes its worst `finished in` over nine runs.
-   - The two new blocks take their first CI run's `finished in`.
+   - The two new blocks take the worse `finished in` of their two CI runs.
 7. **D3: no `four_layer` split. D4: no shard-count change** (`ci/SHARDS` stays 12). **D5:** setup's share is the architect's
    backlog row.
-8. **Gates and CI:** {{GATES-CI}}
+8. **Gates and CI:** green.
+   - On the host, at the merged tree: `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+     and `cargo test --workspace` (2,850 passed, 0 failed).
+   - In the pinned image: `clippy` with `with-tools`; `verify_2k2_tier2` 2/2; `with_tools` 33/33.
+   - On CI: 45134177463 (`12699d7f`) green, 17/17 jobs, tier 2 205/205, slowest job 18.4 min. The READY head's run is in the
+     bus note.
 
 ## The build
 
@@ -85,8 +90,8 @@ Not touched: any `src/`, any workflow, `ci/SHARDS`, `fab/`, and every `2310` fil
 | `bounds.rs` `the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib` | 16.2 (estimate) | 7.95 | alone, 7.95 / 7.93 |
 | `with_tools` `a_board_not_drawn_runs_its_gates_and_is_never_verified` | 345.324 (estimate) | 244.010 | worst in-shard (rule 5) over six runs, 173.7–244.0; alone 198.14 / 215.83 |
 | block `campaign_tier2` | 116 (83 + `1211c`'s 32.228 estimate) | 98 | worst `finished in` over nine runs, 56.3–97.0 |
-| block `verify_2k2_tier2` | (new; predicted 572) | 567 | 566.42, its first run |
-| block `cli_backlog_tier1` | (new; predicted 70) | 53 | 52.75, its first run |
+| block `verify_2k2_tier2` | (new; predicted 572) | 624 | the worse of its two runs: 566.42 (45126254602), 623.41 (45134177463) |
+| block `cli_backlog_tier1` | (new; predicted 70) | 64 | the worse of its two runs: 52.75, 63.46 |
 | `cli_backlog_tier1`'s 7 rows, `verify_2k2_tier2`'s 2 | removed | — | their binaries are blocks now |
 
 - The throwaway's runners carried five CPU models (AMD EPYC 7763, 9V45 and 9V74; Intel Xeon 6975P-C and Platinum 8573C). That
@@ -146,20 +151,37 @@ The REFIT RULE's text grew by five lines, because the ruling asks for the model 
 
 ## Gates and CI
 
-{{GATES-CI-DETAIL}}
+- **Host** (merged tree `bf02cbaa`): `cargo fmt --all -- --check` passes; `cargo clippy --workspace --all-targets --
+  -D warnings` is clean; `cargo test --workspace` passes 2,850, fails 0 (1,109 s). `bash ci/test-shard.sh`: 137 PASS.
+- **Image** (`capped-run`, 16 GiB, swap 0, read back): `cargo clippy --workspace --all-targets --features
+  aethelgard-cli/with-tools -- -D warnings` is clean. On the merged tree, `verify_2k2_tier2` passes 2 of 2 (387 s) and
+  `with_tools` 33 of 33.
+- **CI:**
+
+  | run | head | result | jobs | tier 2 | slowest job | spread | note |
+  |---|---|---|---|---|---|---|---|
+  | 45126254602 | `9c7c6cb8` (throwaway) | green | all | — | 19.4 min | 6.5 min | the alone pass on six shards; not a spread sample |
+  | 45134177463 | `12699d7f` (the build) | green | 17/17 | 205/205 | 18.4 min | 8.5 min | blocks measured: `verify_2k2_tier2` 623.41, `cli_backlog_tier1` 63.46 |
+
+  - On `12699d7f` the shards are planned at 830 s, down from 850–896 before the shares. Shard 2 ran 365 s against 830:
+    `supply_tier1`'s fast mode on a fast runner. That is the noise D1 now ignores.
+  - The 20-minute clause held on both runs.
+  - The new clause reads three runs of one plan. This PR's last rows (the two blocks, at the worse of their two runs) change the plan once more, so its count
+    starts on `main` after the merge.
+- `TIER2_MIN` is unchanged (205): no test was added or removed.
 
 ## Findings for the architect
 
 - **F1** (D2 (ii)): the ruled LP1 path cannot exist, as measured from source (above). The guard is built in `with_tools.rs`,
-  outside the named fence, and was flagged first. {{RULING-ON-DEVIATION}}
+  outside the named fence, and was flagged first. No ruling on it had reached the bus at READY. If it is overruled, drop commit `4dc6fa7b` (it touches `with_tools.rs` only), and LP1 becomes an accepted trade.
 - **F2:** each share's directory outlives its process: statics are never dropped (`1909`'s note, now also for three `emit`s
   of about 1 MB each, in `TMPDIR`).
 - **F3** (MB4): a state hash that disagrees with the archive is refused by `verify` itself, before any test can see it. That
   is a defence, not a gap, and it is why MB4b targets a run no `attribute` gate re-reads.
 - **F4:** shard 8 reads ×1.19 over `main`'s last three runs of the old plan, near the new clause's ×1.25. The old plan's
   shard 8 held `against_fab_tier2` and `escape_tier1`. This PR's rows change the plan, so the count restarts. Watch it.
-- **F5:** one CI run is thin ground for a new block (`verify_2k2_tier2` 566.42, `cli_backlog_tier1` 52.75). The next refit
-  should re-weigh both, by the new clause or by rule 3.
+- **F5:** two CI runs are thin ground for a new block (`verify_2k2_tier2` 566.42 and 623.41 s; `cli_backlog_tier1` 52.75 and
+  63.46 s). The next refit should re-weigh both, by the new clause or by rule 3.
 - **F6** (protected file): `docs/roadmap.md:857` still states the old "spread past 6 minutes twice" clause.
 
 ## Record: the measurement and the STOP (`bc0f63e9`)
