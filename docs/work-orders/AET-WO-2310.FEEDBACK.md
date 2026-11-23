@@ -171,4 +171,5 @@ All as stated in §1. Q-F's grants as used:
   - `gates` and `bench-package` failed only on the package (it "differs"; every verify gate passed and every campaign matched). They wait on the dispatch.
   - Every other job passed: cli, pinned, pinout, image, foreign, the ArduPilot seeds, generated, source.
 - **CI, second run** (on `88f87e50`, main `aaad1555` merged): shard 0's clippy, run with `--features aethelgard-cli/with-tools`, flagged a `clone` in `campaign_tier2` (`cloned_ref_to_slice_refs`). My host clippy had run without the feature, so it never compiled the tier-2 tests. Fixed, and clippy with the feature is clean on the host. **Lesson:** run the gate's clippy with every feature CI enables.
+  - **That run's tier 2** (run 45122149284), measured: shards 1–4 and 6–11 passed. Shard 0 failed on that clippy lint. Shard 5 failed only on the bench-package binding. **Every tier-2 test passed on CI.**
 - **CI and the package:** FINAL_CI
