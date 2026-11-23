@@ -248,7 +248,7 @@ fn a_strap_missing_from_the_declaration_is_refused_never_floated() {
 fn a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail() {
     let mut v = d2_drawn();
     v["pin_devices"][0]["signals"][1]["pull"] = json!({
-        "resistor": {"reference": "R9", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3"},
+        "resistor": {"reference": "R19", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3"},
         "source": "AET-WO-1211d test: a declared pull-up"
     });
     // A resistor is judged over a temperature (`TemperatureUndeclared`): D1's.
@@ -256,10 +256,10 @@ fn a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail() {
         fixture("d1-drv8876.json")["pin_devices"][0]["temperature_celsius"].clone();
     let (spec, solved, table) = solved(&v);
     let d = Drawing::of(&spec, &solved, &table).unwrap();
-    let r9 = d.pins("R9").unwrap();
-    assert_eq!(r9.footprint, "Resistor_SMD:R_0603_1608Metric");
-    assert_eq!(r9.value, "10k CRCW0603_F_K");
-    let on: BTreeSet<_> = r9.pins.values().flatten().cloned().collect();
+    let r19 = d.pins("R19").unwrap();
+    assert_eq!(r19.footprint, "Resistor_SMD:R_0603_1608Metric");
+    assert_eq!(r19.value, "10k CRCW0603_F_K");
+    let on: BTreeSet<_> = r19.pins.values().flatten().cloned().collect();
     assert_eq!(on, BTreeSet::from(["DRV_NFAULT".into(), "VDD_3V3".into()]));
 }
 

@@ -14,7 +14,7 @@ The pinout check (`AET-WO-4400a`, ruling D7 on PR #130). It judges what a linked
 - **forward:** every assignment's pin is alternate at the solved AF, and every `gpio` pin is an output. Since `AET-WO-4400b` (§1.3), every topology pin's drive is also judged from the same bytes:
   - **`OSPEEDR`** against the speed `solve` stored in `pin_speeds` (`WrongSpeed`);
   - **`OTYPER`** open-drain exactly on the I2C lines, `aethelgard_ir::silicon::implied_open_drain` (`WrongOutputType`);
-  - **`PUPDR`** against `aethelgard_ir::silicon::implied_pupd`: a pin device's GPIO input's declared pull, no internal pull on every other pin, a motor output included, whose pull-down is the declared external resistor (`AET-WO-4300i` D0) (`WrongPull`).
+  - **`PUPDR`** against `aethelgard_ir::silicon::implied_pupd`: a pin device's GPIO input's declared pull; a motor output's by its declared fitment (`AET-WO-4300j` D6): `fitted`, none, `00`, whose pull-down is the declared external resistor (`AET-WO-4300i` D0), `open`, the internal pull-down, `10`; no internal pull on every other pin (`WrongPull`).
 
   The check reads the stored speed and calls these two rules. The generator calls neither, and stores nothing (`RUL-20`); a test in `aethelgard-hwdef` holds that. A topology with no stored speed for a pin is refused (`NoPinSpeed`), never judged as `00`.
 - **reverse:** every *configured* pin is named by the topology or the allow-list. An allowed pin is exactly as declared, and the allow-list may not name a topology pin.

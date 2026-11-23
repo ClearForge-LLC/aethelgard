@@ -140,9 +140,16 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// pin at a connector is FT (`ConnectorPinNotFt`), and the solver offers a
 /// connector-facing net FT pins only; a motor output is never on a pin with
 /// a reset pull (`MotorPinResetPull`).
+/// Version 29 (`AET-WO-4300j`) requires `motor_outputs[].pull.link`, the
+/// pull's series jumper, and `motor_outputs[].pull.fitment`, `fitted` or
+/// `open`; the declared ohms are judged against the bound computed on
+/// `mcu.supply` from the MCU row's `io.motor_pull_bound`
+/// (`MotorPullOutsideBound`, `MotorPullFloorUnreachable`,
+/// `MotorPullBoundEmpty`), and the link's part is a jumper row
+/// (`PowerPartUnknown`).
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 28;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 29;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -580,9 +587,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// every datasheet value is the part's row, looked up by part and mode),
 /// version 17 an input's `active` and `pulled`, a pin device's ADC input's
 /// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
-/// twin and `verify` read the solved topology alone, `RUL-16`); an older
-/// file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 17;
+/// twin and `verify` read the solved topology alone, `RUL-16`), version 18
+/// a motor output's `pull`, its fitment, references, ohms and bound
+/// (`AET-WO-4300j` D6, D9: the generators read the topology alone); an
+/// older file is refused, never defaulted (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 18;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -1922,6 +1931,10 @@ pub enum IrValidationError {
         "motor output `{id}` disagrees with the solved topology: its net is one `TIMn_CHk` assignment of a timer with channels, each channel once, indices exactly 0..n, `pwm` present exactly for PWM, and PSC, ARR and CCR within the timer (CCR from 1 to ARR - 1, so a fall never meets the next update)"
     )]
     MotorOutputMismatch { id: String },
+    #[error(
+        "motor output `{id}`'s solved pull disagrees with itself: `floor_ohms` is at least 1 and `ohms` lies between `floor_ohms` and `ceiling_ohms` (so the window is not empty) (`AET-WO-4300j` adversarial F1: hwdef writes these into its comment line)"
+    )]
+    MotorPullMismatch { id: String },
     #[error("serial port `{id}` is declared twice (labels are compared with case folded)")]
     DuplicateSerialLabel { id: String },
     #[error(
@@ -2533,6 +2546,7 @@ impl IrValidationError {
             Self::PulseExceedsPeriod { .. } => "PulseExceedsPeriod",
             Self::UnjudgedMotorConstraint { .. } => "UnjudgedMotorConstraint",
             Self::MotorOutputMismatch { .. } => "MotorOutputMismatch",
+            Self::MotorPullMismatch { .. } => "MotorPullMismatch",
             Self::DuplicateSerialLabel { .. } => "DuplicateSerialLabel",
             Self::SerialPeripheralLpuart { .. } => "SerialPeripheralLpuart",
             Self::UnknownSerialPeripheral { .. } => "UnknownSerialPeripheral",
@@ -2733,6 +2747,7 @@ impl IrValidationError {
             | Self::PulseExceedsPeriod { id, .. }
             | Self::UnjudgedMotorConstraint { id }
             | Self::MotorOutputMismatch { id }
+            | Self::MotorPullMismatch { id }
             | Self::TimerShared { id }
             | Self::DuplicateSerialLabel { id }
             | Self::SerialPeripheralLpuart { id, .. }
@@ -4112,6 +4127,10 @@ impl Specification {
             })?;
             plain(&r.part, || format!("{at}.resistor.part"))?;
             plain(&r.to, || format!("{at}.resistor.to"))?;
+            identifier(IdentifierKind::Reference, &m.pull.link.reference, || {
+                format!("{at}.link.reference")
+            })?;
+            plain(&m.pull.link.part, || format!("{at}.link.part"))?;
             board::source(&m.pull.source, &format!("{at}.source"))?;
         }
         for (i, p) in self.serial_ports.iter().enumerate() {
@@ -4413,15 +4432,27 @@ impl SolvedTopology {
             })?;
             plain(&d.cs, || format!("spi_devices.{reference}.cs"))?;
         }
+        // `AET-WO-4300j` adversarial F1: the pull's references reach hwdef's
+        // comment line verbatim, so each is an identifier, as every other
+        // reference here is, and none repeats another reference.
+        for (net, m) in &self.motor_outputs {
+            plain(net, || format!("motor_outputs.{net}"))?;
+            plain(&m.pull.resistor, || {
+                format!("motor_outputs.{net}.pull.resistor")
+            })?;
+            plain(&m.pull.link, || format!("motor_outputs.{net}.pull.link"))?;
+        }
         references_distinct(
             self.i2c_devices
                 .keys()
                 .chain(self.spi_devices.keys())
-                .map(String::as_str),
+                .map(String::as_str)
+                .chain(
+                    self.motor_outputs
+                        .values()
+                        .flat_map(|m| [m.pull.resistor.as_str(), m.pull.link.as_str()]),
+                ),
         )?;
-        for net in self.motor_outputs.keys() {
-            plain(net, || format!("motor_outputs.{net}"))?;
-        }
         for (label, p) in &self.serial_ports {
             plain(label, || format!("serial_ports.{label}"))?;
             plain(&p.peripheral, || format!("serial_ports.{label}.peripheral"))?;
@@ -4741,6 +4772,10 @@ impl SolvedTopology {
         let mut channels = BTreeSet::new();
         let mut timers: BTreeMap<u32, (motor::TimerKey, u32, u32)> = BTreeMap::new();
         for (net, m) in &self.motor_outputs {
+            let p = &m.pull;
+            if p.floor_ohms == 0 || !(p.floor_ohms..=p.ceiling_ohms).contains(&p.ohms) {
+                return Err(E::MotorPullMismatch { id: net.clone() });
+            }
             let a = self.assignments.get(net).ok_or_else(|| mismatch(net))?;
             let Some((timer, channel)) = motor::timer_channel(&a.signal) else {
                 return Err(mismatch(net));

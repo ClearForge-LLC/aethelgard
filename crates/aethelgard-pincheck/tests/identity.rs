@@ -185,7 +185,7 @@ fn motors() -> SolvedTopology {
     for (i, pin) in ["PA8", "PA9", "PA10", "PA11"].iter().enumerate() {
         let net = format!("MOTOR{}", i + 1);
         v["assignments"][&net] = json!({"pin": pin, "peripheral": "TIM1", "signal": format!("TIM1_CH{}", i + 1), "alternate_function": 1});
-        v["motor_outputs"][&net] = json!({"index": i, "protocol": "dshot600", "pwm": null, "psc": 0, "arr": 107, "ccr": 40});
+        v["motor_outputs"][&net] = json!({"index": i, "protocol": "dshot600", "pwm": null, "psc": 0, "arr": 107, "ccr": 40, "pull": {"fitment": "fitted", "resistor": format!("R{}", 10 + i), "ohms": 442_000, "link": format!("R{}", 20 + i), "floor_ohms": 422_561, "ceiling_ohms": 895_714}});
     }
     serde_json::from_value(v).unwrap()
 }

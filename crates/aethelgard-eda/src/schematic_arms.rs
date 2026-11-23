@@ -958,6 +958,8 @@ pub(super) fn arm(b: &mut Builder<'_>, row: &Arm, declared: Declared<'_>) -> Res
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
+        dnp: false,
+        beside: None,
     });
     // A pin device's declared resistors (straps, pulls), then each analog
     // output's resistor to GND and its reservoir by the MCU's ADC pin: all

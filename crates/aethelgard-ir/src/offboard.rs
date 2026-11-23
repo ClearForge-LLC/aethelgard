@@ -1,14 +1,19 @@
 //! Off-board pins (`AET-WO-4300i`, as ruled on `4300h` D0, D1 (a), D5 and
 //! F7): validation step 26, and the facts the solver's candidate order reads.
 //!
-//! - **The motor pull** (D0 `external`): every motor output declares a
-//!   resistor from its net to `GND` (`MotorPullNotDown`), a resistor row of
-//!   the power parts table (`PowerPartUnknown`), whose declared ohms lie
-//!   inside the MCU row's RPD range, `io.weak_pull_down_ohms`
-//!   (`MotorPullOutsideRpd`, DS12117 Rev 10 Table 49 = Table 146, the held
-//!   source ruled on V). The declared ohms are judged, not a tolerance band:
-//!   most motor boards declare no temperature. No value outside the range
-//!   is admitted, and nothing names an escape.
+//! - **The motor pull** (D0 `external`; `AET-WO-4300j` D3 (a), D4, D5):
+//!   every motor output declares a resistor from its net to `GND`
+//!   (`MotorPullNotDown`), a resistor row of the power parts table, through
+//!   a link that is a jumper row (`PowerPartUnknown`), whose declared ohms lie
+//!   inside the bound [`motor_pull_window`] computes on `mcu.supply` from the
+//!   MCU row's `io.motor_pull_bound` (`MotorPullOutsideBound`). A rail on
+//!   which the internal pull-up cannot lift the line to the threshold at all
+//!   is `MotorPullFloorUnreachable`, and one whose floor is above its ceiling
+//!   `MotorPullBoundEmpty`: neither admits a value. The declared ohms are
+//!   judged, not a tolerance band (the margin is in the bound, tolerance in
+//!   the value's selection rule). No value outside the bound is admitted,
+//!   and nothing names an escape. The fitment is not judged here: either
+//!   is valid, and `MotorPinResetPull` holds for both.
 //! - **Declared reservations** (F7): `mcu.reserved_pins` names each pin
 //!   once (`ReservedPinTwice`) and none the engine already reserves
 //!   (`ReservedPinEngineReserved`, [`crate::reserved_pins`]); whether each is
@@ -41,9 +46,14 @@ use crate::{IrValidationError, Specification};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OffboardKind {
     MotorPullNotDown,
-    MotorPullOutsideRpd,
-    /// A motor pull's part that is not a resistor row, or an `mcu.part`
-    /// with no MCU row where one is needed.
+    MotorPullOutsideBound,
+    /// The rail's internal pull-up cannot hold the idle line at the input-high
+    /// threshold plus the margin with no pull-down at all.
+    MotorPullFloorUnreachable,
+    /// The rail's floor is above its ceiling: no value is admitted.
+    MotorPullBoundEmpty,
+    /// A motor pull's part that is not a resistor row, its link's that is not
+    /// a jumper row, or an `mcu.part` with no MCU row where one is needed.
     PowerPartUnknown,
     ReservedPinTwice,
     ReservedPinEngineReserved,
@@ -56,7 +66,9 @@ impl OffboardKind {
     pub fn name(self) -> &'static str {
         match self {
             Self::MotorPullNotDown => "MotorPullNotDown",
-            Self::MotorPullOutsideRpd => "MotorPullOutsideRpd",
+            Self::MotorPullOutsideBound => "MotorPullOutsideBound",
+            Self::MotorPullFloorUnreachable => "MotorPullFloorUnreachable",
+            Self::MotorPullBoundEmpty => "MotorPullBoundEmpty",
             Self::PowerPartUnknown => "PowerPartUnknown",
             Self::ReservedPinTwice => "ReservedPinTwice",
             Self::ReservedPinEngineReserved => "ReservedPinEngineReserved",
@@ -129,6 +141,127 @@ fn mcu_io(spec: &Specification) -> Result<&'static McuIo, IrValidationError> {
             ),
         )),
     }
+}
+
+/// The whole ohms a motor pull-down is admitted between on one board
+/// (`AET-WO-4300j` D3 (a)): `floor_ohms` the least, `ceiling_ohms` the most.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MotorPullWindow {
+    pub floor_ohms: u32,
+    pub ceiling_ohms: u32,
+}
+
+/// The motor pull-down's bound on `spec`'s `mcu.supply`, the one
+/// computation step 26 judges by and `solve` copies into the topology, so
+/// the two never disagree (`AET-WO-4300j` DERIVATION.md §3, §4 and §5a, D1
+/// (a), cross-rail, as ruled). In exact integers, nanovolts throughout:
+///
+/// - the FC's rail at its minimum, `VDD_lo = nominal x (1000 - tol) / 1000`,
+///   and the peer's at its maximum, `VDD_hi = nominal x (1000 + tol) / 1000`;
+/// - `I`, the pad's leakage plus the peer's input current;
+/// - **the floor** (state A, passthrough idle): the node
+///   `(VDD_lo - V) / RPU = V / R + I` must hold `V >= V_hi =
+///   (input_high + margin) / 1000 x VDD_hi`, which, `V` rising with `R`, is
+///   `R >= V_hi x RPU / (VDD_lo - V_hi - I x RPU)`, rounded up to whole ohms.
+///   A denominator at or below zero is `MotorPullFloorUnreachable`;
+/// - **the ceiling** (state B, reset, pin Hi-Z): `I x R <= (input_low -
+///   margin) / 1000 x VDD_lo`, rounded down.
+///
+/// A floor above the ceiling, or beyond any `u32`, is `MotorPullBoundEmpty`;
+/// a ceiling beyond `u32` admits every declarable value. Refused at
+/// `mcu.part` when it has no MCU row (`PowerPartUnknown`), and at
+/// `mcu.supply` when it names no domain (`UnknownDomain`).
+pub fn motor_pull_window(spec: &Specification) -> Result<MotorPullWindow, IrValidationError> {
+    use OffboardKind as K;
+    let b = &mcu_io(spec)?.motor_pull_bound;
+    let pp = power_parts::table()?;
+    let Some(d) = spec
+        .voltage_domains
+        .iter()
+        .find(|d| d.id == spec.mcu.supply)
+    else {
+        return Err(IrValidationError::UnknownDomain {
+            id: spec.mcu.supply.clone(),
+        });
+    };
+    let n = i128::from(d.nominal_millivolts);
+    let tol = i128::from(d.tolerance_permille);
+    let rpu = i128::from(b.pull_up_max_ohms.value);
+    let high = i128::from(b.input_high_min_permille.value);
+    let low = i128::from(b.input_low_max_permille.value);
+    let margin = i128::from(b.margin_permille.value);
+    let i_na =
+        i128::from(b.leakage_max_nanoamps.value) + i128::from(b.peer_input_current_nanoamps.value);
+    // The ESC's thresholds are taken on its own rail, held as a stand-in
+    // (`AET-WO-4300j` F2: the ESC makes its own 3.3 V, DS70005664A p. 16);
+    // the pull-up works from the board's `mcu.supply`.
+    let peer_n = i128::from(b.peer_rail_millivolts.value);
+    let peer_tol = i128::from(b.peer_rail_tolerance_permille.value);
+    // mV x 1000 / 1000 x 1e6 = nV.
+    let vdd_lo = n * (1000 - tol) * 1000;
+    let v_hi = (high + margin) * peer_n * (1000 + peer_tol);
+    // nA x ohm = nV.
+    let den = vdd_lo - v_hi - i_na * rpu;
+    let rail = rail(d);
+    if den <= 0 {
+        return Err(refuse(
+            K::MotorPullFloorUnreachable,
+            &d.id,
+            "mcu.supply",
+            format!(
+                "on {rail}, the internal pull-up (RPU max {rpu} ohm) less {i_na} nA cannot hold the idle line at VIH + margin, {high} + {margin} permille of the peer's VDD max, with no pull-down at all: no motor pull-down is admitted ({})",
+                cites(pp, b)
+            ),
+        ));
+    }
+    let floor = (v_hi * rpu + den - 1) / den;
+    let ceiling = (low - margin) * peer_n * (1000 - peer_tol) / i_na;
+    let ceiling_ohms = u32::try_from(ceiling).unwrap_or(u32::MAX);
+    match u32::try_from(floor) {
+        Ok(floor_ohms) if floor_ohms <= ceiling_ohms => Ok(MotorPullWindow {
+            floor_ohms,
+            ceiling_ohms,
+        }),
+        _ => Err(refuse(
+            K::MotorPullBoundEmpty,
+            &d.id,
+            "mcu.supply",
+            format!(
+                "on {rail}, the motor pull-down's floor, {floor} ohm, is above its ceiling, {ceiling} ohm: no value is admitted ({})",
+                cites(pp, b)
+            ),
+        )),
+    }
+}
+
+/// `` `VDD_3V3` (3300 mV +/-50 permille) ``.
+fn rail(d: &crate::VoltageDomain) -> String {
+    format!(
+        "`{}` ({} mV +/-{} permille)",
+        d.id, d.nominal_millivolts, d.tolerance_permille
+    )
+}
+
+/// Every input of the bound with its citation or basis, in one line.
+fn cites(pp: &power_parts::PowerPartsTable, b: &power_parts::MotorPullBound) -> String {
+    format!(
+        "RPU max {} ohm, {}; VIH min {} permille, {}; VIL max {} permille, {}; Ilkg {} nA, {}; peer input {} nA, {}; margin {} permille, {}; peer rail {} mV +/-{} permille, {}",
+        b.pull_up_max_ohms.value,
+        pp.cite(&b.pull_up_max_ohms.at),
+        b.input_high_min_permille.value,
+        pp.cite(&b.input_high_min_permille.at),
+        b.input_low_max_permille.value,
+        pp.cite(&b.input_low_max_permille.at),
+        b.leakage_max_nanoamps.value,
+        pp.cite(&b.leakage_max_nanoamps.at),
+        b.peer_input_current_nanoamps.value,
+        b.peer_input_current_nanoamps.basis,
+        b.margin_permille.value,
+        b.margin_permille.basis,
+        b.peer_rail_millivolts.value,
+        b.peer_rail_tolerance_permille.value,
+        b.peer_rail_millivolts.basis,
+    )
 }
 
 /// The claimants whose net a connector pin names, solved or by hand.
@@ -292,7 +425,10 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     }
     let io = mcu_io(spec)?;
     let pp = power_parts::table()?;
-    let rpd = &io.weak_pull_down_ohms;
+    let window = match spec.motor_outputs.is_empty() {
+        true => None,
+        false => Some(motor_pull_window(spec)?),
+    };
     for (i, m) in spec.motor_outputs.iter().enumerate() {
         let r = &m.pull.resistor;
         let at = format!("motor_outputs[{i}].pull.resistor");
@@ -307,10 +443,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
-        if !matches!(
-            pp.get(&r.part).map(|row| &row.kind),
-            Some(power_parts::Kind::Resistor(_))
-        ) {
+        let Some(power_parts::Kind::Resistor(row)) = pp.get(&r.part).map(|row| &row.kind) else {
             return Err(refuse(
                 K::PowerPartUnknown,
                 &m.label,
@@ -320,19 +453,57 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     r.part
                 ),
             ));
-        }
-        let ohms = i64::from(r.ohms);
-        if ohms < rpd.min || ohms > rpd.max {
+        };
+        let link = &m.pull.link;
+        if !matches!(
+            pp.get(&link.part).map(|row| &row.kind),
+            Some(power_parts::Kind::Jumper(_))
+        ) {
             return Err(refuse(
-                K::MotorPullOutsideRpd,
+                K::PowerPartUnknown,
+                &m.label,
+                format!("motor_outputs[{i}].pull.link.part"),
+                format!(
+                    "`{}` is not a jumper row of the power parts table: a motor pull's link is a zero-ohm jumper (`AET-WO-4300j` D4)",
+                    link.part
+                ),
+            ));
+        }
+        let w = window.expect("computed when a motor output is declared");
+        // The band, not the bare value (`AET-WO-4300j` F3, ruled 12:25Z): the
+        // row's tolerance and drift, ppm, give the low and high corners, and
+        // the low corner clears the floor and the high corner the ceiling,
+        // each a whole ohm, so a corner within an ohm of the exact bound is
+        // refused rather than admitted. TCR is not in the band: most boards
+        // declare no temperature (`4300i` F6).
+        let band = i128::from(row.tolerance_ppm.value) + i128::from(row.drift_ppm.value);
+        let ohms = i128::from(r.ohms);
+        let low_ppm = ohms * (1_000_000 - band);
+        let high_ppm = ohms * (1_000_000 + band);
+        if low_ppm < i128::from(w.floor_ohms) * 1_000_000
+            || high_ppm > i128::from(w.ceiling_ohms) * 1_000_000
+        {
+            let d = spec
+                .voltage_domains
+                .iter()
+                .find(|d| d.id == spec.mcu.supply)
+                .expect("the window found the supply's domain");
+            return Err(refuse(
+                K::MotorPullOutsideBound,
                 &m.label,
                 format!("{at}.ohms"),
                 format!(
-                    "`{}`'s pull is {ohms} ohm, outside RPD's {} to {} ohm ({}): the external pull reproduces the internal one (D0, ruled on V)",
+                    "`{}`'s pull is {} ohm, its band {} to {} ohm with `{}`'s tolerance and drift ({} ppm), outside the bound on {}, {} to {} ohm: the low corner at least the floor, so that in BLHeli passthrough the weakest internal pull-up holds the idle line at VIH + margin of the peer's VDD max, and the high corner at most the ceiling, so that at reset the leakage holds it at VIL - margin of VDD min (`AET-WO-4300j` D1 (a), D3 (a); {})",
                     m.label,
-                    rpd.min,
-                    rpd.max,
-                    pp.cite(&rpd.at)
+                    r.ohms,
+                    low_ppm / 1_000_000,
+                    (high_ppm + 999_999) / 1_000_000,
+                    r.part,
+                    band,
+                    rail(d),
+                    w.floor_ohms,
+                    w.ceiling_ohms,
+                    cites(pp, &io.motor_pull_bound)
                 ),
             ));
         }
@@ -345,7 +516,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 &m.label,
                 format!("motor_outputs[{i}].pin"),
                 format!(
-                    "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull (`AET-WO-4300i` D0), and a pull-up fights the declared pull-down from power-up until the timer takes the pin; pin it elsewhere",
+                    "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull from reset (`AET-WO-4300i` D0; an `open` output's firmware pull-down is written only at init, `AET-WO-4300j`), and a pull-up fights the pull-down from power-up until the timer takes the pin; pin it elsewhere",
                     m.label
                 ),
             ));

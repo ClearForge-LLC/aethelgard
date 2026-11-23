@@ -832,10 +832,12 @@ const PUPDR_PULL_DOWN: u32 = 0b10;
 const PUPDR_PULL_UP: u32 = 0b01;
 
 /// The `PUPDR` field the solved topology implies for the pin of `net`
-/// (`AET-WO-4400b` D3): none on a motor output, `00`, whose pull-down is the
+/// (`AET-WO-4400b` D3): on a motor output, by its declared fitment
+/// (`AET-WO-4300j` D6): `fitted`, none, `00`, whose pull-down is the
 /// declared external resistor `motor_outputs[].pull` from power-up
 /// (`AET-WO-4300i`, ruled D0 `external`, which reverses Q-G's internal
-/// pull-down for motor outputs; `1211` Q9 went with it); on a pin device's
+/// pull-down for motor outputs; `1211` Q9 went with it); `open`, the link
+/// not fitted, the internal pull-down, `10`; on a pin device's
 /// GPIO input its declared MCU pull (`AET-WO-1211b`); and no internal pull on
 /// every other pin. An I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`).
 /// A pull a board needs is a declared fact, never a generator's default. The
@@ -844,7 +846,10 @@ const PUPDR_PULL_UP: u32 = 0b01;
 pub fn implied_pupd(t: &crate::SolvedTopology, net: &str) -> u32 {
     use crate::pin_devices::{Direction, McuPull};
     match (t.motor_outputs.get(net), t.gpio.get(net)) {
-        (Some(_), _) => 0,
+        (Some(m), _) => match m.pull.fitment {
+            crate::motor::PullFitment::Fitted => 0,
+            crate::motor::PullFitment::Open => PUPDR_PULL_DOWN,
+        },
         (None, Some(g)) if g.direction == Direction::Input => match g.pull {
             Some(McuPull::Up) => PUPDR_PULL_UP,
             Some(McuPull::Down) => PUPDR_PULL_DOWN,

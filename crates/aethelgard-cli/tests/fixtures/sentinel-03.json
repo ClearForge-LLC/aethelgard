@@ -1,5 +1,5 @@
 {
-  "schema_version": 28,
+  "schema_version": 29,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -964,7 +964,7 @@
       "protocol": "dshot600",
       "pwm": null,
       "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R52", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
+      "pull": {"resistor": {"reference": "R52", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R56", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
     },
     {
       "label": "MOTOR2",
@@ -972,7 +972,7 @@
       "protocol": "dshot600",
       "pwm": null,
       "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R53", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
+      "pull": {"resistor": {"reference": "R53", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R57", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
     },
     {
       "label": "MOTOR3",
@@ -980,7 +980,7 @@
       "protocol": "dshot600",
       "pwm": null,
       "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R54", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
+      "pull": {"resistor": {"reference": "R54", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R58", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
     },
     {
       "label": "MOTOR4",
@@ -988,7 +988,7 @@
       "protocol": "dshot600",
       "pwm": null,
       "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R55", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
+      "pull": {"resistor": {"reference": "R55", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R59", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
     }
   ],
   "power": {

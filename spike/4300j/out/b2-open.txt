@@ -1,0 +1,19 @@
+AET-WO-4300j B2: the open path end to end (scratch copy of motors-pwm with all four fitments open,
+~/.cache/aet-4300j/b2/open/motors-pwm-open.json, not committed), KiCad 10.0.7 in the tools image
+ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58.
+
+emit: rc 0. The board differs from the fitted motors-pwm board only by " dnp" in the four links'
+(attr smd dnp); the schematic by four (dnp yes); the emitter's BOM by "DNP" in R10-R13's Note.
+erc / drc --spec --schematic / support: pass, findings [] (b2-checks.tsv, row motors-pwm-open).
+KiCad's own netlist export: (property (name "dnp")) on R10-R13, on no component of the fitted board.
+KiCad's own BOM: the DNP column says DNP for R10-R13; with --exclude-dnp, R10-R13 are absent.
+KiCad's placement file (pcb export pos, as the fab path calls it, no --exclude-dnp) lists R10-R13;
+aethelgard_eda::fab::jlcpcb on the emitter's BOM and that file: R10-R13 in neither JLCPCB file
+(the fitted board's files carry them: 0,"R10,R11,R12,R13",R_0402_1005Metric,, and four CPL rows).
+Cross-fitment, KiCad's netlist: the open spec against the fitted board fails support with
+motor_link_fitment x4 ("marked populated ... declared open"); the fitted spec against the open
+board fails with motor_link_fitment x4 ("marked dnp ... declared fitted").
+KiCad reads the footprint's dnp: pcb export pos --exclude-dnp on the open board lists none of R10-R13.
+KiCad's parity check holds symbol and footprint dnp equal: check drc --schematic with the open
+schematic and the fitted board, and with the fitted schematic and the open board, each fails with
+footprint_symbol_mismatch x4 ("Footprint attributes don't match symbol: 'Do not populate' settings differ").

@@ -287,6 +287,19 @@ pub const CHANGES: &[VersionChange] = &[
             "PowerPartUnknown",
         ],
     ),
+    row(
+        29,
+        "AET-WO-4300j",
+        &["motor_outputs[].pull.link", "motor_outputs[].pull.fitment"],
+        &[],
+        &[],
+        &[
+            "MotorPullOutsideBound",
+            "MotorPullFloorUnreachable",
+            "MotorPullBoundEmpty",
+            "PowerPartUnknown",
+        ],
+    ),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

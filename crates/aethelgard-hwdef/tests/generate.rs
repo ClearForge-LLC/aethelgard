@@ -1,13 +1,17 @@
-//! `AET-WO-4400b`: the generator on the CI boards' topologies, byte
-//! for byte; every emitted keyword one ArduPilot `Copter-4.7.2` reads; every
+//! `AET-WO-4400b`: the generator on the CI boards' topologies, and on
+//! `serial-dshot-9600-open` (`AET-WO-4300j` D8, every motor pull `open`,
+//! solved from `spike/4300j/open/`), byte for byte; every emitted keyword
+//! one ArduPilot `Copter-4.7.2` reads; every
 //! refusal by name; and the generator calls none of the rules the pinout
 //! check judges by (`RUL-20`).
+
+use std::collections::BTreeSet;
 
 use aethelgard_hwdef::{Refusal, generate};
 use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 
-const BOARDS: [(&str, &str, &str); 4] = [
+const BOARDS: [(&str, &str, &str); 5] = [
     (
         "sentinel-01",
         include_str!("fixtures/sentinel-01.topology.json"),
@@ -28,6 +32,11 @@ const BOARDS: [(&str, &str, &str); 4] = [
         "four-port",
         include_str!("fixtures/four-port.topology.json"),
         include_str!("fixtures/four-port.hwdef.dat"),
+    ),
+    (
+        "serial-dshot-9600-open",
+        include_str!("fixtures/serial-dshot-9600-open.topology.json"),
+        include_str!("fixtures/serial-dshot-9600-open.hwdef.dat"),
     ),
 ];
 
@@ -129,12 +138,13 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("DEFAULT_SERIAL9_BAUD", "AP_SerialManager.cpp:390"),
         ("DEFAULT_SERIAL9_OPTIONS", "AP_SerialManager.cpp:395"),
     ];
-    const PIN_TOKENS: [&str; 5] = [
+    const PIN_TOKENS: [&str; 6] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
         "PUSHPULL",
         "OPENDRAIN",
         "FLOATING",
+        "PULLDOWN",
     ];
     for (name, t, _) in BOARDS {
         let text = generate(&topology(t)).unwrap().text;
@@ -532,25 +542,133 @@ fn pwm_lines(text: &str) -> Vec<String> {
         .collect()
 }
 
-/// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23): a motor line
-/// carries no internal pull, since its pull-down is the declared external
-/// resistor (`motor_outputs[].pull`). Every `PWM(n)` line ends `PUSHPULL
-/// FLOATING`, ArduPilot's own default for a PWM line, written explicitly
-/// (`chibios_hwdef.py:387-427` at the pinned tag); none carries `PULLDOWN`
-/// or `PULLUP`.
+/// `AET-WO-4300j` D6: a motor line's pull follows its declared fitment, pin
+/// by pin. `fitted` (`4300i` D0): the line ends `PUSHPULL FLOATING`,
+/// ArduPilot's own default for a PWM line, written explicitly
+/// (`chibios_hwdef.py:387-427` at the pinned tag), since the declared
+/// external resistor holds it; `open`: `PUSHPULL PULLDOWN`, the link not
+/// fitted. No line carries `PULLUP`. The committed `serial-dshot-9600` is
+/// `fitted` on every output and `serial-dshot-9600-open` `open`; each motor's
+/// line is found by its own pin, in each committed file and in what the
+/// generator writes, and one output flipped alone moves its own line and no
+/// other.
 #[test]
-fn every_motor_line_is_floating() {
-    for t in [topology(BOARDS[2].1), pwm_board()] {
+fn each_motor_line_s_pull_follows_its_fitment() {
+    use aethelgard_ir::motor::PullFitment;
+    // Each motor's line in `text`, found by its own pin, against its fitment.
+    let check_text = |t: &SolvedTopology, text: &str| {
+        let lines = pwm_lines(text);
+        assert_eq!(lines.len(), t.motor_outputs.len(), "{text}");
+        for (net, m) in &t.motor_outputs {
+            let pin = &t.assignments[net].pin;
+            let line = lines
+                .iter()
+                .find(|l| l.split_whitespace().next() == Some(pin.as_str()))
+                .unwrap_or_else(|| panic!("{net}: no line on {pin}"));
+            let want = match m.pull.fitment {
+                PullFitment::Fitted => " PUSHPULL FLOATING",
+                PullFitment::Open => " PUSHPULL PULLDOWN",
+            };
+            assert!(line.ends_with(want), "{net}: `{line}`");
+            assert!(!line.contains("PULLUP"), "`{line}`");
+        }
+    };
+    let check = |t: &SolvedTopology| check_text(t, &generate(t).unwrap().text);
+    let board = |name: &str| BOARDS.iter().find(|b| b.0 == name).unwrap();
+    let (fitted_b, open_b) = (board("serial-dshot-9600"), board("serial-dshot-9600-open"));
+    let fitted = topology(fitted_b.1);
+    let open = topology(open_b.1);
+    // The committed files themselves, pin by pin.
+    check_text(&fitted, fitted_b.2);
+    check_text(&open, open_b.2);
+    for (t, want) in [
+        (&fitted, PullFitment::Fitted),
+        (&pwm_board(), PullFitment::Fitted),
+        (&open, PullFitment::Open),
+    ] {
+        assert_eq!(t.motor_outputs.len(), 4);
+        assert!(t.motor_outputs.values().all(|m| m.pull.fitment == want));
+        check(t);
+    }
+    // One output flipped alone, either way.
+    for (base, to) in [(&fitted, PullFitment::Open), (&open, PullFitment::Fitted)] {
+        let mut t = base.clone();
+        t.motor_outputs.get_mut("MOTOR2").unwrap().pull.fitment = to;
+        t.validate().unwrap();
+        check(&t);
+        let (a, b) = (
+            pwm_lines(&generate(base).unwrap().text),
+            pwm_lines(&generate(&t).unwrap().text),
+        );
+        let moved: Vec<usize> = (0..a.len()).filter(|&i| a[i] != b[i]).collect();
+        assert_eq!(moved, [1], "{a:?} {b:?}");
+    }
+}
+
+/// `AET-WO-4300j` §1 (4): one comment line above each motor line names, from
+/// the topology alone, the net, the fitment, the resistor, its ohms, the
+/// link and the bound the resistor was judged against. ArduPilot discards
+/// it (`hwdef.py:209-212`). No `HAL_SERIAL_ESC_COMM_ENABLED` is written, and
+/// the comment lines set no width: every line with a source has its `#` in
+/// one column.
+#[test]
+fn a_comment_line_above_each_motor_line_names_its_fitment_and_bound() {
+    for (name, t, _) in &BOARDS[2..] {
+        let t = topology(t);
         let text = generate(&t).unwrap().text;
-        let lines = pwm_lines(&text);
-        assert_eq!(lines.len(), 4, "{text}");
-        for line in &lines {
-            assert!(line.ends_with(" PUSHPULL FLOATING"), "`{line}`");
+        assert!(!text.contains("HAL_SERIAL_ESC_COMM_ENABLED"), "{name}");
+        let lines: Vec<&str> = text.lines().collect();
+        for (net, m) in &t.motor_outputs {
+            let p = &m.pull;
+            let want = match p.fitment {
+                aethelgard_ir::motor::PullFitment::Fitted => format!(
+                    "# {net} pull: fitted, {} {} ohm to GND via link {}; bound {}..{} ohm, checked for BLHeli passthrough idle with it fitted, the ESC threshold a stand-in (AET-WO-4300j R1)",
+                    p.resistor, p.ohms, p.link, p.floor_ohms, p.ceiling_ohms
+                ),
+                aethelgard_ir::motor::PullFitment::Open => format!(
+                    "# {net} pull: open (link {} not fitted), PULLDOWN in firmware; {} {} ohm, bound {}..{} ohm (AET-WO-4300j)",
+                    p.link, p.resistor, p.ohms, p.floor_ohms, p.ceiling_ohms
+                ),
+            };
+            let at = lines.iter().position(|l| *l == want).unwrap_or_else(|| {
+                panic!(
+                    "{name}: no `{want}`
+{text}"
+                )
+            });
+            let next = lines[at + 1];
             assert!(
-                !line.contains("PULLDOWN") && !line.contains("PULLUP"),
-                "`{line}`"
+                next.starts_with(&format!("{} ", t.assignments[net].pin))
+                    && next.contains(&format!(" PWM({}) ", m.index + 1)),
+                "{name}: `{next}` after `{want}`"
             );
         }
+        let comments = lines
+            .iter()
+            .filter(|l| {
+                l.starts_with("# ")
+                    && l.contains(" pull: ")
+                    && (l.ends_with("(AET-WO-4300j)") || l.ends_with("(AET-WO-4300j R1)"))
+            })
+            .count();
+        assert_eq!(comments, t.motor_outputs.len(), "{name}");
+        // Every line with a source shares one width, its longest line's: no
+        // comment line set it.
+        let sourced: Vec<&str> = lines
+            .iter()
+            .copied()
+            .filter(|l| !l.starts_with('#') && !l.is_empty())
+            .collect();
+        let widths: BTreeSet<usize> = sourced.iter().map(|l| l.find("  # ").unwrap()).collect();
+        let longest = sourced
+            .iter()
+            .map(|l| l[..l.find("  # ").unwrap()].trim_end().len())
+            .max();
+        assert_eq!(
+            widths.into_iter().collect::<Vec<_>>(),
+            Vec::from_iter(longest),
+            "{name}"
+        );
     }
 }
 

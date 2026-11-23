@@ -512,40 +512,81 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
 }
 
 /// D0 (`AET-WO-4300h`, ruled by Scotty 2026-11-23; `AET-WO-4300i`), which
-/// reverses R5 (Q-G) for motor outputs: each motor output's `PUPDR` field is
-/// independent-rule, `00`, no internal pull, by `silicon::implied_pupd`, its
+/// reverses R5 (Q-G) for motor outputs, and `AET-WO-4300j` D6: each motor
+/// output's `PUPDR` field is independent-rule by `silicon::implied_pupd`,
+/// following the declared fitment: `fitted`, `00`, no internal pull, its
 /// pull-down being the declared external resistor (`motor_outputs[].pull`);
-/// every other `PUPDR` field stays same-source. A generator writing a pull
-/// there, down (`10`) or up (`01`), is refused by name (`LedgerRuleDisagrees`).
+/// `open` (`spike/4300j/open/motors-pwm-open.json`, every pull `open`),
+/// `10`, the firmware's pull-down, the link `DNP`. The judge names the rule
+/// and both fitments; each row's note names its own fitment, resistor and
+/// link. Every other `PUPDR` field stays same-source. A generator writing any
+/// other value is refused by name (`LedgerRuleDisagrees`): on a `fitted`
+/// board a pull, down (`10`) or up (`01`); on an `open` board none (`00`) or
+/// up (`01`).
 #[test]
-fn a_motor_output_s_pin_carries_no_internal_pull_by_the_independent_rule() {
-    for name in ["motors-pwm", "motors-dshot600"] {
-        let (t, table) = fixture(name);
+fn a_motor_output_s_pin_pull_follows_its_fitment_by_the_independent_rule() {
+    let open =
+        solve(&fs::read(root().join("spike/4300j/open/motors-pwm-open.json")).unwrap()).unwrap();
+    for (name, (t, table), want, forced) in [
+        ("motors-pwm", fixture("motors-pwm"), 0b00, [0b10, 0b01]),
+        (
+            "motors-dshot600",
+            fixture("motors-dshot600"),
+            0b00,
+            [0b10, 0b01],
+        ),
+        ("motors-pwm-open", open, 0b10, [0b00, 0b01]),
+    ] {
         let l = ledger::build(&t, &table).unwrap();
-        let motor: std::collections::BTreeSet<String> = t
+        let motor: BTreeMap<String, &String> = t
             .motor_outputs
             .keys()
             .map(|net| {
                 let pin = &t.assignments[net].pin;
-                format!("GPIO{}.PUPDR.PUPD{}", &pin[1..2], &pin[2..])
+                (format!("GPIO{}.PUPDR.PUPD{}", &pin[1..2], &pin[2..]), net)
             })
             .collect();
         assert_eq!(motor.len(), 4, "{name}");
         for r in l.rows.iter().filter(|r| r.register.ends_with(".PUPDR")) {
-            if motor.contains(&r.id) {
+            if let Some(net) = motor.get(&r.id) {
+                let m = &t.motor_outputs[*net];
                 assert_eq!(r.class, Class::IndependentRule, "{name} {}", r.id);
-                assert_eq!(r.value, Some(0b00), "{name} {}", r.id);
-                assert!(r.judge.contains("implied_pupd"), "{}", r.judge);
-                assert!(r.judge.contains("D0"), "{}", r.judge);
-                assert!(r.judge.contains("motor_outputs[].pull"), "{}", r.judge);
+                assert_eq!(r.value, Some(want), "{name} {}", r.id);
+                for named in [
+                    "implied_pupd",
+                    "D0",
+                    "motor_outputs[].pull",
+                    "AET-WO-4300j D6",
+                    "fitted, `00`",
+                    "open, `10`",
+                    "link DNP",
+                ] {
+                    assert!(r.judge.contains(named), "{named}: {}", r.judge);
+                }
+                let fitment = if want == 0b10 {
+                    format!(
+                        "pull open: the firmware's internal pull-down, `10`, from the first GPIO init, link {} DNP",
+                        m.pull.link
+                    )
+                } else {
+                    format!(
+                        "pull fitted: no internal pull, `00`, from the first GPIO init, its pull-down the declared external resistor {} through link {}",
+                        m.pull.resistor, m.pull.link
+                    )
+                };
+                assert!(
+                    r.note.contains(&format!("motor output `{net}` on "))
+                        && r.note.contains(&fitment),
+                    "{name}: {}",
+                    r.note
+                );
             } else {
                 assert_eq!(r.class, Class::SameSource, "{name} {}", r.id);
             }
         }
-        // The generator's value is the rule's, or the ledger refuses: Q-G's
-        // pull-down and Q9's pull-up alike.
-        let first = motor.iter().next().unwrap().clone();
-        for forced in [0b10, 0b01] {
+        // The generator's value is the rule's, or the ledger refuses.
+        let first = motor.keys().next().unwrap().clone();
+        for forced in forced {
             let mut fields = register_fields(&t, &table).unwrap();
             let f = fields.iter_mut().find(|f| f.id() == first).unwrap();
             f.value = Some(forced);
