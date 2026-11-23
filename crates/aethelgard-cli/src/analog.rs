@@ -1312,8 +1312,13 @@ mod tests {
         );
         // `AET-WO-1606`: a run that started the library names its banner;
         // `AET-WO-2310`: and the file it was mapped from, whose bytes the CLI
-        // hashes. This test binary stands in for the library's file.
-        let file = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+        // hashes. A small file of the test's own stands in for the library's
+        // file: this test binary did once, until it grew past the 256 MiB a
+        // library may be (`AET-WO-1609`, after `4240e` merged).
+        let dir = std::env::temp_dir().join(format!("aet-analog-lib-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("libngspice.so.0"), b"\x7fELF stand-in for ngspice").unwrap();
+        let file = std::fs::canonicalize(dir.join("libngspice.so.0")).unwrap();
         let library = file.to_str().unwrap();
         let want: String = {
             use sha2::{Digest, Sha256};
@@ -1385,6 +1390,7 @@ mod tests {
                 "{r}"
             );
         }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// `AET-WO-2301`: a rail answer is crossings of requested levels at their
