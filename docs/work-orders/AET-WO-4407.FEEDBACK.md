@@ -124,9 +124,9 @@ The layer digests differ between A and B, except the base's and the plain `COPY`
 
 - **Q1, a trigger gap (outside the fence).** `ardupilot-image.yml`'s `paths:` lists do not include `container/debian-trixie.sources`. A later PR that only moves the snapshot date would rebuild the tools image (`container/**`) but not the ArduPilot image, so ArduPilot's table would not be judged at the new date. The fix is one line in each of its two `paths:` lists.
 - **Q2, moving the date.** Moving it is now one edit to both `*.sources` files (check-pins refuses a mismatch), plus regenerating whichever table rows move. Regenerate with `debian-src.py table` from a snapshot build: any machine now reproduces CI's layer, so 1605's "only from CI" lesson no longer binds.
+- **Q3, the re-pin.** `container/IMAGE` still pins `e5fc7ddb`, whose `linux-libc-dev` is `6.12.115-2`. After main publishes this PR, the re-pin picks up `6.12.117-1`, the GtkSharp mirror and the revision label. Main's `publish` also mirrors `linux 6.12.117-1` beside `aethelgard-tools` (about 154 MB).
 - **Q4, the rehearsal's source.** `source-rehearsal` downloads GitHub's archive on every container PR. `gcc-source.sh` instead seeds from the published mirror once main has it. GitHub does not promise byte-stable archives: the sha256 held over two downloads here, and `oci-mirror.sh` refuses a changed one before any push. Once main has published the mirror, should the rehearsal seed from it, and `publish` too, on the GCC pattern?
 - **Q5, the fence.** I also edited two files the fence does not name: `container/test-check-pins.sh` (nested fixtures, two locales) and `container/fixtures/README.md` (the new fixtures). Both sit beside check-pins' fixtures; flagged here.
-- **Q3, the re-pin.** `container/IMAGE` still pins `e5fc7ddb`, whose `linux-libc-dev` is `6.12.115-2`. After main publishes this PR, the re-pin picks up `6.12.117-1`, the GtkSharp mirror and the revision label. Main's `publish` also mirrors `linux 6.12.117-1` beside `aethelgard-tools` (about 154 MB).
 
 ## 6. Gates
 
@@ -142,6 +142,26 @@ Beside them:
 
 ## 7. CI
 
-CI_RESULT
+**All four workflows green on `0393feaf`** **[measured]**:
+- `ardupilot-image` 45096054805;
+- `tools-image` 45096053732;
+- `engine-image` 45096053719;
+- `ci` 45096053735.
+
+The acceptance lines, read from the job logs rather than from the green status:
+- **ArduPilot `image`:**
+  - apt ran uncached on the runner from the snapshot: `Get:85 http://snapshot.debian.org/archive/debian-security/20261117T120000Z … linux-libc-dev all 6.12.117-1`;
+  - `ok   every GPL-2.0-only or LGPL-2.x-only source package in this image (29) is in container/ARDUPILOT-DEBIAN-GPL2.tsv`;
+  - no `ANSWER debian_drift`;
+  - both fixture tests passed, the check-pins fixtures under `C` and `en_US.utf8`.
+- **tools `image`:**
+  - apt ran uncached from the snapshot (`linux-libc-dev 6.12.117-1`);
+  - `ok   every … (84) is in container/TOOLS-DEBIAN-GPL2.tsv`, with no drift;
+  - 669 dpkg packages, the same count as the local fresh builds;
+  - workspace gates inside the image: 160 `test result: ok`.
+- **tools `source-rehearsal`:** pushed `…:GtkSharp-964cb9c…` at `sha256:03cf1db8…`, fetched it anonymously, and a second publish pushed nothing. `ok   TOOLS-SOURCES.md names ghcr.io/clearforge-llc/aethelgard-tools@sha256:03cf1db8…`.
+- **`ci`:** `ANSWER tier2_tests_passed=204 floor=203`.
+
+**After that run**, `main` `d09a5187` (3307 #341 and docs #343) was merged in. Nothing it changes overlaps this branch's files. The workflows run again on the final head; that result is on the PR and on the bus.
 
 **Signal:** READY.
