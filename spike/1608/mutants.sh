@@ -19,10 +19,11 @@ s = open(p).read()
 assert s.count(old) == 1, f"{p}: {old!r} occurs {s.count(old)} times"
 open(p, "w").write(s.replace(old, new))
 EOF
-  if nice -n 10 cargo test -q "$@" >/dev/null 2>&1; then
+  # A mutant that hangs its suite is reported, never waited on for ever.
+  if timeout 1200 nice -n 10 cargo test -q "$@" >/dev/null 2>&1; then
     echo "SURVIVED $name"
   else
-    echo "killed   $name"
+    echo "killed   $name (exit $?)"
   fi
   git checkout -q -- "$file"
 }

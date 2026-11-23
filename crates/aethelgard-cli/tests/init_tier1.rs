@@ -7,7 +7,8 @@ mod common;
 
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
+use std::time::{Duration, Instant};
 
 use common::Scratch;
 use serde_json::Value;
@@ -227,9 +228,26 @@ fn filled_it_passes_validate_and_solve() {
     assert_eq!(out.status.code(), Some(0), "{out:?}");
 }
 
-/// `init` refuses `out`, exit 3, `UnwritableOutput`, with one line.
+/// `init` refuses `out` at once, exit 3, `UnwritableOutput`, with one line.
+/// A refusal that blocks (a FIFO opened for writing waits for a reader) is
+/// killed after 10 s and fails here, rather than hanging the suite.
 fn refused(out: &Path) {
-    let (code, v) = init(out);
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["init", "--template", TEMPLATE, "--out"])
+        .arg(out)
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > deadline {
+            child.kill().unwrap();
+            child.wait().unwrap();
+            panic!("init blocked on {}", out.display());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let (code, v) = line(&child.wait_with_output().unwrap());
     assert_eq!(code, 3, "{}: {v}", out.display());
     assert_eq!(v["ok"], false);
     assert_eq!(v["error"]["kind"], "UnwritableOutput", "{v}");
