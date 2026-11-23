@@ -19,7 +19,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock, RwLockReadGuard};
 
 use aethelgard_chaos::record::Record;
 use aethelgard_chaos::{Manifest, cbor, replay_dir};
@@ -29,6 +29,17 @@ use sha2::{Digest, Sha256};
 mod common;
 
 use common::verify::root;
+
+/// The flood test's boot runs against Renode's 30 s wall bound, and this binary's other tests boot Renode in
+/// parallel threads. On a 4-vCPU runner they slowed it past that bound (AET-WO-2310, CI run 45133448578: run 0
+/// killed at 34.17 s, against 3.7 s alone). The flood test takes this lock alone; every other test shares it, so
+/// the rest still run beside one another but never beside the flood boot.
+static FLOOD_ALONE: RwLock<()> = RwLock::new(());
+
+/// Every test but the flood test holds this for its whole run.
+fn beside_others() -> RwLockReadGuard<'static, ()> {
+    FLOOD_ALONE.read().unwrap_or_else(|e| e.into_inner())
+}
 
 fn answer(line: &str) {
     let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
@@ -142,6 +153,7 @@ fn run_47k() -> PathBuf {
 
 #[test]
 fn p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects() {
+    let _turn = beside_others();
     let c = first();
     assert_eq!(
         c.code,
@@ -186,6 +198,7 @@ fn p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects() {
 
 #[test]
 fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_three_events() {
+    let _turn = beside_others();
     let replayed = replay_dir(&run_47k()).unwrap();
     let records = &replayed.state.records;
     let rises: Vec<(usize, &Record)> = records
@@ -275,6 +288,7 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
 
 #[test]
 fn p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash() {
+    let _turn = beside_others();
     let run = run_47k();
     let (c1, out1) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
     let (c2, out2) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
@@ -334,6 +348,7 @@ fn refused(dir: &Path) -> (Option<i32>, Value) {
 
 #[test]
 fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed() {
+    let _turn = beside_others();
     let flipped = tampered("flip", |t| {
         let at = t.len() / 2;
         t[at] ^= 1;
@@ -384,6 +399,7 @@ fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed
 
 #[test]
 fn p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario() {
+    let _turn = beside_others();
     let second = campaign("b");
     assert_eq!(
         second.code,
@@ -559,6 +575,7 @@ fn crossings(records: &[Record]) -> Vec<(String, String, u64, bool)> {
 
 #[test]
 fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay() {
+    let _turn = beside_others();
     let (code_a, a) = reference_campaign().clone();
     let (code_b, b) = droop_campaign("b");
     assert_eq!(
@@ -991,6 +1008,7 @@ fn recipe() -> Vec<String> {
 
 #[test]
 fn renodes_reset_recipe_is_pinned_step_by_step() {
+    let _turn = beside_others();
     // a. `machine Reset` alone never reboots: the core is at zero, the vector
     // table offset is cleared, and nothing runs.
     let mut r = Renode::booted();
@@ -1084,6 +1102,7 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
 
 #[test]
 fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
+    let _alone = FLOOD_ALONE.write().unwrap_or_else(|e| e.into_inner());
     let elf = flood_firmware();
     let runs: Vec<(Option<i32>, Value)> = (0..2)
         .map(|i| {
@@ -1174,6 +1193,7 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
 /// boot's own" (exit 70): chaos took the first read from I2C records only.
 #[test]
 fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
+    let _turn = beside_others();
     let dir = scratch("spi-only");
     // The generated board is built where no workspace encloses it: CI keeps
     // its target directory, and so `CARGO_TARGET_TMPDIR`, inside the
@@ -1248,6 +1268,7 @@ fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
 /// (`INV-04`).
 #[test]
 fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it() {
+    let _turn = beside_others();
     let dir = scratch("4202");
     let spec = root().join("examples/sentinel-01.json");
     // A base outside the campaign's directory is refused: a copy, beside it.
@@ -1331,6 +1352,7 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
 /// hash, and a hold on nSLEEP is refused `PinHeldIsOutput` before any run.
 #[test]
 fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
+    let _turn = beside_others();
     let dir = scratch("d1-1211c");
     let spec = dir.join("d1.json");
     fs::copy(
@@ -1538,6 +1560,7 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
 /// its `--chain` answer, which a stub replaces with the one under test.
 #[test]
 fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
+    let _turn = beside_others();
     let dir = scratch("2310-deck");
     let spec = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
     let generated = dir.join("gen");
