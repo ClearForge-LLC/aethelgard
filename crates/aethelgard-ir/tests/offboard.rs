@@ -444,6 +444,15 @@ fn a_hand_tt_pin_at_a_connector_is_refused_by_name() {
     );
 }
 
+/// The family is the structure before its first `_`, so a bare `FT` (`PH1`,
+/// DS12117 Table 8) is FT.
+#[test]
+fn a_hand_ft_pin_of_bare_structure_at_a_connector_validates() {
+    let mut v = d1();
+    v["motor_outputs"][2]["pin"] = json!("PH1");
+    spec(&v).validate().unwrap();
+}
+
 #[test]
 fn a_hand_pin_at_a_connector_with_no_held_structure_is_refused() {
     let mut v = d1();
