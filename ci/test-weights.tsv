@@ -70,6 +70,8 @@
 # AET-WO-1914 (P3 refuses a test of 10 s or more with no row): three rows, each its worst in-shard seconds (P3's reconstruction from the job log's stamps; an upper bound) over the held main runs 45099268629 (d09a5187), 45098769482 (b22600d3) and 45088311091 (fa9d7edd). pin_device_refusals' a_power_sense_input_is_not_generated took 10 s or more on all three (20.971 worst). emit_tier1's a_pin_device_beside_a_test_point_... (5.758) and generate_tier1's a_declared_hse_... (5.334) are the two other tests with no row over 4 s: the same test's in-shard time varied up to 2.52x across seven main runs, so either can reach 10 s on a slow runner (spike/1914/).
 # AET-WO-1607: with_tools' a_board_not_drawn_runs_its_gates_and_is_never_verified is a Furnace estimate, not a run: 123.33 s in the pinned image on Furnace (libtest `finished in`, alone: d1-drv8876's ten harnesses, build and simulate), times 2.8 (AET-WO-1310's factor), 345.324; replace it at the next refit.
 # AET-WO-1607 (P3, AET-WO-1914): cli_backlog_tier1's tests are Furnace estimates, not runs: the worst of three, each alone (`--exact`, one thread, libtest `finished in`, debug host build), times 2.8 (AET-WO-1310's factor). Most of the three large ones is emitting the same three boards in each test (FEEDBACK F-L). Replace them at the next refit.
+# AET-WO-1916 D2: cli_backlog_tier1 and verify_2k2_tier2 are colocated blocks now (ci/colocate.tsv); their test rows are removed.
+# AET-WO-1916 D6 (ruled 2026-11-23 06:35Z): the stale Furnace-estimate rows above re-weighed from CI's own timings, run 45126254602 (head 9c7c6cb8, its throwaway alone pass, reverted; spike/1916/alone.tsv): each test alone on two runners (REFIT RULE 1 and 2), the worse sample: board_tier2's d1_s_pin_device_generates_builds_and_proves 148.30 (127.08) and build_names_the_rustc_cargo_ran 0.37 (0.36; a lock-serialised binary, so it keeps a row), fab_tier1's a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name 2.71 (2.13), main.rs's verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode 1.40 (1.08), bounds.rs's the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib 7.95 (7.93). with_tools' a_board_not_drawn_runs_its_gates_and_is_never_verified (CPU-heavy, REFIT RULE 5) at its worst in-shard seconds (P3) over runs 45112159401, 45114924858, 45117816997, 45118544871, 45122394199 and 45126254602: 244.010 (173.7-244.0; alone 198.14 and 215.83).
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.600
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.000
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	1.61
@@ -116,9 +118,9 @@ tests/board_tier2.rs	a_write_past_the_block_fails	45.32
 tests/board_tier2.rs	a_wrong_alternate_function_fails	29.11
 tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.58
 tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	0.72
-tests/board_tier2.rs	build_names_the_rustc_cargo_ran	1.12
+tests/board_tier2.rs	build_names_the_rustc_cargo_ran	0.37
 tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	7.37
-tests/board_tier2.rs	d1_s_pin_device_generates_builds_and_proves	269.332
+tests/board_tier2.rs	d1_s_pin_device_generates_builds_and_proves	148.30
 tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	139.76
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	270.81
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	42.99
@@ -196,7 +198,7 @@ tests/boot_tier1.rs	three_agreeing_witnesses_pass	1.100
 tests/boot_tier1.rs	two_devices_witness_their_own_reads_in_either_order	2.000
 tests/boot_tier1.rs	word_one_that_is_not_the_value_the_flash_read_returned_fails_naming_both	1.200
 tests/bounds.rs	replay_is_linear_in_events	0.800
-tests/bounds.rs	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib	16.200
+tests/bounds.rs	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib	7.95
 tests/campaign_tier1.rs	a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1	3.100
 tests/campaign_tier1.rs	a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays	9.540
 # AET-WO-2310: renamed (moved to the stub-bootable minimal board) and lengthened to four scenarios behind a stub boot: a Furnace estimate (AET-WO-2302's rule:
@@ -246,13 +248,6 @@ tests/classes_tier1.rs	a_part_on_each_edge_is_routed_and_read_back_where_kicad_p
 tests/classes_tier1.rs	extract_bounds_a_classed_line_at_its_own_width	0.920
 tests/classes_tier1.rs	the_pair_judge_refuses_each_breakage	0.800
 tests/classes_tier1.rs	the_stand_in_pair_is_routed_coupled_and_measured	0.700
-tests/cli_backlog_tier1.rs	check_support_runs_only_the_pinned_kicad	3.220
-tests/cli_backlog_tier1.rs	solve_prints_the_banner_on_stderr_and_the_topology_alone_on_stdout	0.616
-tests/cli_backlog_tier1.rs	the_drc_and_support_verdicts_carry_the_banner_of_their_spec	47.432
-tests/cli_backlog_tier1.rs	the_emit_verdict_carries_the_banner_and_the_files_do_not	45.136
-tests/cli_backlog_tier1.rs	the_pinout_verdict_carries_the_banner_of_its_topology	0.756
-tests/cli_backlog_tier1.rs	the_prove_verdict_carries_the_banner_of_its_spec	92.008
-tests/cli_backlog_tier1.rs	verify_of_a_board_not_drawn_runs_past_its_board_gates	3.136
 tests/connectors_tier1.rs	a_board_draws_exactly_its_declared_connectors	1.1
 tests/connectors_tier1.rs	extract_counts_each_connectors_declared_budget_and_no_ci	2.800
 tests/connectors_tier1.rs	the_fixture_emits_its_connectors_at_the_bottom_edge	4.300
@@ -295,7 +290,7 @@ tests/fab_tier1.rs	a_tree_that_differs_writes_no_package_and_says_so	4.500
 tests/fab_tier1.rs	an_unacknowledged_unwitnessed_row_is_refused_by_each_fab_flag_naming_every_one	3.770
 tests/fab_tier1.rs	an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched	5.200
 tests/fab_tier1.rs	the_acknowledged_reference_passes_the_check_before_any_gate	1.78
-tests/fab_tier1.rs	a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name	2.600
+tests/fab_tier1.rs	a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name	2.71
 tests/generate_tier1.rs	a_configuration_above_the_scratch_directory_is_refused_by_name	1.500
 tests/generate_tier1.rs	a_declared_hse_validates_and_solves_and_h1_is_not_refused_as_hse	5.334
 tests/generate_tier1.rs	build_and_prove_refuse_what_cargo_would_run_before_any_tool	1.400
@@ -492,9 +487,7 @@ tests/uid_boundary_tier1.rs	a_tool_writing_past_the_file_size_cap_is_a_tool_erro
 tests/uid_boundary_tier1.rs	the_emitted_schematic_names_no_sheet	1.500
 tests/validate.rs	removing_any_key_of_any_object_is_refused	0.700
 tests/validate_cli.rs	a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify	2.000
-tests/verify_2k2_tier2.rs	verify_binds_the_reference_and_two_runs_print_the_same_bytes	537.170
-tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at_any_path	457.800
-tests/with_tools.rs	a_board_not_drawn_runs_its_gates_and_is_never_verified	345.324
+tests/with_tools.rs	a_board_not_drawn_runs_its_gates_and_is_never_verified	244.010
 tests/with_tools.rs	a_board_whose_own_files_are_looser_is_judged_by_the_gate	2.000
 tests/with_tools.rs	a_part_on_each_edge_passes_erc_and_drc	5.100
 tests/with_tools.rs	a_seeded_neck_is_joined_by_kicads_refill_wherever_the_judge_joins_it	6.700
@@ -553,6 +546,6 @@ unittests src/main.rs	renode::tests::each_anchor_bound_fails_by_name	1.300
 unittests src/main.rs	renode::tests::every_run_for_runs_exactly_its_nanoseconds_in_renode	0.760
 unittests src/main.rs	run::tests::the_capture_cap_holds_with_and_without_the_filter	0.800
 unittests src/main.rs	tests::provenance_is_generated_only_for_the_generated_crate	1.700
-unittests src/main.rs	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode	1.400
+unittests src/main.rs	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode	1.40
 # AET-WO-4300i (1914 P3): one row, its worst in-shard seconds by P3 over ci runs 45117199226 (pull_request, 172e0657) and 45117832704 (dispatch, 172e0657): 29.939 and 22.647. No other test this WO adds takes 4 s or more in either run (the next, 1.854 s).
 tests/emit_tier1.rs	every_motor_net_carries_its_declared_pull_down_in_the_emitted_files	29.939

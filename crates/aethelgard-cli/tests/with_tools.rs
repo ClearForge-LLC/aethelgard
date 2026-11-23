@@ -1661,14 +1661,32 @@ fn a_turned_keepout_is_where_kicad_draws_it() {
 /// reports ERC, DRC, `support` and `extract` `not_applicable`, and is never
 /// `pass` (`INV-03`: no ERC, so never verified). With every other gate
 /// passed it is `not_verified`, reason `DrawsNoBoard`, exit 7, never 0.
+///
+/// `AET-WO-1916` D2 (ii), LP1: the run is also `--against` the tree
+/// `generate` writes, which makes it the one plain `verify` with no fab flag
+/// that reaches its verdict: `--against` finds it `identical` (`AET-WO-1909`
+/// LP1; `verify_2k2_tier2`'s `--against` carries `--fab-out`). `--against`
+/// only reads that tree and changes no gate's input (`AET-WO-1909` FEEDBACK).
 #[test]
 fn a_board_not_drawn_runs_its_gates_and_is_never_verified() {
+    const SPEC: &str = "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json";
+    let tree = common::verify::scratch("1916-lp1");
+    let (code, out) =
+        common::verify::aethelgard(&["generate", "--spec", SPEC, "--out", tree.to_str().unwrap()]);
+    assert_eq!(code, Some(0), "generate writes the --against tree: {out}");
     let (code, stdout) = common::verify::aethelgard(&[
         "verify",
         "--spec",
-        "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json",
+        SPEC,
+        "--against",
+        tree.to_str().unwrap(),
     ]);
     let v = common::verify::one(&stdout);
+    assert_eq!(
+        v["against"], "identical",
+        "--against with no fab flag finds generate's tree identical: {v}"
+    );
+    assert!(v.get("fab").is_none(), "no fab flag, no fab key: {v}");
     assert_eq!(code, Some(7), "{v}");
     assert_eq!(v["ok"], false, "{v}");
     assert_eq!(v["verdict"], "not_verified", "{v}");

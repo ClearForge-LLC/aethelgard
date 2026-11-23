@@ -1,0 +1,13 @@
+# shard	name	(AET-WO-1916 D6 throwaway, REFIT RULE 1: each stale Furnace-estimate row's test run alone after the shard's own tests, on two runners)
+1	d1_s_pin_device_generates_builds_and_proves
+7	d1_s_pin_device_generates_builds_and_proves
+2	a_board_not_drawn_runs_its_gates_and_is_never_verified
+8	a_board_not_drawn_runs_its_gates_and_is_never_verified
+3	build_names_the_rustc_cargo_ran
+9	build_names_the_rustc_cargo_ran
+3	a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name
+9	a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name
+3	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode
+9	verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode
+3	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib
+9	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib
