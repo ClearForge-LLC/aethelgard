@@ -45,11 +45,12 @@ fn number(s: &str) -> Option<u32> {
     digits.parse().ok()
 }
 
-/// The README's status line, from `**Status:**` to its first sentence that
-/// names no phase: "phases P0 to P2 are complete. P3's work has merged, and
-/// its exit gate waits on …. P4's … work is under way." Each sentence is
-/// returned with the phases it names; a range `Pa to Pb` names every phase
-/// between.
+/// The README's status line, after `**Status:**`, as its sentences that
+/// name a phase: "phases P0 to P2 are complete. P3's work has merged, and
+/// its exit gate waits on …. P4's … work is under way." Each sentence comes
+/// with the phases it names; a range `Pa to Pb` names every phase between.
+/// Every sentence of the line is read, so a claim cannot hide after one that
+/// names no phase.
 fn stated(readme: &str) -> Vec<(String, Vec<u32>)> {
     let line = readme
         .lines()
@@ -72,19 +73,46 @@ fn stated(readme: &str) -> Vec<(String, Vec<u32>)> {
             rest = tail;
         }
         named.dedup();
-        if named.is_empty() {
-            break;
+        if !named.is_empty() {
+            out.push((sentence.to_owned(), named));
         }
-        out.push((sentence.to_owned(), named));
     }
     out
 }
 
-/// The first way the status line disagrees with §5, if any.
+/// The sentence's words, lower-cased, so `incomplete` is not `complete`.
+fn words(sentence: &str) -> Vec<String> {
+    sentence
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .filter(|w| !w.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+/// A sentence that says its phases are done: a word of done, and no word
+/// that takes it back ("has not passed", "is incomplete", "waits").
+fn says_done(sentence: &str) -> bool {
+    const DONE: [&str; 6] = ["complete", "completed", "passed", "done", "finished", "met"];
+    const OPEN: [&str; 8] = [
+        "not",
+        "incomplete",
+        "open",
+        "waits",
+        "waiting",
+        "pending",
+        "under",
+        "until",
+    ];
+    let w = words(sentence);
+    w.iter().any(|x| DONE.contains(&x.as_str())) && !w.iter().any(|x| OPEN.contains(&x.as_str()))
+}
+
+/// The first way the status line disagrees with §5, if any: a phase §5 does
+/// not have; a phase it does not state; a passed phase any sentence states
+/// as other than done; or an open phase any sentence states as done.
 fn disagreement(readme: &str, roadmap: &str) -> Option<String> {
     let phases = phases(roadmap);
     let stated = stated(readme);
-    let says_done = |s: &str| s.contains("complete") || s.contains("passed");
     for (sentence, named) in &stated {
         if let Some(n) = named.iter().find(|n| !phases.contains_key(n)) {
             return Some(format!("names P{n}, which §5 does not have: {sentence:?}"));
@@ -99,15 +127,14 @@ fn disagreement(readme: &str, roadmap: &str) -> Option<String> {
         if about.is_empty() {
             return Some(format!("does not state P{n}"));
         }
-        let done = about.iter().any(|s| says_done(s));
-        if passed && !about.iter().any(|s| s.contains("complete")) {
+        if passed && let Some(s) = about.iter().find(|s| !says_done(s)) {
             return Some(format!(
-                "P{n}'s exit gate passed, but no sentence calls it complete: {about:?}"
+                "P{n}'s exit gate passed, but the line does not call it done: {s:?}"
             ));
         }
-        if !passed && done {
+        if !passed && let Some(s) = about.iter().find(|s| says_done(s)) {
             return Some(format!(
-                "P{n}'s exit gate is open, but the line calls it complete or passed: {about:?}"
+                "P{n}'s exit gate is open, but the line calls it done: {s:?}"
             ));
         }
     }
@@ -157,11 +184,11 @@ fn a_stale_status_line_or_an_unmarked_phase_is_caught() {
         "phase P1 is complete",
     );
     caught(&stale, &roadmap, "does not state P0");
-    // A passed phase named, but not as complete.
+    // A passed phase named, but not as done.
     let vague = edit(
         &readme,
         "phases P0 to P2 are complete",
-        "phases P0 to P2 are done",
+        "phases P0 to P2 have merged",
     );
     caught(&vague, &roadmap, "P0's exit gate passed");
     // A roadmap whose P2 gate is not marked passed.
@@ -176,6 +203,36 @@ fn a_stale_status_line_or_an_unmarked_phase_is_caught() {
         let early = edit(&readme, "P3's work has merged, and its exit gate waits", to);
         caught(&early, &roadmap, "P3's exit gate is open");
     }
+    // The adversarial pass's five (AET-WO-1607 F1): a negation, other words
+    // of done, a contradiction, and a claim after a sentence naming no phase.
+    let negated = edit(
+        &readme,
+        "phases P0 to P2 are complete",
+        "phases P0 to P2 are incomplete",
+    );
+    caught(&negated, &roadmap, "P0's exit gate passed");
+    for to in ["P3 is done and its gate is met", "P3's work is finished"] {
+        let early = edit(&readme, "P3's work has merged, and its exit gate waits", to);
+        caught(&early, &roadmap, "P3's exit gate is open");
+    }
+    let finished = edit(
+        &readme,
+        "P4's flight-controller work is under way",
+        "P4's flight-controller work is finished",
+    );
+    caught(&finished, &roadmap, "P4's exit gate is open");
+    let contradicted = edit(
+        &readme,
+        "phases P0 to P2 are complete.",
+        "phases P0 to P2 are complete. P1's exit gate has not passed.",
+    );
+    caught(&contradicted, &roadmap, "P1's exit gate passed");
+    let hidden = edit(
+        &readme,
+        "it is the supported interface.**",
+        "it is the supported interface.** P3 is complete.",
+    );
+    caught(&hidden, &roadmap, "P3's exit gate is open");
     // An open phase the line does not state at all.
     let silent = edit(&readme, " P4's flight-controller work is under way.", "");
     caught(&silent, &roadmap, "does not state P4");

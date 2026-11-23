@@ -2915,9 +2915,18 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
 /// `aethelgard solve --file`: read and validate as `validate` does, load the
 /// part's pin table, solve, and print the `SolvedTopology` on one line (exit
 /// 0). A specification the solver cannot realize is exit 2, with `claimants`.
+/// `solve` prints the `SolvedTopology` alone on stdout, which
+/// `generate hwdef --topology` and `check pinout --topology` read strictly;
+/// its lifecycle banner goes to stderr, one line each (`AET-WO-1607` (6),
+/// D1 ruled (b)).
 fn solve(file: &Path) -> ExitCode {
     match solved(file) {
-        Ok((_, topology, _)) => emit(&topology, 0),
+        Ok((spec, topology, _)) => {
+            for line in spec.lifecycle_banner().unwrap_or_default() {
+                eprintln!("{line}");
+            }
+            emit(&topology, 0)
+        }
         Err(code) => code,
     }
 }

@@ -402,13 +402,18 @@ fn the_pinout_verdict_carries_the_banner_of_its_topology() {
 fn the_private_scratch_is_outside_home() {
     let tmp = private_tmp(&format!("1607-home-{}", next()));
     let real = fs::canonicalize(&tmp.0).unwrap();
-    let home = fs::canonicalize(std::env::var_os("HOME").unwrap()).unwrap();
-    assert!(
-        !real.starts_with(&home),
-        "{} is under {}",
-        real.display(),
-        home.display()
-    );
+    // As `private_tmp` reads it: a home of `/`, or none, holds no scratch apart.
+    if let Some(home) = std::env::var_os("HOME")
+        .and_then(|h| fs::canonicalize(h).ok())
+        .filter(|h| h.parent().is_some())
+    {
+        assert!(
+            !real.starts_with(&home),
+            "{} is under {}",
+            real.display(),
+            home.display()
+        );
+    }
     let base = if rustix::process::geteuid().is_root() {
         PathBuf::from("/var/lib/aethelgard")
     } else {
@@ -418,4 +423,56 @@ fn the_private_scratch_is_outside_home() {
         ))
     };
     assert_eq!(real.parent(), Some(base.as_path()));
+}
+
+/// `solve` (D1, ruled (b)): stdout stays the `SolvedTopology` alone, which
+/// `generate hwdef --topology` reads strictly; the banner is on stderr, one
+/// line each, equal to `validate`'s, and stderr is empty with none.
+#[test]
+fn solve_prints_the_banner_on_stderr_and_the_topology_alone_on_stdout() {
+    let dir = Scratch::new("1607-solve");
+    for rel in [NRND, EOL, ACTIVE] {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(["solve", "--file", &spec(rel)])
+            .env("PATH", "")
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{rel}");
+        let stderr = String::from_utf8(out.stderr).unwrap();
+        let want: Vec<String> = banner(rel)
+            .as_array()
+            .map(|a| a.iter().map(|l| l.as_str().unwrap().to_owned()).collect())
+            .unwrap_or_default();
+        assert_eq!(stderr.lines().collect::<Vec<_>>(), want, "{rel}");
+        let topology: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(topology.get("lifecycle").is_none(), "{rel}");
+        let file = dir.0.join("topology.json");
+        fs::write(&file, &out.stdout).unwrap();
+        let hwdef = dir.0.join("hwdef.dat");
+        let _ = fs::remove_file(&hwdef);
+        let (code, v) = run(
+            &[
+                "generate",
+                "hwdef",
+                "--topology",
+                file.to_str().unwrap(),
+                "--out",
+                hwdef.to_str().unwrap(),
+            ],
+            None,
+            &[],
+        );
+        // The strict reader takes it: a pass, or a refusal of the board's own
+        // (`SenseNotEmitted`, `NoSerialPort`), never the topology's shape.
+        assert!(
+            code == 0
+                || !["SchemaViolation", "InvalidJson"]
+                    .contains(&v["error"]["kind"].as_str().unwrap()),
+            "{rel}: {v}"
+        );
+        // The reference is a board CI generates a hwdef for, from this pipe.
+        if rel == NRND {
+            assert_eq!(code, 0, "{v}");
+        }
+    }
 }
