@@ -1,6 +1,6 @@
 # AET-WO-1914 — FEEDBACK: the shard planner's P3, and refusal fixtures that check their reason
 
-**Status: READY FOR REVIEW at this PR's last push** (the merge of `main` `9958f594`). D1 and D2 are ruled (architect, bus, 03:30Z): both leans, as built. One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
+**Status: READY FOR REVIEW at this PR's last push** (the merge of `main` `15798f91`, docs only, on top of `9958f594`). D1 and D2 are ruled (architect, bus, 03:30Z): both leans, as built. One PR, unmerged. ci/ and spike/ only; no crate, specification, `fab/` or workflow change.
 
 **Base:** `main` `d09a5187`; `main` `9958f594` (`2309` #340, `4407` #339) merged in at `27f07acd`. **Branch:** `wo/aet-1914-planner-p3`.
 **Predictions:** `spike/1914/predictions.md`, committed `f164d606` before any `main` CI log was read for this work order.
