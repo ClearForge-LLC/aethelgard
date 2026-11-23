@@ -67,9 +67,11 @@ fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger()
             .starts_with("no package: 280 unwitnessed ledger row(s)"),
         "{v}"
     );
-    // `AET-WO-2307` §1.1: the 43 entries they need, measured in `spike/2307/`.
+    // `AET-WO-2307` §1.1: the entries they need, measured in `spike/2307/`:
+    // 43 then, 44 since `AET-WO-4300i` moved MOTOR1 to PA8, whose rows
+    // complete the held `GPIOA.AFRH` entry.
     let entries = v["error"]["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 43, "{v}");
+    assert_eq!(entries.len(), 44, "{v}");
     assert!(entries.iter().all(|a| a["reason"] == ""), "{v}");
 }
 
