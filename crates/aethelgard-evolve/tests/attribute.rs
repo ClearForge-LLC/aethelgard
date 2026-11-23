@@ -308,20 +308,30 @@ fn refused(records: &[Record]) -> &'static str {
     }
 }
 
+/// The reason `replay` refuses a verdict whose count of `kind` its records
+/// do not bound (`aethelgard_chaos::campaign::SHOWN`, `AET-WO-2312`).
+fn refusal(kind: &str) -> &'static str {
+    aethelgard_chaos::campaign::SHOWN
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, why)| *why)
+        .unwrap()
+}
+
 /// `AET-WO-4210` F-B10: an identity read's mismatch named as a data or
 /// configuration step's selects nothing, and the run is `I1`; named as its
 /// own step's, it is decided as before.
 #[test]
-fn an_identity_mismatch_dressed_as_another_steps_is_unexplained() {
+fn an_identity_mismatch_dressed_as_another_steps_is_refused() {
     let mut r = healthy();
     replace(&mut r, is_check, check("ok", 0x61));
     replace(&mut r, is_verdict, verdict(&[("i2c_identity_mismatch", 1)]));
     assert_ne!(attributed(&r).rule, Rule::I1);
+    // Dressed as another step's, the identity read's own goes unnamed: replay
+    // refuses it by that kind, and attribute with it (`AET-WO-2312`).
     for dressed in ["i2c_data_mismatch", "i2c_configure_mismatch"] {
         replace(&mut r, is_verdict, verdict(&[(dressed, 1)]));
-        let a = attributed(&r);
-        assert_eq!(a.rule, Rule::I1, "{dressed}: {a:?}");
-        assert!(a.unexplained.contains(&dressed.to_owned()), "{a:?}");
+        assert_eq!(refused(&r), refusal("i2c_identity_mismatch"), "{dressed}");
     }
 }
 
@@ -539,11 +549,8 @@ fn changing_only_the_verdicts_finding_kinds_does_not_move_the_domain() {
     let honest = attributed(&r);
     assert_eq!((honest.domain, honest.rule), (Domain::Software, Rule::S1));
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
-    let forged = attributed(&r);
-    assert_eq!(
-        (forged.domain, forged.rule),
-        (Domain::Indeterminate, Rule::I1)
-    );
+    // No record shows a timeout: refused by that kind (`AET-WO-2312`).
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
     // And claiming the analog finding on a healthy bus is refused by replay's rules.
     replace(
         &mut r,
@@ -555,12 +562,11 @@ fn changing_only_the_verdicts_finding_kinds_does_not_move_the_domain() {
 }
 
 #[test]
-fn a_finding_count_the_events_do_not_reach_is_unexplained() {
+fn a_finding_count_the_events_do_not_reach_is_refused() {
     let mut r = healthy();
     wrong_register(&mut r);
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 2)]));
-    let a = attributed(&r);
-    assert_eq!(a.rule, Rule::I1);
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
 }
 
 #[test]
@@ -880,16 +886,14 @@ fn set_register(r: &mut [Record], name: &str, f: impl FnOnce(&mut Reading)) {
 }
 
 #[test]
-fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained() {
+fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_is_refused() {
     // The wrong-address run, its verdict rewritten to pass: the TXIS timeout
-    // is still in the archive, so it is unexplained, never `none`.
+    // is still in the archive, so replay refuses it by that kind, and
+    // attribute with it, never `none` (`AET-WO-2312`; before, `I1`).
     let mut r = healthy();
     wrong_register(&mut r);
-    let timeout = find(&r, is_check);
     replace(&mut r, is_verdict, verdict(&[]));
-    let a = attributed(&r);
-    assert_eq!((a.domain, a.rule), (Domain::Indeterminate, Rule::I1));
-    assert_eq!(a.unexplained, [format!("event {timeout}")]);
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
     // The timeout moved to `info`: the same.
     let mut r = healthy();
     wrong_register(&mut r);
@@ -901,7 +905,7 @@ fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained(
             findings: vec![("i2c_timeout".into(), "info".into(), 1)],
         },
     );
-    assert_eq!(attributed(&r).rule, Rule::I1);
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
     // Two buses: one faulted, the other's wrong address dropped from the
     // verdict. Without the converse rule this was a confident E1.
     let mut r = healthy();
@@ -913,8 +917,7 @@ fn a1_a_verdict_narrowed_or_passed_beside_a_failing_event_leaves_it_unexplained(
         is_verdict,
         verdict(&[("analog_rise_exceeds_ceiling", 2)]),
     );
-    let a = attributed(&r);
-    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
 }
 
 #[test]
@@ -1168,11 +1171,21 @@ fn a_field_the_reading_covers_only_in_part_is_no_evidence() {
 fn a_ports_clock_gate_left_off_is_software_and_explains_the_locked_access() {
     let mut r = healthy();
     set_register(&mut r, "RCC.AHB4ENR", |g| g.observed = Some(0x1));
-    // The count of locked accesses is not compared: one finding, any number.
+    // The judge names the locked accesses once, however many there were
+    // (`AET-WO-2312`): the fixture's old count, three, is refused.
     replace(
         &mut r,
         is_verdict,
         verdict(&[("locked_peripheral_access", 3), ("register_mismatch", 1)]),
+    );
+    assert_eq!(
+        refused(&r),
+        "the verdict names locked_peripheral_access more than once"
+    );
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[("locked_peripheral_access", 1), ("register_mismatch", 1)]),
     );
     let a = attributed(&r);
     assert_eq!((a.rule, kinds(&a.evidence)), (Rule::S1, vec![7, 7, 11]));
@@ -1287,20 +1300,22 @@ fn a_line_stuck_high_and_an_incomplete_rise_are_electrical() {
 
 #[test]
 fn each_finding_selects_only_the_events_that_show_it() {
-    // An invalid record, as invalid: no evidence, I4. Claimed as a timeout: I1.
+    // An invalid record, as invalid: no evidence, I4. Claimed as a timeout,
+    // no record shows one: refused by that kind (`AET-WO-2312`; before, I1).
     let mut r = healthy();
     replace(&mut r, is_check, check("invalid", 0));
     replace(&mut r, is_witness, witness(Some(&[])));
     replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
     assert_eq!(attributed(&r).rule, Rule::I4);
     replace(&mut r, is_verdict, verdict(&[("i2c_timeout", 1)]));
-    assert_eq!(attributed(&r).rule, Rule::I1);
-    // An identity mismatch or an unwitnessed read claimed of a timed-out read.
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
+    // An identity mismatch or an unwitnessed read claimed of a timed-out
+    // read: the timeout is unnamed, and refused by its kind.
     let mut r = healthy();
     wrong_register(&mut r);
     for kind in ["i2c_identity_mismatch", "i2c_transaction_unwitnessed"] {
         replace(&mut r, is_verdict, verdict(&[(kind, 1)]));
-        assert_eq!(attributed(&r).rule, Rule::I1, "{kind}");
+        assert_eq!(refused(&r), refusal("i2c_timeout"), "{kind}");
     }
     // A boot word claimed missing that is there is refused by `replay`
     // (`AET-WO-3201` B2); so, on a booted run, is a halt claimed of a full
@@ -1342,7 +1357,7 @@ fn each_finding_selects_only_the_events_that_show_it() {
     set_register(&mut r, "GPIOB.MODER", |g| g.observed = Some(0x0000_8000));
     set_register(&mut r, "GPIOB.AFRL", |g| g.observed = Some(0x4500_0000));
     replace(&mut r, is_verdict, verdict(&[("register_mismatch", 1)]));
-    assert_eq!(attributed(&r).rule, Rule::I1);
+    assert_eq!(refused(&r), refusal("register_mismatch"));
 }
 
 #[test]
@@ -1478,37 +1493,58 @@ fn an_unexplained_finding_names_no_evidence_beside_a_decided_symptom() {
 }
 
 #[test]
-fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
-    // Each event shows a failure, and the verdict passes: every one is named.
+fn every_kind_of_failing_event_the_verdict_omits_is_refused_or_unexplained() {
+    // Each event shows a failure, and the verdict passes. Since `AET-WO-2312`
+    // replay refuses each kind its records bound, by that kind, and attribute
+    // with it. A witness that differs without its read's witness being
+    // unread binds no count (the archive cuts a long log), so it is left to
+    // attribute, unexplained.
     type Edit = Box<dyn Fn(&mut Vec<Record>)>;
-    let cases: Vec<(&str, Edit)> = vec![
+    let cases: Vec<(&str, Edit, Option<&str>)> = vec![
         (
             "invalid",
             Box::new(|r| replace(r, is_check, check("invalid", 0))),
+            Some("i2c_record_invalid"),
         ),
         (
             "identity",
             Box::new(|r| replace(r, is_check, check("ok", 0x61))),
+            Some("i2c_identity_mismatch"),
         ),
+        // A short, whole witness that differs: the judge names it (or a
+        // cut `[ERROR]` line's `step_error`), so it is refused jointly
+        // (`AET-WO-2312` adversarial F2).
         (
             "unwitnessed",
             Box::new(|r| replace(r, is_witness, witness(Some(&["Write D1", "Read 60"])))),
+            Some("i2c witness"),
         ),
         (
             "register",
             Box::new(|r| set_register(r, "GPIOA.MODER", |g| g.observed = Some(0))),
+            Some("register_mismatch"),
         ),
         // A boot word missing with no finding is refused by `replay`
         // since `AET-WO-3201` B2 (`a_boot_word_missing_unnamed_is_refused`),
-        // and a booted halt with none since `AET-WO-2310` (below).
+        // and a booted halt with none since `AET-WO-2310` (below). A clock
+        // enable left off is a register's mismatch first.
         (
             "locked",
             Box::new(|r| set_register(r, "RCC.AHB4ENR", |g| g.observed = Some(0x1))),
+            Some("register_mismatch"),
         ),
     ];
-    for (name, edit) in cases {
+    for (name, edit, kind) in cases {
         let mut r = healthy();
         edit(&mut r);
+        if let Some("i2c witness") = kind {
+            assert_eq!(refused(&r), I2C_WITNESSES, "{name}");
+            continue;
+        }
+        if let Some(kind) = kind {
+            assert_eq!(refused(&r), refusal(kind), "{name}");
+            continue;
+        }
         let a = attributed(&r);
         assert_eq!(a.rule, Rule::I1, "{name}: {a:?}");
         assert!(
@@ -1539,19 +1575,19 @@ fn every_kind_of_failing_event_the_verdict_omits_is_unexplained() {
         },
     );
     assert_eq!(refused(&r), HALTED);
-    // Two such events of one kind are both named.
+    // Two such events of one kind: refused by it.
     let mut r = healthy();
     set_register(&mut r, "GPIOA.MODER", |g| g.observed = Some(0));
     set_register(&mut r, "GPIOB.MODER", |g| g.observed = Some(0));
-    assert_eq!(attributed(&r).unexplained.len(), 2);
+    assert_eq!(refused(&r), refusal("register_mismatch"));
 }
 
 #[test]
-fn a_timeout_claimed_as_an_invalid_record_is_unexplained() {
+fn a_timeout_claimed_as_an_invalid_record_is_refused() {
     let mut r = healthy();
     wrong_register(&mut r);
     replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
-    assert_eq!(attributed(&r).rule, Rule::I1);
+    assert_eq!(refused(&r), refusal("i2c_timeout"));
 }
 
 #[test]
@@ -1791,12 +1827,13 @@ fn a_masked_identity_check_counts_as_passing() {
             ),
         );
         replace(&mut r, is_verdict, verdict(&[("i2c_identity_mismatch", 1)]));
-        attributed(&r).rule
+        r
     };
-    // 0xFFC8 & 0x3F == 0x08: the claimed mismatch has no event to show it.
-    assert_eq!(masked(0xFFC8), Rule::I1);
+    // 0xFFC8 & 0x3F == 0x08: the claimed mismatch has no event to show it,
+    // so replay refuses it by its kind (`AET-WO-2312`; before, I1).
+    assert_eq!(refused(&masked(0xFFC8)), refusal("i2c_identity_mismatch"));
     // 0xFF00 & 0x3F == 0: a real mismatch.
-    assert_ne!(masked(0xFF00), Rule::I1);
+    assert_ne!(attributed(&masked(0xFF00)).rule, Rule::I1);
 }
 
 /// `AET-WO-4230` D10: kind 10's brown-out word not the declared level, or
@@ -1903,9 +1940,33 @@ fn observe(r: &mut [Record], reference: &str, lines: &[&str]) {
     r[i] = with;
 }
 
+/// The joint witness refusal (`AET-WO-2312` adversarial F1-F3).
+const I2C_WITNESSES: &str =
+    "the verdict's i2c witness findings do not reach the I2C witnesses that show one";
+
+/// `records` with its verdict naming each witness that differs from the
+/// model's, as the judge names it (`campaign::shown`'s unwitnessed records),
+/// when the verdict passes: the view tests read a witness's fields, and
+/// replay refuses a differing witness left unnamed (`AET-WO-2312` F2).
+fn named_witnesses(records: &[Record]) -> Vec<Record> {
+    let mut r = records.to_vec();
+    let n = campaign::shown(&r)
+        .into_iter()
+        .find(|s| s.kind == "i2c_transaction_unwitnessed")
+        .map_or(0, |s| s.records.len() as u64);
+    if n > 0 && matches!(r.last(), Some(Record::Verdict { pass: true, .. })) {
+        replace(
+            &mut r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", n)]),
+        );
+    }
+    r
+}
+
 /// The fields `attribute`'s view gives witness `index`.
 fn fields_of(records: &[Record], index: usize) -> Vec<(String, u32, u64, Option<u64>, bool)> {
-    let run = archived(records);
+    let run = archived(&named_witnesses(records));
     let e = aethelgard_evolve::EventRef {
         index: index as u64,
         kind: 13,
@@ -2474,6 +2535,17 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
             .collect()
     };
     assert!(wrong("[NOISY] i2c1.u5: read 0x01 -> 0x50").is_empty());
+    // Its fixtures' passing verdict, a differing witness unnamed, is refused
+    // (`fields_of` names it, `AET-WO-2312` adversarial F2).
+    let r = bme_bmp(
+        |_| {},
+        [
+            &["[NOISY] i2c1.u5: read 0x01 -> 0x51"],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+            &["[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62"],
+        ],
+    );
+    assert_eq!(refused(&r), I2C_WITNESSES);
     assert_eq!(
         shown("[NOISY] i2c1.u5: read 0x01 -> 0x51 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00")
             .into_iter()
@@ -2658,16 +2730,175 @@ fn a_candidate_that_cannot_be_told_names_no_step() {
             *observed = Some(vec!["[ERROR] i2c1.u6: bus error".to_owned()]);
         }
         observe(r, "U5", &["Write D0", "Read 60", "Write D0", "Read 60"]);
+        // U6's step logged an `[ERROR]`: the judge names it
+        // `i2c_step_error`, not unwitnessed (`AET-WO-2312` adversarial F3).
         replace(
             r,
             is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 3)]),
+            verdict(&[("i2c_step_error", 1), ("i2c_transaction_unwitnessed", 2)]),
         );
     });
+    // The fixture's old verdict, three unwitnessed, is refused by it.
+    let mut old = r.clone();
+    replace(
+        &mut old,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 3)]),
+    );
+    assert_eq!(refused(&old), refusal("i2c_step_error"));
     let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
         .into_iter()
         .filter(|f| f.4)
         .map(|f| f.0)
         .collect();
     assert_eq!(wrong, ["i2c1.u5.transactions"]);
+}
+
+// ---- AET-WO-2312: attribute takes replay's derivation, and is bounded ----
+
+/// Review round 3 A8 (`AET-WO-2312` (6)): the reviewer's four archives,
+/// each this healthy run with one failure its verdict does not name, built
+/// here by the reviewer's edits through `archived` (chaos holds only `.rs`
+/// under `tests/`, so they are not committed as archives). They were `I1`
+/// here while replay passed three of them. Replay now refuses each by the
+/// kind its records show, and attribute with the same reason.
+#[test]
+fn the_round_3_archives_are_refused_as_replay_refuses_them() {
+    let healthy_run = attribute(&archived(&healthy())).unwrap();
+    assert_eq!(
+        (healthy_run.domain, healthy_run.rule),
+        (Domain::None, Rule::N1)
+    );
+    type Edit = fn(&mut Vec<Record>);
+    let shapes: [(&str, Edit, &str); 4] = [
+        (
+            "reg_unnamed",
+            |r| set_register(r, "GPIOB.AFRL", |g| g.observed = Some(0x4700_0000)),
+            refusal("register_mismatch"),
+        ),
+        (
+            "timeout_unnamed",
+            |r| {
+                replace(r, is_check, check("timeout_rxne", 0));
+                replace(r, is_witness, witness(Some(&[])));
+            },
+            refusal("i2c_timeout"),
+        ),
+        (
+            "idmismatch_unnamed",
+            |r| {
+                replace(r, is_check, check("ok", 0x58));
+                replace(r, is_witness, witness(Some(&["Write D0", "Read 58"])));
+            },
+            refusal("i2c_identity_mismatch"),
+        ),
+        (
+            "halted_unnamed",
+            |r| {
+                let b = find(r, |x| matches!(x, Record::BootObserved { .. }));
+                if let Record::BootObserved {
+                    instructions_observed,
+                    ..
+                } = &mut r[b]
+                {
+                    *instructions_observed = Some(5);
+                }
+            },
+            HALTED,
+        ),
+    ];
+    for (shape, edit, why) in shapes {
+        let mut r = healthy();
+        edit(&mut r);
+        let run = archived(&r);
+        assert_eq!(
+            attribute(&run),
+            Err(AttributeError::NotACampaignRun(why)),
+            "{shape}"
+        );
+        assert_eq!(
+            campaign::check_archived(&run.header, &run.state).unwrap_err(),
+            why,
+            "{shape}"
+        );
+    }
+}
+
+/// The records `attribute` takes a symptom from are replay's
+/// (`campaign::shown`): before the boot word a read's value shows nothing,
+/// as the judge names nothing of it, so the run is decided by its boot word,
+/// not left unexplained. Evolve's own selection (before `AET-WO-2312`)
+/// showed the read and made it `I1`.
+#[test]
+fn a_records_value_before_the_boot_word_shows_nothing_to_attribute() {
+    let mut r = healthy();
+    replace(&mut r, is_check, check("ok", 0x61));
+    replace(
+        &mut r,
+        |x| matches!(x, Record::BootObserved { .. }),
+        boot(0),
+    );
+    replace(&mut r, is_verdict, verdict(&[("boot_word_missing", 1)]));
+    let a = attributed(&r);
+    assert!(a.unexplained.is_empty(), "{a:?}");
+    assert_ne!(a.rule, Rule::I1, "{a:?}");
+}
+
+/// Review round 3 A15: attribute's cost grows with symptoms × buses ×
+/// records, and it is an MCP tool. Past `MAX_ATTRIBUTE_RECORDS` it refuses
+/// by name; at it, it attributes.
+#[test]
+fn a_run_past_the_attribution_bound_is_refused_by_name() {
+    use aethelgard_evolve::MAX_ATTRIBUTE_RECORDS;
+    let padded = |total: usize| {
+        let mut r = healthy();
+        let at = find(&r, |x| matches!(x, Record::RegisterObserved { .. }));
+        let pad = total - r.len();
+        for i in 0..pad {
+            r.insert(
+                at,
+                Record::RegisterObserved {
+                    name: format!("GPIOK.PAD{i}"),
+                    reading: reading(0x5802_2800 + 4 * i as u32, u32::MAX, 0, 0),
+                },
+            );
+        }
+        r
+    };
+    let at_bound = padded(MAX_ATTRIBUTE_RECORDS);
+    assert_eq!(at_bound.len(), MAX_ATTRIBUTE_RECORDS);
+    assert_eq!(attributed(&at_bound).rule, Rule::N1);
+    let past = padded(MAX_ATTRIBUTE_RECORDS + 1);
+    let run = archived(&past);
+    // Replay judges it as before; attribute alone is bounded.
+    assert!(campaign::check_archived(&run.header, &run.state).is_ok());
+    assert_eq!(
+        attribute(&run),
+        Err(AttributeError::TooManyRecords {
+            records: MAX_ATTRIBUTE_RECORDS + 1,
+            limit: MAX_ATTRIBUTE_RECORDS,
+        })
+    );
+}
+
+/// A reached kind may pass its records in replay (`campaign::Bound::Reach`):
+/// an unmodelled device's invalid read is named and not archived. Attribute
+/// explains a kind only by as many records as the count, so the read with no
+/// record leaves the kind unexplained, never decided by the other's.
+#[test]
+fn a_reached_count_past_its_records_is_unexplained() {
+    let mut r = healthy();
+    replace(&mut r, is_check, check("invalid", 0));
+    replace(&mut r, is_witness, witness(Some(&[])));
+    replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 1)]));
+    assert_eq!(attributed(&r).rule, Rule::I4);
+    replace(&mut r, is_verdict, verdict(&[("i2c_record_invalid", 2)]));
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::I1, "{a:?}");
+    let at = find(&r, is_check);
+    assert_eq!(
+        a.unexplained,
+        [format!("event {at}"), "i2c_record_invalid".to_owned()],
+        "{a:?}"
+    );
 }

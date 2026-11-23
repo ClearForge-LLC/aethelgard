@@ -13,7 +13,9 @@ use aethelgard_chaos::campaign::{self, run_id};
 use aethelgard_chaos::record::{BusLine, Override, Reading, Record};
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use aethelgard_evolve::propose::{self, BusFacts, Input, MODEL_SLOT, Outcome, Rules};
-use aethelgard_evolve::{Attribution, Domain, EventRef, Evidence, Rule, View, attribute, view};
+use aethelgard_evolve::{
+    AttributeError, Attribution, Domain, EventRef, Evidence, Rule, View, attribute, view,
+};
 
 const DEV: &str = "spi1.spi1mux.u4";
 const MUX: &str = "spi1.spi1mux";
@@ -667,16 +669,26 @@ fn a_data_step_found_absent_is_electrical_e2_by_that_steps_witness() {
     assert_eq!(a.evidence, vec![ev(w, 22)]);
     assert_eq!(a.symptoms, vec![ev(c, 21), ev(w, 22)]);
     // The data step's mismatch dressed as an identity mismatch (`AET-WO-4210`
-    // F-B10): it selects no event, and the data read's is unexplained.
+    // F-B10): no record shows it, so replay refuses it by that kind, and
+    // attribute with it (`AET-WO-2312`; before, I1).
     let n = r.len() - 1;
     r[n] = verdict(&BOTH);
-    let a = attribute(&archived(&r)).unwrap();
-    assert_eq!(a.rule, Rule::I1, "{a:?}");
-    assert!(
-        a.unexplained.contains(&"spi_identity_mismatch".to_owned()),
-        "{a:?}"
+    assert_eq!(
+        attribute(&archived(&r)),
+        Err(AttributeError::NotACampaignRun(refusal(
+            "spi_identity_mismatch"
+        )))
     );
-    assert!(a.unexplained.contains(&format!("event {c}")), "{a:?}");
+}
+
+/// The reason `replay` refuses a verdict whose count of `kind` its records
+/// do not bound (`aethelgard_chaos::campaign::SHOWN`, `AET-WO-2312`).
+fn refusal(kind: &str) -> &'static str {
+    campaign::SHOWN
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, why)| *why)
+        .unwrap()
 }
 
 /// A data step's mismatch, named by its step (`AET-WO-4210` F-B10).
@@ -761,10 +773,10 @@ fn a_configure_steps_mismatch_is_named_by_its_step() {
     assert_ne!(a.rule, Rule::I1, "{a:?}");
     let n = r.len() - 1;
     r[n] = verdict(&[("spi_identity_mismatch", 1)]);
-    let a = attribute(&archived(&r)).unwrap();
-    assert_eq!(a.rule, Rule::I1, "{a:?}");
-    assert!(
-        a.unexplained.contains(&"spi_identity_mismatch".to_owned()),
-        "{a:?}"
+    assert_eq!(
+        attribute(&archived(&r)),
+        Err(AttributeError::NotACampaignRun(refusal(
+            "spi_identity_mismatch"
+        )))
     );
 }

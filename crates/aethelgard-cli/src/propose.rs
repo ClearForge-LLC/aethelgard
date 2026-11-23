@@ -476,6 +476,13 @@ fn register_refusal(dir: &Path, e: &AttributeError) -> ExitCode {
             e.kind(),
             format!("{}: a register fact the run names: {e}", dir.display()),
         ),
+        AttributeError::TooManyRecords { records, limit } => mismatch(
+            "TooManyRecords",
+            format!(
+                "{}: the run holds {records} records; attribution is bounded at {limit}",
+                dir.display()
+            ),
+        ),
     }
 }
 

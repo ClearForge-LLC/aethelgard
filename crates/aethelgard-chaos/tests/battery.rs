@@ -577,7 +577,12 @@ fn a_second_rail_or_a_rail_beside_another_fault_is_refused_by_name() {
         Override::SerialRxOpen { port: "P".into() },
         Override::RailOutOfBand { domain: "B".into() },
     ];
-    assert!(aethelgard_chaos::campaign::check_rail_out_of_band(&two).is_err());
+    // Refused for its two rails, by name (review round 3 A15: this asserted
+    // a bare `is_err`).
+    assert_eq!(
+        aethelgard_chaos::campaign::check_rail_out_of_band(&two),
+        Err("more than one rail out of band in one scenario: their interaction is not modelled")
+    );
 }
 
 /// One doctoring of kind 31.

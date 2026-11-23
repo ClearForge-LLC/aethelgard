@@ -1,0 +1,63 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p92095-i197215255.scope memory.max=8589934592 memory.swap.max=0 pids.max=8192
+-rwxr-xr-x 2 root root 289045184 Nov 23 10:22 /cache/target-main/debug/aethelgard
+-rwxr-xr-x 2 root root   9002408 Nov 23 10:22 /cache/target-main/debug/aethelgard-bridge
+built min rc=0
+built s01 rc=0
+built dshot rc=0
+built pwm rc=0
+built serial rc=0
+built ext rc=0
+built two rc=0
+built s03 rc=0
+built pow rc=0
+campaign min rc=0
+campaign s01 rc=0
+campaign dshot rc=0
+campaign pwm rc=0
+campaign serial rc=0
+campaign s03 rc=0
+campaign pow rc=0
+campaign ext rc=0
+campaign two rc=0
+built two-0x75 rc=0
+built two-0x77 rc=0
+campaign two-0x75 rc=1
+campaign two-0x77 rc=1
+built seeded-wrong-address rc=0
+campaign seeded-wrong-address rc=1
+built seeded-wrong-register rc=0
+campaign seeded-wrong-register rc=1
+built seeded-wrong-nbytes rc=0
+campaign seeded-wrong-nbytes rc=1
+built seeded-i2c-clock-skipped rc=0
+campaign seeded-i2c-clock-skipped rc=1
+built seeded-scl-af-wrong rc=0
+campaign seeded-scl-af-wrong rc=1
+built seeded-sda-af-wrong rc=0
+campaign seeded-sda-af-wrong rc=1
+built seeded-scl-mode-output rc=0
+campaign seeded-scl-mode-output rc=1
+built seeded-gpiob-clock-skipped rc=0
+campaign seeded-gpiob-clock-skipped rc=1
+built seeded-no-boot-word rc=0
+campaign seeded-no-boot-word rc=1
+built seeded-cs-never rc=0
+campaign seeded-cs-never rc=1
+built seeded-leave-firmware rc=0
+campaign seeded-leave-firmware rc=1
+built seeded-motor-af-wrong rc=0
+campaign seeded-motor-af-wrong rc=1
+built seeded-console-rx-af-wrong rc=0
+campaign seeded-console-rx-af-wrong rc=1
+simulate min run 1 rc=0
+simulate min run 2 rc=0
+simulate s01 run 1 rc=0
+simulate s01 run 2 rc=0
+simulate dshot run 1 rc=0
+simulate dshot run 2 rc=0
+simulate s03 run 1 rc=0
+simulate s03 run 2 rc=0
+simulate pow run 1 rc=0
+simulate pow run 2 rc=0
+done
+EXIT 0
