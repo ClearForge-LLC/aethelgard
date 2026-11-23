@@ -21,3 +21,7 @@
 - The finding's concern holds: 221 k is still refused there, because its band starts at 291 785.
 
 The test plants the derived numbers.
+
+## D-d (architect, 2026-11-23T13:10Z): accepted
+
+The floor follows the board's own pull-up rail. The ruling's "422 561" assumed a 3V3 ±50 board. The derived-number test stays.

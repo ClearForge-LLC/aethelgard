@@ -198,7 +198,7 @@ The report and its probes are in `~/.cache/aet-4300j/adv/`.
   - The pull-up works from the board's own rail. At ±1 ‰ that rail's minimum is 3296.7 mV, not 3135 mV, so its pull-up is stronger and the floor is 1 386 000 000 / 4897 = 283 030.4 Ω.
   - The ceiling is the ESC's alone and stays 895 714 Ω.
   - The finding's concern holds: 221 k is still refused there, because its band starts at 291 785.
-  - The test plants the derived numbers (`motor.rs` `the_bound_moves_with_the_rail`). If the ruling meant the FC's rail to be held fixed too, that is a different model; say so.
+  - The test plants the derived numbers (`motor.rs` `the_bound_moves_with_the_rail`). **Accepted, 13:10Z:** the floor follows the board's own pull-up rail.
 - **D-c · `{value, basis}`.** `peer_input_current_nanoamps` and `margin_permille` are held as `{value, basis}`, not `{value, at}`: an `at` must name a held document, and a ruling is not one. This follows the table's `bound_basis` precedent.
 
 ## 6. Rows (§7.1)
