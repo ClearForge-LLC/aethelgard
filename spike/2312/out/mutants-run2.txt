@@ -1,0 +1,3 @@
+M10 (4) bound removed: KILLED ['a_run_past_the_attribution_bound_is_refused_by_name']
+M11 attribute exactness dropped: SURVIVED []
+M12 attribute converse loop dropped: KILLED ['every_kind_of_failing_event_the_verdict_omits_is_refused_or_unexplained']

@@ -66,13 +66,15 @@ impl State {
     }
 }
 
-/// The wire kinds of the records a run holds at most once: scenario, topology,
-/// boot, verdict, the declared rail and the expected counts.
 /// The most records a run may fold. A campaign run holds a few dozen; the cap
 /// bounds the memory the fold builds, which the 256 MiB trace bound does not
 /// (a 10-byte record costs about 350 bytes of state).
 pub const MAX_RECORDS: usize = 65_536;
 
+/// The wire kinds of the records a run holds at most once: scenario, topology,
+/// boot, verdict, the declared rail and the expected counts. The fold refuses
+/// a second here, by its index, before `check_run`'s counts see the run
+/// (review round 3 B6: kept, since it names what `check_run` cannot).
 const ONCE_KINDS: [u64; 6] = [5, 6, 10, 14, 16, 20];
 
 /// The incremental fold. The writer and the reader both drive it, so a
