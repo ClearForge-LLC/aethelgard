@@ -356,9 +356,15 @@ fn a_chip_select_low_from_its_first_write_is_named() {
         findings(w, &allow()),
         ["forward WrongOutputLevel PA0 FLASH_CS ODR 0"]
     );
+    // PA0's bit alone low, then every bit but PA0's: the bit read is PA0's.
     let mut w = step_g_words();
-    w[0][4] = 0x0000_FFDF; // PA5, an SPI pin, low
-    assert_eq!(w[0][4] & 1, 1);
+    w[0][4] = 0x0000_FFFE;
+    assert_eq!(
+        findings(w, &allow()),
+        ["forward WrongOutputLevel PA0 FLASH_CS ODR 0"]
+    );
+    let mut w = step_g_words();
+    w[0][4] = 0x0000_0001;
     assert_eq!(findings(w, &allow()), Vec::<String>::new());
 }
 
