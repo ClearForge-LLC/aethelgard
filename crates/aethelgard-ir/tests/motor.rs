@@ -162,35 +162,42 @@ fn outside_on(nominal: u32, tol: u32, ohms: u32) -> String {
     e.to_string()
 }
 
-/// The bound is the board's rail's. On the committed 3300 mV +/-50 it is
-/// 17 325 000 / 41 = 422 560.97... to 6 270 000 / 7 = 895 714.28... ohm; on
-/// 1800 mV +/-50 it is 75 600 000 / 163 = 463 803.68... to 3 420 000 / 7 =
-/// 488 571.42... ohm, so the ruled 442 000 is refused there. On 2500 mV
-/// +/-50 the floor is exactly 437 500, and on 2500 mV +/-20 the floor is
-/// exactly 272 000 and the ceiling exactly 700 000: an edge that is a whole
-/// ohm is admitted, one ohm past it refused (the rounding is exact, not a
-/// step outward).
+/// The pull-up works from the board's rail; the ESC's thresholds sit on its
+/// own, held as a stand-in at 3300 mV +/-50 (`AET-WO-4300j` F2, ruled
+/// 12:25Z); and the band, not the bare value, is judged (F3): the low corner
+/// (-1 % - 2 %) clears the floor and the high corner (+1 % + 2 %) the ceiling.
+/// On the committed 3300 mV +/-50 the window is 17 325 000 / 41 =
+/// 422 560.97... to 6 270 000 / 7 = 895 714.28... ohm, so the band admits
+/// 435 630 to 869 625 ohm: 442 000 admitted, 432 000 refused. A board rail of
+/// 3300 +/-1 holds a stronger pull-up, so the floor falls to 1 386 000 000 /
+/// 4897 = 283 030.43... and the band admits 291 785 to 869 625, the ceiling
+/// the ESC's alone: 221 000 is still refused, the value D1 (a) rejected. On
+/// 3400 +/-50 the floor is 15 400 000 / 47 = 327 659.57..., and on 1800
+/// +/-50 no pull-up reaches the ESC's threshold at all. Every edge was worked
+/// out outside the engine in exact fractions.
 #[test]
 fn the_bound_moves_with_the_rail() {
     on_rail(3300, 50, 442_000).unwrap();
-    outside_on(3300, 50, 422_560);
-    outside_on(3300, 50, 895_715);
-    let m = outside_on(1800, 50, 442_000);
-    assert!(m.contains("463804 to 488571 ohm"), "{m}");
-    assert!(m.contains("`VDD_3V3` (1800 mV +/-50 permille)"), "{m}");
-    outside_on(1800, 50, 463_803);
-    outside_on(1800, 50, 488_572);
-    for ohms in [463_804, 488_571] {
-        on_rail(1800, 50, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    for ohms in [435_630, 869_625] {
+        on_rail(3300, 50, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
     }
-    outside_on(2500, 50, 437_499);
-    on_rail(2500, 50, 437_500).unwrap();
-    let m = outside_on(2500, 20, 271_999);
-    assert!(m.contains("272000 to 700000 ohm"), "{m}");
-    outside_on(2500, 20, 700_001);
-    for ohms in [272_000, 700_000] {
-        on_rail(2500, 20, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    for ohms in [432_000, 435_629, 869_626, 422_561, 895_714] {
+        let m = outside_on(3300, 50, ohms);
+        assert!(m.contains("422561 to 895714 ohm"), "{m}");
     }
+    let m = outside_on(3300, 1, 221_000);
+    assert!(m.contains("283031 to 895714 ohm"), "{m}");
+    assert!(m.contains("`VDD_3V3` (3300 mV +/-1 permille)"), "{m}");
+    assert!(m.contains("peer rail 3300 mV +/-50 permille"), "{m}");
+    for ohms in [291_785, 869_625] {
+        on_rail(3300, 1, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+    outside_on(3300, 1, 291_784);
+    outside_on(3300, 1, 869_626);
+    let m = outside_on(3400, 50, 221_000);
+    assert!(m.contains("327660 to 895714 ohm"), "{m}");
+    let e = on_rail(1800, 50, 442_000).unwrap_err();
+    assert_eq!(e.kind(), "MotorPullFloorUnreachable", "{e}");
 }
 
 /// `MOTOR1`'s pull net is `MOTOR1_PD` (`AET-WO-4300j` D5), the engine's
@@ -207,27 +214,26 @@ fn a_net_named_motor1_pd_is_refused_in_any_case() {
         .unwrap();
 }
 
-/// A rail whose floor is above its ceiling admits nothing: 3300 mV +/-80
-/// gives 712 800 000 / 749 = 951 668.89... against 6 072 000 / 7 =
-/// 867 428.57... ohm. A rail on which the weakest pull-up cannot reach the
-/// threshold even with no pull-down, 3000 mV +/-105, admits nothing either:
-/// its denominator is -2 000 000 nV. 3000 +/-104 is the last tolerance with
-/// a floor, 662 400 000 / 17 = 38 964 705.88... ohm against a ceiling of
-/// exactly 768 000: empty, not unreachable. Each is refused by name, at
-/// `mcu.supply`, for every value.
+/// A rail whose floor is above its ceiling admits nothing: the ceiling is
+/// the ESC's, 6 270 000 / 7 = 895 714.28... ohm on its held 3300 +/-50, and a
+/// board on 3000 mV +/-13 gives a floor of exactly 900 000. On 3000 +/-64 the
+/// floor is 138 600 000, still a `u32`: empty. On 3000 +/-65 the weakest
+/// pull-up cannot reach the threshold even with no pull-down: its
+/// denominator is -2 000 000 nV. Each is refused by name, at `mcu.supply`,
+/// for every value.
 #[test]
 fn an_empty_or_unreachable_bound_admits_nothing() {
     for (nominal, tol, kind, values) in [
-        (3300, 80, "MotorPullBoundEmpty", [442_000, 867_428, 951_669]),
+        (3000, 13, "MotorPullBoundEmpty", [442_000, 895_714, 900_000]),
         (
             3000,
-            104,
+            64,
             "MotorPullBoundEmpty",
-            [442_000, 768_000, 38_964_706],
+            [442_000, 895_714, 138_600_000],
         ),
         (
             3000,
-            105,
+            65,
             "MotorPullFloorUnreachable",
             [442_000, 1, u32::MAX],
         ),
@@ -241,10 +247,10 @@ fn an_empty_or_unreachable_bound_admits_nothing() {
             );
         }
     }
-    let e = on_rail(3300, 80, 442_000).unwrap_err();
+    let e = on_rail(3000, 13, 442_000).unwrap_err();
     assert!(
         e.to_string()
-            .contains("951669 ohm, is above its ceiling, 867428 ohm"),
+            .contains("900000 ohm, is above its ceiling, 895714 ohm"),
         "{e}"
     );
 }

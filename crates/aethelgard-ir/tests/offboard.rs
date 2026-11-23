@@ -212,13 +212,16 @@ fn outside(ohms: u32) -> String {
     e.to_string()
 }
 
-/// D3 (a): both edges planted on the committed rail, 3300 mV +/-50: floor
-/// 17 325 000 / 41, so 422 560 is refused and 422 561 admitted; ceiling
-/// 6 270 000 / 7, so 895 714 is admitted and 895 715 refused. The ruled
-/// 442 000 is admitted.
+/// D3 (a) with F3 (ruled 12:25Z): the band, `CRCW0603_F_K`'s +/-1 % and
+/// +/-2 % drift, is judged against the bound on the committed rail, 3300 mV
+/// +/-50: window 17 325 000 / 41 to 6 270 000 / 7, so the band admits
+/// 435 630 (low corner 422 561.1) to 869 625 (high corner 895 713.75).
+/// 435 629 and 869 626 are refused; so are the window's own edges, 422 561
+/// and 895 714, whose corners fall outside it, and 432 000, whose low corner
+/// is 419 040. The ruled 442 000 is admitted.
 #[test]
 fn a_pull_outside_the_bound_is_refused_at_both_edges() {
-    for ohms in [422_560, 895_715, 40_200, 0] {
+    for ohms in [435_629, 869_626, 432_000, 422_561, 895_714, 40_200, 0] {
         let m = outside(ohms);
         assert!(m.contains("422561 to 895714 ohm"), "{m}");
         assert!(m.contains("`VDD_3V3` (3300 mV +/-50 permille)"), "{m}");
@@ -229,26 +232,34 @@ fn a_pull_outside_the_bound_is_refused_at_both_edges() {
             "FT_u +/-350 nA",
             "a stand-in (S2)",
             "10 % of VDD at each threshold",
+            "peer rail 3300 mV +/-50 permille",
+            "DS70005664A p. 16",
+            "(30000 ppm)",
         ] {
             assert!(m.contains(cited), "{cited}: {m}");
         }
     }
-    for ohms in [422_561, 442_000, 895_714] {
+    assert!(outside(432_000).contains("its band 419040 to 444960 ohm"));
+    for ohms in [435_630, 442_000, 869_625] {
         judged(ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
     }
 }
 
-/// The window `solve` copies is the one `validate` judges by: on the
-/// committed rail its edges are exactly the least and the most whole ohms
-/// `validate` admits.
+/// The window `solve` copies is the bound `validate` judges the band by: on
+/// the committed rail its edges are the exact bound's whole ohms, and the
+/// least and most declared values `validate` admits are those edges widened
+/// by the row's 3 % band, rounded inward.
 #[test]
 fn the_window_is_what_validate_admits() {
     let w = aethelgard_ir::offboard::motor_pull_window(&spec(&d1())).unwrap();
     assert_eq!((w.floor_ohms, w.ceiling_ohms), (422_561, 895_714));
-    judged(w.floor_ohms).unwrap();
-    judged(w.ceiling_ohms).unwrap();
-    outside(w.floor_ohms - 1);
-    outside(w.ceiling_ohms + 1);
+    let least = (u64::from(w.floor_ohms) * 1_000_000).div_ceil(970_000);
+    let most = u64::from(w.ceiling_ohms) * 1_000_000 / 1_030_000;
+    assert_eq!((least, most), (435_630, 869_625));
+    judged(u32::try_from(least).unwrap()).unwrap();
+    judged(u32::try_from(most).unwrap()).unwrap();
+    outside(u32::try_from(least - 1).unwrap());
+    outside(u32::try_from(most + 1).unwrap());
 }
 
 /// A solved committed motor board (`d1-drv8876`) carries each output's
@@ -1153,9 +1164,11 @@ fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
             b.input_low_max_permille.value,
             b.leakage_max_nanoamps.value,
             b.peer_input_current_nanoamps.value,
-            b.margin_permille.value
+            b.margin_permille.value,
+            b.peer_rail_millivolts.value,
+            b.peer_rail_tolerance_permille.value
         ),
-        (50_000, 700, 300, 350, 350, 100)
+        (50_000, 700, 300, 350, 350, 100, 3300, 50)
     );
     for (at, says) in [
         (&b.pull_up_max_ohms.at, "RPU"),
@@ -1172,6 +1185,12 @@ fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
             .contains("ruled 2026-11-23T10:11Z")
     );
     assert!(b.margin_permille.basis.contains("ruled 2026-11-23T10:11Z"));
+    // F2 (ruled 12:25Z): the ESC's own rail, a stand-in on DS70005664A p. 16.
+    for c in [&b.peer_rail_millivolts, &b.peer_rail_tolerance_permille] {
+        assert!(c.basis.contains("(S1)"), "{}", c.basis);
+        assert!(c.basis.contains("ruled 2026-11-23T12:25Z"), "{}", c.basis);
+    }
+    assert!(b.peer_rail_millivolts.basis.contains("DS70005664A p. 16"));
 
     let edited = |path: &[&str], value: Option<Value>| {
         let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
@@ -1196,6 +1215,8 @@ fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
         "leakage_max_nanoamps",
         "peer_input_current_nanoamps",
         "margin_permille",
+        "peer_rail_millivolts",
+        "peer_rail_tolerance_permille",
     ];
     for f in fields {
         assert!(edited(&[f], None).is_err(), "{f} missing");
@@ -1232,6 +1253,11 @@ fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
         );
     }
     assert!(edited(&["extra"], Some(json!(1))).is_err());
+    // The peer rail's tolerance is below 1000 permille, so its minimum is
+    // above zero.
+    let tol = ["peer_rail_tolerance_permille", "value"];
+    assert!(edited(&tol, Some(json!(1000))).is_err(), "tolerance 1000");
+    assert!(edited(&tol, Some(json!(999))).is_ok(), "tolerance 999");
     // The thresholds and the margin: each leaves both thresholds inside
     // (0, 1000) permille. The edges are admitted one step inside.
     for (f, bad, good) in [

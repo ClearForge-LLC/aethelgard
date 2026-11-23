@@ -1994,6 +1994,14 @@
               "margin_permille": {
                 "value": 100,
                 "basis": "AET-WO-4300j D1 (a), ruled 2026-11-23T10:11Z: 10 % of VDD at each threshold"
+              },
+              "peer_rail_millivolts": {
+                "value": 3300,
+                "basis": "a stand-in (S1): the ESC makes its own 3.3 V (DS70005664A p. 16, VREG -> R54 0R -> VDD), so its thresholds are taken on its own rail, not mcu.supply. AET-WO-4300j F2, ruled 2026-11-23T12:25Z"
+              },
+              "peer_rail_tolerance_permille": {
+                "value": 50,
+                "basis": "a stand-in (S1): the ESC regulator's tolerance is not held (FEEDBACK R1); taken as the committed boards' 3V3 +/-50 permille. AET-WO-4300j F2, ruled 2026-11-23T12:25Z"
               }
             }
           }

@@ -514,6 +514,12 @@ pub struct MotorPullBound {
     pub peer_input_current_nanoamps: Chosen,
     /// The margin at each threshold, per mille of VDD.
     pub margin_permille: Chosen,
+    /// The peer's own rail, nominal mV: a stand-in (`AET-WO-4300j` F2; the
+    /// ESC makes its own 3.3 V, DS70005664A p. 16). The ESC's thresholds are
+    /// taken on it, the pull-up on `mcu.supply`.
+    pub peer_rail_millivolts: Chosen,
+    /// The peer rail's tolerance, per mille, below 1000: a stand-in.
+    pub peer_rail_tolerance_permille: Chosen,
 }
 
 /// Pins of [`McuIo::pins`] whose pad is analog only, and where that is read.
@@ -1258,6 +1264,8 @@ struct RawMotorPullBound {
     leakage_max_nanoamps: RawLimit,
     peer_input_current_nanoamps: RawChosen,
     margin_permille: RawChosen,
+    peer_rail_millivolts: RawChosen,
+    peer_rail_tolerance_permille: RawChosen,
 }
 
 #[derive(Deserialize)]
@@ -2452,7 +2460,18 @@ fn motor_pull_bound(raw: RawMotorPullBound, r: &mut Reader<'_>) -> Result<MotorP
             "peer_input_current_nanoamps",
         )?,
         margin_permille: chosen(raw.margin_permille, "margin_permille")?,
+        peer_rail_millivolts: chosen(raw.peer_rail_millivolts, "peer_rail_millivolts")?,
+        peer_rail_tolerance_permille: chosen(
+            raw.peer_rail_tolerance_permille,
+            "peer_rail_tolerance_permille",
+        )?,
     };
+    if b.peer_rail_tolerance_permille.value >= 1000 {
+        return Err(format!(
+            "`{f}.peer_rail_tolerance_permille.value` is {}, not below 1000",
+            b.peer_rail_tolerance_permille.value
+        ));
+    }
     let (high, low, margin) = (
         b.input_high_min_permille.value,
         b.input_low_max_permille.value,

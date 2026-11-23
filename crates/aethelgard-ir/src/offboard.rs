@@ -192,9 +192,14 @@ pub fn motor_pull_window(spec: &Specification) -> Result<MotorPullWindow, IrVali
     let margin = i128::from(b.margin_permille.value);
     let i_na =
         i128::from(b.leakage_max_nanoamps.value) + i128::from(b.peer_input_current_nanoamps.value);
+    // The ESC's thresholds are taken on its own rail, held as a stand-in
+    // (`AET-WO-4300j` F2: the ESC makes its own 3.3 V, DS70005664A p. 16);
+    // the pull-up works from the board's `mcu.supply`.
+    let peer_n = i128::from(b.peer_rail_millivolts.value);
+    let peer_tol = i128::from(b.peer_rail_tolerance_permille.value);
     // mV x 1000 / 1000 x 1e6 = nV.
     let vdd_lo = n * (1000 - tol) * 1000;
-    let v_hi = (high + margin) * n * (1000 + tol);
+    let v_hi = (high + margin) * peer_n * (1000 + peer_tol);
     // nA x ohm = nV.
     let den = vdd_lo - v_hi - i_na * rpu;
     let rail = rail(d);
@@ -210,7 +215,7 @@ pub fn motor_pull_window(spec: &Specification) -> Result<MotorPullWindow, IrVali
         ));
     }
     let floor = (v_hi * rpu + den - 1) / den;
-    let ceiling = (low - margin) * n * (1000 - tol) / i_na;
+    let ceiling = (low - margin) * peer_n * (1000 - peer_tol) / i_na;
     let ceiling_ohms = u32::try_from(ceiling).unwrap_or(u32::MAX);
     match u32::try_from(floor) {
         Ok(floor_ohms) if floor_ohms <= ceiling_ohms => Ok(MotorPullWindow {
@@ -240,7 +245,7 @@ fn rail(d: &crate::VoltageDomain) -> String {
 /// Every input of the bound with its citation or basis, in one line.
 fn cites(pp: &power_parts::PowerPartsTable, b: &power_parts::MotorPullBound) -> String {
     format!(
-        "RPU max {} ohm, {}; VIH min {} permille, {}; VIL max {} permille, {}; Ilkg {} nA, {}; peer input {} nA, {}; margin {} permille, {}",
+        "RPU max {} ohm, {}; VIH min {} permille, {}; VIL max {} permille, {}; Ilkg {} nA, {}; peer input {} nA, {}; margin {} permille, {}; peer rail {} mV +/-{} permille, {}",
         b.pull_up_max_ohms.value,
         pp.cite(&b.pull_up_max_ohms.at),
         b.input_high_min_permille.value,
@@ -253,6 +258,9 @@ fn cites(pp: &power_parts::PowerPartsTable, b: &power_parts::MotorPullBound) -> 
         b.peer_input_current_nanoamps.basis,
         b.margin_permille.value,
         b.margin_permille.basis,
+        b.peer_rail_millivolts.value,
+        b.peer_rail_tolerance_permille.value,
+        b.peer_rail_millivolts.basis,
     )
 }
 
@@ -435,10 +443,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
-        if !matches!(
-            pp.get(&r.part).map(|row| &row.kind),
-            Some(power_parts::Kind::Resistor(_))
-        ) {
+        let Some(power_parts::Kind::Resistor(row)) = pp.get(&r.part).map(|row| &row.kind) else {
             return Err(refuse(
                 K::PowerPartUnknown,
                 &m.label,
@@ -448,7 +453,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     r.part
                 ),
             ));
-        }
+        };
         let link = &m.pull.link;
         if !matches!(
             pp.get(&link.part).map(|row| &row.kind),
@@ -465,7 +470,19 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
             ));
         }
         let w = window.expect("computed when a motor output is declared");
-        if r.ohms < w.floor_ohms || r.ohms > w.ceiling_ohms {
+        // The band, not the bare value (`AET-WO-4300j` F3, ruled 12:25Z): the
+        // row's tolerance and drift, ppm, give the low and high corners, and
+        // the low corner clears the floor and the high corner the ceiling,
+        // each a whole ohm, so a corner within an ohm of the exact bound is
+        // refused rather than admitted. TCR is not in the band: most boards
+        // declare no temperature (`4300i` F6).
+        let band = i128::from(row.tolerance_ppm.value) + i128::from(row.drift_ppm.value);
+        let ohms = i128::from(r.ohms);
+        let low_ppm = ohms * (1_000_000 - band);
+        let high_ppm = ohms * (1_000_000 + band);
+        if low_ppm < i128::from(w.floor_ohms) * 1_000_000
+            || high_ppm > i128::from(w.ceiling_ohms) * 1_000_000
+        {
             let d = spec
                 .voltage_domains
                 .iter()
@@ -476,9 +493,13 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 &m.label,
                 format!("{at}.ohms"),
                 format!(
-                    "`{}`'s pull is {} ohm, outside the bound on {}, {} to {} ohm: at least the floor, so that in BLHeli passthrough the weakest internal pull-up holds the idle line at VIH + margin of the peer's VDD max, and at most the ceiling, so that at reset the leakage holds it at VIL - margin of VDD min (`AET-WO-4300j` D1 (a), D3 (a); {})",
+                    "`{}`'s pull is {} ohm, its band {} to {} ohm with `{}`'s tolerance and drift ({} ppm), outside the bound on {}, {} to {} ohm: the low corner at least the floor, so that in BLHeli passthrough the weakest internal pull-up holds the idle line at VIH + margin of the peer's VDD max, and the high corner at most the ceiling, so that at reset the leakage holds it at VIL - margin of VDD min (`AET-WO-4300j` D1 (a), D3 (a); {})",
                     m.label,
                     r.ohms,
+                    low_ppm / 1_000_000,
+                    (high_ppm + 999_999) / 1_000_000,
+                    r.part,
+                    band,
                     rail(d),
                     w.floor_ohms,
                     w.ceiling_ohms,
