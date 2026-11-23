@@ -1142,33 +1142,36 @@ pub struct PinBound {
 /// The most threads [`bound_all`] spends (`AET-WO-1323` D5).
 pub const SOLVE_THREADS: usize = 4;
 
-/// [`bound`] from `source` to each of `sinks`, on at most `threads` scoped
-/// threads, in `sinks`' order. Each pin's bound is computed alone, exactly
-/// as one call of [`bound`] computes it, and kept at its index, so the
-/// results are the same bytes whatever the thread count or the timing.
-pub fn bound_all(
+/// [`bound`] from `source` to each of `sinks`, each result passed to `f`
+/// with its pin as soon as it is made (so no pin's whole bound outlives
+/// it), on at most `threads` scoped threads, in `sinks`' order. Each pin's
+/// bound is computed alone, exactly as one call of [`bound`] computes it,
+/// and kept at its index, so the results are the same bytes whatever the
+/// thread count or the timing.
+pub fn bound_all<T: Send>(
     nc: &NetCopper,
     m: &Model,
     source: &Pad,
     sinks: &[&Pad],
     max_iter: usize,
     threads: usize,
-) -> Vec<Result<PinBound, Refusal>> {
+    f: &(dyn Fn(&Pad, Result<PinBound, Refusal>) -> T + Sync),
+) -> Vec<T> {
     let threads = threads.clamp(1, sinks.len().max(1));
     if threads == 1 {
         return sinks
             .iter()
-            .map(|p| bound(nc, m, source, p, max_iter))
+            .map(|p| f(p, bound(nc, m, source, p, max_iter)))
             .collect();
     }
-    let mut out: Vec<Option<Result<PinBound, Refusal>>> = sinks.iter().map(|_| None).collect();
+    let mut out: Vec<Option<T>> = sinks.iter().map(|_| None).collect();
     std::thread::scope(|scope| {
         let handles: Vec<_> = (0..threads)
             .map(|k| {
                 scope.spawn(move || {
                     (k..sinks.len())
                         .step_by(threads)
-                        .map(|i| (i, bound(nc, m, source, sinks[i], max_iter)))
+                        .map(|i| (i, f(sinks[i], bound(nc, m, source, sinks[i], max_iter))))
                         .collect::<Vec<_>>()
                 })
             })
@@ -1644,13 +1647,10 @@ pub fn supplies(
             let threads = std::thread::available_parallelism()
                 .map_or(1, |n| n.get())
                 .min(SOLVE_THREADS);
-            let results = bound_all(&nc, &model, from, sinks, 400, threads)
-                .into_iter()
-                .zip(sinks)
-                .map(|(r, p)| match r {
-                    Ok(b) => bounded_pin(p, &b),
-                    Err(r) => {
-                        let (kind, message) = match r {
+            let results = bound_all(&nc, &model, from, sinks, 400, threads, &|p, r| match r {
+                Ok(b) => bounded_pin(p, &b),
+                Err(r) => {
+                    let (kind, message) = match r {
                             Refusal::Named(k, m) => (k, m),
                             Refusal::Flow(FlowError::Disconnected) if !nc.unfit.is_empty() => (
                                 "SupplyViaPadTooSmall",
@@ -1684,14 +1684,13 @@ pub fn supplies(
                             ),
                             Refusal::Flow(FlowError::Malformed(m)) => ("SupplyPinUnbounded", m),
                         };
-                        PinResult::Refused {
-                            pin: p.number.clone(),
-                            kind,
-                            message,
-                        }
+                    PinResult::Refused {
+                        pin: p.number.clone(),
+                        kind,
+                        message,
                     }
-                })
-                .collect();
+                }
+            });
             Ok((results, notes))
         };
         let vdd = mcu_pads(d);
@@ -1982,14 +1981,15 @@ mod tests {
         let m = model();
         let nc = copper(&b, &routed, "VDD", &terminals, &m).unwrap();
         let text = |threads| {
-            bound_all(&nc, &m, src, &sinks, 400, threads)
-                .iter()
-                .map(|r| format!("{r:?}"))
-                .collect::<Vec<_>>()
+            bound_all(&nc, &m, src, &sinks, 400, threads, &|p, r| {
+                format!("{} {r:?}", p.number)
+            })
         };
         let serial = text(1);
         assert_eq!(serial.len(), 5);
-        assert!(serial.iter().all(|r| r.starts_with("Ok(")), "{serial:?}");
+        for (k, r) in serial.iter().enumerate() {
+            assert!(r.starts_with(&format!("{} Ok(", k + 1)), "{r}");
+        }
         for threads in [2, 3, SOLVE_THREADS] {
             assert_eq!(text(threads), serial, "{threads} threads");
         }
