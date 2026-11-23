@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -22,7 +22,8 @@
       "connector": "J3",
       "pin": "1"
     },
-    "reset_switch": true
+    "reset_switch": true,
+    "reserved_pins": []
   },
   "voltage_domains": [
     {

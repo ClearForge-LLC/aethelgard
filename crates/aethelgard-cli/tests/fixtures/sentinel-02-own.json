@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -36,7 +36,8 @@
         "USART3": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"},
         "USART6": {"value": 72000000, "source": "ArduPilot Copter-4.7.2, ChibiOS stm32h7_mcuconf.h: USART16SEL and USART234578SEL PLL2_Q, HSI/8*45/5 = 72 MHz (RCC_D2CCIP2R 0xE01009 written, AET-WO-4400f)"}
       }
-    }
+    },
+    "reserved_pins": []
   },
   "voltage_domains": [
     {

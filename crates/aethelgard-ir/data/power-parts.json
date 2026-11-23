@@ -1,5 +1,5 @@
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -1956,6 +1956,15 @@
               "at": {
                 "document": "DS12117",
                 "section": "p. 67, Table 8 (pin/ball definition): `PC2_C` and `PC3_C` are pin type ANA, and note 4: the Pxy alternate functions reach the Pxy_C pad only through the analog switch (SYSCFG); p. 104, Table 11 (current characteristics): a Px_C pin sinks at most 1 mA"
+              }
+            },
+            "weak_pull_down_ohms": {
+              "min": 30000,
+              "typical": 40000,
+              "max": 50000,
+              "at": {
+                "document": "DS12117",
+                "section": "Table 49 p. 137 (rev Y) and Table 146 p. 241 (rev V): RPD weak pull-down equivalent resistor, VIN = VDD, 30 / 40 / 50 kOhm"
               }
             }
           }

@@ -1,5 +1,5 @@
 {
-  "schema_version": 27,
+  "schema_version": 28,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -396,7 +396,21 @@
       "source": "DS12117 Rev 10 sec. 3.5.1 p. 27, Figure 65 p. 206, Table 113 p. 211: VCAP decoupled only, the MCU support group of power-parts.json (2 x 2.2 uF VCAP to GND); no external VCORE"
     },
     "supply_source": null,
-    "reset_switch": true
+    "reset_switch": true,
+    "reserved_pins": [
+      {
+        "pin": "PA11",
+        "reason": "USB OTG_FS DM, kept free for USB (AET-WO-3400 F5, 4300e1)"
+      },
+      {
+        "pin": "PA12",
+        "reason": "USB OTG_FS DP, kept free for USB (AET-WO-3400 F5, 4300e1)"
+      },
+      {
+        "pin": "PC9",
+        "reason": "MCO2: AET-WO-3400 E5's clock-out, moved from MCO1/PA8 when MOTOR1 took PA8 (AET-WO-4300h D3, ruled 2026-11-23)"
+      }
+    ]
   },
   "voltage_domains": [
     {
@@ -946,31 +960,35 @@
   "motor_outputs": [
     {
       "label": "MOTOR1",
-      "pin": "PE9",
+      "pin": "PA8",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
+      "pull": {"resistor": {"reference": "R52", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
     },
     {
       "label": "MOTOR2",
       "pin": "PE11",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
+      "pull": {"resistor": {"reference": "R53", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
     },
     {
       "label": "MOTOR3",
       "pin": "PE13",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
+      "pull": {"resistor": {"reference": "R54", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
     },
     {
       "label": "MOTOR4",
       "pin": "PE14",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}}
+      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
+      "pull": {"resistor": {"reference": "R55", "part": "CRCW0603_F_K", "ohms": 40200, "to": "GND"}, "source": "DS12117 Rev 10 Table 49 p. 137, Table 146 p. 241: RPD 30/40/50 kOhm. External copy of the Q-G pull (D0): E96 value nearest 40 kOhm (VISHAY_20035 p. 2). Ruled 2026-11-23T01:15Z"}
     }
   ],
   "power": {

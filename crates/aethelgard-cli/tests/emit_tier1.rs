@@ -762,3 +762,187 @@ fn the_stand_in_undeclared_is_refused_by_validate_before_any_board() {
     assert_eq!(r["error"]["kind"], "UnknownPart", "{r}");
     assert_eq!(r["error"]["id"], "U6");
 }
+
+/// The seven drawn boards whose specifications declare motor outputs
+/// (`AET-WO-4300i` `spike/4300i/RESULTS.md`, 28 nets); the stand-ins
+/// `hse-external-8` and `d1-drv8876` draw no board.
+const MOTOR_BOARDS: [&str; 7] = [
+    "driver-judges-nothing",
+    "hse-crystal-16",
+    "motors-dshot600",
+    "motors-pwm",
+    "sentinel-02-shaped",
+    "sentinel-03",
+    "serial-dshot-9600",
+];
+
+/// A resistance as the test reads a schematic value's first token (`40k2`,
+/// `10k`, `330`), its own reading: `None` for anything else.
+fn resistance(token: &str) -> Option<u64> {
+    let (whole, scale, frac) = match token.find(['k', 'M']) {
+        Some(i) => (
+            &token[..i],
+            if &token[i..=i] == "k" {
+                1_000
+            } else {
+                1_000_000
+            },
+            &token[i + 1..],
+        ),
+        None => (token, 1, ""),
+    };
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    if !digits(whole) || !(frac.is_empty() || digits(frac)) {
+        return None;
+    }
+    let f = if frac.is_empty() {
+        0
+    } else {
+        frac.parse::<u64>().ok()? * scale / 10u64.pow(u32::try_from(frac.len()).ok()?)
+    };
+    Some(whole.parse::<u64>().ok()? * scale + f)
+}
+
+/// Each footprint of an emitted board, read strictly: its reference, value,
+/// library id, and each pad's number and net.
+type Footprint = (String, String, String, Vec<(String, Option<String>)>);
+
+fn footprints(emitted: &Value) -> Vec<Footprint> {
+    let text = fs::read_to_string(emitted["board"]["path"].as_str().unwrap()).unwrap();
+    let pcb = aethelgard_eda::strict::board(&text).unwrap();
+    pcb.root()
+        .all("footprint")
+        .map(|fp| {
+            let pads = fp
+                .all("pad")
+                .map(|p| {
+                    let net = p.one("net").unwrap().and_then(|n| n.last());
+                    (p.arg(1).unwrap().to_owned(), net.map(str::to_owned))
+                })
+                .collect();
+            (
+                fp.field("Reference").unwrap().unwrap().to_owned(),
+                fp.field("Value").unwrap().unwrap().to_owned(),
+                fp.arg(1).unwrap().to_owned(),
+                pads,
+            )
+        })
+        .collect()
+}
+
+/// The nets of a footprint's pads, sorted (a label's `/` before `GND`).
+fn pad_nets(pads: &[(String, Option<String>)]) -> Vec<Option<&str>> {
+    let mut on: Vec<Option<&str>> = pads.iter().map(|(_, n)| n.as_deref()).collect();
+    on.sort_unstable();
+    on
+}
+
+/// `AET-WO-4300i` §2: every motor net of every drawn board carries its
+/// declared pull-down, read from the emitted files alone. On the board,
+/// exactly one footprint joins the motor's net (`/<label>`) to `GND`, by
+/// its two pads and no other: the declared reference, valued the declared
+/// resistance and part, on the part row's footprint. In the bill of
+/// materials, the same reference, value, footprint and the row's symbol.
+#[test]
+fn every_motor_net_carries_its_declared_pull_down_in_the_emitted_files() {
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let parts = aethelgard_ir::power_parts::table().unwrap();
+    let d = Dir::new("motor-pulls");
+    let nets = std::sync::atomic::AtomicUsize::new(0);
+    std::thread::scope(|s| {
+        for board in MOTOR_BOARDS {
+            let (fixtures, d, parts, nets) = (&fixtures, &d, &parts, &nets);
+            s.spawn(move || {
+                let path = fixtures.join(format!("{board}.json"));
+                let spec: aethelgard_ir::Specification =
+                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                assert!(!spec.motor_outputs.is_empty(), "{board}");
+                let r = json_line(&emit(&path, &d.0.join(board)), 0);
+                let fps = footprints(&r);
+                let bom =
+                    fs::read_to_string(r["bill_of_materials"]["path"].as_str().unwrap()).unwrap();
+                for m in &spec.motor_outputs {
+                    let want = &m.pull.resistor;
+                    assert_eq!(want.to, "GND", "{board} {}", m.label);
+                    let row = parts.get(&want.part).unwrap();
+                    let line = format!("/{}", m.label);
+                    let joining: Vec<_> = fps
+                        .iter()
+                        .filter(|(_, _, _, pads)| {
+                            pad_nets(pads) == [Some(line.as_str()), Some("GND")]
+                        })
+                        .collect();
+                    let [(reference, value, footprint, pads)] = joining.as_slice() else {
+                        panic!(
+                            "{board} {}: {} parts join it to GND",
+                            m.label,
+                            joining.len()
+                        );
+                    };
+                    assert_eq!(reference, &want.reference, "{board} {}", m.label);
+                    let (token, part) = value.split_once(' ').unwrap();
+                    assert_eq!(
+                        resistance(token),
+                        Some(u64::from(want.ohms)),
+                        "{board} {value}"
+                    );
+                    assert_eq!(part, want.part, "{board} {value}");
+                    assert_eq!(footprint, &row.footprint, "{board} {reference}");
+                    let mut numbers: Vec<&str> = pads.iter().map(|(n, _)| n.as_str()).collect();
+                    numbers.sort_unstable();
+                    assert_eq!(numbers, ["1", "2"], "{board} {reference}");
+                    let rows: Vec<&str> = bom
+                        .lines()
+                        .filter(|l| l.split(',').next() == Some(reference.as_str()))
+                        .collect();
+                    assert_eq!(
+                        rows,
+                        [format!(
+                            "{reference},{value},{},{},",
+                            row.footprint, row.symbol
+                        )],
+                        "{board}"
+                    );
+                    nets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+            });
+        }
+    });
+    assert_eq!(nets.into_inner(), 28);
+}
+
+/// `AET-WO-4300i`: a motor pull's reference is claimed before the emitter
+/// numbers its own parts, as every declared reference is. Declared `R1` to
+/// `R4`, below the emitter's own resistors, they keep their names on the
+/// motor nets and no reference is drawn twice.
+#[test]
+fn a_motor_pull_declared_below_the_emitters_numbers_keeps_its_reference() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/motors-pwm.json");
+    let mut v: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    for (i, m) in v["motor_outputs"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        m["pull"]["resistor"]["reference"] = json!(format!("R{}", i + 1));
+    }
+    let d = Dir::new("motor-low-refs");
+    let r = json_line(&emit(&write_spec(&d, &v), &d.0.join("o")), 0);
+    let refs = board_references(&r);
+    let mut unique = refs.clone();
+    unique.sort();
+    unique.dedup();
+    assert_eq!(unique.len(), refs.len(), "{refs:?}");
+    let fps = footprints(&r);
+    for (i, label) in ["MOTOR1", "MOTOR2", "MOTOR3", "MOTOR4"].iter().enumerate() {
+        let reference = format!("R{}", i + 1);
+        let (_, value, _, pads) = fps.iter().find(|f| f.0 == reference).unwrap();
+        let line = format!("/{label}");
+        assert_eq!(
+            pad_nets(pads),
+            [Some(line.as_str()), Some("GND")],
+            "{reference} {value}"
+        );
+    }
+}

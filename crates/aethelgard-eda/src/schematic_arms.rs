@@ -718,42 +718,6 @@ fn volts(mv: u64) -> String {
     format!("{whole}.{digits}V")
 }
 
-/// The references the pin devices bring: each device's, then its declared
-/// passives' (a pull, a strap resistor, an analog output's resistor and
-/// reservoir, the bulk capacitor), claimed before any emitter-numbered one.
-/// `devices` is the specification's, which `schematic` reads for this module (`RUL-16`:
-/// `eda`'s one reader of declared devices, as for the power tree).
-pub(super) fn references(devices: &[PinDevice]) -> Vec<&String> {
-    let mut out = Vec::new();
-    for d in devices {
-        out.push(&d.reference);
-        for s in d.straps.values() {
-            if let Strap::Resistor(r) = s {
-                out.push(&r.reference);
-            }
-        }
-        for s in &d.signals {
-            if let Some(SignalPull {
-                resistor: Some(r), ..
-            }) = &s.pull
-            {
-                out.push(&r.reference);
-            }
-        }
-        for a in &d.analog {
-            let Transfer::CurrentOutput(c) = &a.transfer;
-            out.push(&c.resistor.reference);
-            if let Some(r) = &c.reservoir {
-                out.push(&r.reference);
-            }
-        }
-        if let Some(bulk) = &d.bulk {
-            out.push(&bulk.reference);
-        }
-    }
-    out
-}
-
 /// Draws each of `devices` (the specification's, read by `schematic`), in
 /// document order, by its row. `on_connectors` is every net a declared
 /// connector pin carries, where a bridge output must end; `mcu` is the MCU's

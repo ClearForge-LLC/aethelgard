@@ -37,8 +37,9 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// operation (`AET-WO-1211e` A1). Version 7 gave `io` its absolute maximum
 /// ratings, DS12117 Table 10 (`AET-WO-1216b`). Version 8 gave it
 /// `analog_pads`, the pins whose pad takes only an analog input
-/// (`AET-WO-1217` F4).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 8;
+/// (`AET-WO-1217` F4). Version 9 gave it `weak_pull_down_ohms`, the RPD
+/// range a declared motor pull-down is held inside (`AET-WO-4300i`, D0).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 9;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -462,6 +463,21 @@ pub struct McuIo {
     /// `ANA`): the solver offers them to no digital claimant and refuses one
     /// by hand (`AET-WO-1217` F4).
     pub analog_pads: AnalogPads,
+    /// RPD, the weak pull-down's equivalent resistor (DS12117 Rev 10 Table 49
+    /// = Table 146): the range a declared external motor pull-down is held
+    /// inside (`AET-WO-4300i`, D0 and the ruling on V).
+    pub weak_pull_down_ohms: WeakPull,
+}
+
+/// A weak pull's equivalent resistance, Ω: `min <= typical <= max`, each
+/// above zero, and where they are read. The typical is the value the
+/// external copy is chosen nearest; only `min` and `max` bound it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WeakPull {
+    pub min: i64,
+    pub typical: i64,
+    pub max: i64,
+    pub at: At,
 }
 
 /// Pins of [`McuIo::pins`] whose pad is analog only, and where that is read.
@@ -1184,6 +1200,16 @@ struct RawMcuIo {
     pulls_off_above_supply_millivolts: RawLimit,
     absolute_maximum: RawIoAbsoluteMaximum,
     analog_pads: RawAnalogPads,
+    weak_pull_down_ohms: RawWeakPull,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawWeakPull {
+    min: i64,
+    typical: i64,
+    max: i64,
+    at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -2325,6 +2351,27 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
         )?,
         absolute_maximum,
         analog_pads,
+        weak_pull_down_ohms: weak_pull(m.weak_pull_down_ohms, r)?,
+    })
+}
+
+/// `kind.mcu.io.weak_pull_down_ohms`: each figure above zero, in order.
+fn weak_pull(raw: RawWeakPull, r: &mut Reader<'_>) -> Result<WeakPull, String> {
+    let field = "kind.mcu.io.weak_pull_down_ohms";
+    for v in [raw.min, raw.typical, raw.max] {
+        bounded(v, field)?;
+    }
+    if raw.min <= 0 || raw.min > raw.typical || raw.typical > raw.max {
+        return Err(format!(
+            "`{field}` is {} / {} / {}: min, typical and max are above zero and in order",
+            raw.min, raw.typical, raw.max
+        ));
+    }
+    Ok(WeakPull {
+        min: raw.min,
+        typical: raw.typical,
+        max: raw.max,
+        at: r.at(raw.at, field)?,
     })
 }
 

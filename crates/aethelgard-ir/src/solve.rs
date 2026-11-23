@@ -34,6 +34,36 @@ pub fn reserved_pins(hse: Option<&crate::clock::Hse>) -> Vec<&'static str> {
     pins
 }
 
+/// What the engine's reservation is, as [`SolveError::ReservedPin`] names it.
+const ENGINE_RESERVED: &str = "debug port or oscillator";
+
+/// Every pin `solve` never assigns: the engine's ([`reserved_pins`]), then
+/// the specification's `mcu.reserved_pins` (`AET-WO-4300i` F7), which every
+/// candidate filter reads, so no branch offers one.
+pub(crate) fn all_reserved(spec: &Specification) -> Vec<&str> {
+    let mut pins = reserved_pins(spec.mcu.hse.as_ref());
+    pins.extend(spec.mcu.reserved_pins.iter().map(|r| r.pin.as_str()));
+    pins
+}
+
+/// The refusal of a hand pin on a reserved `pin`: the engine's reason, or
+/// the declared one (`AET-WO-4300i` F7).
+pub(crate) fn reserved_refusal(spec: &Specification, pin: &str, claimant: &str) -> SolveError {
+    let reason = match spec.mcu.reserved_pins.iter().find(|r| r.pin == pin) {
+        // belt-and-suspenders: validate refuses a declared pin the engine also
+        // reserves (`ReservedPinEngineReserved`); the engine's reason wins here.
+        Some(r) if !reserved_pins(spec.mcu.hse.as_ref()).contains(&pin) => {
+            format!("`mcu.reserved_pins`: {}", r.reason)
+        }
+        _ => ENGINE_RESERVED.to_owned(),
+    };
+    SolveError::ReservedPin {
+        pin: pin.to_owned(),
+        claimant: claimant.to_owned(),
+        reason,
+    }
+}
+
 /// The pins `solve` offers no digital claimant and refuses as a digital
 /// hand pin (`AET-WO-1217` F4): the MCU row's `io.analog_pads`. An ADC input
 /// may take one. A part with no power-parts row has no pin table either
@@ -72,8 +102,14 @@ pub enum SolveError {
     PartMismatch { spec: String, table: String },
     #[error("`{claimant}` names pin `{pin}`, which the pin table does not have")]
     UnknownPin { pin: String, claimant: String },
-    #[error("`{claimant}` names pin `{pin}`, which is reserved (debug port or oscillator)")]
-    ReservedPin { pin: String, claimant: String },
+    /// `reason` is the engine's (debug port or oscillator) or the declared
+    /// reservation's (`mcu.reserved_pins`, `AET-WO-4300i` F7).
+    #[error("`{claimant}` names pin `{pin}`, which is reserved ({reason})")]
+    ReservedPin {
+        pin: String,
+        claimant: String,
+        reason: String,
+    },
     #[error(
         "`{claimant}` names pin `{pin}`, whose pad takes only an analog input (the MCU row's `io.analog_pads`: DS12117 Table 8 types it `ANA`, and a Px_C pin sinks at most 1 mA); a digital signal goes on another pin"
     )]
@@ -106,10 +142,13 @@ pub enum SolveError {
     Infeasible { buses: Vec<String> },
     #[error("the search tried {limit} values without an answer; it was placing bus `{bus}`")]
     BudgetExceeded { bus: String, limit: u64 },
-    #[error("`{claimant}` has no free pin left")]
-    NoFreePin { claimant: String },
-    #[error("no free pin carries a single-ended ADC input for ADC net `{net}`")]
-    NoAdcPin { net: String },
+    /// `withheld` names the pins withheld from a net at a connector as not
+    /// FT (`AET-WO-4300i` D1), and is empty when none is.
+    #[error("`{claimant}` has no free pin left{withheld}")]
+    NoFreePin { claimant: String, withheld: String },
+    /// `withheld` as for [`SolveError::NoFreePin`].
+    #[error("no free pin carries a single-ended ADC input for ADC net `{net}`{withheld}")]
+    NoAdcPin { net: String, withheld: String },
     /// `AET-WO-1211a`: a pin device's ADC input pinned, or its channel
     /// named, where the pin carries no such input.
     #[error("ADC net `{net}`: {reason}")]
@@ -117,10 +156,15 @@ pub enum SolveError {
     /// `AET-WO-1211a`, `1211` Q8: the only free ADC pins carry an ADC2 input
     /// alone, which the twin does not model; pin one by hand to take it.
     #[error(
-        "ADC net `{net}`: the free ADC pins {} carry ADC2 alone, which the twin does not model (`1211` Q8); the solver takes ADC1 or ADC3, and an ADC2 pin only when the specification pins it",
+        "ADC net `{net}`: the free ADC pins {} carry ADC2 alone, which the twin does not model (`1211` Q8); the solver takes ADC1 or ADC3, and an ADC2 pin only when the specification pins it{withheld}",
         quoted(.pins)
     )]
-    AdcUnmodelled { net: String, pins: Vec<String> },
+    AdcUnmodelled {
+        net: String,
+        pins: Vec<String>,
+        /// As for [`SolveError::NoFreePin`].
+        withheld: String,
+    },
     /// `AET-WO-1211a`, `1211` §2.6: a pin device's driven input on a pin the
     /// MCU pulls up from reset (PA13, PA15, PB4), against the part's own
     /// pull-down until the first write.
@@ -288,7 +332,7 @@ impl SolveError {
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. }
             | Self::NoI2cTiming { bus, .. } => Some(bus),
-            Self::NoAdcPin { net }
+            Self::NoAdcPin { net, .. }
             | Self::AdcChannelNotOnPin { net, .. }
             | Self::AdcUnmodelled { net, .. }
             | Self::PinSpeed { net, .. } => Some(net),
@@ -318,7 +362,7 @@ impl SolveError {
             | Self::ReservedPin { claimant, .. }
             | Self::AnalogPadPin { claimant, .. }
             | Self::UnknownPeripheral { claimant, .. }
-            | Self::NoFreePin { claimant } => vec![claimant.clone()],
+            | Self::NoFreePin { claimant, .. } => vec![claimant.clone()],
             Self::PinClaimedTwice { first, second, .. }
             | Self::PeripheralClaimedTwice { first, second, .. } => {
                 vec![first.clone(), second.clone()]
@@ -328,7 +372,7 @@ impl SolveError {
             | Self::SpiKernelClockUnavailable { bus, .. }
             | Self::SpiSpeedBelowKernelRange { bus, .. }
             | Self::NoI2cTiming { bus, .. } => vec![bus.clone()],
-            Self::NoAdcPin { net }
+            Self::NoAdcPin { net, .. }
             | Self::AdcChannelNotOnPin { net, .. }
             | Self::AdcUnmodelled { net, .. }
             | Self::PinSpeed { net, .. } => vec![net.clone()],
@@ -389,7 +433,7 @@ fn solve_inner(
     forced: bool,
 ) -> Result<SolvedTopology, SolveError> {
     spec.validate().map_err(SolveError::InvalidSpecification)?;
-    let reserved = reserved_pins(spec.mcu.hse.as_ref());
+    let reserved = all_reserved(spec);
     let pads = analog_pads(&spec.mcu.part).map_err(SolveError::InvalidSpecification)?;
     let mut out = SolvedTopology {
         schema_version: crate::SOLVED_SCHEMA_VERSION,
@@ -540,19 +584,23 @@ fn solve_inner(
         out.i2c_timings.insert(p, t);
     }
     // Every cs last, in document order: a hand pin is already owned; the rest
-    // take the first free, unreserved pin in key order. The buses, the motor
-    // outputs and the serial ports use a fixed number of pins, so this greedy
-    // pass never loses a solution.
+    // take the first free, unreserved pin in key order, an FT one at a
+    // connector (`AET-WO-4300i` D1). The buses, the motor outputs and the
+    // serial ports use a fixed number of pins, so this greedy pass never
+    // loses a solution.
     for cs in &model.cs {
         let pin = match cs.hand {
             Some(pin) => pin,
             None => {
-                let free = table.pins.keys().map(String::as_str).find(|p| {
-                    !reserved.contains(p) && !pads.contains(p) && !search.used.contains_key(p)
-                });
-                let Some(pin) = free else {
+                let free = || {
+                    table.pins.keys().map(String::as_str).filter(|p| {
+                        !reserved.contains(p) && !pads.contains(p) && !search.used.contains_key(p)
+                    })
+                };
+                let Some(pin) = free().find(|p| model.at.offers(cs.net, p)) else {
                     return Err(SolveError::NoFreePin {
                         claimant: cs.path.clone(),
+                        withheld: model.at.note(cs.net, free()),
                     });
                 };
                 search.used.insert(pin, cs.path.clone());
@@ -603,11 +651,15 @@ fn solve_inner(
                 .copied();
             let Some((name, pin)) = modelled else {
                 if free.is_empty() {
-                    return Err(SolveError::NoAdcPin { net: s.net.clone() });
+                    return Err(SolveError::NoAdcPin {
+                        net: s.net.clone(),
+                        withheld: String::new(),
+                    });
                 }
                 return Err(SolveError::AdcUnmodelled {
                     net: s.net.clone(),
                     pins: free.iter().map(|(n, _)| (*n).to_owned()).collect(),
+                    withheld: String::new(),
                 });
             };
             let (peripheral, channel) =
@@ -1491,6 +1543,9 @@ struct Model<'s, 't> {
     /// `candidates` leaves out (`AET-WO-1217` F4), in key order; a refusal
     /// names them (`AET-WO-1218`, `1217` R4).
     withheld: BTreeMap<(String, &'static str), Vec<&'t str>>,
+    /// What a net at a connector is offered: FT pins only (`AET-WO-4300i`
+    /// D1 (a), adversarial pass F1).
+    at: crate::offboard::AtConnector<'s>,
 }
 
 /// An instance is offered when the table carries each of its kind's signals
@@ -1522,8 +1577,23 @@ impl<'s, 't> Model<'s, 't> {
     /// README's order: hand pins (unknown, reserved, claimed twice), hand
     /// peripherals (unknown, claimed twice), then each bus alone.
     fn new(spec: &'s Specification, table: &'t PinTable) -> Result<Self, SolveError> {
-        let reserved = reserved_pins(spec.mcu.hse.as_ref());
+        // Each declared reservation is a pin of the table (`AET-WO-4300i`
+        // F7); `validate` judged the rest of it.
+        for (i, r) in spec.mcu.reserved_pins.iter().enumerate() {
+            if !table.pins.contains_key(&r.pin) {
+                return Err(SolveError::UnknownPin {
+                    pin: r.pin.clone(),
+                    claimant: format!("mcu.reserved_pins[{i}]"),
+                });
+            }
+        }
+        let reserved = all_reserved(spec);
         let pads = analog_pads(&spec.mcu.part).map_err(SolveError::InvalidSpecification)?;
+        // belt-and-suspenders: step 26 already refused a part with no MCU row
+        // when a net faces a connector; `solve` re-checks its input rather than
+        // trusting its caller, as it re-runs `validate`.
+        let at =
+            crate::offboard::AtConnector::new(spec).map_err(SolveError::InvalidSpecification)?;
         let mut claimed: BTreeMap<&'t str, String> = BTreeMap::new();
         // `digital`: every claimant but an ADC input, which an analog pad
         // takes (`AET-WO-1217` F4).
@@ -1541,10 +1611,7 @@ impl<'s, 't> Model<'s, 't> {
                 };
                 let key = key.as_str();
                 if reserved.contains(&key) {
-                    return Err(SolveError::ReservedPin {
-                        pin: key.to_owned(),
-                        claimant,
-                    });
+                    return Err(reserved_refusal(spec, key, &claimant));
                 }
                 if digital && pads.contains(&key) {
                     return Err(SolveError::AnalogPadPin {
@@ -1646,10 +1713,22 @@ impl<'s, 't> Model<'s, 't> {
                 path,
             });
         }
+        // No motor output is offered a pin holding an internal pull from
+        // reset (`AET-WO-4300i` F2, RM0433 Rev 9 p. 542): a reset pull-up
+        // fights the declared pull-down until the timer takes the pin, and a
+        // hand pin there is `validate`'s `MotorPinResetPull`.
+        let reset_pull = |pin: &str| {
+            crate::pin_devices::MCU_RESET_PULL_UPS.contains(&pin)
+                || crate::pin_devices::MCU_RESET_PULL_DOWNS.contains(&pin)
+        };
         let mut channels: Vec<Channel<'t>> = table
             .pins
             .iter()
-            .filter(|(pin, _)| !reserved.contains(&pin.as_str()) && !pads.contains(&pin.as_str()))
+            .filter(|(pin, _)| {
+                !reserved.contains(&pin.as_str())
+                    && !pads.contains(&pin.as_str())
+                    && !reset_pull(pin)
+            })
             .flat_map(|(pin, p)| {
                 p.alternate_functions.iter().filter_map(move |(name, af)| {
                     motor::timer_channel(name).map(|(n, k)| (n, k, pin.as_str(), *af))
@@ -1759,6 +1838,7 @@ impl<'s, 't> Model<'s, 't> {
             spi_instances,
             candidates,
             withheld,
+            at,
         };
         model.check_peripherals()?;
         model.check_each_bus()?;
@@ -1778,20 +1858,40 @@ impl<'s, 't> Model<'s, 't> {
             .map_or(&[], Vec::as_slice)
     }
 
-    /// What a refusal adds for the analog pads carrying `inst`'s `sig`:
-    /// nothing when none does (`AET-WO-1218`, `1217` R4).
-    fn withheld_note(&self, inst: &str, sig: &'static str) -> String {
+    /// The pins `sig` may take on `inst`, its net's own filter over
+    /// [`Model::pins_for`]: at a connector, the FT ones only
+    /// (`AET-WO-4300i` D1, adversarial pass F1). Every branch's candidates
+    /// for a bus line or a serial line are these.
+    fn offered<'a>(
+        &'a self,
+        inst: &str,
+        sig: &'a Sig<'s, 't>,
+    ) -> impl Iterator<Item = (&'t str, u8)> + 'a {
+        self.pins_for(inst, sig.name)
+            .iter()
+            .copied()
+            .filter(move |(pin, _)| self.at.offers(sig.net, pin))
+    }
+
+    /// What a refusal adds for the pins withheld from `inst`'s `sig`: the
+    /// analog pads carrying it (`AET-WO-1218`, `1217` R4), then, at a
+    /// connector, the non-FT ones (`AET-WO-4300i` D1); nothing when none is.
+    fn withheld_note(&self, inst: &str, sig: &Sig<'s, 't>) -> String {
         let pads = self
             .withheld
-            .get(&(inst.to_owned(), sig))
+            .get(&(inst.to_owned(), sig.name))
             .map_or(&[][..], Vec::as_slice);
-        if pads.is_empty() {
-            return String::new();
+        let mut note = String::new();
+        if !pads.is_empty() {
+            let named: Vec<String> = pads.iter().map(|p| format!("`{p}`")).collect();
+            note = format!(
+                "; {} withheld as an analog pad (the MCU row's `io.analog_pads`)",
+                named.join(", ")
+            );
         }
-        let named: Vec<String> = pads.iter().map(|p| format!("`{p}`")).collect();
-        format!(
-            "; {} withheld as an analog pad (the MCU row's `io.analog_pads`)",
-            named.join(", ")
+        note + &self.at.note(
+            sig.net,
+            self.pins_for(inst, sig.name).iter().map(|(p, _)| *p),
         )
     }
 
@@ -1847,9 +1947,9 @@ impl<'s, 't> Model<'s, 't> {
                     .iter()
                     .find(|s| !alone.has_pin(s, inst))
                     .expect("an unplaceable bus has a signal with no pin");
-                let pins = self.pins_for(inst, sig.name);
+                let pins: Vec<(&str, u8)> = self.offered(inst, sig).collect();
                 let name = format!("{inst}_{}", sig.name);
-                let note = self.withheld_note(inst, sig.name);
+                let note = self.withheld_note(inst, sig);
                 reasons.push(match sig.hand {
                     Some(h) => format!("{inst}: `{name}` is not on pin `{h}`"),
                     None if pins.is_empty() => {
@@ -1884,15 +1984,20 @@ impl<'s, 't> Model<'s, 't> {
         for (m, motor) in self.motors.iter().enumerate() {
             let options: Vec<Channel<'t>> = alone.channels_for(m).collect();
             if options.is_empty() {
+                let note = self.at.note(motor.label, self.channels.iter().map(|c| c.2));
                 let reason = match motor.hand {
                     Some(h) if !self.channels.iter().any(|c| c.2 == h) => {
                         format!("pin `{h}` carries no timer channel (`TIMn_CH1` to `TIMn_CH4`)")
                     }
                     Some(h) => format!("pin `{h}` is held by `{}`", alone.used[h]),
-                    None if self.channels.is_empty() => {
-                        "the table has no unreserved pin with a timer channel".to_owned()
+                    None if !self
+                        .channels
+                        .iter()
+                        .any(|c| self.at.offers(motor.label, c.2)) =>
+                    {
+                        format!("the table has no unreserved pin with a timer channel{note}")
                     }
-                    None => "every pin with a timer channel is held by hand".to_owned(),
+                    None => format!("every pin with a timer channel is held by hand{note}"),
                 };
                 return Err(SolveError::NoTimerChannel {
                     output: motor.label.to_owned(),
@@ -2229,9 +2334,8 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
     /// The pins `sig` could take on `inst` right now.
     fn pins<'a>(&'a self, sig: &'a Sig<'s, 't>, inst: &str) -> impl Iterator<Item = &'t str> + 'a {
         self.model
-            .pins_for(inst, sig.name)
-            .iter()
-            .map(|(pin, _)| *pin)
+            .offered(inst, sig)
+            .map(|(pin, _)| pin)
             .filter(move |pin| sig.hand.is_none_or(|h| h == *pin) && self.free(pin, &sig.path))
     }
 
@@ -2343,6 +2447,7 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             .copied()
             .filter(move |&(n, k, pin, _)| {
                 motor.hand.is_none_or(|h| h == pin)
+                    && self.model.at.offers(motor.label, pin)
                     && self.free(pin, &motor.path)
                     && !self.channels_used.contains(&(n, k))
                     && self
@@ -2397,11 +2502,9 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
     /// pins, each in key order, each its hand pin or free.
     fn uart_options(&self, u: usize) -> Vec<UartPlaced<'t>> {
         let port = &self.model.serial[u];
-        let pins = |p: &str, sig: &Sig<'s, 't>| -> Vec<(&'t str, u8)> {
+        let pins = |p: &str, sig: &'m Sig<'s, 't>| -> Vec<(&'t str, u8)> {
             self.model
-                .pins_for(p, sig.name)
-                .iter()
-                .copied()
+                .offered(p, sig)
                 .filter(|(pin, _)| sig.hand.is_none_or(|h| h == *pin) && self.free(pin, &sig.path))
                 .collect()
         };
@@ -2410,8 +2513,8 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             if port.peripheral.is_some_and(|d| d != p) || self.serial_taken.contains(p) {
                 continue;
             }
-            let rxs = pins(p, &port.rx);
-            for tx in pins(p, &port.tx) {
+            let (rxs, txs) = (pins(p, &port.rx), pins(p, &port.tx));
+            for tx in txs {
                 for &rx in rxs.iter().filter(|rx| rx.0 != tx.0) {
                     out.push((p, tx, rx));
                 }
@@ -2425,8 +2528,8 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
     fn uart_reason(&self, port: &Uart<'s, 't>, p: &str) -> String {
         for sig in [&port.tx, &port.rx] {
             let name = format!("{p}_{}", sig.name);
-            let pins = self.model.pins_for(p, sig.name);
-            let note = self.model.withheld_note(p, sig.name);
+            let pins: Vec<(&str, u8)> = self.model.offered(p, sig).collect();
+            let note = self.model.withheld_note(p, sig);
             match sig.hand {
                 Some(h) if !pins.iter().any(|(q, _)| *q == h) => {
                     return format!("{p}: `{name}` is not on pin `{h}`");
@@ -2501,7 +2604,8 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             return false;
         }
         let sig = &bus.signals[k];
-        for &(pin, af) in model.pins_for(inst, sig.name) {
+        let order: Vec<(&'t str, u8)> = model.offered(inst, sig).collect();
+        for (pin, af) in order {
             if !self.tick(pos) {
                 return false;
             }
@@ -2729,6 +2833,7 @@ mod differential {
                 }),
                 reset_switch: false,
                 foreign_clock: None,
+                reserved_pins: Vec::new(),
             },
             voltage_domains: vec![VoltageDomain {
                 id: "D".into(),

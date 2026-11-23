@@ -335,23 +335,26 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
 /// `AET-WO-1313b`'s prototype placed it at `5e30de78…` (`457d644`, FEEDBACK
 /// §1.3); re-pinned by `AET-WO-1315` from a measured run, the hot-plug bulk
 /// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2); re-pinned by
-/// `AET-WO-4202` from a measured run, U2 gone (its FEEDBACK §2.3). Re-pin it
-/// only with the change that moves it, named in that change's FEEDBACK.
+/// `AET-WO-4202` from a measured run, U2 gone (its FEEDBACK §2.3); re-pinned
+/// by `AET-WO-4300i` from a measured run, MOTOR1 on PA8 and its four motor
+/// pull-downs R52-R55 drawn (its FEEDBACK). Re-pin it only with the change
+/// that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "bd276856d6578b8c095b8ade3794acae7e4081e6c6fdc159e7f59a11c02a55c3";
+    "0d5e8c861c5ebf03685bf0dcf472e29a99da4d1e097aa1d8c75de19b71ff6e6c";
 
 /// `AET-WO-1313c` §2: the fixture places at its measured outline, with
 /// every placer gap and every loop rule kept after compaction: 85.25 x
 /// 80.95 mm at `1313b`'s (FEEDBACK §2.1, (k)+(m)+(s)), 96.50 x 69.35 mm
 /// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured), 95.80 x 67.60
-/// mm since `AET-WO-4202` took U2 away (its FEEDBACK §2.3, measured).
+/// mm since `AET-WO-4202` took U2 away (its FEEDBACK §2.3, measured), 96.25
+/// x 67.60 mm since `AET-WO-4300i` drew the four motor pull-downs (measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (95_800_000, 67_600_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (96_250_000, 67_600_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -434,12 +437,14 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// refused (the x headroom fell from 14.75 to 3.5 mm, its FEEDBACK D1).
 /// `AET-WO-1317`: 2 and 6 place on the reseeded rank's second seed, at their
 /// measured outlines (its FEEDBACK §4.3); 8 is still refused, every seed over.
+/// `AET-WO-4300i` (MOTOR1 on PA8, R52-R55 drawn): each outline re-measured,
+/// 8 still refused, its least-over 102.150 x 88.200 mm now 103.650 x 89.950.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
-        (1, Some((98_800_000, 69_850_000))),
-        (2, Some((89_200_000, 83_200_000))),
-        (6, Some((98_150_000, 87_450_000))),
+        (1, Some((99_300_000, 70_450_000))),
+        (2, Some((89_200_000, 82_700_000))),
+        (6, Some((97_050_000, 87_950_000))),
         (8, None),
     ] {
         let v = rename::sized(&fixture(), len);
@@ -460,7 +465,7 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
                 // attempts (seed 0 was 118.500 x 79.450 mm).
                 assert!(
                     e.to_string().contains(
-                        "the placer's best outline is 102.150 x 88.200 mm, over by 2.150 x 0.000 mm"
+                        "the placer's best outline is 103.650 x 89.950 mm, over by 3.650 x 0.000 mm"
                     ),
                     "{len}: {e}"
                 );

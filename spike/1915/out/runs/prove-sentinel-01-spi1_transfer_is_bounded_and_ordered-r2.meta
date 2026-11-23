@@ -1,0 +1,7 @@
+tag=prove-sentinel-01-spi1_transfer_is_bounded_and_ordered-r2 mem=16G net=none tree=/home/forge/.cache/aet-1915/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:e5fc7ddbe36c050e78763ad1d203ec8d176408a3e534bed5563c424d8d9a1b58
+start=2026-11-23T04:55:12+00:00
+host_avail_kB=53116648
+cmd: bash /repo/spike/1915/tools/ctl.sh prove boards/sentinel-01 examples/sentinel-01-minimal.json spi1_transfer_is_bounded_and_ordered
+exit=0
+end=2026-11-23T04:55:24+00:00
