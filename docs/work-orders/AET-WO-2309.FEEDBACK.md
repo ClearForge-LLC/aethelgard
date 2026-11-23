@@ -1,6 +1,6 @@
 # AET-WO-2309 — FEEDBACK: replay and the trace writer hold their own bounds (STOPPED at §7)
 
-**Branch:** `wo/aet-2309-replay-bounds` from `main` `28fba951`.
+**Branch:** `wo/aet-2309-replay-bounds` from `main` `28fba951`. Main `fa9d7edd` was merged in before the push. It changes docs only (`docs/reviews/`, one roadmap line), so every sweep stands.
 **Builder:** Claude (Opus 5.5), single-threaded: the work is gate logic in one file. Written 2026-11-23.
 
 **Status: STOPPED at §7, "a committed archive or trace fixture fails the stricter replay".** Rule (3) as the work order states it refuses tier-1 trace fixtures that main accepts. No byte of `crates/`, `fab/`, a workflow or `ci/` changes on this branch. The only changes are `spike/2309/` and this file.
