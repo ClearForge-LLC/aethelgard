@@ -17,6 +17,7 @@ use std::process::{Command, Stdio};
 
 use serde_json::Value;
 
+use common::verify::Shared;
 use common::{Scratch, private_tmp, stub};
 
 /// Sentinel-01's reference: the NRND flash.
@@ -135,20 +136,50 @@ exit 99
     .unwrap();
 }
 
-/// `emit` of `rel` into a scratch directory: the verdict, and the
-/// schematic's and board's paths.
-fn emitted(rel: &str) -> (Scratch, Value, String, String) {
-    let dir = Scratch::new(&format!("1607-emit-{}", next()));
-    let out = dir.0.join("out");
-    let (code, v) = run(
-        &["emit", "--file", &spec(rel), "--out", out.to_str().unwrap()],
-        None,
-        &[],
-    );
-    assert_eq!(code, 0, "{v}");
-    let file = |key: &str| v[key]["path"].as_str().unwrap().to_owned();
-    let (sch, pcb) = (file("schematic"), file("board"));
-    (dir, v, sch, pcb)
+/// One `emit` of a specification into a scratch directory: the verdict, and
+/// the schematic's and board's paths. Read, never written, by every test that
+/// needs that specification's boards.
+struct Emitted {
+    _dir: Scratch,
+    verdict: Value,
+    sch: String,
+    pcb: String,
+}
+
+/// One `emit` per specification, made once per test binary and read by the
+/// `check support` test and the `emit` and `drc`/`support` banner tests
+/// (`AET-WO-1916` D2, `1607` F-L). A failed `emit` is recorded once and fails
+/// every reader, each naming its own property.
+static EMITS: [Shared<Emitted>; 3] = [
+    Shared::new("emit of the NRND reference"),
+    Shared::new("emit of the EOL power board"),
+    Shared::new("emit of the ACTIVE bench board"),
+];
+
+/// `rel`'s shared `emit`; `property` is what the calling test checks on it.
+fn emitted(rel: &str, property: &str) -> &'static Emitted {
+    let i = [NRND, EOL, ACTIVE]
+        .iter()
+        .position(|r| *r == rel)
+        .expect("emit is shared for the three banner specifications only");
+    EMITS[i].get(property, || {
+        let dir = Scratch::new(&format!("1607-emit-{}", next()));
+        let out = dir.0.join("out");
+        let (code, verdict) = run(
+            &["emit", "--file", &spec(rel), "--out", out.to_str().unwrap()],
+            None,
+            &[],
+        );
+        assert_eq!(code, 0, "{verdict}");
+        let file = |key: &str| verdict[key]["path"].as_str().unwrap().to_owned();
+        let (sch, pcb) = (file("schematic"), file("board"));
+        Emitted {
+            _dir: dir,
+            verdict,
+            sch,
+            pcb,
+        }
+    })
 }
 
 // ------------------------------------------------------------------- (1)
@@ -159,16 +190,16 @@ fn emitted(rel: &str) -> (Scratch, Value, String, String) {
 /// stub then has no netlist to give, so the export fails as a tool error).
 #[test]
 fn check_support_runs_only_the_pinned_kicad() {
-    let (_dir, _, sch, pcb) = emitted(NRND);
+    let e = emitted(NRND, "check support runs only the pinned KiCad");
     let support = |tb: &Path| {
         run(
             &[
                 "check",
                 "support",
                 "--schematic",
-                &sch,
+                &e.sch,
                 "--board",
-                &pcb,
+                &e.pcb,
                 "--spec",
                 &spec(NRND),
             ],
@@ -230,11 +261,12 @@ fn verify_of_a_board_not_drawn_runs_past_its_board_gates() {
 #[test]
 fn the_emit_verdict_carries_the_banner_and_the_files_do_not() {
     for rel in [NRND, EOL, ACTIVE] {
-        let (_dir, v, sch, pcb) = emitted(rel);
+        let e = emitted(rel, "the emit verdict carries the banner");
+        let v = &e.verdict;
         assert_eq!(v["lifecycle"], banner(rel), "{rel}: {v}");
         assert_eq!(v.get("lifecycle").is_some(), rel != ACTIVE, "{rel}: {v}");
         let bom = v["bill_of_materials"]["path"].as_str().unwrap();
-        for file in [&sch, &pcb, bom] {
+        for file in [&e.sch, &e.pcb, bom] {
             let text = fs::read_to_string(file).unwrap();
             assert!(!text.contains("LIFECYCLE"), "{rel}: {file}");
         }
@@ -246,7 +278,8 @@ fn the_emit_verdict_carries_the_banner_and_the_files_do_not() {
 #[test]
 fn the_drc_and_support_verdicts_carry_the_banner_of_their_spec() {
     for rel in [NRND, EOL, ACTIVE] {
-        let (_dir, _, sch, pcb) = emitted(rel);
+        let e = emitted(rel, "the drc and support verdicts carry the banner");
+        let (sch, pcb) = (e.sch.clone(), e.pcb.clone());
         let tb = toolbox();
         kicad(&tb.0, "10.0.7");
         fs::write(
