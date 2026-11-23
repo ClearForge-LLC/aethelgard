@@ -17,7 +17,7 @@ tests/attribute_seeded.rs	526
 tests/verify_47k_tier2.rs	278
 # campaign_tier2: first() (one campaign of 2k2 and 47k) once instead of once per shard.
 # AET-WO-1211c: + 32.228 s for d1_s_pin_device_simulates_and_its_faults_run_and_replay, a Furnace estimate (11.51 s in the pinned image, libtest `finished in`, times 2.8, AET-WO-1310's factor), rounded up; replace it at the next refit.
-tests/campaign_tier2.rs	206
+tests/campaign_tier2.rs	116
 # AET-WO-4300b refit: the four blocks re-weighed at their worst in-process wall time (libtest's `finished in`) over runs 43752525127 and 43763615224: attribute_seeded 872.87 s, against_fab_tier2 869.15 s, verify_47k_tier2 278.56 s, campaign_tier2 45.34 s, rounded up.
 # AET-WO-4300b, Q10 (b) (PR #152 comment 6903399822): the four blocks at their worst in-shard wall time (libtest's `finished in`) over runs 43771580225 and 43774296207: attribute_seeded 726, against_fab_tier2 860, verify_47k_tier2 278, campaign_tier2 71.
 # AET-WO-4230 refit (2026-11-16), rule 5: the four blocks at their libtest `finished in` in run 43875567562 (head 2bb9ee4), rounded up, kept at the earlier
@@ -53,6 +53,3 @@ tests/via_ring_tier1.rs	61
 # 44735701946, 44735207864, 44732069104 and the throwaway runs 44751773365 and 44755810025, rounded up: supply_tier1 720.39 (44747464266, shard 8; samples 291.74-720.39 in
 # two modes, its cause not measured, AET-WO-1912 FEEDBACK F2), attribute_seeded 525.12 (44735207864), campaign_tier2 82.74 (44735207864). The other five are within 25 % and keep their rows.
 # AET-WO-1913 (REFIT RULE 3 and 5; WO §1 step 3): four_layer_fab_tier2 and verify_47k_tier2 raised to their worst `finished in` over the five green main runs above, the throwaway run 44787324803 (its normal pass and each binary run whole alone) and AET-WO-1912's measured 740.63 and 277.29, rounded up: 741 and 278. The other blocks are within 25 % of their worst and keep their rows.
-# AET-WO-2310: campaign_tier2 at its worst libtest `finished in` on this branch, 188.97 (run 45133448578; 180.55 in 45130065208), rounded up to 189,
-# plus the FLOOD_ALONE lock's cost as a Furnace estimate times 2.8 (AET-WO-1310's factor): the binary pinned to 4 CPUs in the pinned image went from
-# 61.08 and 65.81 s to 72.67 and 67.05 s, a worst delta of 6 s, so 17 s: 206. Replace it at the next refit.
