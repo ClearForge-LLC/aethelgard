@@ -1020,8 +1020,10 @@ fn crystal(
 /// its two pins are on the output's label net and on `to`'s, and it has no
 /// other (`motor_pull_off_net`); its value is the declared resistance and
 /// part, `<ohms> <part>` (`motor_pull_value`); its footprint is the part
-/// row's (`motor_pull_footprint`); and it is the one resistor joining the two
-/// nets, since a second in parallel is another value (`motor_pull_count`).
+/// row's (`motor_pull_footprint`); and it is the one part joining the two
+/// nets, since a second in parallel, of any symbol, is another value
+/// (`motor_pull_count`); and no other resistor is on the line
+/// (`motor_net_extra_resistor`).
 fn motor_pulls(
     spec: &Specification,
     netlist: &Netlist,
@@ -1111,15 +1113,12 @@ fn motor_pulls(
                 ),
             );
         }
+        // Any two-pin part across the two nets is a second path, whatever it
+        // is drawn as (a resistor, a capacitor, a ferrite, a jumper).
         let parallel: Vec<&String> = netlist
             .components
-            .iter()
-            .filter(|(q, x)| {
-                q.as_str() != reference
-                    && x.symbol.as_deref() == Some(row.symbol.as_str())
-                    && joins(q)
-            })
-            .map(|(q, _)| q)
+            .keys()
+            .filter(|q| q.as_str() != reference && joins(q))
             .collect();
         if !parallel.is_empty() {
             fail(
@@ -1135,8 +1134,47 @@ fn motor_pulls(
                 ),
             );
         }
+        // A resistor on the line to anywhere else (a pull-up beside the
+        // pull-down) moves the level D0 judges the pull-down by.
+        let extra: Vec<&String> = netlist
+            .components
+            .iter()
+            .filter(|(q, x)| {
+                q.as_str() != reference
+                    && is_resistor(x)
+                    && !parallel.contains(q)
+                    && netlist.pins_of(q).any(|(_, n)| n == line)
+            })
+            .map(|(q, _)| q)
+            .collect();
+        if !extra.is_empty() {
+            fail(
+                "motor_net_extra_resistor",
+                format!(
+                    "{} is a resistor on `{line}` beside {}'s pull-down {reference}",
+                    extra
+                        .iter()
+                        .map(|q| q.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    m.label
+                ),
+            );
+        }
     }
     Ok(())
+}
+
+/// A resistor by what the gate can read: KiCad's `Device:R` family (`R`,
+/// `R_Small`, `R_US`...), or a `Resistor_*` footprint.
+fn is_resistor(c: &Component) -> bool {
+    c.symbol.as_deref().is_some_and(|s| {
+        s.strip_prefix("Device:R")
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('_'))
+    }) || c
+        .footprint
+        .as_deref()
+        .is_some_and(|f| f.starts_with("Resistor_"))
 }
 
 /// Resistances as schematics write them (`330`, `10k`, `2k2`, `1M`), in
