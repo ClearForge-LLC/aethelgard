@@ -1,10 +1,10 @@
 # AET-WO-4300i mutants
 
-One mutant per guard this work order adds, sized to the diff (CLAUDE.md). `spike/4300i/mutants.py` applies each edit, runs the named filter of `cargo test -p aethelgard-ir --test offboard`, records the result, and restores the file with `git checkout`. It ran on the committed tree (`1989af79`, the adversarial-pass fixes), with no other change in any file it touches. The raw results are in `out/mutants.tsv`.
+One mutant per guard this work order adds, sized to the diff (CLAUDE.md). `spike/4300i/mutants.py` applies each edit, runs the named filter of `cargo test -p aethelgard-ir --test offboard`, records the result, and restores the file with `git checkout`. It ran on the committed tree (the adversarial-pass fixes with F3 reverted), with no other change in any file it touches. The raw results are in `out/mutants.tsv`.
 
-**Result: 43/43 killed, 0 survived.** The whole IR set was re-run after the fixes: 29 of the first 37 (M8 re-anchored on `at`, the claimants at a connector), and A1 to A14, one per guard the fixes add or change.
+**Result: 42/42 killed, 0 survived.** The whole IR set was re-run after the fixes and after F3's revert: 29 of the first 37 (M8 re-anchored on `at`, the claimants at a connector), and A1 to A14 but A13, one per guard the fixes add or change.
 
-**Retired (8):** M13 (`ft_first`'s partition) and M26 to M32 (its call sites: motor channels, serial TX, serial RX, bus line, chip select, ADC input, device signal). The adversarial pass's F1 fix offers a connector-facing net FT pins only, so the partition had nothing left to order and was removed with its call sites; A1 to A8 mutate the filter that replaced it in each of those branches.
+**Retired (9):** A13 (`MotorIdleHighPulledDown`): F3 reverted by the PM, 2026-11-23: idle-high is not refused; D0 holds every motor line low from power-up. Also M13 (`ft_first`'s partition) and M26 to M32 (its call sites: motor channels, serial TX, serial RX, bus line, chip select, ADC input, device signal). The adversarial pass's F1 fix offers a connector-facing net FT pins only, so the partition had nothing left to order and was removed with its call sites; A1 to A8 mutate the filter that replaced it in each of those branches.
 
 | id | guard | file | mutant (exact edit) | killing test | result |
 |---|---|---|---|---|---|
@@ -50,7 +50,6 @@ One mutant per guard this work order adds, sized to the diff (CLAUDE.md). `spike
 | A10 | F1: a pin with no held structure counts as non-FT | `src/offboard.rs` | `self.structure(pin).is_some_and(is_ft)` -> `self.structure(pin).is_none_or(is_ft)` | `offboard::a_pin_with_no_held_structure` | killed |
 | A11 | F2 offer: no motor channel on a reset-pull pin | `src/solve.rs` | `&& !reset_pull(pin)` -> `` | `offboard::the_solver_never_offers_a_motor_a_reset_pull` | killed |
 | A12 | F2 hand: MotorPinResetPull | `src/offboard.rs` | `if let Some(pin) = m.pin.as_deref().filter(\|p\| {` -> `if let Some(pin) = m.pin.as_deref().filter(\|p\| false && {` | `offboard::a_motor_pinned_on_a_reset_pull` | killed |
-| A13 | F3: MotorIdleHighPulledDown | `src/offboard.rs` | `if m.pwm.as_ref().map(\|p\| p.idle)` -> `if false && m.pwm.as_ref().map(\|p\| p.idle)` | `offboard::a_motor_idling_high` | killed |
 | A14 | F8: a solved claimant at a connector needs the MCU row | `src/offboard.rs` | `.filter(\|(_, net, _)\| facing.contains(net))` -> `.filter(\|(_, net, p)\| facing.contains(net) && p.is_some())` | `offboard::an_mcu_with_no_row` | killed |
 
 Not mutated:

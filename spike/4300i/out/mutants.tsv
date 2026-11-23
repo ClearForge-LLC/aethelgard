@@ -40,5 +40,4 @@ A9	src/offboard.rs	`pins.into_iter().filter(|p| !self.offers(net, p)).collect();
 A10	src/offboard.rs	`self.structure(pin).is_some_and(is_ft)` -> `self.structure(pin).is_none_or(is_ft)`	offboard::a_pin_with_no_held_structure	killed
 A11	src/solve.rs	`&& !reset_pull(pin)` -> ``	offboard::the_solver_never_offers_a_motor_a_reset_pull	killed
 A12	src/offboard.rs	`if let Some(pin) = m.pin.as_deref().filter(|p| {` -> `if let Some(pin) = m.pin.as_deref().filter(|p| false && {`	offboard::a_motor_pinned_on_a_reset_pull	killed
-A13	src/offboard.rs	`if m.pwm.as_ref().map(|p| p.idle)` -> `if false && m.pwm.as_ref().map(|p| p.idle)`	offboard::a_motor_idling_high	killed
 A14	src/offboard.rs	`.filter(|(_, net, _)| facing.contains(net))` -> `.filter(|(_, net, p)| facing.contains(net) && p.is_some())`	offboard::an_mcu_with_no_row	killed
