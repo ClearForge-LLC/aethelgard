@@ -127,9 +127,9 @@ Two survived on the first sweep, and both were fixed:
 ## 5. Gates
 
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace`: GATES_TEST_RESULT.
+- `cargo test --workspace`: 2,785 passed, 0 failed, 0 ignored (Furnace, capped scope, 6 threads). No crate changed.
 - `bash ci/test-shard.sh`: 137 passed, 0 failed, under gawk and mawk.
-- CI: CI_RESULT.
+- CI: pending on the PR.
 - **Reduction pass (diff):** −11 lines net (`ci/shard.sh` −2 against the first draft, the label included; `ci/test-shard.sh` −9 greps) · 2 duplicates removed · 1 dead path removed ·
   1 protected kept · 2 findings below.
   - Duplicates:
