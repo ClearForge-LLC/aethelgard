@@ -279,11 +279,47 @@ fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     (after.is_empty() || after.starts_with(blank)).then_some(after)
 }
 
+/// Whether `line` defines `name` as a function-like macro: `#define <name>(`,
+/// the `(` straight after the name with no blank (C11 §6.10.3 ¶3, ¶10;
+/// `AET-WO-4410` (5), review 3 A15). `#define <name> (x)` is object-like and
+/// stays a value. A comment is one blank and a continuation splices first
+/// ([`logical`]), so `<name>/**/(x)` is object-like and `<name>\` then
+/// `(x)` is function-like, as GCC reads them.
+fn defines_function(line: &str, name: &str) -> bool {
+    let blank = [' ', '\t'];
+    let Some(("define", rest)) = directive(line) else {
+        return false;
+    };
+    rest.starts_with(blank)
+        && rest
+            .trim_start_matches(blank)
+            .strip_prefix(name)
+            .is_some_and(|after| after.starts_with('('))
+}
+
+/// A function-like definition of `name` in a line the preprocessor may
+/// compile, refused by name: the judge would read `name` as undefined.
+fn refuse_function_like(lines: &[(usize, State, String)], name: &str) -> Result<(), Refusal> {
+    match lines
+        .iter()
+        .find(|(_, s, l)| *s != State::Dead && defines_function(l, name))
+    {
+        Some((n, _, _)) => refuse(
+            name,
+            format!(
+                "is defined as a function-like macro on line {n}, which the reader does not expand"
+            ),
+        ),
+        None => Ok(()),
+    }
+}
+
 /// The value text of `#define <name> <value>`, as the preprocessor sees it
 /// (`lines`, from [`logical`]): defined exactly once in a live line, named in
 /// no other line it compiles, and named in no line it may or may not
 /// compile (`HwdefConditionalUnsupported`, `AET-WO-1603` §1.4).
 fn definition(lines: &[(usize, State, String)], name: &str) -> Result<String, Refusal> {
+    refuse_function_like(lines, name)?;
     let mentions = |text: &str| {
         text.match_indices(name)
             .filter(|&(at, _)| {
@@ -447,6 +483,7 @@ impl Preprocessed {
     /// it. Refused when it is defined twice, or named inside a conditional
     /// the reader does not evaluate.
     pub fn value(&self, name: &str) -> Result<Option<String>, Refusal> {
+        refuse_function_like(&self.0, name)?;
         let word = |c: char| c.is_ascii_alphanumeric() || c == '_';
         let mentions = |text: &str| {
             text.match_indices(name).any(|(at, _)| {
@@ -497,12 +534,14 @@ impl Preprocessed {
     /// line, or in a branch whose condition the reader does not evaluate
     /// (ArduPilot's `HAL_I2Cn_CONFIG` has one per DMA branch). A caller reads
     /// only what every one of them agrees on.
-    pub fn candidates(&self, name: &str) -> Vec<String> {
-        self.0
+    pub fn candidates(&self, name: &str) -> Result<Vec<String>, Refusal> {
+        refuse_function_like(&self.0, name)?;
+        Ok(self
+            .0
             .iter()
             .filter(|(_, s, _)| *s != State::Dead)
             .filter_map(|(_, _, l)| defines(l, name))
             .map(|rest| rest.trim().to_owned())
-            .collect()
+            .collect())
     }
 }

@@ -138,13 +138,15 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("DEFAULT_SERIAL9_BAUD", "AP_SerialManager.cpp:390"),
         ("DEFAULT_SERIAL9_OPTIONS", "AP_SerialManager.cpp:395"),
     ];
-    const PIN_TOKENS: [&str; 6] = [
+    // `PULLUP` only on the SWD line (`chibios_hwdef.py:407-413` names it).
+    const PIN_TOKENS: [&str; 7] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
         "PUSHPULL",
         "OPENDRAIN",
         "FLOATING",
         "PULLDOWN",
+        "PULLUP",
     ];
     for (name, t, _) in BOARDS {
         let text = generate(&topology(t)).unwrap().text;
@@ -288,6 +290,70 @@ fn a_topology_with_sense_pins_is_refused() {
             net: "VBAT_SENSE".into()
         }
     );
+}
+
+/// `AET-WO-4410` S2: a sense solved on ADC3 alone is refused by name, ahead
+/// of `SenseNotEmitted`: ArduPilot's H7 build needs an ADC1 pin line
+/// (`stm32h7_mcuconf.h:420`, `hal_adc_lld.h:339`, measured).
+#[test]
+fn a_sense_solved_on_adc3_alone_is_refused_by_name() {
+    let mut v = sentinel_01();
+    v["power"] = json!({
+        "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
+        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PF3", "position": 13, "channels": ["ADC3_INP5"]}}
+    });
+    v["adc_inputs"] =
+        json!({"VBAT_SENSE": {"pin": "PF3", "peripheral": "ADC3", "channel": "INP5"}});
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    t.validate().unwrap();
+    let err = generate(&t).unwrap_err();
+    assert_eq!(
+        err,
+        Refusal::SenseNotOnAdc1 {
+            net: "VBAT_SENSE".into(),
+            peripheral: "ADC3".into()
+        }
+    );
+    assert_eq!(
+        (err.kind(), err.id()),
+        ("SenseNotOnAdc1", Some("VBAT_SENSE"))
+    );
+    assert!(err.to_string().contains("stm32h7_mcuconf.h:420"));
+}
+
+/// `AET-WO-4410` (3), review 3 A11: every board keeps SWD on, each line
+/// exactly once, with RM0433's reset pull written out.
+#[test]
+fn every_board_keeps_swd_on() {
+    for (name, t, _) in BOARDS {
+        let text = generate(&topology(t)).unwrap().text;
+        for want in ["PA13 JTMS-SWDIO SWD PULLUP", "PA14 JTCK-SWCLK SWD PULLDOWN"] {
+            let n = text
+                .lines()
+                .filter(|l| l.split('#').next().unwrap().trim() == want)
+                .count();
+            assert_eq!(n, 1, "{name}: `{want}`");
+        }
+    }
+}
+
+/// `AET-WO-4410` §5: a net solved on PA13 or PA14 is refused by name, never
+/// overwritten by the SWD line.
+#[test]
+fn a_net_solved_on_an_swd_pin_is_refused() {
+    for pin in ["PA13", "PA14"] {
+        let mut v = sentinel_01();
+        v["gpio"]["FLASH_CS"]["pin"] = json!(pin);
+        let t: SolvedTopology = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            generate(&t).unwrap_err(),
+            Refusal::SwdPinSolved {
+                net: "FLASH_CS".into(),
+                pin: pin.into()
+            },
+            "{pin}"
+        );
+    }
 }
 
 /// The adversarial pass's case: two buses at different speeds run at the

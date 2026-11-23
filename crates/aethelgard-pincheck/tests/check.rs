@@ -39,17 +39,20 @@ fn findings(words: [[u32; 7]; 11], allow: &AllowList) -> Vec<String> {
 }
 
 #[test]
-fn the_decoder_reads_the_spikes_hand_decode() {
+fn the_decoder_reads_step_g_s_words() {
     let config = elf::read(&Elf::default().bytes()).unwrap();
     assert_eq!(
-        config.ports[0].moder, 0x0000_A801,
-        "GPIOA MODER, AET-WO-4400 FEEDBACK §5"
+        config.ports[0].moder, 0x2828_A801,
+        "GPIOA MODER: AET-WO-4400 FEEDBACK §5, the console and SWD"
     );
     assert_eq!(config.ports[0].afrl, 0x5550_0000);
+    assert_eq!(config.ports[0].odr, 0x0000_FFFF);
     let pin = |n| aethelgard_pincheck::PinId::parse(n).unwrap();
     assert_eq!(config.pin(pin("PA0")), (Mode::Output, 0));
+    assert_eq!(config.odr(pin("PA0")), 1);
     assert_eq!(config.pin(pin("PA5")), (Mode::Alternate, 5));
-    assert_eq!(config.pin(pin("PA13")), (Mode::Input, 0));
+    assert_eq!(config.pin(pin("PA9")), (Mode::Alternate, 7));
+    assert_eq!(config.pin(pin("PA13")), (Mode::Alternate, 0));
     assert_eq!(config.pin(pin("PD9")), (Mode::Alternate, 7));
 }
 
@@ -70,6 +73,8 @@ fn step_g_passes_with_its_declared_allow_list() {
             "PA5 topology SPI_SCK",
             "PA6 topology SPI_MISO",
             "PA7 topology SPI_MOSI",
+            "PA9 topology CONSOLE_TX",
+            "PA10 topology CONSOLE_RX",
             "PB6 topology I2C_SCL",
             "PB7 topology I2C_SDA",
             "PD8 allow-list",
@@ -128,7 +133,7 @@ fn each_seed_fails_by_name() {
 #[test]
 fn a_gpio_that_is_not_an_output_and_an_af_on_an_input_pin_fail() {
     let mut w = step_g_words();
-    w[0][0] = 0x0000_A800; // PA0 input
+    w[0][0] &= !0x3; // PA0 input
     w[1][0] = 0x0000_8000; // PB6 input, though AFRL still says AF4
     assert_eq!(
         findings(w, &allow()),
@@ -150,11 +155,14 @@ fn reset_states_are_not_configured_but_driving_a_debug_pin_is() {
     }
     w[3][0] = 0xFFFA_FFFF; // port D analog but for PD8 and PD9
     assert_eq!(findings(w, &allow()), Vec::<String>::new());
-    // PA13 on AF1 is not its reset state.
-    w[0][6] = 0x0010_0000;
+    // PA13 on AF1 is not its reset state, and SWD is lost (`AET-WO-4410` (3)).
+    w[0][6] |= 0x0010_0000;
     assert_eq!(
         findings(w, &allow()),
-        ["reverse UnnamedPin PA13 - alternate AF1"]
+        [
+            "debug SwdNotKept PA13 - alternate AF1",
+            "reverse UnnamedPin PA13 - alternate AF1"
+        ]
     );
 }
 
@@ -321,6 +329,114 @@ fn every_malformed_elf_is_refused_by_name() {
     let mut not_elf = bytes;
     not_elf[0] = 0;
     assert_eq!(elf::read(&not_elf).unwrap_err().kind(), "NotElf");
+}
+
+/// `AET-WO-4410` (5), review 3 A15: a function-like definition of one of the
+/// 33 macros is refused by name, not read as "not defined".
+#[test]
+fn a_function_like_register_macro_is_refused_by_name() {
+    let text = common::header(&step_g_words());
+    let bad = text.replace("#define VAL_GPIOB_AFRL ", "#define VAL_GPIOB_AFRL(x) ");
+    assert_ne!(bad, text);
+    let err = header::read(&bad).unwrap_err();
+    assert_eq!(err.kind(), "MalformedHeader");
+    assert_eq!(err.id().as_deref(), Some("VAL_GPIOB_AFRL"));
+    assert!(err.to_string().contains("function-like"), "{err}");
+}
+
+/// `AET-WO-4410` (4), review 3 A12: each GPIO output's `ODR` bit against its
+/// solved level. The review's kit ELF, GPIOA `ODR` `0xfffc`, drives the chip
+/// select low from its first write; it is named. `ODR` on a pin the topology
+/// does not name as a GPIO is not judged.
+#[test]
+fn a_chip_select_low_from_its_first_write_is_named() {
+    let mut w = step_g_words();
+    w[0][4] = 0x0000_FFFC;
+    assert_eq!(
+        findings(w, &allow()),
+        ["forward WrongOutputLevel PA0 FLASH_CS ODR 0"]
+    );
+    let mut w = step_g_words();
+    w[0][4] = 0x0000_FFDF; // PA5, an SPI pin, low
+    assert_eq!(w[0][4] & 1, 1);
+    assert_eq!(findings(w, &allow()), Vec::<String>::new());
+}
+
+/// `AET-WO-4410` (3), review 3 A11: an image that takes PA13 or PA14 off
+/// alternate AF0 loses SWD, and is named whatever it makes of the pin. The
+/// expected value is the check's own reset table (`RUL-20`).
+#[test]
+fn an_image_that_loses_swd_is_named() {
+    let with = |f: fn(&mut [[u32; 7]; 11])| {
+        let mut w = step_g_words();
+        f(&mut w);
+        findings(w, &allow())
+    };
+    assert_eq!(
+        with(|w| w[0][0] &= !(3 << 26)),
+        ["debug SwdNotKept PA13 - input"]
+    );
+    assert_eq!(
+        with(|w| w[0][0] |= 3 << 28),
+        ["debug SwdNotKept PA14 - analog"]
+    );
+    assert_eq!(
+        with(|w| w[0][0] = (w[0][0] & !(3 << 26)) | (1 << 26)),
+        [
+            "debug SwdNotKept PA13 - output",
+            "reverse UnnamedPin PA13 - output"
+        ]
+    );
+    assert_eq!(
+        with(|w| w[0][6] |= 1 << 24),
+        [
+            "debug SwdNotKept PA14 - alternate AF1",
+            "reverse UnnamedPin PA14 - alternate AF1"
+        ]
+    );
+}
+
+/// `AET-WO-4410` §5: a topology net or an allow-list entry on PA13 or PA14
+/// is refused by name, never judged in place of SWD.
+#[test]
+fn an_swd_pin_named_by_the_topology_or_the_allow_list_is_refused() {
+    let config = elf::read(&Elf::default().bytes()).unwrap();
+    for pin in ["PA13", "PA14"] {
+        let mut t = topology();
+        t.gpio.get_mut("FLASH_CS").unwrap().pin = pin.into();
+        let err = judge(&t, &lqfp_like(), &config, None, &allow()).unwrap_err();
+        assert_eq!(
+            err,
+            Refusal::SwdPinNamed {
+                net: "FLASH_CS".into(),
+                pin: pin.into()
+            }
+        );
+        assert_eq!(aethelgard_pincheck::admit(&t, &lqfp_like()), Err(err));
+        let list = AllowList::parse(
+            format!(r#"{{"allow": {{"{pin}": {{"mode": "alternate", "alternate_function": 0, "why": "SWD"}}}}}}"#)
+                .as_bytes(),
+        )
+        .unwrap();
+        let err = judge(&topology(), &lqfp_like(), &config, None, &list).unwrap_err();
+        assert_eq!(err.kind(), "AllowNamesSwdPin", "{pin}");
+    }
+}
+
+/// `AET-WO-4410` D1 (ruled 2026-11-23): no writer of `SYSCFG_PMCR` in the
+/// judged ArduPilot touches PC2SO or PC3SO, so LQFP144 pads 28 and 29 stay
+/// `PC2_C` and `PC3_C` (RM0433 Rev 9 p. 549). The fact is cited source, not
+/// read from any image; this names it.
+#[test]
+fn no_pmcr_writer_at_the_tag_touches_pc2so_or_pc3so() {
+    use aethelgard_pincheck::pmcr;
+    assert_eq!(pmcr::PC2SO_PC3SO, 0x0C00_0000);
+    assert_eq!(pmcr::WRITERS.len(), 3);
+    for w in pmcr::WRITERS {
+        assert!(w.at.contains("hal_mac_lld.c:"), "{}", w.at);
+        assert_eq!(w.mask & pmcr::PC2SO_PC3SO, 0, "{} `{}`", w.at, w.text);
+    }
+    assert!(pmcr::SOURCE.contains("fb773567") && pmcr::SOURCE.contains("d103983f"));
 }
 
 #[test]
@@ -580,6 +696,10 @@ fn ardupilot_s_default_speeds_and_pulls_are_refused_by_name() {
             "forward WrongSpeed PA5 SPI_SCK OSPEEDR 10",
             "forward WrongSpeed PA6 SPI_MISO OSPEEDR 10",
             "forward WrongSpeed PA7 SPI_MOSI OSPEEDR 10",
+            "forward WrongSpeed PA9 CONSOLE_TX OSPEEDR 10",
+            "forward WrongPull PA9 CONSOLE_TX PUPDR 01",
+            "forward WrongSpeed PA10 CONSOLE_RX OSPEEDR 10",
+            "forward WrongPull PA10 CONSOLE_RX PUPDR 01",
             "forward WrongSpeed PB6 I2C_SCL OSPEEDR 10",
             "forward WrongSpeed PB7 I2C_SDA OSPEEDR 10",
         ]

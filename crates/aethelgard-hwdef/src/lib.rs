@@ -42,6 +42,17 @@ pub const HAL_STORAGE_SIZE: u32 = 16_384;
 /// §3.3.1: two banks of eight 128-Kbyte sectors).
 pub const H7_SECTOR_KB: i64 = 128;
 
+/// The SWD port, kept on (`AET-WO-4410` (3), review 3 A11): ArduPilot makes an
+/// unlisted pin `INPUT FLOATING` (`chibios_hwdef.py:47`, `:145`), which turns
+/// SWD off at boot. Each line is ArduPilot's own text (197 boards at the tag)
+/// with the pull its script gives the label written out (`:407-413`), which
+/// is RM0433's reset pull (Rev 9 §11.4.4 p. 542, `GPIOA_PUPDR` `0x6400 0000`).
+/// The label alone picks AF0 (`STM32H753xx.py:247`, `:249`).
+pub const SWD_LINES: [(&str, &str); 2] = [
+    ("PA13", "PA13 JTMS-SWDIO SWD PULLUP"),
+    ("PA14", "PA14 JTCK-SWCLK SWD PULLDOWN"),
+];
+
 /// The timers the system tick may take, in order of preference: TIM5, the
 /// H7 default (`stm32h7_mcuconf.h:605-606`), then TIM2, the other 32-bit
 /// general-purpose timer (RM0433 Rev 9 §39.1).
@@ -154,6 +165,18 @@ pub enum Refusal {
         "battery sense `{net}` is solved, but its divider ratio (SCALE) has no source in the topology (AET-WO-4400b D7)"
     )]
     SenseNotEmitted { net: String },
+    /// `AET-WO-4410` S2: ArduPilot's H7 build enables ADC12 whatever the
+    /// board holds, and ChibiOS then needs its DMA stream, which ArduPilot
+    /// allocates only from an ADC1 or ADC2 pin line.
+    #[error(
+        "battery sense `{net}` is solved on {peripheral}, not ADC1: ArduPilot's H7 build enables ADC12 (stm32h7_mcuconf.h:420) and fails without an ADC1 pin's DMA stream (ChibiOS hal_adc_lld.h:339, measured in AET-WO-4410)"
+    )]
+    SenseNotOnAdc1 { net: String, peripheral: String },
+    /// `AET-WO-4410` (3): PA13 and PA14 are the SWD port's, always emitted.
+    #[error(
+        "`{net}` is solved on {pin}, a pin of the SWD port this generator always emits (AET-WO-4410)"
+    )]
+    SwdPinSolved { net: String, pin: String },
     /// `AET-WO-4400d` (`INV-06`): an IMU's rotation is the declared
     /// orientation's, never a default.
     #[error(
@@ -193,6 +216,8 @@ impl Refusal {
             Self::SpiBelowArduPilotDivider { .. } => "SpiBelowArduPilotDivider",
             Self::NoSystemTimer => "NoSystemTimer",
             Self::SenseNotEmitted { .. } => "SenseNotEmitted",
+            Self::SenseNotOnAdc1 { .. } => "SenseNotOnAdc1",
+            Self::SwdPinSolved { .. } => "SwdPinSolved",
             Self::PinNotEmitted { .. } => "PinNotEmitted",
             Self::GpioNotEmitted { .. } => "GpioNotEmitted",
             Self::ImuOrientationUndeclared { .. } => "ImuOrientationUndeclared",
@@ -214,6 +239,8 @@ impl Refusal {
             | Self::LabelCollision { net }
             | Self::LabelTakesAfPrefix { net, .. }
             | Self::SenseNotEmitted { net }
+            | Self::SenseNotOnAdc1 { net, .. }
+            | Self::SwdPinSolved { net, .. }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::GpioNotEmitted { reference, .. } => Some(reference),
             Self::DuplicateSpidev { second, .. } => Some(second),
@@ -428,7 +455,30 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             part: d.part.clone(),
         });
     }
-    if let Some(net) = t.power.as_ref().and_then(|p| p.sense.keys().next()) {
+    // Every solved pin, by net: none may be an SWD pin.
+    let sense = t.power.as_ref().map(|p| &p.sense);
+    let solved_pins = t
+        .assignments
+        .iter()
+        .map(|(net, a)| (net, &a.pin))
+        .chain(t.gpio.iter().map(|(net, g)| (net, &g.pin)))
+        .chain(t.adc_inputs.iter().map(|(net, a)| (net, &a.pin)))
+        .chain(sense.into_iter().flatten().map(|(net, s)| (net, &s.pin)));
+    for (net, pin) in solved_pins {
+        if SWD_LINES.iter().any(|(swd, _)| swd == pin) {
+            return Err(Refusal::SwdPinSolved {
+                net: net.clone(),
+                pin: pin.clone(),
+            });
+        }
+    }
+    if let Some(net) = sense.and_then(|s| s.keys().next()) {
+        if let Some(a) = t.adc_inputs.get(net).filter(|a| a.peripheral != "ADC1") {
+            return Err(Refusal::SenseNotOnAdc1 {
+                net: net.clone(),
+                peripheral: a.peripheral.clone(),
+            });
+        }
         return Err(Refusal::SenseNotEmitted { net: net.clone() });
     }
     let mut not_emitted = Vec::new();
@@ -490,6 +540,12 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         format!("STORAGE_FLASH_PAGE {}", flash_kb / H7_SECTOR_KB - 2),
         "[P] flash_kilobytes; [C] the last two 128 KB sectors (storage uses page and page+1)",
     );
+    for (_, line) in SWD_LINES {
+        l.push(
+            line,
+            "[C] SWD_LINES: the debug port kept on, alternate AF0 with RM0433's reset pull",
+        );
+    }
 
     // The system timer, off every motor timer.
     let motor_timers: BTreeSet<&str> = t
@@ -1147,7 +1203,7 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
     ));
     c("Sources: [T] the topology; [P] a parts-table row; [C] a constant of this generator.");
     c(&format!(
-        "Constants: APJ_BOARD_ID {APJ_BOARD_ID} (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE {HAL_STORAGE_SIZE} in the last two flash sectors; the system timer TIM5, else TIM2."
+        "Constants: APJ_BOARD_ID {APJ_BOARD_ID} (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE {HAL_STORAGE_SIZE} in the last two flash sectors; the system timer TIM5, else TIM2; the SWD port PA13/PA14 kept on."
     ));
     c("Never emitted: DEFAULTGPIO (4400a D-1).");
     if l.0.iter().any(|(line, _)| line.starts_with("IMU ")) {
@@ -1160,7 +1216,7 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
         .any(|(line, _)| line.starts_with("define DEFAULT_SERIAL") && line.contains("_PROTOCOL "))
     {
         c(
-            "Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on SERIAL1 to SERIAL9 (UARTDriver.cpp:1611, 1624), or pulls down a line it inverts, and no line here removes that.",
+            "Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on every port it opens (UARTDriver.cpp:1611, 1624): SERIAL1 to SERIAL9 at init (AP_SerialManager.cpp:451-457), and SERIAL0 when GCS looks up its MAVLink console (GCS_Common.cpp:2810; AP_SerialManager.cpp:605, 656). It pulls down a line it inverts, and no line here removes that.",
         );
     }
     for n in not_emitted {

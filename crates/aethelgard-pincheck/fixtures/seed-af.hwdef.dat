@@ -1,9 +1,10 @@
-# Sentinel-01, hand-written in AET-WO-4400 as the generator would then emit it, from the
-# topology of specification sha256 a277c933439524885deb931b2b930555b74aa94aefbee7b34c83ddef73aa1196:
-# examples/sentinel-01-minimal.json as of d00c9653 (AET-WO-4100).
+# Sentinel-01, hand-written in AET-WO-4400 as the generator would then emit it. Its first lines
+# came from the topology of specification sha256 a277c933439524885deb931b2b930555b74aa94aefbee7b34c83ddef73aa1196
+# (examples/sentinel-01-minimal.json as of d00c9653, AET-WO-4100); that file has moved on since.
 # SEED: wrong AF, PB6/PB7 given I2C4 (AF6 in the table) where I2C1 (AF4) was solved
 # SERIAL_ORDER and the USART3 lines came with AET-WO-4400a (47a883b8); the console's USART1
-# lines, and USART1 first in SERIAL_ORDER, were added in AET-WO-4300b (25640c55).
+# lines, and USART1 first in SERIAL_ORDER, were added in AET-WO-4300b (25640c55). The SWD lines,
+# PA13 and PA14, came with AET-WO-4410 (3): ArduPilot's own text, with the pull it gives each label.
 # CI judges this board against the topology solved from examples/sentinel-01-minimal.json at
 # the commit under test (.github/workflows/ardupilot-image.yml, job pinout): by path, never by
 # a hash, which would go stale at every specification bump.
@@ -37,3 +38,5 @@ PD9 USART3_RX USART3           # [N] step F
 define HAL_USE_ADC FALSE       # [N] step C: no ADC pin in the topology (4300d)
 define HAL_STORAGE_SIZE 16384  # [N] step D: parameter storage size, no source
 FLASH_RESERVE_START_KB 0       # [N] step G: no bootloader, so the image must start at 0x08000000
+PA13 JTMS-SWDIO SWD PULLUP     # [N] AET-WO-4410 (3): SWD kept on, alternate AF0
+PA14 JTCK-SWCLK SWD PULLDOWN   # [N] AET-WO-4410 (3)

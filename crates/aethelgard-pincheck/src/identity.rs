@@ -222,7 +222,7 @@ fn bus_list(h: &Preprocessed, name: &str, driver: &str) -> Result<Vec<u8>, Refus
         // Each candidate definition (one per DMA branch, which the reader
         // does not evaluate) must name the same driver; that is all read.
         let numbers: Vec<Option<u8>> = h
-            .candidates(&entry)
+            .candidates(&entry)?
             .iter()
             .map(|body| {
                 args(inside(body, "{", "}").unwrap_or(""))

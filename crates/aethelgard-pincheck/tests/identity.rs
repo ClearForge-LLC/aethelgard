@@ -11,9 +11,24 @@ use aethelgard_pincheck::elf::{self, SerialEntry, SerialParam};
 use aethelgard_pincheck::{Refusal, header, identity};
 use common::{
     Elf, IDENTITY, INVENSENSEV3_PROBE, Port, SD1, SERIAL0_ONLY, VarRow, gps_var_info, group_end,
-    sd_address, serial_bytes, topology, var_info, var_row,
+    sd_address, serial_bytes, var_info, var_row,
 };
 use serde_json::{Value, json};
+
+/// The reference topology (`common::topology`, as `solve` gives it) with its
+/// console taken out (`AET-WO-4410` R9): these tests declare every serial
+/// port they judge, each against an ELF serial table they write, and the
+/// reference's own console would be a port none of them declared.
+fn topology() -> SolvedTopology {
+    let mut t = common::topology();
+    for (_, p) in std::mem::take(&mut t.serial_ports) {
+        for net in [p.tx, p.rx] {
+            t.assignments.remove(&net);
+            t.pin_speeds.remove(&net);
+        }
+    }
+    t
+}
 
 /// The IMU probe ArduPilot writes for `IMU Invensensev3 SPI:icm42688
 /// ROTATION_ROLL_180_YAW_90`, as the generated sentinel-02's `hwdef.h` holds
@@ -746,6 +761,48 @@ fn the_sitl_probe_define_is_named() {
     )
     .unwrap();
     assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{found:?}");
+}
+
+/// `AET-WO-4410` (5), review 3 A15: a function-like `#define` of a name the
+/// judge reads is refused by name, wherever the judge reads it: a single
+/// value (`HAL_SITL_INVENSENSEV3`, `Preprocessed::value`), a bus entry
+/// (`HAL_SPI1_CONFIG`, `candidates`). Read as undefined, the first would
+/// pass a SITL probe and the second refuse for the wrong reason. The
+/// adversarial spellings are read as GCC reads them: a blank or a comment
+/// before `(` is object-like; `%:` and a continuation are not escapes.
+#[test]
+fn a_function_like_define_of_a_name_the_judge_reads_is_refused() {
+    let (t, text) = declared();
+    let refused = |extra: &str| {
+        let err = judge(&t, &format!("{text}{extra}"), &[EMPTY]).unwrap_err();
+        (err.kind(), err.id(), err.to_string())
+    };
+    for extra in [
+        "#define HAL_SITL_INVENSENSEV3(x) 1\n",
+        "%:define HAL_SITL_INVENSENSEV3(x) 1\n",
+        "#define HAL_SITL_INVENSENSEV3\\\n(x) 1\n",
+    ] {
+        let (kind, id, message) = refused(extra);
+        assert_eq!(kind, "MalformedHeader", "{extra}");
+        assert_eq!(id.as_deref(), Some("HAL_SITL_INVENSENSEV3"), "{extra}");
+        assert!(message.contains("function-like"), "{extra}: {message}");
+    }
+    // Object-like, as GCC reads them: the probe is defined, and named.
+    for extra in [
+        "#define HAL_SITL_INVENSENSEV3 (x)\n",
+        "#define HAL_SITL_INVENSENSEV3/**/(x)\n",
+    ] {
+        let found = judge(&t, &format!("{text}{extra}"), &[EMPTY]).unwrap();
+        assert_eq!(kinds(&found), ["UnexpectedImuProbe"], "{extra}: {found:?}");
+    }
+    // A bus entry read through `candidates`.
+    let bus = text.replace("#define HAL_SPI1_CONFIG {", "#define HAL_SPI1_CONFIG(x) {");
+    assert_ne!(bus, text);
+    let err = judge(&t, &bus, &[EMPTY]).unwrap_err();
+    assert_eq!(
+        (err.kind(), err.id().as_deref()),
+        ("MalformedHeader", Some("HAL_SPI1_CONFIG"))
+    );
 }
 
 /// `AET-WO-4404`: a topology with one port per `(role, inverted)`, in
