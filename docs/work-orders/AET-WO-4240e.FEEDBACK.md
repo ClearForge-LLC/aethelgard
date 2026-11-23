@@ -183,5 +183,9 @@ The first form compared each write with the last `RCC_CR` read, but Renode's acc
 - **In the tools image (Kani 0.68.0, Renode 1.17.0):**
   - **prove** on `boards/sentinel-01-bench`, each passing: `spi_kernel_switch_is_in_order_bounded_and_named`, `spi1_transfer_is_bounded_and_ordered`, `spi1_transfer_refuses_too_many_frames`, `every_valid_sequence_spi1`.
   - **simulate:** `sentinel-01-bench` (ELF `eb1d9bfe…`) and `d1-drv8876` (ELF `441a7ee7…`) pass, boot word `0x2100B007`.
-- **The bench package:** asked for the dispatch. It moves by the ELF, `MANIFEST.json`'s ELF, specification, topology and verdict hashes, `FAB-NOTES.md` L3–4, and `BENCH.md` L5's ELF hash. Nothing `ORDERED.sha256` lists may move.
+- **The bench package** is dispatch run `45252001498` (`ci.yml`, `write`, at `5dfd003b`), committed byte for byte. Three files moved:
+  - `sentinel-01-bench.elf`: `f3e871bb…` → `eb1d9bfe…`, identical to my image build;
+  - `MANIFEST.json`: its ELF and `FAB-NOTES.md` hashes, and the specification (`de03f566…`), topology (`d6185fd6…`) and verdict (`35b2cb73…`) hashes;
+  - `FAB-NOTES.md`: the specification hash (L4) and one generated line, Q8's acknowledgement, which the notes list like every other.
+  `BENCH.md` L5 names the new ELF. Every file `ORDERED.sha256` lists is byte-identical (`sha256sum -c` on the artifact), and so are the other ten files.
 - **CI:** TODO.
