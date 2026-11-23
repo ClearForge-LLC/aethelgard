@@ -12,7 +12,7 @@ pub const VERSION: u64 = 1;
 /// changed, is a row of [`TRACE_CHANGES`]. An archive of any other version is
 /// refused by name (`Fault::Version`); an older one with the rows since it
 /// (`AET-WO-2310`, `AET-WO-1215`'s pattern).
-pub const TRACE_VERSION: u64 = 19;
+pub const TRACE_VERSION: u64 = TRACE_CHANGES[TRACE_CHANGES.len() - 1].version;
 
 /// One trace version and what it changed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

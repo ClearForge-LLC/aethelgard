@@ -305,8 +305,15 @@ pub struct BatterySag {
 }
 
 /// The bound of a planted instant's offset from the boot word, either way:
-/// a run is `MAX_VIRTUAL_NS`, 100 ms (`AET-WO-2310`).
-pub const MAX_PLANT_OFFSET_NS: i64 = 100_000_000;
+/// a run's length (`AET-WO-2310`).
+pub const MAX_PLANT_OFFSET_NS: i64 = crate::campaign::TWIN_MAX_VIRTUAL_NS as i64;
+
+/// A planted event's offset as a scenario may state it (`AET-WO-2310`):
+/// within [`MAX_PLANT_OFFSET_NS`] either way of the boot word and a whole
+/// number of 10 ns instructions, as the boot word is.
+pub fn plant_offset_ok(v: i64) -> bool {
+    (-MAX_PLANT_OFFSET_NS..=MAX_PLANT_OFFSET_NS).contains(&v) && v % 10 == 0
+}
 
 /// A planted event's instant from reset: the undisturbed boot word's plus
 /// the signed offset (`AET-WO-2310`, ruled Q-A (a)). `None` when it lies

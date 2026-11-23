@@ -116,9 +116,7 @@ pub fn check_battery_sag(
     // refuses a record no scenario could have made (adversarial 4).
     let offset = sag.from_boot_word_ns;
     let shaped = (1..=SERIES_MILLIOHMS_MAX).contains(&r)
-        && (-crate::record::MAX_PLANT_OFFSET_NS..=crate::record::MAX_PLANT_OFFSET_NS)
-            .contains(&offset)
-        && offset % 10 == 0
+        && crate::record::plant_offset_ok(offset)
         && start_ns.is_none_or(|at| (1..=START_NS_MAX).contains(&at))
         && (1..=V_OPEN_MAX_UV).contains(&chain.v_open_microvolts)
         && chain.capacitance_picofarads > 0

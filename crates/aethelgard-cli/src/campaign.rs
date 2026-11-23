@@ -1315,6 +1315,11 @@ fn run_one(
             .position(|r| matches!(r, Record::RecoveryBound { .. }))
         {
             Some(i) if boot[i] == want => {}
+            // belt-and-suspenders: the two undisturbed boots are one prepared
+            // boot run twice by a deterministic Renode, so they agree; a
+            // stub cannot make them differ under the sandbox (no state it
+            // may write), so no test reaches this. If they ever differ, the
+            // instant and the bound would come from two words: stop.
             Some(i) => {
                 return Err(internal(format!(
                     "the droop's undisturbed boot gave {:?}, and the campaign placed its instant from the boot word at {word} ns",

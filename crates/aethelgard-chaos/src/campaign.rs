@@ -32,11 +32,9 @@ use crate::replay::State;
 /// since `AET-WO-2304b`, which also admits `battery_sag` and
 /// `rail_out_of_band`; 5, since `AET-WO-1211c`, which also admits a pin
 /// device's overrides, `pin_held` and `analog_value`; and 6, since
-/// `AET-WO-2310`, in which a `droop` and a `battery_sag` plant their instant
-/// `from_boot_word_ns`, signed from the undisturbed boot word, and a droop
-/// states no `bor_level` (the specification's `mcu.bor_level` is the level):
-/// a droop or a battery sag is read only at version 6
-/// ([`PLANTED_NEEDS_VERSION`]). A file may use only what its version admits.
+/// `AET-WO-2310` ([`PLANTED_CHANGES`]), the only version that reads a droop
+/// or a battery sag ([`PLANTED_NEEDS_VERSION`]). A file may use only what its
+/// version admits.
 pub const SCENARIO_VERSIONS: [u32; 6] = [1, 2, 3, 4, 5, 6];
 /// The scenario version a planted event (a droop, a battery sag) needs.
 pub const PLANTED_VERSION: u32 = 6;
@@ -587,7 +585,7 @@ const DROOP_BOUNDS: [(&str, u64, u64); 6] = [
 /// the undisturbed boot word places it ([`PLANTED_UNPLACED`]).
 fn offset_from(what: &str, v: i64) -> Result<i64, ScenarioError> {
     let max = record::MAX_PLANT_OFFSET_NS;
-    if !(-max..=max).contains(&v) || v % 10 != 0 {
+    if !record::plant_offset_ok(v) {
         return Err(schema(format!(
             "{what} `from_boot_word_ns` is not a multiple of 10 from {} to {max}: {v} (judged before the boot, from the offset alone; its instant from reset is judged once the undisturbed boot word places it)",
             -max
