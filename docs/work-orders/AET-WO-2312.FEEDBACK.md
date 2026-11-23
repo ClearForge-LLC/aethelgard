@@ -133,7 +133,7 @@
 
 ## 5. Adversarial pass (full, a fresh Opus subagent, frozen at `1d0c89b3`)
 
-The reviewer was given the code and the judge, not my conclusions. It wrote 22 probes in its own copy (`~/.cache/aet-2312/adv`, files `adv2312.rs`). I re-ran F1–F4 there; all four reproduced.
+The reviewer was given the code and the judge, not my conclusions. It wrote 22 probes in its own copy, now kept as `~/.cache/aet-2312/adv-probes/{chaos,evolve}-adv2312.rs`. I re-ran F1–F4 there; all four reproduced.
 
 **Fixed, in `5ba62a28`:**
 - **F1, false pass.** An `ok` read with no witness format (empty `expected`) under a passing verdict. The judge names `{bus}_witness_unavailable`, an error (`renode.rs:4029-4036`).
@@ -183,4 +183,18 @@ The reviewer was given the code and the judge, not my conclusions. It wrote 22 p
 
 ## 7. Gates, fence, reduction pass
 
-(pending)
+- **Gates** on the final head, capped (32 GiB, swap 0, 6 jobs):
+  - `cargo fmt --all -- --check`: clean;
+  - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
+  - `cargo test --workspace`: 163 of 163 test binaries ok, on `0f592518` (11:17–11:37Z).
+  - CI: on the PR.
+- **Fence:** chaos (`campaign.rs`, `replay.rs`, tests), evolve (`lib.rs`, tests), `spike/2312/`, this file. Plus one match arm each in `cli/src/campaign.rs` and `cli/src/propose.rs` (fence widened at 11:00Z).
+  - No `fab/`, `scenarios/`, IR, eda, generator, judge, `verify.rs`, `mcp.rs` or workflow byte.
+  - No `ci/test-weights.tsv` row: every new test runs well under 0.5 s.
+- **Reduction pass (diff): −3 copies of one fact · 2 duplicates removed · 1 dead path removed · 1 protected kept · 1 finding (R6).**
+  - **Duplicates removed:**
+    - the boot-word predicate, three copies (`check_run`, `shown`, evolve's `joined`), is now `campaign::booted`;
+    - `read_matches` and `mismatch_kind` lived in evolve as copies of the judge's rules. They are now in chaos only, beside `shown`.
+  - **Dead path removed:** `unread_ok_witnesses` and its quadratic join, folded into `witness_steps`.
+  - **Protected and kept:** evolve's `belt-and-suspenders` boot filter (`lib.rs`, the DShot window path).
+  - **Finding:** R6, the older per-kind checks `check_shown` re-binds. That is gate-sized.
