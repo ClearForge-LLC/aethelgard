@@ -162,6 +162,8 @@ impl Group {
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         });
         b.anchor_last(
             mcu,
@@ -184,6 +186,8 @@ impl Group {
                 owner: None,
                 offboard: BTreeMap::new(),
                 seat: None,
+                dnp: false,
+                beside: None,
             });
             b.anchor_last(mcu, vec![("1".into(), pin)], None, false);
         }

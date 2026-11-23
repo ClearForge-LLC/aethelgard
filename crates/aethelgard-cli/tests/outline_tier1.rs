@@ -337,24 +337,27 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
 /// capacitor C1 drawn behind U10's ceramics (its FEEDBACK §2); re-pinned by
 /// `AET-WO-4202` from a measured run, U2 gone (its FEEDBACK §2.3); re-pinned
 /// by `AET-WO-4300i` from a measured run, MOTOR1 on PA8 and its four motor
-/// pull-downs R52-R55 drawn (its FEEDBACK). Re-pin it only with the change
-/// that moves it, named in that change's FEEDBACK.
+/// pull-downs R52-R55 drawn (its FEEDBACK); re-pinned by `AET-WO-4300j`
+/// from a measured run, the links R56-R59 drawn and R52-R55 moved to the
+/// pull nets (`spike/4300j/out/b2-boards.tsv`). Re-pin it only with the
+/// change that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "0d5e8c861c5ebf03685bf0dcf472e29a99da4d1e097aa1d8c75de19b71ff6e6c";
+    "5855c8357866d6dcdb12c75907b9e1ed6f33a12ee84906b755bf22149fe64ee1";
 
 /// `AET-WO-1313c` §2: the fixture places at its measured outline, with
 /// every placer gap and every loop rule kept after compaction: 85.25 x
 /// 80.95 mm at `1313b`'s (FEEDBACK §2.1, (k)+(m)+(s)), 96.50 x 69.35 mm
 /// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured), 95.80 x 67.60
 /// mm since `AET-WO-4202` took U2 away (its FEEDBACK §2.3, measured), 96.25
-/// x 67.60 mm since `AET-WO-4300i` drew the four motor pull-downs (measured).
+/// x 67.60 mm since `AET-WO-4300i` drew the four motor pull-downs (measured),
+/// 95.80 x 69.10 mm since `AET-WO-4300j` drew their four links (measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (96_250_000, 67_600_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (95_800_000, 69_100_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -439,12 +442,14 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// measured outlines (its FEEDBACK §4.3); 8 is still refused, every seed over.
 /// `AET-WO-4300i` (MOTOR1 on PA8, R52-R55 drawn): each outline re-measured,
 /// 8 still refused, its least-over 102.150 x 88.200 mm now 103.650 x 89.950.
+/// `AET-WO-4300j` (the links R56-R59 drawn): each re-measured, 8 still
+/// refused, its least-over now 102.050 x 92.700 mm.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
-        (1, Some((99_300_000, 70_450_000))),
+        (1, Some((99_300_000, 70_600_000))),
         (2, Some((89_200_000, 82_700_000))),
-        (6, Some((97_050_000, 87_950_000))),
+        (6, Some((99_400_000, 88_700_000))),
         (8, None),
     ] {
         let v = rename::sized(&fixture(), len);
@@ -465,7 +470,7 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
                 // attempts (seed 0 was 118.500 x 79.450 mm).
                 assert!(
                     e.to_string().contains(
-                        "the placer's best outline is 103.650 x 89.950 mm, over by 3.650 x 0.000 mm"
+                        "the placer's best outline is 102.050 x 92.700 mm, over by 2.050 x 0.000 mm"
                     ),
                     "{len}: {e}"
                 );
@@ -670,28 +675,5 @@ fn a_reseeded_placement_is_deterministic_and_name_free() {
         let renamed = rename::order_only(&base, seed);
         assert_ne!(renamed, base, "seed {seed} renames nothing");
         assert_eq!(name_free(&place(&renamed)), want, "seed {seed}");
-    }
-}
-
-#[test]
-fn zz_b2_measure() {
-    use sha2::{Digest, Sha256};
-    let (_, _, _, e) = emitted("the fixture places at the spike's outline with every gap kept");
-    let o = outline_nm(&e.board);
-    let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect();
-    eprintln!("MEASURE fixture {} {} {digest}", o.x1 - o.x0, o.y1 - o.y0);
-    for len in [1, 2, 6, 8] {
-        let v = rename::sized(&fixture(), len);
-        let (spec, solved, table) = solved(&v);
-        match schematic::emit(&spec, &solved, &table) {
-            Ok(e) => {
-                let o = outline_nm(&e.board);
-                eprintln!("MEASURE {len} {} {}", o.x1 - o.x0, o.y1 - o.y0);
-            }
-            Err(e) => eprintln!("MEASURE {len} ERR {} {e}", e.kind()),
-        }
     }
 }

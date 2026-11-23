@@ -1,0 +1,7 @@
+AET-WO-4300j B2: every spec of spike/4300j/universe.sh (34) emitted through aethelgard_eda::schematic::emit
+by a probe built on HEAD 9c35dc1f's eda (Phase A) and one built on the B2 working tree, each reading the
+same current spec files; every emitted file compared with cmp.
+Outcomes identical for all 34 (26 ok, 3 emit-error, 3 solve-error, 2 validate-error).
+Files that differ: the 7 drawn motor boards (schematic, board, BOM each) and d1-drv8876
+(crates/aethelgard-ir/tests/fixtures, board.drawn false, 3 motor outputs: its links are drawn).
+No spec without motor outputs moves a byte.

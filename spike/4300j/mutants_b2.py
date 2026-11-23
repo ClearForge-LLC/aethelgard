@@ -6,7 +6,9 @@ binary with its filter, records killed (the run fails) or survived, and
 restores the file from the copy taken before the edit, checking its sha256.
 Nothing is restored with git: the B2 work is not committed while this runs.
 
-usage: mutants_b2.py <out.tsv> [id ...]   (env CARGO_TARGET_DIR; run from the repo root)
+usage: mutants_b2.py <out.tsv> [id ...]   (env CARGO_TARGET_DIR), run from the root of a
+copy of the working tree, never the shared worktree, so no other builder compiles a mutant:
+  rsync -a --delete --exclude target/ --exclude .git/ <worktree>/ <copy>/
 """
 import hashlib, os, subprocess, sys
 
@@ -18,7 +20,7 @@ M = [
  # id, guard, file, old, new, (crate, kind, binary), filter
  ('S1', 'motor_link_missing', E+'support.rs',
   '''            None => fail(
-                "motor_link_missing",''', '''            None if false => fail(
+                "motor_link_missing",''', '''            None => (|_: &'static str, _: String| ())(
                 "motor_link_missing",''', CLI+('support_tier1',), 'a_motor_link_absent_is_missing'),
  ('S2', 'motor_link_part: the row\'s symbol', E+'support.rs',
   'if c.symbol.as_deref() != Some(l_row.symbol.as_str()) || c.value != "0" {', 'if c.value != "0" {',

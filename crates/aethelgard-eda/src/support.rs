@@ -21,7 +21,8 @@
 //!    it too is recorded, not required (DS-009's debug ports carry none);
 //! 6. the declared supply source's pin on the supply;
 //! 7. the crystal beside a declared one (`AET-WO-4240c`);
-//! 8. each motor output's declared pull-down (`AET-WO-4300i`).
+//! 8. each motor output's declared pull-down and its link (`AET-WO-4300i`,
+//!    `AET-WO-4300j`).
 //!
 //! Each failure is a named finding. A netlist or board the gate cannot read
 //! is refused, never judged in part.
@@ -29,6 +30,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_ir::Specification;
+use aethelgard_ir::motor::PullFitment;
 use aethelgard_ir::power_parts::{self, Kind, Support, SupportCapacitor};
 
 use crate::route::{Board, Pad};
@@ -42,15 +44,23 @@ const CAPACITOR: &str = "Device:C";
 const UNCONNECTED: &str = "unconnected-";
 
 /// One component of the netlist: its value, its symbol (`lib:part`), its
-/// footprint (`lib:name`) when the netlist names one, and whether a
-/// property marks it unpopulated (`dnp`, `exclude_from_bom`,
-/// `exclude_from_board`: adversarial A4).
+/// footprint (`lib:name`) when the netlist names one, and which properties
+/// mark it unpopulated (`dnp`, `exclude_from_bom`, `exclude_from_board`:
+/// adversarial A4). A motor pull's link reads `dnp` alone, by its fitment
+/// (`AET-WO-4300j` D7); every other part is unpopulated by any of them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Component {
     pub value: String,
     pub symbol: Option<String>,
     pub footprint: Option<String>,
-    pub unpopulated: bool,
+    pub marks: BTreeSet<&'static str>,
+}
+
+impl Component {
+    /// Whether any property takes it off the built board.
+    pub fn unpopulated(&self) -> bool {
+        !self.marks.is_empty()
+    }
 }
 
 /// Properties that take a part off the built board.
@@ -117,10 +127,11 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
             Some(_) => Some(text(&comp, "footprint")?.to_owned()),
             None => None,
         };
-        let mut unpopulated = false;
+        let mut marks = BTreeSet::new();
         for p in comp.all("property") {
-            if UNPOPULATED.contains(&text(&p, "name")?) {
-                unpopulated = true;
+            let name = text(&p, "name")?;
+            if let Some(mark) = UNPOPULATED.iter().find(|m| **m == name) {
+                marks.insert(*mark);
             }
         }
         let previous = out.components.insert(
@@ -129,7 +140,7 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
                 value: value.to_owned(),
                 symbol,
                 footprint,
-                unpopulated,
+                marks,
             },
         );
         if previous.is_some() {
@@ -283,7 +294,7 @@ fn capacitors(n: &Netlist) -> Vec<Capacitor<'_>> {
     n.components
         .iter()
         .filter_map(|(reference, c)| {
-            if c.unpopulated || c.symbol.as_deref() != Some(CAPACITOR) {
+            if c.unpopulated() || c.symbol.as_deref() != Some(CAPACITOR) {
                 return None;
             }
             let picofarads = picofarads(&c.value)?;
@@ -734,7 +745,7 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
                 .nets
                 .keys()
                 .any(|(r, p)| r == *sw && p != "1" && p != "2");
-            if nrst.is_none() || pins != want || other || netlist.components[*sw].unpopulated {
+            if nrst.is_none() || pins != want || other || netlist.components[*sw].unpopulated() {
                 fail(
                     "reset_switch_wrong",
                     format!(
@@ -881,7 +892,7 @@ fn crystal(
         .components
         .iter()
         .filter(|(_, c)| {
-            !c.unpopulated
+            !c.unpopulated()
                 && c.value == row.part
                 && c.symbol.as_deref() == Some(row.symbol.as_str())
         })
@@ -946,7 +957,7 @@ fn crystal(
             .copied()
             .filter(|r| {
                 let c = &netlist.components[r.as_str()];
-                !c.unpopulated && c.symbol.as_deref() == Some(CAPACITOR) && {
+                !c.unpopulated() && c.symbol.as_deref() == Some(CAPACITOR) && {
                     let mut pins: Vec<&str> = netlist.pins_of(r).map(|(_, n)| n).collect();
                     pins.sort_unstable();
                     pins == [gnd, net] || pins == [net, gnd]
@@ -1014,136 +1025,249 @@ fn crystal(
     Ok(())
 }
 
-/// Step 8 (`AET-WO-4300i`, ruled D0 `external`): each motor output's declared
-/// pull-down, judged from the netlist against its declaration alone. Its
-/// reference is a populated part of its row's symbol (`motor_pull_missing`);
-/// its two pins are on the output's label net and on `to`'s, and it has no
-/// other (`motor_pull_off_net`); its value is the declared resistance and
-/// part, `<ohms> <part>` (`motor_pull_value`); its footprint is the part
-/// row's (`motor_pull_footprint`); and it is the one part joining the two
-/// nets, since a second in parallel, of any symbol, is another value
-/// (`motor_pull_count`); and no other resistor is on the line
-/// (`motor_net_extra_resistor`).
+/// Step 8 (`AET-WO-4300i`, ruled D0 `external`; `AET-WO-4300j` D5): each
+/// motor output's declared pull-down and its series link, judged from the
+/// netlist against the declaration alone. The chain is `<label>` → the link
+/// → `<label>_PD` → the resistor → `to`.
+///
+/// **The resistor:** its reference is a populated part of its row's symbol
+/// (`motor_pull_missing`); its two pins are on `<label>_PD` and on `to`, and
+/// it has no other (`motor_pull_off_net`); its value is the declared
+/// resistance and part, `<ohms> <part>` (`motor_pull_value`); its footprint
+/// is the part row's (`motor_pull_footprint`); and it is the one part
+/// joining `<label>_PD` or `<label>` to `to`, since a second in parallel,
+/// of any symbol, is another value (`motor_pull_count`).
+///
+/// **The link:** its reference is in the netlist (`motor_link_missing`), of
+/// its jumper row's symbol and valued `0` (`motor_link_part`), on the row's
+/// footprint (`motor_link_footprint`); its two pins are on `<label>` and
+/// `<label>_PD`, and it has no other (`motor_link_off_net`); it is the one
+/// part joining them (`motor_link_count`); and it is populated when the
+/// output is `fitted`, and marked `dnp`, and nothing else that takes it off
+/// the board or the BOM, when `open` (`motor_link_fitment`, D7).
+///
+/// No other resistor is on `<label>` or `<label>_PD`, which the fitted link
+/// joins into one node (`motor_net_extra_resistor`).
 fn motor_pulls(
     spec: &Specification,
     netlist: &Netlist,
     fail: &mut impl FnMut(&'static str, String),
 ) -> Result<(), String> {
     let table = power_parts::table().map_err(|e| e.to_string())?;
+    // belt-and-suspenders: `validate` refuses a motor pull or link whose
+    // part the table lacks (`PowerPartUnknown`) before any gate reads it.
+    let row = |m: &aethelgard_ir::MotorOutput, what: &str, reference: &str, part: &str| {
+        table.get(part).ok_or_else(|| {
+            format!(
+                "{}'s {what} {reference} names `{part}`, which the power parts table lacks",
+                m.label
+            )
+        })
+    };
+    // Whether `c` has exactly pins 1 and 2, one on each of `a` and `b`.
+    let joins = |c: &str, a: &str, b: &str| {
+        let pins: Vec<(&str, &str)> = netlist.pins_of(c).collect();
+        let mut want = [a, b];
+        want.sort_unstable();
+        pins.iter().map(|(p, _)| *p).eq(["1", "2"]) && {
+            let mut have = [pins[0].1, pins[1].1];
+            have.sort_unstable();
+            have == want
+        }
+    };
+    let on = |reference: &str| {
+        let on: Vec<String> = netlist
+            .pins_of(reference)
+            .map(|(p, n)| format!("pin {p} on `{n}`"))
+            .collect();
+        if on.is_empty() {
+            "no pin on a net".to_owned()
+        } else {
+            on.join(", ")
+        }
+    };
+    let names = |v: &[&String]| v.iter().map(|q| q.as_str()).collect::<Vec<_>>().join(", ");
     for m in &spec.motor_outputs {
         let r = &m.pull.resistor;
-        let reference = r.reference.as_str();
-        // belt-and-suspenders: `validate` refuses a motor pull whose part
-        // the table lacks (`PowerPartUnknown`) before any gate reads it.
-        let row = table.get(&r.part).ok_or_else(|| {
-            format!(
-                "{}'s pull-down {reference} names `{}`, which the power parts table lacks",
-                m.label, r.part
-            )
-        })?;
-        // The label as the board names it; `to` is `GND` (`validate`'s
-        // `MotorPullNotDown`), a power net KiCad names by its value.
-        let (line, to) = (crate::extract::board_net(&m.label), r.to.as_str());
-        let joins = |c: &str| {
-            let pins: Vec<(&str, &str)> = netlist.pins_of(c).collect();
-            let mut want = [line.as_str(), to];
-            want.sort_unstable();
-            pins.iter().map(|(p, _)| *p).eq(["1", "2"]) && {
-                let mut have = [pins[0].1, pins[1].1];
-                have.sort_unstable();
-                have == want
-            }
+        let link = &m.pull.link;
+        let (reference, linked) = (r.reference.as_str(), link.reference.as_str());
+        let r_row = row(m, "pull-down", reference, &r.part)?;
+        let l_row = row(m, "link", linked, &link.part)?;
+        // The label and the pull net as the board names them; `to` is `GND`
+        // (`validate`'s `MotorPullNotDown`), a power net KiCad names by its
+        // value.
+        let line = crate::extract::board_net(&m.label);
+        let pd = crate::extract::board_net(&aethelgard_ir::names::motor_pull_net(&m.label));
+        let to = r.to.as_str();
+        // Any two-pin part across the same two nets, but the declared two,
+        // is a second path, whatever it is drawn as (a resistor, a
+        // capacitor, a ferrite, a jumper).
+        let across = |a: &str, b: &str| -> Vec<&String> {
+            netlist
+                .components
+                .keys()
+                .filter(|q| q.as_str() != reference && q.as_str() != linked && joins(q, a, b))
+                .collect()
         };
-        let Some(c) = netlist
+        // The resistor.
+        match netlist
             .components
             .get(reference)
-            .filter(|c| c.symbol.as_deref() == Some(row.symbol.as_str()) && !c.unpopulated)
-        else {
-            fail(
+            .filter(|c| c.symbol.as_deref() == Some(r_row.symbol.as_str()) && !c.unpopulated())
+        {
+            None => fail(
                 "motor_pull_missing",
                 format!(
                     "{}'s declared pull-down {reference} is not a populated `{}` in the netlist",
-                    m.label, row.symbol
+                    m.label, r_row.symbol
                 ),
-            );
-            continue;
-        };
-        if !joins(reference) {
-            let on: Vec<String> = netlist
-                .pins_of(reference)
-                .map(|(p, n)| format!("pin {p} on `{n}`"))
-                .collect();
-            fail(
-                "motor_pull_off_net",
-                format!(
-                    "{}'s pull-down {reference} has {}, not one pin on `{line}` and one on `{to}`",
-                    m.label,
-                    if on.is_empty() {
-                        "no pin on a net".to_owned()
-                    } else {
-                        on.join(", ")
-                    }
-                ),
-            );
+            ),
+            Some(c) => {
+                if !joins(reference, &pd, to) {
+                    fail(
+                        "motor_pull_off_net",
+                        format!(
+                            "{}'s pull-down {reference} has {}, not one pin on `{pd}` and one on `{to}`",
+                            m.label,
+                            on(reference)
+                        ),
+                    );
+                }
+                let value_ok = c.value.split_once(' ').is_some_and(|(token, part)| {
+                    ohms(token) == Some(u64::from(r.ohms)) && part == r.part
+                });
+                if !value_ok {
+                    fail(
+                        "motor_pull_value",
+                        format!(
+                            "{}'s pull-down {reference} is `{}`, and it is declared {} ohm `{}`",
+                            m.label, c.value, r.ohms, r.part
+                        ),
+                    );
+                }
+                if c.footprint.as_deref() != Some(r_row.footprint.as_str()) {
+                    fail(
+                        "motor_pull_footprint",
+                        format!(
+                            "{}'s pull-down {reference} has footprint {}, and its part `{}` is `{}`",
+                            m.label,
+                            quoted_or_none(c.footprint.as_deref()),
+                            r.part,
+                            r_row.footprint
+                        ),
+                    );
+                }
+            }
         }
-        let value_ok = c
-            .value
-            .split_once(' ')
-            .is_some_and(|(token, part)| ohms(token) == Some(u64::from(r.ohms)) && part == r.part);
-        if !value_ok {
-            fail(
-                "motor_pull_value",
-                format!(
-                    "{}'s pull-down {reference} is `{}`, and it is declared {} ohm `{}`",
-                    m.label, c.value, r.ohms, r.part
-                ),
-            );
-        }
-        if c.footprint.as_deref() != Some(row.footprint.as_str()) {
-            fail(
-                "motor_pull_footprint",
-                format!(
-                    "{}'s pull-down {reference} has footprint {}, and its part `{}` is `{}`",
-                    m.label,
-                    c.footprint
-                        .as_deref()
-                        .map_or_else(|| "none".to_owned(), |f| format!("`{f}`")),
-                    r.part,
-                    row.footprint
-                ),
-            );
-        }
-        // Any two-pin part across the two nets is a second path, whatever it
-        // is drawn as (a resistor, a capacitor, a ferrite, a jumper).
-        let parallel: Vec<&String> = netlist
-            .components
-            .keys()
-            .filter(|q| q.as_str() != reference && joins(q))
-            .collect();
+        // A second path to `to`: beside the resistor, or from the motor net
+        // past the link.
+        let mut parallel = across(&pd, to);
+        parallel.extend(across(&line, to));
         if !parallel.is_empty() {
             fail(
                 "motor_pull_count",
                 format!(
-                    "{} also joins `{line}` to `{to}` beside {}'s pull-down {reference}",
-                    parallel
-                        .iter()
-                        .map(|q| q.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    "{} also joins `{pd}` or `{line}` to `{to}` beside {}'s pull-down {reference}",
+                    names(&parallel),
                     m.label
                 ),
             );
         }
-        // A resistor on the line to anywhere else (a pull-up beside the
-        // pull-down) moves the level D0 judges the pull-down by.
+        // The link.
+        match netlist.components.get(linked) {
+            None => fail(
+                "motor_link_missing",
+                format!("{}'s declared link {linked} is not in the netlist", m.label),
+            ),
+            Some(c) => {
+                if c.symbol.as_deref() != Some(l_row.symbol.as_str()) || c.value != "0" {
+                    fail(
+                        "motor_link_part",
+                        format!(
+                            "{}'s link {linked} is `{}` drawn as {}, and its part `{}` is a `0` `{}`",
+                            m.label,
+                            c.value,
+                            quoted_or_none(c.symbol.as_deref()),
+                            link.part,
+                            l_row.symbol
+                        ),
+                    );
+                }
+                if c.footprint.as_deref() != Some(l_row.footprint.as_str()) {
+                    fail(
+                        "motor_link_footprint",
+                        format!(
+                            "{}'s link {linked} has footprint {}, and its part `{}` is `{}`",
+                            m.label,
+                            quoted_or_none(c.footprint.as_deref()),
+                            link.part,
+                            l_row.footprint
+                        ),
+                    );
+                }
+                if !joins(linked, &line, &pd) {
+                    fail(
+                        "motor_link_off_net",
+                        format!(
+                            "{}'s link {linked} has {}, not one pin on `{line}` and one on `{pd}`",
+                            m.label,
+                            on(linked)
+                        ),
+                    );
+                }
+                let agrees = match m.pull.fitment {
+                    PullFitment::Fitted => !c.unpopulated(),
+                    PullFitment::Open => c.marks.iter().eq(["dnp"].iter()),
+                };
+                if !agrees {
+                    fail(
+                        "motor_link_fitment",
+                        format!(
+                            "{}'s link {linked} is marked {}, and the output is declared `{}`: {}",
+                            m.label,
+                            if c.marks.is_empty() {
+                                "populated".to_owned()
+                            } else {
+                                c.marks
+                                    .iter()
+                                    .map(|k| format!("`{k}`"))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            },
+                            m.pull.fitment.name(),
+                            match m.pull.fitment {
+                                PullFitment::Fitted => "populated, with no `dnp`",
+                                PullFitment::Open => "`dnp` alone",
+                            }
+                        ),
+                    );
+                }
+            }
+        }
+        let bridged = across(&line, &pd);
+        if !bridged.is_empty() {
+            fail(
+                "motor_link_count",
+                format!(
+                    "{} also joins `{line}` to `{pd}` beside {}'s link {linked}",
+                    names(&bridged),
+                    m.label
+                ),
+            );
+        }
+        // A resistor on the line or the pull net to anywhere else (a
+        // pull-up beside the pull-down) moves the level D0 judges the
+        // pull-down by.
         let extra: Vec<&String> = netlist
             .components
             .iter()
             .filter(|(q, x)| {
                 q.as_str() != reference
+                    && q.as_str() != linked
                     && is_resistor(x)
                     && !parallel.contains(q)
-                    && netlist.pins_of(q).any(|(_, n)| n == line)
+                    && !bridged.contains(q)
+                    && netlist.pins_of(q).any(|(_, n)| n == line || n == pd)
             })
             .map(|(q, _)| q)
             .collect();
@@ -1151,18 +1275,19 @@ fn motor_pulls(
             fail(
                 "motor_net_extra_resistor",
                 format!(
-                    "{} is a resistor on `{line}` beside {}'s pull-down {reference}",
-                    extra
-                        .iter()
-                        .map(|q| q.as_str())
-                        .collect::<Vec<_>>()
-                        .join(", "),
+                    "{} is a resistor on `{line}` or `{pd}` beside {}'s pull-down {reference} and link {linked}",
+                    names(&extra),
                     m.label
                 ),
             );
         }
     }
     Ok(())
+}
+
+/// A footprint or symbol as a finding names it: quoted, or `none`.
+fn quoted_or_none(s: Option<&str>) -> String {
+    s.map_or_else(|| "none".to_owned(), |f| format!("`{f}`"))
 }
 
 /// A resistor by what the gate can read: KiCad's `Device:R` family (`R`,
@@ -1256,7 +1381,7 @@ fn boot0_pull_down(
             resistors.len()
         ));
     };
-    if part.unpopulated {
+    if part.unpopulated() {
         return Err(format!(
             "its pull-down {reference} is unpopulated, so it floats"
         ));

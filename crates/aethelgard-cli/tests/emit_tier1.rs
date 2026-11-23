@@ -5,6 +5,7 @@
 #[path = "common/stub.rs"]
 mod stub;
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::os::unix::fs::symlink;
 use std::path::{Path, PathBuf};
@@ -804,8 +805,9 @@ fn resistance(token: &str) -> Option<u64> {
 }
 
 /// Each footprint of an emitted board, read strictly: its reference, value,
-/// library id, and each pad's number and net.
-type Footprint = (String, String, String, Vec<(String, Option<String>)>);
+/// library id, each pad's number and net, and whether KiCad's `dnp`
+/// attribute marks it not fitted (`AET-WO-4300j` D7).
+type Footprint = (String, String, String, Vec<(String, Option<String>)>, bool);
 
 fn footprints(emitted: &Value) -> Vec<Footprint> {
     let text = fs::read_to_string(emitted["board"]["path"].as_str().unwrap()).unwrap();
@@ -825,7 +827,23 @@ fn footprints(emitted: &Value) -> Vec<Footprint> {
                 fp.field("Value").unwrap().unwrap().to_owned(),
                 fp.arg(1).unwrap().to_owned(),
                 pads,
+                fp.all("attr").any(|a| a.texts().any(|x| x == "dnp")),
             )
+        })
+        .collect()
+}
+
+/// Each placed symbol's `dnp` (`yes` or `no`) by its reference, from the
+/// emitted schematic.
+fn symbol_dnp(emitted: &Value) -> BTreeMap<String, String> {
+    let text = fs::read_to_string(emitted["schematic"]["path"].as_str().unwrap()).unwrap();
+    let sch = aethelgard_eda::strict::schematic(&text).unwrap();
+    sch.root()
+        .all("symbol")
+        .filter_map(|s| {
+            let reference = s.field("Reference").unwrap()?.to_owned();
+            let dnp = s.one("dnp").unwrap()?.arg(1)?.to_owned();
+            Some((reference, dnp))
         })
         .collect()
 }
@@ -837,84 +855,178 @@ fn pad_nets(pads: &[(String, Option<String>)]) -> Vec<Option<&str>> {
     on
 }
 
-/// `AET-WO-4300i` §2: every motor net of every drawn board carries its
-/// declared pull-down, read from the emitted files alone. On the board,
-/// exactly one footprint joins the motor's net (`/<label>`) to `GND`, by
-/// its two pads and no other: the declared reference, valued the declared
-/// resistance and part, on the part row's footprint. In the bill of
-/// materials, the same reference, value, footprint and the row's symbol.
+/// `AET-WO-4300j` D5, D7: every motor net of an emitted board carries its
+/// declared chain, read from the emitted files alone. On the board, exactly
+/// one footprint joins the motor's net (`/<label>`) to `/<label>_PD`, by its
+/// two pads and no other: the declared link, valued `0`, on its jumper row's
+/// footprint; exactly one joins `/<label>_PD` to `GND`: the declared
+/// resistor, valued the declared resistance and part, on its row's
+/// footprint; and none joins the motor's net to `GND`. The link is not
+/// fitted exactly when the output is `open`: KiCad's `dnp` on its footprint
+/// and its symbol, and `DNP` in its BOM row's note; the resistor is fitted
+/// in both. Returns the number of motor nets judged.
+fn assert_motor_chains(board: &str, spec_path: &Path, emitted: &Value) -> usize {
+    let parts = aethelgard_ir::power_parts::table().unwrap();
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(spec_path).unwrap()).unwrap();
+    assert!(!spec.motor_outputs.is_empty(), "{board}");
+    let fps = footprints(emitted);
+    let dnp = symbol_dnp(emitted);
+    let bom = fs::read_to_string(emitted["bill_of_materials"]["path"].as_str().unwrap()).unwrap();
+    let bom_row = |reference: &str| -> Vec<&str> {
+        bom.lines()
+            .filter(|l| l.split(',').next() == Some(reference))
+            .collect()
+    };
+    for m in &spec.motor_outputs {
+        let (r, link) = (&m.pull.resistor, &m.pull.link);
+        assert_eq!(r.to, "GND", "{board} {}", m.label);
+        let line = format!("/{}", m.label);
+        let pd = format!("/{}", aethelgard_ir::names::motor_pull_net(&m.label));
+        let joining = |a: &str, b: &str| -> Vec<&Footprint> {
+            fps.iter()
+                .filter(|(_, _, _, pads, _)| pad_nets(pads) == [Some(a), Some(b)])
+                .collect()
+        };
+        assert!(
+            joining(&line, "GND").is_empty(),
+            "{board} {}: a part joins the motor net to GND",
+            m.label
+        );
+        let open = m.pull.fitment == aethelgard_ir::motor::PullFitment::Open;
+        for (want, a, b, part) in [
+            (&r.reference, pd.as_str(), "GND", &r.part),
+            (&link.reference, line.as_str(), pd.as_str(), &link.part),
+        ] {
+            let row = parts.get(part).unwrap();
+            let found = joining(a, b);
+            let [(reference, value, footprint, pads, not_fitted)] = found.as_slice() else {
+                panic!(
+                    "{board} {}: {} parts join `{a}` to `{b}`",
+                    m.label,
+                    found.len()
+                );
+            };
+            assert_eq!(reference, want, "{board} {}", m.label);
+            let is_link = *want == link.reference;
+            if is_link {
+                assert_eq!(value, "0", "{board} {reference}");
+            } else {
+                let (token, p) = value.split_once(' ').unwrap();
+                assert_eq!(
+                    resistance(token),
+                    Some(u64::from(r.ohms)),
+                    "{board} {value}"
+                );
+                assert_eq!(p, r.part, "{board} {value}");
+            }
+            assert_eq!(footprint, &row.footprint, "{board} {reference}");
+            let mut numbers: Vec<&str> = pads.iter().map(|(n, _)| n.as_str()).collect();
+            numbers.sort_unstable();
+            assert_eq!(numbers, ["1", "2"], "{board} {reference}");
+            let dnp_here = is_link && open;
+            assert_eq!(*not_fitted, dnp_here, "{board} {reference}: footprint dnp");
+            assert_eq!(
+                dnp[reference.as_str()],
+                if dnp_here { "yes" } else { "no" },
+                "{board} {reference}: symbol dnp"
+            );
+            assert_eq!(
+                bom_row(reference),
+                [format!(
+                    "{reference},{value},{},{},{}",
+                    row.footprint,
+                    row.symbol,
+                    if dnp_here { "DNP" } else { "" }
+                )],
+                "{board}"
+            );
+        }
+    }
+    spec.motor_outputs.len()
+}
+
+/// `AET-WO-4300i` §2, `AET-WO-4300j` §2: every motor net of every drawn
+/// board carries its declared link and pull-down, all `fitted`
+/// ([`assert_motor_chains`]).
 #[test]
 fn every_motor_net_carries_its_declared_pull_down_in_the_emitted_files() {
     let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let parts = aethelgard_ir::power_parts::table().unwrap();
     let d = Dir::new("motor-pulls");
     let nets = std::sync::atomic::AtomicUsize::new(0);
     std::thread::scope(|s| {
         for board in MOTOR_BOARDS {
-            let (fixtures, d, parts, nets) = (&fixtures, &d, &parts, &nets);
+            let (fixtures, d, nets) = (&fixtures, &d, &nets);
             s.spawn(move || {
                 let path = fixtures.join(format!("{board}.json"));
-                let spec: aethelgard_ir::Specification =
-                    serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-                assert!(!spec.motor_outputs.is_empty(), "{board}");
-                let r = json_line(&emit(&path, &d.0.join(board)), 0);
-                let fps = footprints(&r);
-                let bom =
-                    fs::read_to_string(r["bill_of_materials"]["path"].as_str().unwrap()).unwrap();
-                for m in &spec.motor_outputs {
-                    let want = &m.pull.resistor;
-                    assert_eq!(want.to, "GND", "{board} {}", m.label);
-                    let row = parts.get(&want.part).unwrap();
-                    let line = format!("/{}", m.label);
-                    let joining: Vec<_> = fps
-                        .iter()
-                        .filter(|(_, _, _, pads)| {
-                            pad_nets(pads) == [Some(line.as_str()), Some("GND")]
-                        })
-                        .collect();
-                    let [(reference, value, footprint, pads)] = joining.as_slice() else {
-                        panic!(
-                            "{board} {}: {} parts join it to GND",
-                            m.label,
-                            joining.len()
-                        );
-                    };
-                    assert_eq!(reference, &want.reference, "{board} {}", m.label);
-                    let (token, part) = value.split_once(' ').unwrap();
-                    assert_eq!(
-                        resistance(token),
-                        Some(u64::from(want.ohms)),
-                        "{board} {value}"
-                    );
-                    assert_eq!(part, want.part, "{board} {value}");
-                    assert_eq!(footprint, &row.footprint, "{board} {reference}");
-                    let mut numbers: Vec<&str> = pads.iter().map(|(n, _)| n.as_str()).collect();
-                    numbers.sort_unstable();
-                    assert_eq!(numbers, ["1", "2"], "{board} {reference}");
-                    let rows: Vec<&str> = bom
-                        .lines()
-                        .filter(|l| l.split(',').next() == Some(reference.as_str()))
-                        .collect();
-                    assert_eq!(
-                        rows,
-                        [format!(
-                            "{reference},{value},{},{},",
-                            row.footprint, row.symbol
-                        )],
-                        "{board}"
-                    );
-                    nets.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let v: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+                for m in v["motor_outputs"].as_array().unwrap() {
+                    assert_eq!(m["pull"]["fitment"], "fitted", "{board}");
                 }
+                let r = json_line(&emit(&path, &d.0.join(board)), 0);
+                let n = assert_motor_chains(board, &path, &r);
+                nets.fetch_add(n, std::sync::atomic::Ordering::Relaxed);
             });
         }
     });
     assert_eq!(nets.into_inner(), 28);
 }
 
-/// `AET-WO-4300i`: a motor pull's reference is claimed before the emitter
-/// numbers its own parts, as every declared reference is. Declared `R1` to
-/// `R4`, below the emitter's own resistors, they keep their names on the
-/// motor nets and no reference is drawn twice.
+/// `AET-WO-4300j` D7, the `open` path: the motors fixture with MOTOR1 and
+/// MOTOR3 `open` and MOTOR2 and MOTOR4 `fitted` draws every link, the open
+/// ones not fitted (`dnp` on the board and the sheet, `DNP` in the BOM) and
+/// the fitted ones fitted, and every resistor fitted; no other part moves
+/// between the two fitments but by those marks.
+#[test]
+fn an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/motors-pwm.json");
+    let mut v: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    let d = Dir::new("motor-open");
+    let fitted = json_line(&emit(&path, &d.0.join("fitted")), 0);
+    for i in [0, 2] {
+        v["motor_outputs"][i]["pull"]["fitment"] = json!("open");
+    }
+    let open_spec = write_spec(&d, &v);
+    let open = json_line(&emit(&open_spec, &d.0.join("open")), 0);
+    assert_eq!(assert_motor_chains("motors-pwm open", &open_spec, &open), 4);
+    let links: Vec<String> = v["motor_outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["pull"]["link"]["reference"].as_str().unwrap().to_owned())
+        .collect();
+    let open_fps = footprints(&open);
+    let dnp: Vec<&str> = open_fps
+        .iter()
+        .filter(|f| f.4)
+        .map(|f| f.0.as_str())
+        .filter(|r| links.iter().any(|l| l == r))
+        .collect();
+    assert_eq!(dnp, [links[0].as_str(), links[2].as_str()]);
+    // The two boards differ by the marks alone: the same footprints, values
+    // and pads, the same BOM rows but for the two notes.
+    let strip = |fps: Vec<Footprint>| -> Vec<Footprint> {
+        fps.into_iter()
+            .map(|(r, v, l, p, _)| (r, v, l, p, false))
+            .collect()
+    };
+    assert_eq!(strip(footprints(&fitted)), strip(footprints(&open)));
+    let bom =
+        |e: &Value| fs::read_to_string(e["bill_of_materials"]["path"].as_str().unwrap()).unwrap();
+    let (a, b) = (bom(&fitted), bom(&open));
+    let differ: Vec<(&str, &str)> = a.lines().zip(b.lines()).filter(|(x, y)| x != y).collect();
+    assert_eq!(a.lines().count(), b.lines().count());
+    assert_eq!(differ.len(), 2, "{differ:?}");
+    for (x, y) in differ {
+        assert_eq!(format!("{x}DNP"), y);
+    }
+}
+
+/// `AET-WO-4300i`, `AET-WO-4300j`: a motor pull's and its link's references
+/// are claimed before the emitter numbers its own parts, as every declared
+/// reference is. Declared `R1` to `R4` and `R5` to `R8`, below the emitter's
+/// own resistors, they keep their names on the motor nets and no reference
+/// is drawn twice.
 #[test]
 fn a_motor_pull_declared_below_the_emitters_numbers_keeps_its_reference() {
     let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/motors-pwm.json");
@@ -926,6 +1038,7 @@ fn a_motor_pull_declared_below_the_emitters_numbers_keeps_its_reference() {
         .enumerate()
     {
         m["pull"]["resistor"]["reference"] = json!(format!("R{}", i + 1));
+        m["pull"]["link"]["reference"] = json!(format!("R{}", i + 5));
     }
     let d = Dir::new("motor-low-refs");
     let r = json_line(&emit(&write_spec(&d, &v), &d.0.join("o")), 0);
@@ -936,13 +1049,17 @@ fn a_motor_pull_declared_below_the_emitters_numbers_keeps_its_reference() {
     assert_eq!(unique.len(), refs.len(), "{refs:?}");
     let fps = footprints(&r);
     for (i, label) in ["MOTOR1", "MOTOR2", "MOTOR3", "MOTOR4"].iter().enumerate() {
-        let reference = format!("R{}", i + 1);
-        let (_, value, _, pads) = fps.iter().find(|f| f.0 == reference).unwrap();
         let line = format!("/{label}");
-        assert_eq!(
-            pad_nets(pads),
-            [Some(line.as_str()), Some("GND")],
-            "{reference} {value}"
-        );
+        let pd = format!("/{label}_PD");
+        for (reference, want) in [
+            (format!("R{}", i + 1), [Some(pd.as_str()), Some("GND")]),
+            (
+                format!("R{}", i + 5),
+                [Some(line.as_str()), Some(pd.as_str())],
+            ),
+        ] {
+            let (_, value, _, pads, _) = fps.iter().find(|f| f.0 == reference).unwrap();
+            assert_eq!(pad_nets(pads), want, "{reference} {value}");
+        }
     }
 }

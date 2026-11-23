@@ -1,0 +1,28 @@
+id	guard	file	test filter	result
+S1	motor_link_missing	crates/aethelgard-eda/src/support.rs	a_motor_link_absent_is_missing	killed
+S2	motor_link_part: the row's symbol	crates/aethelgard-eda/src/support.rs	a_motor_link_of_another_part_or_footprint_fails_by_name	killed
+S3	motor_link_part: the value 0	crates/aethelgard-eda/src/support.rs	a_motor_link_of_another_part_or_footprint_fails_by_name	killed
+S4	motor_link_footprint	crates/aethelgard-eda/src/support.rs	a_motor_link_of_another_part_or_footprint_fails_by_name	killed
+S5	motor_link_off_net	crates/aethelgard-eda/src/support.rs	a_motor_link_off_its_nets_fails_by_name	killed
+S6	motor_link_fitment: fitted is populated	crates/aethelgard-eda/src/support.rs	a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name	killed
+S7	motor_link_fitment: open is dnp alone	crates/aethelgard-eda/src/support.rs	a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name	killed
+S8	motor_link_fitment: open is not populated	crates/aethelgard-eda/src/support.rs	a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name	killed
+S9	motor_link_count	crates/aethelgard-eda/src/support.rs	a_second_part_across_a_motor_link_fails_by_name	killed
+S10	motor_pull_off_net: on the pull net	crates/aethelgard-eda/src/support.rs	a_motor_pull_off_its_nets_fails_by_name	killed
+S11	motor_pull_count: past the link to `to`	crates/aethelgard-eda/src/support.rs	a_second_resistor_beside_a_motor_pull_fails_by_name	killed
+S12	motor_pull_count: beside the resistor	crates/aethelgard-eda/src/support.rs	a_second_resistor_beside_a_motor_pull_fails_by_name	killed
+S13	a second path excludes the link	crates/aethelgard-eda/src/support.rs	a_motor_link_off_its_nets_fails_by_name	killed
+S14	motor_net_extra_resistor excludes the link	crates/aethelgard-eda/src/support.rs	the_motor_fixtures_pulls_pass_the_support_gate	killed
+S15	motor_net_extra_resistor: the pull net too	crates/aethelgard-eda/src/support.rs	another_resistor_on_a_motor_line_fails_by_name	killed
+S16	the netlist's marks, each by name	crates/aethelgard-eda/src/support.rs	a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name	killed
+E1	schematic: (dnp yes)	crates/aethelgard-eda/src/schematic.rs	an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted	killed
+E2	schematic: an open link is dnp	crates/aethelgard-eda/src/schematic.rs	an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted	killed
+E3	BOM: DNP in the note	crates/aethelgard-eda/src/schematic.rs	an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted	killed
+E4	board: the footprint's dnp attribute	crates/aethelgard-eda/src/pcb.rs	an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted	killed
+E5	JLCPCB: a DNP row is found by its note	crates/aethelgard-eda/src/fab.rs	a_dnp_part_is_in_neither_jlcpcb_file	killed
+E6	JLCPCB: no placement row for a DNP part	crates/aethelgard-eda/src/fab.rs	a_dnp_part_is_in_neither_jlcpcb_file	killed
+E7	JLCPCB: no BOM row for a DNP part	crates/aethelgard-eda/src/fab.rs	a_dnp_part_is_in_neither_jlcpcb_file	killed
+E8	schematic: every link drawn	crates/aethelgard-eda/src/schematic.rs	every_motor_net_carries_its_declared_pull_down_in_the_emitted_files	killed
+E9	schematic: the resistor on the pull net	crates/aethelgard-eda/src/schematic.rs	every_motor_net_carries_its_declared_pull_down_in_the_emitted_files	killed
+E10	schematic: the resistor placed beside its motor net	crates/aethelgard-eda/src/schematic.rs	the_fixture_places_at_the_spikes_outline_with_every_gap_kept	killed
+E11	placer: a part shares its beside net	crates/aethelgard-eda/src/pcb.rs	a_part_placed_beside_a_net_goes_by_that_nets_ic_pad	killed
