@@ -50,7 +50,7 @@
   - `DrawsNoBoard` is refused only with a fab flag;
   - `run_gates` runs `board_gates` on a drawn board, or pushes `BOARD_GATES` as `not_applicable` with `reason`;
   - `passes(…, drawn)` excuses `not_applicable` only for those four gates and only when not drawn;
-  - `outcome(passed, drawn)` decides the verdict, `reason` and code in one place: `pass`/0 only on a drawn board, `not_verified`/`DrawsNoBoard`/7 on a board not drawn whose gates passed, `fail`/1 otherwise. `Report` gains `reason`, skipped when absent, and `main.rs` gains `EXIT_NOT_VERIFIED = 7`;
+  - `outcome(passed, drawn)` decides the verdict and `reason`: `pass` only on a drawn board, `not_verified`/`DrawsNoBoard` on a board not drawn whose gates passed, `fail` otherwise. `exit_code(ok, verdict)` reads the verdict as finally stated, after the fab step (which `--against-fab` can turn to `fail`): 0, 7 or 1. `Report` gains `reason`, skipped when absent, and `main.rs` gains `EXIT_NOT_VERIFIED = 7`;
   - a board file's hash is read with `get`, falling back to `""`, which never matches a hash (`BindingMismatch`), and the BOM is read only on the fab path.
   - `Gate` gains `reason`, skipped when absent, so a drawn board's verdict is byte-identical.
   - `emit_tier1`'s stand-in test drops its plain-`verify` row (out-of-list edit (c), accepted).
@@ -136,6 +136,13 @@ Findings and what was done:
 
 The adversary also noted, for D1: a second stdout line would break `solve > t.json` and, over MCP, make the call an error (`mcp.rs` accepts one line except for `campaign`). MCP drops stderr on success, so **`solve`'s banner is invisible over MCP** (§6).
 
+## 5b. A defect I introduced, caught by CI
+
+- **What:** D2's first build (`1a8a4364`, pushed at `ea46983a`) computed the exit code in `outcome` *before* the fab step. `--against-fab` on a differing package sets `ok: false`, `verdict: fail` inside `package`, but the code stayed the earlier 0.
+- **Caught by:** CI run 45103263052, tools shards 1 and 8. `against_fab_tier2::verify_against_fab_names_every_changed_and_extra_file` and `four_layer_fab_tier2::against_fab_names_a_missing_inner_layer_and_a_stackup_that_lies` both read `left: Some(0), right: Some(1)`.
+- **Why nothing earlier caught it:** only those two tier-2 tests reach a pass that the package then fails. The host suite, the image runs above and the 23 mutants never do. `the_exit_code_is_the_verdicts_whatever_the_fab_mode` starts from a failing gate.
+- **Fix (`5a0a1b33`):** `outcome` returns the verdict and reason only, and `exit_code(report.ok, report.verdict)` is read after the package, as `main`'s code read `report.ok`. The unit test asserts `exit_code(false, "fail") == 1`, and M21 covers `exit_code`'s `not_verified` arm. CI_FIX
+
 ## 6. Findings, not fixed here
 
 - **F-A (D1 (a)):** the strict topology reader that accepts and checks `lifecycle`, so the banner can be in `solve`'s verdict line and seen over MCP. The architect's row.
@@ -146,8 +153,8 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
 - **F-F:** each banner site takes `lifecycle_banner().unwrap_or_default()`, as the existing sites do. It can only swallow a failure to parse the embedded parts table, which `validate` refuses first. Read only; kept for consistency.
 - **F-G:** `cli_backlog_tier1`'s first-harness reader copies `verify::harnesses` (the bin-private parser). A test cannot reach it; reported, not removed.
 - **F-H: Kani needs more than 16 GiB for `sentinel-02-bench-hse8`'s `every_valid_sequence_spi1`**, which plain `verify` on that stand-in now reaches (base refused it with `DrawsNoBoard`). Measured above. CI runs no `verify` of it, so no gate is affected; A caller who runs one needs more than 16 GiB, measured at a 16.5 GiB peak. The kickoff's 16 GiB rule for `verify` does not cover it.
-- **F-I: MCP and exit 7.** `mcp.rs` counts only 0, 1 and 6 as successful calls. A `not_verified` run therefore returns its verdict in `structuredContent` with `isError: true`. Whether 7 is a successful call is `mcp.rs`'s question, outside this fence.
-- **F-J: `TIER2_MIN`** is in `.github/workflows/ci.yml`, outside this fence, so it stays 203 while the tier-2 count rises by one. The architect raises it.
+- **MCP and exit 7, ruled 03:30Z:** a successful call, like 1. `mcp.rs` counts 7 with 0, 1 and 6 (one line), and its unit test is now `exit_0_1_6_and_7_are_successful_calls_and_others_are_errors`; the snapshot `tests/mcp-tools.json` does not move (`mcp_snapshot_tier1` passes). Mutant M20.
+- **`TIER2_MIN`, ruled 03:30Z:** raised in `ci.yml` from 203 to **205**: `main`'s count, 204 (run 45099268629 at `d09a5187`; 2309 and 4407 add no `TIER2_RE` test), plus D2's. As ruled, one line: the value only. The comment history above it, which ends at 203, is not extended.
 
 ## 7. Gates, fence, reduction pass, mutants
 
