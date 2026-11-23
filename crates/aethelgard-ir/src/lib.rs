@@ -2374,7 +2374,7 @@ pub enum IrValidationError {
     /// refusal's.
     #[error("{0}")]
     PinDevice(pin_devices::PinDeviceRefusal),
-    /// Step 26 (`AET-WO-4300i`): a motor pull, pin or idle, a declared
+    /// Step 26 (`AET-WO-4300i`): a motor pull or pin, a declared
     /// reservation, or a hand pin at a connector; the kind is the inner
     /// refusal's.
     #[error("{0}")]

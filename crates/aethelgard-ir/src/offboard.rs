@@ -131,13 +131,12 @@ fn mcu_io(spec: &Specification) -> Result<&'static McuIo, IrValidationError> {
     }
 }
 
-/// The claimant nets a connector pin names, solved or by hand.
-fn facing_claims(spec: &Specification) -> BTreeSet<&str> {
+/// The claimants whose net a connector pin names, solved or by hand.
+fn facing_claims(spec: &Specification) -> Vec<Claimant<'_>> {
     let facing = connector_facing(spec);
     claimants(spec)
         .into_iter()
-        .map(|(_, net, _)| net)
-        .filter(|net| facing.contains(net))
+        .filter(|(_, net, _)| facing.contains(net))
         .collect()
 }
 
@@ -156,17 +155,12 @@ impl<'s> AtConnector<'s> {
     /// Refused at `mcu.part` (`PowerPartUnknown`) when a claimant faces a
     /// connector and the part has no MCU row, which step 26 refused first.
     pub(crate) fn new(spec: &'s Specification) -> Result<Self, IrValidationError> {
-        let facing = facing_claims(spec);
+        let facing: BTreeSet<&str> = facing_claims(spec).into_iter().map(|c| c.1).collect();
         let io = match facing.is_empty() {
             true => None,
             false => Some(mcu_io(spec)?),
         };
         Ok(Self { facing, io })
-    }
-
-    /// Whether `net` is a claimant's net a connector pin names.
-    pub(crate) fn faces(&self, net: &str) -> bool {
-        self.facing.contains(net)
     }
 
     /// The held structure of `pin`, if any.
@@ -176,14 +170,10 @@ impl<'s> AtConnector<'s> {
             .map(|(s, _)| s.as_str())
     }
 
-    /// Whether `pin` has a held FT structure.
-    pub(crate) fn ft(&self, pin: &str) -> bool {
-        self.structure(pin).is_some_and(is_ft)
-    }
-
-    /// Whether the solver may offer `pin` to `net`.
+    /// Whether the solver may offer `pin` to `net`: any pin when no
+    /// connector pin names `net`, else one with a held FT structure.
     pub(crate) fn offers(&self, net: &str, pin: &str) -> bool {
-        !self.faces(net) || self.ft(pin)
+        !self.facing.contains(net) || self.structure(pin).is_some_and(is_ft)
     }
 
     /// What a refusal adds for the `pins` withheld from `net` as not FT, each
@@ -296,11 +286,7 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
             ));
         }
     }
-    let facing = connector_facing(spec);
-    let at: Vec<_> = claimants(spec)
-        .into_iter()
-        .filter(|(_, net, _)| facing.contains(net))
-        .collect();
+    let at = facing_claims(spec);
     if spec.motor_outputs.is_empty() && at.is_empty() {
         return Ok(());
     }
