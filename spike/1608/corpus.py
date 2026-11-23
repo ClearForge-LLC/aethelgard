@@ -6,6 +6,9 @@ each object key (every depth) and empty each string value, one at a time, and
 run `aethelgard validate` on each mutant. Writes one JSON line per mutant to
 --rows and prints the kind counts.
 
+Each number is also set to 0, one at a time (mutant `zero`): a number a
+template keeps is a value a person may leave unread.
+
 Usage: python3 -I corpus.py --bin target/debug/aethelgard --rows OUT.jsonl SPEC...
 """
 
@@ -30,6 +33,8 @@ def paths(node, prefix=()):
             yield from paths(v, prefix + (i,))
     elif isinstance(node, str):
         yield prefix, "empty"
+    elif isinstance(node, (int, float)) and not isinstance(node, bool):
+        yield prefix, "zero"
 
 
 def mutate(doc, path, how):
@@ -39,6 +44,8 @@ def mutate(doc, path, how):
         parent = parent[p]
     if how == "delete":
         del parent[path[-1]]
+    elif how == "zero":
+        parent[path[-1]] = 0
     else:
         parent[path[-1]] = ""
     return doc
@@ -107,7 +114,7 @@ def main():
     for spec, kind in skipped:
         print(f"skipped (base refused as {kind}): {spec}", file=sys.stderr)
     print(f"specifications: {len(a.specs) - len(skipped)}, mutants: {len(rows)}")
-    for how in ("delete", "empty", None):
+    for how in ("delete", "empty", "zero", None):
         sel = [r for r in rows if how is None or r["mutant"] == how]
         c = collections.Counter(r["kind"] for r in sel)
         print(f"\n## {how or 'both'}: {len(sel)}")

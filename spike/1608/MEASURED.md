@@ -83,6 +83,16 @@ In `sentinel-01-minimal`, an emptied `acknowledge_unwitnessed[i].reason` is `Inv
 path (30 of 30), but an emptied `accept_lifecycle[0].statement` is `LifecycleStatementInvalid` with **no
 `path`**: it would fail by kind, not by path, unless that refusal gains a path (another refusal's bytes).
 
+## 3a. The bench's 30 numbers, each set to 0 (mutant `zero`)
+
+28 refuse; **7 name a `path`**: `board.rules` x4 (`RuleBelowFloor`, `UnsupportedViaRule`) and
+`StackupValue` x3. The other 21 name an `id` or nothing: `UnsupportedSchemaVersion` (`schema_version`, not a
+person's value), and
+`ZeroCapacitance` 4, `ZeroRiseTime` 4, `FinishedThickness` 3, `PinCapacitanceOutOfRange` 2,
+`UnsupportedLayerCount`, `ZeroPullUp`, `UnsupportedI2cSpeed`, `I2cAddressOutOfRange`, `ZeroSpiSpeed`,
+`ZeroNominalVoltage`, `ToleranceOutOfRange`. `mcu.bor_level` and `mcu.hse_hz` **pass** at 0 (already 0 in
+the example: 0 means not programmed, and no HSE).
+
 ## 4. The package
 
 `cargo package -p aethelgard-cli --list --allow-dirty` with `crates/aethelgard-cli/templates/bench.json`
@@ -104,5 +114,5 @@ which is what CI's include-target gate (`ci.yml:163-171`) checks. The probe file
 | P3 | empties: `InvalidIdentifier`, then `InvalidSource`, then `SchemaViolation` | `InvalidIdentifier`, then `UnwitnessedAcknowledgementStale`, then `InvalidSource` | **wrong order** |
 | P4 | an emptied `condition` passes | none passes; `condition` is `InvalidSource` with its path | **wrong** |
 | P5 | most common kind `SchemaViolation` | 56.6 % / 64.5 % | held |
-| P6 | the bench, eight placeholders | the bench, **ten** (I left out `project_name` and miscounted the capacitance pair) | count wrong |
+| P6 | the bench, eight placeholders | the bench, **ten**: the prediction named every one, `project_name` included, then counted them as eight | count wrong |
 | P7 | `templates/` packages with no manifest change | yes | held |
