@@ -2393,7 +2393,8 @@ fn a_collide_onto_a_bmp581_is_software_by_its_witness() {
 /// line below carrying a wrong register or value: a line another model
 /// writes (the ICM42688P's `bank 0` line, the BME280's `Write`/`Read`), a
 /// warning or another device's line, and a malformed one. A script in no
-/// form it reads is no evidence at all.
+/// form it reads is no evidence at all, and a BME280's witness does not read
+/// the BMP581's form.
 #[test]
 fn a_bmp581_witness_reads_only_its_models_lines_whole() {
     let identity = |r: &[Record]| {
@@ -2482,6 +2483,13 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
         *expected = vec!["[NOISY] i2c1.u5: read 0x01 -> 0x5".to_owned()];
     }
     assert!(fields_of(&r, i).is_empty(), "a malformed script");
+    // Nor does a `Write`/`Read` witness read our BMP581's form.
+    let r = two_bme(&[], |r| observe(r, "U2", &["read 0xD1 -> 0x61"]));
+    let f = fields_of(&r, witness_index(&r, "U2"));
+    assert!(
+        f.len() == 3 && f.iter().all(|f| !f.4 && f.3.is_none()),
+        "{f:?}"
+    );
 }
 
 /// Adversarial F1 (`AET-WO-3306` §6): a step is named as sent to the
