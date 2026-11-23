@@ -1682,6 +1682,8 @@ fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
             Conn::Net(aethelgard_ir::names::motor_pull_net(&m.label)),
             to,
         )?;
+        // belt-and-suspenders: `power::resistor` has just pushed this part, so
+        // the list is never empty here; refused by name rather than unwrapped.
         let part = b
             .parts
             .last_mut()
@@ -1700,6 +1702,8 @@ fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
             None,
         )?;
         if m.pull.fitment == aethelgard_ir::motor::PullFitment::Open {
+            // belt-and-suspenders: `power::two_pin` has just pushed the link,
+            // so the list is never empty here; refused by name, not unwrapped.
             let part = b
                 .parts
                 .last_mut()

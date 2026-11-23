@@ -2458,7 +2458,7 @@ fn motor_pull_bound(raw: RawMotorPullBound, r: &mut Reader<'_>) -> Result<MotorP
         b.input_low_max_permille.value,
         b.margin_permille.value,
     );
-    if high >= 1000 || low >= high || margin >= low || high + margin >= 1000 {
+    if low >= high || margin >= low || high + margin >= 1000 {
         return Err(format!(
             "`{f}` holds input high {high}, input low {low} and margin {margin} permille: each threshold below 1000 and low below high, and the margin leaves both above zero (low - margin > 0, 1000 - (high + margin) > 0)"
         ));

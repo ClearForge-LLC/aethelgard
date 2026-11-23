@@ -831,12 +831,7 @@ fn a_motor_link_absent_is_missing() {
     pads.1.retain(|(r, _), _| r != LINK);
     let f = judge(&spec, &pads, &board);
     let m = motor_findings(&f);
-    assert_eq!(
-        m.iter().map(|x| x.0).collect::<Vec<_>>(),
-        ["motor_link_missing"],
-        "{:?}",
-        f.findings
-    );
+    assert_eq!(motor_kinds(&f), ["motor_link_missing"], "{:?}", f.findings);
     assert!(m[0].1.contains("MOTOR1") && m[0].1.contains(LINK), "{m:?}");
 }
 
@@ -885,11 +880,7 @@ fn a_motor_link_off_its_nets_fails_by_name() {
         }
         let f = judge(&spec, &p, &board);
         let m = motor_findings(&f);
-        assert_eq!(
-            m.iter().map(|x| x.0).collect::<Vec<_>>(),
-            want,
-            "{why}: {m:?}"
-        );
+        assert_eq!(motor_kinds(&f), want, "{why}: {m:?}");
         let off = m.iter().find(|x| x.0 == "motor_link_off_net").unwrap();
         assert!(off.1.contains("MOTOR1") && off.1.contains(LINK), "{m:?}");
     }
@@ -938,11 +929,7 @@ fn a_motor_link_of_another_part_or_footprint_fails_by_name() {
         };
         let f = judge(&spec, &p, &board);
         let m = motor_findings(&f);
-        assert_eq!(
-            m.iter().map(|x| x.0).collect::<Vec<_>>(),
-            ["motor_link_footprint"],
-            "{why}: {m:?}"
-        );
+        assert_eq!(motor_kinds(&f), ["motor_link_footprint"], "{why}: {m:?}");
         assert!(m[0].1.contains(why) && m[0].1.contains(LINK), "{m:?}");
     }
 }
@@ -960,12 +947,10 @@ fn a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name() {
     assert!(text.contains(&comp));
     for mark in ["dnp", "exclude_from_bom", "exclude_from_board"] {
         let edit = text.replace(&comp, &format!("{comp} (property (name \"{mark}\"))"));
-        let m = motor_findings(&judge_text(&spec, &edit, &board))
-            .iter()
-            .map(|x| (x.0, x.1.to_owned()))
-            .collect::<Vec<_>>();
+        let f = judge_text(&spec, &edit, &board);
+        let m = motor_findings(&f);
         assert_eq!(
-            m.iter().map(|x| x.0).collect::<Vec<_>>(),
+            motor_kinds(&f),
             ["motor_link_fitment"],
             "fitted, {mark}: {m:?}"
         );
@@ -978,15 +963,9 @@ fn a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name() {
     // Populated.
     let mut p = open_pads.clone();
     p.3.remove(LINK);
-    let m = motor_findings(&judge(&open, &p, &open_board))
-        .iter()
-        .map(|x| (x.0, x.1.to_owned()))
-        .collect::<Vec<_>>();
-    assert_eq!(
-        m.iter().map(|x| x.0).collect::<Vec<_>>(),
-        ["motor_link_fitment"],
-        "{m:?}"
-    );
+    let f = judge(&open, &p, &open_board);
+    let m = motor_findings(&f);
+    assert_eq!(motor_kinds(&f), ["motor_link_fitment"], "{m:?}");
     assert!(m[0].1.contains(LINK) && m[0].1.contains("`open`"), "{m:?}");
     // `dnp` and something more.
     let text = netlist_text(&open_pads);
@@ -1017,15 +996,9 @@ fn a_second_part_across_a_motor_link_fails_by_name() {
             p.0.insert(r.into(), v.into());
             p.1.insert((r.into(), "1".into()), "/MOTOR1".into());
             p.1.insert((r.into(), "2".into()), "/MOTOR1_PD".into());
-            let m = motor_findings(&judge(spec, &p, board))
-                .iter()
-                .map(|x| (x.0, x.1.to_owned()))
-                .collect::<Vec<_>>();
-            assert_eq!(
-                m.iter().map(|x| x.0).collect::<Vec<_>>(),
-                ["motor_link_count"],
-                "{r}: {m:?}"
-            );
+            let f = judge(spec, &p, board);
+            let m = motor_findings(&f);
+            assert_eq!(motor_kinds(&f), ["motor_link_count"], "{r}: {m:?}");
             assert!(m[0].1.contains(r) && m[0].1.contains(LINK), "{m:?}");
         }
     }

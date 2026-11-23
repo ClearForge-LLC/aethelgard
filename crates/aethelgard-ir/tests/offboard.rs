@@ -1126,12 +1126,12 @@ fn a_motor_idling_high_validates_pulled_down() {
 
 // ------------------------------------------------------ the power-parts row
 
-fn mcu_row(t: &Value) -> usize {
+fn row_of(t: &Value, part: &str) -> usize {
     t["parts"]
         .as_array()
         .unwrap()
         .iter()
-        .position(|p| p["part"] == "STM32H753ZITx")
+        .position(|p| p["part"] == part)
         .unwrap()
 }
 
@@ -1175,7 +1175,7 @@ fn the_mcu_row_holds_the_bound_inputs_and_refuses_them_malformed() {
 
     let edited = |path: &[&str], value: Option<Value>| {
         let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
-        let r = mcu_row(&t);
+        let r = row_of(&t, "STM32H753ZITx");
         let mut at = &mut t["parts"][r]["kind"]["mcu"]["io"]["motor_pull_bound"];
         for k in &path[..path.len() - 1] {
             at = &mut at[*k];
@@ -1289,12 +1289,7 @@ fn the_jumper_row_is_held_and_refuses_it_malformed() {
     }
     let edited = |edit: &dyn Fn(&mut Value)| {
         let mut t: Value = serde_json::from_str(POWER_PARTS_JSON).unwrap();
-        let r = t["parts"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .position(|p| p["part"] == "CRCW0402_Z_0")
-            .unwrap();
+        let r = row_of(&t, "CRCW0402_Z_0");
         edit(&mut t["parts"][r]["kind"]["jumper"]);
         parse_power_parts(&t.to_string())
     };

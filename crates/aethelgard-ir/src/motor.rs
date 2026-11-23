@@ -216,15 +216,6 @@ pub enum PullFitment {
     Open,
 }
 
-impl PullFitment {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Fitted => "fitted",
-            Self::Open => "open",
-        }
-    }
-}
-
 /// What an output's ESC is (`AET-WO-2304` D2, `2304b` §1.2): today only
 /// `none`, an output that drives no ESC fed through the board, with its
 /// source. `AET-WO-4500` adds a part beside it. A battery sag on a board

@@ -1223,7 +1223,7 @@ fn motor_pulls(
                     fail(
                         "motor_link_fitment",
                         format!(
-                            "{}'s link {linked} is marked {}, and the output is declared `{}`: {}",
+                            "{}'s link {linked} is marked {}, and the output is declared {}",
                             m.label,
                             if c.marks.is_empty() {
                                 "populated".to_owned()
@@ -1234,10 +1234,9 @@ fn motor_pulls(
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             },
-                            m.pull.fitment.name(),
                             match m.pull.fitment {
-                                PullFitment::Fitted => "populated, with no `dnp`",
-                                PullFitment::Open => "`dnp` alone",
+                                PullFitment::Fitted => "`fitted`: populated, with no `dnp`",
+                                PullFitment::Open => "`open`: `dnp` alone",
                             }
                         ),
                     );
