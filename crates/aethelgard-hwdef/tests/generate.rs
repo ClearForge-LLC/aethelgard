@@ -574,11 +574,13 @@ fn each_motor_line_s_pull_follows_its_fitment() {
         }
     };
     let check = |t: &SolvedTopology| check_text(t, &generate(t).unwrap().text);
-    let fitted = topology(BOARDS[2].1);
-    let open = topology(BOARDS[3].1);
+    let board = |name: &str| BOARDS.iter().find(|b| b.0 == name).unwrap();
+    let (fitted_b, open_b) = (board("serial-dshot-9600"), board("serial-dshot-9600-open"));
+    let fitted = topology(fitted_b.1);
+    let open = topology(open_b.1);
     // The committed files themselves, pin by pin.
-    check_text(&fitted, BOARDS[2].2);
-    check_text(&open, BOARDS[3].2);
+    check_text(&fitted, fitted_b.2);
+    check_text(&open, open_b.2);
     for (t, want) in [
         (&fitted, PullFitment::Fitted),
         (&pwm_board(), PullFitment::Fitted),
