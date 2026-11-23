@@ -9,7 +9,7 @@ fn main() {
     let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
     let clock = rcc.reset_clock(&mut r, &scale2).unwrap();
-    let kernels = rcc.select_spi_kernels(&mut r, &clock);
+    let kernels = rcc.select_spi_kernels(&mut r, &clock, 9744).unwrap();
     let a = rcc.enable_gpioa(&mut r, board.gpioa, scale2).split(&mut r);
     let sck = a.pa5.into_spi1_sck(&mut r);
     let mosi = a.pa7.into_spi1_mosi(&mut r);

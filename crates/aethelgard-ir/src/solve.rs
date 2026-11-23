@@ -598,6 +598,22 @@ fn solve_inner(
         let c = spi_controller(&bus.id, p, declared, &out.clock)?;
         out.spi_controllers.insert(p.clone(), c);
     }
+    // `per_ck` is selected away from `SPI123SEL`'s reset input `pll1_q_ck`,
+    // so PLL1 runs from the HSI across the select (`AET-WO-4240e` D1 (a)).
+    if out.clock.hse.is_none()
+        && out
+            .spi_controllers
+            .values()
+            .any(|c| c.kernel == SpiKernel::PerCk)
+    {
+        let [pllckselr, pllcfgr, pll1divr] =
+            hsi_switch_words().expect("the HSI's band has a PLL1 setting (unit test)");
+        out.clock.kernel_switch = Some(crate::clock::SolvedKernelSwitch {
+            pllckselr,
+            pllcfgr,
+            pll1divr,
+        });
+    }
     for bus in &spec.i2c_buses {
         let p = out.assignments[&bus.sda.net].peripheral.clone();
         let t = i2c_controller(&bus.id, &out.clock, &p)?;
@@ -718,6 +734,16 @@ fn solve_inner(
         &mut out.adc_inputs,
     )?;
     crate::pin_devices::reset_held(spec, &out)?;
+    // The ADCs a pin device's input enables (a power sense is not converted
+    // by the bring-up) convert on `adc_sclk` / 4, `CKMODE` `11` (`1211b`;
+    // `AET-WO-4240e`, the ruling on the ADC): `ADCSEL`'s reset input,
+    // `pll2_p_ck`, never runs.
+    let sensed: BTreeSet<&String> = out.power.iter().flat_map(|p| p.sense.keys()).collect();
+    if out.adc_inputs.keys().any(|net| !sensed.contains(net)) {
+        out.clock.adc = Some(crate::clock::SolvedAdcClock {
+            ckmode: ADC_CKMODE_SCLK_DIV4,
+        });
+    }
     // An IN/IN bridge's two motor outputs share one timer (`1211` §2.7 (e)).
     for (bridge, first, second) in crate::pin_devices::in_in_motor_pairs(spec) {
         let timer = |l: &str| out.assignments[l].peripheral.clone();
@@ -957,6 +983,10 @@ fn flash_acr_vos2(hclk_fastest_hz: u64) -> Option<u32> {
         .map(|(_, latency, wrhighfreq)| wrhighfreq << 4 | latency)
 }
 
+/// `ADCx_CCR.CKMODE` `11`: `adc_sclk` / 4 (RM0433 Rev 9 p. 1039), the
+/// synchronous clock every generated ADC converts on (`AET-WO-1211b`).
+const ADC_CKMODE_SCLK_DIV4: u32 = 0b11;
+
 /// H1's `sys_ck` (`4240` D1): 64 MHz, so every kernel runs where the reset
 /// tree's does.
 const H1_SYS_HZ: u64 = 64_000_000;
@@ -1018,6 +1048,59 @@ pub(crate) fn h1_words(num: u64, den: u64) -> Option<[u32; 3]> {
                 1 << 24 | (p - 1) << 16 | (p - 1) << 9 | (n - 1),
             ]);
         }
+    }
+    None
+}
+
+/// The solver's choice of PLL1 words for the kernel-clock switch on a board
+/// with no HSE tree (`AET-WO-4240e` D1 (a)), `[PLLCKSELR, PLLCFGR,
+/// PLL1DIVR]`, from the HSI across its whole budget ([`crate::clock::Budget::HSI`],
+/// 62,342,784–64,958,976 Hz). PLL1's reset words do not serve: `DIVM1` 32
+/// gives a 2 MHz reference, the wide VCO's floor (DS12117 Rev 10 Table 39,
+/// p. 129), which the HSI's slow side falls under.
+/// - `PLLSRC` `00`, `hsi_ck` (RM0433 Rev 9 p. 399); `DIVM2` = `DIVM3` = 0;
+/// - `DIVM1` the least, 1 to 63, whose reference across the band lies
+///   strictly inside one `PLL1RGE` range at or above 2 MHz (2–4, 4–8,
+///   8–16 MHz, p. 402), the wide VCO's input range;
+/// - `PLL1VCOSEL` wide (0), `PLL1FRACEN` 0; `DIVN1` the least, 4 to 512,
+///   whose VCO across the band lies in 192–836 MHz (Table 39, the stricter
+///   silicon revision);
+/// - `DIVQ1` the least, 1 to 128, whose `pll1_q_ck` at the band's top is at
+///   most 200 MHz, VOS Scale 3's ceiling (Table 39, p. 130), so it holds at
+///   any scale; `DIVQ1EN` the only output enable; `DIVP1` and `DIVR1` at
+///   their reset 1 (÷2; 0 is "not allowed", p. 403).
+///
+/// `None` when no setting exists. The solver's; the rule shares none of it
+/// (`RUL-20`).
+pub(crate) fn hsi_switch_words() -> Option<[u32; 3]> {
+    const RANGES: [(u64, u64, u32); 3] = [
+        (2_000_000, 4_000_000, 0b01),
+        (4_000_000, 8_000_000, 0b10),
+        (8_000_000, 16_000_000, 0b11),
+    ];
+    let budget = crate::clock::Budget::HSI;
+    let (slow, fast) = (budget.slowest_hz(64_000_000), budget.fastest_hz(64_000_000));
+    for m in 1..=63u64 {
+        let (lo_ref, hi_ref) = (slow / m, fast.div_ceil(m));
+        let Some(&(_, _, rge)) = RANGES
+            .iter()
+            .find(|&&(lo, hi, _)| lo < lo_ref && hi_ref < hi)
+        else {
+            continue;
+        };
+        let Some(n) =
+            (4..=512u64).find(|n| slow * n / m >= 192_000_000 && fast * n / m < 836_000_000)
+        else {
+            continue;
+        };
+        let q = (1..=128u64).find(|q| (fast * n).div_ceil(m * q) <= 200_000_000)?;
+        let w = |v: u64| u32::try_from(v).ok();
+        let (m, n, q) = (w(m)?, w(n)?, w(q)?);
+        return Some([
+            m << 4,
+            1 << 17 | rge << 2,
+            1 << 24 | (q - 1) << 16 | 1 << 9 | (n - 1),
+        ]);
     }
     None
 }
@@ -2990,6 +3073,17 @@ mod differential {
         );
         assert_eq!(err.claimants(), ["I2C_BUS_0"]);
         assert!(i2c_controller("I2C_BUS_0", &SolvedClock::reset(), "I2C1").is_ok());
+    }
+
+    /// `AET-WO-4240e`: the switch's PLL1 from the HSI. `DIVM1` 5 (4 gives
+    /// 16.24 MHz at the band's top, over `PLL1RGE` `11`'s 16), reference
+    /// 12,468,556–12,991,795 Hz in `RGE` `11`; `DIVN1` 16 (VCO
+    /// 199,496,908–207,868,723 Hz, 15 under 192 MHz at the bottom); `DIVQ1` 2
+    /// (103.9 MHz; 1 is 207.9 MHz, over 200); `DIVQ1EN` alone, `PLLSRC` `00`,
+    /// `DIVP1` and `DIVR1` at their reset 1.
+    #[test]
+    fn the_switch_words_hold_across_the_hsi_band() {
+        assert_eq!(hsi_switch_words(), Some([0x50, 0x0002_000C, 0x0101_020F]));
     }
 
     #[test]

@@ -159,6 +159,21 @@ pub enum BoardError {
         "ADC input `{net}` on an HSE board: the ADC bring-up and its proof are written for the reset clock (AET-WO-1211b)"
     )]
     AdcOnHseNotGenerated { net: String },
+    /// `AET-WO-4240e` (the ruling on the ADC): the ADC bring-up converts on
+    /// `adc_sclk` / 4, `ADCx_CCR.CKMODE` `11`, and its bounds are counted for
+    /// that clock; the topology's `clock.adc` must say so, and nothing else is
+    /// substituted (`INV-06`).
+    #[error(
+        "ADC input `{net}`: the solved topology's clock.adc.ckmode is {found:?}, and the ADC bring-up is written for 3 (adc_sclk / 4, RM0433 Rev 9 p. 1039; AET-WO-4240e)"
+    )]
+    AdcClockNotGenerated { net: String, found: Option<u32> },
+    /// `AET-WO-4240e` (D5, ruled): an enabled kernel-clocked peripheral with
+    /// no running kernel clock at its start, by RM0433 Rev 9 pp. 371–372, as
+    /// `aethelgard_ir::kernel_clock::check` judges the topology. Its kind is
+    /// the rule's (`KernelClockDeadSwitch`, `KernelClockNotRunning`,
+    /// `KernelClockUnknown`).
+    #[error("{0}")]
+    KernelClock(aethelgard_ir::kernel_clock::KernelClockRefusal),
     /// `AET-WO-1211b` S1: the solved topology carries no resolution for a
     /// device ADC input, and none is substituted (`INV-06`).
     #[error(
@@ -239,6 +254,8 @@ impl BoardError {
             Self::HsePollsOverflow { .. } => "HsePollsOverflow",
             Self::AdcNotGenerated { .. } => "AdcNotGenerated",
             Self::AdcOnHseNotGenerated { .. } => "AdcOnHseNotGenerated",
+            Self::AdcClockNotGenerated { .. } => "AdcClockNotGenerated",
+            Self::KernelClock(r) => r.kind(),
             Self::AdcResolutionNotSolved { .. } => "AdcResolutionNotSolved",
             Self::AdcResolutionNotCommon { .. } => "AdcResolutionNotCommon",
             Self::AdcResolutionsDiffer { .. } => "AdcResolutionsDiffer",
@@ -303,6 +320,14 @@ fn hsi_slowest(hz: u64) -> u64 {
 /// not hold is refused by the clock's name, so a refused tree is never
 /// generated. `SolvedTopology::validate` refuses most such trees first.
 pub fn check_silicon(solved: &SolvedTopology) -> Result<(), BoardError> {
+    // Every enabled kernel-clocked peripheral's clock at its start, first
+    // (`AET-WO-4240e`): the rules below take a kernel clock as given.
+    if let Some(refusal) = aethelgard_ir::kernel_clock::check(solved)
+        .into_iter()
+        .next()
+    {
+        return Err(BoardError::KernelClock(refusal));
+    }
     let rule = vos::judge_generated(solved);
     if !rule.holds() {
         if let Some(c) = rule.clocks.iter().find(|c| c.holds != Some(true)) {
@@ -1365,6 +1390,9 @@ struct Plan {
     oracle_adcs: BTreeMap<String, adc::OracleAdc>,
     /// The HSE tree (`AET-WO-4240b`), `None` on a board that runs on the HSI.
     hse: Option<HsePlan>,
+    /// PLL1 from the HSI across the kernel-clock selects (`AET-WO-4240e`
+    /// D1 (a)): the topology's `clock.kernel_switch`, `None` without one.
+    switch: Option<SwitchPlan>,
     /// The topology's clock, for the oracle only (its budgets, `aethelgard_ir`).
     ir_clock: aethelgard_ir::motor::SolvedClock,
 }
@@ -1630,6 +1658,49 @@ struct HsePlan {
     /// The reads of the `HSERDY`, `PLL1RDY` and `SWS` waits.
     polls: [u32; 3],
 }
+
+/// The kernel-clock switch's PLL1 (`AET-WO-4240e` D1 (a)): the topology's
+/// three words and the `PLL1RDY` wait's bound in reads.
+#[derive(Debug, Clone)]
+struct SwitchPlan {
+    pllckselr: u32,
+    pllcfgr: u32,
+    pll1divr: u32,
+    /// The reads of `RCC_CR` the `PLL1RDY` wait makes: [`PLL_LOCK_US`] at
+    /// HSI's fastest, one read at least one core cycle, rounded up.
+    pll_polls: u32,
+}
+
+impl SwitchPlan {
+    fn new(k: &aethelgard_ir::clock::SolvedKernelSwitch) -> Result<Self, BoardError> {
+        let hz = hsi_fastest(RESET_HZ);
+        Ok(Self {
+            pllckselr: k.pllckselr,
+            pllcfgr: k.pllcfgr,
+            pll1divr: k.pll1divr,
+            pll_polls: (u128::from(PLL_LOCK_US) * u128::from(hz))
+                .div_ceil(1_000_000)
+                .try_into()
+                .map_err(|_| BoardError::HsePollsOverflow {
+                    wait: "PLL1RDY",
+                    us: u64::from(PLL_LOCK_US),
+                    hz,
+                })?,
+        })
+    }
+}
+
+/// The reads of the select register the switch makes after its last select
+/// write and before `PLL1ON` is cleared (`AET-WO-4240e`): RM0433 Rev 9 p. 371
+/// gates the kernel clock "during 2 clock cycles of the previously selected
+/// clock and 2 clock cycles of the new selected clock" and asks both to run
+/// through it. The slowest of the two here is `per_ck`, the HSI at its
+/// slowest, 62,342,784 Hz, and `pll1_q_ck` is faster (the topology's words,
+/// held by `aethelgard_ir::kernel_clock`), so the transition is under four
+/// HSI cycles at its slowest, 64.2 ns. A read takes at least one core cycle on
+/// the HSI, 15.4 ns at its fastest: eight reads, at least 123 ns, cover it 1.9
+/// times over; the first also orders the select write before them.
+pub const SWITCH_READS: u32 = 8;
 
 /// `PLL1RDY`'s bound, µs: DS12117 Rev 10 Table 39 (rev Y, p. 130) = Table 136
 /// (rev V), PLL lock time 150 µs maximum.
@@ -2123,6 +2194,15 @@ impl Plan {
                         net: p.inputs[0].net.clone(),
                     });
                 }
+                let found = solved.clock.adc.as_ref().map(|a| a.ckmode);
+                if let Some(p) = adcs.values().next()
+                    && found != Some(adc::CKMODE_SCLK_DIV4)
+                {
+                    return Err(BoardError::AdcClockNotGenerated {
+                        net: p.inputs[0].net.clone(),
+                        found,
+                    });
+                }
                 adcs
             },
             bridges: bridge_plans(solved)?,
@@ -2138,6 +2218,12 @@ impl Plan {
                 .hse
                 .as_ref()
                 .map(|h| HsePlan::new(h, u64::from(solved.clock.sysclk_hz)))
+                .transpose()?,
+            switch: solved
+                .clock
+                .kernel_switch
+                .as_ref()
+                .map(SwitchPlan::new)
                 .transpose()?,
             ir_clock: solved.clock.clone(),
         })
@@ -2484,6 +2570,9 @@ struct Facts {
     pwr: PwrFacts,
     /// An HSE board's clock bring-up registers (`AET-WO-4240b`).
     hse: Option<HseFacts>,
+    /// The same registers and positions for the kernel-clock switch's PLL1
+    /// (`AET-WO-4240e`), `None` without a switch.
+    switch: Option<HseFacts>,
 }
 
 /// The registers and fields an HSE board's bring-up writes and polls
@@ -3024,6 +3113,11 @@ impl Facts {
                 .as_ref()
                 .map(|_| HseFacts::new(f, &rcc))
                 .transpose()?,
+            switch: plan
+                .switch
+                .as_ref()
+                .map(|_| HseFacts::new(f, &rcc))
+                .transpose()?,
             flash,
             pwr: PwrFacts::new(f)?,
             rcc_base: f.base("RCC")?,
@@ -3465,8 +3559,23 @@ fn emit_lib(plan: &Plan, facts: &Facts, speeds: &Speeds) -> String {
              pub struct SpiKernels {\n    \
                  _private: (),\n\
              }\n\
+             \n\
+             /// A kernel-clock selection that could not be made (`AET-WO-4240e`).\n\
+             #[derive(Clone, Copy, PartialEq, Eq, Debug)]\n\
+             pub enum KernelClockFault {\n    \
+                 /// `RCC_CR.PLL1RDY` did not read 1 within its bound, before any select.\n    \
+                 Pll1NotLocked,\n\
+             }\n\
              \n",
         );
+        if plan.switch.is_some() {
+            let _ = writeln!(
+                w,
+                "/// The reads of the last select register through the kernel mux's transition\n\
+                 /// (RM0433 Rev 9 p. 371): see `aethelgard_svd_hal::board::SWITCH_READS`.\n\
+                 pub const SWITCH_READS: u32 = {SWITCH_READS};\n"
+            );
+        }
     }
     // Speeds.
     for (name, (hz, admitted)) in speeds {
@@ -4514,7 +4623,7 @@ fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
             format!("    /// - `{name}`: {kernel}, {} Hz.", c.kernel_hz)
         })
         .collect();
-    let writes: Vec<String> = facts
+    let selects: Vec<String> = facts
         .kernel_selects
         .iter()
         .map(|s| {
@@ -4524,18 +4633,85 @@ fn emit_select_kernels(w: &mut String, facts: &Facts, plan: &Plan) {
             )
         })
         .collect();
+    let (doc, body, polls) = match (&plan.switch, &facts.switch) {
+        (Some(k), Some(f)) => {
+            let hsion = 1u32 << f.hsion;
+            let pll1on = 1u32 << f.pll1on;
+            let pll1rdy = 1u32 << f.pll1rdy;
+            let last = facts.kernel_selects.last().map_or(0, |s| s.offset);
+            (
+                "    /// `SPI123SEL` leaves its reset input `pll1_q_ck`, and a kernel mux switches only\n    \
+                 /// while its old and new inputs both run (RM0433 Rev 9 \u{a7}8.5.10, pp. 371\u{2013}372;\n    \
+                 /// `AET-WO-4240e`): PLL1 from the HSI, its three words as solved (`clock.kernel_switch`)\n    \
+                 /// with PLL1 off, `PLL1ON`, at most `pll_polls` reads for `PLL1RDY`; the selects;\n    \
+                 /// [`SWITCH_READS`] reads of the last select register through the transition, one\n    \
+                 /// line each; then\n    \
+                 /// `PLL1ON` cleared, since nothing else takes a clock from PLL1. A lock that does\n    \
+                 /// not come is [`KernelClockFault::Pll1NotLocked`], with nothing written after it.\n"
+                    .to_owned(),
+                format!(
+                    "        r.write(TOKEN, Block::Rcc, {pllckselr_at:#05x}, {pllckselr:#010x}); // PLLCKSELR: PLLSRC hsi_ck\n        \
+                     r.write(TOKEN, Block::Rcc, {pllcfgr_at:#05x}, {pllcfgr:#010x}); // PLLCFGR: DIVQ1EN\n        \
+                     r.write(TOKEN, Block::Rcc, {pll1divr_at:#05x}, {pll1divr:#010x}); // PLL1DIVR\n        \
+                     r.write(TOKEN, Block::Rcc, {cr:#05x}, {on:#010x}); // CR: HSION, PLL1ON\n        \
+                     let mut locked = false;\n        \
+                     for _ in 0..pll_polls {{\n            \
+                         if r.read(TOKEN, Block::Rcc, {cr:#05x}) & {rdy:#010x} != 0 {{\n                \
+                             locked = true;\n                \
+                             break;\n            \
+                         }}\n        \
+                     }}\n        \
+                     if !locked {{\n            \
+                         return Err(KernelClockFault::Pll1NotLocked); // PLL1RDY\n        \
+                     }}\n\
+                     {selects}\n\
+                     {settle}        \
+                     r.write(TOKEN, Block::Rcc, {cr:#05x}, {hsion:#010x}); // CR: HSION, PLL1ON cleared\n",
+                    pllckselr_at = f.pllckselr,
+                    pllckselr = k.pllckselr,
+                    pllcfgr_at = f.pllcfgr,
+                    pllcfgr = k.pllcfgr,
+                    pll1divr_at = f.pll1divr,
+                    pll1divr = k.pll1divr,
+                    cr = f.cr,
+                    on = hsion | pll1on,
+                    rdy = pll1rdy,
+                    selects = selects.join("\n"),
+                    // Straight-line, so no harness's unwind bound meets a loop
+                    // here (`spi_kernels_token`).
+                    settle = (0..SWITCH_READS)
+                        .map(|_| format!("        let _ = r.read(TOKEN, Block::Rcc, {last:#05x}); // the transition\n"))
+                        .collect::<String>(),
+                ),
+                "pll_polls",
+            )
+        }
+        _ => (
+            "    /// Each select leaves a reset input that runs, so no PLL is started, and the\n    \
+             /// call never faults (`AET-WO-4240e`).\n"
+                .to_owned(),
+            format!("{}\n", selects.join("\n")),
+            "_pll_polls",
+        ),
+    };
     let _ = writeln!(
         w,
         "\n    /// Selects each solved SPI controller's kernel clock, every select register\n    \
          /// written whole, every other field at its reset value, 0 (RM0433 Rev 9\n    \
-         /// §8.7.20, §8.7.22), and none read: Renode 1.17.0 stores no selection.\n\
+         /// \u{a7}8.7.20, \u{a7}8.7.22), and none read back for its value: Renode 1.17.0 stores no\n    \
+         /// selection.\n\
+         {doc}\
          {kernels}\n    \
-         pub fn select_spi_kernels<R: Registers>(&mut self, r: &mut R, _clock: &ResetClock) -> SpiKernels {{\n\
-         {writes}\n        \
-             SpiKernels {{ _private: () }}\n    \
+         pub fn select_spi_kernels<R: Registers>(\n        \
+             &mut self,\n        \
+             r: &mut R,\n        \
+             _clock: &ResetClock,\n        \
+             {polls}: u32,\n    \
+         ) -> Result<SpiKernels, KernelClockFault> {{\n\
+         {body}        \
+             Ok(SpiKernels {{ _private: () }})\n    \
          }}",
         kernels = kernels.join("\n"),
-        writes = writes.join("\n"),
     );
 }
 
@@ -5218,9 +5394,14 @@ fn footprint(plan: &Plan, facts: &Facts, action: &Action) -> Footprint {
         }
         // Each select register is written whole; the offsets are the oracle's
         // (`aethelgard_ir::silicon::spi_words`).
+        // With the switch's PLL1 the harnesses take the token
+        // (`spi_kernels_token`), so the image's RCC is never written here
+        // (`AET-WO-4240e`; `spi_kernel_switch_is_in_order_bounded_and_named`).
         Action::SelectKernels => {
-            for (offset, _) in oracle_selects(plan) {
-                add("Rcc".to_owned(), offset, !0);
+            if plan.switch.is_none() {
+                for (offset, _) in oracle_selects(plan) {
+                    add("Rcc".to_owned(), offset, !0);
+                }
             }
         }
         Action::TimerStart(n) => {
@@ -5344,6 +5525,9 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
     emit_timer_proofs(w, plan, facts);
     emit_flash_proof(w);
     emit_pwr_proof(w, plan);
+    if let Some(k) = &plan.switch {
+        emit_switch_proof(w, plan, k, facts.rcc_words);
+    }
     if let Some(h) = &plan.hse {
         emit_hse_proof(w, plan, h, facts.rcc_words);
         // Every targeted harness takes its token from the stub
@@ -5363,6 +5547,26 @@ fn emit_proofs(plan: &Plan, facts: &Facts, speeds: &Speeds) -> Result<String, Bo
             "",
         );
         s = s.replace(", scale2, &kernels)\n", ", scale2, &clock)\n");
+    }
+    // The kernel-clock selection (`AET-WO-4240e`): with the switch's PLL1, every
+    // harness but the switch's own takes its token from the stub
+    // (`spi_kernels_token`), as an HSE board's take the solved clock's, so its
+    // image's RCC never holds the PLL words; without one the call never faults.
+    if plan.switch.is_some() {
+        s = s.replace(
+            "rcc.select_spi_kernels(&mut img, ",
+            "spi_kernels_token(&mut rcc, ",
+        );
+    } else {
+        s = s
+            .replace(
+                "rcc.select_spi_kernels(&mut img, &clock)",
+                "rcc.select_spi_kernels(&mut img, &clock, 0).unwrap()",
+            )
+            .replace(
+                "rcc.select_spi_kernels(&mut img, clock.as_ref().unwrap())",
+                "rcc.select_spi_kernels(&mut img, clock.as_ref().unwrap(), 0).unwrap()",
+            );
     }
     Ok(s)
 }
@@ -5654,6 +5858,156 @@ fn emit_hse_proof(w: &mut String, plan: &Plan, h: &HsePlan, rcc_words: u32) {
         checks = checks.join("\n"),
     );
     let _ = plan;
+}
+
+// belt-and-suspenders: the oracle's places for the kernel-clock switch
+// (`AET-WO-4240e`), written from RM0433 Rev 9 (`RCC_PLLCKSELR` §8.7.11 0x028,
+// `RCC_PLLCFGR` §8.7.12 0x02C, `RCC_PLL1DIVR` §8.7.13 0x030); the code's come
+// from the header ([`HseFacts`]), so an error in either fails the proof.
+const ORACLE_RCC_SWITCH_WORDS: [u32; 3] = [0x028, 0x02C, 0x030];
+
+/// The switch's own harness (`AET-WO-4240e` D1 (a), the order's consistency
+/// judge the architect named): every write held to the contract's, in order,
+/// the PLL words being the topology's (`clock.kernel_switch`, which
+/// `aethelgard_ir::kernel_clock` holds) and the selects the rule's
+/// (`aethelgard_ir::silicon::spi_words`); no select before `PLL1RDY` read 1;
+/// `PLL1ON` cleared only after [`SWITCH_READS`] reads of the last select
+/// register; a lock that does not come named, with nothing written after it.
+/// Then the token the other harnesses take ([`emit_proofs`]).
+fn emit_switch_proof(w: &mut String, plan: &Plan, k: &SwitchPlan, rcc_words: u32) {
+    let selects = oracle_selects(plan);
+    let last = selects.keys().next_back().copied().unwrap_or(0);
+    let mut expect: Vec<(u32, u32)> = ORACLE_RCC_SWITCH_WORDS
+        .into_iter()
+        .zip([k.pllckselr, k.pllcfgr, k.pll1divr])
+        .collect();
+    expect.push((ORACLE_RCC_CR, ORACLE_CR_RESET | ORACLE_CR_PLL1ON));
+    let at_pll = expect.len();
+    expect.extend(selects.iter().map(|(o, v)| (*o, *v)));
+    let at_reads = expect.len();
+    expect.push((ORACLE_RCC_CR, ORACLE_CR_RESET));
+    let total = expect.len();
+    let checks: Vec<String> = expect
+        .iter()
+        .enumerate()
+        .map(|(i, (off, word))| {
+            format!(
+                "            {i} => kani::assert(block == Block::Rcc && offset == {off:#05x} && value == {word:#010x}, \"write {n} is not the contract's\"),",
+                n = i + 1
+            )
+        })
+        .collect();
+    let _ = writeln!(
+        w,
+        "\n\
+         /// RCC as `select_spi_kernels` may touch it with the switch's PLL1 (AET-WO-4240e):\n\
+         /// each write held to the contract's, in order; each `PLL1RDY` read any word.\n\
+         struct SwitchSpy {{\n    \
+             writes: usize,\n    \
+             pll_reads: u32,\n    \
+             pll: bool,\n    \
+             settle_reads: u32,\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for SwitchSpy {{}}\n\
+         \n\
+         impl Registers for SwitchSpy {{\n    \
+             fn read(&mut self, _: sealed::Token, block: Block, offset: usize) -> u32 {{\n        \
+                 let v: u32 = kani::any();\n        \
+                 if block == Block::Rcc && offset == {cr:#05x} && self.writes == {at_pll} {{\n            \
+                     kani::assert(!self.pll, \"CR polled after PLL1RDY read 1\");\n            \
+                     self.pll_reads += 1;\n            \
+                     self.pll = v & {pll1rdy:#010x} != 0;\n        \
+                 }} else if block == Block::Rcc && offset == {last:#05x} && self.writes == {at_reads} {{\n            \
+                     self.settle_reads += 1;\n        \
+                 }} else {{\n            \
+                     kani::assert(false, \"the switch read a register out of the contract's order\");\n        \
+                 }}\n        \
+                 v\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, block: Block, offset: usize, value: u32) {{\n        \
+                 match self.writes {{\n\
+         {checks}\n            \
+                     _ => kani::assert(false, \"the switch wrote more than the contract's {total} words\"),\n        \
+                 }}\n        \
+                 kani::assert(self.writes < {at_pll} || self.pll, \"a select before PLL1RDY read 1\");\n        \
+                 kani::assert(self.writes < {at_reads} || self.settle_reads >= {reads}, \"PLL1ON cleared before the transition's reads\");\n        \
+                 self.writes += 1;\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 kani::assert(false, \"the switch made a byte access\");\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{\n        \
+                 kani::assert(false, \"the switch made a byte access\");\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// `select_spi_kernels` with the switch's PLL1, on any `PLL1RDY` reads, its bound\n\
+         /// symbolic, one or two reads: the contract's {total} words, in order, once each;\n\
+         /// `SpiKernels` only once `PLL1RDY` read 1 and every word was written; a lock that does\n\
+         /// not come [`KernelClockFault::Pll1NotLocked`] after exactly its bound's reads, each 0,\n\
+         /// with nothing written after it.\n\
+         #[kani::proof]\n\
+         #[kani::unwind({unwind})]\n\
+         fn spi_kernel_switch_is_in_order_bounded_and_named() {{\n    \
+             let pb: u32 = kani::any();\n    \
+             kani::assume((1..=2).contains(&pb));\n    \
+             let mut regs = SwitchReady {{ rcc: [0; {rcc_words}] }};\n    \
+             let mut board = Board::take().unwrap();\n    \
+             let scale2 = scale2_token(board.pwr);\n    \
+             let reset = board.rcc.reset_clock(&mut regs, &scale2);\n    \
+             kani::assert(reset.is_ok(), \"the reset clock refused a reset RCC\");\n    \
+             let mut spy = SwitchSpy {{ writes: 0, pll_reads: 0, pll: false, settle_reads: 0 }};\n    \
+             match board.rcc.select_spi_kernels(&mut spy, &reset.unwrap(), pb) {{\n        \
+                 Ok(_) => {{\n            \
+                     kani::assert(spy.writes == {total} && spy.pll && spy.settle_reads == {reads}, \"SpiKernels without every word written, PLL1RDY ready and the transition's reads\");\n            \
+                     kani::cover!(true, \"the kernel clocks are switched\");\n        \
+                 }}\n        \
+                 Err(KernelClockFault::Pll1NotLocked) => {{\n            \
+                     kani::assert(spy.writes == {at_pll} && !spy.pll && spy.pll_reads == pb, \"Pll1NotLocked other than after the bound's reads of PLL1RDY, each 0, with nothing written after\");\n            \
+                     kani::cover!(true, \"PLL1RDY times out\");\n        \
+                 }}\n    \
+             }}\n\
+         }}\n\
+         \n\
+         /// RCC always ready for the switch: each word reads as last written (0 at first, the\n\
+         /// reset clock), `PLL1RDY` its ON bit.\n\
+         struct SwitchReady {{\n    \
+             rcc: [u32; {rcc_words}],\n\
+         }}\n\
+         \n\
+         impl sealed::Sealed for SwitchReady {{}}\n\
+         \n\
+         impl Registers for SwitchReady {{\n    \
+             fn read(&mut self, _: sealed::Token, _: Block, offset: usize) -> u32 {{\n        \
+                 self.rcc[offset / 4]\n    \
+             }}\n    \
+             fn write(&mut self, _: sealed::Token, _: Block, offset: usize, value: u32) {{\n        \
+                 self.rcc[offset / 4] = if offset == {cr:#05x} {{ value | ((value & {on:#010x}) << 1) }} else {{ value }};\n    \
+             }}\n    \
+             fn read8(&mut self, _: sealed::Token, _: Block, _: usize) -> u8 {{\n        \
+                 0\n    \
+             }}\n    \
+             fn write8(&mut self, _: sealed::Token, _: Block, _: usize, _: u8) {{}}\n\
+         }}\n\
+         \n\
+         /// The token the other harnesses take: the selection on [`SwitchReady`], which returns\n\
+         /// `Ok` (`spi_kernel_switch_is_in_order_bounded_and_named` proves the switch itself).\n\
+         #[allow(dead_code)]\n\
+         fn spi_kernels_token(rcc: &mut Rcc, clock: &ResetClock) -> SpiKernels {{\n    \
+             let mut regs = SwitchReady {{ rcc: [0; {rcc_words}] }};\n    \
+             let kernels = rcc.select_spi_kernels(&mut regs, clock, 1);\n    \
+             kani::assert(kernels.is_ok(), \"the switch refused a ready RCC\");\n    \
+             kernels.unwrap()\n\
+         }}",
+        cr = ORACLE_RCC_CR,
+        pll1rdy = ORACLE_CR_PLL1RDY,
+        on = ORACLE_CR_PLL1ON,
+        reads = SWITCH_READS,
+        unwind = 3,
+        checks = checks.join("\n"),
+    );
 }
 
 /// `FLASH_OPTSR_CUR`'s offset in the flash controller's block: "Address
@@ -6830,8 +7184,9 @@ fn emit_schedule(
             let _ = writeln!(w, "    rcc[{i}] = {word:#010x}; // {what}", i = offset / 4);
         }
     }
-    // Each kernel-clock select register, the rule's whole word.
-    if acts.contains(&Action::SelectKernels) {
+    // Each kernel-clock select register, the rule's whole word; with the
+    // switch's PLL1, the token's, which never writes the image (`AET-WO-4240e`).
+    if acts.contains(&Action::SelectKernels) && plan.switch.is_none() {
         for (offset, word) in oracle_selects(plan) {
             let _ = writeln!(
                 w,

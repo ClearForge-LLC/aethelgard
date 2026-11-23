@@ -260,18 +260,26 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `39db0635…279b`, each hashes to the digest before, `7df27b59…ec96`,
 /// `871c2296…1453` and `6962b767…618a`, measured by
 /// `spike/4300j/order_back.rs`; the boot image did not move.
+/// Moved in `AET-WO-4240e` (D2, D6, ruled): the specification lost its three
+/// stale selector acknowledgements, so the three texts move by their
+/// specification sha line (with `39db0635…279b` put back for
+/// `9183270c…2d4c`, the two platforms hash to the digests before,
+/// `39f2aedd…5f04` and `30f151af…c656`, measured by
+/// `spike/4240e/order_back.rs`), and `firmware/src/main.rs` also by the
+/// kernel-clock switch's fault arm and its two constants (it was
+/// `5dbf904c…ca39`); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "5dbf904ca3e16cc168ee4319c871727be0e72ec677194f1c8c397e300127ca39",
+        "25b41c339b0d751afa7205c634f4b5e01ec78952decddc496be2e4abaedbc1e5",
     ),
     (
         "platform",
-        "39f2aedd54bb00c239749bed966049a6c91e32060e21d5f0336cc01b59465f04",
+        "a92085cf192cce837708b406053609842dd5c5c6cf8407c8e73355057dd8c007",
     ),
     (
         "platform faulted",
-        "30f151af6a07a8dd803ca989267ae7d791cd55e803d352b0ae732307c92fc656",
+        "348fd55f2d66a4210227f4062fcfca8a6e81da0c6085ba33c9645cde48f2bb62",
     ),
     (
         "boot image",

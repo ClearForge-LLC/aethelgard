@@ -666,6 +666,11 @@ fn what_the_generator_cannot_write_is_refused() {
 /// `Scale2` token, so `board.rs` moves by that signature (and `Scale2`'s
 /// `Clone, Copy`, which keeps every ELF's bytes), `main.rs` and `proofs.rs` by
 /// the calls; they were `5dad6e44…c2f9`, `8184414c…5e1e` and `e8218507…6608`.
+/// Re-taken at `AET-WO-4240e` (D1 (a), D6, ruled): `select_spi_kernels` runs
+/// PLL1 from the HSI across the select and returns a `Result`, so `board.rs`
+/// moves by the switch and its fault, `main.rs` by the fault arm and its two
+/// constants, and `proofs.rs` by the switch's harness and token; they were
+/// `975b78d8…bc7f`, `8680571d…5ae8` and `65140d4a…32d0`.
 const BEFORE: [(&str, &str); 10] = [
     (
         "Cargo.lock",
@@ -693,11 +698,11 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "firmware/src/main.rs",
-        "8680571d85a9c549adbd1273e3abc79a2ad3d6651645a5a20c5468f74d775ae8",
+        "e42a3928a5867ab8b032906d2da2dfc2329dd6d2b8f58b7c7a33201faa92cd0f",
     ),
     (
         "src/board.rs",
-        "975b78d80d16e897dee79cc16636942fdce19cd51ec7f0112060bbdab9a3bc7f",
+        "55a8e870edba15045a22d05fba521fc2fefe13d6215f3bf85f83671ba41494a9",
     ),
     (
         "src/lib.rs",
@@ -705,7 +710,7 @@ const BEFORE: [(&str, &str); 10] = [
     ),
     (
         "src/proofs.rs",
-        "65140d4aae8c039236ca091257b0cdf9d6255a7fb5972eed500c94fb21e532d0",
+        "12f046b0dc878e34a17f068442e6b8fdde4c5828609e07d86d6e29429753fdda",
     ),
 ];
 

@@ -18,6 +18,7 @@ pub mod connectors;
 mod drawn;
 pub mod ds009;
 pub mod electrical;
+pub mod kernel_clock;
 pub mod motor;
 pub mod names;
 pub mod off_domain;
@@ -589,9 +590,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
 /// twin and `verify` read the solved topology alone, `RUL-16`), version 18
 /// a motor output's `pull`, its fitment, references, ohms and bound
-/// (`AET-WO-4300j` D6, D9: the generators read the topology alone); an
-/// older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 18;
+/// (`AET-WO-4300j` D6, D9: the generators read the topology alone), version
+/// 19 the clock's `kernel_switch` and `adc` (`AET-WO-4240e` D7, ADC (i):
+/// each absent when unused); an older file is refused, never defaulted
+/// (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 19;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -4732,7 +4735,15 @@ impl SolvedTopology {
         // silicon rule), never passed: `check_silicon` holds the verdict.
         // The tree is the reset one, or an HSE tree the clock rule holds
         // (`AET-WO-4240a` §1.5).
-        if self.clock.hse.is_none() && self.clock != SolvedClock::reset() {
+        // The kernel-clock switch and the ADC clock (`AET-WO-4240e`) are set
+        // aside here: `kernel_clock::check` judges them, the tree beside them
+        // is still the reset one or the HSE's.
+        let bare = |c: &SolvedClock| SolvedClock {
+            kernel_switch: None,
+            adc: None,
+            ..c.clone()
+        };
+        if self.clock.hse.is_none() && bare(&self.clock) != SolvedClock::reset() {
             return Err(E::UnsupportedClock);
         }
         clock::judge_tree(&self.clock)?;
@@ -4747,7 +4758,7 @@ impl SolvedTopology {
         // is another specification, bound only by `specification_sha256`.
         if let Some(h) = &self.clock.hse {
             let again = solve::hse_clock(&h.declared)?;
-            if again != self.clock {
+            if again != bare(&self.clock) {
                 let ours = again.hse.as_ref();
                 let field = if ours.map(clock::SolvedHse::budget) != Some(h.budget()) {
                     "the budget"

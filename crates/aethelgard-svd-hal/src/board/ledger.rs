@@ -241,11 +241,41 @@ fn registers(plan: &Plan, facts: &Facts, mode: Option<&str>) -> Result<Vec<Regis
             whole(hf.cfgr_word()),
         );
     }
-    // The kernel-clock selection, then each clock gate (a read-modify-write
-    // of its one bit).
+    // The kernel-clock switch's PLL1 (`AET-WO-4240e`): its three words and
+    // `RCC_CR` with `PLL1ON`, whole; the selection; then `RCC_CR` again with
+    // `PLL1ON` cleared. Then each clock gate (a read-modify-write of its one
+    // bit).
+    let switch = plan.switch.as_ref().zip(facts.switch.as_ref());
+    if let Some((k, sf)) = switch {
+        for (name, offset, word) in [
+            ("PLLCKSELR", sf.pllckselr, k.pllckselr),
+            ("PLLCFGR", sf.pllcfgr, k.pllcfgr),
+            ("PLL1DIVR", sf.pll1divr, k.pll1divr),
+        ] {
+            add(
+                "RCC",
+                "RCC",
+                name,
+                &format!("RCC_{name}"),
+                offset,
+                whole(word),
+            );
+        }
+        add(
+            "RCC",
+            "RCC",
+            "CR",
+            "RCC_CR",
+            sf.cr,
+            whole(1 << sf.hsion | 1 << sf.pll1on),
+        );
+    }
     for s in &facts.kernel_selects {
         let prefix = format!("RCC_{}", s.register);
         add("RCC", "RCC", s.register, &prefix, s.offset, whole(s.word));
+    }
+    if let Some((_, sf)) = switch {
+        add("RCC", "RCC", "CR", "RCC_CR", sf.cr, whole(1 << sf.hsion));
     }
     let gates = facts
         .ports
@@ -742,6 +772,11 @@ fn reset_rows(plan: &Plan, f: &RegisterFacts, bor_level: u8) -> Result<Vec<Field
         rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "HSERDY", 1));
         rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 1));
     } else {
+        // The kernel-clock switch polls `PLL1RDY` until it reads 1
+        // (`AET-WO-4240e`).
+        if plan.switch.is_some() {
+            rows.push(("RCC", "CR", rcc.offset("CR", 0)?, "PLL1RDY", 1));
+        }
         rows.push((
             "FLASH",
             "ACR",

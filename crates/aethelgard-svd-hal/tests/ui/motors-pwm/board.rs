@@ -174,6 +174,17 @@ pub struct SpiKernels {
     _private: (),
 }
 
+/// A kernel-clock selection that could not be made (`AET-WO-4240e`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum KernelClockFault {
+    /// `RCC_CR.PLL1RDY` did not read 1 within its bound, before any select.
+    Pll1NotLocked,
+}
+
+/// The reads of the last select register through the kernel mux's transition
+/// (RM0433 Rev 9 p. 371): see `aethelgard_svd_hal::board::SWITCH_READS`.
+pub const SWITCH_READS: u32 = 8;
+
 /// `I2C1` bus speeds. Each mode's `TIMINGR` is the solved topology's
 /// (`AET-WO-4230` §1.4: RM0433 Rev 9 §47.4.9 at the kernel clock, judged by
 /// `aethelgard_ir::silicon::check_i2c` before this crate was generated).
@@ -863,11 +874,48 @@ impl Rcc {
 
     /// Selects each solved SPI controller's kernel clock, every select register
     /// written whole, every other field at its reset value, 0 (RM0433 Rev 9
-    /// §8.7.20, §8.7.22), and none read: Renode 1.17.0 stores no selection.
+    /// §8.7.20, §8.7.22), and none read back for its value: Renode 1.17.0 stores no
+    /// selection.
+    /// `SPI123SEL` leaves its reset input `pll1_q_ck`, and a kernel mux switches only
+    /// while its old and new inputs both run (RM0433 Rev 9 §8.5.10, pp. 371–372;
+    /// `AET-WO-4240e`): PLL1 from the HSI, its three words as solved (`clock.kernel_switch`)
+    /// with PLL1 off, `PLL1ON`, at most `pll_polls` reads for `PLL1RDY`; the selects;
+    /// [`SWITCH_READS`] reads of the last select register through the transition, one
+    /// line each; then
+    /// `PLL1ON` cleared, since nothing else takes a clock from PLL1. A lock that does
+    /// not come is [`KernelClockFault::Pll1NotLocked`], with nothing written after it.
     /// - `SPI1`: `per_ck` (HSI at `CKPERSEL`'s reset), 64000000 Hz.
-    pub fn select_spi_kernels<R: Registers>(&mut self, r: &mut R, _clock: &ResetClock) -> SpiKernels {
+    pub fn select_spi_kernels<R: Registers>(
+        &mut self,
+        r: &mut R,
+        _clock: &ResetClock,
+        pll_polls: u32,
+    ) -> Result<SpiKernels, KernelClockFault> {
+        r.write(TOKEN, Block::Rcc, 0x028, 0x00000050); // PLLCKSELR: PLLSRC hsi_ck
+        r.write(TOKEN, Block::Rcc, 0x02c, 0x0002000c); // PLLCFGR: DIVQ1EN
+        r.write(TOKEN, Block::Rcc, 0x030, 0x0101020f); // PLL1DIVR
+        r.write(TOKEN, Block::Rcc, 0x000, 0x01000001); // CR: HSION, PLL1ON
+        let mut locked = false;
+        for _ in 0..pll_polls {
+            if r.read(TOKEN, Block::Rcc, 0x000) & 0x02000000 != 0 {
+                locked = true;
+                break;
+            }
+        }
+        if !locked {
+            return Err(KernelClockFault::Pll1NotLocked); // PLL1RDY
+        }
         r.write(TOKEN, Block::Rcc, 0x050, 0x00004000); // D2CCIP1R
-        SpiKernels { _private: () }
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        let _ = r.read(TOKEN, Block::Rcc, 0x050); // the transition
+        r.write(TOKEN, Block::Rcc, 0x000, 0x00000001); // CR: HSION, PLL1ON cleared
+        Ok(SpiKernels { _private: () })
     }
 }
 

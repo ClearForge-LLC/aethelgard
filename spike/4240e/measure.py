@@ -88,11 +88,16 @@ def measure_one(ae, root, rel, scratch):
     row["hse"] = any("hse.start(" in l for l in main)
     # The selector words select_spi_kernels writes (the emitted body).
     writes = []
-    m = re.search(r"fn select_spi_kernels.*?\n(.*?)\n\s*SpiKernels \{", board, re.S)
+    # Every RCC write in select_spi_kernels, in order (AET-WO-4240e: the
+    # switch's PLL words and RCC_CR come around the selects).
+    body_writes = []
+    m = re.search(r"fn select_spi_kernels.*?\n(.*?)\n\s*Ok\(SpiKernels \{|fn select_spi_kernels.*?\n(.*?)\n\s*SpiKernels \{", board, re.S)
     if m:
-        for w in re.finditer(r"r\.write\(TOKEN, Block::Rcc, (0x[0-9a-f]+), (0x[0-9a-f]+)\)", m.group(1)):
-            writes.append((OFFSET.get(int(w.group(1), 16), w.group(1)), int(w.group(2), 16)))
+        for w in re.finditer(r"r\.write\(TOKEN, Block::Rcc, (0x[0-9a-f]+), (0x[0-9a-f]+)\)", m.group(1) or m.group(2)):
+            body_writes.append((int(w.group(1), 16), int(w.group(2), 16)))
+    writes = [(OFFSET[o], v) for o, v in body_writes if o in OFFSET]
     row["select_writes"] = ["%s=%#010x" % w for w in writes]
+    row["switch_writes"] = ["%#05x=%#010x" % w for w in body_writes if w[0] not in OFFSET]
     # Every access to a CCIPR register anywhere in the board crate, by kind
     # (read, write, modify) and register: P1.1 shown, not inferred.
     acc = {}
@@ -155,7 +160,24 @@ def measure_one(ae, root, rel, scratch):
         if kind == "hse_start":
             running |= pll_on
         elif kind == "select":
-            for reg, word in writes:
+            pllcfgr = 0
+            for off, word in body_writes:
+                if off == 0x02C:
+                    pllcfgr = word
+                    continue
+                if off == 0x000:
+                    # RCC_CR: PLL1ON (bit 24) on runs PLL1's enabled outputs
+                    # (the bounded PLL1RDY poll precedes any select); off
+                    # stops them. PLLSRC/DIVM/VCO validity is the IR rule's.
+                    outs = {"pll1_p_ck": 16, "pll1_q_ck": 17, "pll1_r_ck": 18}
+                    if word >> 24 & 1:
+                        running |= {o for o, b in outs.items() if pllcfgr >> b & 1}
+                    else:
+                        running -= set(outs)
+                    continue
+                if off not in OFFSET:
+                    continue
+                reg = OFFSET[off]
                 for sel in list({s[:2]: s for s in SELECTOR.values() if s[0] == reg}.values()):
                     code = word >> sel[2] & ((1 << sel[3]) - 1)
                     new = sel[5].get(code, "disabled")
