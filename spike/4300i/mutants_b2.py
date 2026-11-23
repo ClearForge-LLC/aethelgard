@@ -5,9 +5,11 @@ Each mutant is applied, `cargo test -p aethelgard-cli --test <t> <filter>` is ru
 `git checkout -- <file>`. A mutant that does not compile is reported as such, never as killed."""
 import os, subprocess, sys
 SC, SU = "crates/aethelgard-eda/src/schematic.rs", "crates/aethelgard-eda/src/support.rs"
+NA = "crates/aethelgard-ir/src/names.rs"
 M = [
  ("B1", SC, "    motor_pulls(&mut b)?;\n", "", "emit_tier1", "every_motor_net_carries_its_declared_pull_down"),
- ("B2", SC, ".map(|m| &m.pull.resistor.reference),", ".map(|m| &m.pull.resistor.reference).filter(|_| false),",
+ # B2 re-anchored by the reduction pass: eda claims `names::references`, whose motor-pull line is the one copy.
+ ("B2", NA, ".map(|m| m.pull.resistor.reference.as_str()),", ".map(|m| m.pull.resistor.reference.as_str()).filter(|_| false),",
   "emit_tier1", "a_motor_pull_declared_below_the_emitters_numbers_keeps_its_reference"),
  ("B3", SU, "Some(_) => Some(text(&comp, \"footprint\")?.to_owned()),", "Some(_) => None,",
   "support_tier1", "the_motor_fixtures_pulls_pass_the_support_gate"),

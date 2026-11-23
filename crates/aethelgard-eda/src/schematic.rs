@@ -1390,26 +1390,12 @@ pub(crate) fn design(
         });
     }
     let mut used = Taken::default();
-    for r in spec
-        .declared_i2c_devices()
-        .iter()
-        .map(|d| &d.reference)
-        .chain(spec.declared_spi_devices().iter().map(|d| &d.reference))
-        .chain(spec.declared_connectors().iter().map(|c| &c.reference))
-        .chain(spec.power.iter().flat_map(aethelgard_ir::power::references))
-        .chain(spec.declared_test_points().iter().map(|t| &t.reference))
-        .chain(arms::references(spec.declared_pin_devices()))
-        .chain(
-            spec.motor_outputs
-                .iter()
-                .map(|m| &m.pull.resistor.reference),
-        )
-    {
+    for r in aethelgard_ir::names::references(spec) {
         // KiCad treats a reference starting with `#` as a virtual symbol (power,
         // flag) and drops it from the netlist and BOM, and the emitter names its
         // own power symbols and flags there.
         if r.starts_with('#') {
-            return Err(EmitError::ReservedName(r.clone()));
+            return Err(EmitError::ReservedName(r.to_owned()));
         }
         used.claim(r)
             .map_err(|holder| collision(r, holder, EmitError::DuplicateReference))?;
