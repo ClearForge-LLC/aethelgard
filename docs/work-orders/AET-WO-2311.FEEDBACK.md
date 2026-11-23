@@ -1,27 +1,35 @@
 # AET-WO-2311 — FEEDBACK: serial options seen in the twin (a measurement, then a build with one stop)
 
-**Branch:** `wo/aet-2311-serial-options-twin` from `main` `cc99de04`.
-**Builder:** Claude (Opus 5.5) as project manager. No subagents: the hook, the judge and the rule table are
+**Branch:** `wo/aet-2311-serial-options-twin` from `main` `cc99de04`; `main` `4b466f03` merged.
+**Builder:** Claude (Opus 5.5) as project manager. No subagents: the judge, its expectation and the rule table are
 gate logic, kept single-threaded.
 Written 2026-11-23.
 
-**Status: STOPPED at §1.2**, as the WO plans. Predictions: `spike/2311/PREDICTIONS.md`, committed `3ed3e7a2`
-before the CR2 run. Results: `spike/2311/RESULTS.md`.
+**Status: READY** (§8). The §1.2 stop was ruled at 13:45Z on the bus: D1 (b), D2 (b), D3, D4, the leans of D5 and D6,
+and F2 conditional. Predictions: `spike/2311/PREDICTIONS.md`, committed `3ed3e7a2` before the measurement.
+Results: `spike/2311/RESULTS.md`. Mutants: `spike/2311/mutants.py`.
 
 **The answer:**
-- **No other §7 stop fires.**
-  - Every declared port's first `CR2` write is by 0.202 s, well inside 5 s.
-  - No trace field is needed: a foreign run is never archived.
-  - No `fab/` byte moves, and no ledger row is touched.
-  - The four-port fixture has an RC port (CRSF on USART3), though no inverted port (F2).
-- **Today's foreign judge passes all three ELF mutants.** These are SWAP on SERIAL1, RXINV|TXINV on SERIAL1, and
-  TXINV on the RC port. In the twin `CR2` reads 0 for every tag.
-- **The hook pattern works,** with one hole: a half-word write at offset 4 logs exactly as a word. The hook's
-  scope has `offset` and `value`, no width (D2).
-- **Six decisions are needed before the build** (§3). Two come from measured facts the WO did not foresee:
-  - **SWAP, TXINV and RXINV take only while `UE` is clear.** RM0433 Rev 9 §48.8.3, p. 2075 says so, and ArduPilot
-    writes `CR2` with `UE` set too (D1).
-  - **The hook cannot see a write's width** (D2).
+- **`simulate --foreign` judges each declared port's `USART_CR2` options against the specification.**
+  - It reads them from the USART's access log (`LogPeripheralAccess`, D2 (b)).
+  - It judges the last word written while `CR1.UE` was clear, the word silicon keeps (D1 (b), RM0433 Rev 9 §48.8.3,
+    p. 2075).
+  - **The expectation comes from the topology alone** (`aethelgard_twin::serial::options`, `INV-07`): SWAP clear;
+    on RC input TXINV clear and RXINV unjudged; on every other port TXINV and RXINV each as `framing.inverted`.
+- **What fails, each by name:**
+  - a wrong bit: `serial_swap_set`, `serial_txinv_wrong`, `serial_rxinv_wrong`;
+  - a `UE`-set write that changes a judged bit: `serial_options_ignored`, as ruled;
+  - a non-word or misplaced write into `CR1`/`CR2`, or a log not read whole: `serial_options_unjudgeable` (D3);
+  - no `UE`-clear word at all: `serial_options_unwritten`.
+- **Each serial line's `PUPDR`** is read back at the run's end and reported as `serial_pull` (info, D5), and named in
+  `boot.serial_pulls`. Per-port judgements are in `boot.serial_options`.
+- **`ci/foreign-judge.sh` runs the four-port ELF** from the generated matrix job (D6). Run locally on the merged head,
+  every run holds (§7):
+  - unmodified ArduPilot passes, judged on all four ports;
+  - SWAP on GPS and TXINV on the RC port are refused by name, as `var_info` default patches of that ELF;
+  - GPS declared inverted refuses the unmodified ELF (TXINV and RXINV) and passes the ELF with both inverted.
+- **Unchanged:** no trace field, no `fab/` byte, no ledger row, no IR or generator change.
+- **Checks:** 16 of 16 mutants killed. The CLAUDE.md gates pass (§6).
 
 ## 1. The measurement (§1.1)
 
@@ -60,7 +68,7 @@ On the four-port ELF (built here from the committed hwdef in the pinned ArduPilo
   - A write while the USART's clock is off is dropped as locked, before the hook (silicon ignores it too).
   - The hook is armed before `RunFor`; the CLI's earlier writes are RCC only.
 
-## 2. WO §5, the adversarial items, as far as measured
+## 2. WO §5, the adversarial items, as measured at the stop
 
 - **A CR2 write the hook misses.**
   - None is missed for ArduPilot.
@@ -76,7 +84,7 @@ On the four-port ELF (built here from the committed hwdef in the pinned ArduPilo
 
   This is now verified by a test (`serial::tests::a_generated_firmware_that_sets_swap_is_refused`, committed with this stop).
 
-## 3. Decisions for the architect (§1.2)
+## 3. Decisions for the architect (§1.2), as put at the stop (ruled: see §5)
 
 **D1. Which write is judged.** The WO says the last word before the window's end. RM0433 Rev 9 §48.8.3 (p. 2075) says
 SWAP, TXINV and RXINV "can only be written when the USART is disabled (UE = 0)", and the hook's `CR1` column shows
@@ -144,7 +152,7 @@ It also gains `serial_pulls`, per line: the label, TX or RX, the pin and the pul
   owner of the generator should check the source path for SERIAL0. This is not changed here (no generator change).
 - **F2 (fixture).** The four-port fixture has no inverted port. A required RXINV/TXINV, and RXINV missing on an
   inverted port, can only be tier-1 tests on planted logs. A fixture that judges it on real firmware needs a non-RC
-  port declared `inverted` (e.g. a GPS port, `DEFAULT_SERIALn_OPTIONS 3`).
+  port declared `inverted` (e.g. a GPS port, `DEFAULT_SERIALn_OPTIONS 3`). (Since ruled and built in CI without a fixture change: §5.)
 - **F3 (a twin residual for the rule row).** `set_options` writes `CR2` only when its word differs from what it reads
   (`UARTDriver.cpp:1574`, `:1699-1709`). The twin reads every tag as 0, so ArduPilot's write sequence is the twin's,
   not silicon's: the 4.2095 s group has no clearing write. The judged word is the twin's. The rewritten `RULES` row
@@ -161,10 +169,116 @@ It also gains `serial_pulls`, per line: the label, TX or RX, the pin and the pul
   only CR2 field the model stores". The foreign judge reads written words, not the model's state. No `RULES` text is
   quoted in the ledger or in `FAB-NOTES.md` (grep).
 
-## 5. Gates
+## 5. The rulings (13:45Z, `~/.cache/aet-bus/2311.md`) and what was built
 
-For this stop: one test added in `aethelgard-twin`, run alone and passing. The CLAUDE.md gates run at the build.
+- **D1 (b):** the judged word is the last `CR2` word written with `UE` clear. A `UE`-set write that changes a judged bit
+  is `serial_options_ignored`.
+  - It counts judged bits only: on an RC port RXINV is unjudged, so ArduPilot's own search does not trip it. The
+    4.2095 s group's `UE`-set `0x40` clears only RXINV, the twin path of F3.
+- **D2 (b):** `sysbus LogPeripheralAccess sysbus.<usart> true` for each declared USART, before the run.
+  - The access log is parsed by `serial::access`, the generated judge's parse.
+  - The foreign log filter already keeps every USART write.
+  - It costs about 82 KiB on four-port (log kept 274,070 bytes, against 191,744 before).
+- **D3:** fail closed by name (above).
+- **D4:** the kinds as proposed, plus `serial_options_ignored` for the D1 rule. The text is in
+  `renode::foreign::judge_serial`.
+- **D5 (14:35Z):** pulls recorded, info.
+- **D6 (14:35Z):** in `ci/foreign-judge.sh`:
+  - sentinel-02-own's `mcu.foreign_clock` is derived onto four-port;
+  - the mutations are `var_info` default patches, with no rebuild, measured identical to rebuilds;
+  - the workflow's foreign job downloads `generated-four-port`.
+- **F2 (conditional):** an inverted port in the fixture would move the four-port hwdef and topology goldens, which are
+  outside the fence, so the fixture is unchanged. The inverted case still runs on real firmware: the script derives
+  the specification with GPS declared inverted and judges the unmodified ELF (refused) and the ELF with
+  `SERIAL1_OPTIONS` 3 (passes, PA2/PA3 pulled down). `SERIAL1_OPTIONS` 3 is what an inverted GPS port compiles
+  (rebuild measured identical). A real inverted fixture remains a row (§9).
+- **The `RULES` table:**
+  - the row "USART CR1, CR2" says what is now judged and what is still weakened (RC RXINV, the twin's read-back path
+    F3, CR1.RE);
+  - a row "serial pins' PUPDR" says the pull is reported, not judged.
 
-## 6. Signal
+### Files
 
-The last push is the commit "AET-WO-2311 STOPPED: §1.2 …". Nothing is pushed after it unless asked.
+- **`crates/aethelgard-twin/src/serial.rs`:**
+  - `Expect`, `Options`, `options(topology)`, `expected(role, inverted)`;
+  - `OptionsJudgement`, `judge_options(options, accesses)`;
+  - `pull_name`, `PinMux::pupdr`;
+  - five tests.
+- **`crates/aethelgard-cli/src/renode/foreign.rs`:**
+  - the USART logs and `PUPDR` reads in `commands`/`reads`;
+  - `judge_serial`, its report types and kinds, the `RULES` rows;
+  - five tests on recorded access lines in Renode's measured shape.
+- **`crates/aethelgard-cli/src/renode.rs`:** the two `commands` call sites, and one test holding the commands to D2.
+- **`crates/aethelgard-cli/tests/boot_tier1.rs`:**
+  - every foreign transcript now starts with the CONSOLE's measured bring-up and reads GPIOA's `PUPDR`;
+  - one end-to-end test (pulls info; a planted SWAP fails by name).
+- **`ci/foreign-judge.sh`, `.github/workflows/ardupilot-image.yml`** (the foreign job's download only).
+- **`crates/aethelgard-cli/README.md`:** one paragraph (F5, granted).
+- **Beside the named fence, flagged:** `crates/aethelgard-cli/src/main.rs`. It is plumbing only: it computes
+  `serial::options(&topology)` once for a foreign run and passes it to `commands` and `judge` (+12 lines).
+  - No other route reaches the topology: `BootPlan` carries none, and is built in `main.rs` too.
+
+## 6. Adversarial pass, targeted (§5), on the build
+
+- **A1. A `CR2` write the judge misses.**
+  - With the access log every width is seen. A byte or half-word into `CR1` or `CR2`, or a word at offsets 1–3 or 5–7,
+    is `serial_options_unjudgeable`, tested.
+  - A write while the USART's clock is off is dropped before any log (measured), as silicon ignores it. The port then
+    has no `UE`-clear word and fails `serial_options_unwritten`.
+  - Logging is armed before `RunFor`.
+  - The USART has one bus registration (`<0x40004400, 0x400047FF>`, measured).
+- **A2. An expectation read from the artifact.** None.
+  - `options` reads `SolvedTopology::serial_ports` (role, `framing.inverted`) and ST's header only.
+  - A test flips `inverted` in the specification and the expectation follows.
+  - CI judges the same ELF against two specifications, with opposite verdicts.
+  - Nothing in the path reads `var_info` or `hwdef.h`.
+- **A3. A generated firmware that sets SWAP.** `judge_writes` refuses it, by two rules, now under test.
+- **A4. Renode's `collapse-repeated-log-entries`.** Measured: identical consecutive access lines are printed in full
+  (seven identical `TDR` writes in a row, m4). The judgement is also idempotent under any fold of identical writes;
+  only `writes` could undercount.
+- **A5. A flood (finding, not built).**
+  - The access log keeps each declared USART's `TDR` writes: ArduPilot's console wrote 568 in 5 s.
+  - A foreign firmware that transmits faster than the 8 MiB budget allows fails closed: every port is unjudgeable and
+    every witness is unread. That is never a false pass.
+  - The foreign judge reads no `TDR` line, so `FOREIGN_LOG_FILTER` could discard them. This is proposed as a row
+    under the scope test, not built.
+- **A6. UE's source.** `UE` is rebuilt from `CR1` word writes from reset (clear). A narrow `CR1` write is
+  unjudgeable, so no write can flip `UE` unseen.
+
+## 7. The four-port runs, on the merged head (local, tools image `1e0ab105`, ELFs built here in `e1809b90`)
+
+FINAL_RUNS
+
+The existing sentinel-02 runs keep their kinds: `window-before-u5-data` reads `core_in_exception` as `main`'s CI run
+45179832134 does.
+
+## 8. Gates and mutants
+
+GATES_LINE
+- **Mutants** (`spike/2311/mutants.py`; one per guard this WO adds, each against the suites it lives in): **16 of 16
+  killed**, each by a named test. The SWAP check removed; TXINV and RXINV exchanged (masks, and kinds); the first
+  `UE`-clear write judged in place of the last; `UE` ignored; the ignored-write rule dropped or widened to unjudged
+  bits; a narrow or misplaced write accepted; RC RXINV judged; RC TXINV following `inverted`; unwritten demoted to
+  info; a log not read whole judged; the pull made to fail; the USARTs not logged; a pull not read.
+  - One mutant survived the first run: unwritten demoted to info. The tests' `failing()` filtered by kind, not
+    severity. Fixed, and re-killed.
+- **Reduction pass (diff):** −16 net · 1 duplicate removed (the expected-options rule, once in `options` and once in
+  the twin tests' helper, now `serial::expected`) · 2 dead paths removed (the pull loop's unreachable `else continue`
+  branches) · 0 protected kept · 2 findings below.
+  - Findings: `spike/2311/default.py` and `derive.py` are the measurement's record, with their live copies in
+    `ci/foreign-judge.sh`; the spike's are kept as the record of what was measured. The RC rule also lives in
+    pincheck's `serial_settings`, a separate judge of the ELF, out of fence and deliberate (`RUL-20`).
+
+## 9. Questions and rows for the architect
+
+- **F5, granted 14:35Z:** one paragraph, "The serial options", in `crates/aethelgard-cli/README.md`'s "Foreign
+  firmware" section, and nothing else in that file.
+- **Proposed §7.1 rows:**
+  - F4, the RC port's frame bits read at the cut;
+  - A5, drop `TDR` writes from the foreign log filter;
+  - F2, a real inverted port in a fixture;
+  - F1, the hwdef header's "SERIAL1 to SERIAL9" pull sentence (SERIAL0 is pulled up too).
+
+## 10. Signal
+
+The last push is the commit "AET-WO-2311 READY: …". Nothing is pushed after it unless asked.
