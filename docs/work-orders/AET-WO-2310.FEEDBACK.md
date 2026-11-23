@@ -3,7 +3,7 @@
 **Branch:** `wo/aet-2310-trace-schema` from `main` `15798f91`; `main` `29a34afa` merged at the build's start, `c7a62975` (1607) at 05:3xZ, `aaad1555` (docs), and `965ded2e` (4300i, specification 28, with its package) at 07:00Z (§9).
 **Builder:** Claude (Opus 5.5). It orchestrated three subagents, for the chaos tests' adaptation, a source survey and the reduction pass; each report was spot-checked against the code before use. Written 2026-11-23.
 
-**Status: built to the architect's rulings of 04:30Z and 05:32Z (`~/.cache/aet-bus/2310.md`).** 05:32Z:
+**Status: READY, built to the architect's rulings of 04:30Z and 05:32Z (`~/.cache/aet-bus/2310.md`).** 05:32Z:
 - 1607 merged, freeing `verify.rs` and `fab_tier1.rs`;
 - Q-E admitted;
 - Q-M (ii) as built, its cost named in seconds (§8);
@@ -174,4 +174,5 @@ All as stated in §1. Q-F's grants as used:
   - **That run's tier 2** (run 45122149284), measured: shards 1–4 and 6–11 passed. Shard 0 failed on that clippy lint. Shard 5 failed only on the bench-package binding. **Every tier-2 test passed on CI.**
 - **CI, third run** (on `c84a9f54`), measured: every job passes but those reaching the package binding: `bench-package` ("differs"), `gates` and `tools-shard (5)` (that one test), and the `tools` aggregate (shard 5). Shards 0–4 and 6–11 pass.
 - **Main `965ded2e` merged** (4300i's specification 28 and its package's hash lines) at 07:00Z, as the 07:05Z note asked, before the dispatch: fmt and clippy (with `with-tools`) clean on the merged tree; `cargo test --workspace --no-fail-fast` 2,871 passed, 1 failed (the package binding, which the dispatch moves).
-- **CI and the package:** FINAL_CI
+- **The package**, from the architect's `write=true` dispatch (run 45132250434 on `41239793`), is committed byte for byte in the READY commit. As predicted, only `MANIFEST.json` moved: `droop-bor3`'s scenario sha256 (`5e35634c…` → `c310ade1…`) and `verdict_sha256` (`fbf1c3b8…` → `b3347072…`). The other 16 files are byte-identical. `bench_board_tier1` is 2/2 with it.
+- **CI on the READY commit:** see the READY note on the bus.
