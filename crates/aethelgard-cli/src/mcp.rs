@@ -507,6 +507,7 @@ mod tests {
         assert_eq!(
             names(&Cli::command()),
             [
+                "init",
                 "validate",
                 "solve",
                 "emit",
@@ -569,7 +570,7 @@ mod tests {
             Some("A subcommand added by a test")
         );
         assert_eq!(t.input_schema["required"], json!(["thing"]));
-        assert_eq!(all.len(), 21);
+        assert_eq!(all.len(), 22);
     }
 
     #[test]
