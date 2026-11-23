@@ -1,0 +1,19 @@
+finding	probe	command	before	after
+F1	p2-cross-instance-spi.json	solve	exit 0 EXT_SCK=PA5/SPI1/TT_ha EXT_MOSI=PD7/SPI1/FT_h EXT_MISO=PA6/SPI1/FT_a	exit 0 EXT_SCK=PA12/SPI2/FT_u EXT_MOSI=PB15/SPI2/FT_u EXT_MISO=PB14/SPI2/FT_u
+F1b	p2b-solved-pin-as-hand.json	validate	exit 2 ConnectorPinNotFt spi_buses[1].sck.pin	exit 2 ConnectorPinNotFt spi_buses[1].sck.pin
+F1c	p2c-ext-on-spi2.json	solve	exit 0 EXT_SCK=PA12/SPI2/FT_u EXT_MOSI=PB15/SPI2/FT_u EXT_MISO=PB14/SPI2/FT_u	exit 0 EXT_SCK=PA12/SPI2/FT_u EXT_MOSI=PB15/SPI2/FT_u EXT_MISO=PB14/SPI2/FT_u
+F2	resetpull-PB4.json	solve	exit 0 MOTOR1=PB4/TIM3/FT	exit 2 MotorPinResetPull motor_outputs[0].pin
+F2	resetpull-PA15.json	solve	exit 0 MOTOR1=PA15/TIM2/FT	exit 2 MotorPinResetPull motor_outputs[0].pin
+F2b	resetpull-solver.json	solve	exit 0 MOTOR1=PA15/TIM2/FT	exit 0 MOTOR1=PA1/TIM2/FT_ha
+F3	idlehigh-hwdef.json	validate	exit 0 ok	exit 2 MotorIdleHighPulledDown motor_outputs[0].pwm.idle
+F3	v-idlehigh.json	validate	exit 0 ok	exit 2 MotorIdleHighPulledDown motor_outputs[0].pwm.idle
+F5	v-ohms30000.json	validate	exit 0 ok	exit 0 ok
+F5	v-ohms50000.json	validate	exit 0 ok	exit 0 ok
+hand-TT	tt-cs.json	validate	exit 2 ConnectorPinNotFt spi_devices[0].cs.pin	exit 2 ConnectorPinNotFt spi_devices[0].cs.pin
+hand-TT	tt-motor-pe9.json	validate	exit 2 ConnectorPinNotFt motor_outputs[0].pin	exit 2 ConnectorPinNotFt motor_outputs[0].pin
+hand-TT	tt-serial-tx.json	validate	exit 2 ConnectorPinNotFt serial_ports[0].tx.pin	exit 2 ConnectorPinNotFt serial_ports[0].tx.pin
+hand-TT	tt-serial-rx.json	validate	exit 2 ConnectorPinNotFt serial_ports[0].rx.pin	exit 2 ConnectorPinNotFt serial_ports[0].rx.pin
+hand-TT	tt-pd-signal.json	validate	exit 2 ConnectorPinNotFt pin_devices[0].signals[0].pin	exit 2 ConnectorPinNotFt pin_devices[0].signals[0].pin
+hand-TT	tt-pd-analog.json	validate	exit 2 ConnectorPinNotFt pin_devices[0].analog[0].pin	exit 2 ConnectorPinNotFt pin_devices[0].analog[0].pin
+hand-TT	tt-i2c.json	validate	exit 2 ConnectorPinNotFt i2c_buses[0].scl.pin	exit 2 ConnectorPinNotFt i2c_buses[0].scl.pin
+hand-TT	tt-miso.json	validate	exit 2 ConnectorPinNotFt spi_buses[1].mosi.pin	exit 2 ConnectorPinNotFt spi_buses[1].mosi.pin
