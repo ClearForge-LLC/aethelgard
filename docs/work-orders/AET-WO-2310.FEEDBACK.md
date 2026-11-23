@@ -1,6 +1,6 @@
 # AET-WO-2310 — FEEDBACK: one trace and scenario schema bump
 
-**Branch:** `wo/aet-2310-trace-schema` from `main` `15798f91`; `main` `29a34afa` merged at the build's start, and `c7a62975` (1607) at 05:3xZ (§9).
+**Branch:** `wo/aet-2310-trace-schema` from `main` `15798f91`; `main` `29a34afa` merged at the build's start, `c7a62975` (1607) at 05:3xZ, `aaad1555` (docs), and `965ded2e` (4300i, specification 28, with its package) at 07:00Z (§9).
 **Builder:** Claude (Opus 5.5). It orchestrated three subagents, for the chaos tests' adaptation, a source survey and the reduction pass; each report was spot-checked against the code before use. Written 2026-11-23.
 
 **Status: built to the architect's rulings of 04:30Z and 05:32Z (`~/.cache/aet-bus/2310.md`).** 05:32Z:
@@ -173,4 +173,5 @@ All as stated in §1. Q-F's grants as used:
 - **CI, second run** (on `88f87e50`, main `aaad1555` merged): shard 0's clippy, run with `--features aethelgard-cli/with-tools`, flagged a `clone` in `campaign_tier2` (`cloned_ref_to_slice_refs`). My host clippy had run without the feature, so it never compiled the tier-2 tests. Fixed, and clippy with the feature is clean on the host. **Lesson:** run the gate's clippy with every feature CI enables.
   - **That run's tier 2** (run 45122149284), measured: shards 1–4 and 6–11 passed. Shard 0 failed on that clippy lint. Shard 5 failed only on the bench-package binding. **Every tier-2 test passed on CI.**
 - **CI, third run** (on `c84a9f54`), measured: every job passes but those reaching the package binding: `bench-package` ("differs"), `gates` and `tools-shard (5)` (that one test), and the `tools` aggregate (shard 5). Shards 0–4 and 6–11 pass.
+- **Main `965ded2e` merged** (4300i's specification 28 and its package's hash lines) at 07:00Z, as the 07:05Z note asked, before the dispatch: fmt and clippy (with `with-tools`) clean on the merged tree; `cargo test --workspace --no-fail-fast` 2,871 passed, 1 failed (the package binding, which the dispatch moves).
 - **CI and the package:** FINAL_CI
