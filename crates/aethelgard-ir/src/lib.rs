@@ -18,6 +18,7 @@ pub mod connectors;
 mod drawn;
 pub mod ds009;
 pub mod electrical;
+pub mod kernel_clock;
 pub mod motor;
 pub mod names;
 pub mod off_domain;
@@ -589,9 +590,11 @@ const I2C_SPEEDS_HZ: [u32; 3] = [100_000, 400_000, 1_000_000];
 /// `transfer` and a pin device's `supplies` (`AET-WO-1211c` D7, ruled: the
 /// twin and `verify` read the solved topology alone, `RUL-16`), version 18
 /// a motor output's `pull`, its fitment, references, ohms and bound
-/// (`AET-WO-4300j` D6, D9: the generators read the topology alone); an
-/// older file is refused, never defaulted (`INV-06`).
-pub const SOLVED_SCHEMA_VERSION: u32 = 18;
+/// (`AET-WO-4300j` D6, D9: the generators read the topology alone), version
+/// 19 the clock's `kernel_switch` and `adc` (`AET-WO-4240e` D7, ADC (i):
+/// each absent when unused); an older file is refused, never defaulted
+/// (`INV-06`).
+pub const SOLVED_SCHEMA_VERSION: u32 = 19;
 
 /// What the solver derived from one specification (`RUL-16`). Keyed by net, in
 /// `BTreeMap`s, so serialization is a function of content. `assignments` holds
@@ -1609,8 +1612,16 @@ pub enum IrValidationError {
         "diff pair `{id}` names `{net}`, a voltage domain or `GND`: a rail, a plane or ground is not a coupled conductor"
     )]
     PairOnRail { id: String, net: String },
-    #[error("`{path}` is not an identifier: {rule}")]
-    InvalidIdentifier { path: String, rule: &'static str },
+    /// `rule` is the broadest rule broken; the message then ends with the
+    /// key and the whole shape of `family`, every rule of it at once, so a
+    /// value written to that shape passes the identifier check
+    /// (`AET-WO-1608` D3).
+    #[error("`{path}` is not an identifier: {rule}; the fix: {}", identifier_fix(.path, *.family))]
+    InvalidIdentifier {
+        path: String,
+        rule: &'static str,
+        family: IdentifierKind,
+    },
     #[error("voltage_domains is empty")]
     NoVoltageDomain,
     #[error("voltage domain id `{id}` appears more than once")]
@@ -2871,6 +2882,36 @@ pub enum IdentifierKind {
     Reference,
 }
 
+impl IdentifierKind {
+    /// Every rule [`check_identifier`] holds an identifier of this kind to,
+    /// in one phrase: a value of this shape passes it whole (`AET-WO-1608`).
+    pub const fn shape(self) -> &'static str {
+        match self {
+            Self::Plain => {
+                "1 to 64 bytes of printable ASCII 0x21-0x7E, none of / { } $ [ ] \" % * , or \\, with no date shape dddd-dd-dd or time shape dd:dd:dd"
+            }
+            Self::Project => {
+                "1 to 58 bytes of a-z, 0-9 and -, a letter first, not ending with -, with no -- and no date shape dddd-dd-dd, and not a Windows device name (con, prn, aux, nul, com0 to com9, lpt0 to lpt9)"
+            }
+            Self::Reference => {
+                "1 to 64 bytes, a letter then letters, digits and _, in any case neither a name the Renode platform holds (RESERVED_REFERENCES) nor p, a port a to k, a pin 0 to 15 and obs (pa8obs)"
+            }
+        }
+    }
+}
+
+/// The end of an `InvalidIdentifier` message: the field's own key and the
+/// shape its value takes, as JSON a person can paste. A path ending in an
+/// array element (`reserved_pins[0]`) quotes the array's key.
+pub fn identifier_fix(path: &str, family: IdentifierKind) -> String {
+    let last = path.rsplit('.').next().unwrap_or(path);
+    let shape = family.shape();
+    match last.split_once('[') {
+        Some((key, _)) => format!("\"{key}\": [..., \"<{shape}>\"]"),
+        None => format!("\"{last}\": \"<{shape}>\""),
+    }
+}
+
 /// The base set, for every kind: 1 to 64 bytes of printable ASCII
 /// `0x21`-`0x7E`, so two identifiers that look alike are the same bytes.
 /// Refused beyond that, each measured: `/`, `{`, `}`, `$`, `[` and `]`, which
@@ -3096,8 +3137,11 @@ pub(crate) fn identifier(
     value: &str,
     path: impl FnOnce() -> String,
 ) -> Result<(), IrValidationError> {
-    check_identifier(kind, value)
-        .map_err(|rule| IrValidationError::InvalidIdentifier { path: path(), rule })
+    check_identifier(kind, value).map_err(|rule| IrValidationError::InvalidIdentifier {
+        path: path(),
+        rule,
+        family: kind,
+    })
 }
 
 pub(crate) fn plain(value: &str, path: impl FnOnce() -> String) -> Result<(), IrValidationError> {
@@ -4548,7 +4592,7 @@ impl SolvedTopology {
         self.validate_pin_speeds()
     }
 
-    /// Sets `spi_controllers` and `i2c_timings` to what `solve` derives for
+    /// Sets `spi_controllers`, `i2c_timings` and `clock.kernel_switch` to what `solve` derives for
     /// the SPI and I2C peripherals of `assignments`, from `clock` and, for
     /// SPI, the lowest `rate_hz` of each controller's lines in `spi_lines`;
     /// a peripheral it derives nothing for is left out, which `validate`
@@ -4558,6 +4602,8 @@ impl SolvedTopology {
     /// builds one (`AET-WO-4230`); `solve` fills all three itself.
     pub fn derive_controllers(&mut self) {
         (self.spi_controllers, self.i2c_timings) = self.derived_controllers();
+        // The kernel-clock switch those controllers need (`AET-WO-4240e`).
+        self.clock.kernel_switch = solve::kernel_switch(&self.spi_controllers);
         let speeds: BTreeMap<String, u8> = solve::solved_pins(self)
             .filter_map(|(net, pin)| Some((net.clone(), solve::pin_speed(self, net, pin).ok()?)))
             .collect();
@@ -4732,7 +4778,15 @@ impl SolvedTopology {
         // silicon rule), never passed: `check_silicon` holds the verdict.
         // The tree is the reset one, or an HSE tree the clock rule holds
         // (`AET-WO-4240a` §1.5).
-        if self.clock.hse.is_none() && self.clock != SolvedClock::reset() {
+        // The kernel-clock switch and the ADC clock (`AET-WO-4240e`) are set
+        // aside here: `kernel_clock::check` judges them, the tree beside them
+        // is still the reset one or the HSE's.
+        let bare = |c: &SolvedClock| SolvedClock {
+            kernel_switch: None,
+            adc: None,
+            ..c.clone()
+        };
+        if self.clock.hse.is_none() && bare(&self.clock) != SolvedClock::reset() {
             return Err(E::UnsupportedClock);
         }
         clock::judge_tree(&self.clock)?;
@@ -4747,7 +4801,7 @@ impl SolvedTopology {
         // is another specification, bound only by `specification_sha256`.
         if let Some(h) = &self.clock.hse {
             let again = solve::hse_clock(&h.declared)?;
-            if again != self.clock {
+            if again != bare(&self.clock) {
                 let ours = again.hse.as_ref();
                 let field = if ours.map(clock::SolvedHse::budget) != Some(h.budget()) {
                     "the budget"

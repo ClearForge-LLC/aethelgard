@@ -39,6 +39,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
     assert_eq!(
         names,
         [
+            "init",
             "validate",
             "solve",
             "emit",

@@ -104,8 +104,11 @@ pub fn validate(
     let mut owner: BTreeMap<&str, &str> = BTreeMap::new();
 
     let name = |value: &str, path: String| {
-        check_identifier(IdentifierKind::Plain, value)
-            .map_err(|rule| E::InvalidIdentifier { path, rule })
+        check_identifier(IdentifierKind::Plain, value).map_err(|rule| E::InvalidIdentifier {
+            path,
+            rule,
+            family: IdentifierKind::Plain,
+        })
     };
     let width = |value: u32, path: String| {
         if value < min_width {

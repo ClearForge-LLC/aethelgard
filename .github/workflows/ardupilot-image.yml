@@ -32,30 +32,9 @@ name: ardupilot-image
 on:
   pull_request:
     paths:
-      - "container/ardupilot*"
-      - "container/ARDUPILOT-IMAGE"
-      - "container/debian-trixie.sources"
-      - "container/check-pins.sh"
-      - "container/test-check-pins.sh"
-      - "container/fixtures/check-pins/**"
-      - "container/check-ardupilot-pin.sh"
-      - "container/test-check-ardupilot-pin.sh"
-      - "container/fixtures/ardupilot-pin/**"
-      - "container/ARDUPILOT-LICENSE.md"
-      - "container/ARDUPILOT-SOURCES.md"
-      - "container/GCC-SOURCE"
-      - "container/gcc-source.manifest.json"
-      - "container/gcc-source.sh"
-      - "container/check-gcc-source.sh"
-      - "container/test-check-gcc-source.sh"
-      - "container/fixtures/gcc-source/**"
-      - "container/check-sources.sh"
-      - "container/oci-mirror.sh"
-      - "container/debian-src.py"
-      - "container/debian-gpl2.py"
-      - "container/ARDUPILOT-DEBIAN-GPL2.tsv"
-      - "container/test-debian-src.sh"
-      - "container/fixtures/debian-src/**"
+      - "container/**"
+      - "bridge/**"
+      - "boards/sentinel-01/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -66,30 +45,9 @@ on:
   push:
     branches: [main]
     paths:
-      - "container/ardupilot*"
-      - "container/ARDUPILOT-IMAGE"
-      - "container/debian-trixie.sources"
-      - "container/check-pins.sh"
-      - "container/test-check-pins.sh"
-      - "container/fixtures/check-pins/**"
-      - "container/check-ardupilot-pin.sh"
-      - "container/test-check-ardupilot-pin.sh"
-      - "container/fixtures/ardupilot-pin/**"
-      - "container/ARDUPILOT-LICENSE.md"
-      - "container/ARDUPILOT-SOURCES.md"
-      - "container/GCC-SOURCE"
-      - "container/gcc-source.manifest.json"
-      - "container/gcc-source.sh"
-      - "container/check-gcc-source.sh"
-      - "container/test-check-gcc-source.sh"
-      - "container/fixtures/gcc-source/**"
-      - "container/check-sources.sh"
-      - "container/oci-mirror.sh"
-      - "container/debian-src.py"
-      - "container/debian-gpl2.py"
-      - "container/ARDUPILOT-DEBIAN-GPL2.tsv"
-      - "container/test-debian-src.sh"
-      - "container/fixtures/debian-src/**"
+      - "container/**"
+      - "bridge/**"
+      - "boards/sentinel-01/**"
       - "crates/**"
       - "models/**"
       - "examples/**"
@@ -267,6 +225,10 @@ jobs:
           # protocols and options reach unmodified ArduPilot and `check pinout`.
           - board: four-port
             spec: crates/aethelgard-cli/tests/fixtures/four-port.json
+          # AET-WO-1917 (4408 Q5): Sentinel-01's full specification, with its
+          # second I2C bus, beside the minimal one.
+          - board: sentinel-01-full
+            spec: examples/sentinel-01.json
           # AET-WO-4400e §2: sentinel-02's committed hwdef without its IMU
           # line, for `foreign` only.
           - board: sentinel-02-noimu
@@ -448,13 +410,16 @@ jobs:
           name: aethelgard
           path: ${{ runner.temp }}/bin
       # The expected values come from the solver, never from the boards (INV-07).
+      # The boards judged are this workflow's matrices (AET-WO-1917): a board
+      # either matrix names with no artifact here, or an artifact no matrix
+      # names, is refused by name.
       - name: each hand board and seed fails by name, each generated board passes
         run: |
           bin="$RUNNER_TEMP/bin/aethelgard"
           chmod +x "$bin"
           "$bin" solve --file examples/sentinel-01-minimal.json > "$RUNNER_TEMP/topology.json"
           bash container/ardupilot-pinout.sh "$bin" "$RUNNER_TEMP/topology.json" "$RUNNER_TEMP/boards" \
-            crates/aethelgard-pincheck/fixtures/step-g.allow.json
+            crates/aethelgard-pincheck/fixtures/step-g.allow.json .github/workflows/ardupilot-image.yml
 
   publish:
     needs: [image, pinout]

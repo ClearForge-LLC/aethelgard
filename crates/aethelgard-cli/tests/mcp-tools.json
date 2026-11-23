@@ -1,5 +1,27 @@
 [
   {
+    "description": "Write one specification from a template held in this binary to a new file. Every value a person must own (the project name, every citation) is left empty, which validate refuses by name and path until it is filled. Never overwrites",
+    "inputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "out": {
+          "description": "The file to write; it must not exist (a file, directory, FIFO or symlink there is refused). No directory is created",
+          "type": "string"
+        },
+        "template": {
+          "description": "The template: i2c-spi-bench (examples/sentinel-02-bench.json: a 2-layer STM32H753 board with one I2C sensor and one SPI sensor)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "template",
+        "out"
+      ],
+      "type": "object"
+    },
+    "name": "init"
+  },
+  {
     "description": "Validate one JSON Specification read from stdin, or from --file",
     "inputSchema": {
       "additionalProperties": false,

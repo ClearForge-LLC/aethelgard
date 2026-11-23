@@ -10,5 +10,5 @@ fn main() {
     let scale2 = board.pwr.scale2(&mut r, 10).unwrap();
     let mut rcc = board.rcc;
     let unchecked = rcc.reset_clock(&mut r, &scale2);
-    let _kernels = rcc.select_spi_kernels(&mut r, &unchecked);
+    let _kernels = rcc.select_spi_kernels(&mut r, &unchecked, 9744);
 }

@@ -260,12 +260,17 @@ unweighted() {
 # order on THREADS threads and each completion starts the next, so the j-th by name (j > THREADS) starts at the
 # (j - THREADS)-th completion; a test's seconds are its result line's stamp less that start. A line with no stamp,
 # a stamp that goes back, or a binary whose results are not all timed is refused (fail closed, not skipped).
+# libtest writes `test NAME ... ` and its result as two writes, so a tool's output can land between them (AET-WO-1917
+# D6). Read: `TOOL test NAME ... ok`; or `TOOL test NAME ... TOOL` held PENDING until the next line that is exactly
+# `ok`, `FAILED` or `ignored`, whose stamp is the test's. A lone result with nothing pending (trybuild's) is no test.
+# Refused by name: a second libtest name, or a `test result:` line, while one is pending; a log ending with one pending.
 times() {
   local log=$1 threads=$2
   readable "$log"
   case $threads in '' | *[!0-9]* | 0) die "the test thread count '$threads' is not a positive integer" ;; esac
   awk -v lf="$log" -v T="$threads" '
     function bad(m) { print "shard: " lf ":" NR ": " m > "/dev/stderr"; failed = 1; exit 1 }
+    function record(x) { if (x in at) bad(x " has two results"); n++; nm[n] = x; tc[n] = t; at[x] = t }
     function flush(   i, j, x, s, st) {
       for (i = 1; i <= n; i++) { x = nm[i]; for (j = i - 1; j >= 1 && ("" s[j]) > ("" x); j--) s[j + 1] = s[j]; s[j + 1] = x }
       for (j = 1; j <= n; j++) { st = (j <= T) ? t0 : tc[j - T]; printf "%s\t%s\t%.3f\n", binary, s[j], at[s[j]] - st }
@@ -282,10 +287,19 @@ times() {
     # A tool line can precede the result on one line: match its end. A libtest name is a Rust path.
     open && match(line, /test [A-Za-z0-9_:]+( - should panic)? [.][.][.] (ok|FAILED|ignored)$/) {
       x = substr(line, RSTART + 5); sub(/ .*$/, "", x)
-      if (x in at) bad(x " has two results"); n++; nm[n] = x; tc[n] = t; at[x] = t; next }
+      if (pending != "") bad(x " opened while " pending " is awaiting its result")
+      record(x); next }
+    # A name with other text after it: its result is the next line that is exactly a result.
+    open && match(line, /test [A-Za-z0-9_:]+( - should panic)? [.][.][.] /) {
+      x = substr(line, RSTART + 5); sub(/ .*$/, "", x)
+      if (pending != "") bad(x " opened while " pending " is awaiting its result")
+      pending = x; next }
+    open && pending != "" && line ~ /^(ok|FAILED|ignored)$/ { x = pending; pending = ""; record(x); next }
     line ~ /^test result: / { if (!open) bad("a result with no `running` line")
+      if (pending != "") bad("a `test result:` line while " pending " is awaiting its result")
       if (n != want) bad(binary ": timed " n " of its " want " tests"); flush(); next }
-    END { if (failed) exit 1; if (open) bad("the log ends inside " binary) }
+    END { if (failed) exit 1; if (pending != "") bad("the log ends while " pending " is awaiting its result")
+      if (open) bad("the log ends inside " binary) }
   ' "$log"
 }
 
