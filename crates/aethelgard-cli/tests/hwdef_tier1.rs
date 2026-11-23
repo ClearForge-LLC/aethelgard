@@ -17,9 +17,9 @@ fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
-/// The four CI boards: (fixture name in `aethelgard-hwdef/tests/fixtures`,
+/// The CI boards: (fixture name in `aethelgard-hwdef/tests/fixtures`,
 /// specification). `four-port` (`AET-WO-4408`) is the one with SERIAL1–3.
-const BOARDS: [(&str, &str); 4] = [
+const BOARDS: [(&str, &str); 5] = [
     ("sentinel-01", "examples/sentinel-01-minimal.json"),
     (
         "sentinel-02",
@@ -33,6 +33,8 @@ const BOARDS: [(&str, &str); 4] = [
         "four-port",
         "crates/aethelgard-cli/tests/fixtures/four-port.json",
     ),
+    // AET-WO-1917: Sentinel-01's full specification (`4408` Q5).
+    ("sentinel-01-full", "examples/sentinel-01.json"),
 ];
 
 fn scratch(name: &str) -> PathBuf {
