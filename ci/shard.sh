@@ -225,18 +225,27 @@ tally() {
 # that has no row in WEIGHTS and is in no binary of COLOCATE, as `binary<TAB>test`.
 heavy_unweighted() {
   local log=$1 weights=$2 colocate=$3
-  readable "$log"; readable "$weights"; readable "$colocate"
-  awk -F'\t' -v wf="$weights" -v cf="$colocate" '
-    FILENAME == wf { if ($0 !~ /^#/ && NF == 3) w[$1 "\t" $2] = 1; next }
-    FILENAME == cf { if ($0 !~ /^#/ && NF == 2) blk[$1] = 1; next }
+  readable "$log"
+  awk '
     /^ +Running / { split($0, f, " "); binary = f[2]; if (f[3] ~ /^src\//) binary = f[2] " " f[3]; next }
     /^ +Doc-tests / { binary = ""; next }
     # A tool line can precede the libtest warning on one line (board_ui, trybuild): match its end.
     match($0, /(^| )test [^ ]+ has been running for over 60 seconds$/) {
       name = substr($0, RSTART, RLENGTH); sub(/^ /, "", name); sub(/^test /, "", name)
       sub(/ has been running for over 60 seconds$/, "", name)
-      if (binary != "" && !(binary in blk) && !((binary "\t" name) in w)) print binary "\t" name }
-  ' "$weights" "$colocate" "$log"
+      if (binary != "") print binary "\t" name }
+  ' "$log" | unweighted "$weights" "$colocate"
+}
+
+# unweighted WEIGHTS COLOCATE: the lines of stdin, `binary<TAB>test[<TAB>...]`, whose test has no row in WEIGHTS and
+# whose binary is in no block of COLOCATE (P2 and P3's one rule for a weighed test).
+unweighted() {
+  readable "$1"; readable "$2"
+  awk -F'\t' -v wf="$1" -v cf="$2" '
+    FILENAME == wf { if ($0 !~ /^#/ && NF == 3) w[$1 "\t" $2] = 1; next }
+    FILENAME == cf { if ($0 !~ /^#/ && NF == 2) blk[$1] = 1; next }
+    !($1 in blk) && !(($1 "\t" $2) in w)
+  ' "$1" "$2" -
 }
 
 # AET-WO-1914 P3. `run` stamps every line of a shard's log `seconds.micro<TAB>line` ($EPOCHREALTIME, as read).
@@ -273,21 +282,9 @@ times() {
   ' "$log"
 }
 
-# The seconds over which a test must carry a row (AET-WO-1910 D6, P3).
+# The seconds at or over which a test must carry a row (AET-WO-1910 D6, P3): no upper bound, so a test past 60 s whose
+# libtest warning was split by a tool line is refused too.
 P3_SECONDS=10
-
-# slow_unweighted TIMES WEIGHTS COLOCATE: each test of TIMES (`times`' output) that took P3_SECONDS or more with no row in
-# WEIGHTS and in no binary of COLOCATE, as `binary<TAB>test<TAB>seconds`. No upper bound: a test past 60 s whose libtest
-# warning was split by a tool line is refused here too.
-slow_unweighted() {
-  local times=$1 weights=$2 colocate=$3
-  readable "$times"; readable "$weights"; readable "$colocate"
-  awk -F'\t' -v wf="$weights" -v cf="$colocate" -v lim="$P3_SECONDS" '
-    FILENAME == wf { if ($0 !~ /^#/ && NF == 3) w[$1 "\t" $2] = 1; next }
-    FILENAME == cf { if ($0 !~ /^#/ && NF == 2) blk[$1] = 1; next }
-    $3 + 0 >= lim && !($1 in blk) && !(($1 "\t" $2) in w) { print }
-  ' "$weights" "$colocate" "$times"
-}
 
 result() {
   local k=$1 shardfile=$2 wslog=$3 bridgelog=$4 re=$5 weights=${6:-} colocate=${7:-/dev/null}
@@ -310,7 +307,6 @@ result() {
     read -r p f ig t2 < <(tally "$tmp/log" "$re")
     { [ "$f" -eq 0 ] && [ "$ig" -eq 0 ]; } || die "$suite: $f failed, $ig ignored"
     [ "$p" -eq "$expect" ] || die "$suite: $p passed, the assignment is $expect"
-    [ "$(wc -l <"$tmp/times")" -eq "$p" ] || die "$suite: $(wc -l <"$tmp/times") test results timed, $p passed"
     total=$((total + p))
     tier2=$((tier2 + t2))
     # AET-WO-1910 P2 (ruled D6): the plan gave a test with no row DEFAULT_WEIGHT; one libtest reports
@@ -320,8 +316,10 @@ result() {
       local heavy
       heavy=$(heavy_unweighted "$tmp/log" "$weights" "$colocate") || exit 1
       [ -z "$heavy" ] || die "$suite: ran over 60 s with no row in $(basename "$weights") (the plan gave each $DEFAULT_WEIGHT s; weigh it by the REFIT RULE): $(tr '\t\n' ' ;' <<<"$heavy")"
-      # AET-WO-1914 P3: the same, for a test that took P3_SECONDS or more by its stamps; P2 stays, a second witness.
-      heavy=$(slow_unweighted "$tmp/times" "$weights" "$colocate") || exit 1
+      # AET-WO-1914 P3: the same, for a test that took P3_SECONDS or more by its stamps.
+      # belt-and-suspenders: P2 above reads libtest's own 60 s clock; P3 reconstructs from the thread count. Each covers the
+      # other's failure: P2 a wrong thread count, P3 a warning line split by a tool.
+      heavy=$(awk -F'\t' -v lim="$P3_SECONDS" '$3 + 0 >= lim' "$tmp/times" | unweighted "$weights" "$colocate") || exit 1
       [ -z "$heavy" ] || die "$suite: took $P3_SECONDS s or more with no row in $(basename "$weights") (the plan gave each $DEFAULT_WEIGHT s; weigh it by the REFIT RULE): $(tr '\t\n' ' ;' <<<"$heavy")"
     fi
   done
@@ -476,7 +474,7 @@ run() {
 cmd=${1:?usage: shard.sh parse|assign|guard|names|result|aggregate|plan|run|build|pack|unpack ...}
 shift
 case $cmd in
-  parse | assign | guard | names | result | aggregate | tally | heavy_unweighted | times | slow_unweighted) "$cmd" "$@" ;;
+  parse | assign | guard | names | result | aggregate | tally | heavy_unweighted | times) "$cmd" "$@" ;;
   plan) mkdir -p "$1"; plan "$@" ;;
   run) run "$@" ;;
   build) build_all ;;

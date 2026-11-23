@@ -9,6 +9,8 @@ py=(bash "$here/shard.sh")
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 fail=0
+# Which awk the fixtures run under (AET-WO-1914: gawk warns on a `\.` in a -v value, mawk does not).
+echo "== awk: $(awk -W version 2>&1 | head -1)"
 
 ok()   { echo "PASS $1"; }
 bad()  { echo "FAIL $1"; fail=1; }
@@ -22,6 +24,11 @@ refuses() {
   else ok "$name: refused ($reason)"; fi
 }
 accepts() { local name=$1; shift; if "$@" >"$tmp/out" 2>&1; then ok "$name"; else bad "$name: $(head -1 "$tmp/out")"; fi; }
+# The harness itself (AET-WO-1914): a refusal for another reason, or one that prints an awk warning, is a FAIL.
+(refuses "x" "the reason" bash -c 'echo another reason >&2; exit 1') | grep -q '^FAIL x: refused, but not because: the reason' \
+  && ok "refuses: a refusal for another reason fails" || bad "refuses: a refusal for another reason passed"
+(refuses "y" "the reason" bash -c 'echo "awk: warning: escape sequence"; echo the reason; exit 1') | grep -q '^FAIL y: an awk warning' \
+  && ok "refuses: a refusal that prints an awk warning fails" || bad "refuses: an awk warning passed"
 
 suite() {
 local N=$1
@@ -187,7 +194,8 @@ p3log 110.500000 112.000000 >"$tmp/p3.log"
 accepts "P3: a queued test is timed from its start, not its binary's (c: 9.5 s, not 10.5)" p3 "$tmp/wb.tsv"
 refuses "P3: on three threads the same c started with its binary (10.5 s)" "unittests src/lib.rs c 10.500" env RUST_TEST_THREADS=3 "${py[@]}" result 0 "$tmp/p3.tsv" "$tmp/p3.log" "$tmp/none.log" "$RE" "$tmp/wb.tsv"
 printf 'unittests src/lib.rs\t30\n' >"$tmp/co.tsv"
-accepts "P3: a co-located binary's test is weighed as its block" p3 "$tmp/wb.tsv" "$tmp/co.tsv"
+p3log 105.000000 112.000000 >"$tmp/p3.log"
+accepts "P3: a co-located binary's test is weighed as its block (b, 12 s, no row)" p3 "$tmp/w0.tsv" "$tmp/co.tsv"
 p3log 170.000000 171.000000 >"$tmp/p3.log"
 refuses "P3: no upper bound (69 s with no libtest 60 s line)" "unittests src/lib.rs c 69.000" p3 "$tmp/wb.tsv"
 p3log 105.000000 106.000000 "102.000000	tool output then the result: test c-is-not-a-name ... ok" >"$tmp/p3.log"
@@ -205,6 +213,15 @@ p3log 105.000000 106.000000 | sed '$d' >"$tmp/p3.log"
 refuses "P3: a log that ends inside a binary" "the log ends inside unittests src/lib.rs" p3 "$tmp/wb.tsv"
 p3log 105.000000 106.000000 >"$tmp/p3.log"
 refuses "P3: a thread count that is not one" "the test thread count 'x' is not a positive integer" env RUST_TEST_THREADS=x "${py[@]}" result 0 "$tmp/p3.tsv" "$tmp/p3.log" "$tmp/none.log" "$RE"
+# P3 on CI's own log: shard 4 of main d09a5187 (run 45099268629; held.sh's stamps from GitHub's, cargo's and libtest's
+# own lines kept). Against main's weights (this file's less the rows AET-WO-1914 adds) it names the one test; with them, none.
+awk -F'\t' '{ print "ws\t" $2 "\t1" }' <("${py[@]}" times "$fx/p3-d09a5187-shard-4.log" 4) >"$tmp/p3ci.tsv"
+grep -v -e '	a_pin_device_beside_a_test_point_validates_solves_and_emits_with_stable_references	' \
+  -e '	a_declared_hse_validates_and_solves_and_h1_is_not_refused_as_hse	' -e '	a_power_sense_input_is_not_generated	' \
+  "$here/test-weights.tsv" >"$tmp/main-weights.tsv"
+refuses "P3: main d09a5187's shard 4 against main's weights" "the REFIT RULE): tests/pin_device_refusals.rs a_power_sense_input_is_not_generated 20.971;" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$tmp/main-weights.tsv" "$here/colocate.tsv"
+[ "$(grep -c 'a_power_sense_input_is_not_generated 20.971;$' "$tmp/out")" -eq 1 ] && ok "P3: it names that test alone" || bad "P3: d09a5187: $(tail -1 "$tmp/out")"
+accepts "P3: main d09a5187's shard 4 with this file's rows" "${py[@]}" result 4 "$tmp/p3ci.tsv" "$fx/p3-d09a5187-shard-4.log" "$tmp/none.log" "$RE" "$here/test-weights.tsv" "$here/colocate.tsv"
 # The gates split (ci/gates.sh): the complement of tools-only by name; refused by name otherwise.
 gs=(bash "$here/gates.sh")
 meta() { # extra-target-json
@@ -237,6 +254,8 @@ printf '   Compiling aethelgard-cli v0.2.0 (/repo/crates/aethelgard-cli)\n    Fi
 refuses "compiled_in: a shard that compiles" "stale.log: this shard compiled" "${py[@]}" compiled_in "$tmp/stale.log"
 printf '\033[1m\033[32m   Compiling\033[0m aethelgard-cli v0.2.0\n     Running tests/a.rs (x)\n' >"$tmp/color.log"
 refuses "compiled_in: a coloured Compiling line" "color.log: this shard compiled" "${py[@]}" compiled_in "$tmp/color.log"
+printf '   Compiling aethelgard-cli v0.2.0\n     Running tests/a.rs (x)\n' | st >"$tmp/stamped.log"
+refuses "compiled_in: a Compiling line in run's stamped log" "stamped.log: this shard compiled" "${py[@]}" compiled_in "$tmp/stamped.log"
 # pack and unpack, on a scratch repository with its own copy of ci/ and container/IMAGE.
 g() { git -c user.name=t -c user.email=t@t -c init.defaultBranch=main -c commit.gpgsign=false "$@"; }
 mkrepo() { rm -rf "$1"; mkdir -p "$1/ci" "$1/container" "$1/src"; cp "$here/shard.sh" "$here/SHARDS" "$1/ci/"; echo img@sha256:1 >"$1/container/IMAGE"; echo a >"$1/src/a.rs"; echo /target/ >"$1/.gitignore"
