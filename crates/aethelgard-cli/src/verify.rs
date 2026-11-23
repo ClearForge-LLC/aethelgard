@@ -378,8 +378,13 @@ struct Gate {
     /// `attribute`: the scenario whose run it attributed (`AET-WO-3303` D1).
     #[serde(skip_serializing_if = "Option::is_none")]
     scenario: Option<String>,
-    /// `pass`, `fail`, or `not_run` when a gate before it failed so it could not run.
+    /// `pass`, `fail`, `not_run` when a gate before it failed so it could not
+    /// run, or `not_applicable` for a board gate of a specification that
+    /// draws no board (`AET-WO-1607` (5)).
     verdict: &'static str,
+    /// Why a `not_applicable` gate did not run; absent on every other gate.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<&'static str>,
     /// What the gate judged (`AET-WO-2306`); absent when it did not run.
     #[serde(flatten, skip_serializing_if = "Option::is_none")]
     scope: Option<Scope>,
@@ -619,6 +624,7 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         } else {
             "fail"
         },
+        reason: None,
         scope: Some(scope_of(name, v)),
         exit_code: Some(ran.code),
         tool_version: v["tool"]["version"].as_str().map(str::to_owned),
@@ -769,6 +775,7 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
         } else {
             "fail"
         },
+        reason: None,
         scope: Some(Scope::of(
             items
                 .iter()
@@ -828,6 +835,7 @@ fn not_run(name: &'static str) -> Gate {
         harness: None,
         scenario: None,
         verdict: "not_run",
+        reason: None,
         scope: None,
         exit_code: None,
         tool_version: None,
@@ -838,6 +846,23 @@ fn not_run(name: &'static str) -> Gate {
         cover_count: None,
         findings: Vec::new(),
         items: None,
+    }
+}
+
+/// The gates that judge the drawn board: on a specification that declares
+/// `board.drawn: false` there is none, so each is reported `not_applicable`
+/// and none runs (`AET-WO-1607` (5), `1210` F2).
+const BOARD_GATES: [&str; 4] = ["erc", "drc", "support", "extract"];
+
+/// Why a board gate is `not_applicable`.
+const NO_BOARD: &str =
+    "the specification declares `board.drawn: false`, so no board is drawn for this gate to judge";
+
+fn not_applicable(name: &'static str) -> Gate {
+    Gate {
+        verdict: "not_applicable",
+        reason: Some(NO_BOARD),
+        ..not_run(name)
     }
 }
 
@@ -1634,17 +1659,21 @@ pub fn verify(
         Ok(s) => s,
         Err((r, code)) => return crate::emit(&r, code),
     };
-    // No board gates, and no fabrication package written or compared, for a
-    // board never drawn (`AET-WO-1210` §1.4): `generate::tree` draws none
-    // for it (F1), so there is nothing for ERC, DRC or `extract` to judge.
+    // No fabrication package is written or compared for a board never drawn
+    // (`AET-WO-1210` §1.4): `generate::tree` draws none for it (F1). Plain
+    // `verify` runs, and reports each of [`BOARD_GATES`] `not_applicable`
+    // (`AET-WO-1607` (5)).
     let command = match fab_mode {
         Some(FabMode::Write(_)) => "verify --fab-out",
         Some(FabMode::Compare(_)) => "verify --against-fab",
         None => "verify",
     };
-    if let Err(r) = crate::draws_a_board(&spec, command) {
+    if fab_mode.is_some()
+        && let Err(r) = crate::draws_a_board(&spec, command)
+    {
         return crate::emit(&r, EXIT_INVALID_SPEC);
     }
+    let drawn = spec.board.drawn;
     let (topology, table) = match crate::solve_spec(&spec, &spec_sha256) {
         Ok(s) => s,
         Err(code) => return code,
@@ -1894,6 +1923,10 @@ pub fn verify(
     let repl = format!("{BOARD_DIR}/{project}.repl");
     let path = |rel: &str| os(&root.join(rel));
     let spec_arg = os(&spec_copy);
+    // A board's files are generated only when it is drawn. Never a sha256,
+    // so a board gate bound to it would fail closed (`BindingMismatch`); on
+    // a board not drawn no board gate runs, and no fab flag gets this far.
+    let board_file = |rel: &str| hashes.get(rel).map_or("", String::as_str);
 
     if let Err(code) = run_gates(
         &mut report,
@@ -1907,8 +1940,9 @@ pub fn verify(
             archive: os(&scratch.tool.join("archive")),
         },
         &Want {
-            sch: &hashes[&sch],
-            pcb: &hashes[&pcb],
+            drawn,
+            sch: board_file(&sch),
+            pcb: board_file(&pcb),
             repl: &hashes[&repl],
             board: &board_sha256,
             spec: &spec_sha256,
@@ -1926,9 +1960,12 @@ pub fn verify(
         spec_sha256: &spec_sha256,
         topology: &topology,
         board: root.join(&pcb),
-        board_sha256: &hashes[&pcb],
+        board_sha256: board_file(&pcb),
         elf: scratch.tool.join("firmware.elf"),
-        bom: files[&format!("{KICAD_DIR}/{project}.bom.csv")].as_bytes(),
+        // Read only with a fab flag, which a board not drawn never reaches.
+        bom: files
+            .get(&format!("{KICAD_DIR}/{project}.bom.csv"))
+            .map_or(&[][..], |t| t.as_bytes()),
         expected: &expected,
         seeded: &seeded,
         harnesses: &harnesses,
@@ -1967,7 +2004,7 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
         &report.gates,
         report.campaign.as_deref().unwrap_or_default(),
     );
-    report.ok = passes(&report.findings, &report.gates);
+    report.ok = passes(&report.findings, &report.gates, t.spec.board.drawn);
     report.verdict = if report.ok { "pass" } else { "fail" };
     if let Some(mode) = fab_mode {
         let elf_sha256 = report.elf_sha256.clone().unwrap_or_default();
@@ -2023,9 +2060,14 @@ fn campaign_conditions(runs: &[Run]) -> Vec<String> {
     out
 }
 
-/// The verdict passes when no finding is an error and every gate passed.
-fn passes(findings: &[Finding], gates: &[Gate]) -> bool {
-    findings.iter().all(|f| f.severity != "error") && gates.iter().all(|g| g.verdict == "pass")
+/// The verdict passes when no finding is an error and every gate passed; on
+/// a board not drawn, each of [`BOARD_GATES`] may instead be
+/// `not_applicable` (`AET-WO-1607` (5)). On a drawn board nothing is.
+fn passes(findings: &[Finding], gates: &[Gate], drawn: bool) -> bool {
+    let excused =
+        |g: &Gate| !drawn && g.verdict == "not_applicable" && BOARD_GATES.contains(&g.gate);
+    findings.iter().all(|f| f.severity != "error")
+        && gates.iter().all(|g| g.verdict == "pass" || excused(g))
 }
 
 /// Each controller whose independent rule does not hold, as an error by name
@@ -2212,6 +2254,8 @@ struct Paths {
 }
 
 struct Want<'a> {
+    /// `board.drawn`: false runs none of [`BOARD_GATES`].
+    drawn: bool,
     sch: &'a str,
     pcb: &'a str,
     repl: &'a str,
@@ -2231,13 +2275,26 @@ fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
 
 /// ERC, DRC with parity, `extract`, `prove` of every harness, `build`,
 /// `simulate --firmware` and the campaign, in that order, each bound to the
-/// generated hashes. A refusal or a binding mismatch stops the run.
+/// generated hashes. A refusal or a binding mismatch stops the run. On a
+/// board not drawn, each of [`BOARD_GATES`] is `not_applicable` instead.
 fn run_gates(
     report: &mut Report,
     p: &Paths,
     want: &Want<'_>,
     expected: &[Expected],
 ) -> Result<(), ExitCode> {
+    if want.drawn {
+        board_gates(report, p, want)?;
+    } else {
+        report
+            .gates
+            .extend(BOARD_GATES.into_iter().map(not_applicable));
+    }
+    proof_and_boot_gates(report, p, want, expected)
+}
+
+/// ERC, DRC with parity, `support` and `extract`: [`BOARD_GATES`].
+fn board_gates(report: &mut Report, p: &Paths, want: &Want<'_>) -> Result<(), ExitCode> {
     let erc = gate("erc", args(&[&"check", &"erc", &"--schematic", &p.sch]))?;
     bound("erc", &erc, want, "", "")?;
     report.gates.push(gate_report("erc", None, &erc));
@@ -2299,7 +2356,16 @@ fn run_gates(
     let mut g = gate_report("extract", None, &extract);
     g.uid_boundary = None;
     report.gates.push(g);
+    Ok(())
+}
 
+/// `prove` of every harness, `build`, `simulate --firmware` and the campaign.
+fn proof_and_boot_gates(
+    report: &mut Report,
+    p: &Paths,
+    want: &Want<'_>,
+    expected: &[Expected],
+) -> Result<(), ExitCode> {
     if want.harnesses.is_empty() {
         report.findings.push(Finding {
             kind: "no_harness",
@@ -2571,7 +2637,7 @@ mod tests {
         gate.verdict = "pass";
         let gates = [gate];
         assert!(silicon_findings(&silicon(1)).is_empty());
-        assert!(passes(&silicon_findings(&silicon(1)), &gates));
+        assert!(passes(&silicon_findings(&silicon(1)), &gates, true));
         let brr = silicon_findings(&silicon_brr(1, 557));
         assert_eq!(brr.len(), 1);
         assert!(
@@ -2581,7 +2647,7 @@ mod tests {
             "{}",
             brr[0].message
         );
-        assert!(!passes(&brr, &gates));
+        assert!(!passes(&brr, &gates, true));
         let failing = silicon_findings(&silicon(0));
         assert_eq!(failing.len(), 1);
         assert_eq!(failing[0].kind, "silicon_rule_fails");
@@ -2595,7 +2661,7 @@ mod tests {
             "{}",
             failing[0].message
         );
-        assert!(!passes(&failing, &gates));
+        assert!(!passes(&failing, &gates, true));
     }
 
     /// `AET-WO-4300g`: the package's support precondition is met only by a

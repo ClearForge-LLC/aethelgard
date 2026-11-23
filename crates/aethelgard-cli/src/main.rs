@@ -998,6 +998,11 @@ fn check_kicad(
     v.included_severities = Some(&kicad::SEVERITIES);
     if matches!(check, kicad::Check::Drc) {
         v.rules = Some(rules.source.name());
+        // `AET-WO-1607` (6): the banner of the specification `--spec` names.
+        v.lifecycle = read_spec_value
+            .as_ref()
+            .map(|(spec, _)| spec.lifecycle_banner().unwrap_or_default())
+            .unwrap_or_default();
         v.specification_sha256 = spec_sha256;
         v.pairs = pairs;
         v.power = power;
@@ -1067,7 +1072,11 @@ fn check_support(
         read_only: tool.dirs(),
         read_write: Vec::new(),
     };
-    let version = version(invocation(run::args(["version"]), "status-version"))?;
+    // Pinned as `check drc` and `check erc` are (`AET-WO-1607` (1), `1311` F4).
+    let version = kicad::pinned(version(invocation(
+        run::args(["version"]),
+        "status-version",
+    ))?)?;
     let net = scratch.tool.join("input.net");
     let mut args = run::args(["sch", "export", "netlist", "--format", "kicadsexpr", "-o"]);
     args.push(net.clone().into_os_string());
@@ -1120,6 +1129,7 @@ fn check_support(
         out.sandbox,
         findings,
     );
+    v.lifecycle = spec.lifecycle_banner().unwrap_or_default();
     v.specification_sha256 = Some(sha256);
     v.support = Some(verdict::SupportRecord::from((
         record,
@@ -1217,9 +1227,11 @@ fn power_gate(
 }
 
 /// The board crate `generate` writes for the specification in `file`, its
-/// paths relative to the crate; every refusal as a `Stop`, with `solve`'s and
-/// `generate`'s kinds and codes.
-fn generated_board(file: &Path) -> Result<std::collections::BTreeMap<String, String>, run::Stop> {
+/// paths relative to the crate, and the specification's lifecycle banner;
+/// every refusal as a `Stop`, with `solve`'s and `generate`'s kinds and codes.
+type GeneratedBoard = (std::collections::BTreeMap<String, String>, Vec<String>);
+
+fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
     let (spec, sha256) = read_spec(Some(file)).map_err(|(refusal, code)| run::Stop {
         code,
         kind: refusal.error.kind,
@@ -1256,9 +1268,9 @@ fn generated_board(file: &Path) -> Result<std::collections::BTreeMap<String, Str
             id: err.id().map(str::to_owned),
             message: err.to_string(),
         })?;
-    Ok(tree::subtree(
-        &files,
-        &format!("{}/", aethelgard_cli::generate::BOARD_DIR),
+    Ok((
+        tree::subtree(&files, &format!("{}/", aethelgard_cli::generate::BOARD_DIR)),
+        spec.lifecycle_banner().unwrap_or_default(),
     ))
 }
 
@@ -1319,7 +1331,7 @@ fn prove(
     input::dir_check(crate_dir)?;
     // A --spec that cannot be generated, and a crate the pre-flight refuses
     // (`AET-WO-1603` §1.2), are refused before any tool is looked for.
-    let generated = spec.map(generated_board).transpose()?;
+    let (generated, lifecycle) = spec.map(generated_board).transpose()?.unzip();
     let scratch = Scratch::new()?;
     let input = input::crate_dir(crate_dir, &scratch.tool.join("crate"))?;
     firmware::preflight(&input.copy, &input.copy)?;
@@ -1376,6 +1388,7 @@ fn prove(
         out.sandbox,
         findings,
     );
+    v.lifecycle = lifecycle.unwrap_or_default();
     v.harness = Some(harness.to_owned());
     v.harness_provenance = Some(provenance);
     v.cover_count = Some(kani::cover_count(&out));
@@ -3028,6 +3041,10 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
         ok: bool,
         project_name: String,
         specification_sha256: String,
+        /// The lifecycle banner (`AET-WO-1607` (6)); absent when it is empty.
+        /// The verdict only: the KiCad files carry none.
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        lifecycle: Vec<String>,
         schematic: Written,
         bill_of_materials: Written,
         board: Written,
@@ -3131,6 +3148,7 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
             ok: true,
             project_name: spec.project_name.clone(),
             specification_sha256: topology.specification_sha256.clone(),
+            lifecycle: spec.lifecycle_banner().unwrap_or_default(),
             schematic,
             bill_of_materials,
             board,
@@ -3367,7 +3385,7 @@ mod tests {
     #[test]
     fn provenance_is_generated_only_for_the_generated_crate() {
         let spec = root().join("examples/sentinel-01-minimal.json");
-        let board = generated_board(&spec).unwrap();
+        let (board, _) = generated_board(&spec).unwrap();
         let committed = root().join("boards/sentinel-01");
         assert_eq!(provenance(&committed, Some(&board)).unwrap(), "generated");
         assert_eq!(provenance(&committed, None).unwrap(), "supplied");
