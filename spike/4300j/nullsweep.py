@@ -55,8 +55,12 @@ def allowed(path):
 
 
 rows, bad = [], 0
-assert set(a) == set(b), (set(a) ^ set(b))
-for n in sorted(b):
+# A board that main added after the baseline has no baseline row: it is
+# listed, not judged. A baseline board missing after the build is a failure.
+missing = sorted(set(b) - set(a))
+added = sorted(set(a) - set(b))
+bad += len(missing)
+for n in sorted(set(b) & set(a)):
     x, y = b[n], a[n]
     codes = all(x[k] == y[k] for k in keys)
     pins, other, nsolve = [], [], 0
@@ -76,7 +80,7 @@ with open(f"{here}/out/null-sweep.tsv", "w") as f:
     f.write("name\tcodes_same\tsolve_paths_moved\tpin_moves\tunexpected_paths\temit\tmotor_board\trepeat\tverdict\n")
     for r in rows:
         f.write("\t".join(r) + "\n")
-print(f"{len(rows) - bad}/{len(rows)} as expected")
+print(f"{len(rows) - (bad - len(missing))}/{len(rows)} as expected; missing after: {missing}; added since the baseline (not judged): {added}")
 print("emit moved on:", [r[0] for r in rows if r[5] == "moved"])
 print("pin moves:", [r[0] for r in rows if r[3] != "-"])
 for r in rows:
