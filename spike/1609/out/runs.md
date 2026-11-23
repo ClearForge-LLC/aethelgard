@@ -17,3 +17,4 @@ Hooked re-runs of the CLI's own captured script (sh/capture.sh, measure.py), no 
 - **halt**: hooks none; CFSR 0x00000000, HFSR 0x00000000, instructions 72,576,093, PC 0x80360ac, ICSR 0x00042800; U5 log lines after 4.393 s: 0; log bytes 1,034,966
 - **udf**: lines=20258612 bytes=2350079600; hook `[00:00:04.392440830] HardFault_Handler pc=8000340`; end: CFSR 0x00010000 (UNDEFINSTR), HFSR 0x40000000 (FORCED), PC 0x8001434 (CrashCatcher_getc), ICSR 0x00000803 (VECTACTIVE 3); 20,250,235 log lines `usart1: [cpu: 0x8001432] ReadUInt32 from 0x1C (InterruptAndStatus)`.
 
+- **rss** (sh/rss.sh, stdout discarded, VmHWM): control 844,492 KiB; control nolog 860,044 KiB; udf 2,589,980 KiB; udf nolog 1,101,724 KiB (cap 1,048,576 KiB).

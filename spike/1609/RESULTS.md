@@ -1,8 +1,8 @@
 # AET-WO-1609 — the measurement (§1.1) and the stop (§1.2)
 
 Measured 2026-11-23 on `e5984c86` (main), predictions committed first (`170cae45`, `PREDICTIONS.md`).
-Code side read at source (two read-only sub-measurements, each spot-checked at the cited lines; one
-correction below). Twin side run in the pinned tools image (`container/IMAGE`, `1e0ab105…`, Renode
+Code side read at source (two read-only sub-measurements, spot-checked at the cited lines; one
+correction below; rows not re-checked by me are marked "sub, not re-checked"). Twin side run in the pinned tools image (`container/IMAGE`, `1e0ab105…`, Renode
 `1.17.0+20260907gitf1dd1b4af.aet1605`) under `~/bin/capped-run` (8 GiB, swap 0), `--network none`.
 
 **Three answers up front.**
@@ -28,15 +28,15 @@ on the via ring (not a gate), and on P4's HardFault (it fails, but by memory, no
 |---|---|---|---|---|
 | `erc`, `drc`, `support`, `extract` | 1, 1, roles+straps, see parts | `run_gates` L2320-2325 | `board.drawn` (default true) | `not_applicable` + `NO_BOARD` (the one traced "off") |
 | `extract` › lines | per bounded line | the topology's buses | `i2c_buses`, `spi_buses` | in `judged`; 0 → `nothing_in_scope` |
-| `extract` › supply | +1 per domain | **eda** `supply.rs:1349-1357` (no `power`, no `drop_limits`, or empty → `Vec::new()`) | `power.drop_limits` | **silent**: `supplies` omitted (`extract.rs:45-48`); `judged` just shrinks |
-| `extract` › oscillator | +1 per net (**counted, never judged**: see F1) | **eda** `extract.rs:1382` | `mcu.hse` (a `Crystal`) | silent (omitted) |
+| `extract` › supply | +1 per domain | **eda** `supply.rs:1349-1357` (no `power`, no `drop_limits`, or empty → `Vec::new()`) | `power.drop_limits`, **non-empty**: `[]` validates (`ir/power.rs:863` checks rows only) and is off with the key present | **silent**: `supplies` omitted (`extract.rs:45-48`); `judged` just shrinks |
+| `extract` › oscillator | +1 per net (**counted, never judged**: see F1) | **eda** `extract.rs:1382` (`Hse::Crystal` only) | `mcu.hse.crystal`: `mcu.hse.external` is present-but-off, as on `examples/sentinel-02-bench-hse8.json` and `fixtures/hse-external-8.json` | silent (omitted) |
 | `extract` › pairs | conductors counted as lines | the spec's pairs | `diff_pairs` | silent (omitted) |
-| `drc` › pairs, `drc` › power loops | not counted | `main.rs:931`, `main.rs:954` → **eda** `loops.rs:38` | `diff_pairs`, `power` | silent; `gate_report` drops both keys even when on |
-| `prove` | 1 per harness | the harnesses of the generated `src/proofs.rs` (`verify.rs:1804`), emitted by **svd-hal** `board.rs:5345-5347` (flash, pwr always; HSE only with `mcu.hse`) | **none: the generator's choice** | zero harnesses → `no_harness` error (unreachable); a missing feature harness is silent |
+| `drc` › pairs, `drc` › power loops | not counted | `main.rs:931`, `main.rs:954` → **eda** `loops.rs:38` (sub, not re-checked) | `diff_pairs`, `power` | silent; `gate_report` drops both keys even when on |
+| `prove` | 1 per harness | the harnesses of the generated `src/proofs.rs` (`verify.rs:1804`), emitted by **svd-hal** `board.rs:5345-5347` (flash, pwr always; HSE only with `mcu.hse`; sub, not re-checked) | **none: the generator's choice** | zero harnesses → `no_harness` error (unreachable); a missing feature harness is silent |
 | `build` | 1 | always | always on | — |
 | `simulate` | 1 | after `build` (L2437-2438) | always on | `not_run`, no reason |
-| `simulate` › HSE clock rule | not counted | **twin** `hse.rs:118`, `renode.rs:3013` | `mcu.hse` | silent (in no verdict struct) |
-| `gpio`, `adc` | items (an all-input `gpio` judges 0) | `verify.rs:772-773` drops an empty list; the list is `simulate`'s `boot.gpio`/`boot.adc` | `pin_devices[].signals`, `pin_devices[].analog` | absent, and absent too when `build` fails (no `not_run`) |
+| `simulate` › HSE clock rule | not counted | **twin** `hse.rs:118` (`clock.hse` of either kind, re-checked), `renode.rs:3013` | `mcu.hse` | silent (in no verdict struct) |
+| `gpio`, `adc` | items (an all-input `gpio` judges 0) | `verify.rs:772-773` drops an empty list; the list is `simulate`'s `boot.gpio`/`boot.adc`, from the twin's pin plan (`twin/pins.rs:160-305`) over `topology.gpio` | `pin_devices[].signals`, `pin_devices[].analog`. Re-checked: `topology.gpio` holds each SPI chip select too (`ir/solve.rs:630`), but the twin skips every select (`pins.rs:167-175`), so a select is never a `gpio` item (the SPI windows judge it); the only signals in the list are `pin_devices`' (`ir/pin_devices.rs:2295`) | absent, and absent too when `build` fails (no `not_run`) |
 | `bridge` | items | same filter; items from the topology (`bridges()`, L1959) | `pin_devices[].bridges` | absent |
 | `campaign` | runs | `expected.is_empty()` (L2439, L2464) | **flag `--scenarios`, not a key** | absent without the flag |
 | `attribute` | 1 per run | only a `Seeded::Detect` run that failed as expected with a passing baseline (~L2547-2554) | **none: the run's outcome** | absent |
@@ -126,7 +126,7 @@ Every run's row, including the count-site plants, is in `out/runs.md`. The panic
 **Why the panic passes (the mechanism, from the same run re-executed with hooks).** `sh/capture.sh`
 copied the CLI's own monitor script from Renode's argv. `measure.py` added execution hooks and two
 reads, and nothing else. The panic re-run executed the same 78,253,743 instructions as the judged run.
-- `panic` was entered at **4.392440850 s**, 20 ns after U5's data witness.
+- `panic` was entered at **4.392440850 s**, 20,290 ns (20.3 µs) after U5's data witness.
 - The IMU thread then sleeps inside `panic()`'s `delay`. Every thread parks, and the core ends in
   `__idle_thread` in thread mode: ICSR `0x800`, CFSR and HFSR 0.
 - The final PC is in an executable `PT_LOAD`. Every witness is already in the log.
@@ -135,15 +135,22 @@ reads, and nothing else. The panic re-run executed the same 78,253,743 instructi
 - The judge has no rule that reads silence, a panic entry or the console.
 
 **The HardFault fails, but not by name.**
-- The hook saw `HardFault_Handler` entered at 4.392440830 s.
+- The hook saw `HardFault_Handler` entered at 4.392440830 s, 20,270 ns after the witness.
 - Without the memory bound, the run ends in HardFault: ICSR `0x803`, CFSR `0x00010000` (UNDEFINSTR),
   HFSR `0x40000000` (FORCED), PC `0x8001434` (`CrashCatcher_getc`). `core_in_exception` would name that.
 - It never gets to. CrashCatcher polls USART1's ISR, and the access log `2311` enabled on each declared
   USART logs every poll: 20,250,235 lines, 2.35 GB in 0.6 s. Renode passes the 1 GiB cap and is killed.
+- **Peak RSS, measured** (`sh/rss.sh`: the same script, stdout discarded, VmHWM polled every 0.1 s):
+  control 844,492 KiB; control without the access log 860,044 KiB; **udf 2,589,980 KiB; udf without the
+  access log 1,101,724 KiB**. The cap is 1,048,576 KiB. So the access log drives most of the HardFault's
+  memory, but **without it the run still passes the cap**: the kill is not the access log's alone. The
+  rest is not explained by this measurement.
 - The verdict says `memory_cap_exceeded`, with `booted: null` and no witness read.
 - So it fails closed, but on a firmware whose fault handler polls a USART that is not declared
   (or a run with less contention), the outcome depends on the log budget, not on the exception check.
-  That is §5's "a HardFault that the exception check misses".
+  That is §5's "a HardFault that the exception check misses". Measured above: even with no
+  access log, this HardFault passes the cap, so today the memory bound, not `core_in_exception`,
+  decides every HardFault of this shape.
 
 **The reset fails by name** (`core_in_exception` and others). That is §5's "a watchdog reset" case: it
 is not a pass today.
@@ -182,9 +189,11 @@ and those lines. It is never built from a list. A unit test plants a gate with n
 - **D1, the derivation of "off" (needs a ruling).** For every part but `board.drawn`, the decision is
   made in eda, the twin or svd-hal, and the result does not say it was off. Options:
   - **(a) The gate subcommand in the CLI states the part's key** beside its call, from the
-    specification it already holds: a second decision site in the fence. A test per part removes the
-    key and asserts that eda returns nothing and the row says `off`, and that adding it back gives a
-    row with `judged` ≥ 1, so the two sites cannot drift.
+    specification it already holds: a second decision site in the fence. A test per part drives it both
+    ways, so the two sites cannot drift: the key removed, and the key **present but off** (`drop_limits:
+    []`; `mcu.hse.external` for the oscillator), each giving no eda result and a row `off`; and the
+    key present and live, giving a row with `judged` ≥ 1. Each row's key is the exact predicate eda
+    tests (non-empty `power.drop_limits`, `mcu.hse.crystal`), not the key's mere presence.
   - **(b) eda and the twin report "off" themselves.** This is outside the fence.
 
   **Lean (a).**
@@ -195,6 +204,7 @@ and those lines. It is never built from a list. A unit test plants a gate with n
   - The `prove` harness set: the generator's. **Lean:** one `judged 1` row per harness. A missing
     feature harness is the generator's concern (svd-hal, outside the fence) and gets a backlog row.
 - **D3, which parts get rows.** The acceptance row (`off: drop_limits`) needs parts below a gate.
+  Every part's predicate is a key and a value (above); none joins D2.
   **Lean:** `extract.lines`, `extract.supply`, `extract.oscillator`, `extract.pairs`, `drc.pairs`,
   `drc.power` and `simulate.hse_clock`. This is every part the code survey found that an optional key
   switches. The key is written as its full path (`power.drop_limits`).
@@ -241,4 +251,6 @@ and those lines. It is never built from a list. A unit test plants a gate with n
 `PREDICTIONS.md` (committed first); `plant.py` (the ELF plant); `measure.py` with `sh/capture.sh`,
 `sh/measure.sh` and `sh/foreign.sh` (the runs); `out/runs.md` (every run); `out/panic-simulate.json` and
 `out/control-simulate.json`. The ELFs (GPL, built by CI) are not committed: they are in
-`~/.cache/aet-1609/ap`, re-derivable from run 45245344589 with `plant.py`.
+`~/.cache/aet-1609/ap`, re-derivable from run 45245344589 with `plant.py`. `plant.py` checks the site's bytes and the
+`"\n"` literal's address against this build; the CI case, which rebuilds ArduPilot, must derive the
+literal (from `panic`'s literal pool) rather than pin its address. `sh/rss.sh` measured the peak RSS.

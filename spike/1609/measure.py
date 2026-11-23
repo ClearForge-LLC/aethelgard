@@ -4,9 +4,12 @@ the ELF swapped and three additions, so the run that is judged is also the run t
     plant.py's symbols, given here), each logging `AETHELGARD-HOOK <name> pc=<pc>` once per entry,
     with Renode's virtual timestamp;
   - after the begin marker, SCB's CFSR (0xE000ED28) and HFSR (0xE000ED2C).
-python3 -I measure.py CAPDIR ELF OUTSCRIPT"""
+With a fourth argument `nolog`, the CLI's `sysbus LogPeripheralAccess` lines are dropped (to
+measure what they cost a run; that script is not the judge's).
+python3 -I measure.py CAPDIR ELF OUTSCRIPT [nolog]"""
 import sys
 cap, elf, out = sys.argv[1:4]
+nolog = sys.argv[4:] == ["nolog"]
 hooks = {"panic": 0x080C033C, "HardFault_Handler": 0x08000340}
 log = ("__import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, "
        "__import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, "
@@ -19,6 +22,8 @@ for c in open(f"{cap}/script.txt").read().splitlines():
         c = f"include @{cap}/models/" + c.split("/models/", 1)[1]
     elif c.startswith("sysbus LoadELF"):
         c = f"sysbus LoadELF @{elf}"
+    if nolog and c.startswith("sysbus LogPeripheralAccess"):
+        continue
     if c.startswith("emulation RunFor"):
         res += [f'cpu AddHook {a:#x} "{log.format(name=n)}"' for n, a in hooks.items()]
     res.append(c)
