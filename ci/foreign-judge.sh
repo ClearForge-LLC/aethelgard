@@ -6,8 +6,9 @@
 #
 #   ci/foreign-judge.sh BOARDS
 #
-# BOARDS holds sentinel-02/arducopter.elf (the generated job's) and
-# sentinel-02-noimu/arducopter.elf (the same hwdef without its IMU line).
+# BOARDS holds sentinel-02/arducopter.elf (the generated job's),
+# sentinel-02-noimu/arducopter.elf (the same hwdef without its IMU line) and
+# four-port/arducopter.elf (the generated job's four-port board, AET-WO-2311).
 # The CLI and the analog bridge are built in target/ (CARGO_TARGET_DIR).
 # Each run prints one `ANSWER 4400e:` line with its exit code and verdict.
 # AET-WO-4400g: the specification declares ArduPilot's clock
@@ -146,3 +147,111 @@ run no-imu-line 1 '
 "spi_transaction_unwitnessed" in kinds and not witnessed.get(("U5", "identity"))
 and witnessed.get(("U7", "identity")) and witnessed.get(("U4", "identity"))
 ' --platform "$platform" --firmware "$noimu" --foreign "$window"
+
+# AET-WO-2311 (ruled at §1.2): each declared serial port's USART_CR2 options,
+# from its access log, on the four-port board (SERIAL0-3: console, GPS, CRSF
+# as RC input, GPS2) built with unmodified ArduPilot by the generated matrix.
+# four-port.json declares no mcu.foreign_clock; it takes sentinel-02-own's,
+# ArduPilot's declared clock on the same MCU, as the other variants here are
+# derived. `inverted` declares SERIAL1 (GPS) inverted as well (F2: the
+# fixture has no inverted port).
+four=$boards/four-port/arducopter.elf
+derive_four() {
+  python3 -I - crates/aethelgard-cli/tests/fixtures/four-port.json "$spec" "$work/spec-four-$1.json" "$1" <<'PY'
+import json, sys
+src, s02, dst, how = sys.argv[1:]
+d = json.load(open(src))
+assert "foreign_clock" not in d["mcu"]
+d["mcu"]["foreign_clock"] = json.load(open(s02))["mcu"]["foreign_clock"]
+if how == "inverted":
+    assert d["serial_ports"][1]["label"] == "GPS" and not d["serial_ports"][1]["framing"]["inverted"]
+    d["serial_ports"][1]["framing"]["inverted"] = True
+json.dump(d, open(dst, "w"), indent=2)
+PY
+  "$bin" generate --spec "$work/spec-four-$1.json" --out "$work/gen-four-$1" > "$work/generate-four-$1.json"
+}
+derive_four plain
+derive_four inverted
+
+# The mutations, with no rebuild: one AP_SerialManager parameter's default,
+# in its var_info row (AP_Param::GroupInfo, AP_Param.h:206-218: name pointer,
+# offset, float def_value, u16 flags, u8 idx, u8 type; 16 bytes on ARM32),
+# set in a copy of the ELF; exactly one row has the name and FROM. Measured
+# to write the same CR2 words as rebuilding the hwdef with that
+# DEFAULT_SERIALn_OPTIONS (spike/2311 RESULTS, swap and inversion).
+mutate() {
+  python3 -I - "$four" "$work/$1.elf" "$2" "$3" "$4" <<'PY'
+import struct, sys
+src, dst, name, old, new = sys.argv[1:]
+data = bytearray(open(src, "rb").read())
+assert data[:4] == b"\x7fELF" and data[4] == 1 and data[5] == 1, "not a 32-bit little-endian ELF"
+shoff, = struct.unpack_from("<I", data, 0x20)
+shentsize, shnum = struct.unpack_from("<HH", data, 0x2E)
+secs = [struct.unpack_from("<IIIIIIIIII", data, shoff + i * shentsize) for i in range(shnum)]
+symtab, = [s for s in secs if s[1] == 2]
+strtab = secs[symtab[6]]
+def cstr(off):
+    return bytes(data[off:data.index(0, off)])
+want = b"_ZN16AP_SerialManager8var_infoE"
+(addr, size), = [
+    struct.unpack_from("<II", data, symtab[4] + i * 16 + 4)
+    for i in range(symtab[5] // 16)
+    if cstr(strtab[4] + struct.unpack_from("<I", data, symtab[4] + i * 16)[0]) == want
+]
+def file_off(a):
+    (s,) = [s for s in secs if s[1] == 1 and s[3] <= a < s[3] + s[5]]
+    return a - s[3] + s[4]
+rows = []
+for i in range(0, size, 16):
+    at = file_off(addr + i)
+    name_p, _, val, _, idx, typ = struct.unpack_from("<IifHBB", data, at)
+    if typ == 0 and idx == 255:
+        break
+    if cstr(file_off(name_p)).decode() == name:
+        rows.append((at, val))
+(at, val), = rows
+assert val == float(old), f"{name} defaults to {val:g}, not {old}"
+struct.pack_into("<f", data, at + 8, float(new))
+open(dst, "wb").write(data)
+print(f"ANSWER 2311: {sys.argv[2]} {name} {val:g} -> {float(new):g}")
+PY
+}
+mutate four-swap 1_OPTIONS 0 8      # SWAP on GPS (USART2), OPTION_SWAP (UARTDriver.h:94)
+mutate four-rc-txinv 2_OPTIONS 0 2  # TXINV on CRSF (USART3), RC input (OPTION_TXINV)
+mutate four-inverted 1_OPTIONS 0 3  # RXINV|TXINV on GPS: what an inverted GPS port compiles
+
+four_platform=$(ls "$work"/gen-four-plain/board/*.repl)
+inv_platform=$(ls "$work"/gen-four-inverted/board/*.repl)
+
+# Unmodified ArduPilot passes: every declared port's last CR2 word with UE
+# clear judged, the RC port's RXINV unjudged, and the eight serial lines'
+# pulls info, each named.
+run_spec=$work/spec-four-plain.json run four-port 0 '
+v["verdict"] == "pass" and boot["judge"] == "foreign" and boot["booted"]
+and [o["label"] for o in boot["serial_options"]] == ["MAVLINK", "GPS", "CRSF", "GPS2"]
+and all(o["judged"] is not None and o["writes"] >= 1 for o in boot["serial_options"])
+and [e["expected"] for e in boot["serial_options"][2]["expected"]] == ["clear", "clear", "unjudged"]
+and len(boot["serial_pulls"]) == 8
+and sum(f["kind"] == "serial_pull" for f in v["findings"]) == 8
+and boot["log_lines_dropped"] == 0
+' --platform "$four_platform" --firmware "$four" --foreign "$window"
+
+# SWAP on the GPS port, and TXINV on the RC port: each refused by name.
+run_spec=$work/spec-four-plain.json run four-swap 1 '
+kinds == ["serial_swap_set"]
+and [f["message"] for f in v["findings"] if f["kind"] == "serial_swap_set"][0].startswith("GPS (USART2, gps): ")
+' --platform "$four_platform" --firmware "$work/four-swap.elf" --foreign "$window"
+run_spec=$work/spec-four-plain.json run four-rc-txinv 1 '
+kinds == ["serial_txinv_wrong"]
+and [f["message"] for f in v["findings"] if f["kind"] == "serial_txinv_wrong"][0].startswith("CRSF (USART3, rc_crsf): ")
+' --platform "$four_platform" --firmware "$work/four-rc-txinv.elf" --foreign "$window"
+
+# GPS declared inverted: the unmodified ELF leaves both lines clear and is
+# refused by name; the ELF with both inverted passes.
+run_spec=$work/spec-four-inverted.json run four-inverted-declared 1 '
+kinds == ["serial_txinv_wrong", "serial_rxinv_wrong"]
+' --platform "$inv_platform" --firmware "$four" --foreign "$window"
+run_spec=$work/spec-four-inverted.json run four-inverted 0 '
+v["verdict"] == "pass"
+and [p["pupdr"] for p in boot["serial_pulls"] if p["label"] == "GPS"] == ["pull-down", "pull-down"]
+' --platform "$inv_platform" --firmware "$work/four-inverted.elf" --foreign "$window"

@@ -853,6 +853,193 @@ pub fn judge_writes(b: &Bringup, source: &str, boots: &[Vec<Access>]) -> TagJudg
     j
 }
 
+/// What one `USART_CR2` option bit must be on a foreign firmware's port
+/// (`AET-WO-2311`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Expect {
+    Clear,
+    Set,
+    /// Left to the firmware: an RC input port's `RXINV`, which AP_RCProtocol
+    /// sets and clears as it searches (`AET-WO-4404` FEEDBACK §2.5).
+    Unjudged,
+}
+
+impl Expect {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Clear => "clear",
+            Self::Set => "set",
+            Self::Unjudged => "unjudged",
+        }
+    }
+}
+
+/// A declared port's `USART_CR2` options as a foreign firmware must leave
+/// them, from the topology and ST's header alone (`INV-07`, `AET-WO-2311`
+/// ruled at §1.2), never from the firmware: `SWAP` clear, for no port
+/// declares a swap; on RC input `TXINV` clear and `RXINV` unjudged; on every
+/// other port `TXINV` and `RXINV` each as `framing.inverted`
+/// (`ir/src/serial.rs`, both lines).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Options {
+    pub label: String,
+    pub peripheral: String,
+    /// Renode's name of the USART, the access log's source.
+    pub renode: &'static str,
+    pub role: aethelgard_ir::SerialRole,
+    pub inverted: bool,
+    /// `SWAP`, `TXINV`, `RXINV`: the field's name, its bit and what it must be.
+    pub bits: [(&'static str, u32, Expect); 3],
+    /// `CR1`'s and `CR2`'s offsets, and `CR1.UE`'s bit.
+    pub cr1: u32,
+    pub cr2: u32,
+    pub ue: u32,
+    pub tx: PinMux,
+    pub rx: PinMux,
+}
+
+/// Every declared serial port's [`Options`], in the specification's order.
+pub fn options(topology: &SolvedTopology) -> Result<Vec<Options>, TwinError> {
+    let f = cmsis::register_facts()?;
+    let layout = f.layout("USART")?;
+    let bit = |name: &str| -> Result<u32, TwinError> {
+        Ok(1 << f.position(&format!("USART_{name}_Pos"))?)
+    };
+    let (swap, txinv, rxinv) = (bit("CR2_SWAP")?, bit("CR2_TXINV")?, bit("CR2_RXINV")?);
+    topology
+        .serial_ports_in_order()
+        .into_iter()
+        .map(|(label, p, tx, rx)| {
+            let rc = matches!(
+                p.role,
+                aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus
+            );
+            let line = if p.framing.inverted {
+                Expect::Set
+            } else {
+                Expect::Clear
+            };
+            Ok(Options {
+                label: label.to_owned(),
+                peripheral: p.peripheral.clone(),
+                renode: renode_name(&p.peripheral)?,
+                role: p.role,
+                inverted: p.framing.inverted,
+                bits: [
+                    ("SWAP", swap, Expect::Clear),
+                    ("TXINV", txinv, if rc { Expect::Clear } else { line }),
+                    ("RXINV", rxinv, if rc { Expect::Unjudged } else { line }),
+                ],
+                cr1: layout.offset("CR1", 0)?,
+                cr2: layout.offset("CR2", 0)?,
+                ue: bit("CR1_UE")?,
+                tx: PinMux::of(&tx.pin, tx.alternate_function)?,
+                rx: PinMux::of(&rx.pin, rx.alternate_function)?,
+            })
+        })
+        .collect()
+}
+
+/// What a port's `CR1` and `CR2` writes show against its [`Options`]
+/// ([`judge_options`]).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct OptionsJudgement {
+    /// Every `CR2` word write, `UE` set or clear.
+    pub writes: usize,
+    /// The word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075: `SWAP`,
+    /// `TXINV` and `RXINV` "can only be written when the USART is disabled
+    /// (UE = 0)"): the last `CR2` word written while `CR1.UE` was clear, and
+    /// the index of its access; `None` when there is none.
+    pub judged: Option<(u32, usize)>,
+    /// Each judged bit the judged word holds wrong: its field and what it
+    /// must be.
+    pub wrong: Vec<(&'static str, Expect)>,
+    /// Each `CR2` write made with `UE` set that changes a judged bit from the
+    /// word in force, which silicon ignores (ruled at §1.2): the access's
+    /// index, the word and the fields it changes.
+    pub ignored: Vec<(usize, u32, Vec<&'static str>)>,
+    /// Each write to `CR1` or `CR2` that is not a word at the register's own
+    /// offset, which neither rule can read: a description and its index.
+    pub unjudgeable: Vec<(usize, String)>,
+}
+
+/// Judges `accesses`, a foreign boot's access log in order, against `o`:
+/// the writes of `o.renode` to `CR1` and `CR2` (offsets `CR1` to `CR2 + 3`)
+/// rebuild `UE` from reset (clear) and the word in force, and the last word
+/// written with `UE` clear is held to `o.bits`. A write there that is not a
+/// whole word at `CR1` or `CR2` is unjudgeable (fail closed, ruled D3).
+pub fn judge_options(o: &Options, accesses: &[Access]) -> OptionsJudgement {
+    let mut j = OptionsJudgement::default();
+    let judged_mask = o
+        .bits
+        .iter()
+        .filter(|b| b.2 != Expect::Unjudged)
+        .fold(0, |m, b| m | b.1);
+    let mut ue = false;
+    let mut in_force = 0u32;
+    for (i, a) in accesses.iter().enumerate() {
+        if !a.write || a.source != o.renode || !(o.cr1..o.cr2 + 4).contains(&a.offset) {
+            continue;
+        }
+        if a.bits != 32 || (a.offset != o.cr1 && a.offset != o.cr2) {
+            j.unjudgeable.push((
+                i,
+                format!(
+                    "Write{} to {:#X}, value {:#X}",
+                    width_name(a.bits),
+                    a.offset,
+                    a.value
+                ),
+            ));
+            continue;
+        }
+        let value = u32::try_from(a.value).unwrap_or(u32::MAX);
+        if a.offset == o.cr1 {
+            ue = value & o.ue != 0;
+            continue;
+        }
+        j.writes += 1;
+        if !ue {
+            in_force = value;
+            j.judged = Some((value, i));
+            continue;
+        }
+        let changed = (value ^ in_force) & judged_mask;
+        if changed != 0 {
+            let fields = o
+                .bits
+                .iter()
+                .filter(|b| changed & b.1 != 0)
+                .map(|b| b.0)
+                .collect();
+            j.ignored.push((i, value, fields));
+        }
+    }
+    if let Some((word, _)) = j.judged {
+        j.wrong = o
+            .bits
+            .iter()
+            .filter(|(_, mask, want)| match want {
+                Expect::Clear => word & mask != 0,
+                Expect::Set => word & mask == 0,
+                Expect::Unjudged => false,
+            })
+            .map(|(field, _, want)| (*field, *want))
+            .collect();
+    }
+    j
+}
+
+/// A pin's `PUPDR` field (RM0433 Rev 9 §11.4.4) as the verdict names it.
+pub fn pull_name(field: u8) -> &'static str {
+    match field {
+        0b00 => "floating",
+        0b01 => "pull-up",
+        0b10 => "pull-down",
+        _ => "reserved",
+    }
+}
+
 /// The TX pin's `MODER` and `AFR` words at the first `TDR` write of each
 /// boot that wrote one, rebuilt in log order from the words the access log
 /// shows the firmware wrote to the pin's GPIO port in that boot (a register
@@ -1685,6 +1872,15 @@ impl PinMux {
         )
     }
 
+    /// The pin's port's `PUPDR`: its name (`GPIOA.PUPDR`) and address.
+    pub fn pupdr(&self) -> (String, u32) {
+        let port = self.moder.0.trim_end_matches(".MODER");
+        (
+            format!("{port}.PUPDR"),
+            self.moder.1 - self.offsets.0 + self.config_offsets[2],
+        )
+    }
+
     /// The pin's `MODER` and `AFSEL` fields in the registers `moder` and
     /// `afr`.
     pub fn fields(&self, moder: u32, afr: u32) -> (u8, u8) {
@@ -2238,6 +2434,155 @@ mod tests {
             w("uart4", 0x00, 0x2000_140d),
             w("uart4", 0x28, 0x53),
         ]
+    }
+
+    /// A port's options as [`options`] builds them, for `role` and
+    /// `inverted`, on USART3 (PB10/PB11, AF7).
+    fn opts(role: aethelgard_ir::SerialRole, inverted: bool) -> Options {
+        let f = cmsis::register_facts().unwrap();
+        let bit = |n: &str| 1u32 << f.position(&format!("USART_{n}_Pos")).unwrap();
+        let rc = matches!(
+            role,
+            aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus
+        );
+        let line = if inverted { Expect::Set } else { Expect::Clear };
+        Options {
+            label: "P".into(),
+            peripheral: "USART3".into(),
+            renode: "usart3",
+            role,
+            inverted,
+            bits: [
+                ("SWAP", bit("CR2_SWAP"), Expect::Clear),
+                (
+                    "TXINV",
+                    bit("CR2_TXINV"),
+                    if rc { Expect::Clear } else { line },
+                ),
+                (
+                    "RXINV",
+                    bit("CR2_RXINV"),
+                    if rc { Expect::Unjudged } else { line },
+                ),
+            ],
+            cr1: 0,
+            cr2: 4,
+            ue: bit("CR1_UE"),
+            tx: PinMux::of("PB10", 7).unwrap(),
+            rx: PinMux::of("PB11", 7).unwrap(),
+        }
+    }
+
+    /// Unmodified ArduPilot's last RC search group on USART3, as the access
+    /// log shows it at 4.2095 s (`spike/2311/out/m4`, CR1 writes from the
+    /// hook's column): re-`begin` clears `UE`, writes `CR2` four times, sets
+    /// `UE`, then writes `0x40` with `UE` set.
+    fn rc_group() -> Vec<Access> {
+        vec![
+            w("usart3", 0, 0x10c),
+            w("usart3", 4, 0),
+            w("usart3", 4, 0x1_2040),
+            w("usart3", 4, 0),
+            w("usart3", 4, 0x1_0040),
+            w("usart3", 0, 0x10d),
+            w("usart3", 4, 0x40),
+        ]
+    }
+
+    /// `AET-WO-2311` D1 (b): the judged word is the last written with `UE`
+    /// clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), not
+    /// the last written. On RC input `RXINV` is unjudged, so ArduPilot's
+    /// search passes, and a `UE`-set write that changes only `RXINV` is not a
+    /// finding.
+    #[test]
+    fn the_judged_word_is_the_last_written_with_ue_clear() {
+        use aethelgard_ir::SerialRole::{Gps, RcCrsf};
+        let rc = opts(RcCrsf, false);
+        let j = judge_options(&rc, &rc_group());
+        assert_eq!(j.judged, Some((0x1_0040, 4)), "{j:?}");
+        assert_eq!(j.writes, 5);
+        assert!(j.wrong.is_empty() && j.ignored.is_empty() && j.unjudgeable.is_empty());
+        // On a GPS port the same group leaves RXINV set: wrong, and the UE-set
+        // write that would clear it does not take.
+        let gps = opts(Gps, false);
+        let j = judge_options(&gps, &rc_group());
+        assert_eq!(j.wrong, [("RXINV", Expect::Clear)]);
+        assert_eq!(j.ignored, [(6, 0x40, vec!["RXINV"])]);
+        // Reads, other sources and other registers are not CR2 writes.
+        let mut noise = vec![
+            rd("usart3", 4, 0x8000),
+            w("usart2", 4, 0x8000),
+            w("usart3", 8, 0x8000),
+            w("usart3", 0x28, 0x8000),
+        ];
+        noise.extend(rc_group());
+        assert_eq!(judge_options(&rc, &noise).judged, Some((0x1_0040, 8)));
+    }
+
+    /// The WO's mutant "the first write judged in place of the last": a
+    /// first `UE`-clear word with SWAP and a clean last one passes; the
+    /// reverse is refused.
+    #[test]
+    fn the_last_ue_clear_word_is_judged_not_the_first() {
+        let o = opts(aethelgard_ir::SerialRole::Gps, false);
+        let ok = [w("usart3", 4, 0x8040), w("usart3", 4, 0x40)];
+        assert!(judge_options(&o, &ok).wrong.is_empty());
+        let bad = [w("usart3", 4, 0x40), w("usart3", 4, 0x8040)];
+        assert_eq!(judge_options(&o, &bad).wrong, [("SWAP", Expect::Clear)]);
+    }
+
+    /// Each bit's own refusal: SWAP on any port; TXINV on RC input; TXINV
+    /// and RXINV each as `inverted` elsewhere, by name (the WO's mutants
+    /// "the SWAP check removed" and "TXINV and RXINV exchanged").
+    #[test]
+    fn each_option_bit_is_refused_by_name() {
+        use aethelgard_ir::SerialRole::{Gps, RcSbus};
+        let judge = |o: &Options, word: u32| judge_options(o, &[w("usart3", 4, word)]).wrong;
+        let (gps, inv, rc) = (opts(Gps, false), opts(Gps, true), opts(RcSbus, true));
+        assert_eq!(judge(&gps, 0x8000), [("SWAP", Expect::Clear)]);
+        assert_eq!(judge(&rc, 0x8000), [("SWAP", Expect::Clear)]);
+        assert_eq!(judge(&gps, 0x2_0000), [("TXINV", Expect::Clear)]);
+        assert_eq!(judge(&gps, 0x1_0000), [("RXINV", Expect::Clear)]);
+        assert_eq!(judge(&inv, 0x2_0000), [("RXINV", Expect::Set)]);
+        assert_eq!(judge(&inv, 0x1_0000), [("TXINV", Expect::Set)]);
+        assert!(judge(&inv, 0x3_0000).is_empty());
+        assert_eq!(judge(&rc, 0x3_0000), [("TXINV", Expect::Clear)]);
+        assert!(judge(&rc, 0x1_0000).is_empty() && judge(&rc, 0).is_empty());
+    }
+
+    /// D3: a write into `CR1` or `CR2` that is not a word at its own offset
+    /// is unjudgeable; no `UE`-clear word at all leaves nothing judged.
+    #[test]
+    fn a_narrow_or_misplaced_write_is_unjudgeable_and_none_is_unwritten() {
+        let o = opts(aethelgard_ir::SerialRole::Gps, false);
+        let narrow = |bits, offset| Access {
+            bits,
+            ..w("usart3", offset, 0x80)
+        };
+        let j = judge_options(
+            &o,
+            &[
+                w("usart3", 4, 0x40),
+                narrow(16, 4),
+                narrow(8, 6),
+                narrow(8, 0),
+                w("usart3", 2, 1),
+                w("usart3", 8, 1),
+            ],
+        );
+        assert_eq!(
+            j.unjudgeable,
+            [
+                (1, "WriteUInt16 to 0x4, value 0x80".to_owned()),
+                (2, "WriteByte to 0x6, value 0x80".to_owned()),
+                (3, "WriteByte to 0x0, value 0x80".to_owned()),
+                (4, "WriteUInt32 to 0x2, value 0x1".to_owned()),
+            ]
+        );
+        assert_eq!(j.judged, Some((0x40, 0)));
+        // Only UE-set writes: nothing silicon keeps was written.
+        let j = judge_options(&o, &[w("usart3", 0, 1), w("usart3", 4, 0x40)]);
+        assert_eq!((j.judged, j.writes), (None, 1));
     }
 
     /// `AET-WO-2311` §5: a generated firmware that sets `CR2.SWAP` is

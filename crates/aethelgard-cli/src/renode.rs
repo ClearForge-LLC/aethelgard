@@ -4520,7 +4520,7 @@ mod tests {
     fn no_judge_reads_the_dwt() {
         let image = image();
         let p = plan(&image, &[]);
-        for c in [p.commands(), foreign::commands(&p, &[]).unwrap()] {
+        for c in [p.commands(), foreign::commands(&p, &[], &[]).unwrap()] {
             assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
             for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
                 if let Some(hex) = word.strip_prefix("0x") {
@@ -6051,7 +6051,7 @@ mod tests {
             ..serial_plan(&image, &[], &serial)
         };
         assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
-        let foreign = foreign::commands(&plan(&image, &[]), &[]).unwrap();
+        let foreign = foreign::commands(&plan(&image, &[]), &[], &[]).unwrap();
         assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
         assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
     }

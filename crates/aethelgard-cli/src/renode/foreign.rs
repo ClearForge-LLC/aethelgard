@@ -78,7 +78,12 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "USART CR1, CR2",
         "replaced",
-        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing. Weakens: CR1.RE (receive enable) is not judged, as receive is held",
+        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing, read back; and CR2's SWAP, TXINV and RXINV, which Renode does not store, from each declared USART's access log (AET-WO-2311, ruled at §1.2): the last CR2 word written while CR1.UE was clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), held to the specification alone: SWAP clear; on RC input TXINV clear; elsewhere TXINV and RXINV each as framing.inverted. A CR2 write with UE set that changes a judged bit fails (it does not take); a write into CR1 or CR2 that is not a word at its own offset, or no CR2 word written with UE clear, fails. Weakens: CR1.RE (receive enable) is not judged, as receive is held; an RC input port's RXINV is AP_RCProtocol's and unjudged; the words are the twin's sequence, not silicon's: a firmware that reads CR2 back before writing it reads every tag as 0 in the twin, so a clearing write silicon would make may be absent (ArduPilot's set_options, UARTDriver.cpp:1574, :1699-1709)",
+    ),
+    (
+        "serial pins' PUPDR",
+        "replaced",
+        "an info finding per declared port's TX and RX pin naming its pull, read back at the run's end, each in boot.serial_pulls. Weakens: the pull is not judged (roadmap §7.1 L1054 awaits its ruling)",
     ),
     (
         "USART CR3, BRR",
@@ -257,6 +262,49 @@ pub struct LockedReport {
     pub count: u64,
 }
 
+/// One declared port's `USART_CR2` options as the foreign judge read them
+/// (`AET-WO-2311`).
+#[derive(Serialize)]
+pub struct SerialOptionsReport {
+    pub label: String,
+    pub peripheral: String,
+    pub role: &'static str,
+    pub inverted: bool,
+    /// Every `CR2` word write in the access log, `UE` set or clear.
+    pub writes: usize,
+    /// The last `CR2` word written with `UE` clear, and its virtual time;
+    /// `null` when there is none.
+    pub judged: Option<String>,
+    pub judged_ns: Option<u64>,
+    /// `SWAP`, `TXINV`, `RXINV`: each `clear`, `set` or `unjudged`.
+    pub expected: Vec<OptionBitReport>,
+}
+
+/// One option bit's expectation.
+#[derive(Serialize)]
+pub struct OptionBitReport {
+    pub field: &'static str,
+    pub expected: &'static str,
+}
+
+/// One serial line's pull, read back at the run's end (`AET-WO-2311` (2)).
+#[derive(Serialize)]
+pub struct PullReport {
+    pub label: String,
+    pub line: &'static str,
+    pub pin: String,
+    pub pupdr: &'static str,
+}
+
+/// The finding kinds of the serial options (`AET-WO-2311` D4).
+pub const SWAP_SET: &str = "serial_swap_set";
+pub const TXINV_WRONG: &str = "serial_txinv_wrong";
+pub const RXINV_WRONG: &str = "serial_rxinv_wrong";
+pub const OPTIONS_IGNORED: &str = "serial_options_ignored";
+pub const OPTIONS_UNJUDGEABLE: &str = "serial_options_unjudgeable";
+pub const OPTIONS_UNWRITTEN: &str = "serial_options_unwritten";
+pub const PULL: &str = "serial_pull";
+
 /// What booted the firmware, as D5 rules it.
 #[derive(Serialize)]
 pub struct Booted {
@@ -297,6 +345,10 @@ pub struct ForeignBoot {
     pub flash: Vec<FlashReport>,
     /// Each flash erase the firmware started, as the erase hook logs it.
     pub erases: Vec<EraseReport>,
+    /// Each declared serial port's `CR2` options (`AET-WO-2311`).
+    pub serial_options: Vec<SerialOptionsReport>,
+    /// Each declared serial line's pull at the run's end (`AET-WO-2311`).
+    pub serial_pulls: Vec<PullReport>,
     /// The virtual time of each option-byte change it started (`info`).
     pub option_changes: Vec<Option<u64>>,
     /// Accesses to a peripheral whose clock was off (`info`).
@@ -705,10 +757,16 @@ fn spi_controllers(plan: &BootPlan<'_>) -> Vec<String> {
 
 /// The foreign boot's monitor commands: the platform, the firmware, the cold
 /// RCC, each modelled device's log level and stimulus, each SPI controller's
-/// `CFG2` hook (D4), the run, then the reads between the markers, each loaded flash segment's sha256, and the
-/// listing. No boot word, no record, no hook on the firmware's own code and
-/// no injection: none of the generated runtime's contract.
-pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<String, Stop> {
+/// `CFG2` hook (D4), each declared serial port's USART access log
+/// (`AET-WO-2311` D2), the run, then the reads between the markers, each
+/// loaded flash segment's sha256, and the listing. No boot word, no record,
+/// no hook on the firmware's own code and no injection: none of the
+/// generated runtime's contract.
+pub fn commands(
+    plan: &BootPlan<'_>,
+    flash: &[crate::elf::FlashLoad],
+    serial: &[aethelgard_twin::serial::Options],
+) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
         QUANTUM.to_owned(),
@@ -726,16 +784,45 @@ pub fn commands(plan: &BootPlan<'_>, flash: &[crate::elf::FlashLoad]) -> Result<
     c.push(plan.vtor());
     c.extend(plan.witness_levels());
     c.extend(spi_controllers(plan).iter().map(|s| cfg2_hook(s)));
+    c.extend(usart_logs(serial));
     c.push(Erase::facts()?.hook());
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
-    c.extend(reads(plan)?.into_iter().map(|(cmd, _)| cmd));
+    c.extend(reads(plan, serial)?.into_iter().map(|(cmd, _)| cmd));
     c.push(format!("echo \"{END}\""));
     c.extend(flash.iter().map(flash_hash));
     c.push("peripherals".to_owned());
     c.push("quit".to_owned());
     Ok(c.join("; "))
+}
+
+/// Each declared serial port's USART, its accesses logged (`AET-WO-2311`
+/// D2): the access log carries each write's width, which a write hook's
+/// scope does not (measured, `spike/2311` P7), so a half-word write to `CR2`
+/// is never read as a word. Once per USART.
+fn usart_logs(serial: &[aethelgard_twin::serial::Options]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for o in serial {
+        let c = format!("sysbus LogPeripheralAccess sysbus.{} true", o.renode);
+        if !out.contains(&c) {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Each `PUPDR` a declared serial line's pin is in, by name and address,
+/// once each, in the ports' order (TX, then RX).
+fn pull_registers(serial: &[aethelgard_twin::serial::Options]) -> Vec<(String, u32)> {
+    let mut out: Vec<(String, u32)> = Vec::new();
+    for pin in serial.iter().flat_map(|o| [&o.tx, &o.rx]) {
+        let r = pin.pupdr();
+        if !out.contains(&r) {
+            out.push(r);
+        }
+    }
+    out
 }
 
 /// What one read gives.
@@ -748,9 +835,14 @@ enum ForeignRead {
     Register(usize),
     /// The RCC register at this index of `RccRegisters::OFFSETS`.
     Rcc(usize),
+    /// The `PUPDR` at this index of [`pull_registers`].
+    Pull(usize),
 }
 
-fn reads(plan: &BootPlan<'_>) -> Result<Vec<(String, ForeignRead)>, Stop> {
+fn reads(
+    plan: &BootPlan<'_>,
+    serial: &[aethelgard_twin::serial::Options],
+) -> Result<Vec<(String, ForeignRead)>, Stop> {
     let rcc = aethelgard_svd_hal::cmsis::register_facts()
         .and_then(|f| f.base("RCC"))
         .map_err(|e| Stop::tool_error("aethelgard-svd-hal", e.to_string()))?;
@@ -782,6 +874,12 @@ fn reads(plan: &BootPlan<'_>) -> Result<Vec<(String, ForeignRead)>, Stop> {
         r.push((
             format!("sysbus ReadDoubleWord {:#010x}", rcc + offset),
             ForeignRead::Rcc(i),
+        ));
+    }
+    for (i, (_, address)) in pull_registers(serial).iter().enumerate() {
+        r.push((
+            format!("sysbus ReadDoubleWord {address:#010x}"),
+            ForeignRead::Pull(i),
         ));
     }
     Ok(r)
@@ -935,6 +1033,123 @@ fn error_lines<'l>(run_log: &[&'l str]) -> (Option<&'l str>, u64) {
     (first, exempt)
 }
 
+/// Each declared serial port's `CR2` options, from the access log of `run_log`
+/// (read whole, or every port is unjudgeable), held to the specification by
+/// [`aethelgard_twin::serial::judge_options`]; and each line's pull from
+/// `pulls`, the [`pull_registers`] read back, as info (`AET-WO-2311`, ruled
+/// at §1.2), with the verdict's `serial_options` and `serial_pulls`.
+fn judge_serial(
+    run_log: &[&str],
+    whole: bool,
+    serial: &[aethelgard_twin::serial::Options],
+    pulls: &[u32],
+) -> (Vec<Finding>, Vec<SerialOptionsReport>, Vec<PullReport>) {
+    let (mut options, mut pull_reports) = (Vec::new(), Vec::new());
+    use aethelgard_twin::serial::{Expect, access, judge_options, pull_name};
+    let mut out = Vec::new();
+    let (at, accesses): (Vec<usize>, Vec<aethelgard_twin::serial::Access>) = run_log
+        .iter()
+        .enumerate()
+        .filter_map(|(k, l)| access(log_text(l)).map(|a| (k, a)))
+        .unzip();
+    let ns = |i: usize| log_stamped(run_log[at[i]]).map(|(ns, _)| ns);
+    let when = |i: usize| {
+        ns(i).map_or_else(
+            || "at an unstamped line".to_owned(),
+            |t| format!("at {t} ns"),
+        )
+    };
+    for o in serial {
+        let port = format!("{} ({}, {})", o.label, o.peripheral, o.role.name());
+        let j = judge_options(o, &accesses);
+        options.push(SerialOptionsReport {
+            label: o.label.clone(),
+            peripheral: o.peripheral.clone(),
+            role: o.role.name(),
+            inverted: o.inverted,
+            writes: j.writes,
+            judged: j.judged.map(|(w, _)| format!("{w:#010x}")),
+            judged_ns: j.judged.and_then(|(_, i)| ns(i)),
+            expected: o
+                .bits
+                .iter()
+                .map(|(field, _, e)| OptionBitReport {
+                    field,
+                    expected: e.name(),
+                })
+                .collect(),
+        });
+        if !whole {
+            out.push(Finding::plain(
+                OPTIONS_UNJUDGEABLE,
+                format!("{port}: its USART's access log could not be read whole, so the CR2 word silicon keeps is not known"),
+            ));
+            continue;
+        }
+        for (i, what) in &j.unjudgeable {
+            out.push(Finding::plain(
+                OPTIONS_UNJUDGEABLE,
+                format!("{port}: {what} {}, a write into CR1 or CR2 that is not a word at the register's own offset, which no rule reads (fail closed, AET-WO-2311 D3)", when(*i)),
+            ));
+        }
+        for (i, word, fields) in &j.ignored {
+            out.push(Finding::plain(
+                OPTIONS_IGNORED,
+                format!("{port}: CR2 {word:#010x} written {} with CR1.UE set changes {}, which silicon ignores: SWAP, TXINV and RXINV can only be written when the USART is disabled (RM0433 Rev 9 §48.8.3, p. 2075)", when(*i), fields.join(" and ")),
+            ));
+        }
+        let Some((word, i)) = j.judged else {
+            out.push(Finding::plain(
+                OPTIONS_UNWRITTEN,
+                format!("{port}: no CR2 word was written with CR1.UE clear before the window's end, so SWAP, TXINV and RXINV were never set as the specification declares"),
+            ));
+            continue;
+        };
+        for (field, want) in &j.wrong {
+            let (kind, why) = match (*field, want) {
+                ("SWAP", _) => (SWAP_SET, "serial_ports declares no swap".to_owned()),
+                ("TXINV", Expect::Clear) if o.bits[2].2 == Expect::Unjudged => (
+                    TXINV_WRONG,
+                    "on RC input TXINV is clear (RXINV is AP_RCProtocol's, unjudged; AET-WO-4404 FEEDBACK §2.5)".to_owned(),
+                ),
+                ("TXINV", _) => (TXINV_WRONG, format!("framing.inverted is {}", o.inverted)),
+                _ => (RXINV_WRONG, format!("framing.inverted is {}", o.inverted)),
+            };
+            let does = match want {
+                Expect::Set => "clears",
+                _ => "sets",
+            };
+            out.push(Finding::plain(
+                kind,
+                format!("{port}: CR2 {word:#010x}, the last word written with CR1.UE clear before the window's end ({}), {does} {field}; {why}", when(i)),
+            ));
+        }
+    }
+    let registers = pull_registers(serial);
+    for o in serial {
+        for (line, pin) in [("TX", &o.tx), ("RX", &o.rx)] {
+            let Some(k) = registers.iter().position(|r| *r == pin.pupdr()) else {
+                continue;
+            };
+            let Some(&word) = pulls.get(k) else {
+                continue;
+            };
+            let field = pin.config_fields([0, 0, word]).2;
+            out.push(Finding::info(
+                PULL,
+                format!("{} {line} ({}, {}): PUPDR {} ({field:02b}) at the run's end, read back; not judged (roadmap §7.1 L1054)", o.label, pin.pin, o.peripheral, pull_name(field)),
+            ));
+            pull_reports.push(PullReport {
+                label: o.label.clone(),
+                line: if line == "TX" { "tx" } else { "rx" },
+                pin: pin.pin.clone(),
+                pupdr: pull_name(field),
+            });
+        }
+    }
+    (out, options, pull_reports)
+}
+
 /// The controller of an SPI model's slave-mode `[ERROR]` line (`spi2`).
 fn error_source(line: &str) -> Option<&str> {
     log_text(line)
@@ -983,6 +1198,8 @@ pub fn report(
         log_lines_dropped: 0,
         flash: Vec::new(),
         erases: Vec::new(),
+        serial_options: Vec::new(),
+        serial_pulls: Vec::new(),
         option_changes: Vec::new(),
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
@@ -1000,6 +1217,7 @@ pub fn report(
 
 /// The foreign judge: the run's findings, the listing, and `report` (as
 /// [`report`] starts it) filled in.
+#[allow(clippy::too_many_arguments)]
 pub fn judge(
     code: i32,
     out: &Output,
@@ -1008,6 +1226,7 @@ pub fn judge(
     parts: &std::collections::BTreeMap<String, String>,
     flash: &[crate::elf::FlashLoad],
     hse_hz: u32,
+    serial: &[aethelgard_twin::serial::Options],
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
     let text = out.text();
     let untrusted = |what: String| {
@@ -1057,7 +1276,7 @@ pub fn judge(
         ));
     }
     let run_log: Vec<&str> = lines[..begin].to_vec();
-    let wanted = reads(plan)?;
+    let wanted = reads(plan, serial)?;
     let mut values = Vec::with_capacity(wanted.len());
     for line in &lines[begin + 1..end] {
         if value(line).is_some() {
@@ -1082,6 +1301,7 @@ pub fn judge(
     }
     let mut observed = vec![0u32; plan.image.registers.len()];
     let mut rcc = [0u32; 6];
+    let mut pulls = vec![0u32; pull_registers(serial).len()];
     let (mut pc, mut icsr) = (0u32, 0u32);
     for ((cmd, read), line) in wanted.iter().zip(values) {
         let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
@@ -1093,6 +1313,7 @@ pub fn judge(
             ForeignRead::Icsr => icsr = word()?,
             ForeignRead::Register(i) => observed[i] = word()?,
             ForeignRead::Rcc(i) => rcc[i] = word()?,
+            ForeignRead::Pull(i) => pulls[i] = word()?,
         }
     }
     report.pc = Some(format!("{pc:#010x}"));
@@ -1320,6 +1541,12 @@ pub fn judge(
             ));
         }
     }
+
+    // Each declared serial port's options and pulls (`AET-WO-2311`).
+    let (serial_findings, options, serial_pulls) = judge_serial(&run_log, whole, serial, &pulls);
+    findings.extend(serial_findings);
+    report.serial_options = options;
+    report.serial_pulls = serial_pulls;
 
     // The devices, each by its model's own lines (D5, D6 (i)).
     let table = aethelgard_ir::parts::table()
@@ -1738,5 +1965,259 @@ mod tests {
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, CLOCK_UNDECODABLE);
         assert!(r.checked.iter().all(|c| !c.holds && c.decoded_hz.is_none()));
+    }
+
+    /// The four-port fixture (`AET-WO-4408`), solved, with `edit` applied to
+    /// its specification first: SERIAL0–3 are MAVLINK (console, USART1),
+    /// GPS (USART2), CRSF (rc_crsf, USART3) and GPS2 (UART4).
+    fn four_port(edit: impl Fn(&mut serde_json::Value)) -> Vec<aethelgard_twin::serial::Options> {
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/four-port.json");
+        let mut v: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        edit(&mut v);
+        let spec: aethelgard_ir::Specification = serde_json::from_value(v).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        aethelgard_twin::serial::options(&topology).unwrap()
+    }
+
+    /// An access line in Renode 1.17.0's measured shape (`spike/2311/out`,
+    /// run m4): `width` `UInt32`, `UInt16` or `Byte`.
+    fn acc(t: &str, usart: &str, width: &str, offset: u32, value: u32) -> String {
+        let name = ["ControlRegister1", "ControlRegister2"][(offset / 4).min(1) as usize];
+        format!(
+            "[00:00:0{t}] [INFO] {usart}: [cpu: 0x80FDE5C] Write{width} to {offset:#X} ({name}), value {value:#X}"
+        )
+    }
+
+    /// Unmodified ArduPilot on the four-port board, as measured
+    /// (`spike/2311/out/m1.txt`, `m4`): each port's bring-up writes CR2 with
+    /// UE clear, then CR1 with UE; USART1 rewrites CR2 with UE set; the RC
+    /// port's last search group leaves RXINV in force; and the `PUPDR` words
+    /// read back at 5 s, GPIOA then GPIOB.
+    fn arducopter() -> (Vec<String>, [u32; 2]) {
+        let log = vec![
+            acc("0.003200000", "usart1", "UInt32", 4, 0x40),
+            acc("0.003200000", "usart1", "UInt32", 0, 0x2000_013D),
+            acc("0.009100000", "usart1", "UInt32", 4, 0x40),
+            acc("0.095300000", "usart2", "UInt32", 4, 0x40),
+            acc("0.095300000", "usart2", "UInt32", 0, 0x2000_010D),
+            acc("0.095472850", "uart4", "UInt32", 4, 0x40),
+            acc("0.095472850", "uart4", "UInt32", 0, 0x2000_010D),
+            acc("4.209467430", "usart3", "UInt32", 0, 0x10C),
+            acc("4.209467430", "usart3", "UInt32", 4, 0),
+            acc("4.209467430", "usart3", "UInt32", 4, 0x1_2040),
+            acc("4.209467430", "usart3", "UInt32", 4, 0),
+            acc("4.209467430", "usart3", "UInt32", 4, 0x1_0040),
+            acc("4.209500000", "usart3", "UInt32", 0, 0x10D),
+            acc("4.209500000", "usart3", "UInt32", 4, 0x40),
+        ];
+        (log, [0x0014_0055, 0x0050_0000])
+    }
+
+    fn judged(
+        log: &[String],
+        serial: &[aethelgard_twin::serial::Options],
+        pulls: &[u32],
+    ) -> (Vec<Finding>, Vec<SerialOptionsReport>, Vec<PullReport>) {
+        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        judge_serial(&lines, true, serial, pulls)
+    }
+
+    fn failing(f: &[Finding]) -> Vec<(String, String)> {
+        f.iter()
+            .filter(|f| f.kind != PULL)
+            .map(|f| (f.kind.clone(), f.message.clone()))
+            .collect()
+    }
+
+    /// `AET-WO-2311` (1): the expectation comes from the specification
+    /// alone (`INV-07`): SWAP clear everywhere; on RC input TXINV clear and
+    /// RXINV unjudged; elsewhere TXINV and RXINV as `framing.inverted`, and
+    /// they follow it when it changes.
+    #[test]
+    fn the_options_expected_come_from_the_specification() {
+        use aethelgard_twin::serial::Expect::{Clear, Set, Unjudged};
+        let want = |o: &aethelgard_twin::serial::Options| -> Vec<_> {
+            o.bits.iter().map(|b| (b.0, b.2)).collect()
+        };
+        let ports = four_port(|_| {});
+        let names: Vec<_> = ports.iter().map(|o| (o.label.as_str(), o.renode)).collect();
+        assert_eq!(
+            names,
+            [
+                ("MAVLINK", "usart1"),
+                ("GPS", "usart2"),
+                ("CRSF", "usart3"),
+                ("GPS2", "uart4")
+            ]
+        );
+        for o in [&ports[0], &ports[1], &ports[3]] {
+            assert_eq!(
+                want(o),
+                [("SWAP", Clear), ("TXINV", Clear), ("RXINV", Clear)]
+            );
+        }
+        assert_eq!(
+            want(&ports[2]),
+            [("SWAP", Clear), ("TXINV", Clear), ("RXINV", Unjudged)]
+        );
+        let inverted = four_port(|v| v["serial_ports"][1]["framing"]["inverted"] = true.into());
+        assert_eq!(
+            want(&inverted[1]),
+            [("SWAP", Clear), ("TXINV", Set), ("RXINV", Set)]
+        );
+        // An SBUS port, inverted as SBUS is: RC input, so still TXINV clear and
+        // RXINV unjudged.
+        let rc = four_port(|v| {
+            v["serial_ports"][2]["role"] = "rc_sbus".into();
+            v["serial_ports"][2]["peer_deviation_ppm"] = 5000.into();
+            v["serial_ports"][2]["peer_deviation_source"] = "declared".into();
+            v["serial_ports"][2]["framing"] = serde_json::json!(
+                {"baud": 100000, "data_bits": 8, "parity": "even", "stop_bits": 2, "inverted": true}
+            );
+        });
+        assert!(rc[2].inverted);
+        assert_eq!(want(&rc[2]), want(&ports[2]));
+    }
+
+    /// Unmodified ArduPilot passes; each line's pull is info, named, and the
+    /// verdict's report says what was judged.
+    #[test]
+    fn unmodified_arducopter_passes_and_its_pulls_are_info() {
+        let ports = four_port(|_| {});
+        let (log, pulls) = arducopter();
+        let (f, options, pull_reports) = judged(&log, &ports, &pulls);
+        assert_eq!(failing(&f), []);
+        assert_eq!(f.len(), 8);
+        assert!(f.iter().all(|f| f.severity == "info"));
+        assert_eq!(
+            f[2].message,
+            "GPS TX (PA2, USART2): PUPDR pull-up (01) at the run's end, read back; not judged (roadmap §7.1 L1054)"
+        );
+        assert!(pull_reports.iter().all(|p| p.pupdr == "pull-up"));
+        let o: Vec<_> = options
+            .iter()
+            .map(|o| (o.writes, o.judged.as_deref(), o.judged_ns))
+            .collect();
+        assert_eq!(
+            o,
+            [
+                (2, Some("0x00000040"), Some(3_200_000)),
+                (1, Some("0x00000040"), Some(95_300_000)),
+                (5, Some("0x00010040"), Some(4_209_467_430)),
+                (1, Some("0x00000040"), Some(95_472_850)),
+            ]
+        );
+    }
+
+    /// The WO's §2 planted words, each refused by name on a recorded log:
+    /// SWAP set; TXINV set on an RC port; RXINV missing on an inverted port.
+    #[test]
+    fn a_planted_cr2_word_is_refused_by_name() {
+        let ports = four_port(|_| {});
+        let (mut log, pulls) = arducopter();
+        // SWAP on GPS (USART2), as the ELF mutant writes it at 2.599 s.
+        log.push(acc("2.599100000", "usart2", "UInt32", 0, 0x2000_010C));
+        log.push(acc("2.599100000", "usart2", "UInt32", 4, 0x8000));
+        let (f, ..) = judged(&log, &ports, &pulls);
+        assert_eq!(
+            failing(&f),
+            [(
+                SWAP_SET.to_owned(),
+                "GPS (USART2, gps): CR2 0x00008000, the last word written with CR1.UE clear before the window's end (at 2599100000 ns), sets SWAP; serial_ports declares no swap".to_owned()
+            )]
+        );
+        // TXINV on the RC port's last UE-clear word.
+        let (mut log, _) = arducopter();
+        log[11] = acc("4.209467430", "usart3", "UInt32", 4, 0x3_0040);
+        log[13] = acc("4.209500000", "usart3", "UInt32", 4, 0x2_0040);
+        let (f, ..) = judged(&log, &ports, &pulls);
+        assert_eq!(
+            failing(&f),
+            [(
+                TXINV_WRONG.to_owned(),
+                "CRSF (USART3, rc_crsf): CR2 0x00030040, the last word written with CR1.UE clear before the window's end (at 4209467430 ns), sets TXINV; on RC input TXINV is clear (RXINV is AP_RCProtocol's, unjudged; AET-WO-4404 FEEDBACK §2.5)".to_owned()
+            )]
+        );
+        // GPS declared inverted, ArduPilot's word not: RXINV and TXINV missing.
+        let inverted = four_port(|v| v["serial_ports"][1]["framing"]["inverted"] = true.into());
+        let (log, _) = arducopter();
+        let (f, ..) = judged(&log, &inverted, &pulls);
+        let k: Vec<_> = failing(&f)
+            .into_iter()
+            .map(|(k, m)| (k, m.contains("clears")))
+            .collect();
+        assert_eq!(
+            k,
+            [
+                (TXINV_WRONG.to_owned(), true),
+                (RXINV_WRONG.to_owned(), true)
+            ]
+        );
+        assert!(
+            failing(&f)[1]
+                .1
+                .ends_with("clears RXINV; framing.inverted is true")
+        );
+    }
+
+    /// Ruled at §1.2: a CR2 write with UE set that changes a judged bit
+    /// fails as its own finding; a narrow write fails closed; a port with no
+    /// UE-clear word, or a log not read whole, fails by name.
+    #[test]
+    fn ignored_unjudgeable_and_unwritten_cr2_fail_by_name() {
+        let ports = four_port(|_| {});
+        let (mut log, pulls) = arducopter();
+        log.push(acc("4.900000000", "usart1", "UInt32", 4, 0x8040));
+        log.push(acc("4.900000000", "uart4", "UInt16", 4, 0x40));
+        let (f, ..) = judged(&log, &ports, &pulls);
+        let k: Vec<_> = failing(&f).into_iter().map(|(k, _)| k).collect();
+        assert_eq!(k, [OPTIONS_IGNORED, OPTIONS_UNJUDGEABLE]);
+        assert!(
+            failing(&f)[0]
+                .1
+                .contains("CR2 0x00008040 written at 4900000000 ns with CR1.UE set changes SWAP")
+        );
+        assert!(
+            failing(&f)[1]
+                .1
+                .starts_with("GPS2 (UART4, gps): WriteUInt16 to 0x4, value 0x40 at 4900000000 ns")
+        );
+        // GPS2 never written: unwritten.
+        let (log, _) = arducopter();
+        let log: Vec<String> = log.into_iter().filter(|l| !l.contains("uart4")).collect();
+        let (f, options, _) = judged(&log, &ports, &pulls);
+        assert_eq!(
+            failing(&f).into_iter().map(|(k, _)| k).collect::<Vec<_>>(),
+            [OPTIONS_UNWRITTEN]
+        );
+        assert_eq!(options[3].judged, None);
+        // A log not read whole: every port unjudgeable.
+        let (log, _) = arducopter();
+        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        let (f, ..) = judge_serial(&lines, false, &ports, &pulls);
+        assert_eq!(failing(&f).len(), 4);
+        assert!(failing(&f).iter().all(|(k, _)| k == OPTIONS_UNJUDGEABLE));
+    }
+
+    /// D2: each declared USART's accesses are logged once, and each serial
+    /// pin's `PUPDR` is read once per port after the run.
+    #[test]
+    fn the_usarts_are_logged_and_the_pulls_read() {
+        let ports = four_port(|_| {});
+        assert_eq!(
+            usart_logs(&ports),
+            ["usart1", "usart2", "usart3", "uart4"]
+                .map(|u| format!("sysbus LogPeripheralAccess sysbus.{u} true"))
+        );
+        assert_eq!(
+            pull_registers(&ports),
+            [
+                ("GPIOA.PUPDR".to_owned(), 0x5802_000C),
+                ("GPIOB.PUPDR".to_owned(), 0x5802_040C)
+            ]
+        );
     }
 }
