@@ -1,0 +1,47 @@
+diff --git a/crates/aethelgard-cli/tests/bench_board_tier1.rs b/crates/aethelgard-cli/tests/bench_board_tier1.rs
+index 1feedbc9..2059b8d4 100644
+--- a/crates/aethelgard-cli/tests/bench_board_tier1.rs
++++ b/crates/aethelgard-cli/tests/bench_board_tier1.rs
+@@ -135,3 +135,42 @@ fn the_committed_package_is_bound_to_its_specification_scenarios_and_emit() {
+     );
+     fs::remove_dir_all(&out).unwrap();
+ }
++
++/// DRAFT (AET-WO-3308 §1.1, P3): `BENCH.md` states one full ELF hash, MANIFEST's.
++#[test]
++fn draft_bench_sheet_names_the_package_elf() {
++    let manifest: Value = serde_json::from_slice(
++        &fs::read(root().join(PACKAGE).join("MANIFEST.json")).unwrap(),
++    )
++    .unwrap();
++    let elf = manifest["files"]["sentinel-01-bench.elf"].as_str().unwrap();
++    let text = fs::read_to_string(root().join("fab/sentinel-01-bench/BENCH.md")).unwrap();
++    let mut full = Vec::new();
++    let mut abbreviated = Vec::new();
++    for (n, line) in text.lines().enumerate() {
++        let b = line.as_bytes();
++        let mut i = 0;
++        while i < b.len() {
++            if b[i].is_ascii_hexdigit() && (i == 0 || !b[i - 1].is_ascii_alphanumeric()) {
++                let mut j = i;
++                while j < b.len() && b[j].is_ascii_hexdigit() {
++                    j += 1;
++                }
++                let tok = &line[i..j];
++                let alnum_after = j < b.len() && b[j].is_ascii_alphanumeric();
++                if tok.len() == 64 && !alnum_after {
++                    full.push(format!("L{}: {tok}", n + 1));
++                } else if tok.len() >= 8 && line[j..].starts_with('…') {
++                    abbreviated.push(format!("L{}: {tok}…", n + 1));
++                }
++                i = j;
++            } else {
++                i += 1;
++            }
++        }
++    }
++    assert!(
++        full.len() == 1 && full[0].ends_with(elf),
++        "BENCH.md must state exactly one full ELF hash, MANIFEST.json's {elf}; full hashes found: {full:?}; abbreviated hashes found: {abbreviated:?}"
++    );
++}
