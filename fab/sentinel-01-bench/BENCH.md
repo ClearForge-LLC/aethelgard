@@ -2,7 +2,7 @@
 
 The rows to run when the boards arrive (AET-WO-3401 §2.4, corrected by AET-WO-3403 after the post-order review, `docs/reviews/2026-11-19-sentinel-01-as-ordered.md`). Each row says which prediction it tests, the instrument, the pass line and what a disagreement adds to the record. A pass line is a number from a cited prediction, and a reading outside it fails the row. A failed row is a finding, never a retry.
 
-The board is `examples/sentinel-01.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-01-bench.elf`, sha256 `f3e871bb4a16678a77ac1b81bf2f9b53e463b3c9aee435dd45010a1fde7452c4`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, `AET-WO-3308`). Every row here runs that ELF, and every prediction below was re-checked against it on 2026-11-23, row by row (`spike/3308/ROWS.md`). It is not the ELF the package held when the boards were ordered on 2026-11-19: `4240v` (VOS2) and `4241` (U3's identity read) replaced that one before the boards arrived. The BMP581 on J4 runs a different ELF, from a bench specification, and has its own sheet: `BENCH-EXT-BMP581.md`. That specification describes a board that was never made (the breakout as an on-board part), so its `verify` verdict says nothing about J4's copper with a breakout plugged in.
+The board is `examples/sentinel-01.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-01-bench.elf`, sha256 `f3e871bb4a16678a77ac1b81bf2f9b53e463b3c9aee435dd45010a1fde7452c4`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, `AET-WO-3308`). Every row here runs that ELF, and every prediction below was re-checked against it on 2026-11-23, row by row (`spike/3308/ROWS.md`). Line numbers (`L…`) are those of the generated `boards/sentinel-01-bench/` as `AET-WO-3308` merged it, which builds this ELF byte for byte; a later regeneration that keeps the ELF can move them, and the statement each cites is what holds. It is not the ELF the package held when the boards were ordered on 2026-11-19: `4240v` (VOS2) and `4241` (U3's identity read) replaced that one before the boards arrived. The BMP581 on J4 runs a different ELF, from a bench specification, and has its own sheet: `BENCH-EXT-BMP581.md`. That specification describes a board that was never made (the breakout as an on-board part), so its `verify` verdict says nothing about J4's copper with a breakout plugged in.
 
 **What each prediction rests on** (`RUL-20`'s terms, as `AET-WO-3304.bench.md` labels them). Every pass line names one:
 - **twin:** the twin's own run of this ELF (Renode's models and the boot judge, or ngspice through the campaign).
@@ -132,7 +132,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
 | B4 | Unchanged: record 1 follows record 0 whatever it holds |
 | B6 | SENSORS' bounds still hold. They include U2's and U3's pads and pin capacitance, so with U2 off (and U3, while it is not fitted) they are looser by up to those pins |
 | B7 | Unchanged: EXT, not SENSORS |
-| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. U3 (the TMP117), if fitted, is the positive witness of I2C1 |
+| B9 | Record 0 is TXIS, and the scope shows `0xEC`, NACK, STOP. Then, after the SPI read, U3's `0x90`: with U3 empty, NACK, STOP, and record 2 is TXIS (changed 2026-11-23 (`AET-WO-3308`), before the bench, with B9 part 1's pass line). U3 (the TMP117), if fitted, is the positive witness of I2C1 |
 
 **What is lost:** the silicon witness of a full I2C read on SENSORS by the firmware (record 0 = `0x60`). With U3 fitted, B9's TMP117 probe witnesses PB6/PB7 at AF4 and the SENSORS copper without it. With U3 empty as well, no device on I2C1 acknowledges anything (B9).
 
@@ -163,7 +163,7 @@ Let the firmware run for at least 1 s after reset before reading. A read attache
   - **rule:** `independent-rule`, `silicon.rs`;
   - **not predicted:** `ignored-by-model` or `silicon-only`: only the bench judges it.
   - `TIMINGR`'s exact word is the generator's (the rule holds its fields only by inequalities), so those rows can fail only on a read-back difference (`AET-WO-3304.FEEDBACK.md` A5).
-  - `I2C1.CR2`'s mask leaves out `AUTOEND`, `START`, the address and the count: they hold the last transfer's, which differs with U2 fitted or empty. No row below depends on U2.
+  - `I2C1.CR2`'s mask leaves out `AUTOEND`, `START`, the address and the count: they hold the last transfer's (U3's at `0x48`, `main.rs` L231), which differs with U3 fitted or empty. No row below depends on U2 or U3.
 
   | Register | Address | Mask | Expected | Source |
   |---|---|---|---|---|

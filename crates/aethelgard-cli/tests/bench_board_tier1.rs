@@ -60,6 +60,11 @@ fn run_raw(args: &[&str]) -> (Option<i32>, String) {
     (out.status.code(), stdout)
 }
 
+/// The committed package's `MANIFEST.json`.
+fn manifest() -> Value {
+    serde_json::from_slice(&fs::read(root().join(PACKAGE).join("MANIFEST.json")).unwrap()).unwrap()
+}
+
 fn sha(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -81,8 +86,7 @@ fn the_ordered_board_validates() {
 #[test]
 fn the_committed_package_is_bound_to_its_specification_scenarios_and_emit() {
     let pkg = root().join(PACKAGE);
-    let manifest: Value =
-        serde_json::from_slice(&fs::read(pkg.join("MANIFEST.json")).unwrap()).unwrap();
+    let manifest = manifest();
     assert_eq!(manifest["project"], "sentinel-01-bench");
     assert_eq!(
         manifest["specification_sha256"],
@@ -155,56 +159,112 @@ const NOT_ORDERED: [&str; 7] = [
     "sentinel-01-bench.bom.csv",
     "sentinel-01-bench.elf",
 ];
-/// The abbreviated digests `BENCH.md` may name that are not an ELF's
-/// (ruling D3 on PR #362), each with what it is.
+/// The digests `BENCH.md` may cite that are not an ELF's, by their first
+/// eight hex digits (ruling D3 on PR #362), each with what it is.
 const NOT_AN_ELF: [(&str, &str); 2] = [
     (
-        "78212e91…b789",
+        "78212e91",
         "TI SNOSD82D, the TMP117 datasheet (AET-WO-4241 FEEDBACK §8)",
     ),
-    ("452d906c…", "the W25Q64JV row of parts.json"),
+    ("452d906c", "the W25Q64JV row of parts.json"),
 ];
 
-/// Parses `ORDERED.sha256`: `#` lines (the header, and any ruling block
-/// below it), then `sha256sum` lines, `<64 lowercase hex>  package/<name>`.
-/// Refuses CRLF, a missing final newline, a list that does not open with its
-/// header, an empty or malformed line, and a name listed twice.
-fn parse_ordered(text: &str) -> Result<Vec<(String, String)>, String> {
+/// The sha256 of `ORDERED.sha256`'s as-ordered block: its header and the ten
+/// entries, every byte before the first ruling block. Its header says nothing
+/// in it is rewritten; a re-spin adds a dated ruling block below it.
+const AS_ORDERED_SHA256: &str = "a71977376474c757244894722c56d246e095821df4c3102c021d7192c7a248f1";
+
+/// Whether `line` opens a ruling block: `# Ruling YYYY-MM-DD`.
+fn opens_ruling(line: &str) -> bool {
+    line.strip_prefix("# Ruling ").is_some_and(|rest| {
+        let d = rest.as_bytes();
+        d.len() >= 10
+            && d[..10].iter().enumerate().all(|(i, c)| {
+                if i == 4 || i == 7 {
+                    *c == b'-'
+                } else {
+                    c.is_ascii_digit()
+                }
+            })
+    })
+}
+
+/// One entry, `<64 lowercase hex>  package/<name>`, as (hash, name).
+fn ordered_entry(line: &str) -> Option<(String, String)> {
+    let (hash, path) = line.split_once("  ")?;
+    let name = path.strip_prefix("package/")?;
+    let hash_ok = hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
+    let name_ok = !name.is_empty()
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
+    (hash_ok && name_ok).then(|| (hash.to_owned(), name.to_owned()))
+}
+
+/// Parses `ORDERED.sha256`: the as-ordered block (`#` header lines, then
+/// entries), then any ruling blocks, each opening `# Ruling YYYY-MM-DD` and
+/// holding entries that supersede the same name above. Returns the
+/// as-ordered block's text and the list in force. Refuses CRLF, a missing
+/// final newline, an empty or malformed line, a block below the header that does not open with a dated
+/// ruling, and a name listed twice in one block.
+fn parse_ordered(text: &str) -> Result<(String, Vec<(String, String)>), String> {
     if text.contains('\r') {
         return Err("a carriage return: the list is LF only".to_owned());
     }
     let Some(body) = text.strip_suffix('\n') else {
         return Err("no final newline".to_owned());
     };
-    if !body.starts_with('#') {
-        return Err("the list does not open with its header".to_owned());
-    }
-    let mut entries: Vec<(String, String)> = Vec::new();
+    let (mut list, mut block): (Vec<(String, String)>, Vec<String>) = (Vec::new(), Vec::new());
+    let (mut after_entry, mut as_ordered_end, mut offset) = (false, None, 0);
     for (i, line) in body.split('\n').enumerate() {
         if line.starts_with('#') {
-            continue;
+            if after_entry {
+                if !opens_ruling(line) {
+                    return Err(format!(
+                        "line {}: a block below the header opens with `# Ruling YYYY-MM-DD`: {line:?}",
+                        i + 1
+                    ));
+                }
+                as_ordered_end.get_or_insert(offset);
+                block.clear();
+                after_entry = false;
+            }
+        } else {
+            let Some(entry) = ordered_entry(line) else {
+                return Err(format!("line {}: malformed: {line:?}", i + 1));
+            };
+            if block.contains(&entry.1) {
+                return Err(format!(
+                    "line {}: {} is listed twice in one block",
+                    i + 1,
+                    entry.1
+                ));
+            }
+            block.push(entry.1.clone());
+            match list.iter_mut().find(|(_, n)| *n == entry.1) {
+                Some(e) => *e = entry,
+                None => list.push(entry),
+            }
+            after_entry = true;
         }
-        let entry = line.split_once("  ").and_then(|(hash, path)| {
-            let name = path.strip_prefix("package/")?;
-            let hash_ok = hash.len() == 64
-                && hash
-                    .bytes()
-                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-            let name_ok = !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b));
-            (hash_ok && name_ok).then(|| (hash.to_owned(), name.to_owned()))
-        });
-        let Some(entry) = entry else {
-            return Err(format!("line {}: malformed: {line:?}", i + 1));
-        };
-        if entries.iter().any(|(_, n)| *n == entry.1) {
-            return Err(format!("line {}: {} is listed twice", i + 1, entry.1));
-        }
-        entries.push(entry);
+        offset += line.len() + 1;
     }
-    Ok(entries)
+    let end = as_ordered_end.unwrap_or(text.len());
+    Ok((text[..end].to_owned(), list))
+}
+
+/// The list in force, once the as-ordered block is the one committed.
+fn ordered_in_force(text: &str) -> Result<Vec<(String, String)>, String> {
+    let (as_ordered, list) = parse_ordered(text)?;
+    if sha(as_ordered.as_bytes()) != AS_ORDERED_SHA256 {
+        return Err(format!(
+            "the as-ordered block of {ORDERED} was rewritten: a re-spin adds a dated `# Ruling` block below it, and nothing above it changes"
+        ));
+    }
+    Ok(list)
 }
 
 /// Every way `pkg` differs from the list: a listed file whose bytes moved or
@@ -231,7 +291,7 @@ fn ordered_differences(pkg: &Path, list: &[(String, String)]) -> Vec<String> {
 }
 
 fn ordered_list() -> Vec<(String, String)> {
-    parse_ordered(&fs::read_to_string(root().join(ORDERED)).unwrap()).unwrap()
+    ordered_in_force(&fs::read_to_string(root().join(ORDERED)).unwrap()).unwrap()
 }
 
 /// `AET-WO-3308` (2): the package holds the ordered bytes, and no other file
@@ -239,7 +299,6 @@ fn ordered_list() -> Vec<(String, String)> {
 #[test]
 fn the_package_holds_the_files_as_ordered() {
     let list = ordered_list();
-    assert_eq!(list.len(), 10, "ORDER.md §1 uploads ten files: {list:?}");
     let differences = ordered_differences(&root().join(PACKAGE), &list);
     assert!(
         differences.is_empty(),
@@ -260,11 +319,14 @@ fn package_copy(tag: &str) -> PathBuf {
     out
 }
 
+/// A package change: what it is, how to make it, and the findings it must give.
+type Case = (&'static str, fn(&Path), &'static [&'static str]);
+
 /// Each way a package can stop being what was ordered fails, naming the file.
 #[test]
 fn a_moved_added_removed_or_split_fabrication_file_is_named() {
     let list = ordered_list();
-    let cases: [(&str, fn(&Path), &[&str]); 5] = [
+    let cases: [Case; 5] = [
         (
             "one byte",
             |p| {
@@ -333,48 +395,70 @@ fn a_moved_added_removed_or_split_fabrication_file_is_named() {
     }
 }
 
-/// The list's own form: each refusal, and the form it accepts.
+/// The list's own form: each refusal, the ruling block it accepts, and the
+/// as-ordered block held to its committed bytes.
 #[test]
-fn the_ordered_list_refuses_crlf_a_duplicate_and_a_malformed_line() {
+fn the_ordered_list_refuses_crlf_a_duplicate_a_malformed_line_and_a_rewrite() {
     let text = fs::read_to_string(root().join(ORDERED)).unwrap();
     let first = text
         .lines()
         .find(|l| !l.starts_with('#'))
         .unwrap()
         .to_owned();
+    let (hash, path) = first.split_once("  ").unwrap();
     let refused = |t: String, why: &str| {
-        let e = parse_ordered(&t).expect_err(why);
+        let e = ordered_in_force(&t).expect_err(why);
         assert!(e.contains(why), "{why}: {e}");
     };
     refused(text.replace('\n', "\r\n"), "carriage return");
     refused(text.trim_end().to_owned(), "no final newline");
-    refused(format!("{first}\n{text}"), "header");
-    refused(format!("{text}{first}\n"), "listed twice");
+    refused(format!("{text}{first}\n"), "listed twice in one block");
     for bad in [
         first.replacen("  ", " ", 1),
         first.replacen("  ", "  ./", 1),
         first.replacen("package/", "", 1),
         format!("{first} "),
-        first.to_uppercase(),
+        format!("{}  {path}", hash.to_uppercase()),
+        format!("{hash}  package/"),
         first[1..].to_owned(),
         String::new(),
     ] {
         refused(format!("{text}{bad}\n"), "malformed");
     }
-    let more = format!("{text}# Ruling 2026-12-01: a block below the header, as the header says\n");
-    assert_eq!(parse_ordered(&more).unwrap(), parse_ordered(&text).unwrap());
+    refused(format!("{text}# a note\n{first}\n"), "opens with `# Ruling");
+    let other = "0".repeat(64);
+    let rewritten = text.replacen(hash, &other, 1);
+    refused(rewritten, "was rewritten");
+
+    let ruled =
+        format!("{text}# Ruling 2026-12-01: a re-spin, as the header says\n{other}  {path}\n");
+    let list = ordered_in_force(&ruled).unwrap();
+    let before = ordered_in_force(&text).unwrap();
+    assert_eq!(list.len(), before.len());
+    let name = path.strip_prefix("package/").unwrap();
+    assert!(
+        list.contains(&(other.clone(), name.to_owned())),
+        "the ruling's entry is in force"
+    );
+    refused(
+        format!("{ruled}{other}  {path}\n"),
+        "listed twice in one block",
+    );
 }
 
-/// Every hex token in `text` that could name a digest, by line: the 64-digit
-/// ones, and the abbreviated ones (eight digits or more, then `…` or `...`,
-/// then any digits). Tokens inside a word or after `0x` are not digests.
-fn digests(text: &str) -> (Vec<String>, Vec<String>) {
-    let (mut full, mut short) = (Vec::new(), Vec::new());
+/// Every hex run in `text` that could name a digest, by line (ruling D3 on
+/// PR #362): a run of 16 hex digits or more anywhere; a run of 7 or more
+/// standing alone (no letter or digit either side); a run of more than 8
+/// after `0x` (a register word has at most 8). So a commit or a run id the sheet cites by 7 hex digits or more is a digest too: name it
+/// in [`NOT_AN_ELF`] or leave it out.
+fn digests(text: &str) -> Vec<String> {
+    let alnum = |c: Option<&u8>| c.is_some_and(u8::is_ascii_alphanumeric);
+    let mut out = Vec::new();
     for (n, line) in text.lines().enumerate() {
         let b = line.as_bytes();
         let mut i = 0;
         while i < b.len() {
-            if !b[i].is_ascii_hexdigit() || (i > 0 && b[i - 1].is_ascii_alphanumeric()) {
+            if !b[i].is_ascii_hexdigit() {
                 i += 1;
                 continue;
             }
@@ -382,54 +466,39 @@ fn digests(text: &str) -> (Vec<String>, Vec<String>) {
             while j < b.len() && b[j].is_ascii_hexdigit() {
                 j += 1;
             }
-            let rest = &line[j..];
-            let dots = ["…", "..."].into_iter().find(|d| rest.starts_with(*d));
-            if let (Some(d), true) = (dots, j - i >= 8) {
-                let mut k = j + d.len();
-                while k < b.len() && b[k].is_ascii_hexdigit() {
-                    k += 1;
-                }
-                short.push(format!("L{}: {}", n + 1, &line[i..k]));
-                j = k;
-            } else if j - i == 64 && !rest.starts_with(|c: char| c.is_ascii_alphanumeric()) {
-                full.push(format!("L{}: {}", n + 1, &line[i..j]));
+            let run = j - i;
+            let prev = i.checked_sub(1).and_then(|k| b.get(k));
+            let after_0x = i >= 2 && b[i - 2..i].eq_ignore_ascii_case(b"0x");
+            let alone = !alnum(prev) && !alnum(b.get(j));
+            if run >= 16 || (run >= 7 && alone) || (after_0x && run > 8) {
+                out.push(format!("L{}: {}", n + 1, &line[i..j]));
             }
             i = j;
         }
     }
-    (full, short)
+    out
 }
 
-/// Ruling D3 on PR #362: the sheet states exactly one full digest, the ELF's,
-/// and abbreviates only the named digests that are not an ELF's.
+/// Ruling D3 on PR #362: the sheet's digests are MANIFEST's ELF, exactly
+/// once, and the named digests that are not an ELF's.
 fn bench_names_only(text: &str, elf: &str) -> Result<(), String> {
-    let (full, short) = digests(text);
-    if full.len() != 1 || !full[0].ends_with(&format!(": {elf}")) {
-        return Err(format!(
-            "BENCH.md must state exactly one full digest, MANIFEST.json's ELF {elf}; it states {full:?}"
-        ));
-    }
-    let other: Vec<_> = short
+    let found = digests(text);
+    let is = |t: &String, d: &str| t.ends_with(&format!(": {d}"));
+    let elfs = found.iter().filter(|t| is(t, elf)).count();
+    let other: Vec<_> = found
         .iter()
-        .filter(|s| {
-            !NOT_AN_ELF
-                .iter()
-                .any(|(d, _)| s.ends_with(&format!(": {d}")))
-        })
+        .filter(|t| !is(t, elf) && !NOT_AN_ELF.iter().any(|(d, _)| is(t, d)))
         .collect();
-    if !other.is_empty() {
+    if elfs != 1 || !other.is_empty() {
         return Err(format!(
-            "BENCH.md abbreviates a digest that is not one of the named non-ELF ones (NOT_AN_ELF): {other:?}"
+            "BENCH.md must state MANIFEST.json's ELF {elf} exactly once ({elfs} found), and no other digest than those in NOT_AN_ELF: {other:?}"
         ));
     }
     Ok(())
 }
 
 fn package_elf() -> String {
-    let manifest: Value =
-        serde_json::from_slice(&fs::read(root().join(PACKAGE).join("MANIFEST.json")).unwrap())
-            .unwrap();
-    manifest["files"]["sentinel-01-bench.elf"]
+    manifest()["files"]["sentinel-01-bench.elf"]
         .as_str()
         .unwrap()
         .to_owned()
@@ -439,15 +508,11 @@ fn package_elf() -> String {
 #[test]
 fn the_bench_sheet_names_the_package_elf() {
     let text = fs::read_to_string(root().join(BENCH)).unwrap();
-    let elf = package_elf();
-    assert_eq!(
-        elf,
-        sha(&fs::read(root().join(PACKAGE).join("sentinel-01-bench.elf")).unwrap())
-    );
-    bench_names_only(&text, &elf).unwrap();
+    bench_names_only(&text, &package_elf()).unwrap();
 }
 
-/// The cases (3) exists to fail, on the sheet as committed.
+/// The cases (3) exists to fail, and the words it must let pass, on the
+/// sheet as committed.
 #[test]
 fn a_bench_sheet_naming_another_elf_fails() {
     let text = fs::read_to_string(root().join(BENCH)).unwrap();
@@ -457,16 +522,17 @@ fn a_bench_sheet_naming_another_elf_fails() {
         &elf[..63],
         if elf.ends_with('0') { '1' } else { '0' }
     );
-    let other = "008a2a59".repeat(8);
+    let old = "008a2a59".repeat(8);
     for (case, sheet) in [
         ("one character off", text.replace(&elf, &off)),
         (
             "a prefix only",
             text.replace(&elf, &format!("{}…", &elf[..8])),
         ),
+        ("the ELF twice", format!("{text}Again: {elf}.\n")),
         (
             "a second full digest in a table row",
-            format!("{text}| x | `{other}` |\n"),
+            format!("{text}| x | `{old}` |\n"),
         ),
         (
             "the old ELF abbreviated",
@@ -477,11 +543,37 @@ fn a_bench_sheet_naming_another_elf_fails() {
             format!("{text}The ELF 008a2a59....\n"),
         ),
         (
+            "the old ELF bare, eight digits",
+            format!("{text}The ELF `008a2a59`.\n"),
+        ),
+        (
+            "the old ELF bare, seven digits",
+            format!("{text}The ELF 008a2a5.\n"),
+        ),
+        (
+            "the old ELF after 0x, nine digits",
+            format!("{text}0x008a2a594\n"),
+        ),
+        ("the old ELF glued to a word", format!("{text}{old}s\n")),
+        (
             "the ELF in capitals",
             text.replace(&elf, &elf.to_uppercase()),
         ),
     ] {
         assert!(bench_names_only(&sheet, &elf).is_err(), "{case} passed");
+    }
+    for (case, words) in [
+        (
+            "register words",
+            "`0x2100B007`, `0x0000_A000`, `0x22020001`",
+        ),
+        ("a word with seven hex letters, then a letter", "FEEDBACK"),
+        ("eight hex letters after a letter", "`Xcafebabe`"),
+    ] {
+        assert!(
+            bench_names_only(&format!("{text}{words}\n"), &elf).is_ok(),
+            "{case} failed"
+        );
     }
     for (d, _) in NOT_AN_ELF {
         assert!(

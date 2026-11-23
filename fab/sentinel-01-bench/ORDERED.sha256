@@ -6,6 +6,8 @@
 # member that differs is recorded in a ruling block below.
 # Check by hand: cd fab/sentinel-01-bench && sha256sum --strict -c ORDERED.sha256
 # A re-spin edits this list only by a ruling, named in a dated block added below; nothing above it is rewritten.
+# A ruling block opens with `# Ruling YYYY-MM-DD`; an entry in it supersedes the same file's above. A tier-1 test holds
+# every byte above the first ruling block (AET-WO-3308).
 e479681d8d56f18e9a3d90d38301e696b3a81f7ff56914831fe0fb8dc9450283  package/sentinel-01-bench-F_Cu.gtl
 f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d  package/sentinel-01-bench-B_Cu.gbl
 77096eda672cf3062eedb19df7e41154ee55211383553cef517fb39559d88dcb  package/sentinel-01-bench-F_Mask.gts
