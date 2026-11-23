@@ -1,0 +1,186 @@
+# AET-WO-4408 — FEEDBACK: the ArduPilot matrix grows (a measurement, then a build)
+
+**Branch:** `wo/aet-4408-matrix` from `main` `7fbe5d11`.
+**Builder:** Claude (Opus 5.5) as project manager. Subagents (Sonnet) did volume work only: transcribing the DS12117 tables and checking them by eye. Gate logic, pins and workflows stayed single-threaded.
+Written 2026-11-23.
+
+**Status: see §8.** Predictions: `spike/4408/PREDICTIONS.md` (committed `ebd66a16` before any measurement). Results: `spike/4408/RESULTS.md`.
+
+**The answer:**
+- **WO §7's second stop holds for `container/IMAGE`.**
+  - `main`'s tools-image publish after #339 failed (run 45105034798), in a smoke flake: `ldconfig -p | grep -qF` under `pipefail`, measured 1 in 200 in both images.
+  - So no tools digest exists, and `IMAGE` stays at `e5fc7ddb`. Reported on the bus at 07:11Z, with (a) a re-run and (b) a one-line fix; awaiting a ruling (§5 Q1).
+- **`ARDUPILOT-IMAGE` re-pinned** to `main`'s newest publish, `e1809b90…` from `ab9d4663`.
+  - Its dpkg list equals `160f9955`'s (171 packages).
+  - Sentinel-01's and four-port's ELF and `hwdef.h` are byte-identical under both images.
+- **The four-port board** (`four-port.json`, specification 28, 4404's measured `fc-base`) is in the generated matrix.
+  - It is held in tier 1.
+  - It builds with unmodified ArduPilot and passes `check pinout` with no finding [measured locally].
+- **ST's pin table** is held against DS12117 Rev 10 (tier 1) and ArduPilot's `STM32H753xx.py` (`ardupilot-image.yml`, ruled D1 (a)).
+  - All three give the same 167 AF rows in the solver's families.
+  - ArduPilot shares 603 rows, with 0 disagreements.
+  - 142/144 pads equal. Pads 28 and 29 are `PC2_C`/`PC3_C`, cited and allowed exactly (§3 A1).
+- **`4407` Q1, Q4, Q5:**
+  - `paths:` take `debian-trixie.sources`, held by a tier-1 test over the Dockerfile's `COPY`s;
+  - the GtkSharp rehearsal and publish seed from the published mirror;
+  - Q5 is confirmed (§2.5).
+
+## 1. The measurement (§1.1)
+
+Predictions were committed before any measurement. Their outcomes:
+- **D:** I read the digests before predicting and recorded them as facts.
+- **A1, A2, H1–H10, P1–P3, P5–P7, G1:** held.
+- **P4:** held for 142 of 144 pads. The two exceptions are the finding in §3 A1.
+- **B1:** §2.4.
+
+## 2. What was built
+
+### 2.1 The four-port generated board
+
+- **The fixture** is `crates/aethelgard-cli/tests/fixtures/four-port.json`, `serial-four.json` changed in 13 lines:
+  - MAVLINK becomes the console;
+  - SBUS becomes `GPS2`, 8N1 115200, not inverted, with its nets renamed;
+  - the I2C bus runs at 100 kHz.
+
+  This is 4404's `fc-base`, which pincheck's `FC_BASE` tests already model.
+- **Why not `serial-four` as it is:** it has no console and two RC ports, so the generator refuses it (`NoConsole`, then `RcInputTwice`).
+- **Its generated files** are `crates/aethelgard-hwdef/tests/fixtures/four-port.{topology.json,hwdef.dat}`. They are held byte for byte by both tier-1 holders of the CI boards: `hwdef_tier1.rs` (solve and generate through the CLI) and `generate.rs`.
+- **In CI:** a `generated` matrix entry in `ardupilot-image.yml`, and `four-port` in `ardupilot-pinout.sh`'s list of generated boards. That list is hard-coded, so without that line the board would build and never be judged.
+
+### 2.2 The pin-table test (`crates/aethelgard-svd-hal/tests/pin_table_sources.rs`)
+
+- **Three sources, compared pair by pair, with no vote.** Every difference fails, naming the row and both values.
+  - **ST–DS12117 pads**, both ways: 144 positions.
+  - **ST–DS12117 AFs** in the solver's families (I2C SCL/SDA, SPI SCK/MISO/MOSI, U(S)ART TX/RX, TIM CH1–4, written from their names in the test, not imported).
+  - **ST–ArduPilot:** every shared (pin, signal) on the package across all families (603), and the solver's families both ways (167).
+- **The DS12117 data** is `tests/fixtures/ds12117/{pads,af}.tsv`. Each row carries its PDF page, and the header carries the PDF's sha256 `607b9ead…`. How it was transcribed is in `RESULTS.md` §P.
+- **The ArduPilot leg (ruling D1 (a), 07:37Z):**
+  - It is `#[ignore]`d in `cargo test`.
+  - `ardupilot-image.yml`'s new `pin-table` job copies the file out of the pinned image and runs it with `--ignored` and `AETHELGARD_ARDUPILOT_AF_TABLE`.
+  - The file's sha256 `58fd32c3…` is pinned, and any other file is refused by name, as is an unset variable.
+  - No ArduPilot byte is committed. The roadmap row's "tier-1" holds for the planted half only: the planted tests use lines I wrote in ArduPilot's format. The ArduPilot table itself is GPL-3.0-or-later, and `container/ARDUPILOT-LICENSE.md` keeps every GPL byte out of the crates, whose `tests/` ship to crates.io (98 files in svd-hal's package, measured). (b) was not taken.
+
+### 2.3 The re-pins
+
+- **`ARDUPILOT-IMAGE`:** `160f9955` → `e1809b909b02…c2b6`, `main`'s publish from `ab9d4663` at 07:13Z.
+  - The image carries the revision label.
+  - Its dpkg list is identical to the old image's.
+  - ArduPilot builds byte-identically in it (A1, A2).
+- **`IMAGE`:** not re-pinned: the §7 stop (§5 Q1).
+
+### 2.4 The bench package under the re-pinned tools image
+
+- **The rehearsal (`RESULTS.md` §B):** CI's exact `verify --against-fab`, under `main`'s tools image built `--no-cache` on Furnace and, as a control, under the pinned `e5fc7ddb`.
+  - Both derive the same 17 files, and 16 equal the committed package byte for byte.
+  - `MANIFEST.json` (`d47031ce…` in both) differs from the committed one only by Furnace's sandbox record (`uid_boundary: false`), which the control shares.
+- **So no `fab/` byte moves under the re-pinned content, and WO §7's first stop does not fire.**
+- The acceptance, CI's `bench-package` on a published tools digest, waits for §5 Q1.
+
+### 2.5 `4407`'s follow-ups
+
+- **Q1 (`paths:`).** `container/debian-trixie.sources` is in both lists.
+  - `crates/aethelgard-cli/tests/image_workflow_paths.rs` (tier 1) reads every `COPY` source of `ardupilot.Dockerfile`, plus the Dockerfile itself, and requires a glob in both lists to match each one.
+  - It refuses, rather than misreads, the forms it does not take: JSON form, continuation, wildcard, `..`.
+  - Before the fix it failed naming exactly `debian-trixie.sources` under both events.
+  - It is tier 1 because the workflow cannot guard its own `paths:`.
+- **Q4 (the GtkSharp seed).** `gtksharp-source.sh` publish now takes `gcc-source.sh`'s `CANON` pattern:
+  - the published mirror first;
+  - GitHub only when ghcr answers 404;
+  - fail-closed ("GitHub not asked") on any other refusal.
+
+  The rehearsal asserts which source it took. While ghcr has no mirror, that must be GitHub; once `main` publishes it, it must be `seeded from ghcr.io/…`. All three branches were measured against a loopback registry (`RESULTS.md` §G).
+- **Q5 (the fence).**
+  - `container/test-check-pins.sh` and `container/fixtures/README.md` are as #339 merged them. They are unchanged here, and `test-check-pins.sh` passes.
+  - The edit sits beside check-pins' own fixtures and is confined to the tests. Confirmed and recorded.
+
+### 2.5b The smoke flake (ruling (b), 08:00Z)
+
+- **The failure it prevents** (`main`'s tools-image run 45105034798, job `image`, 2026-11-23T03:25:04Z):
+  `FAIL    libngspice: ldconfig does not list libngspice.so.0`
+  The library was listed. `ldconfig -p | grep -qF` runs under `set -o pipefail`; `grep -q` exits at its first match (byte 18,612 of 62,785), and ldconfig, still writing, dies of SIGPIPE (PIPESTATUS `141 0`).
+- **The fix**, `container/smoke.sh`, one line: `grep -F … > /dev/null`. grep reads all of ldconfig's output, so no early close.
+- **Measured in `main`'s tools image:**
+  - the new form fails 0/1000; the old form fails 2/1000 in the same container;
+  - an absent library name is still refused;
+  - the whole smoke passes (17 `ok`).
+- **Other `| grep -q` under `pipefail`** in `container/` and `ci/` read from `printf` of a few lines or from `head`. None has ldconfig's 62 KB producer, so none was changed.
+
+### 2.6 Edits beside the named fence (flagged)
+
+Each one is needed for something inside the fence to be checked at all:
+- **`crates/aethelgard-hwdef/tests/generate.rs` and `crates/aethelgard-cli/tests/hwdef_tier1.rs`:** four-port added to each `BOARDS` array (3 → 4). Without it, a generator change that moves four-port's file would be caught only by `ardupilot-image.yml`.
+- **`container/ardupilot-pinout.sh`:** four-port added to its list of generated boards. Without it, the matrix board is built and never judged.
+- **`crates/aethelgard-cli/tests/workspace_shape.rs`:** svd-hal's file allowlist takes the two DS12117 fixtures, on 3303's precedent for `tests/ui/motors-pwm/topology.json`.
+- **`ardupilot-image.yml`:** a new `pin-table` job, beyond "the matrix and `paths:`". It is ruling D1 (a)'s CI half.
+- **No crate `src/`, specification other than `four-port.json`, `ci/`, or `fab/` byte changes** (`git diff --stat origin/main -- 'crates/*/src' ci fab examples` is empty).
+
+## 3. Adversarial pass, targeted (§5)
+
+**A1. A row both sources agree on that DS12117 contradicts.**
+- **Planted:**
+  - `a_row_only_ds12117_contradicts_fails` takes `PB6 I2C1_SCL`: AF4 in ST and in ArduPilot-format input, and AF6 in DS12117. It fails with exactly `PB6 I2C1_SCL: st AF4, ds12117 AF6`.
+  - Mutants on the real fixture (an AF changed, a row dropped, two pads swapped) are each killed.
+- **Found in the real data, at the pad level:**
+  - ST's XML and ArduPilot (which has no package data) both give PC2 and PC3 their digital AFs. ST's table puts them at pads 28 and 29.
+  - DS12117 prints those LQFP144 pads `PC2_C`/`PC3_C`. Note 4 says Pxy's AFs reach Pxy_C only through a closed analog switch.
+  - RM0433 Rev 9 p. 549: on a package with only `PXn_C`, `PXnSO` resets to 0, so the switch is closed.
+  - ST's model therefore matches silicon at reset. The test carries the two pads as a cited, exact allowance (`SWITCHED`: pad, printed name and pin must all match). It is not a normalisation of `_C`.
+  - **Residual:** nothing checks that firmware leaves `PC2SO`/`PC3SO` at 0 (§5 Q3).
+
+**A2. A re-pin that a cached layer hides.**
+- **ArduPilot:**
+  - The published `e1809b90` (from `ab9d4663`) has `Created` 03:18:27Z, the time of the `9958f594` build. Its layers came from the GHA cache, and only the label layer is new.
+  - That is harmless here, and measured so, not assumed: it was pulled by digest, its dpkg list equals `160f9955`'s, and the ELFs are identical.
+- **Tools:**
+  - The `--no-cache` build of `main`'s Dockerfile holds 669 packages, the same count as `e5fc7ddb`. The only difference is `linux-libc-dev` `6.12.115-2` → `6.12.117-1` [measured], which is `4407`'s ruled move.
+  - `main`'s failed build also built from the GHA cache.
+  - The `--no-cache` build on Furnace is the uncached truth, and it reproduces the same smoke flake at the same rate. The flake is in the check, not in a stale layer.
+- **General:**
+  - A pin is checked by `check-ardupilot-pin.sh` for shape only. What the image holds is read back in the image: `pinned` smokes it, and this WO reads its dpkg list and label.
+  - A cached layer cannot hide a changed `COPY` input, because BuildKit keys on content. It could only hide a change in what an unchanged instruction fetches, and the snapshot date fixes apt's answer.
+
+**A3 (found while building).**
+- The ArduPilot `pinout` list of generated boards is hard-coded, so a matrix board missing from it builds and is never judged. I added four-port there and did not generalise. §5 Q4 has the one-line generalisation.
+
+## 4. Reduction pass (diff)
+
+- **Cut:**
+  - 36 DS12117 AF rows for pins the LQFP144 does not bond (the test only filtered them out). The filter became a refusal of any off-package pin, which is stricter.
+  - A roundabout assertion in the planted test.
+- **Kept:**
+  - the two refusal tests of the ArduPilot reader (an unread line, a key given twice): each guards a silent misread;
+  - `image_workflow_paths.rs`'s planted test: it is the only thing proving the reader is not vacuous on its glob forms.
+- **Not touched:** `serial-four.json`. `four-port.json` duplicates 475 of its 488 lines, but `serial-four` is the twin's four-port fixture with SBUS. Deriving one from the other at test time is what `4404` did, and it is exactly what this WO replaces with a committed specification for CI.
+
+## 5. Questions for the architect
+
+1. **(the stop) The tools re-pin.** Posted 07:11Z:
+   - (a) re-run run 45105034798's failed jobs, so that `main` publishes;
+   - (b) fix `container/smoke.sh:115` so the flake cannot recur (`ldconfig -p` into a variable, or `grep -F … >/dev/null`).
+
+   `smoke.sh` is in `container/` but outside the named fence. Once there is a digest, the re-pin and the bench verify under it are a short follow-up, in this PR if it is still open.
+2. **The roadmap row (`4404` draft) for the run-time serial pull-ups and `USART_CR2`**, assigned to 4408 at roadmap L1054 and L1056, is not in this WO's text. It is not built here. Four-port's generated header carries 4404's "Serial pulls" line.
+3. **PC2SO/PC3SO.** A board on PC2 or PC3 depends on `SYSCFG_PMCR`'s package-dependent reset. A rule that no generated firmware writes `PC2SO`/`PC3SO`, or a twin row for `PMCR`, would close it. Today no committed board uses PC2 or PC3 [not measured beyond the CI boards'].
+4. **`ardupilot-pinout.sh`** could judge every `generated-*` artifact it is given instead of a fixed list. It is one loop, deferred as outside this WO.
+5. **F7's third item**, `examples/sentinel-01.json` in the ArduPilot matrix (roadmap L1057), is not in the WO text, and is not built.
+
+## 6. Gates
+
+All three pass on Furnace at `7d8b7190` (2026-11-23). The commits after it touch no Rust.
+- `cargo fmt --all -- --check`;
+- `cargo clippy --workspace --all-targets -- -D warnings`;
+- `cargo test --workspace`: 164 suites, 2,860 passed, 0 failed, 1 ignored (the ArduPilot leg, run in CI by `pin-table`).
+
+An earlier run had caught one failure of mine (`workspace_shape.rs`: svd-hal's file allowlist, §2.6), which is fixed.
+
+Beside them:
+- `bash container/test-check-pins.sh` and `test-check-ardupilot-pin.sh` pass;
+- the ArduPilot leg passes with the pinned file (`--ignored`, 603 shared rows, 167 family rows).
+
+## 7. CI
+
+(below)
+
+## 8. Signal
+
+(below)
