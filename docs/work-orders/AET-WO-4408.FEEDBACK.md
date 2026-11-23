@@ -7,9 +7,12 @@ Written 2026-11-23.
 **Status: see §8.** Predictions: `spike/4408/PREDICTIONS.md` (committed `ebd66a16` before any measurement). Results: `spike/4408/RESULTS.md`.
 
 **The answer:**
-- **WO §7's second stop holds for `container/IMAGE`.**
-  - `main`'s tools-image publish after #339 failed (run 45105034798), in a smoke flake: `ldconfig -p | grep -qF` under `pipefail`, measured 1 in 200 in both images.
-  - So no tools digest exists, and `IMAGE` stays at `e5fc7ddb`. Reported on the bus at 07:11Z, with (a) a re-run and (b) a one-line fix; awaiting a ruling (§5 Q1).
+- **WO §7's second stop fired, and was ruled and cleared.**
+  - `main`'s tools-image publish after #339 failed (run 45105034798) on a smoke flake: `ldconfig -p | grep -qF` under `pipefail`, 2 runs in 1000.
+  - Reported 07:11Z. Ruled 08:00Z: (a) the architect re-ran it; (b) this PR carries the one-line fix (§2.5b).
+  - Attempt 2 published `aethelgard-tools@sha256:1e0ab105…9c63` (08:25Z), and **`IMAGE` names it**.
+  - Its dpkg list equals a `--no-cache` build of `main`'s Dockerfile.
+  - The bench package's verify under the pulled digest derives the same 17 files as under `e5fc7ddb`, and 16 equal `fab/` (§2.4).
 - **`ARDUPILOT-IMAGE` re-pinned** to `main`'s newest publish, `e1809b90…` from `ab9d4663`.
   - Its dpkg list equals `160f9955`'s (171 packages).
   - Sentinel-01's and four-port's ELF and `hwdef.h` are byte-identical under both images.
@@ -66,15 +69,18 @@ Predictions were committed before any measurement. Their outcomes:
   - The image carries the revision label.
   - Its dpkg list is identical to the old image's.
   - ArduPilot builds byte-identically in it (A1, A2).
-- **`IMAGE`:** not re-pinned: the §7 stop (§5 Q1).
+- **`IMAGE`:** `e5fc7ddb` → `1e0ab105ec42…9c63`, `main`'s publish from `9958f594`, run 45105034798 attempt 2 (`publish` job 137569487351, 08:25:19Z).
+  - The image carries revision label `9958f594`.
+  - Its 669 dpkg lines equal the `--no-cache` Furnace build's. Against `e5fc7ddb` only `linux-libc-dev` moves, `6.12.115-2` → `6.12.117-1`, `4407`'s ruled move.
+  - The same publish pushed the GtkSharp mirror (`…:GtkSharp-964cb9c…` at `03cf1db8…`).
 
 ### 2.4 The bench package under the re-pinned tools image
 
-- **The rehearsal (`RESULTS.md` §B):** CI's exact `verify --against-fab`, under `main`'s tools image built `--no-cache` on Furnace and, as a control, under the pinned `e5fc7ddb`.
-  - Both derive the same 17 files, and 16 equal the committed package byte for byte.
-  - `MANIFEST.json` (`d47031ce…` in both) differs from the committed one only by Furnace's sandbox record (`uid_boundary: false`), which the control shares.
+- **The rehearsal (`RESULTS.md` §B):** CI's exact `verify --against-fab`, run three times: under the published `1e0ab105` pulled by digest, under `main`'s tools image built `--no-cache` on Furnace, and, as a control, under the old `e5fc7ddb`.
+  - All three build the same CLI and bridge, and derive the same 17 files. 16 equal the committed package byte for byte.
+  - `MANIFEST.json` (`d47031ce…` in all three) differs from the committed one only by Furnace's sandbox record (`uid_boundary: false`), which the control shares.
 - **So no `fab/` byte moves under the re-pinned content, and WO §7's first stop does not fire.**
-- The acceptance, CI's `bench-package` on a published tools digest, waits for §5 Q1.
+- The acceptance is CI's `bench-package` job on this PR, which runs under `container/IMAGE` (§7).
 
 ### 2.5 `4407`'s follow-ups
 
@@ -154,11 +160,7 @@ Each one is needed for something inside the fence to be checked at all:
 
 ## 5. Questions for the architect
 
-1. **(the stop) The tools re-pin.** Posted 07:11Z:
-   - (a) re-run run 45105034798's failed jobs, so that `main` publishes;
-   - (b) fix `container/smoke.sh:115` so the flake cannot recur (`ldconfig -p` into a variable, or `grep -F … >/dev/null`).
-
-   `smoke.sh` is in `container/` but outside the named fence. Once there is a digest, the re-pin and the bench verify under it are a short follow-up, in this PR if it is still open.
+1. **(ruled 08:00Z, done) The tools re-pin.** (a) Re-run: attempt 2 published. (b) The `smoke.sh` fix is in this PR. Nothing is open.
 2. **The roadmap row (`4404` draft) for the run-time serial pull-ups and `USART_CR2`**, assigned to 4408 at roadmap L1054 and L1056, is not in this WO's text. It is not built here. Four-port's generated header carries 4404's "Serial pulls" line.
 3. **PC2SO/PC3SO.** A board on PC2 or PC3 depends on `SYSCFG_PMCR`'s package-dependent reset. A rule that no generated firmware writes `PC2SO`/`PC3SO`, or a twin row for `PMCR`, would close it. Today no committed board uses PC2 or PC3 [not measured beyond the CI boards'].
 4. **`ardupilot-pinout.sh`** could judge every `generated-*` artifact it is given instead of a fixed list. It is one loop, deferred as outside this WO.

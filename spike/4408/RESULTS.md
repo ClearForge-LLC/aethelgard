@@ -5,7 +5,7 @@ Measured 2026-11-23 on Furnace, on `wo/aet-4408-matrix` from `main` `7fbe5d11`. 
 ## D. Digests
 
 As recorded before predicting:
-- **No tools image has been published since #339** (run 45105034798, smoke flake). WO §7's second stop holds for `container/IMAGE`, which stays at `e5fc7ddb`.
+- **No tools image has been published since #339** (run 45105034798, smoke flake). WO §7's second stop holds for `container/IMAGE`, which stays at `e5fc7ddb`. **Since cleared:** the architect re-ran it at 07:58Z (ruling 08:00Z), and attempt 2 published `1e0ab105…9c63` at 08:25Z, which `IMAGE` now names (§B).
 - **ArduPilot:** the newest publish is **`aethelgard-ardupilot@sha256:e1809b909b02c7fd01b593a65f32d191169a5027ef61ceeae8e74cc08117c2b6`**, from `ab9d4663` (run 45127867881, `publish` job 137539166537, 07:13Z), and `ARDUPILOT-IMAGE` now names it.
 
 | # | Prediction | Result |
@@ -72,6 +72,10 @@ The rehearsal [measured]:
 - **Both verifies** pass every gate and all four fab preconditions, and derive the same 17 files, hash for hash.
 - **16 of 17 equal the committed `fab/` package byte for byte,** the ELF `f3e871bb…` among them. The 17th, `MANIFEST.json`, is `d47031ce…` in both runs. It differs from the committed one because the verdict it binds records the sandbox: `uid_boundary: false (user_namespace)` on rootless podman. ci.yml says the committed package is the one CI writes, "never one written on another machine". The control shows the same, so the image re-pin moves nothing.
 - **Exit 1 in both,** for `against_fab: differs` on `MANIFEST.json` only.
+- **After the architect's re-run** (run 45105034798, attempt 2, 08:25Z), `main` published `aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63` from `9958f594`.
+  - Pulled by digest, it carries revision label `9958f594…` and `Created` 03:20:17Z: attempt 1's layers, from the GHA cache.
+  - Its dpkg list equals the `--no-cache` Furnace build's, all 669 lines.
+  - The same verify under it builds the same binaries (`98ab9780…`, `691cd8be…`) and derives the same 17 files as the control and the local build.
 - **B1 held as a rehearsal:** no `fab/` byte moves under `main`'s tools content. The acceptance remains CI's `bench-package` job on a published digest.
 
 ## G. The GtkSharp seed
