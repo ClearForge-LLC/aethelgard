@@ -40,7 +40,7 @@ No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weig
 - **(2)**
   - `the_package_holds_the_files_as_ordered`: every listed file's bytes, and the package's whole name set (the ten plus `NOT_ORDERED`'s seven).
   - `a_moved_added_removed_or_split_fabrication_file_is_named`: one byte, a new `.gbr` layer, a renamed layer, the drill split into `-PTH`/`-NPTH`, a file removed. Each case is run on a copy, and each finding names the file.
-  - `the_ordered_list_refuses_crlf_a_duplicate_a_malformed_line_and_a_rewrite`: CRLF, no final newline, no header first, eight malformed forms, an undated block, a duplicate in one block, and an in-place rewrite of the as-ordered block. It also accepts a dated ruling block that supersedes an entry.
+  - `the_ordered_list_refuses_crlf_a_duplicate_a_malformed_line_and_a_rewrite`: CRLF, no final newline, eight malformed forms, an undated block, a duplicate in one block, and an in-place rewrite of the as-ordered block. It also accepts a dated ruling block that supersedes an entry.
 - **(3)**
   - `the_bench_sheet_names_the_package_elf`.
   - `a_bench_sheet_naming_another_elf_fails`: one character off, a prefix only, the ELF twice, a second full digest in a table row, the old ELF abbreviated (`…` and `...`), bare at 8 and 7 digits, after `0x` (9 digits), glued to a word, and in capitals. Register words and words of hex letters pass.
@@ -57,7 +57,15 @@ No `package/` byte moved, and no crate `src/` or workflow changed. `ci/test-weig
 
 ## 3. Mutants (one per guard this WO adds; `~/.cache/aet-3308/mut/mutants.py`)
 
-MUTANTS_PLACEHOLDER
+**23 of 23 killed** on the final tree, each run alone against its own suite (`~/.cache/aet-3308/mut/run3.log`):
+- **`bench_board_tier1` mutants (22):** CRLF; final newline; hash form; lowercase hash; empty name; name characters; dated ruling block; as-ordered end; block reset; duplicate in a block; ruling supersedes; as-ordered pin; moved bytes; missing file; extra file; a long run anywhere; seven standing alone; alone before; alone after; more than 8 after `0x`; ELF exactly once; the named non-ELF set.
+- **Route mutant (1):** the route line. `test-route.sh` and `route.sh check` both fail.
+
+**Earlier runs found four survivors, each redundant, and all four were removed** (§5):
+- the count of ten;
+- the ELF's bytes against MANIFEST (already held by the manifest test);
+- the header-first guard. The pin fails a headerless list, and its case passed for the wrong reason: "header" matched another error;
+- the `...` continuation. A bare run is a digest anyway.
 
 ## 4. Adversarial pass (targeted, §5; a fresh Opus subagent given the code, the WO and the ruling)
 
@@ -78,7 +86,14 @@ MUTANTS_PLACEHOLDER
 
 ## 5. Reduction pass
 
-REDUCTION_PLACEHOLDER
+Reduction pass (diff): −20 net · 2 duplicates removed · 4 dead paths removed · 0 protected kept · 0 findings below.
+- **Duplicates removed:** the ELF-bytes assertion (the manifest test holds it), and a second `MANIFEST.json` reader (one `manifest()` now).
+- **Dead paths removed:**
+  - the count-of-ten assertion (the closed name set fails any dropped entry);
+  - the header-first guard (the pin);
+  - the ellipsis continuation (the non-ELF set is named by eight-digit prefixes);
+  - the `0x` rule's third-character check (no case could kill it; dropping it only makes the rule stricter).
+- **Proof:** the suite is green, and every surviving guard's mutant still fails (§3).
 
 ## 6. Findings and backlog
 
@@ -94,4 +109,12 @@ REDUCTION_PLACEHOLDER
 
 ## Gates
 
-GATES_PLACEHOLDER
+Run in the pinned image (`container/IMAGE` `1e0ab105…`) under `capped-run --mem 16G`, on a copy of the tree at `ebaab589` (the last code commit), with the target inside the repository (CI's layout):
+- `cargo fmt --all -- --check`: 0.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: 0.
+- `cargo test --workspace --locked`: 0. **2,897 passed, 0 failed**, in 165 test binaries.
+- `bash ci/test-route.sh`: all 45 cases passed. `bash ci/route.sh check ci/docs-tests.tsv`: inventory ok, 9 rows.
+- `cd fab/sentinel-01-bench && sha256sum --strict -c ORDERED.sha256`: 10 OK.
+- `git diff b9d5f4b6 -- fab/sentinel-01-bench/package`: empty. No package byte moved.
+
+The tokens minted are revoked with HTTP 204. CI on the pushed head is the remaining gate.
