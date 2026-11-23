@@ -94,18 +94,30 @@ pub fn settle_ns(chain: &SagChain, r_mohm: u64, v_uv: u64) -> Option<u64> {
 /// the healthy R), when it has no operating point (F5), when the operating
 /// point lies below any sink's shutdown (F5) or regulation floor (D-B9,
 /// F11), naming the sink and both figures, and when the chain has not
-/// settled by `span_ns`. `Ok` is the static operating point, µV.
+/// settled by `span_ns`. `Ok` is the static operating point, µV. `start_ns`
+/// is the sag's instant from reset once the undisturbed boot word places it
+/// (`AET-WO-2310`); `None` before the boot, when only the offset is judged.
 pub fn check_battery_sag(
     sag: &BatterySag,
+    start_ns: Option<u64>,
     chain: &SagChain,
     span_ns: u64,
 ) -> Result<u64, ScenarioError> {
     let refuse = |m: String| ScenarioError::new(REFUSED, None, m);
     let r = u64::from(sag.series_milliohms);
+    // Before the boot only the offset is known (`AET-WO-2310`): the clauses
+    // of its instant wait for the undisturbed boot word, and a refusal before
+    // it says so.
+    let instant = start_ns.map_or_else(
+        || format!("{} ns from the boot word (the instant from reset is judged once the undisturbed boot word places it)", sag.from_boot_word_ns),
+        |at| format!("{at} ns"),
+    );
     // The shape the parser and the deck hold, judged here too, so replay
     // refuses a record no scenario could have made (adversarial 4).
+    let offset = sag.from_boot_word_ns;
     let shaped = (1..=SERIES_MILLIOHMS_MAX).contains(&r)
-        && (1..=START_NS_MAX).contains(&sag.start_ns)
+        && crate::record::plant_offset_ok(offset)
+        && start_ns.is_none_or(|at| (1..=START_NS_MAX).contains(&at))
         && (1..=V_OPEN_MAX_UV).contains(&chain.v_open_microvolts)
         && chain.capacitance_picofarads > 0
         && (1..=MAX_SINKS).contains(&chain.sinks.len())
@@ -114,8 +126,7 @@ pub fn check_battery_sag(
         });
     if !shaped {
         return Err(refuse(format!(
-            "out of shape: {r} mΩ from {} ns, {} µV open, {} pF on the battery, {} sinks, each with power and both floors above 0, outside the bounds the scenario and the deck hold",
-            sag.start_ns,
+            "out of shape: {r} mΩ from {instant}, {} µV open, {} pF on the battery, {} sinks, each with power and both floors above 0, outside the bounds the scenario and the deck hold",
             chain.v_open_microvolts,
             chain.capacitance_picofarads,
             chain.sinks.len()
@@ -154,12 +165,14 @@ pub fn check_battery_sag(
             )));
         }
     }
-    let end = settle_ns(chain, r, v).and_then(|s| s.checked_add(sag.start_ns));
+    let Some(start_ns) = start_ns else {
+        return Ok(v);
+    };
+    let end = settle_ns(chain, r, v).and_then(|s| s.checked_add(start_ns));
     match end {
         Some(end) if end <= span_ns => Ok(v),
         _ => Err(refuse(format!(
-            "past the span: stepped at {} ns, the chain settles (10 τ) at {} ns, past the boot's {span_ns} ns",
-            sag.start_ns,
+            "past the span: stepped at {start_ns} ns, the chain settles (10 τ) at {} ns, past the boot's {span_ns} ns",
             end.map_or_else(|| "no time".to_owned(), |e| e.to_string())
         ))),
     }

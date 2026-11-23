@@ -199,7 +199,9 @@ tests/bounds.rs	replay_is_linear_in_events	0.800
 tests/bounds.rs	the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib	16.200
 tests/campaign_tier1.rs	a_campaign_with_one_matching_and_one_unmatched_scenario_exits_1	3.100
 tests/campaign_tier1.rs	a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays	9.540
-tests/campaign_tier1.rs	a_droop_past_a_dshot_board_s_boot_is_refused_with_its_time	0.700
+# AET-WO-2310: renamed (moved to the stub-bootable minimal board) and lengthened to four scenarios behind a stub boot: a Furnace estimate (AET-WO-2302's rule:
+# 2.71 s alone on Furnace, libtest `finished in`, times 1.2, rounded up), until the refit rule measures it.
+tests/campaign_tier1.rs	a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it	3.3
 tests/campaign_tier1.rs	a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line	0.900
 tests/campaign_tier1.rs	a_failing_run_that_matches_its_expectation_exits_0	1.300
 tests/campaign_tier1.rs	a_failing_run_under_an_expect_pass_scenario_exits_1_unmatched	0.800
@@ -455,7 +457,9 @@ tests/twin_tier2.rs	kani_proves_every_part_of_both_motor_fixtures	510.64
 tests/twin_tier2.rs	kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check	12.63
 tests/twin_tier2.rs	l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo	9.4
 tests/twin_tier2.rs	l1_bytes_written_before_the_frame_never_count_as_its_echo	8.08
-tests/twin_tier2.rs	m1_a_core_that_slept_and_wrote_its_boot_word_is_the_ruled_disagreement	4.67
+# AET-WO-2310: the A8 test renamed (A10 overturned) and lengthened (a boot, then a two-scenario campaign, replays and attributes): a Furnace estimate
+# (AET-WO-2302's rule: its libtest `finished in` alone in the pinned image, 14.24 s, spike/2310/sh/time-a8.sh, times 1.2, rounded up), until the refit rule measures it.
+tests/twin_tier2.rs	m1_a_core_that_slept_and_wrote_its_boot_word_is_cpu_halted	18
 tests/twin_tier2.rs	m1_a_core_that_slept_without_its_boot_word_is_cpu_halted	12.01
 tests/twin_tier2.rs	m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped	12.82
 tests/twin_tier2.rs	m2_a_dma_start_of_cen_fails_closed_by_name	6.24

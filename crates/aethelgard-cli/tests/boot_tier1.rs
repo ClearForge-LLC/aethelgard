@@ -598,13 +598,17 @@ fn a_halted_core_fails_and_a_set_word_beside_one_is_untrusted() {
     ));
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["boot_word_missing", "cpu_halted"]);
-    untrusted(boot(&with(
+    // A set word beside a halt was untrusted (exit 5) by `AET-WO-2100`'s
+    // ruled A10; `AET-WO-2310` overturns it: the firmware's `cpu_halted`.
+    let (code, v) = boot(&with(
         "",
         "0x2100B007",
         "0x00000000000F423F",
         "0x00000064",
         &GOOD_REGISTERS,
-    )));
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["cpu_halted"]);
 }
 
 #[test]
@@ -617,13 +621,21 @@ fn more_instructions_than_the_run_holds_or_another_speed_is_untrusted() {
         &GOOD_REGISTERS,
     )));
     // At 1 MIPS, 10,000 instructions would fill the run; the platform is 100.
-    untrusted(boot(&with(
+    // Untrusted by its speed, never the firmware's `cpu_halted` (`AET-WO-2310`).
+    let (code, v) = boot(&with(
         "",
         "0x2100B007",
         "0x0000000000002710",
         "0x00000001",
         &GOOD_REGISTERS,
-    )));
+    ));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("at 1 MIPS, not the platform's 100")),
+        "{v}"
+    );
+    untrusted((code, v));
 }
 
 #[test]

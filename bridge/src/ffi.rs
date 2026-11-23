@@ -127,6 +127,48 @@ unsafe extern "C" {
 
 static STARTED: AtomicBool = AtomicBool::new(false);
 
+/// glibc's `Dl_info` (`dlfcn.h`), for [`library_path`]; not libngspice's, so
+/// after the header-checked block above.
+#[repr(C)]
+struct DlInfo {
+    dli_fname: *const c_char,
+    dli_fbase: *mut c_void,
+    dli_sname: *const c_char,
+    dli_saddr: *mut c_void,
+}
+
+unsafe extern "C" {
+    /// glibc's `dladdr` (`dlfcn.h`, in libc since 2.34).
+    fn dladdr(addr: *const c_void, info: *mut DlInfo) -> c_int;
+}
+
+/// The file the loader mapped libngspice from, as glibc's `dladdr` names it
+/// for `ngSpice_Init`, made canonical (`AET-WO-2310`): the library this
+/// process runs, whatever path or search order found it. The CLI hashes its
+/// bytes; it is read here only for its name.
+pub fn library_path() -> Result<std::path::PathBuf, String> {
+    let mut info = DlInfo {
+        dli_fname: std::ptr::null(),
+        dli_fbase: std::ptr::null_mut(),
+        dli_sname: std::ptr::null(),
+        dli_saddr: std::ptr::null_mut(),
+    };
+    let addr = ngSpice_Init as *const c_void;
+    // SAFETY: `dladdr` reads `addr` only as an address and writes `info`,
+    // which is valid for the call; it returns 0 when it names nothing.
+    let found = unsafe { dladdr(addr, &mut info) };
+    if found == 0 || info.dli_fname.is_null() {
+        return Err("dladdr names no file for ngSpice_Init".to_owned());
+    }
+    // SAFETY: on success `dli_fname` is a NUL-terminated string the loader
+    // owns for as long as the library stays loaded, and the bridge never
+    // unloads it.
+    let name = unsafe { CStr::from_ptr(info.dli_fname) }
+        .to_str()
+        .map_err(|_| "the library's file name is not UTF-8".to_owned())?;
+    std::fs::canonicalize(name).map_err(|e| format!("the library's file `{name}`: {e}"))
+}
+
 /// Text ngspice hands to the caller; lossy, since ngspice promises no encoding.
 fn text(s: *mut c_char) -> String {
     if s.is_null() {

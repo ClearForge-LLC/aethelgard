@@ -175,7 +175,7 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
             None => Ok((Vec::new(), Some(Machine { cpus, peripherals }))),
             Some(line) => Ok((
                 vec![Finding::plain(
-                    "platform_load_error",
+                    aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING,
                     line.trim().to_owned(),
                 )],
                 None,
@@ -185,7 +185,7 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
             let detail = lines.get(i + 1).map(|l| l.trim()).unwrap_or_default();
             Ok((
                 vec![Finding::plain(
-                    "platform_load_error",
+                    aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING,
                     format!("{} {detail}", lines[i].trim()).trim().to_owned(),
                 )],
                 None,
@@ -292,7 +292,7 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
     let text = out.text();
     if let Some(line) = text.lines().find(|l| l.contains(ABORTED)) {
         return Finding::plain(
-            "cpu_aborted",
+            aethelgard_chaos::campaign::CPU_ABORTED_FINDING,
             format!(
                 "the machine aborted and the run never ended; killed at the {bound:?} bound: {}",
                 line.trim_matches(['\r', ' '])
@@ -301,14 +301,14 @@ pub fn bounded(out: &Output, bound: Bound) -> Finding {
     }
     match bound {
         Bound::Wall => Finding::plain(
-            "wall_bound_exceeded",
+            aethelgard_chaos::campaign::WALL_BOUND_FINDING,
             format!(
                 "the boot ran past the {} s wall-clock bound and was killed",
                 BOOT_BOUNDS.wall.as_secs()
             ),
         ),
         Bound::Memory => Finding::plain(
-            "memory_cap_exceeded",
+            aethelgard_chaos::campaign::MEMORY_CAP_FINDING,
             format!(
                 "Renode's resident memory passed the {} MiB cap and it was killed",
                 BOOT_BOUNDS.rss_kib / 1024
@@ -2444,9 +2444,9 @@ pub fn judge_boot(
         let message = format!("{} {detail}", lines[i].trim()).trim().to_owned();
         let kind = if lines[i].contains("error executing command 'machine LoadPlatformDescription")
         {
-            "platform_load_error"
+            aethelgard_chaos::campaign::PLATFORM_LOAD_FINDING
         } else if lines[i].contains("error executing command 'sysbus LoadELF") {
-            "firmware_load_error"
+            aethelgard_chaos::campaign::FIRMWARE_LOAD_FINDING
         } else {
             return Err(untrusted(format!("a monitor command failed: {message}")));
         };
@@ -2805,6 +2805,17 @@ pub fn judge_boot(
             observed.instructions
         )));
     }
+    // The run's instructions are its time at the platform's speed; a core
+    // reported at another speed is the tool's fault, never the firmware's.
+    // Before `AET-WO-2310` A10's stop caught it as too few instructions; a
+    // booted sleep is now the firmware's `cpu_halted`, so it is named here.
+    if observed.mips != aethelgard_twin::boot::MIPS {
+        return Err(untrusted(format!(
+            "renode reports the core at {} MIPS, not the platform's {}",
+            observed.mips,
+            aethelgard_twin::boot::MIPS
+        )));
+    }
     let booted = observed.boot_word == aethelgard_twin::boot::BOOT_MAGIC;
     // The echo follows the boot word, so without it nothing is judged of it.
     if !booted {
@@ -2812,13 +2823,11 @@ pub fn judge_boot(
             w.echo = "not_judged";
         }
     }
+    // A core that slept or stopped executed fewer instructions than the run
+    // holds; with the boot word set too, it is the firmware's own doing, so
+    // it is the run's finding, `cpu_halted` below, never a stop of the
+    // campaign (`AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10).
     let halted = observed.instructions < expected;
-    if booted && halted {
-        return Err(untrusted(format!(
-            "the boot word is set but the core executed {} of {expected} instructions",
-            observed.instructions
-        )));
-    }
     // A line of ours lagging its stamp is a core that executed fewer
     // instructions than its time held: with the whole run's executed, the
     // witnesses disagree.
@@ -2889,7 +2898,7 @@ pub fn judge_boot(
             .map(|s| format!("; {s}: the core slept or stopped before it"))
             .unwrap_or_default();
         findings.push(Finding::plain(
-            "cpu_halted",
+            aethelgard_chaos::campaign::HALTED_FINDING,
             format!(
                 "the core executed {} of the run's {expected} instructions{lag}",
                 observed.instructions
@@ -4358,7 +4367,7 @@ pub fn build(version_stdout: &[u8]) -> Option<String> {
 /// (`AET-WO-4200`), so an I2C record holding `RXP`'s word is invalid.
 pub fn status_name(wire: &aethelgard_twin::boot::Wire, status: u32) -> &'static str {
     match wire.status(status) {
-        Some(None) => "ok",
+        Some(None) => aethelgard_chaos::campaign::STATUS_OK,
         Some(Some("TXIS")) => "timeout_txis",
         Some(Some("TC")) => "timeout_tc",
         Some(Some("RXNE")) => "timeout_rxne",
@@ -5226,7 +5235,7 @@ mod tests {
         });
         let mut f: Vec<Finding> = slept
             .into_iter()
-            .map(|s| Finding::plain("cpu_halted", s))
+            .map(|s| Finding::plain(aethelgard_chaos::campaign::HALTED_FINDING, s))
             .collect();
         f.extend(witness_findings_of(&motors[0], &w));
         f.extend(anchor_findings(
@@ -5856,6 +5865,61 @@ mod tests {
     /// in the boot, `CR1` is expected set and `judge_stop_missing` named;
     /// past the filter's budget nothing of ours is read, every output is
     /// unreadable, and no anchor finding is named (fail closed, never absent).
+    /// `AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10 on purpose
+    /// (`2302` Q1): a boot that wrote its boot word and executed fewer
+    /// instructions than the run holds is the run's `cpu_halted`, an error
+    /// of the firmware, never a stop of the campaign (exit 5); with every
+    /// instruction executed it names none.
+    #[test]
+    fn a_booted_core_that_executed_fewer_instructions_is_cpu_halted_not_a_stop() {
+        let image = image();
+        let p = plan(&image, &[]);
+        let flash = "[00:00:00.000000000] [INFO] flashController: [cpu: 0x8000102] ReadUInt32 from 0x1C (OptionStatusCurrent), returned 0x406AAF0";
+        let judged = |instructions: u64| {
+            let mut text = format!("{flash}\nAETHELGARD-BOOT-BEGIN\n");
+            for (_, read) in p.reads() {
+                let v = match read {
+                    Read::BootWord => u64::from(aethelgard_twin::boot::BOOT_MAGIC),
+                    Read::Instructions => instructions,
+                    Read::Mips => 100,
+                    Read::Pc => 0x0800_0010,
+                    Read::Icsr => 0x800,
+                    Read::Loop(_, 0) => 0xBF10,
+                    Read::Loop(_, _) => 0xE7FD,
+                    Read::BrownOut => 0x0406_AAF0,
+                    Read::Register(i) => u64::from(image.registers[i].value),
+                    Read::Record(_, 0) | Read::Unwitnessable(_, 0) => {
+                        u64::from(aethelgard_twin::boot::STATUS_OK)
+                    }
+                    Read::Record(_, _) | Read::Unwitnessable(_, _) => 0x60,
+                    Read::Idr(_) | Read::Dr(_) => 0,
+                };
+                text.push_str(&format!("{v:#x}\n"));
+            }
+            text.push_str("AETHELGARD-BOOT-END\nAvailable peripherals:\n  \u{251c}\u{2500}\u{2500} cpu (CortexM)\n  \u{2502}       Slot: 0\n  \u{251c}\u{2500}\u{2500} u2 (BME280)\n");
+            let out = output(text.into_bytes(), 0);
+            let (f, _, _) = judge_boot(0, &out, &p, &Captured::default())
+                .unwrap_or_else(|s| panic!("{instructions}: a stop, {}: {}", s.kind, s.message));
+            f.iter().map(|f| f.kind.clone()).collect::<Vec<_>>()
+        };
+        for (instructions, halted) in [(10_000_000, false), (9_999_990, true)] {
+            let kinds = judged(instructions);
+            assert_eq!(
+                kinds
+                    .iter()
+                    .any(|k| k == aethelgard_chaos::campaign::HALTED_FINDING),
+                halted,
+                "{instructions}: {kinds:?}"
+            );
+            assert!(
+                !kinds
+                    .iter()
+                    .any(|k| k == aethelgard_chaos::campaign::BOOT_WORD_FINDING),
+                "{instructions}: {kinds:?}"
+            );
+        }
+    }
+
     #[test]
     fn judge_boot_reads_a_dshot_boot_s_window_and_stop() {
         let (image, motors) = dshot_parts();

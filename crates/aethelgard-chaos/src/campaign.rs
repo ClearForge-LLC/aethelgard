@@ -19,8 +19,9 @@ use sha2::{Digest, Sha256};
 use crate::event::{Header, name_ok};
 use crate::power::{self, Band};
 use crate::record::{
-    self, ANALOG_MAX_MILLIVOLTS, BatterySag, BusLine, Droop, Level, Line, Override, Reading,
-    Record, SERIAL_FRAME_LEN, SerialCapture, SerialFraming, realized_ns, split_pin, step_index,
+    self, ANALOG_MAX_MILLIVOLTS, BatterySag, BusLine, Droop, Level, Line, Override, RailDroop,
+    Reading, Record, SERIAL_FRAME_LEN, SerialCapture, SerialFraming, realized_ns, split_pin,
+    step_index,
 };
 use crate::replay::State;
 
@@ -29,10 +30,23 @@ use crate::replay::State;
 /// and since `AET-WO-4200` the `spi_device_absent` override; and 3, since
 /// `AET-WO-2302` (D5), which also admits the `serial_rx_open` override; 4,
 /// since `AET-WO-2304b`, which also admits `battery_sag` and
-/// `rail_out_of_band`; and 5, since `AET-WO-1211c`, which also admits a pin
-/// device's overrides, `pin_held` and `analog_value`. A file may use only
-/// what its version admits.
-pub const SCENARIO_VERSIONS: [u32; 5] = [1, 2, 3, 4, 5];
+/// `rail_out_of_band`; 5, since `AET-WO-1211c`, which also admits a pin
+/// device's overrides, `pin_held` and `analog_value`; and 6, since
+/// `AET-WO-2310` ([`PLANTED_CHANGES`]), the only version that reads a droop
+/// or a battery sag ([`PLANTED_NEEDS_VERSION`]). A file may use only what its
+/// version admits.
+pub const SCENARIO_VERSIONS: [u32; 6] = [1, 2, 3, 4, 5, 6];
+/// The scenario version a planted event (a droop, a battery sag) needs.
+pub const PLANTED_VERSION: u32 = 6;
+/// A droop or a battery sag in a scenario older than [`PLANTED_VERSION`].
+pub const PLANTED_NEEDS_VERSION: &str = "PlantedEventNeedsVersion6";
+/// What changed for a planted event at [`PLANTED_VERSION`], as its refusal
+/// says (`AET-WO-1215`'s pattern).
+pub const PLANTED_CHANGES: &str = "scenario 6 (AET-WO-2310): a droop's and a battery_sag's `start_ns` from reset is `from_boot_word_ns`, signed ns from the undisturbed boot word, and a droop states no `bor_level` (the specification's mcu.bor_level is the level)";
+/// A planted event the undisturbed boot word cannot place: its instant
+/// before reset or past the run, or no boot word to place it from
+/// (`AET-WO-2310`, ruled Q-A (a)).
+pub const PLANTED_UNPLACED: &str = "PlantedEventUnplaced";
 /// At most this many overrides, so the scenario record stays inside the
 /// reader's 4,096-byte event bound.
 pub const MAX_OVERRIDES: usize = 32;
@@ -44,6 +58,10 @@ pub const HELD_LOW: &str = "scenario.line_held_low";
 pub const HELD_LOW_FINDING: &str = "i2c_line_held_low";
 /// The findings the analog pre-pass fails a run with, one per line.
 pub const PAST_CEILING_FINDING: &str = "analog_rise_exceeds_ceiling";
+/// The boot judge's finding for a core that executed fewer instructions than
+/// the run holds: it slept or stopped (`renode::judge_boot`), with or without
+/// the boot word (`AET-WO-2310`, overturning `AET-WO-2100`'s ruled A10).
+pub const HALTED_FINDING: &str = "cpu_halted";
 /// One per reset a droop rendered (`info`): the reset itself is the
 /// supervisor doing its job, so it never fails a run.
 pub const RESET_FINDING: &str = "brownout_reset";
@@ -84,16 +102,26 @@ pub fn brown_out_fails(r: &record::Reading) -> bool {
 /// The boot judge's finding for a boot that was read and whose boot word is
 /// not the firmware's, made once (`AET-WO-3201` B2).
 pub const BOOT_WORD_FINDING: &str = "boot_word_missing";
+/// A boot whose machine aborted and never ended (`renode::bounded`).
+pub const CPU_ABORTED_FINDING: &str = "cpu_aborted";
+/// A firmware Renode could not load (`renode::judge_boot`).
+pub const FIRMWARE_LOAD_FINDING: &str = "firmware_load_error";
+/// A boot killed at its memory cap (`renode::bounded`).
+pub const MEMORY_CAP_FINDING: &str = "memory_cap_exceeded";
+/// A platform Renode could not load (`renode::judge_boot`).
+pub const PLATFORM_LOAD_FINDING: &str = "platform_load_error";
+/// A boot killed at its wall-clock bound (`renode::bounded`).
+pub const WALL_BOUND_FINDING: &str = "wall_bound_exceeded";
 /// The findings of a boot that read nothing, one of which the judge names
 /// (`AET-WO-3201` B2): killed at a bound (the CLI's `renode::bounded`), or a
 /// platform or firmware that did not load (`renode::judge_boot`; adversarial
-/// pass, F1).
+/// pass, F1). The judge names each by the constant above (`AET-WO-2310`).
 pub const UNREAD_FINDINGS: [&str; 5] = [
-    "cpu_aborted",
-    "firmware_load_error",
-    "memory_cap_exceeded",
-    "platform_load_error",
-    "wall_bound_exceeded",
+    CPU_ABORTED_FINDING,
+    FIRMWARE_LOAD_FINDING,
+    MEMORY_CAP_FINDING,
+    PLATFORM_LOAD_FINDING,
+    WALL_BOUND_FINDING,
 ];
 /// The identity reads' findings the judge makes only once the boot word is
 /// set (`renode::judge_boot`): a record is judged at the fixed point, and
@@ -110,6 +138,66 @@ pub const BOOTED_READ_FINDINGS: [&str; 10] = [
     "spi_record_invalid",
     "spi_transaction_unwitnessed",
 ];
+/// A read's status in kinds 12 and 21 when it completed (`renode::status_name`).
+pub const STATUS_OK: &str = "ok";
+/// The judge's findings for an `ok` read whose witness was not the model's
+/// or could not be read (`renode::witness_finding`), two of
+/// [`BOOTED_READ_FINDINGS`].
+pub const UNWITNESSED_I2C: &str = "i2c_transaction_unwitnessed";
+pub const UNWITNESSED_SPI: &str = "spi_transaction_unwitnessed";
+
+/// How many `ok` reads of `bus` (kind 12 for `i2c`, 21 for `spi`) have their
+/// own witness (kind 13 or 22, by reference and step) unread.
+fn unread_ok_witnesses(records: &[Record], bus: &str) -> u64 {
+    let unread = |reference: &str, step: &str| {
+        records.iter().any(|w| match (bus, w) {
+            (
+                "i2c",
+                Record::I2cWitness {
+                    reference: r,
+                    step: s,
+                    observed,
+                    ..
+                },
+            )
+            | (
+                "spi",
+                Record::SpiWitness {
+                    reference: r,
+                    step: s,
+                    observed,
+                    ..
+                },
+            ) => r == reference && s == step && observed.is_none(),
+            _ => false,
+        })
+    };
+    records
+        .iter()
+        .filter(|x| match (bus, x) {
+            (
+                "i2c",
+                Record::I2cCheck {
+                    reference,
+                    step,
+                    status,
+                    ..
+                },
+            )
+            | (
+                "spi",
+                Record::SpiCheck {
+                    reference,
+                    step,
+                    status,
+                    ..
+                },
+            ) => status.as_deref() == Some(STATUS_OK) && unread(reference, step),
+            _ => false,
+        })
+        .count() as u64
+}
+
 /// A scenario refused, with the kind `aethelgard` reports.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ScenarioError {
@@ -204,7 +292,7 @@ struct RawAnalogValue {
 #[serde(deny_unknown_fields, remote = "Self")]
 struct RawBatterySag {
     series_milliohms: u64,
-    start_ns: u64,
+    from_boot_word_ns: i64,
 }
 
 #[derive(Deserialize)]
@@ -212,13 +300,12 @@ struct RawBatterySag {
 struct RawDroop {
     domain: String,
     floor_millivolts: u64,
-    start_ns: u64,
+    from_boot_word_ns: i64,
     fall_ns: u64,
     hold_ns: u64,
     rise_ns: u64,
     source_milliohms: u64,
     load_milliamps: u64,
-    bor_level: u64,
 }
 
 /// `expect_counts`: an object of finding kinds to counts, in the file's order;
@@ -314,7 +401,7 @@ fn schema(message: String) -> ScenarioError {
     ScenarioError::new("SchemaViolation", None, message)
 }
 
-fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
+fn override_from(raw: RawOverride, version: u32) -> Result<Override, ScenarioError> {
     use serde_json::Value as J;
     let text = |v: J, key: &str| match v {
         J::String(s) if name_ok(&s) => Ok(s),
@@ -391,6 +478,15 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
             || spi_device_absent.is_some()
             || serial_rx_open.is_some()
     };
+    if (battery_sag.is_some() || droop.is_some()) && version < PLANTED_VERSION {
+        return Err(ScenarioError::new(
+            PLANTED_NEEDS_VERSION,
+            None,
+            format!(
+                "scenario schema_version {version} reads no droop or battery_sag: {PLANTED_CHANGES}"
+            ),
+        ));
+    }
     if let Some(b) = battery_sag {
         alone("battery_sag", rest(false, rail_out_of_band.is_some()))?;
         return battery_sag_from(b).map(Override::BatterySag);
@@ -470,19 +566,33 @@ fn override_from(raw: RawOverride) -> Result<Override, ScenarioError> {
     }
 }
 
-/// The bounds of a droop's integers (`AET-WO-2301` §5.4), each checked on
-/// its own before any arithmetic: the run is 100 ms, a source is at most
-/// 1 kΩ, a load at most 10 A.
-const DROOP_BOUNDS: [(&str, u64, u64); 8] = [
+/// The bounds of a droop's unsigned integers (`AET-WO-2301` §5.4), each
+/// checked on its own before any arithmetic: the run is 100 ms, a source is
+/// at most 1 kΩ, a load at most 10 A. Its offset is [`offset_from`]'s.
+const DROOP_BOUNDS: [(&str, u64, u64); 6] = [
     ("floor_millivolts", 1, 5_000),
-    ("start_ns", 1, 100_000_000),
     ("fall_ns", 1, 10_000_000),
     ("hold_ns", 1, 100_000_000),
     ("rise_ns", 1, 10_000_000),
     ("source_milliohms", 1, 1_000_000),
     ("load_milliamps", 0, 10_000),
-    ("bor_level", 0, power::MAX_BOR_LEVEL as u64),
 ];
+
+/// A planted event's `from_boot_word_ns` (`AET-WO-2310`): within a run's
+/// length either way of the boot word ([`record::MAX_PLANT_OFFSET_NS`]) and
+/// a whole number of 10 ns instructions, as the boot word is. Judged before
+/// any boot, from the offset alone: the instant from reset is judged once
+/// the undisturbed boot word places it ([`PLANTED_UNPLACED`]).
+fn offset_from(what: &str, v: i64) -> Result<i64, ScenarioError> {
+    let max = record::MAX_PLANT_OFFSET_NS;
+    if !record::plant_offset_ok(v) {
+        return Err(schema(format!(
+            "{what} `from_boot_word_ns` is not a multiple of 10 from {} to {max}: {v} (judged before the boot, from the offset alone; its instant from reset is judged once the undisturbed boot word places it)",
+            -max
+        )));
+    }
+    Ok(v)
+}
 
 fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
     let raw: RawDroop = serde_json::from_value(v).map_err(|e| schema(format!("droop: {e}")))?;
@@ -494,13 +604,11 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
     }
     let values = [
         raw.floor_millivolts,
-        raw.start_ns,
         raw.fall_ns,
         raw.hold_ns,
         raw.rise_ns,
         raw.source_milliohms,
         raw.load_milliamps,
-        raw.bor_level,
     ];
     for ((key, lo, hi), v) in DROOP_BOUNDS.iter().zip(values) {
         if !(*lo..=*hi).contains(&v) {
@@ -511,39 +619,30 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
     }
     let narrow = |v: u64| u32::try_from(v).expect("bounded above");
     Ok(Droop {
+        from_boot_word_ns: offset_from("droop", raw.from_boot_word_ns)?,
         domain: raw.domain,
         floor_millivolts: narrow(raw.floor_millivolts),
-        start_ns: raw.start_ns,
         fall_ns: raw.fall_ns,
         hold_ns: raw.hold_ns,
         rise_ns: raw.rise_ns,
         source_milliohms: narrow(raw.source_milliohms),
         load_milliamps: narrow(raw.load_milliamps),
-        bor_level: u8::try_from(raw.bor_level).expect("bounded above"),
     })
 }
 
 fn battery_sag_from(v: serde_json::Value) -> Result<BatterySag, ScenarioError> {
     let raw: RawBatterySag =
         serde_json::from_value(v).map_err(|e| schema(format!("battery_sag: {e}")))?;
-    for (key, lo, hi, v) in [
-        (
-            "series_milliohms",
-            1,
-            crate::battery::SERIES_MILLIOHMS_MAX,
-            raw.series_milliohms,
-        ),
-        ("start_ns", 1, crate::battery::START_NS_MAX, raw.start_ns),
-    ] {
-        if !(lo..=hi).contains(&v) {
-            return Err(schema(format!(
-                "battery_sag `{key}` is not from {lo} to {hi}: {v}"
-            )));
-        }
+    let (lo, hi) = (1, crate::battery::SERIES_MILLIOHMS_MAX);
+    if !(lo..=hi).contains(&raw.series_milliohms) {
+        return Err(schema(format!(
+            "battery_sag `series_milliohms` is not from {lo} to {hi}: {}",
+            raw.series_milliohms
+        )));
     }
     Ok(BatterySag {
         series_milliohms: u32::try_from(raw.series_milliohms).expect("bounded above"),
-        start_ns: raw.start_ns,
+        from_boot_word_ns: offset_from("battery_sag", raw.from_boot_word_ns)?,
     })
 }
 
@@ -615,10 +714,11 @@ pub fn tolerance_floor_uv(nominal_millivolts: u32, tolerance_permille: u32) -> u
 /// grid's rounding on both edges. The recovery bound is not in it: it is
 /// read from the boot the twin ran (`AET-WO-2305` §1.2), and the probe it
 /// places is checked against the run once it is known.
-pub fn droop_end_ns(droop: &Droop, decoupling_picofarads: u64) -> u64 {
+pub fn droop_end_ns(rail: &RailDroop, decoupling_picofarads: u64) -> u64 {
+    let droop = &rail.droop;
     let settle = tau_ns(droop.source_milliohms, decoupling_picofarads).saturating_mul(10);
     [
-        droop.start_ns,
+        rail.start_ns,
         droop.fall_ns,
         droop.hold_ns,
         droop.rise_ns,
@@ -637,12 +737,44 @@ pub fn droop_end_ns(droop: &Droop, decoupling_picofarads: u64) -> u64 {
 /// min–max band, because the part's behaviour there is not stated; when the
 /// resting rail is not above every active threshold, so the part would not
 /// run at all; when the floor is held less than 10 τ, so the rail never
-/// reaches it; and when its effects run past the boot's `span_ns`.
+/// reaches it; and when its effects run past the boot's `span_ns`. The
+/// instant and the level are the rendered rail's ([`RailDroop`]): the
+/// instant placed from the undisturbed boot word, the level the
+/// specification's (`AET-WO-2310`).
 pub fn check_droop(
-    droop: &Droop,
+    rail: &RailDroop,
     nominal_millivolts: u32,
     decoupling_picofarads: u64,
     span_ns: u64,
+) -> Result<(), ScenarioError> {
+    check_droop_shape(
+        &rail.droop,
+        rail.bor_level,
+        nominal_millivolts,
+        decoupling_picofarads,
+    )?;
+    let end = droop_end_ns(rail, decoupling_picofarads);
+    if end > span_ns {
+        return Err(ScenarioError::new(
+            "DroopRefused",
+            Some(&rail.droop.domain),
+            format!(
+                "the droop's effects run to {end} ns, past the boot's {span_ns} ns (its instant {} ns, placed from the undisturbed boot word)",
+                rail.start_ns
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// [`check_droop`] before the boot, when only the offset is known
+/// (`AET-WO-2310`): every clause but the instant's, at the specification's
+/// BOR level. The clause of its instant waits for the undisturbed boot word.
+pub fn check_droop_shape(
+    droop: &Droop,
+    bor_level: u8,
+    nominal_millivolts: u32,
+    decoupling_picofarads: u64,
 ) -> Result<(), ScenarioError> {
     let refuse = |m: String| ScenarioError::new("DroopRefused", Some(&droop.domain), m);
     if droop.floor_millivolts >= nominal_millivolts {
@@ -664,7 +796,7 @@ pub fn check_droop(
             tau.saturating_mul(10)
         )));
     }
-    for t in power::active(droop.bor_level) {
+    for t in power::active(bor_level) {
         if power::band(rest, t.falling_uv) != Band::Above {
             return Err(refuse(format!(
                 "the resting rail, {rest} µV, is not above {}'s falling band",
@@ -702,12 +834,6 @@ pub fn check_droop(
             }
             _ => {}
         }
-    }
-    let end = droop_end_ns(droop, decoupling_picofarads);
-    if end > span_ns {
-        return Err(refuse(format!(
-            "the droop's effects run to {end} ns, past the boot's {span_ns} ns"
-        )));
     }
     Ok(())
 }
@@ -805,7 +931,7 @@ impl Scenario {
         let overrides = raw
             .overrides
             .into_iter()
-            .map(override_from)
+            .map(|o| override_from(o, raw.schema_version))
             .collect::<Result<Vec<_>, _>>()?;
         let mut expect_counts = raw.expect_counts.unwrap_or_default();
         let v2_only = overrides
@@ -1292,11 +1418,39 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             "a boot that read nothing does not name once why (a bound or a load error), or a read one does",
         );
     }
+    // A booted core that slept (`AET-WO-2310`, overturning `AET-WO-2100`'s
+    // ruled A10): the verdict names `cpu_halted` once, as an error, exactly
+    // when kind 10 counts fewer instructions than the run holds.
+    if booted {
+        let halted = records.iter().any(|r| {
+            matches!(r, Record::BootObserved { instructions_observed: Some(n), instructions_expected, .. }
+                if n < instructions_expected)
+        });
+        let want = u64::from(halted);
+        if any_severity(HALTED_FINDING) != want || count(HALTED_FINDING) != want {
+            return Err(
+                "the verdict's cpu_halted does not match the booted core's instruction count",
+            );
+        }
+    }
     // A record is judged only at the fixed point: without the boot word, no
     // finding of a record's value, validity or witness (adversarial F2), as
     // for the motor outputs and serial ports below.
     if !booted && BOOTED_READ_FINDINGS.iter().any(|k| any_severity(k) > 0) {
         return Err("the verdict judges an identity read's record of a boot without its boot word");
+    }
+    // An `ok` read whose own witness is unread (`AET-WO-2310`, `2309` §5): at
+    // the fixed point the judge names `{bus}_transaction_unwitnessed` for
+    // each, so a witness blanked without its finding is refused.
+    if booted {
+        for (bus, kind) in [("i2c", UNWITNESSED_I2C), ("spi", UNWITNESSED_SPI)] {
+            let unwitnessed = unread_ok_witnesses(records, bus);
+            if count(kind) < unwitnessed {
+                return Err(
+                    "an ok read's witness is unread and the verdict does not name it unwitnessed",
+                );
+            }
+        }
     }
     // The motor outputs (`AET-WO-4300a`): the verdict names a static
     // mismatch once per check that fails, and, once the boot word is set,
@@ -1612,6 +1766,45 @@ fn reads_as_expected(r: &Reading) -> bool {
         .is_some_and(|o| o & r.mask == r.expected & r.mask)
 }
 
+/// The undisturbed boot word a planted run's instants are placed from
+/// (`AET-WO-2310`, ruled Q-A (a)): a run with a droop or a battery sag holds
+/// exactly one kind 32, and it holds the word (a run whose undisturbed boot
+/// wrote none is refused by name before it is archived); a run with neither
+/// holds no kind 32.
+fn planted_reference(
+    records: &[Record],
+    overrides: &[Override],
+) -> Result<Option<u64>, &'static str> {
+    let planted = overrides
+        .iter()
+        .any(|o| matches!(o, Override::Droop(_) | Override::BatterySag(_)));
+    let words: Vec<Option<u64>> = records
+        .iter()
+        .filter_map(|r| match r {
+            Record::RecoveryBound { boot_word_ns, .. } => Some(*boot_word_ns),
+            _ => None,
+        })
+        .collect();
+    match (planted, words.as_slice()) {
+        (false, []) => Ok(None),
+        (true, [Some(word)]) => Ok(Some(*word)),
+        (true, [None]) => Err("a planted run's reference holds no undisturbed boot word"),
+        _ => Err(
+            "a planted run does not hold exactly one kind 32, or a run with none planted holds one",
+        ),
+    }
+}
+
+/// The BOR level kind 10's brown-out reading declares: its expected word
+/// under its own mask, shifted down to the field (`AET-WO-2310`). `None` when
+/// the reading is not a field's value.
+pub fn declared_bor_level(brown_out: &Reading) -> Option<u8> {
+    let shift = brown_out.mask.trailing_zeros();
+    (brown_out.mask != 0 && brown_out.expected & !brown_out.mask == 0)
+        .then(|| brown_out.expected >> shift)
+        .and_then(|v| u8::try_from(v).ok())
+}
+
 /// The droop's records against the scenario and against each other, and the
 /// counts of the droop's findings they require (`AET-WO-2301` §2.2, §2.3, §5):
 /// - kinds 16 to 19 appear only with a droop override, and kind 16 then
@@ -1621,8 +1814,10 @@ fn reads_as_expected(r: &Reading) -> bool {
 ///   while it rises (within 10 τ of each ramp), at the table's typical value;
 /// - the resets are exactly [`power::schedule`] of those crossings, each
 ///   with its fixed rendering;
-/// - kind 32 is archived once exactly when a reset is released, and each
-///   probe lies inside the run (`AET-WO-2305` §1.2);
+/// - the rail's instant is the undisturbed boot word (kind 32, which every
+///   planted run holds, [`planted_reference`]) plus the scenario's offset,
+///   and its BOR level the one kind 10 declares (`AET-WO-2310`);
+/// - each probe lies inside the run (`AET-WO-2305` §1.2);
 /// - each release has exactly one observation, at its probe (the release, its
 ///   nudge and the bound),
 ///   unless the boot was killed before its reads (its boot record observed
@@ -1680,13 +1875,7 @@ fn check_droop_records(
         })
         .collect();
     let script = first_script(records);
-    let bounds: Vec<Option<u64>> = records
-        .iter()
-        .filter_map(|r| match r {
-            Record::RecoveryBound { bound_ns, .. } => Some(*bound_ns),
-            _ => None,
-        })
-        .collect();
+    let reference = planted_reference(records, overrides)?;
     let observed: Vec<(u64, bool)> = records
         .iter()
         .filter_map(|r| match r {
@@ -1713,11 +1902,7 @@ fn check_droop_records(
     check_observed_against_the_boot(records)?;
     let (droop, (rail, nominal, tolerance, decoupling)) = match (droop, declared) {
         (None, None) => {
-            if !(crossings.is_empty()
-                && resets.is_empty()
-                && observed.is_empty()
-                && bounds.is_empty())
-            {
+            if !(crossings.is_empty() && resets.is_empty() && observed.is_empty()) {
                 return Err("a run without a droop holds a droop's records");
             }
             return Ok([
@@ -1729,8 +1914,23 @@ fn check_droop_records(
         (Some(d), Some(r)) => (d, r),
         _ => return Err("a droop override and its declared rail do not come together"),
     };
-    if rail != droop {
+    if rail.droop != *droop {
         return Err("the declared rail is not the scenario's droop");
+    }
+    // Its instant, placed from the undisturbed boot word (ruled Q-A (a)), and
+    // its level, the specification's, which kind 10 declares (`AET-WO-2310`).
+    let word = reference.ok_or("a droop's run holds no undisturbed boot word")?;
+    if record::resolve_instant(word, droop.from_boot_word_ns) != Some(rail.start_ns) {
+        return Err(
+            "the declared rail's instant is not the undisturbed boot word plus the scenario's offset",
+        );
+    }
+    let level = records.iter().find_map(|r| match r {
+        Record::BootObserved { brown_out, .. } => declared_bor_level(brown_out),
+        _ => None,
+    });
+    if level != Some(rail.bor_level) {
+        return Err("the declared rail's BOR level is not the one kind 10 declares");
     }
     if records
         .iter()
@@ -1745,15 +1945,15 @@ fn check_droop_records(
         .saturating_mul(1000);
     let ps = |ns: u64| ns.saturating_mul(1000);
     let fall = (
-        ps(droop.start_ns),
-        ps(droop.start_ns + droop.fall_ns).saturating_add(settle_ps),
+        ps(rail.start_ns),
+        ps(rail.start_ns + droop.fall_ns).saturating_add(settle_ps),
     );
-    let rise_from = droop.start_ns + droop.fall_ns + droop.hold_ns;
+    let rise_from = rail.start_ns + droop.fall_ns + droop.hold_ns;
     let rise = (
         ps(rise_from),
         ps(rise_from + droop.rise_ns).saturating_add(settle_ps),
     );
-    for (name, uv) in power::levels(droop.bor_level) {
+    for (name, uv) in power::levels(rail.bor_level) {
         let here: Vec<&power::Crossing> = crossings.iter().filter(|c| c.level == name).collect();
         let within = |c: &power::Crossing, (a, b): (u64, u64)| a < c.at_ps && c.at_ps <= b;
         let ok = if floor < uv {
@@ -1771,7 +1971,7 @@ fn check_droop_records(
         != crossings
             .iter()
             .filter(|c| {
-                power::levels(droop.bor_level)
+                power::levels(rail.bor_level)
                     .iter()
                     .any(|(n, _)| *n == c.level)
             })
@@ -1779,7 +1979,7 @@ fn check_droop_records(
     {
         return Err("a crossing names a level no active threshold has");
     }
-    let schedule = power::schedule(droop.bor_level, &crossings)?;
+    let schedule = power::schedule(rail.bor_level, &crossings)?;
     let mut want: Vec<(u64, bool, &[String], &str)> = Vec::new();
     for r in &schedule {
         want.push((r.asserted_ns, false, &r.cause, power::ASSERT_RENDERING));
@@ -1790,19 +1990,14 @@ fn check_droop_records(
     if resets != want {
         return Err("the rendered resets are not the supervisor's rule applied to the crossings");
     }
-    // Kind 32 once exactly when a reset is released (`AET-WO-2305` §1.2):
-    // each probe at the release, its nudge and the bound, inside the run;
-    // with no bound (the undisturbed boot wrote no boot word) no probe is
-    // read, and every release is unrecovered.
+    // The recovery bound (`AET-WO-2305` §1.2), kind 32's, which every planted
+    // run holds (`AET-WO-2310`): each probe at the release, its nudge and the
+    // bound, inside the run. A droop that releases nothing probes nothing.
     let releases: Vec<u64> = schedule.iter().filter_map(|r| r.released_ns).collect();
-    let bound = match (releases.is_empty(), bounds.as_slice()) {
-        (true, []) => None,
-        (false, [b]) => *b,
-        _ => {
-            return Err(
-                "a droop's recovery bound is not archived once exactly when it releases a reset",
-            );
-        }
+    let bound = if releases.is_empty() {
+        None
+    } else {
+        power::recovery_bound(word)
     };
     let probes: Vec<u64> = match bound {
         Some(b) => releases
@@ -1881,6 +2076,7 @@ fn check_battery_sag_records(
     };
     let Record::BatterySagDeclared {
         sag: declared_sag,
+        start_ns,
         v_open_microvolts,
         healthy_milliohms,
         sinks,
@@ -1895,13 +2091,21 @@ fn check_battery_sag_records(
     if declared_sag != sag {
         return Err("the declared battery sag is not the scenario's");
     }
+    // Its instant, placed from the undisturbed boot word (`AET-WO-2310`).
+    let word = planted_reference(records, overrides)?
+        .ok_or("a battery sag's run holds no undisturbed boot word")?;
+    if record::resolve_instant(word, sag.from_boot_word_ns) != Some(*start_ns) {
+        return Err(
+            "the declared battery sag's instant is not the undisturbed boot word plus the scenario's offset",
+        );
+    }
     let chain = crate::battery::SagChain {
         v_open_microvolts: *v_open_microvolts,
         healthy_milliohms: *healthy_milliohms,
         sinks: sinks.clone(),
         capacitance_picofarads: *capacitance_picofarads,
     };
-    let at = crate::battery::check_battery_sag(sag, &chain, TWIN_MAX_VIRTUAL_NS)
+    let at = crate::battery::check_battery_sag(sag, Some(*start_ns), &chain, TWIN_MAX_VIRTUAL_NS)
         .map_err(|_| "a battery sag's declaration is one its checks refuse")?;
     if at != *static_microvolts {
         return Err("a battery sag's static operating point is not the one its fields give");
@@ -3763,8 +3967,15 @@ pub const ENGINE: &str = "aethelgard";
 pub const RENODE: &str = "renode";
 pub const BRIDGE: &str = "aethelgard-bridge";
 pub const NGSPICE: &str = "ngspice";
+/// The Rust toolchain on the host that ran the campaign (`AET-WO-2310`, ruled
+/// Q-T T1): `rustc -V`'s version and a digest of its whole active sysroot.
+/// It is the host's toolchain, not proven to be the one that built the ELF.
+pub const RUST_TOOLCHAIN: &str = "rust-toolchain";
+/// [`RUST_TOOLCHAIN`]'s version on a host with none, with no hash.
+pub const TOOLCHAIN_ABSENT: &str = "absent";
 
-/// The tools a campaign run's header names, sorted.
+/// The tools a campaign run's header names, sorted: every run names the
+/// host's Rust toolchain too (`AET-WO-2310`).
 pub fn tools_of(records: &[Record]) -> Vec<&'static str> {
     fn line(r: &Record) -> bool {
         matches!(
@@ -3786,6 +3997,7 @@ pub fn tools_of(records: &[Record]) -> Vec<&'static str> {
         tools.push(NGSPICE);
     }
     tools.push(RENODE);
+    tools.push(RUST_TOOLCHAIN);
     tools
 }
 
@@ -3810,6 +4022,21 @@ pub fn check_archived(header: &Header, state: &State) -> Result<RunSummary, &'st
     let tools: Vec<&str> = header.tools.iter().map(|(n, _)| n.as_str()).collect();
     if tools != tools_of(&state.records) {
         return Err("the header's tools are not the ones its records say judged the run");
+    }
+    // The content hashes (`AET-WO-2310`): ngspice's library whenever ngspice
+    // judged the run, and the toolchain's sysroot unless the host had none;
+    // no other tool's.
+    let hashed: Vec<&str> = header.tool_sha256.iter().map(|(n, _)| n.as_str()).collect();
+    let want: Vec<&str> = header
+        .tools
+        .iter()
+        .filter(|(n, v)| n == NGSPICE || (n == RUST_TOOLCHAIN && v != TOOLCHAIN_ABSENT))
+        .map(|(n, _)| n.as_str())
+        .collect();
+    if hashed != want {
+        return Err(
+            "the header's tool hashes are not ngspice's library and the toolchain's sysroot",
+        );
     }
     let hash = |i: usize| &header.artifacts[i].1;
     // The topology follows the scenario, and its expected counts if any.

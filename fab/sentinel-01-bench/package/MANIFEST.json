@@ -9,7 +9,7 @@
     },
     {
       "scenario": "droop-bor3",
-      "sha256": "5e35634c16d5f42828208db35b5e1c939271379b755d368ea3d61ebd52bbf21f"
+      "sha256": "c310ade102f7ba60f97bb6a2f132b544da49a582bce630d3fbe1eb4912a7d482"
     },
     {
       "scenario": "spi-absent-u4",
@@ -45,7 +45,7 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "fbf1c3b81dc30c2c114f9d34bcb431dcdc91a3747e0056630bf325a7141df287",
+  "verdict_sha256": "b33470720d8ce647a2b5e5789ff2206ed23ab672ee2f60f09f43b537ddf04c82",
   "files": {
     "FAB-NOTES.md": "3d25409f1ec98764eeae09c0ca321b8c79fc9080e4763b2de41cbd13b297684a",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",

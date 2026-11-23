@@ -849,9 +849,11 @@ fn every_admitted_identifier_character_survives_every_output() {
     fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
     // The seeded set, renamed (`AET-WO-3303` D1, ruled): the first scenario
     // carries the admitted characters into the manifest.
+    // Planted from the undisturbed boot word (`AET-WO-2310`): sentinel-01-minimal's,
+    // 3,627,610 ns, measured (`spike/2310/results.md`), so it lands at 1 ms.
     let droop = serde_json::json!({"droop": {"domain": domain, "floor_millivolts": 2400,
-        "start_ns": 1000000, "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}});
+        "from_boot_word_ns": -2_627_610, "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
+        "source_milliohms": 500, "load_milliamps": 100}});
     let seeded = [
         (
             "scenario.json",
@@ -892,7 +894,8 @@ fn every_admitted_identifier_character_survives_every_output() {
     ];
     for (file, name, expect, findings, overrides) in &seeded {
         let scenario = serde_json::json!({
-            "schema_version": 3,
+            // 6: the droop is planted from the boot word (`AET-WO-2310`).
+            "schema_version": 6,
             "name": name,
             // Only a relative `base` inside the current directory is accepted
             // (`BaseOutsideRoot`): here, next to the scenario.
@@ -1887,16 +1890,18 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
     .unwrap();
     // `AET-WO-4600`'s `scenarios/driver/droop-bor3.json`, its `base` beside it.
     let droop = serde_json::json!({
-        "schema_version": 3,
+        "schema_version": 6,
         "name": "droop-bor3",
         "base": "spec.json",
         "expect": "pass",
         "expect_findings": [],
         "expect_counts": {"brownout_reset": 1, "brownout_unrecovered": 0, "rail_below_tolerance": 1},
+        // Planted from the undisturbed boot word (`AET-WO-2310`): this board's,
+        // 17,150 ns, measured, so it lands at 1 ms as before.
         "overrides": [{"droop": {
-            "domain": "VDD_3V3", "floor_millivolts": 2400, "start_ns": 1_000_000,
+            "domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": 982_850,
             "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3
+            "source_milliohms": 500, "load_milliamps": 100
         }}],
     });
     fs::write(base.join("droop.json"), serde_json::to_vec(&droop).unwrap()).unwrap();

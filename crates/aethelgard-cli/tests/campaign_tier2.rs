@@ -19,7 +19,7 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock, RwLockReadGuard};
 
 use aethelgard_chaos::record::Record;
 use aethelgard_chaos::{Manifest, cbor, replay_dir};
@@ -29,6 +29,17 @@ use sha2::{Digest, Sha256};
 mod common;
 
 use common::verify::root;
+
+/// The flood test's boot runs against Renode's 30 s wall bound, and this binary's other tests boot Renode in
+/// parallel threads. On a 4-vCPU runner they slowed it past that bound (AET-WO-2310, CI run 45133448578: run 0
+/// killed at 34.17 s, against 3.7 s alone). The flood test takes this lock alone; every other test shares it, so
+/// the rest still run beside one another but never beside the flood boot.
+static FLOOD_ALONE: RwLock<()> = RwLock::new(());
+
+/// Every test but the flood test holds this for its whole run.
+fn beside_others() -> RwLockReadGuard<'static, ()> {
+    FLOOD_ALONE.read().unwrap_or_else(|e| e.into_inner())
+}
 
 fn answer(line: &str) {
     let mut log = OpenOptions::new().append(true).open("/dev/stderr").unwrap();
@@ -142,6 +153,7 @@ fn run_47k() -> PathBuf {
 
 #[test]
 fn p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects() {
+    let _turn = beside_others();
     let c = first();
     assert_eq!(
         c.code,
@@ -186,6 +198,7 @@ fn p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects() {
 
 #[test]
 fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_three_events() {
+    let _turn = beside_others();
     let replayed = replay_dir(&run_47k()).unwrap();
     let records = &replayed.state.records;
     let rises: Vec<(usize, &Record)> = records
@@ -275,6 +288,7 @@ fn p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_th
 
 #[test]
 fn p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash() {
+    let _turn = beside_others();
     let run = run_47k();
     let (c1, out1) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
     let (c2, out2) = aethelgard(&["replay", "--archive", run.to_str().unwrap()]);
@@ -334,6 +348,7 @@ fn refused(dir: &Path) -> (Option<i32>, Value) {
 
 #[test]
 fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed() {
+    let _turn = beside_others();
     let flipped = tampered("flip", |t| {
         let at = t.len() / 2;
         t[at] ^= 1;
@@ -384,6 +399,7 @@ fn p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed
 
 #[test]
 fn p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario() {
+    let _turn = beside_others();
     let second = campaign("b");
     assert_eq!(
         second.code,
@@ -477,6 +493,31 @@ fn scratch(label: &str) -> PathBuf {
 
 const DROOPS: [&str; 2] = ["droop-tolerated", "droop-bor3"];
 
+/// The reference droop campaign, once per test binary, shared by the tests
+/// that place an instant from its undisturbed boot word (`AET-WO-2310`,
+/// ruled Q-G).
+fn reference_campaign() -> &'static (Option<i32>, Vec<Value>) {
+    static RUN: OnceLock<(Option<i32>, Vec<Value>)> = OnceLock::new();
+    RUN.get_or_init(|| droop_campaign("a"))
+}
+
+/// The reference board's undisturbed boot word, as `droop-bor3`'s kind 32
+/// archives it (`AET-WO-2310`, ruled Q-G): every pinned instant below is it
+/// plus a delta, so a change in boot length moves none of them.
+fn reference_word() -> u64 {
+    let (_, lines) = reference_campaign();
+    records(&run_dir(line(lines, "droop-bor3")))
+        .iter()
+        .find_map(|r| match r {
+            Record::RecoveryBound {
+                boot_word_ns: Some(w),
+                ..
+            } => Some(*w),
+            _ => None,
+        })
+        .expect("the bor3 droop archives its undisturbed boot word")
+}
+
 /// The two reference droops, into a fresh archive named `label`: the lines
 /// printed, and each scenario's run directory.
 fn droop_campaign(label: &str) -> (Option<i32>, Vec<Value>) {
@@ -534,7 +575,8 @@ fn crossings(records: &[Record]) -> Vec<(String, String, u64, bool)> {
 
 #[test]
 fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay() {
-    let (code_a, a) = droop_campaign("a");
+    let _turn = beside_others();
+    let (code_a, a) = reference_campaign().clone();
     let (code_b, b) = droop_campaign("b");
     assert_eq!(
         (code_a, code_b),
@@ -572,9 +614,53 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         }
     }
 
+    // Every instant below is placed from the undisturbed boot word, the
+    // reference both planted runs hold (kind 32, `AET-WO-2310`, ruled Q-G).
+    let word = reference_word();
+    let offset = |name: &str| -> i64 {
+        let v: Value = serde_json::from_slice(
+            &fs::read(root().join(format!("scenarios/sentinel-01/{name}.json"))).unwrap(),
+        )
+        .unwrap();
+        v["overrides"][0]["droop"]["from_boot_word_ns"]
+            .as_i64()
+            .unwrap()
+    };
+    let reference = |records: &[Record]| -> Vec<Record> {
+        records
+            .iter()
+            .filter(|r| matches!(r, Record::RecoveryBound { .. }))
+            .cloned()
+            .collect()
+    };
+    let placed = |records: &[Record]| -> u64 {
+        records
+            .iter()
+            .find_map(|r| match r {
+                Record::RailDeclared { droop, .. } => Some(droop.start_ns),
+                _ => None,
+            })
+            .unwrap()
+    };
+    let want_reference = Record::RecoveryBound {
+        boot_word_ns: Some(word),
+        margin_ns: 100_000,
+        bound_ns: Some(word + 100_000),
+    };
+
     // droop-tolerated: the rail stays inside its tolerance. The rail is
     // declared (kind 16) but nothing crosses, resets or is observed after.
     let tolerated = records(&run_dir(line(&a, "droop-tolerated")));
+    assert_eq!(
+        reference(&tolerated),
+        std::slice::from_ref(&want_reference),
+        "the tolerated droop holds the same undisturbed boot word as its reference"
+    );
+    assert_eq!(
+        i128::from(placed(&tolerated)),
+        i128::from(word) + i128::from(offset("droop-tolerated")),
+        "the tolerated droop is placed from the boot word"
+    );
     assert!(
         tolerated
             .iter()
@@ -587,9 +673,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
             Record::RailCrossing { .. }
                 | Record::ResetRendered { .. }
                 | Record::FirmwareObserved { .. }
-                | Record::RecoveryBound { .. }
         )),
-        "the tolerated droop has no rail crossing, reset, recovery bound or firmware observation: {tolerated:?}"
+        "the tolerated droop has no rail crossing, reset or firmware observation: {tolerated:?}"
     );
     let Some(Record::BootObserved {
         instructions_expected,
@@ -628,6 +713,12 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     // droop-bor3: the supply falls through VBOR3, the reset is asserted and
     // released, and the firmware boots again.
     let bor3 = records(&run_dir(line(&a, "droop-bor3")));
+    let start = placed(&bor3);
+    assert_eq!(
+        i128::from(start),
+        i128::from(word) + i128::from(offset("droop-bor3")),
+        "the bor3 droop is placed from the boot word"
+    );
     let found = crossings(&bor3);
     answer_2301(&format!("bor3 crossings {found:?}"));
     let shape: Vec<(&str, u64, bool)> = found
@@ -640,10 +731,11 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
             // Re-measured at `AET-WO-4300g`: the rail's decoupling rose from
             // 0.4 to 8.3 uF with the MCU's support network, so its time
             // constant and every crossing moved (FEEDBACK §10, P5).
-            ("VBOR3_rising", 1_016_291_380, true),
-            ("VBOR3_falling", 1_018_322_818, true),
-            ("VBOR3_falling", 1_229_512_382, false),
-            ("VBOR3_rising", 1_231_681_149, false),
+            // Each from the droop's own instant (1 ms from reset here).
+            ("VBOR3_rising", start * 1000 + 16_291_380, true),
+            ("VBOR3_falling", start * 1000 + 18_322_818, true),
+            ("VBOR3_falling", start * 1000 + 229_512_382, false),
+            ("VBOR3_rising", start * 1000 + 231_681_149, false),
         ],
         "the bor3 droop crosses VBOR3 falling then rising at the predicted times"
     );
@@ -662,8 +754,8 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     assert_eq!(
         resets,
         [
-            (1_018_330, false, vec!["VBOR3".to_owned()]),
-            (1_231_690, true, vec!["VBOR3".to_owned()]),
+            (start + 18_330, false, vec!["VBOR3".to_owned()]),
+            (start + 231_690, true, vec!["VBOR3".to_owned()]),
         ],
         "the bor3 droop asserts the reset then releases it, both caused by VBOR3"
     );
@@ -687,29 +779,19 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
         unreachable!()
     };
     // `AET-WO-2305` §1.2: the bound is the same boot's undisturbed boot
-    // word (26,620 ns since `AET-WO-4240v`'s VOS2 bring-up, measured in
-    // `spike/2305`; 25,700 before it) and one quantum, and the probe is the
-    // release, its nudge and the bound: 1,231,690 + 10 + 126,620.
-    // `AET-WO-4241`: the unmodelled TMP117's identity read, before the boot
-    // word, moves it by the reference's measured shift, 3,600,990 ns
-    // (`spike/4241/out/rejudge`, 2662 -> 362761 instructions): the boot word
-    // is 3,627,610, the bound 3,727,610, and the probe 1,231,690 + 10 +
-    // 3,727,610 = 4,959,310 (the architect's D3: re-pinned from the shift).
-    let bound: Vec<&Record> = bor3
-        .iter()
-        .filter(|r| matches!(r, Record::RecoveryBound { .. }))
-        .collect();
+    // word and one quantum, and the probe is the release, its nudge and the
+    // bound. `AET-WO-2310` (ruled Q-G): from the word kind 32 archives, not
+    // a literal, so a change in boot length (`AET-WO-4241`'s 3,600,990 ns
+    // re-pinned this) moves no pin; the word is 3,627,610 ns at `15798f91`.
     assert_eq!(
-        bound,
-        [&Record::RecoveryBound {
-            boot_word_ns: Some(3_627_610),
-            margin_ns: 100_000,
-            bound_ns: Some(3_727_610),
-        }],
+        reference(&bor3),
+        [want_reference],
         "the bor3 droop archives its recovery bound once"
     );
+    let release = start + 231_690;
     assert_eq!(
-        *at_ns, 4_959_310,
+        *at_ns,
+        release + 10 + word + 100_000,
         "the firmware is observed at the predicted time after the release"
     );
     assert_eq!(
@@ -749,14 +831,17 @@ fn the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay(
     else {
         panic!("the bor3 droop archives a boot observation: {bor3:?}");
     };
+    // The boot after the release and its nudge, to the run's end, 10 ns an
+    // instruction: 9,876,830 with the release at 1,231,690 ns.
+    let after = (100_000_000 - (release + 10)) / 10;
     assert_eq!(
-        *instructions_expected, 9_876_830,
-        "the bor3 droop expects 9,876,830 instructions"
+        *instructions_expected, after,
+        "the bor3 droop expects the instructions after its release"
     );
     assert_eq!(
         *instructions_observed,
-        Some(9_876_830),
-        "the bor3 droop observes all 9,876,830 instructions"
+        Some(after),
+        "the bor3 droop observes all the instructions after its release"
     );
     let Some(Record::Verdict { pass, findings }) = bor3.last() else {
         panic!("the verdict is the last record");
@@ -923,6 +1008,7 @@ fn recipe() -> Vec<String> {
 
 #[test]
 fn renodes_reset_recipe_is_pinned_step_by_step() {
+    let _turn = beside_others();
     // a. `machine Reset` alone never reboots: the core is at zero, the vector
     // table offset is cleared, and nothing runs.
     let mut r = Renode::booted();
@@ -936,9 +1022,10 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
     );
 
     // b. The recipe, held 1 ms, released, nudged by 10 ns: the firmware boots.
-    // Read 100 us after its boot word, which the unmodelled TMP117's read
-    // moved 3,600,990 ns later (`AET-WO-4241`, the reference's measured
-    // shift): 100,000 + 3,600,990.
+    // Read 73,380 ns after its boot word: the instant `AET-WO-4241` re-pinned
+    // by its measured shift (100 us after the release before it). Since
+    // `AET-WO-2310` (ruled Q-G) the word is the reference's kind 32, so no
+    // change in boot length re-pins it.
     let mut r = Renode::booted();
     r.add(recipe())
         .add([
@@ -946,7 +1033,7 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
             "cpu IsHalted false".to_owned(),
             run_for(10),
         ])
-        .add([run_for(3_700_990)])
+        .add([run_for(reference_word() + 73_380)])
         .read(&[READ_BOOT, READ_STATUS, READ_VALUE]);
     let b = r.run("b-recipe");
     assert_eq!(
@@ -1015,6 +1102,7 @@ fn renodes_reset_recipe_is_pinned_step_by_step() {
 
 #[test]
 fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
+    let _alone = FLOOD_ALONE.write().unwrap_or_else(|e| e.into_inner());
     let elf = flood_firmware();
     let runs: Vec<(Option<i32>, Value)> = (0..2)
         .map(|i| {
@@ -1105,6 +1193,7 @@ fn a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice() {
 /// boot's own" (exit 70): chaos took the first read from I2C records only.
 #[test]
 fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
+    let _turn = beside_others();
     let dir = scratch("spi-only");
     // The generated board is built where no workspace encloses it: CI keeps
     // its target directory, and so `CARGO_TARGET_TMPDIR`, inside the
@@ -1179,6 +1268,7 @@ fn a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays() {
 /// (`INV-04`).
 #[test]
 fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it() {
+    let _turn = beside_others();
     let dir = scratch("4202");
     let spec = root().join("examples/sentinel-01.json");
     // A base outside the campaign's directory is refused: a copy, beside it.
@@ -1189,9 +1279,11 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
     .unwrap();
     scenario["name"] = "droop-bor3-50-ns-later".into();
     scenario["base"] = "sentinel-01.json".into();
-    let start = &mut scenario["overrides"][0]["droop"]["start_ns"];
-    assert_eq!(*start, 1_000_000, "the bench's droop starts at 1 ms");
-    *start = 1_000_050.into();
+    // Planted from the undisturbed boot word (`AET-WO-2310`): the bench's,
+    // 3,630,040 ns, so -2,630,040 is 1 ms from reset, and 50 ns later is -2,629,990.
+    let start = &mut scenario["overrides"][0]["droop"]["from_boot_word_ns"];
+    assert_eq!(*start, -2_630_040, "the bench's droop starts at 1 ms");
+    *start = (-2_629_990).into();
     fs::write(
         dir.join("droop.json"),
         serde_json::to_vec_pretty(&scenario).unwrap(),
@@ -1260,6 +1352,7 @@ fn a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it(
 /// hash, and a hold on nSLEEP is refused `PinHeldIsOutput` before any run.
 #[test]
 fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
+    let _turn = beside_others();
     let dir = scratch("d1-1211c");
     let spec = dir.join("d1.json");
     fs::copy(
@@ -1449,6 +1542,117 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
     assert_eq!(
         (code, v["error"]["kind"].as_str()),
         (Some(2), Some("PinHeldIsOutput")),
+        "{v}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// `AET-WO-2304b` §1.8, after a real boot since `AET-WO-2310`: a battery
+/// sag's instant is placed from its boot's word, so the deck solves it after
+/// the boot (ruled Q-A (a)), and its answer is judged there. A floor the
+/// solve crosses refuses the run by name (`BatterySagSolvedBelowFloor`,
+/// exit 2, `id` the sink), with a crossing named or not; a solved minimum off
+/// the static point (8,088,035 µV at 500 mΩ) by more than 1 mV is an
+/// internal error (exit 70), never a verdict, and prints nothing; an answer
+/// that is not the chain's stops the call (`ToolError`, exit 5). No run is
+/// archived. Moved from tier 1 (`campaign_tier1`), where no stub boots a
+/// power-tree board: the bridge is the real one, beside the CLI, but for
+/// its `--chain` answer, which a stub replaces with the one under test.
+#[test]
+fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
+    let _turn = beside_others();
+    let dir = scratch("2310-deck");
+    let spec = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+    let generated = dir.join("gen");
+    let (code, out) = aethelgard(&[
+        "generate",
+        "--spec",
+        spec,
+        "--out",
+        generated.to_str().unwrap(),
+    ]);
+    assert_eq!(code, Some(0), "{out}");
+    let elf = dir.join("fw.elf");
+    let (code, out) = aethelgard(&[
+        "build",
+        "--crate",
+        generated.join("board").to_str().unwrap(),
+        "--out",
+        elf.to_str().unwrap(),
+    ]);
+    assert_eq!(code, Some(0), "{out}");
+    let me = Path::new(env!("CARGO_BIN_EXE_aethelgard"));
+    let real = me.with_file_name("aethelgard-bridge");
+    assert!(
+        real.is_file(),
+        "the real bridge is beside the CLI: {}",
+        real.display()
+    );
+    let deck = |answer: &str, label: &str| {
+        let bin = dir.join(format!("bin-{label}"));
+        fs::create_dir_all(&bin).unwrap();
+        fs::copy(me, bin.join("aethelgard")).unwrap();
+        fs::copy(&real, bin.join("real-bridge")).unwrap();
+        // The real bridge's own identity first (`--version` starts the
+        // library), then the answer under test; every other mode is the
+        // real bridge's.
+        common::stub::write_executable(
+            &bin.join("aethelgard-bridge"),
+            format!(
+                "#!/bin/sh\nhere=$(/usr/bin/dirname \"$0\")\nif [ \"$1\" = --chain ]; then\n  \"$here/real-bridge\" --version | /usr/bin/head -n 1\n  printf '%s\\n' '{answer}'\n  exit 0\nfi\nexec \"$here/real-bridge\" \"$@\"\n"
+            ),
+        );
+        let archive = dir.join(format!("archive-{label}"));
+        let out = Command::new(bin.join("aethelgard"))
+            .args([
+                "campaign",
+                "--scenarios",
+                "scenarios/sentinel-03/battery-sag-tolerated.json",
+                "--firmware",
+                elf.to_str().unwrap(),
+                "--archive",
+                archive.to_str().unwrap(),
+            ])
+            .current_dir(root())
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let runs = fs::read_dir(&archive).map_or(0, |d| d.count());
+        assert_eq!(runs, 0, "{label}: a run was archived");
+        out
+    };
+    let chain = |min: &str, at: &str| {
+        format!(
+            r#"{{"accepted_points":1,"chain":"solved","final_microvolts":{min},"initial_microvolts":8998361,"minimum_at_ns":100000000,"minimum_microvolts":{min},"ngspice":"44.2","sinks":[{{"at_ps":{at},"floor_microvolts":7000000,"name":"U10"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U11"}}],"step_ns":10000}}"#
+        )
+    };
+    let refusal = |out: &std::process::Output| -> Value {
+        let v: Value = serde_json::from_slice(&out.stdout)
+            .unwrap_or_else(|e| panic!("{e}: {}", String::from_utf8_lossy(&out.stdout)));
+        v
+    };
+    let out = deck(&chain("6999999", "10395072253"), "crossed");
+    let v = refusal(&out);
+    assert_eq!(
+        (out.status.code(), &v["error"]["kind"], &v["error"]["id"]),
+        (Some(2), &"BatterySagSolvedBelowFloor".into(), &"U10".into()),
+        "{v}"
+    );
+    let out = deck(&chain("6999999", "null"), "below");
+    let v = refusal(&out);
+    assert_eq!(
+        (out.status.code(), &v["error"]["kind"]),
+        (Some(2), &"BatterySagSolvedBelowFloor".into()),
+        "{v}"
+    );
+    let out = deck(&chain("8087034", "null"), "off");
+    assert_eq!(out.status.code(), Some(70), "{out:?}");
+    assert!(out.stdout.is_empty(), "{out:?}");
+    let out = deck(r#"{"chain":"solved"}"#, "malformed");
+    let v = refusal(&out);
+    assert_eq!(
+        (out.status.code(), &v["error"]["kind"]),
+        (Some(5), &"ToolError".into()),
         "{v}"
     );
     let _ = fs::remove_dir_all(&dir);

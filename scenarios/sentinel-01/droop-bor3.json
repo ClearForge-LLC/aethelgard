@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 6,
   "name": "droop-bor3",
   "base": "../../examples/sentinel-01-minimal.json",
   "expect": "pass",
@@ -10,13 +10,12 @@
       "droop": {
         "domain": "VDD_3V3",
         "floor_millivolts": 2400,
-        "start_ns": 1000000,
+        "from_boot_word_ns": -2627610,
         "fall_ns": 20000,
         "hold_ns": 200000,
         "rise_ns": 20000,
         "source_milliohms": 500,
-        "load_milliamps": 100,
-        "bor_level": 3
+        "load_milliamps": 100
       }
     }
   ]

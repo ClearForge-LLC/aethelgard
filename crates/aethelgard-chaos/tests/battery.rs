@@ -6,8 +6,11 @@
 use aethelgard_chaos::battery::{
     REFUSED, SagChain, binding, check_battery_sag, operating_point_uv, settle_ns,
 };
-use aethelgard_chaos::campaign::{Scenario, ScenarioError, check_run};
-use aethelgard_chaos::record::{BatterySag, Override, Reading, Record, SagSink};
+use aethelgard_chaos::campaign::{
+    PLANTED_CHANGES, PLANTED_NEEDS_VERSION, Scenario, ScenarioError, check_run,
+};
+use aethelgard_chaos::power;
+use aethelgard_chaos::record::{BatterySag, Override, Reading, Record, SagSink, resolve_instant};
 use serde_json::{Value as J, json};
 
 const SPAN_NS: u64 = 100_000_000;
@@ -36,22 +39,34 @@ fn sink(name: &str, mw: u64, shutdown: u64, regulation: u64) -> SagSink {
     }
 }
 
+/// The reference sag's instant from reset, 10 ms, and the reference boot
+/// word it is placed from (`AET-WO-2310`; sentinel-01-minimal's undisturbed
+/// boot word, measured): the scenario's offset is 10,000,000 − 3,627,610.
+const START_NS: u64 = 10_000_000;
+const BOOT_WORD_NS: u64 = 3_627_610;
+const OFFSET_NS: i64 = 6_372_390;
+
 fn sag(r: u32) -> BatterySag {
     BatterySag {
         series_milliohms: r,
-        start_ns: 10_000_000,
+        from_boot_word_ns: OFFSET_NS,
     }
 }
 
+/// The sag judged at its placed instant, as replay judges it.
+fn check(s: &BatterySag, c: &SagChain) -> Result<u64, ScenarioError> {
+    check_battery_sag(s, Some(START_NS), c, SPAN_NS)
+}
+
 fn refusal(s: &BatterySag, c: &SagChain) -> ScenarioError {
-    check_battery_sag(s, c, SPAN_NS).expect_err("refused")
+    check(s, c).expect_err("refused")
 }
 
 // ---- the clauses (§1.6) ----
 
 #[test]
 fn the_tolerated_sag_admits_at_its_static_point() {
-    assert_eq!(check_battery_sag(&sag(500), &s03(), SPAN_NS), Ok(8_088_035));
+    assert_eq!(check(&sag(500), &s03()), Ok(8_088_035));
     assert_eq!(binding(&s03().sinks).unwrap().name, "U10");
 }
 
@@ -60,7 +75,7 @@ fn the_tolerated_sag_admits_at_its_static_point() {
 /// message names the sink and both floors.
 #[test]
 fn below_regulation_is_refused_at_the_edge_naming_the_sink_and_both_floors() {
-    assert_eq!(check_battery_sag(&sag(949), &s03(), SPAN_NS), Ok(7_000_070));
+    assert_eq!(check(&sag(949), &s03()), Ok(7_000_070));
     let e = refusal(&sag(950), &s03());
     assert_eq!(e.kind, REFUSED);
     assert!(e.message.starts_with("below regulation"), "{e}");
@@ -79,7 +94,7 @@ fn no_operating_point_is_refused() {
     for k in &mut c.sinks {
         (k.shutdown_millivolts, k.regulation_millivolts) = (1, 1);
     }
-    assert!(check_battery_sag(&sag(1_372), &c, SPAN_NS).is_ok());
+    assert!(check(&sag(1_372), &c).is_ok());
     let e = refusal(&sag(1_373), &c);
     assert!(e.message.starts_with("no operating point"), "{e}");
 }
@@ -92,7 +107,7 @@ fn no_operating_point_is_refused() {
 fn below_shutdown_is_refused_before_regulation_and_names_both_floors() {
     let mut c = s03();
     c.sinks = vec![sink("U99", 14_752, 7_000, 3_000)];
-    assert!(check_battery_sag(&sag(949), &c, SPAN_NS).is_ok());
+    assert!(check(&sag(949), &c).is_ok());
     let e = refusal(&sag(950), &c);
     assert!(e.message.starts_with("below shutdown"), "{e}");
     assert!(
@@ -108,20 +123,65 @@ fn below_shutdown_is_refused_before_regulation_and_names_both_floors() {
 fn a_sag_at_or_below_the_healthy_path_is_not_a_fault() {
     let e = refusal(&sag(1), &s03());
     assert!(e.message.starts_with("not a fault"), "{e}");
-    assert!(check_battery_sag(&sag(2), &s03(), SPAN_NS).is_ok());
+    assert!(check(&sag(2), &s03()).is_ok());
 }
 
+/// The instant is the placed one (`AET-WO-2310`): judged against the span
+/// once the boot word places it, and skipped before, when only the offset is
+/// known.
 #[test]
 fn a_sag_whose_chain_settles_past_the_span_is_refused() {
     let c = s03();
-    let v = check_battery_sag(&sag(500), &c, SPAN_NS).unwrap();
+    let v = check(&sag(500), &c).unwrap();
     let settle = settle_ns(&c, 500, v).unwrap();
-    let mut s = sag(500);
-    s.start_ns = SPAN_NS - settle;
-    assert!(check_battery_sag(&s, &c, SPAN_NS).is_ok());
-    s.start_ns += 1;
-    let e = refusal(&s, &c);
+    let s = sag(500);
+    let at = SPAN_NS - settle;
+    assert!(check_battery_sag(&s, Some(at), &c, SPAN_NS).is_ok());
+    let e = check_battery_sag(&s, Some(at + 1), &c, SPAN_NS).unwrap_err();
     assert!(e.message.starts_with("past the span"), "{e}");
+    assert!(
+        e.message.contains(&format!("stepped at {} ns", at + 1)),
+        "{e}"
+    );
+    // Before the boot the same sag is judged on its shape alone.
+    assert_eq!(check_battery_sag(&s, None, &c, SPAN_NS), Ok(v));
+}
+
+/// Before the boot (`None`) every clause but the instant's is judged, and a
+/// shape refusal says the instant waits for the boot word.
+#[test]
+fn before_the_boot_a_sag_is_judged_on_its_offset_alone() {
+    let c = s03();
+    let before = |s: &BatterySag| check_battery_sag(s, None, &c, SPAN_NS);
+    assert_eq!(before(&sag(500)), Ok(8_088_035));
+    assert!(
+        before(&sag(950))
+            .unwrap_err()
+            .message
+            .starts_with("below regulation")
+    );
+    let mut off_grid = sag(500);
+    off_grid.from_boot_word_ns = 15;
+    let e = before(&off_grid).unwrap_err();
+    assert!(e.message.starts_with("out of shape"), "{e}");
+    assert!(
+        e.message
+            .contains("15 ns from the boot word (the instant from reset is judged once the undisturbed boot word places it)"),
+        "{e}"
+    );
+    // A negative offset, placed, is an ordinary instant.
+    let mut early = sag(500);
+    early.from_boot_word_ns = -3_000_000;
+    assert_eq!(before(&early), Ok(8_088_035));
+    assert_eq!(
+        check_battery_sag(&early, Some(627_610), &c, SPAN_NS),
+        Ok(8_088_035)
+    );
+    // Placed past the run or at 0, it is out of shape.
+    for at in [0, SPAN_NS + 1] {
+        let e = check_battery_sag(&sag(500), Some(at), &c, SPAN_NS).unwrap_err();
+        assert!(e.message.starts_with("out of shape"), "{at}: {e}");
+    }
 }
 
 /// The incremental time constant is longer than R·C under constant power,
@@ -151,13 +211,17 @@ fn parse(v: &J) -> Result<Scenario, ScenarioError> {
     Scenario::parse(v.to_string().as_bytes())
 }
 
-fn sag_json(r: u64, start: u64) -> J {
-    json!({"battery_sag": {"series_milliohms": r, "start_ns": start}})
+/// Scenario 6's form (`AET-WO-2310`): the instant signed from the boot word.
+fn sag_json(r: u64, offset: i64) -> J {
+    json!({"battery_sag": {"series_milliohms": r, "from_boot_word_ns": offset}})
 }
 
+/// A battery sag needs version 6 since `AET-WO-2310` (a rail out of band
+/// still version 4): below 4 it is now refused by the planted-event rule
+/// first, which names the change.
 #[test]
 fn a_battery_sag_and_a_rail_out_of_band_parse_under_version_4_only() {
-    let s = parse(&scenario(4, json!([sag_json(500, 10_000_000)]))).unwrap();
+    let s = parse(&scenario(6, json!([sag_json(500, OFFSET_NS)]))).unwrap();
     assert_eq!(s.battery_sag(), Some(&sag(500)));
     let r = parse(&scenario(
         4,
@@ -165,35 +229,68 @@ fn a_battery_sag_and_a_rail_out_of_band_parse_under_version_4_only() {
     ))
     .unwrap();
     assert_eq!(r.rail_out_of_band(), Some("VDD_5V"));
-    for o in [sag_json(500, 1), json!({"rail_out_of_band": "VDD_5V"})] {
-        let e = parse(&scenario(3, json!([o]))).unwrap_err();
-        assert_eq!(e.kind, "SchemaViolation", "{e}");
-        assert!(e.message.contains("schema_version 4"), "{e}");
-    }
+    let e = parse(&scenario(3, json!([{"rail_out_of_band": "VDD_5V"}]))).unwrap_err();
+    assert_eq!(e.kind, "SchemaViolation", "{e}");
+    assert!(e.message.contains("schema_version 4"), "{e}");
+    let e = parse(&scenario(3, json!([sag_json(500, 10)]))).unwrap_err();
+    assert_eq!(e.kind, PLANTED_NEEDS_VERSION, "{e}");
     assert_eq!(
-        parse(&scenario(6, json!([]))).unwrap_err().kind,
+        parse(&scenario(7, json!([]))).unwrap_err().kind,
         "UnsupportedSchemaVersion"
     );
 }
 
+/// `AET-WO-2310` (j): a sag at versions 1 to 5, in either key form, is
+/// refused by name, and the refusal says what changed.
+#[test]
+fn a_battery_sag_under_schema_versions_1_to_5_needs_version_6() {
+    let old = json!({"battery_sag": {"series_milliohms": 500, "start_ns": START_NS}});
+    for version in 1..=5 {
+        for o in [sag_json(500, OFFSET_NS), old.clone()] {
+            let e = parse(&scenario(version, json!([o]))).unwrap_err();
+            assert_eq!(e.kind, PLANTED_NEEDS_VERSION, "{version}: {e}");
+            assert!(e.message.contains(PLANTED_CHANGES), "{e}");
+        }
+    }
+}
+
 #[test]
 fn a_battery_sag_s_integers_are_bounded_and_its_keys_closed() {
-    for (r, start) in [(0, 1), (10_000_001, 1), (1, 0), (1, 100_000_001)] {
-        let e = parse(&scenario(4, json!([sag_json(r, start)]))).unwrap_err();
-        assert_eq!(e.kind, "SchemaViolation", "{r} {start}: {e}");
+    for (r, offset) in [
+        (0, 10),
+        (10_000_001, 10),
+        (1, 5),
+        (1, -5),
+        (1, 100_000_010),
+        (1, -100_000_010),
+    ] {
+        let e = parse(&scenario(6, json!([sag_json(r, offset)]))).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{r} {offset}: {e}");
+        if r == 1 {
+            assert!(
+                e.message
+                    .contains("judged before the boot, from the offset alone"),
+                "{e}"
+            );
+        }
     }
-    assert!(parse(&scenario(4, json!([sag_json(10_000_000, 100_000_000)]))).is_ok());
+    for offset in [-100_000_000, 0, 100_000_000] {
+        assert!(parse(&scenario(6, json!([sag_json(10_000_000, offset)]))).is_ok());
+    }
     for bad in [
         json!({"battery_sag": {"series_milliohms": 500}}),
-        json!({"battery_sag": {"series_milliohms": 500, "start_ns": 1, "x": 1}}),
-        json!({"battery_sag": {"series_milliohms": 500.5, "start_ns": 1}}),
+        json!({"battery_sag": {"series_milliohms": 500, "from_boot_word_ns": 10, "x": 1}}),
+        json!({"battery_sag": {"series_milliohms": 500, "from_boot_word_ns": 10, "start_ns": 1}}),
+        json!({"battery_sag": {"series_milliohms": 500, "start_ns": 1}}),
+        json!({"battery_sag": {"series_milliohms": 500.5, "from_boot_word_ns": 10}}),
+        json!({"battery_sag": {"series_milliohms": 500, "from_boot_word_ns": 10.5}}),
         json!({"battery_sag": [500, 1]}),
-        json!({"battery_sag": {"series_milliohms": 500, "start_ns": 1}, "bus": "B"}),
+        json!({"battery_sag": {"series_milliohms": 500, "from_boot_word_ns": 10}, "bus": "B"}),
         json!({"rail_out_of_band": "VDD_5V", "serial_rx_open": "CRSF"}),
         json!({"rail_out_of_band": ""}),
         json!({"rail_out_of_band": 5}),
     ] {
-        let e = parse(&scenario(4, json!([bad.clone()]))).unwrap_err();
+        let e = parse(&scenario(6, json!([bad.clone()]))).unwrap_err();
         assert_eq!(e.kind, "SchemaViolation", "{bad}: {e}");
     }
 }
@@ -202,13 +299,13 @@ fn a_battery_sag_s_integers_are_bounded_and_its_keys_closed() {
 #[test]
 fn a_combined_battery_sag_is_refused_by_name() {
     let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
-        "start_ns": 1_000_000, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
-        "source_milliohms": 500, "load_milliamps": 100, "bor_level": 3}});
+        "from_boot_word_ns": -2_627_610, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
+        "source_milliohms": 500, "load_milliamps": 100}});
     for overrides in [
-        json!([sag_json(500, 1), sag_json(600, 1)]),
-        json!([sag_json(500, 1), droop]),
+        json!([sag_json(500, 10), sag_json(600, 10)]),
+        json!([sag_json(500, 10), droop]),
     ] {
-        let e = parse(&scenario(4, overrides)).unwrap_err();
+        let e = parse(&scenario(6, overrides)).unwrap_err();
         assert_eq!(e.kind, REFUSED, "{e}");
         assert!(e.message.starts_with("combined"), "{e}");
     }
@@ -217,9 +314,10 @@ fn a_combined_battery_sag_is_refused_by_name() {
 // ---- kind 31 and replay (`INV-04`) ----
 
 fn declared(s: &BatterySag, c: &SagChain) -> Record {
-    let at = check_battery_sag(s, c, SPAN_NS).unwrap();
+    let at = check(s, c).unwrap();
     Record::BatterySagDeclared {
         sag: s.clone(),
+        start_ns: START_NS,
         v_open_microvolts: c.v_open_microvolts,
         healthy_milliohms: c.healthy_milliohms,
         sinks: c.sinks.clone(),
@@ -239,8 +337,17 @@ fn reading(observed: Option<u32>) -> Reading {
     }
 }
 
+/// The undisturbed boot's word the sag is placed from (`AET-WO-2310`).
+fn bound() -> Record {
+    Record::RecoveryBound {
+        boot_word_ns: Some(BOOT_WORD_NS),
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: Some(BOOT_WORD_NS + power::RECOVERY_MARGIN_NS),
+    }
+}
+
 /// A passing run of a tolerated sag: the scenario, the topology, kind 31,
-/// the boot and the verdict.
+/// its kind 32, the boot and the verdict.
 fn run(kind31: Record) -> Vec<Record> {
     vec![
         Record::Scenario {
@@ -255,6 +362,7 @@ fn run(kind31: Record) -> Vec<Record> {
             topology_sha256: [3; 32],
         },
         kind31,
+        bound(),
         Record::BootObserved {
             image_sha256: [4; 32],
             boot_word: reading(Some(0x12)),
@@ -412,7 +520,8 @@ fn replay_refuses_a_doctored_kind_31() {
 fn a_rail_out_of_band_without_its_rendering_is_refused_in_replay() {
     let scenario = |overrides: Vec<Override>| {
         let mut r = run(good());
-        r.remove(2);
+        // Kind 31 and its kind 32: nothing is planted (`AET-WO-2310`).
+        r.drain(2..4);
         r[0] = Record::Scenario {
             name: "rail".into(),
             sha256: [1; 32],
@@ -453,10 +562,14 @@ fn a_second_rail_or_a_rail_beside_another_fault_is_refused_by_name() {
     for overrides in [
         json!([rail("VDD_5V"), open("CRSF"), rail("VDD_3V3")]),
         json!([rail("VDD_5V"), open("CRSF"), {"bus": "SENSORS", "line_held_low": "sda"}]),
-        json!([rail("VDD_5V"), open("CRSF"), sag_json(500, 1)]),
+        json!([rail("VDD_5V"), open("CRSF"), sag_json(500, 10)]),
         json!([rail("VDD_5V")]),
     ] {
-        let e = parse(&scenario(4, overrides.clone())).unwrap_err();
+        // A sag is read at version 6 only (`AET-WO-2310`): there, so the
+        // rail's own refusal is reached; the rest at version 4 as before.
+        let sag = overrides.to_string().contains("battery_sag");
+        let version = if sag { 6 } else { 4 };
+        let e = parse(&scenario(version, overrides.clone())).unwrap_err();
         assert_eq!(e.kind, "RailOutOfBandRefused", "{overrides}: {e}");
     }
     let two = vec![
@@ -476,10 +589,22 @@ type Edit = fn(&mut Record);
 #[test]
 fn replay_refuses_a_kind_31_out_of_shape_or_combined() {
     let clause = "a battery sag's declaration is one its checks refuse";
-    let cases: [(&str, Edit); 5] = [
-        ("start 0", |r| {
-            if let Record::BatterySagDeclared { sag, .. } = r {
-                sag.start_ns = 0;
+    // `start 0` was kind 31's own instant out of shape; since `AET-WO-2310`
+    // an instant is the boot word plus the offset, never 0, so the two
+    // out-of-shape instants that still resolve stand for it: an offset off
+    // the 10 ns grid, and an instant past the run, each with kind 31's
+    // instant placed from it, so the clause is reached.
+    let cases: [(&str, Edit); 6] = [
+        ("offset off the grid", |r| {
+            if let Record::BatterySagDeclared { sag, start_ns, .. } = r {
+                sag.from_boot_word_ns = OFFSET_NS + 5;
+                *start_ns = START_NS + 5;
+            }
+        }),
+        ("instant past the run", |r| {
+            if let Record::BatterySagDeclared { sag, start_ns, .. } = r {
+                sag.from_boot_word_ns = 100_000_000;
+                *start_ns = BOOT_WORD_NS + 100_000_000;
             }
         }),
         ("R past 10 kΩ", |r| {
@@ -547,4 +672,68 @@ fn a_zero_discriminant_is_no_operating_point() {
     };
     let e = refusal(&sag(1_000), &c);
     assert!(e.message.starts_with("no operating point"), "{e}");
+}
+
+// ---- the planted instant (`AET-WO-2310`) ----
+
+const MSG_ONE_BOUND: &str =
+    "a planted run does not hold exactly one kind 32, or a run with none planted holds one";
+
+fn at_bound(r: &[Record]) -> usize {
+    r.iter()
+        .position(|x| matches!(x, Record::RecoveryBound { .. }))
+        .expect("the run's kind 32")
+}
+
+#[test]
+fn the_reference_sag_s_instant_is_the_boot_word_plus_the_offset() {
+    assert_eq!(resolve_instant(BOOT_WORD_NS, OFFSET_NS), Some(START_NS));
+}
+
+/// (d) Kind 31's instant is the word plus the scenario's offset, to the ns.
+#[test]
+fn a_kind_31_instant_10_ns_off_the_word_plus_the_offset_is_refused() {
+    let reason = "the declared battery sag's instant is not the undisturbed boot word plus the scenario's offset";
+    for delta in [10i64, -10] {
+        let r = with(|r| {
+            if let Record::BatterySagDeclared { start_ns, .. } = r {
+                *start_ns = start_ns.checked_add_signed(delta).unwrap();
+            }
+        });
+        assert_eq!(check_run(&r), Err(reason), "{delta}");
+    }
+    // The word moved by 10, its bound with it.
+    let mut r = run(good());
+    let k = at_bound(&r);
+    r[k] = Record::RecoveryBound {
+        boot_word_ns: Some(BOOT_WORD_NS + 10),
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: Some(BOOT_WORD_NS + 10 + power::RECOVERY_MARGIN_NS),
+    };
+    assert_eq!(check_run(&r), Err(reason));
+}
+
+/// (d) A sag's run holds exactly one kind 32, and it holds the word.
+#[test]
+fn a_sag_run_without_its_kind_32_or_with_no_word_or_two_is_refused() {
+    let mut r = run(good());
+    r.remove(at_bound(&r));
+    assert_eq!(check_run(&r), Err(MSG_ONE_BOUND), "no kind 32");
+
+    let mut r = run(good());
+    let k = at_bound(&r);
+    r[k] = Record::RecoveryBound {
+        boot_word_ns: None,
+        margin_ns: power::RECOVERY_MARGIN_NS,
+        bound_ns: None,
+    };
+    assert_eq!(
+        check_run(&r),
+        Err("a planted run's reference holds no undisturbed boot word"),
+        "no word"
+    );
+
+    let mut r = run(good());
+    r.insert(at_bound(&r), bound());
+    assert_eq!(check_run(&r), Err(MSG_ONE_BOUND), "two kind 32");
 }

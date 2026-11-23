@@ -1,0 +1,5 @@
+mips-speed: KILLED ['    more_instructions_than_the_run_holds_or_another_speed_is_untrusted'] thread 'more_instructions_than_the_run_holds_or_another_speed_is_untrusted' (1436055) panicked at crates/aethelgard-cli/tests/boot_tier1.rs:632:5: 
+tree-link-bytes: KILLED ['     |', '     |'] thread 'campaign::tests::the_tree_digest_moves_with_every_byte_name_and_link_target' (1440500) panicked at crates/aethelgard-cli/src/campaign.rs:2647:13: 
+booted-sleep-stop: KILLED [] thread 'renode::tests::a_booted_core_that_executed_fewer_instructions_is_cpu_halted_not_a_stop' (1441150) panicked at crates/aethelgard-cli/src/renode.rs:5905:3 
+library-canonical: KILLED [] thread 'analog::tests::a_bridge_that_does_not_name_this_trees_sources_first_is_refused' (1441570) panicked at crates/aethelgard-cli/src/analog.rs:1381:51: called `Result::unwrap_err()` on an `Ok` value: (Identity { version: "0.1.0", source_sha256: "aacbc9b5cd6835e26c0ae27f75b3bc674031519cefc9d364d32a6b49ce2d7808", ngspice: Some("44.2"), ngspice_library_
+EXIT 0

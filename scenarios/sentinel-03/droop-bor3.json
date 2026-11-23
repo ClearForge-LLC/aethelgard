@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 6,
   "name": "droop-bor3",
   "base": "../../crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
   "expect": "pass",
@@ -14,13 +14,12 @@
       "droop": {
         "domain": "VDD_3V3",
         "floor_millivolts": 2400,
-        "start_ns": 1000000,
+        "from_boot_word_ns": -42929480,
         "fall_ns": 20000,
         "hold_ns": 600000,
         "rise_ns": 20000,
         "source_milliohms": 500,
-        "load_milliamps": 100,
-        "bor_level": 3
+        "load_milliamps": 100
       }
     }
   ]

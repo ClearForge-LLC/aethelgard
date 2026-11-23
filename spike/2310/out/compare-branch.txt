@@ -1,0 +1,1 @@
+same=64 moved=0 fields={'removed:window': 64}

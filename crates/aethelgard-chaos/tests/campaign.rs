@@ -136,13 +136,16 @@ fn a_duplicate_key_inside_an_override_is_refused() {
 }
 
 #[test]
-fn schema_version_six_is_unsupported() {
+fn schema_version_seven_is_unsupported() {
     let mut v: Value = serde_json::from_slice(&pass_doc(json!([]))).unwrap();
-    v["schema_version"] = json!(6);
+    v["schema_version"] = json!(7);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
-    // Version 5 reads a version-1 file's content as it always did.
-    v["schema_version"] = json!(5);
-    assert!(parse(&v).is_ok());
+    // Versions 5 and 6 (`AET-WO-2310`) read a version-1 file's content as
+    // it always did.
+    for version in [5, 6] {
+        v["schema_version"] = json!(version);
+        assert!(parse(&v).is_ok(), "{version}");
+    }
 }
 
 /// `AET-WO-2302` D5: `{serial_rx_open: port}` is exactly that, a label of 1
@@ -1648,7 +1651,7 @@ fn a_kind_7_complete_flag_of_2_is_refused() {
 mod archived {
     use super::*;
     use aethelgard_chaos::Header;
-    use aethelgard_chaos::campaign::{ARTIFACTS, check_archived};
+    use aethelgard_chaos::campaign::{ARTIFACTS, RUST_TOOLCHAIN, check_archived};
 
     const SCEN: [u8; 32] = [1; 32];
     const SPEC: [u8; 32] = [2; 32];
@@ -1668,7 +1671,12 @@ mod archived {
             tools: vec![
                 ("aethelgard".into(), "0.1.0".into()),
                 ("renode".into(), "1.17.0+20260907gitf1dd1b4af".into()),
+                (
+                    RUST_TOOLCHAIN.into(),
+                    "rustc 1.91.0 (f8297e351 2025-10-28)".into(),
+                ),
             ],
+            tool_sha256: vec![(RUST_TOOLCHAIN.into(), [7; 32])],
         }
     }
 
@@ -1709,13 +1717,24 @@ mod archived {
     }
 
     fn replayed(name: &str, header: &Header, raw_write: bool) -> aethelgard_chaos::Replayed {
+        replayed_records(name, header, raw_write, records())
+    }
+
+    fn replayed_records(
+        name: &str,
+        header: &Header,
+        raw_write: bool,
+        records: Vec<Record>,
+    ) -> aethelgard_chaos::Replayed {
         let dir = scratch(name).join("run");
         let mut w = TraceWriter::create(&dir, header).unwrap();
         if raw_write {
             w.append(&write(0, 0x4000_0000, 1)).unwrap();
         }
-        for r in records() {
-            let timestamp = if r.kind() < 10 { 0 } else { 100_000_000 };
+        for r in records {
+            // Kinds 5 and 6 before the boot, as before; a solved bus (kind
+            // 15) too, which `records_with_lines` holds.
+            let timestamp = if r.before_boot() { 0 } else { 100_000_000 };
             w.append(&Event::Record {
                 timestamp,
                 record: r,
@@ -1735,9 +1754,10 @@ mod archived {
     fn the_header_names_the_engine_and_renode_and_the_bridge_only_when_it_ran() {
         const TOOLS: &str = "the header's tools are not the ones its records say judged the run";
         let tool = |n: &str| (n.to_owned(), "v".to_owned());
-        // `records()` computed no line: no bridge and no ngspice.
-        for tools in [
-            vec![],
+        // `records()` computed no line: no bridge and no ngspice. Each list
+        // ends with the host's toolchain, which every run names since
+        // `AET-WO-2310`, so it is wrong only as it was before.
+        for mut tools in [
             vec![tool("aethelgard")],
             vec![tool("renode")],
             vec![
@@ -1748,6 +1768,7 @@ mod archived {
             ],
             vec![tool("aethelgard"), tool("qemu"), tool("renode")],
         ] {
+            tools.push(tool(RUST_TOOLCHAIN));
             let mut h = header();
             h.tools = tools.clone();
             assert_eq!(
@@ -1756,11 +1777,16 @@ mod archived {
                 "{tools:?}"
             );
         }
+        let mut h = header();
+        h.tools = vec![];
+        h.tool_sha256 = vec![];
+        assert_eq!(judged("ca-tools", &h, false).unwrap_err(), TOOLS, "none");
         // Any version passes: replay does not compare them with this host's.
         let mut h = header();
         h.tools = vec![
             ("aethelgard".into(), "99.0.0".into()),
             ("renode".into(), "0.0.1+forged".into()),
+            (RUST_TOOLCHAIN.into(), "rustc 0.0.1-forged".into()),
         ];
         judged("ca-tools-any", &h, false).unwrap();
         // A computed line brings the bridge and its ngspice.
@@ -1771,7 +1797,7 @@ mod archived {
         );
         assert_eq!(
             aethelgard_chaos::campaign::tools_of(&lines),
-            ["aethelgard", "renode"]
+            ["aethelgard", "renode", "rust-toolchain"]
         );
         lines.insert(
             3,
@@ -1790,19 +1816,28 @@ mod archived {
         );
         assert_eq!(
             aethelgard_chaos::campaign::tools_of(&lines),
-            ["aethelgard", "aethelgard-bridge", "ngspice", "renode"]
+            [
+                "aethelgard",
+                "aethelgard-bridge",
+                "ngspice",
+                "renode",
+                "rust-toolchain"
+            ]
         );
         // A rail alone ran the bridge; ngspice is named only by a crossing.
         let rail = Record::RailDeclared {
-            droop: aethelgard_chaos::record::Droop {
-                domain: "VDD".into(),
-                floor_millivolts: 2_000,
+            droop: aethelgard_chaos::record::RailDroop {
+                droop: aethelgard_chaos::record::Droop {
+                    domain: "VDD".into(),
+                    floor_millivolts: 2_000,
+                    from_boot_word_ns: 0,
+                    fall_ns: 1,
+                    hold_ns: 1,
+                    rise_ns: 1,
+                    source_milliohms: 1,
+                    load_milliamps: 0,
+                },
                 start_ns: 1,
-                fall_ns: 1,
-                hold_ns: 1,
-                rise_ns: 1,
-                source_milliohms: 1,
-                load_milliamps: 0,
                 bor_level: 0,
             },
             nominal_millivolts: 3_300,
@@ -1811,7 +1846,12 @@ mod archived {
         };
         assert_eq!(
             aethelgard_chaos::campaign::tools_of(std::slice::from_ref(&rail)),
-            ["aethelgard", "aethelgard-bridge", "renode"]
+            [
+                "aethelgard",
+                "aethelgard-bridge",
+                "renode",
+                "rust-toolchain"
+            ]
         );
         let crossing = Record::RailCrossing {
             domain: "VDD".into(),
@@ -1822,7 +1862,98 @@ mod archived {
         };
         assert_eq!(
             aethelgard_chaos::campaign::tools_of(&[rail, crossing]),
-            ["aethelgard", "aethelgard-bridge", "ngspice", "renode"]
+            [
+                "aethelgard",
+                "aethelgard-bridge",
+                "ngspice",
+                "renode",
+                "rust-toolchain"
+            ]
+        );
+    }
+
+    const HASHES: &str =
+        "the header's tool hashes are not ngspice's library and the toolchain's sysroot";
+
+    /// `records()` with a healthy computed line on each of a solved bus's
+    /// two lines: the bridge and ngspice judged the run.
+    fn records_with_lines() -> Vec<Record> {
+        let mut r = records();
+        r.insert(
+            2,
+            solved_bus("SENSORS", "I2C1", ["I2C_SCL", "I2C_SDA"], &[]),
+        );
+        r.insert(3, healthy_rise("SENSORS", "I2C_SCL"));
+        r.insert(4, healthy_rise("SENSORS", "I2C_SDA"));
+        r
+    }
+
+    fn judged_records(
+        name: &str,
+        header: &Header,
+        records: Vec<Record>,
+    ) -> Result<(), &'static str> {
+        let r = replayed_records(name, header, false, records);
+        check_archived(&r.header, &r.state).map(|_| ())
+    }
+
+    /// (h) `AET-WO-2310`: every run names the host's toolchain, last; the
+    /// header hashes ngspice's library whenever ngspice judged the run and
+    /// the toolchain's sysroot unless its version is `absent`, and no other
+    /// tool's.
+    #[test]
+    fn the_header_hashes_ngspice_and_the_toolchain_and_no_other_tool() {
+        use aethelgard_chaos::campaign::{NGSPICE, TOOLCHAIN_ABSENT};
+        judged("ca-hash-ok", &header(), false).unwrap();
+        // The toolchain missing from the tools, its hash with it.
+        let mut h = header();
+        h.tools.retain(|(n, _)| n != RUST_TOOLCHAIN);
+        h.tool_sha256.clear();
+        assert_eq!(
+            judged("ca-hash-no-toolchain", &h, false).unwrap_err(),
+            "the header's tools are not the ones its records say judged the run"
+        );
+        // The toolchain named with no hash.
+        let mut h = header();
+        h.tool_sha256.clear();
+        assert_eq!(
+            judged("ca-hash-toolchain-unhashed", &h, false).unwrap_err(),
+            HASHES
+        );
+        // A host with no toolchain: `absent`, and no hash; with one, refused.
+        let mut h = header();
+        h.tools[2].1 = TOOLCHAIN_ABSENT.into();
+        assert_eq!(
+            judged("ca-hash-absent-hashed", &h, false).unwrap_err(),
+            HASHES
+        );
+        h.tool_sha256.clear();
+        judged("ca-hash-absent", &h, false).unwrap();
+        // A hash on renode, beside the toolchain's.
+        let mut h = header();
+        h.tool_sha256.insert(0, ("renode".into(), [8; 32]));
+        assert_eq!(judged("ca-hash-renode", &h, false).unwrap_err(), HASHES);
+        // ngspice judged the run: its library is hashed, or refused.
+        let tool = |n: &str| (n.to_owned(), "v".to_owned());
+        let mut h = header();
+        h.tools = vec![
+            tool("aethelgard"),
+            tool("aethelgard-bridge"),
+            tool(NGSPICE),
+            tool("renode"),
+            tool(RUST_TOOLCHAIN),
+        ];
+        assert_eq!(
+            judged_records("ca-hash-ngspice-unhashed", &h, records_with_lines()).unwrap_err(),
+            HASHES
+        );
+        h.tool_sha256 = vec![(NGSPICE.into(), [9; 32]), (RUST_TOOLCHAIN.into(), [7; 32])];
+        judged_records("ca-hash-ngspice", &h, records_with_lines()).unwrap();
+        // ngspice hashed, the toolchain not.
+        h.tool_sha256.pop();
+        assert_eq!(
+            judged_records("ca-hash-ngspice-only", &h, records_with_lines()).unwrap_err(),
+            HASHES
         );
     }
 
@@ -3273,15 +3404,26 @@ fn a_boots_reads_are_all_read_or_all_unread() {
         r.iter_mut().for_each(f);
         check_run(&r).map(|_| ())
     };
-    // The flooded log's shape: read, its witnesses unread. Accepted.
+    // The flooded log's shape: read, its witnesses unread. Accepted, with
+    // the finding the judge names for U4's ok read whose witness is unread
+    // (`AET-WO-2310`: without it, refused; U2's read timed out, so it needs
+    // none).
+    let flooded = |x: &mut Record| match x {
+        Record::I2cWitness { observed, .. } | Record::SpiWitness { observed, .. } => {
+            *observed = None
+        }
+        _ => {}
+    };
     assert_eq!(
-        edited(&base, &|x| match x {
-            Record::I2cWitness { observed, .. } | Record::SpiWitness { observed, .. } =>
-                *observed = None,
-            _ => {}
-        }),
-        Ok(())
+        edited(&base, &flooded),
+        Err("an ok read's witness is unread and the verdict does not name it unwitnessed")
     );
+    let mut named = base.clone();
+    let Some(Record::Verdict { findings, .. }) = named.last_mut() else {
+        panic!("the verdict is last")
+    };
+    findings.push(("spi_transaction_unwitnessed".into(), "error".into(), 1));
+    assert_eq!(edited(&named, &flooded), Ok(()));
     // 5.8, one record at a time, beside a read boot.
     let unread_in_read: [Case; 5] = [
         ("kind 11", &|x| {
@@ -3376,4 +3518,125 @@ fn a_boots_reads_are_all_read_or_all_unread() {
     for (what, f) in read_in_unread {
         assert_eq!(edited(&killed, f), Err(NOT_TOGETHER), "{what}");
     }
+}
+
+// ---- AET-WO-2310: cpu_halted and the unwitnessed ok read ----
+
+const HALTED: &str = "the verdict's cpu_halted does not match the booted core's instruction count";
+const UNWITNESSED: &str =
+    "an ok read's witness is unread and the verdict does not name it unwitnessed";
+
+/// `good()`'s own findings.
+const GOOD_FINDINGS: [(&str, &str, u64); 3] = [
+    (PAST, "error", 2),
+    ("device_unmodelled", "info", 1),
+    ("i2c_timeout", "error", 1),
+];
+
+fn plus(extra: &[(&'static str, &'static str, u64)]) -> Vec<(&'static str, &'static str, u64)> {
+    let mut f = GOOD_FINDINGS.to_vec();
+    f.extend_from_slice(extra);
+    f.sort();
+    f
+}
+
+/// (f) A booted core that counted fewer instructions than the run holds is
+/// named `cpu_halted` once, as an error; one that counted them all is not.
+#[test]
+fn cpu_halted_is_named_once_exactly_when_a_booted_core_counted_fewer_instructions() {
+    let halted = || good_with_boot(|_, n, _| *n = Some(9));
+    assert_eq!(
+        check_run(&with_findings(halted(), &GOOD_FINDINGS)).unwrap_err(),
+        HALTED,
+        "missing"
+    );
+    check_run(&with_findings(
+        halted(),
+        &plus(&[("cpu_halted", "error", 1)]),
+    ))
+    .unwrap();
+    for bad in [("cpu_halted", "info", 1), ("cpu_halted", "error", 2)] {
+        assert_eq!(
+            check_run(&with_findings(halted(), &plus(&[bad]))).unwrap_err(),
+            HALTED,
+            "{bad:?}"
+        );
+    }
+    // Observed equal to expected: none, so one is refused.
+    check_run(&good()).unwrap();
+    assert_eq!(
+        check_run(&with_findings(good(), &plus(&[("cpu_halted", "error", 1)]))).unwrap_err(),
+        HALTED,
+        "present at 10 of 10"
+    );
+}
+
+fn blank_witness(r: &mut [Record], step_of: &str) {
+    for x in r {
+        match x {
+            Record::I2cWitness { step, observed, .. }
+            | Record::SpiWitness { step, observed, .. }
+                if step == step_of =>
+            {
+                *observed = None
+            }
+            _ => {}
+        }
+    }
+}
+
+/// (g) An ok I2C read whose own witness is unread needs
+/// `i2c_transaction_unwitnessed` at least once per such read.
+#[test]
+fn an_ok_i2c_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
+    check_run(&three_steps()).unwrap();
+    let mut r = three_steps();
+    blank_witness(&mut r, "data");
+    assert_eq!(
+        check_run(&with_findings(r.clone(), &GOOD_FINDINGS)).unwrap_err(),
+        UNWITNESSED
+    );
+    let one = plus(&[("i2c_transaction_unwitnessed", "error", 1)]);
+    check_run(&with_findings(r.clone(), &one)).unwrap();
+    // At info it is not named.
+    let info = plus(&[("i2c_transaction_unwitnessed", "info", 1)]);
+    assert_eq!(
+        check_run(&with_findings(r.clone(), &info)).unwrap_err(),
+        UNWITNESSED
+    );
+    // Two such reads need two.
+    blank_witness(&mut r, "configure");
+    assert_eq!(
+        check_run(&with_findings(r.clone(), &one)).unwrap_err(),
+        UNWITNESSED
+    );
+    let two = plus(&[("i2c_transaction_unwitnessed", "error", 2)]);
+    check_run(&with_findings(r, &two)).unwrap();
+    // The timed-out identity read's witness unread needs none.
+    let mut r = three_steps();
+    blank_witness(&mut r, "identity");
+    check_run(&r).unwrap();
+}
+
+/// (g) The same for an ok SPI read and `spi_transaction_unwitnessed`.
+#[test]
+fn an_ok_spi_read_with_its_witness_unread_needs_its_unwitnessed_finding() {
+    let mut spi_only = good_with_spi();
+    for x in &mut spi_only {
+        if let Record::SpiWitness { observed, .. } = x {
+            *observed = None;
+        }
+    }
+    assert_eq!(
+        check_run(&with_findings(spi_only.clone(), &GOOD_FINDINGS)).unwrap_err(),
+        UNWITNESSED
+    );
+    let named = plus(&[("spi_transaction_unwitnessed", "error", 1)]);
+    check_run(&with_findings(spi_only.clone(), &named)).unwrap();
+    // The I2C finding does not stand for it.
+    let other = plus(&[("i2c_transaction_unwitnessed", "error", 1)]);
+    assert_eq!(
+        check_run(&with_findings(spi_only, &other)).unwrap_err(),
+        UNWITNESSED
+    );
 }

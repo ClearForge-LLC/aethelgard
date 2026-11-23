@@ -73,17 +73,19 @@ fn rail_agreement_ns(seconds: f64) -> f64 {
 }
 
 /// The first line of stdout in every mode; `ngspice` is the banner of the
-/// library this run started and accepted, when it did.
-fn identity(ngspice: Option<&Banner>) -> String {
+/// library this run started and accepted, when it did, and
+/// `ngspice_library` the file it was mapped from (`AET-WO-2310`).
+fn identity(ngspice: Option<(&Banner, &str)>) -> String {
     let mut v = json!({
         "bridge": "aethelgard-bridge",
         "source_sha256": env!("AETHELGARD_BRIDGE_SOURCE_SHA256"),
         "version": env!("CARGO_PKG_VERSION"),
     });
-    if let Some(b) = ngspice {
+    if let Some((b, library)) = ngspice {
         let fields = v.as_object_mut().expect("an object");
         fields.insert("ngspice".into(), json!(b.release));
         fields.insert("ngspice_banner".into(), json!(b.line));
+        fields.insert("ngspice_library".into(), json!(library));
     }
     v.to_string()
 }
@@ -160,7 +162,7 @@ fn main() -> ExitCode {
 fn started<T>(request: Result<T, String>) -> Result<(T, Ngspice), ExitCode> {
     let request = request.map_err(|e| refuse(2, "request_refused", &e))?;
     let spice = Ngspice::start().map_err(|e| refuse(3, "ngspice_unusable", &e))?;
-    if emit_text(&identity(Some(spice.banner()))).is_err() {
+    if emit_text(&identity(Some((spice.banner(), spice.library())))).is_err() {
         return Err(ExitCode::from(3));
     }
     Ok((request, spice))
@@ -653,11 +655,11 @@ mod tests {
             line: "** ngspice-45.0 shared library".to_owned(),
             release: "45.0".to_owned(),
         };
-        let loaded = super::identity(Some(&banner));
+        let loaded = super::identity(Some((&banner, "/lib/libngspice.so.0.0.12")));
         let bare = super::identity(None);
         assert_eq!(
             loaded.replacen(
-                r#""ngspice":"45.0","ngspice_banner":"** ngspice-45.0 shared library","#,
+                r#""ngspice":"45.0","ngspice_banner":"** ngspice-45.0 shared library","ngspice_library":"/lib/libngspice.so.0.0.12","#,
                 "",
                 1
             ),

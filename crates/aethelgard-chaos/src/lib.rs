@@ -49,8 +49,15 @@ pub enum ArchiveError {
     MalformedManifest(String),
     #[error("malformed header: {0}")]
     MalformedHeader(String),
-    #[error("unknown format version {found} in {item}")]
-    UnknownVersion { item: &'static str, found: u64 },
+    /// `changes` are the trace versions after `found`, when `found` is an
+    /// older header's (`AET-WO-2310`, `AET-WO-1215`'s pattern); empty for a
+    /// newer version and for the manifest.
+    #[error("unknown format version {found} in {item}{}", since(changes))]
+    UnknownVersion {
+        item: &'static str,
+        found: u64,
+        changes: &'static [event::TraceChange],
+    },
     #[error("manifest.cbor is over the {limit}-byte bound")]
     ManifestTooLarge { limit: u64 },
     #[error("the manifest declares a trace of {declared} bytes, over the {limit}-byte bound")]
@@ -93,6 +100,22 @@ pub enum ArchiveError {
     MirrorBeforeCommit,
     #[error("mirror.cbor already exists")]
     MirrorExists,
+}
+
+/// What an older trace lacks, as `UnknownVersion`'s text lists it.
+fn since(changes: &[event::TraceChange]) -> String {
+    if changes.is_empty() {
+        return String::new();
+    }
+    let rows: Vec<String> = changes
+        .iter()
+        .map(|c| format!("{} ({}): {}", c.version, c.work_order, c.change))
+        .collect();
+    format!(
+        "; this reader is version {}, and since then: {}",
+        event::TRACE_VERSION,
+        rows.join("; ")
+    )
 }
 
 impl ArchiveError {

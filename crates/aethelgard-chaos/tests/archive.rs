@@ -341,8 +341,10 @@ fn a_timestamp_of_u64_max_followed_by_another_event_is_refused() {
 #[test]
 fn an_unknown_version_is_refused() {
     // [magic, version, ...] -> the version byte is the one right after the
-    // magic text. The trace's version is 18 since AET-WO-1211c added kinds 33
-    // to 37 and the overrides' tags 8 and 9 (17 since AET-WO-2305 added kind
+    // magic text. The trace's version is 19 since AET-WO-2310 hashed the
+    // header's tools and placed the planted instants from the boot word (18
+    // since AET-WO-1211c added kinds 33
+    // to 37 and the overrides' tags 8 and 9, 17 since AET-WO-2305 added kind
     // 32, 16 since AET-WO-3305 narrowed kind 13's `absent`, 15 since
     // AET-WO-2304b added kind 31
     // and the overrides' tags 6 and 7, 14 since AET-WO-4400g made kind
@@ -365,13 +367,23 @@ fn an_unknown_version_is_refused() {
         assert_eq!(trace[at], version);
         trace[at] = found;
         let dir = commit_raw(&format!("v{found}-trace"), &trace, 0, [0; 32]);
-        assert!(matches!(
-            replay_dir(&dir),
-            Err(E::UnknownVersion {
-                item: "header",
-                found: f
-            }) if f == u64::from(found)
-        ));
+        // An older trace is refused with the rows since it, oldest first
+        // (`AET-WO-2310`); a newer one with none.
+        let want: Vec<u64> = (u64::from(found) + 1..=u64::from(version))
+            .filter(|_| found < version)
+            .collect();
+        assert!(
+            matches!(
+                replay_dir(&dir),
+                Err(E::UnknownVersion {
+                    item: "header",
+                    found: f,
+                    changes,
+                }) if f == u64::from(found)
+                    && changes.iter().map(|c| c.version).collect::<Vec<_>>() == want
+            ),
+            "{found}"
+        );
     }
 
     let (dir, m) = write_run("v2-manifest", 0x0400, &events(5));
@@ -386,10 +398,220 @@ fn an_unknown_version_is_refused() {
             replay_dir(&dir),
             Err(E::UnknownVersion {
                 item: "manifest",
-                found: f
+                found: f,
+                changes: [],
             }) if f == u64::from(found)
         ));
     }
+}
+
+/// (i) `AET-WO-2310`: an older trace's refusal lists exactly the versions
+/// since it, each with its work order and change, and says so in its text; a
+/// newer one lists none.
+#[test]
+fn an_older_trace_is_refused_with_what_changed_since_it() {
+    use aethelgard_chaos::event::{TRACE_CHANGES, TRACE_VERSION, changes_since};
+    assert_eq!(TRACE_VERSION, 19);
+    assert_eq!(TRACE_CHANGES.last().map(|c| c.version), Some(TRACE_VERSION));
+    let versions: Vec<u64> = TRACE_CHANGES.iter().map(|c| c.version).collect();
+    assert_eq!(versions, (2..=19).collect::<Vec<_>>());
+    let at = 1 + 1 + "aethelgard-trace".len();
+    let refused = |found: u8| {
+        let mut trace = header_bytes();
+        trace[at] = found;
+        let dir = commit_raw(&format!("since-v{found}"), &trace, 0, [0; 32]);
+        replay_dir(&dir).expect_err("refused")
+    };
+    for (found, want) in [(14u8, vec![15, 16, 17, 18, 19]), (18, vec![19])] {
+        let e = refused(found);
+        let E::UnknownVersion {
+            item: "header",
+            found: f,
+            changes,
+        } = &e
+        else {
+            panic!("{e:?}")
+        };
+        assert_eq!(*f, u64::from(found));
+        assert_eq!(changes.iter().map(|c| c.version).collect::<Vec<_>>(), want);
+        assert_eq!(*changes, changes_since(u64::from(found)));
+        let text = e.to_string();
+        assert!(
+            text.starts_with(&format!(
+                "unknown format version {found} in header; this reader is version 19, and since then: {} (",
+                found + 1
+            )),
+            "{text}"
+        );
+        for c in *changes {
+            assert!(
+                text.contains(&format!("{} ({}): {}", c.version, c.work_order, c.change)),
+                "{text}"
+            );
+        }
+    }
+    assert!(
+        refused(18)
+            .to_string()
+            .contains("since then: 19 (AET-WO-2310)")
+    );
+    assert!(
+        refused(14)
+            .to_string()
+            .contains("since then: 15 (AET-WO-2304b)")
+    );
+    let e = refused(20);
+    assert!(
+        matches!(
+            e,
+            E::UnknownVersion {
+                item: "header",
+                found: 20,
+                changes: [],
+            }
+        ),
+        "{e:?}"
+    );
+    assert_eq!(e.to_string(), "unknown format version 20 in header");
+    assert!(changes_since(19).is_empty() && changes_since(20).is_empty());
+}
+
+/// A header with `tools`, `[name, version, [] or [sha256]]` each, as
+/// trace 19 writes it (`AET-WO-2310`).
+fn header_with_tools(tools: Vec<Value>) -> Value {
+    let Value::Array(mut items) = synthetic::header(0x0400).to_value() else {
+        panic!("the header is an array")
+    };
+    assert_eq!(
+        items.len(),
+        6,
+        "magic, version, run id, unit, artifacts, tools"
+    );
+    items[5] = Value::Array(tools);
+    Value::Array(items)
+}
+
+fn tool(name: &str, version: &str, hash: &[Value]) -> Value {
+    Value::Array(vec![
+        Value::Text(name.into()),
+        Value::Text(version.into()),
+        Value::Array(hash.to_vec()),
+    ])
+}
+
+/// `AET-WO-2310`: a tool's hash round-trips through CBOR as the third item
+/// of its entry, `[]` for a tool not hashed.
+#[test]
+fn a_tool_hash_round_trips_through_the_header() {
+    let mut h = synthetic::header(0x0400);
+    h.tools = vec![
+        ("aethelgard".into(), "0.1.0".into()),
+        ("ngspice".into(), "45".into()),
+        ("rust-toolchain".into(), "rustc 1.91.0".into()),
+    ];
+    h.tool_sha256 = vec![
+        ("ngspice".into(), [0xA5; 32]),
+        ("rust-toolchain".into(), [0x5A; 32]),
+    ];
+    let v = h.to_value();
+    let Value::Array(items) = &v else { panic!() };
+    assert_eq!(
+        items[5],
+        Value::Array(vec![
+            tool("aethelgard", "0.1.0", &[]),
+            tool("ngspice", "45", &[Value::Bytes(vec![0xA5; 32])]),
+            tool(
+                "rust-toolchain",
+                "rustc 1.91.0",
+                &[Value::Bytes(vec![0x5A; 32])]
+            ),
+        ])
+    );
+    assert_eq!(
+        aethelgard_chaos::Header::from_value(&v).map_err(|_| ()),
+        Ok(h.clone())
+    );
+    assert_eq!(h.sha256_of("ngspice"), Some(&[0xA5; 32]));
+    assert_eq!(h.sha256_of("aethelgard"), None);
+    // Through a committed trace and replay too: an empty run's state hash is
+    // its header's digest.
+    let raw = cbor::to_bytes(&v);
+    let dir = commit_raw("tool-hash", &raw, 0, Sha256::digest(&raw).into());
+    assert_eq!(replay_dir(&dir).unwrap().header, h);
+}
+
+/// `AET-WO-2310`: a tool entry of two items (trace 18's), a hash that is not
+/// 32 bytes, or not one byte string, is a malformed header; so is a hash
+/// list out of order or naming no tool of the header.
+#[test]
+fn a_tool_entry_of_two_items_or_a_short_hash_is_malformed() {
+    let bytes = |n: usize| Value::Bytes(vec![1; n]);
+    for (name, entry, reason) in [
+        (
+            "tool-pair",
+            Value::Array(vec![
+                Value::Text("ngspice".into()),
+                Value::Text("45".into()),
+            ]),
+            "tool is not [name, version, [] or [sha256]]",
+        ),
+        (
+            "tool-31",
+            tool("ngspice", "45", &[bytes(31)]),
+            "tool hash is not 32 bytes",
+        ),
+        (
+            "tool-33",
+            tool("ngspice", "45", &[bytes(33)]),
+            "tool hash is not 32 bytes",
+        ),
+        (
+            "tool-two-hashes",
+            tool("ngspice", "45", &[bytes(32), bytes(32)]),
+            "tool hash is not [] or [sha256]",
+        ),
+        (
+            "tool-hash-text",
+            tool("ngspice", "45", &[Value::Text("x".into())]),
+            "tool hash is not [] or [sha256]",
+        ),
+        (
+            "tool-hash-bytes",
+            Value::Array(vec![
+                Value::Text("ngspice".into()),
+                Value::Text("45".into()),
+                bytes(32),
+            ]),
+            "tool is not [name, version, [] or [sha256]]",
+        ),
+    ] {
+        let dir = commit_raw(
+            name,
+            &cbor::to_bytes(&header_with_tools(vec![entry])),
+            0,
+            [0; 32],
+        );
+        match replay_dir(&dir) {
+            Err(E::MalformedHeader(m)) => assert_eq!(m, reason, "{name}"),
+            other => panic!("{name}: {other:?}"),
+        }
+    }
+    let ok = cbor::to_bytes(&header_with_tools(vec![tool(
+        "ngspice",
+        "45",
+        &[bytes(32)],
+    )]));
+    let dir = commit_raw("tool-ok", &ok, 0, Sha256::digest(&ok).into());
+    assert!(replay_dir(&dir).is_ok());
+    // A hash naming no tool, or out of order, is refused by the header's check.
+    let mut h = synthetic::header(0x0400);
+    h.tools = vec![("a".into(), "1".into()), ("b".into(), "1".into())];
+    h.tool_sha256 = vec![("c".into(), [0; 32])];
+    assert_eq!(h.check(), Err("a tool hash names no tool of the header"));
+    h.tool_sha256 = vec![("b".into(), [0; 32]), ("a".into(), [0; 32])];
+    assert_eq!(h.check(), Err("tool hashes are not sorted by unique name"));
+    h.tool_sha256 = vec![("a".into(), [0; 32]), ("b".into(), [0; 32])];
+    assert_eq!(h.check(), Ok(()));
 }
 
 #[test]

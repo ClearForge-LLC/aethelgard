@@ -1,0 +1,8 @@
+
+main run 1 rc=0 wall_ms=9984
+main run 2 rc=0 wall_ms=8228
+main run 3 rc=0 wall_ms=6483
+branch run 1 rc=0 wall_ms=8160
+branch run 2 rc=0 wall_ms=8108
+branch run 3 rc=0 wall_ms=8059
+EXIT 0
