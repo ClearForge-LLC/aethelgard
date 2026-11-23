@@ -264,7 +264,7 @@ A specification's `mcu.reserved_pins` (`AET-WO-4300i` F7) join them in every bra
 
 ### FT at connectors
 
-A net some connector pin names is connector-facing (`AET-WO-4300i`, `4300h` D1 (a)). Every candidate list such a net walks is stably partitioned: the pins whose held structure (the MCU row's `io.pins`) is FT first, in their order, then the rest in theirs; a pin with no held structure counts as non-FT. That holds for a bus line's pins, a serial port's TX and RX pins, a motor output's timer channels, a `cs`, a battery sense and a pin device's ADC inputs and signals. The search is a depth-first search over fixed per-claimant orders, so a board whose first answer already sat on FT pins at its connectors finds the same answer; no committed board's pin moved (measured, `spike/4300i/out/pin-moves.tsv`). A hand pin there is `validate`'s step 26.
+A net some connector pin names is connector-facing (`AET-WO-4300i`, `4300h` D1 (a)). Every candidate list such a net walks is stably partitioned: the pins whose held structure (the MCU row's `io.pins`) is FT first, in their order, then the rest in theirs; a pin with no held structure counts as non-FT. That holds for a bus line's pins, a serial port's TX and RX pins, a motor output's timer channels, a `cs` and a pin device's ADC inputs and signals; a battery sense net is never a connector's (`ConnectorNetUnknown`), so its order is unchanged. The search is a depth-first search over fixed per-claimant orders, so a board whose first answer already sat on FT pins at its connectors finds the same answer; no committed board's pin moved (measured, `spike/4300i/out/pin-moves.tsv`). A hand pin there is `validate`'s step 26.
 
 ### Analog pads
 

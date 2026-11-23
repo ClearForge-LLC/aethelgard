@@ -629,7 +629,6 @@ fn solve_inner(
                 .filter(|(name, _)| !search.used.contains_key(name))
                 .copied()
                 .collect();
-            let free = ft.order(&s.net, free, |(n, _)| n);
             // ADC1 or ADC3 (`AET-WO-1211a`, `1211` Q8): a sense is never
             // pinned, so an ADC2-only pin is never its.
             let modelled = free
