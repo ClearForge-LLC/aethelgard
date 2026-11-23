@@ -236,9 +236,12 @@ Hand-run with the `reduction-pass` skill's four questions over the whole diff (`
 
 ## 9. Gates, merge and CI
 
-- **Main:** `fa9d7edd` is merged in, and main has not moved since (checked before the push).
-- **Gates on the pushed tree, on Furnace:**
+- **Main `d09a5187` merged in** (`29e105b3`), which brings 3307 (#341, `b22600d3`) and #343.
+  - The merge was clean.
+  - In evolve `tests/attribute.rs`, both changes stand: this work order's `a_register_with_nothing_observed_is_no_evidence` (L1585) and 3307's inverted BMP581 pin. Evolve passes 164 tests with 3307's new fixtures under the new rules.
+- **Gates on the merged tree, on Furnace:**
   - `cargo fmt --all -- --check`: clean;
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean;
-  - `cargo test --workspace`: **2,790 passed, 0 failed**. That is main's 2,784 plus the 6 new tests.
-- **CI:** runs on this head. Its run id and result are posted on the bus with READY. Nothing is pushed after this head, so CI judges the tree reviewed here.
+  - `cargo test --workspace`: **2,791 passed, 0 failed**.
+- **CI on the build before the merge** (`15d86a4b`, run 45097343930): every job green, including `gates`, all 12 tools shards and the `tools` aggregate, and `bench-package`. That was the first tier-2 run of these rules against real campaigns; nothing was refused, and no `fab/` byte moved.
+- **CI on this head:** its run id and result are posted on the bus with READY. Nothing is pushed after this head.
