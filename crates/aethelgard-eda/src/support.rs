@@ -19,7 +19,9 @@
 //! 5. the programming path: a declared connector carrying the nets of the
 //!    MCU's SWDIO and SWCLK pins, `GND` and the supply; whether NRST reaches
 //!    it too is recorded, not required (DS-009's debug ports carry none);
-//! 6. the declared supply source's pin on the supply.
+//! 6. the declared supply source's pin on the supply;
+//! 7. the crystal beside a declared one (`AET-WO-4240c`);
+//! 8. each motor output's declared pull-down (`AET-WO-4300i`).
 //!
 //! Each failure is a named finding. A netlist or board the gate cannot read
 //! is refused, never judged in part.
@@ -39,13 +41,15 @@ const CAPACITOR: &str = "Device:C";
 /// KiCad's prefix for a pin the schematic leaves unconnected.
 const UNCONNECTED: &str = "unconnected-";
 
-/// One component of the netlist: its value, its symbol (`lib:part`), and
-/// whether a property marks it unpopulated (`dnp`, `exclude_from_bom`,
+/// One component of the netlist: its value, its symbol (`lib:part`), its
+/// footprint (`lib:name`) when the netlist names one, and whether a
+/// property marks it unpopulated (`dnp`, `exclude_from_bom`,
 /// `exclude_from_board`: adversarial A4).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Component {
     pub value: String,
     pub symbol: Option<String>,
+    pub footprint: Option<String>,
     pub unpopulated: bool,
 }
 
@@ -109,6 +113,10 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
             Some(l) => Some(format!("{}:{}", text(&l, "lib")?, text(&l, "part")?)),
             None => None,
         };
+        let footprint = match comp.one("footprint").map_err(|r| r.to_string())? {
+            Some(_) => Some(text(&comp, "footprint")?.to_owned()),
+            None => None,
+        };
         let mut unpopulated = false;
         for p in comp.all("property") {
             if UNPOPULATED.contains(&text(&p, "name")?) {
@@ -120,6 +128,7 @@ pub fn netlist(tree: &Tree) -> Result<Netlist, String> {
             Component {
                 value: value.to_owned(),
                 symbol,
+                footprint,
                 unpopulated,
             },
         );
@@ -766,6 +775,8 @@ pub fn judge(spec: &Specification, netlist: &Netlist, board: &Board) -> Result<R
     };
     // 7. The crystal beside a declared one (`AET-WO-4240c` §1.3).
     crystal(spec, s, netlist, mcu, &mut fail)?;
+    // 8. Each motor output's declared pull-down (`AET-WO-4300i`).
+    motor_pulls(spec, netlist, &mut fail)?;
     let mut conditions: Vec<String> = s
         .capacitors
         .iter()
@@ -997,6 +1008,131 @@ fn crystal(
             fail(
                 "hse_load_capacitor_tolerance",
                 format!("{c} on `{net}` names a part whose tolerance its row does not state"),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Step 8 (`AET-WO-4300i`, ruled D0 `external`): each motor output's declared
+/// pull-down, judged from the netlist against its declaration alone. Its
+/// reference is a populated part of its row's symbol (`motor_pull_missing`);
+/// its two pins are on the output's label net and on `to`'s, and it has no
+/// other (`motor_pull_off_net`); its value is the declared resistance and
+/// part, `<ohms> <part>` (`motor_pull_value`); its footprint is the part
+/// row's (`motor_pull_footprint`); and it is the one resistor joining the two
+/// nets, since a second in parallel is another value (`motor_pull_count`).
+fn motor_pulls(
+    spec: &Specification,
+    netlist: &Netlist,
+    fail: &mut impl FnMut(&'static str, String),
+) -> Result<(), String> {
+    let table = power_parts::table().map_err(|e| e.to_string())?;
+    for m in &spec.motor_outputs {
+        let r = &m.pull.resistor;
+        let reference = r.reference.as_str();
+        // belt-and-suspenders: `validate` refuses a motor pull whose part
+        // the table lacks (`PowerPartUnknown`) before any gate reads it.
+        let row = table.get(&r.part).ok_or_else(|| {
+            format!(
+                "{}'s pull-down {reference} names `{}`, which the power parts table lacks",
+                m.label, r.part
+            )
+        })?;
+        // The label as the board names it; `to` is `GND` (`validate`'s
+        // `MotorPullNotDown`), a power net KiCad names by its value.
+        let (line, to) = (crate::extract::board_net(&m.label), r.to.as_str());
+        let joins = |c: &str| {
+            let pins: Vec<(&str, &str)> = netlist.pins_of(c).collect();
+            let mut want = [line.as_str(), to];
+            want.sort_unstable();
+            pins.iter().map(|(p, _)| *p).eq(["1", "2"]) && {
+                let mut have = [pins[0].1, pins[1].1];
+                have.sort_unstable();
+                have == want
+            }
+        };
+        let Some(c) = netlist
+            .components
+            .get(reference)
+            .filter(|c| c.symbol.as_deref() == Some(row.symbol.as_str()) && !c.unpopulated)
+        else {
+            fail(
+                "motor_pull_missing",
+                format!(
+                    "{}'s declared pull-down {reference} is not a populated `{}` in the netlist",
+                    m.label, row.symbol
+                ),
+            );
+            continue;
+        };
+        if !joins(reference) {
+            let on: Vec<String> = netlist
+                .pins_of(reference)
+                .map(|(p, n)| format!("pin {p} on `{n}`"))
+                .collect();
+            fail(
+                "motor_pull_off_net",
+                format!(
+                    "{}'s pull-down {reference} has {}, not one pin on `{line}` and one on `{to}`",
+                    m.label,
+                    if on.is_empty() {
+                        "no pin on a net".to_owned()
+                    } else {
+                        on.join(", ")
+                    }
+                ),
+            );
+        }
+        let value_ok = c
+            .value
+            .split_once(' ')
+            .is_some_and(|(token, part)| ohms(token) == Some(u64::from(r.ohms)) && part == r.part);
+        if !value_ok {
+            fail(
+                "motor_pull_value",
+                format!(
+                    "{}'s pull-down {reference} is `{}`, and it is declared {} ohm `{}`",
+                    m.label, c.value, r.ohms, r.part
+                ),
+            );
+        }
+        if c.footprint.as_deref() != Some(row.footprint.as_str()) {
+            fail(
+                "motor_pull_footprint",
+                format!(
+                    "{}'s pull-down {reference} has footprint {}, and its part `{}` is `{}`",
+                    m.label,
+                    c.footprint
+                        .as_deref()
+                        .map_or_else(|| "none".to_owned(), |f| format!("`{f}`")),
+                    r.part,
+                    row.footprint
+                ),
+            );
+        }
+        let parallel: Vec<&String> = netlist
+            .components
+            .iter()
+            .filter(|(q, x)| {
+                q.as_str() != reference
+                    && x.symbol.as_deref() == Some(row.symbol.as_str())
+                    && joins(q)
+            })
+            .map(|(q, _)| q)
+            .collect();
+        if !parallel.is_empty() {
+            fail(
+                "motor_pull_count",
+                format!(
+                    "{} also joins `{line}` to `{to}` beside {}'s pull-down {reference}",
+                    parallel
+                        .iter()
+                        .map(|q| q.as_str())
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                    m.label
+                ),
             );
         }
     }
