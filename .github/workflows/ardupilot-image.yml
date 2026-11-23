@@ -34,6 +34,7 @@ on:
     paths:
       - "container/ardupilot*"
       - "container/ARDUPILOT-IMAGE"
+      - "container/debian-trixie.sources"
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"
@@ -67,6 +68,7 @@ on:
     paths:
       - "container/ardupilot*"
       - "container/ARDUPILOT-IMAGE"
+      - "container/debian-trixie.sources"
       - "container/check-pins.sh"
       - "container/test-check-pins.sh"
       - "container/fixtures/check-pins/**"
@@ -261,6 +263,10 @@ jobs:
             spec: crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
           - board: serial-dshot-9600
             spec: crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json
+          # AET-WO-4408: SERIAL0-3 (console, GPS, CRSF, GPS), so the serial
+          # protocols and options reach unmodified ArduPilot and `check pinout`.
+          - board: four-port
+            spec: crates/aethelgard-cli/tests/fixtures/four-port.json
           # AET-WO-4400e §2: sentinel-02's committed hwdef without its IMU
           # line, for `foreign` only.
           - board: sentinel-02-noimu
@@ -362,6 +368,40 @@ jobs:
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --locked --manifest-path bridge/Cargo.toml"
       - name: the foreign judge passes ArduPilot and refuses each mutation by name
         run: $RUN --network none "$(cat container/IMAGE)" bash ci/foreign-judge.sh boards
+
+  # AET-WO-4408 (the Sentinel-01 review F7, INV-07): ST's pin table, the one
+  # source of every AF number and pad `verify`'s gates use, held against
+  # ArduPilot's STM32H753xx.py, the table the ArduPilot that `pinout` judges
+  # resolves hwdef.dat against. That file is GPL and never committed
+  # (ARDUPILOT-LICENSE.md): it is copied out of the pinned image, and the test
+  # refuses any file whose sha256 is not the one it pins. The DS12117 legs run
+  # in every `cargo test`.
+  pin-table:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: copy STM32H753xx.py out of the pinned ArduPilot image
+        run: |
+          pin=$(bash container/check-ardupilot-pin.sh container/ARDUPILOT-IMAGE)
+          docker pull -q "$pin"
+          docker run --rm --network none "$pin" \
+            cat /opt/ardupilot/libraries/AP_HAL_ChibiOS/hwdef/scripts/STM32H753xx.py > "$RUNNER_TEMP/STM32H753xx.py"
+      - run: rustup toolchain install && rustc --version
+      # The leg compiles only under this cfg (ci/shard.sh refuses an ignored
+      # test), so its ANSWER line is required: a run of nothing cannot pass.
+      - name: ST's pin table against ArduPilot's
+        env:
+          RUSTFLAGS: --cfg aethelgard_ardupilot
+          AETHELGARD_ARDUPILOT_AF_TABLE: ${{ runner.temp }}/STM32H753xx.py
+        run: |
+          rc=0
+          cargo test --locked -p aethelgard-svd-hal --test pin_table_sources ardupilot_leg -- --nocapture > "$RUNNER_TEMP/pin-table.log" 2>&1 || rc=$?
+          cat "$RUNNER_TEMP/pin-table.log"
+          [ "$rc" -eq 0 ]
+          grep -q '^ANSWER ardupilot shared=' "$RUNNER_TEMP/pin-table.log"
 
   cli:
     runs-on: ubuntu-latest

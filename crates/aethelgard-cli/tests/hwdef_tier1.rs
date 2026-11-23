@@ -1,4 +1,4 @@
-//! `AET-WO-4400b`: `generate hwdef` end to end on the three CI boards, the
+//! `AET-WO-4400b`: `generate hwdef` end to end on the CI boards, the
 //! committed topologies held to what `solve` gives today, the refusals a
 //! solved specification can reach, and D2's equality: the board crate's own
 //! speed choice equals the speed `solve` stored. No tool runs: each call has
@@ -17,9 +17,9 @@ fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
-/// The three CI boards: (fixture name in `aethelgard-hwdef/tests/fixtures`,
-/// specification).
-const BOARDS: [(&str, &str); 3] = [
+/// The four CI boards: (fixture name in `aethelgard-hwdef/tests/fixtures`,
+/// specification). `four-port` (`AET-WO-4408`) is the one with SERIAL1–3.
+const BOARDS: [(&str, &str); 4] = [
     ("sentinel-01", "examples/sentinel-01-minimal.json"),
     (
         "sentinel-02",
@@ -28,6 +28,10 @@ const BOARDS: [(&str, &str); 3] = [
     (
         "serial-dshot-9600",
         "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
+    ),
+    (
+        "four-port",
+        "crates/aethelgard-cli/tests/fixtures/four-port.json",
     ),
 ];
 
