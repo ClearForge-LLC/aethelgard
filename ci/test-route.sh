@@ -125,6 +125,46 @@ inv; printf 'demo\tgone\tdocs/a.md\t1\treads\n' >>ci/list.tsv
 expect "a row the inventory does not find is refused" refused "demo gone docs/a.md"
 inv; printf 'demo\treads\t../../docs/a.md\treads\n' >ci/list.tsv
 expect "a malformed row is refused" refused "want package<TAB>target<TAB>literal<TAB>occurrences<TAB>reads|cites"
+# AET-WO-1917 (4), the anchored reading: a literal with a format placeholder or a trailing "/" that holds a docs-only
+# anchor and matches a docs-only path, directory or name once each placeholder reads as any run of characters.
+winv() { inv; mkdir -p docs/work-orders docs/reviews fab/b; echo w >docs/work-orders/W.md; echo r >docs/reviews/R.md; echo o >fab/b/ORDER.md; }
+wplant() { printf 'fn f(x: &str) { let _ = %s; }\n' "$1" >crates/d/tests/w.rs; }
+wrefused() { # NAME RUST-EXPRESSION LITERAL
+  winv; wplant "$2"; expect "placeholder/slash: $1" refused "demo w $3"
+}
+wrefused "positional placeholder in a file name" 'format!("docs/work-orders/{}.md", x)' 'docs/work-orders/{}.md'
+wrefused "named placeholder in a file name" 'format!("docs/work-orders/{x}.md")' 'docs/work-orders/{x}.md'
+wrefused "placeholder as a directory" 'format!("docs/{}/W.md", x)' 'docs/{}/W.md'
+wrefused "placeholder after docs/" 'format!("docs/{}", x)' 'docs/{}'
+wrefused "prefix placeholder, docs/, placeholder" 'format!("{}/docs/{}.md", x, x)' '{}/docs/{}.md'
+wrefused "../../ then a placeholder" 'format!("../../docs/reviews/{}", x)' '../../docs/reviews/{}'
+wrefused "trailing slash on a docs directory" '"docs/reviews/"' 'docs/reviews/'
+wrefused "trailing slash on docs" '"docs/"' 'docs/'
+wrefused "../../ and a trailing slash" '"../../docs/work-orders/"' '../../docs/work-orders/'
+wrefused "fab directory with a placeholder" 'format!("fab/{}/ORDER.md", x)' 'fab/{}/ORDER.md'
+wrefused "fab directory, trailing slash" '"fab/b/"' 'fab/b/'
+wrefused "placeholder stem of a root document" 'format!("{}.md", x)' '{}.md'
+wrefused "README with a placeholder suffix" 'format!("README{}", x)' 'README{}'
+wrefused "placeholders around a slash, anchored by .md" 'format!("{}/{}.md", x, x)' '{}/{}.md'
+wrefused "a debug placeholder" 'format!("docs/{:?}", x)' 'docs/{:?}'
+wrefused "a placeholder crossing a slash" 'format!("docs/{}.md", x)' 'docs/{}.md'
+wrefused "a trailing slash run" '"docs//"' 'docs//'
+winv; wplant 'format!("{}/{}", x, x)'; expect "an unanchored all-placeholder path is not reported" ok
+winv; wplant '"{}"'; expect "a bare placeholder is not reported" ok
+winv; wplant '"FAB-NOTES.md states {want}"'; expect "anchored by .md but matching no docs-only path is not reported" ok
+winv; wplant 'format!("crates/d/{}", x)'; expect "an unanchored crate path with a placeholder is not reported" ok
+winv; wplant '"crates/d/src/"'; expect "a trailing slash on a non-docs directory is not reported" ok
+winv; wplant '"docs{{x}}"'; expect "escaped braces beside docs are not a placeholder" ok
+winv; wplant '"docs/a{{}}.md/"'; expect "escaped braces read as literal braces, not dropped (docs/a.md is not named)" ok
+winv; wplant '"docs/a{{x}}.md/"'; expect "escaped braces read as literal braces, not a placeholder run" ok
+wrefused "a document name matched by its basename only" 'format!("W{}.md", x)' 'W{}.md'
+wrefused "a root name stem matched by the bare name only" 'format!("LICENSE{}", x)' 'LICENSE{}'
+winv; wplant '"docs/a.md{{/"'; expect "an escaped open brace is a brace, not dropped" ok
+winv; wplant '"docs/a.md}}/"'; expect "an escaped close brace is a brace, not dropped" ok
+winv; wplant 'format!("rs/W.md{}", x)'; expect "a match must start at the literal's start (not a suffix of a path)" ok
+winv; wplant '"docs/a.m/"'; expect "a match must reach the literal's end (not a prefix of a path)" ok
+winv; wplant '"docs/.{x}"'; expect "regex metacharacters in a literal are matched literally (a dot is not any character)" ok
+
 inv; git_ rm -q docs/a.md README.md
 expect "a tree with no docs-only file is refused" refused "no docs-only file"
 
