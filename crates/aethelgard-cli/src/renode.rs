@@ -4520,7 +4520,7 @@ mod tests {
     fn no_judge_reads_the_dwt() {
         let image = image();
         let p = plan(&image, &[]);
-        for c in [p.commands(), foreign::commands(&p, &[]).unwrap()] {
+        for c in [p.commands(), foreign::commands(&p, &[], &[]).unwrap()] {
             assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
             for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
                 if let Some(hex) = word.strip_prefix("0x") {
@@ -6051,9 +6051,38 @@ mod tests {
             ..serial_plan(&image, &[], &serial)
         };
         assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
-        let foreign = foreign::commands(&plan(&image, &[]), &[]).unwrap();
+        let foreign = foreign::commands(&plan(&image, &[]), &[], &[]).unwrap();
         assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
         assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
+    }
+
+    /// `AET-WO-2311` D2: a foreign boot logs each declared port's USART's
+    /// accesses from before the run, and reads each serial pin's `PUPDR`
+    /// between the markers; with no port, neither.
+    #[test]
+    fn a_foreign_boot_logs_the_usarts_and_reads_the_pulls() {
+        let image = image();
+        let path =
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/four-port.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let serial = aethelgard_twin::serial::options(&topology).unwrap();
+        let c = foreign::commands(&plan(&image, &[]), &[], &serial).unwrap();
+        let (run, begin) = (c.find("emulation RunFor").unwrap(), c.find(BEGIN).unwrap());
+        for u in ["usart1", "usart2", "usart3", "uart4"] {
+            let log = format!("sysbus LogPeripheralAccess sysbus.{u} true");
+            assert_eq!(c.matches(&log).count(), 1, "{u}");
+            assert!(c.find(&log).unwrap() < run, "{u}");
+        }
+        for pupdr in ["0x5802000c", "0x5802040c"] {
+            let read = format!("sysbus ReadDoubleWord {pupdr}");
+            assert_eq!(c.matches(&read).count(), 1, "{pupdr}");
+            assert!(c.find(&read).unwrap() > begin, "{pupdr}");
+        }
+        let none = foreign::commands(&plan(&image, &[]), &[], &[]).unwrap();
+        assert!(!none.contains("LogPeripheralAccess sysbus.usart"), "{none}");
     }
 
     /// `AET-WO-4240v` §1.4 and §1.6, through `judge_boot` whole: the
