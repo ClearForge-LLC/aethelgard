@@ -1940,9 +1940,6 @@ mod tests {
         assert!(r >= narrow, "{r} under the etched track's exact {narrow}");
     }
 
-    /// Two vias carry the current down to B.Cu and back: the bound holds
-    /// above the tracks' bars and both barrels at their shortest, and not
-    /// far above.
     /// `AET-WO-1323` D5: the pins bounded on threads are the serial pins,
     /// byte for byte, in the same order, at every thread count: each pin's
     /// whole result (bound, fluxes, shares, via transfers, or refusal) as
@@ -1998,6 +1995,9 @@ mod tests {
         }
     }
 
+    /// Two vias carry the current down to B.Cu and back: the bound holds
+    /// above the tracks' bars and both barrels at their shortest, and not
+    /// far above.
     #[test]
     fn a_path_through_two_vias_is_bounded_above_its_floor() {
         let b = board(vec![

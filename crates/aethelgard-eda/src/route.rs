@@ -1683,8 +1683,9 @@ impl<'a> Router<'a> {
     }
 
     /// Takes off every end of `net`'s copper that lies in none of its pads
-    /// (a node met by one edge, with no via), until none is left; true if
-    /// any was. The maps are the caller's to rebuild ([`Router::remap`]).
+    /// and is no escape's far end (a node met by one edge, with no via),
+    /// until none is left; true if any was. The maps are the caller's to
+    /// rebuild ([`Router::remap`]).
     fn prune(&mut self, net: usize) -> bool {
         let reach: Vec<Rect> = self
             .board
@@ -1693,6 +1694,13 @@ impl<'a> Router<'a> {
             .flat_map(|p| &p.pads)
             .filter(|p| p.net.as_deref() == Some(self.nets[net].as_str()))
             .map(|p| p.reach())
+            .collect();
+        // An escaped pad is joined at its escape's end, off the pad.
+        let escaped: BTreeSet<usize> = self
+            .escapes
+            .values()
+            .filter(|e| e.net == net)
+            .map(|e| e.end)
             .collect();
         let mut any = false;
         loop {
@@ -1709,6 +1717,7 @@ impl<'a> Router<'a> {
                         let (x, y) = self.grid.at(n);
                         d == 1
                             && !self.vias.contains_key(&n)
+                            && !escaped.contains(&n)
                             && !reach.iter().any(|r| r.contains(Rect::point(x, y)))
                     })
                     .map(|(n, _)| n)
@@ -5808,6 +5817,58 @@ mod tests {
             }
         }
         assert!(routed > 0);
+    }
+
+    /// D4, the adversarial pass's A1: a pair whose pads the grid cannot
+    /// reach is joined at each escape's far end, outside the pad; `prune`
+    /// keeps that end, as it keeps an end in a pad. Two SOIC-like parts,
+    /// 8 pads a side at 0.4 mm, 0.15 mm wide, `/P` and `/N` two pads apart.
+    #[test]
+    fn a_pair_on_escaped_pads_keeps_its_breakouts() {
+        let side = |k: usize| match k {
+            2 => Some("/P"),
+            4 => Some("/N"),
+            _ => None,
+        };
+        let soic = |reference: &str, cx: i64, nets: [fn(usize) -> Option<&'static str>; 2]| {
+            let mut pads = Vec::new();
+            for (col, net) in [-1, 1].into_iter().zip(nets) {
+                for k in 0..8 {
+                    let (x, y) = (cx + col * 2 * MM, 6 * MM + k as i64 * 400_000 - 1_400_000);
+                    let number = (pads.len() + 1).to_string();
+                    pads.push(pad(
+                        &number,
+                        net(k),
+                        rect(x - MM / 2, y - 75_000, x + MM / 2, y + 75_000),
+                    ));
+                }
+            }
+            Part {
+                rotation: 0,
+                reference: reference.into(),
+                pads,
+                courtyard: Vec::new(),
+                keepouts: Vec::new(),
+            }
+        };
+        let none: fn(usize) -> Option<&'static str> = |_| None;
+        let mut stack = crate::stack::reference();
+        stack.pairs.push(crate::stack::Pair {
+            name: "X".into(),
+            nets: ["/P".into(), "/N".into()],
+            gap_nm: 300_000,
+            width_nm: 200_000,
+        });
+        let board = Board {
+            outline: rect(0, 0, 24 * MM, 12 * MM),
+            parts: vec![
+                soic("A", 5 * MM, [none, side]),
+                soic("B", 19 * MM, [side, none]),
+            ],
+            stack,
+        };
+        let routed = route(&board).unwrap();
+        connectivity(&board, &routed).unwrap();
     }
 
     /// D4: the pairs' copper is judged right after the pair loop. Here the

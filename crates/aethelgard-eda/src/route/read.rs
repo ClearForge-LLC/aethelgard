@@ -263,26 +263,26 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
     for z in fp.all("zone") {
         keepouts.push(keepout(&z, &named)?);
     }
+    let part = Part {
+        reference,
+        rotation: theta,
+        pads,
+        courtyard,
+        keepouts,
+    };
     // A footprint's keepout is its own part's (`AET-WO-1323` D3, `1310`
     // A7): wholly inside its courtyard outline or its pad field, edges
     // included. One moved off its part would have `check` judge copper by a
     // zone that is not where the part is.
-    let field = pads.iter().map(|p| p.rect).reduce(Rect::union);
-    for k in &keepouts {
-        if !field.is_some_and(|f| f.contains(k.rect)) && !held(&courtyard, k.rect) {
+    for k in &part.keepouts {
+        if !field(&part).is_some_and(|f| f.contains(k.rect)) && !held(&part.courtyard, k.rect) {
             return Err(format!(
                 "{named}'s keepout on {} lies outside its own courtyard and pad field",
                 k.layer.name()
             ));
         }
     }
-    Ok(Part {
-        reference,
-        rotation: theta,
-        pads,
-        courtyard,
-        keepouts,
-    })
+    Ok(part)
 }
 
 /// Whether the box `r` lies wholly inside the closed outline `edges`, its
