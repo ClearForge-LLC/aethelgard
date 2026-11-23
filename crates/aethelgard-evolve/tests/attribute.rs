@@ -2388,7 +2388,8 @@ fn a_collide_onto_a_bmp581_is_software_by_its_witness() {
 
 /// `AET-WO-3307` §5, targeted: a BMP581 witness reads only its own model's
 /// lines, whole. U5's identity witness on two-bme with U5 a BMP581: our
-/// model's line with a wrong register or value is the software's. Every
+/// model's line with a wrong register or value is the software's, and a
+/// read too wide to judge still shows its pointer (adversarial 2). Every
 /// other line is none it reads, so the witness shows nothing wrong, each
 /// line below carrying a wrong register or value: a line another model
 /// writes (the ICM42688P's `bank 0` line, the BME280's `Write`/`Read`), a
@@ -2422,12 +2423,26 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
             .collect()
     };
     assert!(wrong("[NOISY] i2c1.u5: read 0x01 -> 0x50").is_empty());
+    assert_eq!(
+        shown("[NOISY] i2c1.u5: read 0x01 -> 0x51 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00")
+            .into_iter()
+            .map(|f| (f.3, f.4))
+            .collect::<Vec<_>>(),
+        [(None, false), (Some(0x01), false), (None, false)],
+        "the pointer of a read too wide to judge, and no value"
+    );
     for (line, field, observed) in [
         ("[NOISY] i2c1.u5: read 0x01 -> 0x51", "Read", 0x51),
         ("[NOISY] i2c1.u5: read 0x02 -> 0x50", "Write", 0x02),
         ("[NOISY] i2c1.u5: write 0x02 <- (none)", "Write", 0x02),
         // A write of 0x01 then 0x50, shown under the step's one-byte mask.
         ("[NOISY] i2c1.u5: write 0x01 <- 0x50", "Write", 0x50),
+        // Adversarial 2: a read too wide to judge keeps its pointer.
+        (
+            "[NOISY] i2c1.u5: read 0x02 -> 0x50 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
+            "Write",
+            0x02,
+        ),
     ] {
         assert_eq!(
             wrong(line),
@@ -2461,7 +2476,6 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
         "[NOISY] i2c1.u5: read 0x02 <- 0x50",
         "[NOISY] i2c1.u5: write 0x02 -> 0x50",
         "[NOISY] i2c1.u5: Read 0x01 -> 0x51",
-        "[NOISY] i2c1.u5: read 0x01 -> 0x51 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
         "[NOISY] i2c1.u5: write 0x02 <- 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
     ] {
         let f = shown(line);

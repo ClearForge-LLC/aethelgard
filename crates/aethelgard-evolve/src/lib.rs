@@ -684,7 +684,7 @@ fn packed(bytes: &[u8]) -> Option<(u64, usize)> {
 /// 0xRR <- 0xBB …`, or `<- (none)`, writes the pointer and the bytes after
 /// it; `read 0xRR -> 0xVV …` writes the pointer and reads the bytes. Each
 /// byte is `0x` and two upper-case digits, as `Join` writes it, and the
-/// pointer is the model's, 7 bits. `what` is `Write` or `Read`, as for
+/// pointer is the model's, 7 bits; a line that is not so says nothing. `what` is `Write` or `Read`, as for
 /// [`witness_bytes`]; `None` for any other line.
 fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     let byte = |t: &str| {
@@ -704,18 +704,14 @@ fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
     };
     let (written, read) = match (verb, arrow) {
         ("write", "<-") => ([&[pointer], &bytes[..]].concat(), None),
-        ("read", "->") => (vec![pointer], Some(bytes)),
+        ("read", "->") if !bytes.is_empty() => (vec![pointer], Some(bytes)),
         _ => return None,
     };
-    // Whole or not at all: a line whose bytes do not fit says nothing.
-    let written = packed(&written)?;
-    let read = match read {
-        Some(bytes) => Some(packed(&bytes)?),
-        None => None,
-    };
+    // A read too wide to hold says nothing of its value, but its pointer
+    // stands, as the `Write` line of the other form does (adversarial 2).
     match what {
-        "Write" => Some(written),
-        "Read" => read,
+        "Write" => packed(&written),
+        "Read" => packed(&read?),
         _ => None,
     }
 }
