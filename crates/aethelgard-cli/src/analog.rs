@@ -71,7 +71,7 @@ impl Pass {
 /// its own package; a test recomputes it from the bridge's files on disk, so
 /// an edit to the bridge fails the build's tests until this is updated with it.
 pub const BRIDGE_SOURCE_SHA256: &str =
-    "2e95092a66cd337a764c741b2c88f950056684fd14a128126a23f50bf249cc2f";
+    "aacbc9b5cd6835e26c0ae27f75b3bc674031519cefc9d364d32a6b49ce2d7808";
 
 /// The bridge's identity, as [`identified`] accepted it.
 #[derive(Debug, PartialEq)]
@@ -1304,23 +1304,37 @@ mod tests {
                 Identity {
                     version: "0.1.0".to_owned(),
                     source_sha256: me.to_owned(),
-                    ngspice: None
+                    ngspice: None,
+                    ngspice_library_sha256: None,
                 },
                 "rest\n"
             )
         );
-        // `AET-WO-1606`: a run that started the library names its banner.
+        // `AET-WO-1606`: a run that started the library names its banner;
+        // `AET-WO-2310`: and the file it was mapped from, whose bytes the CLI
+        // hashes. This test binary stands in for the library's file.
+        let file = std::fs::canonicalize(std::env::current_exe().unwrap()).unwrap();
+        let library = file.to_str().unwrap();
+        let want: String = {
+            use sha2::{Digest, Sha256};
+            Sha256::digest(std::fs::read(&file).unwrap())
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
         let loaded = format!(
-            r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","source_sha256":"{me}","version":"0.1.0"}}"#
+            r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","ngspice_library":"{library}","source_sha256":"{me}","version":"0.1.0"}}"#
         );
         assert_eq!(
             identified(&format!("{loaded}\nrest\n")).unwrap().0,
             Identity {
                 version: "0.1.0".to_owned(),
                 source_sha256: me.to_owned(),
-                ngspice: Some("44.2".to_owned())
+                ngspice: Some("44.2".to_owned()),
+                ngspice_library_sha256: Some(want.clone()),
             }
         );
+
         // A run that answered must have named its ngspice; nothing stands in.
         let bare = identified(&format!("{ok}\n")).unwrap().0;
         assert_eq!(bare.ran().unwrap_err().kind, "ToolError");
@@ -1333,6 +1347,25 @@ mod tests {
             // A release without its banner, or a banner without its release.
             loaded.replace(r#""ngspice":"44.2","#, ""),
             loaded.replace(r#""ngspice_banner":"** ngspice-44.2 shared library","#, ""),
+            // `AET-WO-2310`: a library named without its file, or a file that is
+            // not an absolute, canonical path to a regular file.
+            loaded.replace(&format!(r#""ngspice_library":"{library}","#), ""),
+            loaded.replace(library, "libngspice.so.0"),
+            loaded.replace(library, "/nonexistent/libngspice.so.0"),
+            loaded.replace(library, "/tmp"),
+            loaded.replace(
+                library,
+                &format!(
+                    "{}/../{}",
+                    file.parent().unwrap().display(),
+                    file.parent()
+                        .unwrap()
+                        .file_name()
+                        .unwrap()
+                        .to_str()
+                        .unwrap()
+                ),
+            ),
             String::new(),
             "rest".to_owned(),
             ok.replace(me, &"0".repeat(64)),

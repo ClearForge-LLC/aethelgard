@@ -51,6 +51,26 @@ fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
+/// The stub Renode's boot word: instruction 2575 of its transcript
+/// ([`injection`]), 25,750 ns.
+const STUB_BOOT_WORD_NS: i64 = 25_750;
+/// [`stub_droop`]'s file, in every [`Work`] directory.
+const STUB_DROOP: &str = "droop-bor3.json";
+
+/// `scenarios/sentinel-01/droop-bor3.json` planted for the stub's boot
+/// (`AET-WO-2310`): its droop placed from the boot word the stub writes, so
+/// it lands where the twin's lands from the twin's, at 1 ms from reset, the
+/// instant the stub's transcripts are cut at; its base the [`Work`]'s copy.
+fn stub_droop() -> Vec<u8> {
+    let mut v: Value = serde_json::from_slice(
+        &fs::read(root().join("scenarios/sentinel-01/droop-bor3.json")).unwrap(),
+    )
+    .unwrap();
+    v["base"] = "spec.json".into();
+    v["overrides"][0]["droop"]["from_boot_word_ns"] = (1_000_000 - STUB_BOOT_WORD_NS).into();
+    serde_json::to_vec_pretty(&v).unwrap()
+}
+
 fn spec_bytes() -> Vec<u8> {
     fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap()
 }
@@ -462,6 +482,7 @@ impl Work {
     fn new() -> Work {
         let dir = Dir::new("work");
         dir.write("spec.json", &spec_bytes());
+        dir.write(STUB_DROOP, &stub_droop());
         let firmware = dir.write("fw.elf", &elf());
         let archive = dir.0.join("archive");
         Work {
@@ -2483,8 +2504,8 @@ fn a_droop_scenario_renders_its_reset_through_the_bridge_in_one_command_line() {
     let out = campaign(
         &cli(Some(DROOP_BRIDGE)),
         &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.dir.0,
+        &[STUB_DROOP],
         &work.firmware,
         &archive.0.join("a"),
     );
@@ -2530,8 +2551,8 @@ fn a_firmware_that_does_not_recover_in_the_bound_fails_and_replays() {
     let out = campaign(
         &cli(Some(DROOP_BRIDGE)),
         &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.dir.0,
+        &[STUB_DROOP],
         &work.firmware,
         &archive.0.join("a"),
     );
@@ -2631,8 +2652,8 @@ fn a_record_that_claims_ok_without_the_device_logging_a_transfer_is_unrecovered(
         let out = campaign(
             &cli(Some(DROOP_BRIDGE)),
             &tb.0,
-            &root(),
-            &["scenarios/sentinel-01/droop-bor3.json"],
+            &work.dir.0,
+            &[STUB_DROOP],
             &work.firmware,
             &archive.0.join("a"),
         );
@@ -2700,8 +2721,8 @@ fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
     let out = campaign(
         &cli(Some(DROOP_BRIDGE)),
         &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.dir.0,
+        &[STUB_DROOP],
         &work.firmware,
         &archive.0.join("a"),
     );
@@ -3111,8 +3132,8 @@ fn a_release_too_late_for_the_serial_injection_is_refused_by_name() {
     let out = campaign(
         &cli(Some(LATE_DROOP_BRIDGE)),
         &tb.0,
-        &root(),
-        &["scenarios/sentinel-01/droop-bor3.json"],
+        &work.dir.0,
+        &[STUB_DROOP],
         &work.firmware,
         &archive.0.join("a"),
     );

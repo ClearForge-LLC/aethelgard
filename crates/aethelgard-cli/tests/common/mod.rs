@@ -304,12 +304,25 @@ pub mod verify;
 
 /// The identity line the bridge built from this tree prints first in a run
 /// that started the pinned libngspice (`AET-WO-2200` F15, `bridge/build.rs`,
-/// `AET-WO-1606`), so a stub bridge can be the one the CLI expects.
+/// `AET-WO-1606`), so a stub bridge can be the one the CLI expects. Its
+/// `ngspice_library` (`AET-WO-2310`) is [`bridge_library`], whose bytes the
+/// CLI hashes into the header.
 pub fn bridge_identity() -> String {
     format!(
-        r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","source_sha256":"{}","version":"0.1.0"}}"#,
+        r#"{{"bridge":"aethelgard-bridge","ngspice":"44.2","ngspice_banner":"** ngspice-44.2 shared library","ngspice_library":"{}","source_sha256":"{}","version":"0.1.0"}}"#,
+        bridge_library().display(),
         bridge_digest()
     )
+}
+
+/// The file a stub bridge names as its mapped libngspice: a fixed file of
+/// this tree (the vendored header), canonical, so its sha256 is stable.
+pub fn bridge_library() -> PathBuf {
+    std::fs::canonicalize(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../bridge/vendor/ngspice-44.2/sharedspice.h"),
+    )
+    .expect("the vendored header")
 }
 
 /// The identity line of a run that started no library: a refusal, or
