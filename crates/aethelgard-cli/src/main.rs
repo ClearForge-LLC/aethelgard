@@ -2059,10 +2059,18 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         booted_is_emitted(&booted.path, r, pass)?;
     }
     let foreign = ready.as_ref().and_then(|r| r.foreign.as_ref());
+    // Each declared serial port's CR2 options, from the topology alone
+    // (`AET-WO-2311`, `INV-07`).
+    let foreign_serial = match (&ready, foreign) {
+        (Some(r), Some(_)) => aethelgard_twin::serial::options(&r.topology).map_err(twin_stop)?,
+        _ => Vec::new(),
+    };
     let commands = match (&plan, foreign) {
-        (Some(plan), Some(_)) => {
-            renode::foreign::commands(plan, &ready.as_ref().expect("foreign is ready's").flash)?
-        }
+        (Some(plan), Some(_)) => renode::foreign::commands(
+            plan,
+            &ready.as_ref().expect("foreign is ready's").flash,
+            &foreign_serial,
+        )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
     };
@@ -2134,6 +2142,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 &parts,
                 &r.flash,
                 r.topology.clock.hse_hz,
+                &foreign_serial,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))

@@ -2573,18 +2573,32 @@ fn foreign_transcript_flash(run_log: &str, icsr: &str, flash: &str) -> String {
     foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_AT_RESET)
 }
 
+/// The reference board's CONSOLE (USART1) as unmodified ArduPilot brings it
+/// up in the access log (`AET-WO-2311`, `spike/2311/out/m4`): `CR2` with
+/// `UE` clear, then `CR1` with `UE`. Every foreign transcript starts with it,
+/// so its serial options hold unless a test plants a word after it.
+const CONSOLE_BRINGUP: &str = "[00:00:00.003200000] [INFO] usart1: [cpu: 0x80FDE5C] WriteUInt32 to 0x4 (ControlRegister2), value 0x40\n\
+[00:00:00.003200000] [INFO] usart1: [cpu: 0x80FDE6E] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000013D\n";
+
+/// GPIOA's `PUPDR` as unmodified ArduPilot leaves it: PA9 and PA10, the
+/// CONSOLE's TX and RX, pulled up; read after the RCC registers.
+const CONSOLE_PULLS: &str = "0x00140000";
+
 /// A foreign transcript whose RCC registers read back as `rcc`.
 fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6]) -> String {
     let mut s = String::from(
         "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
     );
+    s.push_str(CONSOLE_BRINGUP);
     s.push_str(run_log);
     s.push_str("AETHELGARD-BOOT-BEGIN\n");
     // Then the RCC registers the clock check reads (`AET-WO-4400g`).
+    // Then each serial line's `PUPDR` (`AET-WO-2311`).
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
         .chain(GOOD_REGISTERS.iter())
         .chain(rcc.iter())
+        .chain([CONSOLE_PULLS].iter())
     {
         s.push_str(r);
         s.push('\n');
@@ -2707,6 +2721,61 @@ fn a_foreign_boot_no_model_witnesses_fails_by_name() {
         kinds(&v).contains(&"i2c_transaction_unwitnessed".to_owned()),
         "{v}"
     );
+}
+
+/// `AET-WO-2311`: the CONSOLE's serial options are judged from its access
+/// log, end to end: its pulls are info and named in `boot.serial_pulls`,
+/// and a planted `CR2` word with SWAP, written with `UE` clear, fails by name.
+#[test]
+fn a_foreign_boot_judges_the_serial_options_and_reports_the_pulls() {
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    let b = &v["boot"];
+    assert_eq!(b["serial_options"][0]["label"], "CONSOLE", "{v}");
+    assert_eq!(b["serial_options"][0]["judged"], "0x00000040", "{v}");
+    assert_eq!(b["serial_options"][0]["judged_ns"], 3_200_000, "{v}");
+    assert_eq!(
+        b["serial_options"][0]["expected"][0]["field"], "SWAP",
+        "{v}"
+    );
+    assert_eq!(
+        b["serial_options"][0]["expected"][0]["expected"], "clear",
+        "{v}"
+    );
+    let pulls: Vec<(String, String)> = b["serial_pulls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            (
+                p["pin"].as_str().unwrap().into(),
+                p["pupdr"].as_str().unwrap().into(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        pulls,
+        [
+            ("PA9".into(), "pull-up".into()),
+            ("PA10".into(), "pull-up".into())
+        ]
+    );
+    let info: Vec<_> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "serial_pull")
+        .collect();
+    assert_eq!(info.len(), 2, "{v}");
+    assert!(info.iter().all(|f| f["severity"] == "info"), "{v}");
+    let swap = "[00:00:00.060000000] [INFO] usart1: [cpu: 0x80F6AF2] WriteUInt32 to 0x0 (ControlRegister1), value 0x10C\n\
+[00:00:00.060000000] [INFO] usart1: [cpu: 0x80FDE5C] WriteUInt32 to 0x4 (ControlRegister2), value 0x8040\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{swap}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["serial_swap_set"], "{v}");
 }
 
 /// D4 (ruled on PR #215; its evidence narrowed by D7 (b), PR #212): the SPI
