@@ -89,13 +89,25 @@ struct Within {
     parent: Option<Rc<Within>>,
 }
 
+/// The most bytes a rendered chain of carriers writes before it counts the
+/// rest: each label is bounded ([`strict::shown`]), and so is their sum
+/// (`AET-WO-1322` adversarial B1: 250 nested footprints, each a bounded
+/// label, wrote 130 kB).
+const MAX_CHAIN_BYTES: usize = 4 * strict::MAX_ECHO_BYTES;
+
 /// `within` as a refusal names it, such as `pad 2 of footprint R7`; empty
-/// for an item at the top level.
+/// for an item at the top level. Past [`MAX_CHAIN_BYTES`] the carriers left
+/// are counted, never written.
 fn render(within: Option<&Within>) -> String {
     let mut out = String::new();
     let mut at = within;
     while let Some(w) = at {
         if !out.is_empty() {
+            if out.len() + w.label.len() > MAX_CHAIN_BYTES {
+                let more = std::iter::successors(Some(w), |w| w.parent.as_deref()).count();
+                out.push_str(&format!(" of … ({more} more carriers)"));
+                break;
+            }
             out.push_str(" of ");
         }
         out.push_str(&w.label);
@@ -428,6 +440,28 @@ mod tests {
                 Err(BoardRefusal::LocalClearance(at.to_owned())),
                 "{board}"
             );
+        }
+    }
+
+    /// `AET-WO-1322` adversarial B1: a chain of carriers is bounded whole,
+    /// not only label by label. 250 nested footprints, each named by a
+    /// 10 kB reference or by `R1`, give an id under 1 kB that names the
+    /// nearest carriers and counts the rest.
+    #[test]
+    fn a_deep_chain_of_carriers_is_bounded_whole() {
+        for reference in ["N".repeat(10_000), "R1".to_owned()] {
+            let open = format!("(footprint \"X\" (property \"Reference\" \"{reference}\") ");
+            let board = format!(
+                "(kicad_pcb {}(clearance 0.1){})",
+                open.repeat(250),
+                ")".repeat(250)
+            );
+            let e = prepare(&board, SETUP).unwrap_err();
+            let id = e.id().unwrap_or_else(|| panic!("{e:?}"));
+            assert!(id.len() < 1024, "{} bytes", id.len());
+            assert!(id.starts_with("footprint "), "{id}");
+            assert!(id.ends_with(" more carriers)"), "{id}");
+            assert!(e.to_string().len() < 1200);
         }
     }
 }

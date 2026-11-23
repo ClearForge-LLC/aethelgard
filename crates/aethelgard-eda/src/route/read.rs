@@ -758,11 +758,6 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
             .all("footprint")
             .map(|fp| fp.all("pad").count())
             .sum::<usize>();
-    if items > MAX_ITEMS {
-        return Err(format!(
-            "the board holds {items} copper items (pads, tracks and vias); the judges read at most {MAX_ITEMS}"
-        ));
-    }
     let mut edges = Vec::new();
     for r in board.all("gr_rect") {
         if one(&r, "layer")?.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {
@@ -788,7 +783,7 @@ pub fn read(tree: &Tree, stack: &crate::stack::Stack) -> Result<(Board, Routed),
         .sum::<usize>();
     if items + rest > MAX_ITEMS {
         return Err(format!(
-            "the board holds {items} copper items and {rest} courtyard edges and keepouts, which `check` also scans: {} items; the judges read at most {MAX_ITEMS}",
+            "the board holds {items} copper items (pads, tracks and vias) and {rest} courtyard edges and keepouts, which `check` also scans: {} items; the judges read at most {MAX_ITEMS}",
             items + rest
         ));
     }

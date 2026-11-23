@@ -7,7 +7,7 @@
 # Usage: mutants.sh <branch tree (pristine)> <scratch dir> [ids...]
 set -uo pipefail
 src=$1 scratch=$2; shift 2
-ids=${*:-B1 B2 B3 K1 K2 E1 E2 S1 R1 R2 C1 C2 D1 X1 L1 I1 P1 N1}
+ids=${*:-B1 B2 B3 B4 K1 K2 E1 E2 S1 R1 R2 C1 C2 D1 X1 L1 I1 P1 N1}
 bad=0
 mkdir -p "$scratch"
 for m in $ids; do
@@ -26,6 +26,9 @@ M = {
     # (3) board.rs names: the reference unbounded.
     "B2": (E + "board.rs", 'Some(format!("footprint {}", shown(reference)))',
            'Some(format!("footprint {reference}"))', lib + "strict::tests::a_long_name_reaches_no_refusal_whole"),
+    # (3) board.rs: the chain of carriers unbounded.
+    "B4": (E + "board.rs", "            if out.len() + w.label.len() > MAX_CHAIN_BYTES {", "            if false {",
+           lib + "board::tests::a_deep_chain_of_carriers_is_bounded_whole"),
     # (3) board.rs: the net class unbounded.
     "B3": (E + "board.rs", "                    strict::shown(class)\n", "                    class\n",
            lib + "strict::tests::a_long_name_reaches_no_refusal_whole"),

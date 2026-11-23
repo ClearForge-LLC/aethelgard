@@ -5246,9 +5246,9 @@ mod tests {
         }
     }
 
-    /// `AET-WO-1311` §1.2: `read` takes at most [`MAX_ITEMS`] copper items,
-    /// pads included; one more is refused before any is read. Since
-    /// `AET-WO-1322` the footprint's four courtyard edges count too.
+    /// `AET-WO-1311` §1.2: `read` takes at most [`MAX_ITEMS`] items, pads
+    /// included; one more is refused. Since `AET-WO-1322` the footprint's
+    /// four courtyard edges and a keepout count too.
     #[test]
     fn a_board_past_the_item_cap_is_refused() {
         let keepout = "(zone (layer \"F.Cu\") (keepout (tracks not_allowed) (vias not_allowed) (pads not_allowed) (copperpour not_allowed) (footprints allowed)) (polygon (pts (xy 4 4) (xy 6 4) (xy 6 6) (xy 4 6))))";
@@ -5275,7 +5275,7 @@ mod tests {
         let e = read_ref(&board(2, MAX_ITEMS - 5)).unwrap_err();
         assert!(
             e.contains(&format!(
-                "{} copper items and 4 courtyard edges and keepouts, which `check` also scans: {} items",
+                "{} copper items (pads, tracks and vias) and 4 courtyard edges and keepouts, which `check` also scans: {} items",
                 MAX_ITEMS - 3,
                 MAX_ITEMS + 1
             )),
