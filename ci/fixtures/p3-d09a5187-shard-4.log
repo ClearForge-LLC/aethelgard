@@ -1,0 +1,751 @@
+1795400785.833497	     Running unittests src/lib.rs (target/debug/deps/aethelgard_chaos-d83ecbf1e34585b5)
+1795400785.834784	running 1 test
+1795400785.835715	test power::tests::every_rev_10_value_equals_rev_7s ... ok
+1795400785.835813	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+1795400785.835879	     Running tests/archive.rs (target/debug/deps/archive-e1e49454d555852c)
+1795400785.836768	running 2 tests
+1795400785.837987	test nesting_nine_deep_is_refused ... ok
+1795400785.839296	test a_missing_manifest_is_uncommitted ... ok
+1795400785.839383	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 27 filtered out; finished in 0.00s
+1795400785.839685	     Running tests/battery.rs (target/debug/deps/battery-67229b8af4476229)
+1795400785.841121	running 5 tests
+1795400785.841803	test a_zero_discriminant_is_no_operating_point ... ok
+1795400785.841875	test a_sag_whose_chain_settles_past_the_span_is_refused ... ok
+1795400785.841956	test a_battery_sag_and_a_rail_out_of_band_parse_under_version_4_only ... ok
+1795400785.842043	test no_operating_point_is_refused ... ok
+1795400785.842719	test the_tolerated_sag_admits_at_its_static_point ... ok
+1795400785.842820	test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795400785.842916	     Running tests/bounds.rs (target/debug/deps/bounds-2bf474b096480baf)
+1795400785.845134	running 1 test
+1795400785.851028	test a_header_over_1_mib_is_refused_before_it_is_built ... ok
+1795400785.851143	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.01s
+1795400785.851571	     Running tests/campaign.rs (target/debug/deps/campaign-6e842eb9a7b6d011)
+1795400785.853492	running 7 tests
+1795400785.854171	test different_things_on_one_bus_are_not_duplicates ... ok
+1795400785.854230	test a_run_expecting_fewer_kinds_does_not_match ... ok
+1795400785.854305	test expected_findings_are_sorted_whatever_the_file_order ... ok
+1795400785.854354	test records_out_of_order_are_refused ... ok
+1795400785.855730	test archived::a_header_topology_hash_that_differs_from_the_record_is_refused ... ok
+1795400785.857942	test the_reader_applies_the_record_field_rules_the_writer_does ... ok
+1795400785.858650	test every_record_variant_round_trips_through_the_archive ... ok
+1795400785.858740	test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 109 filtered out; finished in 0.01s
+1795400785.859120	     Running tests/cbor.rs (target/debug/deps/cbor-baf7f7596f5f0221)
+1795400785.860475	running 3 tests
+1795400785.862247	test invalid_utf8_and_truncation_are_refused ... ok
+1795400785.862316	test trailing_bytes_are_refused_at_the_first_extra_byte ... ok
+1795400785.977626	test whatever_the_decoder_accepts_re_encodes_to_the_same_bytes ... ok
+1795400785.977706	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.12s
+1795400785.978083	     Running tests/droop.rs (target/debug/deps/droop-9b529805eae3a914)
+1795400785.979584	running 9 tests
+1795400785.980572	test a_droop_override_with_a_bad_bor_level_or_a_missing_field_is_not_an_override ... ok
+1795400785.980666	test a_falling_crossing_past_its_ramps_window_is_refused ... ok
+1795400785.983532	test a_refall_inside_trsttempo_with_no_later_rise_is_never_released ... ok
+1795400785.983616	test a_second_declared_rail_is_refused ... ok
+1795400785.983703	test a_rail_inside_its_tolerance_has_no_below_tolerance_finding ... ok
+1795400785.983754	test a_valid_v2_droop_scenario_parses_with_every_field ... ok
+1795400785.983806	test an_unrecovered_observation_with_its_error_finding_is_accepted_and_fails_the_run ... ok
+1795400785.983863	test the_new_records_are_stamped_with_their_own_time_or_zero ... ok
+1795400785.983909	test the_reference_droop_run_passes_and_matches_its_counts ... ok
+1795400785.983962	test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.00s
+1795400785.984043	     Running tests/golden.rs (target/debug/deps/golden-543bd027bea01571)
+1795400785.984085	running 0 tests
+1795400785.984124	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+1795400785.984178	     Running tests/kill.rs (target/debug/deps/kill-ca40e132cb618bd5)
+1795400785.984660	running 0 tests
+1795400785.984725	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795400785.985110	     Running tests/motor.rs (target/debug/deps/motor-46640f830739d4b4)
+1795400785.986301	running 1 test
+1795400785.987065	test replay_binds_a_stop_s_read_back_to_kind_11 ... ok
+1795400785.987120	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+1795400785.987488	     Running tests/pin_devices.rs (target/debug/deps/pin_devices-73fae8260a3ba313)
+1795400785.988759	running 1 test
+1795400785.989258	test the_decode_refuses_what_is_not_a_level_or_a_flag ... ok
+1795400785.989347	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 37 filtered out; finished in 0.00s
+1795400785.989537	     Running tests/serial.rs (target/debug/deps/serial-93aeb52975114d71)
+1795400785.990928	running 3 tests
+1795400785.991552	test replay_ties_each_echo_to_its_capture_and_rx_pin ... ok
+1795400785.993035	test the_serial_records_round_trip_through_the_archive ... ok
+1795400785.993625	test adversarial_4_a_pin_unrouted_once_solved_is_never_witnessed ... ok
+1795400785.993704	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+1795400785.994112	     Running unittests src/lib.rs (target/debug/deps/aethelgard_cli-36c1c8de6e371598)
+1795400785.995828	running 1 test
+1795400785.995944	test ledger::tests::a_pattern_matches_a_digit_run_and_nothing_else ... ok
+1795400785.996062	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+1795400785.996433	     Running unittests src/main.rs (target/debug/deps/aethelgard-1783056ad6bcee5b)
+1795400785.997962	running 19 tests
+1795400786.004232	test anchor::tests::a_pwm_timer_s_hook_only_logs ... ok
+1795400786.005886	test fab::tests::a_real_header_loses_exactly_its_two_clock_lines ... ok
+1795400786.006169	test firmware::tests::only_both_witnesses_agreeing_is_a_build_or_a_failure ... ok
+1795400786.014191	test campaign::tests::apply_refuses_an_unknown_bus ... ok
+1795400786.014753	test mcp::tests::a_boolean_flag_panics - should panic ... ok
+1795400786.018888	test mcp::tests::a_value_starting_with_dashes_is_one_token_not_a_flag ... ok
+1795400786.041863	test fab::tests::the_gerbers_are_the_declared_layers ... ok
+1795400786.056379	test renode::foreign::tests::an_erase_names_the_flash_it_erases_from_the_header_s_facts ... ok
+1795400786.130971	test pinwitness::tests::an_output_is_witnessed_by_its_level_s_bsrr_write_before_moder ... ok
+1795400786.215157	test elf::tests::file_bytes_over_the_boot_word_are_refused ... ok
+1795400786.215282	test renode::tests::an_absent_address_goes_to_every_step_when_the_boundary_is_not_one_write_each ... ok
+1795400786.412384	test renode::tests::judge_boot_holds_the_pwr_writes_to_the_rule ... ok
+1795400786.413422	test run::tests::past_its_budget_log_lines_are_counted_and_the_first_of_each_kept_kind_stays ... ok
+1795400786.415858	test said::tests::cargo_joins_every_error_line_and_renode_takes_the_first ... ok
+1795400786.513860	test renode::tests::a_later_port_goes_in_once_the_port_before_has_echoed ... ok
+1795400786.516050	test verify::tests::the_extract_gate_line_carries_the_ladder_cause_when_it_fails ... ok
+1795400786.522059	test verify::tests::a_rail_is_detected_only_with_every_rendered_consumer_attributed ... ok
+1795400786.562604	test renode::tests::a_serial_boot_captures_first_and_injects_from_the_boot_word ... ok
+1795400786.691399	test renode::tests::a_port_s_wire_time_must_fit_its_bound_from_the_injection ... ok
+1795400786.691473	test result: ok. 19 passed; 0 failed; 0 ignored; 0 measured; 188 filtered out; finished in 0.69s
+1795400786.694402	     Running tests/adversarial_1300.rs (target/debug/deps/adversarial_1300-00fb93cba5c2c881)
+1795400786.695778	running 1 test
+1795400791.129678	test withstood_emission_ignores_env_locale_time_cwd_and_spec_layout ... ok
+1795400791.129750	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 4.43s
+1795400791.129974	     Running tests/adversarial_1301.rs (target/debug/deps/adversarial_1301-4c9d0953641ec40f)
+1795400791.131512	running 0 tests
+1795400791.131838	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+1795400791.132199	     Running tests/adversarial_1301_tools.rs (target/debug/deps/adversarial_1301_tools-bd47444da47f01a1)
+1795400791.133581	running 0 tests
+1795400791.133649	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795400791.134151	     Running tests/adversarial_1302_tools.rs (target/debug/deps/adversarial_1302_tools-95149c7d13080d5c)
+1795400791.135231	running 0 tests
+1795400791.135315	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400791.135604	     Running tests/against_fab_tier2.rs (target/debug/deps/against_fab_tier2-8149c76d61a843a1)
+1795400791.136735	running 0 tests
+1795400791.136803	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400791.137102	     Running tests/attribute_seeded.rs (target/debug/deps/attribute_seeded-e59cc80a7e519caa)
+1795400791.138341	running 0 tests
+1795400791.138441	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795400791.138729	     Running tests/battery_sag_tier1.rs (target/debug/deps/battery_sag_tier1-496c2f527ac53567)
+1795400791.140121	running 0 tests
+1795400791.140185	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+1795400791.140541	     Running tests/bench_board_tier1.rs (target/debug/deps/bench_board_tier1-2c589c180aeb4a05)
+1795400791.141710	running 0 tests
+1795400791.141995	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400791.142139	     Running tests/bench_tier1.rs (target/debug/deps/bench_tier1-858145ea61090406)
+1795400791.143749	running 0 tests
+1795400791.143820	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.00s
+1795400791.144325	     Running tests/board_names.rs (target/debug/deps/board_names-746037a6ef508d58)
+1795400791.151248	running 2 tests
+1795400791.151294	test each_arm_of_the_selection_holds_its_floor ... ok
+1795400791.152878	test a_planted_tree_yields_exactly_its_planted_hits ... ok
+1795400791.152937	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400791.153305	     Running tests/board_tier2.rs (target/debug/deps/board_tier2-8f5728aae7296b70)
+1795400791.162244	running 3 tests
+1795400809.974913	test prove_with_spec_tells_a_hand_written_harness_from_the_generated_one ... ok
+1795400819.566600	test a_missing_clock_enable_fails ... ok
+1795400851.162772	test the_imu_fixture_s_transfers_prove_within_its_scripts has been running for over 60 seconds
+1795400865.121969	test the_imu_fixture_s_transfers_prove_within_its_scripts ... ok
+1795400865.122077	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 73.96s
+1795400865.123012	     Running tests/boot_tier1.rs (target/debug/deps/boot_tier1-44e607ec789d99dd)
+1795400865.124697	running 3 tests
+1795400866.097181	test a_foreign_boot_ending_in_an_exception_fails ... ok
+1795400868.340985	test two_devices_witness_their_own_reads_in_either_order ... ok
+1795400871.604875	test a_console_too_slow_for_the_boot_is_refused_before_it ... ok
+1795400871.605853	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 58 filtered out; finished in 6.48s
+1795400871.606734	     Running tests/campaign_tier1.rs (target/debug/deps/campaign_tier1-47e2894cb437143b)
+1795400871.608233	running 7 tests
+1795400873.163651	test a_failure_for_a_subset_of_the_expected_findings_is_a_campaign_failure ... ok
+1795400873.164349	test a_one_byte_change_with_the_manifest_resealed_diverges_on_replay ... ok
+1795400873.174264	test a_run_with_a_consistently_resealed_but_changed_header_is_not_a_campaign_run ... ok
+1795400873.434112	test a_generator_report_names_each_generator_once_in_order ... ok
+1795400874.693640	test an_indeterminate_run_exits_1_with_its_unexplained_finding_named ... ok
+1795400874.773570	test a_second_campaign_into_the_same_archive_is_refused_and_the_run_is_untouched ... ok
+1795400874.815964	test propose_refuses_a_run_replay_refuses_or_a_topology_the_run_did_not_have ... ok
+1795400874.816106	test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 3.21s
+1795400874.816365	     Running tests/campaign_tier2.rs (target/debug/deps/campaign_tier2-aedb06c05a66ebb6)
+1795400874.818049	running 0 tests
+1795400874.818118	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795400874.819004	     Running tests/channels_tier1.rs (target/debug/deps/channels_tier1-55b2bf9ca3df6919)
+1795400874.819861	running 1 test
+1795400874.886288	test pidfd_calls_are_refused_inside_and_reach_the_kernel_outside ... ok
+1795400874.886421	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.07s
+1795400874.886648	     Running tests/classes_tier1.rs (target/debug/deps/classes_tier1-5094ded2655987e8)
+1795400874.888354	running 1 test
+1795400874.894011	test validate_refuses_a_net_in_two_classes ... ok
+1795400874.894151	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.01s
+1795400874.894506	     Running tests/connectors_tier1.rs (target/debug/deps/connectors_tier1-89ff3de6d3075f4d)
+1795400874.895992	running 0 tests
+1795400874.896159	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795400874.896312	     Running tests/descriptors_tier1.rs (target/debug/deps/descriptors_tier1-87e0a7f02e089485)
+1795400874.897556	running 0 tests
+1795400874.897639	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400874.897705	     Running tests/doctor_tier1.rs (target/debug/deps/doctor_tier1-ce2cd8a73bd0b0ca)
+1795400874.903625	running 1 test
+1795400875.197987	test a_bridge_that_is_absent_or_not_ours_is_named ... ok
+1795400875.198141	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.29s
+1795400875.198479	     Running tests/emit_tier1.rs (target/debug/deps/emit_tier1-c289282f49f33798)
+1795400875.199863	running 1 test
+1795400878.077227	test an_out_that_cannot_hold_the_files_is_refused ... ok
+1795400878.077322	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 2.88s
+1795400878.077708	     Running tests/escape_tier1.rs (target/debug/deps/escape_tier1-af156b0047552a86)
+1795400878.079111	running 1 test
+1795400881.038942	test a_via_in_a_courtyard_is_refused_but_in_the_dense_parts_own_ring ... ok
+1795400881.039047	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 2.96s
+1795400881.039986	     Running tests/extract_tier1.rs (target/debug/deps/extract_tier1-991c32fc8aeccabe)
+1795400881.041515	running 1 test
+1795400888.411993	test a_longer_route_raises_the_trace_term_by_the_per_length_bound ... ok
+1795400888.412101	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 7.37s
+1795400888.412392	     Running tests/fab_tier1.rs (target/debug/deps/fab_tier1-92fe9c05969f91c9)
+1795400888.417788	running 1 test
+1795400913.352809	test a_campaign_that_misses_a_bus_or_rail_is_refused_by_name ... ok
+1795400913.353237	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 24.94s
+1795400913.354137	     Running tests/four_layer_fab_tier2.rs (target/debug/deps/four_layer_fab_tier2-6ceb7c4b728c98a9)
+1795400913.354653	running 0 tests
+1795400913.355314	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400913.355484	     Running tests/generate_tier1.rs (target/debug/deps/generate_tier1-e148d648ce05728c)
+1795400913.356595	running 1 test
+1795400913.360787	test prove_with_spec_refuses_an_invalid_specification_before_any_tool ... ok
+1795400913.360878	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+1795400913.361293	     Running tests/hot_plug_tier1.rs (target/debug/deps/hot_plug_tier1-23af78a96bdb396b)
+1795400913.362755	running 0 tests
+1795400913.362826	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+1795400913.363162	     Running tests/hse_eda_tier1.rs (target/debug/deps/hse_eda_tier1-b54af248802c6dc0)
+1795400913.364631	running 1 test
+1795400915.728476	test a_crystal_drawn_on_a_board_that_declares_none_is_named ... ok
+1795400915.728617	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 2.36s
+1795400915.730585	     Running tests/hwdef_tier1.rs (target/debug/deps/hwdef_tier1-ff229ec93fb45a9e)
+1795400915.732166	running 1 test
+1795400915.783628	test an_existing_output_is_refused ... ok
+1795400915.783705	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.05s
+1795400915.784233	     Running tests/ledger_tier1.rs (target/debug/deps/ledger_tier1-8ab457d2258ff1af)
+1795400915.785790	running 2 tests
+1795400915.903178	test pasted_entries_pass_once_written_and_are_refused_unwritten ... ok
+1795400916.138966	test a_motor_output_s_pull_down_is_the_independent_rule_s ... ok
+1795400916.139080	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 17 filtered out; finished in 0.35s
+1795400916.140759	     Running tests/lifecycle_tier1.rs (target/debug/deps/lifecycle_tier1-c3930f5197588fac)
+1795400916.147451	running 1 test
+1795400916.804216	test a_guardian_started_before_its_directory_removes_it_when_its_parent_dies ... ok
+1795400916.804290	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.66s
+1795400916.804501	     Running tests/load_references_tier1.rs (target/debug/deps/load_references_tier1-6027bf06c997da3d)
+1795400916.805844	running 0 tests
+1795400916.806083	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+1795400916.806240	     Running tests/mcp_snapshot_tier1.rs (target/debug/deps/mcp_snapshot_tier1-0fd119bed14cf844)
+1795400916.807416	running 0 tests
+1795400916.807788	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+1795400916.807863	     Running tests/mcp_tier1.rs (target/debug/deps/mcp_tier1-9899d1f4d94d95ef)
+1795400916.809125	running 1 test
+1795400917.118992	test nothing_but_protocol_reaches_stdout ... ok
+1795400917.119086	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.31s
+1795400917.119345	     Running tests/models_tier2.rs (target/debug/deps/models_tier2-7a00a808412de664)
+1795400917.121244	running 0 tests
+1795400917.121340	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+1795400917.121628	     Running tests/orientation_tier1.rs (target/debug/deps/orientation_tier1-aa6c10d494480f00)
+1795400917.123187	running 0 tests
+1795400917.123312	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+1795400917.123614	     Running tests/outline_tier1.rs (target/debug/deps/outline_tier1-c1c50d883bfa7a59)
+1795400917.125125	running 0 tests
+1795400917.125211	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795400917.125560	     Running tests/own_board_tier1.rs (target/debug/deps/own_board_tier1-aa7ebfe98f937158)
+1795400917.126960	running 1 test
+1795400919.648490	test without_its_declaration_the_icm_is_refused ... ok
+1795400919.648603	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 2.52s
+1795400919.648945	     Running tests/own_models_tier1.rs (target/debug/deps/own_models_tier1-c6b589b4fce28817)
+1795400919.658413	running 1 test
+1795400919.660339	test the_archive_orders_every_step_name_the_parts_table_gives ... ok
+1795400919.660431	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400919.660800	     Running tests/package_licences.rs (target/debug/deps/package_licences-e56c782fddb211ec)
+1795400919.662000	running 0 tests
+1795400919.662205	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400919.662446	     Running tests/parts_arms_tier1.rs (target/debug/deps/parts_arms_tier1-bb6542cdda4ee222)
+1795400919.663987	running 0 tests
+1795400919.664543	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400919.664632	     Running tests/pin_device_refusals.rs (target/debug/deps/pin_device_refusals-4ab621024b63a220)
+1795400919.666096	running 1 test
+1795400940.636950	test a_power_sense_input_is_not_generated ... ok
+1795400940.637052	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 20.97s
+1795400940.643510	     Running tests/pin_devices_drawn_tier1.rs (target/debug/deps/pin_devices_drawn_tier1-e8c288c34890e2ba)
+1795400940.645171	running 2 tests
+1795400940.691320	test a_declared_nfault_pull_up_is_drawn_between_its_net_and_its_rail ... ok
+1795400940.724877	test an_undeclared_nfault_is_open_and_an_undeclared_ipropi_is_refused ... ok
+1795400940.725053	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.08s
+1795400940.726002	     Running tests/pin_devices_solve.rs (target/debug/deps/pin_devices_solve-bc8db51ab4a0227c)
+1795400940.727369	running 2 tests
+1795400940.770334	test d1_with_an_idle_high_input_solves_to_arr_plus_one ... ok
+1795400940.770433	test a_pin_device_s_gpio_is_never_a_chip_select_s_shape ... ok
+1795400940.770491	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.04s
+1795400940.771068	     Running tests/pinout_tier1.rs (target/debug/deps/pinout_tier1-8d988abd64e9ff9f)
+1795400940.775456	running 1 test
+1795400940.875232	test a_pad_claim_is_refused_whatever_the_topology_calls_its_mcu ... ok
+1795400940.875300	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.10s
+1795400940.875675	     Running tests/placement_tier1.rs (target/debug/deps/placement_tier1-4e7aa94a30fd916c)
+1795400940.877085	running 2 tests
+1795400942.351294	test no_courtyards_overlap_and_every_one_is_inside_the_outline ... ok
+1795400943.800292	test emit_writes_the_board_and_two_runs_are_byte_identical ... ok
+1795400943.800380	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 2.92s
+1795400943.801009	     Running tests/power_board_tier1.rs (target/debug/deps/power_board_tier1-197ee1fbc3131e4c)
+1795400943.811667	running 0 tests
+1795400943.811796	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 16 filtered out; finished in 0.00s
+1795400943.812486	     Running tests/readme_status.rs (target/debug/deps/readme_status-655664eff64f26e2)
+1795400943.813760	running 0 tests
+1795400943.813828	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400943.814145	     Running tests/reserved_references_tier1.rs (target/debug/deps/reserved_references_tier1-2474df1deeaa6da2)
+1795400943.815562	running 2 tests
+1795400943.865765	test aet_1206_a_library_caller_s_bad_strap_is_refused_by_validate_first ... ok
+1795400944.080822	test aet_1208_validate_refuses_what_solve_refused_byte_for_byte ... ok
+1795400944.080918	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.27s
+1795400944.081618	     Running tests/routing_tier1.rs (target/debug/deps/routing_tier1-07bca9a00045e96f)
+1795400944.087662	running 0 tests
+1795400944.087751	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795400944.088257	     Running tests/silicon_rules.rs (target/debug/deps/silicon_rules-100c756c53e5c123)
+1795400944.096172	running 0 tests
+1795400944.096420	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795400944.096682	     Running tests/sockets_tier1.rs (target/debug/deps/sockets_tier1-63f0d7dc56f3f140)
+1795400944.097920	running 0 tests
+1795400944.098274	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+1795400944.098359	     Running tests/solve_cli.rs (target/debug/deps/solve_cli-a417fa33eb9759f7)
+1795400944.099549	running 0 tests
+1795400944.099646	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+1795400944.099878	     Running tests/solved_devices.rs (target/debug/deps/solved_devices-f8b522d6575057cf)
+1795400944.101163	running 0 tests
+1795400944.101334	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+1795400944.101544	     Running tests/speeds_tier1.rs (target/debug/deps/speeds_tier1-c11d268d7a274334)
+1795400944.102736	running 1 test
+1795400945.222507	test the_motor_driver_judges_no_line_and_says_so ... ok
+1795400945.222651	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 1.12s
+1795400945.223233	     Running tests/stackups_tier1.rs (target/debug/deps/stackups_tier1-5e73dbcef2d46813)
+1795400945.225099	running 1 test
+1795400945.584234	test the_four_layer_board_is_the_declared_one_and_extracts ... ok
+1795400945.584318	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.36s
+1795400945.584650	     Running tests/strict_fence.rs (target/debug/deps/strict_fence-1cd3699a73e44396)
+1795400945.586067	running 2 tests
+1795400945.588114	test every_gate_module_calls_the_strict_reader ... ok
+1795400945.821821	test every_module_is_known_and_reads_kicad_files_only_as_its_role_allows ... ok
+1795400945.822248	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.24s
+1795400945.822490	     Running tests/strict_tier1.rs (target/debug/deps/strict_tier1-648dac7da51f7987)
+1795400945.827407	running 0 tests
+1795400945.827653	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+1795400945.827933	     Running tests/subgrid_tier1.rs (target/debug/deps/subgrid_tier1-0032d0bd54df291e)
+1795400945.829448	running 1 test
+1795400945.838113	test a_through_hole_pad_of_its_own_part_in_the_pocket_is_a_way_out ... ok
+1795400945.838212	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.01s
+1795400945.838856	     Running tests/supply_tier1.rs (target/debug/deps/supply_tier1-44601d0f3539122a)
+1795400945.840125	running 0 tests
+1795400945.840472	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+1795400945.840634	     Running tests/support_tier1.rs (target/debug/deps/support_tier1-52b8e514dc83f82a)
+1795400945.841931	running 2 tests
+1795400947.348884	test one_capacitor_serves_one_pin ... ok
+1795400947.383310	test a_connector_that_cannot_program_the_part_fails ... ok
+1795400947.383423	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 1.54s
+1795400947.385949	     Running tests/through_hole_tier1.rs (target/debug/deps/through_hole_tier1-0e846c0b8c76d0ce)
+1795400947.387473	running 0 tests
+1795400947.387540	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.00s
+1795400947.387964	     Running tests/tools_tier1.rs (target/debug/deps/tools_tier1-04249f7df7bc5c26)
+1795400947.393763	running 10 tests
+1795400947.406230	test at_platform_naming_nothing_is_unreadable_input ... ok
+1795400947.410119	test crate_holding_a_fifo_is_unreadable_input ... ok
+1795400947.417030	test erc_without_kicad_cli_is_tool_missing ... ok
+1795400947.463958	test kicad_version_printing_nothing_is_tool_unusable ... ok
+1795400947.471127	test a_report_that_is_a_fifo_is_tool_error_not_a_hang ... ok
+1795400947.472842	test drc_unconnected_items_count_as_findings ... ok
+1795400947.488361	test kicad_exit_5_with_an_empty_report_is_tool_error ... ok
+1795400947.525509	test prove_compile_error_is_compile_error ... ok
+1795400947.531609	test simulate_with_a_cpu_and_an_error_log_line_fails ... ok
+1795400947.533165	test prove_missing_harness_is_harness_not_found ... ok
+1795400947.533322	test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 114 filtered out; finished in 0.14s
+1795400947.533628	     Running tests/twin_tier2.rs (target/debug/deps/twin_tier2-1d18b65b6989af08)
+1795400947.535468	running 9 tests
+1795400954.467610	test a_read_no_model_answers_fails_as_a_timeout_at_txis ... ok
+1795400960.008346	test a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed ... ok
+1795400960.008444	test renode_s_files_are_the_pinned_ones_and_declare_the_stock_table ... ok
+1795400976.892332	test the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot ... ok
+1795400982.494970	test a_forged_spi_record_fails_unwitnessed ... ok
+1795400987.815790	test the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt ... ok
+1795400989.014631	test motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af ... ok
+1795400994.356151	test a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software ... ok
+1795400999.696534	test the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s ... ok
+1795400999.696596	test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 87 filtered out; finished in 52.15s
+1795400999.696661	     Running tests/uid_boundary_tier1.rs (target/debug/deps/uid_boundary_tier1-3ac68cb1206be6ff)
+1795400999.696707	running 0 tests
+1795400999.696745	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.00s
+1795400999.696803	     Running tests/validate_cli.rs (target/debug/deps/validate_cli-7e3de116df14c56e)
+1795400999.696871	running 2 tests
+1795400999.696895	test solved_topology_document_exits_2 ... ok
+1795400999.722473	test oversized_input_exits_3 ... ok
+1795400999.722854	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.04s
+1795400999.722970	     Running tests/verify_2k2_tier2.rs (target/debug/deps/verify_2k2_tier2-b5b94a1da7183bcc)
+1795400999.725552	running 1 test
+1795401059.724754	test verify_binds_the_reference_and_two_runs_print_the_same_bytes has been running for over 60 seconds
+1795401506.885346	test verify_binds_the_reference_and_two_runs_print_the_same_bytes ... ok
+1795401506.885431	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 507.16s
+1795401506.885819	     Running tests/verify_47k_tier2.rs (target/debug/deps/verify_47k_tier2-a12d879e52460df6)
+1795401506.891059	running 0 tests
+1795401506.891171	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401506.891563	     Running tests/via_ring_tier1.rs (target/debug/deps/via_ring_tier1-51c0e819034765b8)
+1795401506.892722	running 7 tests
+1795401506.987491	test a_class_via_under_the_ring_is_refused_by_name ... ok
+1795401507.278166	test each_input_the_ring_rule_needs_is_refused_by_name ... ok
+1795401539.670166	test a_board_without_tolerances_is_routed_as_before ... ok
+1795401550.751394	test a_board_no_rung_fits_is_refused_with_every_net_over_its_bound ... ok
+1795401551.221260	test sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone ... ok
+1795401551.276671	test every_reader_of_a_board_refuses_a_partial_tolerance_block_by_name ... ok
+1795401566.893161	test a_board_extract_cannot_judge_is_routed_as_today_and_named has been running for over 60 seconds
+1795401571.177834	test a_board_extract_cannot_judge_is_routed_as_today_and_named ... ok
+1795401571.177922	test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 64.28s
+1795401571.178437	     Running tests/with_tools.rs (target/debug/deps/with_tools-988ae45c1e2fabba)
+1795401571.180198	running 1 test
+1795401576.425562	test the_class_and_pair_fixtures_pass_erc_and_drc_and_the_pair_is_reported ... ok
+1795401576.425623	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 5.25s
+1795401576.426119	     Running tests/workspace_shape.rs (target/debug/deps/workspace_shape-d33f5c14ef4291c5)
+1795401576.427490	running 3 tests
+1795401576.428457	test the_bridge_and_the_twin_format_decimals_with_one_function ... ok
+1795401576.428723	test members_are_exactly_the_eleven_parts ... ok
+1795401576.429336	test eda_has_only_its_known_files_keys_and_dependencies ... ok
+1795401576.429432	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+1795401576.429762	     Running unittests src/lib.rs (target/debug/deps/aethelgard_eda-74b9e0d1309f68a2)
+1795401576.437971	running 18 tests
+1795401576.438449	test extract::tests::the_prism_shell_is_steiners_formula_for_a_box ... ok
+1795401576.439137	test flow::tests::the_interval_functions_hold_their_values ... ok
+1795401576.439508	test flow::tests::a_grazing_face_is_refused ... ok
+1795401576.440922	test library::tests::every_vendored_file_matches_its_hash ... ok
+1795401576.442717	test fab::tests::the_two_files_must_name_the_same_parts_and_be_what_their_writers_write ... ok
+1795401576.442820	test route::tests::a_circle_pad_that_is_not_square_is_refused ... ok
+1795401576.442910	test rules::tests::the_rules_file_is_balanced_s_expressions ... ok
+1795401576.442992	test schematic::arms::tests::a_decoupler_dropped_or_added_is_refused ... ok
+1795401576.443095	test route::tests::only_a_ground_zone_on_b_cu_is_judged_joined ... ok
+1795401576.444666	test schematic::tests::resistances_read_as_schematics_write_them ... ok
+1795401576.445098	test sexpr::tests::spans_cover_each_top_level_child ... ok
+1795401576.445210	test strict::tests::a_child_kicad_holds_once_is_refused_when_repeated_by_path ... ok
+1795401576.445305	test strict::tests::what_kicad_appends_may_repeat ... ok
+1795401576.459178	test schematic::arms::tests::the_arms_are_the_known_parts ... ok
+1795401576.819170	test pcb::tests::every_connector_part_places_and_writes ... ok
+1795401579.045300	test flow::tests::a_via_in_a_disc_is_bounded_above_its_shorted_floor ... ok
+1795401586.200351	test supply::tests::a_plane_island_is_left_out ... ok
+1795401598.057647	test supply::tests::a_declared_dielectric_maximum_bounds_the_barrel_row ... ok
+1795401598.057771	test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 21.62s
+1795401598.059949	     Running tests/adversarial_1300.rs (target/debug/deps/adversarial_1300-0b5725d6815025d8)
+1795401598.065418	running 0 tests
+1795401598.065480	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+1795401598.065799	     Running tests/adversarial_1301.rs (target/debug/deps/adversarial_1301-2ceeae8248bd7669)
+1795401598.070246	running 0 tests
+1795401598.070314	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401598.070599	     Running tests/own_driver_parts.rs (target/debug/deps/own_driver_parts-5f1dd8134e3d52c7)
+1795401598.071863	running 0 tests
+1795401598.072106	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+1795401598.072298	     Running tests/own_parts.rs (target/debug/deps/own_parts-01bff68848eedad5)
+1795401598.073478	running 0 tests
+1795401598.073541	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795401598.073829	     Running tests/supply_libm.rs (target/debug/deps/supply_libm-0bf7ab25b6ad2534)
+1795401598.075122	running 0 tests
+1795401598.075411	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401598.075574	     Running unittests src/lib.rs (target/debug/deps/aethelgard_evolve-b86a901e05887994)
+1795401598.076783	running 0 tests
+1795401598.076852	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401598.077061	     Running tests/attribute.rs (target/debug/deps/attribute-e46b0118f71aa178)
+1795401598.078387	running 4 tests
+1795401598.179455	test the_same_wrong_register_on_a_faulted_bus_is_electrical_with_the_witness_masked ... ok
+1795401598.181680	test a5_a_witness_whose_lines_are_not_its_devices_is_no_evidence ... ok
+1795401598.234415	test changing_only_the_verdicts_finding_kinds_does_not_move_the_domain ... ok
+1795401598.291985	test a_board_symptom_names_its_rule_and_evidence ... ok
+1795401598.292098	test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 63 filtered out; finished in 0.21s
+1795401598.292682	     Running tests/motor.rs (target/debug/deps/motor-eb2a3d294d8b95d8)
+1795401598.299562	running 1 test
+1795401598.350249	test a_dshot_output_witnessed_inside_its_window_passes_none ... ok
+1795401598.350313	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 31 filtered out; finished in 0.05s
+1795401598.350786	     Running tests/propose.rs (target/debug/deps/propose-efe3bc97fda3a93b)
+1795401598.352323	running 4 tests
+1795401598.352951	test a_target_below_every_e12_value_proposes_nothing ... ok
+1795401598.353053	test each_faulted_bus_is_sized_by_its_own_lines_and_facts ... ok
+1795401598.353145	test the_hand_built_47k_row_proposes_2700_so_the_rows_below_differ_only_where_named ... ok
+1795401598.546407	test a_stuck_high_line_an_incomplete_rise_or_a_fault_of_another_cause_has_no_rule ... ok
+1795401598.546532	test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.19s
+1795401598.547128	     Running tests/serial.rs (target/debug/deps/serial-6c92b162bbb1e3ed)
+1795401598.553992	running 2 tests
+1795401598.561318	test adv_s4_replay_refuses_a_first_injection_under_a_quantum ... ok
+1795401598.608129	test a_register_wrong_in_two_ports_fields_is_both_ports_evidence ... ok
+1795401598.608238	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 21 filtered out; finished in 0.05s
+1795401598.608641	     Running tests/spi.rs (target/debug/deps/spi-05cf06c9dfdb8b2e)
+1795401598.610102	running 3 tests
+1795401598.677431	test a_witness_that_could_not_be_read_is_no_evidence_and_i4 ... ok
+1795401598.702465	test s3_is_answered_by_rules_and_never_as_a_proposal ... ok
+1795401598.702550	test a_six_byte_read_is_shown_in_64_bits ... ok
+1795401598.702631	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.09s
+1795401598.703226	     Running unittests src/lib.rs (target/debug/deps/aethelgard_hwdef-8c34c91a8b0dfd36)
+1795401598.704754	running 0 tests
+1795401598.704871	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+1795401598.705096	     Running tests/generate.rs (target/debug/deps/generate-94df2bb5682c4ec4)
+1795401598.713224	running 2 tests
+1795401598.747527	test an_imu_with_no_declared_orientation_is_refused_by_name ... ok
+1795401598.748958	test a_topology_ardupilot_cannot_run_a_console_on_is_refused ... ok
+1795401598.749043	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.04s
+1795401598.749758	     Running unittests src/lib.rs (target/debug/deps/aethelgard_ir-d641b899cee6dc83)
+1795401598.758440	running 4 tests
+1795401598.761796	test silicon::tests::the_kernel_and_achieved_rates_are_held ... ok
+1795401598.762166	test serial::tests::crsf_accepts_its_cited_bauds_and_a_negotiated_one_and_refuses_the_rest ... ok
+1795401598.762651	test solve::differential::an_spi_controller_with_no_kernel_clock_is_refused_by_name ... ok
+1795401598.767744	test silicon::tests::an_i2c_controller_is_held_whole ... ok
+1795401598.767835	test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 46 filtered out; finished in 0.01s
+1795401598.768320	     Running tests/bench.rs (target/debug/deps/bench-15a8922ea7ceff93)
+1795401598.769709	running 3 tests
+1795401598.778647	test the_switch_skips_a_spelled_sw1_and_refuses_another_spelling_of_it ... ok
+1795401598.786220	test boot0_is_the_emitters_net_where_carried_and_no_declared_net_may_spell_it ... ok
+1795401598.787100	test a_net_no_part_declares_is_refused_by_name ... ok
+1795401598.787443	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.02s
+1795401598.787911	     Running tests/board.rs (target/debug/deps/board-b187cd48fdc1e70d)
+1795401598.789293	running 1 test
+1795401598.792615	test a_layer_table_of_the_wrong_length_or_names_is_refused ... ok
+1795401598.792699	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 18 filtered out; finished in 0.00s
+1795401598.793139	     Running tests/classes.rs (target/debug/deps/classes-ba3832ee5000ea09)
+1795401598.801848	running 3 tests
+1795401598.809951	test the_two_sections_are_closed ... ok
+1795401598.838223	test a_class_net_holding_a_quote_or_a_wildcard_is_refused ... ok
+1795401598.839560	test a_width_under_the_floor_or_the_rules_is_refused ... ok
+1795401598.839648	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.04s
+1795401598.840352	     Running tests/connectors.rs (target/debug/deps/connectors-e5131f579cf8fe30)
+1795401598.848127	running 4 tests
+1795401598.872143	test two_connectors_with_one_reference_are_a_duplicate ... ok
+1795401598.881157	test unknown_part_is_refused ... ok
+1795401598.881711	test budget_on_ground_is_not_applicable ... ok
+1795401598.881779	test gh_6_pin_part_named_i2c_contradicts_the_standard ... ok
+1795401598.881867	test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 73 filtered out; finished in 0.03s
+1795401598.881956	     Running tests/hse.rs (target/debug/deps/hse-bcca76567bee145b)
+1795401598.883490	running 3 tests
+1795401598.892422	test the_vos_limits_take_the_hse_s_fastest ... ok
+1795401598.892696	test the_spi_kernels_of_an_hse_tree_are_the_reset_selects ... ok
+1795401598.904064	test the_judge_refuses_each_tree_by_name ... ok
+1795401598.904148	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.02s
+1795401598.904851	     Running tests/load_references.rs (target/debug/deps/load_references-18a909e36339aaa2)
+1795401598.906355	running 0 tests
+1795401598.906466	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+1795401598.906676	     Running tests/motor.rs (target/debug/deps/motor-387bb5fed916e61b)
+1795401598.908350	running 1 test
+1795401598.920661	test a_resolution_conflict_on_one_timer_is_refused_by_name ... ok
+1795401598.920727	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 28 filtered out; finished in 0.01s
+1795401598.921394	     Running tests/off_domain.rs (target/debug/deps/off_domain-62095694db747470)
+1795401598.922908	running 2 tests
+1795401598.936130	test a_connector_on_a_rail_between_voids_the_exemption ... ok
+1795401598.937191	test a_crossing_a_side_off_the_supply_lists_its_lines_and_cs_pull ... ok
+1795401598.937289	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 14 filtered out; finished in 0.01s
+1795401598.937957	     Running tests/orientation.rs (target/debug/deps/orientation-be67af7112ab8ff9)
+1795401598.939429	running 1 test
+1795401598.943136	test axes_not_at_right_angles_are_refused_never_rounded ... ok
+1795401598.943199	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+1795401598.943662	     Running tests/parts.rs (target/debug/deps/parts-414b4a92b9ba5625)
+1795401598.944981	running 5 tests
+1795401598.962304	test refuses_a_citation_with_both_sha256_and_pending_or_neither ... ok
+1795401598.962408	test refuses_text_that_is_not_json_without_panicking ... ok
+1795401598.968314	test refuses_an_unknown_key_in_bus ... ok
+1795401598.973565	test an_ardupilot_id_other_than_the_identity_is_refused ... ok
+1795401598.975900	test a_stand_in_with_no_printed_start_up_may_carry_both_null_and_no_other_part_may ... ok
+1795401598.975991	test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.03s
+1795401598.976488	     Running tests/pin_devices.rs (target/debug/deps/pin_devices-ca4b73eedab58f22)
+1795401598.984842	running 3 tests
+1795401599.027887	test a_full_scale_no_error_band_covers_is_refused ... ok
+1795401599.027957	test a_device_pin_bound_twice_is_refused ... ok
+1795401599.028686	test an_open_drain_input_with_no_pull_up_is_refused ... ok
+1795401599.028748	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 82 filtered out; finished in 0.04s
+1795401599.029555	     Running tests/pin_devices_solve.rs (target/debug/deps/pin_devices_solve-14eb0fa9099b5fca)
+1795401599.037587	running 1 test
+1795401599.095958	test a_digital_hand_pin_on_an_analog_pad_is_refused ... ok
+1795401599.096124	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.06s
+1795401599.096670	     Running tests/power.rs (target/debug/deps/power-08b9df1745e19047)
+1795401599.098199	running 1 test
+1795401599.105520	test the_embedded_table_parses_with_every_document_held ... ok
+1795401599.105578	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 39 filtered out; finished in 0.01s
+1795401599.106100	     Running tests/readme_versions.rs (target/debug/deps/readme_versions-eb14c2a1e59b42ad)
+1795401599.107233	running 0 tests
+1795401599.107574	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+1795401599.107651	     Running tests/rul16_fence.rs (target/debug/deps/rul16_fence-c9b87d35e5e9ce0f)
+1795401599.108827	running 0 tests
+1795401599.108901	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401599.109170	     Running tests/sense_pin.rs (target/debug/deps/sense_pin-3c1d3a5777aad5dd)
+1795401599.110594	running 1 test
+1795401599.111110	test an_adc_channel_name_is_checked_like_a_signal ... ok
+1795401599.111199	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+1795401599.111635	     Running tests/serial.rs (target/debug/deps/serial-d68d6e3c9d1de83d)
+1795401599.113122	running 2 tests
+1795401599.118392	test a_serial_net_is_a_net_and_takes_no_constraint ... ok
+1795401599.137175	test a_peer_deviation_is_cited_only_as_the_crsf_spread ... ok
+1795401599.137258	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 43 filtered out; finished in 0.02s
+1795401599.137987	     Running tests/solve.rs (target/debug/deps/solve-d5244b0a3eeca4ed)
+1795401599.139542	running 6 tests
+1795401599.145780	test a_line_with_no_constraint_is_refused_naming_the_first_in_document_order ... ok
+1795401599.153978	test an_unknown_pin_is_refused_by_key_never_by_case ... ok
+1795401599.154091	test an_invalid_specification_hash_or_part_is_refused_before_the_search ... ok
+1795401599.154165	test a_bus_above_its_ceiling_is_refused ... ok
+1795401599.154199	test hand_values_are_kept ... ok
+1795401599.156784	test the_controllers_are_solved_and_a_speed_below_the_kernel_range_is_refused ... ok
+1795401599.156953	test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.02s
+1795401599.157749	     Running tests/speeds.rs (target/debug/deps/speeds-7bade3b1d5469aec)
+1795401599.158938	running 1 test
+1795401599.159581	test a_capacitance_rounds_up_to_the_next_row ... ok
+1795401599.159672	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.00s
+1795401599.159930	     Running tests/support.rs (target/debug/deps/support-3e25a3a145a39435)
+1795401599.161317	running 2 tests
+1795401599.172515	test the_mcu_row_holds_figure_14s_network ... ok
+1795401599.227781	test a_malformed_support_network_is_refused ... ok
+1795401599.227911	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.07s
+1795401599.228540	     Running tests/thermal.rs (target/debug/deps/thermal-83233baadc6420c7)
+1795401599.229927	running 0 tests
+1795401599.229995	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795401599.230346	     Running tests/validate.rs (target/debug/deps/validate-d32043019c4a36ab)
+1795401599.238118	running 8 tests
+1795401599.256292	test refuses_a_net_declared_twice_across_buses_and_cs ... ok
+1795401599.258267	test a_version_2_file_without_spi_devices_is_refused_by_version_not_by_a_missing_key ... ok
+1795401599.259956	test solved_refuses_a_net_in_both_maps ... ok
+1795401599.264663	test a_declaration_never_stands_beside_a_cited_maximum ... ok
+1795401599.264725	test the_reserved_list_is_sorted_and_lowercase ... ok
+1795401599.268269	test solved_refuses_an_spi_chip_select_that_is_not_a_gpio ... ok
+1795401599.273226	test solved_holds_the_controllers_to_what_solve_derives ... ok
+1795401599.274896	test identifier_boundaries ... ok
+1795401599.274963	test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 121 filtered out; finished in 0.04s
+1795401599.275782	     Running tests/versions.rs (target/debug/deps/versions-6d21858dbfd8e34d)
+1795401599.277272	running 0 tests
+1795401599.277342	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+1795401599.277718	     Running tests/vos.rs (target/debug/deps/vos-275fcb1416650b50)
+1795401599.279133	running 1 test
+1795401599.287941	test a_tree_at_another_scale_within_its_limits_is_unsupported ... ok
+1795401599.288052	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 15 filtered out; finished in 0.01s
+1795401599.288265	     Running unittests src/lib.rs (target/debug/deps/aethelgard_kicad_lib-17be47dff4b82bc8)
+1795401599.289466	running 0 tests
+1795401599.289515	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401599.289801	     Running unittests src/lib.rs (target/debug/deps/aethelgard_pincheck-d54a03dddeb95561)
+1795401599.294605	running 0 tests
+1795401599.294686	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401599.295091	     Running tests/check.rs (target/debug/deps/check-db3802d8d88445db)
+1795401599.296508	running 2 tests
+1795401599.296851	test a_malformed_allow_list_is_refused ... ok
+1795401599.298243	test each_seed_fails_by_name ... ok
+1795401599.298296	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 20 filtered out; finished in 0.00s
+1795401599.298706	     Running tests/defaults.rs (target/debug/deps/defaults-badc7d9bf9126db8)
+1795401599.299874	running 0 tests
+1795401599.300178	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795401599.300363	     Running tests/identity.rs (target/debug/deps/identity-f5c869075d0ff509)
+1795401599.301651	running 2 tests
+1795401599.309461	test the_imu_driver_must_be_linked_into_the_elf ... ok
+1795401599.312244	test each_motor_channel_is_judged ... ok
+1795401599.312325	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.01s
+1795401599.312756	     Running tests/separation.rs (target/debug/deps/separation-cff8a49bdde29797)
+1795401599.313904	running 1 test
+1795401599.333186	test the_check_reaches_only_the_ir_among_workspace_crates ... ok
+1795401599.333281	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.02s
+1795401599.333578	     Running unittests src/lib.rs (target/debug/deps/aethelgard_renode_models-0b65483a58d6a11e)
+1795401599.337821	running 0 tests
+1795401599.337886	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401599.338168	     Running unittests src/lib.rs (target/debug/deps/aethelgard_svd_hal-9e6e24df32993e38)
+1795401599.346326	running 7 tests
+1795401599.394167	test board::tests::the_generators_pwr_words_are_the_rules ... ok
+1795401599.466517	test board::tests::a_timerless_split_that_leaves_an_action_unscheduled_is_refused ... ok
+1795401599.474440	test cmsis::tests::an_interrupt_or_a_size_outside_its_shape_is_refused ... ok
+1795401599.475013	test tests::two_pins_with_one_canonical_name_are_refused ... ok
+1795401599.494242	test tests::the_eleven_suffixed_names_reduce_to_canonical_ones ... ok
+1795401599.502548	test board::tests::a_board_without_a_clock_still_runs_the_sequence_first ... ok
+1795401599.504055	test board::tests::otyper_is_written_whole_by_split_and_the_oracle_is_the_hand_word ... ok
+1795401599.504123	test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 60 filtered out; finished in 0.16s
+1795401599.504390	     Running tests/adc_channels.rs (target/debug/deps/adc_channels-6c969b3515e9a634)
+1795401599.513562	running 1 test
+1795401599.594352	test the_pins_carry_the_inputs_the_xml_gives_them ... ok
+1795401599.594411	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.08s
+1795401599.594873	     Running tests/board.rs (target/debug/deps/board-4a55906fbd1c3173)
+1795401599.596672	running 1 test
+1795401599.697718	test one_wait_separates_every_configuration_from_every_data_read ... ok
+1795401599.697785	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 8 filtered out; finished in 0.10s
+1795401599.698690	     Running tests/board_ui.rs (target/debug/deps/board_ui-61db59af1b1fd2ad)
+1795401599.700209	running 0 tests
+1795401599.700418	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+1795401599.700701	     Running tests/hse_bringup.rs (target/debug/deps/hse_bringup-97ec025142d7fa9f)
+1795401599.702096	running 1 test
+1795401599.855160	test every_start_takes_the_solved_clock ... ok
+1795401599.855244	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.15s
+1795401599.855920	     Running tests/motor_outputs.rs (target/debug/deps/motor_outputs-8d4fefb83fb61686)
+1795401599.857510	running 1 test
+1795401599.936520	test an_output_no_unit_owns_is_proved_in_the_gpio_part ... ok
+1795401599.936630	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.08s
+1795401599.937413	     Running tests/order_2203.rs (target/debug/deps/order_2203-2c9a9a5261ce928b)
+1795401599.944854	running 0 tests
+1795401599.944978	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+1795401599.945369	     Running tests/pin_devices.rs (target/debug/deps/pin_devices-3f606b47580116d6)
+1795401599.946894	running 0 tests
+1795401599.947268	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 0.00s
+1795401599.947396	     Running tests/register_fields.rs (target/debug/deps/register_fields-dc8dd8a9e763ef69)
+1795401599.948834	running 0 tests
+1795401599.949168	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 3 filtered out; finished in 0.00s
+1795401599.949270	     Running tests/serial_ports.rs (target/debug/deps/serial_ports-f6a2c089daf84e57)
+1795401599.950876	running 0 tests
+1795401599.951239	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.00s
+1795401599.951527	     Running tests/silicon_words.rs (target/debug/deps/silicon_words-bd726f6823898934)
+1795401599.959259	running 0 tests
+1795401599.959541	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795401599.959807	     Running tests/spi_devices.rs (target/debug/deps/spi_devices-09b553715797ea91)
+1795401599.961338	running 1 test
+1795401600.039172	test a_firmware_that_starts_the_bus_first_fails_the_check ... ok
+1795401600.039243	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.08s
+1795401600.039877	     Running unittests src/lib.rs (target/debug/deps/aethelgard_twin-2805f3db2a4d5035)
+1795401600.041505	running 7 tests
+1795401600.042639	test serial::tests::a_port_s_wire_time_is_its_characters_at_the_solved_baud ... ok
+1795401600.042734	test serial::tests::the_twin_s_copies_are_the_generator_s ... ok
+1795401600.042814	test model::tests::the_witness_formats_are_the_measured_lines ... ok
+1795401600.042906	test tests::a_two_byte_identity_is_judged_whole_and_most_significant_byte_first ... ok
+1795401600.049814	test analog::tests::a_malformed_topology_is_refused ... ok
+1795401600.178391	test tests::no_devices_means_no_reads_and_nothing_unmodelled ... ok
+1795401600.356374	test tests::a_foreign_platform_keeps_the_stock_pwr_stub ... ok
+1795401600.356470	test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 72 filtered out; finished in 0.31s
+1795401600.357078	     Running tests/hse_clock.rs (target/debug/deps/hse_clock-71851274dc678b78)
+1795401600.358675	running 1 test
+1795401600.431105	test sw_before_the_pll1rdy_read_is_named ... ok
+1795401600.431195	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 11 filtered out; finished in 0.07s
+1795401600.432038	     Running tests/motor_platform.rs (target/debug/deps/motor_platform-14acef3952d4f71f)
+1795401600.433650	running 0 tests
+1795401600.433790	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+1795401600.434131	     Running tests/pins.rs (target/debug/deps/pins-4ae09fc7931e27a4)
+1795401600.442602	running 1 test
+1795401600.850061	test a_hold_or_a_value_off_a_declared_input_is_refused_by_name ... ok
+1795401600.850160	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.41s
+1795401600.850883	     Running tests/reserved_names.rs (target/debug/deps/reserved_names-81d94c897ebbe12b)
+1795401600.852335	running 0 tests
+1795401600.852401	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.00s
+1795401600.852644	     Running tests/spi_platform.rs (target/debug/deps/spi_platform-f44081b3d628600d)
+1795401600.854077	running 2 tests
+1795401600.861321	test an_i2c_model_on_spi_reaches_the_kept_guard_through_spi_wiring ... ok
+1795401601.037484	test two_spi_devices_share_one_mux_and_one_port_block_and_the_judge_reads_both ... ok
+1795401601.037563	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 9 filtered out; finished in 0.18s
+1795401601.038138	     Running tests/timer_routes.rs (target/debug/deps/timer_routes-c6b40a99f38b0317)
+1795401601.039701	running 0 tests
+1795401601.040051	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 6 filtered out; finished in 0.00s
+1795401601.040134	   Doc-tests aethelgard_chaos
+1795401601.179514	running 0 tests
+1795401601.180735	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401601.183940	   Doc-tests aethelgard_cli
+1795401601.244697	running 0 tests
+1795401601.244762	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401601.247618	   Doc-tests aethelgard_eda
+1795401601.518501	running 0 tests
+1795401601.518576	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401601.521548	   Doc-tests aethelgard_evolve
+1795401601.569379	running 0 tests
+1795401601.569431	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401601.572238	   Doc-tests aethelgard_hwdef
+1795401601.607718	running 0 tests
+1795401601.607780	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401601.610514	   Doc-tests aethelgard_ir
+1795401602.713896	running 0 tests
+1795401602.713945	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401602.717198	   Doc-tests aethelgard_kicad_lib
+1795401602.743413	running 0 tests
+1795401602.743490	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401602.746126	   Doc-tests aethelgard_pincheck
+1795401602.808387	running 0 tests
+1795401602.808461	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401602.811473	   Doc-tests aethelgard_renode_models
+1795401602.826927	running 0 tests
+1795401602.827000	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401602.829529	   Doc-tests aethelgard_svd_hal
+1795401602.965984	running 0 tests
+1795401602.966104	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401602.968980	   Doc-tests aethelgard_twin
+1795401603.059217	running 0 tests
+1795401603.059292	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+1795401603.125830	     Running unittests src/main.rs (target/debug/deps/aethelgard_bridge-0207aae517ee5f6e)
+1795401603.127217	running 3 tests
+1795401603.128470	test rail::tests::picoseconds_round_to_nearest ... ok
+1795401603.128654	test request::tests::the_reference_shape_parses ... ok
+1795401603.129473	test header::every_declaration_matches_the_vendored_header ... ok
+1795401603.129567	test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 22 filtered out; finished in 0.00s
+1795401603.129769	     Running tests/chain.rs (target/debug/deps/chain-aa90181ea07cbd46)
+1795401603.131175	running 2 tests
+1795401603.193563	test a_fault_at_960_milliohms_crosses_the_7_volt_floor_falling_after_the_start ... ok
+1795401603.376240	test two_runs_are_byte_identical ... ok
+1795401603.376326	test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.24s
+1795401603.376595	     Running tests/edges.rs (target/debug/deps/edges-55b7670dd0f80456)
+1795401603.380623	running 0 tests
+1795401603.380736	test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+1795401603.380991	     Running tests/rail.rs (target/debug/deps/rail-3b73719d1a139571)
+1795401603.382000	running 1 test
+1795401603.669072	test a_droop_crosses_each_level_where_the_spike_measured ... ok
+1795401603.669162	test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 0.29s
