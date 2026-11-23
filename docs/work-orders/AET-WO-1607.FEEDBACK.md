@@ -170,7 +170,9 @@ The adversary also noted, for D1: a second stdout line would break `solve > t.js
   - D2's tier-2 test in `with_tools.rs`, with its `ci/test-weights.tsv` row, which §3 allows. It is a Furnace estimate: 123.33 s alone in the image, times 2.8, gives 345.324.
   - The CLI README's lifecycle and `verify` sentences, which name the new verdicts and `not_applicable`, are (a)'s file.
   - Not touched: `renode.rs`, `campaign.rs`, `ledger.rs` and `ledger_tier1.rs` (4300i's), `tests/fixtures/*.json`, the IR, eda, the generators, workflows and `ci/`.
-- **`main` merged:** `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`. `readme_status` passes on the merged tree.
+- **`main` merged twice:**
+  - `fa9d7edd` (docs only: `docs/roadmap.md` and a review), at `d2a5737a`.
+  - `d09a5187` (3307's evolve change, its spike, and `docs/`), at `28662844`. It touches nothing this branch changes, and merged clean. On the merged tree, `readme_status` (which reads the moved roadmap) and `aethelgard-evolve`'s 164 tests pass, and fmt and clippy are clean. The measurement stands: evolve is not in the sweep's commands, and its spike JSON is under `spike/`, which the sweep skips.
 - **Reduction pass (diff): +807 net in `crates/` (+927 −120) · 3 duplicates removed (and one module loaded twice) · 0 dead paths removed · 0 protected kept · 1 finding (F-G).**
   - **Removed:** `doctor`'s `KICAD_PINNED`, equal to `KICAD` once (1) landed.
   - **Removed:** the banner-to-lines conversion, written twice in `cli_backlog_tier1` (now `banner_lines`).
