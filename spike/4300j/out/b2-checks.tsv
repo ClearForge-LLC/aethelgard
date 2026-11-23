@@ -1,0 +1,9 @@
+board	erc	drc (--spec --schematic)	support
+driver-judges-nothing	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+hse-crystal-16	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+motors-dshot600	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+motors-pwm	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+sentinel-02-shaped	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+sentinel-03	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+serial-dshot-9600	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []
+motors-pwm-open	pass rc 0, findings []	pass rc 0, findings []	pass rc 0, findings []

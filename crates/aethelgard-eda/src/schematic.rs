@@ -466,6 +466,14 @@ pub(crate) struct Part {
     /// An IMU's declared orientation with its part's cited axes
     /// (`AET-WO-4400d`): the placer turns its footprint so the two agree.
     pub(crate) seat: Option<Seat>,
+    /// Drawn but not fitted (`AET-WO-4300j` D7: an `open` motor pull's
+    /// link): the symbol carries `(dnp yes)`, the footprint KiCad's `dnp`
+    /// attribute, the BOM's note `DNP`, and JLCPCB's files omit it.
+    pub(crate) dnp: bool,
+    /// The net whose IC pad the placer targets for a part that shares no
+    /// net with an IC: a motor pull's resistor, which reaches its motor net
+    /// only through its link (`AET-WO-4300j` D5). `None` for every other.
+    pub(crate) beside: Option<String>,
 }
 
 /// What the placer turns an IMU's footprint by, and the DRC gate holds it
@@ -785,6 +793,8 @@ impl Builder<'_> {
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         });
         Ok(())
     }
@@ -1517,6 +1527,8 @@ pub(crate) fn design(
         owner: None,
         offboard: BTreeMap::new(),
         seat: None,
+        dnp: false,
+        beside: None,
     });
     if let Some(group) = hse {
         group.draw(&mut b, &mcu_ref)?;
@@ -1651,13 +1663,17 @@ pub(crate) fn design(
 }
 
 /// Each motor output's declared pull-down (`AET-WO-4300i`, ruled D0
-/// `external`), in document order: its resistor from the output's net to
-/// its `to` (`GND`, held there by `validate`'s `MotorPullNotDown`), drawn as
-/// a pin device's signal pull is, valued `<ohms> <part>` with its
-/// power-parts row's symbol and footprint. It is placed as that pull is,
-/// unanchored: beside the one IC on its net, the MCU, its target the motor
-/// pin's pad (5-11 mm from it on the seven drawn boards, measured). Drawn after every other part, so no other part's reference or
-/// schematic position moves.
+/// `external`) behind its series link (`AET-WO-4300j` D5): `<label>` → the
+/// link → `<label>_PD` ([`aethelgard_ir::names::motor_pull_net`]) → the
+/// resistor → `to` (`GND`, held there by `validate`'s `MotorPullNotDown`).
+/// The resistors are drawn in document order, valued `<ohms> <part>` as a
+/// pin device's signal pull is, then the links, each valued `0` with its
+/// jumper row's symbol and footprint. A link is drawn in both fitments; an
+/// `open` one is not fitted (`dnp`, D7), and its resistor is. Drawn after
+/// every other part, so no other part's reference or schematic position
+/// moves. Each is placed unanchored: the link beside the one IC on its net,
+/// the MCU, its target the motor pin's pad; the resistor, which shares no
+/// net with an IC, beside the same pad ([`Part::beside`]).
 fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
     let spec = b.spec;
     for m in &spec.motor_outputs {
@@ -1670,9 +1686,37 @@ fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
                 part: r.part.clone(),
                 ohms: r.ohms,
             },
-            Conn::Net(m.label.clone()),
+            Conn::Net(aethelgard_ir::names::motor_pull_net(&m.label)),
             to,
         )?;
+        // belt-and-suspenders: `power::resistor` has just pushed this part, so
+        // the list is never empty here; refused by name rather than unwrapped.
+        let part = b
+            .parts
+            .last_mut()
+            .ok_or_else(|| EmitError::Internal(format!("{}: not drawn", r.reference)))?;
+        part.beside = Some(m.label.clone());
+    }
+    for m in &spec.motor_outputs {
+        let link = &m.pull.link;
+        power::two_pin(
+            b,
+            &link.reference,
+            &link.part,
+            "0".to_owned(),
+            Conn::Net(m.label.clone()),
+            Conn::Net(aethelgard_ir::names::motor_pull_net(&m.label)),
+            None,
+        )?;
+        if m.pull.fitment == aethelgard_ir::motor::PullFitment::Open {
+            // belt-and-suspenders: `power::two_pin` has just pushed the link,
+            // so the list is never empty here; refused by name, not unwrapped.
+            let part = b
+                .parts
+                .last_mut()
+                .ok_or_else(|| EmitError::Internal(format!("{}: not drawn", link.reference)))?;
+            part.dnp = true;
+        }
     }
     Ok(())
 }
@@ -1726,6 +1770,8 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         });
     }
     for t in spec.declared_test_points() {
@@ -1740,6 +1786,8 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         });
     }
     Ok(())
@@ -1778,6 +1826,8 @@ fn connectors(b: &mut Builder<'_>) -> Result<(), EmitError> {
             owner: None,
             offboard,
             seat: None,
+            dnp: false,
+            beside: None,
         });
     }
     Ok(())
@@ -1788,6 +1838,10 @@ fn symbol_value(lib_id: &str) -> Result<String, EmitError> {
     let sym = library::symbol(lib_id)?;
     Ok(sym.property("Value").unwrap_or("").to_owned())
 }
+
+/// The BOM's note on a part drawn but not fitted (`AET-WO-4300j` D7), its
+/// whole note: no part the emitter marks `dnp` carries another.
+pub const DNP: &str = "DNP";
 
 pub struct BomRow {
     pub reference: String,
@@ -1804,7 +1858,11 @@ impl From<&Part> for BomRow {
             value: p.value.clone(),
             footprint: p.footprint.clone(),
             symbol: p.lib_id.to_owned(),
-            note: p.note.clone().unwrap_or_default(),
+            note: if p.dnp {
+                DNP.to_owned()
+            } else {
+                p.note.clone().unwrap_or_default()
+            },
         }
     }
 }
@@ -2005,6 +2063,20 @@ impl Sheet<'_> {
             pos,
             &key,
         )?;
+        if part.dnp {
+            // The instance writes `(dnp no)`; a part drawn but not fitted
+            // says `yes` there (`AET-WO-4300j` D7). belt-and-suspenders: the
+            // `ok_or_else` is unreachable, `instance` always writes it.
+            let dnp = self
+                .items
+                .last_mut()
+                .and_then(Sx::items_mut)
+                .and_then(|v| v.iter_mut().find(|c| c.head() == Some("dnp")))
+                .ok_or_else(|| {
+                    EmitError::Internal(format!("{}: no `dnp` written", part.reference))
+                })?;
+            *dnp = Sx::node("dnp", &["yes"]);
+        }
         let pins = pins(&self.syms[part.lib_id]).map_err(EmitError::Internal)?;
         for n in part.conns.keys() {
             if !pins.iter().any(|p| &p.number == n) {
@@ -2208,6 +2280,47 @@ mod tests {
     }
 
     use super::*;
+
+    /// `AET-WO-4300j` D7: a part drawn but not fitted is `(dnp yes)` on the
+    /// sheet and noted `DNP` in the BOM; a fitted one is `(dnp no)` with its
+    /// own note.
+    #[test]
+    fn a_dnp_part_is_dnp_on_the_sheet_and_in_the_bom() {
+        let r = |reference: &str, dnp: bool| Part {
+            lib_id: R,
+            reference: reference.into(),
+            value: "0".into(),
+            footprint: "Resistor_SMD:R_0402_1005Metric".into(),
+            conns: BTreeMap::from([
+                ("1".into(), Conn::Net("MOTOR1".into())),
+                ("2".into(), Conn::Net("MOTOR1_PD".into())),
+            ]),
+            note: None,
+            owner: None,
+            offboard: BTreeMap::new(),
+            seat: None,
+            dnp,
+            beside: None,
+        };
+        let parts = [r("R1", true), r("R2", false)];
+        let sheet = write_sheet("p", &parts, &BTreeSet::new()).unwrap();
+        let tree = crate::strict::schematic(&sheet).unwrap();
+        let dnp: BTreeMap<String, String> = tree
+            .root()
+            .all("symbol")
+            .filter_map(|s| {
+                let reference = s.field("Reference").ok()??.to_owned();
+                let d = s.one("dnp").ok()??.arg(1)?.to_owned();
+                Some((reference, d))
+            })
+            .collect();
+        assert_eq!(
+            dnp,
+            BTreeMap::from([("R1".into(), "yes".into()), ("R2".into(), "no".into())])
+        );
+        let notes: Vec<String> = parts.iter().map(|p| BomRow::from(p).note).collect();
+        assert_eq!(notes, ["DNP", ""]);
+    }
 
     /// `AET-WO-1311` §1.5 (`4200` F12): each address takes the strap the
     /// datasheet gives it, by the parts table's order, pinned here so a
@@ -2460,6 +2573,8 @@ mod tests {
                     owner: None,
                     offboard: Default::default(),
                     seat: None,
+                    dnp: false,
+                    beside: None,
                 }),
                 "{}: its symbol is not recognised as a connector",
                 row.name

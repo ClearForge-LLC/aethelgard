@@ -920,10 +920,21 @@ fn coordinate(kicad: &str) -> Option<&str> {
 ///   normalised to 0–359, in KiCad's frame with no per-footprint offset.
 ///
 /// Each line ends CRLF. A part on the bottom side refuses both files by its
-/// reference. The two files must name exactly the same parts.
+/// reference. A part the BOM notes `DNP` is in neither (`AET-WO-4300j` D7).
+/// The two files must name exactly the same parts.
 pub fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(String, String), JlcpcbRefusal> {
     use JlcpcbRefusal::{BottomSide, Malformed};
-    let placed = placement(pos).map_err(|e| Malformed(format!("the placement file: {e}")))?;
+    let rows = bom_rows(bom).map_err(Malformed)?;
+    // A part drawn but not fitted (`AET-WO-4300j` D7) is neither bought nor
+    // placed: its designator is in neither file, whether KiCad's placement
+    // file lists it or not.
+    let dnp: Vec<&str> = rows
+        .iter()
+        .filter(|[.., note]| note == crate::schematic::DNP)
+        .map(|[reference, ..]| reference.as_str())
+        .collect();
+    let mut placed = placement(pos).map_err(|e| Malformed(format!("the placement file: {e}")))?;
+    placed.retain(|p| !dnp.contains(&p.reference));
     let mut cpl = format!("{JLCPCB_CPL_HEADER}\r\n");
     for p in &placed {
         let layer = match p.side {
@@ -948,9 +959,11 @@ pub fn jlcpcb(bom: &[u8], pos: &[u8]) -> Result<(String, String), JlcpcbRefusal>
             csv_field(p.reference, true)
         ));
     }
-    let rows = bom_rows(bom).map_err(Malformed)?;
     let mut kinds: Vec<((String, String, String), Vec<String>)> = Vec::new();
-    for [reference, value, footprint, note] in rows {
+    for [reference, value, footprint, note] in rows.iter().cloned() {
+        if dnp.contains(&reference.as_str()) {
+            continue;
+        }
         let name = footprint
             .split_once(':')
             .map_or(footprint.as_str(), |(_, n)| n)
@@ -1150,6 +1163,28 @@ mod tests {
         assert_eq!(refs, ["C2:a", "C10:b"]);
         assert_eq!(noted(BOM_HEAD.as_bytes()), Ok(Vec::new()));
         assert!(noted(b"Reference,Value\r\n").is_err());
+    }
+
+    /// `AET-WO-4300j` D7: a part the emitter's BOM notes `DNP` is in neither
+    /// JLCPCB file, whether KiCad's placement file lists it or not; a part
+    /// with any other note is bought and placed.
+    #[test]
+    fn a_dnp_part_is_in_neither_jlcpcb_file() {
+        let bom = format!(
+            "{BOM_HEAD}R1,442k CRCW0603_F_K,Resistor_SMD:R_0603_1608Metric,Device:R,\r\nR2,0,Resistor_SMD:R_0402_1005Metric,Device:R,DNP\r\nR3,0,Resistor_SMD:R_0402_1005Metric,Device:R,DNP note\r\n"
+        );
+        let want_bom = "Comment,Designator,Footprint,JLCPCB Part #（optional）,Note\r\n442k CRCW0603_F_K,\"R1\",R_0603_1608Metric,,\r\n0,\"R3\",R_0402_1005Metric,,DNP note\r\n";
+        let want_cpl = "Designator,Mid X,Mid Y,Layer,Rotation\r\n\"R1\",1.500000mm,-2.250000mm,T,0\r\n\"R3\",1.500000mm,-2.250000mm,T,0\r\n";
+        for listed in [true, false] {
+            let mut pos = format!("{POS_HEAD}{}", pos_row("R1", "0", "top"));
+            if listed {
+                pos.push_str(&pos_row("R2", "0", "top"));
+            }
+            pos.push_str(&pos_row("R3", "0", "top"));
+            let (b, c) = jlcpcb(bom.as_bytes(), pos.as_bytes()).unwrap();
+            assert_eq!(b, want_bom, "listed {listed}");
+            assert_eq!(c, want_cpl, "listed {listed}");
+        }
     }
 
     #[test]

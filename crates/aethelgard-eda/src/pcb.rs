@@ -492,9 +492,13 @@ fn pad_order(n: &str) -> (u64, &str) {
 
 impl Item<'_> {
     /// The nets this part shares with `other`, ground and unconnected nets
-    /// aside: label nets first, then rails, each by name.
+    /// aside: label nets first, then rails, each by name. A part placed
+    /// beside a net it does not carry ([`Part::beside`]) shares that net too.
     fn shared(&self, other: &Item<'_>) -> Vec<String> {
-        let mine = self.nets();
+        let mut mine = self.nets();
+        if let Some(label) = &self.part.beside {
+            mine.insert(format!("/{}", escape(label)));
+        }
         let mut shared: Vec<String> = other.nets().intersection(&mine).cloned().collect();
         shared.sort_by_key(|n| (!n.starts_with('/'), n.clone()));
         shared
@@ -1671,6 +1675,7 @@ fn footprint(
         .rposition(|c| c.head() == Some("property"))
         .ok_or_else(|| internal(&part.reference, "a footprint without properties"))?;
     let mut n = 0;
+    let mut dnp_written = false;
     for (index, child) in body.iter().enumerate() {
         let mut c = child.clone();
         match child.head() {
@@ -1683,6 +1688,15 @@ fn footprint(
             // same `route::rotate` its pads do (`AET-WO-4400d` D2, replacing
             // the refusal of a turned zone; the tier-2
             // `a_turned_keepout_is_where_kicad_draws_it` holds it).
+            // A part drawn but not fitted carries KiCad's `dnp` flag in its
+            // footprint's attributes (`AET-WO-4300j` D7), as its symbol
+            // carries `(dnp yes)`: KiCad's parity check holds the two equal.
+            Some("attr") if part.dnp => {
+                if let Some(items) = c.items_mut() {
+                    items.push(Sx::atom("dnp"));
+                    dnp_written = true;
+                }
+            }
             Some("zone") => to_board(&mut c, origin, rotation, &part.reference)?,
             Some("fp_text") if rotation != 0 => turn(&mut c, rotation, &part.reference)?,
             Some("property") => {
@@ -1754,6 +1768,15 @@ fn footprint(
                 Sx::str(format!("{project}.kicad_sch")),
             ]));
         }
+    }
+    // belt-and-suspenders: every vendored SMD footprint carries `attr`, so
+    // no test reaches this; one without would put a fitted pad under a
+    // `dnp` symbol, which KiCad's parity check refuses at DRC (tier 2).
+    if part.dnp && !dnp_written {
+        return Err(internal(
+            &part.reference,
+            "a footprint without `attr` to mark `dnp`",
+        ));
     }
     Ok(Sx::List(out))
 }
@@ -2592,6 +2615,8 @@ mod tests {
             owner: None,
             offboard: BTreeMap::new(),
             seat: None,
+            dnp: false,
+            beside: None,
         }
     }
 
@@ -2941,6 +2966,76 @@ mod tests {
     }
 
     /// Two parts with one footprint get distinct UUIDs throughout.
+    /// `AET-WO-4300j` D7: a part drawn but not fitted carries KiCad's `dnp`
+    /// flag among its footprint's attributes; a fitted one does not.
+    #[test]
+    fn a_dnp_part_carries_the_dnp_attribute_and_a_fitted_one_does_not() {
+        let r = |reference: &str, dnp: bool| {
+            let mut p = part(
+                "Device:R",
+                R0402,
+                reference,
+                &[("1", net("MOTOR1")), ("2", net("MOTOR1_PD"))],
+            );
+            p.dnp = dnp;
+            p
+        };
+        let board = write(
+            "p",
+            &[
+                mcu(&[("100", net("MOTOR1"))]),
+                r("R1", true),
+                r("R2", false),
+            ],
+            &crate::stack::reference(),
+        )
+        .unwrap();
+        let tree = crate::strict::board(&board).unwrap();
+        let attrs: BTreeMap<String, Vec<String>> = tree
+            .root()
+            .all("footprint")
+            .map(|fp| {
+                let reference = fp.field("Reference").unwrap().unwrap().to_owned();
+                let attr = fp
+                    .all("attr")
+                    .flat_map(|a| a.texts().map(str::to_owned).collect::<Vec<_>>())
+                    .collect();
+                (reference, attr)
+            })
+            .collect();
+        assert_eq!(attrs["R1"], ["smd", "dnp"], "{attrs:?}");
+        assert_eq!(attrs["R2"], ["smd"], "{attrs:?}");
+    }
+
+    /// `AET-WO-4300j` D5: a part that shares no net with an IC, placed
+    /// beside a net it does not carry (a motor pull's resistor behind its
+    /// link), goes beside that net's IC pad, as a part on the net would.
+    #[test]
+    fn a_part_placed_beside_a_net_goes_by_that_nets_ic_pad() {
+        let on = |beside: Option<&str>| {
+            let mut p = part(
+                "Device:R",
+                R0402,
+                "R1",
+                &[("1", net("MOTOR1_PD")), ("2", Conn::Rail("GND".into()))],
+            );
+            p.beside = beside.map(str::to_owned);
+            let parts = [mcu(&[("100", net("MOTOR1"))]), p];
+            let l = layout(&parts).unwrap();
+            let items = items(&parts).unwrap();
+            let pad = items[0].pad_on("/MOTOR1").unwrap();
+            let r = l.placed.iter().find(|p| p.reference == "R1").unwrap();
+            let c = r.courtyard.centre();
+            let (dx, dy) = (c.0 - (ORIGIN.0 + pad.0), c.1 - (ORIGIN.1 + pad.1));
+            dx * dx + dy * dy
+        };
+        let (beside, alone) = (on(Some("MOTOR1")), on(None));
+        assert!(
+            beside < alone,
+            "beside the pad {beside} nm^2, by the courtyard's centre {alone} nm^2"
+        );
+    }
+
     #[test]
     fn every_uuid_on_the_board_is_distinct() {
         let bme = |r: &str| {

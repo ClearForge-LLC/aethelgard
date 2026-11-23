@@ -13,9 +13,18 @@ use aethelgard_svd_hal::pin_table;
 use sha2::{Digest, Sha256};
 
 fn fixture(name: &str) -> (SolvedTopology, aethelgard_ir::PinTable) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join(format!("../aethelgard-cli/tests/fixtures/{name}.json"));
-    let bytes = fs::read(path).unwrap();
+    solved_at(&format!("crates/aethelgard-cli/tests/fixtures/{name}.json"))
+}
+
+/// The specification at `path` (from the workspace root), solved as
+/// `aethelgard solve` solves it, with its pin table.
+fn solved_at(path: &str) -> (SolvedTopology, aethelgard_ir::PinTable) {
+    let bytes = fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(path),
+    )
+    .unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let sha: String = Sha256::digest(&bytes)
         .iter()
@@ -263,41 +272,181 @@ fn a_timer_pin_on_an_af_the_table_does_not_give_is_refused() {
     );
 }
 
-/// The trybuild cases include this generated `board.rs` by path; it must be
-/// exactly what the generator writes for `motors-pwm`.
-/// `AETHELGARD_BLESS=1` rewrites it.
+/// The two ui cases (`tests/ui/<case>`) and the specification each is solved
+/// from: the committed `motors-pwm` fixture (every motor pull `fitted`), and
+/// its copy with every pull `open` (`AET-WO-4300j` D8, under `spike/`, which
+/// no sweep reads), so that both fitments are held byte for byte.
+const UI_CASES: [(&str, &str); 2] = [
+    (
+        "motors-pwm",
+        "crates/aethelgard-cli/tests/fixtures/motors-pwm.json",
+    ),
+    ("motors-pwm-open", "spike/4300j/open/motors-pwm-open.json"),
+];
+
+/// The trybuild cases include `motors-pwm`'s generated `board.rs` by path;
+/// each case's must be exactly what the generator writes for its
+/// specification. `AETHELGARD_BLESS=1` rewrites them.
 #[test]
 fn the_ui_board_is_the_generated_one() {
-    let path: PathBuf = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/motors-pwm/board.rs");
-    let text = generated("motors-pwm")["src/board.rs"].clone();
-    if std::env::var_os("AETHELGARD_BLESS").is_some() {
-        fs::create_dir_all(path.parent().unwrap()).unwrap();
-        fs::write(&path, &text).unwrap();
+    for (case, spec) in UI_CASES {
+        let path: PathBuf =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/ui/{case}/board.rs"));
+        let (solved, table) = solved_at(spec);
+        let text =
+            generate_with("motors-board", &solved, &table, &answers).unwrap()["src/board.rs"]
+                .clone();
+        if std::env::var_os("AETHELGARD_BLESS").is_some() {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &text).unwrap();
+        }
+        assert!(
+            fs::read_to_string(&path).unwrap() == text,
+            "{} differs",
+            path.display()
+        );
     }
-    assert!(
-        fs::read_to_string(&path).unwrap() == text,
-        "{} differs",
-        path.display()
-    );
 }
 
 /// The unit tests of the schedule proof's split read the PWM fixture's
-/// solved topology from this file; it must be exactly what `solve` gives.
-/// `AETHELGARD_BLESS=1` rewrites it.
+/// solved topology from `tests/ui/motors-pwm/topology.json`; each case's
+/// must be exactly what `solve` gives. `AETHELGARD_BLESS=1` rewrites them.
 #[test]
 fn the_ui_topology_is_the_solved_one() {
-    let path: PathBuf =
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/ui/motors-pwm/topology.json");
-    let (solved, _) = fixture("motors-pwm");
-    let text = serde_json::to_string(&solved).unwrap() + "\n";
-    if std::env::var_os("AETHELGARD_BLESS").is_some() {
-        fs::write(&path, &text).unwrap();
+    for (case, spec) in UI_CASES {
+        let path: PathBuf =
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/ui/{case}/topology.json"));
+        let (solved, _) = solved_at(spec);
+        let text = serde_json::to_string(&solved).unwrap() + "\n";
+        if std::env::var_os("AETHELGARD_BLESS").is_some() {
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(&path, &text).unwrap();
+        }
+        assert!(
+            fs::read_to_string(&path).unwrap() == text,
+            "{} differs",
+            path.display()
+        );
     }
+}
+
+/// `GPIOx_PUPDR`'s field of pin `index` in `word` (RM0433 Rev 9 §11.4.4,
+/// p. 542: `PUPDy` is bits `2y+1:2y`).
+fn pupd_field(word: u32, index: u32) -> u32 {
+    (word >> (2 * index)) & 0b11
+}
+
+/// The one hex word after `head` in `text`, up to `tail`.
+fn word_after(text: &str, head: &str, tail: &str) -> u32 {
+    assert_eq!(text.matches(head).count(), 1, "`{head}`");
+    let rest = &text[text.find(head).unwrap() + head.len()..];
+    let hex = &rest[..rest.find(tail).unwrap()];
+    u32::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap()
+}
+
+/// The proof oracle's expected whole `PUPDR` of `port`: the word of every
+/// `kani::assert(value == <word>, "Gpio<port> PUPDR is not the solved word,
+/// whole")`, which must be one word.
+fn oracle_word(proofs: &str, port: &str) -> u32 {
+    let tail = format!(", \"Gpio{port} PUPDR is not the solved word, whole\");");
+    let words: std::collections::BTreeSet<u32> = proofs
+        .match_indices(&tail)
+        .map(|(at, _)| {
+            let head = &proofs[..at];
+            let hex = &head[head.rfind("value == ").unwrap() + "value == ".len()..];
+            u32::from_str_radix(hex.trim_start_matches("0x"), 16).unwrap()
+        })
+        .collect();
+    assert_eq!(words.len(), 1, "Gpio{port}: {words:?}");
+    words.into_iter().next().unwrap()
+}
+
+/// `AET-WO-4300j` D6, pin by pin: each motor pin's `PUPDR` field follows its
+/// declared fitment, `00` when `fitted` (the declared external resistor
+/// holds the line, `4300i` D0) and `10` when `open` (the internal
+/// pull-down), in the generator's `split` write and in the proof oracle's
+/// expected word alike, decoded field by field from each case's committed
+/// topology and board. The committed `motors-pwm` is `fitted` on every
+/// output and `motors-pwm-open` `open`; every other field of the port is the
+/// same in both, the debug port's reset pulls among them. One output flipped
+/// alone moves its own field and no other.
+#[test]
+fn each_motor_pin_s_pupdr_follows_its_fitment_in_the_generator_and_the_oracle() {
+    use aethelgard_ir::motor::PullFitment;
+    let ui = |case: &str, file: &str| {
+        fs::read_to_string(
+            Path::new(env!("CARGO_MANIFEST_DIR")).join(format!("tests/ui/{case}/{file}")),
+        )
+        .unwrap()
+    };
+    let (_, table) = fixture("motors-pwm");
+    // (generator's word, oracle's word) of `port`.
+    let words = |solved: &SolvedTopology, board: &str, port: &str| {
+        let files = generate_with("motors-board", solved, &table, &answers).unwrap();
+        let head = format!("r.write(TOKEN, Block::Gpio{port}, 0x0c, ");
+        (
+            word_after(board, &head, ");"),
+            oracle_word(&files["src/proofs.rs"], port),
+        )
+    };
+    let check = |solved: &SolvedTopology, board: &str| {
+        let mut ports = BTreeMap::new();
+        for (net, m) in &solved.motor_outputs {
+            let pin = &solved.assignments[net].pin;
+            let (port, index) = (&pin[1..2], pin[2..].parse::<u32>().unwrap());
+            let (generator, oracle) = words(solved, board, port);
+            let want = match m.pull.fitment {
+                PullFitment::Fitted => 0b00,
+                PullFitment::Open => 0b10,
+            };
+            assert_eq!(pupd_field(generator, index), want, "generator {net} {pin}");
+            assert_eq!(pupd_field(oracle, index), want, "oracle {net} {pin}");
+            ports.insert(port.to_owned(), (generator, oracle));
+        }
+        ports
+    };
+    let fitted: SolvedTopology = serde_json::from_str(&ui("motors-pwm", "topology.json")).unwrap();
+    let open: SolvedTopology =
+        serde_json::from_str(&ui("motors-pwm-open", "topology.json")).unwrap();
     assert!(
-        fs::read_to_string(&path).unwrap() == text,
-        "{} differs",
-        path.display()
+        fitted
+            .motor_outputs
+            .values()
+            .all(|m| m.pull.fitment == PullFitment::Fitted)
     );
+    assert!(
+        open.motor_outputs
+            .values()
+            .all(|m| m.pull.fitment == PullFitment::Open)
+    );
+    let a = check(&fitted, &ui("motors-pwm", "board.rs"));
+    let b = check(&open, &ui("motors-pwm-open", "board.rs"));
+    // Port A: PA8..PA11 (bits 23:16) `00` or `10` each, over the debug port's
+    // reset pulls.
+    assert_eq!(a["A"], (0x6400_0000, 0x6400_0000));
+    assert_eq!(b["A"], (0x64AA_0000, 0x64AA_0000));
+    // One output flipped alone, either way: its own field moves, no other.
+    for (base, board, to) in [
+        (&fitted, ui("motors-pwm", "board.rs"), PullFitment::Open),
+        (
+            &open,
+            ui("motors-pwm-open", "board.rs"),
+            PullFitment::Fitted,
+        ),
+    ] {
+        let mut t = base.clone();
+        let m = t.motor_outputs.get_mut("MOTOR2").unwrap();
+        m.pull.fitment = to;
+        t.validate().unwrap();
+        let files = generate_with("motors-board", &t, &table, &answers).unwrap();
+        let now = check(&t, &files["src/board.rs"]);
+        let before = words(base, &board, "A");
+        let index = t.assignments["MOTOR2"].pin[2..].parse::<u32>().unwrap();
+        let mask = 0b11 << (2 * index);
+        assert_eq!(now["A"].0 & !mask, before.0 & !mask);
+        assert_eq!(now["A"].1 & !mask, before.1 & !mask);
+        assert_ne!(now["A"].0, before.0);
+    }
 }
 
 /// Each `#[kani::proof]` harness of a generated `proofs.rs`, by name.
@@ -395,9 +544,10 @@ fn an_output_no_unit_owns_is_proved_in_the_gpio_part() {
 }
 
 /// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23), which reverses
-/// `AET-WO-4230` R5 (Q-G) for motor outputs: no motor-output pin carries an
-/// internal pull, `PUPDR` `00`, because its pull-down is the declared external
-/// resistor (`motor_outputs[].pull`). `split` still writes port A's whole
+/// `AET-WO-4230` R5 (Q-G) for motor outputs, on a `fitted` board
+/// (`AET-WO-4300j` D6): no motor-output pin carries an internal pull, `PUPDR`
+/// `00`, because its pull-down is the declared external resistor
+/// (`motor_outputs[].pull`). `split` still writes port A's whole
 /// word, the debug port's reset pulls (`0x6400_0000`, RM0433 Rev 9 §11.4.4,
 /// p. 542) and `00` at PA8..PA11 (bits 23:16); no pin method writes `PUPDR`,
 /// and the proofs hold the word whole. A motor pull written in either

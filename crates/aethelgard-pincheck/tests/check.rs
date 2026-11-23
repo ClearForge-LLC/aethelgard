@@ -636,8 +636,62 @@ fn each_wrong_drive_field_is_refused_by_name() {
     }
 }
 
-/// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23): a motor pin
-/// carries no internal pull, its pull-down being the declared external
+/// The `WrongPull` findings of an ELF whose port A `PUPDR` is `pupdr`, as
+/// `<pin> <net> <decoded> expected <expected>`.
+fn wrong_pulls(t: &aethelgard_ir::SolvedTopology, pupdr: u32) -> Vec<String> {
+    let mut words = [[0u32; 7]; 11];
+    words[0][3] = pupdr;
+    let config = elf::read(
+        &Elf {
+            words,
+            ..Elf::default()
+        }
+        .bytes(),
+    )
+    .unwrap();
+    judge(t, &lqfp_like(), &config, None, &allow())
+        .unwrap()
+        .findings
+        .iter()
+        .filter(|f| f.kind == "WrongPull")
+        .map(|f| {
+            format!(
+                "{} {} {} expected {}",
+                f.pin,
+                f.net.as_deref().unwrap_or("-"),
+                f.decoded,
+                f.expected
+            )
+        })
+        .collect()
+}
+
+/// `AET-WO-4300j` D6: on a board whose motor pulls are `open` (the link not
+/// fitted), each motor pin must carry the internal pull-down, `10`, and an
+/// ELF with none, `00`, the `fitted` firmware, is refused pin by pin by name;
+/// with `10` on PA8..PA11 no pull is named. The topology is `motors-pwm`'s
+/// with every pull `open` (`tests/ui/motors-pwm-open`, solved from
+/// `spike/4300j/open/`).
+#[test]
+fn an_open_motor_pin_with_no_internal_pull_is_refused_as_wrong_pull() {
+    let t: aethelgard_ir::SolvedTopology = serde_json::from_str(include_str!(
+        "../../aethelgard-svd-hal/tests/ui/motors-pwm-open/topology.json"
+    ))
+    .unwrap();
+    assert_eq!(wrong_pulls(&t, 0x00AA_0000), Vec::<String>::new());
+    assert_eq!(
+        wrong_pulls(&t, 0),
+        [
+            "PA8 MOTOR1 PUPDR 00 expected PUPDR 10",
+            "PA9 MOTOR2 PUPDR 00 expected PUPDR 10",
+            "PA10 MOTOR3 PUPDR 00 expected PUPDR 10",
+            "PA11 MOTOR4 PUPDR 00 expected PUPDR 10"
+        ]
+    );
+}
+
+/// `AET-WO-4300i` D0 (`4300h`, ruled by Scotty 2026-11-23), on a `fitted`
+/// board (`AET-WO-4300j` D6): a motor pin carries no internal pull, its pull-down being the declared external
 /// resistor (`motor_outputs[].pull`), so an ELF whose motor pin is pulled,
 /// down (Q-G's `10`) or up (`01`), is refused by name with `PUPDR 00`
 /// expected; with `00` on every motor pin no pull is named. The topology is
@@ -648,33 +702,7 @@ fn a_motor_pin_with_an_internal_pull_is_refused_as_wrong_pull() {
         "../../aethelgard-svd-hal/tests/ui/motors-pwm/topology.json"
     ))
     .unwrap();
-    let pulls = |pupdr: u32| -> Vec<String> {
-        let mut words = [[0u32; 7]; 11];
-        words[0][3] = pupdr;
-        let config = elf::read(
-            &Elf {
-                words,
-                ..Elf::default()
-            }
-            .bytes(),
-        )
-        .unwrap();
-        judge(&t, &lqfp_like(), &config, None, &allow())
-            .unwrap()
-            .findings
-            .iter()
-            .filter(|f| f.kind == "WrongPull")
-            .map(|f| {
-                format!(
-                    "{} {} {} expected {}",
-                    f.pin,
-                    f.net.as_deref().unwrap_or("-"),
-                    f.decoded,
-                    f.expected
-                )
-            })
-            .collect()
-    };
+    let pulls = |pupdr: u32| wrong_pulls(&t, pupdr);
     assert_eq!(pulls(0), Vec::<String>::new());
     assert_eq!(pulls(0b10 << 16), ["PA8 MOTOR1 PUPDR 10 expected PUPDR 00"]);
     assert_eq!(

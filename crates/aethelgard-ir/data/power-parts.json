@@ -1,5 +1,5 @@
 {
-  "schema_version": 9,
+  "schema_version": 10,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -1958,13 +1958,50 @@
                 "section": "p. 67, Table 8 (pin/ball definition): `PC2_C` and `PC3_C` are pin type ANA, and note 4: the Pxy alternate functions reach the Pxy_C pad only through the analog switch (SYSCFG); p. 104, Table 11 (current characteristics): a Px_C pin sinks at most 1 mA"
               }
             },
-            "weak_pull_down_ohms": {
-              "min": 30000,
-              "typical": 40000,
-              "max": 50000,
-              "at": {
-                "document": "DS12117",
-                "section": "Table 49 p. 137 (rev Y) and Table 146 p. 241 (rev V): RPD weak pull-down equivalent resistor, VIN = VDD, 30 / 40 / 50 kOhm"
+            "motor_pull_bound": {
+              "pull_up_max_ohms": {
+                "value": 50000,
+                "at": {
+                  "document": "DS12117",
+                  "section": "Table 49 p. 137 (rev Y) = Table 146 p. 241 (rev V): RPU weak pull-up equivalent resistor, VIN = VSS, 30 / 40 / 50 kOhm, max"
+                }
+              },
+              "input_high_min_permille": {
+                "value": 700,
+                "at": {
+                  "document": "DS12117",
+                  "section": "Table 49 p. 136 (rev Y) = Table 146 p. 241 (rev V): VIH min 0.7 VDD, 1.62 V < VDD < 3.6 V, note 1 (compliant with CMOS requirements)"
+                }
+              },
+              "input_low_max_permille": {
+                "value": 300,
+                "at": {
+                  "document": "DS12117",
+                  "section": "Table 49 p. 136 (rev Y) = Table 146 p. 241 (rev V): VIL max 0.3 VDD, 1.62 V < VDD < 3.6 V, note 1 (compliant with CMOS requirements)"
+                }
+              },
+              "leakage_max_nanoamps": {
+                "value": 350,
+                "at": {
+                  "document": "DS12117",
+                  "section": "Table 49 p. 137 (rev Y) = Table 146 p. 241 (rev V): Ilkg, 0 < VIN <= Max(VDDXXX): FT_xx and TT_xx +/-250 nA, FT_u +/-350 nA, the largest row"
+                }
+              },
+              "peer_input_current_nanoamps": {
+                "value": 350,
+                "basis": "a stand-in (S2): AET-WO-4300j D1 (a), ruled 2026-11-23T10:11Z: the ESC input's current taken as the STM32's largest Ilkg row; no ESC MCU datasheet is held (FEEDBACK R1)"
+              },
+              "margin_permille": {
+                "value": 100,
+                "basis": "AET-WO-4300j D1 (a), ruled 2026-11-23T10:11Z: 10 % of VDD at each threshold"
+              },
+              "peer_rail_millivolts": {
+                "value": 3300,
+                "basis": "a stand-in (S1): the ESC makes its own 3.3 V (DS70005664A p. 16, VREG -> R54 0R -> VDD), so its thresholds are taken on its own rail, not mcu.supply. AET-WO-4300j F2, ruled 2026-11-23T12:25Z"
+              },
+              "peer_rail_tolerance_permille": {
+                "value": 50,
+                "basis": "a stand-in (S1): the ESC regulator's tolerance is not held (FEEDBACK R1); taken as the committed boards' 3V3 +/-50 permille. AET-WO-4300j F2, ruled 2026-11-23T12:25Z"
               }
             }
           }
@@ -2010,6 +2047,39 @@
             }
           },
           "drift_condition": "0.10 % after 8000 h at P70 in general mode (film 125 C), the reference temperature 20 C (test table, (20 / -55 / 20) C and (20 / 125 / 20) C)"
+        }
+      }
+    },
+    {
+      "part": "CRCW0402_Z_0",
+      "lifecycle": "unread",
+      "symbol": "Device:R",
+      "footprint": "Resistor_SMD:R_0402_1005Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 155,
+        "at": {
+          "document": "VISHAY_20035",
+          "section": "p. 1, operating temperature -55 to 155 C"
+        }
+      },
+      "kind": {
+        "jumper": {
+          "max_milliohms": {
+            "value": 20,
+            "at": {
+              "document": "VISHAY_20035",
+              "section": "p. 2, D10/CRCW0402 e3: Jumper, Imax. = 1.5 A, <= 20 mOhm, 0 Ohm; p. 3 part numbering: CRCW0402, 0000 jumper, Z jumper tolerance, 0 jumper TCR, ED packaging (CRCW04020000Z0ED)"
+            }
+          },
+          "max_milliamps": {
+            "value": 1500,
+            "at": {
+              "document": "VISHAY_20035",
+              "section": "p. 2, D10/CRCW0402 e3: Jumper, Imax. = 1.5 A, <= 20 mOhm, 0 Ohm; p. 3 part numbering: CRCW0402, 0000 jumper, Z jumper tolerance, 0 jumper TCR, ED packaging (CRCW04020000Z0ED)"
+            }
+          }
         }
       }
     },

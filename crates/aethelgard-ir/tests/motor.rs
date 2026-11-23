@@ -56,12 +56,15 @@ fn table() -> PinTable {
     }
 }
 
-/// An output's declared pull-down (specification 28, `AET-WO-4300i`), its
-/// reference named after the output.
+/// An output's declared pull-down (specification 28, `AET-WO-4300i`), with
+/// its link and fitment (specification 29, `AET-WO-4300j`), its references
+/// named after the output.
 fn pull(label: &str) -> Value {
     json!({"resistor": {"reference": format!("RPD_{label}"), "part": "CRCW0603_F_K",
-        "ohms": 40200, "to": "GND"},
-        "source": "DS12117 Rev 10 Table 49 p. 137: RPD 30/40/50 kOhm (test)"})
+        "ohms": 442000, "to": "GND"},
+        "link": {"reference": format!("RLK_{label}"), "part": "CRCW0402_Z_0"},
+        "fitment": "fitted",
+        "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm (test)"})
 }
 
 fn pwm(label: &str, pin: Option<&str>, rate_hz: u32) -> Value {
@@ -128,6 +131,128 @@ fn with_spi(motors: Vec<Value>, sck: Option<&str>) -> Specification {
 
 fn refused(motors: Vec<Value>) -> IrValidationError {
     spec(motors).validate().expect_err("refused")
+}
+
+/// `M1`, a DShot output whose pull declares `ohms`, on `VDD_3V3` at
+/// `nominal` mV +/- `tol` permille: what `validate` says (`AET-WO-4300j` D3
+/// (a), the bound computed on the board's rail). Every edge below was worked
+/// out outside the engine in exact fractions.
+fn on_rail(nominal: u32, tol: u32, ohms: u32) -> Result<(), IrValidationError> {
+    let mut m = dshot("M1", None);
+    m["pull"]["resistor"]["ohms"] = json!(ohms);
+    let mut v = spec_json(vec![m]);
+    v["voltage_domains"][0]["nominal_millivolts"] = json!(nominal);
+    v["voltage_domains"][0]["tolerance_permille"] = json!(tol);
+    serde_json::from_value::<Specification>(v)
+        .expect("a specification")
+        .validate()
+}
+
+fn outside_on(nominal: u32, tol: u32, ohms: u32) -> String {
+    let e = on_rail(nominal, tol, ohms).expect_err("refused");
+    assert_eq!(
+        (e.kind(), e.id(), e.path()),
+        (
+            "MotorPullOutsideBound",
+            Some("M1"),
+            Some("motor_outputs[0].pull.resistor.ohms")
+        ),
+        "{nominal} +/-{tol}, {ohms}: {e}"
+    );
+    e.to_string()
+}
+
+/// The pull-up works from the board's rail; the ESC's thresholds sit on its
+/// own, held as a stand-in at 3300 mV +/-50 (`AET-WO-4300j` F2, ruled
+/// 12:25Z); and the band, not the bare value, is judged (F3): the low corner
+/// (-1 % - 2 %) clears the floor and the high corner (+1 % + 2 %) the ceiling.
+/// On the committed 3300 mV +/-50 the window is 17 325 000 / 41 =
+/// 422 560.97... to 6 270 000 / 7 = 895 714.28... ohm, so the band admits
+/// 435 630 to 869 625 ohm: 442 000 admitted, 432 000 refused. A board rail of
+/// 3300 +/-1 holds a stronger pull-up, so the floor falls to 1 386 000 000 /
+/// 4897 = 283 030.43... and the band admits 291 785 to 869 625, the ceiling
+/// the ESC's alone: 221 000 is still refused, the value D1 (a) rejected. On
+/// 3400 +/-50 the floor is 15 400 000 / 47 = 327 659.57..., and on 1800
+/// +/-50 no pull-up reaches the ESC's threshold at all. Every edge was worked
+/// out outside the engine in exact fractions.
+#[test]
+fn the_bound_moves_with_the_rail() {
+    on_rail(3300, 50, 442_000).unwrap();
+    for ohms in [435_630, 869_625] {
+        on_rail(3300, 50, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+    for ohms in [432_000, 435_629, 869_626, 422_561, 895_714] {
+        let m = outside_on(3300, 50, ohms);
+        assert!(m.contains("422561 to 895714 ohm"), "{m}");
+    }
+    let m = outside_on(3300, 1, 221_000);
+    assert!(m.contains("283031 to 895714 ohm"), "{m}");
+    assert!(m.contains("`VDD_3V3` (3300 mV +/-1 permille)"), "{m}");
+    assert!(m.contains("peer rail 3300 mV +/-50 permille"), "{m}");
+    for ohms in [291_785, 869_625] {
+        on_rail(3300, 1, ohms).unwrap_or_else(|e| panic!("{ohms}: {e}"));
+    }
+    outside_on(3300, 1, 291_784);
+    outside_on(3300, 1, 869_626);
+    let m = outside_on(3400, 50, 221_000);
+    assert!(m.contains("327660 to 895714 ohm"), "{m}");
+    let e = on_rail(1800, 50, 442_000).unwrap_err();
+    assert_eq!(e.kind(), "MotorPullFloorUnreachable", "{e}");
+}
+
+/// `MOTOR1`'s pull net is `MOTOR1_PD` (`AET-WO-4300j` D5), the engine's
+/// own: a second output spelling it, in any case, is `ReservedName`.
+#[test]
+fn a_net_named_motor1_pd_is_refused_in_any_case() {
+    for label in ["MOTOR1_PD", "motor1_pd", "Motor1_Pd"] {
+        let e = refused(vec![dshot("MOTOR1", None), dshot(label, None)]);
+        assert_eq!(e.kind(), "ReservedName", "{label}: {e}");
+        assert!(e.to_string().contains("MOTOR1_PD"), "{label}: {e}");
+    }
+    spec(vec![dshot("MOTOR1", None), dshot("MOTOR2", None)])
+        .validate()
+        .unwrap();
+}
+
+/// A rail whose floor is above its ceiling admits nothing: the ceiling is
+/// the ESC's, 6 270 000 / 7 = 895 714.28... ohm on its held 3300 +/-50, and a
+/// board on 3000 mV +/-13 gives a floor of exactly 900 000. On 3000 +/-64 the
+/// floor is 138 600 000, still a `u32`: empty. On 3000 +/-65 the weakest
+/// pull-up cannot reach the threshold even with no pull-down: its
+/// denominator is -2 000 000 nV. Each is refused by name, at `mcu.supply`,
+/// for every value.
+#[test]
+fn an_empty_or_unreachable_bound_admits_nothing() {
+    for (nominal, tol, kind, values) in [
+        (3000, 13, "MotorPullBoundEmpty", [442_000, 895_714, 900_000]),
+        (
+            3000,
+            64,
+            "MotorPullBoundEmpty",
+            [442_000, 895_714, 138_600_000],
+        ),
+        (
+            3000,
+            65,
+            "MotorPullFloorUnreachable",
+            [442_000, 1, u32::MAX],
+        ),
+    ] {
+        for ohms in values {
+            let e = on_rail(nominal, tol, ohms).expect_err("refused");
+            assert_eq!(
+                (e.kind(), e.id(), e.path()),
+                (kind, Some("VDD_3V3"), Some("mcu.supply")),
+                "{nominal} +/-{tol}, {ohms}: {e}"
+            );
+        }
+    }
+    let e = on_rail(3000, 13, 442_000).unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("900000 ohm, is above its ceiling, 895714 ohm"),
+        "{e}"
+    );
 }
 
 #[test]
@@ -884,7 +1009,7 @@ fn a_foreign_clock_no_silicon_could_run_is_refused_by_name() {
 /// without `mcu.foreign_clock`, never read as today's board.
 #[test]
 fn a_version_16_file_is_refused_by_its_version() {
-    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 28);
+    assert_eq!(aethelgard_ir::SPECIFICATION_SCHEMA_VERSION, 29);
     for c in [None, Some(foreign_clock(200_000_000, 72_000_000))] {
         let mut v = match c {
             Some(c) => with_foreign_clock(c),
@@ -900,7 +1025,7 @@ fn a_version_16_file_is_refused_by_its_version() {
             IrValidationError::UnsupportedSchemaVersion {
                 changes: aethelgard_ir::versions::lacked_by(16),
                 version: 16,
-                expected: 28
+                expected: 29
             }
         );
     }
@@ -937,4 +1062,89 @@ fn an_esc_is_null_or_none_with_a_source() {
     ] {
         assert!(with(bad.clone()).is_err(), "{bad}");
     }
+}
+
+/// M2's solved pull, to edit.
+fn solved_pull(t: &mut SolvedTopology) -> &mut aethelgard_ir::motor::SolvedMotorPull {
+    &mut t.motor_outputs.get_mut("M2").unwrap().pull
+}
+
+/// `AET-WO-4300j` adversarial F1: the solved pull's strings reach hwdef's
+/// comment line verbatim, and its window and value are written there as the
+/// bound checked, so a topology is refused when any of them is not a
+/// reference or disagrees with itself.
+#[test]
+fn the_topology_refuses_a_pull_that_is_not_references_or_disagrees_with_its_window() {
+    let kind = |edit: &dyn Fn(&mut SolvedTopology)| {
+        let mut t = topology();
+        edit(&mut t);
+        t.validate().map_err(|e| e.kind())
+    };
+    assert_eq!(kind(&|_| {}), Ok(()));
+    // The injection the adversary planted: a live hwdef line in the link.
+    assert_eq!(
+        kind(&|t| {
+            solved_pull(t).link = "R10\nPA8 TIM1_CH1 TIM1 PWM(1) SPEED_VERYLOW PUSHPULL PULLUP\ndefine HAL_SERIAL_ESC_COMM_ENABLED 1\n#".into();
+        }),
+        Err("InvalidIdentifier")
+    );
+    assert_eq!(
+        kind(&|t| solved_pull(t).resistor = "R 6".into()),
+        Err("InvalidIdentifier")
+    );
+    // The link the resistor's own reference, in any case; or another
+    // output's link.
+    assert_eq!(
+        kind(&|t| {
+            let r = solved_pull(t).resistor.to_lowercase();
+            solved_pull(t).link = r;
+        }),
+        Err("DuplicateReference")
+    );
+    assert_eq!(
+        kind(&|t| {
+            let other = t.motor_outputs["M1"].pull.link.clone();
+            solved_pull(t).link = other;
+        }),
+        Err("DuplicateReference")
+    );
+    // The window: at least 1, ordered, and the value inside it, both edges.
+    let mismatch = Err("MotorPullMismatch");
+    assert_eq!(kind(&|t| solved_pull(t).floor_ohms = 0), mismatch);
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).floor_ohms = c + 1;
+        }),
+        mismatch
+    );
+    assert_eq!(kind(&|t| solved_pull(t).ohms = 40_200), mismatch);
+    assert_eq!(
+        kind(&|t| {
+            let f = solved_pull(t).floor_ohms;
+            solved_pull(t).ohms = f - 1;
+        }),
+        mismatch
+    );
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).ohms = c + 1;
+        }),
+        mismatch
+    );
+    assert_eq!(
+        kind(&|t| {
+            let f = solved_pull(t).floor_ohms;
+            solved_pull(t).ohms = f;
+        }),
+        Ok(())
+    );
+    assert_eq!(
+        kind(&|t| {
+            let c = solved_pull(t).ceiling_ohms;
+            solved_pull(t).ohms = c;
+        }),
+        Ok(())
+    );
 }

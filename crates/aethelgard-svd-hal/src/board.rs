@@ -962,6 +962,21 @@ fn input_pull(pull: Option<McuPull>) -> u32 {
     }
 }
 
+/// The generator's `PUPDR` field for a motor output's pin, by its declared
+/// fitment (`AET-WO-4300j` D6; RM0433 Rev 9 §11.4.4, p. 542): `fitted`, `00`,
+/// no internal pull, since the declared external resistor holds the line
+/// (`AET-WO-4300i` D0); `open`, `10`, the internal pull-down, since the
+/// link is not fitted.
+///
+/// belt-and-suspenders: `aethelgard_ir::silicon::implied_pupd` is the
+/// oracle's copy (`INV-07`).
+fn motor_pull(fitment: motor::PullFitment) -> u32 {
+    match fitment {
+        motor::PullFitment::Fitted => 0b00,
+        motor::PullFitment::Open => 0b10,
+    }
+}
+
 /// A port's `PUPDR` at reset (RM0433 Rev 9 §11.4.4, p. 542): `0x6400_0000`
 /// in port A (PA13 pull-up, PA14 pull-down, PA15 pull-up) and `0x0000_0100`
 /// in port B (PB4 pull-up), the debug port's pulls; 0 in every other port.
@@ -1014,11 +1029,10 @@ impl Role {
     /// The generator's policy for a role: (mode, output type, pull). I2C is
     /// open-drain with no internal pull (the specification requires an
     /// external pull-up); SPI is push-pull; a GPIO output is push-pull and
-    /// starts high (an inactive chip select); a timer channel is push-pull
-    /// with no internal pull, because a motor line's pull-down is the declared
-    /// external resistor (`motor_outputs[].pull`; `AET-WO-4300i`, ruled D0
-    /// `external`, which reverses Q-G for motor outputs); a USART's TX and RX
-    /// are push-pull with no internal pull. The speed is [`Role::scope`]'s.
+    /// starts high (an inactive chip select); a timer channel is push-pull,
+    /// and the pull here is not a motor output's: its pin's pull follows the
+    /// declared fitment ([`motor_pull`], `AET-WO-4300j` D6); a USART's TX and
+    /// RX are push-pull with no internal pull. The speed is [`Role::scope`]'s.
     fn policy(self) -> (u32, u32, u32) {
         match self {
             Self::I2cScl | Self::I2cSda => (MODE_AF, 1, 0b00),
@@ -1198,9 +1212,9 @@ struct PinPlan {
     /// `OSPEEDR`, from the output speed check.
     speed: u32,
     check: SpeedCheck,
-    /// `PUPDR`: the role's pull ([`Role::policy`]; none on a motor output,
-    /// `AET-WO-4300i` D0), except a GPIO input's, its declared pull
-    /// ([`input_pull`]) (`AET-WO-1211b`).
+    /// `PUPDR`: the role's pull ([`Role::policy`]), except a motor output's,
+    /// by its declared fitment ([`motor_pull`], `AET-WO-4300j` D6), and a
+    /// GPIO input's, its declared pull ([`input_pull`]) (`AET-WO-1211b`).
     pull: u32,
     /// A GPIO output's declared initial level, which its `BSRR` write sets
     /// before `MODER` (`AET-WO-1211b`); `None` for every other role.
@@ -1852,9 +1866,11 @@ impl Plan {
             // A serial line: `validate` holds every assignment on a USART to
             // the TX or RX net of the one port on it, on its own signal.
             let serial = serial_nets.get(net.as_str()).copied();
-            // The pin's role, and its peripheral's kind unless it is a timer's
-            // or a USART's.
-            let (role, kind) = if let Some((peripheral, role)) = serial {
+            // The pin's role, its peripheral's kind unless it is a timer's or
+            // a USART's, and its `PUPDR` field: the role's pull, except a
+            // motor output's, which follows its declared fitment
+            // ([`motor_pull`], `AET-WO-4300j` D6).
+            let (role, kind, pull) = if let Some((peripheral, role)) = serial {
                 let s = serials
                     .get_mut(peripheral)
                     .expect("serial_plans planned every port's peripheral");
@@ -1863,7 +1879,7 @@ impl Plan {
                 } else {
                     &mut s.rx
                 } = a.pin.clone();
-                (role, None)
+                (role, None, role.policy().2)
             } else if let Some((n, k, role)) = channel {
                 let mismatch = || {
                     BoardError::InvalidTopology(IrValidationError::MotorOutputMismatch {
@@ -1886,7 +1902,7 @@ impl Plan {
                 if t.channels.insert(k, (a.pin.clone(), m.ccr)).is_some() {
                     return Err(mismatch());
                 }
-                (role, None)
+                (role, None, motor_pull(m.pull.fitment))
             } else {
                 let kind = peripheral_kind(&a.peripheral)?;
                 let role_name = a
@@ -1902,7 +1918,7 @@ impl Plan {
                         peripheral: a.peripheral.clone(),
                         signal: a.signal.clone(),
                     })?;
-                (role, Some(kind))
+                (role, Some(kind), role.policy().2)
             };
             let (speed, check) = choose_speed(speeds_table, solved, &a.pin, net, role)?;
             let plan = PinPlan {
@@ -1914,7 +1930,7 @@ impl Plan {
                 net: net.clone(),
                 speed,
                 check,
-                pull: role.policy().2,
+                pull,
                 initial: None,
             };
             pins.insert(a.pin.clone(), plan);
@@ -4234,7 +4250,8 @@ fn hse_api(plan: &Plan, facts: &Facts) -> String {
 
 /// An HSE board's `css_hold` (`AET-WO-4240b`), which the firmware's CSS NMI
 /// calls: every motor output driven to its safe level, low (the level its
-/// declared external pull-down holds, `AET-WO-4300i` D0), as a GPIO output
+/// declared pull-down holds: the external resistor when `fitted`, the
+/// internal pull-down `split` wrote when `open`, `AET-WO-4300j` D6), as a GPIO output
 /// (its `BSRR` reset bit, then its `MODER` field `01`), then a park that
 /// never returns. It writes no `PUPDR`. Every motor is driven, whatever its
 /// timer: the CSS break event reaches TIM1/8/15/16/17
@@ -4756,9 +4773,10 @@ fn port_pupdr(plan: &Plan, facts: &Facts, port: char) -> u32 {
 /// [`Role::policy`] nor [`port_pupdr`]: `PUPDRn` is bits `2n+1:2n` (RM0433
 /// Rev 9 §11.4.4, p. 542). Each solved pin takes the rule's pull
 /// (`aethelgard_ir::silicon::implied_pupd`): a GPIO input's is its declared
-/// pull (`AET-WO-1211b`), every other solved pin none, `00`, a motor output's
-/// included (its pull-down is the declared external resistor, `AET-WO-4300i`
-/// D0); every other pin of the port its reset value.
+/// pull (`AET-WO-1211b`), a motor output's follows its declared fitment
+/// (`AET-WO-4300j` D6: `fitted` `00`, the declared external resistor holds
+/// the line; `open` `10`, the internal pull-down), every other solved pin
+/// none, `00`; every other pin of the port its reset value.
 ///
 /// belt-and-suspenders: the reset words restate [`pupdr_reset`]'s on purpose,
 /// read again from the page; the oracle must not take what the crate under

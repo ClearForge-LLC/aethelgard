@@ -161,6 +161,34 @@ inventory() {
         out[++m] = parts[i] }
       p = ""; for (i = 1; i <= m; i++) p = p (i > 1 ? "/" : "") out[i]; return p }
     function base(p) { sub(/.*\//, "", p); return p }
+    # wild L: a literal with a format placeholder or a trailing "/" (AET-WO-1917 D3, the anchored reading) that holds a
+    # docs-only anchor outside its placeholders and, each placeholder read as any run of characters, matches a docs-only
+    # path, directory or name. "{{" and "}}" are literal braces. A literal that is all placeholder is not reported.
+    function wild(L,   t, s, m, r, i, c, j, p) {
+      t = L; gsub(/\{\{/, "\001", t); gsub(/\}\}/, "\002", t)
+      if (t !~ /\{[^}]*\}/ && t !~ /\/$/) return 0
+      s = t; gsub(/\{[^}]*\}/, "", s)
+      if (!(s ~ /(^|\/)docs(\/|$)/ || s ~ /(^|\/)fab\// || s ~ /README|LICENSE/ || s ~ /\.md/)) return 0
+      # A leading placeholder and "/" is a root prefix ("{root}/docs/x"), stripped like "../".
+      m = norm(t); while (sub(/^\{[^}]*\}\//, "", m)) m = norm(m)
+      sub(/\/+$/, "", m)
+      if (m == "") return 0
+      r = ""
+      for (i = 1; i <= length(m); i++) {
+        c = substr(m, i, 1)
+        if (c == "{" && (j = index(substr(m, i), "}")) > 0) { r = r ".*"; i += j - 1; continue }
+        if (c == "\001") r = r "[{]"
+        else if (c == "\002") r = r "[}]"
+        else if (c ~ /[\\^]/) r = r "\\" c
+        else if (index("[].*+?(){}|$", c)) r = r "[" c "]"
+        else r = r c
+      }
+      r = "^" r "$"
+      for (p in full) if (p ~ r) return 1
+      for (p in dir) if (p ~ r) return 1
+      for (p in b) if (p ~ r) return 1
+      return 0
+    }
     # A file, its name, its directory (a walker of fab/sentinel-01-bench reads BENCH.md), every docs/ directory,
     # and the bare stems of the root names (README*, LICENSE*: format!("{}.md", "README")).
     FILENAME == df { full[$0] = 1; b[base($0)] = 1
@@ -179,7 +207,7 @@ inventory() {
       # placeholder ("{root}/README.md").
       s = L; sub(/^.*(^|[\/}])docs\//, "docs/", s)
       p = L; sub(/^.*\}\//, "", p)
-      if ((n in full) || (n in b) || (n in dir) || (s in full) || (s in dir) || (p != L && (p in full)) || L == "md" || L == ".md") print "lit\t" f "\t" L
+      if ((n in full) || (n in b) || (n in dir) || (s in full) || (s in dir) || (p != L && (p in full)) || L == "md" || L == ".md" || wild(L)) print "lit\t" f "\t" L
     }' "$dfile" - | while IFS="$TAB" read -r kind f lit; do
       if [ "$kind" = include ]; then printf 'include!\t%s\t%s\n' "$f" "$lit"; continue; fi
       target_of "$root" "$f" "$paths" | while IFS= read -r t; do printf '%s\t%s\n' "$t" "$lit"; done

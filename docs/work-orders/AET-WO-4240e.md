@@ -11,6 +11,7 @@
   - **RM0433 Rev 9 pp. 371–372** ("Clock switching state after system reset"): a kernel-clock mux switches only if a clock is present on both inputs; otherwise no clock is provided to the peripheral.
   - SPI123SEL's reset input is `pll1_q_ck`. With PLL1 off, the mux cannot leave it, so **SPI1 starts with no kernel clock**.
 - **The 3302 bench** (`~/.cache/aet-architect/bench-3302-results.md` B8, before the `4230` change): on silicon, `SPI123SEL` = `pll1_q_ck` with PLL1 off, no kernel clock, and SPI1 dead. The `4230` change wrote `per_ck` instead, and **no firmware with that change has run SPI1 on silicon since.**
+- **The same class on another selector** (`TVI-WO-1300`, 14:42Z): `d1-drv8876` enables `ADC3EN` with `ADCSEL` = `pll2_p_ck` and PLL2 never started. It is in scope: every kernel-clock selector, not only `SPI123SEL`.
 - **Review round 2, A1;** **`RUL-20`:** a fact counts as judged only by an independent rule, the twin's reaction, or the bench. The twin's stock RCC tags the selector, so nothing judged this.
 
 > **What this is:**

@@ -3,16 +3,18 @@
 //! `1312`, `4240c`); the tier-2 tests read KiCad's own export.
 #![allow(dead_code)]
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use aethelgard_eda::strict;
 
-/// Each footprint's value, each pad's net and each footprint's library id,
-/// from the board text.
+/// Each footprint's value, each pad's net, each footprint's library id, and
+/// each footprint KiCad's `dnp` attribute marks not fitted (`AET-WO-4300j`
+/// D7), from the board text.
 pub type Pads = (
     BTreeMap<String, String>,
     BTreeMap<(String, String), String>,
     BTreeMap<String, String>,
+    BTreeSet<String>,
 );
 
 pub fn pads_of(board: &str) -> Pads {
@@ -20,8 +22,12 @@ pub fn pads_of(board: &str) -> Pads {
     let mut values = BTreeMap::new();
     let mut nets = BTreeMap::new();
     let mut footprints = BTreeMap::new();
+    let mut dnp = BTreeSet::new();
     for fp in tree.root().all("footprint") {
         let reference = fp.field("Reference").unwrap().unwrap().to_owned();
+        if fp.all("attr").any(|a| a.texts().any(|x| x == "dnp")) {
+            dnp.insert(reference.clone());
+        }
         footprints.insert(reference.clone(), fp.arg(1).unwrap().to_owned());
         values.insert(
             reference.clone(),
@@ -37,13 +43,15 @@ pub fn pads_of(board: &str) -> Pads {
             );
         }
     }
-    (values, nets, footprints)
+    (values, nets, footprints, dnp)
 }
 
 /// The netlist, each symbol named as KiCad writes it for the emitter's parts
 /// by their reference's letters, then each footprint as the board names it
-/// (after the symbol, so a test's edit of a value and its symbol reads one span).
-pub fn netlist_text((values, nets, footprints): &Pads) -> String {
+/// (after the symbol, so a test's edit of a value and its symbol reads one
+/// span), then KiCad's `dnp` property on a part not fitted (measured: KiCad
+/// 10.0.7's export of a `(dnp yes)` symbol, `spike/4300j/out/b2-open.txt`).
+pub fn netlist_text((values, nets, footprints, dnp): &Pads) -> String {
     let mut by_net: BTreeMap<&str, Vec<(&str, &str)>> = BTreeMap::new();
     for ((r, p), n) in nets {
         by_net.entry(n).or_default().push((r, p));
@@ -62,7 +70,14 @@ pub fn netlist_text((values, nets, footprints): &Pads) -> String {
         let fp = footprints
             .get(r)
             .map_or_else(String::new, |f| format!(" (footprint \"{f}\")"));
-        s.push_str(&format!("(comp (ref \"{r}\") (value \"{v}\"){lib}{fp})\n"));
+        let dnp = if dnp.contains(r) {
+            " (property (name \"dnp\"))"
+        } else {
+            ""
+        };
+        s.push_str(&format!(
+            "(comp (ref \"{r}\") (value \"{v}\"){lib}{fp}{dnp})\n"
+        ));
     }
     s.push_str(")\n(nets\n");
     for (i, (n, nodes)) in by_net.iter().enumerate() {
