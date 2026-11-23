@@ -4,7 +4,7 @@
 **Builder:** Claude (Opus 5.5) as project manager. Subagents (Sonnet) did volume work only: transcribing the DS12117 tables and checking them by eye. Gate logic, pins and workflows stayed single-threaded.
 Written 2026-11-23.
 
-**Status: see §8.** Predictions: `spike/4408/PREDICTIONS.md` (committed `ebd66a16` before any measurement). Results: `spike/4408/RESULTS.md`.
+**Status: READY** (§8). Predictions: `spike/4408/PREDICTIONS.md` (committed `ebd66a16` before any measurement). Results: `spike/4408/RESULTS.md`.
 
 **The answer:**
 - **WO §7's second stop fired, and was ruled and cleared.**
@@ -181,12 +181,12 @@ Each one is needed for something inside the fence to be checked at all:
 
 ## 6. Gates
 
-All three pass on Furnace at `7d8b7190` (2026-11-23). The commits after it touch no Rust.
+All three pass on Furnace at `fa847441` (`main` `3b59fa8d` merged; 2026-11-23):
 - `cargo fmt --all -- --check`;
 - `cargo clippy --workspace --all-targets -- -D warnings`;
-- `cargo test --workspace`: 164 suites, 2,860 passed, 0 failed, 1 ignored. The ignored one was then the ArduPilot leg; it is now cfg-gated (§3 A4), so it is absent and not ignored.
+- `cargo test --workspace`: 165 suites, 2,892 passed, 0 failed, 0 ignored.
 
-An earlier run had caught one failure of mine (`workspace_shape.rs`: svd-hal's file allowlist, §2.6), which is fixed.
+An earlier run at `7d8b7190` passed too (164 suites, 2,860, 1 ignored, then the ArduPilot leg). A run before that caught one failure of mine (`workspace_shape.rs`, §2.6), which is fixed.
 
 Beside them:
 - `bash container/test-check-pins.sh` and `test-check-ardupilot-pin.sh` pass;
@@ -194,8 +194,30 @@ Beside them:
 
 ## 7. CI
 
-(below)
+**All four workflows are green on `fa847441`** (`main` `3b59fa8d` merged) **[measured]**: `ci` 45151496656, `ardupilot-image` 45151496655, `tools-image` 45151496660, `engine-image` 45151496649.
+
+The acceptance lines, read from the job logs rather than from the green status:
+- **The matrix's four-port board builds ArduPilot and passes `check pinout`:**
+  - `generated (four-port)`: `ANSWER board=four-port jobs=4 wall_ms=260510`;
+  - `pinout`: `four-port: exit 0` with `"findings":[]`.
+- **The pin-table test:** `pin-table` gives `ANSWER ardupilot shared=603 families=167`. The DS12117 legs and the planted mismatches run in the shards. The planted mismatch fails by name (§3 A1, mutants in `RESULTS.md`).
+- **The image pins name `main`'s published digests, and the bench package verifies identically under them:**
+  - `ci`'s `bench-package` passes under `IMAGE` = `1e0ab105…`: `verify --against-fab fab/sentinel-01-bench/package` exits 0, so no `fab/` byte moves;
+  - `pinned` smokes `ARDUPILOT-IMAGE` = `e1809b90…`.
+- **The smoke fix:** tools `image`, `ok      libngspice` in both smokes.
+- **The GtkSharp seed, live:** tools `source-rehearsal`, `GtkSharp-964cb9c….tar.gz seeded from ghcr.io/clearforge-llc/aethelgard-tools`. GitHub was not asked.
+- **ci:** `tier2_tests_passed=206 floor=205`.
+
+Earlier heads, for the record:
+- `b81902a6`: `ardupilot-image` green, the first run of four-port and `pin-table`.
+- `0b102fd4` and `81f66368`: `ci` red in shard 11, the two `ci/shard.sh` refusals of §3 A4. Every other job was green, `bench-package` included.
 
 ## 8. Signal
 
-(below)
+**READY.**
+- **Built:** every item of WO §1 and §2.
+- **The stop:** the §7 stop fired and was ruled and cleared (`IMAGE` re-pinned after the architect's re-run, with the `smoke.sh` fix carried).
+- **Departure:** one departure from D1 (a)'s literal `#[ignore]`, forced by `ci/shard.sh` (§3 A4, Q6).
+- **Untouched:** no crate `src/`, `ci/`, `fab/` or `examples/` byte changes.
+
+The architect merges. This READY commit is the last push.
