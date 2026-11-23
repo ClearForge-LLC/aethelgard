@@ -149,12 +149,6 @@ pub enum Refusal {
         "`{reference}` ({part}) is a pin device; hwdef.dat has no GPIO(n) line this generator writes for its pins (AET-WO-1211a)"
     )]
     GpioNotEmitted { reference: String, part: String },
-    /// `AET-WO-1211a`: the motor line's pull is `PULLDOWN`, which a high idle
-    /// contradicts; the pull follows the idle at `AET-WO-1211b`.
-    #[error(
-        "motor output `{net}` idles high, but this generator's motor line is PULLDOWN until AET-WO-1211b"
-    )]
-    IdleHighNotEmitted { net: String },
     #[error(
         "battery sense `{net}` is solved, but its divider ratio (SCALE) has no source in the topology (AET-WO-4400b D7)"
     )]
@@ -200,7 +194,6 @@ impl Refusal {
             Self::SenseNotEmitted { .. } => "SenseNotEmitted",
             Self::PinNotEmitted { .. } => "PinNotEmitted",
             Self::GpioNotEmitted { .. } => "GpioNotEmitted",
-            Self::IdleHighNotEmitted { .. } => "IdleHighNotEmitted",
             Self::ImuOrientationUndeclared { .. } => "ImuOrientationUndeclared",
             Self::ImuFrameNotCited { .. } => "ImuFrameNotCited",
         }
@@ -220,7 +213,6 @@ impl Refusal {
             | Self::LabelCollision { net }
             | Self::LabelTakesAfPrefix { net, .. }
             | Self::SenseNotEmitted { net }
-            | Self::IdleHighNotEmitted { net }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::GpioNotEmitted { reference, .. } => Some(reference),
             Self::DuplicateSpidev { second, .. } => Some(second),
@@ -426,16 +418,6 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             part: d.part.clone(),
         });
     }
-    if let Some((net, _)) = t.motor_outputs.iter().find(|(_, m)| {
-        matches!(
-            m.pwm.as_ref().map(|p| p.idle),
-            Some(aethelgard_ir::motor::Idle::Level(
-                aethelgard_ir::motor::Level::High
-            ))
-        )
-    }) {
-        return Err(Refusal::IdleHighNotEmitted { net: net.clone() });
-    }
     if let Some(net) = t.power.as_ref().and_then(|p| p.sense.keys().next()) {
         return Err(Refusal::SenseNotEmitted { net: net.clone() });
     }
@@ -518,7 +500,13 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
     i2c(t, parts_table, &mut l, &mut not_emitted, speed);
     spi(t, parts_table, ap, &mut l, &mut not_emitted, speed)?;
 
-    // Motor outputs, in the specification's order.
+    // Motor outputs, in the specification's order. Each line is `FLOATING`,
+    // no internal pull: its pull-down is the declared external resistor
+    // (`motor_outputs[].pull`; `AET-WO-4300i`, ruled D0 `external`, which
+    // reverses `4400b` D3's `PULLDOWN`). `FLOATING` is ArduPilot's default
+    // for a PWM line with no pull token (`chibios_hwdef.py:387-427`, at the
+    // pinned tag); it is written, as on every other line here, so the line
+    // states the fact rather than leaning on the default.
     let mut motors: Vec<(&String, &aethelgard_ir::SolvedMotorOutput)> =
         t.motor_outputs.iter().collect();
     motors.sort_by_key(|(_, m)| m.index);
@@ -526,7 +514,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         let a = &t.assignments[*net];
         l.push(
             format!(
-                "{} {} {} PWM({}) {} PUSHPULL PULLDOWN",
+                "{} {} {} PWM({}) {} PUSHPULL FLOATING",
                 a.pin,
                 a.signal,
                 a.peripheral,
@@ -534,7 +522,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
                 speed(net)
             ),
             format!(
-                "[T] motor_outputs.{net} (index {}), assignments, pin_speeds; pulled down (D3)",
+                "[T] motor_outputs.{net} (index {}), assignments, pin_speeds; no internal pull: the pull-down is the declared resistor (4300i D0)",
                 m.index
             ),
         );

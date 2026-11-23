@@ -831,21 +831,13 @@ fn divider(kernel_hz: u64, baud: u32, brr: u32) -> BrrFinding {
 const PUPDR_PULL_DOWN: u32 = 0b10;
 const PUPDR_PULL_UP: u32 = 0b01;
 
-/// Q-G's `PUPDR` field of every motor-output pin, pull-down (the
-/// architect's ruling on PR #161, comment 6911424608). `AET-WO-4300i` D0
-/// reverses it: a motor line's pull is the declared external resistor, and
-/// [`implied_pupd`] gives no internal pull on it.
-// 4300i: removed in phase B (its last caller is aethelgard-cli's ledger).
-pub fn motor_output_pupd() -> u32 {
-    PUPDR_PULL_DOWN
-}
-
 /// The `PUPDR` field the solved topology implies for the pin of `net`
-/// (`AET-WO-4400b` D3): none on a motor output, whose pull-down is the
-/// declared external resistor from power-up (`AET-WO-4300i`, ruled D0
-/// `external`; `1211` Q9 goes with Q-G); on a pin device's GPIO input its
-/// declared MCU pull (`AET-WO-1211b`); and no internal pull on every other
-/// pin. An I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`).
+/// (`AET-WO-4400b` D3): none on a motor output, `00`, whose pull-down is the
+/// declared external resistor `motor_outputs[].pull` from power-up
+/// (`AET-WO-4300i`, ruled D0 `external`, which reverses Q-G's internal
+/// pull-down for motor outputs; `1211` Q9 went with it); on a pin device's
+/// GPIO input its declared MCU pull (`AET-WO-1211b`); and no internal pull on
+/// every other pin. An I2C line's pull-up is external (`analog_lines[..].pull_up_ohms`).
 /// A pull a board needs is a declared fact, never a generator's default. The
 /// pinout check and the board crate's proof oracle read this; no generator
 /// calls it (`RUL-20`).
@@ -1385,10 +1377,5 @@ mod tests {
         // A peripheral with no kernel at reset holds nothing.
         let f = check_brr("LPUART1", &reset, 64_000_000, 115_200, 556);
         assert!(!f.kernel_ok && !f.holds && f.kernel_hz == 0, "{f:?}");
-    }
-
-    #[test]
-    fn a_motor_output_pin_is_pulled_down() {
-        assert_eq!(motor_output_pupd(), 0b10);
     }
 }

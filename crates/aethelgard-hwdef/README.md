@@ -31,7 +31,7 @@ It never reads a `Specification`.
 **Every pin line** carries ArduPilot's own tokens (`chibios_hwdef.py:349-431`):
 - the stored speed, `SPEED_VERYLOW` for `0` and `SPEED_LOW` for `1`;
 - `OPENDRAIN` on an I2C line and `PUSHPULL` on every other;
-- `FLOATING`, which overrides ArduPilot's pull-up on a CS and a USART, except `PULLDOWN` on a motor output (`4400b` D3). On the USART of SERIAL1 to SERIAL9 it holds from reset only: ArduPilot's `set_options` then pulls TX and RX up, or down on a line it inverts (`UARTDriver.cpp:1601-1625`). No `hwdef.dat` line can remove that, and the header says so on any board with such a port (`AET-WO-4404`).
+- `FLOATING`, which overrides ArduPilot's pull-up on a CS and a USART. A motor output's line is `FLOATING` too, no internal pull: its pull-down is the declared external resistor (`motor_outputs[].pull`, `AET-WO-4300i` D0, which replaced `4400b` D3's `PULLDOWN`). `FLOATING` is ArduPilot's own default on a PWM line (`chibios_hwdef.py:387-427`); it is written so the line states it. With no internal motor pull, a motor output that idles high is emitted like any other (`IdleHighNotEmitted` is gone). On the USART of SERIAL1 to SERIAL9 it holds from reset only: ArduPilot's `set_options` then pulls TX and RX up, or down on a line it inverts (`UARTDriver.cpp:1601-1625`). No `hwdef.dat` line can remove that, and the header says so on any board with such a port (`AET-WO-4404`).
 
 `DEFAULTGPIO` is never emitted (`4400a` D-1). The comments (`#`) are discarded by ArduPilot's reader (`hwdef.py:209`).
 

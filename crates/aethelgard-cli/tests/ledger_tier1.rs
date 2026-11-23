@@ -511,12 +511,14 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
     assert_eq!(found.index, 30);
 }
 
-/// R5 (the architect's ruling on Q-G): each motor output's `PUPDR` field is
-/// independent-rule, pulled down (`10`) by `silicon::motor_output_pupd`;
-/// every other `PUPDR` field stays same-source. A generator leaving another
-/// value there is refused by name (`LedgerRuleDisagrees`).
+/// D0 (`AET-WO-4300h`, ruled by Scotty 2026-11-23; `AET-WO-4300i`), which
+/// reverses R5 (Q-G) for motor outputs: each motor output's `PUPDR` field is
+/// independent-rule, `00`, no internal pull, by `silicon::implied_pupd`, its
+/// pull-down being the declared external resistor (`motor_outputs[].pull`);
+/// every other `PUPDR` field stays same-source. A generator writing a pull
+/// there, down (`10`) or up (`01`), is refused by name (`LedgerRuleDisagrees`).
 #[test]
-fn a_motor_output_s_pull_down_is_the_independent_rule_s() {
+fn a_motor_output_s_pin_carries_no_internal_pull_by_the_independent_rule() {
     for name in ["motors-pwm", "motors-dshot600"] {
         let (t, table) = fixture(name);
         let l = ledger::build(&t, &table).unwrap();
@@ -532,21 +534,27 @@ fn a_motor_output_s_pull_down_is_the_independent_rule_s() {
         for r in l.rows.iter().filter(|r| r.register.ends_with(".PUPDR")) {
             if motor.contains(&r.id) {
                 assert_eq!(r.class, Class::IndependentRule, "{name} {}", r.id);
-                assert_eq!(r.value, Some(0b10), "{name} {}", r.id);
-                assert!(r.judge.contains("motor_output_pupd"), "{}", r.judge);
+                assert_eq!(r.value, Some(0b00), "{name} {}", r.id);
+                assert!(r.judge.contains("implied_pupd"), "{}", r.judge);
+                assert!(r.judge.contains("D0"), "{}", r.judge);
+                assert!(r.judge.contains("motor_outputs[].pull"), "{}", r.judge);
             } else {
                 assert_eq!(r.class, Class::SameSource, "{name} {}", r.id);
             }
         }
-        // The generator's value is the rule's, or the ledger refuses.
-        let mut fields = register_fields(&t, &table).unwrap();
+        // The generator's value is the rule's, or the ledger refuses: Q-G's
+        // pull-down and Q9's pull-up alike.
         let first = motor.iter().next().unwrap().clone();
-        let f = fields.iter_mut().find(|f| f.id() == first).unwrap();
-        f.value = Some(0b01);
-        let mut rows = ledger::register_rows(&fields, &ledger::TABLE).unwrap();
-        let err = ledger::motor_pupd(&mut rows, &t).unwrap_err();
-        assert_eq!(err.kind(), "LedgerRuleDisagrees");
-        assert_eq!(err.id(), Some(first.as_str()));
+        for forced in [0b10, 0b01] {
+            let mut fields = register_fields(&t, &table).unwrap();
+            let f = fields.iter_mut().find(|f| f.id() == first).unwrap();
+            f.value = Some(forced);
+            let mut rows = ledger::register_rows(&fields, &ledger::TABLE).unwrap();
+            let err = ledger::motor_pupd(&mut rows, &t).unwrap_err();
+            assert_eq!(err.kind(), "LedgerRuleDisagrees", "{name} {forced:02b}");
+            assert_eq!(err.id(), Some(first.as_str()), "{name} {forced:02b}");
+            assert!(err.message().contains("implied_pupd"), "{}", err.message());
+        }
     }
 }
 
@@ -877,11 +885,12 @@ fn a_pin_device_s_input_pull_and_output_level_are_named() {
     assert!(err.message().contains("implied_pupd"), "{}", err.message());
 }
 
-/// `AET-WO-1211b` (`1211` Q9): a motor output that idles high is pulled up,
-/// classed independent-rule by the idle's pull; the other outputs keep the
-/// pull-down's row, text for text.
+/// A motor output that idles high carries no internal pull either: its
+/// `PUPDR` field is `00`, independent-rule, by the same rule and text as every
+/// other motor output (`AET-WO-4300i` D0; `1211` Q9's pull-up went with Q-G).
+/// Every other row is unchanged, text for text.
 #[test]
-fn an_idle_high_motor_output_s_pull_up_is_the_rule_s() {
+fn an_idle_high_motor_output_s_pin_carries_no_internal_pull() {
     use aethelgard_ir::motor::{Idle, Level};
     let (mut t, table) = fixture("motors-pwm");
     let before = ledger::build(&t, &table).unwrap();
@@ -902,11 +911,10 @@ fn an_idle_high_motor_output_s_pull_up_is_the_rule_s() {
     let high = l.rows.iter().find(|r| r.id == id).unwrap();
     assert_eq!(
         (high.class, high.value),
-        (Class::IndependentRule, Some(0b01))
+        (Class::IndependentRule, Some(0b00))
     );
-    assert!(high.judge.contains("Q9"), "{}", high.judge);
     for (a, b) in before.rows.iter().zip(&l.rows) {
-        if a.id != id && !a.id.contains(".CCR") {
+        if !a.id.contains(".CCR") {
             assert_eq!(
                 (&a.id, &a.judge, &a.note, a.value),
                 (&b.id, &b.judge, &b.note, b.value)
@@ -1100,9 +1108,12 @@ fn a_partial_entry_is_reported_completed_with_its_reason_emptied() {
 }
 
 /// §1.1, §1.3 on Sentinel-03 (measured in `spike/2307/`): its 280
-/// unacknowledged rows across 35 registers need 43 entries, 6 completing an
-/// entry it holds (its fields kept) and 37 new, every reason "", 313 fields
-/// in all.
+/// unacknowledged rows across 36 registers need 44 entries, 7 completing an
+/// entry it holds (its fields kept) and 37 new, every reason "", 315 fields
+/// in all. `AET-WO-4300i` moved MOTOR1 PE9 -> PA8: its `AFSEL8`, `MODER8`
+/// and `OSPEED8` rows complete the held `GPIOA` entries (`GPIOA.AFRH` the
+/// seventh), `PE9`'s leave `GPIOE`'s, and `PUPD9` joins `GPIOE.PUPDR` while
+/// `PUPD8` is the motor rule's.
 /// No entry's reason is ever a ledger row's `judge` text, and none covers a
 /// row outside its register and class.
 #[test]
@@ -1123,9 +1134,9 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
         .collect();
     assert_eq!(
         (missing.len(), registers.len(), entries.len(), held.len()),
-        (280, 35, 43, 6)
+        (280, 36, 44, 7)
     );
-    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 313);
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 315);
     for a in &held {
         let class = a.class_kind().unwrap();
         let mine = spec
@@ -1229,7 +1240,7 @@ fn every_unbounded_path_is_a_twin_limit_never_judged() {
     assert!(
         motor
             .note
-            .contains("on `PE9`: at VDD = 0 the pin takes at most 4000 mV"),
+            .contains("on `PA8`: at VDD = 0 the pin takes at most 4000 mV"),
         "{}",
         motor.note
     );
