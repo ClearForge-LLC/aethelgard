@@ -1172,7 +1172,16 @@ fn a_ports_clock_gate_left_off_is_software_and_explains_the_locked_access() {
     let mut r = healthy();
     set_register(&mut r, "RCC.AHB4ENR", |g| g.observed = Some(0x1));
     // The judge names the locked accesses once, however many there were
-    // (`AET-WO-2312`: replay refuses a second).
+    // (`AET-WO-2312`): the fixture's old count, three, is refused.
+    replace(
+        &mut r,
+        is_verdict,
+        verdict(&[("locked_peripheral_access", 3), ("register_mismatch", 1)]),
+    );
+    assert_eq!(
+        refused(&r),
+        "the verdict names locked_peripheral_access more than once"
+    );
     replace(
         &mut r,
         is_verdict,
@@ -2695,27 +2704,61 @@ fn a_candidate_that_cannot_be_told_names_no_step() {
 
 // ---- AET-WO-2312: attribute takes replay's derivation, and is bounded ----
 
-/// Review round 3 A8: the reviewer's four archives (`aethelgard-chaos`'s
-/// fixtures) were `I1` here while replay passed three of them. Attribute
-/// now refuses each by the kind replay refuses it by, so the two cannot
-/// disagree; the healthy run they edit is attributed as before.
+/// Review round 3 A8 (`AET-WO-2312` (6)): the reviewer's four archives,
+/// each this healthy run with one failure its verdict does not name, built
+/// here by the reviewer's edits through `archived` (chaos holds only `.rs`
+/// under `tests/`, so they are not committed as archives). They were `I1`
+/// here while replay passed three of them. Replay now refuses each by the
+/// kind its records show, and attribute with the same reason.
 #[test]
 fn the_round_3_archives_are_refused_as_replay_refuses_them() {
-    let dir = |shape: &str| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../aethelgard-chaos/tests/fixtures/round3")
-            .join(shape)
-            .join("10019a7ca6fb9f96d75fdeaef6f47765")
-    };
-    let healthy = attribute(&replay_dir(&dir("healthy")).unwrap()).unwrap();
-    assert_eq!((healthy.domain, healthy.rule), (Domain::None, Rule::N1));
-    for (shape, why) in [
-        ("reg_unnamed", refusal("register_mismatch")),
-        ("timeout_unnamed", refusal("i2c_timeout")),
-        ("idmismatch_unnamed", refusal("i2c_identity_mismatch")),
-        ("halted_unnamed", HALTED),
-    ] {
-        let run = replay_dir(&dir(shape)).unwrap();
+    let healthy_run = attribute(&archived(&healthy())).unwrap();
+    assert_eq!(
+        (healthy_run.domain, healthy_run.rule),
+        (Domain::None, Rule::N1)
+    );
+    type Edit = fn(&mut Vec<Record>);
+    let shapes: [(&str, Edit, &str); 4] = [
+        (
+            "reg_unnamed",
+            |r| set_register(r, "GPIOB.AFRL", |g| g.observed = Some(0x4700_0000)),
+            refusal("register_mismatch"),
+        ),
+        (
+            "timeout_unnamed",
+            |r| {
+                replace(r, is_check, check("timeout_rxne", 0));
+                replace(r, is_witness, witness(Some(&[])));
+            },
+            refusal("i2c_timeout"),
+        ),
+        (
+            "idmismatch_unnamed",
+            |r| {
+                replace(r, is_check, check("ok", 0x58));
+                replace(r, is_witness, witness(Some(&["Write D0", "Read 58"])));
+            },
+            refusal("i2c_identity_mismatch"),
+        ),
+        (
+            "halted_unnamed",
+            |r| {
+                let b = find(r, |x| matches!(x, Record::BootObserved { .. }));
+                if let Record::BootObserved {
+                    instructions_observed,
+                    ..
+                } = &mut r[b]
+                {
+                    *instructions_observed = Some(5);
+                }
+            },
+            HALTED,
+        ),
+    ];
+    for (shape, edit, why) in shapes {
+        let mut r = healthy();
+        edit(&mut r);
+        let run = archived(&r);
         assert_eq!(
             attribute(&run),
             Err(AttributeError::NotACampaignRun(why)),

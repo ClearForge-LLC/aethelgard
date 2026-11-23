@@ -1098,6 +1098,17 @@ fn replay_binds_the_anchor_findings_kinds_26_and_30_carry() {
         }
     };
     assert_eq!(run(&left, vec![(JUDGE_STOP_MISSING_FINDING, 1)]), Ok(true));
+    // The fixture's old form moved kind 11's expected CR1 and not what the
+    // stop left: its records show a register_mismatch the verdict omits
+    // (`AET-WO-2312`).
+    let moved_only = |r: &mut Vec<Record>| {
+        left_only(r);
+        cr1_expected(r, 0x81);
+    };
+    assert_eq!(
+        run(&moved_only, vec![(JUDGE_STOP_MISSING_FINDING, 1)]),
+        Err("the verdict's register_mismatch does not match the registers' records")
+    );
     assert_eq!(
         run(&left_only, vec![(JUDGE_STOP_MISSING_FINDING, 1)]),
         Err(STOP_VALUE_REFUSED)

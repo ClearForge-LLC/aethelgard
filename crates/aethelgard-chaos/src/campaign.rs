@@ -146,6 +146,15 @@ pub const STATUS_OK: &str = "ok";
 pub const UNWITNESSED_I2C: &str = "i2c_transaction_unwitnessed";
 pub const UNWITNESSED_SPI: &str = "spi_transaction_unwitnessed";
 
+/// Whether the boot word is the firmware's: the judge's fixed point, before
+/// which a read's value, validity and witness are not judged (kind 10).
+pub fn booted(records: &[Record]) -> bool {
+    records.iter().any(|r| {
+        matches!(r, Record::BootObserved { boot_word, .. }
+            if boot_word.observed == Some(boot_word.expected))
+    })
+}
+
 /// How a verdict's count of one finding kind is bound by the records that
 /// show it ([`shown`], `AET-WO-2312`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -358,10 +367,7 @@ fn mismatch_kind(bus: &str, step: &str) -> Option<&'static str> {
 ///
 /// Linear in the records: each read finds its witness through one index.
 pub fn shown(records: &[Record]) -> Vec<Shown> {
-    let booted = records.iter().any(|r| {
-        matches!(r, Record::BootObserved { boot_word, .. }
-            if boot_word.observed == Some(boot_word.expected))
-    });
+    let booted = booted(records);
     let releases = released(records);
     let port = |label: &str| {
         records
@@ -1595,10 +1601,7 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     if let Record::Scenario { overrides, .. } = &records[0] {
         check_rail_out_of_band(overrides)?;
     }
-    let booted = records.iter().any(|r| {
-        matches!(r, Record::BootObserved { boot_word, .. }
-            if boot_word.observed == Some(boot_word.expected))
-    });
+    let booted = booted(records);
     check_read_with_the_boot(records)?;
     check_joins(records, booted)?;
     check_serial_joins(records, booted)?;

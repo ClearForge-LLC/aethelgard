@@ -2269,10 +2269,7 @@ fn joined(run: &Replayed) -> Result<(Run<'_>, bool), AttributeError> {
             });
         }
     }
-    let booted = records.iter().any(|r| {
-        matches!(r, Record::BootObserved { boot_word, .. }
-            if boot_word.observed == Some(boot_word.expected))
-    });
+    let booted = campaign::booted(records);
     let state = Run {
         records,
         buses,

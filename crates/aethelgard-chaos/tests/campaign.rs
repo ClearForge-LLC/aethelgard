@@ -1285,6 +1285,10 @@ fn held_low_run() -> Vec<Record> {
 fn a_held_low_run_is_ok_and_matches() {
     let s = check_run(&held_low_run()).unwrap();
     assert!(s.matched);
+    // Before `AET-WO-2312` the fixture left the read's timeout out of its
+    // verdict and replayed; the records show it, so that is refused by it.
+    let r = with_findings(held_low_run(), &[("i2c_line_held_low", "error", 1)]);
+    assert_eq!(check_run(&r).unwrap_err(), why("i2c_timeout"));
     assert_eq!(
         s.failing_kinds,
         vec!["i2c_line_held_low".to_owned(), "i2c_timeout".to_owned()]
@@ -2431,7 +2435,9 @@ fn two_devices_on_one_controller_have_two_witnesses() {
         "a step's read without its witness, or a witness without its read"
     );
     r.insert(w + 2, witness("I2C1", "U3", 0x75, 0x71, Some(vec![])));
-    // Its timeout is the judge's second (`AET-WO-2312`).
+    // Its timeout is the judge's second (`AET-WO-2312`): the fixture's old
+    // verdict, one timeout, is refused by it.
+    assert_eq!(check_run(&r).unwrap_err(), why("i2c_timeout"));
     let r = with_findings(
         r,
         &[
@@ -3233,8 +3239,19 @@ fn a_boot_that_read_nothing_names_its_bound() {
         unread_boot(&mut r);
         r
     };
-    // No record is read, so no timeout is named (`AET-WO-2312`).
+    // No record is read, so no timeout is named (`AET-WO-2312`): the
+    // fixture's old verdict, a timeout beside its bound, is refused by it.
     let others = [(PAST, "error", 2), ("device_unmodelled", "info", 1)];
+    let mut f = others.to_vec();
+    f.extend([
+        ("i2c_timeout", "error", 1),
+        ("wall_bound_exceeded", "error", 1),
+    ]);
+    f.sort();
+    assert_eq!(
+        check_run(&with_findings(unread(), &f)).unwrap_err(),
+        why("i2c_timeout")
+    );
     // Before: the run's other findings alone replayed.
     assert_eq!(
         check_run(&with_findings(unread(), &others)).unwrap_err(),
@@ -3985,35 +4002,5 @@ fn shown_names_every_kind_once_and_finds_the_locked_access_by_name() {
         };
         let locked = shown(&r).pop().unwrap();
         assert_eq!(locked.records == [i], shows, "{name} {observed:#x}");
-    }
-}
-
-/// Review round 3 A8, the reviewer's four archives (`AET-WO-2312` (6)),
-/// re-made at trace 19 by `spike/2312/probe` (`make`) on the tests'
-/// `archived` header, beside the healthy run they edit. Replay passed three
-/// of them; each is refused by the kind its records show.
-#[test]
-fn the_round_3_archives_are_refused_by_the_kind_their_records_show() {
-    let dir = |shape: &str| {
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("tests/fixtures/round3")
-            .join(shape)
-            .join("10019a7ca6fb9f96d75fdeaef6f47765")
-    };
-    let judge = |shape: &str| {
-        let run = replay_dir(&dir(shape)).unwrap();
-        aethelgard_chaos::campaign::check_archived(&run.header, &run.state).map(|s| s.pass)
-    };
-    assert_eq!(judge("healthy"), Ok(true));
-    for (shape, reason) in [
-        ("reg_unnamed", why("register_mismatch")),
-        ("timeout_unnamed", why("i2c_timeout")),
-        ("idmismatch_unnamed", why("i2c_identity_mismatch")),
-        (
-            "halted_unnamed",
-            "the verdict's cpu_halted does not match the booted core's instruction count",
-        ),
-    ] {
-        assert_eq!(judge(shape), Err(reason), "{shape}");
     }
 }
