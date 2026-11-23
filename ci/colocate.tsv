@@ -61,5 +61,7 @@ tests/via_ring_tier1.rs	61
 # AET-WO-1916, after this PR's first CI run 45126254602 (REFIT RULE 3 and 5, each block's libtest `finished in`): verify_2k2_tier2 566.42 s
 # (shard 4) and cli_backlog_tier1 52.75 s (shard 11), rounded up, replacing the predictions; campaign_tier2 (D6: its 1211c Furnace
 # estimate) at its worst `finished in` over the nine runs held, 97.0 s (45114924858, shard 5; 56.3-97.0), rounded up: 98.
-tests/verify_2k2_tier2.rs	567
-tests/cli_backlog_tier1.rs	53
+# AET-WO-1916, after this PR's second CI run 45134177463 (head 12699d7f, REFIT RULE 3 and 5): verify_2k2_tier2 623.40 s (shard 4) and
+# cli_backlog_tier1 63.5 s (shard 10), each over its first run's figure, so each block at its worse `finished in` of the two, rounded up.
+tests/verify_2k2_tier2.rs	624
+tests/cli_backlog_tier1.rs	64
