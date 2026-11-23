@@ -1,0 +1,6 @@
+K=200 D=1 big_fail records=1004 bytes=73162 replay rc=0 wall_ms=20 
+K=200 D=1 big_fail records=1004 bytes=73162 attribute rc=1 wall_ms=627 "rule":"I2"
+K=200 D=5 big_fail records=2604 bytes=226763 replay rc=0 wall_ms=38 
+K=200 D=5 big_fail records=2604 bytes=226763 attribute rc=1 wall_ms=4339 "rule":"I2"
+K=200 D=10 big_fail records=4604 bytes=418763 replay rc=0 wall_ms=61 
+K=200 D=10 big_fail records=4604 bytes=418763 attribute rc=1 wall_ms=14266 "rule":"I2"

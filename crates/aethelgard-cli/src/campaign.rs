@@ -2575,6 +2575,17 @@ pub fn attribute(dir: &Path) -> ExitCode {
                 EXIT_UNREADABLE,
             );
         }
+        Err(AttributeError::TooManyRecords { records, limit }) => {
+            return refuse(
+                "TooManyRecords",
+                None,
+                format!(
+                    "{}: the run holds {records} records; attribution is bounded at {limit}",
+                    dir.display()
+                ),
+                EXIT_UNREADABLE,
+            );
+        }
     };
     let lines = |v: Vec<aethelgard_evolve::EventRef>| {
         v.into_iter()

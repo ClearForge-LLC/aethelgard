@@ -1409,8 +1409,26 @@ fn the_view_reads_every_field_of_a_rise_a_stuck_line_a_boot_and_a_witness() {
         verdict(&[
             ("analog_rise_exceeds_ceiling", 1),
             ("boot_word_missing", 1),
+            // Seven of the run's instructions: the judge names the halt at
+            // any boot it read (`renode::judge_boot`; `AET-WO-2312`).
+            ("cpu_halted", 1),
             ("i2c_timeout", 1),
         ]),
+    );
+    // The fixture's old verdict, without it, is refused by it.
+    let mut old = r.clone();
+    replace(
+        &mut old,
+        |x| matches!(x, Record::Verdict { .. }),
+        verdict(&[
+            ("analog_rise_exceeds_ceiling", 1),
+            ("boot_word_missing", 1),
+            ("i2c_timeout", 1),
+        ]),
+    );
+    assert!(
+        matches!(view(&archived(&old)), Err(aethelgard_evolve::AttributeError::NotACampaignRun(why))
+            if why == "the verdict's cpu_halted does not match the core's instruction count")
     );
     let run = archived(&r);
     let v = view(&run).unwrap();

@@ -18,7 +18,7 @@ use aethelgard_chaos::record::{
 };
 use aethelgard_chaos::{Event, Header, Replayed, TraceWriter, replay_dir};
 use aethelgard_evolve::propose::{self, BusFacts, Input, Outcome, Rules};
-use aethelgard_evolve::{Attribution, Domain, Evidence, Rule, attribute, view};
+use aethelgard_evolve::{AttributeError, Attribution, Domain, Evidence, Rule, attribute, view};
 
 /// The firmware the archive's header names: each frame is derived from it.
 const FIRMWARE: [u8; 32] = [9; 32];
@@ -725,7 +725,8 @@ fn a_failing_static_framing_check_is_never_software() {
 #[test]
 fn a_rewritten_verdict_cannot_move_the_domain() {
     // The register is wrong but the verdict names only the dead echo: the
-    // register's event shows a failure the verdict does not name.
+    // register's event shows a failure the verdict does not name, so replay
+    // refuses it by that kind, and attribute with it (`AET-WO-2312`).
     let r = run(
         &Case {
             afrh: 0x870,
@@ -734,9 +735,14 @@ fn a_rewritten_verdict_cannot_move_the_domain() {
         },
         &[(SERIAL_ECHO_FINDING, 1)],
     );
-    let a = attribute(&archived(&r)).unwrap();
-    assert_eq!(a.rule, Rule::I1, "{a:?}");
-    // And the echo, dropped from the verdict, is replay's to refuse.
+    assert_eq!(
+        attribute(&archived(&r)),
+        Err(AttributeError::NotACampaignRun(refusal(
+            "register_mismatch"
+        )))
+    );
+    // And the echo, dropped from the verdict, is replay's to refuse, by its
+    // kind (review round 3 A15: this asserted a bare `is_err`).
     let r = run(
         &Case {
             afrh: 0x870,
@@ -745,7 +751,20 @@ fn a_rewritten_verdict_cannot_move_the_domain() {
         },
         &[("register_mismatch", 1)],
     );
-    assert!(campaign::check_run(&r).is_err());
+    assert_eq!(
+        campaign::check_run(&r).unwrap_err(),
+        "the verdict's serial findings do not match the serial records"
+    );
+}
+
+/// The reason `replay` refuses a verdict whose count of `kind` its records
+/// do not bound (`aethelgard_chaos::campaign::SHOWN`, `AET-WO-2312`).
+fn refusal(kind: &str) -> &'static str {
+    campaign::SHOWN
+        .iter()
+        .find(|(k, _)| *k == kind)
+        .map(|(_, why)| *why)
+        .unwrap()
 }
 
 /// `propose` answers S5 with a generator report naming the board crate's
