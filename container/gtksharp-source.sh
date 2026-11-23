@@ -18,15 +18,14 @@ export LC_ALL=C
 here=$(dirname "$0")
 MANIFEST=$here/gtksharp-source.manifest.json
 die() { echo "gtksharp-source: $*" >&2; exit 1; }
+# The archive's name and url; its bytes are pinned by the layer's sha256 and
+# size, which oci-mirror.sh checks before any push and after every fetch.
 read -r TITLE URL < <(python3 -I -c '
-import json, re, sys
+import json, sys
 m = json.load(open(sys.argv[1]))
 (l,) = m["layers"]
-t, u = l["annotations"]["org.opencontainers.image.title"], m["annotations"]["org.opencontainers.image.url"]
-c = re.fullmatch(r"https://github\.com/GtkSharp/GtkSharp/archive/([0-9a-f]{40})\.tar\.gz", u)
-if not (c and t == "GtkSharp-" + c[1] + ".tar.gz"):
-    sys.exit("not one GitHub archive of a GtkSharp commit")
-print(t, u)' "$MANIFEST") || die "$MANIFEST is refused (above)"
+print(l["annotations"]["org.opencontainers.image.title"], m["annotations"]["org.opencontainers.image.url"])' "$MANIFEST") \
+  || die "$MANIFEST names not exactly one layer (above)"
 PIN=$(sha256sum < "$MANIFEST" | cut -d' ' -f1)
 oci() { bash "$here/oci-mirror.sh" "$@"; }
 fetch() { oci fetch "$1@sha256:$PIN" "$2" --manifest "$MANIFEST"; }

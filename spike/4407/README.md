@@ -119,7 +119,7 @@ involved.
   bundle: deb822, `http://snapshot.debian.org/archive/debian[-security]/<T>`,
   `Signed-By` the base's keyring, `Check-Valid-Until: no`. `apt-get update` passes
   the signature check on the `InRelease` files.
-- **P5 not measured.** Two fresh builds wait on the ruling.
+- **P5: measured after the ruling (§4).**
 - **P6 held.** On the SDK base (bookworm, apt 2.6.1), a `bookworm` snapshot at
   either date resolves `patch 2.7.6-7` alone (`Debian:12.15/oldstable`).
 - **P7 held.** Today `check-pins.sh` passes all of these:
@@ -144,3 +144,26 @@ involved.
 
 `REMAINDER.tsv` is `package<TAB>version`: the published image's `/SOURCES-debian.tsv`
 minus its base image's dpkg list.
+
+## 4. After the ruling (D1 (b), architect 2026-11-23T01:15Z)
+
+One timestamp, `20261117T120000Z`, in every apt stage. Measured on Furnace on
+2026-11-23 with `podman build --isolation=chroot --no-cache` in a capped scope.
+
+- **Before (`main` `28fba951`):** both builds fail by name at their apt step.
+  ArduPilot fails after 2 s and tools after 51 s, with
+  `E: Version '2.41-12+deb13u4' for 'libc6-dev' was not found`.
+- **After, ArduPilot ×2** (77 s each):
+  - the two `/SOURCES-debian.tsv` are byte-identical (171 packages) and equal
+    the published `160f9955`'s;
+  - `check-sources.sh inside ardupilot` passes in fail mode (29 flagged sources,
+    all in the table);
+  - the layer digests differ between the two, except the base and the plain
+    `COPY` layers (P5's second half held).
+- **After, tools ×2** (94 s and 114 s):
+  - the two `/SOURCES-debian.tsv` are byte-identical (669 packages); against the
+    published `e5fc7ddb`, only `linux-libc-dev` moves, `6.12.115-2` → `6.12.117-1`,
+    as ruled;
+  - `check-sources.sh inside tools` passes in fail mode with the new table (84
+    flagged sources);
+  - `smoke.sh` passes, and both Renode DLLs match their pinned sha256.
