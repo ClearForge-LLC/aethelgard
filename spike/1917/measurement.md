@@ -18,7 +18,16 @@ The two `paths:` blocks are identical, item for item (P2 held). One independent 
 | U6 | the tools Dockerfile's COPY sources: `KICAD-LICENSE.md`, `TOOLS-SOURCES.md`, `TOOLS-DEBIAN-GPL2.tsv`, `renode-nvic/**` | `image` | `check-pins.sh:198-208` refuses a COPY source that is missing or a script (reached by U5) |
 | U7 | `container/TOOLS-DEBIAN-GPL2.tsv` | `image` | `test-debian-src.sh:77` checks it |
 
-Matched and confirmed read: `ci/foreign-judge.sh` (listed), `models/renode/*.cs` (`models/**`), every `container/ardupilot*`, the pin and GCC/Debian source files, `crates/**`, `examples/**`, `Cargo.*`, `rust-toolchain.toml`.
+**How each was verified:**
+- U3: `aethelgard-svd-hal/Cargo.toml:25` `sentinel-01-board.workspace = true`, and `Cargo.lock:105,785`. `cargo metadata --locked --offline` loads `boards/sentinel-01/Cargo.toml`.
+- U1, U4-U7: each read at the line cited.
+- **Repository `.cargo/` configs:** there is none at the root. `bridge/.cargo/config.toml` is not read by `foreign`'s build: cargo finds config from the working directory, `/repo`. It is under `bridge/**` anyway.
+
+**Matched and read** (each confirmed): `ci/foreign-judge.sh` (listed), `models/renode/*.cs` (`models/**`), every `container/ardupilot*`, the pin and GCC/Debian source files, `crates/**`, `examples/**`, `Cargo.*` and `rust-toolchain.toml`.
+- I read `ci/foreign-judge.sh` myself for every repository path it reads or runs. It runs `target/debug/aethelgard`, which U2 and U3 build. It reads `crates/aethelgard-cli/tests/fixtures/{sentinel-02-own,four-port}.json` (l.20, 160), and generates everything else into its own scratch.
+
+**Unresolved:** what the `aethelgard` binary reads at run time in `solve`, `generate`, `check pinout` and `simulate`, beyond `models/renode` and the files named on its command line.
+- The subagent grepped non-test sources for path literals and `include_*` and found nothing more. Nobody ran it under a file-access trace.
 
 **Against P1:** predicted `container/IMAGE`, `bridge/**` and a tools Dockerfile (2-4 misses). Found 7 groups. U3 (`boards/sentinel-01`), U4, U6 and U7 were not predicted. Nothing under `ci/` beyond `foreign-judge.sh` is read.
 
@@ -32,7 +41,8 @@ Matched and confirmed read: `ci/foreign-judge.sh` (listed), `models/renode/*.cs`
 
 ## (3) `examples/sentinel-01.json` — it generates
 
-**P4 was wrong.** The host CLI (the `cli` job builds on the runner, as here) gives, on `77e829f1`:
+**P4 was wrong.** The host CLI gives, on `77e829f1`, the results below.
+- §1.1 says "in the tools image". I ran the host build because the workflow's `cli` job builds on the runner and `generated` runs that binary there. The tools image is not in this path.
 
 - `validate` exit 0 (project `sentinel-01-bench`), `solve` exit 0;
 - `generate hwdef` exit 0, `not_emitted: ["U3 (TMP117) …"]`, which is the same informational line the minimal spec gives. There is no refusal and no `SenseNotEmitted`.
@@ -66,6 +76,12 @@ Each form was planted alone in a scratch tree with `docs/work-orders/W.md`, `doc
 | **anchored**: the literal holds a docs anchor outside its placeholders (`docs` segment, `fab/`, `README`, `LICENSE`, `.md`) | **0** |
 | **any**: every literal whose wildcard reading matches some docs path or name (`{}`, `{v}`, `{}/{}` …) | **610 distinct literals in 234 files** |
 
+**The zero is controlled.**
+- Seven literals were planted in a copy of the list:
+  - `docs/work-orders/{}.md`, `docs/reviews/`, `{}.md`, `README{}`, `fab/{}/ORDER.md`, `../../docs/{x}`;
+  - `{}/{}`.
+- The first six came out `anchored`, and `{}/{}` came out `any`.
+
 So the anchored rule lands with no new `docs-tests.tsv` row. A fully unresolvable literal (`format!("{}/{}", a, b)`) stays a residual of a literal scanner, as `1911` F4 records for `concat!` and `format!` arguments.
 
 ## (5) `with-tools` files against `TIER2_RE` (P6 held)
@@ -95,10 +111,48 @@ So the anchored rule lands with no new `docs-tests.tsv` row. A fully unresolvabl
 **Forms to read** (P7 held):
 - (a) `TOOL test NAME ... ok`, read today;
 - (b) `test NAME ... TOOL`, then later `ok` alone on a line;
-- (c) both sides, `TOOL test NAME ... TOOL`, then `ok`.
+- (c) both sides, `TOOL test NAME ... TOOL`, then `ok`. **Not observed in 168 logs.** It follows from (a) and (b) together, and is tested as reasoned.
+
+**A lone result that is not libtest's:** the same shard-5 log, l.1667-1668:
+- l.1667 is trybuild's `test tests/ui/fail/foreign_speed.rs [should fail to compile] ... `, with libtest's 60 s warning after it.
+- l.1668 is `ok` alone. That is trybuild's result, not a pending libtest test's.
+- So a lone result with nothing pending must not be counted. One with a name pending could be another tool's, which would make the time early, never a pass: the count's `n == want` and the tally's `test result:` line are unchanged.
 
 Fail closed:
 - a second name opened while one is pending, or a `test result:` line with a name pending, is refused;
 - a lone result with nothing pending is not a test;
 - `TOOLok`, where a partial tool line runs into the result, stays unread and is refused as today (`timed n of m`);
 - the tally's pass count still comes from libtest's own `test result:` line, never from per-test lines.
+
+## Decisions for the architect (the §1.1 stop), each with my lean
+
+- **D1 — (3) lands as a new row; the fixture and two test arrays sit outside the fence.**
+  - The row needs a board name other than `sentinel-01`, which the minimal row owns for its artifact and its fixture. Lean: `sentinel-01-full`.
+  - It needs a committed `crates/aethelgard-hwdef/tests/fixtures/sentinel-01-full.{hwdef.dat,topology.json}` for the `cmp`.
+  - It needs a row in each of `aethelgard-hwdef/tests/generate.rs` `BOARDS` and `aethelgard-cli/tests/hwdef_tier1.rs` `BOARDS`, which hold every CI board's fixture byte for byte.
+  - Dropping the `cmp` for this row would make a gate require less, so it is not offered.
+  - Lean: widen the fence to those two files and the fixture pair, with no generator change.
+- **D2 — (1) the scope of `paths:` and where the test learns the inputs.**
+  - Lean: add `container/**` (it replaces the 24 `container/...` entries and covers U1 and U4-U7), `bridge/**` and `boards/sentinel-01/**`.
+  - `container/**` costs almost nothing: `crates/**` already runs this workflow on nearly every PR.
+  - The test should derive its inputs, not hold a second hand list:
+    - (a) the COPY sources of every Dockerfile under `container/`, and the Dockerfiles themselves;
+    - (b) every `$(cat F)`, `head -n 1 F`, `bash F`, `python3 -I F` and `--manifest-path D/Cargo.toml` file in the workflow's `run:` blocks;
+    - (c) every workspace `path =` dependency in the root `Cargo.toml`, as `DIR/**`.
+  - Each must match both lists, and each reader is proven by a planted miss. U4 and U7, a sibling glob and a loop in a test script, are what such a reader cannot see. `container/**` covers them; a narrower list would need them named.
+- **D3 — (4) the mechanism.** The work order says an unresolvable literal "routes the change to the full run". Today's mechanism is to report it and refuse it until it is classified in `docs-tests.tsv`, where a `reads` row runs on docs-only PRs.
+  - Lean: the anchored reading. A placeholder or trailing-slash literal with a docs anchor outside its placeholders is read as a wildcard and reported as a row, refused until classified. Today that adds 0 rows.
+  - The fully unresolvable `{}`/`{}/{}` forms (610 literals in 234 files) stay a recorded residual, beside `1911` F4.
+  - Routing every such literal to the full run would end docs-only routing. It is not offered.
+- **D4 — (5) what a "with-tools file" is.**
+  - Lean: any `tests/*.rs` in any crate or the bridge whose source carries a `feature = "with-tools"` cfg, at file or item level, so `attribute_seeded.rs` counts.
+  - The check is both ways: such a file missing from `TIER2_RE` fails by name, and a `TIER2_RE` name with no such file fails by name. `TIER2_RE` itself is unchanged.
+  - Lean: a Rust test beside `image_workflow_paths.rs`, with a planted file.
+- **D5 — (2) how the judge knows the set.** `pinout` merges `ardupilot-*` and `generated-*` into one directory, so the script cannot see artifact names. A generated board's directory is the one holding `topology.json`.
+  - Lean: `ardupilot-pinout.sh` takes the workflow file and reads the `generated` matrix's rows that have no `drop`. It requires the generated directories to equal that set, judging each against its own topology.
+  - A matrix board with no directory, a directory not in the set, and an empty set are each refused by name. The four hand boards stay as they are.
+  - The planted-row test needs either a stub `BIN` run of the script or a new `container/test-ardupilot-pinout.sh`; the second is outside the fence. Lean: the stub run, from a Rust test beside the paths test.
+- **D6 — (6) no decision.** `times()` keeps one pending name after `test NAME ... TOOL`, and the next line that is exactly `ok`/`FAILED`/`ignored` (stamp stripped) closes it.
+  - Refused: a second name opened while one is pending, and a `test result:` line or the log's end with one pending.
+  - A lone result with nothing pending is not counted (l.1668's trybuild `ok`).
+  - The tests are built from l.444-445 of the real log, with form (c) as reasoned, and a mutant for each guard.
