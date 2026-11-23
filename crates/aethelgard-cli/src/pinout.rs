@@ -22,6 +22,9 @@ use crate::{EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_TOOL_ERROR, EXIT_UNREADABLE, 
 #[derive(Serialize)]
 pub struct Verdict {
     pub check: &'static str,
+    /// The topology's lifecycle banner (`AET-WO-1607` (6)); absent when empty.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub lifecycle: Vec<String>,
     pub topology_sha256: String,
     pub elf_sha256: String,
     pub hwdef_h_sha256: Option<String>,
@@ -146,6 +149,7 @@ pub fn check(
     }
     Ok(Verdict {
         check: "pinout",
+        lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         topology_sha256: sha256(&topology_bytes),
         elf_sha256: sha256(&elf_bytes),
         hwdef_h_sha256: header_bytes.as_deref().map(sha256),

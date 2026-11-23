@@ -27,8 +27,13 @@ fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
 
+/// A test's scratch, under the repository whatever `CARGO_TARGET_DIR` is
+/// (`AET-WO-1607` (3), `1211e` F11): `verify` runs from the repository root,
+/// and a scenario's `base` must resolve inside it (`BaseOutsideRoot`). In
+/// `target/`, which git ignores.
 fn scratch(label: &str) -> PathBuf {
-    let dir = Path::new(env!("CARGO_TARGET_TMPDIR"))
+    let dir = root()
+        .join("target/aet-tests")
         .join(format!("aet-3300-{label}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_file(&dir);
