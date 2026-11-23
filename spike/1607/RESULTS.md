@@ -25,3 +25,23 @@ Base `aethelgard-cli` tests with `HOME` a private directory holding `.cargo/conf
 - **P5, partly missed.** `fab_tier1` fails only `a_rail_or_bus_no_fault_kind_reaches_is_named` (`BaseOutsideRoot`). The tests at lines 350 and 602 pass: their runs are refused before `read_base`.
 - **P6, missed.** No other file failed: `campaign_tier1` and `attribute_seeded` pass with the target outside.
 - **After (2) and (3):** the touched suites under the same condition, 207 tests, 0 failures (`m/accept-1.log`).
+
+## The null sweep at the final head (`8ff08248`, D1 (b) built)
+
+- **94 files differ, all named by (6):**
+  - the 69 lines above, unchanged in kind;
+  - 25 `solve` stderr files, each exactly that specification's `validate` banner, one line each. These are the 29 that solve, less the 4 that carry none.
+  - `solve`'s stdout is byte-identical on all 29 (`same-head.txt`).
+- **V4, resolved by the ruling:** the banner goes to stderr, so the `hwdef` and `pinout` verdicts' `topology_sha256` do not move.
+- **V6:** see `verify`, below.
+
+## `prove` with Kani (V1 for `prove`)
+
+On `sentinel-01-minimal`, `sentinel-02-power` and `sentinel-02-bench`, base and branch (`sw/prove-*`):
+- every `prove` exits 0 with `pass`;
+- `prove --spec` differs only by `lifecycle`, equal to `validate`'s;
+- plain `prove` is unchanged.
+
+## Mutants
+
+`mutants.py`, under the acceptance condition (fake `HOME` with `.cargo/config.toml`, target outside the tree): **22 of 22 killed** at `d2a5737a` and again at `8ff08248`. Each is killed by its named test, and every selection passes on the pristine tree (`mut/result-final.txt`).
