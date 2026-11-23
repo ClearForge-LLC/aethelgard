@@ -219,6 +219,8 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
             "proofs::usart1_start_writes_the_solved_values",
             "proofs::flash_option_status_is_one_read",
             "proofs::pwr_scale2_is_once_in_order_and_bounded",
+            // `AET-WO-4240e`: the kernel-clock switch.
+            "proofs::spi_kernel_switch_is_in_order_bounded_and_named",
         ],
         "every harness of the generated crate is a prove gate"
     );

@@ -1003,7 +1003,8 @@ fn writes_at(elf: &Path, words: &[u32]) -> Vec<Vec<u64>> {
 /// instructions across the committed boards, bound here at 32 (0.32 µs at
 /// 100 MIPS). Raised to 40 by `AET-WO-4240e` Q12 (ruled 20:58Z): with the
 /// kernel-clock switch's code preceding both reads, U4's status write moved
-/// 35 (2898 with U3, 2863 without). A later change that needs it raised again
+/// 35 (2875 with U3, 2840 without, the switch in whole words; 2898 against
+/// 2863 when it was a read-modify-write). A later change that needs it raised again
 /// is a stop, not an edit here. The name keeps 32: `ci/` routes and weighs
 /// the test by it, outside this work order's fence. The reference firmware, against itself with U3's read and its
 /// record removed (the board without U3): U2's and U4's status writes each

@@ -5,7 +5,7 @@
 **The answer:**
 - **Before:** 26 of the 32 committed specifications that generate started SPI1–3 with no kernel clock. That is every board on the HSI with SPI on `SPI123SEL`. The firmware wrote `SPI123SEL` = `per_ck` while the mux's input, `pll1_q_ck`, had never run (RM0433 Rev 9 pp. 371–372).
 - **After:** 0 of 32 (`spike/4240e/out/measure-after.json`, at `2f3184b4`).
-- **The fix (D1 (a)):** the bring-up writes PLL1's words from the HSI with PLL1 off, sets `PLL1ON` by a read-modify-write, and polls `PLL1RDY`, bounded. It then writes the selects, makes 8 straight-line reads through the transition, and clears `PLL1ON` the same way. A lock that does not come writes `0x2100B0F5` and parks (D6).
+- **The fix (D1 (a)):** the bring-up writes PLL1's words from the HSI with PLL1 off, then writes `RCC_CR` whole (`HSION|PLL1ON`) and polls `PLL1RDY`, bounded. It then writes the selects, makes 8 straight-line reads through the transition, and writes `RCC_CR` whole again (`HSION`, Q11). A lock that does not come writes `0x2100B0F5` and parks (D6).
 - **One rule, and three judges of the order that are not the generator:**
   - the rule `aethelgard_ir::kernel_clock::check` (`RUL-20` (1)) judges the solved topology. It is wired into generation (`check_silicon`, by its kinds) and into the verdict's silicon findings;
   - the order is judged by the svd-hal Kani harness `spi_kernel_switch_is_in_order_bounded_and_named`, which passes in the tools image;
@@ -25,6 +25,9 @@
 | `4108a0a4` | Q10 (a); the adversarial pass's fixes; the pins |
 | `0aedba3d` | the twin judge without reads (found by simulating) |
 | `f99462b8` | `main` `8d727980` merged; `sentinel-01-full`'s hwdef fixtures moved to solved 19 |
+| `0a777ce3` | the bench package from dispatch `45252001498`; CI then red on four tier-2 tests |
+| `a5eea862` | two tier-2 pins (the switch's `prove`; the campaign's droop plant) |
+| `04813286` | Q11 (a), whole `RCC_CR` words and their acknowledgements; Q12, the bound to 40; the bench sheet's read-only rule |
 | `9666fa12` | the reduction pass |
 | `2f3184b4` | the measurement re-run |
 | (this) | BENCH's `L…` citations moved with their lines (D6; 29 remapped, each to the identical line); FEEDBACK |
@@ -53,6 +56,7 @@ The record is `spike/4240e/RESULTS.md`; the predictions are `PREDICTIONS.md`, co
 **Rulings:**
 - **17:52Z:** D1 (a); D2 granted (deletions); D4 planted topologies with the 26 pre-fix ones; D5 the three kinds; D6 the fault arm; D7 solved 19; the ADC (i).
 - **18:30Z:** Q8 granted (one acknowledgement); Q9 granted (the twin judge; `aethelgard-twin/src/serial.rs` joins the fence for it).
+- **20:58Z:** Q11 (a): whole `RCC_CR` words. On the six Q8 specs, `RCC.CR`'s `ignored-by-model` acknowledgement gains 12 fields and its `silicon-only` one gains `CSSHSEON`. Q12 (a): the 4241 bound goes to 40 instructions.
 - **19:08Z:** Q10 (a): **D2 reverted.**
   - The reset selector rows went back to `ignored-by-model`, and their 3×7 acknowledgements were restored byte for byte.
   - Why: the adversarial reviewer showed those rows meet neither limb of `independent-rule`. The rule never reads them, and nothing in them can make it fail.
@@ -82,25 +86,26 @@ The record is `spike/4240e/RESULTS.md`; the predictions are `PREDICTIONS.md`, co
 - **The Kani harness** holds every switch write to the contract, in order:
   - the PLL words are the topology's;
   - the selects are `silicon::spi_words`';
-  - each `RCC_CR` write is the word read just before it, with `PLL1ON` set, then cleared;
+  - each `RCC_CR` word whole: `HSION|PLL1ON`, then `HSION` (Q11);
   - no select comes before `PLL1RDY` reads 1;
   - a lock that does not come is named, with nothing written after it.
 - **Tests:**
   - `kernel_switch.rs`: the order, the fault arm, a live-input select, the HSE board, the ADC, a slow Q, the ledger rows;
   - `kernel_scar.rs`: each of the 26, clocked as solved, then put back as it was and refused by name with exactly the controllers the measurement found.
 
-**Twin (Q9):** `RccRule.switch` and `switch_flags`:
+**Twin (Q9):** `RccRule.switch`:
 - the switch's writes in order, from the topology and the header, each once per boot;
 - every select inside the PLL1 window;
-- `RCC_CR` judged with its read-only flags masked against the word from reset.
+- `RCC_CR`'s two words compared exactly (Q11).
 
-The first form compared each write with the last `RCC_CR` read, but Renode's access log holds no reads. The real boot failed `serial_tag_mismatch` on it, and I found that by simulating, not by a test.
+Two earlier forms went wrong. The first compared each `RCC_CR` write with the last read, but Renode's access log holds no reads, so the real boot failed `serial_tag_mismatch`; I found that by simulating, not by a test. The second masked the read-only flags, and Q11's whole words removed the need for it.
 
 **CLI:**
 - `ledger::Silicon.kernel_clock`, carried in the verdict, and `silicon_rule_fails` messages that name the kind.
+- **The bench sheet's read-only rule:** `Entry.read_only`, taken from the table's own `read-only` entries (`RCC_CR`'s flags, `CFGR.SWS`). A whole word writes 0 into such a field and it reads back whatever the hardware says, so its written row is no bench prediction. It also no longer displaces the field's reset row, so `D2CKRDY` stays predicted at 1 and `PLL1RDY` at 0.
 - The switch's PLL rows cite the rule; `PLL1ON`'s note names the switch.
 
-**Specifications (Q8):** one entry, `RCC.CR` `silicon-only` `PLL1RDY`, with Q8's reason, added as text (every other byte checked equal by JSON) to:
+**Specifications (Q8, Q11):** `RCC.CR` `silicon-only` `PLL1RDY` and `CSSHSEON`, and `RCC.CR` `ignored-by-model` widened from `D2CKRDY` to the 13 tag and read-only fields of the whole words, each with a reason naming why the twin cannot judge it. Each is added as text (every other byte checked equal by JSON) to:
 - `examples/sentinel-01.json` (the bench package's);
 - `examples/sentinel-01-minimal.json` (`fab_tier1`'s acknowledged reference; its tests refuse without it);
 - the CLI fixtures `four-layer` (`four_layer_fab_tier2`), `logger-4600`, `sentinel-01-bench` (`board_tier2`) and `sentinel-03` (`battery_sag_tier1`, `board_tier2`). These are every acknowledged specification with the switch.
@@ -131,12 +136,15 @@ The first form compared each write with the last `RCC_CR` read, but Renode's acc
 | 6 | forbidden `PLL1DIVR` codes and `PLL1FRACEN` passed the rule | `CodeNotAllowed`, `FractionalMode`; `solve.rs`'s `DIVP1` claim corrected. Test and mutants: R01–R04 |
 | note | SPI1–3 on different kernels passed (one select) | `SelectSharedApart`. Test and mutant: R05; the agent's two tests that used such a board were split |
 | note | the ADC with `CKMODE` `01` needs `HPRE` = 1 on revision Y (p. 1039); the rule does not judge it | not built: generation refuses any `CKMODE` but `11`. §5 row |
+| CI | my read-modify-write of `RCC_CR` (af671c0e) "saved" 14 ledger rows. It did not: it writes back every field it read, so the ledger owes those rows anyway. `twin_tier2`'s coverage test caught it on CI | Q11 (a): whole words, the rows acknowledged |
+| found then | with whole words the bench sheet predicted read-only flags from their written 0 (`HSIRDY`, `D1CKRDY`, `D2CKRDY` 0, which silicon reads 1) | the read-only rule above. Mutants B01, B02 |
 
 **Mutants:**
 - **The rule:** 54 of 54 (`spike/4240e/mutants-rule.md`).
 - **The build:** G01–G23 (`spike/4240e/mutants-gen.md`), all killed but G10, which is equivalent and was removed in the reduction.
 - **The review's fixes:** R01–R06, 6 of 6.
-- **The twin judge:** T01–T02, 2 of 2.
+- **The twin judge:** T03 (exact words) killed. T01–T02, for the masked comparison, went with the mask.
+- **Q11's guards:** B01–B02 killed; L01 equivalent (recorded).
 - **Not mutated on the host:** the Kani-only guards (the proofs' token replacement and the schedule footprint). The harnesses were proved in the tools image instead (§6).
 
 ## 4. Versions and what moved
@@ -152,15 +160,16 @@ The first form compared each write with the last `RCC_CR` read, but Renode's acc
   - `order_2203`: the platforms by their spec sha line alone, measured with `spike/4240e/order_back.rs`;
   - `serial_ports`.
 - **`ledger_tier1`:**
-  - 301 → 330 rows: +29, the switch's `PLLCKSELR` 5, `PLLCFGR` 18 and `PLL1DIVR` 4 fields, plus `PLL1ON` and `PLL1RDY`.
-  - By class: `independent-rule` 75 → 102, `observed` 58 → 59, `silicon-only` 5 → 6.
-  - 30 → 31 acknowledgement entries; 168 → 169 fields.
-  - The bench sheet 148 → 149 rows: `PLL1RDY` added, the four reset reads kept.
+  - 301 → 351 rows: +50. The switch's whole words add `PLLCKSELR` 5, `PLLCFGR` 18, `PLL1DIVR` 4 and `RCC_CR` 22 fields, plus `PLL1RDY` polled.
+  - By class: `independent-rule` 75 → 102, `observed` 58 → 66, `ignored-by-model` 80 → 93, `silicon-only` 5 → 7.
+  - 30 → 31 acknowledgement entries; 168 → 182 fields (183 rows: `D2CKRDY` is written and read under one field).
+  - The bench sheet 148 → 153 rows: `PLL1RDY` (0), and `HSIKERON`, `CSIKERON`, `HSEBYP` and `CSSHSEON` (0); the four reset reads kept; no read-only flag.
+- **`twin_tier2`'s 4241 bound:** 32 → 40 instructions (Q12). U4's status write moves 35: 2875 against 2840 with whole words, as built (2898 against 2863 when Q12 was asked, under the read-modify-write). The test's name keeps 32, because `ci/` routes it by name.
 - **The CLI README's example line:** solved 19, the reference's hash `b62f2ad3…`.
 
 ## 5. Decisions and rows
 
-- **The read-modify-write of `RCC_CR` (after Q8 was asked; reported 18:3xZ).** Whole words added 15 unwitnessed rows on an HSI board, and would clear `HSIKERON`/`CSION` if anything set them. One bit leaves one row, Q8's.
+- **The read-modify-write of `RCC_CR` (af671c0e) was a mistake, reverted by Q11.** I believed one bit left one row. It writes back every field it read, so the rows are owed either way, and whole words are judged exactly by the Kani harness and the twin.
 - **Rows proposed for §7.1:**
   - **B10 and B11 on the Nucleo** (Scotty): each settles a reading, p. 371 and p. 920.
   - **Today's `main` firmware on the Nucleo from a power-on reset:** SPI1 SCK or none. That is the other half of roadmap §7.1's row.
