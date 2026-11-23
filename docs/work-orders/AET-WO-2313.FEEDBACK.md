@@ -127,13 +127,13 @@ is the architect's. `RUL-13` (L563) carries the 2026-11-23 amendment on main 9e1
 
 | Test | Change | Kills |
 |---|---|---|
-| `boot_tier1` `a_boot_past_the_memory_cap_fails_and_names_it` | `HOG` = `yes \| dd bs=1800M` (1,869,572 KiB) held 60 s; asserts `bound_kib == 1_572_864` literally and `peak > 1_572_864` | M1, M4 |
+| `boot_tier1` `a_boot_past_the_memory_cap_fails_and_names_it` | `common::HOLD_PAST_CAP` = `yes \| dd bs=1800M` (1,869,572 KiB) held 60 s; asserts `bound_kib == 1_572_864` literally and `peak > 1_572_864` | M1, M4 |
 | `boot_tier1` `a_boot_between_one_and_one_and_a_half_gib_is_not_reaped` (new) | `dd bs=1300M` (1,357,428 KiB) for 3 s after a passing transcript: exit 0, pass, `bound_kib` 1,572,864, `1 GiB < peak < 1.5 GiB` | M1 |
 | `boot_tier1` `a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound` (new) | the same 1,357,428 KiB in a stub bridge: `ToolError` "Memory bound", inside 30 s | M2 |
 | `campaign_tier1` `a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays` | hog moved to `dd bs=1800M`; still `memory_cap_exceeded` | (past both caps by design) |
 | `campaign_tier1` `a_droop_boot_between_one_and_one_and_a_half_gib_is_not_reaped` (new) | the 1,357,428 KiB plant in the droop boot: exit 0, matched, no `memory_cap_exceeded` | M3 |
 | `twin_tier2` `the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot` (`windowed_dshot`) | `bound_kib == 1_572_864`, `share_permille` against it | M1 (tier 2, in the tools image) |
-| `boot_tier1` `an_aborted_machine_killed_at_a_bound_is_cpu_aborted` | shares `HOG`, unchanged assertion | — |
+| `boot_tier1` `an_aborted_machine_killed_at_a_bound_is_cpu_aborted` | shares `HOLD_PAST_CAP`, unchanged assertion | — |
 
 **The old `HOG` proved nothing about the value:** `x=$(yes | head -c 1300000000)` held 2,543,124 KiB, past
 both caps, so the cap test passed unchanged at 1 GiB and at 1.5 GiB (§5's second item). The droop hog was the
@@ -141,8 +141,52 @@ same.
 
 Mutants (one each, against the suites they live in; `~/.cache/aet-2313/mutants.sh`):
 - **M1, the old constant** (`BOOT_BOUNDS.rss_kib = 1024 * 1024`): killed by `a_boot_past_the_memory_cap…`
-  and `a_boot_between_…` (tier 1), and by the tier-2 twin test (§4.1).
+  and `a_boot_between_…` (tier 1), and by the tier-2 twin test (`bound_kib` left 1048576, right 1572864;
+  in the tools image `1e0ab105`, under `capped-run` 8 GiB, swap 0).
 - **M2, the bridge's bound raised** (`BRIDGE_BOUNDS.rss_kib = 1_572_864`): killed by `a_bridge_between_…`.
 - **M3, the droop boot on the bridge's bound** (`analog::boot` → `BRIDGE_BOUNDS`): killed by
   `a_droop_boot_between_…`.
 - **M4, a cap above the plant** (`2 * 1024 * 1024`): killed by `a_boot_past_the_memory_cap…`.
+
+Each mutant was killed by a test failure, not a compile error (the script names the failing tests and
+checks for `could not compile`).
+
+## 5. Adversarial pass (targeted, §5)
+
+- **A second copy of the constant:** the search re-run after merging main ee239949 finds the cap only in
+  `BOOT_BOUNDS`, and 1 GiB only in `BRIDGE_BOUNDS` and in dated prose. No script, workflow, `container/` file
+  or test helper holds a literal of it; `ci/foreign-judge.sh` prints `memory` and judges nothing on it; the
+  `900‰` stop was `4400g`'s measurement, not code; no archive or golden holds the finding's "MiB cap" text.
+  The verdict's `memory` record and the finding text both read the enforced constant.
+- **A test that passes at both caps:** the old cap test and the droop hog did (§4). Now every changed test
+  kills a named mutant except the droop cap test, which plants past both caps on purpose (the past-cap half
+  of the droop path; its between-caps half kills M3). `an_aborted_machine_killed…` judges `cpu_aborted`, not
+  the value.
+- **A plant that silently does nothing:** the first build's `dd if=/dev/zero` held 11,680 KiB inside the
+  sandbox; the between-caps test's `peak > 1 GiB` assertion failed on it, as written to. Kept.
+- **A stale binary passing for a mutant:** restoring a mutated file by `mv` kept an mtime older than the
+  mutant's build, so cargo reused it and one host run tested M4 (`bound_kib` 2,097,152). The script now
+  touches each restored file; every number in §4 is from the corrected script.
+- **My own kit ran another builder's tree:** the image runner copied from `1609`'s kit kept
+  `REPO=$HOME/aethelgard-1609`, so the first in-image clippy, twin run and M1 ran 1609's tree (read-only;
+  nothing of 1609's was written). M1 "survived" there because the edit never reached the container; that is
+  how it was caught (`Finished in 0.04s`, `/proc/self/mountinfo`). The path is fixed, and every in-image
+  result here is from this worktree.
+
+## 6. Reduction pass (diff)
+
+Reduction pass (diff): −10 net · 1 duplicate removed (the plant recipe and its measurement were in three
+places across two test files; now `common::HOLD_PAST_CAP` and `common::HOLD_BETWEEN_CAPS`) · 0 dead paths ·
+0 protected kept · 1 finding: the literal `1_572_864` in `boot_tier1` (`CAP_KIB`) and `twin_tier2` is the
+test's oracle, kept on purpose (a value read from `BOOT_BOUNDS` would pass every mutant). Run inline: the diff
+is about 130 lines.
+
+## 7. Gates
+
+- `cargo fmt --all -- --check`: clean.
+- `cargo clippy --workspace --all-targets -- -D warnings`: clean on the host and in the tools image with
+  `--features aethelgard-cli/with-tools`.
+- `cargo test --workspace` on the host: 169 suites, 0 failed (before the reduction); `boot_tier1` (64) and
+  `campaign_tier1` (70) again after it. Tier 2 locally: the twin test only; CI runs the rest.
+- `main` merged at ee239949 (4240e). `1609` has not merged; when it does, its `foreign.rs` is taken and the
+  comment and the L181 string re-applied.

@@ -1006,34 +1006,9 @@ fn bounded(output: &str, then: &str) -> (Option<i32>, Value, std::time::Duration
 /// written out so that a change to `renode::BOOT_BOUNDS` fails here.
 const CAP_KIB: u64 = 1_572_864;
 
-/// `dd` fills one block from `yes` and holds it resident while it waits to
-/// write it to a reader that never reads: the tree's resident size is the
-/// block plus about 26 MiB, steady (measured on Furnace: `bs=1300M`
-/// 1,357,428 KiB, `bs=1800M` 1,869,572 KiB). The sandbox denies `/dev/zero`,
-/// so `yes` feeds it. A shell variable is not used, because bash holds about
-/// two copies of it (`yes | head -c 1300000000` held 2,543,124 KiB, past
-/// both caps, `AET-WO-2313` §1.2).
-macro_rules! hold {
-    ($mib:literal, $secs:literal) => {
-        concat!(
-            "/usr/bin/yes | /bin/dd bs=",
-            $mib,
-            "M count=1 iflag=fullblock status=none | /bin/sleep ",
-            $secs
-        )
-    };
-}
-
-/// About 1,870,000 KiB, past the 1.5 GiB cap and under 2 GiB, held until the
-/// reaper kills it.
-const HOG: &str = hold!(1800, 60);
-
-/// About 1,357,000 KiB for 3 s: past the former 1 GiB cap, under 1.5 GiB.
-const BETWEEN_CAPS: &str = hold!(1300, 3);
-
 #[test]
 fn a_boot_past_the_memory_cap_fails_and_names_it() {
-    let (code, v, took) = bounded("", HOG);
+    let (code, v, took) = bounded("", common::HOLD_PAST_CAP);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["memory_cap_exceeded"]);
     assert_eq!(v["tool"]["exit_code"], -1);
@@ -1056,7 +1031,7 @@ fn a_boot_past_the_memory_cap_fails_and_names_it() {
 /// record shows the tree really was past 1 GiB.
 #[test]
 fn a_boot_between_one_and_one_and_a_half_gib_is_not_reaped() {
-    let (code, v, _) = bounded(&good(), BETWEEN_CAPS);
+    let (code, v, _) = bounded(&good(), common::HOLD_BETWEEN_CAPS);
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
     let memory = &v["memory"];
@@ -1070,9 +1045,9 @@ fn a_boot_between_one_and_one_and_a_half_gib_is_not_reaped() {
 /// well before its 30 s wall bound.
 #[test]
 fn a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound() {
-    const HOGGING_BRIDGE: &str = concat!("#!/bin/sh\n", hold!(1300, 60), "\n");
+    let hogging: &'static str = format!("#!/bin/sh\n{}\n", common::HOLD_BETWEEN_CAPS).leak();
     let start = std::time::Instant::now();
-    let (code, v) = pre_pass(Some(HOGGING_BRIDGE), false);
+    let (code, v) = pre_pass(Some(hogging), false);
     assert_eq!(code, Some(5), "{v}");
     assert_eq!(v["error"]["kind"], "ToolError", "{v}");
     assert_eq!(v["error"]["id"], "aethelgard-bridge", "{v}");
@@ -1089,7 +1064,7 @@ fn a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound() {
 #[test]
 fn an_aborted_machine_killed_at_a_bound_is_cpu_aborted() {
     let log = "[00:00:00.092740000] [ERROR] machine-0: This machine has aborted. Emulation cannot continue until this machine is removed.\n";
-    let (code, v, _) = bounded(log, HOG);
+    let (code, v, _) = bounded(log, common::HOLD_PAST_CAP);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(kinds(&v), ["cpu_aborted"]);
 }
