@@ -188,7 +188,10 @@ fn inputs(root: &Path, workflow: &str, cargo_toml: &str) -> BTreeSet<String> {
         };
         for f in files_under(root, &dir) {
             if f.ends_with(".sh") || f.ends_with(".py") {
-                todo.extend(named_paths(root, &fs::read_to_string(root.join(&f)).unwrap()));
+                todo.extend(named_paths(
+                    root,
+                    &fs::read_to_string(root.join(&f)).unwrap(),
+                ));
             }
             out.insert(f);
         }
@@ -277,7 +280,10 @@ fn every_file_the_ardupilot_image_workflow_reads_triggers_it() {
         assert!(inputs.contains(want), "{want} not derived: {inputs:?}");
     }
     for s in &inputs {
-        assert!(fs::symlink_metadata(root.join(s)).is_ok(), "{s} is not an entry");
+        assert!(
+            fs::symlink_metadata(root.join(s)).is_ok(),
+            "{s} is not an entry"
+        );
     }
     assert_eq!(unlisted(&workflow, &inputs), []);
 }
@@ -316,7 +322,11 @@ fn a_planted_unlisted_copy_is_named() {
 fn a_source_outside_the_context_is_refused() {
     let r = std::panic::catch_unwind(|| copy_sources("COPY ../secret /x\n"));
     let e = r.expect_err("a source outside the context must panic");
-    assert!(e.downcast_ref::<String>().unwrap().contains("leaves the context"));
+    assert!(
+        e.downcast_ref::<String>()
+            .unwrap()
+            .contains("leaves the context")
+    );
 }
 
 /// A planted tree, one input per reader, and a workflow whose lists name only
@@ -325,7 +335,8 @@ fn a_source_outside_the_context_is_refused() {
 /// path, and `target/` are not inputs.
 #[test]
 fn each_reader_names_a_planted_miss() {
-    let t = Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("aet-1917-paths-{}", std::process::id()));
+    let t = Path::new(env!("CARGO_TARGET_TMPDIR"))
+        .join(format!("aet-1917-paths-{}", std::process::id()));
     let _ = fs::remove_dir_all(&t);
     for (f, body) in [
         ("container/a.Dockerfile", "FROM x\nCOPY copied.txt /c\n"),

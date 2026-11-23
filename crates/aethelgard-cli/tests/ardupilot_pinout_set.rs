@@ -64,7 +64,11 @@ fn the_judge_reads_the_workflows_matrices() {
     let wf = root().join(WORKFLOW);
     let wf = wf.to_str().unwrap();
     let (code, out, err) = judge(&["hand", wf]);
-    assert_eq!((code, out.lines().collect::<Vec<_>>()), (0, HAND.to_vec()), "{err}");
+    assert_eq!(
+        (code, out.lines().collect::<Vec<_>>()),
+        (0, HAND.to_vec()),
+        "{err}"
+    );
     // sentinel-02-noimu, the mutant (`drop: IMU`), is out of reach.
     let (code, out, err) = judge(&["generated", wf]);
     assert_eq!(
@@ -145,12 +149,10 @@ fn a_board_no_matrix_names_is_refused_by_name() {
 
 #[test]
 fn a_hand_board_the_judge_has_no_findings_for_is_refused_by_name() {
-    let wf = fs::read_to_string(root().join(WORKFLOW))
-        .unwrap()
-        .replace(
-            "board: [step-g, seed-pin, seed-af, seed-pkg]",
-            "board: [step-g, seed-pin, seed-af, seed-pkg, seed-new]",
-        );
+    let wf = fs::read_to_string(root().join(WORKFLOW)).unwrap().replace(
+        "board: [step-g, seed-pin, seed-af, seed-pkg]",
+        "board: [step-g, seed-pin, seed-af, seed-pkg, seed-new]",
+    );
     assert!(wf.contains("seed-new"));
     let all: Vec<&str> = HAND.iter().chain(GENERATED.iter()).copied().collect();
     refused(

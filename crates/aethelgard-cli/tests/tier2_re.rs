@@ -104,7 +104,10 @@ fn a_planted_miss_either_way_is_named() {
     let names = tier2_names("x\nTIER2_RE='^tests/(a_tier2|gone)[.]rs$'\ny\n");
     let files = [
         ("a_tier2", "#![cfg(feature = \"with-tools\")]\n"),
-        ("new_tools", "#[cfg(feature=\"with-tools\")]\nmod tier2 {}\n"),
+        (
+            "new_tools",
+            "#[cfg(feature=\"with-tools\")]\nmod tier2 {}\n",
+        ),
         ("commented", "// #![cfg(feature = \"with-tools\")]\n"),
         ("plain", "fn header_with_tools() {}\n"),
     ]
