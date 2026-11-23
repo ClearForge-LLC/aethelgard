@@ -987,7 +987,26 @@ mod tests {
     /// translator.
     #[test]
     fn a_crossing_is_refused_without_one_device_or_a_translator() {
+        let on = |reference: &str, bus: &str| aethelgard_ir::SpiDevice {
+            reference: reference.into(),
+            part: "BMP581".into(),
+            supply: "VDD_3V3".into(),
+            bus: bus.into(),
+            cs: aethelgard_ir::Signal {
+                net: format!("{reference}_CS"),
+                pin: None,
+            },
+            pin_capacitance: None,
+            orientation: None,
+        };
+        let one = [on("U2", "spi1"), on("U3", "spi2")];
+        assert_eq!(device_on("U9", "spi1", &one).unwrap().reference, "U2");
+        let two = [on("U2", "spi1"), on("U3", "spi1")];
         for (got, want) in [
+            (
+                device_on("U9", "spi1", &two).map(|_| ()),
+                "bus `spi1` has 2 devices",
+            ),
             (
                 device_on("U9", "spi1", &[]).map(|_| ()),
                 "bus `spi1` has 0 devices",

@@ -418,6 +418,10 @@ mod tests {
                 "zone with no net of footprint U2 of footprint U1",
             ),
             (format!("(kicad_pcb {zone})"), "zone with no net"),
+            (
+                format!("(kicad_pcb (zone (net_name \"GND\") {zone}))"),
+                "zone with no net of zone on net GND",
+            ),
         ] {
             assert_eq!(
                 prepare(&board, SETUP),
