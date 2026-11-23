@@ -182,7 +182,19 @@ jobs:
             registry@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
           for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:5000/v2/ && break; sleep 0.2; done
           ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras")
-          ORAS=$ORAS bash container/gtksharp-source.sh publish localhost:5000/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/a"
+          rc=0
+          ORAS=$ORAS bash container/gtksharp-source.sh publish localhost:5000/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/a" > "$RUNNER_TEMP/first" || rc=$?
+          cat "$RUNNER_TEMP/first"
+          [ "$rc" -eq 0 ]
+          # AET-WO-4408 (4407 Q4): seeded from the published mirror once main
+          # has it, and GitHub is not asked; from GitHub only while it is not.
+          rc=0
+          bash container/gtksharp-source.sh fetch ghcr.io/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/canon" > /dev/null || rc=$?
+          case $rc in
+            0) grep -q ' seeded from ghcr.io/clearforge-llc/aethelgard-tools$' "$RUNNER_TEMP/first" ;;
+            2) grep -q ' from GitHub: https://github.com/' "$RUNNER_TEMP/first" ;;
+            *) exit 1 ;;
+          esac
           echo "a second publish finds it and pushes nothing:"
           ORAS=$ORAS bash container/gtksharp-source.sh publish localhost:5000/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/b"
           pin=ghcr.io/clearforge-llc/aethelgard-tools@sha256:$(sha256sum < container/gtksharp-source.manifest.json | cut -d' ' -f1)

@@ -112,7 +112,10 @@ contains kani.add_overflows "attempt to add with overflow"
 # 7. The libngspice shared object is at its recorded path (OQ-02's in-process
 # prior) and the loader knows it.
 [ -f /usr/lib/x86_64-linux-gnu/libngspice.so.0 ] || fail libngspice "missing /usr/lib/x86_64-linux-gnu/libngspice.so.0"
-ldconfig -p | grep -qF "libngspice.so.0 " || fail libngspice "ldconfig does not list libngspice.so.0"
+# grep reads all of ldconfig's output (no -q): an early exit closed the pipe,
+# ldconfig died of SIGPIPE and pipefail failed the check on a listed library,
+# 1 run in 200 (main's run 45105034798; AET-WO-4408).
+ldconfig -p | grep -F "libngspice.so.0 " > /dev/null || fail libngspice "ldconfig does not list libngspice.so.0"
 pass libngspice
 
 # 8. The pinned toolchain carries the firmware target (AET-WO-2100, R4), so

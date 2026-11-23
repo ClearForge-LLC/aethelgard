@@ -69,7 +69,7 @@ expect seed-pkg 1 "$defaults
 reverse UnnamedPin PI0 - output
 package NotInPackage PI0 - output" "$topology" --allow "$allow"
 
-for name in sentinel-01 sentinel-02 serial-dshot-9600; do
+for name in sentinel-01 sentinel-02 serial-dshot-9600 four-port; do
   expect "$name" 0 "" "$boards/$name/topology.json"
 done
 exit "$bad"

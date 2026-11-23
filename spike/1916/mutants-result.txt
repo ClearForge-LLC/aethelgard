@@ -1,0 +1,20 @@
+# AET-WO-1916 mutants: `mutants.py --judge` over the run's logs (tree: git archive of b02332d9; kit ~/.cache/aet-1916/mut)
+PRISTINE cli_backlog_tier1 check_support_runs_only_the_pinned_kicad: pass
+PRISTINE cli_backlog_tier1 the_drc_and_support_verdicts_carry_the_banner_of_their_spec: pass
+PRISTINE cli_backlog_tier1 the_emit_verdict_carries_the_banner_and_the_files_do_not: pass
+PRISTINE verify_2k2_tier2 verify_binds_the_reference_and_two_runs_print_the_same_bytes: pass
+PRISTINE verify_2k2_tier2 verify_fab_out_writes_the_package_its_verdict_names_at_any_path: pass
+PRISTINE with_tools a_board_not_drawn_runs_its_gates_and_is_never_verified: pass
+MB1: KILLED by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message found)
+MB2: KILLED by verify_fab_out_writes_the_package_its_verdict_names_at_any_path (failed ['verify_fab_out_writes_the_package_its_verdict_names_at_any_path']; message found)
+MB3: KILLED by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message found)
+MB4: SURVIVED or wrong reason by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message MISSING)
+MB5: KILLED by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message found)
+MB6: KILLED by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message found)
+ML1: KILLED by a_board_not_drawn_runs_its_gates_and_is_never_verified (failed ['a_board_not_drawn_runs_its_gates_and_is_never_verified']; message found)
+MF1: KILLED by the_emit_verdict_carries_the_banner_and_the_files_do_not (failed ['the_emit_verdict_carries_the_banner_and_the_files_do_not']; message found)
+MF2: KILLED by the_drc_and_support_verdicts_carry_the_banner_of_their_spec (failed ['the_drc_and_support_verdicts_carry_the_banner_of_their_spec']; message found)
+PRISTINE cli_backlog_tier1 check_support_runs_only_the_pinned_kicad: pass
+PRISTINE verify_2k2_tier2 verify_binds_the_reference_and_two_runs_print_the_same_bytes: pass
+MB4b: KILLED by verify_binds_the_reference_and_two_runs_print_the_same_bytes (failed ['verify_binds_the_reference_and_two_runs_print_the_same_bytes']; message found)
+MF3: KILLED by check_support_runs_only_the_pinned_kicad (failed ['check_support_runs_only_the_pinned_kicad']; message found)

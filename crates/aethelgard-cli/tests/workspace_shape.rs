@@ -271,6 +271,10 @@ fn svd_hal_has_only_its_known_files_keys_and_dependencies() {
             // `AET-WO-4300j` D8: its copy with every motor pull `open`, held to
             // `solve` by the same test.
             || file == "tests/ui/motors-pwm-open/topology.json"
+            // `AET-WO-4408`: DS12117's pads and AF rows, the third source
+            // `tests/pin_table_sources.rs` holds ST's pin table against.
+            || file == "tests/fixtures/ds12117/pads.tsv"
+            || file == "tests/fixtures/ds12117/af.tsv"
             || DATA.contains(&file.as_str());
         assert!(
             allowed,
