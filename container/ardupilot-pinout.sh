@@ -32,8 +32,19 @@ set -euo pipefail
 
 die() { echo "::error::ardupilot-pinout: $*" >&2; exit 1; }
 
-# The four hand boards, each with its expected findings below (AET-WO-4400a).
-HAND="step-g seed-pin seed-af seed-pkg"
+# The four hand boards (AET-WO-4400a): each one's own findings beside the
+# defaults every hand board shares (below). The one list of hand boards.
+declare -A OWN=(
+  [step-g]=""
+  [seed-pin]="forward NotAlternate PB6 I2C_SCL input
+forward WrongOutputType PB6 I2C_SCL push-pull
+reverse UnnamedPin PB8 - alternate AF4"
+  [seed-af]="forward WrongAlternateFunction PB6 I2C_SCL alternate AF6
+forward WrongAlternateFunction PB7 I2C_SDA alternate AF6
+identity WrongBaroProbe HAL_BARO_PROBE1 U2 BMP280 on I2C4 at 0x76"
+  [seed-pkg]="reverse UnnamedPin PI0 - output
+package NotInPackage PI0 - output"
+)
 
 # hand WORKFLOW: the boards of the `ardupilot` job's `board: [...]` matrix.
 hand() {
@@ -68,11 +79,10 @@ generated() {
 
 # boards WORKFLOW BOARDS: BOARDS holds exactly the hand and generated boards WORKFLOW names.
 boards() {
-  local want got n h missing extra
+  local want got n missing extra
   want=$( { hand "$1"; generated "$1"; } ) || exit 1
   for n in $(hand "$1"); do
-    for h in $HAND; do [ "$n" = "$h" ] && continue 2; done
-    die "$n: in the ardupilot matrix, but this judge has no expected findings for it"
+    [[ -v OWN[$n] ]] || die "$n: in the ardupilot matrix, but this judge has no expected findings for it"
   done
   for n in $want; do [[ $n =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]] || die "bad board name in $1: $n"; done
   [ -d "$2" ] || die "no boards directory $2"
@@ -127,18 +137,9 @@ identity WrongSpiSpeed SPIDEV dataflash low U4 20000000 Hz
 identity WrongSpiSpeed SPIDEV dataflash high U4 20000000 Hz
 identity UnexpectedSerialPort SERIAL1 - U(S)ART3 TX PD8 RX PD9"
 
-expect step-g 1 "$defaults" "$topology" --allow "$allow"
-expect seed-pin 1 "$defaults
-forward NotAlternate PB6 I2C_SCL input
-forward WrongOutputType PB6 I2C_SCL push-pull
-reverse UnnamedPin PB8 - alternate AF4" "$topology" --allow "$allow"
-expect seed-af 1 "$defaults
-forward WrongAlternateFunction PB6 I2C_SCL alternate AF6
-forward WrongAlternateFunction PB7 I2C_SDA alternate AF6
-identity WrongBaroProbe HAL_BARO_PROBE1 U2 BMP280 on I2C4 at 0x76" "$topology" --allow "$allow"
-expect seed-pkg 1 "$defaults
-reverse UnnamedPin PI0 - output
-package NotInPackage PI0 - output" "$topology" --allow "$allow"
+for name in $(hand "$workflow"); do
+  expect "$name" 1 "$defaults${OWN[$name]:+$'\n'${OWN[$name]}}" "$topology" --allow "$allow"
+done
 
 for name in $(generated "$workflow"); do
   expect "$name" 0 "" "$boards/$name/topology.json"

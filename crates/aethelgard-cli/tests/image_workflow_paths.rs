@@ -356,14 +356,9 @@ fn a_planted_unlisted_copy_is_named() {
 }
 
 #[test]
+#[should_panic(expected = "leaves the context")]
 fn a_source_outside_the_context_is_refused() {
-    let r = std::panic::catch_unwind(|| copy_sources("COPY ../secret /x\n"));
-    let e = r.expect_err("a source outside the context must panic");
-    assert!(
-        e.downcast_ref::<String>()
-            .unwrap()
-            .contains("leaves the context")
-    );
+    copy_sources("COPY ../secret /x\n");
 }
 
 /// A planted tree, one input per reader, and a workflow whose lists name only
