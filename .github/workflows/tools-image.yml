@@ -94,13 +94,21 @@ jobs:
         with:
           context: container
           tags: ${{ env.TAG }}
-          labels: org.opencontainers.image.documentation=https://github.com/ClearForge-LLC/aethelgard/blob/${{ github.sha }}/container/TOOLS-SOURCES.md
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.documentation=https://github.com/ClearForge-LLC/aethelgard/blob/${{ github.sha }}/container/TOOLS-SOURCES.md
           load: true
           cache-from: type=gha,scope=tools-image
 
       # The image pushed is the image smoke-tested here, not a rebuild of it.
       - name: smoke the image about to be published
         run: docker run --rm --network none -v "$PWD/container:/container:ro" "$TAG" bash /container/smoke.sh
+
+      # AET-WO-4407 (4403 Q3): the pin is tied to its commit by this label too.
+      - name: the revision label is the commit published
+        run: |
+          got=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$TAG")
+          [ "$got" = "$GITHUB_SHA" ] || { printf 'revision label is %q, not %s\n' "${got:0:80}" "$GITHUB_SHA" >&2; exit 1; }
 
       - name: the source offer in the image about to be published
         run: |
@@ -123,6 +131,13 @@ jobs:
           ORAS=$ORAS python3 -I container/debian-src.py publish ghcr.io/clearforge-llc/aethelgard-tools container/TOOLS-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
           echo "ANSWER debian_mirror_s=$(( $(date +%s) - start ))"
 
+      # AET-WO-4407 (4403 D4): GtkSharp's source at the commit GTK# 3.24.24.95
+      # was built from, next to the image and before it.
+      - name: mirror GtkSharp's source
+        run: |
+          ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras-g")
+          ORAS=$ORAS bash container/gtksharp-source.sh publish ghcr.io/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/gtksharp"
+
       # container/IMAGE is updated by a pull request from this digest; CI never
       # writes to the repository.
       - name: push and record the digest
@@ -144,3 +159,32 @@ jobs:
           persist-credentials: false
       - name: fetch every GPL-2.0-only Debian source anonymously by its pinned digest
         run: python3 -I container/debian-src.py fetch ghcr.io/clearforge-llc/aethelgard-tools container/TOOLS-DEBIAN-GPL2.tsv "$RUNNER_TEMP/debian-src"
+      - name: fetch GtkSharp's source anonymously by its pinned digest
+        run: bash container/gtksharp-source.sh fetch ghcr.io/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/gtksharp"
+
+  # Pull requests cannot push to ghcr (RUL-15). The GtkSharp mirror's publish
+  # and fetch run end to end against a registry on the runner, so the code
+  # main's publish runs has run first (AET-WO-4407), and TOOLS-SOURCES.md must
+  # name the pin it publishes.
+  source-rehearsal:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: GtkSharp's source, published to a registry on the runner, then fetched anonymously
+        run: |
+          # distribution 3.1.2, by index digest.
+          docker run -d --rm --name registry -p 127.0.0.1:5000:5000 \
+            registry@sha256:82f6ff4a7f982960c8aa51617fea3aabc485df6e55cce80d22deb1de36f1bc3c
+          for _ in $(seq 50); do curl -fs -o /dev/null http://127.0.0.1:5000/v2/ && break; sleep 0.2; done
+          ORAS=$(bash container/oci-mirror.sh oras "$RUNNER_TEMP/oras")
+          ORAS=$ORAS bash container/gtksharp-source.sh publish localhost:5000/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/a"
+          echo "a second publish finds it and pushes nothing:"
+          ORAS=$ORAS bash container/gtksharp-source.sh publish localhost:5000/clearforge-llc/aethelgard-tools "$RUNNER_TEMP/b"
+          pin=ghcr.io/clearforge-llc/aethelgard-tools@sha256:$(sha256sum < container/gtksharp-source.manifest.json | cut -d' ' -f1)
+          grep -qF "\`$pin\`" container/TOOLS-SOURCES.md || { echo "TOOLS-SOURCES.md does not name $pin" >&2; exit 1; }
+          echo "ok   TOOLS-SOURCES.md names $pin"

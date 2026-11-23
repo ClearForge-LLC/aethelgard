@@ -14,6 +14,8 @@ FROM mcr.microsoft.com/dotnet/sdk:8.0.405@sha256:da1f981a47b9017065a702f054f1863
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_NOLOGO=1 \
     NUGET_PACKAGES=/ci/src/renode/.nuget
+# Debian from one snapshot.debian.org timestamp (AET-WO-4407), as below.
+COPY debian-bookworm.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       patch=2.7.6-7 \
@@ -142,8 +144,13 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PATH=/opt/cargo/bin:$PATH \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1
 
-# Exact versions from the trixie archive. A pin that leaves the archive fails
-# this step by name; the published image digest is what consumers pin.
+# Exact versions, resolved from Debian at one snapshot.debian.org timestamp
+# (AET-WO-4407), so a build with no cache installs what CI's cached layer
+# holds and what TOOLS-DEBIAN-GPL2.tsv names. From the moving archive, this
+# step failed by name once trixie's point release replaced libc6-dev
+# 2.41-12+deb13u4 (about 2026-11-21). The published image digest is what
+# consumers pin.
+COPY debian-trixie.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
       ca-certificates=20250419 \

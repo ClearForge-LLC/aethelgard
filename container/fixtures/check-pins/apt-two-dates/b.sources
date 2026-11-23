@@ -1,0 +1,14 @@
+# The snapshot source every apt fixture here COPYs (AET-WO-4407).
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian/20261105T120000Z
+Suites: trixie trixie-updates
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+Check-Valid-Until: no
+
+Types: deb
+URIs: http://snapshot.debian.org/archive/debian-security/20261105T120000Z
+Suites: trixie-security
+Components: main
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+Check-Valid-Until: no
