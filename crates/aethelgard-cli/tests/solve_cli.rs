@@ -159,8 +159,8 @@ use sha2::{Digest, Sha256};
 /// each topology gains `clock.kernel_switch`; with it taken out,
 /// `"schema_version":17` and the specification-24 sha256 put back, each still
 /// hashes to `1211c`'s digest. Before: `17515df2…1ce7` and `2c4cb557…890e`.
-const REFERENCE_DIGEST: &str = "320a409d931d6c834d43d7ffddb42a9a669bc03ea6fa338ba1719ae9de1490b0";
-const STRESS_DIGEST: &str = "d794bad8883030619f0278e200890c4ae9c51b013983e62452fe06428867f94e";
+const REFERENCE_DIGEST: &str = "7a9e40e273ee3c8e7d73e195d3f0a37c16052ca18274f25b593f06d2d2872240";
+const STRESS_DIGEST: &str = "67aa0587502402bc8af3956d1e2d187fca0e78d4d89dcc66749e1bc417852012";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";
@@ -307,10 +307,10 @@ fn gate_clause_4_two_solves_are_byte_identical_and_match_the_spike() {
         let (_, b) = solved(&file);
         assert_eq!(a, b, "{}", file.display());
         assert_eq!(hex(a.as_bytes()), digest, "{}: {a}", file.display());
-        // `AET-WO-4240e` (solved 19): the clock's `kernel_switch` taken out too.
+        // `AET-WO-4240e` (solved 19): the clock's `kernel_switch` taken out too (solved 20, `AET-WO-4410`, moves the version alone).
         let back = a
             .replacen(&t.specification_sha256, sha_24, 1)
-            .replacen("\"schema_version\":19", "\"schema_version\":17", 1)
+            .replacen("\"schema_version\":20", "\"schema_version\":17", 1)
             .replacen(
                 ",\"kernel_switch\":{\"pllckselr\":80,\"pllcfgr\":131084,\"pll1divr\":16843279}",
                 "",
@@ -697,7 +697,8 @@ fn a_power_tree_solves_into_the_topology_and_emits_its_board() {
         (2714, 10_100)
     );
     // `AET-WO-4300d2` §1.7: the sense net's pin, the lowest package position
-    // among the free pins that carry a single-ended ADC input.
+    // among the free pins that carry a single-ended ADC input; since
+    // `AET-WO-4410` S2, an ADC1 input (one is free on this board).
     let table = aethelgard_svd_hal::pin_table("STM32H753ZITx").unwrap();
     let sense = &p.sense["VBAT_SENSE"];
     let pin = &table.pins[&sense.pin];
@@ -718,7 +719,7 @@ fn a_power_tree_solves_into_the_topology_and_emits_its_board() {
         .pins
         .iter()
         .filter(|(n, q)| {
-            !q.adc_channels.is_empty()
+            q.adc_channels.iter().any(|c| c.starts_with("ADC1_"))
                 && !aethelgard_ir::RESERVED_PINS.contains(&n.as_str())
                 && !taken.contains(&n.as_str())
         })
