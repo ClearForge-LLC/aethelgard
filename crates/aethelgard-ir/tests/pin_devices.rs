@@ -191,7 +191,9 @@ fn an_idle_longer_than_the_period_is_refused() {
 fn idle_high_and_low_validate_and_the_commanded_clause_stands() {
     let mut v = d1();
     motor(&mut v, "SERVO1")["pwm"]["idle"] = json!({"level": "high"});
-    spec(&v).validate().unwrap();
+    // Every step before 26 admits it; step 26 refuses a pulled-down output
+    // idling high (`AET-WO-4300i` F3).
+    assert_kind(&v, "MotorIdleHighPulledDown");
     // A commanded minimum one tick short of the period is still refused,
     // though the idle word ARR + 1 is accepted.
     motor(&mut v, "SERVO1")["pwm"]["pulse_min_us"] = json!(19_999);
@@ -525,7 +527,8 @@ fn a_driving_idle_is_refused() {
     // EN low is brake whatever PH: awake and idle, not driving.
     motor(&mut v, "DRV_EN")["pwm"]["idle"] = json!({"level": "low"});
     motor(&mut v, "DRV_PH")["pwm"]["idle"] = json!({"level": "high"});
-    spec(&v).validate().unwrap();
+    // Step 24 admits it; step 26 refuses the idle high (`AET-WO-4300i` F3).
+    assert_kind(&v, "MotorIdleHighPulledDown");
 }
 
 /// The enable is read: the same driving inputs with nSLEEP low are sleep.
@@ -533,7 +536,8 @@ fn a_driving_idle_is_refused() {
 fn a_sleeping_part_idles_whatever_its_inputs() {
     let mut v = d1();
     motor(&mut v, "DRV_EN")["pwm"]["idle"] = json!({"level": "high"});
-    spec(&v).validate().unwrap();
+    // Step 24 admits it; step 26 refuses the idle high (`AET-WO-4300i` F3).
+    assert_kind(&v, "MotorIdleHighPulledDown");
 }
 
 /// IN/IN both high is brake, which slow-decay PWM uses: not refused
@@ -545,7 +549,8 @@ fn both_inputs_high_on_an_in_in_bridge_is_brake_and_validates() {
     for l in ["A_IN1", "A_IN2"] {
         motor(&mut v, l)["pwm"]["idle"] = json!({"level": "high"});
     }
-    spec(&v).validate().unwrap();
+    // Step 24 admits it; step 26 refuses the idle high (`AET-WO-4300i` F3).
+    assert_kind(&v, "MotorIdleHighPulledDown");
     motor(&mut v, "A_IN2")["pwm"]["idle"] = json!({"level": "low"});
     assert_kind(&v, "BridgeIdleDrives");
 }

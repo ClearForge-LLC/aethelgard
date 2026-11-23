@@ -13,15 +13,25 @@
 //!   once (`ReservedPinTwice`) and none the engine already reserves
 //!   (`ReservedPinEngineReserved`, [`crate::reserved_pins`]); whether each is
 //!   a pin of the table is `solve`'s (`UnknownPin`), which holds the table.
+//! - **Off the reset pulls** (adversarial pass F2, F3): a motor output's
+//!   hand pin holds no internal pull from reset (`MotorPinResetPull`,
+//!   [`crate::pin_devices::MCU_RESET_PULL_UPS`] and `MCU_RESET_PULL_DOWNS`,
+//!   RM0433 Rev 9 p. 542), and the solver never offers it one; a PWM output
+//!   whose idle is `{"level": "high"}` is refused (`MotorIdleHighPulledDown`):
+//!   its pull goes to `GND` only (ruled I), so the line would sit low against
+//!   its idle until `start_outputs`, and an idle-high output waits for a
+//!   ruling.
 //! - **FT at connectors** (D1 (a), D5): a net some `connectors[].pins[].net`
 //!   names is connector-facing. A hand pin on one must have a held `FT`
 //!   structure (`ConnectorPinNotFt`), and one with no held structure is
-//!   `McuPinStructureUnheld`; the solver tries FT pins first for such a net
-//!   ([`ft_first`]). Test points and `power.input` are not connectors here.
+//!   `McuPinStructureUnheld`. The solver offers such a net FT pins only, the
+//!   same bar ([`AtConnector`], adversarial pass F1): every other candidate
+//!   is withheld in every branch, and a refusal for want of a pin names it.
+//!   Test points and `power.input` are not connectors here.
 //!
 //! The MCU row is read once, and refused at `mcu.part` (`PowerPartUnknown`)
-//! only when something needs it: a motor output, or a hand pin on a
-//! connector-facing net.
+//! only when something needs it: a motor output, or a claimant (hand or
+//! solved) on a connector-facing net (adversarial pass F8).
 
 use std::collections::BTreeSet;
 
@@ -40,6 +50,8 @@ pub enum OffboardKind {
     ReservedPinEngineReserved,
     ConnectorPinNotFt,
     McuPinStructureUnheld,
+    MotorPinResetPull,
+    MotorIdleHighPulledDown,
 }
 
 impl OffboardKind {
@@ -52,6 +64,8 @@ impl OffboardKind {
             Self::ReservedPinEngineReserved => "ReservedPinEngineReserved",
             Self::ConnectorPinNotFt => "ConnectorPinNotFt",
             Self::McuPinStructureUnheld => "McuPinStructureUnheld",
+            Self::MotorPinResetPull => "MotorPinResetPull",
+            Self::MotorIdleHighPulledDown => "MotorIdleHighPulledDown",
         }
     }
 }
@@ -102,114 +116,163 @@ fn is_ft(structure: &str) -> bool {
     structure.split('_').next() == Some("FT")
 }
 
-/// The pins of `part`'s MCU row whose held structure is `FT`; none for a part
-/// with no MCU row, so every pin then counts as non-FT.
-pub(crate) fn ft_pins(part: &str) -> Result<BTreeSet<&'static str>, IrValidationError> {
-    let table = power_parts::table()?;
-    Ok(match table.get(part).map(|r| &r.kind) {
-        Some(power_parts::Kind::Mcu(m)) => {
-            m.io.pins
-                .iter()
-                .filter(|(_, (s, _))| is_ft(s))
-                .map(|(p, _)| p.as_str())
-                .collect()
-        }
-        _ => BTreeSet::new(),
-    })
-}
-
-/// `items` stably partitioned when `net` is connector-facing: those on an FT
-/// pin first in their order, then the rest in theirs (D1 (a)); unchanged
-/// otherwise.
-pub(crate) fn ft_first<T>(
-    items: Vec<T>,
-    net: &str,
-    facing: &BTreeSet<&str>,
-    ft: &BTreeSet<&str>,
-    pin: impl Fn(&T) -> &str,
-) -> Vec<T> {
-    if !facing.contains(net) {
-        return items;
+/// The MCU row's I/O facts, or the refusal at `mcu.part` when `mcu.part`
+/// has no MCU row (`PowerPartUnknown`): the one home of both, for step 26
+/// and the solver.
+fn mcu_io(spec: &Specification) -> Result<&'static McuIo, IrValidationError> {
+    match power_parts::table()?.get(&spec.mcu.part).map(|r| &r.kind) {
+        Some(power_parts::Kind::Mcu(row)) => Ok(&row.io),
+        _ => Err(refuse(
+            OffboardKind::PowerPartUnknown,
+            &spec.mcu.part,
+            "mcu.part",
+            format!(
+                "`{}` has no MCU row in the power parts table, and a motor output's pull and every pin of a net at a connector, by hand or solved, are judged against it",
+                spec.mcu.part
+            ),
+        )),
     }
-    let (mut first, rest): (Vec<T>, Vec<T>) = items.into_iter().partition(|t| ft.contains(pin(t)));
-    first.extend(rest);
-    first
 }
 
-/// The facts [`ft_first`] reads for one specification: its connector-facing
-/// nets and its MCU row's FT pins.
-pub(crate) struct FtOrder<'s> {
+/// The claimant nets a connector pin names, solved or by hand.
+fn facing_claims(spec: &Specification) -> BTreeSet<&str> {
+    let facing = connector_facing(spec);
+    claimants(spec)
+        .into_iter()
+        .map(|(_, net, _)| net)
+        .filter(|net| facing.contains(net))
+        .collect()
+}
+
+/// What the solver may offer a net at a connector (D1 (a), adversarial pass
+/// F1): an FT pin only, the bar a hand pin meets (`ConnectorPinNotFt`). A
+/// pin with no held structure counts as non-FT. Every other candidate is
+/// withheld in every branch, and a refusal for want of a pin names it
+/// ([`AtConnector::note`]).
+pub(crate) struct AtConnector<'s> {
     facing: BTreeSet<&'s str>,
-    ft: BTreeSet<&'static str>,
+    /// The MCU row's I/O facts, read when some claimant faces a connector.
+    io: Option<&'static McuIo>,
 }
 
-impl<'s> FtOrder<'s> {
+impl<'s> AtConnector<'s> {
+    /// Refused at `mcu.part` (`PowerPartUnknown`) when a claimant faces a
+    /// connector and the part has no MCU row, which step 26 refused first.
     pub(crate) fn new(spec: &'s Specification) -> Result<Self, IrValidationError> {
-        Ok(Self {
-            facing: connector_facing(spec),
-            ft: ft_pins(&spec.mcu.part)?,
-        })
+        let facing = facing_claims(spec);
+        let io = match facing.is_empty() {
+            true => None,
+            false => Some(mcu_io(spec)?),
+        };
+        Ok(Self { facing, io })
     }
 
-    /// `items` in the order `net` tries them ([`ft_first`]).
-    pub(crate) fn order<T>(&self, net: &str, items: Vec<T>, pin: impl Fn(&T) -> &str) -> Vec<T> {
-        ft_first(items, net, &self.facing, &self.ft, pin)
+    /// Whether `net` is a claimant's net a connector pin names.
+    pub(crate) fn faces(&self, net: &str) -> bool {
+        self.facing.contains(net)
+    }
+
+    /// The held structure of `pin`, if any.
+    fn structure(&self, pin: &str) -> Option<&'static str> {
+        self.io
+            .and_then(|io| io.pins.get(pin))
+            .map(|(s, _)| s.as_str())
+    }
+
+    /// Whether `pin` has a held FT structure.
+    pub(crate) fn ft(&self, pin: &str) -> bool {
+        self.structure(pin).is_some_and(is_ft)
+    }
+
+    /// Whether the solver may offer `pin` to `net`.
+    pub(crate) fn offers(&self, net: &str, pin: &str) -> bool {
+        !self.faces(net) || self.ft(pin)
+    }
+
+    /// What a refusal adds for the `pins` withheld from `net` as not FT, each
+    /// with its held structure, once, in key order: nothing when none is.
+    pub(crate) fn note<'p>(&self, net: &str, pins: impl IntoIterator<Item = &'p str>) -> String {
+        let withheld: BTreeSet<&str> = pins.into_iter().filter(|p| !self.offers(net, p)).collect();
+        if withheld.is_empty() {
+            return String::new();
+        }
+        let named: Vec<String> = withheld
+            .iter()
+            .map(|p| match self.structure(p) {
+                Some(s) => format!("`{p}` ({s})"),
+                None => format!("`{p}` (no held structure)"),
+            })
+            .collect();
+        format!(
+            "; {} withheld as not FT at a connector (`AET-WO-4300i` D1)",
+            named.join(", ")
+        )
     }
 }
 
-/// Every hand pin of the specification with its net and its path, in
-/// document order: the buses' lines, the chip selects, the motor outputs,
-/// the serial ports, then each pin device's signals and ADC inputs.
-fn hand_pins(spec: &Specification) -> Vec<(String, &str, &str)> {
-    let mut out: Vec<(String, &str, &str)> = Vec::new();
+/// Every claimant of the specification with its pin's path, its net and its
+/// hand pin (`None` for the solver), in document order: the buses' lines,
+/// the chip selects, the motor outputs, the serial ports, then each pin
+/// device's signals and ADC inputs.
+type Claimant<'s> = (String, &'s str, Option<&'s str>);
+
+fn claimants(spec: &Specification) -> Vec<Claimant<'_>> {
+    let mut out: Vec<Claimant<'_>> = Vec::new();
     for (i, b) in spec.i2c_buses.iter().enumerate() {
         for (k, s) in [("sda", &b.sda), ("scl", &b.scl)] {
-            if let Some(p) = &s.pin {
-                out.push((format!("i2c_buses[{i}].{k}.pin"), &s.net, p));
-            }
+            out.push((format!("i2c_buses[{i}].{k}.pin"), &s.net, s.pin.as_deref()));
         }
     }
     for (i, b) in spec.spi_buses.iter().enumerate() {
         for (k, s) in [("sck", &b.sck), ("mosi", &b.mosi), ("miso", &b.miso)] {
-            if let Some(p) = &s.pin {
-                out.push((format!("spi_buses[{i}].{k}.pin"), &s.net, p));
-            }
+            out.push((format!("spi_buses[{i}].{k}.pin"), &s.net, s.pin.as_deref()));
         }
     }
     for (i, d) in spec.declared_spi_devices().iter().enumerate() {
-        if let Some(p) = &d.cs.pin {
-            out.push((format!("spi_devices[{i}].cs.pin"), &d.cs.net, p));
-        }
+        out.push((
+            format!("spi_devices[{i}].cs.pin"),
+            &d.cs.net,
+            d.cs.pin.as_deref(),
+        ));
     }
     for (i, m) in spec.motor_outputs.iter().enumerate() {
-        if let Some(p) = &m.pin {
-            out.push((format!("motor_outputs[{i}].pin"), &m.label, p));
-        }
+        out.push((
+            format!("motor_outputs[{i}].pin"),
+            &m.label,
+            m.pin.as_deref(),
+        ));
     }
     for (i, u) in spec.serial_ports.iter().enumerate() {
         for (k, s) in [("tx", &u.tx), ("rx", &u.rx)] {
-            if let Some(p) = &s.pin {
-                out.push((format!("serial_ports[{i}].{k}.pin"), &s.net, p));
-            }
+            out.push((
+                format!("serial_ports[{i}].{k}.pin"),
+                &s.net,
+                s.pin.as_deref(),
+            ));
         }
     }
     for (i, d) in spec.declared_pin_devices().iter().enumerate() {
         for (k, s) in d.signals.iter().enumerate() {
-            if let Some(p) = &s.pin {
-                out.push((format!("pin_devices[{i}].signals[{k}].pin"), &s.net, p));
-            }
+            out.push((
+                format!("pin_devices[{i}].signals[{k}].pin"),
+                &s.net,
+                s.pin.as_deref(),
+            ));
         }
         for (k, a) in d.analog.iter().enumerate() {
-            if let Some(p) = &a.pin {
-                out.push((format!("pin_devices[{i}].analog[{k}].pin"), &a.net, p));
-            }
+            out.push((
+                format!("pin_devices[{i}].analog[{k}].pin"),
+                &a.net,
+                a.pin.as_deref(),
+            ));
         }
     }
     out
 }
 
 /// Step 26, in this order: the reservations, the MCU row where needed, each
-/// motor output's pull, then each hand pin on a connector-facing net.
+/// motor output's pull, hand pin and idle, then each hand pin on a
+/// connector-facing net.
 pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     use OffboardKind as K;
     let engine = crate::reserved_pins(spec.mcu.hse.as_ref());
@@ -237,26 +300,15 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
         }
     }
     let facing = connector_facing(spec);
-    let hands: Vec<_> = hand_pins(spec)
+    let at: Vec<_> = claimants(spec)
         .into_iter()
         .filter(|(_, net, _)| facing.contains(net))
         .collect();
-    if spec.motor_outputs.is_empty() && hands.is_empty() {
+    if spec.motor_outputs.is_empty() && at.is_empty() {
         return Ok(());
     }
+    let io = mcu_io(spec)?;
     let pp = power_parts::table()?;
-    let Some(power_parts::Kind::Mcu(row)) = pp.get(&spec.mcu.part).map(|r| &r.kind) else {
-        return Err(refuse(
-            K::PowerPartUnknown,
-            &spec.mcu.part,
-            "mcu.part",
-            format!(
-                "`{}` has no MCU row in the power parts table, and a motor output's pull or a hand pin at a connector is judged against it",
-                spec.mcu.part
-            ),
-        ));
-    };
-    let io: &McuIo = &row.io;
     let rpd = &io.weak_pull_down_ohms;
     for (i, m) in spec.motor_outputs.iter().enumerate() {
         let r = &m.pull.resistor;
@@ -301,8 +353,36 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
+        if let Some(pin) = m.pin.as_deref().filter(|p| {
+            crate::pin_devices::MCU_RESET_PULL_UPS.contains(p)
+                || crate::pin_devices::MCU_RESET_PULL_DOWNS.contains(p)
+        }) {
+            return Err(refuse(
+                K::MotorPinResetPull,
+                &m.label,
+                format!("motor_outputs[{i}].pin"),
+                format!(
+                    "`{}` is pinned on `{pin}`, which holds an internal pull from reset to the first write (RM0433 Rev 9 p. 542: PA13, PA15 and PB4 pulled up, PA14 down): a motor line carries no internal pull (`AET-WO-4300i` D0), and a pull-up fights the declared pull-down from power-up until the timer takes the pin; pin it elsewhere",
+                    m.label
+                ),
+            ));
+        }
+        if m.pwm.as_ref().map(|p| p.idle)
+            == Some(crate::motor::Idle::Level(crate::motor::Level::High))
+        {
+            return Err(refuse(
+                K::MotorIdleHighPulledDown,
+                &m.label,
+                format!("motor_outputs[{i}].pwm.idle"),
+                format!(
+                    "`{}` idles high, and its line is pulled down: the motor pull goes to `GND` only (`AET-WO-4300i` D0, ruled I), so the line sits low against its idle until `start_outputs`; an idle-high output waits for a ruling",
+                    m.label
+                ),
+            ));
+        }
     }
-    for (path, net, pin) in hands {
+    for (path, net, pin) in at {
+        let Some(pin) = pin else { continue };
         let ends: Vec<String> = spec
             .declared_connectors()
             .iter()

@@ -137,8 +137,10 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// Version 28 (`AET-WO-4300i`) requires `motor_outputs[].pull`, each motor
 /// line's external pull-down to `GND` inside the MCU row's RPD range, and
 /// `mcu.reserved_pins`, each pin the board keeps with its reason; a hand
-/// pin at a connector is FT (`ConnectorPinNotFt`), and the solver tries FT
-/// pins first for a connector-facing net.
+/// pin at a connector is FT (`ConnectorPinNotFt`), and the solver offers a
+/// connector-facing net FT pins only; a motor output is never on a pin with
+/// a reset pull (`MotorPinResetPull`) and never idles high
+/// (`MotorIdleHighPulledDown`).
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
 pub const SPECIFICATION_SCHEMA_VERSION: u32 = 28;
@@ -2373,8 +2375,9 @@ pub enum IrValidationError {
     /// refusal's.
     #[error("{0}")]
     PinDevice(pin_devices::PinDeviceRefusal),
-    /// Step 26 (`AET-WO-4300i`): a motor pull, a declared reservation or a
-    /// hand pin at a connector; the kind is the inner refusal's.
+    /// Step 26 (`AET-WO-4300i`): a motor pull, pin or idle, a declared
+    /// reservation, or a hand pin at a connector; the kind is the inner
+    /// refusal's.
     #[error("{0}")]
     Offboard(offboard::OffboardRefusal),
     /// Step 25 (`AET-WO-1216b`): a path from a rail that can lead

@@ -31,6 +31,7 @@ fn table() -> PinTable {
         ("PA13", &[("TIM1_CH1", 1)]),
         ("PB6", &[("TIM4_CH1", 2)]),
         ("PB7", &[]),
+        ("PC14", &[]),
     ];
     PinTable {
         part: "STM32H753ZITx".into(),
@@ -311,8 +312,10 @@ fn adversarial_3_a_pin_with_no_timer_channel_is_refused_by_name() {
     // A complementary output (TIM1_CH1N) is not a channel this engine drives.
     let e = solve(&spec(vec![pwm("M1", Some("PA7"), 400)]), &table(), HASH).unwrap_err();
     assert_eq!(e.kind(), "NoTimerChannel");
-    // A reserved pin is refused as any hand pin is.
-    let e = solve(&spec(vec![pwm("M1", Some("PA13"), 400)]), &table(), HASH).unwrap_err();
+    // A reserved pin is refused as any hand pin is (`PC14`, the LSE's; `PA13`
+    // is refused before it, at validate, as a pin with a reset pull,
+    // `MotorPinResetPull`, `AET-WO-4300i` F2).
+    let e = solve(&spec(vec![pwm("M1", Some("PC14"), 400)]), &table(), HASH).unwrap_err();
     assert_eq!(e.kind(), "ReservedPin");
 }
 

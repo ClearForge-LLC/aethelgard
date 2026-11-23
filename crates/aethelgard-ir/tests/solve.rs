@@ -592,7 +592,8 @@ fn a_cs_with_no_free_pin_left_is_refused() {
     assert_eq!(
         err,
         SolveError::NoFreePin {
-            claimant: "spi_devices[1].cs".into()
+            claimant: "spi_devices[1].cs".into(),
+            withheld: String::new()
         }
     );
 }

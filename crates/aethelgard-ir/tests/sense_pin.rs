@@ -160,7 +160,8 @@ fn no_free_adc_pin_is_refused_by_net() {
     assert_eq!(
         err,
         SolveError::NoAdcPin {
-            net: "VBAT_SENSE".into()
+            net: "VBAT_SENSE".into(),
+            withheld: String::new()
         }
     );
     assert_eq!((err.kind(), err.id()), ("NoAdcPin", Some("VBAT_SENSE")));

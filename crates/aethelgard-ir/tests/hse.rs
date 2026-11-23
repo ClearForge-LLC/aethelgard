@@ -30,7 +30,7 @@ fn table() -> PinTable {
         ("PH1", &[("I2C3_SCL", 4)]),
     ];
     PinTable {
-        part: "TEST_PART".into(),
+        part: "STM32H753ZITx".into(),
         package: "TEST".into(),
         source: PinSource {
             repository: "test".into(),
@@ -77,7 +77,7 @@ fn spec_json(hse: Value, baud: u32) -> Value {
         "acknowledge_unwitnessed": [],
         "project_name": "t",
         "board": serde_json::from_str::<Value>(BOARD).unwrap(),
-        "mcu": {"part": "TEST_PART", "supply": "VDD_3V3", "hse": hse, "bor_level": 0,
+        "mcu": {"part": "STM32H753ZITx", "supply": "VDD_3V3", "hse": hse, "bor_level": 0,
             "core_supply": {"mode": "ldo", "source": "DS12117 Rev 10 sec. 3.5.1 p. 27"},
             "supply_source": {"connector": "J91", "pin": "1"}, "reserved_pins": []},
         "voltage_domains": [{"id": "VDD_3V3", "nominal_millivolts": 3300, "tolerance_permille": 50}],

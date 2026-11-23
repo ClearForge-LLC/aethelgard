@@ -1,8 +1,11 @@
 //! `AET-WO-4300i`: specification 28's off-board pins. Each refusal of
 //! `validate`'s step 26 by name; `mcu.reserved_pins` in every solver branch
-//! it changed; the FT-first order at a connector in every branch, each shown
-//! against the same specification with the net taken off its connector (the
-//! control), so the test fails if the order is removed; the motor pull's
+//! it changed; FT pins only at a connector in every branch (adversarial pass
+//! F1): each branch never takes a TT pin there, and is refused naming the
+//! pins it withheld when only TT pins are free, each shown against the same
+//! specification with the net taken off its connector (the control), which
+//! takes the TT pin; no motor output on a reset pull (F2) or idling high
+//! (F3); the motor pull's
 //! parse and its row; `silicon::implied_pupd` on a motor net; and the
 //! power-parts row's `io.weak_pull_down_ohms`.
 //!
@@ -499,18 +502,36 @@ fn an_mcu_with_no_row_is_refused_where_the_row_is_needed() {
     unface(&mut v, "M1_OUT1");
     unface(&mut v, "M1_OUT2");
     v["mcu"]["part"] = json!("STM32H743ZITx");
-    let e = refused(&v);
-    assert_eq!(
-        (e.kind(), e.id(), e.path()),
-        ("PowerPartUnknown", Some("STM32H743ZITx"), Some("mcu.part")),
-        "{e}"
-    );
+    let unknown = |v: &Value| {
+        let e = refused(v);
+        assert_eq!(
+            (e.kind(), e.id(), e.path()),
+            ("PowerPartUnknown", Some("STM32H743ZITx"), Some("mcu.part")),
+            "{e}"
+        );
+    };
+    unknown(&v);
+    // With no motor output and no hand pin, the console's solved lines still
+    // reach `J1` (adversarial pass F8): the solver judges them on the row.
+    v["motor_outputs"] = json!([]);
+    unface(&mut v, "SERVO1");
+    unknown(&v);
+    // With no claimant at a connector, nothing needs the row.
+    v["serial_ports"] = json!([]);
+    unface(&mut v, "CMD_TX");
+    unface(&mut v, "CMD_RX");
+    spec(&v).validate().unwrap();
 }
 
+/// What every refusal for want of a pin at a connector says of the pins it
+/// withheld (`AET-WO-4300i` D1, adversarial pass F1).
+const WITHHELD: &str = "withheld as not FT at a connector (`AET-WO-4300i` D1)";
+
 /// The motor channels: `TIM2_CH1` on `PA5` (`TT_ha`) comes before
-/// `TIM2_CH2` on `PA0` (`FT_a`); `SERVO1` cannot share TIM1's key.
+/// `TIM2_CH2` on `PA0` (`FT_a`); `SERVO1` cannot share TIM1's key. At its
+/// connector it is never offered `PA5`; off it (the control), it takes it.
 #[test]
-fn a_connector_facing_motor_takes_an_ft_channel_first() {
+fn a_connector_facing_motor_is_offered_ft_channels_only() {
     let t = d1_table(&[
         ("PA5", 6, &[("TIM2_CH1", 1)], &[]),
         ("PA0", 7, &[("TIM2_CH2", 1)], &[]),
@@ -522,16 +543,40 @@ fn a_connector_facing_motor_takes_an_ft_channel_first() {
     assert_eq!(pin_of(&solved(&v, &t).unwrap(), "SERVO1"), "PA5");
 }
 
-/// The serial candidates: `PA4` and `PA7` (`TT_a`) sort before `PB14` and
-/// `PB15`.
+/// `SERVO1`'s only free channels are `PA5` and `PE9`, both `TT_ha`: the
+/// bridge's outputs hold `PE11` and `PE13` by hand, and `PC6` is reserved.
 #[test]
-fn a_connector_facing_port_takes_ft_pins_first() {
+fn a_connector_facing_motor_whose_only_channels_are_tt_is_refused() {
+    let t = d1_table(&[("PA5", 6, &[("TIM2_CH1", 1)], &[])]);
+    let mut v = d1();
+    v["motor_outputs"][0]["pin"] = json!("PE11");
+    v["motor_outputs"][1]["pin"] = json!("PE13");
+    reserve(&mut v, "PC6", "test");
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(
+        (e.kind(), e.id()),
+        ("NoTimerChannel", Some("SERVO1")),
+        "{e}"
+    );
+    let m = e.to_string();
+    assert!(
+        m.contains(&format!("`PA5` (TT_ha), `PE9` (TT_ha) {WITHHELD}")),
+        "{m}"
+    );
+    unface(&mut v, "SERVO1");
+    assert_eq!(pin_of(&solved(&v, &t).unwrap(), "SERVO1"), "PA5");
+}
+
+/// The serial candidates: `PA4` and `PA7` (`TT_a`) sort before `PB14` and
+/// `PB15`. A serial port always reaches a connector
+/// (`SerialPortNotAtConnector`), so the key order alone would give `PA4`
+/// and `PA7`, and there is no off-connector control.
+#[test]
+fn a_connector_facing_port_is_offered_ft_pins_only() {
     let t = d1_table(&[
         ("PA4", 4, &[("USART1_TX", 4)], &[]),
         ("PA7", 8, &[("USART1_RX", 4)], &[]),
     ]);
-    // A serial port always reaches a connector (`SerialPortNotAtConnector`),
-    // so the key order alone would give `PA4` and `PA7`.
     let s = solved(&d1(), &t).unwrap();
     assert_eq!(
         (pin_of(&s, "CMD_TX"), pin_of(&s, "CMD_RX")),
@@ -539,9 +584,37 @@ fn a_connector_facing_port_takes_ft_pins_first() {
     );
 }
 
+/// With `PB14` (then `PB15`) reserved, the port's only TX (then RX) pin is
+/// `PA4` (then `PA7`), `TT_a`: refused, naming it. Unreserved, it solves.
+#[test]
+fn a_connector_facing_port_whose_only_pin_is_tt_is_refused() {
+    let t = d1_table(&[
+        ("PA4", 4, &[("USART1_TX", 4)], &[]),
+        ("PA7", 8, &[("USART1_RX", 4)], &[]),
+    ]);
+    for (ft, tt, sig) in [("PB14", "PA4", "TX"), ("PB15", "PA7", "RX")] {
+        let mut v = d1();
+        reserve(&mut v, ft, "test");
+        let e = solved(&v, &t).unwrap_err();
+        assert_eq!(
+            (e.kind(), e.id()),
+            ("NoSerialPeripheral", Some("CMD")),
+            "{e}"
+        );
+        let m = e.to_string();
+        assert!(
+            m.contains(&format!(
+                "USART1: the table has no unreserved pin for `USART1_{sig}`; `{tt}` (TT_a) {WITHHELD}"
+            )),
+            "{m}"
+        );
+    }
+    solved(&d1(), &t).unwrap();
+}
+
 /// A pin device's signal: `PC4` (`TT_a`) is the next free key before `PD0`.
 #[test]
-fn a_connector_facing_device_signal_takes_an_ft_pin_first() {
+fn a_connector_facing_device_signal_is_offered_ft_pins_only() {
     let t = d1_table(&[("PC4", 45, &[], &[])]);
     let mut v = d1();
     face(&mut v, "DRV_NFAULT", false);
@@ -549,14 +622,51 @@ fn a_connector_facing_device_signal_takes_an_ft_pin_first() {
     assert_eq!(pin_of(&solved(&d1(), &t).unwrap(), "DRV_NFAULT"), "PC4");
 }
 
+/// With `PD0` to `PD2` and `PE13` reserved, `DRV_NFAULT`'s only free pin is `PC4`
+/// (`TT_a`): at a connector it is refused, naming it; off it, it takes it.
+#[test]
+fn a_connector_facing_device_signal_whose_only_pin_is_tt_is_refused() {
+    let t = d1_table(&[("PC4", 45, &[], &[])]);
+    let mut v = d1();
+    for p in ["PD0", "PD1", "PD2", "PE13"] {
+        reserve(&mut v, p, "test");
+    }
+    let control = v.clone();
+    face(&mut v, "DRV_NFAULT", false);
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(
+        (e.kind(), e.claimants()),
+        ("NoFreePin", vec!["pin_devices[0].signals[1]".to_owned()]),
+        "{e}"
+    );
+    let m = e.to_string();
+    assert!(m.contains(&format!("`PC4` (TT_a) {WITHHELD}")), "{m}");
+    assert_eq!(pin_of(&solved(&control, &t).unwrap(), "DRV_NFAULT"), "PC4");
+}
+
 /// A pin device's ADC input: `PB1` (`TT_a`) has the lowest position.
 #[test]
-fn a_connector_facing_adc_input_takes_an_ft_pin_first() {
+fn a_connector_facing_adc_input_is_offered_ft_pins_only() {
     let t = d1_table(&[]);
     let mut v = d1();
     face(&mut v, "DRV_IPROPI", false);
     assert_eq!(pin_of(&solved(&v, &t).unwrap(), "DRV_IPROPI"), "PC0");
     assert_eq!(pin_of(&solved(&d1(), &t).unwrap(), "DRV_IPROPI"), "PB1");
+}
+
+/// With `PC0` reserved, `DRV_IPROPI`'s only ADC pin is `PB1` (`TT_a`).
+#[test]
+fn a_connector_facing_adc_input_whose_only_pin_is_tt_is_refused() {
+    let t = d1_table(&[]);
+    let mut v = d1();
+    reserve(&mut v, "PC0", "test");
+    let control = v.clone();
+    face(&mut v, "DRV_IPROPI", false);
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("NoAdcPin", Some("DRV_IPROPI")), "{e}");
+    let m = e.to_string();
+    assert!(m.contains(&format!("`PB1` (TT_a) {WITHHELD}")), "{m}");
+    assert_eq!(pin_of(&solved(&control, &t).unwrap(), "DRV_IPROPI"), "PB1");
 }
 
 /// Sentinel-02's power fixture without its crossing and IMU, as
@@ -605,9 +715,26 @@ fn s02_table(extra: &[Row<'_>]) -> PinTable {
     table_of(&rows)
 }
 
+/// Each of `nets` on a pin of a new four-pin connector `J91` (pins 1 to 3,
+/// `GND` on 4), each with an off-board load, as a bus line declares one.
+fn face_lines(v: &mut Value, nets: &[&str]) {
+    let mut pins: Vec<Value> = (0..3)
+        .map(|k| match nets.get(k) {
+            Some(net) => json!({"pin": (k + 1).to_string(), "net": net,
+                "offboard": {"capacitance_femtofarads": 30000, "source": "condition: test"}}),
+            None => json!({"pin": (k + 1).to_string(), "net": null, "offboard": null}),
+        })
+        .collect();
+    pins.push(json!({"pin": "4", "net": "GND", "offboard": null}));
+    v["connectors"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"reference": "J91", "part": "SM04B-GHS-TB", "standard": null, "pins": pins}));
+}
+
 /// A chip select: `PA4` (`TT_a`) is the first free key, `PD0` the first FT.
 #[test]
-fn a_connector_facing_chip_select_takes_an_ft_pin_first() {
+fn a_connector_facing_chip_select_is_offered_ft_pins_only() {
     let t = s02_table(&[("PA4", 4, &[], &[]), ("PD0", 50, &[], &[])]);
     assert_eq!(pin_of(&solved(&s02(), &t).unwrap(), "FLASH_CS"), "PA4");
     let mut v = s02();
@@ -615,14 +742,76 @@ fn a_connector_facing_chip_select_takes_an_ft_pin_first() {
     assert_eq!(pin_of(&solved(&v, &t).unwrap(), "FLASH_CS"), "PD0");
 }
 
+/// The chip select's free pins are `PA4` and `PB1` (`TT_a`), with `PF11`
+/// reserved: at a connector it is refused, naming both; off it, it takes
+/// `PA4`, and the battery sense `PB1`.
+#[test]
+fn a_connector_facing_chip_select_whose_only_pins_are_tt_is_refused() {
+    let t = s02_table(&[("PA4", 4, &[], &[]), ("PB1", 3, &[], &["ADC1_INP5"])]);
+    let mut v = s02();
+    reserve(&mut v, "PF11", "test");
+    let control = v.clone();
+    face(&mut v, "FLASH_CS", true);
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!(
+        (e.kind(), e.claimants()),
+        ("NoFreePin", vec!["spi_devices[0].cs".to_owned()]),
+        "{e}"
+    );
+    let m = e.to_string();
+    assert!(
+        m.contains(&format!("`PA4` (TT_a), `PB1` (TT_a) {WITHHELD}")),
+        "{m}"
+    );
+    assert_eq!(pin_of(&solved(&control, &t).unwrap(), "FLASH_CS"), "PA4");
+}
+
 /// A bus line: `PA4` (`TT_a`) carries `SPI1_MISO` before `PA6`.
 #[test]
-fn a_connector_facing_bus_line_takes_an_ft_pin_first() {
+fn a_connector_facing_bus_line_is_offered_ft_pins_only() {
     let t = s02_table(&[("PA4", 4, &[("SPI1_MISO", 5)], &[]), ("PD0", 50, &[], &[])]);
     assert_eq!(pin_of(&solved(&s02(), &t).unwrap(), "SPI_MISO"), "PA4");
     let mut v = s02();
     face(&mut v, "SPI_MISO", true);
     assert_eq!(pin_of(&solved(&v, &t).unwrap(), "SPI_MISO"), "PA6");
+}
+
+/// The adversarial pass's probe `p2` (F1): the flash's lines at a
+/// connector, SPI1's only SCK on `PA5` (`TT_ha`), SPI2 on FT pins
+/// (`PD0` to `PD2`, `FT_h`). The first instance cannot serve it, so it
+/// moves to the next, where every line is FT; off the connector (the
+/// control) it stays on SPI1. With no SPI2, it is refused, naming `PA5`.
+#[test]
+fn a_connector_facing_bus_takes_another_instance_rather_than_a_tt_pin() {
+    let spi2: [Row<'_>; 3] = [
+        ("PD0", 50, &[("SPI2_SCK", 5)], &[]),
+        ("PD1", 51, &[("SPI2_MISO", 5)], &[]),
+        ("PD2", 52, &[("SPI2_MOSI", 5)], &[]),
+    ];
+    let mut extra: Vec<Row<'_>> = spi2.to_vec();
+    extra.push(("PE2", 60, &[], &[]));
+    let t = s02_table(&extra);
+    let lines = ["SPI_SCK", "SPI_MOSI", "SPI_MISO"];
+    let base = solved(&s02(), &t).unwrap();
+    assert_eq!(base.assignments["SPI_SCK"].peripheral, "SPI1");
+    let mut v = s02();
+    face_lines(&mut v, &lines);
+    let s = solved(&v, &t).unwrap();
+    let got: Vec<(&str, &str)> = lines
+        .iter()
+        .map(|n| (pin_of(&s, n), s.assignments[*n].peripheral.as_str()))
+        .collect();
+    assert_eq!(got, [("PD0", "SPI2"), ("PD2", "SPI2"), ("PD1", "SPI2")]);
+    let t = s02_table(&[("PE2", 60, &[], &[])]);
+    let e = solved(&v, &t).unwrap_err();
+    assert_eq!((e.kind(), e.id()), ("NoInstance", Some("FLASH")), "{e}");
+    let m = e.to_string();
+    assert!(
+        m.contains(&format!(
+            "SPI1: the table has no unreserved pin for `SPI1_SCK`; `PA5` (TT_ha) {WITHHELD}"
+        )),
+        "{m}"
+    );
 }
 
 /// The chip select and the battery sense read `solve`'s reservation.
@@ -641,6 +830,63 @@ fn the_chip_select_and_the_sense_never_take_a_declared_reservation() {
         let s = solved(&v, &t).unwrap();
         assert_ne!(pin_of(&s, net), pin, "{net}");
     }
+}
+
+// ------------------------------------------------- the motor's reset pulls
+
+/// RM0433 Rev 9 p. 542: `PA15` and `PB4` reset pulled up, `PA14` down. A
+/// motor output pinned on one is refused (`AET-WO-4300i` F2).
+#[test]
+fn a_motor_pinned_on_a_reset_pull_is_refused_by_name() {
+    for pin in ["PB4", "PA15", "PA14"] {
+        let mut v = d1();
+        v["motor_outputs"][0]["pin"] = json!(pin);
+        let e = refused(&v);
+        assert_eq!(
+            (e.kind(), e.id(), e.path()),
+            (
+                "MotorPinResetPull",
+                Some("DRV_EN"),
+                Some("motor_outputs[0].pin")
+            ),
+            "{pin}: {e}"
+        );
+        assert!(e.to_string().contains("RM0433 Rev 9 p. 542"), "{e}");
+    }
+    let mut v = d1();
+    v["motor_outputs"][0]["pin"] = json!("PE11");
+    spec(&v).validate().unwrap();
+}
+
+/// `TIM2_CH1` sorts before TIM3's channel on `PC6`, so `SERVO1` takes it on
+/// `PA0` (the control); on `PA15`, an FT pin pulled up from reset, it is
+/// never offered, and `SERVO1` keeps `PC6`.
+#[test]
+fn the_solver_never_offers_a_motor_a_reset_pull() {
+    let t = d1_table(&[("PA0", 7, &[("TIM2_CH1", 1)], &[])]);
+    assert_eq!(pin_of(&solved(&d1(), &t).unwrap(), "SERVO1"), "PA0");
+    let t = d1_table(&[("PA15", 7, &[("TIM2_CH1", 1)], &[])]);
+    assert_eq!(pin_of(&solved(&d1(), &t).unwrap(), "SERVO1"), "PC6");
+}
+
+/// A PWM output whose idle is high is pulled down against it (`AET-WO-4300i`
+/// F3, D0, ruled I); low and a pulse idle validate.
+#[test]
+fn a_motor_idling_high_is_refused_by_name() {
+    let mut v = d1();
+    v["motor_outputs"][2]["pwm"]["idle"] = json!({"level": "high"});
+    let e = refused(&v);
+    assert_eq!(
+        (e.kind(), e.id(), e.path()),
+        (
+            "MotorIdleHighPulledDown",
+            Some("SERVO1"),
+            Some("motor_outputs[2].pwm.idle")
+        ),
+        "{e}"
+    );
+    v["motor_outputs"][2]["pwm"]["idle"] = json!({"level": "low"});
+    spec(&v).validate().unwrap();
 }
 
 // ------------------------------------------------------ the power-parts row
