@@ -556,6 +556,15 @@ jobs:
         --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
         scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
         scenarios/sentinel-01-bench/serial-rx-open-console.json
+      # AET-WO-4300k (8): Sentinel-03, every scenario in its directory's order.
+      VERIFY_S03: >-
+        target/debug/aethelgard verify --spec examples/sentinel-03.json
+        --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json
+        scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json
+        scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx-open-console.json
+        scenarios/sentinel-03/serial-rx-open-crsf.json scenarios/sentinel-03/serial-rx-open-mavlink.json
+        scenarios/sentinel-03/spi-absent-u4.json scenarios/sentinel-03/spi-absent-u5.json
+        scenarios/sentinel-03/vdd5v-out-of-band.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -573,6 +582,16 @@ jobs:
       - name: verify --fab-out, the package written for committing
         if: ${{ inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package
+
+      # AET-WO-4300k (8): Sentinel-03's package, derived again from the committed one, or
+      # written for committing on a dispatch with `write` (FabricationNotReady is judged then).
+      - name: Sentinel-03, verify --against-fab, or --fab-out on a write
+        run: |
+          if [ "${{ inputs.write }}" = "true" ]; then
+            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/bench-package/sentinel-03
+          else
+            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
+          fi
 
       - name: keep the written package
         if: ${{ inputs.write }}
