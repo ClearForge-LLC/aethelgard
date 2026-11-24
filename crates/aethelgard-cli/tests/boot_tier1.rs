@@ -3602,3 +3602,87 @@ fn an_archived_input_run_replays_from_its_trace_alone() {
     assert_eq!(rv["error"]["kind"], "RunIdMismatch", "{rv}");
     assert_eq!(r.status.code(), Some(3), "{rv}");
 }
+
+/// `AET-WO-4400i` D6 (R1): replay re-judges what the trace holds and refuses
+/// what does not hold together, each archive written here with the chaos
+/// writer: a header naming another input than the one the trace holds
+/// (`InputHashMismatch`), and a capture before the stimuli
+/// (`NotAForeignRun`). The well-formed one re-judges the rejected parameter
+/// from the archived transmission alone.
+#[test]
+fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
+    use aethelgard_chaos::event::{Event, Header};
+    use aethelgard_chaos::record::Record;
+    let dir = Dir::new("crafted");
+    let file = serde_json::to_vec(&serde_json::json!({
+        "input_version": 1, "port": "CONSOLE",
+        "frames": [{"at_ns": 1_000_000, "mavlink": UNKNOWN_PARAM, "fill": 0}]
+    }))
+    .unwrap();
+    let sha: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&file).into();
+    let input = Record::ForeignInput {
+        label: "CONSOLE".into(),
+        peripheral: "USART1".into(),
+        spacing_ns: 100_000,
+        part: 0,
+        parts: 1,
+        file: file.clone(),
+    };
+    let stimuli = Record::Stimuli { part: 0, parts: 1, entries: Vec::new() };
+    let capture = Record::SerialCaptured {
+        label: "CONSOLE".into(),
+        end_ns: 10_000_000,
+        part: 0,
+        parts: 1,
+        bytes: ardupilot_tx("reject"),
+    };
+    let write = |seed: u8, named: [u8; 32], records: Vec<Record>| -> PathBuf {
+        let header = Header {
+            run_id: [seed; 16],
+            artifacts: vec![
+                ("firmware".into(), [1; 32]),
+                ("input".into(), named),
+                ("platform".into(), [2; 32]),
+                ("specification".into(), [3; 32]),
+            ],
+            tools: vec![("renode".into(), "1.17.0".into())],
+            tool_sha256: Vec::new(),
+        };
+        let run_dir = dir.0.join(hex(&[seed; 16]));
+        let mut w = aethelgard_chaos::TraceWriter::create(&run_dir, &header).unwrap();
+        // In the order given, each later than the last, so the reader, not
+        // the writer's clock, judges the order.
+        for (timestamp, record) in records.into_iter().enumerate() {
+            let timestamp = timestamp as u64;
+            w.append(&Event::Record { timestamp, record }).unwrap();
+        }
+        w.commit().unwrap();
+        run_dir
+    };
+    let empty = Dir::new("empty");
+    let replay = |run_dir: &Path| {
+        let out = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), run_dir.as_os_str()]);
+        (out.status.code(), report(&out))
+    };
+    let good = write(1, sha, vec![input.clone(), stimuli.clone(), capture.clone()]);
+    let (code, v) = replay(&good);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    assert_eq!(v["findings"][0]["kind"], "foreign_param_rejected", "{v}");
+    let (code, v) = replay(&write(2, [9; 32], vec![input.clone(), stimuli.clone(), capture.clone()]));
+    assert_eq!((code, &v["error"]["kind"]), (Some(2), &Value::from("InputHashMismatch")), "{v}");
+    let (code, v) = replay(&write(3, sha, vec![input, capture, stimuli]));
+    assert_eq!((code, &v["error"]["kind"]), (Some(2), &Value::from("NotAForeignRun")), "{v}");
+}
+
+/// `AET-WO-4400i`: an input file over 1 MiB is refused before it is parsed.
+#[test]
+fn an_input_file_over_its_bound_is_refused() {
+    let empty = Dir::new("empty");
+    let dir = Dir::new("big");
+    let big = dir.write("big.json", &vec![b' '; (1 << 20) + 1]);
+    let out = input_run(&empty.0, &big, None, &[]);
+    let v = report(&out);
+    assert_eq!(v["error"]["kind"], "InputMalformed", "{v}");
+    assert!(v["error"]["message"].as_str().unwrap().contains("over the"), "{v}");
+}

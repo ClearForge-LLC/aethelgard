@@ -2763,6 +2763,16 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
 mod tests {
     use super::*;
 
+    /// `AET-WO-4400i`: an input's timeline pauses and resumes the machine at
+    /// every byte; the filter drops those two lines and nothing like them.
+    #[test]
+    fn the_timelines_pause_lines_are_dropped_and_nothing_else() {
+        assert!(unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine paused."));
+        assert!(unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine resumed."));
+        assert!(!unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine started."));
+        assert!(!unread_access_line("[00:00:01.000000000] [WARNING] machine-0: Machine paused."));
+    }
+
     /// D4: the slave-mode `[ERROR]` is exempt only directly after a `CFG2`
     /// write with `MASTER` 0 while the last `CR1` write left `SPE` 0, as
     /// `spi_lld_stop` writes them (`AET-WO-4400e2` D4, measured).

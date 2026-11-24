@@ -245,3 +245,20 @@ fn a_frame_hidden_by_a_start_byte_in_text_is_still_found() {
     stream.extend_from_slice(hb);
     assert_eq!(scan(&stream, &table()).len(), 1);
 }
+
+#[test]
+fn a_payload_longer_than_its_message_is_refused() {
+    // The heartbeat's 9 bytes declared 10, one more byte, the CRC recomputed:
+    // well formed but for its length.
+    let mut b = hex(HEARTBEAT_GCS);
+    b.truncate(b.len() - 2);
+    b[1] = 10;
+    b.push(0x55);
+    let crc = x25(&[50], x25(&b[1..], 0xFFFF));
+    b.extend_from_slice(&crc.to_le_bytes());
+    let e = check(&[InputFrame { at_ns: 0, bytes: b, fill: 0 }]).unwrap_err();
+    assert_eq!(
+        e,
+        InputRefusal::NotMavlink { index: 0, reason: Malformed::TooLong { len: 10, max: 9 } }
+    );
+}

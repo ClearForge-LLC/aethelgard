@@ -1171,3 +1171,43 @@ fn each_pwr_boot_word_names_its_fault() {
         assert_eq!(name(other), None, "{other:#x}");
     }
 }
+
+/// `AET-WO-4400i` D2: on a foreign board, each declared serial port's USART
+/// carries its receive DMA request (RM0433 Rev 9 Table 124), once, under its
+/// clock entry; a generated board's platform carries none, so it does not
+/// move.
+#[test]
+fn a_foreign_board_routes_each_declared_ports_receive_request() {
+    let mut t = reference();
+    let generated = platform::emit(&t).unwrap();
+    assert!(!generated.contains("ReceiveDmaRequest"), "{generated}");
+    t.foreign_clock = Some(aethelgard_ir::motor::SolvedForeignClock {
+        apb1_timers_hz: 200_000_000,
+        apb2_timers_hz: 200_000_000,
+        usarts: aethelgard_ir::serial::PERIPHERALS
+            .iter()
+            .map(|p| ((*p).to_owned(), 100_000_000))
+            .collect(),
+        vos: aethelgard_ir::vos::Vos::Scale1,
+    });
+    let emitted = platform::emit(&t).unwrap();
+    assert_eq!(emitted.matches("ReceiveDmaRequest").count(), 1, "{emitted}");
+    assert!(
+        emitted.contains("\nusart1:\n    frequency: 100000000\n    ReceiveDmaRequest -> dmamux1@41\nusart2:\n"),
+        "{emitted}"
+    );
+    // The table, as RM0433 Rev 9 Table 124 (p. 697) prints it.
+    for (p, n) in [
+        ("USART1", 41),
+        ("USART2", 43),
+        ("USART3", 45),
+        ("UART4", 63),
+        ("UART5", 65),
+        ("USART6", 71),
+        ("UART7", 79),
+        ("UART8", 81),
+    ] {
+        assert_eq!(platform::usart_rx_request(p).unwrap(), n, "{p}");
+    }
+    assert!(platform::usart_rx_request("LPUART1").is_err());
+}

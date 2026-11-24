@@ -346,6 +346,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "archive": {
+          "description": "Archive the input run in DIR, a new directory named by its run id (trace 20), which `replay --archive` re-judges with no file. Needs --input",
+          "type": "string"
+        },
         "firmware": {
           "description": "Boot this ELF on the platform and judge the boot by the specification. Needs --spec, and --for or --foreign",
           "type": "string"
@@ -356,6 +360,10 @@
         },
         "foreign": {
           "description": "Judge the boot as a foreign firmware's, one this project did not generate (AET-WO-4400e): declared here, never inferred from the ELF; the verdict's boot says judge foreign. Its value is the virtual time the boot runs, as --for's, at most the foreign window. Needs --firmware; not with --for",
+          "type": "string"
+        },
+        "input": {
+          "description": "A declared input for a foreign run (AET-WO-4400i): a JSON file of timed MAVLink 2 frames for one declared serial port, sent at their stated virtual times, the board at rest. Its sha256 is the verdict's; a frame that is not MAVLink, forces the arm or skips a check is refused by name. Needs --foreign",
           "type": "string"
         },
         "platform": {
