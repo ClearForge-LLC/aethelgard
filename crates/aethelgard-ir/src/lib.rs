@@ -216,6 +216,15 @@ pub struct Specification {
     /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
     /// list acknowledges none.
     pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
+    /// Each condition a fabrication package rests on, acknowledged by its
+    /// stable id `<kind>:<reference>` with the reason (`AET-WO-4300k` (1),
+    /// (d)): screened, typical, not computed, declared or not production
+    /// tested. `validate` refuses a malformed entry; `verify` refuses one no
+    /// condition produces (`ConditionAcknowledgementStale`), and
+    /// `verify --fab-out` a condition no entry names. Absent or empty
+    /// acknowledges none, the stricter case, and is not written back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acknowledge_conditions: Vec<ConditionAcknowledgement>,
     /// Each test point: a pad on a declared net (`AET-WO-1312`). Absent or
     /// empty declares none, as the work order states, and an empty list is
     /// not written back. Private as `connectors` is (`RUL-16`): read through
@@ -252,6 +261,13 @@ pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
 /// unknown one by name), the exact fields it covers, and why the board is
 /// fabricated with them unwitnessed. At most one entry per register and
 /// class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct ConditionAcknowledgement {
+    pub id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct UnwitnessedAcknowledgement {
@@ -1048,6 +1064,7 @@ object_only!(
     Specification,
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
+    ConditionAcknowledgement,
     CoreSupply,
     ReservedPin,
     SupplySource,
@@ -1540,6 +1557,20 @@ pub enum IrValidationError {
     FinishedThickness { rule: &'static str },
     #[error("`{path}`: {rule}")]
     StackupValue { path: String, rule: &'static str },
+    #[error(
+        "`{path}` cites nothing, and the stackup declares a fabricator: every bound cites it, a standard or a condition (AET-WO-4300k (b))"
+    )]
+    StackupSourceUncited { path: String },
+    #[error("`{path}`: {rule} (AET-WO-4300k (d))")]
+    ConditionAcknowledgementMalformed { path: String, rule: &'static str },
+    #[error(
+        "`{path}` cites `{cited}`, which is not a document of the declared fabricator `{fabricator}` (AET-WO-4300k (b))"
+    )]
+    StackupSourceForeign {
+        path: String,
+        cited: String,
+        fabricator: String,
+    },
     #[error("`{path}` is not a source: 1 to 200 bytes of printable ASCII, no space at either end")]
     InvalidSource { path: String },
     #[error("`{path}` is {value} um, below the engine floor of {floor} um")]
@@ -2474,6 +2505,9 @@ impl IrValidationError {
             Self::DielectricTable { .. } => "DielectricTable",
             Self::FinishedThickness { .. } => "FinishedThickness",
             Self::StackupValue { .. } => "StackupValue",
+            Self::StackupSourceUncited { .. } => "StackupSourceUncited",
+            Self::ConditionAcknowledgementMalformed { .. } => "ConditionAcknowledgementMalformed",
+            Self::StackupSourceForeign { .. } => "StackupSourceForeign",
             Self::InvalidSource { .. } => "InvalidSource",
             Self::RuleBelowFloor { .. } => "RuleBelowFloor",
             Self::UnsupportedViaRule { .. } => "UnsupportedViaRule",
@@ -2688,6 +2722,9 @@ impl IrValidationError {
             | Self::DielectricTable { .. }
             | Self::FinishedThickness { .. }
             | Self::StackupValue { .. }
+            | Self::StackupSourceUncited { .. }
+            | Self::StackupSourceForeign { .. }
+            | Self::ConditionAcknowledgementMalformed { .. }
             | Self::InvalidSource { .. }
             | Self::RuleBelowFloor { .. }
             | Self::UnsupportedViaRule { .. }
@@ -2868,6 +2905,9 @@ impl IrValidationError {
             | Self::LayerRole { path, .. }
             | Self::DielectricTable { path, .. }
             | Self::StackupValue { path, .. }
+            | Self::StackupSourceUncited { path }
+            | Self::StackupSourceForeign { path, .. }
+            | Self::ConditionAcknowledgementMalformed { path, .. }
             | Self::InvalidSource { path }
             | Self::RuleBelowFloor { path, .. }
             | Self::UnsupportedViaRule { path, .. }
@@ -4053,7 +4093,39 @@ impl Specification {
         // 13c: each serial port, in document order (`AET-WO-4300b`).
         serial::validate(&self.serial_ports)?;
         // 13d: each unwitnessed acknowledgement's shape (`AET-WO-4230` R1).
-        self.validate_unwitnessed()
+        self.validate_unwitnessed()?;
+        self.validate_condition_acknowledgements()
+    }
+
+    /// Step 13e (`AET-WO-4300k` (d)): each entry's id is `<kind>:<reference>`,
+    /// a kind of lower-case letters, digits and `_` and a reference by the
+    /// base identifier set; its reason a source; no id twice.
+    fn validate_condition_acknowledgements(&self) -> Result<(), IrValidationError> {
+        let mut ids = BTreeSet::new();
+        for (i, a) in self.acknowledge_conditions.iter().enumerate() {
+            let path = format!("acknowledge_conditions[{i}].id");
+            let ok = a.id.split_once(':').is_some_and(|(kind, reference)| {
+                !kind.is_empty()
+                    && kind
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+                    && check_identifier(IdentifierKind::Plain, reference).is_ok()
+            });
+            if !ok {
+                return Err(IrValidationError::ConditionAcknowledgementMalformed {
+                    path,
+                    rule: "a condition id is `<kind>:<reference>`: a kind of lower-case letters, digits and `_`, a reference by the identifier rule",
+                });
+            }
+            board::source(&a.reason, &format!("acknowledge_conditions[{i}].reason"))?;
+            if !ids.insert(a.id.as_str()) {
+                return Err(IrValidationError::ConditionAcknowledgementMalformed {
+                    path,
+                    rule: "a condition acknowledged once",
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Step 13d (`AET-WO-4230` R1), each entry in document order: a register

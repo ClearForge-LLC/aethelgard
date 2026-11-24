@@ -171,6 +171,10 @@ struct FabReport {
     /// `--against-fab`: every file that differs, is missing or is extra.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     differences: Vec<Finding>,
+    /// The readiness gate (`AET-WO-4300k` (c)): judged before any gate under
+    /// `--fab-out`; under `--against-fab`, named as not judged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fabrication_ready: Option<&'static str>,
     /// Each part on the board whose lifecycle no held vendor page states,
     /// named with the page it must be read from: a purchase never meets an
     /// unread lifecycle silently (`AET-WO-4210` D1).
@@ -301,6 +305,7 @@ impl FabReport {
             files: BTreeMap::new(),
             differences: Vec::new(),
             lifecycle_unheld,
+            fabrication_ready: None,
         }
     }
 }
@@ -1900,6 +1905,22 @@ pub fn verify(
             EXIT_INVALID_SPEC,
         );
     }
+    // `AET-WO-4300k` (d): an acknowledged condition no condition produces is
+    // refused as a stale ledger entry is, in every mode.
+    let conditions = match aethelgard_cli::readiness::conditions(&spec) {
+        Ok(c) => c,
+        Err(e) => return refuse(e.kind(), e.id(), e.to_string(), EXIT_INVALID_SPEC),
+    };
+    if let Some(id) = aethelgard_cli::readiness::stale(&spec, &conditions) {
+        return refuse(
+            aethelgard_cli::readiness::STALE,
+            Some(id),
+            format!(
+                "`acknowledge_conditions` names `{id}`, which no condition of this specification produces"
+            ),
+            EXIT_INVALID_SPEC,
+        );
+    }
     let unacknowledged = aethelgard_cli::ledger::acknowledge(&mut ledger, &spec);
     let silicon = aethelgard_cli::ledger::silicon(&topology);
     let project = spec.project_name.clone();
@@ -2003,6 +2024,17 @@ pub fn verify(
     // before any gate (`AET-WO-3303` D1, ruled): the gates then decide
     // whether each run survived or detected its fault.
     let seeded: Vec<Seeded> = expected.iter().map(|e| e.seeded.clone()).collect();
+    // `AET-WO-4300k` (1), ruled (c): `--fab-out` only, before any gate.
+    if matches!(fab_mode, Some(FabMode::Write(_)))
+        && let Err(g) = aethelgard_cli::readiness::check(&spec, &topology, &conditions)
+    {
+        return refuse(
+            aethelgard_cli::readiness::KIND,
+            Some(&g.id),
+            g.message,
+            EXIT_INVALID_SPEC,
+        );
+    }
     if fab_mode.is_some() {
         let short = coverage(&spec, &topology, &seeded, None);
         if !short.unmet.is_empty() {
@@ -2366,6 +2398,7 @@ fn package(
         files,
         differences: Vec::new(),
         lifecycle_unheld: report.lifecycle_unheld.clone(),
+        fabrication_ready: None,
     };
     match mode {
         FabMode::Write(dir) => {
@@ -2384,8 +2417,13 @@ fn package(
                 crate::stopped(s)
             })?;
             fab_report.status = "written";
+            fab_report.fabrication_ready =
+                Some("judged before any gate (aethelgard_cli::readiness), and met");
         }
         FabMode::Compare(dir) => {
+            fab_report.fabrication_ready = Some(
+                "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))",
+            );
             let mut package = exported.files;
             package.insert(fab::MANIFEST.to_owned(), manifest);
             let differences = tree::against(dir, &package, &[]).map_err(crate::stopped)?;
