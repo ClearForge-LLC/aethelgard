@@ -353,6 +353,6 @@ kinds == ["core_in_exception", "foreign_fault"]
 and all(witnessed.get((r, "identity")) for r in ("U4", "U5", "U7"))
 and witnessed.get(("U5", "data (reads[0])"))
 and [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0].startswith("the core took HardFault (exception 3) at ")
-and [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0].endswith(", from PC '"$udf_site"'; its handler'"'"'s hook halted the core there")
+and ", from PC '"$udf_site"' (read from its stack frame at 0x" in [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0]
 and v["memory"]["peak_rss_kib"] < v["memory"]["bound_kib"]
 ' --platform "$platform" --firmware "$work/udf.elf" --foreign "$window"

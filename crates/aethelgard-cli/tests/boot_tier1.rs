@@ -57,27 +57,14 @@ fn platform() -> PathBuf {
     root().join("boards/sentinel-01/sentinel-01.repl")
 }
 
-/// An ELF32 LE `EM_ARM` `ET_EXEC` with two executable `PT_LOAD`s, each
-/// `(paddr, code)` (`AET-WO-2314`: flash, and code at ITCM's address 0).
-fn elf_two(a: (u32, &[u8]), b: (u32, &[u8])) -> Vec<u8> {
-    let mut e = elf_at(a.0, a.1, 40);
-    e.truncate(52);
-    e[44..46].copy_from_slice(&2u16.to_le_bytes());
-    let mut offset = 52 + 2 * 32;
-    for (paddr, code) in [a, b] {
-        let len = code.len() as u32;
-        for v in [1u32, offset, paddr, paddr, len, len, 5, 4] {
-            e.extend_from_slice(&v.to_le_bytes());
-        }
-        offset += len;
-    }
-    e.extend_from_slice(a.1);
-    e.extend_from_slice(b.1);
-    e
-}
-
 /// An ELF32 LE `EM_ARM` `ET_EXEC` with one `PT_LOAD` of `code` at `paddr`.
 fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
+    elf_segments(machine, &[(paddr, code)])
+}
+
+/// An ELF32 LE `ET_EXEC` for `machine` with one executable `PT_LOAD` per
+/// `(paddr, code)`, in order.
+fn elf_segments(machine: u16, segments: &[(u32, &[u8])]) -> Vec<u8> {
     let mut b = vec![0u8; 52];
     b[..7].copy_from_slice(b"\x7fELF\x01\x01\x01");
     b[16..18].copy_from_slice(&2u16.to_le_bytes());
@@ -86,12 +73,18 @@ fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     b[28..32].copy_from_slice(&52u32.to_le_bytes());
     b[40..42].copy_from_slice(&52u16.to_le_bytes());
     b[42..44].copy_from_slice(&32u16.to_le_bytes());
-    b[44..46].copy_from_slice(&1u16.to_le_bytes());
-    let len = code.len() as u32;
-    for v in [1u32, 84, paddr, paddr, len, len, 5, 4] {
-        b.extend_from_slice(&v.to_le_bytes());
+    b[44..46].copy_from_slice(&(segments.len() as u16).to_le_bytes());
+    let mut offset = 52 + 32 * segments.len() as u32;
+    for (paddr, code) in segments {
+        let len = code.len() as u32;
+        for v in [1u32, offset, *paddr, *paddr, len, len, 5, 4] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        offset += len;
     }
-    b.extend_from_slice(code);
+    for (_, code) in segments {
+        b.extend_from_slice(code);
+    }
     b
 }
 
@@ -2589,6 +2582,11 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
 /// [`elf`]'s one flash segment (64 bytes at `0x08000000`) after the reads and
 /// before the listing; without it, nothing is hashed.
 fn toolbox_foreign(stdout: &str, time: &str, flash: bool) -> Dir {
+    toolbox_foreign_then(stdout, time, flash, "")
+}
+
+/// As [`toolbox_foreign`], running `then` after its output.
+fn toolbox_foreign_then(stdout: &str, time: &str, flash: bool, then: &str) -> Dir {
     let tb = Dir::new("tb");
     let hash = match flash {
         true => {
@@ -2613,6 +2611,7 @@ case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 case "$7" in *"cpu AddHook 0x8000030 \"r = lambda x: "*"ok = v in (3, 4, 5, 6, ); "*"setattr(self, 'IsHalted', True)\"; "*"emulation RunFor"*) ;; *) exit 91;; esac
 {hash}
 /bin/cat '{out}'
+{then}
 "#,
         out = out.display()
     );
@@ -3058,8 +3057,10 @@ fn a_foreign_boot_ending_in_an_exception_fails() {
 /// D3: the judge is declared, never inferred. `--for` and `--foreign`
 /// together are refused, as is a foreign window past its bound; a generated
 /// boot's verdict names no judge; an ELF with RAM in D2 SRAM is refused
-/// without the declaration and loads with it; an ELF outside every region
-/// is refused either way (`FirmwareOutsideMemory`).
+/// without the declaration and loads with it, beside a flash segment that
+/// holds its vector table (one with no table is refused for that,
+/// `AET-WO-2314`); an ELF outside every region is refused either way
+/// (`FirmwareOutsideMemory`).
 #[test]
 fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     let input = Dir::new("in");
@@ -3108,10 +3109,28 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     assert_eq!(e["error"]["kind"], "ForeignFaultVectorUnusable", "{e}");
     assert!(
         e["error"]["message"].as_str().unwrap().contains(
-            "no PT_LOAD's file bytes hold the vector table's fault entries at 0x0800000c"
+            "no single PT_LOAD's file bytes hold the vector table's fault entries at 0x0800000c"
         ),
         "{e}"
     );
+    let with_table = input.write(
+        "d2-flash.elf",
+        &common::foreign::with_panic(
+            elf_segments(
+                40,
+                &[(0x0800_0000, &foreign_code()), (0x3000_0000, &code())],
+            ),
+            0x0800_0020,
+        ),
+    );
+    let tt = toolbox_foreign(
+        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        "0.0100000005",
+        true,
+    );
+    let loaded = foreign_with(&tt.0, &with_table, "10ms");
+    assert_eq!(loaded.status.code(), Some(0), "{loaded:?}");
+    assert_eq!(report(&loaded)["boot"]["judge"], "foreign", "{loaded:?}");
     let outside = input.write("fmc.elf", &elf_at(0x6000_0000, &code(), 40));
     let refused = foreign_with(&tf.0, &outside, "10ms");
     assert_eq!(refused.status.code(), Some(3), "{refused:?}");
@@ -3142,7 +3161,7 @@ fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
         )
     };
     let (code, v) = foreign(&foreign_transcript(
-        &mark("3 8000030 80360aa"),
+        &mark("3 8000030 30027328 80360aa"),
         "0x00000803",
     ));
     assert_eq!(code, Some(1), "{v}");
@@ -3156,11 +3175,11 @@ fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
     assert_eq!(kinds, ["core_in_exception", "foreign_fault"], "{v}");
     assert_eq!(
         finding(&v, "foreign_fault").unwrap()["message"],
-        "the core took HardFault (exception 3) at 4392440 ns, from PC 0x080360aa; its handler's hook halted the core there",
+        "the core took HardFault (exception 3) at 4392440 ns, from PC 0x080360aa (read from its stack frame at 0x30027328); its handler's hook halted the core there",
         "{v}"
     );
     let (_, v) = foreign(&foreign_transcript(
-        &mark("4 8000030 8000010"),
+        &mark("4 8000030 30027328 8000010"),
         "0x00000804",
     ));
     assert!(
@@ -3171,7 +3190,7 @@ fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
         "{v}"
     );
     let (code, v) = foreign(&foreign_transcript(
-        &mark("3 8000032 80360aa"),
+        &mark("3 8000032 30027328 80360aa"),
         "0x00000800",
     ));
     assert_eq!(code, Some(0), "{v}");
@@ -3184,6 +3203,28 @@ fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
             .any(|r| r["rule"] == "foreign_fault"),
         "{v}"
     );
+}
+
+/// `AET-WO-2314` adversarial pass: a run whose fault hook logged its mark
+/// and that was then killed at a bound ended two ways, and names both.
+#[test]
+fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
+    let log = format!(
+        "{}[00:00:00.004392440] [WARNING] cpu: AETHELGARD-FAULT 3 8000030 30027328 80360aa\n",
+        good_foreign_log()
+    );
+    let tb = toolbox_foreign_then(
+        &foreign_transcript(&log, "0x00000803"),
+        "0.0100000005",
+        true,
+        common::HOLD_PAST_CAP,
+    );
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &foreign_elf());
+    let out = foreign_with(&tb.0, &fw, "10ms");
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(1), "{v}");
+    assert_eq!(kinds(&v), ["memory_cap_exceeded", "foreign_fault"], "{v}");
 }
 
 /// `AET-WO-2314` D2 (i): a vector table whose fault entry is 0, or outside
@@ -3203,7 +3244,7 @@ fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
         ("zero.elf", elf_at(0x0800_0000, &code(), 40), zero),
         (
             "itcm.elf",
-            elf_two((0x0800_0000, &code()), (0x0000_0000, &[0u8; 16])),
+            elf_segments(40, &[(0x0800_0000, &code()), (0x0000_0000, &[0u8; 16])]),
             zero,
         ),
         (

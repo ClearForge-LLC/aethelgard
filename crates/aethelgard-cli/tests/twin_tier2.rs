@@ -4752,8 +4752,9 @@ fn foreign_elf(segments: &[(u32, Vec<u8>, u32)]) -> Vec<u8> {
 }
 
 /// 512 bytes of flash at `0x08000000`: a vector table (its four fault
-/// entries naming the spin, which the foreign judge hooks, `AET-WO-2314`),
-/// then at `0x08000040` Thumb code that loads `base`, writes `first` and
+/// entries naming a `b .` at `0x08000070` that never runs, which the
+/// foreign judge hooks, `AET-WO-2314`: a hook on the spin itself would run on
+/// every pass), then at `0x08000040` Thumb code that loads `base`, writes `first` and
 /// `second` to `[base + 4]` and `third` to `[base + 12]`, and spins. With the
 /// flash controller's base, its unlock keys and a control word, that is an
 /// erase (RM0433 Rev 9 §4.3.10); with `base` an address in the image, three
@@ -4762,8 +4763,9 @@ fn foreign_code(base: u32, first: u32, second: u32, third: u32) -> Vec<u8> {
     let mut c = vec![0u8; 0x200];
     c[..8].copy_from_slice(&[0x00, 0x10, 0x00, 0x20, 0x41, 0x00, 0x00, 0x08]);
     for at in (0x0C..0x1C).step_by(4) {
-        c[at..at + 4].copy_from_slice(&0x0800_004Fu32.to_le_bytes());
+        c[at..at + 4].copy_from_slice(&0x0800_0071u32.to_le_bytes());
     }
+    c[0x70..0x72].copy_from_slice(&0xE7FEu16.to_le_bytes());
     // ldr r0,[pc,#16]; ldr r1,[pc,#20]; str r1,[r0,#4]; ldr r1,[pc,#20];
     // str r1,[r0,#4]; ldr r1,[pc,#20]; str r1,[r0,#12]; b .
     for (i, h) in [

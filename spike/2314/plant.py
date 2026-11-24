@@ -16,7 +16,8 @@ VARIANT:
          ArduPilot's HardFault_Handler (CrashCatcher here, AP_CRASHDUMP_ENABLED);
   halt   `cpsid i; b .`: interrupts off and a self-loop in thread mode (chSysHalt's shape);
   reset  SCB->AIRCR = 0x05FA0004 (SYSRESETREQ), then `b .`: a software reset, as the
-         watchdog's or `hal.scheduler->reboot()`'s would be.
+         watchdog's or `hal.scheduler->reboot()`'s would be;
+  call   (2314) `bl HardFault_Handler`: the handler called from thread mode, no exception.
 """
 import struct
 import sys
@@ -102,6 +103,11 @@ if variant == "panic":
     newline = 0x0810C5C3
     assert bytes(data[file_off(newline):file_off(newline) + 2]) == b"\n\x00", "the newline literal moved"
     patch = mov32(0, newline) + bl(site + 8, panic)
+elif variant == "call":
+    # AET-WO-2314 adversarial: a direct call to the HardFault handler from thread mode, no
+    # exception taken (ICSR.VECTACTIVE 0): the fault hook must not fire.
+    hardfault, _ = symbol(b"HardFault_Handler")
+    patch = bl(site, hardfault)
 elif variant == "udf":
     patch = struct.pack("<H", 0xDE00)
 elif variant == "halt":

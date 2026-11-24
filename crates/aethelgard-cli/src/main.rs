@@ -2235,7 +2235,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                     plan, firmware, spec, regions, clock, panic,
                 ));
             }
-            (-1, (vec![renode::bounded(&out, *bound)], None, None))
+            // A fault the hook caught before the bound is named too
+            // (`AET-WO-2314`): the run ended two ways.
+            let mut findings = vec![renode::bounded(&out, *bound)];
+            if let Some(r) = ready.as_ref().filter(|_| foreign_inputs.is_some()) {
+                findings.extend(renode::foreign::fault_finding(&out.text(), &r.faults));
+            }
+            (-1, (findings, None, None))
         }
         (Some(plan), _) if foreign_inputs.is_some() => {
             let code = out.code("renode")?;

@@ -193,7 +193,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "foreign_fault",
         "added (AET-WO-2314)",
-        "an execution hook on each fault handler (HardFault, MemManage, BusFault, UsageFault) that the ELF's vector table at FLASH_BANK1_BASE names (a table entry that is 0 or outside every executable PT_LOAD is refused, ForeignFaultVectorUnusable) fails a run whose core takes that exception (ICSR.VECTACTIVE is its number at the handler's entry), naming the vector, the PC the exception stacked and its virtual time, and halts the core there, so a handler's own loop never reaches the log budget or the memory cap (spike/2314). Weakens: only HardFault was exercised (an undefined instruction, escalated); a firmware that takes and handles a fault on purpose fails; a VTOR moved at run time to a table whose handlers lie elsewhere is not hooked, and the run is judged by the rules above",
+        "an execution hook on each fault handler (HardFault, MemManage, BusFault, UsageFault) that the ELF's vector table at FLASH_BANK1_BASE names (a table entry that is 0 or outside every executable PT_LOAD is refused, ForeignFaultVectorUnusable) fails a run whose core takes that exception (ICSR.VECTACTIVE is its number at the handler's entry), naming the vector, the PC the exception stacked and its virtual time, and halts the core there, so a handler's own loop never reaches the log budget or the memory cap (spike/2314). Weakens: only HardFault was exercised (an undefined instruction, escalated); a firmware that takes and handles a fault on purpose fails; a VTOR moved at run time to a table whose handlers lie elsewhere is not hooked, nor is a handler branched to without an exception (both are judged by the rules above: a crash handler run from thread mode still ends at the memory cap, spike/2314); a handler that is also code the core spins on (a shared default handler) runs the hook on each pass, which slows the run toward its wall bound; a PC stacked where nothing answers reads 0, and the message gives the frame's address",
     ),
 ];
 
@@ -441,7 +441,7 @@ pub fn fault_handlers(
     let first = u64::from(vector_table) + 4 * u64::from(FAULT_VECTORS[0].0);
     let words = crate::elf::loaded_words(bytes, first, FAULT_VECTORS.len())?.ok_or_else(|| {
         unusable(format!(
-            "no PT_LOAD's file bytes hold the vector table's fault entries at {first:#010x}, so the foreign judge cannot hook the firmware's fault handlers"
+            "no single PT_LOAD's file bytes hold the vector table's fault entries at {first:#010x}, so the foreign judge cannot hook the firmware's fault handlers"
         ))
     })?;
     FAULT_VECTORS
@@ -464,8 +464,9 @@ pub fn fault_handlers(
 /// The execution hooks on the fault handlers, one per distinct address
 /// (`AET-WO-2314`, spike/2314): at a handler's first instruction, when
 /// `ICSR.VECTACTIVE` is one of the vectors it serves, the CPU logs its own
-/// `[WARNING]` with the exception, the handler and the PC stacked on the
-/// frame (PSP when `EXC_RETURN` bit 2 is set, else MSP, at +24), then
+/// `[WARNING]` with the exception, the handler, and the address of the PC
+/// stacked on the frame (PSP when `EXC_RETURN` bit 2 is set, else MSP, at
+/// +24) with what it reads (0 where nothing answers there), then
 /// halts, so the handler's loop never runs. A handler entered any other way
 /// (a call, or a moved table) logs nothing and runs on.
 fn fault_hooks(handlers: &[(u32, u64)]) -> Vec<String> {
@@ -482,27 +483,51 @@ fn fault_hooks(handlers: &[(u32, u64)]) -> Vec<String> {
             .map(|(n, _)| format!("{n}, "))
             .collect();
         out.push(format!(
-            "cpu AddHook {address:#x} \"r = lambda x: int(x.RawValue) if hasattr(x, 'RawValue') else int(x); v = self.Bus.ReadDoubleWord(0xe000ed04) & 0x1ff; ok = v in ({vectors}); lr = r(self.LR); f = r(self.OtherSP) if lr & 4 else r(self.SP); ok and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{FAULT_MARK}%d %x %x' % (v, pc, self.Bus.ReadDoubleWord(f + 24))); ok and setattr(self, 'IsHalted', True)\""
+            "cpu AddHook {address:#x} \"r = lambda x: int(x.RawValue) if hasattr(x, 'RawValue') else int(x); v = self.Bus.ReadDoubleWord({icsr:#x}) & {mask:#x}; ok = v in ({vectors}); lr = r(self.LR); f = r(self.OtherSP) if lr & 4 else r(self.SP); ok and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{FAULT_MARK}%d %x %x %x' % (v, pc, f + 24, self.Bus.ReadDoubleWord(f + 24))); ok and setattr(self, 'IsHalted', True)\"",
+            icsr = aethelgard_twin::boot::ICSR,
+            mask = aethelgard_twin::boot::VECTACTIVE_MASK,
         ));
     }
     out
 }
 
-/// A fault hook's entry in `line`: the exception's number, the PC stacked
-/// and the virtual time, when the line is the CPU's own mark at one of
-/// `handlers` for an exception that handler serves; `None` for any other.
-fn fault_entry(line: &str, handlers: &[(u32, u64)]) -> Option<(u32, u64, Option<u64>)> {
+/// A fault hook's entry in `line`: the exception's number, where the PC was
+/// stacked and what it read, and the virtual time, when the line is the
+/// CPU's own mark at one of `handlers` for an exception that handler serves;
+/// `None` for any other.
+fn fault_entry(line: &str, handlers: &[(u32, u64)]) -> Option<(u32, u64, u64, Option<u64>)> {
     let rest = log_text(line)
         .strip_prefix("[WARNING] cpu: ")?
         .strip_prefix(FAULT_MARK)?;
     let mut f = rest.split(' ');
     let n: u32 = f.next()?.parse().ok()?;
     let handler = u64::from_str_radix(f.next()?, 16).ok()?;
+    let frame = u64::from_str_radix(f.next()?, 16).ok()?;
     let stacked = u64::from_str_radix(f.next()?, 16).ok()?;
     if f.next().is_some() || !handlers.contains(&(n, handler)) {
         return None;
     }
-    Some((n, stacked, log_stamped(line).map(|(ns, _)| ns)))
+    Some((n, frame, stacked, log_stamped(line).map(|(ns, _)| ns)))
+}
+
+/// `foreign_fault` for the first fault hook's entry in `text`, if any
+/// (`AET-WO-2314`): a run that took a fault fails by name, with the vector
+/// and the PC it stacked, whether or not it then reached a bound. Every
+/// line: only the CPU writes the mark, which the filter keeps past its
+/// budget.
+pub fn fault_finding(text: &str, handlers: &[(u32, u64)]) -> Option<Finding> {
+    let (n, frame, stacked, ns) = text.lines().find_map(|l| fault_entry(l, handlers))?;
+    let name = FAULT_VECTORS
+        .iter()
+        .find(|v| v.0 == n)
+        .map_or("a fault", |v| v.1);
+    Some(Finding::plain(
+        "foreign_fault",
+        format!(
+            "the core took {name} (exception {n}) at {}, from PC {stacked:#010x} (read from its stack frame at {frame:#010x}); its handler's hook halted the core there",
+            ns.map_or("an unstamped time".to_owned(), |t| format!("{t} ns"))
+        ),
+    ))
 }
 
 /// The foreign firmware's clock in the verdict (`AET-WO-4400g` §1.2, Q2
@@ -1940,22 +1965,8 @@ pub fn judge(
     }
     report.panic.entered_ns = Some(entered);
     // A fault exception, as its hook logs the entry that halted the core
-    // (`AET-WO-2314`): the run fails by name, with the vector and the PC it
-    // stacked, before the handler's own loop could reach a bound. Every
-    // line, as for the panic: only the CPU writes the mark.
-    if let Some((n, stacked, ns)) = lines.iter().find_map(|line| fault_entry(line, faults)) {
-        let name = FAULT_VECTORS
-            .iter()
-            .find(|v| v.0 == n)
-            .map_or("a fault", |v| v.1);
-        findings.push(Finding::plain(
-            "foreign_fault",
-            format!(
-                "the core took {name} (exception {n}) at {}, from PC {stacked:#010x}; its handler's hook halted the core there",
-                ns.map_or("an unstamped time".to_owned(), |t| format!("{t} ns"))
-            ),
-        ));
-    }
+    // (`AET-WO-2314`), before the handler's own loop could reach a bound.
+    findings.extend(fault_finding(&text, faults));
     Ok((findings, Some(machine), report))
 }
 
@@ -2448,12 +2459,10 @@ mod tests {
         assert!(failing(&f).iter().all(|(k, _)| k == OPTIONS_UNJUDGEABLE));
     }
 
-    /// `AET-WO-1609`: the hook is set at the symbol's address, and only the
-    /// CPU's own line carrying that address is an entry, with its virtual
-    /// time; a line of another source, another address or no mark is not.
     /// `AET-WO-2314` D2: one hook per distinct handler, gated on
     /// `ICSR.VECTACTIVE` being a vector it serves, that logs the CPU's own
-    /// mark with the stacked PC (PSP when `EXC_RETURN` bit 2 is set) and
+    /// mark with where the PC was stacked (PSP when `EXC_RETURN` bit 2 is
+    /// set) and what it reads, and
     /// halts the core; only that mark, at a hooked handler for a vector it
     /// serves, is an entry.
     #[test]
@@ -2485,7 +2494,7 @@ mod tests {
             );
             assert!(
                 h.contains(&format!(
-                    "'{FAULT_MARK}%d %x %x' % (v, pc, self.Bus.ReadDoubleWord(f + 24))"
+                    "'{FAULT_MARK}%d %x %x %x' % (v, pc, f + 24, self.Bus.ReadDoubleWord(f + 24))"
                 )),
                 "{h}"
             );
@@ -2498,25 +2507,25 @@ mod tests {
         let line = |body: &str| format!("[00:00:04.392440830] {body}");
         assert_eq!(
             fault_entry(
-                &line("[WARNING] cpu: AETHELGARD-FAULT 3 8000340 80360aa"),
+                &line("[WARNING] cpu: AETHELGARD-FAULT 3 8000340 30027328 80360aa"),
                 &handlers
             ),
-            Some((3, 0x0803_60aa, Some(4_392_440_830)))
+            Some((3, 0x3002_7328, 0x0803_60aa, Some(4_392_440_830)))
         );
         assert_eq!(
             fault_entry(
-                &line("[WARNING] cpu: AETHELGARD-FAULT 6 80c02bc 8001000"),
+                &line("[WARNING] cpu: AETHELGARD-FAULT 6 80c02bc 30027328 8001000"),
                 &handlers
             ),
-            Some((6, 0x0800_1000, Some(4_392_440_830)))
+            Some((6, 0x3002_7328, 0x0800_1000, Some(4_392_440_830)))
         );
         for other in [
-            "[WARNING] cpu: AETHELGARD-FAULT 4 8000340 80360aa",
-            "[WARNING] cpu: AETHELGARD-FAULT 3 8000342 80360aa",
-            "[WARNING] usart1: AETHELGARD-FAULT 3 8000340 80360aa",
-            "[INFO] cpu: AETHELGARD-FAULT 3 8000340 80360aa",
-            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340 80360aa 1",
-            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340",
+            "[WARNING] cpu: AETHELGARD-FAULT 4 8000340 30027328 80360aa",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000342 30027328 80360aa",
+            "[WARNING] usart1: AETHELGARD-FAULT 3 8000340 30027328 80360aa",
+            "[INFO] cpu: AETHELGARD-FAULT 3 8000340 30027328 80360aa",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340 30027328 80360aa 1",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340 30027328",
         ] {
             assert_eq!(fault_entry(&line(other), &handlers), None, "{other}");
         }
@@ -2554,6 +2563,9 @@ mod tests {
         assert!((FOREIGN_LOG_FILTER.discard)(&isr) && (LOG_FILTER.discard)(&isr));
     }
 
+    /// `AET-WO-1609`: the hook is set at the symbol's address, and only the
+    /// CPU's own line carrying that address is an entry, with its virtual
+    /// time; a line of another source, another address or no mark is not.
     #[test]
     fn a_panic_entry_is_the_cpus_own_hook_line_at_the_symbols_address() {
         let hook = panic_hook(0x080c_033c);
