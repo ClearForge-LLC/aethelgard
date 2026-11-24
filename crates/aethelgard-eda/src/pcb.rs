@@ -704,12 +704,26 @@ fn place(
                     .map(|p| (p.keep, Rule::gap(rule[i], rule[j])))
             })
             .chain(approach.iter().map(|&r| (r, 0)))
+            // `AET-WO-4411` D2: no part of a radio module's group lands
+            // beside or above its antenna edge, so the group moves to the
+            // board's top-right corner ([`radio_corner`]) with nothing left
+            // beyond the edge.
+            .chain(
+                radio_band_at(items, &placed, anchor, i)
+                    .into_iter()
+                    .flatten(),
+            )
             .collect();
         if let Some(a) = item.part.owner.as_ref().and_then(|o| o.anchor.as_ref()) {
             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
             continue;
         }
-        let target = if bounded {
+        // A radio module is placed apart, a metre above the MCU, so its
+        // anchored parts find room by its pins before [`radio_corner`]
+        // moves the group (`AET-WO-4411` D2).
+        let target = if radio.first() == Some(&i) {
+            Some(RADIO_APART)
+        } else if bounded {
             centroid_target(item, &items[anchor], at)
         } else {
             item.shared(&items[anchor])
@@ -1840,19 +1854,11 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
                 format!("pin {missing} has no pad in {}", part.footprint),
             ));
         }
-        let mut geometry = geometry_at(&fp, &part.reference, rotation)?;
-        // `AET-WO-4411` D2: nothing is placed beside or above a radio
-        // module's antenna edge, so that the module and its passives move
-        // together to the board's top-right corner ([`radio_corner`]) with
-        // nothing left beyond the edge.
-        if let Some(row) = radio_row(&part.footprint) {
-            if rotation != 0 {
-                return Err(internal(&part.reference, "a turned radio module"));
-            }
-            geometry.keep = geometry.keep.union(radio_band(row, geometry.courtyard));
+        if radio_row(&part.footprint).is_some() && rotation != 0 {
+            return Err(internal(&part.reference, "a turned radio module"));
         }
         out.push(Item {
-            geometry,
+            geometry: geometry_at(&fp, &part.reference, rotation)?,
             rotation,
             part,
             fp,
@@ -2061,6 +2067,10 @@ fn radio_row(footprint: &str) -> Option<&'static aethelgard_ir::radio::RadioPart
         .find(|m| m.footprint == footprint)
 }
 
+/// Where a radio module is placed before it moves to the corner: far from
+/// every other part (the spiral reaches a metre).
+const RADIO_APART: (i64, i64) = (0, -800_000_000);
+
 /// How far either side of a radio module the band beside its antenna edge
 /// reaches.
 const RADIO_BAND_NM: i64 = 20_000_000;
@@ -2081,6 +2091,33 @@ fn radio_band(row: &aethelgard_ir::radio::RadioPart, courtyard: Rect) -> Rect {
         x1: courtyard.x1 + RADIO_BAND_NM,
         y1: antenna_edge(row) + MARGIN_NM,
     }
+}
+
+/// The bands beside a placed radio module, when part `i` is anchored to
+/// it: above its antenna edge ([`radio_band`]), and right of its courtyard,
+/// which [`radio_corner`] sets [`MARGIN_NM`] from the board's right edge.
+fn radio_band_at(
+    items: &[Item<'_>],
+    placed: &[Option<Placed>],
+    anchor: usize,
+    i: usize,
+) -> Option<[(Rect, i64); 2]> {
+    if i == anchor {
+        return None;
+    }
+    let row = radio_row(&items[anchor].part.footprint)?;
+    let m = placed[anchor].as_ref()?;
+    let c = items[anchor].geometry.courtyard;
+    let right = Rect {
+        x0: c.x1,
+        y0: c.y0 - RADIO_BAND_NM,
+        x1: c.x1 + RADIO_BAND_NM,
+        y1: c.y1 + RADIO_BAND_NM,
+    };
+    Some([
+        (radio_band(row, c).shift(m.origin), 0),
+        (right.shift(m.origin), 0),
+    ])
 }
 
 /// The radio module's index and every part anchored to it; empty for a

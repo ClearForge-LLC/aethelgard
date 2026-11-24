@@ -14,8 +14,13 @@ use super::power::{anchor, capacitor, resistor};
 use super::{Builder, Conn, EmitError, Part};
 
 /// How far a module's passive sits from the pin it serves.
-const NEAR_NM: i64 = 3_000_000;
-const NEAR_RULE: &str = "ESP32-C3-WROOM-02 datasheet v1.7 p. 33, Figure 9-1: the enable's RC delay, the strap pulls and the decoupling at the module (3.0 mm, an engine choice: no distance is stated)";
+const NEAR_NM: i64 = 8_000_000;
+const NEAR_RULE: &str = "ESP32-C3-WROOM-02 datasheet v1.7 p. 33, Figure 9-1: the enable's RC delay and the decoupling at the module (8.0 mm, an engine choice: no distance is stated; pins 1 and 2 sit 1.1 and 2.6 mm below the board edge the antenna overhangs, and the edge's 2 mm margin keeps every part below that, so four parts share the room beside two pins)";
+
+/// How far a strap's pull sits from its pin: farther, since a strap is a
+/// static level at reset and the module's right side is the board's edge.
+const STRAP_NM: i64 = 15_000_000;
+const STRAP_RULE: &str = "ESP32-C3-WROOM-02 datasheet v1.7 p. 12, Table 4-1: a strap is read as a static level at reset, so its pull's distance carries no edge rate (15.0 mm, an engine choice: no distance is stated)";
 
 fn not_drawable(reference: &str, why: impl Into<String>) -> EmitError {
     EmitError::PowerNotDrawable {
@@ -78,6 +83,12 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
             part: p.part.clone(),
             ohms: p.ohms,
         };
+        // The decoupling first, so it takes the spots nearest the supply pin.
+        let vdd = row.supply.number.as_str();
+        for c in &m.decoupling {
+            capacitor(b, &c.reference, &c.part, supply.clone(), gnd.clone())?;
+            anchor(b, r, &[("1", vdd)], NEAR_NM, NEAR_RULE);
+        }
         let en_pin = row.enable.number.as_str();
         resistor(
             b,
@@ -101,12 +112,7 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
                 b.rail(&p.to)
             };
             resistor(b, &plain(p), Conn::Net(net), to)?;
-            anchor(b, r, &[("1", pin)], NEAR_NM, NEAR_RULE);
-        }
-        let vdd = row.supply.number.as_str();
-        for c in &m.decoupling {
-            capacitor(b, &c.reference, &c.part, supply.clone(), gnd.clone())?;
-            anchor(b, r, &[("1", vdd)], NEAR_NM, NEAR_RULE);
+            anchor(b, r, &[("1", pin)], STRAP_NM, STRAP_RULE);
         }
     }
     Ok(())
