@@ -1774,6 +1774,16 @@ fn bench(b: &mut Builder<'_>, mcu: &str) -> Result<(), EmitError> {
             beside: None,
         });
     }
+    // `AET-WO-4300k` (9), Path B: the supervisor on `NRST`, its open-drain
+    // output pulled up to the MCU's supply, its supply bypassed.
+    if let Some(s) = &spec.mcu.reset_supervisor {
+        for reference in [&s.reference, &s.pull_up.reference, &s.bypass.reference] {
+            b.used
+                .claim(reference)
+                .map_err(|holder| collision(reference, holder, EmitError::DuplicateReference))?;
+        }
+        power::supervisor(b, s, &spec.mcu.supply)?;
+    }
     for t in spec.declared_test_points() {
         let conn = b.declared(&t.net);
         b.parts.push(Part {

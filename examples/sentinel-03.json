@@ -1,5 +1,5 @@
 {
-  "schema_version": 29,
+  "schema_version": 30,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -16,15 +16,6 @@
         "VOSRDY"
       ],
       "reason": "Polled after VOS Scale 2 is written: the twin's PWR model reads it 1 always (AET-WO-4240v D-3), so no wait is witnessed; bench row B-2 reads PWR_D3CR after boot."
-    },
-    {
-      "register": "FLASH.ACR",
-      "class": "silicon-only",
-      "fields": [
-        "LATENCY",
-        "WRHIGHFREQ"
-      ],
-      "reason": "Depended on at reset and never written (AET-WO-4240v D-7): 7 WS and WRHIGHFREQ 11 judged against RM0433 Rev 9 Table 17 by the VOS rule; Renode models no flash wait state."
     },
     {
       "register": "FLASH.OPTSR_CUR",
@@ -410,7 +401,23 @@
   "mcu": {
     "part": "STM32H753ZITx",
     "supply": "VDD_3V3",
-    "hse_hz": 0,
+    "hse": {
+      "crystal": {
+        "part": "ABM8AIG-16.000MHZ-12-2Z-T3",
+        "load_caps_femtofarads": [
+          18000,
+          18000
+        ],
+        "pull_ppm": 30,
+        "temperature_celsius": {
+          "min": -20,
+          "max": 85
+        },
+        "life_hours": 8000,
+        "startup_max_us": 20000,
+        "startup_source": "architect ruling 2026-11-20: 10x DS12117 Rev 10 Table 33 tSU(HSE) typical 2 ms; no maximum is published (Note 4)"
+      }
+    },
     "bor_level": 3,
     "core_supply": {
       "mode": "ldo",
@@ -418,6 +425,19 @@
     },
     "supply_source": null,
     "reset_switch": true,
+    "reset_supervisor": {
+      "reference": "U12",
+      "part": "TLV803SDBZR",
+      "pull_up": {
+        "reference": "R61",
+        "part": "CRCW0603_F_K",
+        "ohms": 100000
+      },
+      "bypass": {
+        "reference": "C62",
+        "part": "GCM188R71H104KA57"
+      }
+    },
     "reserved_pins": [
       {
         "pin": "PA11",
@@ -566,6 +586,10 @@
           "condition": "each of U5's pins on SCK and MOSI at most TDK's typical C_I of < 10 pF; the datasheet prints no maximum, so the bound holds only if the part's pins do not exceed that typical",
           "source": "TDK InvenSense DS-000347 v1.9, 3.3.2 Table 4, p. 14: C_I < 10 pF for FSYNC, SCLK, SDI and CS in the TYP column, MIN and MAX empty (AET-WO-4220 D10)"
         }
+      },
+      "orientation": {
+        "x": "right",
+        "z": "up"
       }
     }
   ],
@@ -858,6 +882,7 @@
   ],
   "board": {
     "copper_layers": 4,
+    "forward": "top",
     "layers": [
       {
         "name": "F.Cu",
@@ -881,11 +906,25 @@
       }
     ],
     "stackup": {
+      "fabricator": {
+        "name": "OSH Park",
+        "documents": [
+          {
+            "id": "oshpark-four-layer",
+            "title": "OSH Park 4 layer service specifications",
+            "url": "https://docs.oshpark.com/services/four-layer/",
+            "read": "2026-11-24"
+          }
+        ]
+      },
       "finished_thickness_um": {
         "nominal": 1600,
         "min": 1250,
         "max": 1851,
-        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: min the dielectric minima summed; max dielectrics and resist at max plus 4 x 70 um copper, 1.8505 mm up"
+        "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: min the dielectric minima summed; max dielectrics and resist at max plus 4 x 70 um copper, 1.8505 mm up",
+        "cites": {
+          "fabricator": "oshpark-four-layer"
+        }
       },
       "dielectrics": [
         {
@@ -894,7 +933,10 @@
             "In1.Cu"
           ],
           "min_thickness_um": 179,
-          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down"
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         },
         {
           "between": [
@@ -902,7 +944,10 @@
             "In2.Cu"
           ],
           "min_thickness_um": 891,
-          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: FR408HR core 0.9906 mm less 0.0991 mm, rounded down"
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: FR408HR core 0.9906 mm less 0.0991 mm, rounded down",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         },
         {
           "between": [
@@ -910,37 +955,89 @@
             "B.Cu"
           ],
           "min_thickness_um": 179,
-          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down"
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 14 Nov 2026: 2113 prepreg 0.1999 mm less 0.0202 mm, rounded down",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         }
       ],
       "copper_max_um": {
         "value": 70,
-        "source": "the engine's stated condition (AET-WO-1305, as the reference): 2 oz, twice KiCad's 35 um; OSH Park publishes no copper tolerance"
+        "source": "the engine's stated condition (AET-WO-1305, as the reference): 2 oz, twice KiCad's 35 um; OSH Park publishes no copper tolerance",
+        "cites": {
+          "condition": "copper-max-2oz"
+        }
       },
       "relative_permittivity_max_permille": {
         "value": 5400,
-        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz"
+        "source": "the IPC-4101 FR-4 maximum, specified at 1 MHz; IPC-4101 is not held, so a condition (OSH Park states FR408HR 3.61 at 1 GHz, nominal)",
+        "cites": {
+          "condition": "permittivity-fr4-max"
+        }
+      },
+      "outer_copper_min_um": {
+        "value": 30,
+        "source": "a declared condition: OSH Park states 1 oz outer copper, nominal, and no minimum",
+        "cites": {
+          "condition": "outer-copper-min"
+        }
+      },
+      "plane_copper_min_um": {
+        "value": 15,
+        "source": "a declared condition: OSH Park states 1/2 oz inner copper, nominal, and no minimum",
+        "cites": {
+          "condition": "plane-copper-min"
+        }
+      },
+      "plating_min_um": {
+        "value": 18,
+        "source": "a declared condition: OSH Park states via plating 1 mil, nominal, and no minimum",
+        "cites": {
+          "condition": "plating-min"
+        }
+      },
+      "copper_temperature_max_c": {
+        "value": 125,
+        "source": "a declared condition: no fabricator document states the copper's temperature limit",
+        "cites": {
+          "condition": "copper-temperature-max"
+        }
       },
       "fab_tolerances": {
         "hole_position_um": {
-          "value": 75,
-          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole Position Tolerance, \"+/-0.075 mm\""
+          "value": 51,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 2026-11-24, Drill Specifications: Drill Positional Tolerance Max: 2mil (0.0508mm), rounded up",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         },
         "hole_size_plus_um": {
-          "value": 130,
-          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+          "value": 64,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 2026-11-24, Drill Specifications: Drill Size tolerance Max: +/- 2.5mil (0.0635mm), rounded up",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         },
         "hole_size_minus_um": {
-          "value": 80,
-          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, Hole size Tolerance, \"Through-holes: +0.13 / -0.08 mm\""
+          "value": 64,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 2026-11-24, Drill Specifications: Drill Size tolerance Max: +/- 2.5mil (0.0635mm), rounded up",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         },
         "track_width_permille": {
           "value": 200,
-          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Traces, Track width tolerance, \"+/-20%\""
+          "source": "a declared condition: OSH Park publishes no track-width tolerance; 20 % is declared",
+          "cites": {
+            "condition": "track-width-tolerance"
+          }
         },
         "via_ring_um": {
-          "value": 50,
-          "source": "JLCPCB PCB capabilities, jlcpcb.com/capabilities/pcb-capabilities, read 18 Nov 2026: Drilling, \"Via diameter should be 0.1mm(0.15mm preferred) larger than Via hole size\""
+          "value": 102,
+          "source": "OSH Park 4-layer, docs.oshpark.com/services/four-layer/, read 2026-11-24, Copper Specifications: Annular Ring 4mil (0.1016mm), rounded up",
+          "cites": {
+            "fabricator": "oshpark-four-layer"
+          }
         }
       }
     },
@@ -984,32 +1081,100 @@
       "pin": "PA8",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R52", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R56", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
+      "esc": {
+        "none": {
+          "source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"
+        }
+      },
+      "pull": {
+        "resistor": {
+          "reference": "R52",
+          "part": "CRCW0603_F_K",
+          "ohms": 442000,
+          "to": "GND"
+        },
+        "link": {
+          "reference": "R56",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
+      }
     },
     {
       "label": "MOTOR2",
       "pin": "PE11",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R53", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R57", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
+      "esc": {
+        "none": {
+          "source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"
+        }
+      },
+      "pull": {
+        "resistor": {
+          "reference": "R53",
+          "part": "CRCW0603_F_K",
+          "ohms": 442000,
+          "to": "GND"
+        },
+        "link": {
+          "reference": "R57",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
+      }
     },
     {
       "label": "MOTOR3",
       "pin": "PE13",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R54", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R58", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
+      "esc": {
+        "none": {
+          "source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"
+        }
+      },
+      "pull": {
+        "resistor": {
+          "reference": "R54",
+          "part": "CRCW0603_F_K",
+          "ohms": 442000,
+          "to": "GND"
+        },
+        "link": {
+          "reference": "R58",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
+      }
     },
     {
       "label": "MOTOR4",
       "pin": "PE14",
       "protocol": "dshot600",
       "pwm": null,
-      "esc": {"none": {"source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"}},
-      "pull": {"resistor": {"reference": "R55", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"}, "link": {"reference": "R59", "part": "CRCW0402_Z_0"}, "fitment": "fitted", "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"}
+      "esc": {
+        "none": {
+          "source": "J5 is a bench header: MOTOR1-4 and GND, no VBAT (AET-WO-2304 1.2); ESCs, when added, are fed from the pack, not through the board's VBAT copper (Scotty, 2026-11-19, confirmed)"
+        }
+      },
+      "pull": {
+        "resistor": {
+          "reference": "R55",
+          "part": "CRCW0603_F_K",
+          "ohms": 442000,
+          "to": "GND"
+        },
+        "link": {
+          "reference": "R59",
+          "part": "CRCW0402_Z_0"
+        },
+        "fitment": "fitted",
+        "source": "AN4899 Rev 4 5.1.5 p. 18 mirrored (4300j); DS12117 Rev 10 T49 pp. 136-137 = T146 p. 241; cross-rail 422561..895714 ohm; least E96, 1 %+2 % drift (VISHAY_20035 p. 2). Ruled 2026-11-23T10:11Z"
+      }
     }
   ],
   "power": {
@@ -1041,13 +1206,32 @@
           "part": "UCZ1H470MCL1GS",
           "side": "board"
         }
-      ]
+      ],
+      "protection": {
+        "fuse": {
+          "reference": "F1",
+          "part": "SF-1206F700-2"
+        },
+        "fet": {
+          "reference": "Q1",
+          "part": "DMP6023LSS-13"
+        },
+        "zener": {
+          "reference": "D1",
+          "part": "MMSZ5242BT1G"
+        },
+        "gate_resistor": {
+          "reference": "R60",
+          "part": "CRCW0603_F_K",
+          "ohms": 100000
+        }
+      }
     },
     "battery": {
-      "chemistry": "LiPo, 3S to 6S, high-voltage cells allowed",
+      "chemistry": "LiPo, 3S to 4S, high-voltage cells allowed",
       "cells": {
         "min": 3,
-        "max": 6
+        "max": 4
       },
       "cell_min_millivolts": {
         "value": 3000,
@@ -1057,7 +1241,10 @@
         "value": 4350,
         "source": "LiHV full charge (AET-WO-4300d spike P1.2)"
       },
-      "series_milliohms": {"value": 1, "source": "J4 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"}
+      "series_milliohms": {
+        "value": 1,
+        "source": "J4 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"
+      }
     },
     "regulators": [
       {
@@ -1081,6 +1268,11 @@
           {
             "role": "cin",
             "reference": "C10",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin",
+            "reference": "C60",
             "part": "GCM32EC71H106KA03"
           },
           {
@@ -1125,14 +1317,11 @@
           }
         ],
         "junction": {
-          "copper_square_centimetres": {
-            "value": 20,
-            "source": "declared by the fixture: the copper around U10 on each layer; not measured on the drawn board"
-          },
           "loss_milliwatts": {
             "value": 1170,
             "source": "SNVSAN3F p. 27, Figure 9-7, typical at TA 25 C: 90 % on the 36 V curve at 2 A; P_loss = 5.237 V x 2 A x (1/0.90 - 1) = 1164 mW, rounded up"
-          }
+          },
+          "loss_at_milliamps": 2000
         },
         "controls": [
           {
@@ -1168,6 +1357,11 @@
           {
             "role": "cin",
             "reference": "C20",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin",
+            "reference": "C61",
             "part": "GCM32EC71H106KA03"
           },
           {
@@ -1212,14 +1406,11 @@
           }
         ],
         "junction": {
-          "copper_square_centimetres": {
-            "value": 20,
-            "source": "declared by the fixture: the copper around U11 on each layer; not measured on the drawn board"
-          },
           "loss_milliwatts": {
             "value": 550,
             "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 81 % on the 36 V curve at 0.68 A; P_loss = 3.417 V x 679 mA x (1/0.81 - 1) = 544 mW, rounded up"
-          }
+          },
+          "loss_at_milliamps": 679
         },
         "controls": [
           {
@@ -1340,7 +1531,14 @@
         "adc_resolution_bits": 12
       }
     ],
-    "crossings": []
+    "crossings": [],
+    "drop_limits": [
+      {
+        "domain": "VDD_3V3",
+        "max_millivolts": 110,
+        "source": "AET-WO-4300k D6 (ruled): VDD_3V3's solved minimum less this stays above TLV803S's VIT- max plus its typical hysteresis, 3030 mV"
+      }
+    ]
   },
   "serial_ports": [
     {

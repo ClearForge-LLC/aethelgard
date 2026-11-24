@@ -60,6 +60,32 @@ pub struct Part {
     /// Signal pins, numbered `1` to `pins`; the mounting pads are not counted.
     pub pins: u8,
     pub cited: Cited,
+    /// Where the mating opening faces in the KiCad footprint's own frame
+    /// (`AET-WO-4300k` (4), A1), cited by the drawing's page.
+    pub opening: Opening,
+}
+
+/// The side of a footprint, in its own frame at rotation 0 (KiCad: +y down
+/// the page), its mating opening faces (`AET-WO-4300k` (4)). Placement puts
+/// that side on the board's edge, facing out, and `extract` refuses a
+/// connector drawn otherwise.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Opening {
+    pub toward: Toward,
+    pub cited: Cited,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Toward {
+    PlusY,
+    MinusY,
+}
+
+/// The opening of a connector or power-in row named `name`.
+pub fn opening(name: &str) -> Option<Opening> {
+    part(name)
+        .map(|p| p.opening)
+        .or_else(|| power_in(name).map(|p| p.opening))
 }
 
 /// The connector parts (ruled D4): JST GH 4, 6 and 10 for DS-009's external
@@ -74,6 +100,14 @@ pub const PARTS: [Part; 4] = [
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM04B-GHS-TB, 4 circuits)",
         },
+        opening: Opening {
+            toward: Toward::PlusY,
+            cited: Cited {
+                document: JST_GH,
+                sha256: JST_GH_SHA256,
+                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
+            },
+        },
     },
     Part {
         name: "SM06B-GHS-TB",
@@ -83,6 +117,14 @@ pub const PARTS: [Part; 4] = [
             document: JST_GH,
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM06B-GHS-TB, 6 circuits)",
+        },
+        opening: Opening {
+            toward: Toward::PlusY,
+            cited: Cited {
+                document: JST_GH,
+                sha256: JST_GH_SHA256,
+                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
+            },
         },
     },
     Part {
@@ -94,6 +136,14 @@ pub const PARTS: [Part; 4] = [
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM10B-GHS-TB, 10 circuits)",
         },
+        opening: Opening {
+            toward: Toward::PlusY,
+            cited: Cited {
+                document: JST_GH,
+                sha256: JST_GH_SHA256,
+                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
+            },
+        },
     },
     Part {
         name: "SM06B-SRSS-TB",
@@ -103,6 +153,14 @@ pub const PARTS: [Part; 4] = [
             document: JST_SH,
             sha256: JST_SH_SHA256,
             section: "p. 3, Header, side entry type (SM06B-SRSS-TB, 6 circuits)",
+        },
+        opening: Opening {
+            toward: Toward::PlusY,
+            cited: Cited {
+                document: JST_SH,
+                sha256: JST_SH_SHA256,
+                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -2.0 and the body runs to +2.575, so the opening faces +y",
+            },
         },
     },
 ];
@@ -139,6 +197,9 @@ pub struct PowerIn {
     /// Declared solid: a relieved through-hole pad on a supply path is
     /// refused until its spokes are priced (`1309` D2, ruled at 10:30 UTC).
     pub join: PadJoin,
+    /// Where the mating opening faces in the footprint's frame
+    /// (`AET-WO-4300k` (4)).
+    pub opening: Opening,
 }
 
 /// AMASS's board-type table for the XT30 family, held as a screenshot of the
@@ -190,6 +251,14 @@ pub const POWER_IN: [PowerIn; 1] = [PowerIn {
         },
     ],
     join: PadJoin::Solid,
+    opening: Opening {
+        toward: Toward::MinusY,
+        cited: Cited {
+            document: AMASS_XT30PW_M_V12,
+            sha256: AMASS_XT30PW_M_V12_SHA256,
+            section: "the one page, Drawing: the top view puts the two tails past the body's far end and the pegs near the mating end, and the end view looks into the opening; in the footprint the pads are at y 0, the pegs at y -10 and the body from -13.1 to -4.1, so the opening faces -y",
+        },
+    },
 }];
 
 /// The power-in row named `name`.

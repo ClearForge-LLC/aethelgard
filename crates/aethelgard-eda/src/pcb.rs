@@ -1485,6 +1485,33 @@ fn place_connectors(
         .ok_or_else(|| EmitError::Internal("connectors with no other part".into()))?;
     let down = |v: i64| v.div_euclid(SNAP) * SNAP;
     let up = |v: i64| -((-v).div_euclid(SNAP) * SNAP);
+    // `AET-WO-4300k` (4): each connector's opening, from its row (cited by
+    // the drawing's page), goes on the edge. A row opening toward -y is
+    // placed by its geometry turned 180 degrees, so the frame's +y is its
+    // opening, and drawn at the edge's rotation plus 180.
+    let mut frame: BTreeMap<usize, (Geometry, u16)> = BTreeMap::new();
+    for &(i, _) in &sides {
+        let item = &items[i];
+        let Some(o) = aethelgard_ir::connectors::opening(&item.part.value) else {
+            return Err(internal(
+                &item.part.reference,
+                format!(
+                    "`{}` has no opening in the connector tables",
+                    item.part.value
+                ),
+            ));
+        };
+        let turn = match o.toward {
+            aethelgard_ir::connectors::Toward::PlusY => 0u16,
+            aethelgard_ir::connectors::Toward::MinusY => 180,
+        };
+        let g = if turn == 0 {
+            item.geometry
+        } else {
+            geometry_at(&item.fp, &item.part.reference, turn)?
+        };
+        frame.insert(i, (g, turn));
+    }
     for rot in [0u16, 90, 270] {
         let row: Vec<usize> = sides
             .iter()
@@ -1509,7 +1536,7 @@ fn place_connectors(
         };
         let mut edge = up(fcore.y1 + MARGIN_NM);
         for &i in &row {
-            let g = items[i].geometry;
+            let g = frame[&i].0;
             if g.keep.y1 > g.courtyard.y1 {
                 return Err(internal(
                     &items[i].part.reference,
@@ -1520,18 +1547,28 @@ fn place_connectors(
         }
         let width = row
             .iter()
-            .map(|&i| items[i].geometry.keep.x1 - items[i].geometry.keep.x0 + gap)
+            .map(|&i| frame[&i].0.keep.x1 - frame[&i].0.keep.x0 + gap)
             .sum::<i64>()
             - gap;
         let mut x = fcore.centre().0 - width / 2;
         for &i in &row {
-            let (item, g) = (&items[i], items[i].geometry);
+            let (item, (g, turn)) = (&items[i], frame[&i]);
             let at = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
             // belt-and-suspenders: every vendored connector's pads sit inside its
             // courtyard by more than EDGE_NM, so no shipped part trips this (a
             // mutation that loosens it survives); a footprint added later might.
             for pad in item.fp.children("pad") {
                 let r = pad_box(pad, &item.part.reference)?;
+                let r = if turn == 0 {
+                    r
+                } else {
+                    Rect {
+                        x0: -r.x1,
+                        y0: -r.y1,
+                        x1: -r.x0,
+                        y1: -r.y0,
+                    }
+                };
                 if at.1 + r.y1 + route::EDGE_NM > edge {
                     return Err(internal(
                         &item.part.reference,
@@ -1544,11 +1581,12 @@ fn place_connectors(
                 }
             }
             let origin = route::rotate(rot, at);
-            let turned = geometry_at(&item.fp, &item.part.reference, rot)?;
+            let rotation = (rot + turn) % 360;
+            let turned = geometry_at(&item.fp, &item.part.reference, rotation)?;
             placed[i] = Some(Placed {
                 reference: item.part.reference.clone(),
                 origin,
-                rotation: rot,
+                rotation,
                 courtyard: turned.courtyard.shift(origin),
                 keep: turned.keep.shift(origin),
             });

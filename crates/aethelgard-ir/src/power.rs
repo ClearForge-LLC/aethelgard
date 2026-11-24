@@ -81,6 +81,13 @@ pub const BATTERY: &str = "battery";
 /// for the power tree, which a net class may name when a tree is declared.
 pub const BATTERY_NET: &str = "VBAT";
 
+/// The power-in connector's positive net when the input is protected
+/// (`AET-WO-4300k` (10)): connector, then the fuse.
+pub const BATTERY_IN_NET: &str = "VBAT_IN";
+
+/// Between the fuse and the P-FET's drain (`AET-WO-4300k` (10)).
+pub const BATTERY_FUSED_NET: &str = "VBAT_FUSED";
+
 /// Every reference the power tree declares, in the emitter's claim order
 /// (moved from `aethelgard-eda` by `AET-WO-1206`, so `validate`'s name checks
 /// and the emitter read one list); each hot-plug part's after the power-in

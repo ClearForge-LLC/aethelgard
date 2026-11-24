@@ -42,7 +42,7 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// Version 10 replaced that with `motor_pull_bound`, the inputs the motor
 /// pull-down's bound is computed from per board (`AET-WO-4300j` D3 (a)), and
 /// added the `jumper` kind, the pull's series link (D4).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 11;
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 12;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -216,6 +216,15 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         out.extend(device_nets(part).iter().map(|s| format!("{reference}_{s}")));
     }
     if let Some(p) = &spec.power {
+        // `AET-WO-4300k` (10): the input's protection, connector to fuse to
+        // P-FET to `VBAT`, and the FET's gate.
+        if let Some(x) = &p.input.protection {
+            out.extend([
+                crate::power::BATTERY_IN_NET.to_owned(),
+                crate::power::BATTERY_FUSED_NET.to_owned(),
+                format!("{}_GATE", x.fet.reference),
+            ]);
+        }
         for r in &p.regulators {
             if let Some(Kind::Buck(_)) = table.get(&r.part).map(|row| &row.kind) {
                 out.extend(BUCK_NETS.iter().map(|s| format!("{}_{s}", r.reference)));
