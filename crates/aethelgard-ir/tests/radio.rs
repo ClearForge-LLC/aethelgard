@@ -197,3 +197,15 @@ fn the_verdict_line_names_firmware_and_radio() {
         lines[0].starts_with("U30 ESP32-C3-WROOM-02-N4: firmware not judged; radio not simulated")
     );
 }
+
+/// D4: the footprint holds its keepout on each of a 4-layer board's copper
+/// layers; a module on a 2-layer board is refused by name.
+#[test]
+fn a_radio_module_needs_a_four_layer_board() {
+    let mut v = fixture();
+    v["board"]["copper_layers"] = json!(2);
+    let s: Specification = serde_json::from_value(v).unwrap();
+    let e = aethelgard_ir::radio::validate(&s).unwrap_err();
+    assert_eq!(e.kind(), "RadioBoardLayers");
+    assert_eq!(e.path(), Some("board.copper_layers"));
+}

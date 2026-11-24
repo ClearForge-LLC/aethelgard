@@ -226,6 +226,20 @@ pub struct Part {
     /// Its keepout zones (`AET-WO-4300d2` D2 (a), `RUL-03`): areas where no
     /// copper of the kinds each forbids may be, routed around and judged.
     pub keepouts: Vec<Keepout>,
+    /// Its keepout zones on inner copper layers (`AET-WO-4411`: a radio
+    /// module's, one per copper layer as ruled D4), each a rectangle with
+    /// what it forbids there: vias, and fills. No track runs on an inner
+    /// layer here; those layers are planes.
+    pub inner_keepouts: Vec<InnerKeepout>,
+}
+
+/// A footprint's keepout on an inner copper layer, in board coordinates.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InnerKeepout {
+    pub layer: String,
+    pub rect: Rect,
+    pub vias: bool,
+    pub fill: bool,
 }
 
 /// A footprint's keepout zone, in board coordinates: a rectangle on one
@@ -4272,10 +4286,38 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
                 }
             }
             let name = k.layer.name();
-            if k.fill && routed.zones.iter().any(|(_, layer)| layer == name) {
+            // A fill covers the board, so it meets a keepout that reaches
+            // inside the outline (`AET-WO-4411`: a radio module's lies off
+            // the board's edge).
+            if k.fill
+                && k.rect.overlaps(board.outline)
+                && routed.zones.iter().any(|(_, layer)| layer == name)
+            {
                 return Err(format!(
                     "a fill on {name} would meet {}'s keepout",
                     part.reference
+                ));
+            }
+        }
+        for k in &part.inner_keepouts {
+            for item in all
+                .iter()
+                .filter(|i| matches!(i.kind, Copper::Via | Copper::Thermal))
+            {
+                if k.vias && item.shape.enters(k.rect) {
+                    return Err(format!(
+                        "{} is inside {}'s keepout on {}",
+                        item.what, part.reference, k.layer
+                    ));
+                }
+            }
+            if k.fill
+                && k.rect.overlaps(board.outline)
+                && routed.zones.iter().any(|(_, layer)| *layer == k.layer)
+            {
+                return Err(format!(
+                    "a fill on {} would meet {}'s keepout",
+                    k.layer, part.reference
                 ));
             }
         }
@@ -4853,6 +4895,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         }
     }
 
@@ -4898,6 +4941,7 @@ mod tests {
             pads,
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         }
     }
 
@@ -5007,6 +5051,7 @@ mod tests {
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }],
             stack: crate::stack::reference(),
         };
@@ -5098,6 +5143,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         };
         Board {
             outline: rect(0, 0, 20 * MM, 10 * MM),
@@ -5238,6 +5284,7 @@ mod tests {
             )],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         });
         board.parts[1].pads.pop();
         let e = route(&board).unwrap_err();
@@ -5968,6 +6015,7 @@ mod tests {
                 pads,
                 courtyard: (0..4).map(|k| (q[k], q[(k + 1) % 4])).collect(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }
         };
         let parts = [(62, 62), (187, 62), (62, 187), (187, 187)]
@@ -6066,6 +6114,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         });
         board
     }
@@ -6136,6 +6185,7 @@ mod tests {
                 pads,
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }
         };
         let none: fn(usize) -> Option<&'static str> = |_| None;
@@ -6307,6 +6357,7 @@ mod tests {
             }],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         };
         let board = judged(Some(jlc()), vec![tht]);
         let r = router(&board, &[]);
@@ -6430,6 +6481,7 @@ mod tests {
                 )],
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             })
             .collect();
         let board = Board {
@@ -6464,6 +6516,7 @@ mod tests {
                     )],
                     courtyard: Vec::new(),
                     keepouts: Vec::new(),
+                    inner_keepouts: Vec::new(),
                 }
             })
             .collect();

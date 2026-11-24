@@ -1449,6 +1449,7 @@ mod tests {
                     pads: vec![p],
                     courtyard: Vec::new(),
                     keepouts: Vec::new(),
+                    inner_keepouts: Vec::new(),
                 }),
             }
         }

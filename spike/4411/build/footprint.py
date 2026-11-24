@@ -12,7 +12,9 @@ PROVENANCE = (
     "RF_Module:ESP32-C3-WROOM-02 (kicad-footprints tag 10.0.7, sha256 " + SRC_SHA + "), "
     "CC-BY-SA-4.0 with KiCad's design exception. Changes, each with its reason: "
     "(1) the keepout zone: KiCad's one zone on all 32 copper layers, 5 mm around the antenna, is "
-    "replaced by one zone per copper layer (F.Cu and B.Cu here; the emitter adds one per inner layer), "
+    "replaced by one zone per copper layer of a 4-layer board (F.Cu, B.Cu, In1.Cu, In2.Cu; the module is "
+    "refused on any other board, RadioBoardLayers, since a zone on a layer the board lacks is refused and a "
+    "board copy that differs from its library footprint fails KiCad's lib_footprint_mismatch), "
     "each the antenna area only, 18 x 6 mm (datasheet v1.7 p. 37, Fig. 11-1): the gate refuses a "
     "zone naming a layer the board lacks, and the 15 mm clearance beyond the antenna "
     "(Hardware Design Guidelines Fig. 21) is judged by the gate from the part row, never from a zone; "
@@ -81,7 +83,7 @@ def main():
             f'(fp_line\n\t\t(start {x0} {y0})\n\t\t(end {x1} {y1})\n\t\t(stroke\n\t\t\t(width 0.05)\n\t\t\t(type solid)\n\t\t)\n'
             f'\t\t(layer "F.CrtYd")\n\t\t(uuid "4411c0a7-0000-4000-8000-00000000000{n}")\n\t)'
         )
-    for n, layer in enumerate(["F.Cu", "B.Cu"]):
+    for n, layer in enumerate(["F.Cu", "B.Cu", "In1.Cu", "In2.Cu"]):
         added.append(
             f'(zone\n\t\t(layer "{layer}")\n\t\t(uuid "4411c0a7-0000-4000-8000-00000000002{n}")\n'
             f'\t\t(hatch full 0.508)\n\t\t(connect_pads\n\t\t\t(clearance 0)\n\t\t)\n\t\t(min_thickness 0.254)\n'

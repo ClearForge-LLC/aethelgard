@@ -305,6 +305,9 @@ impl RadioTable {
     }
 }
 
+/// The copper layers a radio module's footprint holds its keepout on.
+pub const RADIO_COPPER_LAYERS: u8 = 4;
+
 /// The radio parts table's schema version.
 pub const RADIO_PARTS_SCHEMA_VERSION: u32 = 1;
 
@@ -430,6 +433,7 @@ pub enum Kind {
     RadioStrapPullTo,
     RadioDecouplingUndeclared,
     RadioPassivePartUnknown,
+    RadioBoardLayers,
 }
 
 impl Kind {
@@ -451,6 +455,7 @@ impl Kind {
             Self::RadioStrapPullTo => "RadioStrapPullTo",
             Self::RadioDecouplingUndeclared => "RadioDecouplingUndeclared",
             Self::RadioPassivePartUnknown => "RadioPassivePartUnknown",
+            Self::RadioBoardLayers => "RadioBoardLayers",
         }
     }
 }
@@ -668,6 +673,20 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
     }
     let t = table()?;
     let passives = crate::power_parts::table()?;
+    // The footprint holds one keepout per copper layer of a 4-layer board
+    // (ruled D4): a zone on a layer the board lacks is refused, and one the
+    // emitter dropped would differ from the library's footprint.
+    if spec.board.copper_layers != RADIO_COPPER_LAYERS {
+        return Err(refuse(
+            Kind::RadioBoardLayers,
+            spec.declared_radio_modules()[0].reference.as_str(),
+            "board.copper_layers",
+            format!(
+                "a radio module's footprint holds its antenna keepout on each of {RADIO_COPPER_LAYERS} copper layers, and the board has {}",
+                spec.board.copper_layers
+            ),
+        ));
+    }
     for (i, m) in spec.declared_radio_modules().iter().enumerate() {
         let at = format!("radio_modules[{i}]");
         let r = m.reference.as_str();

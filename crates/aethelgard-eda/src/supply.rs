@@ -1817,6 +1817,7 @@ mod tests {
             pads,
             courtyard: vec![],
             keepouts: vec![],
+            inner_keepouts: Vec::new(),
         }
     }
 
