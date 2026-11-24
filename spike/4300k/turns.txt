@@ -1,0 +1,16 @@
+forward=top x=right: pass 25094 27152
+forward=top x=forward: "kind":"CapacitanceOverBound"
+forward=top x=left: pass 22021 18544
+forward=top x=aft: pass 24340 23041
+forward=right x=right: pass 24340 23041
+forward=right x=forward: pass 25094 27152
+forward=right x=left: "kind":"CapacitanceOverBound"
+forward=right x=aft: pass 22021 18544
+forward=bottom x=right: pass 22021 18544
+forward=bottom x=forward: pass 24340 23041
+forward=bottom x=left: pass 25094 27152
+forward=bottom x=aft: "kind":"CapacitanceOverBound"
+forward=left x=right: "kind":"CapacitanceOverBound"
+forward=left x=forward: pass 22021 18544
+forward=left x=left: pass 24340 23041
+forward=left x=aft: pass 25094 27152

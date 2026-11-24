@@ -97,15 +97,17 @@ No hash differs: no §7 stop.
   - **J5 carries MOTOR1–4 and GND only.** No ESC current crosses Sentinel-03's copper, which agrees with the fixture's `esc.none` source (Scotty, 2026-11-19).
   - **So the whole `VBAT` net is the flight controller's own supply branch.** The FET and fuse go between J4.2 and it, and no motor path exists to refuse.
 - **The power tree's own numbers** (`solve`, `power`): `input_steady_milliamps` **2,747**, `input_fault_milliamps` **10,100**.
-  - "About twice the branch's maximum input current" is about **5.5 A**: fast-blow, at or above 17.4 V DC rated (4S full charge).
-  - Its I²t must pass the hot-plug charge of C1 and the ceramics.
+  - **Read in the code (`power.rs:1630-1640`):** steady is the sum of the bucks' *output* loads (2,000 + 747), and fault is the sum of the high-side limits' maxima (2 × 5,050). Neither is an input current.
+  - The input current from the engine's own losses, at 9.0 V (3S floor): (5.237 V × 2 A + 1,170 mW) + (3.417 V × 747 mA + 550 mW) = 14.75 W, so **about 1.64 A** [computed]. At 12.0 V it is about 1.23 A.
+  - So "about twice the branch's maximum input current" is **about 3.3 A**, or 5.5 A on the engine's output-sum bound (STOP (e)).
+  - The fuse is fast-blow, rated at or above 17.4 V DC (4S full charge), and its I²t must pass the hot-plug charge of C1 and the ceramics.
 - **Constraints a candidate must meet, at 4S** (`cells.max` 4, 4,350 mV):
   - P-FET:
     - |VDS| ≥ 34.8 V, the doubled pack (see M6), so 40 V class at least, 60 V preferred.
     - VGS held by a zener under its |VGS| max at 17.4 V, and Rds(on) stated at the VGS the 3S floor gives (9.0 V less nothing).
     - ID ≥ the fault current, or the fuse clears first.
     - Rds(on) + fuse R small against the buck headroom, which today counts "no input-path drop" (a `solve` condition: the headroom line will need the drop).
-  - Fuse: rated ≥ 17.4 V DC; I²t against the hot-plug inrush; held at the fault current (10.1 A) for less than a buck tolerates.
+  - Fuse: rated ≥ 17.4 V DC; I²t against the hot-plug inrush. The 10.1 A "fault" is an output-side bound, so no input fault current is computed today.
 - **Candidates (not held, not declared; each needs its datasheet fetched by the architect):**
   - P-FET: a −40 V or −60 V, single P-channel in SOT-23 or PowerPAK SO-8, with Rds(on) stated at VGS −4.5 V. Families to look in: Diodes Inc. DMP-series (e.g. DMP6023LSS, −60 V), Vishay Si7461DP (−60 V), onsemi NVTFS5124PL-class.
   - Zener: 12 V SOD-123 (e.g. MMSZ5242B / BZT52C12) with a 100 kΩ gate resistor.
@@ -123,6 +125,8 @@ No hash differs: no §7 stop.
 - **A6, `cin` effective at the pack's maximum** (`solve`, Murata curve):
   - At 6S (26,100 mV), today: 4.092 µF per cap, so three per buck = 12.28 µF (the WO's ~12.3 is this).
   - **At 4S (17,400 mV), a scratch copy with `cells.max` 4: 5.433 µF per cap. Two per buck = 10.87 µF ≥ 10 µF, a margin of 8.7 %. Three per buck = 16.30 µF.**
+  - 5.433 µF is already the worst case: 10 µF × (1 − 0.226, the curve) × (1 − 0.100, tolerance) × (1 − 0.220, X7S over temperature), the condition line's own product.
+  - Today the shortfall is "a named shortfall, not blocking" (ruled D2 (c) on PR #158).
 
 ## M7 · A4: thermal copper (`thermal/THERMAL.md`)
 
@@ -184,6 +188,10 @@ Read live 2026-11-24 (worker's WebFetch, quoted in THERMAL.md):
   | aft | 24,340 / 23,041, pass |
 
   - With `x: right` and the crystal declared (Y1 drawn), `extract` passes: IMU_SCK 21,537, IMU_MOSI 21,398.
+  - **All 16 pairs** (`turns.txt`, every `board.forward` × every U5 `x`): the outcome depends only on U5's physical rotation on the board.
+    - Each edge gives the same four results: 25,094/27,152; 22,021/18,544; 24,340/23,041; and one `CapacitanceOverBound` IMU_SCK 31,879.
+    - The refused pair is top+forward, right+left, bottom+aft or left+right: one physical rotation, whatever the edge is called.
+    - So any forward edge is open, and U5 must avoid that one rotation.
   - J4's 180° turn moves the board, so these are re-measured after it. Which edge is forward is U5's drawn fact: the architect's (D9).
 - **With the keys and the crystal:** `solve` passes, and `generate hwdef` writes `OSCILLATOR_HZ 16000000`, the IMU line `ROTATION_ROLL_180_YAW_90` for `x: right`, and `PC0 BATT_VOLTAGE_SENS ADC1`.
 - **4300j R8:** the link's BOM row reads `0`, not `0 CRCW0402_Z_0`. Still so at `0faaaec3`.
