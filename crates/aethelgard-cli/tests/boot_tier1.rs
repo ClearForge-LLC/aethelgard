@@ -57,6 +57,25 @@ fn platform() -> PathBuf {
     root().join("boards/sentinel-01/sentinel-01.repl")
 }
 
+/// An ELF32 LE `EM_ARM` `ET_EXEC` with two executable `PT_LOAD`s, each
+/// `(paddr, code)` (`AET-WO-2314`: flash, and code at ITCM's address 0).
+fn elf_two(a: (u32, &[u8]), b: (u32, &[u8])) -> Vec<u8> {
+    let mut e = elf_at(a.0, a.1, 40);
+    e.truncate(52);
+    e[44..46].copy_from_slice(&2u16.to_le_bytes());
+    let mut offset = 52 + 2 * 32;
+    for (paddr, code) in [a, b] {
+        let len = code.len() as u32;
+        for v in [1u32, offset, paddr, paddr, len, len, 5, 4] {
+            e.extend_from_slice(&v.to_le_bytes());
+        }
+        offset += len;
+    }
+    e.extend_from_slice(a.1);
+    e.extend_from_slice(b.1);
+    e
+}
+
 /// An ELF32 LE `EM_ARM` `ET_EXEC` with one `PT_LOAD` of `code` at `paddr`.
 fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     let mut b = vec![0u8; 52];
@@ -3170,29 +3189,30 @@ fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
 /// `AET-WO-2314` D2 (i): a vector table whose fault entry is 0, or outside
 /// every executable `PT_LOAD`, cannot be hooked, so the firmware is refused
 /// by name before a boot (the stub would exit 99 on any boot); the D2-only
-/// firmware with no table at all is `the_foreign_judge_is_declared…`'s.
+/// firmware with no table at all is `the_foreign_judge_is_declared…`'s. A 0
+/// entry is refused even when code is loaded at address 0 (ITCM, a region
+/// the foreign judge admits).
 #[test]
 fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
     let tb = toolbox_foreign("", "0.0100000005", true);
     let input = Dir::new("in");
     let mut far = foreign_code();
     far[0x14..0x18].copy_from_slice(&0x0900_0001u32.to_le_bytes());
-    for (name, code, says) in [
+    let zero = "the vector table's HardFault entry (vector 3, at 0x0800000c) reads 0x00000000, no handler, so the foreign judge cannot hook it";
+    for (name, elf, says) in [
+        ("zero.elf", elf_at(0x0800_0000, &code(), 40), zero),
         (
-            "zero.elf",
-            code(),
-            "the vector table's HardFault entry (vector 3, at 0x0800000c) reads 0x00000000, no handler, so the foreign judge cannot hook it",
+            "itcm.elf",
+            elf_two((0x0800_0000, &code()), (0x0000_0000, &[0u8; 16])),
+            zero,
         ),
         (
             "far.elf",
-            far,
+            elf_at(0x0800_0000, &far, 40),
             "the vector table's BusFault entry (vector 5, at 0x08000014) reads 0x09000001, outside every executable PT_LOAD, so the foreign judge cannot hook it",
         ),
     ] {
-        let fw = input.write(
-            name,
-            &common::foreign::with_panic(elf_at(0x0800_0000, &code, 40), 0x0800_0020),
-        );
+        let fw = input.write(name, &common::foreign::with_panic(elf, 0x0800_0020));
         let out = foreign_with(&tb.0, &fw, "10ms");
         let e = report(&out);
         assert_eq!(out.status.code(), Some(3), "{e}");
