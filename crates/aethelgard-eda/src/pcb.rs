@@ -588,10 +588,15 @@ fn place(
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
     // design with no anchor keeps the order above. Drawing order is the
     // anchor's own sequence, never the part's place in the list
-    // (`AET-WO-1313c` F1).
+    // (`AET-WO-1313c` F1). A part whose anchor carries a loop rule goes
+    // before the IC's unbounded ones (`AET-WO-4300k`: Sentinel-03's crystal,
+    // drawn first and bound by no distance, took the room its battery
+    // sense's reservoir is bound to within 3 mm of).
     let anchored = |i: usize| {
         let o = items[i].part.owner.as_ref()?;
-        o.anchor.as_ref().map(|a| (o.ic.as_str(), a.seq))
+        o.anchor
+            .as_ref()
+            .map(|a| (o.ic.as_str(), a.loop_rule.is_none(), a.seq))
     };
     let mut grouped = Vec::with_capacity(order.len());
     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
@@ -600,16 +605,16 @@ fn place(
         // `seq` is unique among one IC's anchored parts (the emitter counts
         // them), so the reference never decides here: it only keeps a
         // hand-built design that repeats a `seq` deterministic.
-        let mut own: Vec<(usize, &str, usize)> = (0..items.len())
+        let mut own: Vec<(bool, usize, &str, usize)> = (0..items.len())
             .filter_map(|j| match anchored(j) {
-                Some((ic, seq)) if ic == reference => {
-                    Some((seq, items[j].part.reference.as_str(), j))
+                Some((ic, unbounded, seq)) if ic == reference => {
+                    Some((unbounded, seq, items[j].part.reference.as_str(), j))
                 }
                 _ => None,
             })
             .collect();
         own.sort_unstable();
-        grouped.extend(own.into_iter().map(|(_, _, j)| j));
+        grouped.extend(own.into_iter().map(|(_, _, _, j)| j));
     }
     if grouped.len() != order.len() {
         return Err(EmitError::Internal(
