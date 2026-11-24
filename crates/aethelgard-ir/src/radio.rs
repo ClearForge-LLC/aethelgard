@@ -99,18 +99,10 @@ pub struct Document {
     pub url: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Lifecycle {
-    Active,
-    Nrnd,
-    Eol,
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Status {
-    pub status: Lifecycle,
+    pub status: crate::parts::Lifecycle,
     pub at: At,
 }
 
@@ -129,51 +121,6 @@ pub struct Supply {
 pub struct Cited {
     pub value: u32,
     pub at: At,
-}
-
-/// The ground pad's thermal vias, as a power row's rule is written
-/// (`AET-WO-1309`): the engine emits them inside the pad.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ThermalRule {
-    pub pad: String,
-    pub columns: u8,
-    pub rows: u8,
-    pub pitch_um: u32,
-    pub drill_um: u32,
-    pub ring_um: u32,
-    pub sources: ThermalSources,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ThermalSources {
-    pub count: String,
-    pub pitch: String,
-    pub drill: String,
-    pub ring: String,
-    pub layers: String,
-}
-
-impl ThermalRule {
-    /// The rule as `1309`'s array, on `layers`.
-    pub fn vias(&self, layers: Vec<String>) -> crate::thermal::ThermalVias {
-        crate::thermal::ThermalVias {
-            columns: self.columns,
-            rows: self.rows,
-            pitch_um: self.pitch_um,
-            drill_um: self.drill_um,
-            ring_um: self.ring_um,
-            layers,
-            sources: crate::thermal::ThermalSources {
-                count: self.sources.count.clone(),
-                pitch: self.sources.pitch.clone(),
-                drill: self.sources.drill.clone(),
-                ring: self.sources.ring.clone(),
-                layers: self.sources.layers.clone(),
-            },
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -226,12 +173,6 @@ pub struct Uart {
     pub at: At,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct RomOutput {
-    pub at: At,
-}
-
 /// A rectangle in the footprint's own coordinates, in µm.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -274,11 +215,14 @@ pub struct RadioPart {
     pub decoupling_min_pf: Cited,
     pub tx_peak_ma_typical: Cited,
     pub ground_pins: Vec<String>,
-    pub thermal_vias: ThermalRule,
+    /// The ground pad's thermal vias, as a power row's rule is written
+    /// (`AET-WO-1309`): the engine emits them inside the pad.
+    pub thermal_vias: crate::power_parts::ThermalRule,
     pub enable: EnablePin,
     pub straps: Vec<StrapRow>,
     pub uart: Uart,
-    pub rom_output: RomOutput,
+    /// Where the ROM's output on UART0 at every boot is stated.
+    pub rom_output: At,
     pub antenna: Antenna,
 }
 
@@ -374,7 +318,7 @@ pub fn parse(text: &str) -> Result<RadioTable, String> {
             &m.tx_peak_ma_typical.at,
             &m.enable.at,
             &m.uart.at,
-            &m.rom_output.at,
+            &m.rom_output,
             &m.antenna.area_at,
             &m.antenna.clearance_at,
             &m.antenna.placement_at,
@@ -595,7 +539,7 @@ pub(crate) fn identifiers(spec: &Specification) -> Result<(), IrValidationError>
 
 /// The current the radio modules on `domain` require of their supply: each
 /// row's stated supply requirement (ruled D5), never its typical transmit
-/// peak. `power::loads` and the routed board's supply gate both count it.
+/// peak, as `power::loads` counts it.
 pub fn load_ma(spec: &Specification, domain: &str) -> Result<u64, IrValidationError> {
     let t = table()?;
     let mut sum = 0;
@@ -742,7 +686,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     format!("`{}` is no declared voltage domain", m.supply),
                 )
             })?;
-        let (lo, hi) = crate::power::domain_range_mv(domain);
+        let (lo, hi) = crate::power::range(domain);
         if lo < u64::from(row.supply.min_mv) || hi > u64::from(row.supply.max_mv) {
             return Err(refuse(
                 Kind::RadioSupplyOutOfRange,
@@ -881,12 +825,14 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 "no capacitor from the supply to ground is declared",
             ));
         }
-        let resistors = std::iter::once((&m.enable.resistor, format!("{at}.enable.resistor")))
-            .chain(m.straps.iter().filter_map(|(pin, s)| match s {
-                RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
-                RadioStrap::Open => None,
-            }));
-        for (p, path) in resistors {
+        let pulls: Vec<(&PullResistor, String)> =
+            std::iter::once((&m.enable.resistor, format!("{at}.enable.resistor")))
+                .chain(m.straps.iter().filter_map(|(pin, s)| match s {
+                    RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
+                    RadioStrap::Open => None,
+                }))
+                .collect();
+        for (p, path) in &pulls {
             if !matches!(
                 passives.get(&p.part).map(|row| &row.kind),
                 Some(crate::power_parts::Kind::Resistor(_))
@@ -906,11 +852,12 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     .enumerate()
                     .map(|(k, c)| (c, format!("{at}.decoupling[{k}]"))),
             );
+        let cap = |part: &str| match passives.get(part).map(|row| &row.kind) {
+            Some(crate::power_parts::Kind::Capacitor(c)) => Some(c),
+            _ => None,
+        };
         for (c, path) in capacitors {
-            if !matches!(
-                passives.get(&c.part).map(|row| &row.kind),
-                Some(crate::power_parts::Kind::Capacitor(_))
-            ) {
+            if cap(&c.part).is_none() {
                 return Err(refuse(
                     Kind::RadioPassivePartUnknown,
                     &c.part,
@@ -924,16 +871,9 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
         // the supply between VIH (0.75 x VDD) or VIH_nRST and the rail, and
         // VIL (0.25 x VDD) and ground (p. 21, Table 6-3), at the domain's
         // lowest voltage.
-        let (lo, _) = crate::power::domain_range_mv(domain);
-        let pulls = std::iter::once((&m.enable.resistor, format!("{at}.enable.resistor"))).chain(
-            m.straps.iter().filter_map(|(pin, s)| match s {
-                RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
-                RadioStrap::Open => None,
-            }),
-        );
         // ohms <= (VDD/4) / I: mV * 1e6 / (4 * nA) ohms.
         let max_ohms = u128::from(lo) * 1_000_000 / (4 * u128::from(row.input_leakage_na.value));
-        for (p, path) in pulls {
+        for (p, path) in &pulls {
             if u128::from(p.ohms) > max_ohms {
                 return Err(refuse(
                     Kind::RadioPullTooWeak,
@@ -951,10 +891,6 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
         // The enable's RC keeps EN below VIH_nRST for tSTBL from the supply's
         // rise: R x C x ln(1 / (1 - 0.75)) >= tSTBL, on the capacitance the
         // specification's declared DC-bias derating retains (p. 15, p. 21).
-        let cap = |part: &str| match passives.get(part).map(|row| &row.kind) {
-            Some(crate::power_parts::Kind::Capacitor(c)) => Some(c),
-            _ => None,
-        };
         if let Some(c) = cap(&m.enable.capacitor.part) {
             let retained = spec
                 .power
@@ -997,7 +933,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
             .filter_map(|c| cap(&c.part))
             .map(|c| u128::try_from(c.rated_picofarads.value).unwrap_or(0))
             .sum();
-        if !m.decoupling.is_empty() && decoupled < u128::from(row.decoupling_min_pf.value) {
+        if decoupled < u128::from(row.decoupling_min_pf.value) {
             return Err(refuse(
                 Kind::RadioDecouplingShort,
                 r,
@@ -1037,7 +973,7 @@ mod tests {
         let row = t.get("ESP32-C3-WROOM-02-N4").unwrap();
         assert_eq!(row.supply_current_min_ma.value, 500);
         assert_eq!(row.tx_peak_ma_typical.value, 345);
-        assert_eq!(row.lifecycle.status, Lifecycle::Active);
+        assert_eq!(row.lifecycle.status, crate::parts::Lifecycle::Active);
     }
 
     #[test]

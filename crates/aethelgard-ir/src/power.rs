@@ -626,13 +626,8 @@ fn battery_range(b: &Battery) -> (u64, u64) {
     )
 }
 
-/// A domain's range, mV, for the radio module's supply check (`AET-WO-4411`).
-pub(crate) fn domain_range_mv(d: &VoltageDomain) -> (u64, u64) {
-    range(d)
-}
-
 /// A domain's range, mV.
-fn range(d: &VoltageDomain) -> (u64, u64) {
+pub(crate) fn range(d: &VoltageDomain) -> (u64, u64) {
     (
         u64::from(minimum_millivolts(d)),
         u64::from(maximum_millivolts(d)),
@@ -2494,7 +2489,7 @@ pub fn thermal_arrays(spec: &Specification) -> Vec<(String, String, crate::therm
                 out.push((
                     m.reference.clone(),
                     row.thermal_vias.pad.clone(),
-                    row.thermal_vias.vias(layers.clone()),
+                    vias(&row.thermal_vias, layers.clone()),
                 ));
             }
         }

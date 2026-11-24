@@ -889,7 +889,8 @@ pub enum OnShortfall {
 /// The thermal-via rule of an exposed pad, as the datasheet states it. The
 /// layers are not a row's: they are the declared board's ground planes, or
 /// `B.Cu` on a two-layer board, joined at `validate` (`AET-WO-4300d` K7).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ThermalRule {
     pub pad: String,
     pub columns: u8,

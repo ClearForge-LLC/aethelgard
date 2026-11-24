@@ -1110,11 +1110,12 @@ fn radio_judged(
         // The antenna area and its clearance, in board nm.
         let a = row.antenna.area_um;
         let c = row.antenna.clearance_um;
+        let edge = y + a.y1 * 1000;
         let (cx0, cx1, cy0, cy1) = (
             x + (a.x0 - c) * 1000,
             x + (a.x1 + c) * 1000,
             y + (a.y0 - c) * 1000,
-            y + a.y1 * 1000,
+            edge,
         );
         if cx0 < ox1 && ox0 < cx1 && cy0 < oy1 && oy0 < cy1 {
             let mm = |nm: i64| format!("{:.3}", nm as f64 / 1e6);
@@ -1141,7 +1142,6 @@ fn radio_judged(
         // feed point on the right, datasheet Figure 10-1): the antenna edge
         // on the board's top edge (one snap, 0.05 mm, either way), and the
         // body's feed side within the row's bound of the right edge.
-        let edge = y + a.y1 * 1000;
         let feed = ox1 - (x + a.x1 * 1000);
         if (oy0 - edge).abs() > 50_000 || feed < 0 || feed > row.antenna.feed_edge_max_um * 1000 {
             return Err(stop(

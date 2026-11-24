@@ -106,9 +106,7 @@
         "rx_number": "11",
         "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 11, Table 3-1: pin 11 RXD (GPIO20, U0RXD), pin 12 TXD (GPIO21, U0TXD); levels (p. 21, Table 6-3) are stated against the module's own supply" }
       },
-      "rom_output": {
-        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 14, Table 4-4: with EFUSE_UART_PRINT_CONTROL at its default 0, the ROM prints to UART0 at every boot whatever GPIO8 is; p. 33: UART0 is used to download firmware and log output" }
-      },
+      "rom_output": { "document": "ESP32-C3-WROOM-02", "section": "p. 14, Table 4-4: with EFUSE_UART_PRINT_CONTROL at its default 0, the ROM prints to UART0 at every boot whatever GPIO8 is; p. 33: UART0 is used to download firmware and log output" },
       "antenna": {
         "area_um": { "x0": -9000, "y0": -13100, "x1": 9000, "y1": -7100 },
         "area_at": { "document": "ESP32-C3-WROOM-02", "section": "p. 37, Figure 11-1: the antenna area, 18 mm wide and 6 mm deep at the module's top edge (the module 18 x 20 mm)" },

@@ -352,13 +352,7 @@ fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Zone, String> {
         Some("B.Cu") => Some(Layer::B),
         // An inner copper layer, `In<n>.Cu` (the board reader has already
         // refused a layer its table lacks).
-        Some(l)
-            if l.strip_prefix("In")
-                .and_then(|n| n.strip_suffix(".Cu"))
-                .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit())) =>
-        {
-            None
-        }
+        Some(l) if strict::copper_layer(l) => None,
         other => {
             return Err(format!(
                 "{what} is on {}, not a copper layer",

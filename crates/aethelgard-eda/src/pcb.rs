@@ -2081,20 +2081,8 @@ fn antenna_edge(row: &aethelgard_ir::radio::RadioPart) -> i64 {
     row.antenna.area_um.y1 * 1000
 }
 
-/// The band above a radio module's antenna edge, the board's margin
-/// beyond it, and [`RADIO_BAND_NM`] either side and beyond its far end: added to the module's keep
-/// box for placing, so that no part lands where the edge will be.
-fn radio_band(row: &aethelgard_ir::radio::RadioPart, courtyard: Rect) -> Rect {
-    Rect {
-        x0: courtyard.x0 - RADIO_BAND_NM,
-        y0: courtyard.y0 - RADIO_BAND_NM,
-        x1: courtyard.x1 + RADIO_BAND_NM,
-        y1: antenna_edge(row) + MARGIN_NM,
-    }
-}
-
 /// The bands beside a placed radio module, when part `i` is anchored to
-/// it: above its antenna edge ([`radio_band`]), and right of its courtyard,
+/// it: above its antenna edge, and right of its courtyard,
 /// which [`radio_corner`] sets [`MARGIN_NM`] from the board's right edge.
 fn radio_band_at(
     items: &[Item<'_>],
@@ -2114,10 +2102,14 @@ fn radio_band_at(
         x1: c.x1 + RADIO_BAND_NM,
         y1: c.y1 + RADIO_BAND_NM,
     };
-    Some([
-        (radio_band(row, c).shift(m.origin), 0),
-        (right.shift(m.origin), 0),
-    ])
+    // Above the antenna edge, its margin beyond, and either side.
+    let above = Rect {
+        x0: c.x0 - RADIO_BAND_NM,
+        y0: c.y0 - RADIO_BAND_NM,
+        x1: c.x1 + RADIO_BAND_NM,
+        y1: antenna_edge(row) + MARGIN_NM,
+    };
+    Some([(above.shift(m.origin), 0), (right.shift(m.origin), 0)])
 }
 
 /// The radio module's index and every part anchored to it; empty for a
@@ -2129,6 +2121,9 @@ fn radio_group(items: &[Item<'_>]) -> Result<Vec<usize>, EmitError> {
     let m = match modules.as_slice() {
         [] => return Ok(Vec::new()),
         [m] => *m,
+        // belt-and-suspenders: `validate` refuses a second module first
+        // (`RadioModuleTwice`); a library caller that emits without it is
+        // refused here, since one top-right corner holds one.
         [_, second, ..] => {
             return Err(internal(
                 &items[*second].part.reference,
