@@ -8,6 +8,8 @@ import sys
 
 src, out = sys.argv[1:3]
 s = json.load(open(src))
+if "radio_modules" in s or any(p["label"] == "WIFI" for p in s["serial_ports"]):
+    sys.exit(f"{src} already carries the module; derive from the board without it")
 # A third argument keeps the board's own name (D6: the module goes on
 # Sentinel-03 itself); without it, the tests/ fixture's.
 if len(sys.argv) < 4:
