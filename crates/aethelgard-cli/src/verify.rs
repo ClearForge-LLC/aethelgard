@@ -2357,13 +2357,30 @@ fn silicon_findings(s: &aethelgard_cli::ledger::Silicon) -> Vec<Finding> {
         .collect()
 }
 
+/// What a mode that does not judge readiness says of it (`AET-WO-4300k` (c),
+/// (R)), on a passing run and a failing one alike.
+fn not_judged(mode: &FabMode) -> Option<String> {
+    match mode {
+        FabMode::Write(_) => None,
+        FabMode::Compare(_) => Some(
+            "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))".to_owned(),
+        ),
+        FabMode::Rebind { committed, .. } => Some(format!(
+            "readiness not judged: a re-bind of {}",
+            committed.display()
+        )),
+    }
+}
+
 /// A run that failed writes and compares nothing, and says so.
 fn not_packaged(report: &mut Report, mode: &FabMode) {
     let (status, against) = match mode {
         FabMode::Write(_) | FabMode::Rebind { .. } => ("not_written", None),
         FabMode::Compare(_) => ("not_derived", Some("not_compared")),
     };
-    report.fab = Some(FabReport::none(status, report.lifecycle_unheld.clone()));
+    let mut fab = FabReport::none(status, report.lifecycle_unheld.clone());
+    fab.fabrication_ready = not_judged(mode);
+    report.fab = Some(fab);
     report.against_fab = against;
 }
 
@@ -2421,11 +2438,8 @@ fn package(
         let mut derived = exported.files.clone();
         derived.insert(fab::MANIFEST.to_owned(), manifest.clone());
         rebind::matches(committed, &derived).map_err(crate::stopped)?;
-        fab_report.fabrication_ready = Some(format!(
-            "readiness not judged: a re-bind of {}",
-            committed.display()
-        ));
     }
+    fab_report.fabrication_ready = not_judged(mode);
     match mode {
         FabMode::Write(dir) | FabMode::Rebind { out: dir, .. } => {
             fab_out_usable(dir).map_err(crate::stopped)?;
@@ -2448,9 +2462,6 @@ fn package(
             });
         }
         FabMode::Compare(dir) => {
-            fab_report.fabrication_ready = Some(
-                "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))".to_owned(),
-            );
             let mut package = exported.files;
             package.insert(fab::MANIFEST.to_owned(), manifest);
             let differences = tree::against(dir, &package, &[]).map_err(crate::stopped)?;

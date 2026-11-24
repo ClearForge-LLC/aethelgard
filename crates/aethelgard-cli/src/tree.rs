@@ -249,6 +249,27 @@ fn same(path: &Path, want: &[u8]) -> Result<bool, Stop> {
 
 use std::os::unix::fs::OpenOptionsExt;
 
+/// The bytes of the regular file at `path`, opened as [`same`] opens one
+/// (never through a symlink, never blocking on a FIFO), or `None` when it is
+/// not a regular file or holds more than `max` bytes.
+pub fn regular(path: &Path, max: u64) -> Result<Option<Vec<u8>>, Stop> {
+    let opened = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
+        .open(path);
+    let Ok(file) = opened else {
+        return Ok(None);
+    };
+    if !file.metadata().is_ok_and(|m| m.is_file()) {
+        return Ok(None);
+    }
+    let mut have = Vec::new();
+    file.take(max + 1)
+        .read_to_end(&mut have)
+        .map_err(|e| Stop::unreadable(format!("cannot read {}: {e}", path.display())))?;
+    Ok((have.len() as u64 <= max).then_some(have))
+}
+
 /// The files of `files` under `prefix` (such as `board/`), relative to it.
 pub fn subtree(files: &BTreeMap<String, String>, prefix: &str) -> BTreeMap<String, String> {
     files

@@ -963,3 +963,23 @@ const BENCH_SCENARIOS: [&str; 5] = [
     "scenarios/sentinel-01-bench/pullup-2k2.json",
     "scenarios/sentinel-01-bench/serial-rx-open-console.json",
 ];
+
+/// `AET-WO-4300k` (R): the tool cannot tell a committed package from any
+/// directory an earlier `--fab-out` of the same board wrote, so CI is the
+/// control: `--rebind` appears in `ci.yml` exactly once, pinned to
+/// Sentinel-01's committed package (the gate review's F2).
+#[test]
+fn ci_rebinds_only_sentinel_01_s_committed_package() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let uses: Vec<&str> = ci
+        .lines()
+        .filter(|l| l.contains("--rebind") && !l.trim_start().starts_with('#'))
+        .collect();
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert!(
+        uses[0]
+            .trim_end()
+            .ends_with("--rebind fab/sentinel-01-bench/package"),
+        "{uses:?}"
+    );
+}

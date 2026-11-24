@@ -3,15 +3,21 @@
 //! C, ruled on PR #115): `AET-WO-3303` D1's detection beside a failing run
 //! (ruled (a)), and `AET-WO-3300`'s nothing written. `--fab-out` changes no gate's input, and
 //! the verdict equals the one without it apart from its `fab` key
-//! (`AET-WO-1909` FEEDBACK).
+//! (`AET-WO-1909` FEEDBACK). The campaign runs on the ready fixture
+//! (`AET-WO-4300k` (T), ruled 11:25Z, `common/ready.rs`), each scenario
+//! rebased on it in a scratch, so `--fab-out` passes the readiness gate and
+//! the run reaches the campaign gate whose failure it is about.
 
 #![cfg(feature = "with-tools")]
 
 mod common;
+#[path = "common/ready.rs"]
+mod ready;
 
 use std::fs;
 
-use common::verify::{SPEC, Shared, aethelgard, one, scratch};
+use common::verify::{Shared, one, scratch};
+use ready::{READY, aethelgard_in, rebased};
 use serde_json::Value;
 
 /// The run's exit code and verdict, and how many entries `--fab-out` holds after it.
@@ -28,28 +34,32 @@ const ONE_KIND: &str = "crates/aethelgard-cli/tests/fixtures/spi-absent-u4-one-k
 
 fn run(property: &str) -> &'static Run {
     RUN.get(property, || {
-        let dir = scratch("verify-47k").join("fab");
+        let base = scratch("verify-47k");
+        let dir = base.join("fab");
         fs::create_dir_all(&dir).unwrap();
         {
             use std::os::unix::fs::PermissionsExt;
             fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
         }
-        let (code, stdout) = aethelgard(&[
-            "verify",
-            "--spec",
-            SPEC,
-            "--scenarios",
-            "scenarios/sentinel-01/pullup-47k.json",
-            "scenarios/sentinel-01/droop-bor3.json",
-            ONE_KIND,
-            "scenarios/sentinel-01/pullup-2k2.json",
-            // The console's open RX line (`AET-WO-2302` D5): without it the
-            // console's port is uncovered and the run is refused before any
-            // gate.
-            "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
-            "--fab-out",
-            dir.to_str().unwrap(),
-        ]);
+        // The ready fixture's bytes, and the set rebased on them beside it.
+        let names = rebased(
+            &base,
+            &fs::read(common::verify::root().join(READY)).unwrap(),
+            &[
+                "scenarios/sentinel-01/pullup-47k.json",
+                "scenarios/sentinel-01/droop-bor3.json",
+                ONE_KIND,
+                "scenarios/sentinel-01/pullup-2k2.json",
+                // The console's open RX line (`AET-WO-2302` D5): without it the
+                // console's port is uncovered and the run is refused before any
+                // gate.
+                "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
+            ],
+        );
+        let mut args = vec!["verify", "--spec", "spec.json", "--scenarios"];
+        args.extend(names.iter().map(String::as_str));
+        args.extend(["--fab-out", dir.to_str().unwrap()]);
+        let (code, stdout) = aethelgard_in(&base, &args);
         Run {
             code,
             verdict: one(&stdout),

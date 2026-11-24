@@ -590,7 +590,7 @@ jobs:
       - name: Sentinel-03, verify --against-fab, or --fab-out on a write
         run: |
           if [ "${{ inputs.write }}" = "true" ]; then
-            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/bench-package/sentinel-03
+            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
           else
             $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
           fi
@@ -601,5 +601,16 @@ jobs:
         with:
           name: bench-package
           path: target/bench-package/
+          if-no-files-found: error
+          retention-days: 7
+
+      # AET-WO-4300k (8): its own artifact, committed unchanged as fab/sentinel-03/package
+      # (never inside Sentinel-01's, which a re-bind would then refuse).
+      - name: keep Sentinel-03's written package
+        if: ${{ inputs.write }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sentinel-03-package
+          path: target/sentinel-03-package/
           if-no-files-found: error
           retention-days: 7

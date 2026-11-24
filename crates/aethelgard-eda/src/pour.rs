@@ -147,6 +147,9 @@ impl Grid {
     }
 }
 
+/// A thermal pad as found on the board: its centre, its net, its rectangle.
+type Found = ((i64, i64), String, Rect);
+
 /// Each declared buck's joined copper on `board` as `routed` read it.
 /// `pads` are the bucks' thermal pads, `(reference, pad number)`; a layer
 /// joins when it is an outer layer the stack pours or a plane of the pad's
@@ -156,7 +159,7 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
     let half_diagonal = CELL_NM * 3 / 4;
     let neck = route::MIN_THICKNESS_NM / 2;
     // Each pad: its centre, its net and its rectangle.
-    let found: Vec<Option<((i64, i64), String, Rect)>> = pads
+    let found: Vec<Option<Found>> = pads
         .iter()
         .map(|(reference, number)| {
             board

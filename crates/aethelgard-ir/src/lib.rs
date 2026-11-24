@@ -4106,6 +4106,48 @@ impl Specification {
     /// Step 13e (`AET-WO-4300k` (d)): each entry's id is `<kind>:<reference>`,
     /// a kind of lower-case letters, digits and `_` and a reference by the
     /// base identifier set; its reason a source; no id twice.
+    /// The values the specification declares where a datasheet maximum would
+    /// stand (`AET-WO-4300k` (d)): each device's pin capacitance on a bounded
+    /// line, `pin_capacitance_declared:<reference>`, and each connector pin's
+    /// capacitance beyond the board, `offboard_declared:<connector>.<pin>`.
+    pub fn declared_value_conditions(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let devices = self
+            .declared_i2c_devices()
+            .iter()
+            .map(|d| (&d.reference, &d.pin_capacitance))
+            .chain(
+                self.declared_spi_devices()
+                    .iter()
+                    .map(|d| (&d.reference, &d.pin_capacitance)),
+            );
+        for (reference, c) in devices {
+            if let Some(c) = c {
+                out.push((
+                    format!("pin_capacitance_declared:{reference}"),
+                    format!(
+                        "{reference}: each of its pins on a bounded line is counted at {} fF, a value the specification declares, not a maximum the datasheet prints ({})",
+                        c.declared.femtofarads, c.declared.source
+                    ),
+                ));
+            }
+        }
+        for conn in self.declared_connectors() {
+            for pin in &conn.pins {
+                if let Some(o) = &pin.offboard {
+                    out.push((
+                        format!("offboard_declared:{}.{}", conn.reference, pin.pin),
+                        format!(
+                            "{}.{}: beyond the board it adds {} fF, declared ({})",
+                            conn.reference, pin.pin, o.capacitance_femtofarads, o.source
+                        ),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
     fn validate_condition_acknowledgements(&self) -> Result<(), IrValidationError> {
         let mut ids = BTreeSet::new();
         for (i, a) in self.acknowledge_conditions.iter().enumerate() {

@@ -820,23 +820,6 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
     }))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The HSI's figures, written by hand: a budget that moves either side
-    /// fails here (`4240v` F5 says why they are not the plain sum).
-    #[test]
-    fn the_hsi_budget_is_the_figures_every_verdict_used() {
-        assert_eq!(Budget::HSI.fast_ppm, 14_984);
-        assert_eq!(Budget::HSI.slow_ppm, 25_894);
-        assert_eq!(Budget::HSI.fastest_hz(64_000_000), 64_958_976);
-        assert_eq!(Budget::HSI.slowest_hz(64_000_000), 62_342_784);
-        assert_eq!(Budget::HSI.fastest_hz(1), 2);
-        assert_eq!(Budget::HSI.slowest_hz(1), 0);
-    }
-}
-
 /// The conditions a declared crystal rests on that no held datasheet lets
 /// the engine compute (`AET-WO-4300k` M3), each by its id: AN2867 Rev 25
 /// §4.2 Step 3's safety factor (§3.8, a negative-resistance measurement) and
@@ -861,4 +844,21 @@ pub fn conditions(hse: Option<&Hse>) -> Vec<(String, String)> {
             ),
         ),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The HSI's figures, written by hand: a budget that moves either side
+    /// fails here (`4240v` F5 says why they are not the plain sum).
+    #[test]
+    fn the_hsi_budget_is_the_figures_every_verdict_used() {
+        assert_eq!(Budget::HSI.fast_ppm, 14_984);
+        assert_eq!(Budget::HSI.slow_ppm, 25_894);
+        assert_eq!(Budget::HSI.fastest_hz(64_000_000), 64_958_976);
+        assert_eq!(Budget::HSI.slowest_hz(64_000_000), 62_342_784);
+        assert_eq!(Budget::HSI.fastest_hz(1), 2);
+        assert_eq!(Budget::HSI.slowest_hz(1), 0);
+    }
 }

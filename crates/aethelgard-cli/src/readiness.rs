@@ -50,39 +50,7 @@ pub fn conditions(
     out.extend(aethelgard_ir::supervisor::check(spec, checked.as_ref())?);
     out.extend(aethelgard_ir::board::conditions(&spec.board.stackup));
     out.extend(aethelgard_ir::clock::conditions(spec.mcu.hse.as_ref()));
-    let devices = spec
-        .declared_i2c_devices()
-        .iter()
-        .map(|d| (&d.reference, &d.pin_capacitance))
-        .chain(
-            spec.declared_spi_devices()
-                .iter()
-                .map(|d| (&d.reference, &d.pin_capacitance)),
-        );
-    for (reference, c) in devices {
-        if let Some(c) = c {
-            out.insert(
-                format!("pin_capacitance_declared:{reference}"),
-                format!(
-                    "{reference}: each of its pins on a bounded line is counted at {} fF, a value the specification declares, not a maximum the datasheet prints ({})",
-                    c.declared.femtofarads, c.declared.source
-                ),
-            );
-        }
-    }
-    for conn in spec.declared_connectors() {
-        for pin in &conn.pins {
-            if let Some(o) = &pin.offboard {
-                out.insert(
-                    format!("offboard_declared:{}.{}", conn.reference, pin.pin),
-                    format!(
-                        "{}.{}: beyond the board it adds {} fF, declared ({})",
-                        conn.reference, pin.pin, o.capacitance_femtofarads, o.source
-                    ),
-                );
-            }
-        }
-    }
+    out.extend(spec.declared_value_conditions());
     let reserved = |p: &str| spec.mcu.reserved_pins.iter().any(|r| r.pin == p);
     if spec.diff_pairs.is_empty() && reserved("PA11") && reserved("PA12") {
         out.insert(

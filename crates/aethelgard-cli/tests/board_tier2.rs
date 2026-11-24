@@ -10,6 +10,8 @@
 #![cfg(feature = "with-tools")]
 
 mod common;
+#[path = "common/ready.rs"]
+mod ready;
 
 use common::verify::{
     SPEC, aethelgard, board, build, copy_tree, gate_reads, generated, one, package_files, root,
@@ -23,6 +25,7 @@ use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use std::time::Instant;
 
+use ready::READY;
 use serde_json::Value;
 
 /// The schedule's I2C1 part: the whole-schedule harness is proved in parts on
@@ -774,10 +777,14 @@ fn rename_value(v: &mut Value, from: &str, to: &str) {
 /// `AET-WO-1102` §1.3, and the image half of the §1.1 spike (the architect's
 /// ruling on PR #106): one specification carries every character `RUL-14`
 /// admits in the positions of every kind, and `verify --scenarios --fab-out`
-/// passes it. Then every output the run writes carries each identifier
-/// byte for byte: the schematic and board (read back by the gates), the BOM,
-/// the placement file, each Gerber's net attributes, the drill file, the file
-/// names, the manifest, and the verdict. A character an output damages makes
+/// passes it. It is the ready fixture renamed (`AET-WO-4300k` (T), ruled
+/// 11:25Z: `--fab-out` refuses a specification that is not ready), so the
+/// reset supervisor's three parts are renamed too, each condition
+/// acknowledgement following its reference. Then every output the run
+/// writes carries each identifier byte for byte: the schematic and board
+/// (read back by the gates), the BOM, the placement file, each Gerber's net
+/// attributes, the drill file, the file names, the manifest, and the
+/// verdict. A character an output damages makes
 /// this test fail at that assertion, and is then added to the base set's
 /// refusals with the failing output named in the work order's FEEDBACK.
 ///
@@ -817,12 +824,16 @@ fn every_admitted_identifier_character_survives_every_output() {
     // its own part's outline (DRC `silk_overlap`, CI run 43510641685), so the
     // references are short. Their letters and digits are the nets' too; `_` is
     // the one character only a reference admits beyond them.
-    let refs: Vec<String> = ["Ua_9", "Vb_8", "Wc_7"].map(String::from).to_vec();
+    // The last three are the ready fixture's reset supervisor, its pull-up
+    // and its bypass capacitor.
+    let refs: Vec<String> = ["Ua_9", "Vb_8", "Wc_7", "Xd_6", "Ye_5", "Zf_4"]
+        .map(String::from)
+        .to_vec();
     let project = "abcdefghijklmnopqrstuvwxyz0123456789-x";
 
-    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(READY)).unwrap()).unwrap();
     for (from, to) in [
-        ("sentinel-01", project),
+        ("sentinel-01-ready", project),
         ("VDD_3V3", &domain),
         ("SENSORS", &sensors),
         ("FLASH", &flash),
@@ -839,8 +850,20 @@ fn every_admitted_identifier_character_survives_every_output() {
         ("U2", &refs[0]),
         ("U3", &refs[1]),
         ("U4", &refs[2]),
+        ("U12", &refs[3]),
+        ("R61", &refs[4]),
+        ("C62", &refs[5]),
     ] {
         rename_value(&mut spec, from, to);
+        // A condition acknowledgement names its reference after the kind.
+        for a in spec["acknowledge_conditions"].as_array_mut().unwrap() {
+            let id = a["id"].as_str().unwrap().to_owned();
+            if let Some((kind, reference)) = id.split_once(':')
+                && reference == from
+            {
+                a["id"] = format!("{kind}:{to}").into();
+            }
+        }
     }
     let base = std::env::temp_dir().join(format!("aet-1102-names-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);
