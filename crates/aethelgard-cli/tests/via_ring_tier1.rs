@@ -82,8 +82,11 @@ fn vias(board: &Path) -> BTreeMap<(String, String), usize> {
 }
 
 /// Sentinel-03 on rule-sized vias (ruling 6982875594 D3, the acceptance):
-/// every via at least the rule's pad for its drill (0.75 mm for 0.3, the
-/// thermal arrays' 0.7 mm for 0.254, raised with a note); the ladder's
+/// every via at least the rule's pad for its drill, at OSH Park's tolerances
+/// since `AET-WO-4300k` (b) (0.75 and 0.7 mm at JLCPCB's): drill + 64 um +
+/// twice the 51 um position's diagonal + twice the 102 um ring, rounded up
+/// to 10 um, so 0.72 mm for 0.3 and the thermal arrays' 0.67 mm for 0.254
+/// (raised with a note), and the classes that declare 0.75 mm keep it; the ladder's
 /// choice reported with its smallest margin; and `extract`, run on the
 /// emitted board on its own, passes every capacitance-bounded net and
 /// finds the same smallest margin: the ladder chose, `extract` judges.
@@ -96,7 +99,8 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     assert_eq!(
         sizes.keys().cloned().collect::<Vec<_>>(),
         [
-            ("0.7".to_string(), "0.254".to_string()),
+            ("0.67".to_string(), "0.254".to_string()),
+            ("0.72".to_string(), "0.3".to_string()),
             ("0.75".to_string(), "0.3".to_string())
         ],
         "{sizes:?}"
@@ -110,12 +114,16 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     assert!(
         notes
             .iter()
-            .any(|n| n.contains("thermal vias raised from 0.554 to 0.7 mm")),
+            .any(|n| n.contains("thermal vias raised from 0.554 to 0.67 mm")),
         "{notes:?}"
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden, measured at `AET-WO-4410` S2 (the sense on PC0,
+    // the fixture's golden, measured at `AET-WO-4300k` (OSH Park's
+    // tolerances, the crystal, protection, supervisor and second input
+    // ceramics drawn, J4 turned, the GND pours; the board re-placed): rung 3,
+    // a bounded via cost of 320, bounded nets not first, nearest at
+    // SPI_MOSI, 23 454 fF of 30 000. At `AET-WO-4410` S2 (the sense on PC0,
     // ADC1 first; the board re-placed): rung 2, a bounded via cost of 96,
     // bounded nets not first, nearest at IMU_MOSI, 27 152 fF of 30 000. At
     // `AET-WO-4300j` (the links R56-R59 drawn, the board re-placed): rung 3,
@@ -127,11 +135,11 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     // via cost of 320, nearest at EXT_SDA, 75 697 fF. At `AET-WO-1315` it
     // was rung 5 (cost 48), nearest at I2C_SCL, 74 937 fF; at `AET-WO-1314` rung 7,
     // nearest at IMU_SCK, 24 945 fF of 30 000.
-    assert_eq!(ladder["rung"], 2, "{ladder}");
-    assert_eq!(ladder["bounded_via_cost"], 96, "{ladder}");
+    assert_eq!(ladder["rung"], 3, "{ladder}");
+    assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
     assert_eq!(ladder["bounded_first"], false, "{ladder}");
-    assert_eq!(margin["net"], "IMU_MOSI", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 27_152, "{ladder}");
+    assert_eq!(margin["net"], "SPI_MOSI", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 23_454, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");
@@ -186,7 +194,7 @@ fn a_class_via_under_the_ring_is_refused_by_name() {
         r["error"]["message"]
             .as_str()
             .unwrap()
-            .contains("declares a 0.7 mm via pad; the declared ring needs 0.75 mm"),
+            .contains("declares a 0.7 mm via pad; the declared ring needs 0.72 mm"),
         "{r}"
     );
 }

@@ -209,14 +209,19 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
 }
 
 /// A specification with no drop limit is not judged: no `supplies` key,
-/// so its verdict's bytes are as before.
+/// so its verdict's bytes are as before. Since `AET-WO-4300k` (2) a power
+/// tree requires its MCU supply's limit, so that is a board with no tree
+/// (sentinel-01-minimal), and Sentinel-03 without its limit is refused by
+/// name before any line is judged.
 #[test]
 fn a_specification_without_a_drop_limit_has_no_supplies() {
-    let (code, v) = extract(s03_board(), &root().join(S03));
+    let spec = root().join("examples/sentinel-01-minimal.json");
+    let board = emitted("s01-nolimit", &spec);
+    let (code, v) = extract(&board, &spec);
     assert_eq!(code, 0, "{v}");
     assert!(v.get("supplies").is_none(), "{v}");
     // ...and the table says so, by the key that would turn it on
-    // (`AET-WO-1609` §2): Sentinel-03 declares a power tree, not a limit.
+    // (`AET-WO-1609` §2).
     assert_eq!(
         part(&v, "extract.supply"),
         &json!({"gate": "extract.supply", "off": "power.drop_limits"})
@@ -225,6 +230,12 @@ fn a_specification_without_a_drop_limit_has_no_supplies() {
     assert_eq!(part(&v, "extract.lines")["judged"], lines, "{v}");
     assert_eq!(part(&v, "extract.pairs")["off"], "diff_pairs");
     assert_eq!(part(&v, "extract.oscillator")["off"], "mcu.hse.crystal");
+    let mut s = s03();
+    s["power"]["drop_limits"] = json!([]);
+    let (code, r) = extract(s03_board(), &write("s03-nolimit", &s));
+    assert_eq!(code, 2, "{r}");
+    assert_eq!(r["error"]["kind"], "DropLimitUndeclared", "{r}");
+    assert_eq!(r["error"]["id"], "VDD_3V3", "{r}");
 }
 
 /// Every input the gate reads is refused by name when the specification
@@ -345,11 +356,12 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
         .map(|c| c.as_str().unwrap())
         .collect();
     // each fabricator's tolerance priced, from its declared source, and the
-    // pads' drawn size named
+    // pads' drawn size named: Sentinel-03's stackup, OSH Park's since
+    // `AET-WO-4300k` (b), its track-width tolerance a declared condition
     for named in [
-        "+-0.075 mm per axis of its pad (JLCPCB",
-        "from 0.08 mm under to 0.13 mm over its drawn size (JLCPCB",
-        "every track at 0.8 of its drawn width (JLCPCB",
+        "+-0.051 mm per axis of its pad (OSH Park",
+        "from 0.064 mm under to 0.064 mm over its drawn size (OSH Park",
+        "every track at 0.8 of its drawn width (a declared condition: OSH Park publishes no track-width tolerance",
         "pads and via pads at their drawn size",
     ] {
         assert!(
@@ -383,9 +395,10 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 }
 
 /// A ring under the gate's own need: at a declared ring of 0, Sentinel-03's
-/// GND vias are 0.65 mm, which keep the hole in the pad but not the band
-/// the gate prices, so every return is refused by name with the pad that
-/// would hold it, 0.7 mm (rulings 6974760231 (1), 6982875594 D5). A class
+/// GND vias keep the hole in the pad but not the band the gate prices, so
+/// every return is refused by name with the pad that would hold it (rulings
+/// 6974760231 (1), 6982875594 D5): 0.57 mm at OSH Park's tolerances since
+/// `AET-WO-4300k` (b) (0.7 mm at JLCPCB's). A class
 /// declaring a via under the ring rule is refused at `emit` instead
 /// (`ViaRingUnheld`, `via_ring_tier1`).
 #[test]
@@ -405,7 +418,7 @@ fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
             p["refused"]["message"]
                 .as_str()
                 .unwrap()
-                .contains("via pad >= 0.7 mm"),
+                .contains("via pad >= 0.57 mm"),
             "{p}"
         );
     }
@@ -516,19 +529,30 @@ fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
 
 /// `AET-WO-4410` Q12 (ruled 2026-11-24), the evidence of a row for the next
 /// router work order: with the sense on PC0 (S2's ADC1-first rule), the
-/// two-layer power fixture's router draws two vias whose junction regions
-/// meet, and `extract` refuses the board by name, where it reported the
-/// ground return on the PF3 layout. When the router is fixed this test
-/// changes with it; it may not silently disappear.
+/// two-layer power fixture's router drew two vias whose junction regions
+/// met, and `extract` refused the board by name (`ViaRegionsOverlap`).
+/// Since `AET-WO-4300k` (a) the board carries a GND pour on F.Cu, the
+/// router's paths move, and the two vias no longer meet: the gate now runs
+/// and reports what it reported on the PF3 layout, the ground return through
+/// a GND zone the emitted board leaves unfilled (`GroundReturnUnread`), and
+/// a supply pin it cannot join. `ViaRegionsOverlap` has no witness
+/// on a committed fixture since: a via planted on this board either keeps
+/// its region apart (0.55 mm and more from its neighbour) or is refused for
+/// clearance first (`AET-WO-4300k` FEEDBACK row, for the router work order).
 #[test]
 fn the_two_layer_power_fixture_on_the_pc0_sense_meets_overlapping_vias() {
     let spec = write("s02-pc0", &gated(common::power::power_tree(), 165));
     let board = emitted("s02-pc0", &spec);
     let (code, v) = extract(&board, &spec);
-    assert_eq!(code, 2, "{v}");
-    assert_eq!(v["error"]["kind"], "ViaRegionsOverlap", "{v}");
-    assert_eq!(
-        v["error"]["message"], "the via at (93250000, 87125000)'s junction region meets another's",
+    assert_eq!(code, 1, "{v}");
+    let s = &v["supplies"][0];
+    assert_eq!(s["verdict"], "fail", "{s}");
+    let findings = v["findings"].as_array().unwrap();
+    assert!(
+        findings.iter().any(|f| f["message"]
+            .as_str()
+            .unwrap()
+            .contains("GroundReturnUnread: U1.16's return runs through a GND zone the emitted board leaves unfilled")),
         "{v}"
     );
 }

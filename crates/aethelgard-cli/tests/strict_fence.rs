@@ -163,8 +163,11 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-cli/src/mcp.rs", Role::Other),
     ("aethelgard-cli/src/pinout.rs", Role::Other),
     ("aethelgard-cli/src/pinwitness.rs", Role::Other),
-    ("aethelgard-cli/src/readiness.rs", Role::Other),
     ("aethelgard-cli/src/propose.rs", Role::Other),
+    ("aethelgard-cli/src/readiness.rs", Role::Other),
+    // `AET-WO-4300k` (R): reads a committed package's files as bytes and
+    // its MANIFEST as JSON; no KiCad file.
+    ("aethelgard-cli/src/rebind.rs", Role::Other),
     ("aethelgard-cli/src/renode.rs", Role::Other),
     ("aethelgard-cli/src/renode/foreign.rs", Role::Other),
     ("aethelgard-cli/src/run.rs", Role::Other),
