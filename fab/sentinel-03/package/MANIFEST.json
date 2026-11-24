@@ -1,0 +1,93 @@
+{
+  "project": "sentinel-03",
+  "specification_sha256": "f6d409a3e41963434eb0b1c24246c6615181b3c2c87b46e54dfbc3f5f7a7abd4",
+  "topology_sha256": "0929f7abf853a75f689d00636c1bbf02643d93e811978bf6aad25e9187d1361a",
+  "scenarios": [
+    {
+      "scenario": "baseline",
+      "sha256": "5d89a3dca0ebc86e03a2d144d2d8a1dbf2eb5cddf95af7282f3f983e8d6d7972"
+    },
+    {
+      "scenario": "battery-sag-tolerated",
+      "sha256": "ef9bd85b67ae626d028db2a1daa71b01341733428f1fa474896b9538041be14c"
+    },
+    {
+      "scenario": "droop-bor3",
+      "sha256": "f7071ac4a89d6a24cd637578f576e3699d63bf582ecf1c7057a321376a6fa404"
+    },
+    {
+      "scenario": "droop-tolerated",
+      "sha256": "20d9d42f4c617839a68d209db42c19218ad32e45327166f67b135aba9e52d6c5"
+    },
+    {
+      "scenario": "held-low-sda",
+      "sha256": "bcafb0cf3955e0d99e64acd30c4961947d9901eb8c5b8c43b444caaa823b162b"
+    },
+    {
+      "scenario": "serial-rx-open-console",
+      "sha256": "494a11d80d5b7e0174f0fe128d247a8a76c49e70cb59e941651fd841fc71d73d"
+    },
+    {
+      "scenario": "serial-rx-open-crsf",
+      "sha256": "d6c842996b064fc884fe75f3832ff299496eb0b0b59e589c626b0ad87a8ef4d4"
+    },
+    {
+      "scenario": "serial-rx-open-mavlink",
+      "sha256": "2c2473e3966ac470f3ac1dec0b0a466fe4b1e042b3d97d036fd14367d604e66d"
+    },
+    {
+      "scenario": "spi-absent-u4",
+      "sha256": "7bd57c8c283f09716666e263b738da4d71d5fb2d05619a4a04c86c6ed639b3c5"
+    },
+    {
+      "scenario": "spi-absent-u5",
+      "sha256": "3e058b06802a2cb7b4c91ea74dfd61ea6856b36d8e581e67dc6b52ce97b374bb"
+    },
+    {
+      "scenario": "vdd5v-out-of-band",
+      "sha256": "0c59e1d045caf6847c1742a6df8bc8767f6ab568000e97021e42d9d65cf1e6b6"
+    }
+  ],
+  "preconditions": [
+    {
+      "precondition": "every_harness_proved",
+      "state": "met"
+    },
+    {
+      "precondition": "campaign_faults_every_bus_and_rail",
+      "state": "met",
+      "no_device": [
+        "I2C bus `EXT` (no device: nothing to fault)"
+      ]
+    },
+    {
+      "precondition": "mcu_support_network_judged",
+      "state": "met"
+    },
+    {
+      "precondition": "every_gate_passed",
+      "state": "met"
+    }
+  ],
+  "verdict_sha256": "429c62c903bbc0f6c9aac925752eee115d99218fa05e3da3babcd7c94bc58f7e",
+  "files": {
+    "FAB-NOTES.md": "b6d83074b8c591a97f4bfd20cfd5864f8806da42311db99dbc2f8ad271587fc4",
+    "sentinel-03-B_Cu.gbl": "c2a9e38e3e811ec731f7e7b44da20fd6e511351a4bd2ee96353317ab5fb61020",
+    "sentinel-03-B_Mask.gbs": "f77c81b76cb39c8ffd1ba45d40744fab9b19c46c3796827023492410af31d290",
+    "sentinel-03-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",
+    "sentinel-03-B_Silkscreen.gbo": "c33d6c7655263578ed865ab787c5ff4d141f3a821500e9293b7492099005c09e",
+    "sentinel-03-Edge_Cuts.gm1": "0371aa008205427b03d0de8ecff0e045ae6a0d58ce9f8d5853913d91fb8dc68a",
+    "sentinel-03-F_Cu.gtl": "6ff696ada5694546251629ba4f7f14799919cda34cd53814ba2d80b22074c668",
+    "sentinel-03-F_Mask.gts": "292669fc246da481a4123bbe170c81652a8ad85afd35ef201330fef58ceab251",
+    "sentinel-03-F_Paste.gtp": "f23396cfed90d3bd65f916865ae2fed1eda8f5ad012e1960bfcaacae07a93505",
+    "sentinel-03-F_Silkscreen.gto": "54e310822e696ebca726b7ae1c5f48899721682ea9ffa5e85dbf70b9128eed7e",
+    "sentinel-03-In1_Cu.g1": "375ee00b620cfb4fb9ca5e3ab5cdde9d419459a75fc7197f5ab5c10f545d7b49",
+    "sentinel-03-In2_Cu.g2": "23698de0392c0b0f32631f16837abf71eeb0230997480ee3942976aa9a0b9628",
+    "sentinel-03-jlcpcb-bom.csv": "8bae8bc93bddd204ad3c3617c6c11da9ee99415bceb5d7c5fc06953d9d56219f",
+    "sentinel-03-jlcpcb-cpl.csv": "69a89a05c4d76f7cab3988034361e8d3af5f381520e5055fa22049e8b180b677",
+    "sentinel-03-pos.csv": "31fdd2da328fbbcfe4ce2d57a30516b688e9cea3ae1fc4bd2c643d286e5e3417",
+    "sentinel-03.bom.csv": "359d9146ebe6a7e3849164ece5b343683915d8d99910f72d8d0b202afdd0c113",
+    "sentinel-03.drl": "5c0e023ece1bd86b31ed8427719e8669e65bf9c806a70fcc71d0f65e619c81b2",
+    "sentinel-03.elf": "6e4a81f299a84c37af4491d8d85d2befddeaab54cbd6787109c4f570fc0ca908"
+  }
+}

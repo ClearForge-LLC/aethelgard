@@ -238,6 +238,16 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
   - `against_fab_tier2` passed 3/3, the re-bind test included (1036 s). `four_layer_fab_tier2` passed 2/2 (453 s).
   - `verify_47k_tier2` passed 2/2, `verify_2k2_tier2` 2/2 and `board_tier2`'s identifier test 1/1, run by the tier-2 worker.
 - **CI (8), ruled 16:50Z (a):** Sentinel-03's package runs in its own job, `bench-package-s03` (90 min), counted by the required `tools` check. A skipped, cancelled, failed or missing run on a code pull request is red. `fab_tier1::the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job` runs the check's own text from `ci.yml` with each planted result; a mutant that drops the check fails it. `ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path` pins the job's two commands.
+- **The packages are the write dispatch's** (run 45452289688 on 87b613f6, 2026-11-24), committed byte for byte from its two artifacts.
+  - `bench-package` holds Sentinel-01 re-bound. Only MANIFEST's specification, topology and verdict hashes and FAB-NOTES' hash moved, plus FAB-NOTES' specification line; `ORDERED.sha256` checks.
+  - `sentinel-03-package` is Sentinel-03's first package. Its ELF is sha256 `6e4a81f2…`, the one my image build produced and `BENCH.md` binds.
+  - **`bench-package-s03`'s `--fab-out` took 51 min in CI** (90-min limit). Sentinel-01's re-bind took 5.3 min on the earlier run.
+  - That run's other reds were 5 tier-2 or environment tests I had not run locally. Each was re-derived or re-pinned (the commit after 87b613f6) and run in the image as root:
+    - the sag's static point, 8,087,826 µV, from the supervisor's +7 mW;
+    - the deck's off case;
+    - the power fixture's 20 loops and its supply gate;
+    - `battery_sag_tier1` by uid;
+    - `campaign_tier2`'s d1. CI killed its boot at the 30 s wall bound; it passed twice in the image at about 17 s. This is a row: the bound is tight on a loaded runner.
 - **Package:** the bootstrap is accepted (12:45Z). `fab/sentinel-03/package` and Sentinel-01's re-bound MANIFEST and FAB-NOTES come from the architect's write dispatch on the final head, committed unchanged. Until then `bench-package` refuses `--against-fab` on Sentinel-03, and `bench_board_tier1` fails on the specification hash.
 
 ## 8. Appendix: Sentinel-03's acknowledgements (D10)
