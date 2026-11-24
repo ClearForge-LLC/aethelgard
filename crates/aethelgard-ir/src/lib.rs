@@ -3935,8 +3935,7 @@ impl Specification {
                 .map(|d| d.reference.as_str())
                 .chain(self.spi_devices.iter().map(|d| d.reference.as_str()))
                 .chain(self.connectors.iter().map(|c| c.reference.as_str()))
-                .chain(pin_devices::references(self))
-                .chain(radio::references(self)),
+                .chain(pin_devices::references(self)),
         )?;
         // 9
         for device in &self.i2c_devices {
