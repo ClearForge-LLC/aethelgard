@@ -992,6 +992,20 @@ enum Read {
     Dr(usize),
 }
 
+/// What an I2C device logged that its steps' witnesses do not show, once
+/// each line is placed by what it says (`AET-WO-3309` (3)).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Unplaced {
+    /// The lines that no step of its script is, in order.
+    pub lines: Vec<String>,
+    /// Its placed transactions were logged out of its script's order, which
+    /// the count rule failed and placement alone would not.
+    pub out_of_order: bool,
+    /// No reader knows its model's line form, so none of its lines is placed
+    /// (`INV-06`).
+    pub unread: bool,
+}
+
 /// A boot's findings, the listing, and what the reads gave.
 pub type Judged = (Vec<Finding>, Option<Machine>, Option<Observed>);
 
@@ -1049,6 +1063,11 @@ pub struct Observed {
     /// attribution's evidence, never a witness (`AET-WO-4200` D4). Empty for
     /// an I2C check.
     pub unrouted: Vec<Vec<String>>,
+    /// For each I2C device, on its first step check, what its steps'
+    /// witnesses do not show ([`attribute`], `AET-WO-3309` (3)): named in a
+    /// finding ([`witness_findings`]), and not archived (carrier B, ruled).
+    /// Default for every other check.
+    pub unplaced: Vec<Unplaced>,
     /// For each unmodelled device (`IdentityPlan::unmodelled`), what its
     /// identity read left (`AET-WO-4241`); default for one the firmware does
     /// not read.
@@ -1233,16 +1252,21 @@ fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(
     lines
 }
 
-/// Each check's observed lines and, on SPI, the multiplexer lines of its
-/// window (`AET-WO-4210` S2, D4, D5). A device's lines are its witness-shaped
+/// Each check's observed lines, on SPI the multiplexer lines of its window
+/// (`AET-WO-4210` S2, D4, D5), and on I2C its device's lines that no step is
+/// (on the device's first step). A device's lines are its witness-shaped
 /// lines ([`device_line`]), but for its model's edge artefact directly after
 /// the multiplexer's finish line for it (D4), which is skipped. They go to
 /// its steps:
 /// - on SPI by chip-select window: the device's `k`-th window is its `k`-th
 ///   step's, a line in a later window or in none its last step's;
-/// - on I2C in order, each step taking as many lines as it expects and the
-///   last step the rest; an `[ERROR]` line is counted toward none, and goes
-///   to the step under way, the last whose first line came before it (D-A1).
+/// - on I2C by what each says (`AET-WO-3309` (3), ruled R3): read as the
+///   transactions of its model's form, each goes to the step whose
+///   transaction it is ([`aethelgard_evolve::lines::place`]). A line that is
+///   no step's (a model's warning, a transaction no step is, any line of a
+///   form no reader knows, `INV-06`) is unplaced, never another step's, and
+///   is quoted in a finding ([`witness_findings`]). An `[ERROR]` line goes to
+///   the step under way, the last whose first line came before it (D-A1).
 ///
 /// A line attributed to the wrong step only ever differs from what that step
 /// expects: attribution never passes a witness.
@@ -1254,9 +1278,10 @@ fn attribute<'a>(
     checks: &'a [aethelgard_twin::boot::StepCheck],
     others: &[(&'a str, u8)],
     log: &[&str],
-) -> (Vec<Vec<String>>, Vec<Vec<String>>) {
+) -> (Vec<Vec<String>>, Vec<Vec<String>>, Vec<Unplaced>) {
     let mut seen = vec![Vec::new(); checks.len()];
     let mut unrouted = vec![Vec::new(); checks.len()];
+    let mut unplaced = vec![Unplaced::default(); checks.len()];
     // Each device's steps, in its script's order: not consecutive, since
     // every data read follows every other device's identity and
     // configuration (`AET-WO-4230` R6).
@@ -1334,30 +1359,40 @@ fn attribute<'a>(
                 let (errors, lines): (Vec<_>, Vec<_>) = lines
                     .into_iter()
                     .partition(|(_, b)| b.starts_with(LOG_ERROR));
-                let mut at = 0;
-                let mut begun = Vec::new();
-                for &k in g {
-                    let n = if k == last {
-                        lines.len().saturating_sub(at)
-                    } else {
-                        checks[k].witness.as_ref().map_or(0, Vec::len)
-                    };
-                    let end = (at + n).min(lines.len());
-                    if let Some(&(i, _)) = lines.get(at).filter(|_| at < end) {
-                        begun.push((i, k));
+                let script: Vec<&str> = g
+                    .iter()
+                    .flat_map(|&k| checks[k].witness.iter().flatten())
+                    .map(String::as_str)
+                    .collect();
+                let bodies: Vec<&str> = lines.iter().map(|&(_, b)| b).collect();
+                let form = aethelgard_evolve::lines::form(&script, &c.device);
+                unplaced[g[0]].unread = form.is_none();
+                let steps: Vec<(&[u8], u8)> = g
+                    .iter()
+                    .map(|&k| (checks[k].write.as_slice(), checks[k].width))
+                    .collect();
+                let owner = form.map_or(vec![None; bodies.len()], |form| {
+                    aethelgard_evolve::lines::place(&steps, &bodies, &c.device, form)
+                });
+                // Each step's first line, for the `[ERROR]` lines (D-A1).
+                let mut begun: Vec<Option<usize>> = vec![None; g.len()];
+                let mut reached = 0;
+                for (&(i, body), s) in lines.iter().zip(owner) {
+                    match s {
+                        Some(s) => {
+                            begun[s].get_or_insert(i);
+                            seen[g[s]].push(body.to_owned());
+                            unplaced[g[0]].out_of_order |= s < reached;
+                            reached = reached.max(s);
+                        }
+                        None => unplaced[g[0]].lines.push(body.to_owned()),
                     }
-                    seen[k] = lines[at..end]
-                        .iter()
-                        .map(|(_, b)| (*b).to_owned())
-                        .collect();
-                    at = end;
                 }
                 for (i, body) in errors {
-                    let k = begun
-                        .iter()
-                        .rev()
-                        .find(|&&(b, _)| b < i)
-                        .map_or(g[0], |&(_, k)| k);
+                    let k = (0..g.len())
+                        .filter(|&s| begun[s].is_some_and(|b| b < i))
+                        .max_by_key(|&s| begun[s])
+                        .map_or(g[0], |s| g[s]);
                     seen[k].push(body.to_owned());
                 }
             }
@@ -1384,7 +1419,7 @@ fn attribute<'a>(
             }
         }
     }
-    (seen, unrouted)
+    (seen, unrouted, unplaced)
 }
 
 /// One motor output as a boot judges it (`AET-WO-4300a` §1.4): the twin's
@@ -2597,7 +2632,7 @@ pub fn judge_boot(
         })
         .collect();
     let others: Vec<(&str, usize)> = i2c_others.iter().map(|&(_, o)| o).collect();
-    let (seen, unrouted) = attribute(checks, &spi_others, &last_boot);
+    let (seen, unrouted, unplaced) = attribute(checks, &spi_others, &last_boot);
     let (absent, absent_others) = hooks.as_deref().map_or_else(
         || {
             (
@@ -2636,6 +2671,7 @@ pub fn judge_boot(
         witnesses,
         absent,
         unrouted,
+        unplaced,
         unmodelled,
         serial: Vec::new(),
         // Past the filter's budget an edge may have been dropped, so no
@@ -4001,12 +4037,25 @@ fn capture_findings(plan: &BootPlan<'_>, capture: &Captured) -> Vec<Finding> {
 /// record that says a wait expired claims nothing. Whatever its record says,
 /// a step in which the device logged an `[ERROR]` fails by name, beside the
 /// run's `renode_error_log` (`AET-WO-4210` D-A1, ruled).
+///
+/// An I2C device's lines that no step is, or its steps' transactions logged
+/// out of its script's order ([`Observed::unplaced`], `AET-WO-3309` (3)), are
+/// named in its first failing finding; with none, and a record of the
+/// device's that claims its step completed, in one more
+/// `i2c_transaction_unwitnessed` of its own (D3, ruled: never a new kind, and
+/// never more than one), so the boot never passes what the count rule failed.
 fn witness_findings(
     checks: &[aethelgard_twin::boot::StepCheck],
     observed: &Observed,
 ) -> Vec<Finding> {
     let mut out = Vec::new();
+    // Each device's first failing finding, by its position in `out`.
+    let mut failing: Vec<(&str, usize)> = Vec::new();
     for (i, c) in checks.iter().enumerate() {
+        if failing.iter().all(|(r, _)| *r != c.reference) {
+            failing.push((&c.reference, usize::MAX));
+        }
+        let before = out.len();
         let seen = observed.witnesses[i].as_deref();
         if let Some(e) = seen.and_then(|s| s.iter().find(|l| l.starts_with(LOG_ERROR))) {
             out.push(Finding::plain(
@@ -4020,6 +4069,54 @@ fn witness_findings(
             ));
         } else if observed.records[i].0 == aethelgard_twin::boot::STATUS_OK {
             out.extend(witness_finding(c, seen));
+        }
+        if out.len() > before
+            && let Some(f) = failing.iter_mut().find(|(r, _)| *r == c.reference)
+        {
+            f.1 = f.1.min(before);
+        }
+    }
+    for (i, c) in checks.iter().enumerate() {
+        let Some(u) = observed.unplaced.get(i) else {
+            continue;
+        };
+        if u.lines.is_empty() && !u.out_of_order {
+            continue;
+        }
+        let mut said = Vec::new();
+        if !u.lines.is_empty() {
+            said.push(format!(
+                "Renode logged {:?} for `{}`, which no step of its script is{}",
+                u.lines,
+                c.device,
+                if u.unread {
+                    ": no reader knows its model's line form (INV-06), so none of its lines is placed"
+                } else {
+                    ""
+                }
+            ));
+        }
+        if u.out_of_order {
+            said.push(format!(
+                "`{}`'s transactions were logged out of its script's order",
+                c.device
+            ));
+        }
+        let quoted = said.join("; ");
+        let first = failing
+            .iter()
+            .find(|(r, _)| *r == c.reference)
+            .map_or(usize::MAX, |f| f.1);
+        if let Some(f) = out.get_mut(first) {
+            f.message = format!("{}; {quoted}", f.message);
+        } else if let Some(k) = (0..checks.len()).find(|&k| {
+            checks[k].reference == c.reference
+                && observed.records[k].0 == aethelgard_twin::boot::STATUS_OK
+        }) {
+            out.push(Finding::plain(
+                &format!("{}_transaction_unwitnessed", bus_word(c)),
+                format!("{}, its {} step: {quoted}", who(c), checks[k].label),
+            ));
         }
     }
     out
@@ -7510,6 +7607,65 @@ mod tests {
         }
     }
 
+    /// A BMP581 at 0x47 on I2C1 (`i2c1.u7`): its three steps as the parts
+    /// table scripts them, each witnessed by its one line ([`ID`], [`CFG`],
+    /// [`DATA`]).
+    fn bmp581_steps() -> [aethelgard_twin::boot::StepCheck; 3] {
+        use aethelgard_ir::parts::StepKind::{Configure, Data, Identity};
+        let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x47 };
+        let d = "i2c1.u7";
+        let at = |kind, line, write: &[u8], width| aethelgard_twin::boot::StepCheck {
+            write: write.to_vec(),
+            width,
+            ..step(i2c(), d, kind, &[line])
+        };
+        [
+            at(Identity, ID, &[0x01], 1),
+            at(Configure, CFG, &[0x36, 0x40, 0x81], 0),
+            at(Data, DATA, &[0x1D], 6),
+        ]
+    }
+
+    /// `lines` as Renode logs them, each with a host timestamp.
+    fn stamp(lines: &[&str]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|b| format!("[00:00:00.010040000] {b}"))
+            .collect()
+    }
+
+    /// `checks`' lines and unplaced lines over `lines` ([`stamp`]).
+    fn placed(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        lines: &[&str],
+    ) -> (Vec<Vec<String>>, Vec<Unplaced>) {
+        let log = stamp(lines);
+        let (seen, _, unplaced) = attribute(
+            checks,
+            &[],
+            &log.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        (seen, unplaced)
+    }
+
+    /// [`step_findings_with`] over `lines` ([`stamp`]).
+    fn judged(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        lines: &[&str],
+        records: Vec<(u32, u64)>,
+    ) -> Vec<Finding> {
+        let log = stamp(lines);
+        step_findings_with(
+            checks,
+            &log.iter().map(String::as_str).collect::<Vec<_>>(),
+            records,
+        )
+    }
+
+    const ID: &str = "[NOISY] i2c1.u7: read 0x01 -> 0x50";
+    const CFG: &str = "[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81";
+    const DATA: &str = "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
+
     /// An unmodelled TMP117 at 0x48 on I2C1, or behind PA0 on SPI1, with its
     /// identity record (`AET-WO-4241`).
     fn tmp117(spi: bool) -> aethelgard_twin::boot::Unmodelled {
@@ -7696,11 +7852,11 @@ mod tests {
             "[00:00:00.000100000] [WARNING] spi1.spi1mux: Tried to transmit byte 0x9F to device 0x1, but it's not connected - ignoring transfer and returning a dummy byte",
             "[00:00:00.000100000] [NOISY] spi1.spi1mux: GPIO #1 set to True",
         ];
-        let (_, unrouted) = attribute(&checks, &[("spi1.spi1mux", 1)], &log);
+        let (_, unrouted, _) = attribute(&checks, &[("spi1.spi1mux", 1)], &log);
         assert_eq!(unrouted, [Vec::<String>::new()]);
         // Without the unmodelled device's window it was the controller's,
         // and U4's identity step took it.
-        let (_, unrouted) = attribute(&checks, &[], &log);
+        let (_, unrouted, _) = attribute(&checks, &[], &log);
         assert_eq!(unrouted[0].len(), 1);
     }
 
@@ -7892,7 +8048,18 @@ mod tests {
 
     /// The findings of `checks` against `log`, every record `ok`.
     fn step_findings(checks: &[aethelgard_twin::boot::StepCheck], log: &[&str]) -> Vec<Finding> {
-        let (seen, unrouted) = attribute(checks, &[], log);
+        let ok = vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()];
+        step_findings_with(checks, log, ok)
+    }
+
+    /// The findings of `checks` against `log`, with each record's status
+    /// word and value.
+    fn step_findings_with(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        log: &[&str],
+        records: Vec<(u32, u64)>,
+    ) -> Vec<Finding> {
+        let (seen, unrouted, unplaced) = attribute(checks, &[], log);
         let observed = Observed {
             boot_word: 0,
             instructions: 0,
@@ -7905,12 +8072,13 @@ mod tests {
             clock_access: None,
             loops: Vec::new(),
             registers: Vec::new(),
-            records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
+            records,
             witnesses: seen.into_iter().map(Some).collect(),
             absent: vec![Vec::new(); checks.len()],
             motors: Vec::new(),
             serial: Vec::new(),
             unrouted,
+            unplaced,
             unmodelled: Vec::new(),
             boot_word_ns: None,
             register_expected: Vec::new(),
@@ -7986,52 +8154,17 @@ mod tests {
     /// falls in its chip-select window.
     #[test]
     fn a_device_s_error_inside_a_step_fails_that_step_by_name() {
-        use aethelgard_ir::parts::StepKind::{Configure, Data, Identity};
+        use aethelgard_ir::parts::StepKind::{Configure, Identity};
         let at = |b: &str| format!("[00:00:00.010040000] {b}");
-        let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x63 };
-        let d = "i2c1.u7";
-        let checks = [
-            step(i2c(), d, Identity, &["[NOISY] i2c1.u7: id"]),
-            step(i2c(), d, Configure, &["[NOISY] i2c1.u7: cfg"]),
-            step(i2c(), d, Data, &["[NOISY] i2c1.u7: data"]),
-        ];
+        // Lines in our BMP581's form (`AET-WO-3309`: a line in no reader's
+        // form is placed in no step).
+        let checks = bmp581_steps();
         let error = "[ERROR] i2c1.u7: Unknown command 0x80";
         for (log, named) in [
-            (
-                vec![
-                    "[NOISY] i2c1.u7: id",
-                    "[NOISY] i2c1.u7: cfg",
-                    "[NOISY] i2c1.u7: data",
-                ],
-                None,
-            ),
-            (
-                vec![
-                    "[NOISY] i2c1.u7: id",
-                    "[NOISY] i2c1.u7: cfg",
-                    error,
-                    "[NOISY] i2c1.u7: data",
-                ],
-                Some("configure"),
-            ),
-            (
-                vec![
-                    "[NOISY] i2c1.u7: id",
-                    "[NOISY] i2c1.u7: cfg",
-                    "[NOISY] i2c1.u7: data",
-                    error,
-                ],
-                Some("data"),
-            ),
-            (
-                vec![
-                    error,
-                    "[NOISY] i2c1.u7: id",
-                    "[NOISY] i2c1.u7: cfg",
-                    "[NOISY] i2c1.u7: data",
-                ],
-                Some("identity"),
-            ),
+            (vec![ID, CFG, DATA], None),
+            (vec![ID, CFG, error, DATA], Some("configure")),
+            (vec![ID, CFG, DATA, error], Some("data")),
+            (vec![error, ID, CFG, DATA], Some("identity")),
         ] {
             let log: Vec<String> = log.into_iter().map(at).collect();
             let log: Vec<&str> = log.iter().map(String::as_str).collect();
@@ -8043,7 +8176,7 @@ mod tests {
                     assert_eq!(kinds, ["i2c_step_error"], "{log:?}");
                     let m = &f[0].message;
                     assert!(
-                        m.contains(&format!("U7 at I2C address 0x63, its {name} step")),
+                        m.contains(&format!("U7 at I2C address 0x47, its {name} step")),
                         "{m}"
                     );
                     assert!(m.ends_with(error), "{m}");
@@ -8086,5 +8219,181 @@ mod tests {
             "{}",
             f[0].message
         );
+    }
+
+    /// `AET-WO-3309` (3), ruled R3: each I2C line goes to the step whose
+    /// transaction it is, by its pointer and direction, then to the first
+    /// free step of its direction; a line no step is goes to none.
+    #[test]
+    fn an_i2c_line_goes_to_the_step_whose_transaction_it_is() {
+        let checks = bmp581_steps();
+        let place = |log: &[&str]| {
+            let (seen, unplaced) = placed(&checks, log);
+            (seen, unplaced[0].clone())
+        };
+        let warn = "[WARNING] i2c1.u7: write to read-only register 0x38 ignored";
+        let cfg37 = "[NOISY] i2c1.u7: write 0x37 <- 0x40 0x81";
+        // ext-cfg37 (3307 F2, measured): the warning took configure's line
+        // slot, so the wrong write fell in the data step. Now the wrong write
+        // is configure's, the device's one write step, and the warning none.
+        let (seen, u) = place(&[ID, warn, cfg37, DATA]);
+        assert_eq!(seen, [vec![ID], vec![cfg37], vec![DATA]]);
+        assert_eq!(u.lines, [warn]);
+        assert!(!u.out_of_order);
+        // A read of another register goes to the first read step that holds
+        // none: identity, whose own line never came.
+        let other = "[NOISY] i2c1.u7: read 0x02 -> 0x50";
+        let (seen, u) = place(&[other, CFG, DATA]);
+        assert_eq!(seen, [vec![other], vec![CFG], vec![DATA]]);
+        assert!(u.lines.is_empty());
+        // A repeated transaction joins its step's: configure fails alone.
+        let (seen, _) = place(&[ID, CFG, CFG, DATA]);
+        assert_eq!(seen, [vec![ID], vec![CFG, CFG], vec![DATA]]);
+        // A read with no free step of its direction is no step's.
+        let (seen, u) = place(&[ID, CFG, DATA, other]);
+        assert_eq!(seen, [vec![ID], vec![CFG], vec![DATA]]);
+        assert_eq!(u.lines, [other]);
+        // Two steps on one register: the k-th such transaction to the k-th
+        // step, a lone one to the first.
+        use aethelgard_ir::parts::StepKind::{Data, Identity};
+        let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x47 };
+        let (a, b) = (
+            "[NOISY] i2c1.u7: read 0x00 -> 0x11",
+            "[NOISY] i2c1.u7: read 0x00 -> 0x22",
+        );
+        let twin = [
+            step(i2c(), "i2c1.u7", Identity, &[a]),
+            step(i2c(), "i2c1.u7", Data, &[b]),
+        ];
+        assert_eq!(placed(&twin, &[a, b]).0, [vec![a], vec![b]]);
+        assert_eq!(placed(&twin, &[b]).0, [vec![b], vec![]]);
+        // `Write`/`Read`: a warning between a write and its read is no
+        // transaction, and the write stays open (D1): the read is its own.
+        let bme = aethelgard_twin::boot::StepCheck {
+            write: vec![0xD0],
+            ..step(
+                i2c(),
+                "i2c1.u2",
+                Identity,
+                &["[NOISY] i2c1.u2: Write D0", "[NOISY] i2c1.u2: Read 60"],
+            )
+        };
+        let w = "[WARNING] i2c1.u2: Unhandled read from offset 0xD1.";
+        let log = ["[NOISY] i2c1.u2: Write D0", w, "[NOISY] i2c1.u2: Read 60"];
+        let (seen, unplaced) = placed(std::slice::from_ref(&bme), &log);
+        assert_eq!(seen, [vec![log[0], log[2]]]);
+        assert_eq!(unplaced[0].lines, [w]);
+    }
+
+    /// `AET-WO-3309` D3 (ruled -min): what no step's witness shows fails the
+    /// boot once, never more, by a kind the boot already names, and is
+    /// quoted: in the device's first failing finding, or with none in one more
+    /// `i2c_transaction_unwitnessed`. A form no reader knows places no line
+    /// and says so (`INV-06`).
+    #[test]
+    fn what_no_step_shows_fails_the_boot_once_and_is_quoted() {
+        let checks = bmp581_steps();
+        let ok = || vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()];
+        let judge = |log: &[&str]| judged(&checks, log, ok());
+        let kinds = |f: &[Finding]| f.iter().map(|f| f.kind.clone()).collect::<Vec<_>>();
+        assert!(judge(&[ID, CFG, DATA]).is_empty());
+        // A stray warning beside the right transactions: one finding, on the
+        // device's first step that claims it completed.
+        let warn = "[WARNING] i2c1.u7: write to read-only register 0x38 ignored";
+        let f = judge(&[ID, warn, CFG, DATA]);
+        assert_eq!(kinds(&f), ["i2c_transaction_unwitnessed"]);
+        assert!(
+            f[0].message.contains("its identity step"),
+            "{}",
+            f[0].message
+        );
+        assert!(f[0].message.contains(warn), "{}", f[0].message);
+        // With no record that claims its read completed, no witness is
+        // judged, and the line adds no finding: the records fail the boot.
+        let txis = vec![(aethelgard_twin::boot::STATUS_TXIS, 0); checks.len()];
+        assert!(judged(&checks, &[ID, warn, CFG, DATA], txis).is_empty());
+        // Beside a failing step: quoted in its finding, and no more findings.
+        let f = judge(&[ID, warn, "[NOISY] i2c1.u7: write 0x37 <- 0x40 0x81", DATA]);
+        assert_eq!(kinds(&f), ["i2c_transaction_unwitnessed"]);
+        assert!(
+            f[0].message.contains("its configure step"),
+            "{}",
+            f[0].message
+        );
+        assert!(f[0].message.contains(warn), "{}", f[0].message);
+        // Each line in its own step, out of the script's order: the count
+        // rule failed it, so placement must too.
+        let f = judge(&[CFG, ID, DATA]);
+        assert_eq!(kinds(&f), ["i2c_transaction_unwitnessed"]);
+        assert!(
+            f[0].message.contains("out of its script's order"),
+            "{}",
+            f[0].message
+        );
+        // No reader knows the form: no line is placed, each step is silent,
+        // and the first finding names why.
+        use aethelgard_ir::parts::StepKind::{Configure, Identity};
+        let i2c = || aethelgard_twin::boot::Wire::I2c { address: 0x47 };
+        let odd = [
+            step(i2c(), "i2c1.u7", Identity, &["[NOISY] i2c1.u7: id"]),
+            step(i2c(), "i2c1.u7", Configure, &["[NOISY] i2c1.u7: cfg"]),
+        ];
+        let ok2 = vec![(aethelgard_twin::boot::STATUS_OK, 0); odd.len()];
+        let f = judged(&odd, &["[NOISY] i2c1.u7: id", "[NOISY] i2c1.u7: cfg"], ok2);
+        assert_eq!(
+            kinds(&f),
+            ["i2c_transaction_unwitnessed", "i2c_transaction_unwitnessed"]
+        );
+        assert!(f[0].message.contains("no reader knows"), "{}", f[0].message);
+    }
+
+    /// `AET-WO-3309` D4 (ruled): every I2C model the twin places has its
+    /// witness lines read by a reader, as transactions only, and each placed
+    /// back in the step it witnesses. A model without one would leave every
+    /// line it logs unplaced (imu-baro's ICP-101xx, measured in §1.1).
+    #[test]
+    fn every_i2c_model_s_witness_is_read_and_placed_in_its_own_step() {
+        use aethelgard_twin::model::{Model, kind};
+        let mut covered = std::collections::BTreeSet::new();
+        for part in aethelgard_ir::parts::table().unwrap().parts() {
+            let Some(model) = kind(&part.part).unwrap() else {
+                continue;
+            };
+            if model.bus() != aethelgard_ir::parts::BusKind::I2c {
+                continue;
+            }
+            let device = "i2c1.u9";
+            let steps = part.steps();
+            let mut script = Vec::new();
+            let mut want = Vec::new();
+            for (k, s) in steps.iter().enumerate() {
+                for line in model.witness(device, s).unwrap_or_default() {
+                    script.push(line);
+                    want.push(Some(k));
+                }
+            }
+            assert!(!script.is_empty(), "{}: no witness line", part.part);
+            let form = aethelgard_evolve::lines::form(&script, device)
+                .unwrap_or_else(|| panic!("{}: no reader knows {script:?}", part.part));
+            let (_, none) = aethelgard_evolve::lines::transactions(&script, device, form);
+            assert!(none.is_empty(), "{}: {script:?}", part.part);
+            let keys: Vec<(&[u8], u8)> = steps
+                .iter()
+                .map(|s| (s.write.as_slice(), s.width))
+                .collect();
+            assert_eq!(
+                aethelgard_evolve::lines::place(&keys, &script, device, form),
+                want,
+                "{}: {script:?}",
+                part.part
+            );
+            covered.insert(format!("{model:?}"));
+        }
+        let all: std::collections::BTreeSet<String> = aethelgard_twin::model::MODELS
+            .into_iter()
+            .filter(|m: &Model| m.bus() == aethelgard_ir::parts::BusKind::I2c)
+            .map(|m| format!("{m:?}"))
+            .collect();
+        assert_eq!(covered, all);
     }
 }
