@@ -380,9 +380,20 @@ fn a_drop_over_its_limit_fails_with_the_pitch_note() {
 /// The two-layer power fixture: its supply pins bounded, its return refused
 /// by name (`GroundReturnUnread`, ruling (iii)): the ground runs through a
 /// zone the emitted board leaves unfilled. No drop, and a finding per pin.
+///
+/// `AET-WO-4410` Q12 (ruled 2026-11-24): the sense is kept off ADC1, on the
+/// pin this test measured (`common::sense::keep_off_adc1`). On the PC0 sense
+/// extract refuses the board, which
+/// `the_two_layer_power_fixture_on_the_pc0_sense_meets_overlapping_vias` holds.
 #[test]
 fn the_two_layer_power_fixture_refuses_its_ground_return_by_name() {
-    let spec = write("s02", &gated(common::power::power_tree(), 165));
+    let spec = write(
+        "s02",
+        &gated(
+            common::sense::keep_off_adc1(common::power::power_tree()),
+            165,
+        ),
+    );
     let board = emitted("s02", &spec);
     let (code, v) = extract(&board, &spec);
     assert_eq!(code, 1, "{v}");
@@ -444,4 +455,23 @@ fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
     let (code, r) = extract(&board, &edited);
     assert_eq!(code, 2, "{r}");
     assert_eq!(r["error"]["kind"], "PairConductorUnbounded", "{r}");
+}
+
+/// `AET-WO-4410` Q12 (ruled 2026-11-24), the evidence of a row for the next
+/// router work order: with the sense on PC0 (S2's ADC1-first rule), the
+/// two-layer power fixture's router draws two vias whose junction regions
+/// meet, and `extract` refuses the board by name, where it reported the
+/// ground return on the PF3 layout. When the router is fixed this test
+/// changes with it; it may not silently disappear.
+#[test]
+fn the_two_layer_power_fixture_on_the_pc0_sense_meets_overlapping_vias() {
+    let spec = write("s02-pc0", &gated(common::power::power_tree(), 165));
+    let board = emitted("s02-pc0", &spec);
+    let (code, v) = extract(&board, &spec);
+    assert_eq!(code, 2, "{v}");
+    assert_eq!(v["error"]["kind"], "ViaRegionsOverlap", "{v}");
+    assert_eq!(
+        v["error"]["message"], "the via at (93250000, 87125000)'s junction region meets another's",
+        "{v}"
+    );
 }

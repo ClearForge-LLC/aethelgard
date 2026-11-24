@@ -339,10 +339,12 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
 /// by `AET-WO-4300i` from a measured run, MOTOR1 on PA8 and its four motor
 /// pull-downs R52-R55 drawn (its FEEDBACK); re-pinned by `AET-WO-4300j`
 /// from a measured run, the links R56-R59 drawn and R52-R55 moved to the
-/// pull nets (`spike/4300j/out/b2-boards.tsv`). Re-pin it only with the
+/// pull nets (`spike/4300j/out/b2-boards.tsv`); re-pinned by `AET-WO-4410`
+/// S2 from a measured run, the sense on PC0 (ADC1 first) with its divider
+/// and reservoir placed beside it (its FEEDBACK). Re-pin it only with the
 /// change that moves it, named in that change's FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "5855c8357866d6dcdb12c75907b9e1ed6f33a12ee84906b755bf22149fe64ee1";
+    "583be341feac4f5ffb8cdb2ce61de176860745e19a1015579329cd2785d46a4d";
 
 /// `AET-WO-1313c` §2: the fixture places at its measured outline, with
 /// every placer gap and every loop rule kept after compaction: 85.25 x
@@ -350,14 +352,15 @@ const FIXTURE_PLACEMENT_SHA256: &str =
 /// since `AET-WO-1315` drew C1 (its FEEDBACK §2, measured), 95.80 x 67.60
 /// mm since `AET-WO-4202` took U2 away (its FEEDBACK §2.3, measured), 96.25
 /// x 67.60 mm since `AET-WO-4300i` drew the four motor pull-downs (measured),
-/// 95.80 x 69.10 mm since `AET-WO-4300j` drew their four links (measured).
+/// 95.80 x 69.10 mm since `AET-WO-4300j` drew their four links (measured),
+/// 98.75 x 68.60 mm since `AET-WO-4410` S2 moved the sense to PC0 (measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (95_800_000, 69_100_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (98_750_000, 68_600_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -443,13 +446,15 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// `AET-WO-4300i` (MOTOR1 on PA8, R52-R55 drawn): each outline re-measured,
 /// 8 still refused, its least-over 102.150 x 88.200 mm now 103.650 x 89.950.
 /// `AET-WO-4300j` (the links R56-R59 drawn): each re-measured, 8 still
-/// refused, its least-over now 102.050 x 92.700 mm.
+/// refused, its least-over now 102.050 x 92.700 mm. `AET-WO-4410` S2 (the
+/// sense on PC0): each re-measured, 8 still refused, its least-over now
+/// 102.050 x 94.700 mm.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed) in [
-        (1, Some((99_300_000, 70_600_000))),
-        (2, Some((89_200_000, 82_700_000))),
-        (6, Some((99_400_000, 88_700_000))),
+        (1, Some((90_250_000, 83_200_000))),
+        (2, Some((90_950_000, 81_050_000))),
+        (6, Some((96_400_000, 86_950_000))),
         (8, None),
     ] {
         let v = rename::sized(&fixture(), len);
@@ -470,7 +475,7 @@ fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
                 // attempts (seed 0 was 118.500 x 79.450 mm).
                 assert!(
                     e.to_string().contains(
-                        "the placer's best outline is 102.050 x 92.700 mm, over by 2.050 x 0.000 mm"
+                        "the placer's best outline is 102.050 x 94.700 mm, over by 2.050 x 0.000 mm"
                     ),
                     "{len}: {e}"
                 );
@@ -503,6 +508,11 @@ fn turned(mut v: Value, x: &str) -> Value {
 ///
 /// `AET-WO-1317`: the forward turn, refused since U2 left (`AET-WO-4202`),
 /// places on the reseeded rank's first seed (its FEEDBACK §4.3).
+///
+/// `AET-WO-4410` Q11 (ruled 2026-11-24): the sense is kept off ADC1, on the
+/// pin this test measured (`common::sense::keep_off_adc1`). On the PC0 sense
+/// the forward turn overruns IMU_SCK, which
+/// `the_forward_turn_on_the_pc0_sense_overruns_imu_sck` holds.
 #[test]
 fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
     for (x, rotation) in [
@@ -511,7 +521,7 @@ fn a_turned_imu_is_compacted_whole_with_its_keepouts_inside_the_bound() {
         ("left", "180"),
         ("aft", "270"),
     ] {
-        let (spec, solved, table) = solved(&turned(fixture(), x));
+        let (spec, solved, table) = solved(&common::sense::keep_off_adc1(turned(fixture(), x)));
         let e = schematic::emit(&spec, &solved, &table).unwrap();
         let tree = sexpr::parse(&e.board).unwrap();
         let u5 = tree
@@ -676,4 +686,23 @@ fn a_reseeded_placement_is_deterministic_and_name_free() {
         assert_ne!(renamed, base, "seed {seed} renames nothing");
         assert_eq!(name_free(&place(&renamed)), want, "seed {seed}");
     }
+}
+
+/// `AET-WO-4410` Q11 (ruled 2026-11-24), the evidence of a row owned by
+/// `AET-WO-4300k`: with the sense on PC0 (S2's ADC1-first rule), Sentinel-03
+/// turned `forward` is refused by `emit`, IMU_SCK's bound 31,879 fF over the
+/// declared 30,000 fF. The other three turns emit. When 4300k answers the
+/// row, this test changes with it; it may not silently disappear.
+#[test]
+fn the_forward_turn_on_the_pc0_sense_overruns_imu_sck() {
+    let (spec, solved, table) = solved(&turned(fixture(), "forward"));
+    assert_eq!(
+        solved.power.as_ref().unwrap().sense["VBAT_SENSE"].pin,
+        "PC0"
+    );
+    let err = schematic::emit(&spec, &solved, &table).unwrap_err();
+    assert_eq!(
+        format!("{err:?}"),
+        r#"CapacitanceOverBound { over: [("IMU_SCK", 31879, 30000)] }"#
+    );
 }

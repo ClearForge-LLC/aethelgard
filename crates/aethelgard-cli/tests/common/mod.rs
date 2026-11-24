@@ -328,6 +328,7 @@ pub mod edges;
 pub mod foreign;
 pub mod power;
 pub mod rename;
+pub mod sense;
 pub mod stub;
 pub mod th;
 pub mod verify;
