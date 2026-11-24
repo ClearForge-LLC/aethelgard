@@ -87,10 +87,14 @@ pub const GROUND: &str = crate::schematic::GND;
 pub const RIPUPS: usize = 500;
 /// The most work one routing may do before it is refused by name
 /// (`RouterWorkExceeded`, `AET-WO-1323` D1): each state a search expands, and
-/// each node a fill flood visits, counts one. A count, never a clock, so a
-/// board's answer cannot depend on the machine. Sized at §1.1: the heaviest
-/// routing any test makes did 170.1 M (d3 shifted, under U1), the heaviest
-/// committed specification 119.0 M (`sentinel-02-power`); `1307` A4's
+/// each node a fill flood visits, counts one. So do each source a search
+/// seeds, each (pad, tree node) pair the nearest-pad index takes and each
+/// pad it picks from, and each pair the final check judges (`AET-WO-1324`):
+/// every part of a routing that grows faster than its states. A count, never
+/// a clock, so a board's answer cannot depend on the machine. Sized at
+/// `1323` §1.1; measured with `1324`'s charges: the heaviest routing any test
+/// makes did 177.1 M (d3 shifted, under U1), the heaviest committed
+/// specification 136.2 M (`sentinel-02-power`, 38.9 %); `1307` A4's
 /// adversary reaches it in under a minute, where it took 203 s to [`RIPUPS`].
 pub const WORK: u64 = 350_000_000;
 
