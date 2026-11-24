@@ -3125,3 +3125,33 @@ fn a_step_s_write_and_read_are_one_transaction_never_stitched() {
         [("i2c1.u5.Read.bytes".to_owned(), Some(0))]
     );
 }
+
+/// `AET-WO-3309` D4: the ICP-101xx's lines are read to place them, never
+/// judged as evidence. A witness in its form, its step's own command and a
+/// wrong value, shows no field.
+#[test]
+fn an_icp_101xx_witness_is_placed_but_never_evidence() {
+    let line = |l: &str| format!("[DEBUG] i2c1.u5: {l}");
+    let read = |v: &str| {
+        line(&format!(
+            "Reading data with CRC: [{v}], current command: 0xD0 (Id), requested: 1 bytes"
+        ))
+    };
+    let r = two_bme(&[], |r| {
+        let i = witness_index(r, "U5");
+        if let Record::I2cWitness {
+            expected, observed, ..
+        } = &mut r[i]
+        {
+            *expected = vec![line("Received command: [0xD0]"), read("0x60")];
+            *observed = Some(vec![line("Received command: [0xD0]"), read("0x61")]);
+        }
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 1)]),
+        );
+    });
+    assert!(fields_of(&r, witness_index(&r, "U5")).is_empty());
+    assert_eq!(attributed(&r).rule, Rule::I4);
+}

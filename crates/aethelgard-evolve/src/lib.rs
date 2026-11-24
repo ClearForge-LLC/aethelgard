@@ -668,15 +668,18 @@ fn packed(bytes: &[u8]) -> Option<(u64, usize)> {
     })
 }
 
+/// The form attribution reads `device`'s script in: our BMP581's, or
+/// `Write` and `Read` (`AET-WO-3307`). The ICP-101xx's is placed by the
+/// judge (`AET-WO-3309` D4), never judged here: `None`, no evidence.
+fn judged_form(script: &[String], device: &str) -> Option<Form> {
+    lines::form(script, device).filter(|f| *f != Form::Icp)
+}
+
 /// `lines`, read whole, as `device`'s transactions in its script's `form`
 /// (`AET-WO-3306`; a BMP581's since `AET-WO-3309`), as the model logs them
 /// ([`lines::transactions`]). `None` if any line is none (a warning, an
-/// error, another device's), or for the ICP-101xx's form, whose witness
-/// attribution does not judge.
+/// error, another device's).
 fn transactions(lines: &[String], device: &str, form: Form) -> Option<Vec<Transaction>> {
-    if form == Form::Icp {
-        return None;
-    }
     let (ts, none) = lines::transactions(lines, device, form);
     none.is_empty().then_some(ts)
 }
@@ -956,10 +959,9 @@ impl<'a> Run<'a> {
             return None;
         };
         let observed = observed.as_deref()?;
-        // A witness is read in its script's form: our BMP581's, or `Write`
-        // and `Read` (`AET-WO-3307`). A line in another form is not the
-        // device's model's. The ICP-101xx's is placed, never judged.
-        let form = lines::form(expected, device).filter(|f| *f != Form::Icp)?;
+        // A witness is read in its script's form ([`judged_form`]). A line in
+        // another form is not the device's model's.
+        let form = judged_form(expected, device)?;
         let first = |ls: &[String]| lines::transactions(ls, device, form).0.into_iter().next();
         let want = first(expected)?;
         let reg_want = packed(&want.written)?;
@@ -1060,7 +1062,7 @@ impl<'a> Run<'a> {
         let Some((device, script, log, at)) = self.whole_log(reference) else {
             return (0, Vec::new());
         };
-        let Some(form) = lines::form(&script, device) else {
+        let Some(form) = judged_form(&script, device) else {
             return (0, Vec::new());
         };
         let (Some(want), Some(got)) = (
@@ -1232,7 +1234,7 @@ impl<'a> Run<'a> {
             return Some(false);
         }
         let (device, script, log, _) = self.whole_log(reference)?;
-        let form = lines::form(&script, device)?;
+        let form = judged_form(&script, device)?;
         let own = step_shape(write, *width);
         let count = |lines: &[String]| -> Option<usize> {
             Some(

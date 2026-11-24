@@ -8016,6 +8016,17 @@ mod tests {
 
     /// The findings of `checks` against `log`, every record `ok`.
     fn step_findings(checks: &[aethelgard_twin::boot::StepCheck], log: &[&str]) -> Vec<Finding> {
+        let ok = vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()];
+        step_findings_with(checks, log, ok)
+    }
+
+    /// The findings of `checks` against `log`, with each record's status
+    /// word and value.
+    fn step_findings_with(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        log: &[&str],
+        records: Vec<(u32, u64)>,
+    ) -> Vec<Finding> {
         let (seen, unrouted, unplaced) = attribute(checks, &[], log);
         let observed = Observed {
             boot_word: 0,
@@ -8029,7 +8040,7 @@ mod tests {
             clock_access: None,
             loops: Vec::new(),
             registers: Vec::new(),
-            records: vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()],
+            records,
             witnesses: seen.into_iter().map(Some).collect(),
             absent: vec![Vec::new(); checks.len()],
             motors: Vec::new(),
@@ -8287,6 +8298,15 @@ mod tests {
             f[0].message
         );
         assert!(f[0].message.contains(warn), "{}", f[0].message);
+        // With no record that claims its read completed, no witness is
+        // judged, and the line adds no finding: the records fail the boot.
+        let stamped: Vec<String> = [ID, warn, CFG, DATA]
+            .iter()
+            .map(|b| format!("[00:00:00.010040000] {b}"))
+            .collect();
+        let stamped: Vec<&str> = stamped.iter().map(String::as_str).collect();
+        let txis = vec![(aethelgard_twin::boot::STATUS_TXIS, 0); checks.len()];
+        assert!(step_findings_with(&checks, &stamped, txis).is_empty());
         // Beside a failing step: quoted in its finding, and no more findings.
         let f = judge(&[ID, warn, "[NOISY] i2c1.u7: write 0x37 <- 0x40 0x81", DATA]);
         assert_eq!(kinds(&f), ["i2c_transaction_unwitnessed"]);
