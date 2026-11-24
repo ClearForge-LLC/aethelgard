@@ -174,12 +174,9 @@ fn rebind_verify(out: &Path, committed: &Path) -> (Option<i32>, String) {
 }
 
 /// `AET-WO-4300k`, ruled 11:25Z (R): re-binding the package `--fab-out` wrote
-/// writes the same package, every gate run, and names readiness not judged;
-/// with one byte of one Gerber flipped in the committed copy, every gate
-/// passes and the re-bind is refused `RebindMoved` (exit 3), naming the
-/// file, and nothing is written.
+/// writes the same package, every gate run, and names readiness not judged.
 #[test]
-fn a_rebind_writes_only_a_package_that_moved_nothing_but_its_binding() {
+fn a_rebind_of_the_package_it_wrote_writes_the_same_package() {
     let (p, committed) = package_copy("a re-bind writes the same package", "rebind-same");
     let out = scratch("rebind-out").join("pkg");
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -193,7 +190,14 @@ fn a_rebind_writes_only_a_package_that_moved_nothing_but_its_binding() {
         "{w}"
     );
     assert_eq!(package_files(&out), p.files);
-    let (_, moved) = package_copy("a re-bind refuses a moved byte", "rebind-moved");
+}
+
+/// `AET-WO-4300k`, ruled 11:25Z (R): with one byte of one Gerber flipped in
+/// the committed copy, every gate passes and the re-bind is refused
+/// `RebindMoved` (exit 3), naming the file, and nothing is written.
+#[test]
+fn a_rebind_refuses_a_package_with_one_moved_byte() {
+    let (p, moved) = package_copy("a re-bind refuses a moved byte", "rebind-moved");
     let gerber = p
         .files
         .keys()
@@ -205,6 +209,7 @@ fn a_rebind_writes_only_a_package_that_moved_nothing_but_its_binding() {
     bytes[at] ^= 0x01;
     fs::write(moved.join(&gerber), bytes).unwrap();
     let out = scratch("rebind-out-moved").join("pkg");
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let (code, o) = rebind_verify(&out, &moved);
     let w = one(&o);
     assert_eq!(code, Some(3), "{w}");
