@@ -1,0 +1,90 @@
+diff --git a/crates/aethelgard-cli/tests/campaign_tier1.rs b/crates/aethelgard-cli/tests/campaign_tier1.rs
+index 2f474748..c745539b 100644
+--- a/crates/aethelgard-cli/tests/campaign_tier1.rs
++++ b/crates/aethelgard-cli/tests/campaign_tier1.rs
+@@ -315,6 +315,11 @@ const BUILD: &str = aethelgard_twin::platform::RENODE_BUILD;
+ 
+ /// As [`toolbox`], with Renode reporting `build` as its build.
+ fn toolbox_built(stdout: &str, build: &str) -> Dir {
++    toolbox_built_then(stdout, build, "")
++}
++
++/// As [`toolbox_built`], running `then` after its output.
++fn toolbox_built_then(stdout: &str, build: &str, then: &str) -> Dir {
+     let tb = Dir::new("tb");
+     let out = tb.write("renode.out", stdout.as_bytes());
+     let capture = capture_lines(&tb.write("capture.bin", &capture_of(&elf())));
+@@ -330,6 +335,7 @@ case "$7" in
+   *) exit 99;;
+ esac
+ {capture}/bin/cat '{out}'
++{then}
+ "#,
+         out = out.display(),
+         // An empty `build` prints no build line at all.
+@@ -3384,3 +3390,65 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
+         "{tried} {failing}"
+     );
+ }
++
++// ---------------------------------------------------------------- AET-WO-2314 (spike)
++
++/// SPIKE 2314 §1.1: each cause of an undisturbed boot with no boot word,
++/// planted, and the campaign's refusal printed.
++#[test]
++fn spike_2314_each_cause_today() {
++    let magic_hook = "BOOTWORD 2100b007 0 2575";
++    let first_read = "AETHELGARD-BOOT-BEGIN\n0x2100B007\n";
++    let flood = "[00:00:00.040000000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
++    let word = |w: &str, hook: &str| {
++        good()
++            .replacen(magic_hook, &format!("BOOTWORD {hook} 0 2575"), 1)
++            .replacen(first_read, &format!("AETHELGARD-BOOT-BEGIN\n{w}\n"), 1)
++    };
++    let plants: Vec<(&str, String, &str)> = vec![
++        ("memory", good(), common::HOLD_PAST_CAP),
++        ("flood", text(&format!("{GOOD_WITNESS}{flood}"), GOOD_RECORD, CPU_LISTING), ""),
++        ("fault word", word("0xDEADBEEF", "deadbeef"), ""),
++        ("park code", word("0x2100B0F5", "2100b0f5"), ""),
++        ("no write", good().replacen(&injection(0), "", 1).replacen(first_read, "AETHELGARD-BOOT-BEGIN\n0x00000000\n", 1), ""),
++        ("magic, no hook", good().replacen(&injection(0), "", 1), ""),
++    ];
++    for (name, out, then) in plants {
++        let tb = toolbox_built_then(&out, BUILD, then);
++        let work = Work::new();
++        let o = campaign(
++            &cli(Some(DROOP_BRIDGE)),
++            &tb.0,
++            &work.dir.0,
++            &[STUB_DROOP],
++            &work.firmware,
++            &work.archive,
++        );
++        println!(
++            "ANSWER 2314: plant {name}: exit={:?} {}",
++            o.status.code(),
++            String::from_utf8_lossy(&o.stdout).trim()
++        );
++    }
++    // The same stubs under `simulate` (the verdict the campaign's boot(None) returns).
++    let plants2: Vec<(&str, String, &str)> = vec![
++        ("memory", good(), common::HOLD_PAST_CAP),
++        ("flood", text(&format!("{GOOD_WITNESS}{flood}"), GOOD_RECORD, CPU_LISTING), ""),
++        ("fault word", word("0xDEADBEEF", "deadbeef"), ""),
++        ("park code", word("0x2100B0F5", "2100b0f5"), ""),
++        ("no write", good().replacen(&injection(0), "", 1).replacen(first_read, "AETHELGARD-BOOT-BEGIN\n0x00000000\n", 1), ""),
++        ("magic, no hook", good().replacen(&injection(0), "", 1), ""),
++    ];
++    for (name, out, then) in plants2 {
++        let tb = toolbox_built_then(&out, BUILD, then);
++        let work = Work::new();
++        let g = run_cli(&cli(Some(DROOP_BRIDGE)), &tb.0, &work.dir.0, &[os("generate"), os("--spec"), os("spec.json"), os("--out"), os("gen")]);
++        assert_eq!(g.status.code(), Some(0), "{}", String::from_utf8_lossy(&g.stdout));
++        let repl = fs::read_dir(work.dir.0.join("gen/board")).unwrap().map(|e| e.unwrap().path()).find(|p| p.extension().is_some_and(|e| e == "repl")).unwrap();
++        let o = run_cli(&cli(Some(DROOP_BRIDGE)), &tb.0, &work.dir.0, &[os("simulate"), os("--spec"), os("spec.json"), os("--platform"), repl.as_os_str(), os("--firmware"), work.firmware.as_os_str(), os("--for"), os("100ms")]);
++        let v: Value = serde_json::from_slice(&o.stdout).unwrap_or(Value::Null);
++        let f: Vec<String> = v["findings"].as_array().map(|a| a.iter().map(|f| format!("{}[{}]: {}", f["kind"].as_str().unwrap_or(""), f["severity"].as_str().unwrap_or(""), f["message"].as_str().unwrap_or(""))).collect()).unwrap_or_default();
++        println!("ANSWER 2314: simulate {name}: exit={:?} boot_word_ns={} word={} memory={} error={}", o.status.code(), v["boot"]["boot_word_ns"], v["boot"]["boot_word"]["observed"], v["memory"], v["error"]);
++        for x in f { println!("    {x}"); }
++    }
++}
