@@ -1,0 +1,15 @@
+# AET-WO-4400h (2): the one local twin change MAVLink injection needs: usart1's receive DMA request routed to
+# DMAMUX1 request 41 (usart1_rx_dma; RM0433 Table 121). Applied by sh/replay.sh REQ=1 to the platform the CLI boots
+# (platform-booted.repl, an update over the stock stm32h7.repl). In the twin it is one line from platform.rs, as for
+# SPI's DMARecieve -> dmamux1@N (crates/aethelgard-twin/src/platform.rs:789-790). Renode's STM32F7_USART raises
+# ReceiveDmaRequest (STM32F7_USART.cs:87, :109). Not committed to any crate.
+--- platform-booted.repl
++++ platform-booted.repl
+@@ -102,6 +102,7 @@
+     frequency: 200000000
+ usart1:
+     frequency: 72000000
++    ReceiveDmaRequest -> dmamux1@41
+ usart2:
+     frequency: 72000000
+ usart3:

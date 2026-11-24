@@ -1,0 +1,39 @@
+t_ns	message	frame_bytes	frame_hex
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationX 0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationY 0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationZ 1	0	-
+6000000000	pad	0	
+6000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+6050000000	pad	0	
+6100000000	pad	0	
+6500000000	pad	0	
+6500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+7000000000	pad	0	
+7000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+7450000000	pad	0	
+7500000000	pad	0	
+7500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+7550000000	pad	0	
+7600000000	pad	0	
+7650000000	pad	0	
+7700000000	pad	0	
+8000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+8500000000	pad	0	
+8500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+8900000000	pad	0	
+9000000000	pad	0	
+9000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+9500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+10000000000	pad	0	
+10000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+10500000000	pad	0	
+10500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+11000000000	pad	0	
+11000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+11500000000	pad	0	
+11500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+12000000000	pad	0	
+12000000000	monitor sysbus.i2c1.u7 Pressure 101325.0	0	-
+12500000000	pad	0	
+12500000000	monitor sysbus.i2c1.u7 Pressure 101325.5	0	-
+13000000000	pad	0	

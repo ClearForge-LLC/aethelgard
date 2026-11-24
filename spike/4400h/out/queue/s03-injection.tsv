@@ -1,0 +1,7 @@
+class	peripheral	offset	register	base_writes	control_writes	armed_writes	armed_distinct_values	first_values
+more-when-armed	dma1	0x10	StreamConfiguration	5	5	65	4	['0x0', '0x100416', '0x400', '0x411']
+more-when-armed	dma1	0x14	StreamNumberOfData	1	1	21	1	['0x40']
+more-when-armed	dma1	0x1C	StreamMemory0Address	1	1	21	2	['0x38001940', '0x380019A0']
+more-when-armed	dma1	0x8	LowInterruptClear	8	8	48	6	['0x20', '0x3D', '0x3D0000', '0x8000000']
+values-when-armed	nvic	0xF5C	DCacheInvalidateByMVAToPoCAddress	51209	51209	51249	8225	['0x38001880', '0x38001900', '0x38001940', '0x38001960']
+values-when-armed	usart1	0x28	TransmitData	761	761	761	104	['0x0', '0x1', '0x10', '0x11']

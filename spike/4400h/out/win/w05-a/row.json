@@ -1,0 +1,1 @@
+{"name": "w05-a", "window": "5000ms", "exit": 1, "wall_s": 30.88, "peak_rss_kib": 1386768, "permille_of_1572864": 881, "load1_min": 21.75, "load1_max": 27.7, "cpus": "all", "ok": false, "kinds": ["wall_bound_exceeded"], "log": [], "stop": null}

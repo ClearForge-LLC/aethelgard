@@ -1,0 +1,1 @@
+{"name": "s1-N-w10", "window": "10000ms", "exit": 1, "wall_s": 20.93, "peak_rss_kib": 1339856, "permille_of_1572864": 851, "load1_min": 18.24, "load1_max": 22.1, "cpus": "all", "ok": false, "kinds": ["foreign_not_booted", "i2c_transaction_unwitnessed", "renode_error_log", "serial_options_unjudgeable", "spi_transaction_unwitnessed"], "log": [], "stop": null}

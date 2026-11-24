@@ -1,0 +1,1 @@
+{"name": "s1-N-w5", "window": "5000ms", "exit": 1, "wall_s": 12.36, "peak_rss_kib": 844256, "permille_of_1572864": 536, "load1_min": 24.73, "load1_max": 26.49, "cpus": "all", "ok": false, "kinds": ["serial_options_unwritten"], "log": [], "stop": null}

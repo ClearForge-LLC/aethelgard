@@ -1,0 +1,8 @@
+simulate exit 1
+1
+2
+gen
+generate.json
+index.txt
+stderr.txt
+verdict.json

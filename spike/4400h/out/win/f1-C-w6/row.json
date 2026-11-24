@@ -1,0 +1,1 @@
+{"name": "f1-C-w6", "window": "6000ms", "exit": 1, "wall_s": 12.2, "peak_rss_kib": 924964, "permille_of_1572864": 588, "load1_min": 10.24, "load1_max": 10.98, "cpus": "all", "ok": false, "kinds": ["register_mismatch"], "log": [], "stop": null}
