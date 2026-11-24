@@ -2,14 +2,16 @@
 # AET-WO-1610 §2: the mutants only tier 2 can kill, each applied to a copy of
 # the committed source (git archive of HEAD) and run in the pinned tools image
 # by the kit (~/.cache/aet-1610/kit/img.sh: capped-run, 16 GiB, swap 0,
-# --network none). Only a test failure (101) kills.
+# --network none). Only a test failure (101) kills. `tar -m` stamps the copy
+# now: `git archive` gives the commit's mtime, older than the last build, and
+# cargo would reuse a mutant's binary for the next, unmutated source.
 set -uo pipefail
 C=$HOME/.cache/aet-1610
 REPO=$(git rev-parse --show-toplevel)
 F='--locked --offline --features aethelgard-cli/with-tools -p aethelgard-cli'
 one() { # name, file, old, new, test args (one string)
   local name=$1 file=$2 old=$3 new=$4 test=$5
-  rm -rf "$C/msrc" && mkdir -p "$C/msrc" && git -C "$REPO" archive HEAD | tar -x -C "$C/msrc"
+  rm -rf "$C/msrc" && mkdir -p "$C/msrc" && git -C "$REPO" archive HEAD | tar -x -m -C "$C/msrc"
   python3 -I - "$C/msrc/$file" "$old" "$new" <<'PY'
 import sys
 p, old, new = sys.argv[1:4]
