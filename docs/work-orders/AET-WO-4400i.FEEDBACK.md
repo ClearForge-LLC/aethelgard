@@ -135,6 +135,16 @@ Nothing labelled `belt-and-suspenders:` was touched.
 - My §2.3 comparison measured the request line, not the version bump, so the claim that no committed verdict moves was wrong.
 - **Asked:** the bench package re-derived on this branch (`bench-package`'s write dispatch), and its `MANIFEST.json` committed. `fab/` is outside this fence.
 
+**F16, ruled 2026-11-24T21:38Z: the move is accepted.**
+- A trace version bump moves every committed campaign state hash, by design.
+- The order is serialized: #390 (4300k) merges first. Then main is merged here, the architect dispatches `bench-package`'s write on this branch, and both packages (Sentinel-01's bench and Sentinel-03's) are committed byte for byte, with only `state_sequence_hash` moving in each. That is shown below when done.
+- Sentinel-01's `fab/sentinel-01-bench/ORDERED.sha256` still checks on this branch before the dispatch (all 10 ordered files OK); it is to be checked again after.
+
+**F17. CI's shard 11 on 902d4917.**
+- `twin_tier2::bor_recovery::the_bmp581_extension_recovers_after_its_settle` failed with `wall_bound_exceeded`, then `PlantedEventUnplaced`: its undisturbed boot ran past the 30 s wall-clock bound on a loaded runner.
+- That is 2314's cause naming, working as built. The test is untouched by this branch, and it passed in the local full run.
+- Ruled not this work order's: the architect files the 30 s wall bound as a row (it also hit 4300k's `d1`). It gets no re-run; the dispatch commit re-runs CI.
+
 **F13. Kit facts for the next builder:**
 - A Renode write hook on a peripheral displaces `LogPeripheralAccess`'s write lines for it (measured, `spike/4400i` §Inputs).
 - The CLI capture's first process is the reaper, not Renode.
