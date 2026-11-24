@@ -41,6 +41,7 @@ The reader's bound is unchanged.
 - **The MCP surface:** derived from the CLI's flags, it gains `input` and `archive` on `simulate`. Two tests pin that list: `mcp.rs`'s unit test and `tests/mcp-tools.json`, re-blessed with exactly those two entries. `campaign --archive` was already served.
 - **The CLI's and the twin's READMEs:** the input, its refusals, the rest, the witness and the replay.
 - **The unit tests in `renode.rs`:** five calls take `commands`' new `None` argument.
+- **`workspace_shape.rs`:** it fixes the twin's file set. It now lists the three cited data tables (`TWIN_DATA`) and the two ArduPilot capture fixtures (`TWIN_FIXTURES`), each by name.
 
 **F6. The window's cost of an input** (for `AET-WO-4400j`):
 - **At 5 s on `sentinel-02-own`,** an input run kept 5.0 MB of the 8 MiB budget against 1.5 MB without. That is mostly the firmware's own response, not the injection: about 27,000 lines of the SPI flash model, as ArduPilot stores the parameters it was sent.
@@ -97,10 +98,15 @@ Nothing labelled `belt-and-suspenders:` was touched.
 
 ## Gates
 
-PENDING: the full suite's result, the CI guards and the shard plan.
+Run locally in the pinned tools image, on the branch with main `2cbbb354` merged:
+- `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
+- **`cargo test --workspace --no-fail-fast`:** 3,090 passed. One failed, `workspace_shape::twin_has_only_its_known_files_keys_and_dependencies`, on the twin's new files. It is fixed (F5), and the three changed crates were then run again in full: 1,610 passed, 0 failed.
+- **CI guards:** `ci/route.sh check ci/docs-tests.tsv`, `ci/test-route.sh` and `ci/test-shard.sh` pass. `ci/shard.sh build` and `ci/shard.sh plan` in the image: 12 shards, guard ok, 3,345 test names (28 new).
+- **`ci/foreign-judge.sh`:** its added cases, run on `sentinel-02-own`'s CI ELF (`5eace4ca`) with a trimmed copy that keeps the script's setup and positive case. All pass, the not-at-rest check on the positive run included. The other existing cases need CI's `noimu`, `four-port` and `udf` ELFs, which are not on Furnace at this main; they run in CI.
 
 ## Mutants
 
-`spike/4400i/mutants/`: 33 mutants, one per guard this work order adds, each run against the suite it lives in. All are killed:
-- **m14 survived on the first pass.** It found the redundant "echoed" guard; m13 was re-pointed at the guard that remains.
+`spike/4400i/mutants/`: 34 mutants, one per guard this work order adds, each run against the suite it lives in. All are killed:
+- **33 by `run.sh`** over `mutants.tsv`.
+- **m14 survived on the first pass.** It found the redundant "echoed" guard, which was removed with its mutant; m13 was re-pointed at the guard that remains.
 - **m34, run by hand against Renode:** the rest's data witnesses dropped from the judge. `input-arm` fails `i2c_transaction_unwitnessed`.

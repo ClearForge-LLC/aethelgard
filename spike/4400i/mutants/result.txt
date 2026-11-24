@@ -6,4 +6,6 @@ m33 (replay's single part-order rule, after three overlapping guards were reduce
 m34, run by hand against ci/foreign-judge.sh's input-arm case (Renode, sentinel-02-own's CI ELF): the rest's data
 witnesses dropped from the judge (`rest.get(reference)` -> `rest.get("")`): KILLED, input-arm exit 1,
 i2c_transaction_unwitnessed (U7).
-Final: 33 mutants in mutants.tsv, each KILLED; m34 KILLED by hand.
+m35 (rest::not_at_rest names nothing when a witness stimulus is off rest): KILLED.
+Final: 33 mutants in mutants.tsv (m01-m35 less m14, removed with its guard, and m34, run by hand), each KILLED;
+m34 KILLED by hand against Renode.
