@@ -2564,10 +2564,35 @@ pub struct Replayed {
     pub state_sequence_hash: String,
 }
 
-/// Whether an archived run is a foreign input run (its kind 38).
-pub fn is_foreign(replayed: &aethelgard_chaos::Replayed) -> bool {
+/// `replay --archive` of a foreign input run (ruling D6, R1, granted
+/// 2026-11-24T19:13Z): `None` when the directory is not one (its records
+/// hold no kind 38, or the strict reader refuses it), which `replay` reads
+/// exactly as before; else the run re-judged, or why not.
+pub fn replay_archive(dir: &Path) -> Option<Result<Replayed, Stop>> {
     use aethelgard_chaos::record::Record;
-    matches!(replayed.state.records.first(), Some(Record::ForeignInput { .. }))
+    let replayed = aethelgard_chaos::replay_dir(dir).ok()?;
+    if !replayed
+        .state
+        .records
+        .iter()
+        .any(|r| matches!(r, Record::ForeignInput { .. }))
+    {
+        return None;
+    }
+    // A run directory is named by its run id, as a campaign's is.
+    let id = crate::input::hex(replayed.header.run_id);
+    let named = std::fs::canonicalize(dir)
+        .ok()
+        .and_then(|d| d.file_name().map(std::ffi::OsStr::to_owned));
+    if named.as_deref() != Some(std::ffi::OsStr::new(&id)) {
+        return Some(Err(Stop {
+            code: crate::EXIT_UNREADABLE,
+            kind: "RunIdMismatch",
+            id: Some(id.clone()),
+            message: format!("{} holds run {id}: a run directory is named by its run id", dir.display()),
+        }));
+    }
+    Some(replay(&replayed))
 }
 
 /// A foreign run's records joined: the input's (label, peripheral, spacing,

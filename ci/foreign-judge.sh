@@ -356,3 +356,60 @@ and [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0].sta
 and ", from PC '"$udf_site"' (read from its stack frame at 0x" in [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0]
 and v["memory"]["peak_rss_kib"] < v["memory"]["bound_kib"]
 ' --platform "$platform" --firmware "$work/udf.elf" --foreign "$window"
+
+# AET-WO-4400i (ruled on PR #396): a declared input on sentinel-02-own's CONSOLE (USART1), its frames written
+# by pymavlink 2.4.50 in the pinned ArduPilot image (spike/4400i/py/input.py), each filled to 64 bytes (D3:
+# declared fill). Inside the 5 s window (D1), ArduPilot echoes each PARAM_SET in its own PARAM_VALUE and
+# refuses every ARM with its own "Arm: System not initialised", read from its transmission, never from the
+# input; the board starts at rest (D4: U5 by its declared orientation, U7 moved by its noise, each data read
+# witnessed at a rest value); the IDLE gap is named.
+inputs=crates/aethelgard-cli/tests/fixtures/4400i
+grep -c 'ReceiveDmaRequest -> dmamux1@41' "$platform" | grep -qx 1
+run input-arm 0 '
+v["verdict"] == "pass" and boot["input"]["input"]["frames"] == 41
+and [p["echoed"] == p["set"] and p["error"] is None for p in boot["input"]["witness"]["params"]] == [True] * 4
+and (400, 4) in [(a["command"], a["result"]) for a in boot["input"]["witness"]["acks"]]
+and (400, 0) not in [(a["command"], a["result"]) for a in boot["input"]["witness"]["acks"]]
+and boot["input"]["witness"]["armed"] is None and boot["input"]["witness"]["heartbeats"] > 0
+and "Arm: System not initialised" in [t["text"] for t in boot["input"]["witness"]["texts"]]
+and [(r["reference"], r["property"], r["values"]) for r in boot["input"]["rest"] if r["reference"] == "U5"]
+    == [("U5", "AccelerationX", ["0"]), ("U5", "AccelerationY", ["0"]), ("U5", "AccelerationZ", ["1"])]
+and (witnessed.get(("U7", "data (rest 0)")) or witnessed.get(("U7", "data (rest 1)")))
+and witnessed.get(("U5", "data (reads[0])"))
+and any(u.startswith("usart_idle_unmodelled") for u in boot["unobservable"])
+' --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/arm5.json"
+
+# A planted force code, and a frame that is not MAVLink: each refused by name before a boot (D8).
+run input-force 2 'v["error"]["kind"] == "InputForcesArm"' \
+  --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/force.json"
+run input-not-mavlink 2 'v["error"]["kind"] == "InputNotMavlink"' \
+  --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/junk.json"
+
+# A parameter ArduPilot does not have: reported rejected from its own PARAM_ERROR (D9), and nothing else.
+run input-reject 1 '
+kinds == ["foreign_param_rejected"]
+and [(p["id"], p["error"]) for p in boot["input"]["witness"]["params"] if p["error"] is not None]
+    == [("AET_NOT_A_PARAM", 1)]
+' --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/reject.json"
+
+# USART1's receive request line dropped from the platform: not the platform the specification emits.
+sed '/ReceiveDmaRequest -> dmamux1@41/d' "$platform" > "$work/no-usart1-rx-dma.repl"
+run no-usart1-rx-dma 3 'v["error"]["kind"] == "PlatformNotEmitted"' \
+  --platform "$work/no-usart1-rx-dma.repl" --firmware "$elf" --foreign "$window" --input "$inputs/arm5.json"
+
+# D6 (R1): the input run archived (trace 20), then re-judged by `replay` from its run directory alone, with
+# no input file and no Renode, to the same witness.
+mkdir "$work/archive"
+run input-archive 0 'v["verdict"] == "pass" and len(boot["input"]["run_id"]) == 32' \
+  --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/arm5.json" --archive "$work/archive"
+id=$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["boot"]["input"]["run_id"])' "$work/input-archive.json")
+"$bin" replay --archive "$work/archive/$id" > "$work/input-replay.json"
+python3 -I - "$work/input-archive.json" "$work/input-replay.json" <<'PY'
+import json, sys
+v, r = (json.load(open(p)) for p in sys.argv[1:])
+w = v["boot"]["input"]
+print(f"ANSWER 4400e: input-replay judge={r['judge']} verdict={r['verdict']} run_id={r['run_id']} "
+      f"events={r['event_count']} same_witness={r['witness'] == w['witness']}")
+assert r["judge"] == "foreign" and r["verdict"] == "pass" and r["run_id"] == w["run_id"]
+assert r["input_sha256"] == w["input"]["sha256"] and r["witness"] == w["witness"]
+PY

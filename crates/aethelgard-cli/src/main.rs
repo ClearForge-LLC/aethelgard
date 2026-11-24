@@ -592,7 +592,13 @@ fn main() -> ExitCode {
             firmware,
             archive,
         } => return campaign::run(&scenarios, &firmware, &archive),
-        Command::Replay { archive } => return campaign::replay(&archive),
+        // A foreign input run's archive (AET-WO-4400i, D6 R1); every other
+        // run goes to the campaign's replay, unchanged.
+        Command::Replay { archive } => match renode::foreign::replay_archive(&archive) {
+            Some(Ok(r)) => return emit(&r, 0),
+            Some(Err(stop)) => return stopped(stop),
+            None => return campaign::replay(&archive),
+        },
         Command::Attribute { archive } => return campaign::attribute(&archive),
         Command::Propose {
             archive,

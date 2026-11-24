@@ -3551,3 +3551,54 @@ fn a_parameter_the_firmware_rejects_is_reported_from_its_own_reply() {
     assert!(rejected[0]["message"].as_str().unwrap().contains("AET_NOT_A_PARAM"), "{v}");
     assert_eq!(v["boot"]["input"]["witness"]["params"][0]["error"], 1, "{v}");
 }
+
+/// `AET-WO-4400i` D6 (R1): an input run archived with `--archive` is named by
+/// its run id, re-judged by `replay` from the trace alone (the input's file
+/// and the firmware's transmission, no file and no Renode) to the same
+/// witness, refused as existing when written again, and refused under
+/// another name. A campaign's archive still replays as before
+/// (`campaign_tier1`: the 2k2 reference replays to its verdict and hash; a
+/// run with neither a scenario nor a kind 38 is `NotACampaignRun`).
+#[test]
+fn an_archived_input_run_replays_from_its_trace_alone() {
+    let tx = ardupilot_tx("early-fill");
+    let tb = toolbox_input(&tx, None);
+    let dir = Dir::new("archived");
+    let archive = dir.0.join("archive");
+    fs::create_dir(&archive).unwrap();
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)]);
+    let out = input_run(&tb.0, &input, None, &[OsStr::new("--archive"), archive.as_os_str()]);
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(0), "{v}");
+    let id = v["boot"]["input"]["run_id"].as_str().unwrap().to_owned();
+    let run_dir = archive.join(&id);
+    assert!(run_dir.join("manifest.cbor").is_file(), "{v}");
+    // The input file is gone; replay needs nothing but the run directory.
+    fs::remove_file(&input).unwrap();
+    let empty = Dir::new("empty");
+    let r = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), run_dir.as_os_str()]);
+    let rv = report(&r);
+    assert_eq!(r.status.code(), Some(0), "{rv}");
+    assert_eq!(rv["judge"], "foreign", "{rv}");
+    assert_eq!(rv["run_id"], id, "{rv}");
+    assert_eq!(rv["verdict"], "pass", "{rv}");
+    assert_eq!(rv["input_sha256"], v["boot"]["input"]["input"]["sha256"], "{rv}");
+    assert_eq!(rv["frames"], 2, "{rv}");
+    assert_eq!(rv["witness"], v["boot"]["input"]["witness"], "{rv}");
+    // 16 KiB of capture is six parts of at most 3 KiB; the input one; the
+    // stimuli one (none, on the reference board).
+    assert_eq!(rv["event_count"], 1 + 1 + tx.len().div_ceil(3072), "{rv}");
+    // Written again: the run exists.
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)]);
+    let again = input_run(&tb.0, &input, None, &[OsStr::new("--archive"), archive.as_os_str()]);
+    let av = report(&again);
+    assert_eq!(av["error"]["kind"], "ArchiveWriteFailed", "{av}");
+    assert_eq!(again.status.code(), Some(3), "{av}");
+    // Under another name, it is not that run.
+    let renamed = archive.join("run");
+    fs::rename(&run_dir, &renamed).unwrap();
+    let r = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), renamed.as_os_str()]);
+    let rv = report(&r);
+    assert_eq!(rv["error"]["kind"], "RunIdMismatch", "{rv}");
+    assert_eq!(r.status.code(), Some(3), "{rv}");
+}
