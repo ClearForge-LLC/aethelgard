@@ -174,3 +174,34 @@ s = json.loads(open(P).read(), object_pairs_hook=OD)
 s["acknowledge_conditions"] = [OD([("id", k), ("reason", ACK[k])]) for k in sorted(ACK)]
 open(P, "w").write(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
 print("acknowledged", len(ACK))
+
+# D10 (ruled): the ledger's 46 register/class entries, each reason specific to this board
+# (drafted from the ledger and the topology, sources in acks-unwitnessed-notes.md), and the four held
+# reasons the crystal and the new pins made false, rewritten.
+s = json.loads(open(P).read(), object_pairs_hook=OD)
+held = s["acknowledge_unwitnessed"]
+FIX = {
+    ("USART1.CR1", "ignored-by-model"): "Not stored by Renode's USART (4300b FEEDBACK section 0; M0, M1 measured P4.1): console USART1 on PA9/PA10, 8 data bits, FIFOEN set, no wake-up, interrupts off. The bench row reads CR1 back.",
+    ("GPIOB.OTYPER", "ignored-by-model"): "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 (I2C1) and PB10/PB11 (I2C2, EXT) open-drain, the rest push-pull. 3302 B2 reads it on silicon; the bench row compares it.",
+    ("RCC.CR", "ignored-by-model"): "D2CKRDY: not polled (Q-F), a tag reading 0 (STM32H7_RCC.cs L175). The rest: tags or read-only flags of the RCC_CR words the HSE bring-up writes. Bench rows: HSIKERON, CSIKERON, HSEBYP, D2CKRDY.",
+    ("RCC.D1CCIPR", "ignored-by-model"): "A tag in Renode (STM32H7_RCC.cs L401, reads 0 whatever is written, 4230 FEEDBACK section 2). SPI1 and SPI2 run on pll1_q here (the topology), not per_ck. The bench row reads it.",
+}
+for a in held:
+    k = (a["register"], a["class"])
+    if k in FIX:
+        a["reason"] = FIX[k]
+new = json.loads(open("spike/4300k/build/acks-unwitnessed.json").read(), object_pairs_hook=OD)
+index = {(a["register"], a["class"]): i for i, a in enumerate(held)}
+for e in new:
+    k = (e["register"], e["class"])
+    entry = OD([("register", e["register"]), ("class", e["class"]), ("fields", e["fields"]), ("reason", e["reason"])])
+    if k in index:
+        held[index[k]] = entry
+    else:
+        held.append(entry)
+for a in held:
+    r = a["reason"]
+    assert 1 <= len(r.encode()) <= 200 and r.isascii() and r == r.strip(), (a["register"], len(r.encode()))
+s["acknowledge_unwitnessed"] = [a for a in held if a["register"] != "FLASH.ACR"]
+open(P, "w").write(json.dumps(s, indent=2, ensure_ascii=False) + "\n")
+print("unwitnessed entries", len(s["acknowledge_unwitnessed"]))

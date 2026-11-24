@@ -2365,11 +2365,12 @@ pub(crate) fn write_placed_at(
 ///
 /// [`Join::token`]: crate::stack::Join::token
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
-    // `AET-WO-4300k` (a), lean of Q2: on a board with thermal pours, every
-    // SMD pad on `GND` joins them solid (a buck's thermal pad among them), so
-    // the copper `extract` measures is the copper the heat reaches, with no
-    // relief gap round each pad.
-    if !stack.pours.is_empty() {
+    // `AET-WO-4300k` (a), Q2 ruled 10:30Z step 1: on a board with thermal
+    // pours, an SMD pad on `GND` joins them solid (a buck's thermal pad among
+    // them), so the copper `extract` measures is the copper the heat reaches;
+    // an 0402 or 0603 passive keeps its relief, against tombstoning.
+    let small = fp.arg(1).is_some_and(|lib| small_passive(lib));
+    if !stack.pours.is_empty() && !small {
         for pad in fp.items_mut().into_iter().flatten() {
             let on_ground = pad.head() == Some("pad")
                 && pad.arg(2) == Some("smd")
@@ -2393,6 +2394,13 @@ fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
             items.push(Sx::node("zone_connect", &[value]));
         }
     }
+}
+
+/// An 0402 or 0603 resistor or capacitor footprint (`AET-WO-4300k` Q2): a
+/// small passive keeps its thermal relief on a pour.
+pub(crate) fn small_passive(lib: &str) -> bool {
+    (lib.starts_with("Resistor_SMD:") || lib.starts_with("Capacitor_SMD:"))
+        && (lib.contains("_0402_") || lib.contains("_0603_"))
 }
 
 /// The router's tracks, vias and unfilled zones as board items, each

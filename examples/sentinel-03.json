@@ -29,46 +29,55 @@
       "register": "GPIOA.AFRH",
       "class": "same-source",
       "fields": [
-        "AFSEL9",
-        "AFSEL10"
+        "AFSEL10",
+        "AFSEL8",
+        "AFSEL9"
       ],
-      "reason": "PA9/PA10 at AF7 for USART1: Renode's USART has no pin (4300b FEEDBACK section 0), so no AF choice shows in the twin. The bench row reads AFRH back after boot."
+      "reason": "PA8 at AF1 for TIM1_CH1 (MOTOR1), PA9/PA10 at AF7 for USART1: Renode routes PA8 by AFR (4300 FEEDBACK section 0) but the table cannot see its role; USART has no pin. Bench reads AFRH."
     },
     {
       "register": "GPIOA.AFRL",
       "class": "same-source",
       "fields": [
+        "AFSEL2",
+        "AFSEL3",
         "AFSEL5",
         "AFSEL6",
         "AFSEL7"
       ],
-      "reason": "PA5-PA7 at AF5 for SPI1: the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRL back; 3302 B2 predicted 0x555 there."
+      "reason": "PA2/PA3 at AF7 for USART2 (CRSF), PA5-PA7 at AF5 for SPI1 (flash): Renode's USART has no pin (4300b FEEDBACK section 0); AFR routes only a timer channel. The bench row reads AFRL."
     },
     {
       "register": "GPIOA.MODER",
       "class": "same-source",
       "fields": [
         "MODER0",
+        "MODER10",
+        "MODER2",
+        "MODER3",
         "MODER5",
         "MODER6",
         "MODER7",
-        "MODER9",
-        "MODER10"
+        "MODER8",
+        "MODER9"
       ],
-      "reason": "PA0 output (flash CS), PA5-PA7 and PA9/PA10 alternate: a BSRR write drives a pin whatever MODER says (4200 FEEDBACK). The bench row reads MODER back, as 3302 B2 did."
+      "reason": "PA0 output (FLASH_CS); PA2/PA3, PA5-PA10 alternate (USART2, SPI1, MOTOR1, USART1): BSRR drives a pin whatever MODER says (4200 FEEDBACK); only PA8's TIM1 route reads it. Bench reads MODER."
     },
     {
       "register": "GPIOA.OSPEEDR",
       "class": "same-source",
       "fields": [
         "OSPEED0",
+        "OSPEED10",
+        "OSPEED2",
+        "OSPEED3",
         "OSPEED5",
         "OSPEED6",
         "OSPEED7",
-        "OSPEED9",
-        "OSPEED10"
+        "OSPEED8",
+        "OSPEED9"
       ],
-      "reason": "No edge rate is modelled; check speeds judges each chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+      "reason": "PA5/PA7 medium for SPI1 at 16 MHz; PA0, PA2/PA3, PA6, PA8-PA10 low: no edge rate is modelled, and check speeds judges each fmax with svd-hal's own table, not an ir rule. Bench reads OSPEEDR."
     },
     {
       "register": "GPIOA.OTYPER",
@@ -99,20 +108,21 @@
       "fields": [
         "PUPD0",
         "PUPD1",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15",
         "PUPD2",
         "PUPD3",
         "PUPD4",
         "PUPD5",
         "PUPD6",
         "PUPD7",
-        "PUPD9",
-        "PUPD10",
-        "PUPD12",
-        "PUPD13",
-        "PUPD14",
-        "PUPD15"
+        "PUPD9"
       ],
-      "reason": "No pull is modelled. Written whole by split: no pull on the solved pins, the debug pins' reset pulls (PA13 up, PA14 down, PA15 up) kept. The bench row reads PUPDR back."
+      "reason": "Written whole: no pull on PA0-PA7, PA9/PA10, nor PA11/PA12 (kept for USB); debug pulls kept (PA13 up, PA14 down, PA15 up); PA8's is the motor rule's. No pull is modelled. Bench reads PUPDR."
     },
     {
       "register": "GPIOB.AFRL",
@@ -127,19 +137,31 @@
       "register": "GPIOB.MODER",
       "class": "same-source",
       "fields": [
+        "MODER10",
+        "MODER11",
+        "MODER12",
+        "MODER13",
+        "MODER14",
+        "MODER15",
         "MODER6",
         "MODER7"
       ],
-      "reason": "PB6/PB7 alternate for I2C1: the model routes a pin by MODER only for a timer channel (4300 FEEDBACK section 0). The bench row reads MODER back, as 3302 B2 did."
+      "reason": "PB6/PB7, PB10/PB11 alternate for I2C1/I2C2, PB13-PB15 for SPI2, PB12 output (IMU_CS): BSRR drives a pin whatever MODER says (4200 FEEDBACK); no timer pin here. Bench reads MODER."
     },
     {
       "register": "GPIOB.OSPEEDR",
       "class": "same-source",
       "fields": [
+        "OSPEED10",
+        "OSPEED11",
+        "OSPEED12",
+        "OSPEED13",
+        "OSPEED14",
+        "OSPEED15",
         "OSPEED6",
         "OSPEED7"
       ],
-      "reason": "PB6/PB7 for I2C1 at 400 kHz: no edge rate is modelled; check speeds judges the chosen speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+      "reason": "All low: PB6/PB7 I2C1 at 400 kHz, PB10/PB11 I2C2 at 100 kHz, PB12-PB15 SPI2 at 2 MHz. No edge rate is modelled; check speeds judges fmax with svd-hal's own table. Bench reads OSPEEDR."
     },
     {
       "register": "GPIOB.OTYPER",
@@ -162,7 +184,7 @@
         "OT14",
         "OT15"
       ],
-      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 open-drain for I2C1, the rest push-pull. 3302 B2 reads it on silicon; the bench row compares it."
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 (I2C1) and PB10/PB11 (I2C2, EXT) open-drain, the rest push-pull. 3302 B2 reads it on silicon; the bench row compares it."
     },
     {
       "register": "GPIOB.PUPDR",
@@ -243,16 +265,17 @@
         "PLL2RDY",
         "PLL3RDY"
       ],
-      "reason": "D2CKRDY: not polled (Q-F), a tag reading 0 (STM32H7_RCC.cs L175). The rest: tags or read-only flags of the whole RCC_CR words the kernel-clock switch writes (AET-WO-4240e). Bench rows read CR."
+      "reason": "D2CKRDY: not polled (Q-F), a tag reading 0 (STM32H7_RCC.cs L175). The rest: tags or read-only flags of the RCC_CR words the HSE bring-up writes. Bench rows: HSIKERON, CSIKERON, HSEBYP, D2CKRDY."
     },
     {
       "register": "RCC.CR",
       "class": "silicon-only",
       "fields": [
         "CSSHSEON",
+        "HSERDY",
         "PLL1RDY"
       ],
-      "reason": "PLL1RDY: polled by the switch (AET-WO-4240e); the stock RCC reads it = PLL1ON at once (L197). CSSHSEON: written 0 whole, stored with no detection. Judged by the bench row and Tviburi RCC guard."
+      "reason": "HSE bring-up waits on HSERDY (ABM8AIG 16 MHz, 20 ms ruled) and PLL1RDY; Renode sets each with its ON bit (L185, L197). CSSHSEON is set after HSERDY: stored, no detection. Bench reads CR."
     },
     {
       "register": "RCC.D1CCIPR",
@@ -260,7 +283,7 @@
       "fields": [
         "CKPERSEL"
       ],
-      "reason": "A tag in Renode (STM32H7_RCC.cs L401, read 0 whatever is written, 4230 FEEDBACK section 2). SPI1's kernel per_ck assumes HSI here; the bench row reads it, as 3302 B8."
+      "reason": "A tag in Renode (STM32H7_RCC.cs L401, reads 0 whatever is written, 4230 FEEDBACK section 2). SPI1 and SPI2 run on pll1_q here (the topology), not per_ck. The bench row reads it."
     },
     {
       "register": "RCC.D2CCIP1R",
@@ -338,7 +361,7 @@
         "TXFEIE",
         "RXFFIE"
       ],
-      "reason": "Not stored by Renode's USART (4300b FEEDBACK section 0; M0, M1 measured P4.1): 8 data bits, FIFO off, no wake-up, interrupts off. The bench row reads CR1 back."
+      "reason": "Not stored by Renode's USART (4300b FEEDBACK section 0; M0, M1 measured P4.1): console USART1 on PA9/PA10, 8 data bits, FIFOEN set, no wake-up, interrupts off. The bench row reads CR1 back."
     },
     {
       "register": "USART1.CR1",
@@ -388,6 +411,539 @@
         "STOP"
       ],
       "reason": "One stop bit: stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
+    },
+    {
+      "register": "GPIOB.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL10",
+        "AFSEL11",
+        "AFSEL13",
+        "AFSEL14",
+        "AFSEL15"
+      ],
+      "reason": "PB10/PB11 at AF4 for I2C2 (EXT, J8), PB13-PB15 at AF5 for SPI2 (IMU U5): the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRH."
+    },
+    {
+      "register": "GPIOC.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL10",
+        "AFSEL11"
+      ],
+      "reason": "PC10/PC11 at AF7 for USART3 (MAVLINK, J7): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries MAVLINK bytes in the twin. The bench row reads AFRH."
+    },
+    {
+      "register": "GPIOC.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER10",
+        "MODER11"
+      ],
+      "reason": "PC10/PC11 alternate for USART3 (MAVLINK, J7): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
+    },
+    {
+      "register": "GPIOC.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED10",
+        "OSPEED11"
+      ],
+      "reason": "PC10/PC11 low for USART3 at 57600 baud (MAVLINK): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+    },
+    {
+      "register": "GPIOC.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9"
+      ],
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port C pin, USART3's PC10/PC11 included. The bench row reads it back."
+    },
+    {
+      "register": "GPIOC.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9"
+      ],
+      "reason": "Written whole as 0: no pull on PC10/PC11 (USART3, MAVLINK) nor PC0 (VBAT_SENSE, ADC1 INP10), every other port C pin at reset. No pull is modelled. The bench row reads PUPDR."
+    },
+    {
+      "register": "GPIOE.AFRH",
+      "class": "same-source",
+      "fields": [
+        "AFSEL11",
+        "AFSEL13",
+        "AFSEL14"
+      ],
+      "reason": "PE11/PE13/PE14 at AF1 for TIM1_CH2-4 (MOTOR2-4): Renode forwards TIM1 only while AFR picks AF1 (4300 FEEDBACK section 0), but the table cannot see a pin's role. Bench reads AFRH."
+    },
+    {
+      "register": "GPIOE.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER11",
+        "MODER13",
+        "MODER14"
+      ],
+      "reason": "PE11/PE13/PE14 alternate for MOTOR2-4: Renode forwards TIM1's level only while MODER is AF (4300 FEEDBACK section 0); the table cannot see a pin's role, so the weaker class. Bench reads MODER."
+    },
+    {
+      "register": "GPIOE.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED11",
+        "OSPEED13",
+        "OSPEED14"
+      ],
+      "reason": "PE11/PE13/PE14 low for MOTOR2-4 DShot600: no edge rate is modelled; check speeds judges that speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR."
+    },
+    {
+      "register": "GPIOE.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9"
+      ],
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port E pin, MOTOR2-4 on PE11/PE13/PE14 included. Bench row reads it back."
+    },
+    {
+      "register": "GPIOE.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD10",
+        "PUPD12",
+        "PUPD15",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9"
+      ],
+      "reason": "Written whole as 0 on port E but MOTOR2-4 (PE11/13/14, the motor rule's); PE9, MOTOR1 until 4300h D3 moved it to PA8, has no pull now. No pull is modelled. Bench reads PUPDR."
+    },
+    {
+      "register": "I2C2.CR1",
+      "class": "same-source",
+      "fields": [
+        "PE"
+      ],
+      "reason": "I2C2 runs EXT (PB10/PB11, J8) at 100 kHz: PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, no reaction claimed. The bench row reads PE as 1."
+    },
+    {
+      "register": "I2C2.CR2",
+      "class": "same-source",
+      "fields": [
+        "ADD10",
+        "AUTOEND",
+        "HEAD10R",
+        "NACK",
+        "PECBYTE",
+        "RELOAD",
+        "STOP"
+      ],
+      "reason": "7-bit, no reload, no PEC: 0 in I2C2's transfer code. STM32F7_I2C.cs is not held, no reaction claimed; EXT (J8) declares no device, so none runs. Bench reads all but AUTOEND."
+    },
+    {
+      "register": "I2C2.ICR",
+      "class": "same-source",
+      "fields": [
+        "ADDRCF",
+        "ALERTCF",
+        "ARLOCF",
+        "BERRCF",
+        "NACKCF",
+        "OVRCF",
+        "PECCF",
+        "STOPCF",
+        "TIMOUTCF"
+      ],
+      "reason": "Write-1-to-clear (RM0433 Rev 9 section 47.9.8): STOPCF|NACKCF in I2C2's transfer, held by its Kani harness only; no bench row, and EXT (J8) has no device, so no record shows a clear."
+    },
+    {
+      "register": "RCC.AHB4ENR",
+      "class": "same-source",
+      "fields": [
+        "GPIOCEN",
+        "GPIOEEN"
+      ],
+      "reason": "GPIOC (USART3, VBAT_SENSE) and GPIOE (MOTOR2-4) clocks: 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows ports C/E registered with its RCC. Bench reads AHB4ENR."
+    },
+    {
+      "register": "RCC.APB1LENR",
+      "class": "same-source",
+      "fields": [
+        "I2C2EN"
+      ],
+      "reason": "I2C2's clock for EXT (J8): 3302 B2 read Renode's APB1LENR as 0x00200000, I2C1 only; no held measurement shows i2c2 registered with its RCC, so the gate goes unseen. Bench reads I2C2EN."
+    },
+    {
+      "register": "RCC.CFGR",
+      "class": "ignored-by-model",
+      "fields": [
+        "HRTIMSEL",
+        "MCO1",
+        "MCO1PRE",
+        "MCO2",
+        "MCO2PRE",
+        "RTCPRE",
+        "STOPKERWUCK",
+        "STOPWUCK",
+        "SWS"
+      ],
+      "reason": "Written whole with SW = PLL1 by the 16 MHz HSE bring-up: SWS read-only, the rest tags (STM32H7_RCC.cs L226-236). MCO1/MCO2 0; PC9 (MCO2) is not set AF. Bench rows read all but SWS."
+    },
+    {
+      "register": "SPI2.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "TSER"
+      ],
+      "reason": "SPI2 to U5 (ICM-42688-P) on PB13-PB15: TSER is a tag (STM32H7_SPI.cs L149), written 0 with TSIZE, as no IMU transfer reloads. The bench row reads it back as 0."
+    },
+    {
+      "register": "SPI2.IFCR",
+      "class": "ignored-by-model",
+      "fields": [
+        "CRCEC",
+        "MODFC",
+        "OVRC",
+        "TIFREC",
+        "TSERFC",
+        "TXTFC",
+        "UDRC"
+      ],
+      "reason": "Tags in Renode (STM32H7_SPI.cs L258-266), written 0 beside EOTC after each U5 transfer; write-only, so no bench row. U5's identity read (0x47 expected), on silicon, shows the transfers ended."
+    },
+    {
+      "register": "SPI2.SR",
+      "class": "ignored-by-model",
+      "fields": [
+        "MODF"
+      ],
+      "reason": "SPI2 masters U5 with PB12 a GPIO select: MODF is a tag (STM32H7_SPI.cs L238) and MASTER reads 1, so no mode fault shows in the twin. Kani proves SSM|SSI before SPE; bench reads MODF 0."
+    },
+    {
+      "register": "TIM1.BDTR",
+      "class": "ignored-by-model",
+      "fields": [
+        "AOE",
+        "BK2E",
+        "BK2F",
+        "BK2P",
+        "BKE",
+        "BKF",
+        "BKP",
+        "DTG",
+        "LOCK",
+        "MOE",
+        "OSSI",
+        "OSSR"
+      ],
+      "reason": "Written as MOE alone (4240b FEEDBACK): no break or dead time on MOTOR1-4. Every BDTR field is a tag (4300a FEEDBACK section 0); toggling MOE moves no observer (2302 A2-4). Bench reads BDTR."
+    },
+    {
+      "register": "TIM1.CCER",
+      "class": "ignored-by-model",
+      "fields": [
+        "CC1NE",
+        "CC2NE",
+        "CC3NE"
+      ],
+      "reason": "CC1NE-CC3NE 0: no complementary output. TIM1's CH1N pins include PA7 (SPI_MOSI) and PB13 (IMU_SCK), here at AF5. Tags in Renode (4300a FEEDBACK section 0). Bench reads CCER."
+    },
+    {
+      "register": "TIM1.CCER",
+      "class": "same-source",
+      "fields": [
+        "CC1E",
+        "CC1NP",
+        "CC1P",
+        "CC2E",
+        "CC2NP",
+        "CC2P",
+        "CC3E",
+        "CC3NP",
+        "CC3P",
+        "CC4E",
+        "CC4NP",
+        "CC4P",
+        "CC5E",
+        "CC5P",
+        "CC6E",
+        "CC6P"
+      ],
+      "reason": "CC1E-CC4E set for MOTOR1-4, CC5/CC6 off, every polarity 0: stored with no reaction claimed; Renode's output path never reads CCxP (4300 FEEDBACK section 0). The bench row reads CCER."
+    },
+    {
+      "register": "TIM1.CCMR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "OC1CE",
+        "OC1FE",
+        "OC1M[3]",
+        "OC1PE",
+        "OC2CE",
+        "OC2FE",
+        "OC2M[3]",
+        "OC2PE"
+      ],
+      "reason": "MOTOR1/MOTOR2 (PA8, PE11): OC1PE/OC2PE set, OCxFE/OCxCE 0, all tags; OCxM[3] is reserved in the model (4300a FEEDBACK section 0); the twin lists OCxPE unobservable. Bench reads CCMR1."
+    },
+    {
+      "register": "TIM1.CCMR1",
+      "class": "same-source",
+      "fields": [
+        "CC1S",
+        "CC2S"
+      ],
+      "reason": "CC1S/CC2S 00 make channels 1-2 outputs for MOTOR1 (PA8) and MOTOR2 (PE11): stored (STM32_Timer.cs L425-445), no reaction claimed; the image compares the topology. Bench reads CCMR1."
+    },
+    {
+      "register": "TIM1.CCMR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "OC3CE",
+        "OC3FE",
+        "OC3M[3]",
+        "OC3PE",
+        "OC4CE",
+        "OC4FE",
+        "OC4M[3]",
+        "OC4PE"
+      ],
+      "reason": "MOTOR3/MOTOR4 (PE13, PE14): OC3PE/OC4PE set, OCxFE/OCxCE 0, all tags; OCxM[3] is reserved in the model (4300a FEEDBACK section 0); the twin lists OCxPE unobservable. Bench reads CCMR2."
+    },
+    {
+      "register": "TIM1.CCMR2",
+      "class": "same-source",
+      "fields": [
+        "CC3S",
+        "CC4S"
+      ],
+      "reason": "CC3S/CC4S 00 make channels 3-4 outputs for MOTOR3 (PE13) and MOTOR4 (PE14): stored (STM32_Timer.cs L425-445), no reaction claimed; the image compares the topology. Bench reads CCMR2."
+    },
+    {
+      "register": "TIM1.CR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "CKD",
+        "UIFREMAP"
+      ],
+      "reason": "TIM1 for MOTOR1-4 DShot600: CKD and UIFREMAP written 0, outside the CR1 bits 0-7 Renode stores (CKD a tag; 4300a FEEDBACK section 0), so the twin cannot show them. Bench reads CR1."
+    },
+    {
+      "register": "TIM1.CR1",
+      "class": "same-source",
+      "fields": [
+        "ARPE",
+        "CMS",
+        "DIR",
+        "UDIS",
+        "URS"
+      ],
+      "reason": "ARPE set, edge-aligned up-count (CMS 0, DIR 0), UDIS/URS 0 for MOTOR1-4's DShot600 frames: stored (bits 0-7) with no reaction claimed; the image compares the topology. Bench reads CR1."
+    },
+    {
+      "register": "TIM1.EGR",
+      "class": "same-source",
+      "fields": [
+        "B2G",
+        "BG",
+        "CC1G",
+        "CC2G",
+        "CC3G",
+        "CC4G",
+        "COMG",
+        "TG"
+      ],
+      "reason": "EGR carries UG alone for TIM1 (MOTOR1-4): CC1G-CC4G, COMG, TG, BG, B2G written 0, raising no event. Write-only, so no bench row; no held source line shows Renode's handling of them."
+    },
+    {
+      "register": "USART2.CR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "CMIE",
+        "DEAT",
+        "DEDT",
+        "EOBIE",
+        "FIFOEN",
+        "IDLEIE",
+        "M0",
+        "M1",
+        "MME",
+        "RXFFIE",
+        "TXFEIE",
+        "UESM",
+        "WAKE"
+      ],
+      "reason": "CRSF on USART2 (PA2/PA3, J6) at 420000: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
+    },
+    {
+      "register": "USART2.CR1",
+      "class": "same-source",
+      "fields": [
+        "OVER8",
+        "PCE",
+        "PEIE",
+        "PS",
+        "RTOIE",
+        "RXNEIE_RXFNEIE",
+        "TCIE",
+        "TXEIE_TXFNFIE"
+      ],
+      "reason": "CRSF is 8N1 (validate refuses other framing): PCE/PS 0, OVER8 0 (the column its tolerance check takes), interrupts off; stored, no reaction claimed (4300b FEEDBACK section 0). Bench reads CR1."
+    },
+    {
+      "register": "USART2.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "ABREN",
+        "ABRMODE",
+        "ADD",
+        "ADDM7",
+        "CLKEN",
+        "CPHA",
+        "CPOL",
+        "DATAINV",
+        "DIS_NSS",
+        "LBCL",
+        "LBDIE",
+        "LBDL",
+        "LINEN",
+        "MSBFIRST",
+        "RTOEN",
+        "RXINV",
+        "SLVEN",
+        "SWAP",
+        "TXINV"
+      ],
+      "reason": "CRSF must be non-inverted 8N1 (4300b FEEDBACK section 0): RXINV/TXINV/SWAP are tags (P4.1, measured), so a wrong inversion on PA2/PA3 passes the twin. Only STOP is stored. Bench reads CR2."
+    },
+    {
+      "register": "USART2.CR2",
+      "class": "same-source",
+      "fields": [
+        "STOP"
+      ],
+      "reason": "One stop bit for CRSF 8N1 at 420000 on USART2: stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
+    },
+    {
+      "register": "USART3.CR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "CMIE",
+        "DEAT",
+        "DEDT",
+        "EOBIE",
+        "FIFOEN",
+        "IDLEIE",
+        "M0",
+        "M1",
+        "MME",
+        "RXFFIE",
+        "TXFEIE",
+        "UESM",
+        "WAKE"
+      ],
+      "reason": "MAVLINK on USART3 (PC10/PC11, J7) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
+    },
+    {
+      "register": "USART3.CR1",
+      "class": "same-source",
+      "fields": [
+        "OVER8",
+        "PCE",
+        "PEIE",
+        "PS",
+        "RTOIE",
+        "RXNEIE_RXFNEIE",
+        "TCIE",
+        "TXEIE_TXFNFIE"
+      ],
+      "reason": "MAVLINK 8N1 at 57600, BRR 1111: PCE/PS 0, OVER8 0 (oversampling by 16), interrupts off; stored with no reaction claimed (4300b FEEDBACK section 0), compared with the topology. Bench reads CR1."
+    },
+    {
+      "register": "USART3.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "ABREN",
+        "ABRMODE",
+        "ADD",
+        "ADDM7",
+        "CLKEN",
+        "CPHA",
+        "CPOL",
+        "DATAINV",
+        "DIS_NSS",
+        "LBCL",
+        "LBDIE",
+        "LBDL",
+        "LINEN",
+        "MSBFIRST",
+        "RTOEN",
+        "RXINV",
+        "SLVEN",
+        "SWAP",
+        "TXINV"
+      ],
+      "reason": "MAVLINK on PC10/PC11: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
+    },
+    {
+      "register": "USART3.CR2",
+      "class": "same-source",
+      "fields": [
+        "STOP"
+      ],
+      "reason": "One stop bit for MAVLINK 8N1 at 57600 on USART3 (J7): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
     }
   ],
   "accept_lifecycle": [
