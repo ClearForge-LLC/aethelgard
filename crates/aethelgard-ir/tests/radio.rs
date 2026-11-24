@@ -225,3 +225,17 @@ fn one_radio_module_per_board() {
     assert_eq!(kind, "RadioModuleTwice");
     assert_eq!(path.as_deref(), Some("radio_modules[1]"));
 }
+
+/// Adversarial pass: with no regulator on the module's supply, nothing
+/// judges its 500 mA (`INV-06`), so step 27 refuses it.
+#[test]
+fn a_supply_no_regulator_outputs_is_refused() {
+    let mut v = fixture();
+    v["power"]["regulators"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|r| r["output"] != "VDD_3V3");
+    let s: Specification = serde_json::from_value(v).unwrap();
+    let e = aethelgard_ir::radio::validate(&s).unwrap_err();
+    assert_eq!(e.kind(), "RadioSupplyUnsourced");
+}

@@ -435,6 +435,7 @@ pub enum Kind {
     RadioPassivePartUnknown,
     RadioBoardLayers,
     RadioModuleTwice,
+    RadioSupplyUnsourced,
 }
 
 impl Kind {
@@ -458,6 +459,7 @@ impl Kind {
             Self::RadioPassivePartUnknown => "RadioPassivePartUnknown",
             Self::RadioBoardLayers => "RadioBoardLayers",
             Self::RadioModuleTwice => "RadioModuleTwice",
+            Self::RadioSupplyUnsourced => "RadioSupplyUnsourced",
         }
     }
 }
@@ -735,6 +737,25 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     row.supply.min_mv,
                     row.supply.max_mv,
                     t.cite(&row.supply.at)
+                ),
+            ));
+        }
+        // The row's supply requirement is judged on a declared regulator's
+        // output (D5); with none, nothing judges it (`INV-06`).
+        if !spec
+            .power
+            .as_ref()
+            .is_some_and(|p| p.regulators.iter().any(|g| g.output == m.supply))
+        {
+            return Err(refuse(
+                Kind::RadioSupplyUnsourced,
+                &m.supply,
+                format!("{at}.supply"),
+                format!(
+                    "no declared regulator outputs `{}`, so the module's {} mA supply requirement is judged by nothing ({})",
+                    m.supply,
+                    row.supply_current_min_ma.value,
+                    t.cite(&row.supply_current_min_ma.at)
                 ),
             ));
         }
