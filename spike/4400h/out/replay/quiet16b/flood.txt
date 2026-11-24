@@ -1,0 +1,7 @@
+bytes per virtual second: {0: 1545, 2: 798, 4: 273828, 5: 443688, 6: 443916, 7: 444030, 8: 444030, 9: 443802, 10: 444030, 11: 443916, 12: 444030, 13: 443916, 14: 444030, 15: 444030} untimed lines: 468
+   5157246 B    45239 lines  ERROR spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+           per s: {4: 2402, 5: 3892, 6: 3894, 7: 3895, 8: 3895, 9: 3893, 10: 3895, 11: 3894, 12: 3895, 13: 3894, 14: 3895, 15: 3895}
+      1824 B       16 lines  ERROR spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+           per s: {0: 9, 2: 7}
+       519 B        6 lines  INFO sysbus: Loading block of # bytes length at #.
+           per s: {0: 6}

@@ -1,0 +1,1 @@
+{"name": "f1-CN-w9", "window": "9000ms", "exit": 1, "wall_s": 18.89, "peak_rss_kib": 1270428, "permille_of_1572864": 807, "load1_min": 7.74, "load1_max": 8.37, "cpus": "all", "ok": false, "kinds": ["foreign_not_booted", "i2c_transaction_unwitnessed", "renode_error_log", "serial_options_unjudgeable", "spi_transaction_unwitnessed"], "log": [], "stop": null}

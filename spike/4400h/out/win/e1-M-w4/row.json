@@ -1,0 +1,1 @@
+{"name": "e1-M-w4", "window": "4000ms", "exit": 1, "wall_s": 8.18, "peak_rss_kib": 749512, "permille_of_1572864": 476, "load1_min": 3.77, "load1_max": 4.17, "cpus": "all", "ok": false, "kinds": ["register_mismatch", "spi_transaction_unwitnessed"], "log": [], "stop": null}

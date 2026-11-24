@@ -1,0 +1,30 @@
+name	window	bounds	usart_log	cpus	exit	ok	wall_s	peak_rss_kib	permille_of_1572864	load1_min	load1_max	log_kept_bytes	log_lines_dropped	failing_kinds
+w05-a	5000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	30.88	1386768	881	21.75	27.7	0	0	wall_bound_exceeded
+s1-L-w5	5000ms	wall 600 s, RSS 6 GiB (measure)	on	all	0	True	19.1	1142068	726	26.18	28.03	1598662	0	-
+s1-N-w5	5000ms	wall 600 s, RSS 6 GiB (measure)	off	all	1	False	12.36	844256	536	24.73	26.49	1540597	0	serial_options_unwritten
+s1-L-w10	10000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	30.66	1630336	1036	22.1	24.73	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+s1-N-w10	10000ms	wall 600 s, RSS 6 GiB (measure)	off	all	1	False	20.93	1339856	851	18.24	22.1	8402913	50272	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+s1-L-w20	20000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	59.75	2915188	1853	14.09	18.24	8402886	325060	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+s1-N-w20	20000ms	wall 600 s, RSS 6 GiB (measure)	off	all	1	False	44.23	2363904	1502	13.5	16.87	8402913	323948	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+s1-L-w30	30000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	89.38	4590036	2918	11.11	18.02	8402886	598963	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+s1-N-w30	30000ms	wall 600 s, RSS 6 GiB (measure)	off	all	1	False	63.75	3522032	2239	10.98	15.31	8402918	597616	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+f1-C-w6	6000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	12.2	924964	588	10.24	10.98	3771189	0	register_mismatch
+f1-CN-w6	6000ms	wall 600 s, RSS 1,572,864 KiB	off	all	1	False	12.22	937056	595	9.96	10.24	3709037	0	register_mismatch,serial_options_unwritten
+f1-C-w7	7000ms	wall 600 s, RSS 1,572,864 KiB	on	all	0	True	14.49	1042204	662	9.46	9.96	5943473	0	-
+f1-CN-w7	7000ms	wall 600 s, RSS 1,572,864 KiB	off	all	1	False	14.06	1020844	649	9.07	9.46	5879281	0	serial_options_unwritten
+f1-C-w8	8000ms	wall 600 s, RSS 1,572,864 KiB	on	all	0	True	16.51	1141480	725	8.83	9.07	8115924	0	-
+f1-CN-w8	8000ms	wall 600 s, RSS 1,572,864 KiB	off	all	1	False	16.49	1141796	725	8.66	8.83	8049691	0	serial_options_unwritten
+f1-C-w9	9000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	18.49	1233296	784	8.37	8.66	8402885	23772	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+f1-CN-w9	9000ms	wall 600 s, RSS 1,572,864 KiB	off	all	1	False	18.89	1270428	807	7.74	8.37	8402912	22916	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+f1-M-w5a	5000ms	main (30 s, 1,572,864 KiB)	on	all	0	True	9.91	828252	526	7.39	7.74	1598667	0	-
+f1-T2-w5a	5000ms	wall 600 s, RSS 6 GiB (measure)	on	0,1	0	True	10.66	943740	600	7.25	7.44	1598667	0	-
+f1-M-w5b	5000ms	main (30 s, 1,572,864 KiB)	on	all	0	True	9.78	809484	514	6.91	7.25	1598667	0	-
+f1-T2-w5b	5000ms	wall 600 s, RSS 6 GiB (measure)	on	0,1	0	True	11.19	982156	624	6.54	6.91	1598667	0	-
+t1-L-w10a	10000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	28.61	1736200	1103	6.14	9.47	8402881	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+t1-L-w10b	10000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	24.78	1452436	923	9.3	9.95	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+t2-C-w10a	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	22.73	1498732	952	3.03	3.35	8402881	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+t2-C-w10b	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	21.32	1423256	904	2.94	3.03	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+t2-C-w10c	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	21.92	1472588	936	2.65	2.96	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+e1-M-w2	2000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	6.63	671676	427	4.36	4.48	152297	0	register_mismatch,spi_transaction_unwitnessed
+e1-M-w3	3000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	6.91	685488	435	4.17	4.36	231894	0	register_mismatch,spi_transaction_unwitnessed
+e1-M-w4	4000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	8.18	749512	476	3.77	4.17	244361	0	register_mismatch,spi_transaction_unwitnessed

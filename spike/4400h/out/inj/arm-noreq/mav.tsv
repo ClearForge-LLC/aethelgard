@@ -1,0 +1,22 @@
+index	type	fields
+1	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase started"}
+3	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+4	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+6	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+7	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+9	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+10	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+11	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+13	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+15	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+16	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+17	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+18	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+19	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+20	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+22	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+23	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+24	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+25	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+26	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+27	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}

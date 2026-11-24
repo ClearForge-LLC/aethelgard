@@ -1,0 +1,1 @@
+{"bad": 6, "by_type": {"BAD_DATA": 6, "HEARTBEAT": 17, "STATUSTEXT": 1, "TIMESYNC": 1}, "bytes": 761, "messages": 25}

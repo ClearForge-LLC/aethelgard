@@ -1,0 +1,1 @@
+{"name": "t2-C-w10c", "window": "10000ms", "exit": 1, "wall_s": 21.92, "peak_rss_kib": 1472588, "permille_of_1572864": 936, "load1_min": 2.65, "load1_max": 2.96, "cpus": "all", "ok": false, "kinds": ["foreign_not_booted", "i2c_transaction_unwitnessed", "renode_error_log", "serial_options_unjudgeable", "spi_transaction_unwitnessed"], "log": [], "stop": null}

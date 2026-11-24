@@ -1,0 +1,39 @@
+after the reboot (>=8.0 s)	AccessControl	0x32	1
+after the reboot (>=8.0 s)	ClearControlBank2	0xFFFFFFFF	4
+after the reboot (>=8.0 s)	ControlBank1	0x31	2
+after the reboot (>=8.0 s)	ControlBank2	0x30	2
+after the reboot (>=8.0 s)	ControlBank2	0x31	2
+after the reboot (>=8.0 s)	ControlBank2	0x32	2
+after the reboot (>=8.0 s)	KeyBank1	0x45670123	2
+after the reboot (>=8.0 s)	KeyBank1	0xCDEF89AB	2
+after the reboot (>=8.0 s)	KeyBank2	0x45670123	2
+after the reboot (>=8.0 s)	KeyBank2	0xCDEF89AB	2
+boot (<7.4 s)	AccessControl	0x32	1
+boot (<7.4 s)	ClearControlBank1	0xFFFFFFFF	4
+boot (<7.4 s)	ClearControlBank2	0xFFFFFFFF	106
+boot (<7.4 s)	ControlBank1	0x31	53
+boot (<7.4 s)	ControlBank2	0x624	2
+boot (<7.4 s)	ControlBank2	0x634	1
+boot (<7.4 s)	ControlBank2	0x635	3
+boot (<7.4 s)	ControlBank2	0x636	1
+boot (<7.4 s)	ControlBank2	0x6B4	2
+boot (<7.4 s)	ControlBank2	0x724	2
+boot (<7.4 s)	ControlBank2	0x734	50
+boot (<7.4 s)	ControlBank2	0x735	50
+boot (<7.4 s)	ControlBank2	0x736	50
+boot (<7.4 s)	ControlBank2	0x7B4	2
+boot (<7.4 s)	KeyBank1	0x45670123	53
+boot (<7.4 s)	KeyBank1	0xCDEF89AB	53
+boot (<7.4 s)	KeyBank2	0x45670123	53
+boot (<7.4 s)	KeyBank2	0xCDEF89AB	53
+boot (<7.4 s)	StatusBank2	0xFFFFFFFF	4
+PARAM_SETs (7.4-8.0 s)	ClearControlBank2	0xFFFFFFFF	34
+PARAM_SETs (7.4-8.0 s)	ControlBank1	0x31	17
+PARAM_SETs (7.4-8.0 s)	ControlBank2	0x734	17
+PARAM_SETs (7.4-8.0 s)	ControlBank2	0x735	17
+PARAM_SETs (7.4-8.0 s)	ControlBank2	0x736	17
+PARAM_SETs (7.4-8.0 s)	KeyBank1	0x45670123	17
+PARAM_SETs (7.4-8.0 s)	KeyBank1	0xCDEF89AB	17
+PARAM_SETs (7.4-8.0 s)	KeyBank2	0x45670123	17
+PARAM_SETs (7.4-8.0 s)	KeyBank2	0xCDEF89AB	17
+phase	register	value	writes

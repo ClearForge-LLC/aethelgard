@@ -1,0 +1,3 @@
+'configure' finished successfully (0.500s)
+'copter' finished successfully (45.852s)
+ANSWER board=sentinel-03 jobs=6 wall_ms=48815

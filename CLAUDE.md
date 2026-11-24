@@ -3,7 +3,7 @@
 Read, in this order, before changing anything:
 
 1. `README.md` — what this is and whether it works yet.
-2. `docs/northstar.md` — why it exists and the invariants `INV-01` through `INV-07`. Cite them by number; never restate them.
+2. `docs/northstar.md` — why it exists and the invariants `INV-01` through `INV-08`. Cite them by number; never restate them.
 3. `docs/architecture.md` — the shape, the rulings `RUL-01` onward with their reasons, and the open questions.
 4. `docs/roadmap.md` — what order things get built in and the exit gate for each phase.
 5. Your work order in `docs/work-orders/AET-WO-PSNN[a].md`. It cites the slice of the above it touches.

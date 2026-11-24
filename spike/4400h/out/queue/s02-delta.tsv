@@ -1,0 +1,6 @@
+class	peripheral	offset	register	base_writes	control_writes	armed_writes	armed_distinct_values	first_values
+values-when-armed	dma1	0x74	StreamFIFOControl+0x50	37	91	96	27	['0x1', '0x11', '0x12', '0x14']
+values-when-armed	rtc	0x58	BackupStart+0x8	79	79	79	54	['0x80000000', '0xB4B2A205', '0xB6EA74A3', '0xB7686F44']
+values-when-armed	rtc	0x9C	BackupEnd	79	79	79	11	['0x1', '0x103', '0x106', '0x1FD']
+values-when-armed	timer5	0x34	CaptureOrCompare1	113720	111417	111473	109187	['0x0', '0x1001E7', '0x100209', '0x100347']
+values-when-armed	usart1	0x28	TransmitData	761	2432	2601	223	['0x0', '0x1', '0x10', '0x11']

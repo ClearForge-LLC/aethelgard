@@ -1,0 +1,1 @@
+{"name": "t1-L-w10b", "window": "10000ms", "exit": 1, "wall_s": 24.78, "peak_rss_kib": 1452436, "permille_of_1572864": 923, "load1_min": 9.3, "load1_max": 9.95, "cpus": "all", "ok": false, "kinds": ["foreign_not_booted", "i2c_transaction_unwitnessed", "renode_error_log", "serial_options_unjudgeable", "spi_transaction_unwitnessed"], "log": [], "stop": null}

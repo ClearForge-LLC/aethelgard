@@ -55,6 +55,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 | P2 | The twin and the faults | Generated firmware runs on the generated board model, and an injected electrical fault produces a replayable failure trace |
 | P3 | Attribution and evolution | A failure is attributed to the right half, a proposal fixes it, and a fabrication package for one reference probe is emitted |
 | P4 | Sentinel-02, the flight controller | A flight controller Aethelgard designed on a multi-layer board passes every gate, is fabricated, and flies a prototype drone on unmodified ArduPilot |
+| P5 | Combinations: a second family and firmware ecosystems | A specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's cold-start path; every P0–P4 verdict is unchanged (`INV-08`). *Trigger-started; not yet scoped* |
 
 ## 5. Sequenced work orders
 
@@ -589,6 +590,11 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
     - **`AET-WO-1322`** (#354, `cd79024`): eda's guards are labelled, with direct tests; `prepare_read` holds each name once; the reader's echo is bounded; no emitted byte moved.
     - **`AET-WO-1916`** (#350, `7dec1d7`): the REFIT RULE fires on a persistent shard (×1.25 over three runs). `1909` B and `1607` F-L are shared. The LP1 guard is kept as built.
     - **`AET-WO-4408`** (#355, `b9d5f4b`): a four-port board in the ArduPilot matrix. ST's pin table is held against DS12117 and ArduPilot, with no ArduPilot bytes committed (D1 (a), a cfg-gated leg). The tools image is re-pinned to `1e0ab105`, and the smoke flake is fixed.
+  - **Merged:** `AET-WO-2314` (#387, `5152900`): the campaign's `PlantedEventUnplaced` names the undisturbed boot's own end; `simulate --foreign` fails `foreign_fault` (the vector and the stacked PC) at the fault handler's entry, before the memory cap (855–879 MB against 1.58 GB), and refuses a firmware whose vectors it cannot hook (`ForeignFaultVectorUnusable`); the foreign filter drops USART `TDR` writes. Shard 11's `bor_recovery` flake is still unnamed; its next CI failure prints its cause.
+  - **Merged:** `AET-WO-3309` (#389, `d033749`): a witness compares byte counts as well as values; the BMP581 and ICP-101xx logs are read whole; each I2C line is placed in the step whose transaction it is, and a line no step is gets quoted in a finding. ext-cfg37 is S1 by its wrong write, and no committed attribution moved.
+  - **Merged as the record:** `AET-WO-4400h` (#393, `fa12abf`): ArduPilot arms in the twin over MAVLink with no defaults file, no skip and no force (in a replay outside the CLI, with one twin line and two stimuli). On Sentinel-03 every TIM1 row is reached unarmed; DShot set over MAVLink engages timer DMA and runs the twin out of memory in 1.65 s; GUIDED is refused for position. The window stays 5 s: past it the IMU's log floods (about 2.2 MB per virtual second) and RSS grows about 100–120 MiB per second. The armed queues are handed to Tviburi for `OQ-03`.
+  - **Written:** `AET-WO-4400i` (a foreign firmware hears MAVLink: a declared, timed input in the trace, the receive request lines, IDLE, declared rest stimuli, an armed witness from the heartbeat), from `4400h` D3. `AET-WO-4411` (Path A: an ESP32 WiFi module as a part on a declared serial port, its firmware named as not judged; Scotty, 2026-11-24).
+  - **Planned, not written:** `AET-WO-4400j`, the window's cost (`4400h` D2: the IMU log flood kept as first and last lines with a count, the RSS growth found, the wall bound), after `4400i`. A CI work order that profiles Sentinel-03's `verify` (16 min on Furnace, 37.7+ in CI, per `4300k`) and brings `bench-package-s03` back under the shards' wall time.
   - **Merged:** `AET-WO-1610` (#385, `29b3a97`): `prove` with no harness is `not_reached: no_harness`; `judged_nothing` removed (the ran table says it); `check drc` states `drc.orientation` and `drc.outline` (`OutlineExceedsBound`); an enum object left `{}` is `VariantMissing` at its path (exit 2); the stale acknowledgement ends with the ledger's fields, never specification text. The bench MANIFEST's `verdict_sha256` committed from dispatch 45396261559. CI's shard 11 failed first on the recorded `bor_recovery` flake (main fails it too) and passed on its one re-run.
   - **Merged:** `AET-WO-1324` (#386, `9c3aeee`): the router keeps a judged supply net's vias one junction region apart; the nearest-pad scan is indexed and charged to `WORK`.
   - **Written:** `AET-WO-4400h` (2026-11-24; a spike ending in a stop): ArduPilot armed in the twin, with parameters sent over MAVLink at run time (no defaults file, `4406`), the window's cost at 5–30 s, and an armed access log in Tviburi's queue format for Tviburi's `OQ-03` cut.
@@ -694,6 +700,41 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 **Later, not yet a phase:** more microcontroller families.
 - **The RP2350 stays the planned second target** (`RUL-08`), because a second vendor keeps the IR from becoming one vendor's register map. It needs a hand-written Renode platform description first, because the twin is the point. **Its timing (Scotty, 2026-11-16):** after Sentinel-01's scar, not after a drone.
 - **Other STM32 families are cheaper:** ST's open pin data already covers them, and Renode models several.
+
+### P5 — Combinations: a second family and firmware ecosystems
+
+**Depends on:** a trigger, not a date. Either P4's gate passes (a Sentinel flies), or Scotty schedules a chip or firmware the current family cannot serve. It is co-scoped with Tviburi's Phase 5 (a register-truth layer across vendors and simulators), whose own trigger is a target Renode cannot host. A second family's twin needs Tviburi's models, so the two phases add a family together.
+
+**Goal:** northstar §3.1: a chosen chip, a board of one's own, and any firmware, judged as one combination, from a cold start.
+
+**Exit gate:** a specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's quickstart path on a clean machine, and every committed P0–P4 verdict is byte-identical before and after (`INV-08`).
+
+**The family order** (Scotty, 2026-11-24; the families named, ranked, for integration and testing):
+1. **RP2350, next.** This is `RUL-08`'s planned second target since 2026-10-19, kept by Scotty. It is a different vendor, so it is the strongest test that the IR is not one vendor's register map (northstar §6).
+   - It is also the costliest next step. Renode ships no RP2350 platform, so its twin is a hand-written platform description (`RUL-08`) and trips Tviburi's Phase 5 trigger.
+   - Its datasheet is not yet held (`1219`: "not held" in all 227 cells).
+   - ArduPilot has no RP2350 port as far as the architect knows (*unverified*), so its firmware is Aethelgard's generated crate or a kernel of the user's own, never the flight controller's autopilot.
+2. **Then the 2026-11-23 research's ranking** (Tviburi `docs/reviews/2026-11-23-chip-families-research.md`), ordered by new failure class per unit of twin work:
+   - nRF52840, STM32F405/F407, LiteX on iCE40/ECP5, i.MX RT1062 (official or sibling Renode platforms);
+   - then STM32G4, STM32U5/H5, nRF54L15, STM32H723/F7, RP2040, ESP32-S3, AT32F435 (new platforms on cores Renode has);
+   - then TI C2000, dsPIC33, ESP32-C6, i.MX RT1176, nRF54H20 (no Renode base).
+   - SAM E70 is a cheap audit only. The STM32H743 is the same target as the H753 (`RUL-08`).
+   - The dsPIC33 is the held ESC's MCU (DS70005664A), so it may be pulled forward if the drone's ESC is co-designed. That is Scotty's call when it comes.
+
+**Reprioritization is reserved** (Scotty, 2026-11-24): the whole list, or any entry, may be reordered at Scotty's discretion. The ESP32 family keeps its place in the research's ranking for its own build-out.
+
+**Path B, two processors on one board** (Scotty, 2026-11-24, recorded here so the reason survives):
+- **What:** a specification that declares two microcontrollers, for example an STM32 flight controller and an ESP32 for the wireless link. Each gets its own pin solve. The link between them is a declared contract (pins, speed, protocol). There are two firmwares, and the twin runs two machines joined by a virtual UART. The verdict covers the pair, the link's traffic included.
+- **Why later:** P4 rules "no second processor on the board in v1", because a second chip is a hole in the twin wherever the simulator has no model of it. A radio is never simulated honestly; it is refused by name and bench-tested.
+- **Why at all:** northstar §3.1's combinations. A board with a radio processor is the drone's real shape. Path A (`AET-WO-4411`, a certified module whose firmware is named as not judged) is the honest step until then.
+
+**Shape:** not scoped yet. `AET-WO-1219` (#333) already audited the IR: 93 % of specification keys and 85 % of refusal kinds are vendor-neutral, and the depth sits in held tables, register constants and solver code. P5's first work order audits what `1219` did not read, each place classed as data, adapter or rewrite, with its cost:
+   - the solver and generators;
+   - the twin's platform description;
+   - the foreign judge;
+   - the firmware ecosystems (ArduPilot, ChibiOS).
+
+   It only reads, so it can run before the trigger.
 
 ## 6. Standing cadence
 
@@ -1135,7 +1176,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | BOR level 3 (2.54–2.68 V falling) below the SPI flash's 2.7 V floor; no reverse-polarity protection or fuse (review 3, A13). **Ruled by Scotty 2026-11-23:** build both BOR paths, Sentinel-03 on Path B (TLV803S); a P-FET and a fuse on the controller's supply branch | review 3 A13; DS12117 Rev 10 Table 16 p. 107 | **`AET-WO-4300k`** (9) |
 | A crystal on Sentinel-03, so the HSE path meets our copper before Sentinel-02 needs it (review 3, B4). **Ruled by Scotty 2026-11-23: yes**, the architect agreeing: it is `4240`'s ruled H1 path (HSE → PLL1, 16 MHz), and the part stays provisional until AN2867 Rev 25 is checked | review 3 B4; `4240` | **`AET-WO-4300k`** |
 | The commit the Sentinel-01 boards were ordered from is recorded nowhere; the upload files are identical from `ac5f8c82` to HEAD. **Closed 2026-11-23:** the uploaded zip is held (sha256 `3bbcd06a8178a8d4…`, dated 2026-11-17 13:32 on the S25; copy at `~/.cache/aet-held/sentinel-01-oshpark-upload.zip`), and its ten members' sha256 equal `ORDERED.sha256`'s ten lines | review 3 A9; `3308` | done (`3308`; the architect's check) |
-| The second vendor's order: `RUL-08` names the RP2350, which no simulator models; nRF52840 and i.MX RT1062 have official Renode platforms. Which second vendor first tests the IR's neutrality | chip research 2026-11-23; `1219` | `1219`'s audit, then a ruling |
+| The second vendor's order: `RUL-08` names the RP2350, which no simulator models; nRF52840 and i.MX RT1062 have official Renode platforms. Which second vendor first tests the IR's neutrality | chip research 2026-11-23; `1219` | **ruled 2026-11-24 (Scotty): RP2350 next, then the research's ranking** (§5 P5) |
 | Nothing checks that firmware leaves `SYSCFG_PMCR` PC2SO/PC3SO clear; LQFP144 pads 28 and 29 are `PC2_C`/`PC3_C`, correct only at reset (RM0433 p. 549) | `4408` Q3 | the next `pincheck` or svd-hal work order (`AET-WO-4410`) |
 | `check pinout`'s board list is hand-written in `ardupilot-pinout.sh`; generalise it to every generated matrix board | `4408` Q4 | done: `AET-WO-1917` (#370) |
 | A Nucleo bench check: with the regenerated firmware (`4240e`), read `RCC_D2CCIP1R` and confirm an SPI1 transfer; with today's firmware, confirm whether SPI1 has a kernel clock. Settles RM0433 p. 371's mux rule on silicon | `TVI-WO-1300` §1.1; `4240e` | **Scotty, at the bench** |
@@ -1169,6 +1210,13 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | The fabricator: OSH Park is confirmed for now (Scotty, 2026-11-24). Once Sentinel-03 is locked, get a quote from the leading assembly house for boards assembled with parts, against OSH Park's three bare boards hand-assembled. An assembler needs a placement (CPL) file and a parts list matched to its stock, which Aethelgard does not emit yet; the quote decides whether a work order follows. Hand-assembling 0402 parts is a cost to weigh | Scotty, 2026-11-24 | Scotty (the quote), after Sentinel-03 locks |
 | The foreign judge's `usart1` access log stamps a DMA-moved byte with the PC of the stream's `EN` store, not of any instruction that moved it (the twin completes a memory-to-peripheral transfer inside the `EN` write) | `TVI-WO-1303` §1.1 | the next foreign-judge work order that reads `usart1` attribution |
 | Tviburi's `OQ-03` cut waits for an armed or longer ArduPilot window: 120 TIM1/TIM2 rows are not reached in 5 s | `TVI-WO-1150` (v); `TVI-WO-1302` §7 | **`AET-WO-4400h`** (spike) |
+| The drone's command link: WiFi (Path A, `4411`) is for testing; its range is not the end goal. A long-range MAVLink radio (900 MHz telemetry or ExpressLRS class) on a declared UART with an external antenna is the next link, chosen once where the agent runs (ground or companion computer) is decided | Scotty, 2026-11-24 | a later P4 work order |
+| A PCB antenna capability: a standard topology (IFA, meander, monopole, patch) sized from cited references, simulated with an open EM solver (openEMS), emitted with its keep-out and a matching network, verdict with stated limits, closed by a bench VNA measurement. Its first step is a spike that checks the solver against a published reference antenna's measured S11 | Scotty's question, 2026-11-24 | Scotty decides whether to start the spike; standalone, per northstar §3.1's independence |
+| A foreign firmware cannot be rebooted in the twin: no reset macro, and with one the second boot runs out of 4 GiB (parameters set over MAVLink cannot be checked across a reboot) | `4400h` D4 a | after `4400j` |
+| DShot set over MAVLink engages timer DMA (`UDE`, `DCR`, DMAMUX 15; 1,986 re-arms) and the twin runs out of memory in 1.65 s; no request moves data | `4400h` D4 a2, F15 | after `4400j`; Tviburi's timer DMA row |
+| Sentinel-03's hwdef emits no `MOT_PWM_TYPE`, so ArduPilot runs PWM on a board declared DShot | `4400h` D4 b | the next hwdef work order |
+| The foreign judge's end-of-window read can sample a transient (GPIOB PB13 at exactly 6.0 s), so the verdict depends on where the window lands | `4400h` D4 e | `4400j` |
+| A flight model: GUIDED is refused for position, and GUIDED_NOGPS winds the outputs up with no dynamics. A bridge to ArduPilot's SITL would carry flight behaviour; the twin carries silicon | `4400h` (4) | a row; northstar §3.1's agent-flown drone |
 | A firmware whose symbol table names a decoy `_ZN6AP_HAL5panicEPKcz` hides its panic from `foreign_panic`: cross-check the hook's address against the ELF's call sites, or against a pinned ArduPilot build | `1609` R4 (review 8) | **`AET-WO-2314`** (measured) |
 | The campaign's `PlantedEventUnplaced` names no cause when the undisturbed boot ends at a bound, drops log lines, faults or parks (`campaign.rs:1224` reads `boot_word_ns` alone); `bor_recovery::the_bmp581_extension_recovers_after_its_settle` failed 3 of 4 CI runs and none on Furnace, the 30 s wall bound suspected | `4410` Q15 | **`AET-WO-2314`** |
 | `judged_nothing` is derivable from `ran` and kept only because three tests read it: a reduction to rule | `1609` R5 | **done, `AET-WO-1610` (#385)** |
@@ -1434,6 +1482,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-24 | §5, §7.1 | `AET-WO-4410` (#373) merged; `AET-WO-4300k` ruled at §1.2 and building; `1324` and `1610` launched; `AET-WO-2314` written (the campaign names its cause, `foreign_fault`, `2311` A5, R4 measured) and given four rows | the merges; `4410` FEEDBACK §6 |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1324` (#386) merged; `AET-WO-3309` written (attribution: counts as well as values, the BMP581 log in the transaction readers, evidence placed by content, one line per step) and given two rows | #386's review; `3307` FEEDBACK |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1610` (#385) merged; `AET-WO-4400h` written (ArduPilot armed in the twin, a spike); rows for the fabricator and assembly quote, the `usart1` DMA PC stamp, and Tviburi's `OQ-03` window | the merge; Scotty, 2026-11-24 (OSH Park; an agent-flown drone) |
+| 2026-11-24 | §4, §5, §7.1 | P5 added (combinations: a second family and firmware ecosystems), trigger-started and co-scoped with Tviburi's Phase 5. The family order named and ranked: RP2350 next (`RUL-08`, kept), then the 2026-11-23 research's ranking. Its first work order audits what `1219` did not read | northstar §3.1 and `INV-08`, the same PR; Scotty, 2026-11-24 |
+| 2026-11-24 | §5, §7.1 | `2314` (#387), `3309` (#389) merged; `4400h` (#393) merged as the record; `AET-WO-4400i` and `AET-WO-4411` written, `4400j` and the Sentinel-03 CI-time work order planned; P5 records Path B and reserved reprioritization; rows for the command link, a PCB antenna capability, and `4400h`'s D4 | the merges; Scotty, 2026-11-24 |
 
 ## 9. Provenance
 
