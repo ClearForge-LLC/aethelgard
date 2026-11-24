@@ -864,10 +864,11 @@ fn an_undeclared_esc_on_a_protected_input_is_refused() {
 fn a_board_above_the_fuses_held_derating_is_refused() {
     let mut t = table_json();
     for r in t["parts"].as_array_mut().unwrap() {
-        if let Some(max) = r["temperature_celsius"]["max"].as_i64() {
-            if max < 125 {
-                r["temperature_celsius"]["max"] = json!(125);
-            }
+        if r["temperature_celsius"]["max"]
+            .as_i64()
+            .is_some_and(|max| max < 125)
+        {
+            r["temperature_celsius"]["max"] = json!(125);
         }
     }
     let mut v = base();
