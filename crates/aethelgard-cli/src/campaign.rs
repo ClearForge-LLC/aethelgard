@@ -469,13 +469,62 @@ fn prepare_droop(
     })
 }
 
+/// The undisturbed boot's word, or, when it wrote none, that boot's own end
+/// as its verdict names it (`AET-WO-2314`, ruled D1; `INV-06`): every
+/// finding but the information-only ones, `renode_log_flood` (its log was
+/// cut, so no hook was read) and, for a boot killed at a bound, the memory
+/// it reached. A boot word that reads `BOOT_MAGIC` though no hook saw it
+/// written has no finding of its own, so it is named here. Every other end
+/// has one: a word not read is a bound's, and one read that is not
+/// `BOOT_MAGIC` is `boot_word_missing`'s (`spike/2314`, the six planted).
+fn undisturbed(v: &Verdict) -> Result<u64, String> {
+    if let Some(word) = v.boot.as_ref().and_then(|b| b.boot_word_ns) {
+        return Ok(word);
+    }
+    let mut end: Vec<String> = v
+        .findings
+        .iter()
+        .filter(|f| f.severity != "info" || f.kind == "renode_log_flood")
+        .map(|f| format!("{}: {}", f.kind, f.message))
+        .collect();
+    let bounded = v.findings.iter().any(|f| {
+        [
+            rules::CPU_ABORTED_FINDING,
+            rules::MEMORY_CAP_FINDING,
+            rules::WALL_BOUND_FINDING,
+        ]
+        .contains(&f.kind.as_str())
+    });
+    if let Some(m) = v.memory.as_ref().filter(|_| bounded) {
+        end.push(format!(
+            "memory: Renode peaked at {} KiB against the bound's {} KiB",
+            m.peak_rss_kib, m.bound_kib
+        ));
+    }
+    let magic = format!("{:#010x}", aethelgard_twin::boot::BOOT_MAGIC);
+    let flood = v.findings.iter().any(|f| f.kind == "renode_log_flood");
+    if !flood
+        && v.boot
+            .as_ref()
+            .and_then(|b| b.boot_word.observed.as_deref())
+            == Some(magic.as_str())
+    {
+        end.push(format!(
+            "its boot word reads {magic} at the run's end, but its hook saw no write of it"
+        ));
+    }
+    Err(end.join("; "))
+}
+
 /// A planted instant from the undisturbed boot word (`AET-WO-2310`, ruled
 /// Q-A (a)): before reset, past the run, or with no boot word to place it
 /// from, the run is refused by name (exit 2), never planted at a default.
+/// With no word, `word` holds that boot's own end ([`undisturbed`]), which
+/// the refusal carries (`AET-WO-2314`).
 fn place(
     scenario: &str,
     what: &str,
-    word: Option<u64>,
+    word: &Result<u64, String>,
     from_boot_word_ns: i64,
 ) -> Result<u64, ExitCode> {
     let unplaced = |m: String| {
@@ -486,10 +535,13 @@ fn place(
             EXIT_INVALID_SPEC,
         )
     };
-    let Some(word) = word else {
-        return Err(unplaced(format!(
-            "its {what} is planted {from_boot_word_ns} ns from the boot word, and the undisturbed boot wrote no boot word to place it from"
-        )));
+    let word = match word {
+        Ok(word) => *word,
+        Err(end) => {
+            return Err(unplaced(format!(
+                "its {what} is planted {from_boot_word_ns} ns from the boot word, and the undisturbed boot wrote no boot word to place it from: {end}"
+            )));
+        }
     };
     match aethelgard_chaos::record::resolve_instant(word, from_boot_word_ns) {
         Some(at) if at <= aethelgard_twin::boot::MAX_VIRTUAL_NS => Ok(at),
@@ -505,7 +557,7 @@ fn place(
 fn place_droop(
     scenario: &str,
     d: &PreparedDroop,
-    word: Option<u64>,
+    word: &Result<u64, String>,
 ) -> Result<crate::analog::Rail, ExitCode> {
     let start_ns = place(scenario, "droop", word, d.droop.from_boot_word_ns)?;
     let droop = aethelgard_chaos::record::RailDroop {
@@ -1221,26 +1273,25 @@ fn run_one(
         )
         .map_err(stop)
     };
-    let word_of = |v: &Verdict| v.boot.as_ref().and_then(|b| b.boot_word_ns);
     // A planted event is placed from the undisturbed boot word (`AET-WO-2310`,
     // ruled Q-A (a)). A droop's boot is disturbed, so the same prepared boot
     // runs first without it; a battery sag never reaches the boot, so the
     // run's own boot is the undisturbed one and the deck solves after it.
     let (verdict, reference) = match &p.droop {
         Some(d) => {
-            let word = word_of(&boot(None)?);
-            let rail = place_droop(&name, d, word)?;
+            let word = undisturbed(&boot(None)?);
+            let rail = place_droop(&name, d, &word)?;
             (boot(Some(rail))?, word)
         }
         None => {
             let v = boot(None)?;
-            let word = word_of(&v);
+            let word = undisturbed(&v);
             (v, word)
         }
     };
     let sag = match &p.sag {
         Some(s) => {
-            let at = place(&name, "battery sag", reference, s.sag.from_boot_word_ns)?;
+            let at = place(&name, "battery sag", &reference, s.sag.from_boot_word_ns)?;
             Some(solve_battery_sag(s, at, &name)?)
         }
         None => None,
@@ -1304,7 +1355,10 @@ fn run_one(
     // droop's boot wrote it when it released a reset, from the same boot run
     // undisturbed, which must be the word the campaign placed from;
     // otherwise it is that word, beside the rail or the sag.
-    if let Some(word) = reference.filter(|_| p.droop.is_some() || sag.is_some()) {
+    if let Some(word) = reference
+        .ok()
+        .filter(|_| p.droop.is_some() || sag.is_some())
+    {
         let want = Record::RecoveryBound {
             boot_word_ns: Some(word),
             margin_ns: aethelgard_chaos::power::RECOVERY_MARGIN_NS,
