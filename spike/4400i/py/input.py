@@ -13,11 +13,11 @@ port = sys.argv[3] if len(sys.argv) > 3 else "CONSOLE"
 m = mav.MAVLink(None, srcSystem=255, srcComponent=190)
 def ms(x): return int(round(x * 1_000_000))
 PARAMS = [("COMPASS_USE", 0), ("FRAME_CLASS", 1), ("FS_THR_ENABLE", 0), ("INS_ACCOFFS_X", 0.001)]
-def plan(end, arm_from, arm_every):
+def plan(end, arm_from, arm_every, params_until):
     s = []
     for t in range(ms(500), end, ms(1000)):
         s.append((t, m.heartbeat_encode(mav.MAV_TYPE_GCS, mav.MAV_AUTOPILOT_INVALID, 0, 0, 0)))
-    for k, t in enumerate(range(ms(750), ms(3000), ms(500))):
+    for k, t in enumerate(range(ms(750), params_until, ms(500))):
         for i, (p, v) in enumerate(PARAMS):
             s.append((t + i * ms(10), m.param_set_encode(1, 1, p.encode(), float(v), mav.MAV_PARAM_TYPE_REAL32)))
         s.append((t + ms(50), m.command_long_encode(1, 1, 241, 0, 0, 0, 0, 0, 76, 0, 0)))
@@ -30,9 +30,11 @@ def frame(t, msg):
     b = msg.pack(m)
     return {"at_ns": t, "mavlink": b.hex(), "fill": -len(b) % 64}
 if name == "arm12":
-    steps = plan(ms(12000), ms(3150), ms(250))
+    # The parameters again after `ArduPilot Ready` (5.2 s): sent only before it (arm12-s03-early-params), they
+    # are not in force at the arm ("Motors: Check frame class and type"), as in the spike's early plan.
+    steps = plan(ms(12000), ms(3150), ms(250), ms(6300))
 else:
-    steps = plan(ms(5000), ms(3150), ms(250))
+    steps = plan(ms(5000), ms(3150), ms(250), ms(3000))
 frames = [frame(t, msg) for t, msg in steps]
 if name == "force":
     frames.append(frame(ms(4900), m.command_long_encode(1, 1, 400, 0, 1, 21196, 0, 0, 0, 0, 0)))

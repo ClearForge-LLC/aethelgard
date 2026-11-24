@@ -11,6 +11,6 @@ esac
 A=target/debug/aethelgard
 $A generate --spec "$spec" --out "$O/gen" > "$O/generate.json"
 extra=(); [ -n "$arch" ] && { mkdir -p "$arch"; extra=(--archive "$arch"); }
-$A simulate --platform "$(ls "$O"/gen/board/*.repl | head -1)" --spec "$spec" --firmware "$elf" --foreign 5000ms \
+$A simulate --platform "$(ls "$O"/gen/board/*.repl | head -1)" --spec "$spec" --firmware "$elf" --foreign "${WINDOW:-5000ms}" \
   --input "$in" "${extra[@]}" > "$O/verdict.json" 2> "$O/stderr.txt"
 echo "simulate exit $?"
