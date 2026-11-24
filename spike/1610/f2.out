@@ -1,0 +1,36 @@
+entry 6 {"register": "GPIOA.MODER", "class": "same-source", "fields": ["MODER0", "MODER5", "MODER6", "MODER7", "MODER9", "MODER10"], "reason": "PA0 output (flash CS), PA5-PA7 and PA9/PA10 alternate: a BSRR write drives a pin whatever MODER says (4200 FEEDBACK). The bench row reads MODER back, as 3302 B2 did."}
+
+## planted field: exit 2
+{
+ "kind": "UnwitnessedAcknowledgementStale",
+ "id": "GPIOA.MODER",
+ "path": "acknowledge_unwitnessed[6].fields",
+ "message": "`acknowledge_unwitnessed` acknowledges `MODER3`; the fix: delete every acknowledge_unwitnessed entry `x` of register `GPIOA.MODER` as `same-source`, which the witness ledger of this specification's firmware has no row of: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1)"
+}
+planted text in message: True
+
+## plain stale field: exit 2
+{
+ "kind": "UnwitnessedAcknowledgementStale",
+ "id": "GPIOA.MODER",
+ "path": "acknowledge_unwitnessed[6].fields",
+ "message": "`acknowledge_unwitnessed` acknowledges `MODER3` of register `GPIOA.MODER` as `same-source`, which the witness ledger of this specification's firmware has no row of: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1)"
+}
+planted text in message: False
+
+## register the ledger lacks: exit 2
+{
+ "kind": "UnwitnessedAcknowledgementStale",
+ "id": "SPI2.CFG1",
+ "path": "acknowledge_unwitnessed[31].fields",
+ "message": "`acknowledge_unwitnessed` acknowledges `MBR` of register `SPI2.CFG1` as `ignored-by-model`, which the witness ledger of this specification's firmware has no row of: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1)"
+}
+planted text in message: False
+
+## planted register: exit 2
+{
+ "kind": "UnwitnessedRegisterMalformed",
+ "id": "GPIOA.MODER x",
+ "message": "`acknowledge_unwitnessed` names register `GPIOA.MODER x`, which is not a peripheral and a register joined by one `.`, each an upper-case letter then upper-case letters, digits or `_` (`SPI1.CFG1`)"
+}
+planted text in message: False

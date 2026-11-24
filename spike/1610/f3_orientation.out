@@ -1,0 +1,12 @@
+== sentinel-03 (solve exit 0)
+{"ok":false,"error":{"kind":"ImuOrientationUndeclared","id":"U5","message":"`U5` (ICM42688P) is an IMU with no declared orientation; ArduPilot's IMU line needs its rotation (AET-WO-4400d)"}}
+exit 2
+== hse-crystal-16 (solve exit 0)
+{"ok":false,"error":{"kind":"NoConsole","id":null,"message":"no serial port has the role `console`; ArduPilot's SERIAL0 is its console"}}
+exit 2
+== sentinel-02-shaped (solve exit 0)
+{"ok":false,"error":{"kind":"NoConsole","id":null,"message":"no serial port has the role `console`; ArduPilot's SERIAL0 is its console"}}
+exit 2
+== sentinel-02-own (solve exit 0)
+{"ok":true,"generator":"hwdef","topology_sha256":"c99db69283b7b7e6e340c7f5d8081175a7d3d46d1def780d0fab600ec394f65d","hwdef_sha256":"f5ad3a9b09d4fb522e8f35326d41649b59dee7c27ae5d70ad32538863d1786c1","not_emitted":["U3 (TMP117): no ArduPilot line; the parts table holds no ardupilot column for it"]}
+exit 0
