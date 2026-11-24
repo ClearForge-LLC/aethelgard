@@ -727,3 +727,111 @@ fn the_forward_turn_on_the_pc0_sense_now_emits_under_every_bound() {
     );
     assert!(ladder.unrouted.is_empty() && ladder.unjudged.is_none());
 }
+
+/// `check drc --spec` on `board` against `spec`, with no tool on `PATH`: the
+/// specification's own checks run before the tool is looked for.
+fn drc_without_tools(label: &str, spec: &Value, board: &str) -> (Option<i32>, Value) {
+    let dir = scratch(label);
+    let (s, b) = (dir.join("spec.json"), dir.join("b.kicad_pcb"));
+    std::fs::write(&s, serde_json::to_vec(spec).unwrap()).unwrap();
+    std::fs::write(&b, board).unwrap();
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["check", "drc", "--board", b.to_str().unwrap(), "--spec"])
+        .arg(&s)
+        .current_dir(root())
+        .env("PATH", "/nonexistent")
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    (out.status.code(), serde_json::from_str(&stdout).unwrap())
+}
+
+/// `AET-WO-1610` (3), D3 as ruled: `check drc --spec` judges a declared
+/// `board.max_outline_um` on the board it reads, its one `Edge.Cuts`
+/// `gr_rect` against the bound, width against width and height against
+/// height, as the placer compares. The emitted board inside its own outline
+/// as the bound passes to the tool; a bound one micrometre short of it, in
+/// either direction, is refused `OutlineExceedsBound` by name before any
+/// tool runs; a board with no outline, or two, under a bound is
+/// `BoardUnreadable`.
+#[test]
+fn check_drc_judges_the_declared_outline_on_the_board() {
+    let (_, _, _, e) = emitted("check drc judges the outline");
+    let o = outline_nm(&e.board);
+    let (w, h) = ((o.x1 - o.x0) / 1000, (o.y1 - o.y0) / 1000);
+    let bound = |w: i64, h: i64| {
+        let mut v = fixture();
+        v["board"]["max_outline_um"] = json!({"width": w, "height": h});
+        v
+    };
+    // Exactly the board's own outline holds: the run goes on to the tool.
+    let (code, v) = drc_without_tools("1610-held", &bound(w, h), &e.board);
+    assert_ne!(v["error"]["kind"], "OutlineExceedsBound", "{v}");
+    assert_ne!(code, Some(0), "no tool, no verdict: {v}");
+    for (label, short) in [
+        ("1610-wide", bound(w - 1, h)),
+        ("1610-tall", bound(w, h - 1)),
+    ] {
+        let (code, v) = drc_without_tools(label, &short, &e.board);
+        assert_eq!(v["error"]["kind"], "OutlineExceedsBound", "{label}: {v}");
+        assert_eq!(code, Some(3), "{label}: {v}");
+        let m = v["error"]["message"].as_str().unwrap();
+        assert!(m.contains("board.max_outline_um"), "{m}");
+    }
+    // No outline, and two: the bound has nothing single to judge.
+    let rect = {
+        // The outline's whole list, by its balanced parentheses.
+        let i = e.board.find("(gr_rect").unwrap();
+        let mut depth = 0;
+        let end = e.board[i..]
+            .char_indices()
+            .find(|&(_, c)| {
+                depth += match c {
+                    '(' => 1,
+                    ')' => -1,
+                    _ => 0,
+                };
+                depth == 0
+            })
+            .unwrap()
+            .0;
+        let rect = e.board[i..=i + end].to_owned();
+        assert!(rect.contains("\"Edge.Cuts\""), "{rect}");
+        rect
+    };
+    // Adversarial review 3: a second graphic of any shape on `Edge.Cuts`,
+    // by either spelling (the strict reader takes `layers` as `layer`), is
+    // refused, never passed over.
+    let layers = rect.replace("(layer \"Edge.Cuts\")", "(layers \"Edge.Cuts\")");
+    assert_ne!(layers, rect);
+    let far = "(gr_circle (center 0 0) (end 400 100) (stroke (width 0.05) (type default)) (fill no) (layers \"Edge.Cuts\"))";
+    for (label, board, n) in [
+        ("1610-none", e.board.replacen(&rect, "", 1), "has 0"),
+        (
+            "1610-two",
+            e.board.replacen(&rect, &format!("{rect}{layers}"), 1),
+            "has 2: `gr_rect`, `gr_rect`",
+        ),
+        (
+            "1610-circle",
+            e.board.replacen(&rect, &format!("{rect}{far}"), 1),
+            "has 2: `gr_rect`, `gr_circle`",
+        ),
+        // One outline, but not a rectangle: the bound has no width and
+        // height to judge it by.
+        (
+            "1610-only-circle",
+            e.board.replacen(&rect, far, 1),
+            "has 1: `gr_circle`",
+        ),
+    ] {
+        let (_, v) = drc_without_tools(label, &bound(w, h), &board);
+        assert_eq!(v["error"]["kind"], "BoardUnreadable", "{label}: {v}");
+        assert!(
+            v["error"]["message"].as_str().unwrap().contains(n),
+            "{label}: {v}"
+        );
+    }
+}

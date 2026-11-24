@@ -91,15 +91,17 @@ struct Report {
     elf_sha256: Option<String>,
     rise_times: &'static str,
     gates: Vec<Gate>,
-    /// Every gate whose scope held nothing, by name, and each campaign run
-    /// whose droop observations witnessed no device, as `campaign:<scenario>`
-    /// (`AET-WO-2306`): a reader sees them without reading every line.
-    judged_nothing: Vec<String>,
     /// The "ran or not" table (`AET-WO-1609`, review 3 B5): every gate `verify`
     /// can run, and each gate's parts, as `judged n`, `off: <the key, flag or
     /// condition that turns it on>` or `not_reached: <why>`, derived from the
     /// gates' own results ([`ran_table`]). Before `against_fab` and `fab`, so the
     /// line `MANIFEST.json` hashes is still the verdict without them.
+    ///
+    /// A gate that judged nothing is its `judged 0` row (`AET-WO-1610` (2),
+    /// which removed `judged_nothing`). A campaign run whose droop witnessed
+    /// no device is not a row: the table counts the campaign's runs, so that
+    /// fact stays at the run's own `campaign[i].observation_witness`
+    /// (`nothing_in_scope` and its reason), as ruled (`1610` D5).
     ran: Vec<crate::verdict::Ran>,
     /// The support gate's record (`AET-WO-4300g`): each role, strap and
     /// condition as `check support` judged them; absent when it did not run.
@@ -630,20 +632,6 @@ fn scope_of(name: &str, v: &Value) -> Scope {
     )
 }
 
-/// The gates and campaign runs that judged nothing, in the verdict's order
-/// (`AET-WO-2306`). Only `prove` and `attribute` repeat, and each judges 1.
-fn judged_nothing(gates: &[Gate], runs: &[Run]) -> Vec<String> {
-    let gates = gates
-        .iter()
-        .filter(|g| g.scope.as_ref().and_then(|s| s.nothing_in_scope) == Some(true))
-        .map(|g| g.gate.to_owned());
-    let runs = runs
-        .iter()
-        .filter(|r| r.observation_witness["nothing_in_scope"] == true)
-        .map(|r| format!("campaign:{}", r.scenario));
-    gates.chain(runs).collect()
-}
-
 /// A gate's report for the verdict, from its one verdict line.
 fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
     let v = ran.last();
@@ -894,8 +882,14 @@ fn not_reached(name: &'static str, why: &'static str) -> Gate {
     }
 }
 
-/// Why `simulate` and the campaign are `not_run` (`verify.rs`'s only one).
+/// Why `simulate` and the campaign are `not_run`.
 const NO_ELF: &str = "the build gate gave no ELF to boot";
+
+/// Why `prove` is `not_run` when the generated board crate has no Kani
+/// harness (`AET-WO-1610` (1), `1609` R6 as ruled): the finding's own kind.
+/// No key or flag turns a harness off, so the row is `not_reached`, never
+/// `off`.
+const NO_HARNESS: &str = "no_harness";
 
 /// The gates that judge the drawn board: on a specification that declares
 /// `board.drawn: false` there is none, so each is reported `not_applicable`
@@ -941,10 +935,7 @@ const GATES: [(&str, Absent); 12] = [
     ("drc", Absent::Never),
     ("support", Absent::Never),
     ("extract", Absent::Never),
-    (
-        "prove",
-        Absent::Off("a Kani harness in the generated board crate's src/proofs.rs"),
-    ),
+    ("prove", Absent::Never),
     ("build", Absent::Never),
     ("simulate", Absent::Never),
     ("gpio", Absent::AfterSimulate("pin_devices[].signals")),
@@ -1949,7 +1940,6 @@ pub fn verify(
         elf_sha256: None,
         rise_times: RISE_TIMES,
         gates: Vec::new(),
-        judged_nothing: Vec::new(),
         ran: Vec::new(),
         support: None,
         campaign: None,
@@ -2242,10 +2232,6 @@ struct Tail<'a> {
 /// whatever the fab mode (`AET-WO-2308` LP2, `AET-WO-1909` LP2); `Err` is a
 /// refusal already printed.
 fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Result<u8, ExitCode> {
-    report.judged_nothing = judged_nothing(
-        &report.gates,
-        report.campaign.as_deref().unwrap_or_default(),
-    );
     report.ran = ran_table(&report.gates).map_err(|e| {
         crate::diagnose(&e);
         ExitCode::from(EXIT_INTERNAL)
@@ -2658,6 +2644,18 @@ fn board_gates(report: &mut Report, p: &Paths, want: &Want<'_>) -> Result<(), Ex
     Ok(())
 }
 
+/// A generated board crate with no Kani harness: the error `no_harness`, and
+/// `prove` pushed `not_run` for that reason, so its row reads
+/// `not_reached: no_harness` (`AET-WO-1610` (1)).
+fn no_harness(findings: &mut Vec<Finding>, gates: &mut Vec<Gate>) {
+    findings.push(Finding {
+        kind: NO_HARNESS,
+        severity: "error",
+        message: "the generated board crate has no Kani harness".to_owned(),
+    });
+    gates.push(not_reached("prove", NO_HARNESS));
+}
+
 /// `prove` of every harness, `build`, `simulate --firmware` and the campaign.
 fn proof_and_boot_gates(
     report: &mut Report,
@@ -2666,11 +2664,7 @@ fn proof_and_boot_gates(
     expected: &[Expected],
 ) -> Result<(), ExitCode> {
     if want.harnesses.is_empty() {
-        report.findings.push(Finding {
-            kind: "no_harness",
-            severity: "error",
-            message: "the generated board crate has no Kani harness".to_owned(),
-        });
+        no_harness(&mut report.findings, &mut report.gates);
     }
     for harness in &want.harnesses {
         let h = OsString::from(harness);
@@ -3251,11 +3245,12 @@ mod tests {
 
     /// `AET-WO-2306` §1.2, §1.3: each gate's entry carries what its own line
     /// says it judged (the line's `judged` and reason, `support`'s roles and
-    /// straps, else 1 for one input judged whole); `judged_nothing` names
-    /// exactly the gates with nothing in scope, in order, and each run whose
-    /// droop witnessed no device; a gate that did not run carries no scope.
+    /// straps, else 1 for one input judged whole); a gate that did not run
+    /// carries no scope. `AET-WO-1610` (2): the `ran` table, not a
+    /// `judged_nothing` list, names exactly the gates with nothing in scope,
+    /// each `judged 0`, and every other gate by its count.
     #[test]
-    fn judged_nothing_names_exactly_the_gates_and_runs_that_judged_nothing() {
+    fn the_table_names_exactly_the_gates_that_judged_nothing() {
         let ran = |line: Value| Ran {
             code: 0,
             lines: vec![line],
@@ -3265,7 +3260,8 @@ mod tests {
             None,
             &ran(
                 json!({"verdict": "pass", "judged": 0, "nothing_in_scope": true,
-                        "nothing_in_scope_reason": "no bounded line"}),
+                        "nothing_in_scope_reason": "no bounded line",
+                        "ran": [{"gate": "extract.lines", "judged": 0}]}),
             ),
         );
         let support = gate_report(
@@ -3296,19 +3292,35 @@ mod tests {
                 .is_none()
         );
 
-        let mut droop = failed(json!([]));
-        droop.scenario = "droop-bor3".into();
-        droop.observation_witness = json!({"judged": 0, "nothing_in_scope": true});
-        let mut witnessed = failed(json!([]));
-        witnessed.observation_witness = json!({"judged": 1});
-        assert_eq!(
-            judged_nothing(
-                &[erc, extract, support, not_run("campaign")],
-                &[failed(json!([])), witnessed, droop]
-            ),
-            vec!["extract".to_owned(), "campaign:droop-bor3".to_owned()]
-        );
-        assert!(judged_nothing(&[empty_support], &[]) == vec!["support".to_owned()]);
+        // The whole run's table: `extract` alone judged nothing.
+        let zero = |gates: &[Gate]| -> Vec<String> {
+            ran_table(gates)
+                .unwrap()
+                .into_iter()
+                .filter(|r| r.state == crate::verdict::RanState::Judged(0))
+                .map(|r| r.gate)
+                .collect()
+        };
+        let swap = |with: Vec<Gate>| {
+            let mut gates = drawn_run();
+            for g in with {
+                let i = gates.iter().position(|o| o.gate == g.gate).unwrap();
+                gates[i] = g;
+            }
+            gates
+        };
+        let run = swap(vec![erc, extract, support]);
+        assert_eq!(zero(&run), ["extract", "extract.lines"]);
+        let row = |gates: &[Gate], name: &str| {
+            ran_table(gates)
+                .unwrap()
+                .into_iter()
+                .find(|r| r.gate == name)
+                .unwrap()
+                .state
+        };
+        assert_eq!(row(&run, "support"), crate::verdict::RanState::Judged(4));
+        assert_eq!(zero(&swap(vec![empty_support])), ["support"]);
     }
 
     /// `AET-WO-4241` §1.3 against `AET-WO-2306`'s fields: an unmodelled
@@ -4233,7 +4245,6 @@ mod tests {
             elf_sha256: None,
             rise_times: RISE_TIMES,
             gates,
-            judged_nothing: Vec::new(),
             ran: Vec::new(),
             support: None,
             campaign: None,
@@ -4506,6 +4517,7 @@ mod tests {
     #[test]
     fn off_and_not_reached_come_from_each_gates_own_verdict() {
         let mut gates: Vec<Gate> = BOARD_GATES.into_iter().map(not_applicable).collect();
+        gates.push(line_gate("prove", json!({"verdict": "pass"})));
         gates.push(line_gate("build", json!({"verdict": "fail"})));
         gates.push(not_reached("simulate", NO_ELF));
         gates.push(not_reached("campaign", NO_ELF));
@@ -4523,15 +4535,40 @@ mod tests {
         for g in ["simulate", "campaign", "gpio", "adc", "bridge", "attribute"] {
             assert_eq!(row(g), NotReached(NO_ELF.into()), "{g}");
         }
-        assert_eq!(
-            row("prove"),
-            Off("a Kani harness in the generated board crate's src/proofs.rs".into())
-        );
         // A `not_run` gate with no reason is refused, not given one.
         let mut bare = gates;
         bare.retain(|g| g.gate != "simulate");
         bare.push(not_run("simulate"));
         assert!(ran_table(&bare).unwrap_err().contains("no reason"));
+    }
+
+    /// `AET-WO-1610` (1), `1609` R6 as ruled: a board crate with no Kani
+    /// harness fails by the error `no_harness`, and `prove`'s row reads
+    /// `not_reached: no_harness`, never `off`: no key or flag turned it off.
+    /// `prove` is always pushed, so a run that pushes none is refused.
+    #[test]
+    fn prove_with_no_harness_is_not_reached_never_off() {
+        use crate::verdict::RanState::NotReached;
+        let mut gates = drawn_run();
+        gates.retain(|g| g.gate != "prove");
+        assert!(
+            ran_table(&gates)
+                .unwrap_err()
+                .contains("`prove` was not pushed"),
+            "a run with no `prove` gate has no row to give it"
+        );
+        let mut findings = Vec::new();
+        no_harness(&mut findings, &mut gates);
+        let rows = ran_table(&gates).unwrap();
+        let prove: Vec<_> = rows.iter().filter(|r| r.gate == "prove").collect();
+        assert_eq!(prove.len(), 1, "{rows:?}");
+        assert_eq!(prove[0].state, NotReached("no_harness".into()));
+        assert_eq!(findings.len(), 1);
+        assert_eq!(
+            (findings[0].kind, findings[0].severity),
+            ("no_harness", "error")
+        );
+        assert!(!passes(&findings, &gates, true), "the run still fails");
     }
 
     /// The keyless gates both ways (ruled at §1.2): the campaign is off

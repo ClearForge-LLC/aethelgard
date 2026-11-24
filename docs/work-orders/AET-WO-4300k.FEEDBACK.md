@@ -210,7 +210,7 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
     - Gm_crit exactly at 1.5 mA/V (16 MHz, CL 1 pF, ESR 37,104,895 mΩ, refused, against 37,104,894, which holds);
     - FAB-NOTES' sha line after a line that is not the specification's lead;
     - the pour's nearer-pad tie (the split factored into `pour::nearest` with a unit test).
-- **Gates on the merged head (`main` 1cb994c1 merged, with 1324's router):**
+- **Gates on the merged head (`main` 29b3a97d merged: 1324's router, then 1610's table; the second merge's full run is 3,132 passed, with 1610's `the_seat_and_outline_parts_are_judged_or_off_by_their_key` repointed to `examples/sentinel-03.json` with U5's orientation taken out, and the two dispatch-bound tests below):**
   - `cargo fmt --all -- --check` passes.
   - `cargo clippy --workspace --all-targets -- -D warnings` is clean, and so is `-p aethelgard-cli --features with-tools`.
   - `cargo test --workspace`: 3,127 passed and 2 failed on the merge.

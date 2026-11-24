@@ -456,20 +456,28 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
 
     assert_eq!(v["verdict"], "pass", "the verdict is pass: {v}");
     // `AET-WO-2306` §1.5: on the ready fixture every gate judged something, as
-    // the inventory found, and the droop's recovery was witnessed.
-    assert_eq!(v["judged_nothing"], serde_json::json!([]), "{v}");
+    // the inventory found, and the droop's recovery was witnessed. Read from
+    // the table since `AET-WO-1610` (2) removed `judged_nothing`: no row is
+    // `judged 0`.
+    assert!(v.get("judged_nothing").is_none(), "{v}");
+    let rows = ran(&v);
+    assert!(
+        rows.iter().all(|(_, s)| s != "judged 0"),
+        "nothing judged nothing: {rows:?}"
+    );
     // `AET-WO-1609` §2: the ready fixture's ran-or-not table, every
     // gate and part by name. It declares no drop limit, no crystal, no pair,
     // no power tree and no pin device, so each of those parts is off by its
     // key; its five scenarios ran, and its two detected faults were
     // attributed.
-    let rows = ran(&v);
     for (gate, state) in [
         ("extract.supply", "off: power.drop_limits"),
         ("extract.oscillator", "off: mcu.hse.crystal"),
         ("extract.pairs", "off: diff_pairs"),
         ("drc.pairs", "off: diff_pairs"),
         ("drc.power", "off: power"),
+        ("drc.orientation", "off: spi_devices[].orientation"),
+        ("drc.outline", "off: board.max_outline_um"),
         ("simulate.hse_clock", "off: mcu.hse"),
         ("gpio", "off: pin_devices[].signals"),
         ("adc", "off: pin_devices[].analog"),
