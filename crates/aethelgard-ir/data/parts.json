@@ -885,6 +885,18 @@
         "min": 2700,
         "max": 3600
       },
+      "supply_by_read_clock": [
+        {
+          "read_clock_max_hz": 104000000,
+          "min": 2700,
+          "max": 3000
+        },
+        {
+          "read_clock_max_hz": 133000000,
+          "min": 3000,
+          "max": 3600
+        }
+      ],
       "io_millivolts": null,
       "pin_capacitance": {
         "max_femtofarads": 8000,
@@ -910,7 +922,7 @@
         "supply": {
           "document": "Winbond W25Q64JV",
           "revision": "J (2018-03-27)",
-          "section": "9.2 (VCC 2.7 to 3.6 V)",
+          "section": "9.2 p. 59 (VCC 2.7 to 3.6 V: 2.7 to 3.0 V at FR 104 MHz, 3.0 to 3.6 V at FR 133 MHz, fR 50 MHz; held as supply_by_read_clock)",
           "sha256": "452d906c3be0da077fd751a2b8aa062629caf6081f8dd1eda04880854ce7c8f9"
         },
         "io": null,

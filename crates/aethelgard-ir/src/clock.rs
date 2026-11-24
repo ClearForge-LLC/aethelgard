@@ -276,7 +276,7 @@ pub enum HseRefusal {
         aging_hours: i64,
     },
     #[error(
-        "`{part}`'s critical gain is {gm_crit_nano_amps_per_volt} nA/V at its ESR and C0 maxima, over DS12117 Rev 10's Gm_crit_max of {max_nano_amps_per_volt} nA/V (Table 33 rev Y p. 125 = Table 130 rev V p. 229; the formula is AN2867 Rev 10 §3.4's): the oscillator may not start"
+        "`{part}`'s critical gain is {gm_crit_nano_amps_per_volt} nA/V at its ESR and C0 maxima, at or over DS12117 Rev 10's Gm_crit_max of {max_nano_amps_per_volt} nA/V (Table 33 rev Y p. 125 = Table 130 rev V p. 229), which AN2867 Rev 25 §3.4 p. 13 requires it be under (the formula is p. 13's): the oscillator may not start"
     )]
     HseGmCritExceeded {
         part: String,
@@ -288,7 +288,7 @@ pub enum HseRefusal {
     )]
     HseBudgetUnbounded { fast_ppm: u64, slow_ppm: u64 },
     #[error(
-        "mcu.hse.load_caps_femtofarads {caps:?}: {reason} (AN2867 Rev 10 §3.3, pp. 13–14, assumes CL1 = CL2 and the crystal seeing its CL)"
+        "mcu.hse.load_caps_femtofarads {caps:?}: {reason} (AN2867 Rev 25 §3.3 p. 12 gives CL = CL1·CL2/(CL1 + CL2) + Cs, and §3.4 p. 13 assumes CL1 = CL2 and the crystal seeing its CL)"
     )]
     HseLoadCapsUnfit {
         caps: [u64; 2],
@@ -415,15 +415,19 @@ pub struct GmCrit {
     /// `4 · ESR · (2πF)² · (C0 + CL)²` at the row's ESR and `C0` maxima, with
     /// π² rounded up ((355/113)² > π²), in nA/V, rounded up: an upper bound.
     pub nano_amps_per_volt: u64,
-    /// At or under [`GM_CRIT_MAX_NANO_AMPS_PER_VOLT`].
+    /// Under [`GM_CRIT_MAX_NANO_AMPS_PER_VOLT`], strictly: AN2867 Rev 25 §3.4
+    /// p. 13 asks Gm_crit_max "greater than" gmcrit, and §4.2 p. 26 gmcrit
+    /// "smaller than" it (`AET-WO-4300k`).
     pub holds: bool,
-    /// AN2867's oscillation margin, `Gm_crit_max` / `Gm_crit`, in hundredths,
-    /// rounded down. **Uncited and judging nothing** (`AET-WO-4240a` §1.5):
-    /// only AN2867 Rev 10 (2015) is held, and its current revision is not.
+    /// `Gm_crit_max` / `Gm_crit`, in hundredths, rounded down, judging
+    /// nothing. It is **not** AN2867's gain margin: Rev 25 §3.4 p. 14 puts
+    /// the factor 5 inside `Gm_crit_max` (= gm / 5), so its gain margin,
+    /// gm / gmcrit, is five times this, and with `Gm_crit_max` stated its
+    /// criterion is `holds` alone (`AET-WO-4300k` M3).
     pub an2867_margin_hundredths_uncited: u64,
 }
 
-/// `Gm_crit` for `row`. The formula is AN2867 Rev 10 §3.4 (p. 13); DS12117
+/// `Gm_crit` for `row`. The formula is AN2867 Rev 25 §3.4 (p. 13); DS12117
 /// states the threshold only.
 pub fn gm_crit(row: &power_parts::Crystal) -> GmCrit {
     let pos = |v: i64| u128::try_from(v).unwrap_or(0);
@@ -443,7 +447,7 @@ pub fn gm_crit(row: &power_parts::Crystal) -> GmCrit {
     });
     GmCrit {
         nano_amps_per_volt: nano,
-        holds: nano <= GM_CRIT_MAX_NANO_AMPS_PER_VOLT,
+        holds: nano < GM_CRIT_MAX_NANO_AMPS_PER_VOLT,
         an2867_margin_hundredths_uncited: (GM_CRIT_MAX_NANO_AMPS_PER_VOLT * 100)
             .checked_div(nano)
             .unwrap_or(0),
@@ -814,6 +818,32 @@ pub fn judge_tree(clock: &SolvedClock) -> Result<Option<TreeVerdict>, IrValidati
         pll1_q_hz,
         gm_crit: gm,
     }))
+}
+
+/// The conditions a declared crystal rests on that no held datasheet lets
+/// the engine compute (`AET-WO-4300k` M3), each by its id: AN2867 Rev 25
+/// §4.2 Step 3's safety factor (§3.8, a negative-resistance measurement) and
+/// Step 4's drive level (§3.5, from a measured `Vpp`), both p. 27.
+pub fn conditions(hse: Option<&Hse>) -> Vec<(String, String)> {
+    let Some(Hse::Crystal(c)) = hse else {
+        return Vec::new();
+    };
+    vec![
+        (
+            "hse_safety_factor_unmeasured:HSE".to_owned(),
+            format!(
+                "HSE: {}'s oscillation safety factor is not computed: AN2867 Rev 25 §4.2 Step 3, p. 27, asks it assessed by §3.8's negative-resistance measurement, a bench row",
+                c.part
+            ),
+        ),
+        (
+            "hse_drive_level_unmeasured:HSE".to_owned(),
+            format!(
+                "HSE: {}'s drive level is not computed: AN2867 Rev 25 §4.2 Step 4, p. 27, computes it by §3.5 from a measured Vpp, a bench row",
+                c.part
+            ),
+        ),
+    ]
 }
 
 #[cfg(test)]

@@ -157,6 +157,10 @@
           "description": "Requires --scenarios (INV-03 counts the fault campaign). Only if every gate passes, write the fabrication package (Gerbers, drill, placement, BOM, firmware ELF, FAB-NOTES.md, MANIFEST.json) into this directory, which must be empty or absent; the verdict names every file's sha256",
           "type": "string"
         },
+        "rebind": {
+          "description": "With --fab-out: re-bind this committed package to the specification (AET-WO-4300k, ruled 11:25Z). Readiness is not judged; the package is written only if every file equals the committed one byte for byte but MANIFEST.json's binding hashes and FAB-NOTES.md's specification line",
+          "type": "string"
+        },
         "scenarios": {
           "description": "Fault scenarios whose base is --spec, run as campaign runs them",
           "items": {

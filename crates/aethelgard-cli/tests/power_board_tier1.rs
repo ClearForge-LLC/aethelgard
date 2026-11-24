@@ -62,8 +62,9 @@ fn every_loop_rule_holds_on_the_fixtures_own_board() {
     let records = judged(spec, solved, table, &e.board);
     // Every part the tree anchors: per buck the two input capacitors, CBOOT,
     // CVCC, the divider and the inductor (7 x 2); the LDO's two capacitors;
-    // the sense reservoir; the hot-plug bulk capacitor on U10 (`AET-WO-1315`).
-    assert_eq!(records.len(), 18, "{records:#?}");
+    // the sense reservoir; the hot-plug bulk capacitor on U10 (`AET-WO-1315`);
+    // each buck's second input ceramic, C60 and C61 (`AET-WO-4300k` D8).
+    assert_eq!(records.len(), 20, "{records:#?}");
     for r in &records {
         assert_eq!(r.verdict, "pass", "{r:#?}");
     }
@@ -204,6 +205,11 @@ fn a_bucks_sw_net_takes_its_outputs_class_and_an_ldo_adds_nothing() {
 
 /// `extract` (no tool) bounds the fixture's board: its through-hole pads,
 /// thermal vias and arc-drawn silkscreen are read, and every line passes.
+/// Since `AET-WO-4300k` D14 the fixture declares its MCU supply's drop
+/// limit, so the supply gate runs too, with its inputs declared here: on
+/// this two-layer board it fails the ground return through the GND zone the
+/// emitted board leaves unfilled (`supply_tier1`), and every finding is the
+/// supply gate's.
 #[test]
 fn extract_bounds_the_power_board() {
     let (_, _, _, e) = emitted("extract bounds the power board");
@@ -212,11 +218,17 @@ fn extract_bounds_the_power_board() {
     let board = dir.join("b.kicad_pcb");
     std::fs::write(&board, &e.board).unwrap();
     let spec_path = dir.join("s.json");
-    std::fs::write(
-        &spec_path,
-        serde_json::to_vec(&common::power::power_tree()).unwrap(),
-    )
-    .unwrap();
+    let mut spec = common::power::power_tree();
+    for (key, value) in [
+        ("outer_copper_min_um", 30),
+        ("plane_copper_min_um", 15),
+        ("plating_min_um", 18),
+        ("copper_temperature_max_c", 125),
+    ] {
+        spec["board"]["stackup"][key] =
+            serde_json::json!({"value": value, "source": "test: the supply gate's input"});
+    }
+    std::fs::write(&spec_path, serde_json::to_vec(&spec).unwrap()).unwrap();
     let out = std::process::Command::new(env!("CARGO_BIN_EXE_aethelgard"))
         .args(["extract", "--board"])
         .arg(&board)
@@ -225,8 +237,16 @@ fn extract_bounds_the_power_board() {
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(out.status.code(), Some(0), "{v}");
-    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_eq!(out.status.code(), Some(1), "{v}");
+    let lines = v["lines"].as_array().unwrap();
+    assert!(!lines.is_empty(), "{v}");
+    for l in lines {
+        assert_eq!(l["verdict"], "pass", "{l}");
+    }
+    assert_eq!(v["supplies"][0]["verdict"], "fail", "{v}");
+    for f in v["findings"].as_array().unwrap() {
+        assert_eq!(f["kind"], "supply_pin_unbounded", "{f}");
+    }
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

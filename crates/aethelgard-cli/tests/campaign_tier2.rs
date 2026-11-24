@@ -1555,7 +1555,8 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
 /// the boot (ruled Q-A (a)), and its answer is judged there. A floor the
 /// solve crosses refuses the run by name (`BatterySagSolvedBelowFloor`,
 /// exit 2, `id` the sink), with a crossing named or not; a solved minimum off
-/// the static point (8,088,035 µV at 500 mΩ) by more than 1 mV is an
+/// the static point (8,087,826 µV at 500 mΩ since `AET-WO-4300k`'s
+/// supervisor, 8,088,314 before) by more than 1 mV is an
 /// internal error (exit 70), never a verdict, and prints nothing; an answer
 /// that is not the chain's stops the call (`ToolError`, exit 5). No run is
 /// archived. Moved from tier 1 (`campaign_tier1`), where no stub boots a
@@ -1565,7 +1566,7 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
 fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
     let _turn = beside_others();
     let dir = scratch("2310-deck");
-    let spec = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+    let spec = "examples/sentinel-03.json";
     let generated = dir.join("gen");
     let (code, out) = aethelgard(&[
         "generate",
@@ -1648,7 +1649,8 @@ fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
         (Some(2), &"BatterySagSolvedBelowFloor".into()),
         "{v}"
     );
-    let out = deck(&chain("8087034", "null"), "off");
+    // 1001 µV under the static point's 8,087,826.
+    let out = deck(&chain("8086825", "null"), "off");
     assert_eq!(out.status.code(), Some(70), "{out:?}");
     assert!(out.stdout.is_empty(), "{out:?}");
     let out = deck(r#"{"chain":"solved"}"#, "malformed");

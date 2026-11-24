@@ -10,8 +10,15 @@ use aethelgard_ir::{IrValidationError as E, Specification};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+#[path = "common/power_table.rs"]
+mod power_table;
+use power_table::{assert_power, refused, row, spec, table_json};
+
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "92b755a960fe4dbf5305c41b39244d16968de94426cae9d4690ab01e83e1ae28";
+/// `AET-WO-4300k`: schema 12 (rows DMP6023LSS-13, MMSZ5242BT1G,
+/// SF-1206F400-2, SF-1206F700-2, TLV803SDBZR and their four documents, the
+/// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
+const TABLE_SHA256: &str = "01bfd34a5412f3bedbc39a6aea984e5dc0d174a97a8ab86ffdefe95c845c9034";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -54,23 +61,6 @@ fn base() -> Value {
     v
 }
 
-fn spec(v: &Value) -> Specification {
-    serde_json::from_value(v.clone()).expect("a specification")
-}
-
-fn refused(v: &Value) -> E {
-    spec(v).validate().expect_err("refused")
-}
-
-fn assert_power(err: &E, kind: Refusal, id: &str) {
-    match err {
-        E::Power { kind: k, id: i, .. } => {
-            assert_eq!((*k, i.as_str()), (kind, id), "{err}");
-        }
-        other => panic!("not a power refusal: {other}"),
-    }
-}
-
 /// [`assert_power`], naming the case that failed.
 fn assert_case(err: &E, kind: Refusal, id: &str, what: &str) {
     match err {
@@ -92,20 +82,6 @@ fn curve(doc: &str, points: &[(i64, i64)], tol: i64, temp: i64) -> Value {
 }
 
 const GRM_SHEET: &str = "MURATA_GRM188R71C105KA12";
-
-/// The embedded table as JSON, for a copy with one limit changed.
-fn table_json() -> Value {
-    serde_json::from_str(POWER_PARTS_JSON).unwrap()
-}
-
-fn row<'v>(t: &'v mut Value, part: &str) -> &'v mut Value {
-    t["parts"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|r| r["part"] == part)
-        .unwrap()
-}
 
 /// The fixture checked against `table`, with the sensor table's own output
 /// delays (`K6`: the ICM-20948's tVD.SDO, 59 ns).
@@ -144,6 +120,7 @@ fn the_embedded_table_parses_with_every_document_held() {
             "C0402C180J5GACTU",
             "CRCW0402_Z_0",
             "CRCW0603_F_K",
+            "DMP6023LSS-13",
             "GCM188R71H104KA57",
             "GCM188R71H224KA64",
             "GCM32EC71H106KA03",
@@ -152,8 +129,12 @@ fn the_embedded_table_parses_with_every_document_held() {
             "GRM32ER71A226KE20",
             "IHLP5050FDER8R2M01",
             "LMR33630ADDA",
+            "MMSZ5242BT1G",
+            "SF-1206F400-2",
+            "SF-1206F700-2",
             "STM32H753ZITx",
             "TLV75518PDBV",
+            "TLV803SDBZR",
             "TNPW0603_B_E",
             "TXU0304PW",
             "UCZ1H470MCL1GS",
@@ -335,10 +316,14 @@ fn the_tree_checks_to_its_hand_computed_bounds() {
     let floors = &d("VDD_3V3").consumers;
     assert_eq!(floors[0], ("STM32H753ZITx (MCU)".to_owned(), 2680));
     // The LDO's input floor is its dropout need, 1827 + 400 mV (A3), and
-    // VREF+ is floored where the divided battery still fits under it (D3).
+    // VREF+ is floored where the divided battery still fits under it (D3):
+    // 4S × 4350 mV = 17400 mV through R50 100 k / R51 10 k, each CRCW at
+    // 10000 + 100 × 65 + 20000 = 36500 ppm, R51 high and R50 low:
+    // ⌈17400 mV × 10365 / (10365 + 96350)⌉ = 1690025 µV, 1691 mV (it was
+    // 2536 mV at 6S's 26100 mV, `AET-WO-4300k` D14).
     assert!(floors.contains(&("U12 (TLV75518PDBV input)".to_owned(), 2227)));
     assert!(
-        floors.contains(&("VREF+ (VBAT_SENSE full scale)".to_owned(), 2536)),
+        floors.contains(&("VREF+ (VBAT_SENSE full scale)".to_owned(), 1691)),
         "{floors:?}"
     );
     assert!(
@@ -431,29 +416,27 @@ fn each_static_check_refuses_by_name() {
                 v["power"]["loads"][1]["milliamps"] = json!(400);
             },
         ),
+        // F1, SF-1206F700-2, is rated -20 °C and is swept with every power
+        // part before J1 is judged (`power_in`); J1 alone is below.
         (
             "a -30 C board",
             Refusal::BoardOutsidePartTemperature,
-            "J1",
+            "F1",
             |v| {
                 v["power"]["conditions"]["board_temperature_celsius"]["min"] = json!(-30);
             },
         ),
+        // By reference: the second input ceramic C60 moved every later index
+        // (`AET-WO-4300k` D14).
         ("no CBOOT", Refusal::ExternalPartMissing, "U10", |v| {
-            v["power"]["regulators"][0]["external"]
-                .as_array_mut()
-                .unwrap()
-                .remove(2);
+            drop_ext(v, "U10", "C12");
         }),
         (
             "three output capacitors",
             Refusal::ExternalPartOutOfRange,
             "U10",
             |v| {
-                v["power"]["regulators"][0]["external"]
-                    .as_array_mut()
-                    .unwrap()
-                    .remove(4);
+                drop_ext(v, "U10", "C14");
             },
         ),
         (
@@ -461,11 +444,12 @@ fn each_static_check_refuses_by_name() {
             Refusal::ExternalPartOutOfRange,
             "C14",
             |v| {
-                v["power"]["regulators"][0]["external"][4]["part"] = json!("GRM32ER71A226KE20");
+                ext(v, "U10", "C14")["part"] = json!("GRM32ER71A226KE20");
             },
         ),
         (
-            "a 16 V input capacitor on a 26.1 V battery",
+            // 16000 mV is under the 4S pack's 4 × 4350 = 17400 mV.
+            "a 16 V input capacitor on a 17.4 V battery",
             Refusal::ExternalPartOutOfRange,
             "C10",
             |v| {
@@ -485,12 +469,16 @@ fn each_static_check_refuses_by_name() {
                     );
             },
         ),
+        // R51 high and R50 low, each 36500 ppm: 100 k / 20 k divides 17400 mV
+        // to ⌈17400 × 20730 / (20730 + 96350)⌉ = 3081 mV, under VREF+'s
+        // 3135 mV (it refused 6S's 26100 mV); 22 k divides it to
+        // ⌈17400 × 22803 / (22803 + 96350)⌉ = 3330 mV, over.
         (
-            "a 20 k bottom resistor",
+            "a 22 k bottom resistor",
             Refusal::SenseFullScaleExceeded,
             "VBAT_SENSE",
             |v| {
-                v["power"]["sense"][0]["bottom"]["ohms"] = json!(20_000);
+                v["power"]["sense"][0]["bottom"]["ohms"] = json!(22_000);
             },
         ),
         (
@@ -561,6 +549,17 @@ fn each_static_check_refuses_by_name() {
             other => panic!("{what}: not a power refusal: {other}"),
         }
     }
+    // The XT30PW-M's own -20 °C floor, with the fuse's lowered to -40 °C in
+    // a table copy so it is not reached first.
+    let mut v = base();
+    v["power"]["conditions"]["board_temperature_celsius"]["min"] = json!(-30);
+    let mut t = table_json();
+    row(&mut t, "SF-1206F700-2")["temperature_celsius"]["min"] = json!(-40);
+    assert_power(
+        &against(&v, &t).unwrap_err(),
+        Refusal::BoardOutsidePartTemperature,
+        "J1",
+    );
 }
 
 #[test]
@@ -574,8 +573,12 @@ fn a_datasheet_limit_changed_in_a_table_copy_is_refused_by_name() {
                 row(t, "LMR33630ADDA")["kind"]["buck"]["toff_min_max_ns"]["value"] = json!(2000);
             },
         ),
-        ("a 500 ns on-time", Refusal::OnTimeTooShort, "U10", |t| {
-            row(t, "LMR33630ADDA")["kind"]["buck"]["ton_min_max_ns"]["value"] = json!(500);
+        // tON = VOUT,min / (VIN,max × fSW,max): U10's 4818048 µV / (17400 mV
+        // × 460 kHz) is 601.95 ns at 4S, so 500 ns (which refused U10 at
+        // 6S's 401 ns) now reaches only U11's 392.9 ns; 700 ns refuses U10,
+        // judged first.
+        ("a 700 ns on-time", Refusal::OnTimeTooShort, "U10", |t| {
+            row(t, "LMR33630ADDA")["kind"]["buck"]["ton_min_max_ns"]["value"] = json!(700);
         }),
         ("a 1.4 V dropout", Refusal::DropoutViolated, "U12", |t| {
             row(t, "TLV75518PDBV")["kind"]["ldo"]["dropout_max_millivolts"]["value"] = json!(1400);
@@ -919,7 +922,7 @@ fn every_remaining_guard_refuses_by_name() {
             Refusal::ExternalPartOutOfRange,
             "C11",
             |v| {
-                v["power"]["regulators"][0]["external"][1]["part"] = json!("GCM32EC71H106KA03");
+                ext(v, "U10", "C11")["part"] = json!("GCM32EC71H106KA03");
             },
         ),
         (
@@ -1152,6 +1155,24 @@ fn reg<'v>(v: &'v mut Value, reference: &str) -> &'v mut Value {
         .unwrap()
 }
 
+/// A regulator's external part, by reference.
+fn ext<'v>(v: &'v mut Value, regulator: &str, reference: &str) -> &'v mut Value {
+    reg(v, regulator)["external"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .find(|e| e["reference"] == reference)
+        .unwrap()
+}
+
+/// A regulator without one external part, by reference.
+fn drop_ext(v: &mut Value, regulator: &str, reference: &str) {
+    let list = reg(v, regulator)["external"].as_array_mut().unwrap();
+    let before = list.len();
+    list.retain(|e| e["reference"] != reference);
+    assert_eq!(list.len() + 1, before, "{regulator} holds {reference}");
+}
+
 /// The fixture's verdict conditions, checked against `table`.
 fn conditions(v: &Value, table: &Value) -> Vec<String> {
     let t = parse_power_parts(&table.to_string()).expect("the changed table parses");
@@ -1163,8 +1184,10 @@ fn conditions(v: &Value, table: &Value) -> Vec<String> {
 }
 
 /// A table with test-only TVS rows: the Littelfuse SMBJ28A and SMBJ26A as
-/// read (p. 2, 06/03/20 revision, from a mirror, so never pinned), and an
-/// invented part that passes, to prove the clamp path.
+/// read (p. 2, 06/03/20 revision, from a mirror, so never pinned), an
+/// invented part that passes, to prove the clamp path, and an invented part
+/// standing off under the 4S pack's 17.4 V (`AET-WO-4300k` D14), whose clamp
+/// alone would pass.
 fn tvs_table() -> Value {
     let mut t = table_json();
     t["documents"]["SMBJ"] = json!({"title": "Littelfuse SMBJ series (test only)",
@@ -1184,12 +1207,15 @@ fn tvs_table() -> Value {
     parts.push(tvs("SMBJ28A", 28000, 45400));
     parts.push(tvs("SMBJ26A", 26000, 42100));
     parts.push(tvs("TVS_TEST_PASS", 27000, 37000));
+    parts.push(tvs("TVS_TEST_LOW_STANDOFF", 17000, 37000));
     t
 }
 
+/// The input damped by a clamp alone, as D2: the fixture's D1 is the
+/// protection's zener (`AET-WO-4300k` D14).
 fn with_clamp(part: &str) -> Value {
     let mut v = base();
-    v["power"]["input"]["hot_plug"] = json!([{"reference": "D1", "part": part, "side": "board"}]);
+    v["power"]["input"]["hot_plug"] = json!([{"reference": "D2", "part": part, "side": "board"}]);
     v
 }
 
@@ -1198,38 +1224,56 @@ fn the_fixture_passes_every_new_check_and_names_each_condition() {
     assert_eq!(spec(&full()).validate().map(|_| ()), Ok(()));
     let c = conditions(&full(), &table_json());
     let has = |s: &str| c.iter().any(|x| x.contains(s));
-    // §1.2: 1170 mW × 28.0 °C/W on an 85 °C board, 7240 mK of margin.
-    assert!(has("is 117760 m°C on a 85 °C board, 7240 mK under 125 °C"));
+    // §1.2, `AET-WO-4300k` (a): the copper is measured on the drawn board,
+    // so the verdict names the least area that clears. U10, 1170 mW on an
+    // 85 °C board: 85000 + ⌈1170 × 36.0⌉ = 127120 m°C at 10 cm², over
+    // 125 °C; 85000 + 1170 × 30.0 = 120100 at 15 cm², under. U11, 550 mW:
+    // 85000 + 550 × 42.0 = 108100 at the figure's first point, 7 cm².
+    assert!(has(
+        "U10: its junction is screened, not guaranteed: it needs at least 15 cm² of copper per joined layer"
+    ));
+    assert!(has(
+        "U11: its junction is screened, not guaranteed: it needs at least 7 cm² of copper per joined layer"
+    ));
+    // The screen at the fixture's former 20 cm²: 1170 mW × 28.0 °C/W is
+    // 32760 mK over 85 °C, 117760 m°C, 7240 mK of margin.
+    let s = power::junction_screen(&spec(&full()), "U10", 2000).unwrap();
+    assert!(
+        s.contains("is 117760 m°C on a 85 °C board, 7240 mK under 125 °C"),
+        "{s}"
+    );
     assert!(has("outside the θJA figure's 4-layer board"));
     // §1.3: the LDO's 1 µF at 50 % against 0.47 µF; the buck's named (D2).
     assert!(has("`cin` holds 500000 pF effective at 3465 mV"));
     assert!(has("a margin of 1.06 times, typical, not guaranteed"));
-    // Ruled D2 (c): the buck's 10 µF input minimum is effective, and its
-    // shortfall under the declared derating is named, not blocking.
-    // With Murata's curve held (the amendment on PR #158): 10 µF x (1 - 0.417
-    // at 26.1 V, interpolated between 25 V's -394 and 27.5 V's -446 and
-    // rounded down) x 0.9 (tolerance) x 0.78 (X7S) = 4.092660 µF, 5.907 µF
-    // short of 10 µF, still a named shortfall.
+    // The buck's 10 µF input minimum is effective and, since `AET-WO-4300k`
+    // D14, enforced, with two ceramics per buck at 4S. Murata's curve at
+    // 17.4 V, between 15 V's -172 and 17.5 V's -228: -172 + ⌊-56 × 2400 /
+    // 2500⌋ = -172 - 54 = -226; 10 µF x 0.774 x 0.9 (tolerance) x 0.78
+    // (X7S) = 5433480 pF each, 10866960 pF for two, 1.08 times 10 µF. One
+    // ceramic's refusal is held in
+    // `a_bias_lie_and_a_short_effective_capacitance_are_refused`.
     assert!(has(
-        "U10: `cin` holds 4.092 µF effective at 26100 mV under DC bias"
+        "U10: `cin` holds 10866960 pF effective at 17400 mV under DC bias"
     ));
     assert!(has(
-        "4092660 pF, its rated 10000000 pF times its maker's curve at 26100 mV, -417 per mille interpolated"
+        "5433480 pF, its rated 10000000 pF times its maker's curve at 17400 mV, -226 per mille interpolated"
     ));
     assert!(has(
         "sha256 8b0b6cfffc8a1bc96152d2d1b6167f71bc9c6cde89d2b37fad060d888b6ce73b"
     ));
     assert!(has("its tolerance's -100 per mille"));
     assert!(has("its temperature limit's -220 per mille"));
-    assert!(has("5.907 µF short of the 10.000 µF minimum"));
-    assert!(has("a named shortfall, not blocking"));
+    assert!(has("it is screened against the 10000000 pF minimum"));
+    assert!(has("a margin of 1.08 times, typical, not guaranteed"));
     assert!(has(
         "by the declared derating, a placeholder until its maker's curve is held"
     ));
     assert!(has("a declared derating, not a maker's figure"));
-    // §1.1, §1.4, D5.
+    // §1.1, §1.4, D5. With no clamp, the ring is bounded at twice the
+    // pack (ruled D7): 2 × 17400 = 34800 mV, under the 38000 mV VIN maximum.
     assert!(has(
-        "the ring's size is not computed, and VIN's absolute maximum is 38000 mV"
+        "rings VIN to at most twice the battery's 17400 mV, 34800 mV, under VIN's absolute maximum of 38000 mV"
     ));
     assert!(has(
         "damps the input's ring through its ESR, at most 250 mOhm"
@@ -1280,16 +1324,30 @@ fn an_undamped_battery_input_is_refused_by_name() {
         mutate(&mut v);
         assert_case(&refused(&v), kind, id, what);
     }
-    // Two bulks (94 µF) are inside TI's 20 to 100 µF.
+    // Two bulks (94 µF) are inside TI's 20 to 100 µF. On the real fuse they
+    // melt it first (`AET-WO-4300k` (10)): 94 µF + the four 10 µF input
+    // ceramics at their +10 % (their DC-bias rows' tolerance, the power
+    // review's F7) + the two 220 nF at rated, 138440000 pF; C·V²/(2·R_min)
+    // with R_min = 7500 µΩ × 0.75 = 5625 µΩ is ⌈138440000 × 17400² /
+    // (2 × 5625 × 10⁶)⌉ = 3725698 mA²s, at or above SF-1206F700-2's
+    // 3250000. With its melting I²t raised past the bound in a table copy,
+    // the bulk judge alone decides, and passes.
     let mut v = base();
     v["power"]["input"]["hot_plug"]
         .as_array_mut()
         .unwrap()
         .push(json!({"reference": "C2", "part": "UCZ1H470MCL1GS", "side": "board"}));
-    assert_eq!(spec(&v).validate().map(|_| ()), Ok(()));
-    // A bulk rated at the battery's maximum, or holding 19 µF, is refused.
+    let err = refused(&v);
+    assert_power(&err, Refusal::FuseMeltsOnHotPlug, "F1");
+    assert!(err.to_string().contains("puts up to 3725698 mA²s"), "{err}");
+    let mut t = table_json();
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["melting_i2t_milliamp2_seconds"]["value"] =
+        json!(3_725_699);
+    assert_eq!(against(&v, &t), Ok(()));
+    // A bulk rated at the battery's maximum (4S × 4350 mV), or holding
+    // 19 µF, is refused.
     for (field, value, id) in [
-        ("rated_millivolts", 26100, "C1"),
+        ("rated_millivolts", 17400, "C1"),
         ("rated_picofarads", 19_000_000, "J1"),
     ] {
         let mut t = table_json();
@@ -1312,14 +1370,21 @@ fn an_undamped_battery_input_is_refused_by_name() {
 
 #[test]
 fn a_clamp_is_judged_by_its_stand_off_and_its_clamp() {
-    // SMBJ28A clamps at 45.4 V, above the LMR33630's 38 V; SMBJ26A stands
-    // off 26.0 V, at or below the 26.1 V pack.
-    for part in ["SMBJ28A", "SMBJ26A"] {
-        assert_power(
-            &against(&with_clamp(part), &tvs_table()).unwrap_err(),
-            Refusal::BatteryInputUndamped,
-            "D1",
-        );
+    // SMBJ28A clamps at 45.4 V, above the LMR33630's 38 V. SMBJ26A stood
+    // off 26.0 V, at or below 6S's 26.1 V pack; at 4S (4 × 4350 = 17400 mV)
+    // its stand-off clears, and its 42.1 V clamp, above 38 V, refuses it.
+    // A stand-off at or below the pack: the invented 17.0 V part.
+    for (part, says) in [
+        ("SMBJ28A", "clamps at up to 45400 mV"),
+        ("SMBJ26A", "clamps at up to 42100 mV"),
+        (
+            "TVS_TEST_LOW_STANDOFF",
+            "stands off 17000 mV, not above the battery's maximum of 17400 mV",
+        ),
+    ] {
+        let err = against(&with_clamp(part), &tvs_table()).unwrap_err();
+        assert_power(&err, Refusal::BatteryInputUndamped, "D2");
+        assert!(err.to_string().contains(says), "{part}: {err}");
     }
     assert_eq!(against(&with_clamp("TVS_TEST_PASS"), &tvs_table()), Ok(()));
     let c = conditions(&with_clamp("TVS_TEST_PASS"), &tvs_table());
@@ -1334,7 +1399,7 @@ fn a_clamp_is_judged_by_its_stand_off_and_its_clamp() {
     assert_power(
         &against(&with_clamp("TVS_TEST_PASS"), &t).unwrap_err(),
         Refusal::BatteryInputUndamped,
-        "D1",
+        "D2",
     );
     // A TVS row clamping at or below its own stand-off does not parse.
     let r = table_refusal(|t| {
@@ -1355,25 +1420,11 @@ fn a_hot_buck_is_refused_by_name() {
                 reg(v, "U10")["junction"] = Value::Null;
             },
         ),
+        // 2000 mW at the figure's lowest θ, 25.0 °C/W (58 cm²), is 85000 +
+        // 50000 m°C: no area clears it.
         ("2 W of loss", Refusal::BuckJunctionOverLimit, "U10", |v| {
             reg(v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(2000);
         }),
-        (
-            "10 cm², at 36 °C/W",
-            Refusal::BuckJunctionOverLimit,
-            "U10",
-            |v| {
-                reg(v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(10);
-            },
-        ),
-        (
-            "below the curve",
-            Refusal::BuckJunctionOverLimit,
-            "U11",
-            |v| {
-                reg(v, "U11")["junction"]["copper_square_centimetres"]["value"] = json!(6);
-            },
-        ),
         (
             "a junction on the LDO",
             Refusal::PowerValueInvalid,
@@ -1400,6 +1451,31 @@ fn a_hot_buck_is_refused_by_name() {
         mutate(&mut v);
         assert_case(&refused(&v), kind, id, what);
     }
+    // The copper is measured on the drawn board and screened there
+    // (`AET-WO-4300k` (a)). 10 cm², 1000 mm², at 36.0 °C/W: 85000 + 1170 ×
+    // 36.0 = 127120 m°C, over 125 °C. 6 cm², 600 mm², is below the
+    // figure's first point, 7 cm².
+    let screen = |v: &Value, r: &str, mm2: u64| power::junction_screen(&spec(v), r, mm2);
+    let err = screen(&base(), "U10", 1000).unwrap_err();
+    assert_case(
+        &err,
+        Refusal::BuckJunctionOverLimit,
+        "U10",
+        "10 cm², at 36 °C/W",
+    );
+    assert!(err.to_string().contains("127120 m°C"), "{err}");
+    let err = screen(&base(), "U11", 600).unwrap_err();
+    assert_case(
+        &err,
+        Refusal::BuckJunctionOverLimit,
+        "U11",
+        "below the curve",
+    );
+    assert!(
+        err.to_string()
+            .contains("under the θJA figure's smallest area, 7 cm²"),
+        "{err}"
+    );
     // A loss bound with no source is refused by the shape.
     let mut v = base();
     reg(&mut v, "U10")["junction"]["loss_milliwatts"]["source"] = json!("");
@@ -1408,26 +1484,28 @@ fn a_hot_buck_is_refused_by_name() {
         "{}",
         refused(&v)
     );
-    // The limit is inclusive and exact: 1428 mW rises 39984 mK to
-    // 124984 m°C, and 1429 mW rises 40012 mK, past 125 °C.
+    // The limit is inclusive and exact, at 20 cm² (2000 mm², 28.0 °C/W):
+    // 1428 mW rises 39984 mK to 124984 m°C, and 1429 mW rises 40012 mK,
+    // past 125 °C.
     for (loss, ok) in [(1428, true), (1429, false)] {
         let mut v = base();
         reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(loss);
-        let r = spec(&v).validate().map(|_| ());
+        let r = screen(&v, "U10", 2000);
         if ok {
-            assert_eq!(r, Ok(()), "{loss}");
+            let s = r.unwrap();
+            assert!(s.contains("is 124984 m°C"), "{loss}: {s}");
         } else {
-            assert_power(&r.unwrap_err(), Refusal::BuckJunctionOverLimit, "U10");
+            let err = r.unwrap_err();
+            assert_power(&err, Refusal::BuckJunctionOverLimit, "U10");
+            assert!(err.to_string().contains("125012 m°C"), "{err}");
         }
     }
-    // The point at or below the declared area is used: 29 cm² reads the
-    // 20 cm² point's 28.0 °C/W, not 30 cm²'s.
-    let mut v = base();
-    reg(&mut v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(29);
-    let c = conditions(&v, &table_json());
+    // The point at or below the measured area is used: 29 cm², 2900 mm²,
+    // reads the 20 cm² point's 28.0 °C/W, not 30 cm²'s.
+    let s = screen(&base(), "U10", 2900).unwrap();
     assert!(
-        c.iter()
-            .any(|x| x.contains("the figure's point at 20 cm² for the 29 cm²"))
+        s.contains("θJA 28.0 °C/W, the figure's point at 20 cm² for the 29.00 cm²"),
+        "{s}"
     );
     // A θ curve for another package, or one that rises with area, does not parse.
     let r = table_refusal(|t| {
@@ -1514,33 +1592,30 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
             curve(GRM_SHEET, &[(0, 200), (16_000, 0)], 0, 0);
     });
     assert!(r.contains("above the rated capacitance"), "{r}");
-    // Past the curve's last point it is refused by name, never extrapolated,
-    // even where the shortfall would only be reported (the buck's input).
+    // Past the curve's last point it is refused by name, never extrapolated:
+    // the curve cut at 15 V, under the 4S pack's 17400 mV (at 6S it was cut
+    // at 25 V, under 26100 mV).
     let mut t = table_json();
     row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = curve(
         "MURATA_GCM32EC71H106KA03_DCBIAS",
-        &[(0, 3), (25_000, -394)],
+        &[(0, 3), (15_000, -172)],
         100,
         220,
     );
-    assert_power(
-        &against(&base(), &t).unwrap_err(),
-        Refusal::DcBiasBeyondCurve,
-        "U10",
-    );
-    // Ruled D2 (c): where a row enforces its effective minimum, the buck's
-    // 4.092 µF is refused.
-    let mut t = table_json();
-    row(&mut t, "LMR33630ADDA")["kind"]["buck"]["external"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|e| e["role"] == "cin")
-        .unwrap()["effective_min_picofarads"]["on_shortfall"] = json!("enforce");
-    assert_power(
-        &against(&base(), &t).unwrap_err(),
-        Refusal::EffectiveCapacitanceBelowMinimum,
-        "U10",
+    let err = against(&base(), &t).unwrap_err();
+    assert_power(&err, Refusal::DcBiasBeyondCurve, "U10");
+    assert!(err.to_string().contains("which ends at 15000 mV"), "{err}");
+    // Ruled D2 (c), enforced since D14: one ceramic, C60 removed, holds
+    // 10 µF x (1 - 0.226 at 17.4 V) x 0.9 x 0.78 = 5433480 pF, at or under
+    // the 10 µF minimum, and is refused.
+    let mut v = base();
+    drop_ext(&mut v, "U10", "C60");
+    let err = refused(&v);
+    assert_power(&err, Refusal::EffectiveCapacitanceBelowMinimum, "U10");
+    assert!(
+        err.to_string()
+            .contains("holds 5433480 pF effective at 17400 mV"),
+        "{err}"
     );
     // A declared class-2 derating keeps at most 50 % (ruled on PR #158); a
     // C0G band may keep all of it.
@@ -1672,19 +1747,23 @@ fn an_unwired_control_pin_is_refused_by_name() {
 /// decides it (the mutation run's survivors).
 #[test]
 fn the_new_guards_hold_at_their_edges() {
-    // A TVS standing off exactly the pack's 26.1 V is refused by its
-    // stand-off alone; one clamping exactly at 38 V passes.
+    // A TVS standing off exactly the 4S pack's 4 × 4350 = 17400 mV is
+    // refused by its stand-off alone; one clamping exactly at 38 V passes.
     let mut t = tvs_table();
-    row(&mut t, "TVS_TEST_PASS")["kind"]["tvs"]["standoff_millivolts"]["value"] = json!(26_100);
-    assert_power(
-        &against(&with_clamp("TVS_TEST_PASS"), &t).unwrap_err(),
-        Refusal::BatteryInputUndamped,
-        "D1",
-    );
+    row(&mut t, "TVS_TEST_PASS")["kind"]["tvs"]["standoff_millivolts"]["value"] = json!(17_400);
+    let err = against(&with_clamp("TVS_TEST_PASS"), &t).unwrap_err();
+    assert_power(&err, Refusal::BatteryInputUndamped, "D2");
+    assert!(err.to_string().contains("stands off 17400 mV"), "{err}");
     let mut t = tvs_table();
     row(&mut t, "TVS_TEST_PASS")["kind"]["tvs"]["clamp_max_millivolts"]["value"] = json!(38_000);
     assert_eq!(against(&with_clamp("TVS_TEST_PASS"), &t), Ok(()));
-    // Bulk at exactly 20 µF, and two at exactly 100 µF, pass.
+    // Bulk at exactly 20 µF, and two at exactly 100 µF, pass the bulk
+    // judge. Two at 100 µF melt the real fuse first (`AET-WO-4300k` (10)):
+    // 100 µF + the 44.44 µF of input ceramics (the 10 µF parts at +10 %) is
+    // 144440000 pF, and ⌈144440000 × 17400² / (2 × 5625 × 10⁶)⌉ = 3887170
+    // mA²s is at or above SF-1206F700-2's 3250000; so the copy raises the
+    // fuse's melting I²t past it. One at 20 µF, 64440000 pF, puts 1734210
+    // mA²s, under it.
     for (pf, parts) in [(20_000_000, 1), (50_000_000, 2)] {
         let mut t = table_json();
         row(&mut t, "UCZ1H470MCL1GS")["kind"]["bulk_capacitor"]["rated_picofarads"]["value"] =
@@ -1695,37 +1774,57 @@ fn the_new_guards_hold_at_their_edges() {
                 .as_array_mut()
                 .unwrap()
                 .push(json!({"reference": "C2", "part": "UCZ1H470MCL1GS", "side": "board"}));
+            let err = against(&v, &t).unwrap_err();
+            assert_power(&err, Refusal::FuseMeltsOnHotPlug, "F1");
+            assert!(err.to_string().contains("puts up to 3887170 mA²s"), "{err}");
+            row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["melting_i2t_milliamp2_seconds"]["value"] =
+                json!(3_887_171);
         }
         assert_eq!(against(&v, &t), Ok(()), "{pf} x {parts}");
     }
-    // The junction: exactly 125 °C passes (1600 mW × 25.0 °C/W at 58 cm²),
-    // and the rise rounds up (1001 mW × 26.5 °C/W is 26526.5 mK, 26527).
+    // The junction, screened at the copper measured on the drawn board
+    // (`AET-WO-4300k` (a)): exactly 125 °C passes (1600 mW × 25.0 °C/W at
+    // 58 cm², 5800 mm²: 85000 + 40000 m°C), and the rise rounds up (1001 mW
+    // × 26.5 °C/W at 40 cm², 4000 mm², is 26526.5 mK, 26527).
     let mut v = base();
-    reg(&mut v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(58);
     reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1600);
     assert_eq!(spec(&v).validate().map(|_| ()), Ok(()));
-    reg(&mut v, "U10")["junction"]["copper_square_centimetres"]["value"] = json!(40);
-    reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1001);
-    let c = conditions(&v, &table_json());
+    let s = power::junction_screen(&spec(&v), "U10", 5800).unwrap();
     assert!(
-        c.iter()
-            .any(|x| x.contains("is 111527 m°C on a 85 °C board"))
+        s.contains("is 125000 m°C on a 85 °C board, 0 mK under 125 °C"),
+        "{s}"
     );
-    // Declared values at and past their maxima.
-    for (what, value, ok) in [
-        ("copper_square_centimetres", 10_000, true),
-        ("copper_square_centimetres", 10_001, false),
-        ("loss_milliwatts", 1_000_001, false),
-    ] {
+    // `validate` needs only that some area clears: its edge is the figure's
+    // lowest θ, so 1601 mW × 25.0 °C/W = 40025 mK, 125025 m°C, is refused.
+    let mut over = base();
+    reg(&mut over, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1601);
+    let err = refused(&over);
+    assert_power(&err, Refusal::BuckJunctionOverLimit, "U10");
+    assert!(err.to_string().contains("125025 m°C"), "{err}");
+    reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1001);
+    let s = power::junction_screen(&spec(&v), "U10", 4000).unwrap();
+    assert!(s.contains("is 111527 m°C on a 85 °C board"), "{s}");
+    // Declared values past their maxima. The copper is no longer declared
+    // (`AET-WO-4300k` (a)): a junction carrying `copper_square_centimetres`,
+    // at its former maximum or past it, does not parse.
+    for value in [10_000, 10_001] {
         let mut v = base();
-        reg(&mut v, "U10")["junction"][what]["value"] = json!(value);
-        let r = spec(&v).validate().map(|_| ());
-        if ok {
-            assert_eq!(r, Ok(()), "{what} {value}");
-        } else {
-            assert_power(&r.unwrap_err(), Refusal::PowerValueInvalid, "U10");
-        }
+        reg(&mut v, "U10")["junction"]["copper_square_centimetres"] =
+            json!({"value": value, "source": "s"});
+        let e = serde_json::from_value::<Specification>(v).unwrap_err();
+        assert!(
+            e.to_string()
+                .contains("unknown field `copper_square_centimetres`"),
+            "{value}: {e}"
+        );
     }
+    let mut v = base();
+    reg(&mut v, "U10")["junction"]["loss_milliwatts"]["value"] = json!(1_000_001);
+    assert_power(
+        &spec(&v).validate().unwrap_err(),
+        Refusal::PowerValueInvalid,
+        "U10",
+    );
     // A derating band past 1000 per mille is refused.
     let mut v = base();
     v["power"]["conditions"]["dc_bias_derating"][0]["ratio_max_permille"] = json!(1001);
@@ -1778,7 +1877,8 @@ fn the_new_guards_hold_at_their_edges() {
         .iter_mut()
         .find(|e| e["role"] == "cboot")
         .unwrap();
-    ext["effective_min_picofarads"] = json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}, "on_shortfall": "enforce"});
+    ext["effective_min_picofarads"] =
+        json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}});
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,

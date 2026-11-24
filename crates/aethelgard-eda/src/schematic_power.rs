@@ -403,9 +403,54 @@ pub(crate) fn draw(
             reservoir(b, mcu, c, net, g, &position)?;
         }
     }
+    // `AET-WO-4300k` (10): the input's protection, from the connector to
+    // `VBAT`: the fuse, then the P-FET (drain to the fuse, source to `VBAT`),
+    // its gate pulled to `GND` and held by the zener, cathode on the source.
+    // The sense divider and every regulator sit on `VBAT`, after it.
+    let plus = match &p.input.protection {
+        Some(x) => {
+            let input = Conn::Net(aethelgard_ir::power::BATTERY_IN_NET.to_owned());
+            let fused = Conn::Net(aethelgard_ir::power::BATTERY_FUSED_NET.to_owned());
+            let gate = Conn::Net(format!("{}_GATE", x.fet.reference));
+            two_pin(
+                b,
+                &x.fuse.reference,
+                &x.fuse.part,
+                x.fuse.part.clone(),
+                input.clone(),
+                fused.clone(),
+                None,
+            )?;
+            let fet = row(&x.fet.reference, &x.fet.part)?;
+            let mut conns = BTreeMap::new();
+            for (role, conn) in [
+                ("D", fused),
+                ("G", gate.clone()),
+                ("S", b.rail(BATTERY_NET)),
+            ] {
+                for n in pin(&x.fet.reference, fet, role)?.split(',') {
+                    conns.insert(n.to_owned(), conn.clone());
+                }
+            }
+            ic(b, &x.fet.reference, fet, conns)?;
+            let source = b.rail(BATTERY_NET);
+            two_pin(
+                b,
+                &x.zener.reference,
+                &x.zener.part,
+                x.zener.part.clone(),
+                source,
+                gate.clone(),
+                None,
+            )?;
+            let g = b.ground();
+            resistor(b, &x.gate_resistor, gate, g)?;
+            input
+        }
+        None => b.rail(BATTERY_NET),
+    };
     // The power-in connector, drawn like `4300f`'s connectors (it is placed
     // with them, at the board's edge).
-    let plus = b.rail(BATTERY_NET);
     let minus = b.ground();
     b.parts.push(Part {
         lib_id: POWER_IN_SYMBOL,
@@ -424,6 +469,31 @@ pub(crate) fn draw(
         beside: None,
     });
     Ok(())
+}
+
+/// `AET-WO-4300k` (9), Path B: a reset supervisor on `NRST` (its row's
+/// `RESET`), on the MCU's supply (`VDD`) and `GND`; its pull-up from `NRST`
+/// to the supply; its bypass from `VDD` to `GND` (SBVS157E p. 6, note 2).
+pub(super) fn supervisor(
+    b: &mut Builder<'_>,
+    s: &aethelgard_ir::supervisor::ResetSupervisor,
+    supply: &str,
+) -> Result<(), EmitError> {
+    let r = row(&s.reference, &s.part)?;
+    let nrst = Conn::Net(aethelgard_ir::NRST.to_owned());
+    let vdd = b.rail(supply);
+    let g = b.ground();
+    let conns = BTreeMap::from([
+        (pin(&s.reference, r, "GND")?, g),
+        (pin(&s.reference, r, "RESET")?, nrst.clone()),
+        (pin(&s.reference, r, "VDD")?, vdd),
+    ]);
+    ic(b, &s.reference, r, conns)?;
+    let up = b.rail(supply);
+    resistor(b, &s.pull_up, nrst, up)?;
+    let vdd = b.rail(supply);
+    let g = b.ground();
+    capacitor(b, &s.bypass.reference, &s.bypass.part, vdd, g)
 }
 
 /// A declared hot-plug part's row in `table`, when it is a bulk capacitor on

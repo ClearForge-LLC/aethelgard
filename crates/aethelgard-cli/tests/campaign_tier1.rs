@@ -2861,10 +2861,7 @@ fn a_scenario_on_a_power_tree_passes_every_check_before_its_run() {
 /// Sentinel-03, as committed (`AET-WO-2304b` §1.2: a healthy 1 mΩ, each
 /// output's `esc` declared `none`).
 fn s03() -> Value {
-    serde_json::from_slice(
-        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap(),
-    )
-    .unwrap()
+    serde_json::from_slice(&fs::read(root().join("examples/sentinel-03.json")).unwrap()).unwrap()
 }
 
 fn sag(r: u64, from_boot_word_ns: i64) -> Value {
@@ -2927,12 +2924,19 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
     );
     sag_refused(&spec, json!([sag(1, start)]), r, "not a fault");
     sag_refused(&spec, json!([sag(1_400, start)]), r, "no operating point");
-    let v = sag_refused(&spec, json!([sag(950, start)]), r, "below regulation");
+    // The edge is 948/949 mΩ since `AET-WO-4300k`: the supervisor's two
+    // 1 mA loads (U12, R61) raise the constant power, and 949 mΩ puts the
+    // battery at 6,999,500 µV, 500 µV under U10's 7 V.
+    let v = sag_refused(&spec, json!([sag(949, start)]), r, "below regulation");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
-        m.contains("U10") && m.contains("7000000 µV") && m.contains("3800000 µV"),
+        m.contains("U10")
+            && m.contains("6999500 µV")
+            && m.contains("7000000 µV")
+            && m.contains("3800000 µV"),
         "{m}"
     );
+    sag_refused(&spec, json!([sag(950, start)]), r, "below regulation");
     for offset in [100_000_010, -100_000_010, 99_999_999] {
         sag_refused(
             &spec,
@@ -2945,7 +2949,7 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
         "from_boot_word_ns": -42_929_480, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
         "source_milliohms": 500, "load_milliamps": 100}});
     sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
-    for admitted in [2, 500, 949] {
+    for admitted in [2, 500, 948] {
         let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
         expect_refusal(&out, 4, "BridgeUnavailable");
         assert!(!made);

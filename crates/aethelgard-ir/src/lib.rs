@@ -33,6 +33,7 @@ pub mod serial;
 pub mod silicon;
 mod solve;
 pub mod speeds;
+pub mod supervisor;
 pub mod thermal;
 pub mod versions;
 pub mod vos;
@@ -148,9 +149,15 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// (`MotorPullOutsideBound`, `MotorPullFloorUnreachable`,
 /// `MotorPullBoundEmpty`), and the link's part is a jumper row
 /// (`PowerPartUnknown`).
+/// Version 30 (`AET-WO-4300k`) requires `power.drop_limits` with a limit
+/// on the MCU's supply, `power.input.protection` (a fuse, a P-FET, its zener
+/// and gate resistor) and `junction.loss_at_milliamps`, and removes
+/// `junction.copper_square_centimetres` (the copper is measured on the drawn
+/// board); it adds `board.stackup.fabricator` with each bound's `cites`,
+/// `mcu.reset_supervisor` and `acknowledge_conditions`.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 29;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 30;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -215,6 +222,15 @@ pub struct Specification {
     /// stale one and `verify --fab-out` an unacknowledged ledger row. An empty
     /// list acknowledges none.
     pub acknowledge_unwitnessed: Vec<UnwitnessedAcknowledgement>,
+    /// Each condition a fabrication package rests on, acknowledged by its
+    /// stable id `<kind>:<reference>` with the reason (`AET-WO-4300k` (1),
+    /// (d)): screened, typical, not computed, declared or not production
+    /// tested. `validate` refuses a malformed entry; `verify` refuses one no
+    /// condition produces (`ConditionAcknowledgementStale`), and
+    /// `verify --fab-out` a condition no entry names. Absent or empty
+    /// acknowledges none, the stricter case, and is not written back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acknowledge_conditions: Vec<ConditionAcknowledgement>,
     /// Each test point: a pad on a declared net (`AET-WO-1312`). Absent or
     /// empty declares none, as the work order states, and an empty list is
     /// not written back. Private as `connectors` is (`RUL-16`): read through
@@ -251,6 +267,13 @@ pub const MAX_LIFECYCLE_STATEMENT: usize = 512;
 /// unknown one by name), the exact fields it covers, and why the board is
 /// fabricated with them unwitnessed. At most one entry per register and
 /// class.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct ConditionAcknowledgement {
+    pub id: String,
+    pub reason: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct UnwitnessedAcknowledgement {
@@ -385,6 +408,15 @@ pub struct Mcu {
     /// as the work order states, and `false` is not written back.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reset_switch: bool,
+    /// A voltage supervisor on `NRST` (`AET-WO-4300k` (9), Path B). Absent is
+    /// none, the stricter case: the BOR level is then the reset every
+    /// supply-bounded device is judged against ([`supervisor`]).
+    #[serde(
+        default,
+        deserialize_with = "board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reset_supervisor: Option<supervisor::ResetSupervisor>,
     /// The kernel clocks a foreign firmware programs (`AET-WO-4400g` §1.2):
     /// `simulate --foreign` requires it and a run of the generated firmware
     /// refuses it. Absent is none, and none is not written back.
@@ -1038,6 +1070,7 @@ object_only!(
     Specification,
     LifecycleAcceptance,
     UnwitnessedAcknowledgement,
+    ConditionAcknowledgement,
     CoreSupply,
     ReservedPin,
     SupplySource,
@@ -1111,6 +1144,7 @@ impl<'de> Deserialize<'de> for Mcu {
                     supply_source: w.supply_source,
                     reset_switch: w.reset_switch,
                     foreign_clock: w.foreign_clock,
+                    reset_supervisor: w.reset_supervisor,
                     reserved_pins: w.reserved_pins,
                 })
             }
@@ -1139,6 +1173,8 @@ struct McuWire {
     reset_switch: bool,
     #[serde(default, deserialize_with = "board::present")]
     foreign_clock: Option<motor::ForeignClock>,
+    #[serde(default, deserialize_with = "board::present")]
+    reset_supervisor: Option<supervisor::ResetSupervisor>,
     reserved_pins: Vec<ReservedPin>,
 }
 
@@ -1539,6 +1575,20 @@ pub enum IrValidationError {
     FinishedThickness { rule: &'static str },
     #[error("`{path}`: {rule}")]
     StackupValue { path: String, rule: &'static str },
+    #[error(
+        "`{path}` cites nothing, and the stackup declares a fabricator: every bound cites it, a standard or a condition (AET-WO-4300k (b))"
+    )]
+    StackupSourceUncited { path: String },
+    #[error("`{path}`: {rule} (AET-WO-4300k (d))")]
+    ConditionAcknowledgementMalformed { path: String, rule: &'static str },
+    #[error(
+        "`{path}` cites `{cited}`, which is not a document of the declared fabricator `{fabricator}` (AET-WO-4300k (b))"
+    )]
+    StackupSourceForeign {
+        path: String,
+        cited: String,
+        fabricator: String,
+    },
     #[error("`{path}` is not a source: 1 to 200 bytes of printable ASCII, no space at either end")]
     InvalidSource { path: String },
     #[error("`{path}` is {value} um, below the engine floor of {floor} um")]
@@ -2474,6 +2524,9 @@ impl IrValidationError {
             Self::DielectricTable { .. } => "DielectricTable",
             Self::FinishedThickness { .. } => "FinishedThickness",
             Self::StackupValue { .. } => "StackupValue",
+            Self::StackupSourceUncited { .. } => "StackupSourceUncited",
+            Self::ConditionAcknowledgementMalformed { .. } => "ConditionAcknowledgementMalformed",
+            Self::StackupSourceForeign { .. } => "StackupSourceForeign",
             Self::InvalidSource { .. } => "InvalidSource",
             Self::RuleBelowFloor { .. } => "RuleBelowFloor",
             Self::UnsupportedViaRule { .. } => "UnsupportedViaRule",
@@ -2689,6 +2742,9 @@ impl IrValidationError {
             | Self::DielectricTable { .. }
             | Self::FinishedThickness { .. }
             | Self::StackupValue { .. }
+            | Self::StackupSourceUncited { .. }
+            | Self::StackupSourceForeign { .. }
+            | Self::ConditionAcknowledgementMalformed { .. }
             | Self::InvalidSource { .. }
             | Self::RuleBelowFloor { .. }
             | Self::UnsupportedViaRule { .. }
@@ -2870,6 +2926,9 @@ impl IrValidationError {
             | Self::LayerRole { path, .. }
             | Self::DielectricTable { path, .. }
             | Self::StackupValue { path, .. }
+            | Self::StackupSourceUncited { path }
+            | Self::StackupSourceForeign { path, .. }
+            | Self::ConditionAcknowledgementMalformed { path, .. }
             | Self::InvalidSource { path }
             | Self::RuleBelowFloor { path, .. }
             | Self::UnsupportedViaRule { path, .. }
@@ -3248,7 +3307,9 @@ impl Specification {
         // 15a (`AET-WO-1312`)
         bench::validate(self)?;
         // 16 (`AET-WO-4300d`)
-        power::check(self)?;
+        let checked = power::check(self)?;
+        // 16a (`AET-WO-4300k` (9))
+        supervisor::check(self, checked.as_ref())?;
         // 17, 18 (`AET-WO-4300g`)
         connectors::programming_path(self)?;
         connectors::supply_source(self)?;
@@ -4053,7 +4114,81 @@ impl Specification {
         // 13c: each serial port, in document order (`AET-WO-4300b`).
         serial::validate(&self.serial_ports)?;
         // 13d: each unwitnessed acknowledgement's shape (`AET-WO-4230` R1).
-        self.validate_unwitnessed()
+        self.validate_unwitnessed()?;
+        self.validate_condition_acknowledgements()
+    }
+
+    /// The values the specification declares where a datasheet maximum would
+    /// stand (`AET-WO-4300k` (d)): each device's pin capacitance on a bounded
+    /// line, `pin_capacitance_declared:<reference>`, and each connector pin's
+    /// capacitance beyond the board, `offboard_declared:<connector>.<pin>`.
+    pub fn declared_value_conditions(&self) -> Vec<(String, String)> {
+        let mut out = Vec::new();
+        let devices = self
+            .declared_i2c_devices()
+            .iter()
+            .map(|d| (&d.reference, &d.pin_capacitance))
+            .chain(
+                self.declared_spi_devices()
+                    .iter()
+                    .map(|d| (&d.reference, &d.pin_capacitance)),
+            );
+        for (reference, c) in devices {
+            if let Some(c) = c {
+                out.push((
+                    format!("pin_capacitance_declared:{reference}"),
+                    format!(
+                        "{reference}: each of its pins on a bounded line is counted at {} fF, a value the specification declares, not a maximum the datasheet prints ({})",
+                        c.declared.femtofarads, c.declared.source
+                    ),
+                ));
+            }
+        }
+        for conn in self.declared_connectors() {
+            for pin in &conn.pins {
+                if let Some(o) = &pin.offboard {
+                    out.push((
+                        format!("offboard_declared:{}.{}", conn.reference, pin.pin),
+                        format!(
+                            "{}.{}: beyond the board it adds {} fF, declared ({})",
+                            conn.reference, pin.pin, o.capacitance_femtofarads, o.source
+                        ),
+                    ));
+                }
+            }
+        }
+        out
+    }
+
+    /// Step 13e (`AET-WO-4300k` (d)): each entry's id is `<kind>:<reference>`,
+    /// a kind of lower-case letters, digits and `_` and a reference by the
+    /// base identifier set; its reason a source; no id twice.
+    fn validate_condition_acknowledgements(&self) -> Result<(), IrValidationError> {
+        let mut ids = BTreeSet::new();
+        for (i, a) in self.acknowledge_conditions.iter().enumerate() {
+            let path = format!("acknowledge_conditions[{i}].id");
+            let ok = a.id.split_once(':').is_some_and(|(kind, reference)| {
+                !kind.is_empty()
+                    && kind
+                        .bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+                    && check_identifier(IdentifierKind::Plain, reference).is_ok()
+            });
+            if !ok {
+                return Err(IrValidationError::ConditionAcknowledgementMalformed {
+                    path,
+                    rule: "a condition id is `<kind>:<reference>`: a kind of lower-case letters, digits and `_`, a reference by the identifier rule",
+                });
+            }
+            board::source(&a.reason, &format!("acknowledge_conditions[{i}].reason"))?;
+            if !ids.insert(a.id.as_str()) {
+                return Err(IrValidationError::ConditionAcknowledgementMalformed {
+                    path,
+                    rule: "a condition acknowledged once",
+                });
+            }
+        }
+        Ok(())
     }
 
     /// Step 13d (`AET-WO-4230` R1), each entry in document order: a register
@@ -4180,8 +4315,17 @@ impl Specification {
         for (i, m) in self.motor_outputs.iter().enumerate() {
             plain(&m.label, || format!("motor_outputs[{i}].label"))?;
             optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
-            if let Some(motor::Esc::NoEsc(n)) = &m.esc {
-                board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
+            match &m.esc {
+                Some(motor::Esc::NoEsc(n)) => {
+                    board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
+                }
+                Some(motor::Esc::BoardVbat(n)) => {
+                    board::source(
+                        &n.source,
+                        &format!("motor_outputs[{i}].esc.board_vbat.source"),
+                    )?;
+                }
+                None => {}
             }
             let r = &m.pull.resistor;
             let at = format!("motor_outputs[{i}].pull");

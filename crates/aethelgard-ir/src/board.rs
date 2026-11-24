@@ -135,6 +135,16 @@ pub enum LayerRole {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Stackup {
+    /// The one fabricator every bound cites (`AET-WO-4300k` (b)): its name
+    /// and the documents a bound may cite by id. Absent, bounds may cite
+    /// nothing (every board ordered before it); `verify --fab-out` requires
+    /// it for a new package.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub fabricator: Option<Fabricator>,
     pub finished_thickness_um: FinishedThickness,
     /// One per adjacent pair of copper layers, top to bottom.
     pub dielectrics: Vec<Dielectric>,
@@ -235,6 +245,15 @@ pub struct FinishedThickness {
     pub min: u32,
     pub max: u32,
     pub source: String,
+    /// What the bound rests on (`AET-WO-4300k` (b)): required for every
+    /// bound once `board.stackup.fabricator` is declared; `source` stays the
+    /// page and the reading.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cites: Option<Cites>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -244,6 +263,15 @@ pub struct Dielectric {
     pub between: Vec<String>,
     pub min_thickness_um: u32,
     pub source: String,
+    /// What the bound rests on (`AET-WO-4300k` (b)): required for every
+    /// bound once `board.stackup.fabricator` is declared; `source` stays the
+    /// page and the reading.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cites: Option<Cites>,
     /// Its thickness at most, under the same `source` (`AET-WO-1303b`):
     /// optional; without it a via barrel prices this dielectric at the
     /// finished maximum less every other layer's minimum.
@@ -260,6 +288,189 @@ pub struct Dielectric {
 pub struct Sourced {
     pub value: u32,
     pub source: String,
+    /// What the bound rests on (`AET-WO-4300k` (b)): required for every
+    /// bound once `board.stackup.fabricator` is declared; `source` stays the
+    /// page and the reading.
+    #[serde(
+        default,
+        deserialize_with = "present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cites: Option<Cites>,
+}
+
+/// The fabricator a stackup is built by (`AET-WO-4300k` (b)): its name and
+/// the documents its bounds cite.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct Fabricator {
+    pub name: String,
+    pub documents: Vec<FabDocument>,
+}
+
+/// One document of a fabricator's, by the id a bound cites it by.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct FabDocument {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    /// When it was read.
+    pub read: String,
+}
+
+/// What a stackup bound rests on (`AET-WO-4300k` (b)): a document of the
+/// declared fabricator, by id; a named standard; or a condition, by an id the
+/// specification acknowledges, when no held document states it (a clause is
+/// never asserted from memory).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub enum Cites {
+    Fabricator(String),
+    Standard(Standard),
+    Condition(String),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Standard {
+    #[serde(rename = "IPC-4101")]
+    Ipc4101,
+    #[serde(rename = "IPC-6012")]
+    Ipc6012,
+}
+
+/// Every bound of `s` with its path, its `source` and what it cites, in
+/// document order.
+pub fn bounds(s: &Stackup) -> Vec<(String, &str, Option<&Cites>)> {
+    let mut out = vec![(
+        "board.stackup.finished_thickness_um".to_owned(),
+        s.finished_thickness_um.source.as_str(),
+        s.finished_thickness_um.cites.as_ref(),
+    )];
+    for (i, d) in s.dielectrics.iter().enumerate() {
+        out.push((
+            format!("board.stackup.dielectrics[{i}]"),
+            d.source.as_str(),
+            d.cites.as_ref(),
+        ));
+    }
+    let tolerances = s.fab_tolerances.as_ref();
+    for (v, path) in [
+        (Some(&s.copper_max_um), "copper_max_um"),
+        (
+            Some(&s.relative_permittivity_max_permille),
+            "relative_permittivity_max_permille",
+        ),
+        (s.outer_copper_min_um.as_ref(), "outer_copper_min_um"),
+        (s.plane_copper_min_um.as_ref(), "plane_copper_min_um"),
+        (s.plating_min_um.as_ref(), "plating_min_um"),
+        (
+            s.copper_temperature_max_c.as_ref(),
+            "copper_temperature_max_c",
+        ),
+        (
+            tolerances.and_then(|f| f.hole_position_um.as_ref()),
+            "fab_tolerances.hole_position_um",
+        ),
+        (
+            tolerances.and_then(|f| f.hole_size_plus_um.as_ref()),
+            "fab_tolerances.hole_size_plus_um",
+        ),
+        (
+            tolerances.and_then(|f| f.hole_size_minus_um.as_ref()),
+            "fab_tolerances.hole_size_minus_um",
+        ),
+        (
+            tolerances.and_then(|f| f.track_width_permille.as_ref()),
+            "fab_tolerances.track_width_permille",
+        ),
+        (
+            tolerances.and_then(|f| f.via_ring_um.as_ref()),
+            "fab_tolerances.via_ring_um",
+        ),
+    ] {
+        if let Some(v) = v {
+            out.push((
+                format!("board.stackup.{path}"),
+                v.source.as_str(),
+                v.cites.as_ref(),
+            ));
+        }
+    }
+    out
+}
+
+/// The conditions a stackup rests on (`AET-WO-4300k` (b)): each bound that
+/// cites a condition, as `stackup_condition:<id>` with its text.
+pub fn conditions(s: &Stackup) -> Vec<(String, String)> {
+    bounds(s)
+        .into_iter()
+        .filter_map(|(path, source, c)| match c {
+            Some(Cites::Condition(id)) => Some((
+                format!("stackup_condition:{id}"),
+                format!("{path}: {source} (a condition: no held document states it)"),
+            )),
+            _ => None,
+        })
+        .collect()
+}
+
+/// (b)'s rule: with a fabricator declared, every bound cites one of its
+/// documents, a standard or a condition; without one, no bound cites a
+/// fabricator.
+fn one_fabricator(s: &Stackup) -> Result<(), IrValidationError> {
+    let Some(fab) = &s.fabricator else {
+        if let Some((path, _, _)) = bounds(s)
+            .into_iter()
+            .find(|(_, _, c)| matches!(c, Some(Cites::Fabricator(_))))
+        {
+            return Err(IrValidationError::StackupValue {
+                path: format!("{path}.cites"),
+                rule: "cites a fabricator, and the stackup declares none",
+            });
+        }
+        return Ok(());
+    };
+    source(&fab.name, "board.stackup.fabricator.name")?;
+    if fab.documents.is_empty() {
+        return Err(IrValidationError::StackupValue {
+            path: "board.stackup.fabricator.documents".into(),
+            rule: "a fabricator lists at least one document",
+        });
+    }
+    let mut ids = BTreeSet::new();
+    for (i, d) in fab.documents.iter().enumerate() {
+        let path = format!("board.stackup.fabricator.documents[{i}]");
+        crate::identifier(crate::IdentifierKind::Plain, &d.id, || format!("{path}.id"))?;
+        source(&d.title, &format!("{path}.title"))?;
+        source(&d.url, &format!("{path}.url"))?;
+        source(&d.read, &format!("{path}.read"))?;
+        if !ids.insert(d.id.as_str()) {
+            return Err(IrValidationError::StackupValue {
+                path: format!("{path}.id"),
+                rule: "a document id once",
+            });
+        }
+    }
+    for (path, _, c) in bounds(s) {
+        match c {
+            None => return Err(IrValidationError::StackupSourceUncited { path }),
+            Some(Cites::Fabricator(id)) if !ids.contains(id.as_str()) => {
+                return Err(IrValidationError::StackupSourceForeign {
+                    path: format!("{path}.cites"),
+                    cited: id.clone(),
+                    fabricator: fab.name.clone(),
+                });
+            }
+            Some(Cites::Condition(id)) => {
+                crate::identifier(crate::IdentifierKind::Plain, id, || {
+                    format!("{path}.cites.condition")
+                })?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -511,6 +722,7 @@ impl Board {
                 }
             }
         }
+        one_fabricator(s)?;
         for (i, d) in s.dielectrics.iter().enumerate() {
             if let Some(m) = d.max_thickness_um {
                 let path = format!("board.stackup.dielectrics[{i}].max_thickness_um");
@@ -610,6 +822,8 @@ crate::object_only!(
     Dielectric,
     Sourced,
     FabTolerances,
+    Fabricator,
+    FabDocument,
     DesignRules,
     OutlineBound
 );

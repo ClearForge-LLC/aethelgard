@@ -230,24 +230,31 @@ fn walk<T: AsRef<[u8]>>(
 /// Whether the regular file at `path` holds exactly `want`, reading at most
 /// one byte more than `want`.
 fn same(path: &Path, want: &[u8]) -> Result<bool, Stop> {
+    Ok(regular(path, want.len() as u64)?.is_some_and(|have| have == want))
+}
+
+use std::os::unix::fs::OpenOptionsExt;
+
+/// The bytes of the regular file at `path`, opened as [`same`] opens one
+/// (never through a symlink, never blocking on a FIFO), or `None` when it is
+/// not a regular file or holds more than `max` bytes.
+pub fn regular(path: &Path, max: u64) -> Result<Option<Vec<u8>>, Stop> {
     let opened = fs::OpenOptions::new()
         .read(true)
         .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
         .open(path);
     let Ok(file) = opened else {
-        return Ok(false);
+        return Ok(None);
     };
     if !file.metadata().is_ok_and(|m| m.is_file()) {
-        return Ok(false);
+        return Ok(None);
     }
-    let mut have = Vec::with_capacity(want.len());
-    file.take(want.len() as u64 + 1)
+    let mut have = Vec::new();
+    file.take(max + 1)
         .read_to_end(&mut have)
         .map_err(|e| Stop::unreadable(format!("cannot read {}: {e}", path.display())))?;
-    Ok(have == want)
+    Ok((have.len() as u64 <= max).then_some(have))
 }
-
-use std::os::unix::fs::OpenOptionsExt;
 
 /// The files of `files` under `prefix` (such as `board/`), relative to it.
 pub fn subtree(files: &BTreeMap<String, String>, prefix: &str) -> BTreeMap<String, String> {

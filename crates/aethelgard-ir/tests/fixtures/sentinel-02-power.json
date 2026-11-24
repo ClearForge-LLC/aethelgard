@@ -1,5 +1,5 @@
 {
-  "schema_version": 29,
+  "schema_version": 30,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [
     {
@@ -340,13 +340,33 @@
           "part": "UCZ1H470MCL1GS",
           "side": "board"
         }
-      ]
+      ],
+      "protection": {
+        "fuse": {
+          "reference": "F1",
+          "part": "SF-1206F700-2"
+        },
+        "fet": {
+          "reference": "Q1",
+          "part": "DMP6023LSS-13"
+        },
+        "zener": {
+          "reference": "D1",
+          "part": "MMSZ5242BT1G"
+        },
+        "gate_resistor": {
+          "reference": "R60",
+          "part": "CRCW0603_F_K",
+          "ohms": 100000
+        },
+        "source": "AET-WO-4300k D14 (ruled): Sentinel-03's protection, the same parts (Q1 ruled (a))"
+      }
     },
     "battery": {
-      "chemistry": "LiPo, 3S to 6S, high-voltage cells allowed",
+      "chemistry": "LiPo, 3S to 4S, high-voltage cells allowed",
       "cells": {
         "min": 3,
-        "max": 6
+        "max": 4
       },
       "cell_min_millivolts": {
         "value": 3000,
@@ -356,7 +376,10 @@
         "value": 4350,
         "source": "LiHV full charge (AET-WO-4300d spike P1.2)"
       },
-      "series_milliohms": {"value": 1, "source": "J1 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"}
+      "series_milliohms": {
+        "value": 1,
+        "source": "J1 XT30PW-M contact resistance 0.80 mOhm (AMASS spec V1.2), rounded up: the connector only; the pack and leads are unmeasured (AET-WO-2304 F2), asked of Scotty"
+      }
     },
     "regulators": [
       {
@@ -380,6 +403,11 @@
           {
             "role": "cin",
             "reference": "C10",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin",
+            "reference": "C60",
             "part": "GCM32EC71H106KA03"
           },
           {
@@ -424,14 +452,11 @@
           }
         ],
         "junction": {
-          "copper_square_centimetres": {
-            "value": 20,
-            "source": "declared by the fixture: the copper around U10 on each layer; not measured on the drawn board"
-          },
           "loss_milliwatts": {
             "value": 1170,
             "source": "SNVSAN3F p. 27, Figure 9-7, typical at TA 25 C: 90 % on the 36 V curve at 2 A; P_loss = 5.237 V x 2 A x (1/0.90 - 1) = 1164 mW, rounded up"
-          }
+          },
+          "loss_at_milliamps": 2000
         },
         "controls": [
           {
@@ -467,6 +492,11 @@
           {
             "role": "cin",
             "reference": "C20",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin",
+            "reference": "C61",
             "part": "GCM32EC71H106KA03"
           },
           {
@@ -511,14 +541,11 @@
           }
         ],
         "junction": {
-          "copper_square_centimetres": {
-            "value": 20,
-            "source": "declared by the fixture: the copper around U11 on each layer; not measured on the drawn board"
-          },
           "loss_milliwatts": {
             "value": 550,
             "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 81 % on the 36 V curve at 0.68 A; P_loss = 3.417 V x 679 mA x (1/0.81 - 1) = 544 mW, rounded up"
-          }
+          },
+          "loss_at_milliamps": 679
         },
         "controls": [
           {
@@ -690,6 +717,13 @@
             "wire": null
           }
         ]
+      }
+    ],
+    "drop_limits": [
+      {
+        "domain": "VDD_3V3",
+        "max_millivolts": 165,
+        "source": "AET-WO-4300k D14: test fixture, 5 % of the 3.3 V nominal (the supply gate is refused before it on this board, TranslatorPinUnbounded)"
       }
     ]
   },

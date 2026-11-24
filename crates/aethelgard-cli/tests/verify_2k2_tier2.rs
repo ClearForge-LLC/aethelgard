@@ -1,77 +1,124 @@
-//! `verify` on the reference with its seeded set, `--against` the committed
-//! tree and `--fab-out`, two runs at two paths made once and read by both
-//! tests (`AET-WO-1916` D2 (i), ruled 2026-11-23 06:35Z; `AET-WO-1909` B):
-//! `AET-WO-3301`'s binding and byte-identity, and `AET-WO-3300`'s package at
-//! two paths. A package needs the seeded set (`AET-WO-3303` D1), so the
-//! binding is asserted against the seeded run: every gate in order, every
-//! campaign run in `SEEDED`'s order, and each run's id and state hash against
-//! `campaign` run directly. `--against` alone, with no fab flag, is guarded by
-//! `with_tools`' board-not-drawn test (LP1). Each test reads what it checks
-//! from the shared runs and never writes into them.
+//! `verify` with a seeded set `--against` a tree, two runs made once per
+//! test (`AET-WO-1909` B): `AET-WO-3301`'s binding and byte-identity, and
+//! `AET-WO-3300`'s package at two paths. The binding is asserted against the
+//! seeded run: every gate in order, every campaign run in the set's order,
+//! and each run's id and state hash against `campaign` run directly.
+//!
+//! The two tests shared one pair of runs with `--fab-out` (`AET-WO-1916` D2
+//! (i), ruled 2026-11-23 06:35Z) until `AET-WO-4300k` (T), ruled
+//! 2026-11-24T11:25Z: `--fab-out` refuses the reference (`FabricationNotReady`),
+//! so the test split. The binding's point is the committed reference board
+//! crate (`boards/sentinel-01`), so it stays on the reference, `--against` the
+//! committed tree with no fab flag; the package moves to the ready fixture
+//! (`common/ready.rs`), `--against` the tree `generate` and `emit` write for
+//! it. `--against` with no fab flag is also `with_tools`' board-not-drawn
+//! test (LP1). Each test reads what it checks from its runs and never writes
+//! into them; the runs go one at a time: each `verify` peaks at about 3.5 GB.
 
 #![cfg(feature = "with-tools")]
 
 mod common;
+#[path = "common/ready.rs"]
+mod ready;
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 use common::verify::{
     SEEDED, SPEC, Shared, aethelgard, board, build, copy_tree, gate_reads, one, package_files, ran,
     root, row, scratch, sha,
 };
+use ready::{READY, READY_SCENARIOS};
 use serde_json::Value;
 
-/// The two runs: their exit codes and stdout, the `--against` tree, and the
-/// two `--fab-out` directories, at paths of different lengths.
+static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+
+/// Two runs: their exit codes and stdout, the `--against` tree and, with
+/// `--fab-out`, the two package directories, at paths of different lengths.
 struct Runs {
     base: PathBuf,
     tree: PathBuf,
-    a: PathBuf,
-    b: PathBuf,
+    fab: Option<[PathBuf; 2]>,
     codes: [Option<i32>; 2],
     first: String,
     second: String,
 }
 
-static RUNS: Shared<Runs> =
-    Shared::new("verify, seeded set, --against and --fab-out, at two paths");
+static REFERENCE: Shared<Runs> =
+    Shared::new("verify of the reference, seeded set, --against the committed tree, twice");
+static PACKAGE: Shared<Runs> =
+    Shared::new("verify of the ready fixture, seeded set, --against and --fab-out, at two paths");
 
-/// The shared runs, made by the first test to ask; `property` is what the
-/// calling test checks, named if the runs failed.
-fn runs(property: &str) -> &'static Runs {
-    RUNS.get(property, || {
-        let base = scratch("verify-2k2");
-        let tree = base.join("against");
-        let a = base.join("a");
-        let b = base.join("a-much/longer/path/b");
-        copy_tree(&board(), &tree.join("board"));
-        let kicad = tree.join("kicad");
-        let (code, stdout) =
-            aethelgard(&["emit", "--file", SPEC, "--out", kicad.to_str().unwrap()]);
+/// `verify --spec spec --scenarios scenarios --against <tree>`, twice, each
+/// with `--fab-out` at its own path when `fab`. The tree is `board_crate` as
+/// `board/` and the KiCad files `emit` writes for `spec` as `kicad/`.
+fn two_runs(label: &str, spec: &str, scenarios: &[&str], board_crate: &Path, fab: bool) -> Runs {
+    let base = scratch(label);
+    let tree = base.join("against");
+    copy_tree(board_crate, &tree.join("board"));
+    let kicad = tree.join("kicad");
+    let (code, stdout) = aethelgard(&["emit", "--file", spec, "--out", kicad.to_str().unwrap()]);
+    assert_eq!(
+        code,
+        Some(0),
+        "emit writes the --against tree's KiCad files: {stdout}"
+    );
+    let fab = fab.then(|| [base.join("a"), base.join("a-much/longer/path/b")]);
+    let run = |i: usize| {
+        let mut args = vec!["verify", "--spec", spec, "--scenarios"];
+        args.extend(scenarios);
+        args.extend(["--against", tree.to_str().unwrap()]);
+        if let Some(dirs) = &fab {
+            args.extend(["--fab-out", dirs[i].to_str().unwrap()]);
+        }
+        aethelgard(&args)
+    };
+    let (code_a, first) = run(0);
+    let (code_b, second) = run(1);
+    Runs {
+        base,
+        tree,
+        fab,
+        codes: [code_a, code_b],
+        first,
+        second,
+    }
+}
+
+/// The reference's runs, `--against` the committed board, with no fab flag;
+/// `property` is what the calling test checks, named if the runs failed.
+fn reference(property: &str) -> &'static Runs {
+    REFERENCE.get(property, || {
+        two_runs("verify-2k2", SPEC, &SEEDED, &board(), false)
+    })
+}
+
+/// The ready fixture's runs with `--fab-out`. It has no committed board
+/// crate: its `board/` is the one `generate` writes, as `boards/sentinel-01`
+/// is the reference's (`generate_tier1.rs`); its `kicad/` is `emit`'s.
+fn package(property: &str) -> &'static Runs {
+    PACKAGE.get(property, || {
+        let generated = scratch("verify-2k2-ready-generate");
+        let (code, out) = aethelgard(&[
+            "generate",
+            "--spec",
+            READY,
+            "--out",
+            generated.to_str().unwrap(),
+        ]);
         assert_eq!(
             code,
             Some(0),
-            "emit writes the --against tree's KiCad files: {stdout}"
+            "generate writes the ready board crate: {out}"
         );
-        let run = |fab: &PathBuf| {
-            let mut args = vec!["verify", "--spec", SPEC, "--scenarios"];
-            args.extend(SEEDED);
-            args.extend(["--against", tree.to_str().unwrap()]);
-            args.extend(["--fab-out", fab.to_str().unwrap()]);
-            aethelgard(&args)
-        };
-        let (code_a, first) = run(&a);
-        let (code_b, second) = run(&b);
-        Runs {
-            base,
-            tree,
-            a,
-            b,
-            codes: [code_a, code_b],
-            first,
-            second,
-        }
+        two_runs(
+            "verify-2k2-ready",
+            READY,
+            &READY_SCENARIOS,
+            &generated.join("board"),
+            true,
+        )
     })
 }
 
@@ -92,14 +139,17 @@ fn seeded_names() -> Vec<String> {
 /// §3.2 and §3.4 of `AET-WO-3301`: `verify` with the seeded set and
 /// `--against` the committed board passes; its verdict names every file's
 /// hash, the ELF's, every gate's result and every run; two runs print the
-/// same bytes.
+/// same bytes. With no fab flag (`AET-WO-4300k` (T)): the point is the
+/// committed board, and the reference is not ready for a package.
 #[test]
 fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
-    let r = runs("verify binds the reference and two runs print the same bytes");
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let r = reference("verify binds the reference and two runs print the same bytes");
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the first run passes: {v}");
     assert_eq!(r.codes[1], Some(0), "the second run passes: {}", r.second);
     assert_eq!(r.first, r.second, "two runs print the same bytes");
+    assert!(v.get("fab").is_none(), "no fab flag, no fab key: {v}");
 
     assert_eq!(v["verdict"], "pass", "the verdict is pass: {v}");
     assert_eq!(
@@ -369,17 +419,22 @@ fn verify_binds_the_reference_and_two_runs_print_the_same_bytes() {
     }
 }
 
-/// `AET-WO-3300` §3, the reference probe: `verify --fab-out` with the seeded
-/// set passes and writes the package; the verdict's `fab` hashes equal the
-/// files' sha256; two runs at two paths print the same verdict and write the
-/// same bytes; the ELF is the one the campaign ran and the BOM is `emit`'s;
-/// the manifest names the verdict line its own run printed, without its `fab`
-/// key (that line carries `against`, as the run does: `AET-WO-1909` B, ruled
-/// acceptable); B.Cu carries the GND pour and no Gerber carries KiCad's clock
-/// (ruling on PR #103). `--against-fab` is `against_fab_tier2.rs`.
+/// `AET-WO-3300` §3, the package probe, on the ready fixture (`AET-WO-4300k`
+/// (T), ruled 11:25Z: the reference made ready for a package; the reference
+/// itself is refused `FabricationNotReady`, `fab_tier1.rs`): `verify
+/// --fab-out` with the seeded set passes and writes the package; the
+/// verdict's `fab` hashes equal the files' sha256; two runs at two paths
+/// print the same verdict and write the same bytes; the ELF is the one the
+/// campaign ran and the BOM is `emit`'s; the manifest names the verdict line
+/// its own run printed, without its `fab` key (that line carries `against`,
+/// as the run does: `AET-WO-1909` B, ruled acceptable); B.Cu carries the GND
+/// pour and no Gerber carries KiCad's clock (ruling on PR #103).
+/// `--against-fab` is `against_fab_tier2.rs`.
 #[test]
 fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
-    let r = runs("verify --fab-out writes the package its verdict names at any path");
+    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let r = package("verify --fab-out writes the package its verdict names at any path");
+    let [a, b] = r.fab.as_ref().unwrap();
     let v = one(&r.first);
     assert_eq!(r.codes[0], Some(0), "the run at the first path passes: {v}");
     assert_eq!(
@@ -392,15 +447,15 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         r.first, r.second,
         "two runs at two paths print the same verdict"
     );
-    let package = package_files(&r.a);
+    let package = package_files(a);
     assert_eq!(
         package,
-        package_files(&r.b),
+        package_files(b),
         "two runs at two paths write the same bytes"
     );
 
     assert_eq!(v["verdict"], "pass", "the verdict is pass: {v}");
-    // `AET-WO-2306` §1.5: on the reference every gate judged something, as
+    // `AET-WO-2306` §1.5: on the ready fixture every gate judged something, as
     // the inventory found, and the droop's recovery was witnessed. Read from
     // the table since `AET-WO-1610` (2) removed `judged_nothing`: no row is
     // `judged 0`.
@@ -410,7 +465,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         rows.iter().all(|(_, s)| s != "judged 0"),
         "nothing judged nothing: {rows:?}"
     );
-    // `AET-WO-1609` §2: the committed reference's ran-or-not table, every
+    // `AET-WO-1609` §2: the ready fixture's ran-or-not table, every
     // gate and part by name. It declares no drop limit, no crystal, no pair,
     // no power tree and no pin device, so each of those parts is off by its
     // key; its five scenarios ran, and its two detected faults were
@@ -466,7 +521,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         "the package names KiCad 10.0.7: {fab}"
     );
     assert_eq!(
-        fab["board_sha256"], v["files"]["kicad/sentinel-01.kicad_pcb"],
+        fab["board_sha256"], v["files"]["kicad/sentinel-01-ready.kicad_pcb"],
         "the package names the generated board: {fab}"
     );
     let drc = v["gates"]
@@ -501,28 +556,28 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         [
             "FAB-NOTES.md",
             "MANIFEST.json",
-            "sentinel-01-B_Cu.gbl",
-            "sentinel-01-B_Mask.gbs",
-            "sentinel-01-B_Paste.gbp",
-            "sentinel-01-B_Silkscreen.gbo",
-            "sentinel-01-Edge_Cuts.gm1",
-            "sentinel-01-F_Cu.gtl",
-            "sentinel-01-F_Mask.gts",
-            "sentinel-01-F_Paste.gtp",
-            "sentinel-01-F_Silkscreen.gto",
-            "sentinel-01-jlcpcb-bom.csv",
-            "sentinel-01-jlcpcb-cpl.csv",
-            "sentinel-01-pos.csv",
-            "sentinel-01.bom.csv",
-            "sentinel-01.drl",
-            "sentinel-01.elf",
+            "sentinel-01-ready-B_Cu.gbl",
+            "sentinel-01-ready-B_Mask.gbs",
+            "sentinel-01-ready-B_Paste.gbp",
+            "sentinel-01-ready-B_Silkscreen.gbo",
+            "sentinel-01-ready-Edge_Cuts.gm1",
+            "sentinel-01-ready-F_Cu.gtl",
+            "sentinel-01-ready-F_Mask.gts",
+            "sentinel-01-ready-F_Paste.gtp",
+            "sentinel-01-ready-F_Silkscreen.gto",
+            "sentinel-01-ready-jlcpcb-bom.csv",
+            "sentinel-01-ready-jlcpcb-cpl.csv",
+            "sentinel-01-ready-pos.csv",
+            "sentinel-01-ready.bom.csv",
+            "sentinel-01-ready.drl",
+            "sentinel-01-ready.elf",
         ],
         "the package is exactly these seventeen files"
     );
     // The firmware is the ELF `build` gave, `simulate` booted and the
     // campaign's run was named by (verify binds the run id to it).
     assert_eq!(
-        named["sentinel-01.elf"],
+        named["sentinel-01-ready.elf"],
         v["elf_sha256"].as_str().unwrap(),
         "the packaged ELF is the one verify built"
     );
@@ -533,23 +588,23 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     // The BOM is `emit`'s, byte for byte: the one the shared runs' `--against`
     // tree holds, which `emit` wrote and `--against` found identical.
     assert_eq!(
-        package["sentinel-01.bom.csv"],
-        fs::read(r.tree.join("kicad/sentinel-01.bom.csv")).unwrap(),
+        package["sentinel-01-ready.bom.csv"],
+        fs::read(r.tree.join("kicad/sentinel-01-ready.bom.csv")).unwrap(),
         "the packaged BOM is emit's, byte for byte"
     );
     // `AET-WO-1604` §1.3: the JLCPCB files are the package's own BOM and
     // placement file in JLCPCB's format, nothing else.
     let (jlcpcb_bom, jlcpcb_cpl) = aethelgard_eda::fab::jlcpcb(
-        &package["sentinel-01.bom.csv"],
-        &package["sentinel-01-pos.csv"],
+        &package["sentinel-01-ready.bom.csv"],
+        &package["sentinel-01-ready-pos.csv"],
     )
     .unwrap();
     assert_eq!(
-        package["sentinel-01-jlcpcb-bom.csv"],
+        package["sentinel-01-ready-jlcpcb-bom.csv"],
         jlcpcb_bom.into_bytes()
     );
     assert_eq!(
-        package["sentinel-01-jlcpcb-cpl.csv"],
+        package["sentinel-01-ready-jlcpcb-cpl.csv"],
         jlcpcb_cpl.into_bytes()
     );
     // `AET-WO-2308` (1): U4's symbol stands in for the W25Q64JVSSIQ, and the
@@ -558,11 +613,11 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     let standin = "symbol Memory_Flash:W25Q32JVSS stands in for W25Q64JVSSIQ: same family, same SOIC-8 208-mil pinout (AET-WO-1300 D2)";
     let text = |name: &str| String::from_utf8(package[name].clone()).unwrap();
     assert!(
-        text("sentinel-01.bom.csv").contains(&format!("U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"{standin}\"\r\n")),
+        text("sentinel-01-ready.bom.csv").contains(&format!("U4,W25Q64JVSSIQ,Package_SO:SOIC-8_5.3x5.3mm_P1.27mm,Memory_Flash:W25Q32JVSS,\"{standin}\"\r\n")),
         "the BOM labels U4"
     );
     assert!(
-        text("sentinel-01-jlcpcb-bom.csv").contains(&format!(
+        text("sentinel-01-ready-jlcpcb-bom.csv").contains(&format!(
             "W25Q64JVSSIQ,\"U4\",SOIC-8_5.3x5.3mm_P1.27mm,,\"{standin}\"\r\n"
         )),
         "the JLCPCB BOM labels U4"
@@ -590,7 +645,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         manifest["topology_sha256"], v["topology_sha256"],
         "the manifest names the topology"
     );
-    let scenarios: Vec<Value> = SEEDED
+    let scenarios: Vec<Value> = READY_SCENARIOS
         .iter()
         .map(|f| {
             let bytes = fs::read(root().join(f)).unwrap();
@@ -603,7 +658,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         Value::Array(scenarios),
         "the manifest names each scenario and its sha256"
     );
-    // `AET-WO-3303` §2: the reference package's verdict, and its manifest,
+    // `AET-WO-3303` §2: the ready fixture package's verdict, and its manifest,
     // list every precondition as met; FLASH's absent device and the
     // console's open RX line were each detected by its mechanism (each
     // `attribute` gate passed, `AET-WO-2302` D5).
@@ -646,7 +701,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     );
     // Condition 8: B.Cu carries a region of the GND zone. No Gerber carries
     // KiCad's clock lines.
-    let bcu = String::from_utf8(package["sentinel-01-B_Cu.gbl"].clone()).unwrap();
+    let bcu = String::from_utf8(package["sentinel-01-ready-B_Cu.gbl"].clone()).unwrap();
     assert!(
         bcu.contains("%TO.N,GND*%\nG36*\n") && bcu.contains("\nG37*\n"),
         "B.Cu carries a region of the GND pour"
@@ -664,7 +719,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     // The specification's sha256, of the file `verify` read: computed, not
     // pinned, so a specification version bump does not move this test
     // (`AET-WO-4400d`: the literal prefix `b9e95cdc` was version 15's).
-    let spec_sha256 = sha(&fs::read(root().join(SPEC)).unwrap());
+    let spec_sha256 = sha(&fs::read(root().join(READY)).unwrap());
     for want in [
         "70 um",
         "0.34 mm to 2 mm",
@@ -699,7 +754,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         .expect("FAB-NOTES.md has the acknowledged ledger rows");
     let written: Vec<&str> = section.lines().filter(|l| l.starts_with("- ")).collect();
     let spec: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(root().join(SPEC)).unwrap()).unwrap();
+        serde_json::from_slice(&std::fs::read(root().join(READY)).unwrap()).unwrap();
     let want: Vec<String> = spec["acknowledge_unwitnessed"]
         .as_array()
         .unwrap()
@@ -720,7 +775,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
             )
         })
         .collect();
-    assert!(!want.is_empty(), "the reference acknowledges rows");
+    assert!(!want.is_empty(), "the ready fixture acknowledges rows");
     assert_eq!(
         written, want,
         "FAB-NOTES.md's ledger rows are the specification's"

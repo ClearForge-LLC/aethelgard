@@ -588,10 +588,15 @@ fn place(
     // any other part can crowd the pins it serves (`AET-WO-4300d2` §1.3). A
     // design with no anchor keeps the order above. Drawing order is the
     // anchor's own sequence, never the part's place in the list
-    // (`AET-WO-1313c` F1).
+    // (`AET-WO-1313c` F1). A part whose anchor carries a loop rule goes
+    // before the IC's unbounded ones (`AET-WO-4300k`: Sentinel-03's crystal,
+    // drawn first and bound by no distance, took the room its battery
+    // sense's reservoir is bound to within 3 mm of).
     let anchored = |i: usize| {
         let o = items[i].part.owner.as_ref()?;
-        o.anchor.as_ref().map(|a| (o.ic.as_str(), a.seq))
+        o.anchor
+            .as_ref()
+            .map(|a| (o.ic.as_str(), a.loop_rule.is_none(), a.seq))
     };
     let mut grouped = Vec::with_capacity(order.len());
     for &i in order.iter().filter(|&&i| anchored(i).is_none()) {
@@ -600,16 +605,16 @@ fn place(
         // `seq` is unique among one IC's anchored parts (the emitter counts
         // them), so the reference never decides here: it only keeps a
         // hand-built design that repeats a `seq` deterministic.
-        let mut own: Vec<(usize, &str, usize)> = (0..items.len())
+        let mut own: Vec<(bool, usize, &str, usize)> = (0..items.len())
             .filter_map(|j| match anchored(j) {
-                Some((ic, seq)) if ic == reference => {
-                    Some((seq, items[j].part.reference.as_str(), j))
+                Some((ic, unbounded, seq)) if ic == reference => {
+                    Some((unbounded, seq, items[j].part.reference.as_str(), j))
                 }
                 _ => None,
             })
             .collect();
         own.sort_unstable();
-        grouped.extend(own.into_iter().map(|(_, _, j)| j));
+        grouped.extend(own.into_iter().map(|(_, _, _, j)| j));
     }
     if grouped.len() != order.len() {
         return Err(EmitError::Internal(
@@ -1485,6 +1490,33 @@ fn place_connectors(
         .ok_or_else(|| EmitError::Internal("connectors with no other part".into()))?;
     let down = |v: i64| v.div_euclid(SNAP) * SNAP;
     let up = |v: i64| -((-v).div_euclid(SNAP) * SNAP);
+    // `AET-WO-4300k` (4): each connector's opening, from its row (cited by
+    // the drawing's page), goes on the edge. A row opening toward -y is
+    // placed by its geometry turned 180 degrees, so the frame's +y is its
+    // opening, and drawn at the edge's rotation plus 180.
+    let mut frame: BTreeMap<usize, (Geometry, u16)> = BTreeMap::new();
+    for &(i, _) in &sides {
+        let item = &items[i];
+        let Some(o) = aethelgard_ir::connectors::opening(&item.part.value) else {
+            return Err(internal(
+                &item.part.reference,
+                format!(
+                    "`{}` has no opening in the connector tables",
+                    item.part.value
+                ),
+            ));
+        };
+        let turn = match o.toward {
+            aethelgard_ir::connectors::Toward::PlusY => 0u16,
+            aethelgard_ir::connectors::Toward::MinusY => 180,
+        };
+        let g = if turn == 0 {
+            item.geometry
+        } else {
+            geometry_at(&item.fp, &item.part.reference, turn)?
+        };
+        frame.insert(i, (g, turn));
+    }
     for rot in [0u16, 90, 270] {
         let row: Vec<usize> = sides
             .iter()
@@ -1509,7 +1541,7 @@ fn place_connectors(
         };
         let mut edge = up(fcore.y1 + MARGIN_NM);
         for &i in &row {
-            let g = items[i].geometry;
+            let g = frame[&i].0;
             if g.keep.y1 > g.courtyard.y1 {
                 return Err(internal(
                     &items[i].part.reference,
@@ -1520,18 +1552,28 @@ fn place_connectors(
         }
         let width = row
             .iter()
-            .map(|&i| items[i].geometry.keep.x1 - items[i].geometry.keep.x0 + gap)
+            .map(|&i| frame[&i].0.keep.x1 - frame[&i].0.keep.x0 + gap)
             .sum::<i64>()
             - gap;
         let mut x = fcore.centre().0 - width / 2;
         for &i in &row {
-            let (item, g) = (&items[i], items[i].geometry);
+            let (item, (g, turn)) = (&items[i], frame[&i]);
             let at = (up(x - g.keep.x0), down(edge - g.courtyard.y1));
             // belt-and-suspenders: every vendored connector's pads sit inside its
             // courtyard by more than EDGE_NM, so no shipped part trips this (a
             // mutation that loosens it survives); a footprint added later might.
             for pad in item.fp.children("pad") {
                 let r = pad_box(pad, &item.part.reference)?;
+                let r = if turn == 0 {
+                    r
+                } else {
+                    Rect {
+                        x0: -r.x1,
+                        y0: -r.y1,
+                        x1: -r.x0,
+                        y1: -r.y0,
+                    }
+                };
                 if at.1 + r.y1 + route::EDGE_NM > edge {
                     return Err(internal(
                         &item.part.reference,
@@ -1544,11 +1586,12 @@ fn place_connectors(
                 }
             }
             let origin = route::rotate(rot, at);
-            let turned = geometry_at(&item.fp, &item.part.reference, rot)?;
+            let rotation = (rot + turn) % 360;
+            let turned = geometry_at(&item.fp, &item.part.reference, rotation)?;
             placed[i] = Some(Placed {
                 reference: item.part.reference.clone(),
                 origin,
-                rotation: rot,
+                rotation,
                 courtyard: turned.courtyard.shift(origin),
                 keep: turned.keep.shift(origin),
             });
@@ -1800,8 +1843,16 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         // the silkscreen, its box above the top row of pins pushed that row's
         // capacitors 2.49 mm out (`AET-WO-4300g` §3, measured).
         let rings = parts.iter().any(|x| anchored_to(x, &part.reference));
+        // A connector turned 180 degrees to put its opening on the edge
+        // (`AET-WO-4300k` (4)): a footprint whose reference text sits past its
+        // courtyard at the opening's end (the XT30PW-M's, at y -14.5 against
+        // -13.6) would print it across the edge.
+        let turned = schematic::is_connector(part)
+            && aethelgard_ir::connectors::opening(&part.value)
+                .is_some_and(|o| o.toward == aethelgard_ir::connectors::Toward::MinusY);
         if part.owner.as_ref().is_some_and(|o| o.anchor.is_some())
             || (rings && part.lib_id == schematic::MCU)
+            || turned
         {
             reference_on_fab(&mut fp);
         }
@@ -2319,6 +2370,28 @@ pub(crate) fn write_placed_at(
 ///
 /// [`Join::token`]: crate::stack::Join::token
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
+    // `AET-WO-4300k` (a), Q2 ruled 10:30Z step 1: on a board with thermal
+    // pours, an SMD pad on `GND` joins them solid (a buck's thermal pad among
+    // them), so the copper `extract` measures is the copper the heat reaches.
+    // An 0402 or 0603 passive's is not joined to the pour at all (`0`): it
+    // keeps its own via to the plane, as before the pours, so no relief can
+    // starve (KiCad's DRC refused C2's and C38's one-spoke reliefs) and no
+    // pour pulls heat from one end (tombstoning).
+    let join = if fp.arg(1).is_some_and(small_passive) {
+        "0"
+    } else {
+        "2"
+    };
+    if !stack.pours.is_empty() {
+        for pad in fp.items_mut().into_iter().flatten() {
+            let on_ground = pad.head() == Some("pad")
+                && pad.arg(2) == Some("smd")
+                && pad.child("net").and_then(|n| n.arg(1)) == Some(aethelgard_ir::GND);
+            if on_ground && let Some(items) = pad.items_mut() {
+                items.push(Sx::node("zone_connect", &[join]));
+            }
+        }
+    }
     let declared = fp
         .property("Reference")
         .and_then(|r| stack.joins.iter().find(|(x, _)| x == r).map(|&(_, j)| j));
@@ -2333,6 +2406,13 @@ fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
             items.push(Sx::node("zone_connect", &[value]));
         }
     }
+}
+
+/// An 0402 or 0603 resistor or capacitor footprint (`AET-WO-4300k` Q2): a
+/// small passive keeps its thermal relief on a pour.
+pub(crate) fn small_passive(lib: &str) -> bool {
+    (lib.starts_with("Resistor_SMD:") || lib.starts_with("Capacitor_SMD:"))
+        && (lib.contains("_0402_") || lib.contains("_0603_"))
 }
 
 /// The router's tracks, vias and unfilled zones as board items, each
@@ -2389,7 +2469,8 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
             ]));
         }
     }
-    for (n, l) in &routed.zones {
+    let pours = stack.pour_zones();
+    for (n, l) in routed.zones.iter().chain(&pours) {
         let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
         out.push(Sx::List(vec![
             Sx::atom("zone"),
@@ -3116,6 +3197,9 @@ mod tests {
         conns.push(("MP".into(), Conn::Rail("GND".into())));
         let mut p = part(sym, fp, reference, &[]);
         p.conns = conns.into_iter().collect();
+        // The row's name is its value, as the emitter writes it: placement
+        // reads the row's opening by it (`AET-WO-4300k` (4)).
+        p.value = name.to_owned();
         p
     }
 
