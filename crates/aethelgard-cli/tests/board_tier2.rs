@@ -2177,10 +2177,11 @@ fn radio_planted_boards_are_refused_by_name() {
             radio_outline_up(&text, 10.0),
             "RadioAntennaOnBoard",
         ),
-        // Review M2: the board widened 40 mm right; the module mid-edge.
+        // Review M2: the board widened 1 mm right, so the feed side is past
+        // the row's 3 mm from the edge (inside the declared bound).
         (
             "mid-edge",
-            radio_outline_right(&text, 40.0),
+            radio_outline_right(&text, 1.0),
             "RadioNotAtCorner",
         ),
         (
