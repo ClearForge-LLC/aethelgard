@@ -326,6 +326,97 @@ pub fn flash_loads(
     Ok(out)
 }
 
+/// The section header's size in an ELF32 file, and the symbol table's
+/// type and entry size (System V ABI, ELF32: `Elf32_Shdr`, `SHT_SYMTAB`,
+/// `Elf32_Sym`).
+const SHDR_LEN: usize = 40;
+const SHT_SYMTAB: u32 = 2;
+const SYM_LEN: usize = 16;
+const STT_FUNC: u8 = 2;
+
+/// The address of the function symbol `name` in a foreign firmware's
+/// symbol table, with Thumb's low bit cleared, and only where it runs from an
+/// executable `PT_LOAD` (`AET-WO-1609`): the judge hooks it there. `None`
+/// when no symbol table names it. Two different addresses under the one
+/// name, or a table outside the file, are refused (`MalformedFirmware`).
+pub fn function(bytes: &[u8], name: &str) -> Result<Option<u64>, Stop> {
+    let loads = loads(bytes)?;
+    let shoff = u32_at(bytes, 32) as usize;
+    let shentsize = usize::from(u16_at(bytes, 46));
+    let shnum = usize::from(u16_at(bytes, 48));
+    if shnum == 0 {
+        return Ok(None);
+    }
+    if shentsize != SHDR_LEN {
+        return Err(malformed(format!(
+            "section header entries are {shentsize} bytes, not {SHDR_LEN}"
+        )));
+    }
+    let range = |off: usize, len: usize, what: &str| {
+        off.checked_add(len)
+            .filter(|&end| end <= bytes.len())
+            .map(|end| off..end)
+            .ok_or_else(|| malformed(format!("the {what} is outside the file")))
+    };
+    let headers = range(
+        shoff,
+        shnum.saturating_mul(SHDR_LEN),
+        "section header table",
+    )?;
+    let section = |i: usize| {
+        let at = headers.start + i * SHDR_LEN;
+        let field = |k: usize| u32_at(bytes, at + 4 * k) as usize;
+        (u32_at(bytes, at + 4), field(4), field(5), field(6))
+    };
+    let mut found: Vec<u64> = Vec::new();
+    for i in 0..shnum {
+        let (kind, offset, size, link) = section(i);
+        if kind != SHT_SYMTAB {
+            continue;
+        }
+        if link >= shnum {
+            return Err(malformed(format!("symbol table {i} links section {link}")));
+        }
+        let symbols = range(offset, size - size % SYM_LEN, "symbol table")?;
+        let (_, str_off, str_size, _) = section(link);
+        let strings = range(str_off, str_size, "string table")?;
+        for at in symbols.step_by(SYM_LEN) {
+            let start = u32_at(bytes, at) as usize;
+            let info = bytes[at + 12];
+            if info & 0xF != STT_FUNC || start >= strings.len() {
+                continue;
+            }
+            let text = &bytes[strings.start + start..strings.end];
+            let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
+            if &text[..end] == name.as_bytes() {
+                let address = u64::from(u32_at(bytes, at + 4) & !1);
+                if !found.contains(&address) {
+                    found.push(address);
+                }
+            }
+        }
+    }
+    let address = match found.as_slice() {
+        [] => return Ok(None),
+        [one] => *one,
+        many => {
+            return Err(malformed(format!(
+                "`{name}` names {} addresses, not one",
+                many.len()
+            )));
+        }
+    };
+    let runs = loads.iter().any(|l| {
+        l.flags & PF_X != 0 && l.vaddr <= address && address < l.vaddr + l.memsz.max(l.filesz)
+    });
+    if !runs {
+        return Err(malformed(format!(
+            "`{name}` is at {address:#010x}, outside every executable PT_LOAD"
+        )));
+    }
+    Ok(Some(address))
+}
+
 /// A foreign firmware's checks, then its image (`AET-WO-4400e`): every
 /// `PT_LOAD` with a size lies, at its physical and its virtual address,
 /// inside one region of [`foreign_memory`]; no two segments' **file bytes**
@@ -471,6 +562,90 @@ mod tests {
 
     fn sha(bytes: &[u8]) -> String {
         check(bytes, &memory(), WORD).unwrap().sha256
+    }
+
+    /// `base` with a symbol table of `symbols` (name, value, `st_info`) and
+    /// its string table appended, and the section headers that name them:
+    /// null, `.symtab`, `.strtab`.
+    fn with_symbols(base: &[u8], symbols: &[(&str, u32, u8)]) -> Vec<u8> {
+        let mut b = base.to_vec();
+        let mut strings = vec![0u8];
+        let mut table = vec![0u8; SYM_LEN];
+        for &(name, value, info) in symbols {
+            let at = strings.len() as u32;
+            strings.extend_from_slice(name.as_bytes());
+            strings.push(0);
+            table.extend_from_slice(&at.to_le_bytes());
+            table.extend_from_slice(&value.to_le_bytes());
+            table.extend_from_slice(&4u32.to_le_bytes());
+            table.extend_from_slice(&[info, 0, 1, 0]);
+        }
+        let symtab_at = b.len() as u32;
+        b.extend_from_slice(&table);
+        let strtab_at = b.len() as u32;
+        b.extend_from_slice(&strings);
+        let shoff = b.len() as u32;
+        let header = |kind: u32, offset: u32, size: u32, link: u32| {
+            let mut h = vec![0u8; SHDR_LEN];
+            for (i, v) in [(1, kind), (4, offset), (5, size), (6, link)] {
+                h[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            h
+        };
+        b.extend(header(0, 0, 0, 0));
+        b.extend(header(SHT_SYMTAB, symtab_at, table.len() as u32, 2));
+        b.extend(header(3, strtab_at, strings.len() as u32, 0));
+        b[32..36].copy_from_slice(&shoff.to_le_bytes());
+        b[46..48].copy_from_slice(&(SHDR_LEN as u16).to_le_bytes());
+        b[48..50].copy_from_slice(&3u16.to_le_bytes());
+        b
+    }
+
+    /// `AET-WO-1609`: the panic hook's address is the function symbol's, its
+    /// Thumb bit cleared, and only inside an executable `PT_LOAD`; absent is
+    /// `None` (the caller refuses it by name), and a name at two addresses,
+    /// or a symbol outside every executable segment, is refused.
+    #[test]
+    fn a_function_symbol_is_found_once_inside_executable_code() {
+        const PANIC: &str = "_ZN6AP_HAL5panicEPKcz";
+        let base = elf(&[(0x0800_0000, 0x0800_0000, &[0u8; 64], 64)]);
+        let one = with_symbols(&base, &[("other", 0x0800_0011, 2), (PANIC, 0x0800_0021, 2)]);
+        assert_eq!(function(&one, PANIC).unwrap(), Some(0x0800_0020));
+        assert_eq!(function(&base, PANIC).unwrap(), None, "no section headers");
+        let object = with_symbols(&base, &[(PANIC, 0x0800_0021, 1)]);
+        assert_eq!(
+            function(&object, PANIC).unwrap(),
+            None,
+            "an STT_OBJECT is not the function"
+        );
+        let prefix = with_symbols(&base, &[("_ZN6AP_HAL5panicEPKc", 0x0800_0021, 2)]);
+        assert_eq!(
+            function(&prefix, PANIC).unwrap(),
+            None,
+            "a prefix is another name"
+        );
+        let twice = with_symbols(&base, &[(PANIC, 0x0800_0021, 2), (PANIC, 0x0800_0031, 2)]);
+        assert_eq!(
+            function(&twice, PANIC).unwrap_err().kind,
+            "MalformedFirmware"
+        );
+        let same = with_symbols(
+            &base,
+            &[(PANIC, 0x0800_0021, 2), (PANIC, 0x0800_0021, 0x12)],
+        );
+        assert_eq!(
+            function(&same, PANIC).unwrap(),
+            Some(0x0800_0020),
+            "one address twice is one"
+        );
+        let outside = with_symbols(&base, &[(PANIC, 0x0900_0001, 2)]);
+        assert_eq!(
+            function(&outside, PANIC).unwrap_err().kind,
+            "MalformedFirmware"
+        );
+        let mut cut = one.clone();
+        cut.truncate(cut.len() - 1);
+        assert_eq!(function(&cut, PANIC).unwrap_err().kind, "MalformedFirmware");
     }
 
     /// `AET-WO-4400e`: a foreign firmware's segment must lie inside a region

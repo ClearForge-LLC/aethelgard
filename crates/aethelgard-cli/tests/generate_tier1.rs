@@ -354,6 +354,16 @@ fn verify_against_fails_on_one_changed_byte_in_any_file_naming_it() {
         assert_eq!(v["verdict"], "fail");
         assert_eq!(v["against"], "differs");
         assert_eq!(v["gates"], Value::Array(Vec::new()), "{path}: no gate runs");
+        // ...and the table still lists every gate, not reached, and why
+        // (`AET-WO-1609`; adversarial review finding 1).
+        let rows = v["ran"].as_array().unwrap();
+        assert_eq!(rows.len(), 12, "{path}: {v}");
+        assert!(
+            rows.iter().all(|r| r["not_reached"]
+                .as_str()
+                .is_some_and(|w| w.starts_with("--against"))),
+            "{path}: {v}"
+        );
         let findings = v["findings"].as_array().unwrap();
         assert_eq!(findings.len(), 1, "{path}: {v}");
         assert_eq!(findings[0]["kind"], "against_differs");

@@ -84,6 +84,11 @@ pub struct Verdict {
     /// every finding and from the campaign's archive.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryReport>,
+    /// `check drc` and a generated `simulate` (`AET-WO-1609`): each part of
+    /// the check that an optional key, flag or condition switches, as
+    /// [`Ran`]; absent on every other verdict.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub ran: Vec<Ran>,
     pub findings: Vec<Finding>,
     /// `simulate --firmware` only: each tool that judged the boot and the
     /// version it reported, for a campaign's archive header (`AET-WO-2205`
@@ -873,6 +878,61 @@ impl Scope {
     }
 }
 
+/// One row of a verdict's "ran or not" table (`AET-WO-1609`, review 3 B5):
+/// a gate, or a part of one, by name, with exactly one of `judged` (the
+/// count it judged, 0 included), `off` (the specification key, or the flag or
+/// condition, that turns it on) or `not_reached` (why it could not run). A
+/// check that did not run is listed as loudly as one that failed.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+pub struct Ran {
+    pub gate: String,
+    /// `prove` only: the harness.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub harness: Option<String>,
+    /// `attribute` only: the scenario whose run it attributed.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scenario: Option<String>,
+    #[serde(flatten)]
+    pub state: RanState,
+}
+
+/// What became of one [`Ran`] row's gate.
+#[derive(Serialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RanState {
+    Judged(u64),
+    Off(String),
+    NotReached(String),
+}
+
+impl Ran {
+    pub fn judged(gate: &str, n: u64) -> Self {
+        Self::of(gate, RanState::Judged(n))
+    }
+    pub fn off(gate: &str, key: &str) -> Self {
+        Self::of(gate, RanState::Off(key.to_owned()))
+    }
+    pub fn not_reached(gate: &str, why: &str) -> Self {
+        Self::of(gate, RanState::NotReached(why.to_owned()))
+    }
+    fn of(gate: &str, state: RanState) -> Self {
+        Self {
+            gate: gate.to_owned(),
+            harness: None,
+            scenario: None,
+            state,
+        }
+    }
+    /// A part's row when `on` holds: `judged n`, else `off: key`.
+    pub fn part(gate: &str, on: bool, n: u64, key: &str) -> Self {
+        if on {
+            Self::judged(gate, n)
+        } else {
+            Self::off(gate, key)
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct ToolReport {
     pub name: &'static str,
@@ -1108,6 +1168,7 @@ impl Verdict {
             faults: None,
             droop: None,
             memory: None,
+            ran: Vec::new(),
             findings,
             tools: Vec::new(),
         }

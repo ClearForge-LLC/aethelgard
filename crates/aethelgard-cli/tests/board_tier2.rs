@@ -1960,6 +1960,16 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         serde_json::json!(["extract", "campaign:droop-bor3"]),
         "{v}"
     );
+    // `AET-WO-1609`: a gate that judged nothing is `judged 0` in the table,
+    // listed, never omitted; its parts say why.
+    let rows = common::verify::ran(&v);
+    assert_eq!(
+        common::verify::row(&rows, "extract"),
+        "judged 0",
+        "{rows:?}"
+    );
+    assert_eq!(common::verify::row(&rows, "extract.lines"), "judged 0");
+    assert_eq!(common::verify::row(&rows, "campaign"), "judged 1");
 }
 
 /// `AET-WO-1211b` §1.4: D1 (`AET-WO-1211a`'s DRV8876 fixture: PH/EN on TIM1,

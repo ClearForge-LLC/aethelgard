@@ -76,6 +76,12 @@ fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     b
 }
 
+/// The foreign tests' firmware: [`elf`] with its panic at `0x08000020`
+/// (`common::foreign::with_panic`).
+fn foreign_elf() -> Vec<u8> {
+    common::foreign::with_panic(elf(), 0x0800_0020)
+}
+
 /// 64 bytes at the flash's start with one `yield; b.n` self-loop at
 /// `0x08000010`, where the stub's transcripts leave the core.
 fn code() -> [u8; 64] {
@@ -2665,15 +2671,87 @@ fn foreign_with(path: &Path, firmware: &Path, time: &str) -> Output {
 }
 
 fn foreign(stdout: &str) -> (Option<i32>, Value) {
+    foreign_of(stdout, &foreign_elf())
+}
+
+fn foreign_of(stdout: &str, firmware: &[u8]) -> (Option<i32>, Value) {
     let tb = toolbox_foreign(stdout, "0.0100000005", true);
     let input = Dir::new("in");
-    let fw = input.write("fw.elf", &elf());
+    let fw = input.write("fw.elf", firmware);
     let out = foreign_with(&tb.0, &fw, "10ms");
     (out.status.code(), report(&out))
 }
 
 fn good_foreign_log() -> String {
     format!("{GOOD_WITNESS}{BME280_READ}{GOOD_SPI_WITNESS}")
+}
+
+/// `AET-WO-1609`: the panic hook's line, the CPU's own, fails a foreign
+/// run that would otherwise pass, by name, with each entry in `boot.panic`;
+/// the same boot without it passes with none. A line at another address,
+/// or of another source, is not an entry.
+#[test]
+fn a_foreign_boot_that_enters_the_panic_fails_by_name() {
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(
+        v["boot"]["panic"],
+        serde_json::json!({"symbol": "_ZN6AP_HAL5panicEPKcz", "address": "0x08000020", "entered_ns": []}),
+        "{v}"
+    );
+    let entered = format!(
+        "{}[00:00:00.009000000] [WARNING] cpu: AETHELGARD-PANIC 8000020\n",
+        good_foreign_log()
+    );
+    let (code, v) = foreign(&foreign_transcript(&entered, "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    let failing: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["severity"] == "error")
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(failing, ["foreign_panic"], "{v}");
+    assert_eq!(
+        v["boot"]["panic"]["entered_ns"],
+        serde_json::json!([9_000_000]),
+        "{v}"
+    );
+    // A line Renode printed after the begin marker still counts (adversarial
+    // review, finding 3): only the CPU writes it.
+    let late = foreign_transcript(&good_foreign_log(), "0x00000800").replacen(
+        "AETHELGARD-BOOT-BEGIN\n",
+        "AETHELGARD-BOOT-BEGIN\n[00:00:00.010000000] [WARNING] cpu: AETHELGARD-PANIC 8000020\n",
+        1,
+    );
+    let (code, v) = foreign(&late);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(
+        v["boot"]["panic"]["entered_ns"],
+        serde_json::json!([10_000_000]),
+        "{v}"
+    );
+    for other in [
+        "[00:00:00.009000000] [WARNING] cpu: AETHELGARD-PANIC 8000030\n",
+        "[00:00:00.009000000] [WARNING] usart1: AETHELGARD-PANIC 8000020\n",
+    ] {
+        let log = format!("{}{other}", good_foreign_log());
+        let (code, v) = foreign(&foreign_transcript(&log, "0x00000800"));
+        assert_eq!(code, Some(0), "{other}: {v}");
+    }
+}
+
+/// `AET-WO-1609`: a foreign firmware whose symbol table does not name the
+/// panic is refused by name before any boot (`INV-06`).
+#[test]
+fn a_foreign_firmware_with_no_panic_symbol_is_refused() {
+    let (code, v) = foreign_of(
+        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        &elf(),
+    );
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ForeignPanicSymbolMissing", "{v}");
 }
 
 /// `AET-WO-4400e` D3, D5, D6 (i): a foreign boot is judged by its models'
@@ -2977,7 +3055,10 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     assert_eq!(status, Some(0), "{v}");
     assert!(v["boot"].get("judge").is_none(), "{v}");
     // A firmware whose one segment is in D2 SRAM, as ArduPilot's .data is.
-    let d2 = input.write("d2.elf", &elf_at(0x3000_0000, &code(), 40));
+    let d2 = input.write(
+        "d2.elf",
+        &common::foreign::with_panic(elf_at(0x3000_0000, &code(), 40), 0x3000_0020),
+    );
     let generated = boot_with(&tb.0, &platform(), &d2, "10ms");
     assert_eq!(generated.status.code(), Some(3), "{generated:?}");
     assert_eq!(report(&generated)["error"]["kind"], "FirmwareOutsideMemory");

@@ -53,7 +53,7 @@ use crate::fab;
 use crate::input::hex;
 use crate::run;
 use crate::tree::{self, Difference};
-use crate::verdict::Scope;
+use crate::verdict::{Ran as Row, Scope};
 use crate::{
     EXIT_FAIL, EXIT_INTERNAL, EXIT_INVALID_SPEC, EXIT_NOT_VERIFIED, EXIT_TOOL_ERROR,
     EXIT_UNREADABLE,
@@ -93,6 +93,12 @@ struct Report {
     /// whose droop observations witnessed no device, as `campaign:<scenario>`
     /// (`AET-WO-2306`): a reader sees them without reading every line.
     judged_nothing: Vec<String>,
+    /// The "ran or not" table (`AET-WO-1609`, review 3 B5): every gate `verify`
+    /// can run, and each gate's parts, as `judged n`, `off: <the key, flag or
+    /// condition that turns it on>` or `not_reached: <why>`, derived from the
+    /// gates' own results ([`ran_table`]). Before `against_fab` and `fab`, so the
+    /// line `MANIFEST.json` hashes is still the verdict without them.
+    ran: Vec<crate::verdict::Ran>,
     /// The support gate's record (`AET-WO-4300g`): each role, strap and
     /// condition as `check support` judged them; absent when it did not run.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -389,7 +395,8 @@ struct Gate {
     /// run, or `not_applicable` for a board gate of a specification that
     /// draws no board (`AET-WO-1607` (5)).
     verdict: &'static str,
-    /// Why a `not_applicable` gate did not run; absent on every other gate.
+    /// Why a `not_applicable` gate did not run, and why `verify` did not run
+    /// a `not_run` gate ([`not_reached`]); absent on every other gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<&'static str>,
     /// What the gate judged (`AET-WO-2306`); absent when it did not run.
@@ -416,6 +423,10 @@ struct Gate {
     /// `2306`'s rule: `judged` counts them); absent on every other gate.
     #[serde(skip_serializing_if = "Option::is_none")]
     items: Option<Vec<Value>>,
+    /// The `ran` rows of the gate's own verdict line, its parts
+    /// (`AET-WO-1609`): `Null` for a gate whose line states none.
+    #[serde(skip)]
+    parts: Value,
 }
 
 #[derive(Serialize)]
@@ -644,6 +655,7 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         cover_count: v["cover_count"].as_u64(),
         findings: v["findings"].as_array().cloned().unwrap_or_default(),
         items: None,
+        parts: v["ran"].clone(),
     }
 }
 
@@ -801,6 +813,7 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
         cover_count: None,
         findings,
         items: Some(items),
+        parts: Value::Null,
     })
     .collect()
 }
@@ -853,8 +866,22 @@ fn not_run(name: &'static str) -> Gate {
         cover_count: None,
         findings: Vec::new(),
         items: None,
+        parts: Value::Null,
     }
 }
+
+/// A gate `verify` did not run because the gate before it gave it nothing to
+/// judge, `not_run` with its reason (`AET-WO-1609`): the table's
+/// `not_reached` reads the reason from the gate itself.
+fn not_reached(name: &'static str, why: &'static str) -> Gate {
+    Gate {
+        reason: Some(why),
+        ..not_run(name)
+    }
+}
+
+/// Why `simulate` and the campaign are `not_run` (`verify.rs`'s only one).
+const NO_ELF: &str = "the build gate gave no ELF to boot";
 
 /// The gates that judge the drawn board: on a specification that declares
 /// `board.drawn: false` there is none, so each is reported `not_applicable`
@@ -871,6 +898,162 @@ fn not_applicable(name: &'static str) -> Gate {
         reason: Some(NO_BOARD),
         ..not_run(name)
     }
+}
+
+/// The key a `not_applicable` gate's row is off by: only a board not drawn
+/// makes one ([`not_applicable`], `NO_BOARD`).
+const NOT_APPLICABLE_KEY: &str = "board.drawn";
+
+/// What turns a gate on when `verify` pushed no row for it (`AET-WO-1609`,
+/// ruled at §1.2): [`ran_table`]'s only list. It is not the table: every row comes
+/// from a gate `verify` pushed, and this says only what an absent gate's row
+/// reads. A gate pushed under a name not here is refused (exit 70), and
+/// `every_gate_verify_pushes_is_in_the_table` reads this file for every
+/// name a gate is pushed under.
+enum Absent {
+    /// Always pushed (`not_applicable` or `not_run` when it cannot run): its
+    /// absence is a defect.
+    Never,
+    /// Absent exactly when this key, flag or condition does not hold.
+    Off(&'static str),
+    /// Built from `simulate`'s line: when `simulate` was not reached, not
+    /// reached for the same reason; else off by this key.
+    AfterSimulate(&'static str),
+}
+
+/// Every gate `verify` runs, in the table's order.
+const GATES: [(&str, Absent); 12] = [
+    ("erc", Absent::Never),
+    ("drc", Absent::Never),
+    ("support", Absent::Never),
+    ("extract", Absent::Never),
+    (
+        "prove",
+        Absent::Off("a Kani harness in the generated board crate's src/proofs.rs"),
+    ),
+    ("build", Absent::Never),
+    ("simulate", Absent::Never),
+    ("gpio", Absent::AfterSimulate("pin_devices[].signals")),
+    ("adc", Absent::AfterSimulate("pin_devices[].analog")),
+    ("bridge", Absent::AfterSimulate("pin_devices[].bridges")),
+    ("campaign", Absent::Off("--scenarios")),
+    (
+        "attribute",
+        Absent::AfterSimulate(
+            "--scenarios with a seeded fault that fails as expected beside a passing no-fault baseline",
+        ),
+    ),
+];
+
+/// The "ran or not" table (`AET-WO-1609`): one row per gate `verify` pushed,
+/// from the gate's own verdict (`judged` its scope's count, `off` by
+/// `board.drawn` when `not_applicable`, `not_reached` with a `not_run`
+/// gate's own reason), then the parts its line states, then a row for each
+/// gate of [`GATES`] it did not push. `Err` names a gate with no row, or a
+/// row the gate's line states malformed.
+fn ran_table(gates: &[Gate]) -> Result<Vec<Row>, String> {
+    if let Some(g) = gates
+        .iter()
+        .find(|g| !GATES.iter().any(|(n, _)| *n == g.gate))
+    {
+        return Err(format!(
+            "gate `{}` has no row in the ran-or-not table: name it in GATES",
+            g.gate
+        ));
+    }
+    let simulate = gates.iter().find(|g| g.gate == "simulate");
+    let mut out = Vec::new();
+    for (name, absent) in &GATES {
+        let mine: Vec<&Gate> = gates.iter().filter(|g| g.gate == *name).collect();
+        if mine.is_empty() {
+            out.push(match absent {
+                Absent::Never => {
+                    return Err(format!("gate `{name}` was not pushed and has no row"));
+                }
+                Absent::Off(key) => Row::off(name, key),
+                Absent::AfterSimulate(key) => match simulate {
+                    Some(s) if s.verdict == "not_run" => {
+                        Row::not_reached(name, s.reason.unwrap_or(NO_ELF))
+                    }
+                    _ => Row::off(name, key),
+                },
+            });
+            continue;
+        }
+        for g in mine {
+            let mut row = match (g.verdict, &g.scope) {
+                ("not_applicable", _) => Row::off(name, NOT_APPLICABLE_KEY),
+                ("not_run", _) => Row::not_reached(
+                    name,
+                    g.reason
+                        .ok_or_else(|| format!("gate `{name}` is not_run with no reason"))?,
+                ),
+                (_, Some(scope)) => Row::judged(name, scope.judged),
+                (_, None) => return Err(format!("gate `{name}` ran and counts nothing")),
+            };
+            row.harness.clone_from(&g.harness);
+            row.scenario.clone_from(&g.scenario);
+            out.push(row);
+            out.extend(parts(g)?);
+        }
+    }
+    Ok(out)
+}
+
+/// Why no gate ran when `--against` found a difference (`AET-WO-1609`).
+const AGAINST_DIFFERS: &str =
+    "--against found the directory differs from the generated tree, so no gate ran";
+
+/// The table of a verdict printed before any gate ran: every gate of
+/// [`GATES`] not reached, for `why` (adversarial review, finding 1).
+fn none_ran(why: &str) -> Vec<Row> {
+    GATES
+        .iter()
+        .map(|(name, _)| Row::not_reached(name, why))
+        .collect()
+}
+
+/// The gates whose own line states its parts' rows: one that ran and
+/// states none is refused, so a part never vanishes unseen (adversarial
+/// review, finding 5).
+const PARTED: [&str; 3] = ["extract", "drc", "simulate"];
+
+/// The rows a gate's own line states for its parts (`extract`, `drc`,
+/// `simulate`), each named `<gate>.<part>` with exactly one of `judged`,
+/// `off` or `not_reached`.
+fn parts(g: &Gate) -> Result<Vec<Row>, String> {
+    let ran = matches!(g.verdict, "pass" | "fail");
+    let Some(rows) = g.parts.as_array() else {
+        return match &g.parts {
+            Value::Null if ran && PARTED.contains(&g.gate) => {
+                Err(format!("gate `{}` ran and states no part's row", g.gate))
+            }
+            Value::Null => Ok(Vec::new()),
+            other => Err(format!("gate `{}` states `ran` as {other}", g.gate)),
+        };
+    };
+    rows.iter()
+        .map(|r| {
+            let bad = || format!("gate `{}` states a malformed part row {r}", g.gate);
+            let gate = r["gate"].as_str().ok_or_else(bad)?;
+            let (Some(part), Some(fields)) = (
+                gate.strip_prefix(g.gate).and_then(|p| p.strip_prefix('.')),
+                r.as_object(),
+            ) else {
+                return Err(bad());
+            };
+            if part.is_empty() || fields.len() != 2 {
+                return Err(bad());
+            }
+            match (r.get("judged"), r.get("off"), r.get("not_reached")) {
+                (Some(n), None, None) => n.as_u64().map(|n| Row::judged(gate, n)),
+                (None, Some(k), None) => k.as_str().map(|k| Row::off(gate, k)),
+                (None, None, Some(w)) => w.as_str().map(|w| Row::not_reached(gate, w)),
+                _ => None,
+            }
+            .ok_or_else(bad)
+        })
+        .collect()
 }
 
 /// What one gate must report about what it judged, as (what, JSON pointer,
@@ -1736,6 +1919,7 @@ pub fn verify(
         rise_times: RISE_TIMES,
         gates: Vec::new(),
         judged_nothing: Vec::new(),
+        ran: Vec::new(),
         support: None,
         campaign: None,
         findings: silicon_findings(&silicon),
@@ -1902,6 +2086,7 @@ pub fn verify(
             if let Some(mode) = fab_mode {
                 not_packaged(&mut report, mode);
             }
+            report.ran = none_ran(AGAINST_DIFFERS);
             return crate::emit(&report, EXIT_FAIL);
         }
         report.against = Some("identical");
@@ -2012,6 +2197,10 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
         &report.gates,
         report.campaign.as_deref().unwrap_or_default(),
     );
+    report.ran = ran_table(&report.gates).map_err(|e| {
+        crate::diagnose(&e);
+        ExitCode::from(EXIT_INTERNAL)
+    })?;
     let drawn = t.spec.board.drawn;
     (report.ok, report.verdict, report.reason) =
         outcome(passes(&report.findings, &report.gates, drawn), drawn);
@@ -2435,9 +2624,9 @@ fn proof_and_boot_gates(
     let elf = built.last()["elf"]["sha256"].as_str().map(str::to_owned);
     report.gates.push(gate_report("build", None, &built));
     let Some(elf) = elf.filter(|_| built.code == 0) else {
-        report.gates.push(not_run("simulate"));
+        report.gates.push(not_reached("simulate", NO_ELF));
         if !expected.is_empty() {
-            report.gates.push(not_run("campaign"));
+            report.gates.push(not_reached("campaign", NO_ELF));
         }
         return Ok(());
     };
@@ -3969,6 +4158,7 @@ mod tests {
             rise_times: RISE_TIMES,
             gates,
             judged_nothing: Vec::new(),
+            ran: Vec::new(),
             support: None,
             campaign: None,
             findings: Vec::new(),
@@ -3997,10 +4187,12 @@ mod tests {
             seeded: &[],
             harnesses: &[],
         };
+        // A whole run (`AET-WO-1609`: `conclude` builds the table from it),
+        // its ERC failed or passed.
         let gate = |verdict: &'static str| {
-            let mut g = not_run("erc");
-            g.verdict = verdict;
-            g
+            let mut gates = drawn_run();
+            gates[0].verdict = verdict;
+            gates
         };
         let out = scratch.join("pkg");
         let against = scratch.join("against");
@@ -4011,7 +4203,7 @@ mod tests {
             Some(FabMode::Write(out.clone())),
             Some(FabMode::Compare(against.clone())),
         ] {
-            let mut report = fresh(vec![gate("fail")]);
+            let mut report = fresh(gate("fail"));
             let code = conclude(&mut report, mode.as_ref(), &tail)
                 .unwrap_or_else(|_| panic!("a failing verdict is concluded, not refused"));
             assert_eq!(
@@ -4019,6 +4211,9 @@ mod tests {
                 "a failing verdict exits EXIT_FAIL in every fab mode"
             );
             assert_eq!(report.verdict, "fail");
+            // `conclude` states the table (`AET-WO-1609`), in every fab mode.
+            assert_eq!(report.ran, ran_table(&report.gates).unwrap());
+            assert!(report.ran.len() >= GATES.len());
             report.fab = None;
             report.against_fab = None;
             lines.push(serde_json::to_string(&report).unwrap());
@@ -4029,7 +4224,7 @@ mod tests {
         );
         assert!(!out.exists(), "a failing run writes nothing");
         assert_eq!(std::fs::read_dir(&against).unwrap().count(), 0);
-        let mut report = fresh(vec![gate("pass")]);
+        let mut report = fresh(gate("pass"));
         assert_eq!(conclude(&mut report, None, &tail).ok(), Some(0));
         std::fs::remove_dir_all(&scratch).unwrap();
     }
@@ -4090,5 +4285,238 @@ mod tests {
             assert!(campaign_renode(&dir, &runs).is_err(), "refused");
         }
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A gate as its verdict line reports it (`AET-WO-1609`'s tests).
+    fn line_gate(name: &'static str, line: Value) -> Gate {
+        gate_report(
+            name,
+            None,
+            &Ran {
+                code: 0,
+                lines: vec![line],
+            },
+        )
+    }
+
+    /// A drawn board's full run with no pin device and no `--scenarios`:
+    /// every gate in `GATES`' order, each part its line states after its
+    /// gate, and the absent ones off by their key or flag (`AET-WO-1609` §2).
+    fn drawn_run() -> Vec<Gate> {
+        let mut prove = line_gate("prove", json!({"verdict": "pass"}));
+        prove.harness = Some("proofs::flash".into());
+        vec![
+            line_gate("erc", json!({"verdict": "pass"})),
+            line_gate(
+                "drc",
+                json!({"verdict": "pass", "ran": [
+                {"gate": "drc.pairs", "off": "diff_pairs"},
+                {"gate": "drc.power", "judged": 3}]}),
+            ),
+            line_gate(
+                "support",
+                json!({"verdict": "pass", "support": {"roles": [1, 2], "straps": [3]}}),
+            ),
+            line_gate(
+                "extract",
+                json!({"verdict": "pass", "judged": 8, "ran": [
+                {"gate": "extract.lines", "judged": 8},
+                {"gate": "extract.supply", "off": "power.drop_limits"}]}),
+            ),
+            prove,
+            line_gate("build", json!({"verdict": "pass"})),
+            line_gate(
+                "simulate",
+                json!({"verdict": "pass", "ran": [
+                {"gate": "simulate.hse_clock", "off": "mcu.hse"}]}),
+            ),
+        ]
+    }
+
+    #[test]
+    fn the_table_lists_every_gate_and_part_from_the_gates_results() {
+        let rows = serde_json::to_value(ran_table(&drawn_run()).unwrap()).unwrap();
+        assert_eq!(
+            rows,
+            json!([
+                {"gate": "erc", "judged": 1},
+                {"gate": "drc", "judged": 1},
+                {"gate": "drc.pairs", "off": "diff_pairs"},
+                {"gate": "drc.power", "judged": 3},
+                {"gate": "support", "judged": 3},
+                {"gate": "extract", "judged": 8},
+                {"gate": "extract.lines", "judged": 8},
+                {"gate": "extract.supply", "off": "power.drop_limits"},
+                {"gate": "prove", "harness": "proofs::flash", "judged": 1},
+                {"gate": "build", "judged": 1},
+                {"gate": "simulate", "judged": 1},
+                {"gate": "simulate.hse_clock", "off": "mcu.hse"},
+                {"gate": "gpio", "off": "pin_devices[].signals"},
+                {"gate": "adc", "off": "pin_devices[].analog"},
+                {"gate": "bridge", "off": "pin_devices[].bridges"},
+                {"gate": "campaign", "off": "--scenarios"},
+                {"gate": "attribute", "off": "--scenarios with a seeded fault that fails as expected beside a passing no-fault baseline"}
+            ])
+        );
+    }
+
+    /// The acceptance's planted gate: a gate pushed under a name the table
+    /// does not know fails by its name, never silently dropped.
+    #[test]
+    fn a_planted_gate_with_no_row_fails_by_name() {
+        let mut gates = drawn_run();
+        gates.push(line_gate("planted", json!({"verdict": "pass"})));
+        let e = ran_table(&gates).unwrap_err();
+        assert!(e.contains("`planted`") && e.contains("GATES"), "{e}");
+        // A gate that is always pushed and is missing is a defect, by name.
+        let without_build: Vec<Gate> = drawn_run()
+            .into_iter()
+            .filter(|g| g.gate != "build")
+            .collect();
+        assert!(ran_table(&without_build).unwrap_err().contains("`build`"));
+    }
+
+    /// Every name `verify` pushes a gate under, read from this file, is in
+    /// `GATES`: a new gate fails here by name before any run.
+    #[test]
+    fn every_gate_verify_pushes_is_in_the_table() {
+        let src = include_str!("verify.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let mut names = Vec::new();
+        for call in ["gate_report(\"", "not_run(\"", "not_reached(\""] {
+            for (i, _) in src.match_indices(call) {
+                let rest = &src[i + call.len()..];
+                names.push(rest[..rest.find('"').unwrap()].to_owned());
+            }
+        }
+        // The per-item gates are named in one array of `(name, items, findings)`.
+        for (i, _) in src.match_indices("findings(&") {
+            let after = &src[i + "findings(&".len()..];
+            if !after[..after.find(')').unwrap()].ends_with("_KINDS") {
+                continue;
+            }
+            let before = &src[..i];
+            let open = before.rfind("(\"").unwrap();
+            names.push(before[open + 2..].split('"').next().unwrap().to_owned());
+        }
+        names.extend(BOARD_GATES.map(str::to_owned));
+        names.sort();
+        names.dedup();
+        for must in [
+            "gpio",
+            "adc",
+            "bridge",
+            "campaign",
+            "attribute",
+            "prove",
+            "simulate",
+        ] {
+            assert!(
+                names.iter().any(|n| n == must),
+                "the scan misses `{must}`: {names:?}"
+            );
+        }
+        for n in &names {
+            assert!(
+                GATES.iter().any(|(g, _)| g == n),
+                "gate `{n}` is pushed but not in GATES"
+            );
+        }
+    }
+
+    /// Not drawn: each board gate is `off: board.drawn`. Build failed:
+    /// `simulate`, the campaign, the per-item gates and `attribute` are
+    /// `not_reached` with the reason the gate itself carries.
+    #[test]
+    fn off_and_not_reached_come_from_each_gates_own_verdict() {
+        let mut gates: Vec<Gate> = BOARD_GATES.into_iter().map(not_applicable).collect();
+        gates.push(line_gate("build", json!({"verdict": "fail"})));
+        gates.push(not_reached("simulate", NO_ELF));
+        gates.push(not_reached("campaign", NO_ELF));
+        let rows = ran_table(&gates).unwrap();
+        let row = |g: &str| rows.iter().find(|r| r.gate == g).unwrap().state.clone();
+        use crate::verdict::RanState::{Judged, NotReached, Off};
+        for g in BOARD_GATES {
+            assert_eq!(row(g), Off("board.drawn".into()), "{g}");
+        }
+        assert_eq!(
+            row("build"),
+            Judged(1),
+            "a failed gate still judged its input"
+        );
+        for g in ["simulate", "campaign", "gpio", "adc", "bridge", "attribute"] {
+            assert_eq!(row(g), NotReached(NO_ELF.into()), "{g}");
+        }
+        assert_eq!(
+            row("prove"),
+            Off("a Kani harness in the generated board crate's src/proofs.rs".into())
+        );
+        // A `not_run` gate with no reason is refused, not given one.
+        let mut bare = gates;
+        bare.retain(|g| g.gate != "simulate");
+        bare.push(not_run("simulate"));
+        assert!(ran_table(&bare).unwrap_err().contains("no reason"));
+    }
+
+    /// The keyless gates both ways (ruled at §1.2): the campaign is off
+    /// without `--scenarios` and judged with it; `attribute` is off with no
+    /// run to attribute and judged once per run it attributed; `gpio` is
+    /// judged when its gate is pushed, even at 0.
+    #[test]
+    fn the_keyless_gates_are_off_until_their_condition_holds() {
+        use crate::verdict::RanState::{Judged, Off};
+        let mut gates = drawn_run();
+        let mut campaign = line_gate("campaign", json!({"verdict": "pass"}));
+        campaign.scope = Some(Scope::of(3, NOTHING_LISTED));
+        gates.push(campaign);
+        let mut a = line_gate("attribute", json!({"verdict": "pass", "ok": true}));
+        a.scenario = Some("droop-bor3".into());
+        gates.push(a);
+        let mut gpio = line_gate("gpio", json!({"verdict": "pass"}));
+        gpio.scope = Some(Scope::of(0, INPUT_NOT_JUDGED));
+        gates.push(gpio);
+        let rows = ran_table(&gates).unwrap();
+        let row = |g: &str| rows.iter().find(|r| r.gate == g).unwrap().clone();
+        assert_eq!(row("campaign").state, Judged(3));
+        assert_eq!(row("attribute").state, Judged(1));
+        assert_eq!(row("attribute").scenario.as_deref(), Some("droop-bor3"));
+        assert_eq!(
+            row("gpio").state,
+            Judged(0),
+            "judged 0 is listed, never omitted"
+        );
+        assert_eq!(row("adc").state, Off("pin_devices[].analog".into()));
+    }
+
+    /// A verdict printed before any gate ran still lists every gate, each
+    /// not reached with the reason (review finding 1: `--against` differs).
+    #[test]
+    fn a_verdict_before_any_gate_lists_every_gate_not_reached() {
+        let rows = none_ran(AGAINST_DIFFERS);
+        assert_eq!(rows.len(), GATES.len());
+        for ((name, _), row) in GATES.iter().zip(&rows) {
+            assert_eq!(row, &Row::not_reached(name, AGAINST_DIFFERS));
+        }
+    }
+
+    /// A part row the gate's line states malformed is refused: two states,
+    /// none, another gate's prefix, or a count that is not a number.
+    #[test]
+    fn a_malformed_part_row_is_refused() {
+        for bad in [
+            json!([{"gate": "extract.supply", "judged": 1, "off": "x"}]),
+            json!([{"gate": "extract.supply"}]),
+            json!([{"gate": "drc.pairs", "judged": 1}]),
+            json!([{"gate": "extract", "judged": 1}]),
+            json!([{"gate": "extract.", "judged": 1}]),
+            json!([{"gate": "extract.lines", "judged": "8"}]),
+            json!([{"gate": "extract.lines", "judged": 8, "harness": "h"}]),
+            json!({"gate": "extract.lines", "judged": 8}),
+            Value::Null,
+        ] {
+            let mut gates = drawn_run();
+            gates[3].parts = bad.clone();
+            assert!(ran_table(&gates).is_err(), "{bad}");
+        }
     }
 }

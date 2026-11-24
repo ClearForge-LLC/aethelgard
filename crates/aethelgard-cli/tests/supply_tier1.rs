@@ -123,6 +123,14 @@ fn extract(board: &Path, spec: &Path) -> (i32, Value) {
     ])
 }
 
+/// One part's row of the gate's `ran` table (`AET-WO-1609`).
+fn part<'v>(v: &'v Value, gate: &str) -> &'v Value {
+    v["ran"]
+        .as_array()
+        .and_then(|rows| rows.iter().find(|r| r["gate"] == gate))
+        .unwrap_or_else(|| panic!("no `{gate}` row: {v}"))
+}
+
 fn pins(s: &Value, side: &str) -> Vec<Value> {
     s[side].as_array().unwrap().clone()
 }
@@ -181,6 +189,16 @@ fn a_specification_without_a_drop_limit_has_no_supplies() {
     let (code, v) = extract(s03_board(), &root().join(S03));
     assert_eq!(code, 0, "{v}");
     assert!(v.get("supplies").is_none(), "{v}");
+    // ...and the table says so, by the key that would turn it on
+    // (`AET-WO-1609` §2): Sentinel-03 declares a power tree, not a limit.
+    assert_eq!(
+        part(&v, "extract.supply"),
+        &json!({"gate": "extract.supply", "off": "power.drop_limits"})
+    );
+    let lines = v["lines"].as_array().unwrap().len() as u64;
+    assert_eq!(part(&v, "extract.lines")["judged"], lines, "{v}");
+    assert_eq!(part(&v, "extract.pairs")["off"], "diff_pairs");
+    assert_eq!(part(&v, "extract.oscillator")["off"], "mcu.hse.crystal");
 }
 
 /// Every input the gate reads is refused by name when the specification
@@ -259,6 +277,11 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     let (code, v) = extract(s024l_board(), &write("s024l-pass", &gated(s024l(), 165)));
     assert_eq!(code, 0, "{v}");
     assert_eq!(v["verdict"], "pass", "{v}");
+    // The limit declared, the part is judged by its domains (`AET-WO-1609`).
+    assert_eq!(
+        part(&v, "extract.supply"),
+        &json!({"gate": "extract.supply", "judged": 1})
+    );
     let s = &v["supplies"][0];
     assert_eq!(s["domain"], "VDD_3V3");
     assert_eq!(s["source"], json!({"reference": "L2", "pad": "2"}));
@@ -427,6 +450,10 @@ fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
     );
     let conductors = p["conductors"].as_array().unwrap();
     assert_eq!(conductors.len(), 2);
+    assert_eq!(
+        part(&v, "extract.pairs"),
+        &json!({"gate": "extract.pairs", "judged": 2})
+    );
     for c in conductors {
         let line = v["lines"]
             .as_array()

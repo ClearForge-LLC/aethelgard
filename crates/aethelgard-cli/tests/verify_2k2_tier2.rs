@@ -17,8 +17,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use common::verify::{
-    SEEDED, SPEC, Shared, aethelgard, board, build, copy_tree, gate_reads, one, package_files,
-    root, scratch, sha,
+    SEEDED, SPEC, Shared, aethelgard, board, build, copy_tree, gate_reads, one, package_files, ran,
+    root, row, scratch, sha,
 };
 use serde_json::Value;
 
@@ -403,6 +403,39 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     // `AET-WO-2306` §1.5: on the reference every gate judged something, as
     // the inventory found, and the droop's recovery was witnessed.
     assert_eq!(v["judged_nothing"], serde_json::json!([]), "{v}");
+    // `AET-WO-1609` §2: the committed reference's ran-or-not table, every
+    // gate and part by name. It declares no drop limit, no crystal, no pair,
+    // no power tree and no pin device, so each of those parts is off by its
+    // key; its five scenarios ran, and its two detected faults were
+    // attributed.
+    let rows = ran(&v);
+    for (gate, state) in [
+        ("extract.supply", "off: power.drop_limits"),
+        ("extract.oscillator", "off: mcu.hse.crystal"),
+        ("extract.pairs", "off: diff_pairs"),
+        ("drc.pairs", "off: diff_pairs"),
+        ("drc.power", "off: power"),
+        ("simulate.hse_clock", "off: mcu.hse"),
+        ("gpio", "off: pin_devices[].signals"),
+        ("adc", "off: pin_devices[].analog"),
+        ("bridge", "off: pin_devices[].bridges"),
+        ("campaign", "judged 5"),
+        ("build", "judged 1"),
+        ("simulate", "judged 1"),
+    ] {
+        assert_eq!(row(&rows, gate), state, "{gate}: {rows:?}");
+    }
+    assert_eq!(
+        rows.iter()
+            .filter(|(n, s)| n.starts_with("attribute#") && s == "judged 1")
+            .count(),
+        2,
+        "{rows:?}"
+    );
+    assert!(
+        row(&rows, "extract.lines").starts_with("judged "),
+        "{rows:?}"
+    );
     for g in v["gates"].as_array().unwrap() {
         assert!(g["judged"].as_u64() >= Some(1), "{g}");
         assert!(g.get("nothing_in_scope").is_none(), "{g}");
