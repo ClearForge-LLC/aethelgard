@@ -248,6 +248,11 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
     - the power fixture's 20 loops and its supply gate;
     - `battery_sag_tier1` by uid;
     - `campaign_tier2`'s d1. CI killed its boot at the 30 s wall bound; it passed twice in the image at about 17 s. This is a row: the bound is tight on a loaded runner.
+- **CI weights for `readiness_tier1` (run 45475807268 red, ruled 20:50Z).**
+  - Five of its tests emit Sentinel-03 and run 52–80 s each in CI, in debug, each in its own shard. They had no row, so the shard timer failed five shards.
+  - The dispatch run's shards 0, 1 and 8 had failed the same way; I read only that run's failing tests.
+  - Weighed by REFIT RULE 5 at the worse of the two runs (6 rows, `ci/test-weights.tsv`).
+  - Note for the next CI work order: one shared emit, colocating the binary, would save about 4 runner-minutes.
 - **Package:** the bootstrap is accepted (12:45Z). `fab/sentinel-03/package` and Sentinel-01's re-bound MANIFEST and FAB-NOTES come from the architect's write dispatch on the final head, committed unchanged. Until then `bench-package` refuses `--against-fab` on Sentinel-03, and `bench_board_tier1` fails on the specification hash.
 
 ## 8. Appendix: Sentinel-03's acknowledgements (D10)
