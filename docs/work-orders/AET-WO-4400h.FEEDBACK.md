@@ -10,7 +10,7 @@
 - **Gates**, on the branch in the tools image `1e0ab105…`:
   - `cargo fmt --all -- --check`: 0;
   - `cargo clippy --workspace --all-targets -- -D warnings`: 0;
-  - `cargo test --workspace`: see §4.
+  - `cargo test --workspace`: 3,075 passed, 0 failed (§4).
 
   No crate changes on the branch. The window patch is `spike/4400h/patches/window.patch`, measured in a detached worktree and never committed to a crate.
 - **Adversarial pass (targeted, WO §5):**
@@ -71,4 +71,9 @@
 
 ## 4. The test gate
 
-(filled from the gate run)
+On head `5e2c5ca9` (main `5152900d` merged), in the tools image `1e0ab105…` under `capped-run --mem 16G`, with a private `/run/user` tmpfs:
+- `cargo fmt --all -- --check`: exit 0;
+- `cargo clippy --locked --workspace --all-targets -- -D warnings`: exit 0;
+- `cargo test --locked --workspace --no-fail-fast`: exit 0, **3,075 passed, 0 failed**.
+
+An earlier run without the `/run/user` tmpfs failed 8 tier-1 tests: `no private test scratch outside $HOME`, an environment fault of my kit, not of the branch. CI is the judge of record.
