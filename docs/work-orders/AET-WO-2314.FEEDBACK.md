@@ -42,6 +42,10 @@ D1 (a), D2 (a) with (i) and the CI plant, D3, D4 a row, D5. Built to that ruling
 **Outside the listed fence, needed by the ruling:**
 - `main.rs`: the `faults` field, the two call arguments, the bounded arm's fault finding.
 - `elf.rs`: one new function. D2 (i)'s refusal before the boot sits where `ForeignPanicSymbolMissing`'s does.
+- `crates/aethelgard-cli/README.md`: granted by the architect at 15:20Z.
+  - L425's claim that a HardFault fails as `memory_cap_exceeded` became false, and was replaced.
+  - Added: the fault paragraph, the CI-list line, and the `PlantedEventUnplaced` line.
+- The architect accepted `main.rs`, `elf.rs` and the `plant()` branch at 15:20Z.
 - No IR, twin, `verify.rs` or validate change.
 
 ## 3. Tests, and the mutant each kills
@@ -50,7 +54,7 @@ D1 (a), D2 (a) with (i) and the CI plant, D3, D4 a row, D5. Built to that ruling
 
 | Guard | Test | Mutants |
 |---|---|---|
-| the carried end (findings, flood, memory, magic sentence, the message) | `campaign_tier1` `an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal` (7 plants: memory bound, flood, fault word, park code, no write, magic with no hook, flood and fault word together) | C1–C6 |
+| the carried end (findings, flood, memory, magic sentence, the message) | `campaign_tier1` `an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal` (6 plants: flood, fault word, park code, no write, magic with no hook, flood and fault word together) and `an_undisturbed_boot_killed_at_a_bound_names_the_bound_and_its_memory` (the memory bound, apart: together they took 8.3 s on CI against P3's 10 s line for an unweighted test) | C1–C6 |
 | the vector table refusal (0 entry, also with code at ITCM's 0; outside; no table) | `boot_tier1` `a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name`, `the_foreign_judge_is_declared…` | F1, F2 |
 | the hook text (VECTACTIVE gate, halt, PSP/MSP frame), the mark kept | `foreign::tests::a_fault_entry_is_the_cpus_own_mark_at_a_hooked_handler_for_its_vector` | F3, F4, F5, F7 |
 | the mark parse, the hook emitted, the finding, its vector and frame | `boot_tier1` `a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc` (the stub refuses a command line without the hook, exit 91) | F6, F8, F9, F10, F11 |

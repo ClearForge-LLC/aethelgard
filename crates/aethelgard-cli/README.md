@@ -422,7 +422,12 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - The judge finds `_ZN6AP_HAL5panicEPKcz`, a function symbol, in the ELF's symbol table, inside an executable `PT_LOAD`, and sets an execution hook on it that logs a `[WARNING]` of the CPU's own on each entry. No firmware can write that line.
 - A run that enters it fails, `foreign_panic`, naming the first entry's virtual time and the last device witness's. Every entry is in `boot.panic.entered_ns`, beside the `symbol` and `address`.
 - A firmware whose symbol table does not name it is refused before any boot, `ForeignPanicSymbolMissing`, exit `3` (`INV-06`). Two addresses under the name, or one outside every executable segment, is `MalformedFirmware`.
-- **It does not judge** a fault, a hang or a reset that never calls the panic. A thread-mode hang after the last witness passes. A HardFault in ArduPilot's handler fails today, but as `memory_cap_exceeded`, not by `core_in_exception` (`spike/1609`).
+- **It does not judge** a fault, a hang or a reset that never calls the panic. A thread-mode hang after the last witness passes. A fault is the next paragraph's.
+
+**A fault** (`AET-WO-2314`, `spike/2314`): the judge reads the four fault handlers (HardFault, MemManage, BusFault, UsageFault) from the ELF's vector table at `FLASH_BANK1_BASE`, the address the boot writes to VTOR, and hooks each one. When `ICSR.VECTACTIVE` is the hooked vector, the hook logs a `[WARNING]` of the CPU's own and halts the core, so the handler's own loop never reaches the log budget or the memory cap.
+- A run that takes one fails `foreign_fault`, naming the vector, the PC the exception stacked (and that frame's address) and the virtual time. That holds beside a bound too, should one still end the run.
+- A table entry that is 0, outside every executable `PT_LOAD`, or not loaded is refused before any boot: `ForeignFaultVectorUnusable`, exit `3`.
+- **It does not judge** a handler reached without an exception, or a VTOR moved at run time. Only HardFault was exercised.
 
 **The memory rule:**
 - Every `PT_LOAD`, at both its physical and its virtual address, lies inside flash or one of the six RAM regions ST's header states (ITCM, DTCM, AXI SRAM, D2 SRAM, D3 SRAM, backup SRAM).
@@ -454,6 +459,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - ArduPilot rebuilt from the same hwdef without its `IMU` line: `spi_transaction_unwitnessed` (U5's identity).
 - `AP_HAL::panic` planted straight after U5's last witness (`AET-WO-1609`): `foreign_panic`, every witness present. It passed before the hook;
 - the panic's symbol renamed: `ForeignPanicSymbolMissing`.
+- an undefined instruction at the same site (`AET-WO-2314`): `core_in_exception` and `foreign_fault`, HardFault at the planted PC, under the memory cap.
 - **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0 while `CR1` holds `SPE` 0, and only when that controller's next `CFG2` write sets `MASTER` again before any of its devices logs a line (or nothing follows). That is ChibiOS's `spi_lld_stop` then its next `spi_lld_start`, legal on silicon (RM0433 §50.11.4). A firmware that leaves the controller a slave and keeps using it is not exempt, since Renode's model stays a master where silicon would not clock (adversarial F1, accepted on PR #212, comment 6967529218).
   - The judge reads it from a hook on each SPI controller's writes, which logs only a `CFG2` write, with the value and `CR1` as it stands (D7 (b)); the SPI access log stays off.
   - Every exemption is counted in `boot.spi_errors_exempted`.
@@ -632,7 +638,7 @@ The format is `aethelgard_chaos::campaign::Scenario::parse`'s (`crates/aethelgar
   - **2** (`AET-WO-2301`, `AET-WO-4200`): also `spi_device_absent` and `expect_counts`;
   - **3** (`AET-WO-2302` D5): also `serial_rx_open`;
   - **4** (`AET-WO-2304b`) and **5** (`AET-WO-1211c`): also `rail_out_of_band`, and `pin_held` and `analog_value`;
-  - **6** (`AET-WO-2310`): a `droop` and a `battery_sag` are read at version 6 only, each planted `from_boot_word_ns`, signed from the undisturbed boot word; an older file holding one is `PlantedEventNeedsVersion6`, naming what changed.
+  - **6** (`AET-WO-2310`): a `droop` and a `battery_sag` are read at version 6 only, each planted `from_boot_word_ns`, signed from the undisturbed boot word; an older file holding one is `PlantedEventNeedsVersion6`, naming what changed. An instant that cannot be placed is `PlantedEventUnplaced`; with no boot word it ends with the undisturbed boot's own end: its findings, the flood, the memory for a bound (`AET-WO-2314`).
 - **Expectations.** A failing scenario names the finding kinds it fails with in `expect_findings` (at most 16, each once); a passing one names none (`ExpectContradiction`). A run matches when its verdict is the one expected and its finding kinds above `info` are exactly `expect_findings`. `expect_counts` (an object of finding kinds to counts, at most 16, a kind named twice refused) also requires each named kind's count, at any severity and 0 when absent, to be exactly the one declared (`AET-WO-2301` §2.3); it is archived as kind 20.
 - **Overrides**, at most 32, two of one thing (one bus's pull-up, one net, one line, one device, one port, or two droops) refused (`DuplicateOverride`). Each id is 1 to 64 bytes of `0x21`–`0x7E`, and an id the specification or its solved topology lacks is refused, exit `2`, by its own kind:
 
