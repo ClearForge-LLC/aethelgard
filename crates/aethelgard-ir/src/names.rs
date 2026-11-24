@@ -149,6 +149,8 @@ fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
                 .iter()
                 .map(|m| m.pull.link.reference.as_str()),
         )
+        // `AET-WO-4411`: last, so no earlier reference's place moves.
+        .chain(crate::radio::references(spec))
         .collect()
 }
 
@@ -251,6 +253,7 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         );
     }
     out.extend(spec.motor_outputs.iter().map(|m| motor_pull_net(&m.label)));
+    out.extend(crate::radio::own_nets(spec));
     Ok(out)
 }
 
@@ -411,6 +414,12 @@ pub(crate) fn loads(spec: &Specification) -> Result<(), E> {
         }
         let counted_by = if *r == mcu {
             Some("the MCU's table row".to_owned())
+        } else if spec
+            .declared_radio_modules()
+            .iter()
+            .any(|m| m.reference == *r)
+        {
+            Some("its radio parts row's supply requirement (`AET-WO-4411` D5)".to_owned())
         } else {
             power
                 .regulators

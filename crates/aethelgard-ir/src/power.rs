@@ -626,6 +626,11 @@ fn battery_range(b: &Battery) -> (u64, u64) {
     )
 }
 
+/// A domain's range, mV, for the radio module's supply check (`AET-WO-4411`).
+pub(crate) fn domain_range_mv(d: &VoltageDomain) -> (u64, u64) {
+    range(d)
+}
+
 /// A domain's range, mV.
 fn range(d: &VoltageDomain) -> (u64, u64) {
     (
@@ -1408,6 +1413,16 @@ fn loads(
                 .filter(|l| l.domain == d.reg.output)
                 .map(|l| u64::from(l.milliamps))
                 .sum();
+            // Each radio module's stated supply requirement (`AET-WO-4411`
+            // D5), counted from its row, never declared.
+            let radio = crate::radio::load_ma(ctx.spec, &d.reg.output)?;
+            if radio > 0 {
+                sum += radio;
+                ctx.note(format!(
+                    "{}: {radio} mA for its radio modules, each row's stated supply requirement, not its typical transmit peak",
+                    d.reg.output
+                ));
+            }
             if ctx.spec.mcu.supply == d.reg.output {
                 let (_, m) = mcu(ctx)?;
                 sum += u64::try_from(m.idd_max_milliamps.value).unwrap_or(0);

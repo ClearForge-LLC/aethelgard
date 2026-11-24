@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "documents": {
+    "ESP32-C3-WROOM-02": {
+      "title": "ESP32-C3-WROOM-02 & WROOM-02U Datasheet",
+      "revision": "v1.7 (2026-03-05)",
+      "sha256": "622db737a711a75e89185aed850f3854c77d515c32ddf0ba9886653663cfdabe",
+      "url": "https://www.espressif.com/sites/default/files/documentation/esp32-c3-wroom-02_datasheet_en.pdf"
+    },
+    "ESP32-C3-HDG": {
+      "title": "ESP32-C3 Hardware Design Guidelines",
+      "revision": "Release master, built 2026-11-12, retrieved 2026-11-24 (a rolling build: a later copy is a new held document)",
+      "sha256": "c67f1e366d84da19a1985dabf560fa48adec16e66cd0201f8140ebb6653a532e",
+      "url": "https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32c3/esp-hardware-design-guidelines-en-master-esp32c3.pdf"
+    },
+    "ESPRESSIF-PRODUCTS": {
+      "title": "Espressif product selector, the JSON products.espressif.com loads",
+      "revision": "retrieved 2026-11-24 (a live database field, not a dated statement)",
+      "sha256": "942911652374043c3fc958ec91507ed711777b2867db78f5e517c4fb07b2f157",
+      "url": "https://products.espressif.com/api/user/products"
+    }
+  },
+  "modules": [
+    {
+      "part": "ESP32-C3-WROOM-02-N4",
+      "u_fl_variant": "ESP32-C3-WROOM-02U-N4",
+      "lifecycle": {
+        "status": "active",
+        "at": { "document": "ESPRESSIF-PRODUCTS", "section": "results[68]: mpn ESP32-C3-WROOM-02-N4, status \"Mass Production\"" }
+      },
+      "symbol": "RF_Module:ESP32-C3-WROOM-02",
+      "footprint": "Aethelgard_RF:ESP32-C3-WROOM-02",
+      "supply": {
+        "pin": "3V3",
+        "min_mv": 3000,
+        "max_mv": 3600,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-2: VDD33 power supply voltage 3.0 min, 3.3 typ, 3.6 max V" }
+      },
+      "supply_current_min_ma": {
+        "value": 500,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-2: IVDD current delivered by external power supply, 0.5 A min" }
+      },
+      "tx_peak_ma_typical": {
+        "value": 345,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 22, Table 6-4: TX 802.11b 1 Mbps @20.5 dBm, 345 mA peak, measured at 3.3 V and 25 C, 100 % duty cycle; a single condition, never a bound" }
+      },
+      "ground_pins": ["9", "19"],
+      "enable": {
+        "pin": "EN",
+        "number": "2",
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 33, Peripheral Schematics: an RC delay at EN, \"usually R = 10 kΩ and C = 1 µF\"; p. 15, Table 4-6: tSTBL and tRST 50 µs min" }
+      },
+      "straps": [
+        {
+          "pin": "IO2",
+          "number": "16",
+          "internal": "floating",
+          "spi_boot": "high",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO2 floating; p. 13, Table 4-3: SPI boot GPIO2 = 1, note 2: GPIO2 does not determine the mode but a pull-up is recommended against glitches" }
+        },
+        {
+          "pin": "IO8",
+          "number": "7",
+          "internal": "floating",
+          "spi_boot": "any",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO8 floating; p. 13, Table 4-3: SPI boot GPIO8 any value" }
+        },
+        {
+          "pin": "IO9",
+          "number": "8",
+          "internal": "pull_up",
+          "spi_boot": "high",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO9 weak pull-up; p. 13, Table 4-3: SPI boot GPIO9 = 1, joint download boot GPIO9 = 0" }
+        }
+      ],
+      "uart": {
+        "tx": "IO21/TXD",
+        "tx_number": "12",
+        "rx": "IO20/RXD",
+        "rx_number": "11",
+        "vih_min_permille": 750,
+        "vil_max_permille": 250,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 10, Table 3-1: pin 11 RXD (GPIO20, U0RXD), pin 12 TXD (GPIO21, U0TXD); p. 21, Table 6-3 (3.3 V, 25 C): VIH 0.75 x VDD min, VIL 0.25 x VDD max" }
+      },
+      "rom_output": {
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 14, Table 4-4: with EFUSE_UART_PRINT_CONTROL at its default 0, the ROM prints to UART0 at every boot whatever GPIO8 is; p. 33: UART0 is used to download firmware and log output" }
+      },
+      "antenna": {
+        "area_um": { "x0": -9000, "y0": -13100, "x1": 9000, "y1": -7100 },
+        "area_at": { "document": "ESP32-C3-WROOM-02", "section": "p. 37, Figure 11-1: the antenna area, 18 mm wide and 6 mm deep at the module's top edge (the module 18 x 20 mm)" },
+        "clearance_um": 15000,
+        "clearance_at": { "document": "ESP32-C3-HDG", "section": "PDF p. 26 (printed 23), Figure 21: a clearance area of Min 15 mm left of, right of and above the antenna" },
+        "placement_at": { "document": "ESP32-C3-HDG", "section": "PDF p. 24 (printed 21), §1.4.7 and Figure 19, position 3 (strongly recommended): the PCB antenna outside the base board, the module at the corner with its feed point (right) at the edge" }
+      }
+    }
+  ]
+}
