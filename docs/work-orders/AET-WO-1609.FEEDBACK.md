@@ -152,18 +152,21 @@ Ten findings, each checked at source:
 
 - **R1: a fault-vector hook (D7 (b)).** Hook the vector table's fault entries (HardFault, MemManage, BusFault,
   UsageFault, read at the ELF's VTOR), so a fault is named, `foreign_fault`, before the log budget or the memory cap can
-  stand in for it. It needs a measurement of whether the hook can pause the machine before a 1 GiB kill discards the
-  finding.
+  stand in for it. It needs a measurement of whether the hook can pause the machine before a memory kill (1.5 GiB since
+  `2313`) discards the finding.
 - **R2: liveness (D7 (c)).** Each witnessed device logs again in the window's last part: `foreign_device_silent`. It
   catches a thread-mode hang (it passes today) and a panic of any kind, but misses one in a thread that reads no device,
   and its rule depends on timing.
 - **R3: the HardFault that fails only as `memory_cap_exceeded`.** It fails closed, but for the wrong reason.
   CrashCatcher polls USART1's ISR, and `2311`'s access log logs every poll. Measured peak RSS:
   - 2.59 GB with the log;
-  - 1.10 GB without it, still over the 1 GiB cap;
+  - 1.10 GB without it;
   - the control is at 844 MB.
 
-  So `2311`'s log has a memory cost, and something else holds the rest.
+  These were measured under the then 1 GiB cap. Under `2313`'s 1.5 GiB (1,572,864 KiB), the run with the log still
+  passes the cap and fails as `memory_cap_exceeded`. Without the log it would stay under, and `core_in_exception`
+  would name it. So `2311`'s access log alone now decides that this HardFault is not named. Not re-measured at
+  1.5 GiB.
 - **R4: the decoy symbol (review 8).** A firmware whose symbol table names a decoy `_ZN6AP_HAL5panicEPKcz` hides its
   panic. A cross-check of the hook's address against the ELF's call sites, or against a pinned ArduPilot build, would
   close it.
