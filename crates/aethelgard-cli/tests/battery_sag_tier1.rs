@@ -53,11 +53,19 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// measured on `ee835bde`), and the readiness gate is met, so no refusal
 /// before a gate stops it: with the environment cleared, the first thing
 /// it cannot do is make its scratch (`ScratchUnsafe`), and nothing is written.
+/// As root (CI's container) scratch needs no `HOME`, so the run goes one step
+/// further, to the first gate's tool (`ToolMissing`, the `PATH` is empty);
+/// both come after every package precondition.
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it() {
     let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
     assert_eq!(code, Some(4), "{v}");
-    assert_eq!(v["error"]["kind"], "ScratchUnsafe", "{v}");
+    let want = if rustix::process::geteuid().is_root() {
+        "ToolMissing"
+    } else {
+        "ScratchUnsafe"
+    };
+    assert_eq!(v["error"]["kind"], want, "{v}");
 }
 
 /// §2: the power fixture's campaign is for the campaign only. Its

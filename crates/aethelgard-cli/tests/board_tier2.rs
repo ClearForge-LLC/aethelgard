@@ -1184,8 +1184,9 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
     assert_eq!(v["verdict"], "pass", "drc: {v}");
     assert_eq!(v["findings"], Value::Array(vec![]), "drc has findings");
     let loops = v["power"]["loops"].as_array().unwrap();
-    // 17, and the hot-plug bulk capacitor's since `AET-WO-1315`.
-    assert_eq!(loops.len(), 18, "{v}");
+    // 17, and the hot-plug bulk capacitor's since `AET-WO-1315`; and each
+    // buck's second input ceramic, C60 and C61, since `AET-WO-4300k` D8.
+    assert_eq!(loops.len(), 20, "{v}");
     assert!(loops.iter().all(|l| l["verdict"] == "pass"), "{v}");
     let classes: Vec<(&str, i64)> = v["power"]["classes"]
         .as_array()
@@ -1202,10 +1203,44 @@ fn the_power_fixture_passes_erc_drc_its_loop_rules_and_extract() {
         "{v}"
     );
 
-    let (code, text) = aethelgard(&["extract", "--board", &board, "--spec", spec_arg]);
+    // Since `AET-WO-4300k` D14 the fixture declares its MCU supply's drop
+    // limit, so `extract`'s supply gate runs, with its inputs declared here:
+    // on this two-layer board every line passes, and the gate fails the
+    // ground return through the GND zone the emitted board leaves unfilled
+    // (`supply_tier1`, `power_board_tier1`), each finding the gate's.
+    let mut gated = common::power::power_tree();
+    for (key, value) in [
+        ("outer_copper_min_um", 30),
+        ("plane_copper_min_um", 15),
+        ("plating_min_um", 18),
+        ("copper_temperature_max_c", 125),
+    ] {
+        gated["board"]["stackup"][key] =
+            serde_json::json!({"value": value, "source": "test: the supply gate's input"});
+    }
+    let gated_path = base.join("sentinel-02-power-gated.json");
+    fs::write(&gated_path, serde_json::to_vec_pretty(&gated).unwrap()).unwrap();
+    let (code, text) = aethelgard(&[
+        "extract",
+        "--board",
+        &board,
+        "--spec",
+        gated_path.to_str().unwrap(),
+    ]);
     let x = one(&text);
-    assert_eq!(code, Some(0), "extract: {x}");
-    assert_eq!(x["verdict"], "pass", "extract: {x}");
+    assert_eq!(code, Some(1), "extract: {x}");
+    let lines = x["lines"].as_array().unwrap();
+    assert!(!lines.is_empty(), "extract: {x}");
+    assert!(lines.iter().all(|l| l["verdict"] == "pass"), "extract: {x}");
+    assert_eq!(x["supplies"][0]["verdict"], "fail", "extract: {x}");
+    assert!(
+        x["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["kind"] == "supply_pin_unbounded"),
+        "extract: {x}"
+    );
 
     // §5.1: the high-frequency input capacitor of U10 moved 25 mm off.
     let spec: aethelgard_ir::Specification =
