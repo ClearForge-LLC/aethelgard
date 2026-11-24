@@ -1174,8 +1174,8 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | An ESC MCU's input threshold (VIL/VIH) from a held datasheet: `4300j` uses the STM32's own VIL as the stand-in for the ceiling of the motor pull-down's bound. AN4899 Rev 4 and Microchip DS70005664A are now held (`~/.cache/aet-held/`, 2026-11-23); DS70005664A shows one ESC's input (0 Ω to the dsPIC, no pull) but states no threshold | `4300i` ruling V, `4300j` | the held datasheet of the ESC MCU J5 will drive; then a parts-data work order |
 | A strict topology reader that accepts a top-level `lifecycle` key and checks it against the banner recomputed from the topology, so `solve`'s stdout can carry the banner | `1607` D1 (a) | the next CLI and pincheck work order, after `4300i` |
 | `3400`'s E5 clock-out loopback moves from MCO1/PA8 to MCO2/PC9 (HSE, SYSCLK, PLL1_P, PLL2_P); MCO1-only sources (HSI, LSE, HSI48, PLL1_Q) would need TIM4 for the motors instead | `4300h` D3, F3 | the E5 work order |
-| evolve's `Write`/`Read` compare checks values, not byte counts: a zero byte prepended to a configure write passes as right (pre-existing, fails safe at I4) | `3307` Adv-1 | the next attribution work order, with the BME280's compare |
-| A BMP581 log is not read whole, so the evidence lands where the line distribution puts it; a BMP581 that warns before its own wrong write stays I4 (ext-cfg37, measured) | `3307` F1, F2 | the next attribution work order |
+| evolve's `Write`/`Read` compare checks values, not byte counts: a zero byte prepended to a configure write passes as right (pre-existing, fails safe at I4) | `3307` Adv-1 | **`AET-WO-3309`** |
+| A BMP581 log is not read whole, so the evidence lands where the line distribution puts it; a BMP581 that warns before its own wrong write stays I4 (ext-cfg37, measured) | `3307` F1, F2 | **`AET-WO-3309`** |
 | `container/IMAGE` and `ARDUPILOT-IMAGE` re-pinned to the images `main` publishes after `4407` (#339); `ardupilot-image.yml`'s `paths:` miss `container/debian-trixie.sources`; the GtkSharp rehearsal seeded from the published mirror; `test-check-pins.sh` and `fixtures/README.md` edited beside the fence | `4407` Q1, Q3, Q4, Q5 | **`AET-WO-4408`** (wave 2) |
 | A read boot's witness blanked without its `*_transaction_unwitnessed` finding still replays: a verdict rule | `2309` FEEDBACK §5 | **`AET-WO-2310`** |
 | `twin_tier2.rs`'s firmware spins (boot-length pins) are not removed by scenario format 6; they are firmware, re-pinned by hand when the boot moves | `2310` Q-G | the next twin-test work order |
@@ -1426,6 +1426,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-24 | §5, §7.1 | `AET-WO-1609` (#376) merged; its FEEDBACK §6 rows recorded (R1–R6, F3); the HardFault row restated under `2313`'s cap | #376's review |
 | 2026-11-24 | §7.1 | `AET-WO-1324` (router: meeting via junction regions, the scan inside the count) and `AET-WO-1610` (CLI backlog) written, both after `4410`; `1609` R6 ruled (`not_reached: no_harness`); seven rows given owners | the rows; `1609` FEEDBACK |
 | 2026-11-24 | §5, §7.1 | `AET-WO-4410` (#373) merged; `AET-WO-4300k` ruled at §1.2 and building; `1324` and `1610` launched; `AET-WO-2314` written (the campaign names its cause, `foreign_fault`, `2311` A5, R4 measured) and given four rows | the merges; `4410` FEEDBACK §6 |
+| 2026-11-24 | §5, §7.1 | `AET-WO-1324` (#386) merged; `AET-WO-3309` written (attribution: counts as well as values, the BMP581 log in the transaction readers, evidence placed by content, one line per step) and given two rows | #386's review; `3307` FEEDBACK |
 
 ## 9. Provenance
 
