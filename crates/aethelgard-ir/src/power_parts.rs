@@ -42,7 +42,7 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// Version 10 replaced that with `motor_pull_bound`, the inputs the motor
 /// pull-down's bound is computed from per board (`AET-WO-4300j` D3 (a)), and
 /// added the `jumper` kind, the pull's series link (D4).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 10;
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 11;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -616,21 +616,37 @@ impl IoFamily {
     }
 }
 
-/// ArduPilot's names for the MCU (`MCU <series> <mcu>`), and, for the one
-/// `OSCILLATOR_HZ` these rows hold for, the kernel clock ArduPilot gives each
-/// SPI peripheral, which its divider halves from `kernel / 2` at most seven
-/// times (`spi_divider_at`).
+/// ArduPilot's names for the MCU (`MCU <series> <mcu>`), and, for each
+/// `OSCILLATOR_HZ` the row cites (`AET-WO-4410` (2): `0` and `16000000`), the
+/// kernel clock ArduPilot gives each SPI peripheral, which its divider halves
+/// from `kernel / 2` at most seven times (`spi_divider_at`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct McuArduPilot {
     pub series: String,
     pub mcu: String,
     pub mcu_at: At,
     pub table_at: At,
+    /// Each cited oscillator once, in the row's order.
+    pub oscillators: Vec<ArduPilotOscillator>,
+    pub spi_divider_at: At,
+}
+
+impl McuArduPilot {
+    /// The cited entry for exactly `hz`, or `None`: a topology on another
+    /// oscillator is never judged by this row's kernel clocks.
+    pub fn oscillator(&self, hz: u32) -> Option<&ArduPilotOscillator> {
+        self.oscillators.iter().find(|o| o.oscillator_hz == hz)
+    }
+}
+
+/// One `OSCILLATOR_HZ` and the SPI kernel clocks ArduPilot's clock tree for it
+/// gives (`stm32h7_mcuconf.h`, ChibiOS `hal_lld_type1.h` at the tag).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ArduPilotOscillator {
     pub oscillator_hz: u32,
-    pub oscillator_at: At,
+    pub at: At,
     /// Keyed `SPI1` to `SPI6`, each once.
     pub spi_kernel_hz: BTreeMap<String, Limit>,
-    pub spi_divider_at: At,
 }
 
 /// The MCU's support network, as its datasheet draws it (`AET-WO-4300g`):
@@ -1315,11 +1331,17 @@ struct RawMcuArduPilot {
     mcu: String,
     mcu_at: RawAt,
     table_at: RawAt,
+    oscillators: Vec<RawArduPilotOscillator>,
+    spi_divider_at: RawAt,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawArduPilotOscillator {
     oscillator_hz: u32,
-    oscillator_at: RawAt,
+    at: RawAt,
     #[serde(deserialize_with = "crate::unique_keys")]
     spi_kernel_hz: BTreeMap<String, RawLimit>,
-    spi_divider_at: RawAt,
 }
 
 #[derive(Deserialize)]
@@ -1454,8 +1476,9 @@ struct RawThermalSources {
 /// near it in its unit, and anything above is a typo.
 pub const MAX_VALUE: i64 = 1_000_000_000_000;
 
-/// The MCU row's `ardupilot`: names ArduPilot reads as identifiers, and a
-/// kernel clock above zero for exactly `SPI1` to `SPI6`.
+/// The MCU row's `ardupilot`: names ArduPilot reads as identifiers, and at
+/// least one oscillator, each cited once, each with a kernel clock above zero
+/// for exactly `SPI1` to `SPI6`.
 fn mcu_ardupilot(m: RawMcuArduPilot, r: &mut Reader<'_>) -> Result<McuArduPilot, String> {
     for (v, f) in [(&m.series, "series"), (&m.mcu, "mcu")] {
         if v.is_empty() || v.len() > 32 || !v.bytes().all(|b| b.is_ascii_alphanumeric()) {
@@ -1464,26 +1487,41 @@ fn mcu_ardupilot(m: RawMcuArduPilot, r: &mut Reader<'_>) -> Result<McuArduPilot,
             ));
         }
     }
-    let want: BTreeSet<String> = (1..=6).map(|n| format!("SPI{n}")).collect();
-    let got: BTreeSet<String> = m.spi_kernel_hz.keys().cloned().collect();
-    if got != want {
-        return Err(
-            "`kind.mcu.ardupilot.spi_kernel_hz` is keyed by exactly SPI1 to SPI6".to_owned(),
-        );
+    if m.oscillators.is_empty() {
+        return Err("`kind.mcu.ardupilot.oscillators` cites no oscillator".to_owned());
     }
-    let mut spi_kernel_hz = BTreeMap::new();
-    for (p, l) in m.spi_kernel_hz {
-        let field = format!("kind.mcu.ardupilot.spi_kernel_hz.{p}");
-        spi_kernel_hz.insert(p, r.positive(l, &field)?);
+    let want: BTreeSet<String> = (1..=6).map(|n| format!("SPI{n}")).collect();
+    let mut oscillators: Vec<ArduPilotOscillator> = Vec::new();
+    for o in m.oscillators {
+        let hz = o.oscillator_hz;
+        if oscillators.iter().any(|seen| seen.oscillator_hz == hz) {
+            return Err(format!(
+                "`kind.mcu.ardupilot.oscillators` cites OSCILLATOR_HZ {hz} twice"
+            ));
+        }
+        let got: BTreeSet<String> = o.spi_kernel_hz.keys().cloned().collect();
+        if got != want {
+            return Err(format!(
+                "`kind.mcu.ardupilot.oscillators[{hz}].spi_kernel_hz` is keyed by exactly SPI1 to SPI6"
+            ));
+        }
+        let mut spi_kernel_hz = BTreeMap::new();
+        for (p, l) in o.spi_kernel_hz {
+            let field = format!("kind.mcu.ardupilot.oscillators[{hz}].spi_kernel_hz.{p}");
+            spi_kernel_hz.insert(p, r.positive(l, &field)?);
+        }
+        oscillators.push(ArduPilotOscillator {
+            oscillator_hz: hz,
+            at: r.at(o.at, &format!("kind.mcu.ardupilot.oscillators[{hz}]"))?,
+            spi_kernel_hz,
+        });
     }
     Ok(McuArduPilot {
         series: m.series,
         mcu: m.mcu,
         mcu_at: r.at(m.mcu_at, "kind.mcu.ardupilot.mcu")?,
         table_at: r.at(m.table_at, "kind.mcu.ardupilot.table")?,
-        oscillator_hz: m.oscillator_hz,
-        oscillator_at: r.at(m.oscillator_at, "kind.mcu.ardupilot.oscillator")?,
-        spi_kernel_hz,
+        oscillators,
         spi_divider_at: r.at(m.spi_divider_at, "kind.mcu.ardupilot.spi_divider")?,
     })
 }

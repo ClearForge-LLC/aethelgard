@@ -96,7 +96,7 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("IMU", "hwdef.py:248-249, 382-425"),
     ];
     // (define, where the tag reads it)
-    const DEFINES: [(&str, &str); 5] = [
+    const DEFINES: [(&str, &str); 8] = [
         (
             "AP_BOOTLOADER_FLASHING_ENABLED",
             "chibios_hwdef.py (4400 step A's refusal names it)",
@@ -111,6 +111,9 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
             "HAL_USE_ADC",
             "4400 step C's refusal: STM32_ADC_ADC12_DMA_STREAM",
         ),
+        ("HAL_BATT_VOLT_PIN", "AP_BattMonitor_Analog.cpp:30-36"),
+        ("HAL_BATT_VOLT_SCALE", "AP_BattMonitor_Analog.cpp:30-36"),
+        ("HAL_BATT_MONITOR_DEFAULT", "AP_BattMonitor.cpp:568-569"),
     ];
     // Each SERIALn default an AP_GROUPINFO reads (AP_SerialManager.cpp at the
     // tag), exactly: SERIAL0 reads only its BAUD (its PROTOCOL default is a
@@ -144,16 +147,26 @@ fn every_emitted_keyword_is_one_ardupilot_reads() {
         ("DEFAULT_SERIAL9_BAUD", "AP_SerialManager.cpp:390"),
         ("DEFAULT_SERIAL9_OPTIONS", "AP_SerialManager.cpp:395"),
     ];
-    const PIN_TOKENS: [&str; 6] = [
+    // `PULLUP` only on the SWD line (`chibios_hwdef.py:407-413` names it);
+    // `SCALE(1)` only on the battery line (`:2203`).
+    const PIN_TOKENS: [&str; 8] = [
         "SPEED_VERYLOW",
         "SPEED_LOW",
         "PUSHPULL",
         "OPENDRAIN",
         "FLOATING",
         "PULLDOWN",
+        "PULLUP",
+        "SCALE(1)",
     ];
-    for (name, t, _) in BOARDS {
-        let text = generate(&topology(t)).unwrap().text;
+    let sensed = generate(&with_sense(100_000, 10_000, "ADC1", "INP10"))
+        .unwrap()
+        .text;
+    let texts = BOARDS
+        .iter()
+        .map(|(name, t, _)| (*name, generate(&topology(t)).unwrap().text))
+        .chain([("sentinel-01 with a sense", sensed)]);
+    for (name, text) in texts {
         for line in text.lines() {
             let line = line.split('#').next().unwrap().trim();
             if line.is_empty() {
@@ -276,24 +289,185 @@ fn spidev_speeds_are_the_achieved_rates() {
 }
 
 /// D7: a solved battery sense pin is refused until `SCALE` has a source.
-#[test]
-fn a_topology_with_sense_pins_is_refused() {
+/// The reference board with a battery sense on PC0 (ADC1 INP10) and the
+/// divider `top` over `bottom`, valid.
+fn with_sense(top: u32, bottom: u32, peripheral: &str, channel: &str) -> SolvedTopology {
     let mut v = sentinel_01();
     v["power"] = json!({
         "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
-        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 0, "channels": ["ADC1_INP10"]}}
+        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PC0", "position": 26,
+            "channels": ["ADC1_INP10", "ADC2_INP10", "ADC3_INP10"],
+            "top_ohms": top, "bottom_ohms": bottom}}
     });
     // The sense is also its ADC input (`AET-WO-1211a`).
     v["adc_inputs"] =
-        json!({"VBAT_SENSE": {"pin": "PC0", "peripheral": "ADC1", "channel": "INP10"}});
+        json!({"VBAT_SENSE": {"pin": "PC0", "peripheral": peripheral, "channel": channel}});
     let t: SolvedTopology = serde_json::from_value(v).unwrap();
     t.validate().unwrap();
+    t
+}
+
+/// The battery lines' text alone, without source comments.
+fn battery_lines(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|l| l.split('#').next().unwrap().trim().to_owned())
+        .filter(|l| l.contains("BATT") || l.contains("HAL_USE_ADC"))
+        .collect()
+}
+
+/// `AET-WO-4410` (1): a solved sense writes ArduPilot's battery monitor:
+/// the pin on ADC1 at `SCALE(1)`, its channel as `HAL_BATT_VOLT_PIN`, the
+/// divider as the exact quotient (D6), voltage only (D5); and no
+/// `HAL_USE_ADC FALSE`, which would swap in an empty analog driver.
+#[test]
+fn a_solved_sense_writes_the_battery_monitor() {
+    let text = generate(&with_sense(100_000, 10_000, "ADC1", "INP10"))
+        .unwrap()
+        .text;
     assert_eq!(
-        generate(&t).unwrap_err(),
-        Refusal::SenseNotEmitted {
-            net: "VBAT_SENSE".into()
+        battery_lines(&text),
+        [
+            "PC0 BATT_VOLTAGE_SENS ADC1 SCALE(1)",
+            "define HAL_BATT_VOLT_PIN 10",
+            "define HAL_BATT_VOLT_SCALE (110000.0f/10000.0f)",
+            "define HAL_BATT_MONITOR_DEFAULT 3",
+        ]
+    );
+    // §5: 100 k over 9.09 k is 12.00110011..., which no decimal states; the
+    // quotient is exact.
+    let text = generate(&with_sense(100_000, 9_090, "ADC1", "INP10"))
+        .unwrap()
+        .text;
+    assert!(
+        battery_lines(&text).contains(&"define HAL_BATT_VOLT_SCALE (109090.0f/9090.0f)".to_owned())
+    );
+    // No sense: the ADC is off, as before.
+    let text = generate(&topology(BOARDS[0].1)).unwrap().text;
+    assert_eq!(battery_lines(&text), ["define HAL_USE_ADC FALSE"]);
+}
+
+/// `AET-WO-4410` D6: a divider whose sum `float` does not hold exactly, or
+/// with no bottom resistor, is refused by name.
+#[test]
+fn a_divider_with_no_exact_float_quotient_is_refused() {
+    for (top, bottom) in [(16_777_216, 1), (10_000_000, 7_000_000), (100_000, 0)] {
+        let e = generate(&with_sense(top, bottom, "ADC1", "INP10")).unwrap_err();
+        assert_eq!(
+            e,
+            Refusal::DividerNotExact {
+                net: "VBAT_SENSE".into(),
+                top_ohms: top,
+                bottom_ohms: bottom
+            },
+            "{top}/{bottom}"
+        );
+    }
+    // 2^24 itself is exact.
+    assert!(generate(&with_sense(16_777_215, 1, "ADC1", "INP10")).is_ok());
+}
+
+/// `AET-WO-4410` §5: a chip select named like the battery line's label
+/// would be a second pin keyed `BATT_VOLTAGE_SENS`; ArduPilot keys pins by
+/// label, so it is refused by name.
+#[test]
+fn a_chip_select_named_like_the_battery_label_is_refused() {
+    let t = with_sense(100_000, 10_000, "ADC1", "INP10");
+    let text = serde_json::to_string(&t)
+        .unwrap()
+        .replace("\"FLASH_CS\"", "\"BATT_VOLTAGE_SENS\"");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        refused(&v),
+        Refusal::LabelCollision {
+            net: "BATT_VOLTAGE_SENS".into()
         }
     );
+}
+
+/// `AET-WO-4410` (1): ArduPilot has one `HAL_BATT_VOLT_PIN`.
+#[test]
+fn two_battery_senses_are_refused() {
+    let t = with_sense(100_000, 10_000, "ADC1", "INP10");
+    let mut v = serde_json::to_value(&t).unwrap();
+    let mut second = v["power"]["sense"]["VBAT_SENSE"].clone();
+    second["pin"] = json!("PC1");
+    second["channels"] = json!(["ADC1_INP11", "ADC2_INP11", "ADC3_INP11"]);
+    v["power"]["sense"]["VBAT2_SENSE"] = second;
+    v["adc_inputs"]["VBAT2_SENSE"] =
+        json!({"pin": "PC1", "peripheral": "ADC1", "channel": "INP11"});
+    let e = refused(&v);
+    assert_eq!(
+        e,
+        Refusal::SenseTwice {
+            first: "VBAT2_SENSE".into(),
+            second: "VBAT_SENSE".into()
+        }
+    );
+}
+
+/// `AET-WO-4410` S2: a sense solved on ADC3 alone is refused by name, ahead
+/// of `SenseNotEmitted`: ArduPilot's H7 build needs an ADC1 pin line
+/// (`stm32h7_mcuconf.h:420`, `hal_adc_lld.h:339`, measured).
+#[test]
+fn a_sense_solved_on_adc3_alone_is_refused_by_name() {
+    let mut v = sentinel_01();
+    v["power"] = json!({
+        "domains": {}, "input_steady_milliamps": 0, "input_fault_milliamps": 0,
+        "conditions": [], "sense": {"VBAT_SENSE": {"pin": "PF3", "position": 13, "channels": ["ADC3_INP5"],
+            "top_ohms": 100_000, "bottom_ohms": 10_000}}
+    });
+    v["adc_inputs"] =
+        json!({"VBAT_SENSE": {"pin": "PF3", "peripheral": "ADC3", "channel": "INP5"}});
+    let t: SolvedTopology = serde_json::from_value(v).unwrap();
+    t.validate().unwrap();
+    let err = generate(&t).unwrap_err();
+    assert_eq!(
+        err,
+        Refusal::SenseNotOnAdc1 {
+            net: "VBAT_SENSE".into(),
+            peripheral: "ADC3".into()
+        }
+    );
+    assert_eq!(
+        (err.kind(), err.id()),
+        ("SenseNotOnAdc1", Some("VBAT_SENSE"))
+    );
+    assert!(err.to_string().contains("stm32h7_mcuconf.h:420"));
+}
+
+/// `AET-WO-4410` (3), review 3 A11: every board keeps SWD on, each line
+/// exactly once, with RM0433's reset pull written out.
+#[test]
+fn every_board_keeps_swd_on() {
+    for (name, t, _) in BOARDS {
+        let text = generate(&topology(t)).unwrap().text;
+        for want in ["PA13 JTMS-SWDIO SWD PULLUP", "PA14 JTCK-SWCLK SWD PULLDOWN"] {
+            let n = text
+                .lines()
+                .filter(|l| l.split('#').next().unwrap().trim() == want)
+                .count();
+            assert_eq!(n, 1, "{name}: `{want}`");
+        }
+    }
+}
+
+/// `AET-WO-4410` §5: a net solved on PA13 or PA14 is refused by name, never
+/// overwritten by the SWD line.
+#[test]
+fn a_net_solved_on_an_swd_pin_is_refused() {
+    for pin in ["PA13", "PA14"] {
+        let mut v = sentinel_01();
+        v["gpio"]["FLASH_CS"]["pin"] = json!(pin);
+        let t: SolvedTopology = serde_json::from_value(v).unwrap();
+        assert_eq!(
+            generate(&t).unwrap_err(),
+            Refusal::SwdPinSolved {
+                net: "FLASH_CS".into(),
+                pin: pin.into()
+            },
+            "{pin}"
+        );
+    }
 }
 
 /// The adversarial pass's case: two buses at different speeds run at the
@@ -464,13 +638,14 @@ fn a_chip_select_named_like_an_alternate_function_is_refused() {
     }
 }
 
-/// `OscillatorNotCited`'s first test (`AET-WO-4240a` §1.5, `4240` §8): the
-/// reference board on the 16 MHz crystal's HSE tree, its I2C words re-solved
-/// for the crystal's budget, is a valid topology, and the generator refuses
-/// it by name: the MCU row cites ArduPilot's SPI kernel clocks only at
-/// `OSCILLATOR_HZ` 0.
+/// The reference board on the 16 MHz crystal's HSE tree, its I2C words
+/// re-solved for the crystal's budget (`AET-WO-4240a` §1.5), is a valid
+/// topology. Since `AET-WO-4410` (2) the MCU row cites ArduPilot's SPI kernel
+/// clocks at `OSCILLATOR_HZ` 16000000 too, so it generates, writing that
+/// oscillator. An oscillator the row does not cite is refused by name
+/// (`hwdef_tier1`, on `hse-external-8`).
 #[test]
-fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
+fn a_topology_on_the_16_mhz_crystal_generates() {
     let mut v = sentinel_01();
     v["clock"] = json!({"source": "PLL1", "sysclk_hz": 64_000_000, "hse_hz": 16_000_000,
         "d1cpre": 1, "hpre": 1, "d1ppre": 1, "d2ppre1": 1, "d2ppre2": 1, "d3ppre": 1,
@@ -492,15 +667,12 @@ fn a_topology_on_an_hse_the_mcu_row_does_not_cite_is_refused() {
     }
     let t: SolvedTopology = serde_json::from_value(v.clone()).unwrap();
     assert_eq!(t.validate(), Ok(()));
-    let e = refused(&v);
-    assert_eq!(e.kind(), "OscillatorNotCited", "{e}");
-    assert!(matches!(
-        e,
-        Refusal::OscillatorNotCited {
-            hse_hz: 16_000_000,
-            cited: 0
-        }
-    ));
+    let text = generate(&t).unwrap().text;
+    assert!(
+        text.lines()
+            .any(|l| l.starts_with("OSCILLATOR_HZ 16000000 ")),
+        "{text}"
+    );
 }
 
 /// `AET-WO-1211a`: ArduPilot's hwdef has no `GPIO(n)` line this generator

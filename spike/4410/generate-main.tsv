@@ -1,0 +1,35 @@
+connectors	generate	2	NoSerialPort None
+d1-24-i2c	generate	2	NoSerialPort None
+d3-24-i2c-12-spi	generate	2	NoSerialPort None
+driver-judges-nothing	generate	0	ok 
+four-layer-power	generate	2	NoSerialPort None
+four-layer	generate	2	NoSerialPort None
+four-port	generate	0	ok 
+hse-crystal-16	generate	2	OscillatorNotCited None
+hse-external-8	generate	2	OscillatorNotCited None
+imu-baro-1v8	generate	2	NoSerialPort None
+logger-4600	generate	0	ok 
+motors-dshot600	generate	2	NoSerialPort None
+motors-pwm	generate	2	NoSerialPort None
+pair-standin	generate	2	NoSerialPort None
+sentinel-01-bench	generate	0	ok 
+sentinel-02-own	generate	0	ok 
+sentinel-02-shaped	generate	2	NoConsole None
+sentinel-03	generate	2	SenseNotEmitted VBAT_SENSE
+serial-dshot-9600	generate	0	ok 
+serial-four	generate	2	NoConsole None
+solve-infeasible-shared	solve	2	Infeasible None
+solve-pigeonhole-spi	solve	2	Infeasible None
+solve-stress	generate	2	LabelTakesAfPrefix SPI_BUS_0_CS0_NET
+solve-thrash-pins	solve	2	Infeasible None
+spi-only	generate	2	NoSerialPort None
+two-bme	generate	2	NoSerialPort None
+d1-drv8876	generate	2	GpioNotEmitted U2
+d2-drv8833	solve	2	PartLimitUndeclared U2
+sentinel-02-power	generate	2	SenseNotEmitted VBAT_SENSE
+invalid-zero-domain	solve	2	ZeroNominalVoltage VDD_3V3
+sentinel-01-ext-bmp581	generate	0	ok 
+sentinel-01-minimal	generate	0	ok 
+sentinel-01	generate	0	ok 
+sentinel-02-bench-hse8	generate	2	OscillatorNotCited None
+sentinel-02-bench	generate	2	NoSerialPort None

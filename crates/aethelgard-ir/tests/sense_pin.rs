@@ -262,3 +262,42 @@ fn the_sense_skips_an_adc2_only_pin_and_is_unmodelled_with_only_those() {
     // `PA6`, the only other ADC pin, is the flash's MISO.
     assert_eq!(solved(&base(), &t).unwrap_err().kind(), "AdcUnmodelled");
 }
+
+/// `AET-WO-4410` S2 (ruled 2026-11-23): a pin with an ADC1 input is taken
+/// before a lower-position pin with ADC3 alone, since ArduPilot's H7 build
+/// fails without an ADC1 pin line (`stm32h7_mcuconf.h:420`, ChibiOS
+/// `hal_adc_lld.h:339` at `fb773567`); with no ADC1 pin free, the ADC3 pin
+/// of lowest position, as before. The solved sense carries the declared
+/// divider (solved version 20, `AET-WO-4410` (1)).
+#[test]
+fn the_sense_takes_an_adc1_pin_before_a_lower_adc3_only_pin() {
+    let t = table(&[
+        ("PF3", 3, &[], &["ADC3_INP5"]),
+        ("PF4", 4, &[], &["ADC3_INP9"]),
+        ("PC0", 40, &[], &["ADC1_INP10", "ADC3_INP10"]),
+    ]);
+    let s = solved(&base(), &t).unwrap();
+    let sense = &s.power.as_ref().unwrap().sense["VBAT_SENSE"];
+    assert_eq!(sense.pin, "PC0");
+    let input = &s.adc_inputs["VBAT_SENSE"];
+    assert_eq!(
+        (input.peripheral.as_str(), input.channel.as_str()),
+        ("ADC1", "INP10")
+    );
+    let declared = &base()["power"]["sense"][0];
+    assert_eq!(
+        (u64::from(sense.top_ohms), u64::from(sense.bottom_ohms)),
+        (
+            declared["top"]["ohms"].as_u64().unwrap(),
+            declared["bottom"]["ohms"].as_u64().unwrap()
+        )
+    );
+    // No ADC1 pin free: the ADC3 pin of lowest position.
+    let t = table(&[
+        ("PF4", 4, &[], &["ADC3_INP9"]),
+        ("PF3", 3, &[], &["ADC3_INP5"]),
+    ]);
+    let s = solved(&base(), &t).unwrap();
+    assert_eq!(s.power.as_ref().unwrap().sense["VBAT_SENSE"].pin, "PF3");
+    assert_eq!(s.adc_inputs["VBAT_SENSE"].peripheral, "ADC3");
+}

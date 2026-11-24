@@ -19,7 +19,7 @@ use std::fmt::Write as _;
 use aethelgard_ir::motor::PullFitment;
 use aethelgard_ir::orientation::{Orientation, Toward};
 use aethelgard_ir::parts::{self, ArduPilotKind};
-use aethelgard_ir::power_parts::{self, Kind as PowerKind, McuArduPilot};
+use aethelgard_ir::power_parts::{self, ArduPilotOscillator, Kind as PowerKind, McuArduPilot};
 use aethelgard_ir::serial::{Parity, SerialRole};
 use aethelgard_ir::{IrValidationError, SolvedTopology};
 
@@ -41,6 +41,19 @@ pub const HAL_STORAGE_SIZE: u32 = 16_384;
 /// An STM32H7's flash sector, KB (`chibios_hwdef.py:799-801`; DS12117 Rev 10
 /// §3.3.1: two banks of eight 128-Kbyte sectors).
 pub const H7_SECTOR_KB: i64 = 128;
+
+/// The SWD port, kept on (`AET-WO-4410` (3), review 3 A11): ArduPilot makes an
+/// unlisted pin `INPUT FLOATING` (`chibios_hwdef.py:47`, `:145`), which turns
+/// SWD off at boot. Each line is ArduPilot's own text (197 boards at the tag)
+/// with the pull its script gives the label written out (`:407-413`), which
+/// is RM0433's reset pull (Rev 9 §11.4.4 p. 542, `GPIOA_PUPDR` `0x6400 0000`).
+/// The label alone picks AF0 (`STM32H753xx.py:247`, `:249`).
+// belt-and-suspenders: `aethelgard-pincheck` keeps its own SWD pins, never
+// this table (INV-07, RUL-20: the judge shares no table with the generator).
+pub const SWD_LINES: [(&str, &str); 2] = [
+    ("PA13", "PA13 JTMS-SWDIO SWD PULLUP"),
+    ("PA14", "PA14 JTCK-SWCLK SWD PULLDOWN"),
+];
 
 /// The timers the system tick may take, in order of preference: TIM5, the
 /// H7 default (`stm32h7_mcuconf.h:605-606`), then TIM2, the other 32-bit
@@ -69,9 +82,10 @@ pub enum Refusal {
     )]
     UnsupportedSeries { part: String, series: String },
     #[error(
-        "the topology's clock has a {hse_hz} Hz oscillator; the MCU row cites ArduPilot's SPI kernel clocks only with OSCILLATOR_HZ {cited}"
+        "the topology's clock has a {hse_hz} Hz oscillator; the MCU row cites ArduPilot's SPI kernel clocks only with OSCILLATOR_HZ {}",
+        cited.iter().map(u32::to_string).collect::<Vec<_>>().join(" or ")
     )]
-    OscillatorNotCited { hse_hz: u32, cited: u32 },
+    OscillatorNotCited { hse_hz: u32, cited: Vec<u32> },
     #[error(
         "the topology has no serial port; ArduPilot builds only with a USART or UART (AET-WO-4400b §1.1, measured)"
     )]
@@ -150,10 +164,34 @@ pub enum Refusal {
         "`{reference}` ({part}) is a pin device; hwdef.dat has no GPIO(n) line this generator writes for its pins (AET-WO-1211a)"
     )]
     GpioNotEmitted { reference: String, part: String },
+    /// `AET-WO-4410` (1): ArduPilot reads one analog battery voltage,
+    /// `HAL_BATT_VOLT_PIN` (`AP_BattMonitor_Analog.cpp:30-36`).
     #[error(
-        "battery sense `{net}` is solved, but its divider ratio (SCALE) has no source in the topology (AET-WO-4400b D7)"
+        "battery senses `{first}` and `{second}` are both solved; ArduPilot's hwdef has one HAL_BATT_VOLT_PIN"
     )]
-    SenseNotEmitted { net: String },
+    SenseTwice { first: String, second: String },
+    /// `AET-WO-4410` D6: the scale is written as the exact quotient of two
+    /// integers a `float` holds exactly (2^24 and below).
+    #[error(
+        "battery sense `{net}`: the divider {top_ohms} ohm over {bottom_ohms} ohm has no exact float quotient (both sums at most 16777216, the bottom above 0)"
+    )]
+    DividerNotExact {
+        net: String,
+        top_ohms: u32,
+        bottom_ohms: u32,
+    },
+    /// `AET-WO-4410` S2: ArduPilot's H7 build enables ADC12 whatever the
+    /// board holds, and ChibiOS then needs its DMA stream, which ArduPilot
+    /// allocates only from an ADC1 or ADC2 pin line.
+    #[error(
+        "battery sense `{net}` is solved on {peripheral}, not ADC1: ArduPilot's H7 build enables ADC12 (stm32h7_mcuconf.h:420) and fails without an ADC1 pin's DMA stream (ChibiOS hal_adc_lld.h:339, measured in AET-WO-4410)"
+    )]
+    SenseNotOnAdc1 { net: String, peripheral: String },
+    /// `AET-WO-4410` (3): PA13 and PA14 are the SWD port's, always emitted.
+    #[error(
+        "`{net}` is solved on {pin}, a pin of the SWD port this generator always emits (AET-WO-4410)"
+    )]
+    SwdPinSolved { net: String, pin: String },
     /// `AET-WO-4400d` (`INV-06`): an IMU's rotation is the declared
     /// orientation's, never a default.
     #[error(
@@ -192,7 +230,10 @@ impl Refusal {
             Self::DuplicateSpidev { .. } => "DuplicateSpidev",
             Self::SpiBelowArduPilotDivider { .. } => "SpiBelowArduPilotDivider",
             Self::NoSystemTimer => "NoSystemTimer",
-            Self::SenseNotEmitted { .. } => "SenseNotEmitted",
+            Self::SenseTwice { .. } => "SenseTwice",
+            Self::DividerNotExact { .. } => "DividerNotExact",
+            Self::SenseNotOnAdc1 { .. } => "SenseNotOnAdc1",
+            Self::SwdPinSolved { .. } => "SwdPinSolved",
             Self::PinNotEmitted { .. } => "PinNotEmitted",
             Self::GpioNotEmitted { .. } => "GpioNotEmitted",
             Self::ImuOrientationUndeclared { .. } => "ImuOrientationUndeclared",
@@ -204,7 +245,9 @@ impl Refusal {
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::UnknownMcu { part } | Self::UnsupportedSeries { part, .. } => Some(part),
-            Self::ConsoleTwice { second, .. } | Self::RcInputTwice { second, .. } => Some(second),
+            Self::ConsoleTwice { second, .. }
+            | Self::RcInputTwice { second, .. }
+            | Self::SenseTwice { second, .. } => Some(second),
             Self::SpiKernelNotCited { peripheral } => Some(peripheral),
             Self::InvertedConsole { port }
             | Self::FramingNotImplied { port, .. }
@@ -213,7 +256,9 @@ impl Refusal {
             Self::UnsupportedSignal { net, .. }
             | Self::LabelCollision { net }
             | Self::LabelTakesAfPrefix { net, .. }
-            | Self::SenseNotEmitted { net }
+            | Self::DividerNotExact { net, .. }
+            | Self::SenseNotOnAdc1 { net, .. }
+            | Self::SwdPinSolved { net, .. }
             | Self::PinNotEmitted { net, .. } => Some(net),
             Self::GpioNotEmitted { reference, .. } => Some(reference),
             Self::DuplicateSpidev { second, .. } => Some(second),
@@ -416,21 +461,35 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             series: ap.series.clone(),
         });
     }
-    if t.clock.hse_hz != ap.oscillator_hz {
-        return Err(Refusal::OscillatorNotCited {
+    let osc = ap
+        .oscillator(t.clock.hse_hz)
+        .ok_or_else(|| Refusal::OscillatorNotCited {
             hse_hz: t.clock.hse_hz,
-            cited: ap.oscillator_hz,
-        });
-    }
+            cited: ap.oscillators.iter().map(|o| o.oscillator_hz).collect(),
+        })?;
     if let Some((reference, d)) = t.pin_devices.iter().next() {
         return Err(Refusal::GpioNotEmitted {
             reference: reference.clone(),
             part: d.part.clone(),
         });
     }
-    if let Some(net) = t.power.as_ref().and_then(|p| p.sense.keys().next()) {
-        return Err(Refusal::SenseNotEmitted { net: net.clone() });
+    // Every solved pin, by net: none may be an SWD pin. A sense's pin is its
+    // ADC input's (`validate` refuses a disagreement, `AET-WO-1211a`).
+    let solved_pins = t
+        .assignments
+        .iter()
+        .map(|(net, a)| (net, &a.pin))
+        .chain(t.gpio.iter().map(|(net, g)| (net, &g.pin)))
+        .chain(t.adc_inputs.iter().map(|(net, a)| (net, &a.pin)));
+    for (net, pin) in solved_pins {
+        if SWD_LINES.iter().any(|(swd, _)| swd == pin) {
+            return Err(Refusal::SwdPinSolved {
+                net: net.clone(),
+                pin: pin.clone(),
+            });
+        }
     }
+    let battery = battery(t)?;
     let mut not_emitted = Vec::new();
     let mut l = Lines(Vec::new());
     let speed = |net: &str| speed_token(t.pin_speeds[net]);
@@ -444,7 +503,12 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             });
         }
     }
-    let labels: BTreeSet<&str> = t.assignments.values().map(|a| a.signal.as_str()).collect();
+    let labels: BTreeSet<&str> = t
+        .assignments
+        .values()
+        .map(|a| a.signal.as_str())
+        .chain(battery.as_ref().map(|_| "BATT_VOLTAGE_SENS"))
+        .collect();
     if let Some(net) = t.gpio.keys().find(|n| labels.contains(n.as_str())) {
         return Err(Refusal::LabelCollision { net: net.clone() });
     }
@@ -490,6 +554,12 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         format!("STORAGE_FLASH_PAGE {}", flash_kb / H7_SECTOR_KB - 2),
         "[P] flash_kilobytes; [C] the last two 128 KB sectors (storage uses page and page+1)",
     );
+    for (_, line) in SWD_LINES {
+        l.push(
+            line,
+            "[C] SWD_LINES: the debug port kept on, alternate AF0 with RM0433's reset pull",
+        );
+    }
 
     // The system timer, off every motor timer.
     let motor_timers: BTreeSet<&str> = t
@@ -508,7 +578,7 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
 
     serial(t, &mut l, &mut not_emitted, speed)?;
     i2c(t, parts_table, &mut l, &mut not_emitted, speed);
-    spi(t, parts_table, ap, &mut l, &mut not_emitted, speed)?;
+    spi(t, parts_table, osc, &mut l, &mut not_emitted, speed)?;
 
     // Motor outputs, in the specification's order. Each line's pull follows
     // the output's declared fitment (`AET-WO-4300j` D6): `fitted`, `FLOATING`,
@@ -573,7 +643,10 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
     if !motors.is_empty() {
         not_emitted.push("BIDIR: nothing declares bidirectional DShot (D7)".to_owned());
     }
-    l.push("define HAL_USE_ADC FALSE", "[T] no power.sense pin");
+    match battery {
+        Some(b) => b.lines(&mut l),
+        None => l.push("define HAL_USE_ADC FALSE", "[T] no power.sense pin"),
+    }
 
     // belt-and-suspenders: every solved pin is on exactly one emitted line,
     // so no fact of the topology is dropped without a name.
@@ -602,6 +675,101 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
         text: render(t, &l, &not_emitted),
         not_emitted,
     })
+}
+
+/// The largest integer a `float` holds exactly, `2^24`: below it the
+/// quotient `a.0f / b.0f` is the correctly rounded ratio (`AET-WO-4410` D6).
+const EXACT_IN_FLOAT: u64 = 1 << 24;
+
+/// The one battery voltage ArduPilot reads (`AET-WO-4410` (1)): the sense
+/// pin on its solved ADC1 input, and the divider's exact ratio.
+struct Battery<'t> {
+    net: &'t str,
+    pin: &'t str,
+    channel: u32,
+    top: u64,
+    bottom: u64,
+}
+
+impl Battery<'_> {
+    /// The pin line, `HAL_BATT_VOLT_PIN`, `HAL_BATT_VOLT_SCALE` and
+    /// `HAL_BATT_MONITOR_DEFAULT`, each line ArduPilot's own
+    /// (`spike/4410/RESULTS.md` (1), built on Sentinel-03 in the pinned image).
+    fn lines(&self, l: &mut Lines) {
+        let net = self.net;
+        l.push(
+            format!("{} BATT_VOLTAGE_SENS ADC1 SCALE(1)", self.pin),
+            format!(
+                "[T] power.sense.{net}, adc_inputs.{net} (ADC1 INP{}); SCALE(1): the pin's own multiplier stays 1, the divider is HAL_BATT_VOLT_SCALE (chibios_hwdef.py:2203-2204, 2241-2247)",
+                self.channel
+            ),
+        );
+        l.push(
+            format!("define HAL_BATT_VOLT_PIN {}", self.channel),
+            format!(
+                "[T] adc_inputs.{net}.channel: the analog pin is the named ADC's channel (chibios_hwdef.py:2204)"
+            ),
+        );
+        l.push(
+            format!(
+                "define HAL_BATT_VOLT_SCALE ({}.0f/{}.0f)",
+                self.top + self.bottom,
+                self.bottom
+            ),
+            format!(
+                "[T] power.sense.{net}: (top_ohms + bottom_ohms) / bottom_ohms, exact in float (AP_BattMonitor_Analog.cpp:30-36, 160)"
+            ),
+        );
+        l.push(
+            "define HAL_BATT_MONITOR_DEFAULT 3",
+            "[C] voltage only: no current sense is declared (AP_BattMonitor_Params.h:17-18; AP_BattMonitor.cpp:568-569)",
+        );
+    }
+}
+
+// belt-and-suspenders: `aethelgard-pincheck`'s identity judge parses the same
+// channel and computes the same ratio by its own code (INV-07, RUL-20).
+/// The solved battery sense, if one: at most one, on ADC1 (`AET-WO-4410`
+/// S2: ArduPilot's H7 build fails without an ADC1 pin line), with a divider
+/// whose quotient a `float` holds exactly.
+fn battery(t: &SolvedTopology) -> Result<Option<Battery<'_>>, Refusal> {
+    let Some(sense) = t.power.as_ref().map(|p| &p.sense) else {
+        return Ok(None);
+    };
+    let mut nets = sense.iter();
+    let Some((net, s)) = nets.next() else {
+        return Ok(None);
+    };
+    if let Some((second, _)) = nets.next() {
+        return Err(Refusal::SenseTwice {
+            first: net.clone(),
+            second: second.clone(),
+        });
+    }
+    let input = t.adc_inputs.get(net);
+    let channel = input
+        .filter(|a| a.peripheral == "ADC1")
+        .and_then(|a| a.channel.strip_prefix("INP"))
+        .and_then(|n| n.parse::<u32>().ok())
+        .ok_or_else(|| Refusal::SenseNotOnAdc1 {
+            net: net.clone(),
+            peripheral: input.map_or_else(|| "no ADC input".to_owned(), |a| a.peripheral.clone()),
+        })?;
+    let (top, bottom) = (u64::from(s.top_ohms), u64::from(s.bottom_ohms));
+    if bottom == 0 || top + bottom > EXACT_IN_FLOAT {
+        return Err(Refusal::DividerNotExact {
+            net: net.clone(),
+            top_ohms: s.top_ohms,
+            bottom_ohms: s.bottom_ohms,
+        });
+    }
+    Ok(Some(Battery {
+        net,
+        pin: &s.pin,
+        channel,
+        top,
+        bottom,
+    }))
 }
 
 /// The serial ports: the console first as SERIAL0, then the rest in the
@@ -971,7 +1139,7 @@ fn rotation(o: &Orientation) -> Option<&'static str> {
 fn spi(
     t: &SolvedTopology,
     parts_table: &parts::PartsTable,
-    ap: &McuArduPilot,
+    osc: &ArduPilotOscillator,
     l: &mut Lines,
     not_emitted: &mut Vec<String>,
     speed: impl Fn(&str) -> &'static str,
@@ -1042,7 +1210,7 @@ fn spi(
             });
         }
         let c = &t.spi_controllers[&d.peripheral];
-        let kernel = ap
+        let kernel = osc
             .spi_kernel_hz
             .get(&d.peripheral)
             .ok_or_else(|| Refusal::SpiKernelNotCited {
@@ -1147,7 +1315,7 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
     ));
     c("Sources: [T] the topology; [P] a parts-table row; [C] a constant of this generator.");
     c(&format!(
-        "Constants: APJ_BOARD_ID {APJ_BOARD_ID} (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE {HAL_STORAGE_SIZE} in the last two flash sectors; the system timer TIM5, else TIM2."
+        "Constants: APJ_BOARD_ID {APJ_BOARD_ID} (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE {HAL_STORAGE_SIZE} in the last two flash sectors; the system timer TIM5, else TIM2; the SWD port PA13/PA14 kept on."
     ));
     c("Never emitted: DEFAULTGPIO (4400a D-1).");
     if l.0.iter().any(|(line, _)| line.starts_with("IMU ")) {
@@ -1160,7 +1328,7 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
         .any(|(line, _)| line.starts_with("define DEFAULT_SERIAL") && line.contains("_PROTOCOL "))
     {
         c(
-            "Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on SERIAL1 to SERIAL9 (UARTDriver.cpp:1611, 1624), or pulls down a line it inverts, and no line here removes that.",
+            "Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on every port it opens (UARTDriver.cpp:1611, 1624): SERIAL1 to SERIAL9 at init (AP_SerialManager.cpp:451-457), and SERIAL0 when GCS looks up its MAVLink console (GCS_Common.cpp:2810; AP_SerialManager.cpp:605, 656). It pulls down a line it inverts, and no line here removes that.",
         );
     }
     for n in not_emitted {
@@ -1188,6 +1356,46 @@ fn render(t: &SolvedTopology, l: &Lines, not_emitted: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-4410` (2), §5: each oscillator's own kernel clocks judge the
+    /// SPI floor. SPI4 runs at 72 MHz on `OSCILLATOR_HZ` 0 and at 100 MHz on
+    /// 16000000, so 300 kHz passes the first (floor 281,250 Hz) and is
+    /// refused on the second (floor 390,625 Hz): a 16 MHz topology is never
+    /// judged by the `0` row's clocks, nor the reverse.
+    #[test]
+    fn each_oscillator_judges_the_spi_floor_by_its_own_kernel_clocks() {
+        let mut t: SolvedTopology =
+            serde_json::from_str(include_str!("../tests/fixtures/sentinel-01.topology.json"))
+                .unwrap();
+        let mut c = t.spi_controllers.remove("SPI1").unwrap();
+        c.achieved_hz = 300_000;
+        t.spi_controllers.insert("SPI4".into(), c);
+        for d in t.spi_devices.values_mut() {
+            d.peripheral = "SPI4".into();
+        }
+        let (_, ap) = mcu_row(&t.mcu).unwrap();
+        let run = |hz: u32| {
+            spi(
+                &t,
+                parts::table().unwrap(),
+                ap.oscillator(hz).unwrap(),
+                &mut Lines(Vec::new()),
+                &mut Vec::new(),
+                |_| "",
+            )
+        };
+        assert_eq!(run(0), Ok(()));
+        assert_eq!(
+            run(16_000_000),
+            Err(Refusal::SpiBelowArduPilotDivider {
+                peripheral: "SPI4".into(),
+                hz: 300_000,
+                kernel_hz: 100_000_000,
+                floor: 390_625,
+            })
+        );
+        assert!(ap.oscillator(8_000_000).is_none());
+    }
 
     /// D6: SPIDEV states whole kHz, rounded down, as MHz when exact.
     #[test]

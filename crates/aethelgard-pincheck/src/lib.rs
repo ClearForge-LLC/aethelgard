@@ -25,6 +25,60 @@ pub const PORTS: [char; 11] = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
 /// The one part whose register layout this check knows.
 pub const PART: &str = "STM32H753ZITx";
 
+/// The SWD port, which every judged image keeps at its reset state, alternate
+/// AF0 (RM0433 Rev 9 §11.4.1 and §11.4.9–10; [`PinId::reset`]), so a debugger
+/// attaches after boot (`AET-WO-4410` (3), review 3 A11). The expected value
+/// is this check's own reset table, never a generator's line (`INV-07`).
+// belt-and-suspenders: the judge's own copy of the SWD pins, never
+// `aethelgard-hwdef`'s `SWD_LINES` (INV-07, RUL-20: no shared table).
+pub const SWD: [&str; 2] = ["PA13", "PA14"];
+
+/// What writes `SYSCFG_PMCR` in the ArduPilot this check judges, a cited
+/// source fact (`AET-WO-4410` D1, ruled 2026-11-23). LQFP144 pads 28 and 29
+/// are `PC2_C` and `PC3_C` only while PC2SO and PC3SO hold their reset value
+/// (RM0433 Rev 9 p. 549). No image the check reads holds `PMCR`: the one
+/// writer at the tag is code, whose operands are instruction immediates, and
+/// it never touches either bit. The twin's access log owns the check on a
+/// running image (a Tviburi row, `SYSCFG_PMCR`).
+pub mod pmcr {
+    /// The source read: ArduPilot and its ChibiOS submodule.
+    pub const SOURCE: &str = "ArduPilot Copter-4.7.2 (fb773567), ChibiOS d103983f";
+    /// `SYSCFG_PMCR_PC2SO_Pos` 26 and `_PC3SO_Pos` 27
+    /// (`os/common/ext/ST/STM32H7xx/stm32h753xx.h:19071`, `:19074`).
+    pub const PC2SO_PC3SO: u32 = (1 << 26) | (1 << 27);
+
+    /// One writer: where it is, its text, and every bit it may change.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub struct Writer {
+        pub at: &'static str,
+        pub text: &'static str,
+        pub mask: u32,
+    }
+
+    /// Every writer of `SYSCFG->PMCR` in the source at the tag, outside the
+    /// vendor headers (`spike/4410/RESULTS.md` M3): ChibiOS's `mac_lld_init`,
+    /// under `#if defined(STM32H7XX)`, linked only with `HAL_USE_MAC`. Each is
+    /// a masked read-modify-write: PA1SO (`_Pos` 25, `stm32h753xx.h:19068`)
+    /// and EPIS (bits 23:21, `:19059-19060`).
+    pub const WRITERS: [Writer; 3] = [
+        Writer {
+            at: "os/hal/ports/STM32/LLD/MACv2/hal_mac_lld.c:306",
+            text: "SYSCFG->PMCR |= SYSCFG_PMCR_PA1SO;",
+            mask: 1 << 25,
+        },
+        Writer {
+            at: "os/hal/ports/STM32/LLD/MACv2/hal_mac_lld.c:308",
+            text: "SYSCFG->PMCR = (SYSCFG->PMCR & ~SYSCFG_PMCR_EPIS_SEL_Msk) | SYSCFG_PMCR_EPIS_SEL_2;",
+            mask: 0x7 << 21,
+        },
+        Writer {
+            at: "os/hal/ports/STM32/LLD/MACv2/hal_mac_lld.c:310",
+            text: "SYSCFG->PMCR &= ~SYSCFG_PMCR_EPIS_SEL_Msk;",
+            mask: 0x7 << 21,
+        },
+    ];
+}
+
 /// One port's seven words, in `gpio_default_config`'s order.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PortRegisters {
@@ -113,6 +167,12 @@ impl GpioConfig {
         (Mode::from_bits(r.moder >> (2 * pin.n)), af as u8)
     }
 
+    /// A pin's `ODR` bit (RM0433 Rev 9 §11.4.6): the level an output drives
+    /// from its first write (`AET-WO-4410` (4)).
+    pub fn odr(&self, pin: PinId) -> u32 {
+        (self.ports[pin.port].odr >> pin.n) & 1
+    }
+
     /// A pin's `OTYPER` bit, `OSPEEDR` field and `PUPDR` field (RM0433
     /// Rev 9 §11.4.2–11.4.4), as the bytes hold them (`AET-WO-4400b` §1.3).
     pub fn drive(&self, pin: PinId) -> (u32, u32, u32) {
@@ -180,6 +240,9 @@ pub enum Refusal {
     /// select, is a fact this check cannot yet judge from the image.
     #[error("`{id}` ({detail}) is a gpio fact the pinout check does not judge (AET-WO-1211a)")]
     GpioNotJudged { id: String, detail: String },
+    /// `AET-WO-4410` (3): the SWD port is the check's to hold at reset.
+    #[error("the topology's {net} is on {pin}, a pin of the SWD port the check holds at reset")]
+    SwdPinNamed { net: String, pin: String },
 }
 
 /// Refuses a topology the check would mis-read: a pin device, or a gpio entry
@@ -214,6 +277,7 @@ impl Refusal {
             Self::InvalidPin { .. } => "InvalidPin",
             Self::NoPinSpeed { .. } => "NoPinSpeed",
             Self::GpioNotJudged { .. } => "GpioNotJudged",
+            Self::SwdPinNamed { .. } => "SwdPinNamed",
         }
     }
 
@@ -222,7 +286,9 @@ impl Refusal {
         match self {
             Self::Header { name, .. } | Self::Conditional { name, .. } => Some(name.clone()),
             Self::DecodesDisagree { port, register, .. } => Some(format!("GPIO{port}_{register}")),
-            Self::InvalidPin { net, .. } | Self::NoPinSpeed { net } => Some(net.clone()),
+            Self::InvalidPin { net, .. }
+            | Self::NoPinSpeed { net }
+            | Self::SwdPinNamed { net, .. } => Some(net.clone()),
             Self::GpioNotJudged { id, .. } => Some(id.clone()),
             Self::UnsupportedPart { part } => Some(part.clone()),
             Self::PartMismatch { topology, .. } => Some(topology.clone()),
@@ -373,14 +439,47 @@ fn cross_check(elf: &GpioConfig, header: &[HeaderPort; PORTS.len()]) -> Result<(
     Ok(())
 }
 
-/// Judges `elf` (and `header`, if given) against `topology`, `package` and `allow`.
-pub fn judge(
-    topology: &SolvedTopology,
-    package: &PinTable,
-    elf: &GpioConfig,
-    header: Option<&[HeaderPort; PORTS.len()]>,
-    allow: &AllowList,
-) -> Result<Judgement, Refusal> {
+/// Each pin the topology names: its net, and the AF it must carry (None for
+/// a GPIO output).
+type Named = BTreeMap<PinId, (String, Option<u8>)>;
+
+/// Every refusal the topology and the package alone decide (`AET-WO-4410`
+/// (6), `1218` F4): `check pinout` runs this before it reads the ELF or
+/// `hwdef.h`, so a topology refusal is never hidden behind an unreadable
+/// image. [`judge`] runs it first too.
+pub fn admit(topology: &SolvedTopology, package: &PinTable) -> Result<(), Refusal> {
+    named(topology, package)?;
+    sensed(topology).map(|_| ())
+}
+
+/// Each battery sense pin, by pin, with its net (`AET-WO-4410` (1)): an
+/// analog pin, so in neither `assignments` nor `gpio`. A pin outside
+/// P[A-K]0-15, or an SWD pin, is refused as any topology pin is.
+fn sensed(topology: &SolvedTopology) -> Result<BTreeMap<PinId, String>, Refusal> {
+    let mut out = BTreeMap::new();
+    for (net, s) in topology.power.iter().flat_map(|p| &p.sense) {
+        out.insert(topology_pin(net, &s.pin)?, net.clone());
+    }
+    Ok(out)
+}
+
+/// A pin the topology names on `net`: one of `P[A-K]0-15` (`InvalidPin`),
+/// and not the SWD port's (`SwdPinNamed`).
+fn topology_pin(net: &str, pin: &str) -> Result<PinId, Refusal> {
+    let id = PinId::parse(pin).ok_or_else(|| Refusal::InvalidPin {
+        net: net.to_owned(),
+        pin: pin.to_owned(),
+    })?;
+    if SWD.contains(&pin) {
+        return Err(Refusal::SwdPinNamed {
+            net: net.to_owned(),
+            pin: pin.to_owned(),
+        });
+    }
+    Ok(id)
+}
+
+fn named(topology: &SolvedTopology, package: &PinTable) -> Result<Named, Refusal> {
     if package.part != PART {
         return Err(Refusal::UnsupportedPart {
             part: package.part.clone(),
@@ -393,33 +492,58 @@ pub fn judge(
         });
     }
     refuse_unjudged_gpio(topology)?;
-    if let Some(header) = header {
-        cross_check(elf, header)?;
-    }
-    let parse = |net: &String, pin: &String| {
-        PinId::parse(pin).ok_or_else(|| Refusal::InvalidPin {
-            net: net.clone(),
-            pin: pin.clone(),
-        })
-    };
-    // Each named pin: its net, and the AF it must carry (None for a GPIO output).
-    let mut named: BTreeMap<PinId, (String, Option<u8>)> = BTreeMap::new();
+    let mut named = Named::new();
     for (net, a) in &topology.assignments {
         named.insert(
-            parse(net, &a.pin)?,
+            topology_pin(net, &a.pin)?,
             (net.clone(), Some(a.alternate_function)),
         );
     }
     for (net, g) in &topology.gpio {
-        named.insert(parse(net, &g.pin)?, (net.clone(), None));
+        named.insert(topology_pin(net, &g.pin)?, (net.clone(), None));
     }
-    if let Some((pin, _)) = allow.0.iter().find(|(pin, _)| named.contains_key(pin)) {
+    if let Some((_, (net, _))) = named
+        .iter()
+        .find(|(_, (net, _))| !topology.pin_speeds.contains_key(net))
+    {
+        return Err(Refusal::NoPinSpeed { net: net.clone() });
+    }
+    Ok(named)
+}
+
+/// Judges `elf` (and `header`, if given) against `topology`, `package` and `allow`.
+pub fn judge(
+    topology: &SolvedTopology,
+    package: &PinTable,
+    elf: &GpioConfig,
+    header: Option<&[HeaderPort; PORTS.len()]>,
+    allow: &AllowList,
+) -> Result<Judgement, Refusal> {
+    let named = named(topology, package)?;
+    let sensed = sensed(topology)?;
+    if let Some(header) = header {
+        cross_check(elf, header)?;
+    }
+    if let Some(pin) = allow
+        .0
+        .keys()
+        .find(|pin| SWD.contains(&pin.to_string().as_str()))
+    {
+        return allow_refusal(
+            "AllowNamesSwdPin",
+            format!("{pin} is the SWD port's; the check holds it at reset"),
+        );
+    }
+    if let Some((pin, net)) = allow.0.keys().find_map(|pin| {
+        named
+            .get(pin)
+            .map(|(net, _)| net)
+            .or_else(|| sensed.get(pin))
+            .map(|net| (pin, net))
+    }) {
         return allow_refusal(
             "AllowNamesTopologyPin",
-            format!(
-                "{pin} is the topology's {}; the topology judges it",
-                named[pin].0
-            ),
+            format!("{pin} is the topology's {net}; the topology judges it"),
         );
     }
 
@@ -431,11 +555,8 @@ pub fn judge(
     for (&pin, (net, _)) in &named {
         let (ot, speed, pupd) = elf.drive(pin);
         let want_ot = u32::from(aethelgard_ir::silicon::implied_open_drain(topology, net));
-        let want_speed = topology
-            .pin_speeds
-            .get(net)
-            .map(|&v| u32::from(v))
-            .ok_or_else(|| Refusal::NoPinSpeed { net: net.clone() })?;
+        // `named` holds a speed for every net.
+        let want_speed = u32::from(topology.pin_speeds[net]);
         let want_pupd = aethelgard_ir::silicon::implied_pupd(topology, net);
         let otype = |v| if v == 1 { "open-drain" } else { "push-pull" };
         for (kind, want, got, show) in [
@@ -474,6 +595,25 @@ pub fn judge(
                     decoded: show.1,
                 });
             }
+        }
+    }
+    // `AET-WO-4410` (4), review 3 A12: each GPIO output's `ODR` bit, the
+    // level it drives from its first write, against its solved level.
+    for (&pin, (net, _)) in &named {
+        let Some(g) = topology.gpio.get(net) else {
+            continue;
+        };
+        let want = u32::from(g.initial == Some(aethelgard_ir::motor::Level::High));
+        let got = elf.odr(pin);
+        if want != got {
+            drive.push(Finding {
+                check: "forward",
+                kind: "WrongOutputLevel",
+                pin: pin.to_string(),
+                net: Some(net.clone()),
+                expected: format!("ODR {want}"),
+                decoded: format!("ODR {got}"),
+            });
         }
     }
     let mut findings = Vec::new();
@@ -522,6 +662,36 @@ pub fn judge(
                 );
             }
             _ => {}
+        }
+    }
+    // `AET-WO-4410` (1): a battery sense pin stays analog, ArduPilot's ADC
+    // pin mode (an `ADC` line, `chibios_hwdef.py:335-336`).
+    for (&pin, net) in &sensed {
+        let (mode, af) = elf.pin(pin);
+        if mode != Mode::Analog {
+            finding(
+                "forward",
+                "NotAnalog",
+                pin,
+                Some(net),
+                "analog".into(),
+                (mode, af),
+            );
+        }
+    }
+    for name in SWD {
+        let pin = PinId::parse(name).expect("a pin P[A-K]0-15");
+        let (mode, af) = elf.pin(pin);
+        if (mode, af) != pin.reset() {
+            let (want_mode, want_af) = pin.reset();
+            finding(
+                "debug",
+                "SwdNotKept",
+                pin,
+                None,
+                decoded(want_mode, want_af),
+                (mode, af),
+            );
         }
     }
     for (&pin, declared) in &allow.0 {

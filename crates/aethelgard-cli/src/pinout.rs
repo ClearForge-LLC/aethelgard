@@ -53,6 +53,7 @@ fn refused(err: CheckRefusal) -> Stop {
         CheckRefusal::InvalidPin { .. }
         | CheckRefusal::NoPinSpeed { .. }
         | CheckRefusal::GpioNotJudged { .. }
+        | CheckRefusal::SwdPinNamed { .. }
         | CheckRefusal::PartMismatch { .. } => EXIT_INVALID_SPEC,
         CheckRefusal::UnsupportedPart { .. } => EXIT_INTERNAL,
         CheckRefusal::Elf { .. }
@@ -87,7 +88,8 @@ pub(crate) fn parse_topology(bytes: &[u8]) -> Result<aethelgard_ir::SolvedTopolo
     })
 }
 
-/// Reads every input, then judges.
+/// Reads the topology and refuses what it alone decides (`AET-WO-4410` (6),
+/// `1218` F4), then reads the image, `hwdef.h` and the allow-list, and judges.
 pub fn check(
     topology: &Path,
     elf: &Path,
@@ -95,10 +97,6 @@ pub fn check(
     allow: Option<&Path>,
 ) -> Result<Verdict, Stop> {
     let topology_bytes = read(topology)?;
-    let elf_bytes = read(elf)?;
-    let header_bytes = hwdef_h.map(read).transpose()?;
-    let allow_bytes = allow.map(read).transpose()?;
-
     let topology = parse_topology(&topology_bytes)?;
     topology.validate().map_err(|err| Stop {
         code: EXIT_INVALID_SPEC,
@@ -106,6 +104,17 @@ pub fn check(
         id: err.id().map(str::to_owned),
         message: format!("the topology: {err}"),
     })?;
+    let table = aethelgard_svd_hal::pin_table(aethelgard_pincheck::PART).map_err(|err| Stop {
+        code: EXIT_INTERNAL,
+        kind: err.kind(),
+        id: None,
+        message: format!("the pin table is unusable: {err}"),
+    })?;
+    aethelgard_pincheck::admit(&topology, &table).map_err(refused)?;
+
+    let elf_bytes = read(elf)?;
+    let header_bytes = hwdef_h.map(read).transpose()?;
+    let allow_bytes = allow.map(read).transpose()?;
     let config = aethelgard_pincheck::elf::read(&elf_bytes).map_err(refused)?;
     let header = match &header_bytes {
         Some(bytes) => {
@@ -123,12 +132,6 @@ pub fn check(
         Some(bytes) => AllowList::parse(bytes).map_err(refused)?,
         None => AllowList::default(),
     };
-    let table = aethelgard_svd_hal::pin_table(aethelgard_pincheck::PART).map_err(|err| Stop {
-        code: EXIT_INTERNAL,
-        kind: err.kind(),
-        id: None,
-        message: format!("the pin table is unusable: {err}"),
-    })?;
     let mut judgement =
         aethelgard_pincheck::judge(&topology, &table, &config, header.as_ref(), &allow_list)
             .map_err(refused)?;

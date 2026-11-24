@@ -11,7 +11,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
-const TABLE_SHA256: &str = "928611842f0938871ce1bbfa9db85c25e127bc4c930090cafb3360f5bf7d38ae";
+const TABLE_SHA256: &str = "92b755a960fe4dbf5305c41b39244d16968de94426cae9d4690ab01e83e1ae28";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -1889,8 +1889,9 @@ fn a_wire_to_a_rail_is_refused_and_every_wire_is_named() {
 }
 
 /// `AET-WO-4400b` D4, D6: the MCU row's flash size and what ArduPilot
-/// `Copter-4.7.2` calls the MCU and clocks its SPI peripherals at, with
-/// `OSCILLATOR_HZ 0`: SPI1-3 on PLL1_Q, 80 MHz; SPI4-6 on PLL2_Q, 72 MHz.
+/// `Copter-4.7.2` calls the MCU and clocks its SPI peripherals at. Since
+/// `AET-WO-4410` (2), for each cited `OSCILLATOR_HZ`: `0`, SPI1-3 on PLL1_Q
+/// at 80 MHz and SPI4-6 on PLL2_Q at 72 MHz; `16000000`, 80 MHz and 100 MHz.
 #[test]
 fn the_mcu_row_holds_its_flash_and_ardupilot_s_names_and_kernels() {
     let t = power_parts::table().unwrap();
@@ -1901,32 +1902,48 @@ fn the_mcu_row_holds_its_flash_and_ardupilot_s_names_and_kernels() {
     assert_eq!(m.flash_kilobytes.at.document, "DS12117");
     let a = &m.ardupilot;
     assert_eq!(
-        (a.series.as_str(), a.mcu.as_str(), a.oscillator_hz),
-        ("STM32H7xx", "STM32H753xx", 0)
+        (a.series.as_str(), a.mcu.as_str()),
+        ("STM32H7xx", "STM32H753xx")
     );
-    let kernels: Vec<(&str, i64)> = a
-        .spi_kernel_hz
-        .iter()
-        .map(|(p, l)| (p.as_str(), l.value))
-        .collect();
-    assert_eq!(
-        kernels,
-        [
-            ("SPI1", 80_000_000),
-            ("SPI2", 80_000_000),
-            ("SPI3", 80_000_000),
-            ("SPI4", 72_000_000),
-            ("SPI5", 72_000_000),
-            ("SPI6", 72_000_000)
-        ]
-    );
-    for l in a.spi_kernel_hz.values() {
-        assert_eq!(l.at.document, "CHIBIOS_HAL_LLD_TYPE1");
-        assert!(matches!(
-            t.document(&l.at.document).unwrap().held,
-            Held::Sha256(_)
-        ));
+    let cited: Vec<u32> = a.oscillators.iter().map(|o| o.oscillator_hz).collect();
+    assert_eq!(cited, [0, 16_000_000]);
+    for (hz, low, high) in [
+        (0, 80_000_000, 72_000_000),
+        (16_000_000, 80_000_000, 100_000_000),
+    ] {
+        let o = a.oscillator(hz).unwrap();
+        assert_eq!(o.at.document, "AP_STM32H7_MCUCONF", "{hz}");
+        let kernels: Vec<(&str, i64)> = o
+            .spi_kernel_hz
+            .iter()
+            .map(|(p, l)| (p.as_str(), l.value))
+            .collect();
+        assert_eq!(
+            kernels,
+            [
+                ("SPI1", low),
+                ("SPI2", low),
+                ("SPI3", low),
+                ("SPI4", high),
+                ("SPI5", high),
+                ("SPI6", high)
+            ],
+            "{hz}"
+        );
+        for l in o.spi_kernel_hz.values() {
+            assert_eq!(l.at.document, "CHIBIOS_HAL_LLD_TYPE1");
+            assert!(
+                l.at.section.starts_with(&format!("OSCILLATOR_HZ {hz}:")),
+                "{}",
+                l.at.section
+            );
+            assert!(matches!(
+                t.document(&l.at.document).unwrap().held,
+                Held::Sha256(_)
+            ));
+        }
     }
+    assert!(a.oscillator(8_000_000).is_none());
 }
 
 /// The MCU row's `kind.mcu` inside a parsed copy of the table.
@@ -1940,31 +1957,42 @@ fn mcu_of(v: &mut Value) -> &mut Value {
 }
 
 /// The column's shape, each refused by name: a peripheral missing from or
-/// added to `spi_kernel_hz`, a zero kernel, a name ArduPilot cannot read, and
-/// a missing `flash_kilobytes`.
+/// added to an oscillator's `spi_kernel_hz`, a zero kernel, no oscillator,
+/// one oscillator cited twice (`AET-WO-4410` (2)), a name ArduPilot cannot
+/// read, and a missing `flash_kilobytes`.
 #[test]
 fn a_malformed_mcu_ardupilot_column_is_refused() {
     type Edit = (fn(&mut Value), &'static str);
-    let cases: [Edit; 5] = [
+    let cases: [Edit; 7] = [
         (
             |m| {
-                m["ardupilot"]["spi_kernel_hz"]
+                m["ardupilot"]["oscillators"][0]["spi_kernel_hz"]
                     .as_object_mut()
                     .unwrap()
                     .remove("SPI6");
             },
-            "exactly SPI1 to SPI6",
+            "oscillators[0].spi_kernel_hz` is keyed by exactly SPI1 to SPI6",
         ),
         (
             |m| {
-                m["ardupilot"]["spi_kernel_hz"]["SPI7"] =
-                    m["ardupilot"]["spi_kernel_hz"]["SPI1"].clone()
+                m["ardupilot"]["oscillators"][1]["spi_kernel_hz"]["SPI7"] =
+                    m["ardupilot"]["oscillators"][1]["spi_kernel_hz"]["SPI1"].clone()
             },
-            "exactly SPI1 to SPI6",
+            "oscillators[16000000].spi_kernel_hz` is keyed by exactly SPI1 to SPI6",
         ),
         (
-            |m| m["ardupilot"]["spi_kernel_hz"]["SPI2"]["value"] = 0.into(),
-            "spi_kernel_hz.SPI2",
+            |m| m["ardupilot"]["oscillators"][1]["spi_kernel_hz"]["SPI2"]["value"] = 0.into(),
+            "oscillators[16000000].spi_kernel_hz.SPI2",
+        ),
+        (
+            |m| m["ardupilot"]["oscillators"] = serde_json::json!([]),
+            "cites no oscillator",
+        ),
+        (
+            |m| {
+                m["ardupilot"]["oscillators"][1]["oscillator_hz"] = 0.into();
+            },
+            "cites OSCILLATOR_HZ 0 twice",
         ),
         (
             |m| m["ardupilot"]["mcu"] = "STM32H753 xx".into(),

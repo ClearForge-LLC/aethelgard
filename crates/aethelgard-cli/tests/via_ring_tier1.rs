@@ -115,20 +115,23 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden, measured at `AET-WO-4300j` (the links R56-R59
-    // drawn, the board re-placed): rung 3, a bounded via cost of 320,
-    // bounded nets not first, nearest at EXT_SDA, 76 135 fF. At
+    // the fixture's golden, measured at `AET-WO-4410` S2 (the sense on PC0,
+    // ADC1 first; the board re-placed): rung 2, a bounded via cost of 96,
+    // bounded nets not first, nearest at IMU_MOSI, 27 152 fF of 30 000. At
+    // `AET-WO-4300j` (the links R56-R59 drawn, the board re-placed): rung 3,
+    // a bounded via cost of 320, bounded nets not first, nearest at EXT_SDA,
+    // 76 135 fF. At
     // `AET-WO-4300i` (MOTOR1 on PA8 and R52-R55 drawn) it was the same rung
     // and cost, nearest at IMU_MOSI, 21 913 fF. At `AET-WO-4202` (U2
     // gone; FEEDBACK §2.3) it was the last rung (7), bounded nets first at a
     // via cost of 320, nearest at EXT_SDA, 75 697 fF. At `AET-WO-1315` it
     // was rung 5 (cost 48), nearest at I2C_SCL, 74 937 fF; at `AET-WO-1314` rung 7,
     // nearest at IMU_SCK, 24 945 fF of 30 000.
-    assert_eq!(ladder["rung"], 3, "{ladder}");
-    assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
+    assert_eq!(ladder["rung"], 2, "{ladder}");
+    assert_eq!(ladder["bounded_via_cost"], 96, "{ladder}");
     assert_eq!(ladder["bounded_first"], false, "{ladder}");
-    assert_eq!(margin["net"], "EXT_SDA", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 76_135, "{ladder}");
+    assert_eq!(margin["net"], "IMU_MOSI", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 27_152, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");
