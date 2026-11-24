@@ -1,0 +1,33 @@
+# id	file	old	new	cargo test args
+m01	crates/aethelgard-twin/src/mavlink.rs	    if first != STX {	    if false {	-p aethelgard-twin --lib mavlink
+m02	crates/aethelgard-twin/src/mavlink.rs	    if bytes[2] & SIGNED != 0 {	    if false {	-p aethelgard-twin --lib mavlink
+m03	crates/aethelgard-twin/src/mavlink.rs	    if len > m.max_len {	    if false {	-p aethelgard-twin --lib mavlink
+m04	crates/aethelgard-twin/src/mavlink.rs	    if got != want {	    if false {	-p aethelgard-twin --lib mavlink
+m05	crates/aethelgard-twin/src/mavlink.rs	    match bytes.len() - used {	    match 0 {	-p aethelgard-twin --lib mavlink
+m06	crates/aethelgard-twin/src/mavlink.rs	        if frame.used == Use::Out {	        if false {	-p aethelgard-twin --lib mavlink
+m07	crates/aethelgard-twin/src/mavlink.rs	                if let Some(code) = force(param2) {	                if let Some(code) = force(param2).filter(|_| false) {	-p aethelgard-twin --lib mavlink
+m08	crates/aethelgard-twin/src/mavlink.rs	pub const FORCE_CODES: [f32; 2] = [21196.0, 2989.0];	pub const FORCE_CODES: [f32; 2] = [21196.0, 21196.0];	-p aethelgard-twin --lib mavlink
+m09	crates/aethelgard-twin/src/mavlink.rs	                        Refused::NonZero => value != 0.0,	                        Refused::NonZero => value == 0.0,	-p aethelgard-twin --lib mavlink
+m10	crates/aethelgard-twin/src/mavlink.rs	        if f.at_ns % QUANTUM_NS != 0 {	        if false {	-p aethelgard-twin --lib mavlink
+m11	crates/aethelgard-twin/src/mavlink.rs	        free_ns = end_ns.saturating_add(spacing_ns);	        free_ns = end_ns;	-p aethelgard-twin --lib mavlink
+m12	crates/aethelgard-twin/src/mavlink.rs	        if end_ns > window_ns {	        if false {	-p aethelgard-twin --lib mavlink
+m13	crates/aethelgard-twin/src/mavlink.rs	            Decoded::Heartbeat { base_mode } if !foreign_source => {	            Decoded::Heartbeat { base_mode } => {	-p aethelgard-twin --lib mavlink
+m15	crates/aethelgard-twin/src/mavlink.rs	                if base_mode & SAFETY_ARMED != 0 && w.armed.is_none() {	                if w.armed.is_none() {	-p aethelgard-twin --lib mavlink
+m16	crates/aethelgard-twin/src/rest.rs	        Toward::Up => 1,	        Toward::Up => -1,	-p aethelgard-twin --lib rest
+m17	crates/aethelgard-twin/src/rest.rs	    let rounded = (2 * num + num.signum() * den) / (2 * den);	    let rounded = num / den;	-p aethelgard-twin --lib rest
+m18	crates/aethelgard-twin/src/platform.rs	        if topology.foreign_clock.is_none() {	        if false {	-p aethelgard-twin --lib a_foreign_board_routes
+m19	crates/aethelgard-twin/src/platform.rs	            let _ = writeln!(out, "    ReceiveDmaRequest -> dmamux1@{n}");	            let _ = n;	-p aethelgard-twin --lib a_foreign_board_routes
+m20	crates/aethelgard-chaos/src/record.rs	                } else if part >= parts || file.is_empty() || file.len() > FOREIGN_PART_BYTES {	                } else if false {	-p aethelgard-chaos --test archive a_foreign_runs
+m21	crates/aethelgard-chaos/src/record.rs	                } else if !entries.windows(2).all(|w| w[0].0 <= w[1].0) {	                } else if false {	-p aethelgard-chaos --test archive a_foreign_runs
+m22	crates/aethelgard-chaos/src/campaign.rs	    if records.iter().any(|r| rank(r) == u8::MAX) {	    if false {	-p aethelgard-chaos --test archive a_foreign_runs
+m23	crates/aethelgard-twin/src/rest.rs	        if has(Quantity::AccelerationX).is_some() || has(Quantity::AccelerationY).is_some() {	        if false {	-p aethelgard-cli --test boot_tier1 an_input_run_on_an_imu
+m24	crates/aethelgard-cli/src/renode/foreign.rs	    if f.input_version != INPUT_VERSION {	    if false {	-p aethelgard-cli --test boot_tier1 each_declared_input
+m25	crates/aethelgard-cli/src/renode/foreign.rs	    let port = ports.get(&f.port).ok_or_else(|| {	    let port = ports.values().next().ok_or_else(|| {	-p aethelgard-cli --test boot_tier1 each_declared_input
+m26	crates/aethelgard-cli/src/renode/foreign.rs	    if bytes.len() > max {	    if false {	-p aethelgard-cli --test boot_tier1 an_input_file_over
+m27	crates/aethelgard-cli/src/renode/foreign.rs	            p.error.map(|e| {	            p.error.filter(|_| false).map(|e| {	-p aethelgard-cli --test boot_tier1 a_parameter_the_firmware
+m28	crates/aethelgard-cli/src/main.rs	        report.unobservable.push(renode::foreign::IDLE_GAP.to_owned());	        let _ = renode::foreign::IDLE_GAP;	-p aethelgard-cli --test boot_tier1 an_input_run_reads
+m29	crates/aethelgard-cli/src/renode/foreign.rs	    if named != Some(sha) {	    if false {	-p aethelgard-cli --test boot_tier1 replay_refuses
+m30	crates/aethelgard-cli/src/renode/foreign.rs	    if named.as_deref() != Some(std::ffi::OsStr::new(&id)) {	    if false {	-p aethelgard-cli --test boot_tier1 an_archived_input
+m31	crates/aethelgard-cli/src/renode/foreign.rs	    if body.starts_with("[INFO] machine-")	    if false && body.starts_with("[INFO] machine-")	-p aethelgard-cli --bin aethelgard pause_lines
+m32	crates/aethelgard-cli/src/main.rs	            Some(Ok(r)) => return emit(&r, 0),	            Some(Ok(_)) => return campaign::replay(&archive),	-p aethelgard-cli --test boot_tier1 an_archived_input
+m33	crates/aethelgard-cli/src/renode/foreign.rs	        if kind != phase && kind != phase + 1 || kind < 38 {	        if false {	-p aethelgard-cli --test boot_tier1 replay_refuses

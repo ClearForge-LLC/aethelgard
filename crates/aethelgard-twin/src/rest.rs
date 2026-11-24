@@ -59,7 +59,8 @@ fn rows() -> Result<Vec<(&'static str, u32, u64, &'static str)>, TwinError> {
             };
             let amp: u32 = amp.parse().map_err(|_| bad())?;
             let period: u64 = period.parse().map_err(|_| bad())?;
-            if amp == 0 || period == 0 || period % QUANTUM_NS != 0 || citation.is_empty() {
+            if amp == 0 || period == 0 || !period.is_multiple_of(QUANTUM_NS) || citation.is_empty()
+            {
                 return Err(bad());
             }
             Ok((*part, amp, period, *citation))
@@ -156,9 +157,10 @@ pub fn stimuli(
             let o = orientation.ok_or_else(|| TwinError::RestOrientationUndeclared {
                 reference: check.reference.clone(),
             })?;
-            let (x, y, z) = accel_at_rest(&o).ok_or_else(|| TwinError::RestOrientationUndeclared {
-                reference: check.reference.clone(),
-            })?;
+            let (x, y, z) =
+                accel_at_rest(&o).ok_or_else(|| TwinError::RestOrientationUndeclared {
+                    reference: check.reference.clone(),
+                })?;
             for (q, g) in [
                 (Quantity::AccelerationX, x),
                 (Quantity::AccelerationY, y),
@@ -172,11 +174,11 @@ pub fn stimuli(
             }
         }
         if let Some(c) = has(Quantity::Pressure) {
-            let (_, amp, period, citation) = rows
-                .iter()
-                .find(|r| r.0 == part)
-                .ok_or_else(|| TwinError::RestNoiseUndeclared {
-                    part: part.to_owned(),
+            let (_, amp, period, citation) =
+                rows.iter().find(|r| r.0 == part).ok_or_else(|| {
+                    TwinError::RestNoiseUndeclared {
+                        part: part.to_owned(),
+                    }
                 })?;
             let property =
                 model
@@ -189,7 +191,7 @@ pub fn stimuli(
             let mut t = 0u64;
             let mut k = 0u64;
             while t < window_ns {
-                let mpa = if k % 2 == 0 {
+                let mpa = if k.is_multiple_of(2) {
                     base + i64::from(*amp)
                 } else {
                     base - i64::from(*amp)
@@ -210,7 +212,10 @@ pub fn stimuli(
 fn milli(v: &str) -> Option<i64> {
     let (neg, v) = v.strip_prefix('-').map_or((false, v), |r| (true, r));
     let (whole, frac) = v.split_once('.').unwrap_or((v, ""));
-    if whole.is_empty() || frac.len() > 3 || !(whole.bytes().chain(frac.bytes())).all(|b| b.is_ascii_digit()) {
+    if whole.is_empty()
+        || frac.len() > 3
+        || !(whole.bytes().chain(frac.bytes())).all(|b| b.is_ascii_digit())
+    {
         return None;
     }
     let m = whole.parse::<i64>().ok()? * 1000 + format!("{frac:0<3}").parse::<i64>().ok()?;
@@ -244,7 +249,10 @@ pub fn data_witnesses(
     check: &StepCheck,
     stimuli: &[Stimulus],
 ) -> Result<Vec<Vec<String>>, TwinError> {
-    let mine: Vec<&Stimulus> = stimuli.iter().filter(|s| s.device == check.device).collect();
+    let mine: Vec<&Stimulus> = stimuli
+        .iter()
+        .filter(|s| s.device == check.device)
+        .collect();
     if check.step != StepKind::Data || mine.is_empty() {
         return Ok(Vec::new());
     }
@@ -253,7 +261,12 @@ pub fn data_witnesses(
         .spi_devices
         .get(&check.reference)
         .map(|d| d.part.as_str())
-        .or_else(|| topology.i2c_devices.get(&check.reference).map(|d| d.part.as_str()));
+        .or_else(|| {
+            topology
+                .i2c_devices
+                .get(&check.reference)
+                .map(|d| d.part.as_str())
+        });
     let Some(p) = part.and_then(|part| table.get(part)) else {
         return Ok(Vec::new());
     };
@@ -268,7 +281,11 @@ pub fn data_witnesses(
     };
     // Each channel's value in thousandths, from its witness stimulus, then
     // as each rest stimulus sets it, in time order.
-    let mut now: Vec<i64> = script.channels.iter().map(|c| i64::from(c.stimulus) * 1000).collect();
+    let mut now: Vec<i64> = script
+        .channels
+        .iter()
+        .map(|c| i64::from(c.stimulus) * 1000)
+        .collect();
     let mut sets: Vec<Vec<i64>> = Vec::new();
     let mut k = 0;
     while k < mine.len() {
@@ -344,7 +361,13 @@ mod tests {
         // endian. 101325 Pa is the parts table's own word; ±0.08 Pa is ±5.12
         // counts, rounded half away from zero to ±5.
         let table = parts::table().unwrap();
-        let c = table.get("BMP581").unwrap().script.as_ref().unwrap().channels[1];
+        let c = table
+            .get("BMP581")
+            .unwrap()
+            .script
+            .as_ref()
+            .unwrap()
+            .channels[1];
         assert_eq!(wire_at(&c, 101_325_000), c.wire());
         let n = |b: Vec<u8>| u32::from(b[0]) | u32::from(b[1]) << 8 | u32::from(b[2]) << 16;
         assert_eq!(n(wire_at(&c, 101_325_080)), 101_325 * 64 + 5);

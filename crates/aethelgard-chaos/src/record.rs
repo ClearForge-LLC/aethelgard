@@ -2031,14 +2031,18 @@ impl Record {
                 part,
                 parts,
                 entries,
-            } => vec![u(*part), u(*parts), Value::Array(
-                entries
-                    .iter()
-                    .map(|(at, device, property, value)| {
-                        Value::Array(vec![u(*at), t(device), t(property), t(value)])
-                    })
-                    .collect(),
-            )],
+            } => vec![
+                u(*part),
+                u(*parts),
+                Value::Array(
+                    entries
+                        .iter()
+                        .map(|(at, device, property, value)| {
+                            Value::Array(vec![u(*at), t(device), t(property), t(value)])
+                        })
+                        .collect(),
+                ),
+            ],
             Self::SerialCaptured {
                 label,
                 end_ns,
@@ -3304,7 +3308,9 @@ impl Record {
                 } else if *spacing_ns == 0 {
                     Err("a foreign input's byte spacing is 0")
                 } else if part >= parts || file.is_empty() || file.len() > FOREIGN_PART_BYTES {
-                    Err("a foreign input's part is not one of its parts, or empty, or over FOREIGN_PART_BYTES")
+                    Err(
+                        "a foreign input's part is not one of its parts, or empty, or over FOREIGN_PART_BYTES",
+                    )
                 } else {
                     Ok(())
                 }
@@ -3315,7 +3321,9 @@ impl Record {
                 entries,
             } => {
                 if part >= parts || entries.len() > FOREIGN_PART_STIMULI {
-                    Err("a run's stimuli part is not one of its parts, or over FOREIGN_PART_STIMULI")
+                    Err(
+                        "a run's stimuli part is not one of its parts, or over FOREIGN_PART_STIMULI",
+                    )
                 } else if !entries.windows(2).all(|w| w[0].0 <= w[1].0) {
                     Err("a run's stimuli are not in time order")
                 } else if !entries

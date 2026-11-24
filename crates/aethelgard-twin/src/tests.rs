@@ -1193,7 +1193,9 @@ fn a_foreign_board_routes_each_declared_ports_receive_request() {
     let emitted = platform::emit(&t).unwrap();
     assert_eq!(emitted.matches("ReceiveDmaRequest").count(), 1, "{emitted}");
     assert!(
-        emitted.contains("\nusart1:\n    frequency: 100000000\n    ReceiveDmaRequest -> dmamux1@41\nusart2:\n"),
+        emitted.contains(
+            "\nusart1:\n    frequency: 100000000\n    ReceiveDmaRequest -> dmamux1@41\nusart2:\n"
+        ),
         "{emitted}"
     );
     // The table, as RM0433 Rev 9 Table 124 (p. 697) prints it.

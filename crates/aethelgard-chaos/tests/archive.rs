@@ -1083,7 +1083,14 @@ fn a_foreign_runs_records_round_trip_in_parts_and_refuse_their_bad_shapes() {
         part,
         parts,
         entries: (0..n as u64)
-            .map(|k| (k * 83_300_000, "i2c1.u7".into(), "Pressure".into(), "101325.080".into()))
+            .map(|k| {
+                (
+                    k * 83_300_000,
+                    "i2c1.u7".into(),
+                    "Pressure".into(),
+                    "101325.080".into(),
+                )
+            })
             .collect(),
     };
     let capture = |part, parts, bytes: Vec<u8>| Record::SerialCaptured {
@@ -1137,7 +1144,10 @@ fn a_foreign_runs_records_round_trip_in_parts_and_refuse_their_bad_shapes() {
             (1, "d".into(), "p".into(), "1".into()),
         ],
     };
-    assert_eq!(unordered.check(), Err("a run's stimuli are not in time order"));
+    assert_eq!(
+        unordered.check(),
+        Err("a run's stimuli are not in time order")
+    );
     // A campaign run carrying one is refused by its rules.
     assert_eq!(
         aethelgard_chaos::campaign::check_run(&records).unwrap_err(),

@@ -2098,7 +2098,7 @@ pub fn read_input(path: &Path) -> Result<(String, Vec<u8>), Stop> {
 }
 
 fn unhex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+    if !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     (0..s.len())
@@ -2107,13 +2107,23 @@ fn unhex(s: &str) -> Option<Vec<u8>> {
         .collect()
 }
 
+/// An input's port label, its USART, the time between two of its bytes, and
+/// its frames, as written and as parsed.
+type Frames = (
+    String,
+    String,
+    u64,
+    Vec<mavlink::InputFrame>,
+    Vec<mavlink::Frame>,
+);
+
 /// The port's label, its USART, the time between two of its bytes, and the
 /// input's frames, as the file states them: every refusal but the rest's.
 pub fn frames_of(
     file: &[u8],
     ports: &std::collections::BTreeMap<String, aethelgard_ir::serial::SolvedSerialPort>,
     window_ns: u64,
-) -> Result<(String, String, u64, Vec<mavlink::InputFrame>, Vec<mavlink::Frame>), Stop> {
+) -> Result<Frames, Stop> {
     let f: InputFile = serde_json::from_slice(file)
         .map_err(|e| invalid("InputMalformed", format!("the input file: {e}")))?;
     if f.input_version != INPUT_VERSION {
@@ -2159,13 +2169,7 @@ pub fn frames_of(
     let table = mavlink::messages().map_err(twin_refused)?;
     let parsed = mavlink::check_input(&frames, spacing_ns, window_ns, &table)
         .map_err(|e| invalid(e.kind(), e.to_string()))?;
-    Ok((
-        f.port,
-        port.peripheral.clone(),
-        spacing_ns,
-        frames,
-        parsed,
-    ))
+    Ok((f.port, port.peripheral.clone(), spacing_ns, frames, parsed))
 }
 
 /// A declared input read, checked and given its rest stimuli.
@@ -2200,24 +2204,21 @@ pub fn declare(
 /// `virtual_ns`. A file, never the `-e` argument: one command per byte would
 /// pass the 128 KiB a single argument may be.
 pub fn timeline(d: &Declared, capture: &Path, virtual_ns: u64) -> String {
-    let mut events: Vec<(u64, u8, String)> = d
-        .stimuli
-        .iter()
-        .map(|s| (s.at_ns, 0, s.command()))
-        .collect();
+    let mut events: Vec<(u64, String)> = d.stimuli.iter().map(|s| (s.at_ns, s.command())).collect();
     events.extend(
         mavlink::schedule(&d.frames, d.spacing_ns)
             .into_iter()
-            .map(|(t, b)| (t, 1, format!("sysbus.{} WriteChar 0x{b:02X}", d.renode))),
+            .map(|(t, b)| (t, format!("sysbus.{} WriteChar 0x{b:02X}", d.renode))),
     );
-    events.sort_by_key(|e| (e.0, e.1));
+    // Stable: at a shared instant, the stimuli (pushed first) go first.
+    events.sort_by_key(|e| e.0);
     let mut lines = vec![format!(
         "sysbus.{0} CreateFileBackend @{1}/{0}.bin true",
         d.renode,
         capture.display()
     )];
     let mut now = 0u64;
-    for (t, _, cmd) in events {
+    for (t, cmd) in events {
         if t > now {
             lines.push(run_for(t - now));
             now = t;
@@ -2418,12 +2419,14 @@ pub fn witness_report(
         WitnessReport {
             captured_bytes: captured.len() as u64,
             heartbeats: w.heartbeats,
-            armed: w.armed.map(|(offset, system, component, base_mode)| ArmedReport {
-                offset,
-                system,
-                component,
-                base_mode,
-            }),
+            armed: w
+                .armed
+                .map(|(offset, system, component, base_mode)| ArmedReport {
+                    offset,
+                    system,
+                    component,
+                    base_mode,
+                }),
             acks,
             params,
             texts,
@@ -2499,7 +2502,14 @@ pub fn archive(
     let entries: Vec<(u64, String, String, String)> = d
         .stimuli
         .iter()
-        .map(|s| (s.at_ns, s.device.clone(), s.property.to_owned(), s.value.clone()))
+        .map(|s| {
+            (
+                s.at_ns,
+                s.device.clone(),
+                s.property.to_owned(),
+                s.value.clone(),
+            )
+        })
         .collect();
     let stimuli: Vec<&[(u64, String, String, String)]> = match entries.is_empty() {
         true => vec![&[]],
@@ -2589,7 +2599,10 @@ pub fn replay_archive(dir: &Path) -> Option<Result<Replayed, Stop>> {
             code: crate::EXIT_UNREADABLE,
             kind: "RunIdMismatch",
             id: Some(id.clone()),
-            message: format!("{} holds run {id}: a run directory is named by its run id", dir.display()),
+            message: format!(
+                "{} holds run {id}: a run directory is named by its run id",
+                dir.display()
+            ),
         }));
     }
     Some(replay(&replayed))
@@ -2608,17 +2621,30 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecor
     let mut input: Option<(String, String, u64, Vec<u8>, u64, u64)> = None;
     let mut stimuli: Option<(usize, u64, u64)> = None;
     let mut captured: Option<(String, u64, Vec<u8>, u64, u64)> = None;
-    // Each kind's next part and its count: a part out of order, a count that
-    // changes, or a kind after a later one is refused.
+    // The kinds in order, 38 then 39 then 40, none skipped: each record's
+    // kind is the current one or the next.
+    let mut phase = 38u64;
+    // Each kind's next part and its count: a part out of order, or a count
+    // that changes, is refused.
     fn next(seen: Option<(u64, u64)>, part: u64, parts: u64) -> Result<(), String> {
         let want = seen.map_or((0, parts), |(p, n)| (p + 1, n));
         if (part, parts) == want {
             Ok(())
         } else {
-            Err(format!("a part {part} of {parts} where part {} of {} was due", want.0, want.1))
+            Err(format!(
+                "a part {part} of {parts} where part {} of {} was due",
+                want.0, want.1
+            ))
         }
     }
     for r in &replayed.state.records {
+        let kind = r.kind();
+        if kind != phase && kind != phase + 1 || kind < 38 {
+            return Err(
+                "it holds a record that is not a foreign run's, or one out of order".to_owned(),
+            );
+        }
+        phase = kind;
         match r {
             Record::ForeignInput {
                 label,
@@ -2627,11 +2653,18 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecor
                 part,
                 parts,
                 file,
-            } if stimuli.is_none() && captured.is_none() => {
+            } => {
                 next(input.as_ref().map(|i| (i.4, i.5)), *part, *parts)?;
                 match &mut input {
                     None => {
-                        input = Some((label.clone(), peripheral.clone(), *spacing_ns, file.clone(), *part, *parts));
+                        input = Some((
+                            label.clone(),
+                            peripheral.clone(),
+                            *spacing_ns,
+                            file.clone(),
+                            *part,
+                            *parts,
+                        ));
                     }
                     Some(i) => {
                         if (&i.0, &i.1, i.2) != (label, peripheral, *spacing_ns) {
@@ -2646,7 +2679,7 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecor
                 part,
                 parts,
                 entries,
-            } if input.is_some() && captured.is_none() => {
+            } => {
                 next(stimuli.map(|s| (s.1, s.2)), *part, *parts)?;
                 let n = stimuli.map_or(0, |s| s.0) + entries.len();
                 stimuli = Some((n, *part, *parts));
@@ -2657,7 +2690,7 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecor
                 part,
                 parts,
                 bytes,
-            } if stimuli.is_some() => {
+            } => {
                 next(captured.as_ref().map(|c| (c.3, c.4)), *part, *parts)?;
                 match &mut captured {
                     None => captured = Some((label.clone(), *end_ns, bytes.clone(), *part, *parts)),
@@ -2670,7 +2703,11 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecor
                     }
                 }
             }
-            _ => return Err("it holds a record that is not a foreign run's, or one out of order".to_owned()),
+            _ => {
+                return Err(
+                    "it holds a record that is not a foreign run's, or one out of order".to_owned(),
+                );
+            }
         }
     }
     let (label, peripheral, spacing, file, last, parts) = input.ok_or("it holds no input")?;
@@ -2696,10 +2733,17 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
         foreign_records(replayed).map_err(|why| {
             invalid(
                 "NotAForeignRun",
-                format!("the archive is not one foreign input run (kinds 38 to 40, in order): {why}"),
+                format!(
+                    "the archive is not one foreign input run (kinds 38 to 40, in order): {why}"
+                ),
             )
         })?;
-    let (label, peripheral, file, captured) = (label.as_str(), peripheral.as_str(), file.as_slice(), captured.as_slice());
+    let (label, peripheral, file, captured) = (
+        label.as_str(),
+        peripheral.as_str(),
+        file.as_slice(),
+        captured.as_slice(),
+    );
     use sha2::Digest;
     let sha: [u8; 32] = sha2::Sha256::digest(file).into();
     let named = replayed
@@ -2721,7 +2765,10 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
     if f.port != label {
         return Err(invalid(
             "InputHashMismatch",
-            format!("the archived input names port `{}`, its record `{label}`", f.port),
+            format!(
+                "the archived input names port `{}`, its record `{label}`",
+                f.port
+            ),
         ));
     }
     let mut frames = Vec::with_capacity(f.frames.len());
@@ -2767,10 +2814,18 @@ mod tests {
     /// every byte; the filter drops those two lines and nothing like them.
     #[test]
     fn the_timelines_pause_lines_are_dropped_and_nothing_else() {
-        assert!(unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine paused."));
-        assert!(unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine resumed."));
-        assert!(!unread_access_line("[00:00:01.000000000] [INFO] machine-0: Machine started."));
-        assert!(!unread_access_line("[00:00:01.000000000] [WARNING] machine-0: Machine paused."));
+        assert!(unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine paused."
+        ));
+        assert!(unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine resumed."
+        ));
+        assert!(!unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine started."
+        ));
+        assert!(!unread_access_line(
+            "[00:00:01.000000000] [WARNING] machine-0: Machine paused."
+        ));
     }
 
     /// D4: the slave-mode `[ERROR]` is exempt only directly after a `CFG2`

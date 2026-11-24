@@ -312,13 +312,33 @@ impl Frame {
 /// The fields the judge reads.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Decoded {
-    Heartbeat { base_mode: u8 },
-    Command { command: u16, param1: f32, param2: f32 },
-    ParamSet { id: String, value: f32 },
-    ParamValue { id: String, value: f32 },
-    ParamError { id: String, error: u8 },
-    CommandAck { command: u16, result: u8 },
-    Text { text: String },
+    Heartbeat {
+        base_mode: u8,
+    },
+    Command {
+        command: u16,
+        param1: f32,
+        param2: f32,
+    },
+    ParamSet {
+        id: String,
+        value: f32,
+    },
+    ParamValue {
+        id: String,
+        value: f32,
+    },
+    ParamError {
+        id: String,
+        error: u8,
+    },
+    CommandAck {
+        command: u16,
+        result: u8,
+    },
+    Text {
+        text: String,
+    },
     Other,
 }
 
@@ -407,9 +427,7 @@ impl InputRefusal {
 /// `force`: whether `param2` is one of [`FORCE_CODES`]. ArduPilot compares
 /// within `FLT_EPSILON`; within 0.5 refuses more, never less.
 fn force(param2: f32) -> Option<f32> {
-    FORCE_CODES
-        .into_iter()
-        .find(|c| (param2 - c).abs() < 0.5)
+    FORCE_CODES.into_iter().find(|c| (param2 - c).abs() < 0.5)
 }
 
 /// A declared input's frames checked in order, each refused by name; on
@@ -528,20 +546,18 @@ pub struct Witness {
 }
 
 /// The witness in `captured`, the firmware's transmitted bytes. A frame
-/// counts only if its CRC holds; a heartbeat counts only if its source is
-/// none of the input's frames' sources and its bytes are none of the input's
-/// frames (a heartbeat the input carried, echoed or forwarded, is not the
-/// firmware's); it witnesses the arm when `base_mode` has
-/// [`SAFETY_ARMED`].
+/// counts only if its CRC holds; a heartbeat counts only if its source (its
+/// system and component ids) is none of the input's frames' sources, so a
+/// heartbeat the input carried, echoed or forwarded, is never the
+/// firmware's; it witnesses the arm when `base_mode` has [`SAFETY_ARMED`].
 pub fn witness(captured: &[u8], input: &[Frame], table: &[Message]) -> Witness {
     let mut w = Witness::default();
     for (at, frame) in scan(captured, table) {
         let foreign_source = input
             .iter()
             .any(|i| (i.sysid, i.compid) == (frame.sysid, frame.compid));
-        let echoed = input.iter().any(|i| i.wire == frame.wire);
         match frame.decode() {
-            Decoded::Heartbeat { base_mode } if !foreign_source && !echoed => {
+            Decoded::Heartbeat { base_mode } if !foreign_source => {
                 w.heartbeats += 1;
                 if base_mode & SAFETY_ARMED != 0 && w.armed.is_none() {
                     w.armed = Some((at, frame.sysid, frame.compid, base_mode));

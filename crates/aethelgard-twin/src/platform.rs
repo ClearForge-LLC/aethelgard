@@ -1040,7 +1040,7 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinErr
             .find(|p| p.peripheral.eq_ignore_ascii_case(&name))
         {
             let n = usart_rx_request(&port.peripheral)?;
-            let _ = write!(out, "    ReceiveDmaRequest -> dmamux1@{n}\n");
+            let _ = writeln!(out, "    ReceiveDmaRequest -> dmamux1@{n}");
         }
     }
     emit_hse(out, topology);

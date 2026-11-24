@@ -1757,9 +1757,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::SerialWitness { .. } => 17,
             Record::Verdict { .. } => 18,
             // A foreign run's (`AET-WO-4400i`), refused below.
-            Record::ForeignInput { .. } | Record::Stimuli { .. } | Record::SerialCaptured { .. } => {
-                u8::MAX
-            }
+            Record::ForeignInput { .. }
+            | Record::Stimuli { .. }
+            | Record::SerialCaptured { .. } => u8::MAX,
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.

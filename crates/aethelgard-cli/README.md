@@ -527,7 +527,7 @@ aethelgard replay --archive <dir>/<run id>
 - `boot.input.rest` lists each, with its citation.
 
 **The witness** (`boot.input.witness`) is read from the bytes the firmware transmitted on the port, never from the input (`INV-07`): every frame whose CRC holds.
-- `armed`: the first heartbeat with `MAV_MODE_FLAG_SAFETY_ARMED`, from a source no input frame has, and with bytes no input frame has.
+- `armed`: the first heartbeat with `MAV_MODE_FLAG_SAFETY_ARMED`, from a source (system and component id) no input frame has: a heartbeat the input carried, echoed back, is never the firmware's.
 - `acks`: each `COMMAND_ACK` (command, result, count).
 - `params`: each parameter the input set, with the firmware's echo or its `PARAM_ERROR`. A `PARAM_ERROR` is the finding `foreign_param_rejected`.
 - `texts`: each `STATUSTEXT`.

@@ -2359,9 +2359,16 @@ fn simulate_with(
         (Some((d, _)), Some(r)) => {
             let capture = capture_dir(&scratch, "capture-input")?;
             let script = scratch.tool.join("input.resc");
-            fs::write(&script, renode::foreign::timeline(d, &capture, r.virtual_ns)).map_err(
-                |e| run::Stop::tool_error("aethelgard", format!("cannot write the input's timeline: {e}")),
-            )?;
+            fs::write(
+                &script,
+                renode::foreign::timeline(d, &capture, r.virtual_ns),
+            )
+            .map_err(|e| {
+                run::Stop::tool_error(
+                    "aethelgard",
+                    format!("cannot write the input's timeline: {e}"),
+                )
+            })?;
             Some((script, capture))
         }
         _ => None,
@@ -2508,7 +2515,9 @@ fn simulate_with(
             }
             _ => None,
         };
-        report.unobservable.push(renode::foreign::IDLE_GAP.to_owned());
+        report
+            .unobservable
+            .push(renode::foreign::IDLE_GAP.to_owned());
         report.input = Some(renode::foreign::InputRun {
             input: renode::foreign::input_report(d),
             rest: renode::foreign::rest_report(&d.stimuli),

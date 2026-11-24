@@ -3269,20 +3269,27 @@ fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
 /// Frames pymavlink 2.4.50 wrote in the pinned ArduPilot image, an encoder
 /// that is not the judge's (the twin's `mavlink` tests hold the same).
 const HB_GCS: &str = "fd09000000ffbe0000000000000006080000035c2b";
-const ARM: &str = "fd20000000ffbe4c00000000803f000000000000000000000000000000000000000000000000900101019e4e";
-const ARM_FORCE_21196: &str = "fd20000000ffbe4c00000000803f0098a546000000000000000000000000000000000000000090010101abb2";
-const ARM_FORCE_2989: &str = "fd20000000ffbe4c00000000803f00d03a45000000000000000000000000000000000000000090010101b8e6";
+const ARM: &str =
+    "fd20000000ffbe4c00000000803f000000000000000000000000000000000000000000000000900101019e4e";
+const ARM_FORCE_21196: &str =
+    "fd20000000ffbe4c00000000803f0098a546000000000000000000000000000000000000000090010101abb2";
+const ARM_FORCE_2989: &str =
+    "fd20000000ffbe4c00000000803f00d03a45000000000000000000000000000000000000000090010101b8e6";
 const SKIPCHK_1: &str = "fd17000000ffbe1700000000803f010141524d494e475f534b495043484b000006f5d4";
 const REQUIRE_0: &str = "fd17000000ffbe17000000000000010141524d494e475f52455155495245000002470c";
 const SYSTEM_TIME: &str = "fd01000000ffbe020000008edf";
 const SIGNED_HB: &str = "fd09010000ffbe000000000000000608000003bbd3000100000000003bc231d90cb8";
-const UNKNOWN_PARAM: &str = "fd17000000ffbe1700000000803f01014145545f4e4f545f415f504152414d000948ef";
+const UNKNOWN_PARAM: &str =
+    "fd17000000ffbe1700000000803f01014145545f4e4f545f415f504152414d000948ef";
 
 /// Copter 4.7.2's own USART1 transmissions from `spike/4400i` (the twin's
 /// fixtures): `early-fill` arms (its first armed heartbeat at byte 11339),
 /// `reject` answers `AET_NOT_A_PARAM` with `PARAM_ERROR`.
 fn ardupilot_tx(name: &str) -> Vec<u8> {
-    fs::read(root().join(format!("crates/aethelgard-twin/tests/data/4400i/{name}-tx.bin"))).unwrap()
+    fs::read(root().join(format!(
+        "crates/aethelgard-twin/tests/data/4400i/{name}-tx.bin"
+    )))
+    .unwrap()
 }
 
 /// An input file: `(at_ns, hex, fill)` frames for `port`.
@@ -3298,7 +3305,12 @@ fn input_file(dir: &Dir, name: &str, port: &str, frames: &[(u64, &str, u32)]) ->
 /// A `--foreign 10ms` run of the foreign ELF with `input` (and `extra`
 /// arguments), on `board` (a specification and its emitted platform; the
 /// reference's by default), with `toolbox`'s `renode`.
-fn input_run(toolbox: &Path, input: &Path, board: Option<(PathBuf, PathBuf)>, extra: &[&OsStr]) -> Output {
+fn input_run(
+    toolbox: &Path,
+    input: &Path,
+    board: Option<(PathBuf, PathBuf)>,
+    extra: &[&OsStr],
+) -> Output {
     let dir = Dir::new("input-in");
     let (spec, platform) = board.unwrap_or_else(|| common::foreign::write(&dir.0));
     let fw = dir.write("fw.elf", &foreign_elf());
@@ -3376,7 +3388,10 @@ fn each_declared_input_refusal_is_named_before_any_tool() {
     };
     let one = |name: &str, hex: &str| input_file(&dir, name, "CONSOLE", &[(1_000_000, hex, 0)]);
     let v = refused(&one("force.json", ARM_FORCE_21196), "InputForcesArm");
-    assert!(v["error"]["message"].as_str().unwrap().contains("21196"), "{v}");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("21196"),
+        "{v}"
+    );
     refused(&one("force2989.json", ARM_FORCE_2989), "InputForcesArm");
     refused(&one("skip.json", SKIPCHK_1), "InputSkipsChecks");
     refused(&one("require.json", REQUIRE_0), "InputSkipsChecks");
@@ -3392,16 +3407,27 @@ fn each_declared_input_refusal_is_named_before_any_tool() {
         "InputTimeOffQuantum",
     );
     refused(
-        &input_file(&dir, "overlap.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (3_000_000, ARM, 0)]),
+        &input_file(
+            &dir,
+            "overlap.json",
+            "CONSOLE",
+            &[(1_000_000, HB_GCS, 0), (3_000_000, ARM, 0)],
+        ),
         "InputFramesOverlap",
     );
     refused(
         &input_file(&dir, "port.json", "RADIO", &[(1_000_000, HB_GCS, 0)]),
         "InputPortUndeclared",
     );
-    refused(&dir.write("json.json", b"{\"input_version\": 1,"), "InputMalformed");
     refused(
-        &dir.write("v2.json", br#"{"input_version": 2, "port": "CONSOLE", "frames": []}"#),
+        &dir.write("json.json", b"{\"input_version\": 1,"),
+        "InputMalformed",
+    );
+    refused(
+        &dir.write(
+            "v2.json",
+            br#"{"input_version": 2, "port": "CONSOLE", "frames": []}"#,
+        ),
         "InputMalformed",
     );
     refused(
@@ -3423,7 +3449,8 @@ fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
     let empty = Dir::new("empty");
     let dir = Dir::new("noorient");
     let mut v: Value = serde_json::from_slice(
-        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json")).unwrap(),
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json"))
+            .unwrap(),
     )
     .unwrap();
     for d in v["spi_devices"].as_array_mut().unwrap() {
@@ -3440,7 +3467,9 @@ fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
     let topology = aethelgard_ir::solve(&s, &table, &hash).unwrap();
     let platform = dir.write(
         "platform.repl",
-        aethelgard_twin::platform::emit(&topology).unwrap().as_bytes(),
+        aethelgard_twin::platform::emit(&topology)
+            .unwrap()
+            .as_bytes(),
     );
     let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
     let out = input_run(&empty.0, &input, Some((spec, platform)), &[]);
@@ -3486,7 +3515,12 @@ fn an_input_run_reads_the_arm_from_the_firmwares_own_heartbeat() {
     let tb = toolbox_input(&tx, Some(&want));
     let dir = Dir::new("arm");
     // A heartbeat at 1 ms, then an ARM at 4 ms with 11 bytes of fill.
-    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)]);
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
     let out = input_run(&tb.0, &input, None, &[]);
     let v = report(&out);
     assert_eq!(out.status.code(), Some(0), "{v}");
@@ -3548,8 +3582,17 @@ fn a_parameter_the_firmware_rejects_is_reported_from_its_own_reply() {
         .filter(|f| f["kind"] == "foreign_param_rejected")
         .collect();
     assert_eq!(rejected.len(), 1, "{v}");
-    assert!(rejected[0]["message"].as_str().unwrap().contains("AET_NOT_A_PARAM"), "{v}");
-    assert_eq!(v["boot"]["input"]["witness"]["params"][0]["error"], 1, "{v}");
+    assert!(
+        rejected[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("AET_NOT_A_PARAM"),
+        "{v}"
+    );
+    assert_eq!(
+        v["boot"]["input"]["witness"]["params"][0]["error"], 1,
+        "{v}"
+    );
 }
 
 /// `AET-WO-4400i` D6 (R1): an input run archived with `--archive` is named by
@@ -3566,8 +3609,18 @@ fn an_archived_input_run_replays_from_its_trace_alone() {
     let dir = Dir::new("archived");
     let archive = dir.0.join("archive");
     fs::create_dir(&archive).unwrap();
-    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)]);
-    let out = input_run(&tb.0, &input, None, &[OsStr::new("--archive"), archive.as_os_str()]);
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
+    let out = input_run(
+        &tb.0,
+        &input,
+        None,
+        &[OsStr::new("--archive"), archive.as_os_str()],
+    );
     let v = report(&out);
     assert_eq!(out.status.code(), Some(0), "{v}");
     let id = v["boot"]["input"]["run_id"].as_str().unwrap().to_owned();
@@ -3576,28 +3629,55 @@ fn an_archived_input_run_replays_from_its_trace_alone() {
     // The input file is gone; replay needs nothing but the run directory.
     fs::remove_file(&input).unwrap();
     let empty = Dir::new("empty");
-    let r = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), run_dir.as_os_str()]);
+    let r = run(
+        &empty.0,
+        &[
+            OsStr::new("replay"),
+            OsStr::new("--archive"),
+            run_dir.as_os_str(),
+        ],
+    );
     let rv = report(&r);
     assert_eq!(r.status.code(), Some(0), "{rv}");
     assert_eq!(rv["judge"], "foreign", "{rv}");
     assert_eq!(rv["run_id"], id, "{rv}");
     assert_eq!(rv["verdict"], "pass", "{rv}");
-    assert_eq!(rv["input_sha256"], v["boot"]["input"]["input"]["sha256"], "{rv}");
+    assert_eq!(
+        rv["input_sha256"], v["boot"]["input"]["input"]["sha256"],
+        "{rv}"
+    );
     assert_eq!(rv["frames"], 2, "{rv}");
     assert_eq!(rv["witness"], v["boot"]["input"]["witness"], "{rv}");
     // 16 KiB of capture is six parts of at most 3 KiB; the input one; the
     // stimuli one (none, on the reference board).
     assert_eq!(rv["event_count"], 1 + 1 + tx.len().div_ceil(3072), "{rv}");
     // Written again: the run exists.
-    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)]);
-    let again = input_run(&tb.0, &input, None, &[OsStr::new("--archive"), archive.as_os_str()]);
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
+    let again = input_run(
+        &tb.0,
+        &input,
+        None,
+        &[OsStr::new("--archive"), archive.as_os_str()],
+    );
     let av = report(&again);
     assert_eq!(av["error"]["kind"], "ArchiveWriteFailed", "{av}");
     assert_eq!(again.status.code(), Some(3), "{av}");
     // Under another name, it is not that run.
     let renamed = archive.join("run");
     fs::rename(&run_dir, &renamed).unwrap();
-    let r = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), renamed.as_os_str()]);
+    let r = run(
+        &empty.0,
+        &[
+            OsStr::new("replay"),
+            OsStr::new("--archive"),
+            renamed.as_os_str(),
+        ],
+    );
     let rv = report(&r);
     assert_eq!(rv["error"]["kind"], "RunIdMismatch", "{rv}");
     assert_eq!(r.status.code(), Some(3), "{rv}");
@@ -3628,7 +3708,11 @@ fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
         parts: 1,
         file: file.clone(),
     };
-    let stimuli = Record::Stimuli { part: 0, parts: 1, entries: Vec::new() };
+    let stimuli = Record::Stimuli {
+        part: 0,
+        parts: 1,
+        entries: Vec::new(),
+    };
     let capture = Record::SerialCaptured {
         label: "CONSOLE".into(),
         end_ns: 10_000_000,
@@ -3661,18 +3745,41 @@ fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
     };
     let empty = Dir::new("empty");
     let replay = |run_dir: &Path| {
-        let out = run(&empty.0, &[OsStr::new("replay"), OsStr::new("--archive"), run_dir.as_os_str()]);
+        let out = run(
+            &empty.0,
+            &[
+                OsStr::new("replay"),
+                OsStr::new("--archive"),
+                run_dir.as_os_str(),
+            ],
+        );
         (out.status.code(), report(&out))
     };
-    let good = write(1, sha, vec![input.clone(), stimuli.clone(), capture.clone()]);
+    let good = write(
+        1,
+        sha,
+        vec![input.clone(), stimuli.clone(), capture.clone()],
+    );
     let (code, v) = replay(&good);
     assert_eq!(code, Some(0), "{v}");
     assert_eq!(v["verdict"], "fail", "{v}");
     assert_eq!(v["findings"][0]["kind"], "foreign_param_rejected", "{v}");
-    let (code, v) = replay(&write(2, [9; 32], vec![input.clone(), stimuli.clone(), capture.clone()]));
-    assert_eq!((code, &v["error"]["kind"]), (Some(2), &Value::from("InputHashMismatch")), "{v}");
+    let (code, v) = replay(&write(
+        2,
+        [9; 32],
+        vec![input.clone(), stimuli.clone(), capture.clone()],
+    ));
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("InputHashMismatch")),
+        "{v}"
+    );
     let (code, v) = replay(&write(3, sha, vec![input, capture, stimuli]));
-    assert_eq!((code, &v["error"]["kind"]), (Some(2), &Value::from("NotAForeignRun")), "{v}");
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("NotAForeignRun")),
+        "{v}"
+    );
 }
 
 /// `AET-WO-4400i`: an input file over 1 MiB is refused before it is parsed.
@@ -3684,5 +3791,8 @@ fn an_input_file_over_its_bound_is_refused() {
     let out = input_run(&empty.0, &big, None, &[]);
     let v = report(&out);
     assert_eq!(v["error"]["kind"], "InputMalformed", "{v}");
-    assert!(v["error"]["message"].as_str().unwrap().contains("over the"), "{v}");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("over the"),
+        "{v}"
+    );
 }
