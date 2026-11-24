@@ -190,6 +190,11 @@ pub const RULES: &[(&str, &str, &str)] = &[
         "added (AET-WO-1609)",
         "an execution hook on AP_HAL::panic, found by its symbol in the ELF (a firmware whose symbol table does not name it is refused, ForeignPanicSymbolMissing), fails a run that enters it, whenever it did, with each entry's virtual time in boot.panic. Weakens: a fault, a hang or a reset that never calls it is judged only by the rules above (a thread-mode hang after the last witness passes; spike/1609); the symbol table that locates the hook is the judged ELF's own, so one that names a decoy function in place of the panic hides it (INV-07: it locates the hook, it sets no pass criterion)",
     ),
+    (
+        "foreign_fault",
+        "added (AET-WO-2314)",
+        "an execution hook on each fault handler (HardFault, MemManage, BusFault, UsageFault) that the ELF's vector table at FLASH_BANK1_BASE names (a table entry that is 0 or outside every executable PT_LOAD is refused, ForeignFaultVectorUnusable) fails a run whose core takes that exception (ICSR.VECTACTIVE is its number at the handler's entry), naming the vector, the PC the exception stacked and its virtual time, and halts the core there, so a handler's own loop never reaches the log budget or the memory cap (spike/2314). Weakens: only HardFault was exercised (an undefined instruction, escalated); a firmware that takes and handles a fault on purpose fails; a VTOR moved at run time to a table whose handlers lie elsewhere is not hooked, and the run is judged by the rules above",
+    ),
 ];
 
 /// One region a foreign firmware may load into.
@@ -408,6 +413,98 @@ fn panic_entry(line: &str, address: u64) -> Option<Option<u64>> {
         .then(|| log_stamped(line).map(|(ns, _)| ns))
 }
 
+/// Each fault exception the judge hooks (`AET-WO-2314`): its number, which
+/// is its vector table index and `ICSR.VECTACTIVE` in its handler, and its
+/// name (ARMv7-M ARM B1.5.2).
+pub const FAULT_VECTORS: [(u32, &str); 4] = [
+    (3, "HardFault"),
+    (4, "MemManage"),
+    (5, "BusFault"),
+    (6, "UsageFault"),
+];
+
+/// The line a fault hook logs on its exception's entry: the exception's
+/// number, the handler's address and the PC the exception stacked.
+const FAULT_MARK: &str = "AETHELGARD-FAULT ";
+
+/// Each fault vector's handler, read from the vector table at
+/// `vector_table` in the firmware's loaded bytes, Thumb bit cleared
+/// (`AET-WO-2314`, ruled D2 (i)): a table not in the loaded bytes, or an
+/// entry that is 0 or outside every executable `PT_LOAD`, cannot be hooked,
+/// so the firmware is refused by name before a boot (`INV-06`).
+pub fn fault_handlers(
+    bytes: &[u8],
+    vector_table: u32,
+    executable: &[(u64, u64)],
+) -> Result<Vec<(u32, u64)>, Stop> {
+    let unusable = |m: String| Stop::refused("ForeignFaultVectorUnusable", m);
+    let first = u64::from(vector_table) + 4 * u64::from(FAULT_VECTORS[0].0);
+    let words = crate::elf::loaded_words(bytes, first, FAULT_VECTORS.len())?.ok_or_else(|| {
+        unusable(format!(
+            "no PT_LOAD's file bytes hold the vector table's fault entries at {first:#010x}, so the foreign judge cannot hook the firmware's fault handlers"
+        ))
+    })?;
+    FAULT_VECTORS
+        .iter()
+        .zip(words)
+        .map(|(&(n, name), word)| {
+            let address = u64::from(word & !1);
+            if word == 0 || !executable.iter().any(|&(s, e)| (s..e).contains(&address)) {
+                return Err(unusable(format!(
+                    "the vector table's {name} entry (vector {n}, at {:#010x}) reads {word:#010x}, {}, so the foreign judge cannot hook it",
+                    u64::from(vector_table) + 4 * u64::from(n),
+                    if word == 0 { "0" } else { "outside every executable PT_LOAD" }
+                )));
+            }
+            Ok((n, address))
+        })
+        .collect()
+}
+
+/// The execution hooks on the fault handlers, one per distinct address
+/// (`AET-WO-2314`, spike/2314): at a handler's first instruction, when
+/// `ICSR.VECTACTIVE` is one of the vectors it serves, the CPU logs its own
+/// `[WARNING]` with the exception, the handler and the PC stacked on the
+/// frame (PSP when `EXC_RETURN` bit 2 is set, else MSP, at +24), then
+/// halts, so the handler's loop never runs. A handler entered any other way
+/// (a call, or a moved table) logs nothing and runs on.
+fn fault_hooks(handlers: &[(u32, u64)]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut seen: Vec<u64> = Vec::new();
+    for &(_, address) in handlers {
+        if seen.contains(&address) {
+            continue;
+        }
+        seen.push(address);
+        let vectors: String = handlers
+            .iter()
+            .filter(|(_, a)| *a == address)
+            .map(|(n, _)| format!("{n}, "))
+            .collect();
+        out.push(format!(
+            "cpu AddHook {address:#x} \"r = lambda x: int(x.RawValue) if hasattr(x, 'RawValue') else int(x); v = self.Bus.ReadDoubleWord(0xe000ed04) & 0x1ff; ok = v in ({vectors}); lr = r(self.LR); f = r(self.OtherSP) if lr & 4 else r(self.SP); ok and __import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '{FAULT_MARK}%d %x %x' % (v, pc, self.Bus.ReadDoubleWord(f + 24))); ok and setattr(self, 'IsHalted', True)\""
+        ));
+    }
+    out
+}
+
+/// A fault hook's entry in `line`: the exception's number, the PC stacked
+/// and the virtual time, when the line is the CPU's own mark at one of
+/// `handlers` for an exception that handler serves; `None` for any other.
+fn fault_entry(line: &str, handlers: &[(u32, u64)]) -> Option<(u32, u64, Option<u64>)> {
+    let rest = log_text(line)
+        .strip_prefix("[WARNING] cpu: ")?
+        .strip_prefix(FAULT_MARK)?;
+    let mut f = rest.split(' ');
+    let n: u32 = f.next()?.parse().ok()?;
+    let handler = u64::from_str_radix(f.next()?, 16).ok()?;
+    let stacked = u64::from_str_radix(f.next()?, 16).ok()?;
+    if f.next().is_some() || !handlers.contains(&(n, handler)) {
+        return None;
+    }
+    Some((n, stacked, log_stamped(line).map(|(ns, _)| ns)))
+}
+
 /// The foreign firmware's clock in the verdict (`AET-WO-4400g` §1.2, Q2
 /// ruled on PR #229): the timers' kernel clocks declared and checked
 /// against the RCC registers read back at the run's end, each USART's
@@ -599,10 +696,44 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
         LOCKED[1],
         MODEL_LOAD_ERROR,
         PANIC_MARK,
+        FAULT_MARK,
     ],
+    discard: unread_access_line,
     summarise: unhandled_write_key,
     ..LOG_FILTER
 };
+
+/// [`LOG_FILTER`]'s discard, and each USART write to its `TDR`, at any
+/// width (`AET-WO-2311` A5, built in `AET-WO-2314`): no foreign rule reads
+/// one (`judge_serial` reads `CR1` and `CR2` only), while the generated
+/// judge does, so its filter keeps them. ArduPilot's console writes about
+/// 600 in 5 s; this trims the log and does not move Renode's own memory.
+fn unread_access_line(line: &str) -> bool {
+    unjudged_access_line(line)
+        || log_body(line)
+            .and_then(aethelgard_twin::serial::access)
+            .is_some_and(|a| {
+                a.write
+                    && usart_tdr().is_some_and(|tdr| a.offset & !3 == tdr)
+                    && usarts().contains(&a.source.as_str())
+            })
+}
+
+/// A USART's `TDR` offset, from the header, read once; `None` if the header
+/// cannot be read (then no `TDR` write is discarded).
+fn usart_tdr() -> Option<u32> {
+    static TDR: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *TDR.get_or_init(|| {
+        let f = aethelgard_svd_hal::cmsis::register_facts().ok()?;
+        f.layout("USART").ok()?.offset("TDR", 0).ok()
+    })
+}
+
+/// Every stock USART's Renode name, read once.
+fn usarts() -> &'static [&'static str] {
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+    NAMES.get_or_init(aethelgard_twin::serial::stock_uarts)
+}
 
 /// An `Unhandled write` warning's summary key: the line after its timestamp
 /// with every written value elided, so writes of other values to the same
@@ -824,6 +955,7 @@ pub fn commands(
     flash: &[crate::elf::FlashLoad],
     serial: &[aethelgard_twin::serial::Options],
     panic: u64,
+    faults: &[(u32, u64)],
 ) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -845,6 +977,7 @@ pub fn commands(
     c.extend(usart_logs(serial));
     c.push(Erase::facts()?.hook());
     c.push(panic_hook(panic));
+    c.extend(fault_hooks(faults));
     c.extend(plan.stimuli());
     c.push(run_for(plan.virtual_ns));
     c.push(format!("echo \"{BEGIN}\""));
@@ -1288,6 +1421,7 @@ pub fn judge(
     flash: &[crate::elf::FlashLoad],
     hse_hz: u32,
     serial: &[aethelgard_twin::serial::Options],
+    faults: &[(u32, u64)],
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
     let text = out.text();
     let untrusted = |what: String| {
@@ -1805,6 +1939,23 @@ pub fn judge(
         ));
     }
     report.panic.entered_ns = Some(entered);
+    // A fault exception, as its hook logs the entry that halted the core
+    // (`AET-WO-2314`): the run fails by name, with the vector and the PC it
+    // stacked, before the handler's own loop could reach a bound. Every
+    // line, as for the panic: only the CPU writes the mark.
+    if let Some((n, stacked, ns)) = lines.iter().find_map(|line| fault_entry(line, faults)) {
+        let name = FAULT_VECTORS
+            .iter()
+            .find(|v| v.0 == n)
+            .map_or("a fault", |v| v.1);
+        findings.push(Finding::plain(
+            "foreign_fault",
+            format!(
+                "the core took {name} (exception {n}) at {}, from PC {stacked:#010x}; its handler's hook halted the core there",
+                ns.map_or("an unstamped time".to_owned(), |t| format!("{t} ns"))
+            ),
+        ));
+    }
     Ok((findings, Some(machine), report))
 }
 

@@ -76,10 +76,23 @@ fn elf_at(paddr: u32, code: &[u8], machine: u16) -> Vec<u8> {
     b
 }
 
-/// The foreign tests' firmware: [`elf`] with its panic at `0x08000020`
-/// (`common::foreign::with_panic`).
+/// The foreign tests' firmware: [`foreign_code`] at the flash's start with
+/// its panic at `0x08000020` (`common::foreign::with_panic`).
 fn foreign_elf() -> Vec<u8> {
-    common::foreign::with_panic(elf(), 0x0800_0020)
+    common::foreign::with_panic(elf_at(0x0800_0000, &foreign_code(), 40), 0x0800_0020)
+}
+
+/// [`code`] with a vector table's four fault entries (`0x0800000C` to
+/// `0x0800001B`) each naming the handler at `0x08000030`, Thumb bit set: the
+/// foreign judge hooks them, and refuses a table it cannot (`AET-WO-2314`).
+/// The foreign judge holds the core to no self-loop, so the one at
+/// `0x08000010` that the table overwrites is not needed.
+fn foreign_code() -> [u8; 64] {
+    let mut c = code();
+    for at in (0x0C..0x1C).step_by(4) {
+        c[at..at + 4].copy_from_slice(&0x0800_0031u32.to_le_bytes());
+    }
+    c
 }
 
 /// 64 bytes at the flash's start with one `yield; b.n` self-loop at
@@ -2591,10 +2604,10 @@ case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
 /// Renode 1.17.0's model logs ArduPilot's (`AET-WO-4400e` §1.1, measured).
 const BME280_READ: &str = "[00:00:00.050000000] [NOISY] i2c1.u2: Write F7\n[00:00:00.050001000] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0\n";
 
-/// [`elf`]'s one loaded flash segment as Renode hashes it after the run:
-/// [`code`] unchanged.
+/// [`foreign_elf`]'s one loaded flash segment as Renode hashes it after the
+/// run: [`foreign_code`] unchanged.
 fn flash_unchanged() -> String {
-    let sha: String = <sha2::Sha256 as sha2::Digest>::digest(code())
+    let sha: String = <sha2::Sha256 as sha2::Digest>::digest(foreign_code())
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
@@ -3068,9 +3081,17 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
         "0.0100000005",
         false,
     );
+    // It passes the memory rule, and is refused next because nothing it
+    // loads holds a vector table to hook its faults from (`AET-WO-2314`).
     let loaded = foreign_with(&tf.0, &d2, "10ms");
-    assert_ne!(loaded.status.code(), Some(3), "{loaded:?}");
-    assert_eq!(report(&loaded)["boot"]["judge"], "foreign", "{loaded:?}");
+    let e = report(&loaded);
+    assert_eq!(e["error"]["kind"], "ForeignFaultVectorUnusable", "{e}");
+    assert!(
+        e["error"]["message"].as_str().unwrap().contains(
+            "no PT_LOAD's file bytes hold the vector table's fault entries at 0x0800000c"
+        ),
+        "{e}"
+    );
     let outside = input.write("fmc.elf", &elf_at(0x6000_0000, &code(), 40));
     let refused = foreign_with(&tf.0, &outside, "10ms");
     assert_eq!(refused.status.code(), Some(3), "{refused:?}");
