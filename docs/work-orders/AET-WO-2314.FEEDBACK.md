@@ -93,7 +93,7 @@ All of it from the pinned tools image, capped (`~/bin/capped-run`, swap 0), on C
 - It ran through `ci/shard.sh run`, pinned to 4 CPUs (`taskset -c 0-3`, `nproc` 4), in the tools image, on this branch's final tree.
 - Result: **10 passes of 10**, 473–573 s each, with Furnace's load average at 5–22. `spike/2314/sh/replay.sh`.
 
-**1610's failing plan** (run 45397844312, the architect's 13:40Z note): five runs were going at the push, and the result goes on the bus and here before READY.
+**1610's failing plan** (run 45397844312, the architect's 13:40Z note): the BMP581 test **passed 5 of 5** (473–501 s; each run counts 285 of 287, the plan's two tests 1610 had not yet merged). CI on this branch (ci 45410550245, 9483542f): every shard green, shard 11 included.
 
 **So the cause is not named yet.** This branch's refusal now carries the undisturbed boot's end (§2 (1)), and the next CI failure will print it. Measured so far (`spike/2314/RESULTS.md`):
 - The failing runs lasted 55.0 s and 57.5 s, against 96.2 s when the same packing passed.
@@ -139,7 +139,7 @@ The wall bound fits these numbers. If CI names it, the fix and its numbers come 
 ## 9. Gates
 
 - `cargo fmt --all -- --check` clean; `cargo clippy --workspace --all-targets -- -D warnings` clean.
-- `cargo test --workspace --no-fail-fast`: **3,069 passed, 0 failed** (host, e452a1a0; the merge of main 1cb994c1 included).
+- `cargo test --workspace --no-fail-fast`: **3,074 passed, 0 failed** (host, after merging main 29b3a97d, 1610; 3,069 at e452a1a0 before it).
 - In the image, with tools:
   - `ci/foreign-judge.sh` all cases pass;
   - `twin_tier2` `bor_recovery` (3) and the foreign R1 tests (3) pass;
