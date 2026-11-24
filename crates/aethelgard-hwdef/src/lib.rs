@@ -48,6 +48,8 @@ pub const H7_SECTOR_KB: i64 = 128;
 /// with the pull its script gives the label written out (`:407-413`), which
 /// is RM0433's reset pull (Rev 9 §11.4.4 p. 542, `GPIOA_PUPDR` `0x6400 0000`).
 /// The label alone picks AF0 (`STM32H753xx.py:247`, `:249`).
+// belt-and-suspenders: `aethelgard-pincheck` keeps its own SWD pins, never
+// this table (INV-07, RUL-20: the judge shares no table with the generator).
 pub const SWD_LINES: [(&str, &str); 2] = [
     ("PA13", "PA13 JTMS-SWDIO SWD PULLUP"),
     ("PA14", "PA14 JTCK-SWCLK SWD PULLDOWN"),
@@ -471,15 +473,14 @@ pub fn generate(t: &SolvedTopology) -> Result<Hwdef, Refusal> {
             part: d.part.clone(),
         });
     }
-    // Every solved pin, by net: none may be an SWD pin.
-    let sense = t.power.as_ref().map(|p| &p.sense);
+    // Every solved pin, by net: none may be an SWD pin. A sense's pin is its
+    // ADC input's (`validate` refuses a disagreement, `AET-WO-1211a`).
     let solved_pins = t
         .assignments
         .iter()
         .map(|(net, a)| (net, &a.pin))
         .chain(t.gpio.iter().map(|(net, g)| (net, &g.pin)))
-        .chain(t.adc_inputs.iter().map(|(net, a)| (net, &a.pin)))
-        .chain(sense.into_iter().flatten().map(|(net, s)| (net, &s.pin)));
+        .chain(t.adc_inputs.iter().map(|(net, a)| (net, &a.pin)));
     for (net, pin) in solved_pins {
         if SWD_LINES.iter().any(|(swd, _)| swd == pin) {
             return Err(Refusal::SwdPinSolved {
@@ -726,6 +727,8 @@ impl Battery<'_> {
     }
 }
 
+// belt-and-suspenders: `aethelgard-pincheck`'s identity judge parses the same
+// channel and computes the same ratio by its own code (INV-07, RUL-20).
 /// The solved battery sense, if one: at most one, on ADC1 (`AET-WO-4410`
 /// S2: ArduPilot's H7 build fails without an ADC1 pin line), with a divider
 /// whose quotient a `float` holds exactly.

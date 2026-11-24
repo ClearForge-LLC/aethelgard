@@ -263,20 +263,23 @@ fn directive(line: &str) -> Option<(&str, &str)> {
     Some((&d[..end], &d[end..]))
 }
 
-/// The text after `name` when `line` is `#define <name>` followed by a blank
-/// or the end, with any blanks GCC allows around `#` and `define`
-/// (`AET-WO-4400b2` adversarial A1: ArduPilot writes a `define` line's own
-/// spacing through), `#` written either way ([`directive`]).
-fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+/// The text straight after `name` when `line` is `#define <name>…`, with any
+/// blanks GCC allows around `#` and `define` (`AET-WO-4400b2` adversarial A1:
+/// ArduPilot writes a `define` line's own spacing through), `#` written
+/// either way ([`directive`]).
+fn define_tail<'a>(line: &'a str, name: &str) -> Option<&'a str> {
     let blank = [' ', '\t'];
     let ("define", rest) = directive(line)? else {
         return None;
     };
-    if !rest.starts_with(blank) {
-        return None;
-    }
-    let after = rest.trim_start_matches(blank).strip_prefix(name)?;
-    (after.is_empty() || after.starts_with(blank)).then_some(after)
+    rest.starts_with(blank)
+        .then(|| rest.trim_start_matches(blank).strip_prefix(name))?
+}
+
+/// The text after `name` when `line` is `#define <name>` followed by a blank
+/// or the end.
+fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
+    define_tail(line, name).filter(|after| after.is_empty() || after.starts_with([' ', '\t']))
 }
 
 /// Whether `line` defines `name` as a function-like macro: `#define <name>(`,
@@ -286,15 +289,7 @@ fn defines<'a>(line: &'a str, name: &str) -> Option<&'a str> {
 /// ([`logical`]), so `<name>/**/(x)` is object-like and `<name>\` then
 /// `(x)` is function-like, as GCC reads them.
 fn defines_function(line: &str, name: &str) -> bool {
-    let blank = [' ', '\t'];
-    let Some(("define", rest)) = directive(line) else {
-        return false;
-    };
-    rest.starts_with(blank)
-        && rest
-            .trim_start_matches(blank)
-            .strip_prefix(name)
-            .is_some_and(|after| after.starts_with('('))
+    define_tail(line, name).is_some_and(|after| after.starts_with('('))
 }
 
 /// A function-like definition of `name` in a line the preprocessor may

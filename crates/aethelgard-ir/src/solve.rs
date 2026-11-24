@@ -668,21 +668,21 @@ fn solve_inner(
             // build enables ADC12 whatever the board holds and fails without
             // an ADC1 pin's DMA stream (`stm32h7_mcuconf.h:420`, ChibiOS
             // `hal_adc_lld.h:339` at `fb773567`); then ADC3, as before.
-            let adc1 = |pin: &&crate::Pin| {
-                pin.adc_channels
-                    .iter()
-                    .any(|c| c.split_once('_').is_some_and(|(p, _)| p == "ADC1"))
-            };
-            let modelled = free
+            // `choose_channel` takes ADC1 before ADC3, so the first pin it
+            // gives ADC1, else the first it gives any channel, in position order.
+            let modelled: Vec<(&str, &crate::Pin, (String, String))> = free
                 .iter()
-                .find(|(_, pin)| adc1(pin))
-                .or_else(|| {
-                    free.iter().find(|(_, pin)| {
-                        crate::pin_devices::choose_channel(&pin.adc_channels, false).is_some()
-                    })
+                .filter_map(|(name, pin)| {
+                    crate::pin_devices::choose_channel(&pin.adc_channels, false)
+                        .map(|c| (*name, *pin, c))
                 })
-                .copied();
-            let Some((name, pin)) = modelled else {
+                .collect();
+            let chosen = modelled
+                .iter()
+                .find(|(.., (p, _))| p == "ADC1")
+                .or(modelled.first())
+                .cloned();
+            let Some((name, pin, (peripheral, channel))) = chosen else {
                 if free.is_empty() {
                     return Err(SolveError::NoAdcPin {
                         net: s.net.clone(),
@@ -695,8 +695,6 @@ fn solve_inner(
                     withheld: String::new(),
                 });
             };
-            let (peripheral, channel) =
-                crate::pin_devices::choose_channel(&pin.adc_channels, false).expect("found above");
             sense_inputs.insert(
                 s.net.clone(),
                 crate::pin_devices::SolvedAdcInput {

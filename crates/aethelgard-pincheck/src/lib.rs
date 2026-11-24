@@ -29,6 +29,8 @@ pub const PART: &str = "STM32H753ZITx";
 /// AF0 (RM0433 Rev 9 §11.4.1 and §11.4.9–10; [`PinId::reset`]), so a debugger
 /// attaches after boot (`AET-WO-4410` (3), review 3 A11). The expected value
 /// is this check's own reset table, never a generator's line (`INV-07`).
+// belt-and-suspenders: the judge's own copy of the SWD pins, never
+// `aethelgard-hwdef`'s `SWD_LINES` (INV-07, RUL-20: no shared table).
 pub const SWD: [&str; 2] = ["PA13", "PA14"];
 
 /// What writes `SYSCFG_PMCR` in the ArduPilot this check judges, a cited
@@ -456,19 +458,25 @@ pub fn admit(topology: &SolvedTopology, package: &PinTable) -> Result<(), Refusa
 fn sensed(topology: &SolvedTopology) -> Result<BTreeMap<PinId, String>, Refusal> {
     let mut out = BTreeMap::new();
     for (net, s) in topology.power.iter().flat_map(|p| &p.sense) {
-        let id = PinId::parse(&s.pin).ok_or_else(|| Refusal::InvalidPin {
-            net: net.clone(),
-            pin: s.pin.clone(),
-        })?;
-        if SWD.contains(&s.pin.as_str()) {
-            return Err(Refusal::SwdPinNamed {
-                net: net.clone(),
-                pin: s.pin.clone(),
-            });
-        }
-        out.insert(id, net.clone());
+        out.insert(topology_pin(net, &s.pin)?, net.clone());
     }
     Ok(out)
+}
+
+/// A pin the topology names on `net`: one of `P[A-K]0-15` (`InvalidPin`),
+/// and not the SWD port's (`SwdPinNamed`).
+fn topology_pin(net: &str, pin: &str) -> Result<PinId, Refusal> {
+    let id = PinId::parse(pin).ok_or_else(|| Refusal::InvalidPin {
+        net: net.to_owned(),
+        pin: pin.to_owned(),
+    })?;
+    if SWD.contains(&pin) {
+        return Err(Refusal::SwdPinNamed {
+            net: net.to_owned(),
+            pin: pin.to_owned(),
+        });
+    }
+    Ok(id)
 }
 
 fn named(topology: &SolvedTopology, package: &PinTable) -> Result<Named, Refusal> {
@@ -484,28 +492,15 @@ fn named(topology: &SolvedTopology, package: &PinTable) -> Result<Named, Refusal
         });
     }
     refuse_unjudged_gpio(topology)?;
-    let parse = |net: &String, pin: &String| {
-        let id = PinId::parse(pin).ok_or_else(|| Refusal::InvalidPin {
-            net: net.clone(),
-            pin: pin.clone(),
-        })?;
-        if SWD.contains(&pin.as_str()) {
-            return Err(Refusal::SwdPinNamed {
-                net: net.clone(),
-                pin: pin.clone(),
-            });
-        }
-        Ok(id)
-    };
     let mut named = Named::new();
     for (net, a) in &topology.assignments {
         named.insert(
-            parse(net, &a.pin)?,
+            topology_pin(net, &a.pin)?,
             (net.clone(), Some(a.alternate_function)),
         );
     }
     for (net, g) in &topology.gpio {
-        named.insert(parse(net, &g.pin)?, (net.clone(), None));
+        named.insert(topology_pin(net, &g.pin)?, (net.clone(), None));
     }
     if let Some((_, (net, _))) = named
         .iter()
