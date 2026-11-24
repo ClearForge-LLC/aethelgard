@@ -417,6 +417,29 @@ pub fn function(bytes: &[u8], name: &str) -> Result<Option<u64>, Stop> {
     Ok(Some(address))
 }
 
+/// The `count` little-endian words at `address` in the file bytes one
+/// `PT_LOAD` loads there, by physical address (`AET-WO-2314`: the vector
+/// table the foreign judge reads its fault handlers from). `None` when no
+/// single segment's file bytes hold all of them.
+pub fn loaded_words(bytes: &[u8], address: u64, count: usize) -> Result<Option<Vec<u32>>, Stop> {
+    let len = 4 * count as u64;
+    Ok(loads(bytes)?
+        .iter()
+        .find(|l| {
+            l.paddr <= address
+                && address + len <= l.paddr + l.filesz
+                // belt-and-suspenders: `check_foreign` refuses a segment
+                // whose file bytes pass the file's end before this is read,
+                // so no test reaches it; it keeps a later caller from
+                // panicking on a slice past the end.
+                && l.offset + l.filesz <= bytes.len() as u64
+        })
+        .map(|l| {
+            let at = (l.offset + address - l.paddr) as usize;
+            (0..count).map(|i| u32_at(bytes, at + 4 * i)).collect()
+        }))
+}
+
 /// A foreign firmware's checks, then its image (`AET-WO-4400e`): every
 /// `PT_LOAD` with a size lies, at its physical and its virtual address,
 /// inside one region of [`foreign_memory`]; no two segments' **file bytes**

@@ -1658,6 +1658,9 @@ struct Ready {
     /// Where the foreign firmware's `AP_HAL::panic` starts, which the judge
     /// hooks (`AET-WO-1609`); `None` for a generated firmware.
     panic: Option<u64>,
+    /// Each fault vector's number and handler, which the foreign judge hooks
+    /// (`AET-WO-2314`); empty for a generated firmware.
+    faults: Vec<(u32, u64)>,
     /// The generated firmware's PWR rule (`AET-WO-4240v` §1.6); `None` for a
     /// foreign firmware, which is never given it.
     pwr: Option<aethelgard_twin::serial::PwrRule>,
@@ -1797,6 +1800,15 @@ fn ready(
         ),
         None => None,
     };
+    let vector_table =
+        u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
+    // The fault handlers the foreign judge hooks (`AET-WO-2314`), from the
+    // vector table the boot points VTOR at: one it cannot hook is refused
+    // by name, never booted without the hook (`INV-06`).
+    let faults = match &foreign {
+        Some(_) => renode::foreign::fault_handlers(&bytes, vector_table, &checked.executable)?,
+        None => Vec::new(),
+    };
     let image = aethelgard_twin::boot::expected(&boot.topology).map_err(twin_stop)?;
     let pwr = pwr_of(boot.foreign, &boot.topology)?;
     let clock = match boot.foreign {
@@ -1835,8 +1847,6 @@ fn ready(
         (false, true) => Some(capture_dir(scratch, "capture-undisturbed")?),
         _ => None,
     };
-    let vector_table =
-        u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     Ok((
         platform,
         Ready {
@@ -1861,6 +1871,7 @@ fn ready(
             foreign,
             flash,
             panic,
+            faults,
             pwr,
             clock,
             pins: boot.pins,
@@ -2291,6 +2302,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 .as_ref()
                 .and_then(|r| r.panic)
                 .expect("ready holds a foreign firmware's panic"),
+            &ready.as_ref().expect("foreign is ready's").faults,
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2349,7 +2361,13 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                     plan, firmware, spec, regions, clock, panic,
                 ));
             }
-            (-1, (vec![renode::bounded(&out, *bound)], None, None))
+            // A fault the hook caught before the bound is named too
+            // (`AET-WO-2314`): the run ended two ways.
+            let mut findings = vec![renode::bounded(&out, *bound)];
+            if let Some(r) = ready.as_ref().filter(|_| foreign_inputs.is_some()) {
+                findings.extend(renode::foreign::fault_finding(&out.text(), &r.faults));
+            }
+            (-1, (findings, None, None))
         }
         (Some(plan), _) if foreign_inputs.is_some() => {
             let code = out.code("renode")?;
@@ -2365,6 +2383,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 &r.flash,
                 r.topology.clock.hse_hz,
                 &foreign_serial,
+                &r.faults,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))
