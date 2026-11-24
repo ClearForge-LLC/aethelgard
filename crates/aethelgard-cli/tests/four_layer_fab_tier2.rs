@@ -27,7 +27,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 use common::verify::{Shared, copy_tree, one, package_files, root, scratch};
-use ready::{aethelgard_in, ready, rebased};
+use ready::{CONSOLE_SCENARIO, aethelgard_in, ready, rebased, with_console};
 use serde_json::Value;
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
@@ -44,13 +44,18 @@ const FOUR_SCENARIOS: [&str; 4] = [
 
 /// The scratch holding the 4-layer fixture made ready, as `spec.json`, and
 /// its seeded set rebased on it, written once; and the scenarios' names.
+/// Ready means the reference's console too (`AET-WO-4300k` Q3 (a), ruled
+/// 12:45Z: a board with no serial port generates no hwdef), as J3 with its
+/// scenario; the inner layers and the stackup are the fixture's own.
 fn readied() -> &'static (PathBuf, Vec<String>) {
     static READIED: OnceLock<(PathBuf, Vec<String>)> = OnceLock::new();
     READIED.get_or_init(|| {
         let four: Value = serde_json::from_slice(&fs::read(root().join(FOUR)).unwrap()).unwrap();
-        let spec = serde_json::to_vec_pretty(&ready(four)).unwrap();
+        let spec = serde_json::to_vec_pretty(&ready(with_console(four, "J3"))).unwrap();
         let dir = scratch("four-layer-ready");
-        let names = rebased(&dir, &spec, &FOUR_SCENARIOS);
+        let mut scenarios = FOUR_SCENARIOS.to_vec();
+        scenarios.push(CONSOLE_SCENARIO);
+        let names = rebased(&dir, &spec, &scenarios);
         (dir, names)
     })
 }

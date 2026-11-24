@@ -28,7 +28,11 @@ pub const MOVED: &str = "RebindMoved";
 
 const MANIFEST: &str = "MANIFEST.json";
 const NOTES: &str = "FAB-NOTES.md";
-/// The `MANIFEST.json` keys whose value lines a re-bind may move.
+/// The `MANIFEST.json` keys whose value lines a re-bind may move (M1, ruled
+/// 12:45Z): the specification's sha256, the topology's, which carries the
+/// specification's sha256 and so moves with every bump (measured on
+/// Sentinel-01's re-bind), and the verdict's, which names both. The ELF and
+/// every hardware file move nothing: a moved one refuses.
 const BINDING: [&str; 3] = ["specification_sha256", "topology_sha256", "verdict_sha256"];
 /// The line before `FAB-NOTES.md`'s specification sha256.
 const NOTES_LEAD: &str = "from the specification whose sha256 is";

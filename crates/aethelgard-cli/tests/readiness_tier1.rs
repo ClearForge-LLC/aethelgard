@@ -67,11 +67,13 @@ fn stackup(v: &mut Value) -> &mut serde_json::Map<String, Value> {
     v["board"]["stackup"].as_object_mut().unwrap()
 }
 
+/// 76 since the power review (`AET-WO-4300k` §3): five named assumptions
+/// added, the supervisor's lifecycle retired (held p. 16, active).
 #[test]
-fn the_base_passes_the_gate_with_71_conditions_from_every_source_and_none_stale() {
+fn the_base_passes_the_gate_with_76_conditions_from_every_source_and_none_stale() {
     let (spec, t, c) = base();
     assert_eq!(readiness::check(spec, t, c), Ok(()));
-    assert_eq!(c.len(), 71);
+    assert_eq!(c.len(), 76);
     for id in [
         "buck_junction_screened:U10",
         "supervisor_hysteresis_typical:U12",
@@ -80,6 +82,8 @@ fn the_base_passes_the_gate_with_71_conditions_from_every_source_and_none_stale(
         "pin_capacitance_declared:U5",
         "offboard_declared:J8.2",
         "usb_pair_undeclared:PA11",
+        "theta_ja_copper_mismatch:U10",
+        "supervisor_delay_unstated:U12",
     ] {
         assert!(c.contains_key(id), "{id} missing from {:?}", c.keys());
     }

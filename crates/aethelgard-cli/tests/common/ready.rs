@@ -107,6 +107,41 @@ pub fn ready(mut spec: Value) -> Value {
     spec
 }
 
+/// The reference's console scenario (`AET-WO-2302` D5): the open RX line,
+/// detected by its mechanism.
+pub const CONSOLE_SCENARIO: &str = "scenarios/sentinel-01/seeded/serial-rx-open-console.json";
+
+/// `spec` with the reference's console (`AET-WO-4300k` Q3 (a), ruled
+/// 12:45Z): its `CONSOLE` serial port, its connector under `reference`, and
+/// the reference's `acknowledge_unwitnessed`, which are a console-less
+/// board's and the console's together (`fab_tier1`'s new-field case). A
+/// board with no serial port generates no hwdef (`NoSerialPort`), which the
+/// readiness gate refuses; run it with [`CONSOLE_SCENARIO`] so the campaign
+/// covers the port.
+pub fn with_console(mut spec: Value, reference: &str) -> Value {
+    let r: Value = serde_json::from_slice(
+        &fs::read(root().join("examples/sentinel-01-minimal.json")).unwrap(),
+    )
+    .unwrap();
+    spec["serial_ports"] = r["serial_ports"].clone();
+    let mut conn = r["connectors"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c.to_string().contains("CONSOLE_TX"))
+        .unwrap()
+        .clone();
+    conn["reference"] = reference.into();
+    let conns = spec["connectors"].as_array_mut().unwrap();
+    assert!(
+        conns.iter().all(|c| c["reference"] != reference),
+        "{reference} is free"
+    );
+    conns.push(conn);
+    spec["acknowledge_unwitnessed"] = r["acknowledge_unwitnessed"].clone();
+    spec
+}
+
 /// `spec` written as `spec.json` in `dir`, beside each of `scenarios` (paths
 /// from the repository root) rebased on it under its own file name: a
 /// scenario's `base` must resolve inside the current directory
