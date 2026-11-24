@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
-const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const S03: &str = "examples/sentinel-03.json";
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -45,16 +45,40 @@ fn run(args: &[&str]) -> (i32, Value) {
     )
 }
 
+/// Sentinel-03's own drop limit (`AET-WO-4300k` D6, ruled at most 110 mV):
+/// above 113 mV its supervisor's release would sit at or above the rail's
+/// minimum at its pin, which `validate` refuses (`SupervisorAboveRail`).
+const S03_LIMIT_MV: u32 = 110;
+
 /// The gate's inputs, as a specification declares them.
+/// A bound's `cites` is kept: a stackup that declares a fabricator (Sentinel-03
+/// since `AET-WO-4300k` (b)) refuses an uncited bound.
 fn gated(mut v: Value, limit_mv: u32) -> Value {
     let st = &mut v["board"]["stackup"];
-    st["outer_copper_min_um"] =
-        json!({"value": 30, "source": "test: 1 oz foil plus plating, at least"});
-    st["plane_copper_min_um"] = json!({"value": 15, "source": "test: 1/2 oz foil, at least"});
-    st["plating_min_um"] =
-        json!({"value": 18, "source": "test: the fabricator's average hole plating"});
-    st["copper_temperature_max_c"] =
-        json!({"value": 125, "source": "test: the load's junction maximum"});
+    for (key, value, source) in [
+        (
+            "outer_copper_min_um",
+            30,
+            "test: 1 oz foil plus plating, at least",
+        ),
+        ("plane_copper_min_um", 15, "test: 1/2 oz foil, at least"),
+        (
+            "plating_min_um",
+            18,
+            "test: the fabricator's average hole plating",
+        ),
+        (
+            "copper_temperature_max_c",
+            125,
+            "test: the load's junction maximum",
+        ),
+    ] {
+        let cites = st[key]["cites"].clone();
+        st[key] = json!({"value": value, "source": source});
+        if !cites.is_null() {
+            st[key]["cites"] = cites;
+        }
+    }
     v["power"]["drop_limits"] =
         json!([{"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"}]);
     v
@@ -150,7 +174,8 @@ fn pins(s: &Value, side: &str) -> Vec<Value> {
 fn each_load_row_s_resistor_is_the_part_its_row_describes() {
     // The rows' own descriptions: the I2C pull-ups (3.465 V / 2.2 kOhm, then
     // / 10 kOhm), the flash's WP and HOLD pull-ups (its pins' leakage), and
-    // the 3.3 V regulator's feedback divider (3.465 V / (105 + 46.4) kOhm).
+    // the 3.3 V regulator's feedback divider (3.465 V / (105 + 46.4) kOhm),
+    // and the reset supervisor's NRST pull-up (`AET-WO-4300k` (9)).
     let described = [
         ("R1", "/I2C_SDA"),
         ("R2", "/I2C_SCL"),
@@ -159,6 +184,7 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         ("R6", "/U4_WP"),
         ("R7", "/U4_HOLD"),
         ("R20", "/U11_FB"),
+        ("R61", "/NRST"),
     ];
     let rows: Vec<String> = s03()["power"]["loads"]
         .as_array()
@@ -187,14 +213,19 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
 }
 
 /// A specification with no drop limit is not judged: no `supplies` key,
-/// so its verdict's bytes are as before.
+/// so its verdict's bytes are as before. Since `AET-WO-4300k` (2) a power
+/// tree requires its MCU supply's limit, so that is a board with no tree
+/// (sentinel-01-minimal), and Sentinel-03 without its limit is refused by
+/// name before any line is judged.
 #[test]
 fn a_specification_without_a_drop_limit_has_no_supplies() {
-    let (code, v) = extract(s03_board(), &root().join(S03));
+    let spec = root().join("examples/sentinel-01-minimal.json");
+    let board = emitted("s01-nolimit", &spec);
+    let (code, v) = extract(&board, &spec);
     assert_eq!(code, 0, "{v}");
     assert!(v.get("supplies").is_none(), "{v}");
     // ...and the table says so, by the key that would turn it on
-    // (`AET-WO-1609` §2): Sentinel-03 declares a power tree, not a limit.
+    // (`AET-WO-1609` §2).
     assert_eq!(
         part(&v, "extract.supply"),
         &json!({"gate": "extract.supply", "off": "power.drop_limits"})
@@ -203,6 +234,12 @@ fn a_specification_without_a_drop_limit_has_no_supplies() {
     assert_eq!(part(&v, "extract.lines")["judged"], lines, "{v}");
     assert_eq!(part(&v, "extract.pairs")["off"], "diff_pairs");
     assert_eq!(part(&v, "extract.oscillator")["off"], "mcu.hse.crystal");
+    let mut s = s03();
+    s["power"]["drop_limits"] = json!([]);
+    let (code, r) = extract(s03_board(), &write("s03-nolimit", &s));
+    assert_eq!(code, 2, "{r}");
+    assert_eq!(r["error"]["kind"], "DropLimitUndeclared", "{r}");
+    assert_eq!(r["error"]["id"], "VDD_3V3", "{r}");
 }
 
 /// Every input the gate reads is refused by name when the specification
@@ -215,7 +252,7 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
         "plating_min_um",
         "copper_temperature_max_c",
     ] {
-        let mut v = gated(s03(), 165);
+        let mut v = gated(s03(), S03_LIMIT_MV);
         v["board"]["stackup"].as_object_mut().unwrap().remove(key);
         let (code, r) = extract(s03_board(), &write(key, &v));
         assert_eq!(code, 2, "{key}: {r}");
@@ -229,7 +266,7 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
     // size, the ring) are refused at `emit`, before any board exists
     // (`via_ring_tier1`, `AET-WO-1314`)
     for key in ["hole_size_minus_um", "track_width_permille"] {
-        let mut v = gated(s03(), 165);
+        let mut v = gated(s03(), S03_LIMIT_MV);
         v["board"]["stackup"]["fab_tolerances"]
             .as_object_mut()
             .unwrap()
@@ -247,7 +284,7 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
     }
     // every part on the domain that draws current is named by a load
     // entry: the flash's removed, the gate names it
-    let mut v = gated(s03(), 165);
+    let mut v = gated(s03(), S03_LIMIT_MV);
     v["power"]["loads"]
         .as_array_mut()
         .unwrap()
@@ -265,9 +302,13 @@ fn each_input_the_gate_reads_is_refused_by_name_when_absent() {
 /// refused by name rather than passed.
 #[test]
 fn a_limit_on_a_domain_the_load_does_not_use_is_refused() {
-    let mut v = gated(s03(), 165);
-    v["power"]["drop_limits"] =
-        json!([{"domain": "VDD_5V", "max_millivolts": 250, "source": "test: the limit"}]);
+    let mut v = gated(s03(), S03_LIMIT_MV);
+    // The MCU's supply keeps its limit (`DropLimitUndeclared` otherwise,
+    // `AET-WO-4300k` (2)); the second names a domain with no MCU pin.
+    v["power"]["drop_limits"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"domain": "VDD_5V", "max_millivolts": 250, "source": "test: the limit"}));
     let (code, r) = extract(s03_board(), &write("five", &v));
     assert_eq!(code, 2, "{r}");
     assert_eq!(r["error"]["kind"], "SupplyTerminalMissing", "{r}");
@@ -319,11 +360,12 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
         .map(|c| c.as_str().unwrap())
         .collect();
     // each fabricator's tolerance priced, from its declared source, and the
-    // pads' drawn size named
+    // pads' drawn size named: Sentinel-03's stackup, OSH Park's since
+    // `AET-WO-4300k` (b), its track-width tolerance a declared condition
     for named in [
-        "+-0.075 mm per axis of its pad (JLCPCB",
-        "from 0.08 mm under to 0.13 mm over its drawn size (JLCPCB",
-        "every track at 0.8 of its drawn width (JLCPCB",
+        "+-0.051 mm per axis of its pad (OSH Park",
+        "from 0.064 mm under to 0.064 mm over its drawn size (OSH Park",
+        "every track at 0.8 of its drawn width (a declared condition: OSH Park publishes no track-width tolerance",
         "pads and via pads at their drawn size",
     ] {
         assert!(
@@ -345,7 +387,7 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
 /// declares no drop limit; this one adds it.
 #[test]
 fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
-    let (code, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), 165)));
+    let (code, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), S03_LIMIT_MV)));
     assert_eq!(code, 0, "{r}");
     let s = &r["supplies"][0];
     assert_eq!(s["verdict"], "pass", "{s}");
@@ -357,14 +399,15 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 }
 
 /// A ring under the gate's own need: at a declared ring of 0, Sentinel-03's
-/// GND vias are 0.65 mm, which keep the hole in the pad but not the band
-/// the gate prices, so every return is refused by name with the pad that
-/// would hold it, 0.7 mm (rulings 6974760231 (1), 6982875594 D5). A class
+/// GND vias keep the hole in the pad but not the band the gate prices, so
+/// every return is refused by name with the pad that would hold it (rulings
+/// 6974760231 (1), 6982875594 D5): 0.57 mm at OSH Park's tolerances since
+/// `AET-WO-4300k` (b) (0.7 mm at JLCPCB's). A class
 /// declaring a via under the ring rule is refused at `emit` instead
 /// (`ViaRingUnheld`, `via_ring_tier1`).
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
-    let mut v = gated(s03(), 165);
+    let mut v = gated(s03(), S03_LIMIT_MV);
     v["board"]["stackup"]["fab_tolerances"]["via_ring_um"]["value"] = json!(0);
     let spec = write("s03-ring0", &v);
     let board = emitted("s03-ring0", &spec);
@@ -379,7 +422,7 @@ fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
             p["refused"]["message"]
                 .as_str()
                 .unwrap()
-                .contains("via pad >= 0.7 mm"),
+                .contains("via pad >= 0.57 mm"),
             "{p}"
         );
     }
@@ -577,18 +620,23 @@ fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     let spec =
         |v: &Value| -> aethelgard_ir::Specification { serde_json::from_value(v.clone()).unwrap() };
     let rule = |v: &Value| JunctionRule::of(&spec(v));
-    let on = rule(&gated(s03(), 165)).unwrap();
+    let on = rule(&gated(s03(), S03_LIMIT_MV)).unwrap();
     // the board's stack carries it
-    let stack = Stack::of(&spec(&gated(s03(), 165))).unwrap();
+    let stack = Stack::of(&spec(&gated(s03(), S03_LIMIT_MV))).unwrap();
     assert_eq!(stack.junction.as_ref(), Some(&on));
     assert_eq!(on.nets, ["VDD_3V3", "GND"]);
+    // OSH Park's tolerances since `AET-WO-4300k` (b) (JLCPCB's were 130 and
+    // 75 um).
     assert_eq!(
         (on.hole_plus_nm, on.hole_offset_nm, on.plating_nm),
-        (130_000, 75_000, 18_000)
+        (64_000, 51_000, 18_000)
     );
-    assert_eq!(on.reach(300_000), 349_068);
-    assert_eq!(rule(&s03()), None);
-    let mut v = gated(s03(), 165);
+    // (300000 + 64000 + 1) / 2 + 18000 + 10000 + ⌈51000·√2⌉ + 1 = 282126.
+    assert_eq!(on.reach(300_000), 282_126);
+    // Sentinel-03 declares its own limit since `AET-WO-4300k` D6, so the rule
+    // is on for it as committed; with no limit it is off.
+    assert_eq!(rule(&s03()).as_ref(), Some(&on));
+    let mut v = gated(s03(), S03_LIMIT_MV);
     v["power"]["drop_limits"] = json!([]);
     assert_eq!(rule(&v), None);
     for (path, key) in [

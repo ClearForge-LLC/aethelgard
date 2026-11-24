@@ -18,7 +18,9 @@ use sha2::{Digest, Sha256};
 
 /// Each specification (from the repository root) and the controllers the
 /// measurement found starting with no kernel clock (`spike/4240e/out/measure.json`).
-const SCAR: [(&str, &[&str]); 26] = [
+/// Sentinel-03 left the list in `AET-WO-4300k`: its crystal runs PLL1, so it
+/// has no switch to remove (`sentinel_03_runs_pll1_from_its_crystal_with_no_switch`).
+const SCAR: [(&str, &[&str]); 25] = [
     (
         "crates/aethelgard-cli/tests/fixtures/connectors.json",
         &["SPI1", "SPI2"],
@@ -69,10 +71,6 @@ const SCAR: [(&str, &[&str]); 26] = [
     ),
     (
         "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json",
-        &["SPI1", "SPI2"],
-    ),
-    (
-        "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
         &["SPI1", "SPI2"],
     ),
     (
@@ -169,4 +167,16 @@ fn every_scar_board_is_clocked_as_solved_and_refused_by_name_as_it_was() {
         assert_eq!(err.kind(), "KernelClockDeadSwitch", "{path}");
         assert!(err.to_string().starts_with(unclocked[0]), "{path}: {err}");
     }
+}
+
+/// `AET-WO-4300k`: Sentinel-03 declares its 16 MHz crystal, so PLL1 runs from
+/// HSE, its SPI kernels are clocked with no switch, the rule passes and the
+/// board generates; the scar it carried (SPI1, SPI2) is gone.
+#[test]
+fn sentinel_03_runs_pll1_from_its_crystal_with_no_switch() {
+    let (t, table) = solved("examples/sentinel-03.json");
+    assert!(t.clock.hse.is_some());
+    assert!(t.clock.kernel_switch.is_none());
+    assert_eq!(check(&t), Vec::new());
+    assert!(generate_with("scar", &t, &table, &answers).is_ok());
 }

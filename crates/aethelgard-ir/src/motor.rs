@@ -224,6 +224,12 @@ pub enum PullFitment {
 pub enum Esc {
     #[serde(rename = "none")]
     NoEsc(NoEsc),
+    /// An ESC fed through the board's `VBAT` copper (`AET-WO-4300k` (10)):
+    /// motor current crosses the board, so a fuse on the input is refused
+    /// (`FuseInMotorPath`) and a battery sag cannot model it yet
+    /// (`AET-WO-4500`'s part).
+    #[serde(rename = "board_vbat")]
+    BoardVbat(NoEsc),
 }
 
 /// Exactly one key, a variant's name: an empty object is refused as the
@@ -243,7 +249,13 @@ impl<'de> Deserialize<'de> for Esc {
                 };
                 let esc = match key.as_str() {
                     "none" => Esc::NoEsc(map.next_value()?),
-                    other => return Err(serde::de::Error::unknown_variant(other, &["none"])),
+                    "board_vbat" => Esc::BoardVbat(map.next_value()?),
+                    other => {
+                        return Err(serde::de::Error::unknown_variant(
+                            other,
+                            &["none", "board_vbat"],
+                        ));
+                    }
                 };
                 if map.next_key::<String>()?.is_some() {
                     return Err(serde::de::Error::custom(

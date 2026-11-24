@@ -2939,6 +2939,7 @@ mod differential {
             power: None,
             accept_lifecycle: Vec::new(),
             acknowledge_unwitnessed: Vec::new(),
+            acknowledge_conditions: Vec::new(),
             project_name: "t".into(),
             mcu: Mcu {
                 part: "T".into(),
@@ -2955,6 +2956,7 @@ mod differential {
                 }),
                 reset_switch: false,
                 foreign_clock: None,
+                reset_supervisor: None,
                 reserved_pins: Vec::new(),
             },
             voltage_domains: vec![VoltageDomain {

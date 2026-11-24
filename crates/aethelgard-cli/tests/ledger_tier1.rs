@@ -1228,21 +1228,35 @@ fn a_partial_entry_is_reported_completed_with_its_reason_emptied() {
     assert_eq!(ledger::acknowledge(&mut l, &spec), Vec::<String>::new());
 }
 
-/// §1.1, §1.3 on Sentinel-03 (measured in `spike/2307/`): its 280
-/// unacknowledged rows across 36 registers need 44 entries, 7 completing an
-/// entry it holds (its fields kept) and 37 new, every reason "", 315 fields
-/// in all. `AET-WO-4300i` moved MOTOR1 PE9 -> PA8: its `AFSEL8`, `MODER8`
-/// and `OSPEED8` rows complete the held `GPIOA` entries (`GPIOA.AFRH` the
-/// seventh), `PE9`'s leave `GPIOE`'s, and `PUPD9` joins `GPIOE.PUPDR` while
-/// `PUPD8` is the motor rule's.
-/// No entry's reason is ever a ledger row's `judge` text, and none covers a
-/// row outside its register and class.
+/// §1.1, §1.3 on Sentinel-03 (measured in `spike/2307/`), and since
+/// `AET-WO-4300k` D10 (ruled): the committed specification acknowledges every
+/// row, each entry with its own reason, none a ledger row's `judge` text and
+/// none covering a row outside its register and class. With its entries
+/// removed, `missing_entries` proposes one entry per register and class for
+/// every row, every reason "", and the same holds of them.
 #[test]
 fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
-    let spec = spec_of("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
-    let (t, table) = fixture("sentinel-03");
+    let committed = spec_of("examples/sentinel-03.json");
+    let (t, table) = solve(&fs::read(root().join("examples/sentinel-03.json")).unwrap()).unwrap();
     let mut l = ledger::build(&t, &table).unwrap();
-    assert_eq!(ledger::stale(&l, &spec), None);
+    assert_eq!(ledger::stale(&l, &committed), None);
+    assert_eq!(
+        ledger::acknowledge(&mut l, &committed),
+        Vec::<String>::new()
+    );
+    assert!(ledger::missing_entries(&l, &committed).is_empty());
+    let held = &committed.acknowledge_unwitnessed;
+    assert!(held.iter().all(|a| !a.reason.trim().is_empty()));
+    for a in held {
+        for r in &l.rows {
+            assert_ne!(a.reason, r.judge, "{} carries {}'s judge", a.register, r.id);
+        }
+    }
+    covers_only_ledger_rows(&l, held);
+    // The entries `missing_entries` proposes with none held.
+    let mut spec = committed.clone();
+    spec.acknowledge_unwitnessed.clear();
+    let mut l = ledger::build(&t, &table).unwrap();
     let missing = ledger::acknowledge(&mut l, &spec);
     let entries = ledger::missing_entries(&l, &spec);
     let registers: std::collections::BTreeSet<_> = entries.iter().map(|a| &a.register).collect();
@@ -1255,9 +1269,19 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
         .collect();
     assert_eq!(
         (missing.len(), registers.len(), entries.len(), held.len()),
-        (280, 36, 44, 7)
+        (469, 57, 68, 0)
     );
-    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 315);
+    // One proposed entry per committed one: D10 wrote exactly these.
+    assert_eq!(entries.len(), committed.acknowledge_unwitnessed.len());
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 468);
+    assert_eq!(
+        committed
+            .acknowledge_unwitnessed
+            .iter()
+            .map(|a| a.fields.len())
+            .sum::<usize>(),
+        468
+    );
     for a in &held {
         let class = a.class_kind().unwrap();
         let mine = spec
@@ -1313,8 +1337,7 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
 /// Table 10's limit at VDD = 0.
 #[test]
 fn every_unbounded_path_is_a_twin_limit_never_judged() {
-    let bytes =
-        fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+    let bytes = fs::read(root().join("examples/sentinel-03.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let (t, _) = solve(&bytes).unwrap();
     let rows = ledger::off_domain_rows(&spec, &t).unwrap();

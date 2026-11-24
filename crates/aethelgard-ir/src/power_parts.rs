@@ -42,7 +42,7 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// Version 10 replaced that with `motor_pull_bound`, the inputs the motor
 /// pull-down's bound is computed from per board (`AET-WO-4300j` D3 (a)), and
 /// added the `jumper` kind, the pull's series link (D4).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 11;
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 12;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -165,6 +165,10 @@ pub struct ThetaCurve {
     pub package: String,
     /// The copper layers of the board the curve was taken on.
     pub board_copper_layers: u8,
+    /// Its outer and inner copper, µm, as the figure's condition states them
+    /// (`AET-WO-4300k`, the power review's F2): a board with less is named.
+    pub outer_copper_um: u16,
+    pub inner_copper_um: u16,
     pub condition: String,
     /// `(cm² per layer, tenths of a kelvin per watt)`, area rising.
     pub points: Vec<(i64, i64)>,
@@ -376,6 +380,78 @@ pub struct Tvs {
     pub clamp_condition: String,
 }
 
+/// A P-channel MOSFET on the battery input, against reverse polarity
+/// (`AET-WO-4300k` (10)). Magnitudes: every voltage and current is stated
+/// positive, as the datasheet's negative P-channel figures' size.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pfet {
+    /// |VDSS|, the absolute maximum drain-source voltage, mV.
+    pub vds_max_millivolts: Limit,
+    /// |VGSS|, the absolute maximum gate-source voltage, mV.
+    pub vgs_max_millivolts: Limit,
+    /// |ID| continuous at its stated ambient, mA.
+    pub id_max_milliamps: Limit,
+    /// RDS(on) maxima, each at its |VGS|, mΩ: the board's gate drive must
+    /// reach one of them.
+    pub rds_on_max: Vec<RdsOn>,
+    /// Whether the datasheet is marked advance information: its figures are
+    /// a condition the specification acknowledges.
+    pub advance_information: Option<At>,
+}
+
+/// One RDS(on) maximum at a gate drive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RdsOn {
+    pub vgs_millivolts: i64,
+    pub max_milliohms: Limit,
+}
+
+/// A zener that holds a P-FET's gate within its rating (`AET-WO-4300k`
+/// (10)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Zener {
+    /// VZ at its test current, mV.
+    pub vz_millivolts: Ranged,
+    /// The test current VZ is stated at, µA.
+    pub izt_microamps: Limit,
+}
+
+/// A fast-acting fuse on the flight controller's own supply branch
+/// (`AET-WO-4300k` (10)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fuse {
+    /// The rated current, mA.
+    pub rated_milliamps: Limit,
+    /// The rated DC voltage, mV.
+    pub voltage_max_millivolts: Limit,
+    /// The cold resistance, typical, µΩ, and its stated tolerance, per mille.
+    pub resistance_typ_microohms: Limit,
+    pub resistance_tolerance_permille: Limit,
+    /// The melting I²t, mA²s (A²s × 10⁶), with its stated condition.
+    pub melting_i2t_milliamp2_seconds: Limit,
+    pub melting_condition: String,
+    /// The rated current kept at 85 °C, per mille, read from the maker's
+    /// derating curve.
+    pub kept_at_85c_permille: Limit,
+}
+
+/// A voltage supervisor on NRST (`AET-WO-4300k` (9), Path B).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Supervisor {
+    /// VIT−, the falling threshold, mV, over its stated junction range.
+    pub falling_millivolts: Ranged,
+    /// The hysteresis, mV, stated typical only: the rising threshold's
+    /// maximum is VIT− max plus it, a condition (ruled D6).
+    pub hysteresis_typ_millivolts: Limit,
+    /// The recommended VDD, mV.
+    pub vdd_millivolts: Ranged,
+    /// The open-drain output's pull-up range the maker names, Ω.
+    pub pull_up_ohms: Ranged,
+    /// How far above VIT− the supply must sit for the stated reset delay to
+    /// hold, mV (`AET-WO-4300k`, the power review's F9).
+    pub delay_overdrive_millivolts: Limit,
+}
+
 /// A zero-ohm jumper (`AET-WO-4300j` D4): its resistance and current, each
 /// at most. A jumper has no tolerance, TCR or drift a resistor row needs
 /// (VISHAY_20035 p. 2: TCR "is not specified for 0 Ohm jumpers").
@@ -439,6 +515,10 @@ pub struct Mcu {
     pub idd_condition: String,
     /// VBOR0 to VBOR3 falling, each at most, mV.
     pub bor_falling_max_millivolts: Vec<Limit>,
+    /// VBOR0 to VBOR3 falling, each at least, mV: the lowest supply the MCU
+    /// may run at before its reset holds, which a supply-bounded device on
+    /// its rail must not be below (`AET-WO-4300k` (9)).
+    pub bor_falling_min_millivolts: Vec<Limit>,
     /// VBOR0 to VBOR3 rising, each at most, mV: the supply must clear it to
     /// leave reset (`AET-WO-4300d3` §1.4).
     pub bor_rising_max_millivolts: Vec<Limit>,
@@ -785,6 +865,10 @@ pub enum Kind {
     Tvs(Tvs),
     Crystal(Box<Crystal>),
     Jumper(Jumper),
+    Pfet(Box<Pfet>),
+    Zener(Zener),
+    Fuse(Box<Fuse>),
+    Supervisor(Supervisor),
 }
 
 impl Kind {
@@ -801,6 +885,10 @@ impl Kind {
             Kind::Tvs(_) => "tvs",
             Kind::Crystal(_) => "crystal",
             Kind::Jumper(_) => "jumper",
+            Kind::Pfet(_) => "pfet",
+            Kind::Zener(_) => "zener",
+            Kind::Fuse(_) => "fuse",
+            Kind::Supervisor(_) => "supervisor",
         }
     }
 }
@@ -866,24 +954,9 @@ pub struct ExternalRule {
     pub dielectrics: Vec<Dielectric>,
     pub at: At,
     /// The least effective capacitance (under DC bias) the datasheet states
-    /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3).
-    pub effective_min_picofarads: Option<EffectiveMin>,
-}
-
-/// A role's effective minimum, and what a shortfall does: refuse, or be
-/// reported by name, not blocking (ruled D2 (c) on PR #158: the buck's input,
-/// whose enforcement and re-pick are the next power work order's).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EffectiveMin {
-    pub limit: Limit,
-    pub on_shortfall: OnShortfall,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OnShortfall {
-    Enforce,
-    Report,
+    /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3); a
+    /// shortfall is refused (`AET-WO-4300k` A6, enforced on every row).
+    pub effective_min_picofarads: Option<Limit>,
 }
 
 /// The thermal-via rule of an exposed pad, as the datasheet states it. The
@@ -1041,6 +1114,57 @@ enum RawKind {
     Tvs(RawTvs),
     Crystal(Box<RawCrystal>),
     Jumper(RawJumper),
+    Pfet(Box<RawPfet>),
+    Zener(RawZener),
+    Fuse(Box<RawFuse>),
+    Supervisor(RawSupervisor),
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawPfet {
+    vds_max_millivolts: RawLimit,
+    vgs_max_millivolts: RawLimit,
+    id_max_milliamps: RawLimit,
+    rds_on_max: Vec<RawRdsOn>,
+    #[serde(deserialize_with = "Option::deserialize")]
+    advance_information: Option<RawAt>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawRdsOn {
+    vgs_millivolts: i64,
+    max_milliohms: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawZener {
+    vz_millivolts: RawRanged,
+    izt_microamps: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawFuse {
+    rated_milliamps: RawLimit,
+    voltage_max_millivolts: RawLimit,
+    resistance_typ_microohms: RawLimit,
+    resistance_tolerance_permille: RawLimit,
+    melting_i2t_milliamp2_seconds: RawLimit,
+    melting_condition: String,
+    kept_at_85c_permille: RawLimit,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSupervisor {
+    falling_millivolts: RawRanged,
+    hysteresis_typ_millivolts: RawLimit,
+    vdd_millivolts: RawRanged,
+    pull_up_ohms: RawRanged,
+    delay_overdrive_millivolts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1082,6 +1206,8 @@ struct RawBuck {
 struct RawTheta {
     package: String,
     board_copper_layers: u8,
+    outer_copper_um: u16,
+    inner_copper_um: u16,
     condition: String,
     points: Vec<RawThetaPoint>,
     at: RawAt,
@@ -1248,6 +1374,7 @@ struct RawMcu {
     idd_max_milliamps: RawLimit,
     idd_condition: String,
     bor_falling_max_millivolts: Vec<RawLimit>,
+    bor_falling_min_millivolts: Vec<RawLimit>,
     bor_rising_max_millivolts: Vec<RawLimit>,
     rain_max_ohms: Vec<RawRain>,
     reservoir_rule: RawReservoirRule,
@@ -1439,7 +1566,6 @@ struct RawExternal {
 struct RawEffective {
     value: i64,
     at: RawAt,
-    on_shortfall: OnShortfall,
 }
 
 #[derive(Deserialize)]
@@ -1665,16 +1791,13 @@ impl Reader<'_> {
                 Some(_) if inductor => {
                     return Err(format!("`{f}`: an inductor has no effective capacitance"));
                 }
-                Some(m) => Some(EffectiveMin {
-                    limit: self.positive(
-                        RawLimit {
-                            value: m.value,
-                            at: m.at,
-                        },
-                        &format!("{f}.effective_min_picofarads"),
-                    )?,
-                    on_shortfall: m.on_shortfall,
-                }),
+                Some(m) => Some(self.positive(
+                    RawLimit {
+                        value: m.value,
+                        at: m.at,
+                    },
+                    &format!("{f}.effective_min_picofarads"),
+                )?),
                 None => None,
             };
             out.push(ExternalRule {
@@ -1792,6 +1915,9 @@ impl Reader<'_> {
                 t.board_copper_layers
             ));
         }
+        if t.outer_copper_um == 0 || t.inner_copper_um == 0 {
+            return Err(format!("`{f}`'s copper is 0 um"));
+        }
         if t.points.is_empty() {
             return Err(format!("`{f}.points` is empty"));
         }
@@ -1816,6 +1942,8 @@ impl Reader<'_> {
         Ok(ThetaCurve {
             package: t.package,
             board_copper_layers: t.board_copper_layers,
+            outer_copper_um: t.outer_copper_um,
+            inner_copper_um: t.inner_copper_um,
             condition: t.condition,
             points,
             at: self.at(t.at, f)?,
@@ -1991,7 +2119,11 @@ fn pin_roles(kind: &Kind) -> &'static [&'static str] {
         | Kind::BulkCapacitor(_)
         | Kind::Tvs(_)
         | Kind::Crystal(_)
-        | Kind::Jumper(_) => &[],
+        | Kind::Jumper(_)
+        | Kind::Zener(_)
+        | Kind::Fuse(_) => &[],
+        Kind::Pfet(_) => &["D", "G", "S"],
+        Kind::Supervisor(_) => &["GND", "RESET", "VDD"],
     }
 }
 
@@ -2255,6 +2387,87 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 )?,
             }))
         }
+        RawKind::Pfet(f) => {
+            if f.rds_on_max.is_empty() {
+                return Err("`kind.pfet.rds_on_max` is empty".to_owned());
+            }
+            let mut rds_on_max = Vec::new();
+            for (i, x) in f.rds_on_max.into_iter().enumerate() {
+                if x.vgs_millivolts <= 0 {
+                    return Err(format!(
+                        "`kind.pfet.rds_on_max[{i}].vgs_millivolts` is {}, not above zero (a magnitude)",
+                        x.vgs_millivolts
+                    ));
+                }
+                rds_on_max.push(RdsOn {
+                    vgs_millivolts: x.vgs_millivolts,
+                    max_milliohms: r
+                        .positive(x.max_milliohms, "kind.pfet.rds_on_max.max_milliohms")?,
+                });
+            }
+            let advance_information = match f.advance_information {
+                Some(a) => Some(r.at(a, "kind.pfet.advance_information")?),
+                None => None,
+            };
+            Kind::Pfet(Box::new(Pfet {
+                vds_max_millivolts: r
+                    .positive(f.vds_max_millivolts, "kind.pfet.vds_max_millivolts")?,
+                vgs_max_millivolts: r
+                    .positive(f.vgs_max_millivolts, "kind.pfet.vgs_max_millivolts")?,
+                id_max_milliamps: r.positive(f.id_max_milliamps, "kind.pfet.id_max_milliamps")?,
+                rds_on_max,
+                advance_information,
+            }))
+        }
+        RawKind::Zener(z) => Kind::Zener(Zener {
+            vz_millivolts: r.ranged_positive(z.vz_millivolts, "kind.zener.vz_millivolts")?,
+            izt_microamps: r.positive(z.izt_microamps, "kind.zener.izt_microamps")?,
+        }),
+        RawKind::Fuse(f) => {
+            text(&f.melting_condition, "kind.fuse.melting_condition", 200)?;
+            let tolerance = r.limit(
+                f.resistance_tolerance_permille,
+                "kind.fuse.resistance_tolerance_permille",
+            )?;
+            if !(0..1000).contains(&tolerance.value) {
+                return Err("`kind.fuse.resistance_tolerance_permille` is not 0 to 999".to_owned());
+            }
+            let kept = r.positive(f.kept_at_85c_permille, "kind.fuse.kept_at_85c_permille")?;
+            if kept.value > 1000 {
+                return Err("`kind.fuse.kept_at_85c_permille` is above 1000".to_owned());
+            }
+            Kind::Fuse(Box::new(Fuse {
+                rated_milliamps: r.positive(f.rated_milliamps, "kind.fuse.rated_milliamps")?,
+                voltage_max_millivolts: r
+                    .positive(f.voltage_max_millivolts, "kind.fuse.voltage_max_millivolts")?,
+                resistance_typ_microohms: r.positive(
+                    f.resistance_typ_microohms,
+                    "kind.fuse.resistance_typ_microohms",
+                )?,
+                resistance_tolerance_permille: tolerance,
+                melting_i2t_milliamp2_seconds: r.positive(
+                    f.melting_i2t_milliamp2_seconds,
+                    "kind.fuse.melting_i2t_milliamp2_seconds",
+                )?,
+                melting_condition: f.melting_condition,
+                kept_at_85c_permille: kept,
+            }))
+        }
+        RawKind::Supervisor(s) => Kind::Supervisor(Supervisor {
+            falling_millivolts: r
+                .ranged_positive(s.falling_millivolts, "kind.supervisor.falling_millivolts")?,
+            hysteresis_typ_millivolts: r.positive(
+                s.hysteresis_typ_millivolts,
+                "kind.supervisor.hysteresis_typ_millivolts",
+            )?,
+            vdd_millivolts: r
+                .ranged_positive(s.vdd_millivolts, "kind.supervisor.vdd_millivolts")?,
+            pull_up_ohms: r.ranged_positive(s.pull_up_ohms, "kind.supervisor.pull_up_ohms")?,
+            delay_overdrive_millivolts: r.positive(
+                s.delay_overdrive_millivolts,
+                "kind.supervisor.delay_overdrive_millivolts",
+            )?,
+        }),
         RawKind::Tvs(t) => {
             text(&t.clamp_condition, "kind.tvs.clamp_condition", 200)?;
             let standoff = r.positive(t.standoff_millivolts, "kind.tvs.standoff_millivolts")?;
@@ -2304,6 +2517,23 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 }
                 bor.push(l);
             }
+            if m.bor_falling_min_millivolts.len() != 4 {
+                return Err(format!(
+                    "`kind.mcu.bor_falling_min_millivolts` holds {} levels, not VBOR0 to VBOR3",
+                    m.bor_falling_min_millivolts.len()
+                ));
+            }
+            let mut bor_min: Vec<Limit> = Vec::with_capacity(4);
+            for (i, l) in m.bor_falling_min_millivolts.into_iter().enumerate() {
+                let l = r.positive(l, &format!("kind.mcu.bor_falling_min_millivolts[{i}]"))?;
+                if bor_min.last().is_some_and(|p| p.value >= l.value) || l.value > bor[i].value {
+                    return Err(
+                        "`kind.mcu.bor_falling_min_millivolts` does not rise from VBOR0 to VBOR3, each at or under its falling maximum"
+                            .to_owned(),
+                    );
+                }
+                bor_min.push(l);
+            }
             if m.bor_rising_max_millivolts.len() != 4 {
                 return Err(format!(
                     "`kind.mcu.bor_rising_max_millivolts` holds {} levels, not VBOR0 to VBOR3",
@@ -2351,6 +2581,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 idd_max_milliamps: r.positive(m.idd_max_milliamps, "kind.mcu.idd_max_milliamps")?,
                 idd_condition: m.idd_condition,
                 bor_falling_max_millivolts: bor,
+                bor_falling_min_millivolts: bor_min,
                 bor_rising_max_millivolts: rising,
                 rain_max_ohms: rain,
                 reservoir_rule: ReservoirRule {

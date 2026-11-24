@@ -119,7 +119,24 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             continue;
         }
         let (drill_nm, join) = match (pad.arg(2), copper.as_slice()) {
-            (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => (None, None),
+            (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => {
+                // `AET-WO-4300k` (a): a pad on a thermal pour may carry its
+                // own solid join, which `pour` reads; nothing else judges it.
+                // `0`: a small passive the pour does not join at all.
+                let join = match one(&pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
+                    None | Some((Some("0"), None)) => None,
+                    Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => {
+                        Some(j)
+                    }
+                    Some(other) => {
+                        return Err(format!(
+                            "{what} has `zone_connect` {}",
+                            strict::echo(&other)
+                        ));
+                    }
+                };
+                (None, join)
+            }
             (Some("thru_hole"), ["*.Cu"]) => through_hole(&pad, &what)?,
             _ => {
                 return Err(format!(
@@ -634,15 +651,23 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .iter()
         .map(|(l, n)| (n.clone(), l.clone()))
         .collect();
-    let ok = if stack.has_planes() {
-        let mut z = zones.clone();
-        z.sort();
-        let mut p = planes.clone();
-        p.sort();
-        z == p
-    } else {
-        zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
-    };
+    // `AET-WO-4300k` (a): the thermal pours are declared zones too.
+    let pours = stack.pour_zones();
+    let (zones, extra): (Vec<_>, Vec<_>) = zones.into_iter().partition(|z| !pours.contains(z));
+    let mut found = extra.clone();
+    found.sort();
+    let mut want = pours.clone();
+    want.sort();
+    let ok = found == want
+        && if stack.has_planes() {
+            let mut z = zones.clone();
+            z.sort();
+            let mut p = planes.clone();
+            p.sort();
+            z == p
+        } else {
+            zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
+        };
     if !ok {
         return Err(no(
             "PlanesDisagree",

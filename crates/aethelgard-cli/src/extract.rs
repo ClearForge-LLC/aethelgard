@@ -55,6 +55,11 @@ struct Report {
     /// declared, so no other report moves.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     oscillator: Vec<Value>,
+    /// Each buck's thermal pad, with the copper it joins on each layer,
+    /// measured from the board as read (`AET-WO-4300k` (a)); absent with no
+    /// buck, so no other report moves.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    thermal: Vec<Value>,
     /// Each part of the gate, judged or off by the key that turns it on
     /// (`AET-WO-1609`): [`parts`].
     ran: Vec<Ran>,
@@ -76,12 +81,13 @@ fn parts(
     supplies: usize,
     oscillator: usize,
     conductors: usize,
+    thermal: usize,
+    openings: usize,
 ) -> Vec<Ran> {
     let drop_limits = spec
         .power
         .as_ref()
-        .and_then(|p| p.drop_limits.as_ref())
-        .is_some_and(|l| !l.is_empty());
+        .is_some_and(|p| !p.drop_limits.is_empty());
     let crystal = matches!(spec.mcu.hse, Some(aethelgard_ir::clock::Hse::Crystal(_)));
     vec![
         Ran::judged("extract.lines", lines as u64),
@@ -102,6 +108,15 @@ fn parts(
             !spec.diff_pairs.is_empty(),
             conductors as u64,
             "diff_pairs",
+        ),
+        Ran::judged("extract.openings", openings as u64),
+        Ran::part(
+            "extract.thermal",
+            spec.power
+                .as_ref()
+                .is_some_and(|p| p.regulators.iter().any(|r| r.junction.is_some())),
+            thermal as u64,
+            "power.regulators[].junction",
         ),
     ]
 }
@@ -485,6 +500,58 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if !oscillator.is_empty() {
         conditions.push(bound::OSC_PIN_CONDITION.to_owned());
     }
+    // `AET-WO-4300k` (a): each buck's thermal pad, the copper it joins
+    // measured on the board as read, and its junction screened at the least
+    // joined layer's area.
+    let pads: Vec<(String, String)> = read
+        .board
+        .stack
+        .thermal
+        .iter()
+        .map(|t| (t.reference.clone(), t.pad.clone()))
+        .collect();
+    let mut thermal = Vec::new();
+    for j in aethelgard_eda::pour::joined(&read.board, &read.routed, &pads) {
+        let layers: serde_json::Map<String, Value> = j
+            .layers
+            .iter()
+            .map(|(l, a)| (l.clone(), json!(a)))
+            .collect();
+        let verdict = match aethelgard_ir::power::junction_screen(&spec, &j.reference, j.min_mm2) {
+            Ok(text) => {
+                conditions.push(text);
+                "pass"
+            }
+            Err(e) => {
+                findings.push(Finding {
+                    kind: e.kind(),
+                    severity: "error",
+                    message: e.to_string(),
+                    cause: None,
+                });
+                "fail"
+            }
+        };
+        thermal.push(json!({
+            "reference": j.reference,
+            "joined_square_millimetres": layers,
+            "least_square_millimetres": j.min_mm2,
+            "bound": "lower, from the board as read",
+            "verdict": verdict,
+        }));
+    }
+    // `AET-WO-4300k` (4): every connector opens off the board, by its row.
+    let (openings, inward) = aethelgard_eda::opening::judge(&read.board, |r| {
+        read.footprints.get(r).map(|(_, value)| value.clone())
+    });
+    if let Some(i) = inward {
+        findings.push(Finding {
+            kind: "ConnectorOpensInward",
+            severity: "error",
+            message: i.message,
+            cause: None,
+        });
+    }
     let oscillator: Vec<Value> = oscillator.iter().map(oscillator_net).collect();
     let supplies: Vec<Value> = gates.iter().map(supply).collect();
     let scope = Scope::of(
@@ -501,6 +568,8 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         supplies.len(),
         oscillator.len(),
         conductors,
+        thermal.len(),
+        openings,
     );
     let ok = findings.is_empty();
     let report = Report {
@@ -521,6 +590,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         supplies,
         pairs,
         oscillator,
+        thermal,
         ran,
         findings,
     };
@@ -541,46 +611,49 @@ mod tests {
     /// whatever the specification declares (`AET-WO-1609` §2).
     #[test]
     fn every_part_has_a_row_in_order() {
-        let s = spec("sentinel-03.json", |_| ());
-        let gates: Vec<String> = parts(&s, 0, 0, 0, 0).into_iter().map(|r| r.gate).collect();
+        let s = spec("../../../../examples/sentinel-03.json", |_| ());
+        let gates: Vec<String> = parts(&s, 0, 0, 0, 0, 0, 0)
+            .into_iter()
+            .map(|r| r.gate)
+            .collect();
         assert_eq!(
             gates,
             [
                 "extract.lines",
                 "extract.supply",
                 "extract.oscillator",
-                "extract.pairs"
+                "extract.pairs",
+                "extract.openings",
+                "extract.thermal"
             ]
         );
         assert_eq!(
-            row(&parts(&s, 0, 0, 0, 0), "extract.lines"),
+            row(&parts(&s, 0, 0, 0, 0, 0, 0), "extract.lines"),
             Ran::judged("extract.lines", 0),
             "no line is `judged 0`, never omitted"
         );
     }
 
-    /// The supply part, both ways: off with `power.drop_limits` absent (as
-    /// on every committed board) and when declared empty, which validates;
-    /// judged with a limit, its count eda's.
+    /// The supply part, both ways: off with no power tree and with
+    /// `power.drop_limits` empty (which `validate` refuses since
+    /// `AET-WO-4300k`, but the part reads the key alone); judged with a limit,
+    /// its count eda's.
     #[test]
     fn the_supply_part_is_off_until_a_drop_limit_is_declared() {
         let off = Ran::off("extract.supply", "power.drop_limits");
-        let absent = spec("sentinel-03.json", |_| ());
-        assert!(absent.power.is_some() && absent.power.as_ref().unwrap().drop_limits.is_none());
-        assert_eq!(row(&parts(&absent, 3, 0, 0, 0), "extract.supply"), off);
-        let empty = spec("sentinel-03.json", |v| {
+        let empty = spec("../../../../examples/sentinel-03.json", |v| {
             v["power"]["drop_limits"] = json!([]);
         });
-        assert_eq!(row(&parts(&empty, 3, 0, 0, 0), "extract.supply"), off);
+        assert_eq!(row(&parts(&empty, 3, 0, 0, 0, 0, 0), "extract.supply"), off);
         let no_power = spec("sentinel-01-bench.json", |_| ());
         assert!(no_power.power.is_none());
-        assert_eq!(row(&parts(&no_power, 3, 0, 0, 0), "extract.supply"), off);
-        let limited = spec("sentinel-03.json", |v| {
-            v["power"]["drop_limits"] =
-                json!([{"domain": "VDD_3V3", "max_millivolts": 165, "source": "test"}]);
-        });
         assert_eq!(
-            row(&parts(&limited, 3, 1, 0, 0), "extract.supply"),
+            row(&parts(&no_power, 3, 0, 0, 0, 0, 0), "extract.supply"),
+            off
+        );
+        let limited = spec("../../../../examples/sentinel-03.json", |_| ());
+        assert_eq!(
+            row(&parts(&limited, 3, 1, 0, 0, 0, 0), "extract.supply"),
             Ran::judged("extract.supply", 1)
         );
     }
@@ -593,18 +666,21 @@ mod tests {
         let off = Ran::off("extract.oscillator", "mcu.hse.crystal");
         let crystal = spec("hse-crystal-16.json", |_| ());
         assert_eq!(
-            row(&parts(&crystal, 3, 0, 2, 0), "extract.oscillator"),
+            row(&parts(&crystal, 3, 0, 2, 0, 0, 0), "extract.oscillator"),
             Ran::judged("extract.oscillator", 2)
         );
         let external = spec("hse-external-8.json", |_| ());
         assert!(external.mcu.hse.is_some());
         assert_eq!(
-            row(&parts(&external, 3, 0, 0, 0), "extract.oscillator"),
+            row(&parts(&external, 3, 0, 0, 0, 0, 0), "extract.oscillator"),
             off
         );
         let none = spec("sentinel-01-bench.json", |_| ());
         assert!(none.mcu.hse.is_none());
-        assert_eq!(row(&parts(&none, 3, 0, 0, 0), "extract.oscillator"), off);
+        assert_eq!(
+            row(&parts(&none, 3, 0, 0, 0, 0, 0), "extract.oscillator"),
+            off
+        );
     }
 
     /// The pair part, both ways: judged by its conductors under
@@ -614,14 +690,14 @@ mod tests {
         let paired = spec("pair-standin.json", |_| ());
         assert!(!paired.diff_pairs.is_empty());
         assert_eq!(
-            row(&parts(&paired, 4, 0, 0, 2), "extract.pairs"),
+            row(&parts(&paired, 4, 0, 0, 2, 0, 0), "extract.pairs"),
             Ran::judged("extract.pairs", 2)
         );
         let unpaired = spec("pair-standin.json", |v| {
             v["diff_pairs"] = json!([]);
         });
         assert_eq!(
-            row(&parts(&unpaired, 4, 0, 0, 0), "extract.pairs"),
+            row(&parts(&unpaired, 4, 0, 0, 0, 0, 0), "extract.pairs"),
             Ran::off("extract.pairs", "diff_pairs")
         );
     }

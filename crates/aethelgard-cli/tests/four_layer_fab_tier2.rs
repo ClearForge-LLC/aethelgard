@@ -6,17 +6,28 @@
 //! with only its directory differing. Each test compares its own copy, so one
 //! test's changed bytes never reach the other. The two comparisons run one
 //! at a time: each `verify` peaks at about 3.5 GB.
+//!
+//! `AET-WO-4300k` (T), ruled 11:25Z: `--fab-out` refuses a specification that
+//! is not ready, and this test's point is the four-layer board's inner
+//! Gerbers and stackup lines, which the two-layer ready fixture does not
+//! have. So the fixture is made ready in code (`common/ready.rs`'s `ready`:
+//! the ready fixture's reset supervisor, fabricator, `fab_tolerances` and
+//! condition, every computed condition acknowledged) and written, with its
+//! seeded set rebased on it, into a scratch from which both flags run.
 
 #![cfg(feature = "with-tools")]
 
 mod common;
+#[path = "common/ready.rs"]
+mod ready;
 
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
-use common::verify::{Shared, aethelgard, copy_tree, one, package_files, scratch};
+use common::verify::{Shared, copy_tree, one, package_files, root, scratch};
+use ready::{CONSOLE_SCENARIO, aethelgard_in, ready, rebased, with_console};
 use serde_json::Value;
 
 static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
@@ -31,12 +42,32 @@ const FOUR_SCENARIOS: [&str; 4] = [
     "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json",
 ];
 
-/// `verify` of the 4-layer fixture with its seeded set and `flag <dir>`.
+/// The scratch holding the 4-layer fixture made ready, as `spec.json`, and
+/// its seeded set rebased on it, written once; and the scenarios' names.
+/// Ready means the reference's console too (`AET-WO-4300k` Q3 (a), ruled
+/// 12:45Z: a board with no serial port generates no hwdef), as J3 with its
+/// scenario; the inner layers and the stackup are the fixture's own.
+fn readied() -> &'static (PathBuf, Vec<String>) {
+    static READIED: OnceLock<(PathBuf, Vec<String>)> = OnceLock::new();
+    READIED.get_or_init(|| {
+        let four: Value = serde_json::from_slice(&fs::read(root().join(FOUR)).unwrap()).unwrap();
+        let spec = serde_json::to_vec_pretty(&ready(with_console(four, "J3"))).unwrap();
+        let dir = scratch("four-layer-ready");
+        let mut scenarios = FOUR_SCENARIOS.to_vec();
+        scenarios.push(CONSOLE_SCENARIO);
+        let names = rebased(&dir, &spec, &scenarios);
+        (dir, names)
+    })
+}
+
+/// `verify` of the 4-layer fixture made ready, with its seeded set and
+/// `flag <dir>`, from the scratch that holds them.
 fn four_verify(dir: &Path, flag: &str) -> (Option<i32>, String) {
-    let mut args = vec!["verify", "--spec", FOUR, "--scenarios"];
-    args.extend(FOUR_SCENARIOS);
+    let (base, names) = readied();
+    let mut args = vec!["verify", "--spec", "spec.json", "--scenarios"];
+    args.extend(names.iter().map(String::as_str));
     args.extend([flag, dir.to_str().unwrap()]);
-    aethelgard(&args)
+    aethelgard_in(base, &args)
 }
 
 /// The package `--fab-out` wrote: its directory, the verdict and its files.

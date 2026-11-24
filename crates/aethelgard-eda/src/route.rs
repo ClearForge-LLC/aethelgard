@@ -4288,10 +4288,16 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
             let name = k.layer.name();
             // A fill covers the board, so it meets a keepout that reaches
             // inside the outline (`AET-WO-4411`: a radio module's lies off
-            // the board's edge).
+            // the board's edge). A thermal pour (`AET-WO-4300k` (a)) may share
+            // the layer: KiCad's refill keeps it out of the keepout, the DRC
+            // gate judges the filled board, and `pour` counts the keepout as
+            // no copper.
             if k.fill
                 && k.rect.overlaps(board.outline)
-                && routed.zones.iter().any(|(_, layer)| layer == name)
+                && routed
+                    .zones
+                    .iter()
+                    .any(|(n, layer)| layer == name && !board.stack.is_pour(n, layer))
             {
                 return Err(format!(
                     "a fill on {name} would meet {}'s keepout",
@@ -4631,7 +4637,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     }
     let mut thermal_joined = vec![false; thermal.len()];
     let stack = &board.stack;
-    let declared: Vec<(String, String)> = if stack.has_planes() {
+    let mut declared: Vec<(String, String)> = if stack.has_planes() {
         stack
             .planes
             .iter()
@@ -4640,6 +4646,10 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     } else {
         vec![(GROUND.to_owned(), "B.Cu".to_owned())]
     };
+    // `AET-WO-4300k` (a): the thermal pours are declared zones too; a board
+    // the router has not yet poured holds only the planes.
+    let planes = declared.len();
+    declared.extend(stack.pour_zones());
     let mut zones = routed.zones.clone();
     zones.sort();
     zones.dedup();
@@ -4649,13 +4659,17 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             routed.zones
         ));
     }
-    if stack.has_planes() && zones.len() != declared.len() {
+    let poured = zones.iter().filter(|(n, l)| stack.is_pour(n, l)).count();
+    if stack.has_planes() && zones.len() - poured != planes {
         return Err(format!(
             "planes {:?}; the specification declares {declared:?}",
             routed.zones
         ));
     }
-    for (net, layer) in &zones {
+    // A thermal pour (`AET-WO-4300k` (a)) joins nothing a plane does not:
+    // KiCad drops its islands, and it adds only its own net's copper, so it
+    // is not flooded here.
+    for (net, layer) in zones.iter().filter(|(n, l)| !stack.is_pour(n, l)) {
         let b_cu = layer == "B.Cu";
         let core = zone_core(
             &grid,
@@ -5833,6 +5847,7 @@ mod tests {
             joins: vec![],
             thermal: vec![],
             imus: vec![],
+            pours: vec![],
             junction: None,
         }
     }

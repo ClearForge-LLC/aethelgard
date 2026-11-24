@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 60] = [
+pub const FILES: [(&str, &[u8]); 68] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -292,6 +292,36 @@ pub const FILES: [(&str, &[u8]); 60] = [
         include_bytes!("../data/kicad-10.0.7/symbols/Switch.kicad_symdir/SW_Push.kicad_sym"),
     ),
     (
+        "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
+        include_bytes!("../data/kicad-10.0.7/footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod"),
+    ),
+    (
+        "footprints/Fuse.pretty/Fuse_1206_3216Metric.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Fuse.pretty/Fuse_1206_3216Metric.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Package_TO_SOT_SMD.pretty/SOT-23-3.kicad_mod",
+        include_bytes!(
+            "../data/kicad-10.0.7/footprints/Package_TO_SOT_SMD.pretty/SOT-23-3.kicad_mod"
+        ),
+    ),
+    (
+        "symbols/Device.kicad_symdir/D_Zener.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/D_Zener.kicad_sym"),
+    ),
+    (
+        "symbols/Device.kicad_symdir/Fuse.kicad_sym",
+        include_bytes!("../data/kicad-10.0.7/symbols/Device.kicad_symdir/Fuse.kicad_sym"),
+    ),
+    (
         "footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
         include_bytes!(
             "../data/aethelgard/footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod"
@@ -337,6 +367,18 @@ pub const FILES: [(&str, &[u8]); 60] = [
         "symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym",
         include_bytes!(
             "../data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/ICM-42688-P.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/DMP6023LSS.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/DMP6023LSS.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym"
         ),
     ),
     (

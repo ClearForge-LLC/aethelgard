@@ -293,7 +293,7 @@ fn declared_parts(v: &Value, out: &mut Vec<(String, String)>) {
 
 fn sentinel_03() -> Value {
     let path =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sentinel-03.json");
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-03.json");
     serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
 }
 

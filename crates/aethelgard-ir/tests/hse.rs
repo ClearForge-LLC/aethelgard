@@ -328,6 +328,18 @@ fn gm_crit_refuses_the_8_mhz_cl_18_crystal() {
     // 2,021,295.0 nA/V with π exact (`4240` §3.1: 2.021 mA/V).
     assert_eq!(g.nano_amps_per_volt, 2_021_296);
     assert!(!g.holds);
+    // The criterion is strict (AN2867 Rev 25 §3.4: Gm_crit_max > gmcrit):
+    // 16 MHz, C0 0 and CL 1 pF, ESR 37104895 mOhm, puts gmcrit at exactly
+    // 1500000 nA/V, refused; 37104894 mOhm puts it at 1499999, which holds.
+    let mut edge = row.clone();
+    edge.c0_max_femtofarads.value = 0;
+    edge.load_femtofarads.value = 1000;
+    edge.esr_max_milliohms.value = 37_104_895;
+    let g = clock::gm_crit(&edge);
+    assert_eq!((g.nano_amps_per_volt, g.holds), (1_500_000, false));
+    edge.esr_max_milliohms.value = 37_104_894;
+    let g = clock::gm_crit(&edge);
+    assert_eq!((g.nano_amps_per_volt, g.holds), (1_499_999, true));
     // The refusal, on a row of that crystal.
     let mut row = table.get(PART).unwrap().clone();
     row.kind = Kind::Crystal(eight);

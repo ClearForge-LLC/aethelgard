@@ -137,6 +137,8 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-eda/src/fab.rs", Role::Other),
     ("aethelgard-eda/src/flow.rs", Role::Other),
     ("aethelgard-eda/src/loops.rs", Role::Other),
+    ("aethelgard-eda/src/opening.rs", Role::Other),
+    ("aethelgard-eda/src/pour.rs", Role::Other),
     ("aethelgard-eda/src/lib.rs", Role::Other),
     ("aethelgard-eda/src/rules.rs", Role::Other),
     ("aethelgard-eda/src/stack.rs", Role::Other),
@@ -163,6 +165,10 @@ const MODULES: &[(&str, Role)] = &[
     ("aethelgard-cli/src/pinout.rs", Role::Other),
     ("aethelgard-cli/src/pinwitness.rs", Role::Other),
     ("aethelgard-cli/src/propose.rs", Role::Other),
+    ("aethelgard-cli/src/readiness.rs", Role::Other),
+    // `AET-WO-4300k` (R): reads a committed package's files as bytes and
+    // its MANIFEST as JSON; no KiCad file.
+    ("aethelgard-cli/src/rebind.rs", Role::Other),
     ("aethelgard-cli/src/renode.rs", Role::Other),
     ("aethelgard-cli/src/renode/foreign.rs", Role::Other),
     ("aethelgard-cli/src/run.rs", Role::Other),
