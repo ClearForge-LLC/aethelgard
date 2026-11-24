@@ -214,11 +214,18 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
 /// Furnace, and 2.59 s and 404,620 KiB in the tools image. The ruling asks at
 /// least 10x the slower wall time (26 s) and 2x the higher peak (791 MiB):
 /// 30 s, since CI's boots under parallel tests took up to 6.84 s, and 1 GiB.
+/// **The memory cap is 1.5 GiB by ruling** (Scotty, 2026-11-23, `RUL-13` as
+/// amended by `AET-WO-2313`), not by that rule: Tviburi `TVI-WO-1301`
+/// measured ArduPilot's full boot on its one-file overlay at 768,856 to
+/// 1,049,556 KiB across CI runs of nearly the same tree, for a cause not yet
+/// known (983,816 KiB on Furnace), so a 1 GiB cap passed or failed it by
+/// chance. A droop's boot, Renode under the bridge, takes this bound; the
+/// bridge alone keeps [`crate::analog::BRIDGE_BOUNDS`].
 /// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
 /// limit, 256 GiB included (measured), so the reaper polls instead.
 pub const BOOT_BOUNDS: Bounds = Bounds {
     wall: std::time::Duration::from_secs(30),
-    rss_kib: 1024 * 1024,
+    rss_kib: 1_572_864,
 };
 
 /// What Renode logs once its CPU has aborted; `RunFor` then never returns
@@ -4520,7 +4527,10 @@ mod tests {
     fn no_judge_reads_the_dwt() {
         let image = image();
         let p = plan(&image, &[]);
-        for c in [p.commands(), foreign::commands(&p, &[], &[]).unwrap()] {
+        for c in [
+            p.commands(),
+            foreign::commands(&p, &[], &[], PANIC_AT).unwrap(),
+        ] {
             assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
             for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
                 if let Some(hex) = word.strip_prefix("0x") {
@@ -6059,9 +6069,28 @@ mod tests {
             ..serial_plan(&image, &[], &serial)
         };
         assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
-        let foreign = foreign::commands(&plan(&image, &[]), &[], &[]).unwrap();
+        let foreign = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT).unwrap();
         assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
         assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
+    }
+
+    /// A panic address for the foreign boot's commands in these tests.
+    const PANIC_AT: u64 = 0x080c_033c;
+
+    /// `AET-WO-1609`: a foreign boot hooks the panic once, at the address it
+    /// is given, after the firmware is loaded and before the run; a
+    /// generated boot sets no execution hook.
+    #[test]
+    fn a_foreign_boot_hooks_the_panic_before_the_run() {
+        let image = image();
+        let p = plan(&image, &[]);
+        let c = foreign::commands(&p, &[], &[], PANIC_AT).unwrap();
+        let hook = "cpu AddHook 0x80c033c ";
+        assert_eq!(c.matches("cpu AddHook").count(), 1, "{c}");
+        let at = c.find(hook).unwrap();
+        assert!(c.find("sysbus LoadELF").unwrap() < at, "{c}");
+        assert!(at < c.find("emulation RunFor").unwrap(), "{c}");
+        assert!(!p.commands().contains("AddHook"));
     }
 
     /// `AET-WO-2311` D2: a foreign boot logs each declared port's USART's
@@ -6077,7 +6106,7 @@ mod tests {
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
         let serial = aethelgard_twin::serial::options(&topology).unwrap();
-        let c = foreign::commands(&plan(&image, &[]), &[], &serial).unwrap();
+        let c = foreign::commands(&plan(&image, &[]), &[], &serial, PANIC_AT).unwrap();
         let (run, begin) = (c.find("emulation RunFor").unwrap(), c.find(BEGIN).unwrap());
         for u in ["usart1", "usart2", "usart3", "uart4"] {
             let log = format!("sysbus LogPeripheralAccess sysbus.{u} true");
@@ -6089,7 +6118,7 @@ mod tests {
             assert_eq!(c.matches(&read).count(), 1, "{pupdr}");
             assert!(c.find(&read).unwrap() > begin, "{pupdr}");
         }
-        let none = foreign::commands(&plan(&image, &[]), &[], &[]).unwrap();
+        let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT).unwrap();
         assert!(!none.contains("LogPeripheralAccess sysbus.usart"), "{none}");
     }
 

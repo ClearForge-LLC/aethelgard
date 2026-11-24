@@ -220,3 +220,105 @@ pub fn scratch(label: &str) -> PathBuf {
     fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+/// Every gate `verify` can run (`AET-WO-1609`): each has a row in every
+/// verdict's `ran` table, judged, off or not reached.
+#[allow(dead_code)]
+pub const GATES: [&str; 12] = [
+    "erc",
+    "drc",
+    "support",
+    "extract",
+    "prove",
+    "build",
+    "simulate",
+    "gpio",
+    "adc",
+    "bridge",
+    "campaign",
+    "attribute",
+];
+
+/// A verdict's `ran` table, checked whole (`AET-WO-1609` §2): each row is a
+/// gate or a part with exactly one of `judged` (a count), `off` or
+/// `not_reached` (each a non-empty text); every gate in `gates` has its row
+/// (by gate, harness and scenario) with its own `judged` when it ran; every
+/// gate of [`GATES`] has at least one row. Returns each row as
+/// `(gate, "judged n" | "off: key" | "not reached: why")`, harness and
+/// scenario appended after a `#`.
+#[allow(dead_code)]
+pub fn ran(v: &Value) -> Vec<(String, String)> {
+    let rows = v["ran"]
+        .as_array()
+        .unwrap_or_else(|| panic!("no ran table: {v}"));
+    let mut out = Vec::new();
+    for r in rows {
+        let o = r.as_object().unwrap();
+        let states: Vec<String> = ["judged", "off", "not_reached"]
+            .iter()
+            .filter_map(|k| {
+                o.get(*k).map(|x| match *k {
+                    "judged" => format!("judged {}", x.as_u64().unwrap_or_else(|| panic!("{r}"))),
+                    "off" => format!("off: {}", x.as_str().filter(|t| !t.is_empty()).unwrap()),
+                    _ => format!(
+                        "not reached: {}",
+                        x.as_str().filter(|t| !t.is_empty()).unwrap()
+                    ),
+                })
+            })
+            .collect();
+        assert_eq!(states.len(), 1, "exactly one state: {r}");
+        for k in o.keys() {
+            assert!(
+                [
+                    "gate",
+                    "harness",
+                    "scenario",
+                    "judged",
+                    "off",
+                    "not_reached"
+                ]
+                .contains(&k.as_str()),
+                "{k} in {r}"
+            );
+        }
+        let mut gate = o["gate"].as_str().unwrap().to_owned();
+        for k in ["harness", "scenario"] {
+            if let Some(x) = o.get(k) {
+                gate = format!("{gate}#{}", x.as_str().unwrap());
+            }
+        }
+        out.push((gate, states[0].clone()));
+    }
+    for g in v["gates"].as_array().unwrap() {
+        let mut name = g["gate"].as_str().unwrap().to_owned();
+        for k in ["harness", "scenario"] {
+            if let Some(x) = g.get(k) {
+                name = format!("{name}#{}", x.as_str().unwrap());
+            }
+        }
+        let row = out
+            .iter()
+            .find(|(n, _)| *n == name)
+            .unwrap_or_else(|| panic!("gate {name} has no row: {:?}", out));
+        if let Some(n) = g["judged"].as_u64() {
+            assert_eq!(row.1, format!("judged {n}"), "{name}");
+        }
+    }
+    for g in GATES {
+        assert!(
+            out.iter()
+                .any(|(n, _)| n == g || n.starts_with(&format!("{g}#"))),
+            "no `{g}` row: {out:?}"
+        );
+    }
+    out
+}
+
+/// The state of the one row named `gate` in [`ran`]'s rows.
+#[allow(dead_code)]
+pub fn row<'r>(rows: &'r [(String, String)], gate: &str) -> &'r str {
+    let hits: Vec<&(String, String)> = rows.iter().filter(|(n, _)| n == gate).collect();
+    assert_eq!(hits.len(), 1, "{gate}: {rows:?}");
+    &hits[0].1
+}

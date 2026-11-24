@@ -66,3 +66,39 @@ pub fn write(dir: &Path) -> (PathBuf, PathBuf) {
     .unwrap();
     (spec_path, platform)
 }
+
+/// `elf` with a symbol table naming ArduPilot's panic, a function at `at`
+/// (Thumb bit set, as the linker writes it), and the section headers that
+/// name it: what the foreign judge hooks (`AET-WO-1609`). The `PT_LOAD`
+/// file bytes are unchanged, so every flash hash a transcript states holds.
+pub fn with_panic(mut b: Vec<u8>, at: u32) -> Vec<u8> {
+    let name = b"_ZN6AP_HAL5panicEPKcz";
+    let mut strings = vec![0u8];
+    strings.extend_from_slice(name);
+    strings.push(0);
+    let mut table = vec![0u8; 16];
+    for v in [1u32, at | 1, 4] {
+        table.extend_from_slice(&v.to_le_bytes());
+    }
+    table.extend_from_slice(&[0x12, 0, 1, 0]);
+    let symtab = b.len() as u32;
+    b.extend_from_slice(&table);
+    let strtab = b.len() as u32;
+    b.extend_from_slice(&strings);
+    let shoff = b.len() as u32;
+    for (kind, offset, size, link) in [
+        (0u32, 0u32, 0u32, 0u32),
+        (2, symtab, table.len() as u32, 2),
+        (3, strtab, strings.len() as u32, 0),
+    ] {
+        let mut h = [0u8; 40];
+        for (i, v) in [(1, kind), (4, offset), (5, size), (6, link)] {
+            h[4 * i..4 * i + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        b.extend_from_slice(&h);
+    }
+    b[32..36].copy_from_slice(&shoff.to_le_bytes());
+    b[46..48].copy_from_slice(&40u16.to_le_bytes());
+    b[48..50].copy_from_slice(&3u16.to_le_bytes());
+    b
+}

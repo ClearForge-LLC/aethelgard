@@ -2282,9 +2282,10 @@ fn windowed_dshot(v: &Value, rises: u64) {
     );
     let memory = &v["memory"];
     let peak = memory["peak_rss_kib"].as_u64().unwrap();
-    assert_eq!(memory["bound_kib"], 1_048_576);
+    // The boot's cap, 1.5 GiB (`RUL-13` as amended by `AET-WO-2313`).
+    assert_eq!(memory["bound_kib"], 1_572_864);
     assert!(
-        peak > 0 && memory["share_permille"].as_u64() == Some(peak * 1000 / 1_048_576),
+        peak > 0 && memory["share_permille"].as_u64() == Some(peak * 1000 / 1_572_864),
         "{memory}"
     );
 }
@@ -4786,7 +4787,13 @@ fn foreign_boot(label: &str, segments: &[(u32, Vec<u8>, u32)]) -> (Option<i32>, 
     let dir = std::env::temp_dir().join(format!("aet-t2-{}-{label}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let elf = dir.join(format!("{label}.elf"));
-    fs::write(&elf, foreign_elf(segments)).unwrap();
+    // ArduPilot's panic named at `0x08000100`, in the first segment's
+    // never-run zeros: the judge hooks it (`AET-WO-1609`).
+    fs::write(
+        &elf,
+        common::foreign::with_panic(foreign_elf(segments), 0x0800_0100),
+    )
+    .unwrap();
     // The reference board with a foreign clock declared at the reset
     // clock's figures, and its platform (`AET-WO-4400g`).
     let (spec, platform) = common::foreign::write(&dir);
@@ -5215,6 +5222,13 @@ fn each_hse_fixture_boots_to_pass_under_the_clock_rule() {
         assert_eq!(code, Some(0), "{fixture}: {v}");
         assert_eq!(v["verdict"], "pass", "{fixture}: {v}");
         assert!(!kinds(&v).contains(&"clock_access"), "{fixture}: {v}");
+        // The clock rule's row (`AET-WO-1609`): on with `mcu.hse`, judged
+        // once the boot word is written.
+        assert_eq!(
+            v["ran"],
+            serde_json::json!([{"gate": "simulate.hse_clock", "judged": 1}]),
+            "{fixture}: {v}"
+        );
         let residuals = v["boot"]["residuals"].to_string();
         assert!(residuals.contains("HSE (AET-WO-4240b)"), "{fixture}: {v}");
         let unobservable = v["boot"]["unobservable"].to_string();

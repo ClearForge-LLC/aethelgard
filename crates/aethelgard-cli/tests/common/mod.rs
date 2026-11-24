@@ -398,3 +398,19 @@ pub fn identified_stub(body: &str) -> String {
     let (shebang, rest) = body.split_once('\n').unwrap_or((body, ""));
     format!("{shebang}\necho '{}'\n{rest}", bridge_identity())
 }
+
+/// A stub's way to hold resident memory (`AET-WO-2313`): `dd` fills one block
+/// from `yes` and holds it while it waits to write it to a reader that never
+/// reads, so the tree's resident size is the block plus about 26 MiB, steady
+/// (measured on Furnace, sampled every 0.1 s). The sandbox denies
+/// `/dev/zero`, so `yes` feeds it. A shell variable is not used: bash holds
+/// about two copies (`yes | head -c 1300000000` held 2,543,124 KiB, past both
+/// the former 1 GiB cap and today's 1.5 GiB). 1,869,572 KiB, past the boot's
+/// 1.5 GiB and under 2 GiB, held until the reaper kills it.
+pub const HOLD_PAST_CAP: &str =
+    "/usr/bin/yes | /bin/dd bs=1800M count=1 iflag=fullblock status=none | /bin/sleep 60";
+
+/// As [`HOLD_PAST_CAP`], 1,357,428 KiB for 3 s: past the bridge's 1 GiB (and
+/// the boot's former cap), under the boot's 1.5 GiB.
+pub const HOLD_BETWEEN_CAPS: &str =
+    "/usr/bin/yes | /bin/dd bs=1300M count=1 iflag=fullblock status=none | /bin/sleep 3";

@@ -60,6 +60,8 @@ fn package_copy(property: &str, label: &str) -> (&'static Package, PathBuf) {
             Some(0),
             "--fab-out writes the 4-layer package to compare: {verdict}"
         );
+        // The four-layer board's verdict carries the table (`AET-WO-1609`).
+        common::verify::ran(&verdict);
         let files = package_files(&dir);
         Package {
             dir,

@@ -70,6 +70,13 @@ fn verify_fails_a_run_that_fails_otherwise_than_declared_and_detects_47k() {
     let v = &r.verdict;
     assert_eq!(r.code, Some(1), "verify exits 1: {v}");
     assert_eq!(v["verdict"], "fail", "the verdict is fail: {v}");
+    // A failing verdict carries the whole table too (`AET-WO-1609`).
+    let rows = common::verify::ran(v);
+    assert_eq!(
+        common::verify::row(&rows, "campaign"),
+        "judged 5",
+        "{rows:?}"
+    );
     let gates = v["gates"].as_array().unwrap();
     let campaign = gates.last().unwrap();
     assert_eq!(
