@@ -1,12 +1,18 @@
 # AET-WO-4400h results
 
-**STOP: §7, "the cap fails before 10 s"** (D1 rules whether this is that stop). What was measured at 10 s:
+**STOP: §7, "the cap fails before 10 s"** (ruled fired, 2026-11-24T15:50Z). What was measured at 10 s:
 - all six logged runs passed `4400g` §1.4's line (a run over 900‰ of the cap stops it); the one no-log run read 851‰;
 - two of the logged runs passed the cap, both with the cap raised to read the share;
 - the three runs at the real cap, at load 3, were not killed by it (904–952‰);
 - every 10 s run lost every witness to the CLI's 8 MiB log budget, which is exhausted at 9 s whatever the load.
 
-**Proposed bound: keep 5 s.** Parts (2)–(4) are predicted (`PREDICTIONS.md`) and harnessed (`sh/`, `py/`; the plans are written by `py/plans.py`), but not run, because the stop came first. §4 gives what the twin lacks for them, from source.
+**Proposed bound: keep 5 s.**
+
+Parts (2)–(4) were then run as ruled, in a replay outside the CLI's bounds (§2–§4):
+- **ArduPilot arms over MAVLink with no defaults file, no skipped check and no forced arm.** It needs one twin change (the USART1 receive request line), five parameters and two stimuli.
+- **On Sentinel-03, unarmed, every TIM1 row is reached;** arming changes only the compare values.
+- **GUIDED is refused for lack of a position estimate.**
+- **Rebooting a foreign firmware is not possible in the twin today.**
 
 Each number below is from a run whose command and record are in this directory.
 
@@ -100,85 +106,125 @@ A longer window needs, in order:
 
 Then measure again.
 
-## 2. Arming with no defaults file: not run (the stop came first)
+## 2. Arming with no defaults file (replay, outside the CLI's bounds)
 
-What is known, from source at the pins (spot-checked; `PREDICTIONS.md` P2.1–P2.7 has the line numbers):
+Ruled 2026-11-24T15:50Z: (2)–(4) run in a Renode replay of the CLI's own invocation, each container under `capped-run --mem 4G`. Every run's argv, injected bytes (`injected.tsv`), ArduPilot's decoded replies (`mav.tsv`) and end are in `out/inj/<run>/`.
 
-- **The MAVLink port is SERIAL0 = USART1,** the board's only serial (`SERIAL_ORDER USART1`, MAVLink2 at 115200). It receives by DMA1 stream 0 (request 41), into a 64-byte bounce buffer (`UARTDriver.h`:25, `UARTDriver.cpp`:549–566).
-- **How the twin injects into a foreign firmware's USART today: it cannot.** A monitor `WriteChar` queues the byte, but ArduPilot never reads it (TVI-WO-1302 §2.6, measured there). What the twin lacks:
-  1. **The request line.** Renode's `STM32F7_USART` has a `ReceiveDmaRequest` output (`STM32F7_USART.cs`:87, raised at :109), which the emitted platform never connects. It needs `ReceiveDmaRequest -> dmamux1@41` in `usart1`'s block, as the twin already writes `DMARecieve -> dmamux1@N` for SPI (`platform.rs`:789–790).
-  2. **IDLE.** `IDLE` and `IDLEIE` are tags (`STM32F7_USART.cs`:154, :231). ArduPilot hands a short frame to its driver on the USART IDLE interrupt (`UARTDriver.cpp`:576–590). Without it, only a transfer-complete at 64 bytes moves data (:606–622), and the harness pads each frame to 64 bytes (`py/frames.py`).
-- **No parameter routes around it:** SERIAL0 has no `OPTIONS` parameter in 4.7.2 (`AP_SerialManager.cpp`:172–180), so `NoDMA_RX` cannot be set.
-- **Neither is a defaults file or a rebuilt ELF;** both are twin changes. §7's third stop is not reached.
-- **The arming path, as harnessed** (`py/plans.py` arm, P2.5):
-  - `FRAME_CLASS` 1, `FS_THR_ENABLE` 0, `DISARM_DELAY` 0 and `INS_ACCOFFS_X` 0.001;
-  - `MAV_CMD_PREFLIGHT_CALIBRATION` param5 = 76;
-  - `MAV_CMD_COMPONENT_ARM_DISARM` with no force.
+### 2.1 The port, and how the twin injects into a foreign firmware's USART
 
-  4.7.2 has `ARMING_SKIPCHK`, not `ARMING_CHECK` (`AP_Arming.cpp`:201). A forced arm still runs the mandatory checks (:1885). The injected bytes are written by `py/frames.py` to `injected.tsv` on each run.
-- **Persistence:**
-  - A `PARAM_SET` is saved through `AP_FlashStorage` to page 14 or 15, which is bank 2 sectors 6–7 (`0x081C0000` and `0x081E0000`), in 32-byte flash words under `CR2.PG`, read back with memcmp.
-  - The boot already erases and writes both sector headers on blank flash.
-  - Renode's `STM32H7_FlashController` models bank 2, the keys, PG, 32-byte words and sector erase.
-  - Renode's `SYSRESETREQ` resets the machine without clearing memory (`NVIC.cs`:1194; `MappedMemory.cs`:183–190), so the `dshot` plan reboots over MAVLink to test persistence inside one run.
+- **The port: SERIAL0 = USART1,** the console, MAVLink2 at 115200. On `sentinel-02-own` it is the only serial port (`SERIAL_ORDER USART1`). Sentinel-03's console is also USART1.
+- **Today the twin cannot deliver a byte.** `arm-noreq` ran the same plan with no request line: ArduPilot sent 20 heartbeats and no `COMMAND_ACK`, because no injected byte was read.
+- **What it lacks, and the change used:**
+  1. **The request line.** `ReceiveDmaRequest -> dmamux1@41` in `usart1`'s block (`patches/usart1-rx-request.diff`). It is one line from `platform.rs`, as SPI's `DMARecieve` already is (`STM32F7_USART.cs`:87, :109).
+  2. **IDLE.** The USART model has none (a tag, `STM32F7_USART.cs`:154, :231). ArduPilot reads a short frame on IDLE (`UARTDriver.cpp`:576–590), and otherwise only when its 64-byte bounce buffer fills (:606–622). So each frame is padded with zero bytes to 64 (`py/frames.py`), injected from the monitor with `WriteChar`.
 
-  This is source only, not measured. It goes to `TVI-WO-1304` as such.
+  With both, every command was answered (`arm1` on).
+- **No parameter routes around it:** SERIAL0 has no `OPTIONS` (`AP_SerialManager.cpp`:172–180). Neither change is a defaults file or a rebuilt ELF.
 
-## 3. What arming reaches: not run
+### 2.2 The failed checks, each by its own message and classed
 
-The queue builder (`sh/queue.sh`) runs Tviburi `TVI-WO-1150` (v)'s own readers, unchanged, from Tviburi main `d22dad8` (hashes in `out/tviburi-readers.sha256`). There are three controls:
-- no injection;
-- the `pad` plan: the same bytes, all zero frames;
-- the `params` plan: the same parameters, no arm.
+Found in order, each run fixing the last finding.
 
-Monitor-issued accesses carry no PC and fall out as `judge` rows (`view2-writes.awk`).
+| run | message (ArduPilot's own) | class | resolution (in every later run) |
+|---|---|---|---|
+| `arm1` | `PreArm: Motors: Check frame class and type` / `Arm: Motors: …` | **a parameter:** `FRAME_CLASS` defaults to 0 | `PARAM_SET FRAME_CLASS 1`: **passes** |
+| `arm1` | `PreArm: Compass 1 not healthy` | **a parameter:** the board has no compass, and `COMPASS_USE` defaults to 1, so `use_for_yaw(0)` is true and `healthy()` false (`AP_Arming.cpp`:625–631) | `PARAM_SET COMPASS_USE 0`: **passes** |
+| `arm1` | `PreArm: Baro: not healthy` | **a twin model gap: a sensor reads constant.** ArduPilot calls a barometer unhealthy whose reading has not changed for its data-change timeout (`AP_Baro_Backend.cpp`:36–41). The BMP581 model holds the `Pressure` it is given | a stimulus, the model's own `Pressure` property, alternating by 0.5 Pa every 0.5 s: **passes** |
+| `arm2`, `arm3` | `Arm: Leaning` | **a twin model gap: the IMU's stimulus.** The CLI sets the ICM-42688-P's witness stimulus from the parts table (`parts.json`:528: 1 g on the sensor's y; z is the model's default, 0). For ArduPilot that is a board on its edge | a stimulus at t = 0: X 0, Y 0, Z +1 g, a board at rest with the sensor's z up (U5's declared orientation): **passes** |
 
-**On this board, no TIM1 or TIM2 row can be reached:** it has no motor output (bus question, 2026-11-24, open).
+- **Set before they could be seen,** so not observed:
+  - `FS_THR_ENABLE` 0 ("RC not found" / "Throttle below failsafe" on a vehicle with no RC);
+  - `DISARM_DELAY` 0;
+  - `INS_ACCOFFS_X` 0.001 with `MAV_CMD_PREFLIGHT_CALIBRATION` param5 = 76 ("3D Accel calibration needed"; `INS_ACC_ID` read 3408146).
 
-## 4. A GUIDED command: not run
+  Copter returns as soon as the motor check fails (`AP_Arming_Copter.cpp`:51–69), so `arm1` reported one failure, then two. Whether these three would have failed was not measured.
+- **No real fault. No check disabled. No forced arm.** `ARMING_SKIPCHK` stayed 0, and the force code was never sent.
+- **The arm** (`arm4`, `arm-s1`, `s02-arm-s`, `s03-arm1`, `s03-arm-s`): ACK 0, HEARTBEAT `base_mode` 209 (`MAV_MODE_FLAG_SAFETY_ARMED`).
+- **An arm with outputs at minimum (§5's case):**
+  - In STABILIZE, with no RC and throttle zero, the outputs stay at 1000 µs. `SERVO_OUTPUT_RAW` reads 1000, and on Sentinel-03 TIM1 `CCR1`–`CCR4` hold 0x3E8.
+  - On `sentinel-02-own` they reach no pin at all: the board has no output, and ArduPilot writes to `Empty::RCOutput`.
+  - **The arm is real; its outputs move only under a command** (§4).
 
-From source:
-- GUIDED refuses once armed without a position estimate (`mode.cpp`:391–396). The twin has no GPS model, so `NAV_TAKEOFF` has no GUIDED to run in.
-- GUIDED_NOGPS takes `SET_ATTITUDE_TARGET` thrust (the `arm` plan carries both).
-- The outputs go to `Empty::RCOutput`: no register moves on this board.
+### 2.3 Persistence, and what the stock flash controller does (bank 2, for `TVI-WO-1304`)
 
-**What the twin cannot say: anything about flight.** There is no vehicle dynamics, so the IMU and barometer do not respond to thrust.
+From `s03-dshot2`'s flash-controller access log (`out/inj/s03-dshot2/flash-writes.tsv`):
+- **Within a run, a `PARAM_SET` persists.** It is echoed as `PARAM_VALUE`, and read back unchanged later in the run (`FRAME_CLASS` 1.0 at 15 s, `arm1`).
+- **Bank 2 is programmed while the board runs.**
+  - At boot, ArduPilot unlocks bank 2 (`KEYR2`) and erases sectors 6 and 7 (`CR2` 0x6B4 and 0x7B4: `SER`, `START`, `SNB` 6/7). These are `AP_FlashStorage`'s pages 14 and 15 at `0x081C0000` and `0x081E0000`. It then runs 50 program cycles.
+  - The six `PARAM_SET`s (7.45–7.69 s) add **17 program cycles**. Each is `KEYR1`/`KEYR2` unlock, `CR2` 0x734, then 0x736 (`PG`, sector 7), then 0x735 (`LOCK`), then two `CCR2` clears.
+  - No `Storage: failed` was printed, so ArduPilot's read-back compare passed.
+  - The stock `STM32H7_FlashController` takes all of it: keys, `PG`, the 32-byte flash word, sector erase.
+- **Across a reboot: not measurable in the twin today.** Two twin gaps:
+  - **The platform registers no `reset` macro.** `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` reached `SYSRESETREQ`, and Renode logged `No action for reset - macro machine_0.reset is not registered`. ArduPilot then waited forever (`s03-dshot`).
+  - **With a reset macro of the CLI's own boot lines, the second boot exhausts 4 GiB within 2.1 s virtual** (`System.OutOfMemoryException` at 10.11, 10.18 and 10.11 s). This happened with and without `LoadELF` in the macro, and with a narrow or wide access log (`s03-dshot2`, `-3`, `-4`). So whether a value survives a reboot, and what ArduPilot does with `MOT_PWM_TYPE` after one, is not known.
 
-**The bridge to ArduPilot's SITL, as a row:** it would need SITL's physics model driving the twin's IMU and barometer models through a sample feed with a declared clock relation, and the twin's PWM or DShot outputs fed back as SITL's servo inputs. That is a lock-step co-simulation across two time bases. Nothing is built.
+## 3. What arming reaches (replay, outside the CLI's bounds)
+
+**The queue files are in `out/queue/`, with `README.md` naming each file's ELF, board and window.** Four logged runs per board, 13.000 s each (`sh/logged.sh`): no injection, zero frames, the parameters without the arm, and the arm. The deltas are register-level, from `py/delta.py`.
+
+- **`sentinel-02-own` (no outputs):**
+  - No queue row changes class between the four runs.
+  - Tier 3 is 29 rows class (a) and **120 rows (c): the TIM1/TIM2 rows stay unreached when armed,** as in Tviburi (v).
+  - What arming changes, by value, never by a new register: the RTC backup registers (ArduPilot's persistent state while armed), USART1's transmissions and DMA1 stream 4's lengths for them, and TIM5's compare (the scheduler).
+- **Sentinel-03 (TIM1 CH1–4 motors):**
+  - **Unarmed, every TIM1 row is reached:** 6 class (a) and 61 class (b). **TIM2's 54 rows stay (c);** no output uses it. So (v)'s 120 "not reached in 5 s" was the board having no motor, not the vehicle being disarmed.
+  - **Setting the parameters adds one row,** `RCC.APB2LPENR.TIM1LPEN`: motor init writes TIM1's sleep-clock enable, a tag the stock RCC drops. It also moves TIM1 from the boot's 50 Hz (`ARR` 0x4E1F) to 400 Hz (`ARR` 0x9C3, `PSC` 0xC7) and sets `CCR` to 1000 µs.
+  - **Arming adds no register.** Under GUIDED_NOGPS thrust, TIM1 `CCR1`–`CCR4` carry 622 distinct values. The RTC backup registers and USART1/USART3's transmissions also change value.
+- **Timer DMA: none.**
+  - `DIER` stays 0 on every run, and DMAMUX1 never routes TIM1's update request (15).
+  - Sentinel-03's spec declares `dshot600`, but its hwdef emits no `MOT_PWM_TYPE` default, so **unmodified ArduPilot runs plain PWM on it.**
+  - Setting `MOT_PWM_TYPE` 6 over MAVLink is saved (echoed 6.0), but takes effect only after a reboot, which the twin cannot do (§2.3). So whether DShot moves timer DMA in the twin is unanswered here. By source, the stock timer raises no DMA request (TVI-WO-1303 P2).
+- **The injection's own traffic** (`s0N-injection.tsv`, zero frames against none):
+  - Each 64-byte frame adds DMA1 stream 0's re-arm: 3 `S0CR`, 1 `S0NDTR`, 1 `S0M0AR`, 1 `LIFCR`, and 2 D-cache invalidates of the bounce buffer.
+  - All of these registers are also written at boot, so the injection adds no queue row, only counts.
+  - The monitor's `WriteChar` and stimulus commands are not bus writes: 0 writes without a CPU PC in every run.
+
+## 4. A commanded step
+
+| command | result |
+|---|---|
+| `MAV_CMD_DO_SET_MODE` GUIDED, armed | refused: ACK 4, STATUSTEXT `Mode change to Guided failed: requires position` |
+| `MAV_CMD_NAV_TAKEOFF` 2 m | refused: ACK 4 |
+| GUIDED_NOGPS, then `SET_ATTITUDE_TARGET` thrust 0.6, an extra row | **the motor outputs change** |
+
+The GUIDED refusals come from the twin's missing position estimate: there is no GPS model.
+
+The GUIDED_NOGPS outputs, in order:
+- `sentinel-02-own`: `SERVO_OUTPUT_RAW` 1073, 1144, 1339, 1797, 1940 µs over 2.5 s, with `system_status` ACTIVE.
+- Sentinel-03: TIM1 `CCR1`–`CCR4` from 0x3E8 through 622 values (`s03-arm1`: 1100 to 1935 µs).
+
+**What the twin cannot say: anything about flight.**
+- There is no vehicle dynamics, so the IMU and barometer do not respond to thrust.
+- The climb controller sees no climb and winds the outputs toward their maximum. The ramp is the controller acting on a vehicle that does not move, not a takeoff.
+
+**The bridge to ArduPilot's SITL, as a row:**
+- SITL's physics would drive the twin's IMU and barometer models (their `Acceleration*`, `AngularRate*` and `Pressure` stimuli) at a declared clock relation.
+- The twin's TIM1 compare values (or DShot frames) would feed back as SITL's servo inputs.
+- That is a lock-step co-simulation across two time bases. Nothing is built.
 
 ## 5. The stop: decisions for the architect
 
-- **D1. §7's cap stop fired,** on 4400g's 900‰ line at 10 s (6 of 6). The cap itself killed no run at load 3, but was passed in 2 of 3 runs at load 6–25 with the cap raised to read the share. **Lean:** the stop stands, and 5 s stays.
-- **D2. The build work order I would write: "the foreign window's cost", a build with one measured stop.**
-  - (a) The foreign log filter keeps the first line of each per-transaction witness kind and counts the rest, as it already does for `Unhandled write`:
-    - the device models' NOISY transaction lines and the mux lines;
-    - the `AETHELGARD-CFG2` hook lines, after the first per controller and value;
-    - Renode's SPI slave-mode ERROR, already exempted and counted (`spi_errors_exempted`).
-  - (b) Find what holds the growth (about 100–120 MiB per virtual second, at least part of it live managed memory), with a heap dump of Renode in the tools image. Remove it if it is ours (a model, a hook); name it upstream if it is Renode's.
+- **D1. §7's cap stop: fired (ruled 15:50Z).** 5 s stays.
+- **D2. The build work order I would write first: "the foreign window's cost"** (a build with one measured stop).
+  - (a) The foreign log filter keeps the first and last line of each per-transaction witness kind and a count, as it does for `Unhandled write`. The kinds are the device and mux NOISY lines, the `AETHELGARD-CFG2` hook, and spi2's slave-mode ERROR. First and last, because a liveness judge (`foreign_device_silent`, not built) would read late lines.
+  - (b) Find what holds the growth: about 100–120 MiB per virtual second from the IMU's start, at least part of it live managed memory. Use a heap dump of Renode.
   - (c) Raise the wall bound with the window.
-  - (d) Measure again under load (two cores and three repeats per cell). Propose the new `FOREIGN_MAX_VIRTUAL_NS`; the architect rules it.
-  - **Fence:**
-    - `crates/aethelgard-cli/src/renode/foreign.rs` (the filter and the window; after `AET-WO-2314` merges);
-    - `crates/aethelgard-cli/src/renode.rs` (the log filter, `BOOT_BOUNDS.wall` only if ruled);
-    - `models/renode/` (if a model holds the growth);
-    - their tests and `ci/foreign-judge.sh`'s window;
-    - not the IR, not the memory cap's value.
-  - **Stops:**
-    - the growth is Renode's and cannot be removed;
-    - a witness the judge reads is lost by the summary.
-- **D3. The twin's USART receive, a second build: "a foreign firmware hears MAVLink".**
-  - `ReceiveDmaRequest -> dmamux1@<request>` for every declared USART, from the topology (`aethelgard-twin` `platform.rs`).
-  - IDLE in an `STM32F7_USART` overlay model of our own, as for the sensors, so no padding is needed.
-  - A `--foreign` input of timed frames, recorded in the trace (`INV-04`), so a run replays with its injections.
-  - **Fence:**
-    - `aethelgard-twin/src/platform.rs` and its goldens;
-    - `models/renode/` (the overlay);
-    - `crates/aethelgard-cli` (the input surface);
-    - tests;
-    - not the IR.
-  - It waits on D2, since the arm needs about 12 s.
-- **D4. Run (2)–(4) now, in replay, outside the CLI's bounds** (the harness is committed), or after D2? **Lean: now.** The arming path and persistence are independent of the bound, are an input to D3's design, and the persistence result is `TVI-WO-1304`'s.
-- **D5. The motored board (bus, open):** (3)'s TIM rows and DShot need a board with motors and an IMU, and no CI-built ELF has both.
+  - (d) Measure again under load. The architect rules the bound.
+  - **Fence:** `renode/foreign.rs` (after `2314`), `renode.rs`'s filter, `models/renode/` (if a model holds the growth), tests, and `ci/foreign-judge.sh`'s window. Not the IR, not the cap.
+- **D3. The second build: "a foreign firmware hears MAVLink."**
+  - Each declared USART's `ReceiveDmaRequest` line, from the topology (`aethelgard-twin` `platform.rs`).
+  - IDLE in a `STM32F7_USART` overlay model of our own, so frames need no padding.
+  - A `--foreign` input of timed frames and stimuli, recorded in the trace (`INV-04`), so an armed run replays.
+  - The rest stimuli an armed run needs, declared, not defaulted (`INV-06`): gravity on the IMU, and a barometer that moves.
+  - **Fence:** `platform.rs` and goldens, `models/renode/`, the CLI's input surface, tests. Not the IR, except a stimulus declaration if ruled.
+  - It waits on D2: an armed run needs at least 11 s.
+- **D4. Rows from (2)–(4):**
+  - (a) The twin's reboot: no `reset` macro, and with one the second boot exhausts 4 GiB in 2.1 s. This blocks persistence across a reboot and any reboot-applied parameter (`MOT_PWM_TYPE`).
+  - (b) **Sentinel-03's hwdef emits no `MOT_PWM_TYPE` for its `dshot600` outputs,** so ArduPilot runs PWM on a board whose spec says DShot. This is a hwdef or pincheck row, and the same as TVI-WO-1302 §7.
+  - (c) The parts-table IMU witness stimulus (1 g on y) reads as "Leaning" to an armed ArduPilot. That is fine for the witness, but an armed run needs a declared rest stimulus (D3).
+  - (d) No GPS model, so no GUIDED. The SITL bridge row (§4).
+  - (e) **The end-of-window read samples a firmware transient** (ruled a row, 15:50Z). At exactly 6.000 s, GPIOB PB13 reads as an output with AF0, so `register_mismatch` fires with and without the log. 5, 7 and 8 s read clean. The verdict depends on where the window lands (§1.4).
+- **D5. The motored board: Sentinel-03 used** (ruled), derived as `out/queue/README.md` says. Its fixture on main lacks U5's orientation and `board.forward` (`ImuOrientationUndeclared`, then `ForwardUndeclared`). `4300k`'s unmerged `examples/sentinel-03.json` has both.
 
 ## 6. Predictions, graded
 
@@ -193,4 +239,20 @@ From source:
 | P1.7 | the cap stop does not fire | **wrong:** it fired at 10 s on 900‰ |
 | P1.8 | propose 10 s | **wrong:** 5 s |
 | P1.9 | two cores raise the share, because RSS follows wall time | **the share rose (600–624‰ against 514–526‰), but not by wall time:** wall moved about 1 s. The reason is wrong |
-| P2–P4 | | not run |
+| P2.1 | the twin cannot inject today; one platform line is missing | **right** (`arm-noreq`: no reply; `arm1`: every command answered with the line) |
+| P2.2 | with the line, a frame is read only at 64 bytes; IDLE is missing | **right as built:** padded frames were read. Unpadded frames were not tried |
+| P2.3 | neither a defaults file nor a rebuilt ELF | **right** |
+| P2.4 | Motors, Accel calibration and RC fail first | **partly:** Motors, measured. Accel and RC were pre-empted, not observed. Compass was not predicted (the reader's "passes by default" was wrong). Baro (constant reading) and Leaning (the stimulus) were twin gaps, as held loosely |
+| P2.5 | four parameters and the accept arm it with no skip or force | **wrong as a minimum, right in kind:** it also needed `COMPASS_USE` 0 and two stimuli. No skip, no force |
+| P2.6 | saved; bank 2 programmed; boot erases; no `Storage: failed`; nothing survives a twin restart | **right within a run.** The reboot test was not possible (§2.3) |
+| P2.7 | armed, outputs about 1100 µs, no register on Sentinel-02 | **partly:** armed (`base_mode` 209), no register; but outputs stay at 1000 µs in STABILIZE, not 1100 |
+| P3.1–P3.2 | Sentinel-02: no TIM row, no new peripheral; SPI1 rises | **right:** no class change. SPI1 rises about 1 % (a count, not a row) |
+| P3.3 | DShot moves no timer DMA | **not answered:** `MOT_PWM_TYPE` needs a reboot the twin cannot do. `DIER` is 0 in every run |
+| P3.4 | the injection's traffic is DMA1 stream 0's re-arm | **right,** plus 2 D-cache invalidates per frame; no row added |
+| P4.1 | GUIDED refused for position; TAKEOFF refused | **right** (exact message measured) |
+| P4.2 | GUIDED_NOGPS thrust moves the outputs; no dynamics | **right:** 1073 to 1940 µs |
+| P5.1 | Sentinel-03's hwdef emits | **wrong for main's fixture** (`ImuOrientationUndeclared`, then `ForwardUndeclared`); right with two declarations copied |
+| P5.2 | unarmed, TIM1 is reached; TIM2 is not | **right:** 67 TIM1 rows reached, 54 TIM2 rows (c) |
+| P5.3 | no timer DMA | **right** (`DIER` 0; no request 15) |
+| P5.4 | arming adds no register; DShot is already the board's default | **first half right.** Second half **wrong:** no `MOT_PWM_TYPE` default is emitted, so ArduPilot runs PWM |
+| P5.5 | a battery check fails | **wrong:** Sentinel-03 armed with the same parameters |

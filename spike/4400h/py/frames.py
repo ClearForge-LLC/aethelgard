@@ -3,7 +3,7 @@
 Run with the ArduPilot image's venv (pymavlink, unmodified). Usage:
   python -I frames.py PLAN.json OUT_DIR
 PLAN.json: {"window_ns": N, "steps": [[t_ns, "msg", {fields}], ...]} in time order, where "msg" is
-heartbeat | param_set | param_request_read | command_long | set_attitude_target | pad (a frame of 64 zero bytes, the control).
+heartbeat | param_set | param_request_read | command_long | set_attitude_target | pad | monitor (a frame of 64 zero bytes, the control).
 Each frame is padded with 0x00 to exactly 64 bytes, ArduPilot's RX bounce buffer
 (AP_HAL_ChibiOS/UARTDriver.h:25), so that DMA1 stream 0's NDTR reaches 0 and its transfer-complete
 interrupt hands the bytes to the driver (UARTDriver.cpp:606-642): the twin models no USART IDLE
@@ -41,9 +41,15 @@ lines, rows, now = [], [], 0
 for t, kind, f in plan["steps"]:
     if t < now:
         raise SystemExit("frames: steps out of order")
+    if t > plan["window_ns"]:
+        raise SystemExit(f"frames: a step at {t} ns is past the window, {plan['window_ns']} ns")
     if t > now:
         lines.append(f'emulation RunFor "{(t - now) / 1e9:.9f}"')
         now = t
+    if kind == "monitor":   # a stimulus, not a USART byte: e.g. the BMP581 model's own Pressure property
+        lines.append(f["cmd"])
+        rows.append(f"{t}\tmonitor {f['cmd']}\t0\t-")
+        continue
     if kind == "pad":
         frame = b""
         name = "pad"

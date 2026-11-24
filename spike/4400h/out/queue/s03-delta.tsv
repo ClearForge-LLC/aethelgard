@@ -1,0 +1,9 @@
+class	peripheral	offset	register	base_writes	control_writes	armed_writes	armed_distinct_values	first_values
+values-when-armed	rtc	0x58	BackupStart+0x8	77	77	77	53	['0x80000000', '0xB6CF8F51', '0xB796BA59', '0xB80215FA']
+values-when-armed	rtc	0x9C	BackupEnd	77	77	77	9	['0x20003', '0x2002C', '0x200FD', '0x200FF']
+values-when-armed	timer1	0x34	CaptureOrCompare1	3129	3129	3133	622	['0x0', '0x3E8', '0x3E9', '0x3EA']
+values-when-armed	timer1	0x38	CaptureOrCompare2	3129	3129	3133	623	['0x0', '0x3E8', '0x3E9', '0x3EA']
+values-when-armed	timer1	0x3C	CaptureOrCompare3	3129	3129	3133	622	['0x0', '0x3E8', '0x3E9', '0x3EA']
+values-when-armed	timer1	0x40	CaptureOrCompare4	3129	3129	3133	622	['0x0', '0x3E8', '0x3E9', '0x3EA']
+values-when-armed	usart1	0x28	TransmitData	761	2518	2687	223	['0x0', '0x1', '0x10', '0x11']
+values-when-armed	usart3	0x28	TransmitData	388	388	409	57	['0x0', '0x1', '0x10', '0x11']

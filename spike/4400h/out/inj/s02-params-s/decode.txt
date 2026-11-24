@@ -1,0 +1,1 @@
+{"bad": 6, "by_type": {"BAD_DATA": 6, "COMMAND_ACK": 6, "HEARTBEAT": 17, "PARAM_VALUE": 11, "SERVO_OUTPUT_RAW": 30, "STATUSTEXT": 6, "SYS_STATUS": 6, "TIMESYNC": 1}, "bytes": 2432, "messages": 83}

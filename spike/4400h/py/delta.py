@@ -6,6 +6,8 @@ writes and distinct values in each run, and the class:
   armed-only        written in ARMED, never in CONTROL nor BASE     (what arming newly reaches)
   injection         written in CONTROL and ARMED, never in BASE     (the injection's own traffic, e.g. DMA re-arm)
   more-when-armed   in all three, ARMED's count above 1.5x CONTROL's (rate change)
+  values-when-armed written in all three at about the same rate, but ARMED writes more distinct values than CONTROL
+                    (e.g. a timer's compare registers carrying the motor outputs)
 Rows of other classes are not printed. Also prints the peripherals with any armed-only register."""
 import collections, sys
 def load(d):
@@ -25,9 +27,11 @@ for k in sorted(set(an) | set(cn)):
     if a and not c and not b: cls = "armed-only"; newp.add(k[0])
     elif a and c and not b: cls = "injection"
     elif a and c and b and a > 1.5 * c: cls = "more-when-armed"
+    elif a and c and len(av.get(k, ())) > len(cv.get(k, ())): cls = "values-when-armed"
     if cls: rows.append((cls, k[0], k[1], k[2], b, c, a, len(av.get(k, ())), sorted(av.get(k, ()))[:4]))
 with open(sys.argv[4], "w") as o:
     o.write("class\tperipheral\toffset\tregister\tbase_writes\tcontrol_writes\tarmed_writes\tarmed_distinct_values\tfirst_values\n")
     for r in rows: o.write("\t".join(str(x) for x in r) + "\n")
 print("armed-only registers:", sum(1 for r in rows if r[0] == "armed-only"), "in", sorted(newp))
-print("injection registers:", sum(1 for r in rows if r[0] == "injection"), "; more-when-armed:", sum(1 for r in rows if r[0] == "more-when-armed"))
+print("injection registers:", sum(1 for r in rows if r[0] == "injection"), "; more-when-armed:", sum(1 for r in rows if r[0] == "more-when-armed"),
+      "; values-when-armed:", sum(1 for r in rows if r[0] == "values-when-armed"))

@@ -9,5 +9,5 @@ name=$1; plan=$2; cap=$3; log=${4:-0}
 K=$HOME/.cache/aet-4400h/kit/img.sh
 $K ardupilot "mkdir -p /cache/inj/$name && python3 -I /spike/py/plans.py /cache/inj/$name && /opt/venv/bin/python -I /spike/py/frames.py /cache/inj/$name/$plan.json /cache/inj/$name" 2>&1 | grep -v '^capped-run'
 req=1; [ "${NOREQ:-0}" = 1 ] && req=0
-MEM=${MEM:-8G} $K tools "REQ=$req INJ=/cache/inj/$name LOG=$log bash /spike/sh/replay.sh /cache/cap/$cap /cache/run/$name" 2>&1 | grep -v '^capped-run'
+MEM=${MEM:-8G} $K tools "REQ=$req INJ=/cache/inj/$name LOG=$log LOGP='${LOGP:-}' RESETMACRO=${RESETMACRO:-0} bash /spike/sh/replay.sh /cache/cap/$cap /cache/run/$name" 2>&1 | grep -v '^capped-run'
 $K ardupilot "/opt/venv/bin/python -I /spike/py/decode.py /cache/run/$name/tx.bin /cache/run/$name/mav.tsv" 2>&1 | grep -v '^capped-run' | tee ~/.cache/aet-4400h/run/$name/decode.txt
