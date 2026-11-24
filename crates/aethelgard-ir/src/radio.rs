@@ -181,6 +181,10 @@ impl ThermalRule {
 pub struct EnablePin {
     pub pin: String,
     pub number: String,
+    /// VIH_nRST, the reset release voltage, in thousandths of the supply.
+    pub release_permille: u32,
+    /// tSTBL: how long the supply is stable before EN rises.
+    pub stable_us: u32,
     pub at: At,
 }
 
@@ -219,8 +223,6 @@ pub struct Uart {
     pub tx_number: String,
     pub rx: String,
     pub rx_number: String,
-    pub vih_min_permille: u32,
-    pub vil_max_permille: u32,
     pub at: At,
 }
 
@@ -249,6 +251,10 @@ pub struct Antenna {
     /// How far, left, right and beyond, no board may be.
     pub clearance_um: i64,
     pub clearance_at: At,
+    /// At most how far the body's feed (right) side is from the board's
+    /// right edge.
+    pub feed_edge_max_um: i64,
+    pub feed_at: At,
     pub placement_at: At,
 }
 
@@ -264,6 +270,8 @@ pub struct RadioPart {
     pub footprint: String,
     pub supply: Supply,
     pub supply_current_min_ma: Cited,
+    pub input_leakage_na: Cited,
+    pub decoupling_min_pf: Cited,
     pub tx_peak_ma_typical: Cited,
     pub ground_pins: Vec<String>,
     pub thermal_vias: ThermalRule,
@@ -360,6 +368,9 @@ pub fn parse(text: &str) -> Result<RadioTable, String> {
             &m.lifecycle.at,
             &m.supply.at,
             &m.supply_current_min_ma.at,
+            &m.input_leakage_na.at,
+            &m.decoupling_min_pf.at,
+            &m.antenna.feed_at,
             &m.tx_peak_ma_typical.at,
             &m.enable.at,
             &m.uart.at,
@@ -436,6 +447,9 @@ pub enum Kind {
     RadioBoardLayers,
     RadioModuleTwice,
     RadioSupplyUnsourced,
+    RadioPullTooWeak,
+    RadioEnableTooFast,
+    RadioDecouplingShort,
 }
 
 impl Kind {
@@ -460,6 +474,9 @@ impl Kind {
             Self::RadioBoardLayers => "RadioBoardLayers",
             Self::RadioModuleTwice => "RadioModuleTwice",
             Self::RadioSupplyUnsourced => "RadioSupplyUnsourced",
+            Self::RadioPullTooWeak => "RadioPullTooWeak",
+            Self::RadioEnableTooFast => "RadioEnableTooFast",
+            Self::RadioDecouplingShort => "RadioDecouplingShort",
         }
     }
 }
@@ -833,9 +850,9 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                         r,
                         path,
                         format!(
-                            "strap `{pin}` floats at reset ({}), and SPI boot needs it {}",
-                            t.cite(&s.at),
-                            if want { "high" } else { "low" }
+                            "strap `{pin}` floats at reset, and the row holds it {} for SPI boot ({})",
+                            if want { "high" } else { "low" },
+                            t.cite(&s.at)
                         ),
                     ));
                 }
@@ -845,7 +862,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                         r,
                         path,
                         format!(
-                            "strap `{pin}` reads {} at reset, and SPI boot needs it {} ({})",
+                            "strap `{pin}` reads {} at reset, and the row holds it {} for SPI boot ({})",
                             if got { "high" } else { "low" },
                             if want { "high" } else { "low" },
                             t.cite(&s.at)
@@ -901,6 +918,96 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     format!("`{}` is no capacitor row of the power parts table", c.part),
                 ));
             }
+        }
+        // Each pull holds its level against the pin's input current: the
+        // drop across it at the row's leakage stays inside the quarter of
+        // the supply between VIH (0.75 x VDD) or VIH_nRST and the rail, and
+        // VIL (0.25 x VDD) and ground (p. 21, Table 6-3), at the domain's
+        // lowest voltage.
+        let (lo, _) = crate::power::domain_range_mv(domain);
+        let pulls = std::iter::once((&m.enable.resistor, format!("{at}.enable.resistor"))).chain(
+            m.straps.iter().filter_map(|(pin, s)| match s {
+                RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
+                RadioStrap::Open => None,
+            }),
+        );
+        // ohms <= (VDD/4) / I: mV * 1e6 / (4 * nA) ohms.
+        let max_ohms = u128::from(lo) * 1_000_000 / (4 * u128::from(row.input_leakage_na.value));
+        for (p, path) in pulls {
+            if u128::from(p.ohms) > max_ohms {
+                return Err(refuse(
+                    Kind::RadioPullTooWeak,
+                    &p.reference,
+                    format!("{path}.ohms"),
+                    format!(
+                        "{} ohm cannot hold its level: at {} nA its drop passes a quarter of {lo} mV above {max_ohms} ohm ({})",
+                        p.ohms,
+                        row.input_leakage_na.value,
+                        t.cite(&row.input_leakage_na.at)
+                    ),
+                ));
+            }
+        }
+        // The enable's RC keeps EN below VIH_nRST for tSTBL from the supply's
+        // rise: R x C x ln(1 / (1 - 0.75)) >= tSTBL, on the capacitance the
+        // specification's declared DC-bias derating retains (p. 15, p. 21).
+        let cap = |part: &str| match passives.get(part).map(|row| &row.kind) {
+            Some(crate::power_parts::Kind::Capacitor(c)) => Some(c),
+            _ => None,
+        };
+        if let Some(c) = cap(&m.enable.capacitor.part) {
+            let retained = spec
+                .power
+                .as_ref()
+                .and_then(|p| {
+                    p.conditions
+                        .dc_bias_derating
+                        .iter()
+                        .find(|d| d.dielectrics.contains(&c.dielectric))
+                })
+                .map(|d| d.retained_permille);
+            let pf = u128::try_from(c.rated_picofarads.value).unwrap_or(0);
+            // tau (ohm pF) * ln 4 (1.386, rounded down) >= tSTBL (us * 1e6 ohm pF).
+            let need = u128::from(row.enable.stable_us) * 1_000_000 * 1000;
+            let have = retained
+                .map(|r| u128::from(m.enable.resistor.ohms) * pf * u128::from(r) / 1000 * 1386);
+            if have.is_none_or(|h| h < need) {
+                return Err(refuse(
+                    Kind::RadioEnableTooFast,
+                    r,
+                    format!("{at}.enable"),
+                    match have {
+                        None => format!(
+                            "`{}` has no declared DC-bias derating for its dielectric, so its capacitance, and the enable's delay, is unbounded",
+                            m.enable.capacitor.part
+                        ),
+                        Some(h) => format!(
+                            "the enable's RC reaches the reset release voltage in {} ns, under the {} us the supply must be stable first ({})",
+                            h / 1_000_000,
+                            row.enable.stable_us,
+                            t.cite(&row.enable.at)
+                        ),
+                    },
+                ));
+            }
+        }
+        let decoupled: u128 = m
+            .decoupling
+            .iter()
+            .filter_map(|c| cap(&c.part))
+            .map(|c| u128::try_from(c.rated_picofarads.value).unwrap_or(0))
+            .sum();
+        if !m.decoupling.is_empty() && decoupled < u128::from(row.decoupling_min_pf.value) {
+            return Err(refuse(
+                Kind::RadioDecouplingShort,
+                r,
+                format!("{at}.decoupling"),
+                format!(
+                    "{decoupled} pF rated from the supply to ground, under the {} pF at the module ({})",
+                    row.decoupling_min_pf.value,
+                    t.cite(&row.decoupling_min_pf.at)
+                ),
+            ));
         }
     }
     Ok(())

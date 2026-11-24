@@ -2108,6 +2108,20 @@ fn radio_outline_up(text: &str, dy: f64) -> String {
     format!("{}{moved}{}", &text[..s], &text[e..])
 }
 
+/// The board's outline moved `dx` mm at its right edge.
+fn radio_outline_right(text: &str, dx: f64) -> String {
+    let i = text.find("(gr_rect").unwrap();
+    let s = text[i..].find("(end ").unwrap() + i + "(end ".len();
+    let e = text[s..].find(')').unwrap() + s;
+    let mut xy = text[s..e].split(' ');
+    let (x, y): (f64, f64) = (
+        xy.next().unwrap().parse().unwrap(),
+        xy.next().unwrap().parse().unwrap(),
+    );
+    let moved = format!("{} {y}", ((x + dx) * 1e6).round() / 1e6);
+    format!("{}{moved}{}", &text[..s], &text[e..])
+}
+
 #[test]
 fn the_radio_fixture_passes_erc_and_drc_and_judges_its_module() {
     let (dir, _) = radio_emitted("pass");
@@ -2162,6 +2176,12 @@ fn radio_planted_boards_are_refused_by_name() {
             "outline-up",
             radio_outline_up(&text, 10.0),
             "RadioAntennaOnBoard",
+        ),
+        // Review M2: the board widened 40 mm right; the module mid-edge.
+        (
+            "mid-edge",
+            radio_outline_right(&text, 40.0),
+            "RadioNotAtCorner",
         ),
         (
             "turned",

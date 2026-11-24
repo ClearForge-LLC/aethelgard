@@ -239,3 +239,56 @@ fn a_supply_no_regulator_outputs_is_refused() {
     let e = aethelgard_ir::radio::validate(&s).unwrap_err();
     assert_eq!(e.kind(), "RadioSupplyUnsourced");
 }
+
+/// Adversarial pass (review M1): a pull whose value the pin's own input
+/// current defeats holds no level; EN's or a strap's.
+#[test]
+fn a_pull_too_weak_to_hold_its_level_is_refused() {
+    let (kind, path) =
+        refused(|v| module(v)["enable"]["resistor"]["ohms"] = json!(4_294_967_295u32));
+    assert_eq!(kind, "RadioPullTooWeak");
+    assert_eq!(
+        path.as_deref(),
+        Some("radio_modules[0].enable.resistor.ohms")
+    );
+    let (kind, path) =
+        refused(|v| module(v)["straps"]["IO2"]["resistor"]["ohms"] = json!(20_000_000));
+    assert_eq!(kind, "RadioPullTooWeak");
+    assert_eq!(
+        path.as_deref(),
+        Some("radio_modules[0].straps.IO2.resistor.ohms")
+    );
+    // 15.6 MOhm holds on VDD_3V3 (3,135 mV at its lowest): a quarter is 783 mV,
+    // 783 mV / 50 nA = 15.675 MOhm.
+    let mut v = fixture();
+    module(&mut v)["straps"]["IO2"]["resistor"]["ohms"] = json!(15_600_000);
+    judged(&v).unwrap();
+}
+
+/// Review M1: EN's RC must keep it under the release voltage for tSTBL.
+#[test]
+fn an_enable_rc_faster_than_the_supply_settles_is_refused() {
+    let (kind, path) = refused(|v| module(v)["enable"]["resistor"]["ohms"] = json!(0));
+    assert_eq!(kind, "RadioEnableTooFast");
+    assert_eq!(path.as_deref(), Some("radio_modules[0].enable"));
+    // 1 uF retained at 50 %: 70 ohm gives 70 x 500,000 pF x 1.386 = 48.5 us,
+    // under 50; 73 ohm gives 50.6 us.
+    let (kind, _) = refused(|v| module(v)["enable"]["resistor"]["ohms"] = json!(70));
+    assert_eq!(kind, "RadioEnableTooFast");
+    let mut v = fixture();
+    module(&mut v)["enable"]["resistor"]["ohms"] = json!(73);
+    judged(&v).unwrap();
+    // No derating declared for the capacitor's dielectric: unbounded.
+    let (kind, _) = refused(|v| v["power"]["conditions"]["dc_bias_derating"] = json!([]));
+    assert_eq!(kind, "RadioEnableTooFast");
+}
+
+/// Review M1: the module's own schematic puts 10 uF on 3V3 (p. 33).
+#[test]
+fn decoupling_under_the_modules_schematic_is_refused() {
+    let (kind, path) = refused(|v| {
+        module(v)["decoupling"] = json!([{ "reference": "C92", "part": "GCM188R71H104KA57" }]);
+    });
+    assert_eq!(kind, "RadioDecouplingShort");
+    assert_eq!(path.as_deref(), Some("radio_modules[0].decoupling"));
+}

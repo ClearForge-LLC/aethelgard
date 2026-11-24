@@ -1137,6 +1137,26 @@ fn radio_judged(
                 ),
             ));
         }
+        // At the corner Espressif marks (HDG-C3 Figure 19 position 3, the
+        // feed point on the right, datasheet Figure 10-1): the antenna edge
+        // on the board's top edge (one snap, 0.05 mm, either way), and the
+        // body's feed side within the row's bound of the right edge.
+        let edge = y + a.y1 * 1000;
+        let feed = ox1 - (x + a.x1 * 1000);
+        if (oy0 - edge).abs() > 50_000 || feed < 0 || feed > row.antenna.feed_edge_max_um * 1000 {
+            return Err(stop(
+                "RadioNotAtCorner",
+                r,
+                format!(
+                    "`{r}` is not at the top-right corner: its antenna edge is {} mm from the board's top edge, and its feed side {} mm from the right edge, at most {} ({}; {})",
+                    (oy0 - edge) as f64 / 1e6,
+                    feed as f64 / 1e6,
+                    row.antenna.feed_edge_max_um as f64 / 1e3,
+                    table.cite(&row.antenna.feed_at),
+                    table.cite(&row.antenna.placement_at)
+                ),
+            ));
+        }
     }
     Ok(Some(modules.len()))
 }
