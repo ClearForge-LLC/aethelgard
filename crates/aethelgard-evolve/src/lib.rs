@@ -17,7 +17,10 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub mod lines;
 pub mod propose;
+
+use lines::{Form, Transaction};
 
 use aethelgard_chaos::Replayed;
 use aethelgard_chaos::campaign::{self, Bound};
@@ -656,29 +659,6 @@ struct Run<'a> {
     releases: u64,
 }
 
-/// The bytes of a witness line `[NOISY] {device}: {what} {bytes}`, as the
-/// model logs them (each byte in upper-case hexadecimal, joined by spaces),
-/// first byte most significant, with their count; `None` for any other line.
-fn witness_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
-    let rest = noisy(line, device)?.strip_prefix(what)?.strip_prefix(' ')?;
-    let bytes: Vec<u8> = rest
-        .split(' ')
-        .map(|b| {
-            (!b.is_empty() && b.len() <= 2 && b.bytes().all(|c| c.is_ascii_hexdigit()))
-                .then(|| u8::from_str_radix(b, 16).ok())
-                .flatten()
-        })
-        .collect::<Option<_>>()?;
-    packed(&bytes)
-}
-
-/// What a `[NOISY]` line of `device`'s model says, after `{device}: `.
-fn noisy<'l>(line: &'l str, device: &str) -> Option<&'l str> {
-    line.strip_prefix("[NOISY] ")?
-        .strip_prefix(device)?
-        .strip_prefix(": ")
-}
-
 /// Bytes as one value, first byte most significant, with their count;
 /// `None` for none or more than fit.
 fn packed(bytes: &[u8]) -> Option<(u64, usize)> {
@@ -688,83 +668,37 @@ fn packed(bytes: &[u8]) -> Option<(u64, usize)> {
     })
 }
 
-/// The bytes of a BMP581 witness line (`AET-WO-3307`), as our model logs a
-/// transaction, one line each (`BMP581.cs` `FinishTransmission`): `write
-/// 0xRR <- 0xBB …`, or `<- (none)`, writes the pointer and the bytes after
-/// it; `read 0xRR -> 0xVV …` writes the pointer and reads the bytes. Each
-/// byte is `0x` and two upper-case digits, as `Join` writes it, and the
-/// pointer is the model's, 7 bits; a line that is not so says nothing. `what` is `Write` or `Read`, as for
-/// [`witness_bytes`]; `None` for any other line.
-fn bmp581_bytes(line: &str, device: &str, what: &str) -> Option<(u64, usize)> {
-    let byte = |t: &str| {
-        let d = t.strip_prefix("0x")?;
-        (d.len() == 2 && d.bytes().all(|c| matches!(c, b'0'..=b'9' | b'A'..=b'F')))
-            .then(|| u8::from_str_radix(d, 16).ok())
-            .flatten()
-    };
-    let (verb, rest) = noisy(line, device)?.split_once(' ')?;
-    let (pointer, rest) = rest.split_once(' ')?;
-    let (arrow, rest) = rest.split_once(' ')?;
-    let pointer = byte(pointer).filter(|&p| p <= 0x7F)?;
-    let bytes: Vec<u8> = if rest == "(none)" {
-        Vec::new()
-    } else {
-        rest.split(' ').map(byte).collect::<Option<_>>()?
-    };
-    let (written, read) = match (verb, arrow) {
-        ("write", "<-") => ([&[pointer], &bytes[..]].concat(), None),
-        ("read", "->") if !bytes.is_empty() => (vec![pointer], Some(bytes)),
-        _ => return None,
-    };
-    // A read too wide to hold says nothing of its value, but its pointer
-    // stands, as the `Write` line of the other form does (adversarial 2).
-    match what {
-        "Write" => packed(&written),
-        "Read" => packed(&read?),
-        _ => None,
-    }
+/// The form attribution reads `device`'s script in: our BMP581's, or
+/// `Write` and `Read` (`AET-WO-3307`). The ICP-101xx's is placed by the
+/// judge (`AET-WO-3309` D4), never judged here: `None`, no evidence.
+fn judged_form(script: &[String], device: &str) -> Option<Form> {
+    lines::form(script, device).filter(|f| *f != Form::Icp)
 }
 
-/// `lines` as `device`'s transactions (`AET-WO-3306`), each its range of
-/// lines: a `Write` line opens one and the `Read` lines after it are its, as
-/// the model logs a transfer; a `Read` first in the lines opens one of its
-/// own, and a `Read` later is the transaction's before it (adversarial F2). `None` if any line is not a `Write` or `Read` of the device
-/// (a warning, an error, another device's).
-fn transactions(lines: &[String], device: &str) -> Option<Vec<std::ops::Range<usize>>> {
-    let mut starts = Vec::new();
-    for (i, l) in lines.iter().enumerate() {
-        if witness_bytes(l, device, "Write").is_some() {
-            starts.push(i);
-        } else if witness_bytes(l, device, "Read").is_none() {
-            return None;
-        } else if i == 0 {
-            starts.push(i);
-        }
-    }
-    starts.push(lines.len());
-    Some(starts.windows(2).map(|w| w[0]..w[1]).collect())
+/// `lines`, read whole, as `device`'s transactions in its script's `form`
+/// (`AET-WO-3306`; a BMP581's since `AET-WO-3309`), as the model logs them
+/// ([`lines::transactions`]). `None` if any line is none (a warning, an
+/// error, another device's).
+fn transactions(lines: &[String], device: &str, form: Form) -> Option<Vec<Transaction>> {
+    let (ts, none) = lines::transactions(lines, device, form);
+    none.is_empty().then_some(ts)
 }
 
 /// A device's model path, whole script, whole log, and the witness each
 /// line of the log went to ([`Run::whole_log`]).
 type WholeLog<'a> = (&'a str, Vec<String>, Vec<String>, Vec<usize>);
 
-/// A transaction's shape (`AET-WO-3306`): its write, as [`witness_bytes`]
-/// gives it, and the bytes its reads return in all.
-fn shape(lines: &[String], device: &str) -> (Option<(u64, usize)>, usize) {
-    let write = lines
-        .first()
-        .and_then(|l| witness_bytes(l, device, "Write"));
-    let read = lines
-        .iter()
-        .filter_map(|l| witness_bytes(l, device, "Read"))
-        .map(|(_, n)| n)
-        .sum();
-    (write, read)
+/// A transaction's write and read widths, as a step's [`step_shape`].
+type Shape = (Option<(u64, usize)>, usize);
+
+/// A transaction's shape (`AET-WO-3306`): its write packed, and the bytes
+/// its reads return in all.
+fn shape(t: &Transaction) -> Shape {
+    (packed(&t.written), t.reads.iter().map(Vec::len).sum())
 }
 
 /// A step's write and read width as a transaction's [`shape`].
-fn step_shape(write: &[u8], width: u8) -> (Option<(u64, usize)>, usize) {
+fn step_shape(write: &[u8], width: u8) -> Shape {
     let value = write.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b));
     (Some((value, write.len())), usize::from(width))
 }
@@ -990,9 +924,13 @@ impl<'a> Run<'a> {
     }
 
     /// A sound witness's register written and value read, each with its
-    /// solved value, the first the model logged, and whether it counts as
-    /// evidence ([`Self::witness_wrong`]); `None` for a witness that is no
-    /// evidence.
+    /// solved value, what the first transaction the model logged wrote and
+    /// read (both from that one transaction, `AET-WO-3309` (4)), and whether
+    /// it counts as evidence ([`Self::witness_wrong`]); `None` for a witness
+    /// that is no evidence. A transaction that wrote or read another number of
+    /// bytes than the step's is wrong by its count, named by a field of its
+    /// own (`{device}.Write.bytes`, `.Read.bytes`), even where its bytes pack
+    /// to the solved value (`AET-WO-3309` (1), D5: `0x00 0x36 0x40 0x81`).
     fn witness_fields(&self, b: usize, record: &Record) -> Option<Vec<Field>> {
         let Record::I2cWitness {
             reference,
@@ -1021,22 +959,12 @@ impl<'a> Run<'a> {
             return None;
         };
         let observed = observed.as_deref()?;
-        // A witness is read in its script's form: our BMP581's, or `Write`
-        // and `Read` (`AET-WO-3307`). A line in the other form is not the
-        // device's model's.
-        let bmp581 = expected
-            .iter()
-            .any(|l| bmp581_bytes(l, device, "Write").is_some());
-        let logged = |lines: &[String], what: &str| {
-            lines.iter().find_map(|l| {
-                if bmp581 {
-                    bmp581_bytes(l, device, what)
-                } else {
-                    witness_bytes(l, device, what)
-                }
-            })
-        };
-        let reg_want = logged(expected, "Write")?;
+        // A witness is read in its script's form ([`judged_form`]). A line in
+        // another form is not the device's model's.
+        let form = judged_form(expected, device)?;
+        let first = |ls: &[String]| lines::transactions(ls, device, form).0.into_iter().next();
+        let want = first(expected)?;
+        let reg_want = packed(&want.written)?;
         if Some(reg_want) != step_shape(write, *read_width).0 || *read_width > 4 {
             return None;
         }
@@ -1045,7 +973,7 @@ impl<'a> Run<'a> {
         let value_want = if *read_width == 0 {
             None
         } else {
-            let want = logged(expected, "Read")?;
+            let want = packed(want.reads.first()?)?;
             if want.1 != usize::from(*read_width) || (want.0 ^ *value) & *value_mask != 0 {
                 return None;
             }
@@ -1053,8 +981,24 @@ impl<'a> Run<'a> {
         };
         let claimed = status.as_deref() == Some("ok");
         let silent = claimed && observed.is_empty();
-        let reg = logged(observed, "Write").map(|(v, _)| v);
-        let read = logged(observed, "Read").map(|(v, _)| v);
+        let (got, none) = lines::transactions(observed, device, form);
+        let got = got.into_iter().next();
+        let written = got
+            .as_ref()
+            .map(|t| t.written.as_slice())
+            .filter(|w| !w.is_empty());
+        // A step's read is its transaction's first, never another
+        // transaction's (`AET-WO-3309` (4)); a later read is a transfer of its
+        // own, never this one's count. One that read nothing read no bytes, when the record claims
+        // the read completed and every line is the model's transaction: a
+        // timeout cuts a transfer short, and a line no reader knows may be
+        // the read.
+        let returned = got.as_ref().and_then(|t| match t.reads.first() {
+            Some(r) => Some(r.as_slice()),
+            None => (claimed && none.is_empty()).then_some(&[][..]),
+        });
+        let reg = written.and_then(packed).map(|(v, _)| v);
+        let read = returned.and_then(packed).map(|(v, _)| v);
         let width_mask = |n: usize| {
             if n >= 4 {
                 u64::from(u32::MAX)
@@ -1085,6 +1029,20 @@ impl<'a> Run<'a> {
         if let Some(want) = value_want {
             fields.push(at("Read", width_mask(want.1), want.0, read));
         }
+        let count = |name: &str, solved: usize, got: Option<&[u8]>| {
+            got.filter(|g| g.len() != solved).map(|g| Field {
+                register: format!("{device}.{name}.bytes"),
+                address: u32::from(*address),
+                mask: u64::MAX,
+                solved: solved as u64,
+                observed: Some(g.len() as u64),
+                wrong: true,
+            })
+        };
+        fields.extend(count("Write", reg_want.1, written));
+        if let Some(want) = value_want {
+            fields.extend(count("Read", want.1, returned));
+        }
         fields.extend(self.surplus_fields(b, record, *address));
         Some(fields)
     }
@@ -1094,19 +1052,28 @@ impl<'a> Run<'a> {
     /// witness its first line went to and its lines. A device's witnesses,
     /// in record order, hold its whole log: each step takes as many lines as
     /// it expects and the last the rest (`renode.rs` `attribute`). Their
-    /// lines are judged whole: every one a `Write` or `Read` of the device,
-    /// and its script's transactions, each whole, in order among the
+    /// lines are judged whole: every one a transaction of the device in its
+    /// script's form ([`transactions`]: `Write`/`Read`, or a BMP581's since
+    /// `AET-WO-3309`), and its script's transactions, each whole, in order among the
     /// observed ones. What is left over is a transaction the firmware sent
     /// to this device's address that none of its steps is. Empty unless all
     /// of that holds: a missing or wrong transaction is left to each
     /// witness's own fields, and an unreadable witness says nothing.
-    fn surplus(&self, reference: &str) -> (usize, Vec<(usize, Vec<String>)>) {
+    fn surplus(&self, reference: &str) -> (usize, Vec<(usize, Shape)>) {
         let Some((device, script, log, at)) = self.whole_log(reference) else {
             return (0, Vec::new());
         };
-        let (Some(want), Some(got)) = (transactions(&script, device), transactions(&log, device))
-        else {
+        let Some(form) = judged_form(&script, device) else {
             return (0, Vec::new());
+        };
+        let (Some(want), Some(got)) = (
+            transactions(&script, device, form),
+            transactions(&log, device, form),
+        ) else {
+            return (0, Vec::new());
+        };
+        let text = |all: &[String], t: &Transaction| -> Vec<String> {
+            t.lines.iter().map(|&i| all[i].clone()).collect()
         };
         // Each scripted transaction is the earliest observed one equal to it.
         let mut held = 0;
@@ -1114,11 +1081,11 @@ impl<'a> Run<'a> {
         for t in got {
             if want
                 .get(held)
-                .is_some_and(|w| script[w.clone()] == log[t.clone()])
+                .is_some_and(|w| text(&script, w) == text(&log, &t))
             {
                 held += 1;
             } else {
-                extra.push((at[t.start], log[t].to_vec()));
+                extra.push((at[t.lines[0]], shape(&t)));
             }
         }
         if held < want.len() {
@@ -1170,7 +1137,7 @@ impl<'a> Run<'a> {
             return Vec::new();
         };
         let (scripted, extra) = self.surplus(reference);
-        let here: Vec<&Vec<String>> = extra
+        let here: Vec<&Shape> = extra
             .iter()
             .filter(|(at, _)| std::ptr::eq(&self.records[*at], record))
             .map(|(_, t)| t)
@@ -1186,8 +1153,7 @@ impl<'a> Run<'a> {
             observed: Some((scripted + extra.len()) as u64),
             wrong: true,
         }];
-        for t in here {
-            let extra = shape(t, device);
+        for &extra in here {
             // Each step of this shape on the bus: `Some` if it went elsewhere,
             // `None` if that cannot be told. This device's own never went
             // elsewhere: its log holds every scripted transaction and this one.
@@ -1242,7 +1208,7 @@ impl<'a> Run<'a> {
     /// own; and its device's whole log holds fewer transactions of its shape
     /// (its write, and its read's width) than its script does. `None` when
     /// that cannot be told: no witness of the step, or one unreadable, or a
-    /// line that is not a `Write` or `Read`.
+    /// line that is not a transaction of its form ([`transactions`]).
     fn sent_elsewhere(&self, check: &Record) -> Option<bool> {
         let Record::I2cCheck {
             reference,
@@ -1269,12 +1235,13 @@ impl<'a> Run<'a> {
             return Some(false);
         }
         let (device, script, log, _) = self.whole_log(reference)?;
+        let form = judged_form(&script, device)?;
         let own = step_shape(write, *width);
         let count = |lines: &[String]| -> Option<usize> {
             Some(
-                transactions(lines, device)?
-                    .into_iter()
-                    .filter(|t| shape(&lines[t.clone()], device) == own)
+                transactions(lines, device, form)?
+                    .iter()
+                    .filter(|t| shape(t) == own)
                     .count(),
             )
         };
