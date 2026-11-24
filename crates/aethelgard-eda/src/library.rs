@@ -16,7 +16,7 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 58] = [
+const PINS: [(&str, &str); 60] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         "03187d2ed4dca904a6c0379cff9fe3a9fd0e1139b59fb9669db42160ca40cc3f",
@@ -154,6 +154,10 @@ const PINS: [(&str, &str); 58] = [
         "49133cae4075c838798a68067881f10d0836a3316f7de485f334d92d71569550",
     ),
     (
+        "symbols/RF_Module.kicad_symdir/ESP32-C3-WROOM-02.kicad_sym",
+        "2508dfe1fc72b61b3957d854397bb4d8afe4da28a5bd2a1c1c30acaf53718460",
+    ),
+    (
         "symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym",
         "f2d21a5bfe88c6651ffc16609c9184099c9063c47c05dcf89a78a2418ff64bda",
     ),
@@ -202,6 +206,11 @@ const PINS: [(&str, &str); 58] = [
         "footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
         "58fc3611cf81a68c368c884a0df4ee9923cd01d7376e418b94e6a045175a4336",
     ),
+    // Derived from KiCad's (`AET-WO-4411` D4), so CC-BY-SA-4.0, not MIT OR Apache-2.0.
+    (
+        "footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
+        "60813259ffcb61f6b479aeea1161728b30c3352ae7e00741f4eefea6c10031bf",
+    ),
     (
         "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         "5ee1738db4ee82b091bd24536bf2e74d8bfc6b4bc16b31cf5d3bcefcc05c2608",
@@ -228,7 +237,7 @@ const PINS: [(&str, &str); 58] = [
     ),
     (
         "aethelgard/README.md",
-        "c790404c70cd5cab4d8793a8a575425605fd261f5304e5d85072be10b00a7730",
+        "3d836e2690d1ba863bc947d85cb12478d5edfaa172cb8f4a17f517844046b6fa",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
@@ -624,10 +633,13 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 16);
+        // `AET-WO-4411`: the radio module's symbol library and our derived footprint library.
+        assert!(sym.contains("(uri \"/s/lib/symbols/RF_Module.kicad_symdir\")"));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_RF.pretty\")"));
+        assert_eq!(sym.matches("(lib ").count(), 17);
         // `AET-WO-4240c`: the crystal's footprint library.
         assert!(fp.contains("(uri \"/s/lib/footprints/Crystal.pretty\")"));
-        assert_eq!(fp.matches("(lib ").count(), 16);
+        assert_eq!(fp.matches("(lib ").count(), 17);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }
