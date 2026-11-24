@@ -457,6 +457,7 @@ fn the_reference_declares_todays_two_layer_board() {
             joins: vec![],
             thermal: vec![],
             imus: vec![],
+            junction: None,
         }
     );
 }
@@ -538,8 +539,9 @@ fn routed_board(label: &str, spec: &str) -> aethelgard_eda::route::Board {
 }
 
 /// D1: the heaviest committed specification's routing (§1.1:
-/// `sentinel-02-power`, 119.0 M) does at most half the work the bound
-/// allows, the margin stated with `route::WORK`.
+/// `sentinel-02-power`, 119.0 M; 136.2 M with `AET-WO-1324`'s charges for
+/// seeds, the nearest-pad index and the final check) does at most half the
+/// work the bound allows, the margin stated with `route::WORK`.
 #[test]
 fn the_heaviest_committed_board_routes_within_half_the_work_bound() {
     use aethelgard_eda::route;
