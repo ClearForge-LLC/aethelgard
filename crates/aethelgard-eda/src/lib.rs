@@ -20,6 +20,7 @@ pub mod fab;
 pub mod flow;
 pub mod library;
 pub mod loops;
+pub mod opening;
 pub mod parity;
 pub mod pcb;
 pub mod pour;

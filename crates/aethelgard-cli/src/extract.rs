@@ -82,6 +82,7 @@ fn parts(
     oscillator: usize,
     conductors: usize,
     thermal: usize,
+    openings: usize,
 ) -> Vec<Ran> {
     let drop_limits = spec
         .power
@@ -108,6 +109,7 @@ fn parts(
             conductors as u64,
             "diff_pairs",
         ),
+        Ran::judged("extract.openings", openings as u64),
         Ran::part(
             "extract.thermal",
             spec.power
@@ -538,6 +540,18 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
             "verdict": verdict,
         }));
     }
+    // `AET-WO-4300k` (4): every connector opens off the board, by its row.
+    let (openings, inward) = aethelgard_eda::opening::judge(&read.board, |r| {
+        read.footprints.get(r).map(|(_, value)| value.clone())
+    });
+    if let Some(i) = inward {
+        findings.push(Finding {
+            kind: "ConnectorOpensInward",
+            severity: "error",
+            message: i.message,
+            cause: None,
+        });
+    }
     let oscillator: Vec<Value> = oscillator.iter().map(oscillator_net).collect();
     let supplies: Vec<Value> = gates.iter().map(supply).collect();
     let scope = Scope::of(
@@ -555,6 +569,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         oscillator.len(),
         conductors,
         thermal.len(),
+        openings,
     );
     let ok = findings.is_empty();
     let report = Report {

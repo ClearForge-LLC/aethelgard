@@ -2207,6 +2207,17 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
                 .map(|e| (e.reference.as_str(), e.part.as_str())),
         );
     }
+    if let Some(x) = &power.input.protection {
+        v.extend([
+            (x.fuse.reference.as_str(), x.fuse.part.as_str()),
+            (x.fet.reference.as_str(), x.fet.part.as_str()),
+            (x.zener.reference.as_str(), x.zener.part.as_str()),
+            (
+                x.gate_resistor.reference.as_str(),
+                x.gate_resistor.part.as_str(),
+            ),
+        ]);
+    }
     for s in &power.sense {
         v.push((&s.top.reference, &s.top.part));
         v.push((&s.bottom.reference, &s.bottom.part));

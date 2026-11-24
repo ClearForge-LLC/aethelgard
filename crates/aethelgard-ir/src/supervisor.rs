@@ -324,7 +324,17 @@ pub fn check(
             table.cite(&v.pull_up_ohms.at),
         ));
     }
-    Ok(vec![(
+    let mut out = Vec::new();
+    if row.lifecycle == crate::power_parts::Lifecycle::Unread {
+        out.push((
+            format!("lifecycle_unread:{}", s.part),
+            format!(
+                "{}: its maker's page states no lifecycle, so its production status is unread",
+                s.part
+            ),
+        ));
+    }
+    out.push((
         format!("supervisor_hysteresis_typical:{}", s.reference),
         format!(
             "{}: {}'s rising threshold is VIT− maximum {} mV plus its hysteresis, {} mV, which is stated typical only ({}), so its release at up to {rising} mV, under the rail's minimum of {rail_min} mV ({how}), is screened, not guaranteed (ruled D6)",
@@ -334,5 +344,6 @@ pub fn check(
             v.hysteresis_typ_millivolts.value,
             table.cite(&v.hysteresis_typ_millivolts.at)
         ),
-    )])
+    ));
+    Ok(out)
 }

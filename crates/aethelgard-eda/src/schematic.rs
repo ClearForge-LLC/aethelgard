@@ -1667,8 +1667,8 @@ pub(crate) fn design(
 /// link → `<label>_PD` ([`aethelgard_ir::names::motor_pull_net`]) → the
 /// resistor → `to` (`GND`, held there by `validate`'s `MotorPullNotDown`).
 /// The resistors are drawn in document order, valued `<ohms> <part>` as a
-/// pin device's signal pull is, then the links, each valued `0` with its
-/// jumper row's symbol and footprint. A link is drawn in both fitments; an
+/// pin device's signal pull is, then the links, each valued `0 <part>` with its
+/// jumper row's symbol and footprint (`AET-WO-4300j` R8, taken by `4300k`). A link is drawn in both fitments; an
 /// `open` one is not fitted (`dnp`, D7), and its resistor is. Drawn after
 /// every other part, so no other part's reference or schematic position
 /// moves. Each is placed unanchored: the link beside the one IC on its net,
@@ -1703,7 +1703,7 @@ fn motor_pulls(b: &mut Builder<'_>) -> Result<(), EmitError> {
             b,
             &link.reference,
             &link.part,
-            "0".to_owned(),
+            format!("0 {}", link.part),
             Conn::Net(m.label.clone()),
             Conn::Net(aethelgard_ir::names::motor_pull_net(&m.label)),
             None,
