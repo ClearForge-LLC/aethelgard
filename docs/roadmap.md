@@ -55,6 +55,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 | P2 | The twin and the faults | Generated firmware runs on the generated board model, and an injected electrical fault produces a replayable failure trace |
 | P3 | Attribution and evolution | A failure is attributed to the right half, a proposal fixes it, and a fabrication package for one reference probe is emitted |
 | P4 | Sentinel-02, the flight controller | A flight controller Aethelgard designed on a multi-layer board passes every gate, is fabricated, and flies a prototype drone on unmodified ArduPilot |
+| P5 | Combinations: a second family and firmware ecosystems | A specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's cold-start path; every P0–P4 verdict is unchanged (`INV-08`). *Trigger-started; not yet scoped* |
 
 ## 5. Sequenced work orders
 
@@ -695,6 +696,34 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 - **The RP2350 stays the planned second target** (`RUL-08`), because a second vendor keeps the IR from becoming one vendor's register map. It needs a hand-written Renode platform description first, because the twin is the point. **Its timing (Scotty, 2026-11-16):** after Sentinel-01's scar, not after a drone.
 - **Other STM32 families are cheaper:** ST's open pin data already covers them, and Renode models several.
 
+### P5 — Combinations: a second family and firmware ecosystems
+
+**Depends on:** a trigger, not a date. Either P4's gate passes (a Sentinel flies), or Scotty schedules a chip or firmware the current family cannot serve. It is co-scoped with Tviburi's Phase 5 (a register-truth layer across vendors and simulators), whose own trigger is a target Renode cannot host. A second family's twin needs Tviburi's models, so the two phases add a family together.
+
+**Goal:** northstar §3.1: a chosen chip, a board of one's own, and any firmware, judged as one combination, from a cold start.
+
+**Exit gate:** a specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's quickstart path on a clean machine, and every committed P0–P4 verdict is byte-identical before and after (`INV-08`).
+
+**The family order** (Scotty, 2026-11-24; the families named, ranked, for integration and testing):
+1. **RP2350, next.** This is `RUL-08`'s planned second target since 2026-10-19, kept by Scotty. It is a different vendor, so it is the strongest test that the IR is not one vendor's register map (northstar §6).
+   - It is also the costliest next step. Renode ships no RP2350 platform, so its twin is a hand-written platform description (`RUL-08`) and trips Tviburi's Phase 5 trigger.
+   - Its datasheet is not yet held (`1219`: "not held" in all 227 cells).
+   - ArduPilot has no RP2350 port as far as the architect knows (*unverified*), so its firmware is Aethelgard's generated crate or a kernel of the user's own, never the flight controller's autopilot.
+2. **Then the 2026-11-23 research's ranking** (Tviburi `docs/reviews/2026-11-23-chip-families-research.md`), ordered by new failure class per unit of twin work:
+   - nRF52840, STM32F405/F407, LiteX on iCE40/ECP5, i.MX RT1062 (official or sibling Renode platforms);
+   - then STM32G4, STM32U5/H5, nRF54L15, STM32H723/F7, RP2040, ESP32-S3, AT32F435 (new platforms on cores Renode has);
+   - then TI C2000, dsPIC33, ESP32-C6, i.MX RT1176, nRF54H20 (no Renode base).
+   - SAM E70 is a cheap audit only. The STM32H743 is the same target as the H753 (`RUL-08`).
+   - The dsPIC33 is the held ESC's MCU (DS70005664A), so it may be pulled forward if the drone's ESC is co-designed. That is Scotty's call when it comes.
+
+**Shape:** not scoped yet. `AET-WO-1219` (#333) already audited the IR: 93 % of specification keys and 85 % of refusal kinds are vendor-neutral, and the depth sits in held tables, register constants and solver code. P5's first work order audits what `1219` did not read, each place classed as data, adapter or rewrite, with its cost:
+   - the solver and generators;
+   - the twin's platform description;
+   - the foreign judge;
+   - the firmware ecosystems (ArduPilot, ChibiOS).
+
+   It only reads, so it can run before the trigger.
+
 ## 6. Standing cadence
 
 Every work order inherits: spike first on anything novel, then stop for review; one pull request per work order, left unmerged for the architect; an adversarial pass before the feedback document; `FEEDBACK.md` findings promoted into these documents by amendment rather than left in the branch; and no number faked, a blocked measurement is reported as blocked with the harness that would produce it. Work-order structure itself is owned by the ClearForge `co-architect-work-order` skill.
@@ -1135,7 +1164,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | BOR level 3 (2.54–2.68 V falling) below the SPI flash's 2.7 V floor; no reverse-polarity protection or fuse (review 3, A13). **Ruled by Scotty 2026-11-23:** build both BOR paths, Sentinel-03 on Path B (TLV803S); a P-FET and a fuse on the controller's supply branch | review 3 A13; DS12117 Rev 10 Table 16 p. 107 | **`AET-WO-4300k`** (9) |
 | A crystal on Sentinel-03, so the HSE path meets our copper before Sentinel-02 needs it (review 3, B4). **Ruled by Scotty 2026-11-23: yes**, the architect agreeing: it is `4240`'s ruled H1 path (HSE → PLL1, 16 MHz), and the part stays provisional until AN2867 Rev 25 is checked | review 3 B4; `4240` | **`AET-WO-4300k`** |
 | The commit the Sentinel-01 boards were ordered from is recorded nowhere; the upload files are identical from `ac5f8c82` to HEAD. **Closed 2026-11-23:** the uploaded zip is held (sha256 `3bbcd06a8178a8d4…`, dated 2026-11-17 13:32 on the S25; copy at `~/.cache/aet-held/sentinel-01-oshpark-upload.zip`), and its ten members' sha256 equal `ORDERED.sha256`'s ten lines | review 3 A9; `3308` | done (`3308`; the architect's check) |
-| The second vendor's order: `RUL-08` names the RP2350, which no simulator models; nRF52840 and i.MX RT1062 have official Renode platforms. Which second vendor first tests the IR's neutrality | chip research 2026-11-23; `1219` | `1219`'s audit, then a ruling |
+| The second vendor's order: `RUL-08` names the RP2350, which no simulator models; nRF52840 and i.MX RT1062 have official Renode platforms. Which second vendor first tests the IR's neutrality | chip research 2026-11-23; `1219` | **ruled 2026-11-24 (Scotty): RP2350 next, then the research's ranking** (§5 P5) |
 | Nothing checks that firmware leaves `SYSCFG_PMCR` PC2SO/PC3SO clear; LQFP144 pads 28 and 29 are `PC2_C`/`PC3_C`, correct only at reset (RM0433 p. 549) | `4408` Q3 | the next `pincheck` or svd-hal work order (`AET-WO-4410`) |
 | `check pinout`'s board list is hand-written in `ardupilot-pinout.sh`; generalise it to every generated matrix board | `4408` Q4 | done: `AET-WO-1917` (#370) |
 | A Nucleo bench check: with the regenerated firmware (`4240e`), read `RCC_D2CCIP1R` and confirm an SPI1 transfer; with today's firmware, confirm whether SPI1 has a kernel clock. Settles RM0433 p. 371's mux rule on silicon | `TVI-WO-1300` §1.1; `4240e` | **Scotty, at the bench** |
@@ -1434,6 +1463,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-24 | §5, §7.1 | `AET-WO-4410` (#373) merged; `AET-WO-4300k` ruled at §1.2 and building; `1324` and `1610` launched; `AET-WO-2314` written (the campaign names its cause, `foreign_fault`, `2311` A5, R4 measured) and given four rows | the merges; `4410` FEEDBACK §6 |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1324` (#386) merged; `AET-WO-3309` written (attribution: counts as well as values, the BMP581 log in the transaction readers, evidence placed by content, one line per step) and given two rows | #386's review; `3307` FEEDBACK |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1610` (#385) merged; `AET-WO-4400h` written (ArduPilot armed in the twin, a spike); rows for the fabricator and assembly quote, the `usart1` DMA PC stamp, and Tviburi's `OQ-03` window | the merge; Scotty, 2026-11-24 (OSH Park; an agent-flown drone) |
+| 2026-11-24 | §4, §5, §7.1 | P5 added (combinations: a second family and firmware ecosystems), trigger-started and co-scoped with Tviburi's Phase 5. The family order named and ranked: RP2350 next (`RUL-08`, kept), then the 2026-11-23 research's ranking. Its first work order audits what `1219` did not read | northstar §3.1 and `INV-08`, the same PR; Scotty, 2026-11-24 |
 
 ## 9. Provenance
 
