@@ -1877,7 +1877,8 @@ fn each_size_sample_passes_every_gate_or_is_refused_by_name() {
 /// its droop past BOR level 3. It passes, as before, and now says what judged
 /// nothing: `extract`'s entry has `judged: 0` and `nothing_in_scope` with
 /// `extract`'s reason; the droop's run has `observation_witness` with no
-/// witnessed device; `judged_nothing` lists exactly those two. Every other
+/// witnessed device; the table's `judged 0` rows are exactly `extract` and
+/// its lines (`AET-WO-1610` (2), which removed `judged_nothing`). Every other
 /// gate judged at least one item and says nothing more.
 #[test]
 fn verify_names_what_judged_nothing_on_the_motor_driver() {
@@ -1955,14 +1956,20 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         }),
         "{run}"
     );
-    assert_eq!(
-        v["judged_nothing"],
-        serde_json::json!(["extract", "campaign:droop-bor3"]),
-        "{v}"
-    );
+    // `AET-WO-1610` (2): `judged_nothing` is gone. What judged nothing is
+    // read from the table (`extract` and its lines, each `judged 0`, and
+    // nothing else) and, for the droop, from the run's own
+    // `observation_witness` above, which the table does not carry (D5).
     // `AET-WO-1609`: a gate that judged nothing is `judged 0` in the table,
     // listed, never omitted; its parts say why.
+    assert!(v.get("judged_nothing").is_none(), "{v}");
     let rows = common::verify::ran(&v);
+    let zero: Vec<&str> = rows
+        .iter()
+        .filter(|(_, s)| s == "judged 0")
+        .map(|(n, _)| n.as_str())
+        .collect();
+    assert_eq!(zero, ["extract", "extract.lines"], "{rows:?}");
     assert_eq!(
         common::verify::row(&rows, "extract"),
         "judged 0",

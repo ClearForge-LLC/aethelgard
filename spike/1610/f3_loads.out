@@ -1,0 +1,8 @@
+== sentinel-03
+{"ok":true,"project_name":"sentinel-03","voltage_domains":2,"net_constraints":8,"lifecycle":["LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv exported by Scotty 2026-11-16, column 15 Status
+{"ok":true,"project_name":"sentinel-03","specification_sha256":"a7bce5f5cdec0fbc836f3fe47f11c5385f3a3ccd5f9fdc612c2e3f2ebf300683","lifecycle":["LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.c
+{"ok": false, "verdict": null, "error": {"kind": "SupplyInputUndeclared", "id": null, "message": "the supply gate reads `board.stackup.outer_copper_min_um`, and the specification does not declare it: it is never defaulted (RUL-14)"}, "ran": null}
+== sentinel-02-power
+{"ok":true,"project_name":"sentinel-02-power","voltage_domains":3,"net_constraints":6,"lifecycle":["LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-11-16.csv exported by Scotty 2026-11-16, column 15 
+{"ok":true,"project_name":"sentinel-02-power","specification_sha256":"a1a03ae5125db6fe2698749b300bd2aa8ef0057f3963ee1bd7258547c65b70ba","lifecycle":["LIFECYCLE NRND: W25Q64JVxIQ (U4) is not recommended for new designs by its vendor (Winbond Parts Catalog export winbond-W25Q64JV-catalog-export-2026-1
+{"ok": false, "verdict": null, "error": {"kind": "TranslatorPinUnbounded", "id": null, "message": "the design puts translator U13 on `IMU_SCK`, and its data pins' capacitance has no stated maximum (SCES935A p. 9, Cio)"}, "ran": null}

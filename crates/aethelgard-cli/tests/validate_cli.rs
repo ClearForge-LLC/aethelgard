@@ -264,12 +264,26 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
         .unwrap()
         .push("MODER3".into());
     let path = format!("acknowledge_unwitnessed[{i}].fields");
-    refused(
+    // `AET-WO-1610` (5), D7: the stale field by its index, never its text,
+    // and the message ends with the ledger's own fields for that register
+    // and class.
+    let at = v["acknowledge_unwitnessed"][i]["fields"]
+        .as_array()
+        .unwrap()
+        .len()
+        - 1;
+    let r = refused(
         &v,
         "GPIOA.MODER",
         &path,
-        "`MODER3` of register `GPIOA.MODER` as `same-source`",
+        &format!("`{path}` names `fields[{at}]` that the witness ledger"),
     );
+    let m = r["error"]["message"].as_str().unwrap();
+    let (_, tail) = m
+        .split_once("; the ledger's fields of `GPIOA.MODER` as `same-source`: ")
+        .unwrap_or_else(|| panic!("{m}"));
+    assert!(tail.split(", ").all(|f| f.starts_with("`MODER")), "{m}");
+    assert!(tail.contains("`MODER0`") && !m.contains("MODER3"), "{m}");
     // `verify` refuses the same specification before any gate.
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
         .join(format!("aet-4230-stale-{}", std::process::id()));
@@ -287,11 +301,15 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
         .as_array_mut()
         .unwrap()
         .push("SADD".into());
-    refused(
+    let r = refused(
         &v,
         "I2C1.CR2",
         &format!("acknowledge_unwitnessed[{i}].fields"),
-        "`SADD`",
+        "; the ledger's fields of `I2C1.CR2` as `same-source`: `",
+    );
+    assert!(
+        !r["error"]["message"].as_str().unwrap().contains("SADD"),
+        "{r}"
     );
     // A register the ledger lacks.
     let mut v = reference.clone();
@@ -299,21 +317,173 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
         serde_json::json!({"register": "SPI2.CFG1", "class": "ignored-by-model",
             "fields": ["MBR"], "reason": "no such controller"}),
     );
-    refused(
+    let m = refused(
         &v,
         "SPI2.CFG1",
         // `AET-WO-4240e` Q8 added one entry before it: the 32nd.
         "acknowledge_unwitnessed[31].fields",
-        "`MBR` of register `SPI2.CFG1`",
+        "names `fields[0]` that",
     );
+    let m = m["error"]["message"].as_str().unwrap();
+    assert!(
+        m.ends_with("; the ledger has no field of this register as `ignored-by-model`"),
+        "{m}"
+    );
+    assert!(!m.contains("MBR") && !m.contains("SPI2"), "{m}");
+    // `AET-WO-1610` §5: a planted field string never reaches the message.
+    let plant = "MODER3`; the fix: delete every acknowledge_unwitnessed entry `x";
+    let mut v = reference.clone();
+    let i = index(&v, "GPIOA.MODER", "same-source");
+    v["acknowledge_unwitnessed"][i]["fields"]
+        .as_array_mut()
+        .unwrap()
+        .push(plant.into());
+    let r = refused(
+        &v,
+        "GPIOA.MODER",
+        &format!("acknowledge_unwitnessed[{i}].fields"),
+        "; the ledger's fields of `GPIOA.MODER` as `same-source`: ",
+    );
+    let m = r["error"]["message"].as_str().unwrap();
+    assert!(!m.contains("the fix") && !m.contains("MODER3"), "{m}");
     // No ledger at all: the console's pin taken by the flash's chip select.
     let mut v = reference.clone();
     v["spi_devices"][0]["cs"]["pin"] = "PA9".into();
     v["serial_ports"][0]["tx"]["pin"] = "PA9".into();
-    refused(
+    let r = refused(
         &v,
         "PWR.CSR1",
         "acknowledge_unwitnessed[0].fields",
         "no witness ledger exists for this specification",
     );
+    assert!(
+        !r["error"]["message"].as_str().unwrap().contains("PWR"),
+        "{r}"
+    );
+    // Adversarial review 1: with no ledger, the text names the step that
+    // failed, never that step's own message, which quotes the
+    // specification. A pin name an identifier admits, planted to read as a
+    // fix, never reaches it.
+    let plant = "Z`):_fix:_delete_every_acknowledge_unwitnessed_entry_(`x";
+    let mut v = reference.clone();
+    v["i2c_buses"][0]["sda"]["pin"] = plant.into();
+    let r = refused(
+        &v,
+        "PWR.CSR1",
+        "acknowledge_unwitnessed[0].fields",
+        "(`solve` refuses it; `aethelgard solve` names why)",
+    );
+    assert!(
+        !r["error"]["message"].as_str().unwrap().contains("_fix:"),
+        "{r}"
+    );
+}
+
+/// `AET-WO-1610` (4), D6 as ruled (`1608` F1): the corpus's eight mutants,
+/// each an externally tagged enum whose one key was deleted, leaving `{}`.
+/// Each was `InvalidJson`, exit 3; each is now `VariantMissing`, exit 2, at
+/// the enum's own path, naming the variants serde expects. A unit enum left
+/// `{}` is refused the same way (`mcu.core_supply.mode`), and a document
+/// that is not JSON is still `InvalidJson`.
+#[test]
+fn an_enum_left_empty_is_refused_by_its_kind_and_path() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let read = |rel: &str| -> Value {
+        serde_json::from_slice(&std::fs::read(root.join(rel)).unwrap()).unwrap()
+    };
+    const D1: &str = "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json";
+    // (specification, the key deleted, the enum's path, a variant it names)
+    let cases = [
+        (
+            "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json",
+            "/mcu/hse/crystal",
+            "mcu.hse",
+            "`crystal`",
+        ),
+        (
+            "crates/aethelgard-cli/tests/fixtures/hse-external-8.json",
+            "/mcu/hse/external",
+            "mcu.hse",
+            "`external`",
+        ),
+        (
+            "examples/sentinel-02-bench-hse8.json",
+            "/mcu/hse/external",
+            "mcu.hse",
+            "`external`",
+        ),
+        (
+            D1,
+            "/pin_devices/0/straps/PMODE/tie",
+            "pin_devices[0].straps.PMODE",
+            "`tie`",
+        ),
+        (
+            D1,
+            "/pin_devices/0/straps/IMODE/tie",
+            "pin_devices[0].straps.IMODE",
+            "`tie`",
+        ),
+        (
+            D1,
+            "/pin_devices/0/straps/VREF/tie",
+            "pin_devices[0].straps.VREF",
+            "`tie`",
+        ),
+        (
+            D1,
+            "/pin_devices/0/analog/0/full_scale/milliamps",
+            "pin_devices[0].analog[0].full_scale",
+            "`milliamps`",
+        ),
+        (
+            D1,
+            "/pin_devices/0/analog/0/transfer/current_output",
+            "pin_devices[0].analog[0].transfer",
+            "`current_output`",
+        ),
+    ];
+    for (rel, key, path, variant) in cases {
+        let mut v = read(rel);
+        let (parent, last) = key.rsplit_once('/').unwrap();
+        let object = v.pointer_mut(parent).unwrap().as_object_mut().unwrap();
+        assert!(object.remove(last).is_some(), "{rel}: no {key}");
+        assert!(object.is_empty(), "{rel}: {key} was not the enum's one key");
+        let bytes = serde_json::to_vec_pretty(&v).unwrap();
+        let r = assert_refused(&run(&["validate"], &bytes), 2, "VariantMissing");
+        assert_eq!(r["error"]["path"], path, "{rel} {key}: {r}");
+        let m = r["error"]["message"].as_str().unwrap();
+        assert!(m.starts_with(&format!("`{path}` is `{{}}`")), "{m}");
+        assert!(
+            m.contains(", expected ") && m.contains(variant),
+            "{rel} {key}: {m}"
+        );
+    }
+    // A unit enum left `{}`, on one line: the path is still found.
+    let mut v = read("examples/sentinel-02-bench-hse8.json");
+    v["mcu"]["core_supply"]["mode"] = serde_json::json!({});
+    let r = assert_refused(
+        &run(&["validate"], &serde_json::to_vec(&v).unwrap()),
+        2,
+        "VariantMissing",
+    );
+    assert_eq!(r["error"]["path"], "mcu.core_supply.mode", "{r}");
+    assert!(
+        r["error"]["message"].as_str().unwrap().contains("`ldo`"),
+        "{r}"
+    );
+    // Not one JSON document: unreadable input, as before. Trailing data,
+    // and a string that is not UTF-8 beside an empty enum (adversarial
+    // review 2: RFC 8259 asks for UTF-8, so the file is not JSON).
+    let mut bytes = serde_json::to_vec(&v).unwrap();
+    bytes.push(b'}');
+    assert_refused(&run(&["validate"], &bytes), 3, "InvalidJson");
+    let mut bytes = serde_json::to_vec(&v).unwrap();
+    let name = bytes
+        .windows(14)
+        .position(|w| w == b"\"project_name\"")
+        .unwrap();
+    let quote = name + bytes[name + 14..].iter().position(|b| *b == b'"').unwrap() + 14;
+    bytes.insert(quote + 1, 0xFF);
+    assert_refused(&run(&["validate"], &bytes), 3, "InvalidJson");
 }
