@@ -474,7 +474,9 @@ fn prepare_droop(
 /// finding but the information-only ones, `renode_log_flood` (its log was
 /// cut, so no hook was read) and, for a boot killed at a bound, the memory
 /// it reached. A boot word that reads `BOOT_MAGIC` though no hook saw it
-/// written has no finding of its own, so it is named here.
+/// written has no finding of its own, so it is named here. Every other end
+/// has one: a word not read is a bound's, and one read that is not
+/// `BOOT_MAGIC` is `boot_word_missing`'s (`spike/2314`, the six planted).
 fn undisturbed(v: &Verdict) -> Result<u64, String> {
     if let Some(word) = v.boot.as_ref().and_then(|b| b.boot_word_ns) {
         return Ok(word);
@@ -501,8 +503,7 @@ fn undisturbed(v: &Verdict) -> Result<u64, String> {
     }
     let magic = format!("{:#010x}", aethelgard_twin::boot::BOOT_MAGIC);
     let flood = v.findings.iter().any(|f| f.kind == "renode_log_flood");
-    if !bounded
-        && !flood
+    if !flood
         && v.boot
             .as_ref()
             .and_then(|b| b.boot_word.observed.as_deref())
@@ -511,9 +512,6 @@ fn undisturbed(v: &Verdict) -> Result<u64, String> {
         end.push(format!(
             "its boot word reads {magic} at the run's end, but its hook saw no write of it"
         ));
-    }
-    if end.is_empty() {
-        end.push("its verdict names no end".to_owned());
     }
     Err(end.join("; "))
 }

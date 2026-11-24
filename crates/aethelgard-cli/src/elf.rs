@@ -428,6 +428,10 @@ pub fn loaded_words(bytes: &[u8], address: u64, count: usize) -> Result<Option<V
         .find(|l| {
             l.paddr <= address
                 && address + len <= l.paddr + l.filesz
+                // belt-and-suspenders: `check_foreign` refuses a segment
+                // whose file bytes pass the file's end before this is read,
+                // so no test reaches it; it keeps a later caller from
+                // panicking on a slice past the end.
                 && l.offset + l.filesz <= bytes.len() as u64
         })
         .map(|l| {

@@ -4722,7 +4722,8 @@ fn the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_inte
 }
 
 /// A Cortex-M ELF of `segments` (physical = virtual address, file bytes,
-/// `p_flags`), entered at `0x08000009` (`AET-WO-4400e` R1 controls).
+/// `p_flags`), entered at `0x08000041` (`AET-WO-4400e` R1 controls; the code
+/// after the vector table's fault entries since `AET-WO-2314`).
 fn foreign_elf(segments: &[(u32, Vec<u8>, u32)]) -> Vec<u8> {
     let n = segments.len() as u16;
     let mut b = vec![0u8; 52];
@@ -4730,7 +4731,7 @@ fn foreign_elf(segments: &[(u32, Vec<u8>, u32)]) -> Vec<u8> {
     b[16..18].copy_from_slice(&2u16.to_le_bytes());
     b[18..20].copy_from_slice(&40u16.to_le_bytes());
     b[20..24].copy_from_slice(&1u32.to_le_bytes());
-    b[24..28].copy_from_slice(&0x0800_0009u32.to_le_bytes());
+    b[24..28].copy_from_slice(&0x0800_0041u32.to_le_bytes());
     b[28..32].copy_from_slice(&52u32.to_le_bytes());
     b[36..40].copy_from_slice(&0x0500_0200u32.to_le_bytes());
     b[40..42].copy_from_slice(&52u16.to_le_bytes());
@@ -4750,14 +4751,19 @@ fn foreign_elf(segments: &[(u32, Vec<u8>, u32)]) -> Vec<u8> {
     b
 }
 
-/// 512 bytes of flash at `0x08000000`: a vector table, then Thumb code that
-/// loads `base`, writes `first` and `second` to `[base + 4]` and `third` to
-/// `[base + 12]`, and spins. With the flash controller's base, its unlock
-/// keys and a control word, that is an erase (RM0433 Rev 9 §4.3.10); with
-/// `base` an address in the image, three stores into it.
+/// 512 bytes of flash at `0x08000000`: a vector table (its four fault
+/// entries naming the spin, which the foreign judge hooks, `AET-WO-2314`),
+/// then at `0x08000040` Thumb code that loads `base`, writes `first` and
+/// `second` to `[base + 4]` and `third` to `[base + 12]`, and spins. With the
+/// flash controller's base, its unlock keys and a control word, that is an
+/// erase (RM0433 Rev 9 §4.3.10); with `base` an address in the image, three
+/// stores into it.
 fn foreign_code(base: u32, first: u32, second: u32, third: u32) -> Vec<u8> {
     let mut c = vec![0u8; 0x200];
-    c[..8].copy_from_slice(&[0x00, 0x10, 0x00, 0x20, 0x09, 0x00, 0x00, 0x08]);
+    c[..8].copy_from_slice(&[0x00, 0x10, 0x00, 0x20, 0x41, 0x00, 0x00, 0x08]);
+    for at in (0x0C..0x1C).step_by(4) {
+        c[at..at + 4].copy_from_slice(&0x0800_004Fu32.to_le_bytes());
+    }
     // ldr r0,[pc,#16]; ldr r1,[pc,#20]; str r1,[r0,#4]; ldr r1,[pc,#20];
     // str r1,[r0,#4]; ldr r1,[pc,#20]; str r1,[r0,#12]; b .
     for (i, h) in [
@@ -4766,10 +4772,10 @@ fn foreign_code(base: u32, first: u32, second: u32, third: u32) -> Vec<u8> {
     .iter()
     .enumerate()
     {
-        c[8 + 2 * i..10 + 2 * i].copy_from_slice(&h.to_le_bytes());
+        c[0x40 + 2 * i..0x42 + 2 * i].copy_from_slice(&h.to_le_bytes());
     }
     for (i, w) in [base, first, second, third].iter().enumerate() {
-        c[0x1C + 4 * i..0x20 + 4 * i].copy_from_slice(&w.to_le_bytes());
+        c[0x54 + 4 * i..0x58 + 4 * i].copy_from_slice(&w.to_le_bytes());
     }
     c
 }

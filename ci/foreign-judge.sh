@@ -309,6 +309,14 @@ blx = max(a for a in range(read_fifo, call, 2)
           if (struct.unpack_from("<H", data, file_off(a))[0] & 0xFF87) == 0x4780)
 site = blx + 2
 assert call + 4 - site >= 12, f"{call + 4 - site} bytes from the transfer to accumulate_samples"
+if how == "udf":
+    # AET-WO-2314: `udf #0` at the same site, an undefined instruction that
+    # escalates to HardFault; its address goes to udf.site for the check.
+    data[file_off(site):file_off(site) + 2] = struct.pack("<H", 0xDE00)
+    open(dst, "wb").write(data)
+    open(dst[:-len(".elf")] + ".site", "w").write(f"{site:#010x}")
+    print(f"ANSWER 2314: udf planted at {site:#010x}, after the transfer at {blx:#010x}")
+    sys.exit()
 # An empty string for the message: the first zero byte of .text, which also
 # holds ArduPilot's read-only data (its link has no .rodata).
 names = secs[shstrndx]
@@ -331,3 +339,20 @@ and boot["panic"]["entered_ns"][0] > witnessed[("U5", "data (reads[0])")]
 ' --platform "$platform" --firmware "$work/panic.elf" --foreign "$window"
 run panic-unnamed 3 'v["error"]["kind"] == "ForeignPanicSymbolMissing"' \
   --platform "$platform" --firmware "$work/panic-unnamed.elf" --foreign "$window"
+
+# AET-WO-2314 (ruled D2, spike/2314): an undefined instruction at the panic's
+# site, a HardFault after U5's last witness. ArduPilot's handler polls USART1
+# forever, and before 2314 this run was killed at the memory cap
+# (memory_cap_exceeded alone). The hook on the handler the ELF's vector table
+# names halts the core at its entry: it fails foreign_fault by name, with the
+# vector and the planted PC, every witness still present, under the cap.
+plant udf
+udf_site=$(cat "$work/udf.site")
+run late-hardfault 1 '
+kinds == ["core_in_exception", "foreign_fault"]
+and all(witnessed.get((r, "identity")) for r in ("U4", "U5", "U7"))
+and witnessed.get(("U5", "data (reads[0])"))
+and [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0].startswith("the core took HardFault (exception 3) at ")
+and [f["message"] for f in v["findings"] if f["kind"] == "foreign_fault"][0].endswith(", from PC '"$udf_site"'; its handler'"'"'s hook halted the core there")
+and v["memory"]["peak_rss_kib"] < v["memory"]["bound_kib"]
+' --platform "$platform" --firmware "$work/udf.elf" --foreign "$window"

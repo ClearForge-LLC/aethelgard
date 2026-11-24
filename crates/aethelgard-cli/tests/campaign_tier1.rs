@@ -315,6 +315,11 @@ const BUILD: &str = aethelgard_twin::platform::RENODE_BUILD;
 
 /// As [`toolbox`], with Renode reporting `build` as its build.
 fn toolbox_built(stdout: &str, build: &str) -> Dir {
+    toolbox_built_then(stdout, build, "")
+}
+
+/// As [`toolbox_built`], running `then` after its output.
+fn toolbox_built_then(stdout: &str, build: &str, then: &str) -> Dir {
     let tb = Dir::new("tb");
     let out = tb.write("renode.out", stdout.as_bytes());
     let capture = capture_lines(&tb.write("capture.bin", &capture_of(&elf())));
@@ -330,6 +335,7 @@ case "$7" in
   *) exit 99;;
 esac
 {capture}/bin/cat '{out}'
+{then}
 "#,
         out = out.display(),
         // An empty `build` prints no build line at all.
@@ -3383,4 +3389,115 @@ fn replay_s_serial_silicon_check_is_the_judge_s_on_a_sweep() {
         tried > 200 && failing > 0 && failing < tried,
         "{tried} {failing}"
     );
+}
+
+// ---------------------------------------------------------------- AET-WO-2314
+
+/// A planted undisturbed boot: its name, the stub's output, what the stub
+/// runs after it, what the refusal must say, and what it must not.
+type Plant<'a> = (&'a str, String, &'a str, Vec<&'a str>, Vec<&'a str>);
+
+/// `AET-WO-2314` (ruled D1): a droop placed from an undisturbed boot that
+/// wrote no boot word is refused with that boot's own end, as its verdict
+/// names it (`spike/2314`, the six endings planted in the stub): the bound and
+/// the memory it reached; the flood (no count, D1 (a)); the word it reads,
+/// named when it is a park code; and, when the word reads `BOOT_MAGIC` but
+/// no hook saw it written, which no finding names, a sentence of its own.
+/// Two endings at once are both named.
+#[test]
+fn an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal() {
+    let magic_hook = "BOOTWORD 2100b007 0 2575";
+    let first_read = "AETHELGARD-BOOT-BEGIN\n0x2100B007\n";
+    let flood = "[00:00:00.040000000] [WARNING] i2c1: Receive buffer underflow!\n".repeat(160_000);
+    let word = |t: String, w: &str, hook: &str| {
+        t.replacen(magic_hook, &format!("BOOTWORD {hook} 0 2575"), 1)
+            .replacen(first_read, &format!("AETHELGARD-BOOT-BEGIN\n{w}\n"), 1)
+    };
+    let flooded = || text(&format!("{GOOD_WITNESS}{flood}"), GOOD_RECORD, CPU_LISTING);
+    let no_hook =
+        "its boot word reads 0x2100b007 at the run's end, but its hook saw no write of it";
+    let plants: Vec<Plant> = vec![
+        (
+            "memory",
+            good(),
+            common::HOLD_PAST_CAP,
+            vec![
+                "memory_cap_exceeded: Renode's resident memory passed the 1536 MiB cap",
+                "memory: Renode peaked at ",
+                "KiB against the bound's 1572864 KiB",
+            ],
+            vec![no_hook],
+        ),
+        (
+            "flood",
+            flooded(),
+            "",
+            vec!["renode_log_flood: Renode's output passed 8 MiB"],
+            vec![no_hook, "memory:"],
+        ),
+        (
+            "fault word",
+            word(good(), "0xDEADBEEF", "deadbeef"),
+            "",
+            vec!["boot_word_missing: the boot word at 0x20000000 reads 0xdeadbeef, not 0x2100b007"],
+            vec![no_hook, "memory:"],
+        ),
+        (
+            "park code",
+            word(good(), "0x2100B0F5", "2100b0f5"),
+            "",
+            vec!["reads 0x2100b0f5, not 0x2100b007: boot_pll1_not_locked"],
+            vec![no_hook],
+        ),
+        (
+            "no write",
+            good().replacen(&injection(0), "", 1).replacen(
+                first_read,
+                "AETHELGARD-BOOT-BEGIN\n0x00000000\n",
+                1,
+            ),
+            "",
+            vec!["boot_word_missing: the boot word at 0x20000000 reads 0x00000000"],
+            vec![no_hook],
+        ),
+        (
+            "magic, no hook",
+            good().replacen(&injection(0), "", 1),
+            "",
+            vec![no_hook],
+            vec!["memory:"],
+        ),
+        (
+            "flood and a fault word",
+            word(flooded(), "0xDEADBEEF", "deadbeef"),
+            "",
+            vec!["renode_log_flood: ", "reads 0xdeadbeef"],
+            vec![no_hook],
+        ),
+    ];
+    for (name, out, then, says, not) in plants {
+        let tb = toolbox_built_then(&out, BUILD, then);
+        let work = Work::new();
+        let o = campaign(
+            &cli(Some(DROOP_BRIDGE)),
+            &tb.0,
+            &work.dir.0,
+            &[STUB_DROOP],
+            &work.firmware,
+            &work.archive,
+        );
+        let v = expect_refusal(&o, 2, "PlantedEventUnplaced");
+        let m = v["error"]["message"].as_str().unwrap();
+        assert!(
+            m.contains("the undisturbed boot wrote no boot word to place it from: "),
+            "{name}: {m}"
+        );
+        for s in says {
+            assert!(m.contains(s), "{name}: `{s}` not in {m}");
+        }
+        assert!(!m.ends_with(": "), "{name}: an empty end: {m}");
+        for s in &not {
+            assert!(!m.contains(s), "{name}: `{s}` in {m}");
+        }
+    }
 }

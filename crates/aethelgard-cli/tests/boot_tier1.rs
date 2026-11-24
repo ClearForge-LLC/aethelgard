@@ -2591,6 +2591,7 @@ case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
 case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
+case "$7" in *"cpu AddHook 0x8000030 \"r = lambda x: "*"ok = v in (3, 4, 5, 6, ); "*"setattr(self, 'IsHalted', True)\"; "*"emulation RunFor"*) ;; *) exit 91;; esac
 {hash}
 /bin/cat '{out}'
 "#,
@@ -3104,4 +3105,98 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
             .contains("D2_AHBSRAM_BASE"),
         "{e}"
     );
+}
+
+// ---------------------------------------------------------------- AET-WO-2314
+
+/// `AET-WO-2314` D2: the CLI hooks the fault handler its vector table names
+/// (the stub refuses a command line without it, exit 91), and a run whose
+/// CPU logged the hook's mark fails `foreign_fault`, naming the vector from
+/// `ICSR.VECTACTIVE` and the PC the exception stacked, beside
+/// `core_in_exception`. A mark at another address is not an entry.
+#[test]
+fn a_foreign_boot_that_takes_a_fault_fails_by_name_with_its_vector_and_pc() {
+    let mark = |body: &str| {
+        format!(
+            "{}[00:00:00.004392440] [WARNING] cpu: AETHELGARD-FAULT {body}\n",
+            good_foreign_log()
+        )
+    };
+    let (code, v) = foreign(&foreign_transcript(
+        &mark("3 8000030 80360aa"),
+        "0x00000803",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["severity"] != "info")
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["core_in_exception", "foreign_fault"], "{v}");
+    assert_eq!(
+        finding(&v, "foreign_fault").unwrap()["message"],
+        "the core took HardFault (exception 3) at 4392440 ns, from PC 0x080360aa; its handler's hook halted the core there",
+        "{v}"
+    );
+    let (_, v) = foreign(&foreign_transcript(
+        &mark("4 8000030 8000010"),
+        "0x00000804",
+    ));
+    assert!(
+        finding(&v, "foreign_fault").unwrap()["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("the core took MemManage (exception 4) at "),
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(
+        &mark("3 8000032 80360aa"),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(0), "{v}");
+    assert!(finding(&v, "foreign_fault").is_none(), "{v}");
+    assert!(
+        v["boot"]["rules"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|r| r["rule"] == "foreign_fault"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-2314` D2 (i): a vector table whose fault entry is 0, or outside
+/// every executable `PT_LOAD`, cannot be hooked, so the firmware is refused
+/// by name before a boot (the stub would exit 99 on any boot); the D2-only
+/// firmware with no table at all is `the_foreign_judge_is_declared…`'s.
+#[test]
+fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
+    let tb = toolbox_foreign("", "0.0100000005", true);
+    let input = Dir::new("in");
+    let mut far = foreign_code();
+    far[0x14..0x18].copy_from_slice(&0x0900_0001u32.to_le_bytes());
+    for (name, code, says) in [
+        (
+            "zero.elf",
+            code(),
+            "the vector table's HardFault entry (vector 3, at 0x0800000c) reads 0x00000000, no handler, so the foreign judge cannot hook it",
+        ),
+        (
+            "far.elf",
+            far,
+            "the vector table's BusFault entry (vector 5, at 0x08000014) reads 0x09000001, outside every executable PT_LOAD, so the foreign judge cannot hook it",
+        ),
+    ] {
+        let fw = input.write(
+            name,
+            &common::foreign::with_panic(elf_at(0x0800_0000, &code, 40), 0x0800_0020),
+        );
+        let out = foreign_with(&tb.0, &fw, "10ms");
+        let e = report(&out);
+        assert_eq!(out.status.code(), Some(3), "{e}");
+        assert_eq!(e["error"]["kind"], "ForeignFaultVectorUnusable", "{e}");
+        assert_eq!(e["error"]["message"], says, "{e}");
+    }
 }

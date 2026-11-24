@@ -453,7 +453,7 @@ pub fn fault_handlers(
                 return Err(unusable(format!(
                     "the vector table's {name} entry (vector {n}, at {:#010x}) reads {word:#010x}, {}, so the foreign judge cannot hook it",
                     u64::from(vector_table) + 4 * u64::from(n),
-                    if word == 0 { "0" } else { "outside every executable PT_LOAD" }
+                    if word == 0 { "no handler" } else { "outside every executable PT_LOAD" }
                 )));
             }
             Ok((n, address))
@@ -2451,6 +2451,109 @@ mod tests {
     /// `AET-WO-1609`: the hook is set at the symbol's address, and only the
     /// CPU's own line carrying that address is an entry, with its virtual
     /// time; a line of another source, another address or no mark is not.
+    /// `AET-WO-2314` D2: one hook per distinct handler, gated on
+    /// `ICSR.VECTACTIVE` being a vector it serves, that logs the CPU's own
+    /// mark with the stacked PC (PSP when `EXC_RETURN` bit 2 is set) and
+    /// halts the core; only that mark, at a hooked handler for a vector it
+    /// serves, is an entry.
+    #[test]
+    fn a_fault_entry_is_the_cpus_own_mark_at_a_hooked_handler_for_its_vector() {
+        let handlers = [
+            (3, 0x0800_0340),
+            (4, 0x080c_02bc),
+            (5, 0x080c_02b4),
+            (6, 0x080c_02bc),
+        ];
+        let hooks = fault_hooks(&handlers);
+        assert_eq!(hooks.len(), 3, "{hooks:?}");
+        assert!(
+            hooks[0].starts_with("cpu AddHook 0x8000340 \""),
+            "{}",
+            hooks[0]
+        );
+        assert!(hooks[0].contains("ok = v in (3, );"), "{}", hooks[0]);
+        assert!(hooks[1].contains("ok = v in (4, 6, );"), "{}", hooks[1]);
+        assert!(hooks[2].contains("ok = v in (5, );"), "{}", hooks[2]);
+        for h in &hooks {
+            assert!(
+                h.contains("v = self.Bus.ReadDoubleWord(0xe000ed04) & 0x1ff;"),
+                "{h}"
+            );
+            assert!(
+                h.contains("f = r(self.OtherSP) if lr & 4 else r(self.SP);"),
+                "{h}"
+            );
+            assert!(
+                h.contains(&format!(
+                    "'{FAULT_MARK}%d %x %x' % (v, pc, self.Bus.ReadDoubleWord(f + 24))"
+                )),
+                "{h}"
+            );
+            assert!(
+                h.ends_with("; ok and setattr(self, 'IsHalted', True)\""),
+                "{h}"
+            );
+            assert_eq!(h.matches('"').count(), 2, "{h}");
+        }
+        let line = |body: &str| format!("[00:00:04.392440830] {body}");
+        assert_eq!(
+            fault_entry(
+                &line("[WARNING] cpu: AETHELGARD-FAULT 3 8000340 80360aa"),
+                &handlers
+            ),
+            Some((3, 0x0803_60aa, Some(4_392_440_830)))
+        );
+        assert_eq!(
+            fault_entry(
+                &line("[WARNING] cpu: AETHELGARD-FAULT 6 80c02bc 8001000"),
+                &handlers
+            ),
+            Some((6, 0x0800_1000, Some(4_392_440_830)))
+        );
+        for other in [
+            "[WARNING] cpu: AETHELGARD-FAULT 4 8000340 80360aa",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000342 80360aa",
+            "[WARNING] usart1: AETHELGARD-FAULT 3 8000340 80360aa",
+            "[INFO] cpu: AETHELGARD-FAULT 3 8000340 80360aa",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340 80360aa 1",
+            "[WARNING] cpu: AETHELGARD-FAULT 3 8000340",
+        ] {
+            assert_eq!(fault_entry(&line(other), &handlers), None, "{other}");
+        }
+        assert!(FOREIGN_LOG_FILTER.keep.contains(&FAULT_MARK));
+    }
+
+    /// `AET-WO-2314` D3: the foreign filter discards each USART's `TDR`
+    /// writes, at any width, and what the default filter discards; it keeps
+    /// the writes its rules read (`CR1`, `CR2`) and the word after `TDR`.
+    /// The default filter, which the generated judge reads, keeps `TDR`.
+    #[test]
+    fn the_foreign_filter_discards_tdr_writes_the_generated_filter_keeps() {
+        let at = |body: &str| format!("[00:00:04.000000000] [INFO] {body}");
+        for tdr in [
+            "usart1: [cpu: 0x8001434] WriteByte to 0x28 (TransmitData), value 0x41",
+            "uart7: [cpu: 0x8001434] WriteUInt16 to 0x28 (TransmitData), value 0x41",
+            "usart3: [cpu: 0x8001434] WriteUInt32 to 0x28 (TransmitData), value 0x41",
+            "usart1: [cpu: 0x8001434] WriteByte to 0x29 (TransmitData+0x1), value 0x0",
+        ] {
+            assert!((FOREIGN_LOG_FILTER.discard)(&at(tdr)), "{tdr}");
+            assert!(!(LOG_FILTER.discard)(&at(tdr)), "{tdr}");
+        }
+        for kept in [
+            "usart1: [cpu: 0x80FDE5C] WriteUInt32 to 0x4 (ControlRegister2), value 0x40",
+            "usart1: [cpu: 0x80FDE6E] WriteUInt32 to 0x0 (ControlRegister1), value 0x2000013D",
+            "usart1: [cpu: 0x80FDE6E] WriteUInt32 to 0xC (BaudRate), value 0x271",
+            "usart1: [cpu: 0x80FDE6E] WriteUInt32 to 0x2C (TransmitData+0x4), value 0x0",
+            "usart1: [cpu: 0x80FDE6E] ReadUInt32 from 0x28 (TransmitData), returned 0x0",
+            "spi1: [cpu: 0x80FDE6E] WriteUInt32 to 0x28 (unknown), value 0x0",
+        ] {
+            assert!(!(FOREIGN_LOG_FILTER.discard)(&at(kept)), "{kept}");
+        }
+        let isr =
+            at("usart1: [cpu: 0x8001434] ReadUInt32 from 0x1C (InterruptAndStatus), returned 0xC0");
+        assert!((FOREIGN_LOG_FILTER.discard)(&isr) && (LOG_FILTER.discard)(&isr));
+    }
+
     #[test]
     fn a_panic_entry_is_the_cpus_own_hook_line_at_the_symbols_address() {
         let hook = panic_hook(0x080c_033c);
