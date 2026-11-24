@@ -240,7 +240,7 @@ fn a_stale_status_line_or_an_unmarked_phase_is_caught() {
     let unknown = edit(
         &readme,
         "P4's flight-controller work is under way.",
-        "P4's flight-controller work is under way. P5's work is under way.",
+        "P4's flight-controller work is under way. P6's work is under way.",
     );
-    caught(&unknown, &roadmap, "names P5");
+    caught(&unknown, &roadmap, "names P6");
 }
