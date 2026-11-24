@@ -421,11 +421,32 @@ fn hole_clear(drill_nm: i64, m: &Model) -> i64 {
     hole_radius(drill_nm + m.hole_plus_nm, m.hole_offset_nm)
 }
 
+/// A via's junction reach, nm: the largest shell radius (the hole drilled
+/// `drill_nm` at its largest finished size, plus the plating's minimum),
+/// the band `beta_nm`, and the furthest the tolerance moves the hole's
+/// centre, `⌈e·√2⌉`, plus 1. Its region is the cells meeting the open disc
+/// of this radius ([`Region::new`]). The router keeps a judged net's vias
+/// apart by the same regions (`AET-WO-1324`), so the two read one formula.
+pub fn junction_reach(
+    drill_nm: i64,
+    hole_plus_nm: i64,
+    plating_nm: i64,
+    beta_nm: i64,
+    hole_offset_nm: i64,
+) -> i64 {
+    (drill_nm + hole_plus_nm + 1) / 2 + plating_nm + beta_nm + hole_radius(0, hole_offset_nm) + 1
+}
+
 /// The via pad, nm, that holds the band at the largest shell and every
-/// position: twice the largest shell radius, the band and the position's
-/// diagonal reach, rounded up to 10 µm.
+/// position: twice the junction reach, rounded up to 10 µm.
 fn pad_needed(drill_nm: i64, m: &Model) -> i64 {
-    let r = shell_radii(drill_nm, m).1 + m.beta_nm + hole_radius(0, m.hole_offset_nm) + 1;
+    let r = junction_reach(
+        drill_nm,
+        m.hole_plus_nm,
+        m.plating_nm,
+        m.beta_nm,
+        m.hole_offset_nm,
+    );
     (2 * r + 9_999) / 10_000 * 10_000
 }
 
@@ -603,7 +624,7 @@ pub fn copper(
         // the largest shell, r0 + e√2: the region (cells meeting that disc)
         // holds it, and the via pad must too, (R − r0)² ≥ 2e², R − r0 > 0
         let r0 = Iv::ratio(r_hi, 1_000_000).add(beta).hi;
-        let reach = r_hi + m.beta_nm + hole_radius(0, e) + 1;
+        let reach = junction_reach(v.drill_nm, m.hole_plus_nm, m.plating_nm, m.beta_nm, e);
         let region = Region::new(h, reach);
         let room = (v.via_nm as f64 / 2e6) - r0;
         let fits = v.drill_nm > m.hole_minus_nm

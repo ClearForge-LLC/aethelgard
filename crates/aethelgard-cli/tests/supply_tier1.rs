@@ -108,7 +108,11 @@ fn emitted(label: &str, spec: &Path) -> PathBuf {
         .unwrap()
 }
 
-/// Sentinel-03's board, emitted once: the gate's inputs never change it.
+/// Sentinel-03's board, emitted once from its own specification, which
+/// declares no drop limit. The gate's inputs can change a routing: the
+/// router keeps a judged net's vias one junction region apart where the
+/// gate runs (`AET-WO-1324`). Sentinel-03 gated routes byte-identical
+/// (measured, FEEDBACK), so each test here judges this one board.
 fn s03_board() -> &'static Path {
     static BOARD: OnceLock<PathBuf> = OnceLock::new();
     BOARD.get_or_init(|| emitted("s03", &root().join(S03)))
@@ -527,32 +531,131 @@ fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
     assert_eq!(r["error"]["kind"], "PairConductorUnbounded", "{r}");
 }
 
-/// `AET-WO-4410` Q12 (ruled 2026-11-24), the evidence of a row for the next
-/// router work order: with the sense on PC0 (S2's ADC1-first rule), the
-/// two-layer power fixture's router drew two vias whose junction regions
-/// met, and `extract` refused the board by name (`ViaRegionsOverlap`).
-/// Since `AET-WO-4300k` (a) the board carries a GND pour on F.Cu, the
-/// router's paths move, and the two vias no longer meet: the gate now runs
-/// and reports what it reported on the PF3 layout, the ground return through
-/// a GND zone the emitted board leaves unfilled (`GroundReturnUnread`), and
-/// a supply pin it cannot join. `ViaRegionsOverlap` has no witness
-/// on a committed fixture since: a via planted on this board either keeps
-/// its region apart (0.55 mm and more from its neighbour) or is refused for
-/// clearance first (`AET-WO-4300k` FEEDBACK row, for the router work order).
+/// `AET-WO-4410` Q12, then `AET-WO-1324` (ruled 2026-11-24). With the sense
+/// on PC0, the two-layer power fixture's router drew two VDD_3V3 vias whose
+/// junction regions met, at (93.25, 87.125) mm and (4, 4) pitches from it,
+/// and `extract` refused the board (`ViaRegionsOverlap`). The router now
+/// keeps a judged net's vias one junction region apart, so the gate reads
+/// the board. Every supply pin is bounded, and every return is refused by
+/// its own name, `GroundReturnUnread` (the two-layer ground zone is left
+/// unfilled): the refusal the PF3 layout had, recorded and not chased here.
 #[test]
-fn the_two_layer_power_fixture_on_the_pc0_sense_meets_overlapping_vias() {
+fn the_two_layer_power_fixture_on_the_pc0_sense_keeps_its_vias_regions_apart() {
     let spec = write("s02-pc0", &gated(common::power::power_tree(), 165));
     let board = emitted("s02-pc0", &spec);
     let (code, v) = extract(&board, &spec);
     assert_eq!(code, 1, "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
     let s = &v["supplies"][0];
-    assert_eq!(s["verdict"], "fail", "{s}");
-    let findings = v["findings"].as_array().unwrap();
+    let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
+    assert_eq!((vdd.len(), vss.len()), (16, 11), "{s}");
+    assert!(vdd.iter().all(|p| p["r_bound_microohms"].is_u64()), "{s}");
     assert!(
-        findings.iter().any(|f| f["message"]
-            .as_str()
-            .unwrap()
-            .contains("GroundReturnUnread: U1.16's return runs through a GND zone the emitted board leaves unfilled")),
-        "{v}"
+        vss.iter()
+            .all(|p| p["refused"]["kind"] == "GroundReturnUnread"),
+        "{s}"
     );
+    // The gate stops at the returns before it prices GND, so the regions are
+    // checked here too, on both judged nets (adversarial A4): each routed
+    // via, array via and through-hole pad of the net on the gate's cell grid
+    // holds the region `extract` gives it, and no two share a cell.
+    use aethelgard_eda::{flow::Region, route, stack::Stack, supply};
+    let parsed: aethelgard_ir::Specification =
+        serde_json::from_str(&fs::read_to_string(&spec).unwrap()).unwrap();
+    let stack = Stack::of(&parsed).unwrap();
+    let rule = stack.junction.clone().unwrap();
+    let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
+    let (read, routed) = route::read(&tree, &stack).unwrap();
+    let h = supply::PITCH_NM;
+    let origin = routed
+        .vias
+        .first()
+        .map(|v| (v.at.0.rem_euclid(h), v.at.1.rem_euclid(h)))
+        .unwrap();
+    for net in ["VDD_3V3", "GND"] {
+        let mut holes: Vec<((i64, i64), i64)> = routed
+            .vias
+            .iter()
+            .filter(|v| v.net == net)
+            .map(|v| (v.at, read.stack.rule(net).drill_nm))
+            .collect();
+        for a in routed.arrays.iter().filter(|a| a.net == net) {
+            holes.extend(a.at.iter().map(|&at| (at, a.drill_nm)));
+        }
+        for p in read.parts.iter().flat_map(|p| &p.pads) {
+            if let (Some(d), Some(n)) = (p.drill_nm, p.net.as_deref())
+                && n == net
+            {
+                let r = p.rect;
+                holes.push((((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), d));
+            }
+        }
+        let mut owner = std::collections::BTreeMap::new();
+        let mut judged = 0;
+        for (k, &(at, drill)) in holes.iter().enumerate() {
+            let (dx, dy) = (at.0 - origin.0, at.1 - origin.1);
+            if dx.rem_euclid(h) != 0 || dy.rem_euclid(h) != 0 {
+                continue;
+            }
+            judged += 1;
+            for &(i, j) in &Region::new(h, rule.reach(drill)).cells {
+                let cell = (dx / h + i, dy / h + j);
+                if let Some(other) = owner.insert(cell, k) {
+                    panic!("{net}: {:?} and {at:?} meet at {cell:?}", holes[other].0);
+                }
+            }
+        }
+        assert!(judged >= 20, "{net}: {judged}");
+    }
+}
+
+/// `AET-WO-1324` Q1: the router's junction rule is on exactly where the
+/// gate runs: on each limited domain and `GND`, at the specification's
+/// tolerances and plating, so its reach is the gate's; off with no limit, or
+/// with any stackup or tolerance input the gate reads undeclared
+/// (adversarial A3: once on with `outer_copper_min_um` missing).
+#[test]
+fn the_routers_junction_rule_is_on_where_the_gate_runs() {
+    use aethelgard_eda::stack::{JunctionRule, Stack};
+    let spec =
+        |v: &Value| -> aethelgard_ir::Specification { serde_json::from_value(v.clone()).unwrap() };
+    let rule = |v: &Value| JunctionRule::of(&spec(v));
+    let on = rule(&gated(s03(), S03_LIMIT_MV)).unwrap();
+    // the board's stack carries it
+    let stack = Stack::of(&spec(&gated(s03(), S03_LIMIT_MV))).unwrap();
+    assert_eq!(stack.junction.as_ref(), Some(&on));
+    assert_eq!(on.nets, ["VDD_3V3", "GND"]);
+    // OSH Park's tolerances since `AET-WO-4300k` (b) (JLCPCB's were 130 and
+    // 75 um).
+    assert_eq!(
+        (on.hole_plus_nm, on.hole_offset_nm, on.plating_nm),
+        (64_000, 51_000, 18_000)
+    );
+    // (300000 + 64000 + 1) / 2 + 18000 + 10000 + ⌈51000·√2⌉ + 1 = 282126.
+    assert_eq!(on.reach(300_000), 282_126);
+    // Sentinel-03 declares its own limit since `AET-WO-4300k` D6, so the rule
+    // is on for it as committed; with no limit it is off.
+    assert_eq!(rule(&s03()).as_ref(), Some(&on));
+    let mut v = gated(s03(), S03_LIMIT_MV);
+    v["power"]["drop_limits"] = json!([]);
+    assert_eq!(rule(&v), None);
+    for (path, key) in [
+        ("board/stackup", "plating_min_um"),
+        ("board/stackup", "outer_copper_min_um"),
+        ("board/stackup", "plane_copper_min_um"),
+        ("board/stackup", "copper_temperature_max_c"),
+        ("board/stackup/fab_tolerances", "hole_size_plus_um"),
+        ("board/stackup/fab_tolerances", "hole_position_um"),
+        ("board/stackup/fab_tolerances", "hole_size_minus_um"),
+        ("board/stackup/fab_tolerances", "track_width_permille"),
+    ] {
+        let mut v = gated(s03(), 165);
+        let at = format!("/{path}");
+        v.pointer_mut(&at)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert_eq!(rule(&v), None, "{key}");
+    }
 }
