@@ -54,6 +54,27 @@ Concretely:
 - They ask for the fabrication package and get Gerbers, a bill of materials, and a firmware image whose hashes match the verdict.
 - The first physical board is still tested on a bench, because simulation narrows the search; it does not replace the board.
 
+### 3.1 The destination: any firmware, on a board of your own, on the chip you choose
+
+*Added 2026-11-24 (Scotty: "firmware agnostic … current chipset options but intended to add more for the ability to test custom kernel to custom board and chip choice combinations", for "a cold start user who will be utilizing Tvi and Aet").* §3's probe is the first rung. This is where the rungs lead.
+
+- **The combination is the unit.** A builder chooses a chip from the supported families, describes a board in a specification, and brings a firmware. That firmware can be Aethelgard's own generated board crate, an existing autopilot, or a kernel of their own. They get one verdict on that combination before anything is fabricated: the board's checks, the pair's fault campaign, and the twin's refusals, all on the same hashes (`INV-03`).
+- **Aethelgard judges any firmware and generates only what it has added.**
+  - It judges a foreign firmware the way it judges unmodified ArduPilot today: by what the models witness, never by trusting the firmware's own report.
+  - It generates board configuration only for firmware ecosystems it has added, one at a time (ArduPilot's hwdef is the first).
+  - It writes no operating system (`NG-01`).
+- **Families are added, not rewritten.** Each new chip family or firmware ecosystem arrives as data and adapters behind the one specification (`INV-08`). The intermediate representation never becomes one vendor's register map (§6).
+- **Tviburi is the twin's floor.** Where Tviburi models a peripheral, the verdict rests on a model that refuses what it cannot answer for. Where it does not, the verdict names the gap. A second family's twin is Tviburi's Phase 5, so the two projects add a family together.
+- **A cold start reaches a verdict.**
+  - Someone on a fresh machine, with nothing but the README, reaches a verdict on a supported combination, with no help from the people who built it.
+  - The README's quickstart, which CI runs as written, is the first instance: today it covers the reference probe's board checks.
+  - Every later rung extends that path; none adds a step that only its authors can perform.
+- **The first application is an agent-flown drone.**
+  - The Sentinel boards carry ArduPilot as a foreign firmware.
+  - An agent, not a pilot, commands the aircraft over MAVLink, and ArduPilot's own failsafes keep authority.
+  - The paths an armed, commanded autopilot takes are the ones the twin must answer for first.
+  - The agent flies; it never judges (`NG-04`).
+
 ## 4. Invariants — true regardless of what any work order asks
 
 Numbered, because work orders and code cite them by number. Each carries the observation that would disprove it. `INV-07` is new relative to Argon's draft and the reason is given beside it; Scotty decides whether it stays.
@@ -67,8 +88,9 @@ Numbered, because work orders and code cite them by number. Each carries the obs
 | 5 | **`INV-05` Attribution precedes mutation.** No change is applied to the design in response to a failure until the failure is attributed to the electrical domain or the software domain with recorded evidence. A software retry never masks an electrical defect, and vice versa. | Find a mutation with no attribution record, or a software patch applied for a failure the record attributes to electrical cause |
 | 6 | **`INV-06` Absence halts.** A missing component model, missing tool, or missing credential halts synthesis with an error naming what is missing. Nothing substitutes a permissive default or a fabricated measurement. | Remove a tool or a model; a run that still produces a verdict falsifies |
 | 7 | **`INV-07` The gates are not computed from the artifact they judge.** Pass criteria come from the specification's declared requirements and from independently authored fault scenarios, never from the generated firmware or board. *New in this draft: without it, the evolution loop can satisfy its own gates by changing what they measure.* | Find a gate whose expected value is read from the generated artifact under test |
+| 8 | **`INV-08` Adding a family never moves a verdict.** A new chip family or firmware ecosystem is added as data and adapters. Every verdict on an existing specification and firmware is byte-identical before and after it lands. *Added 2026-11-24 with §3.1: without it, each family added costs a re-proof of every board already made, so the second family is the last one anyone adds.* | Land a family or ecosystem and re-run every committed verdict; any that moved falsifies |
 
-Seven is inside the working range. Argon's draft had six; `INV-07` was added because the loop in `INV-05` mutates the design until gates pass, and a loop that can also move the gates proves nothing.
+Seven is inside the working range. Argon's draft had six; `INV-07` was added because the loop in `INV-05` mutates the design until gates pass, and a loop that can also move the gates proves nothing. `INV-08` makes eight, added with §3.1's destination.
 
 ## 5. Non-goals — deliberately not built
 
@@ -87,6 +109,9 @@ Each carries its reason, because the reason is what stops it being relitigated e
 - Trace volume grows until traces are sampled or dropped, and `INV-04` holds on paper only.
 - The specification becomes so hard to write that people hand-edit outputs, and the project becomes a KiCad script generator with a slogan.
 - One microcontroller family is supported so deeply that the intermediate representation is secretly that vendor's register map.
+- A second family or firmware arrives and every verdict on the first has to be re-made (`INV-08`).
+- The cold-start path rots: only the people who built Aethelgard can get a verdict out of it.
+- A firmware is judged by what it says about itself rather than by what the models witness.
 
 ## 7. Amendments
 
@@ -95,7 +120,10 @@ Each carries its reason, because the reason is what stops it being relitigated e
 | 2026-10-14 | — | Initial draft | Seed. Synthesized from the five Argon session captures; `INV-07` and `NG-04`, `NG-05` added by Claude with reasons stated inline |
 | 2026-10-19 | status | Ratified | Scotty merged PR #1 with `INV-07`, `NG-04`, and `NG-05` called out in the review summary, and delegated the remaining open questions to Claude. No invariant text changed |
 | 2026-11-16 | §2 | The first scar written in: SPI1's `MODF` on first silicon, which the twin passed, and the H7's I2C clock-synchronisation threshold (`AET-WO-3302` B8, B3–B5) | Scotty ratified it on 2026-11-16, which lifts the specification freeze (roadmap §6) |
+| 2026-11-24 | §3.1 (new), §4, §6 | The destination: any firmware, a board of one's own, a chosen chip, judged as one combination for a cold-start user; Tviburi as the twin's floor; the agent-flown drone as the first application. `INV-08` (adding a family never moves a verdict). Three failure modes | Scotty, 2026-11-24, stating the end state both projects design towards. Proposed by Claude; ratified by Scotty's merge |
 
 ## 8. Provenance
 
 Written 2026-10-14 by Claude Code in session `claude/argon-repo-docs-synthesis-rjrb0d`, from the founding Google Doc and the five captured turns of the Gemini "Capabilities and Dream Projects" session between Scotty (Addison Aliff, ClearForge-LLC) and Argon (Gemini), preserved under `docs/inputs/argon-session/` as captures 00 through 05. The one sentence, `INV-01` through `INV-06`, and `NG-01` through `NG-03` are reworded from Argon's draft northstar in capture 05; the wording changes make each invariant falsifiable and remove stack names. Rests on nothing else.
+
+**Amended 2026-11-24** (§3.1, `INV-08`, §6) by Claude Code in session `claude/argon-repo-docs-synthesis-rjrb0d` (claude.ai session `01HXmu7fgdnAdwho5ar2zV1a`), from Scotty's statements that day: the firmware-agnostic, multi-family, cold-start end state, and the agent-flown drone. The leans on the open points (the drone as the first application, not the definition; judge any kernel, generate only added ecosystems; a public cold-start user; `INV-08`) were stated to him before drafting and are his to strike at ratification.

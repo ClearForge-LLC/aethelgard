@@ -11,7 +11,7 @@ This is the source of truth for what is being built and why each choice was made
 
 **The divergence rule:** any deviation from this document is recorded as a dated amendment in §10 with its rationale. Undocumented drift is a defect, not a shortcut.
 
-Invariants are **not** defined here. They live in `northstar.md` §4 and are cited below as `INV-01` through `INV-07`.
+Invariants are **not** defined here. They live in `northstar.md` §4 and are cited below as `INV-01` through `INV-08`.
 
 ## 2. Ground truth — measured, not assumed
 

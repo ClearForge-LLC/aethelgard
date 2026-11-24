@@ -55,6 +55,7 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 | P2 | The twin and the faults | Generated firmware runs on the generated board model, and an injected electrical fault produces a replayable failure trace |
 | P3 | Attribution and evolution | A failure is attributed to the right half, a proposal fixes it, and a fabrication package for one reference probe is emitted |
 | P4 | Sentinel-02, the flight controller | A flight controller Aethelgard designed on a multi-layer board passes every gate, is fabricated, and flies a prototype drone on unmodified ArduPilot |
+| P5 | Combinations: a second family and firmware ecosystems | A specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's cold-start path; every P0–P4 verdict is unchanged (`INV-08`). *Trigger-started; not yet scoped* |
 
 ## 5. Sequenced work orders
 
@@ -694,6 +695,16 @@ P0 ──> P1 ──> P2 ──> P3 ──> P4
 **Later, not yet a phase:** more microcontroller families.
 - **The RP2350 stays the planned second target** (`RUL-08`), because a second vendor keeps the IR from becoming one vendor's register map. It needs a hand-written Renode platform description first, because the twin is the point. **Its timing (Scotty, 2026-11-16):** after Sentinel-01's scar, not after a drone.
 - **Other STM32 families are cheaper:** ST's open pin data already covers them, and Renode models several.
+
+### P5 — Combinations: a second family and firmware ecosystems
+
+**Depends on:** a trigger, not a date. Either P4's gate passes (a Sentinel flies), or Scotty schedules a chip or firmware the current family cannot serve. It is co-scoped with Tviburi's Phase 5 (a register-truth layer across vendors and simulators), whose own trigger is a target Renode cannot host. A second family's twin needs Tviburi's models, so the two phases add a family together.
+
+**Goal:** northstar §3.1: a chosen chip, a board of one's own, and any firmware, judged as one combination, from a cold start.
+
+**Exit gate:** a specification on a second chip family, with a firmware from a second ecosystem, gets a verdict through the README's quickstart path on a clean machine, and every committed P0–P4 verdict is byte-identical before and after (`INV-08`).
+
+**Shape:** not scoped yet. The first work order is a portability audit, which can run before the trigger because it only reads: every place the STM32H7, ArduPilot or ChibiOS is assumed rather than declared, each classed as data, adapter or rewrite, with what moving it would cost. The family order is not chosen here. Tviburi's `docs/reviews/2026-11-23-chip-families-research.md` is the research that would choose it.
 
 ## 6. Standing cadence
 
@@ -1434,6 +1445,7 @@ Added 2026-11-12 (Mythos review A9, B8). Reviewed at every phase gate. A row lea
 | 2026-11-24 | §5, §7.1 | `AET-WO-4410` (#373) merged; `AET-WO-4300k` ruled at §1.2 and building; `1324` and `1610` launched; `AET-WO-2314` written (the campaign names its cause, `foreign_fault`, `2311` A5, R4 measured) and given four rows | the merges; `4410` FEEDBACK §6 |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1324` (#386) merged; `AET-WO-3309` written (attribution: counts as well as values, the BMP581 log in the transaction readers, evidence placed by content, one line per step) and given two rows | #386's review; `3307` FEEDBACK |
 | 2026-11-24 | §5, §7.1 | `AET-WO-1610` (#385) merged; `AET-WO-4400h` written (ArduPilot armed in the twin, a spike); rows for the fabricator and assembly quote, the `usart1` DMA PC stamp, and Tviburi's `OQ-03` window | the merge; Scotty, 2026-11-24 (OSH Park; an agent-flown drone) |
+| 2026-11-24 | §4, §5 | P5 added (combinations: a second family and firmware ecosystems), trigger-started and co-scoped with Tviburi's Phase 5, its first work order a read-only portability audit | northstar §3.1 and `INV-08`, the same PR |
 
 ## 9. Provenance
 
