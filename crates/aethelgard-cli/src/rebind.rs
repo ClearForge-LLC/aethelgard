@@ -1,0 +1,332 @@
+//! `verify --fab-out OUT --rebind COMMITTED` (`AET-WO-4300k`, ruled
+//! 2026-11-24T11:25Z): a committed package re-bound to its specification
+//! after a change that moves no hardware byte (a specification version
+//! literal). The readiness gate is not judged. Instead the package derived as
+//! `--fab-out` derives it must equal `COMMITTED` byte for byte, but for what
+//! binds it: in `MANIFEST.json`, the lines holding `specification_sha256`,
+//! `topology_sha256`, `verdict_sha256`, each scenario's `sha256` and
+//! `FAB-NOTES.md`'s hash; in `FAB-NOTES.md`, the specification sha256 line.
+//! Any other moved byte (a Gerber, the BOM, the ELF, a precondition row, a
+//! key's order or spacing) refuses it, and nothing is written. Every file is
+//! read as `--against-fab` reads one ([`crate::tree::against`]): never through
+//! a symlink, a regular file only, the entries capped. A new board has no
+//! committed package, so it cannot re-bind; that the directory is the one
+//! committed is the caller's (CI pins `fab/sentinel-01-bench/package`).
+
+use std::collections::BTreeMap;
+use std::path::Path;
+
+use crate::run::Stop;
+use crate::tree;
+
+/// `COMMITTED` holds no committed package.
+pub const NO_PACKAGE: &str = "RebindNoPackage";
+/// `COMMITTED`'s package is another board's.
+pub const OTHER_BOARD: &str = "RebindOtherBoard";
+/// The derived package moves more than its binding.
+pub const MOVED: &str = "RebindMoved";
+
+const MANIFEST: &str = "MANIFEST.json";
+const NOTES: &str = "FAB-NOTES.md";
+/// The `MANIFEST.json` keys whose value lines a re-bind may move (M1, ruled
+/// 12:45Z): the specification's sha256, the topology's, which carries the
+/// specification's sha256 and so moves with every bump (measured on
+/// Sentinel-01's re-bind), and the verdict's, which names both. The ELF and
+/// every hardware file move nothing: a moved one refuses.
+const BINDING: [&str; 3] = ["specification_sha256", "topology_sha256", "verdict_sha256"];
+/// The line before `FAB-NOTES.md`'s specification sha256.
+const NOTES_LEAD: &str = "from the specification whose sha256 is";
+/// The most a committed `MANIFEST.json` or `FAB-NOTES.md` may hold.
+const MAX_TEXT: u64 = 1 << 20;
+
+fn none(dir: &Path, why: String) -> Stop {
+    Stop::refused(
+        NO_PACKAGE,
+        format!(
+            "no package: {} holds no committed package to re-bind ({why})",
+            dir.display()
+        ),
+    )
+}
+
+/// `dir`'s `name`, a regular file read without following a symlink.
+fn text_of(dir: &Path, name: &str) -> Result<Vec<u8>, Stop> {
+    tree::regular(&dir.join(name), MAX_TEXT)
+        .map_err(|s| none(dir, s.message))?
+        .ok_or_else(|| {
+            none(
+                dir,
+                format!("{name} is not a regular file of at most {MAX_TEXT} bytes"),
+            )
+        })
+}
+
+/// Before any gate: `dir` holds a committed package, and it is `project`'s.
+pub fn committed(dir: &Path, project: &str) -> Result<(), Stop> {
+    crate::input::dir_check(dir)?;
+    let bytes = text_of(dir, MANIFEST)?;
+    let v: serde_json::Value = serde_json::from_slice(&bytes)
+        .map_err(|e| none(dir, format!("{MANIFEST} is not JSON: {e}")))?;
+    match v["project"].as_str() {
+        None => Err(none(dir, format!("{MANIFEST} names no project"))),
+        Some(p) if p == project => Ok(()),
+        Some(p) => Err(Stop::refused(
+            OTHER_BOARD,
+            format!(
+                "no package: {} is the package of `{p}`, not of `{project}`: a re-bind keeps its board",
+                dir.display()
+            ),
+        )),
+    }
+}
+
+/// After every gate: `derived` (every file, `MANIFEST.json` included) equals
+/// the package in `dir` but for its binding, or the re-bind is refused,
+/// naming each moved file.
+pub fn matches(dir: &Path, derived: &BTreeMap<String, Vec<u8>>) -> Result<(), Stop> {
+    let mut moved = Vec::new();
+    let mut expected = derived.clone();
+    for (name, alike) in [
+        (MANIFEST, manifest_bound_alike as fn(&str, &str) -> bool),
+        (NOTES, notes_bound_alike),
+    ] {
+        let held = text_of(dir, name)?;
+        let ours = derived.get(name).map_or(&[][..], Vec::as_slice);
+        match (std::str::from_utf8(&held), std::str::from_utf8(ours)) {
+            (Ok(h), Ok(d)) if alike(h, d) => {
+                // Judged here; the walk below sees the committed bytes.
+                expected.insert(name.to_owned(), held);
+            }
+            _ => moved.push(format!("{name} differs beyond its binding")),
+        }
+    }
+    for d in tree::against(dir, &expected, &[])? {
+        moved.push(match d {
+            tree::Difference::Missing(p) => format!("{p} is not in the committed package"),
+            tree::Difference::Extra(p) => format!("{p} is not derived"),
+            tree::Difference::Differs(p) => format!("{p} differs"),
+        });
+    }
+    if moved.is_empty() {
+        return Ok(());
+    }
+    Err(Stop::refused(
+        MOVED,
+        format!(
+            "no package: re-binding {} would move more than its binding: {}; a re-bind moves only MANIFEST.json's {}, scenario and FAB-NOTES.md hash lines and FAB-NOTES.md's specification line",
+            dir.display(),
+            moved.join("; "),
+            BINDING.join(", ")
+        ),
+    ))
+}
+
+/// `"<key>": "<64 hex>"` with its indent and its trailing comma, if any.
+fn hash_line(line: &str) -> Option<(&str, &str, &str)> {
+    let body = line.trim_start();
+    let indent = &line[..line.len() - body.len()];
+    let (body, comma) = body.strip_suffix(',').map_or((body, ""), |b| (b, ","));
+    let (key, value) = body.strip_prefix('"')?.split_once("\": \"")?;
+    let hex = value.strip_suffix('"')?;
+    hex64(hex).then_some((indent, key, comma))
+}
+
+/// `MANIFEST.json` alike, line for line, but for a binding hash line: one of
+/// [`BINDING`], a scenario's `sha256` (the line after its equal `scenario`
+/// line), or `FAB-NOTES.md`'s, each with the same key, indent and comma.
+fn manifest_bound_alike(held: &str, derived: &str) -> bool {
+    let (h, d): (Vec<&str>, Vec<&str>) =
+        (held.split('\n').collect(), derived.split('\n').collect());
+    h.len() == d.len()
+        && h.iter().zip(&d).enumerate().all(|(i, (a, b))| {
+            a == b
+                || match (hash_line(a), hash_line(b)) {
+                    (Some(x), Some(y)) if x == y => {
+                        BINDING.contains(&x.1)
+                            || x.1 == NOTES
+                            || (x.1 == "sha256"
+                                && i > 0
+                                && h[i - 1] == d[i - 1]
+                                && h[i - 1].trim_start().starts_with("\"scenario\": "))
+                    }
+                    _ => false,
+                }
+        })
+}
+
+/// `FAB-NOTES.md` alike, line for line, but for the 64-hex line after
+/// [`NOTES_LEAD`].
+fn notes_bound_alike(held: &str, derived: &str) -> bool {
+    let (h, d): (Vec<&str>, Vec<&str>) =
+        (held.split('\n').collect(), derived.split('\n').collect());
+    h.len() == d.len()
+        && h.iter().zip(&d).enumerate().all(|(i, (a, b))| {
+            a == b
+                || (i > 0
+                    && h[i - 1] == d[i - 1]
+                    && h[i - 1].trim_end().ends_with(NOTES_LEAD)
+                    && sha_line(a)
+                    && sha_line(b))
+        })
+}
+
+/// "`<64 lowercase hex>`." and nothing else.
+fn sha_line(line: &str) -> bool {
+    line.strip_prefix('`')
+        .and_then(|l| l.strip_suffix("`."))
+        .is_some_and(hex64)
+}
+
+/// 64 lowercase hex digits, a sha256.
+fn hex64(hex: &str) -> bool {
+    hex.len() == 64 && hex.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const H: &str = "{\n  \"project\": \"b\",\n  \"specification_sha256\": \"AAAA\",\n  \"scenarios\": [\n    {\n      \"scenario\": \"s\",\n      \"sha256\": \"SSSS\"\n    }\n  ],\n  \"preconditions\": [\n    {\n      \"precondition\": \"every_gate_passed\",\n      \"state\": \"met\"\n    }\n  ],\n  \"verdict_sha256\": \"VVVV\",\n  \"files\": {\n    \"FAB-NOTES.md\": \"NNNN\",\n    \"b-F_Cu.gtl\": \"GGGG\"\n  }\n}\n";
+
+    fn manifest(spec: char, scenario: char, verdict: char, notes: char, gerber: char) -> String {
+        let h = |c: char| c.to_string().repeat(64);
+        H.replace("AAAA", &h(spec))
+            .replace("SSSS", &h(scenario))
+            .replace("VVVV", &h(verdict))
+            .replace("NNNN", &h(notes))
+            .replace("GGGG", &h(gerber))
+    }
+
+    fn notes(spec: char) -> String {
+        format!(
+            "x\nGenerated by aethelgard 0.2.0 {NOTES_LEAD}\n`{}`.\nend\n",
+            spec.to_string().repeat(64)
+        )
+    }
+
+    #[test]
+    fn only_the_binding_lines_of_the_manifest_may_move() {
+        let held = manifest('a', 'a', 'a', 'a', 'c');
+        assert!(manifest_bound_alike(&held, &held));
+        assert!(manifest_bound_alike(
+            &held,
+            &manifest('b', 'b', 'b', 'b', 'c')
+        ));
+        // A Gerber's hash, a precondition row, a scenario's name, a key's
+        // spacing or order, a line added: each moved byte refuses.
+        assert!(!manifest_bound_alike(
+            &held,
+            &manifest('b', 'b', 'b', 'b', 'd')
+        ));
+        for edit in [
+            held.replace("every_gate_passed", "other"),
+            held.replace("\"scenario\": \"s\"", "\"scenario\": \"t\""),
+            held.replace("\"project\": \"b\"", "\"project\":  \"b\""),
+            held.replace(
+                "  \"project\": \"b\",\n",
+                "  \"project\": \"b\",\n  \"project\": \"c\",\n",
+            ),
+            held.replace("\"verdict_sha256\"", "\"verdict_sha512\""),
+        ] {
+            assert!(!manifest_bound_alike(&held, &edit), "{edit}");
+        }
+        // A binding line moves only to another 64-hex value of the same key.
+        let short = held.replacen(&"a".repeat(64), &"b".repeat(63), 1);
+        assert!(!manifest_bound_alike(&held, &short));
+    }
+
+    #[test]
+    fn only_the_specification_line_of_the_notes_may_move() {
+        let held = notes('a');
+        assert!(notes_bound_alike(&held, &notes('b')));
+        for edit in [
+            notes('b').replace("end", "End"),
+            notes('b').replace("0.2.0", "0.2.1"),
+            notes('b').replace('\n', "\r\n"),
+            format!("{}extra\n", notes('b')),
+        ] {
+            assert!(!notes_bound_alike(&held, &edit), "{edit}");
+        }
+        // A sha line moves only after the specification's lead: one after
+        // any other equal line is refused.
+        let two = |first: char| {
+            format!(
+                "x\n`{}`.\nGenerated by aethelgard 0.2.0 {NOTES_LEAD}\n`{}`.\nend\n",
+                first.to_string().repeat(64),
+                "a".repeat(64)
+            )
+        };
+        assert!(notes_bound_alike(&two('a'), &two('a')));
+        assert!(!notes_bound_alike(&two('a'), &two('c')));
+    }
+
+    #[test]
+    fn the_specification_line_is_a_sha_and_nothing_else() {
+        assert!(sha_line(&format!("`{}`.", "0".repeat(64))));
+        for bad in [
+            format!("`{}`.", "0".repeat(63)),
+            format!("`{}`.", "G".repeat(64)),
+            "0".repeat(64),
+        ] {
+            assert!(!sha_line(&bad), "{bad}");
+        }
+    }
+
+    /// The committed directory is read as `--against-fab` reads one: a
+    /// symlinked file, a FIFO and a subdirectory each refuse, without
+    /// following, blocking or descending past what is derived.
+    #[test]
+    fn a_committed_package_is_read_without_following_or_blocking() {
+        let dir = std::env::temp_dir().join(format!("aet-4300k-rebind-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let derived: BTreeMap<String, Vec<u8>> = BTreeMap::from([
+            (
+                MANIFEST.to_owned(),
+                manifest('b', 'b', 'b', 'b', 'c').into_bytes(),
+            ),
+            (NOTES.to_owned(), notes('b').into_bytes()),
+            ("b-F_Cu.gtl".to_owned(), b"G".to_vec()),
+        ]);
+        let put = |name: &str, bytes: &[u8]| std::fs::write(dir.join(name), bytes).unwrap();
+        put(MANIFEST, manifest('a', 'a', 'a', 'a', 'c').as_bytes());
+        put(NOTES, notes('a').as_bytes());
+        put("b-F_Cu.gtl", b"G");
+        assert_eq!(committed(&dir, "b").map_err(|s| s.kind), Ok(()));
+        assert_eq!(committed(&dir, "c").map_err(|s| s.kind), Err(OTHER_BOARD));
+        assert_eq!(matches(&dir, &derived).map_err(|s| s.kind), Ok(()));
+        let moved = |what: &str| {
+            let e = matches(&dir, &derived).unwrap_err();
+            assert_eq!(e.kind, MOVED, "{what}");
+            e.message
+        };
+        put("b-F_Cu.gtl", b"H");
+        assert!(moved("a byte").contains("b-F_Cu.gtl differs"));
+        std::fs::remove_file(dir.join("b-F_Cu.gtl")).unwrap();
+        let outside = dir.with_extension("outside");
+        std::fs::write(&outside, b"G").unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join("b-F_Cu.gtl")).unwrap();
+        assert!(moved("a symlink").contains("b-F_Cu.gtl differs"));
+        std::fs::remove_file(dir.join("b-F_Cu.gtl")).unwrap();
+        put("b-F_Cu.gtl", b"G");
+        rustix::fs::mknodat(
+            rustix::fs::CWD,
+            dir.join("x.drl"),
+            rustix::fs::FileType::Fifo,
+            rustix::fs::Mode::from_raw_mode(0o600),
+            0,
+        )
+        .unwrap();
+        assert!(moved("a FIFO").contains("x.drl is not derived"));
+        std::fs::remove_file(dir.join("x.drl")).unwrap();
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        put("sub/y.gbl", b"Y");
+        assert!(moved("a subdirectory").contains("sub/y.gbl is not derived"));
+        std::fs::remove_dir_all(dir.join("sub")).unwrap();
+        std::fs::remove_file(dir.join(MANIFEST)).unwrap();
+        std::os::unix::fs::symlink(&outside, dir.join(MANIFEST)).unwrap();
+        assert_eq!(committed(&dir, "b").map_err(|s| s.kind), Err(NO_PACKAGE));
+        std::fs::remove_dir_all(&dir).unwrap();
+        std::fs::remove_file(&outside).unwrap();
+    }
+}

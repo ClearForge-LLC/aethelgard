@@ -16,3 +16,5 @@ aethelgard-cli	workspace_shape	LICENSE-MIT	1	cites
 aethelgard-cli	workspace_shape	README.md	7	cites
 # readme_versions.rs reads crates/aethelgard-ir/README.md (concat! of CARGO_MANIFEST_DIR and "/README.md").
 aethelgard-ir	readme_versions	/README.md	1	cites
+# fab_tier1.rs names the route class `docs` (the `CLASS` the tools check reads, AET-WO-4300k 16:50Z), not the docs/ directory.
+aethelgard-cli	fab_tier1	docs	2	cites

@@ -508,6 +508,23 @@ fn package_elf() -> String {
         .to_owned()
 }
 
+/// `AET-WO-4300k` (8): Sentinel-03's bench sheet is bound the same way, to
+/// the ELF its package's `MANIFEST.json` names (the package is the CI
+/// dispatch's, committed unchanged).
+#[test]
+fn sentinel_03_s_bench_sheet_names_its_package_elf() {
+    let dir = root().join("fab/sentinel-03");
+    let m: Value =
+        serde_json::from_slice(&fs::read(dir.join("package/MANIFEST.json")).unwrap()).unwrap();
+    let elf = m["files"]["sentinel-03.elf"].as_str().unwrap();
+    assert_eq!(
+        sha(&fs::read(dir.join("package/sentinel-03.elf")).unwrap()),
+        elf
+    );
+    let text = fs::read_to_string(dir.join("BENCH.md")).unwrap();
+    bench_names_only(&text, elf).unwrap();
+}
+
 /// `AET-WO-3308` (3): the bench sheet predicts the ELF the package carries.
 #[test]
 fn the_bench_sheet_names_the_package_elf() {

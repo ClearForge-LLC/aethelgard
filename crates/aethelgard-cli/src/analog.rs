@@ -1256,8 +1256,7 @@ mod tests {
     #[test]
     fn a_probe_recovers_by_its_reads_and_its_first_devices_own_lines() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let bytes =
-            fs::read(root.join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+        let bytes = fs::read(root.join("examples/sentinel-03.json")).unwrap();
         let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();

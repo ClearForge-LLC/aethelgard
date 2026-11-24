@@ -102,7 +102,8 @@ fn renamed(mut v: Value, at: usize, reference: &str) -> (Option<i32>, Value) {
 
 #[test]
 fn a_load_naming_a_part_with_no_pin_on_its_rail_is_refused() {
-    let s03: Value = serde_json::from_str(include_str!("fixtures/sentinel-03.json")).unwrap();
+    let s03: Value =
+        serde_json::from_str(include_str!("../../../examples/sentinel-03.json")).unwrap();
     // As committed: R6 and R7, the flash's WP and HOLD pull-ups, are on
     // `VDD_3V3`, where their loads are.
     let (code, v) = validate(&s03);

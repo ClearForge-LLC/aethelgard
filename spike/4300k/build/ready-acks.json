@@ -1,0 +1,5 @@
+{
+ "stackup_condition:test-fixture": "every stackup bound rests on the fixture's own condition: no fabricator stands behind a board no one orders",
+ "supervisor_hysteresis_typical:U12": "the release margin rests on TI's typical 40 mV hysteresis, as Sentinel-03's does (D6); a fixture is never benched",
+ "supervisor_delay_unstated:U12": "TI states the reset delay only from 3.19 V, above the domain's declared minimum; a fixture is never benched, so the unstated delay decides nothing"
+}

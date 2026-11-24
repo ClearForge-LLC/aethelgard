@@ -481,6 +481,10 @@ pub struct Part {
     pub stand_in: bool,
     /// The supply range, (min, max) in millivolts.
     pub supply_millivolts: (u32, u32),
+    /// The supply range by the highest read clock it holds at,
+    /// `(read_clock_max_hz, (min, max))`, ascending by clock (`AET-WO-4300k`
+    /// D11); empty where one range holds at any clock. Cited by `supply`.
+    pub supply_by_read_clock: Vec<(u32, (u32, u32))>,
     /// The range its signal pins accept, (min, max) in millivolts, where the
     /// datasheet separates it from the supply (`VDDIO`); `None` when the
     /// supply range is the I/O range (`AET-WO-4210` D7).
@@ -565,6 +569,21 @@ pub struct Axes {
 }
 
 impl Part {
+    /// The lowest supply the device holds at with its bus at `bus_hz`
+    /// (`AET-WO-4300k` (9), D11): the least minimum of the rows whose clock
+    /// covers `bus_hz`, or the supply's minimum where no row is held. `None`
+    /// when rows are held and none covers `bus_hz`.
+    pub fn supply_min_at(&self, bus_hz: u64) -> Option<u32> {
+        if self.supply_by_read_clock.is_empty() {
+            return Some(self.supply_millivolts.0);
+        }
+        self.supply_by_read_clock
+            .iter()
+            .filter(|(hz, _)| u64::from(*hz) >= bus_hz)
+            .map(|(_, (lo, _))| *lo)
+            .min()
+    }
+
     /// The range a device's bus domain must lie in: the I/O range where the
     /// datasheet gives one, else the supply's (`AET-WO-4210` D7).
     pub fn io_range(&self) -> ((u32, u32), &Citation) {
@@ -691,6 +710,10 @@ struct RawPart {
     bus: RawBus,
     identity: RawIdentity,
     supply_millivolts: RawSupply,
+    /// The supply's range by the read clock it holds at (`AET-WO-4300k`
+    /// D11): absent where the datasheet states one range at any clock.
+    #[serde(default)]
+    supply_by_read_clock: Vec<RawClockedSupply>,
     /// Required: `null` says the supply range is the I/O range.
     #[serde(deserialize_with = "Option::deserialize")]
     io_millivolts: Option<RawSupply>,
@@ -841,6 +864,14 @@ struct RawIdentity {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawSupply {
+    min: u32,
+    max: u32,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawClockedSupply {
+    read_clock_max_hz: u32,
     min: u32,
     max: u32,
 }
@@ -1291,6 +1322,30 @@ fn part(raw: RawPart) -> Result<Part, String> {
         );
     }
     let (min, max) = millivolts(&raw.supply_millivolts, "supply_millivolts")?;
+    let mut supply_by_read_clock = Vec::new();
+    for (i, c) in raw.supply_by_read_clock.iter().enumerate() {
+        let at = format!("supply_by_read_clock[{i}]");
+        let (lo, hi) = millivolts(
+            &RawSupply {
+                min: c.min,
+                max: c.max,
+            },
+            &at,
+        )?;
+        if lo < min || hi > max {
+            return Err(format!("`{at}` is outside `supply_millivolts`"));
+        }
+        if c.read_clock_max_hz == 0
+            || supply_by_read_clock
+                .last()
+                .is_some_and(|(hz, _): &(u32, (u32, u32))| *hz >= c.read_clock_max_hz)
+        {
+            return Err(format!(
+                "`{at}.read_clock_max_hz` does not rise above zero and the row before"
+            ));
+        }
+        supply_by_read_clock.push((c.read_clock_max_hz, (lo, hi)));
+    }
     let io = raw
         .io_millivolts
         .as_ref()
@@ -1404,6 +1459,7 @@ fn part(raw: RawPart) -> Result<Part, String> {
             datasheet_value: raw.identity.datasheet_value,
         },
         supply_millivolts: (min, max),
+        supply_by_read_clock,
         io_millivolts: io,
         pin_capacitance_femtofarads: pin_capacitance,
         pin_capacitance_typical_femtofarads: typical,

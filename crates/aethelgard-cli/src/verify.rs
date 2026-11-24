@@ -44,6 +44,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use serde::Serialize;
+
+use crate::rebind;
 use serde_json::Value;
 
 use aethelgard_cli::generate::{BOARD_DIR, KICAD_DIR};
@@ -148,6 +150,13 @@ struct Report {
 pub enum FabMode {
     Write(PathBuf),
     Compare(PathBuf),
+    /// `--fab-out OUT --rebind COMMITTED` (`AET-WO-4300k`, ruled 11:25Z):
+    /// written as `Write` writes, without the readiness gate, and only if the
+    /// derived package equals `COMMITTED` but for its binding ([`rebind`]).
+    Rebind {
+        out: PathBuf,
+        committed: PathBuf,
+    },
 }
 
 #[derive(Serialize)]
@@ -173,6 +182,10 @@ struct FabReport {
     /// `--against-fab`: every file that differs, is missing or is extra.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     differences: Vec<Finding>,
+    /// The readiness gate (`AET-WO-4300k` (c)): judged before any gate under
+    /// `--fab-out`; under `--against-fab`, named as not judged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fabrication_ready: Option<String>,
     /// Each part on the board whose lifecycle no held vendor page states,
     /// named with the page it must be read from: a purchase never meets an
     /// unread lifecycle silently (`AET-WO-4210` D1).
@@ -303,6 +316,7 @@ impl FabReport {
             files: BTreeMap::new(),
             differences: Vec::new(),
             lifecycle_unheld,
+            fabrication_ready: None,
         }
     }
 }
@@ -1847,6 +1861,7 @@ pub fn verify(
     let command = match fab_mode {
         Some(FabMode::Write(_)) => "verify --fab-out",
         Some(FabMode::Compare(_)) => "verify --against-fab",
+        Some(FabMode::Rebind { .. }) => "verify --fab-out --rebind",
         None => "verify",
     };
     if fab_mode.is_some()
@@ -1888,6 +1903,22 @@ pub fn verify(
             aethelgard_cli::ledger::Stale::KIND,
             Some(&s.register),
             s.message(),
+            EXIT_INVALID_SPEC,
+        );
+    }
+    // `AET-WO-4300k` (d): an acknowledged condition no condition produces is
+    // refused as a stale ledger entry is, in every mode.
+    let conditions = match aethelgard_cli::readiness::conditions(&spec) {
+        Ok(c) => c,
+        Err(e) => return refuse(e.kind(), e.id(), e.to_string(), EXIT_INVALID_SPEC),
+    };
+    if let Some(id) = aethelgard_cli::readiness::stale(&spec, &conditions) {
+        return refuse(
+            aethelgard_cli::readiness::STALE,
+            Some(id),
+            format!(
+                "`acknowledge_conditions` names `{id}`, which no condition of this specification produces"
+            ),
             EXIT_INVALID_SPEC,
         );
     }
@@ -1967,6 +1998,9 @@ pub fn verify(
     let fab_checked = match fab_mode {
         Some(FabMode::Write(dir)) => fab_out_usable(dir),
         Some(FabMode::Compare(dir)) => crate::input::dir_check(dir),
+        Some(FabMode::Rebind { out, committed }) => {
+            fab_out_usable(out).and_then(|()| rebind::committed(committed, &spec.project_name))
+        }
         None => Ok(()),
     };
     if let Err(s) = fab_checked {
@@ -2053,6 +2087,21 @@ pub fn verify(
                 EXIT_INVALID_SPEC,
             );
         }
+    }
+
+    // `AET-WO-4300k` (1), ruled (c): `--fab-out` only (a re-bind is judged by
+    // its bytes instead), the last refusal before `--against` and any gate,
+    // so a board refused for its campaign, a stand-in or its ledger keeps
+    // that refusal.
+    if matches!(fab_mode, Some(FabMode::Write(_)))
+        && let Err(g) = aethelgard_cli::readiness::check(&spec, &topology, &conditions)
+    {
+        return refuse(
+            aethelgard_cli::readiness::KIND,
+            Some(&g.id),
+            g.message,
+            EXIT_INVALID_SPEC,
+        );
     }
 
     // `--against` first: a directory that is not the tree fails, naming
@@ -2294,13 +2343,30 @@ fn silicon_findings(s: &aethelgard_cli::ledger::Silicon) -> Vec<Finding> {
         .collect()
 }
 
+/// What a mode that does not judge readiness says of it (`AET-WO-4300k` (c),
+/// (R)), on a passing run and a failing one alike.
+fn not_judged(mode: &FabMode) -> Option<String> {
+    match mode {
+        FabMode::Write(_) => None,
+        FabMode::Compare(_) => Some(
+            "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))".to_owned(),
+        ),
+        FabMode::Rebind { committed, .. } => Some(format!(
+            "readiness not judged: a re-bind of {}",
+            committed.display()
+        )),
+    }
+}
+
 /// A run that failed writes and compares nothing, and says so.
 fn not_packaged(report: &mut Report, mode: &FabMode) {
     let (status, against) = match mode {
-        FabMode::Write(_) => ("not_written", None),
+        FabMode::Write(_) | FabMode::Rebind { .. } => ("not_written", None),
         FabMode::Compare(_) => ("not_derived", Some("not_compared")),
     };
-    report.fab = Some(FabReport::none(status, report.lifecycle_unheld.clone()));
+    let mut fab = FabReport::none(status, report.lifecycle_unheld.clone());
+    fab.fabrication_ready = not_judged(mode);
+    report.fab = Some(fab);
     report.against_fab = against;
 }
 
@@ -2352,9 +2418,16 @@ fn package(
         files,
         differences: Vec::new(),
         lifecycle_unheld: report.lifecycle_unheld.clone(),
+        fabrication_ready: None,
     };
+    if let FabMode::Rebind { committed, .. } = mode {
+        let mut derived = exported.files.clone();
+        derived.insert(fab::MANIFEST.to_owned(), manifest.clone());
+        rebind::matches(committed, &derived).map_err(crate::stopped)?;
+    }
+    fab_report.fabrication_ready = not_judged(mode);
     match mode {
-        FabMode::Write(dir) => {
+        FabMode::Write(dir) | FabMode::Rebind { out: dir, .. } => {
             fab_out_usable(dir).map_err(crate::stopped)?;
             let ordered = exported
                 .files
@@ -2370,6 +2443,9 @@ fn package(
                 crate::stopped(s)
             })?;
             fab_report.status = "written";
+            fab_report.fabrication_ready.get_or_insert_with(|| {
+                "judged before any gate (aethelgard_cli::readiness), and met".to_owned()
+            });
         }
         FabMode::Compare(dir) => {
             let mut package = exported.files;
@@ -3110,7 +3186,7 @@ mod tests {
                    "masked": [], "subjects": subjects})
         };
         // Sentinel-03's VDD_5V: both ports.
-        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+        let (spec, t) = solved("examples/sentinel-03.json");
         let rail = |d: &str| match stress(
             &spec,
             &t,

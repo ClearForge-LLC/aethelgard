@@ -89,7 +89,9 @@ tests/adversarial_1302_tools.rs	kicad_does_not_judge_the_net_a_track_is_labelled
 tests/adversarial_1302_tools.rs	kicad_does_not_see_a_floating_loop_on_a_net_no_pad_carries	3.56
 tests/against_fab_tier2.rs	verify_against_fab_finds_the_package_it_wrote_identical	585.18
 tests/against_fab_tier2.rs	verify_against_fab_names_every_changed_and_extra_file	446.700
-tests/battery_sag_tier1.rs	sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger	23.450
+tests/against_fab_tier2.rs	a_rebind_of_the_package_it_wrote_writes_the_same_package	585.18
+tests/against_fab_tier2.rs	a_rebind_refuses_a_package_with_one_moved_byte	585.18
+tests/battery_sag_tier1.rs	sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it	23.450
 tests/battery_sag_tier1.rs	the_power_fixture_s_vdd_5v_stays_unmet_with_its_reason	30.110
 tests/bench_board_tier1.rs	the_committed_package_is_bound_to_its_specification_scenarios_and_emit	2.300
 tests/bench_tier1.rs	a_board_without_bench_access_is_judged_as_before	1.200
@@ -555,4 +557,12 @@ unittests src/lib.rs	route::tests::no_placement_of_a_crossing_part_leaves_a_pair
 tests/stackups_tier1.rs	a_shifted_d3_routes_with_its_soft_hops_judged_on_the_hard_maps	78
 tests/stackups_tier1.rs	the_heaviest_committed_board_routes_within_half_the_work_bound	82
 # AET-WO-4410 (ruled 2026-11-24 06:05Z, P3 named it on de8fd9e4): one row, 4300j's emit_tier1 test, at its worst in-shard seconds (P3's own reconstruction, `shard.sh times`, 4 threads; an upper bound) over this PR's four runs 45332797904 (de8fd9e4, shard 3) 13.674, 45326283655 (046fdbfa) 2.606, 45314732771 (09c2ff8d) 2.630 and 45312081588 (e39c84c5) 3.265. Its shard's company moves it 5x. Every test this PR added is in a colocated binary (outline_tier1, supply_tier1) or ran under 0.5 s.
+# AET-WO-4300k: against_fab_tier2's two re-bind tests are estimates, not runs: each is the shared --fab-out plus one verify, the shape of verify_against_fab_finds_the_package_it_wrote_identical, so each is weighed at its 585.18 until the REFIT RULE measures them (after the first green run, as ruled 12:45Z). battery_sag_tier1's Sentinel-03 test renamed (its weight kept).
+# AET-WO-4300k: readiness_tier1's tests of 0.5 s or more, each its `ok` less its binary's `Running` (REFIT RULE 5, an upper bound), the worse of runs 45452289688 (87b613f6) and 45475807268 (2a9f8459) where it ran in both, rounded up to 0.1 s.
 tests/emit_tier1.rs	an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted	13.674
+tests/readiness_tier1.rs	a_board_with_no_pours_joins_no_ground_pad_to_anything	2.8
+tests/readiness_tier1.rs	a_connector_turned_to_face_into_the_board_is_judged_inward_and_named	67.8
+tests/readiness_tier1.rs	a_zone_the_specification_does_not_declare_is_refused_as_planes_disagree	66.0
+tests/readiness_tier1.rs	every_connector_opens_off_the_board_on_the_emitted_sentinel_03	80.4
+tests/readiness_tier1.rs	smd_ground_pads_join_the_pour_solid_and_small_passives_keep_a_relief	70.0
+tests/readiness_tier1.rs	the_bucks_join_at_least_their_floor_of_copper_on_exactly_the_three_layers	68.8

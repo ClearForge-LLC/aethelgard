@@ -37,7 +37,7 @@ fn valid() -> Specification {
         "power": null,
         "project_name": "sentinel-01",
         "board": serde_json::from_str::<serde_json::Value>(BOARD).unwrap(),
-        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None, reserved_pins: vec![] },
+        "mcu": Mcu { part: "STM32H753ZITx".into(), supply: "VDD_3V3".into(), hse: None, bor_level: 0, core_supply: aethelgard_ir::CoreSupply { mode: aethelgard_ir::vos::CoreSupplyMode::Ldo, source: "DS12117 Rev 10 sec. 3.5.1 p. 27".into() }, supply_source: Some(aethelgard_ir::SupplySource { connector: "J2".into(), pin: "1".into() }), reset_switch: false, foreign_clock: None, reset_supervisor: None, reserved_pins: vec![] },
         "voltage_domains": [VoltageDomain {
             id: "VDD_3V3".into(),
             nominal_millivolts: 3300,
@@ -199,7 +199,7 @@ fn refuses_unsupported_schema_version() {
         26,
         27,
         28,
-        30,
+        29,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -928,7 +928,8 @@ fn full_document() -> serde_json::Value {
     v["motor_outputs"] = json!([
         {"label": "M1", "pin": null, "protocol": "pwm",
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
-                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null,
+                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000},
+         "esc": {"none": {"source": "its ESC takes the pack's own lead (test)"}},
          "pull": {"resistor": {"reference": "R91", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"},
                   "link": {"reference": "R93", "part": "CRCW0402_Z_0"}, "fitment": "fitted",
                   "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm"}},
@@ -3738,7 +3739,7 @@ fn every_device_carries_pin_capacitance_and_a_version_12_file_is_refused() {
             E::UnsupportedSchemaVersion {
                 changes: _,
                 version: 12,
-                expected: 29
+                expected: 30
             }
         ),
         "{e}"

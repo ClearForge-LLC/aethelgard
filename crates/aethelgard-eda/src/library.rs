@@ -16,7 +16,39 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 58] = [
+const PINS: [(&str, &str); 66] = [
+    (
+        "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
+        "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a",
+    ),
+    (
+        "footprints/Fuse.pretty/Fuse_1206_3216Metric.kicad_mod",
+        "8f4307d8c771db71526ed8ccf7c762824636660adec3635905932cc5e1d02280",
+    ),
+    (
+        "footprints/Package_SO.pretty/SOIC-8_3.9x4.9mm_P1.27mm.kicad_mod",
+        "074ecb2092b24fa4b4b9cdd7c926fc587b0d7d6d21e7341e57935fd42d36894f",
+    ),
+    (
+        "footprints/Package_TO_SOT_SMD.pretty/SOT-23-3.kicad_mod",
+        "ab2ce7041629a2c0042ab00c2e26a6b4a78722e2451c5c855d0eecd3361adb05",
+    ),
+    (
+        "symbols/Device.kicad_symdir/D_Zener.kicad_sym",
+        "138a686e82ce947e4209933f52e036ed5613027e4b8d3d02c685990ec0fd59fe",
+    ),
+    (
+        "symbols/Device.kicad_symdir/Fuse.kicad_sym",
+        "08d01d9946b9d571c9860b3ca3151a6b36d39516d4b9ec9edc3820046c75dfd2",
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/DMP6023LSS.kicad_sym",
+        "7371cc4d53d059fdea705024d6cc9d62d084c598e3ce7250f9410c54de1e05a0",
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
+        "51793743079229c78f742a4b5d448fd2d82e044c7e0a8355ca1504bd658ed3d5",
+    ),
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         "03187d2ed4dca904a6c0379cff9fe3a9fd0e1139b59fb9669db42160ca40cc3f",
@@ -228,7 +260,7 @@ const PINS: [(&str, &str); 58] = [
     ),
     (
         "aethelgard/README.md",
-        "c790404c70cd5cab4d8793a8a575425605fd261f5304e5d85072be10b00a7730",
+        "d1cf8586e45f8d6f23bb27f07d2f8ebdb9a54e261ed766d8f288134fc6a3efdc",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",
@@ -499,9 +531,15 @@ mod tests {
 
     #[test]
     fn a_pinned_file_the_data_crate_lacks_is_refused() {
-        let held = &aethelgard_kicad_lib::FILES[1..];
+        // The file `PINS[0]` names, by path: FILES' order is not PINS'.
+        let held: Vec<_> = aethelgard_kicad_lib::FILES
+            .iter()
+            .copied()
+            .filter(|(p, _)| *p != PINS[0].0)
+            .collect();
+        assert_eq!(held.len(), PINS.len() - 1);
         assert!(matches!(
-            verify(&PINS, held),
+            verify(&PINS, &held),
             Err(LibraryError::MissingFile { path }) if path == PINS[0].0
         ));
     }
@@ -624,10 +662,14 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 16);
+        assert_eq!(sym.matches("(lib ").count(), 17);
         // `AET-WO-4240c`: the crystal's footprint library.
         assert!(fp.contains("(uri \"/s/lib/footprints/Crystal.pretty\")"));
-        assert_eq!(fp.matches("(lib ").count(), 16);
+        // `AET-WO-4300k`: our power library, and the diode and fuse footprints.
+        assert!(sym.contains("(uri \"/s/lib/symbols/Aethelgard_Power.kicad_symdir\")"));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Diode_SMD.pretty\")"));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Fuse.pretty\")"));
+        assert_eq!(fp.matches("(lib ").count(), 18);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

@@ -1039,7 +1039,7 @@ fn crystal(
 /// of any symbol, is another value (`motor_pull_count`).
 ///
 /// **The link:** its reference is in the netlist (`motor_link_missing`), of
-/// its jumper row's symbol and valued `0` (`motor_link_part`), on the row's
+/// its jumper row's symbol and valued `0 <part>` (`motor_link_part`), on the row's
 /// footprint (`motor_link_footprint`); its two pins are on `<label>` and
 /// `<label>_PD`, and it has no other (`motor_link_off_net`); it is the one
 /// part joining them (`motor_link_count`); and it is populated when the
@@ -1180,14 +1180,19 @@ fn motor_pulls(
                 format!("{}'s declared link {linked} is not in the netlist", m.label),
             ),
             Some(c) => {
-                if c.symbol.as_deref() != Some(l_row.symbol.as_str()) || c.value != "0" {
+                // Valued `0 <part>`, as a pull resistor is `<ohms> <part>`
+                // (`AET-WO-4300j` R8, taken by `4300k`).
+                if c.symbol.as_deref() != Some(l_row.symbol.as_str())
+                    || c.value != format!("0 {}", link.part)
+                {
                     fail(
                         "motor_link_part",
                         format!(
-                            "{}'s link {linked} is `{}` drawn as {}, and its part `{}` is a `0` `{}`",
+                            "{}'s link {linked} is `{}` drawn as {}, and its part `{}` is a `0 {}` `{}`",
                             m.label,
                             c.value,
                             quoted_or_none(c.symbol.as_deref()),
+                            link.part,
                             link.part,
                             l_row.symbol
                         ),

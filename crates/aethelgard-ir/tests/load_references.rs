@@ -54,9 +54,10 @@ fn a_load_naming_a_part_the_board_lacks_is_refused_by_reference_and_rail() {
     assert_refused(&v, "power.loads[4].reference", "VDD_3V3", "U2");
     // Spellings the emitter never gives: case, a leading zero, `R0`, another
     // `U` than the MCU's, a switch the specification does not ask for, a
-    // prefix it never numbers.
+    // FET the board does not have (its `Q1` is the protection FET since
+    // `AET-WO-4300k` (10)), a prefix it never numbers.
     let at = fixture()["power"]["loads"].as_array().unwrap().len();
-    for r in ["r1", "R01", "R0", "U99", "SW1", "Q1", "C"] {
+    for r in ["r1", "R01", "R0", "U99", "SW1", "Q9", "C"] {
         assert_refused(
             &with_load(fixture(), r),
             &format!("power.loads[{at}].reference"),

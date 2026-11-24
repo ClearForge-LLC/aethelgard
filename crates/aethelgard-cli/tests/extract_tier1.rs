@@ -918,12 +918,18 @@ fn a_board_without_test_points_states_no_probe() {
 
 /// Sentinel-03's `fab_tolerances` block (cited, JLCPCB), the one the
 /// capacitance ladder needs (`AET-WO-1314`).
-const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const S03: &str = "examples/sentinel-03.json";
 
 /// The reference with Sentinel-03's `fab_tolerances` copied in.
 fn with_tolerances(v: &mut Value) {
     let s03: Value = serde_json::from_str(&fs::read_to_string(root().join(S03)).unwrap()).unwrap();
-    v["board"]["stackup"]["fab_tolerances"] = s03["board"]["stackup"]["fab_tolerances"].clone();
+    let mut tolerances = s03["board"]["stackup"]["fab_tolerances"].clone();
+    // Their `cites` name Sentinel-03's fabricator (`AET-WO-4300k` (b)); the
+    // reference declares none, so the values come without them.
+    for bound in tolerances.as_object_mut().unwrap().values_mut() {
+        bound.as_object_mut().unwrap().remove("cites");
+    }
+    v["board"]["stackup"]["fab_tolerances"] = tolerances;
 }
 
 /// The one `capacitance_over_declared_bound` finding of `v`, which must

@@ -656,7 +656,8 @@ mod tests {
     }
 
     /// `AET-WO-3300`: the fabrication package is two optional flags on
-    /// `verify`, so the tool keeps its name and only `--spec` is required.
+    /// `verify`, so the tool keeps its name and only `--spec` is required;
+    /// `AET-WO-4300k` (R) adds `--rebind`, optional, needing `--fab-out`.
     #[test]
     fn verify_takes_the_fabrication_package_as_optional_flags() {
         let leaf = real().into_iter().find(|l| l.name == "verify").unwrap();
@@ -672,7 +673,8 @@ mod tests {
                 ("scenarios", false),
                 ("against", false),
                 ("fab-out", false),
-                ("against-fab", false)
+                ("against-fab", false),
+                ("rebind", false)
             ]
         );
     }

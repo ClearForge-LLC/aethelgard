@@ -403,10 +403,9 @@ fn serial7_takes_no_options_and_the_header_names_the_pulls() {
 #[test]
 fn sentinel_03_derived_writes_its_battery_monitor() {
     let dir = scratch("s03");
-    let mut spec: Value = serde_json::from_slice(
-        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap(),
-    )
-    .unwrap();
+    let mut spec: Value =
+        serde_json::from_slice(&fs::read(root().join("examples/sentinel-03.json")).unwrap())
+            .unwrap();
     spec["board"]["forward"] = "top".into();
     for d in spec["spi_devices"].as_array_mut().unwrap() {
         if d["reference"] == "U5" {

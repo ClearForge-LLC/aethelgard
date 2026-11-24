@@ -23,6 +23,22 @@ const SCENARIOS: [&str; 5] = [
     "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
 ];
 
+/// `AET-WO-4300k` (T), ruled 11:25Z: a `--fab-out` test whose point lies
+/// past the readiness gate runs on the ready fixture (`common/ready.rs`);
+/// the reference itself is refused `FabricationNotReady`.
+mod common;
+#[path = "common/ready.rs"]
+mod ready;
+use ready::{READY, READY_SCENARIOS};
+
+/// `verify --spec READY --scenarios READY_SCENARIOS... rest...`, as [`run`].
+fn ready_run(rest: &[&str]) -> (Option<i32>, Value) {
+    let mut args = vec!["verify", "--spec", READY, "--scenarios"];
+    args.extend(READY_SCENARIOS);
+    args.extend(rest);
+    run(&args)
+}
+
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
@@ -107,19 +123,7 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
 #[test]
 fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
     let absent = scratch("absent");
-    let (code, v) = run(&[
-        "verify",
-        "--spec",
-        SPEC,
-        "--scenarios",
-        SCENARIOS[0],
-        SCENARIOS[1],
-        SCENARIOS[2],
-        SCENARIOS[3],
-        SCENARIOS[4],
-        "--fab-out",
-        s(&absent),
-    ]);
+    let (code, v) = ready_run(&["--fab-out", s(&absent)]);
     assert_eq!(code, Some(4), "{v}");
     assert!(
         !absent.exists(),
@@ -216,21 +220,7 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     // `AET-WO-2308` L4: an empty directory in the tree is named too.
     fs::create_dir_all(tree.join("stray")).unwrap();
     let out = scratch("against-out");
-    let (code, v) = run(&[
-        "verify",
-        "--spec",
-        SPEC,
-        "--scenarios",
-        SCENARIOS[0],
-        SCENARIOS[1],
-        SCENARIOS[2],
-        SCENARIOS[3],
-        SCENARIOS[4],
-        "--against",
-        s(&tree),
-        "--fab-out",
-        s(&out),
-    ]);
+    let (code, v) = ready_run(&["--against", s(&tree), "--fab-out", s(&out)]);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["against"], "differs");
     assert!(
@@ -778,10 +768,52 @@ fn a_new_field_in_an_acknowledged_register_is_refused_on_the_fab_path() {
 
 /// The reference, acknowledged, passes the check: with `--against` an empty
 /// directory the run reaches the tree comparison and fails there, writing
-/// nothing, so no package precondition before it refused.
+/// nothing, so no package precondition before it refused. Under `--fab-out`
+/// on the ready fixture (`AET-WO-4300k` (T)), the readiness gate included;
+/// under `--against-fab` on the reference itself, which it does not judge.
 #[test]
 fn the_acknowledged_reference_passes_the_check_before_any_gate() {
     let dir = scratch("acknowledged");
+    let empty = dir.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let out = dir.join("pkg");
+    let (code, v) = ready_run(&["--against", s(&empty), "--fab-out", s(&out)]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs", "{v}");
+    assert_eq!(v["fab"]["status"], "not_written", "{v}");
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    assert!(!out.exists());
+    let pkg = dir.join("committed");
+    fs::create_dir_all(&pkg).unwrap();
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
+        SCENARIOS[3],
+        SCENARIOS[4],
+        "--against",
+        s(&empty),
+        "--against-fab",
+        s(&pkg),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs", "{v}");
+    assert_eq!(v["fab"]["status"], "not_derived", "{v}");
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `AET-WO-4300k` (1), (c) as ruled: `--fab-out` on a specification the
+/// readiness gate refuses names the first gap (the reference declares no
+/// `fab_tolerances`, `AET-WO-4300k` (2)), exit 2, after every other refusal
+/// before a gate and before `--against`, and creates nothing.
+#[test]
+fn fab_out_on_a_specification_not_ready_is_refused_by_the_key() {
+    let dir = scratch("not-ready");
     let empty = dir.join("empty");
     fs::create_dir_all(&empty).unwrap();
     let out = dir.join("pkg");
@@ -800,10 +832,221 @@ fn the_acknowledged_reference_passes_the_check_before_any_gate() {
         "--fab-out",
         s(&out),
     ]);
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(v["against"], "differs", "{v}");
-    assert_eq!(v["fab"]["status"], "not_written", "{v}");
-    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "FabricationNotReady", "{v}");
+    assert_eq!(v["error"]["id"], "board.stackup.fab_tolerances", "{v}");
     assert!(!out.exists());
     fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `AET-WO-4300k`, ruled 11:25Z (R): `--rebind` needs `--fab-out` (usage,
+/// 64); a directory that holds no committed package (`RebindNoPackage`) and
+/// another board's package (`RebindOtherBoard`) are refused before any
+/// gate, exit 3, creating nothing. The reference re-binding to the bench's
+/// committed package is the second; the committed package re-bound to its own
+/// board passes these checks and the readiness gate it does not judge,
+/// reaching the first gate's tool.
+#[test]
+fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
+    let dir = scratch("rebind");
+    let out = dir.join("pkg");
+    let committed = "fab/sentinel-01-bench/package";
+    let args = |spec: &'static str, scenarios: [&'static str; 5], rest: Vec<String>| {
+        let mut a: Vec<String> = ["verify", "--spec", spec, "--scenarios"]
+            .map(str::to_owned)
+            .to_vec();
+        a.extend(scenarios.map(str::to_owned));
+        a.extend(rest);
+        a
+    };
+    let call = |a: Vec<String>| {
+        let r: Vec<&str> = a.iter().map(String::as_str).collect();
+        run(&r)
+    };
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec!["--rebind".into(), committed.into()],
+    ));
+    assert_eq!(code, Some(64), "{v}");
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            "scenarios/sentinel-01".into(),
+        ],
+    ));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "RebindNoPackage", "{v}");
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            committed.into(),
+        ],
+    ));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "RebindOtherBoard", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("is the package of `sentinel-01-bench`, not of `sentinel-01`"),
+        "{v}"
+    );
+    assert!(!out.exists());
+    let (code, v) = call(args(
+        "examples/sentinel-01.json",
+        BENCH_SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            committed.into(),
+        ],
+    ));
+    assert_eq!(code, Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolMissing", "{v}");
+    assert!(!out.exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The bench's scenarios, in the order its MANIFEST records them (`ci.yml`).
+const BENCH_SCENARIOS: [&str; 5] = [
+    "scenarios/sentinel-01-bench/pullup-3k3.json",
+    "scenarios/sentinel-01-bench/droop-bor3.json",
+    "scenarios/sentinel-01-bench/spi-absent-u4.json",
+    "scenarios/sentinel-01-bench/pullup-2k2.json",
+    "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+];
+
+/// `AET-WO-4300k` (R): the tool cannot tell a committed package from any
+/// directory an earlier `--fab-out` of the same board wrote, so CI is the
+/// control: `--rebind` appears in `ci.yml` exactly once, pinned to
+/// Sentinel-01's committed package (the gate review's F2).
+#[test]
+fn ci_rebinds_only_sentinel_01_s_committed_package() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let uses: Vec<&str> = ci
+        .lines()
+        .filter(|l| l.contains("--rebind") && !l.trim_start().starts_with('#'))
+        .collect();
+    assert_eq!(uses.len(), 1, "{uses:?}");
+    assert!(
+        uses[0]
+            .trim_end()
+            .ends_with("--rebind fab/sentinel-01-bench/package"),
+        "{uses:?}"
+    );
+}
+
+/// The text of `job`'s block in `ci.yml`: from its `  job:` line to the next
+/// job's.
+fn ci_job(ci: &str, job: &str) -> String {
+    let start = ci
+        .find(&format!("\n  {job}:\n"))
+        .unwrap_or_else(|| panic!("job {job}"));
+    let rest = &ci[start + 1..];
+    let end = rest[1..]
+        .find("\n  ")
+        .map(|i| {
+            // the next line indented exactly two spaces and starting a key
+            let mut at = i + 1;
+            loop {
+                let line = &rest[at + 1..];
+                if line.starts_with("  ") && !line.starts_with("   ") && !line.starts_with("  #") {
+                    break at;
+                }
+                match rest[at + 1..].find("\n  ") {
+                    Some(n) => at += n + 1,
+                    None => break rest.len(),
+                }
+            }
+        })
+        .unwrap_or(rest.len());
+    rest[..end].to_owned()
+}
+
+/// `AET-WO-4300k` (8), ruled 16:50Z (a): Sentinel-03's package job runs its
+/// verify on one specification, `--against-fab` on the committed package and
+/// `--fab-out` into its own artifact's path, each once, and no other job
+/// names Sentinel-03's package.
+#[test]
+fn ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let job = ci_job(&ci, "bench-package-s03");
+    assert!(job.contains("timeout-minutes: 90"), "{job}");
+    assert!(
+        job.contains("target/debug/aethelgard verify --spec examples/sentinel-03.json"),
+        "{job}"
+    );
+    let uses = |needle: &str| {
+        ci.lines()
+            .filter(|l| !l.trim_start().starts_with('#') && l.contains(needle))
+            .count()
+    };
+    for line in [
+        "$VERIFY_S03 --against-fab fab/sentinel-03/package",
+        "$VERIFY_S03 --fab-out target/sentinel-03-package",
+    ] {
+        assert_eq!(uses(line), 1, "{line}");
+        assert!(job.contains(line), "{line} is in bench-package-s03");
+    }
+    assert_eq!(uses("fab/sentinel-03/package"), 1);
+    assert_eq!(uses("examples/sentinel-03.json"), 1);
+}
+
+/// `AET-WO-4300k`, ruled 16:50Z (a): the required `tools` check counts
+/// Sentinel-03's package job. Its "the routing decided" step, run with each
+/// planted result: on a code pull request anything but `success` (skipped,
+/// cancelled, failed, or missing) is red, as a shard's is; on a docs-only
+/// one it must be skipped.
+#[test]
+fn the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let tools = ci_job(&ci, "tools");
+    assert!(
+        tools.contains("needs: [route, tools-build, tools-shard, bench-package-s03]"),
+        "{tools}"
+    );
+    let at = tools.find("- name: the routing decided").unwrap();
+    let body: Vec<&str> = tools[at..]
+        .lines()
+        .skip(2)
+        .take_while(|l| l.starts_with("          ") || l.trim().is_empty())
+        .map(|l| l.get(10..).unwrap_or(""))
+        .collect();
+    let script = body.join("\n");
+    let decide = |class: &str, build: &str, shard: &str, s03: &str| {
+        let s = script
+            .replace("${{ needs.route.result }}", "success")
+            .replace("${{ needs.tools-build.result }}", build)
+            .replace("${{ needs.tools-shard.result }}", shard)
+            .replace("${{ needs.bench-package-s03.result }}", s03);
+        assert!(!s.contains("${{"), "{s}");
+        Command::new("bash")
+            .args(["-e", "-c", &s])
+            .env("CLASS", class)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    assert!(decide("code", "success", "success", "success"));
+    for planted in ["skipped", "cancelled", "failure", ""] {
+        assert!(
+            !decide("code", "success", "success", planted),
+            "{planted:?}"
+        );
+    }
+    assert!(!decide("code", "success", "failure", "success"));
+    assert!(decide("docs", "skipped", "skipped", "skipped"));
+    assert!(!decide("docs", "skipped", "skipped", "success"));
 }
