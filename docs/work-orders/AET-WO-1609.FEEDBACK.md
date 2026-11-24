@@ -223,7 +223,12 @@ did, `bench-package` was red on each head before its package commit.
 
 ## 9. Signal
 
-The last push is the commit "AET-WO-1609 READY: …". Nothing is pushed after it unless asked. The architect merges.
+**READY.** CI is green on `7c94f103`, the package head with main `7d48feb6` merged:
+- `ci` 45295427079: tier 2 206 passed, floor 205; `bench-package` green against the committed package.
+- `ardupilot-image` 45295427086 and `engine-image` 45295427062: green.
+
+The last push is the commit "AET-WO-1609 READY: …", which changes only this file. Nothing is pushed after it unless
+asked. The architect merges; the PR's title and body are in `~/.cache/aet-1609/pr-title-body.md`.
 **`4240e` merged first;** main was merged here and the package re-dispatched.
 **`2313` (#380) carries the boot bound's text on the same `foreign.rs` lines** (the architect, 23:52Z): whichever of
 the two merges second re-applies.
