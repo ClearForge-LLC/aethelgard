@@ -1,7 +1,8 @@
 # AET-WO-1610 — STOP at §1.1 (2026-11-24, main 72d85eef)
 
-The measurement is `MEASURED.md` (predictions `PREDICTIONS.md`, committed first, 5ea10b95). Every prediction held;
-one was corrected (R5 is only partly derivable). **No `§7` stop on (1), (2), (4) or (5).** For (3), the
+The measurement is `MEASURED.md` (predictions `PREDICTIONS.md`, committed before every run, 5ea10b95; the reader
+searches behind P1–P3 were read before it). The predictions held. Two were corrected: R5 is only partly derivable, and
+F1's set is the corpus's, not the types' (a unit enum given `{}` is `InvalidJson` too). **No `§7` stop on (1), (2), (4) or (5).** For (3), the
 refuse-the-absence option for each field **would refuse committed specifications** (a `§7` stop), so the leans
 below are rows, and one check that runs where the data exists (`max_outline_um`).
 
@@ -33,11 +34,17 @@ a missing harness is no one's, so `not_reached`; an undeclared key is the specif
 ## D3. `board.max_outline_um`
 
 - **(i) Judge it on the board, in `drc` — lean (the WO's preferred kind, where the data exists).** With
-  `--spec` and a declared bound, `check drc` reads the board's `Edge.Cuts` rectangle (`aethelgard_eda::route::read`,
-  `Board::outline`, public) and refuses one wider or taller than the bound by name (a new CLI kind,
-  `OutlineExceedsBound`, path `board.max_outline_um`). Today the bound is judged at `validate` and `emit` only,
-  never on the file a gate reads. Its row is `drc.outline` `judged 1`, else off by `board.max_outline_um`.
-  Inside `aethelgard-cli`; it runs before KiCad, so it is tier-1 testable as `ImuOrientationDisagrees` is.
+  `--spec` and a declared bound, `check drc` reads the board's one `Edge.Cuts` `gr_rect` from the strict tree it
+  already holds, and refuses one wider or taller than the bound by name (a new CLI kind, `OutlineExceedsBound`,
+  path `board.max_outline_um`). Today the bound is judged at `validate` and `emit` only, never on the file a gate
+  reads. Its row is `drc.outline` `judged 1`, else off by `board.max_outline_um`.
+  - **The reader is narrow on purpose.** `route::read` and `extract::read_tree` would also give the outline, but
+    each refuses far more (unmodelled top-level items, track widths, holes): `drc` would gain refusals beyond the
+    outline, which the WO's NOT forbids. The CLI reads only the `gr_rect` on `Edge.Cuts`; its only other refusal
+    is a board with no such rectangle, or more than one, under a declared bound.
+  - **The same rectangle the placer judged:** `pcb.rs` writes the outline as that one `gr_rect` and refuses
+    `OutlineUnreachable` when `x1 − x0` exceeds the width or `y1 − y0` the height. `drc` compares the same way.
+  - Inside `aethelgard-cli`. It runs before KiCad, so it is tier-1 testable, as `ImuOrientationDisagrees` is.
   - Predicted to hold on Sentinel-03 (the placer placed inside the bound); measured at the build. If it refuses
     Sentinel-03, I stop again.
 - (ii) The row alone, with no new judgement.
@@ -68,15 +75,17 @@ already asserts whole.
 
 ## D6. F1: kind, path and mechanism
 
-The four enums a specification reaches (`mcu.hse`, a strap's `tie`, an analog's `full_scale` and `transfer`)
-are exactly the corpus's eight mutants. Lean:
+The corpus's eight mutants reach four data enums (`mcu.hse`, a strap's `tie`, an analog's `full_scale` and
+`transfer`). By type, **every serde-derived enum given `{}` is `InvalidJson`, a unit enum too**
+(`mcu.core_supply.mode = {}`, measured). The mechanism below covers every one of them, not only the four. Lean:
 
 - **Kind `VariantMissing`, exit 2, `path` the enum's (`mcu.hse`, `pin_devices[0].straps.PMODE.tie`), the
   message naming the variants serde expects.** The kind is declared in `aethelgard-ir` (the WO's fence for (4)).
 - **Mechanism, all in `parse_spec`, no new dependency:** when serde reports `Syntax` but the bytes are one JSON
   document, the file is an invalid specification, not unreadable input. A small span walk maps serde's line and
   column to the JSON path of the `{}` there. The variant names come from serde itself (the `{}` re-read as
-  `{"": null}` gives serde's `unknown variant`, `expected …` text), so no list is copied. Any other `Syntax`
+  `{"": null}` gives serde's `unknown variant`, `expected …` text, measured), so no list is copied. Measured: serde's
+  line and column land on the `}` of the `{}`. Any other `Syntax`
   error on a well-formed document becomes `SchemaViolation`, exit 2, never `InvalidJson`.
 - The alternative, a hand-written `Deserialize` for each of the four enums in the IR, gives `Data` errors with no
   path (as `SchemaViolation` has none today) and puts the fix outside (4)'s fence.
@@ -97,12 +106,23 @@ Today it quotes the entry's stale fields, which are specification text (MEASURED
 
 ## Not decisions, for the record
 
-- (1): `prove` with no harness pushes a `not_run` `prove` gate whose reason is `no_harness`, so the row is
+- (1), the way I would build it: `prove` with no harness pushes a `not_run` `prove` gate whose reason is `no_harness`, so the row is
   `not_reached: no_harness`, the gate list says it too, and `GATES`' `prove` becomes `Absent::Never`. The verdict
   stays `fail` by the finding. No version bumps (the verdict has none).
+  - The table-only alternative: `GATES`' `prove` entry reads `not_reached: no_harness` when absent, and `gates`
+    stays as it is. Either is fine by me; say if you want this one.
 - (2) and (3)'s `drc` parts move the `verify` verdict line, so the bench package's `MANIFEST.json`
   `verdict_sha256` moves. **One `write` dispatch of `bench-package`, after `main` (with `4300k`) is merged in.**
 - Beside `4300k` (verify.rs's `--fab-out`, validate, the IR): I add, never rewrite, and merge `main` before READY.
+
+## Q8. The CLI README
+
+(1) and (2) make `crates/aethelgard-cli/README.md` stale:
+- line 960 says `ran` comes after `judged_nothing`;
+- line 965 describes an absent gate's `off`.
+
+`2306` treated that README as outside its fence. Is it inside this one?
+- **Lean: yes.** The WO fences `crates/aethelgard-cli`, and the README is the verdict's reader-facing contract.
 
 ## Gates on this stop
 

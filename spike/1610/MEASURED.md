@@ -1,6 +1,9 @@
 # AET-WO-1610 §1.1 — measured (2026-11-24, Furnace, main 72d85eef)
 
-Predictions: `PREDICTIONS.md`, committed first (5ea10b95). Binary: `target/debug/aethelgard` of 72d85eef.
+Predictions: `PREDICTIONS.md`, committed first (5ea10b95). **What "first" covers:** the runs (`f1`, `f2`, `f3_*`,
+`f1_mechanism`) all post-date it. The reader searches and the specification scans behind P1–P3 had already
+printed while I oriented, before the predictions were written; for those, P1–P3 record what I had read, not a
+blind guess. Binary: `target/debug/aethelgard` of 72d85eef.
 Runs: `f1.py` → `f1.out`, `f2.py` → `f2.out`, `f3_loads.sh` → `f3_loads.out`. Reader searches: `git grep`
 over the whole tree (work orders and spikes excluded), as quoted below.
 
@@ -120,15 +123,22 @@ Exactly 8 are refused `InvalidJson`, exit 3, each serde's `expected value at lin
 | ″ | `pin_devices[0].analog[0].full_scale.milliamps` | `…analog[0].full_scale` |
 | ″ | `pin_devices[0].analog[0].transfer.current_output` | `…analog[0].transfer` |
 
-- **By type, not only by corpus:** the IR's enums with data-carrying variants and serde's default (external)
-  tagging are `clock::Hse`, `pin_devices::Strap`, `pin_devices::Transfer`, `pin_devices::FullScale` (the four
-  above) and `pin_devices::SolvedTransfer`, which is in the topology only. Every other `Deserialize` enum is
-  unit-only (a string), internally tagged or untagged (`GpioWire`). So the four are the whole set a
-  specification reaches.
+- **Data-carrying enums:** the IR's enums with data-carrying variants and serde's derived (external) tagging are
+  `clock::Hse`, `pin_devices::Strap`, `pin_devices::Transfer`, `pin_devices::FullScale` (the four above) and
+  `pin_devices::SolvedTransfer`, which is in the topology only.
 - Why exit 3: serde's externally tagged enum, given `{}`, reports a missing key as `ExpectedSomeValue`,
   category `Syntax`, and `parse_spec` (`main.rs`) maps every non-`Data` error to `InvalidJson`.
-- Every other deletion that leaves `{}` (37 more: `pin_capacitance.declared`, `esc.none`, `pwm.idle.*`,
-  `part_limits.*`) is already `SchemaViolation`, exit 2, as `missing field`: those are structs, not enums.
+- The other deletions that leave `{}` are 36 (44 in `f1.out`'s second list, less the 8): 35 `SchemaViolation`
+  (`missing field`), exit 2, and 1 `SupplyPinUndeclared` (`supplies.VM`), exit 2. Their types: `PinCapacitance`
+  and `PartLimits` are structs; `motor::Idle` and `motor::Esc` are **enums with a hand-written `Deserialize`**,
+  which is why they report `Data`, not `Syntax`.
+- **By type, a unit enum given `{}` is `InvalidJson` too** (`f1_mechanism.py`): `mcu.core_supply.mode = {}` and
+  `spi_devices[0].orientation.x = {}` are each exit 3, `expected value`. Deleting a key never makes that shape, so
+  the corpus cannot show it. The eight are the whole set **for the corpus's mutation**, not for the types:
+  every serde-derived enum the specification reaches, unit or data, is refused `InvalidJson` when given `{}`.
+- **Where serde points** (`f1_mechanism.out`): at the `}` of the `{}` (`line 9 col 13: '    "hse": {},'`).
+  Given `{"": null}` instead, serde names the variants: ``unknown variant ``, expected `crystal` or `external` ``,
+  exit 2.
 - `SchemaViolation` carries no `path` today (serde's text names a line and column), so the F1 refusal's `path`
   is new information, not a copy of an existing one.
 
