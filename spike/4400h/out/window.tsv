@@ -25,3 +25,6 @@ t1-L-w10b	10000ms	wall 600 s, RSS 6 GiB (measure)	on	all	1	False	24.78	1452436	9
 t2-C-w10a	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	22.73	1498732	952	3.03	3.35	8402881	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
 t2-C-w10b	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	21.32	1423256	904	2.94	3.03	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
 t2-C-w10c	10000ms	wall 600 s, RSS 1,572,864 KiB	on	all	1	False	21.92	1472588	936	2.65	2.96	8402886	51149	foreign_not_booted,i2c_transaction_unwitnessed,renode_error_log,serial_options_unjudgeable,spi_transaction_unwitnessed
+e1-M-w2	2000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	6.63	671676	427	4.36	4.48	152297	0	register_mismatch,spi_transaction_unwitnessed
+e1-M-w3	3000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	6.91	685488	435	4.17	4.36	231894	0	register_mismatch,spi_transaction_unwitnessed
+e1-M-w4	4000ms	main (30 s, 1,572,864 KiB)	on	all	1	False	8.18	749512	476	3.77	4.17	244361	0	register_mismatch,spi_transaction_unwitnessed

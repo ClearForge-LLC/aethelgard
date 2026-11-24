@@ -1,9 +1,10 @@
 # AET-WO-4400h results
 
-**STOP: §7, "the cap fails before 10 s."** ArduPilot's foreign window cannot hold 10 s on Furnace:
-- all six 10 s runs passed `4400g` §1.4's line (a run over 900‰ of the cap stops it);
-- two of them passed the cap itself;
-- every 10 s run also lost every witness to the CLI's 8 MiB log budget, which is exhausted at 9 s whatever the load.
+**STOP: §7, "the cap fails before 10 s"** (D1 rules whether this is that stop). What was measured at 10 s:
+- all six logged runs passed `4400g` §1.4's line (a run over 900‰ of the cap stops it); the one no-log run read 851‰;
+- two of the logged runs passed the cap, both with the cap raised to read the share;
+- the three runs at the real cap, at load 3, were not killed by it (904–952‰);
+- every 10 s run lost every witness to the CLI's 8 MiB log budget, which is exhausted at 9 s whatever the load.
 
 **Proposed bound: keep 5 s.** Parts (2)–(4) are predicted (`PREDICTIONS.md`) and harnessed (`sh/`, `py/`; the plans are written by `py/plans.py`), but not run, because the stop came first. §4 gives what the twin lacks for them, from source.
 
@@ -30,7 +31,7 @@ Shares are in ‰ of 1,572,864 KiB. "Lifted" means the CLI's wall bound was rais
 | 5 s | on | main's | `w05-a` 30.88, 1,386,768, **881**, load 22–28 | **killed: `wall_bound_exceeded`** |
 | 5 s | on | main's | `f1-M-w5a` 9.91, 828,252, 526, load 7; `f1-M-w5b` 9.78, 809,484, 514, load 7 | pass |
 | 5 s | on | lifted | `s1-L-w5` 19.10, 1,142,068, 726, load 26–28 | pass |
-| 5 s | on | lifted, **2 cores** | `f1-T2-w5a` 10.66, 943,740, 600; `f1-T2-w5b` 11.19, 982,156, 624, load 7 | pass |
+| 5 s | on | lifted, **2 cores** | `f1-T2-w5a` 10.66, 943,740, 600; `f1-T2-w5b` 11.19, 982,156, 624, load 7 | pass. Wall moves about 1 s but the peak rises 115–170 MB: core count moves RSS by more than wall time does (perhaps the .NET GC's heap count), a second, host-dependent part |
 | 5 s | off | lifted | `s1-N-w5` 12.36, 844,256, 536, load 25–26 | fails `serial_options_unwritten` (the log is that judge's input) |
 | 6 s | on / off | wall lifted | 12.2, 924,964, 588 / 12.22, 937,056, 595, load 10 | fails `register_mismatch` (§1.4) |
 | 7 s | on / off | wall lifted | 14.49, 1,042,204, 662 / 14.06, 1,020,844, 649, load 9–10 | pass / `serial_options_unwritten` |
@@ -52,9 +53,8 @@ Shares are in ‰ of 1,572,864 KiB. "Lifted" means the CLI's wall bound was rais
    - Peak RSS grows about 100–120 MiB per virtual second at load 3–10, more under load.
    - 10 s is over 900‰ in 6 of 6 runs, at load 3 to 25.
 3. **The 30 s wall bound, under load, already at 5 s.**
-   - At load 22–28, main's own 5 s window took 30.88 s and was killed at 881‰.
+   - At load 22–28, main's own 5 s window took 30.88 s and was killed at 881‰. Another 5 s run at load 26–28 took 19.1 s (726‰) and would have passed: one kill in two runs above load 20 (n = 2).
    - At load 7 it takes 9.8 s.
-   - So today's CI window holds on Furnace only off-peak.
 
 ### 1.3 The cause, by replay against replay
 
@@ -63,7 +63,8 @@ These are replays of the CLI's own Renode invocation (`sh/capture.sh`, `sh/repla
 | replay | change | wall s | peak KiB |
 |---|---|---|---|
 | `pure16`, `pure16b` | none | 36.45, 36.99 | 2,297,792, 2,353,932 |
-| `quiet16` | `logLevel 3` before the run: only ERROR lines | 34.67 | 2,282,452 |
+| `quiet16` | `logLevel 3` before the run. Checked (`flood.txt`): it dropped the WARNING lines (`Unhandled write`, the CFG2 hook), but each device's own `logLevel -1` survived, so 1.70 MB per virtual second still printed | 34.67 | 2,282,452 |
+| `quiet16b` | the same, plus `logLevel 3` on each device and mux. Only spi2's slave-mode ERROR remains: 0.44 MB/s against 12.3 | 31.65 | 2,109,272 |
 | `nohook16` | the CLI's two SPI `CFG2` write hooks removed | 36.41 | 2,290,836 |
 | `gc768` | `DOTNET_GCHeapHardLimit` = 768 MiB | 12.74 | 1,022,272, then **`System.OutOfMemoryException` at 6.362 s virtual** (`out/replay/gc768/oom.txt`) |
 
@@ -76,10 +77,10 @@ These are replays of the CLI's own Renode invocation (`sh/capture.sh`, `sh/repla
     - the spi2 mux's and the ICM model's NOISY lines, which the judge turns on to witness identity (1.25 MB/s).
 
   The judge needs each of these once.
-- **What grows memory: live managed memory, not the log and not the hooks.**
-  - Silencing the log or removing the hooks leaves the peak where it was.
+- **What grows memory: not the log, not the hooks; at least partly live managed memory.**
+  - Silencing all but 0.44 MB/s of the console lowers the 16 s peak by about 8 % (2,109,272 against 2,282,452–2,353,932 KiB). Removing the SPI hooks changes nothing.
   - A 768 MiB managed-heap limit ends in out-of-memory at 6.36 s, 2 s after the IMU starts. So the live managed heap passes 768 MiB there: at least that much of the growth is retained, not garbage awaiting collection. How much of the later RSS is managed and how much native was not split.
-  - It starts with the IMU traffic. Our ICM-42688-P model's buffers are bounded (`models/renode/ICM42688P.cs`: `txBytes` cleared at L96/L152; `fifo` drained at L665).
+  - **It starts with the IMU traffic.** On main's bounds at load 4 (`e1-M-w2`, `-w3`, `-w4`), the peaks are 671,676, 685,488 and 749,512 KiB at 2, 3 and 4 s, then 809,484–828,252 at 5 s: nearly flat until the ICM is probed, then about 60–120 MiB per virtual second. Our ICM-42688-P model's buffers are bounded (`models/renode/ICM42688P.cs`: `txBytes` cleared at L96/L152; `fifo` drained at L665).
   - **What holds it is not found.** The candidates are Renode's SPI, DMA or unhandled-access paths. A heap dump is the next step (§5, D2).
 
 ### 1.4 A transient at the window's end
@@ -184,12 +185,12 @@ From source:
 | | prediction | measured |
 |---|---|---|
 | P1.1 | the wall bound binds first | **partly:** at load 22–28 the wall bound killed main's 5 s run. At load 3–10 the log budget binds first (9 s) |
-| P1.2 | 2.4–3.2 s wall per virtual second | **right at load 22–28** (19.1 s for 5 s; 30.7 s for 10 s); about 2 s at load 3–10 |
+| P1.2 | 2.4–3.2 s wall per virtual second | **wrong both ways:** 3.1–6.2 s per virtual second at load 22–28 (30.7 s and 19.1 s for 10 s and 5 s; 30.9 s for 5 s), about 2 s at load 3–10 |
 | P1.3 | the RSS table | **wrong past 5 s.** 5 s is in range only off-peak (514–526‰ against 520–650), and 726–881‰ under load. 10 s read 851–1,103‰ against 620–780; 20 s 1,853‰ against 780–980; 30 s 2,918‰ |
 | P1.4 | the log costs under 10 % | **wrong past 5 s:** 26 % at 5 s (load-confounded), 0 % at 8 s, 23 % at 20 s, 30 % at 30 s |
 | P1.5 | no-log fails the serial judge and keeps `memory` | **right** (`serial_options_unwritten`) |
 | P1.6 | the log stays under budget at 30 s | **wrong:** the budget is exhausted at 9 s |
 | P1.7 | the cap stop does not fire | **wrong:** it fired at 10 s on 900‰ |
 | P1.8 | propose 10 s | **wrong:** 5 s |
-| P1.9 | two cores raise the share | **right:** 600–624‰ against 514–526‰ |
+| P1.9 | two cores raise the share, because RSS follows wall time | **the share rose (600–624‰ against 514–526‰), but not by wall time:** wall moved about 1 s. The reason is wrong |
 | P2–P4 | | not run |

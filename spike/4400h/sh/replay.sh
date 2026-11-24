@@ -8,7 +8,7 @@
 #             stored console (gzipped), and Tviburi 1100's regmap.py after it, as Tviburi (v) (replay-ap.sh `logged`)
 #   NOHOOK=1  the CLI's SPI CFG2 write hooks dropped (the RSS cause, replay against replay)
 #   GCLIMIT=HEX  DOTNET_GCHeapHardLimit for Renode: is the growth live memory or uncollected garbage?
-#   SILENCE=1 `logLevel 3` before the run: the flood's cost on RSS, replay against replay
+#   SILENCE=1 `logLevel 3` before the run; SILENCE=2 also each device's and spi2's own level: the flood's cost on RSS
 # Always: USART1's TX into OUT/tx.bin (UartFileBackend), and the storage sectors' first words read after.
 # Usage: replay.sh CAPDIR OUTDIR     cost line in OUTDIR/cost.txt (tree VmRSS peak at 100 ms, as replay-ap.sh)
 set -u
@@ -34,7 +34,8 @@ for i in "${!args[@]}"; do
   [ "${args[$i]}" = "-e" ] || continue
   c=${args[$((i + 1))]}
   pre="sysbus.usart1 CreateFileBackend @$O/tx.bin true; "
-  [ "${SILENCE:-0}" = 1 ] && pre="${pre}logLevel 3; "   # (1)'s cause: only ERROR lines from the run on
+  [ "${SILENCE:-0}" = 1 ] && pre="${pre}logLevel 3; "   # (1)'s cause: global ERROR level (per-device -1 levels survive it)
+  [ "${SILENCE:-0}" = 2 ] && pre="${pre}logLevel 3; logLevel 3 sysbus.spi2.spi2mux.u5; logLevel 3 sysbus.spi2.spi2mux; logLevel 3 sysbus.spi1.spi1mux.u4; logLevel 3 sysbus.spi1.spi1mux; logLevel 3 sysbus.i2c1.u7; "   # and every device line (spi2's ERROR stays: ERROR is the top level)
   [ "${LOG:-0}" = 1 ] && { sed -i 's/^collapse-repeated-log-entries = True/collapse-repeated-log-entries = False/' "$cfg"; pre="${pre}sysbus LogAllPeripheralsAccess true; "; }
   # NOHOOK=1: drop the CLI's two SPI write hooks (foreign.rs cfg2_hook), (1)'s cause: does RSS follow them?
   [ "${NOHOOK:-0}" = 1 ] && c=$(python3 -I -c 'import re,sys; print(re.sub(r"sysbus SetHookBeforePeripheralWrite sysbus\.spi[0-9] \"[^\"]*\"; ", "", sys.argv[1]), end="")' "$c")

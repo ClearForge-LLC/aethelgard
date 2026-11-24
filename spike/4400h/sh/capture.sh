@@ -2,10 +2,11 @@
 # AET-WO-4400h (2)-(4): one `simulate --foreign` by the patched CLI on the held ELF, with each Renode
 # process that loads an ELF captured as Tviburi's spike/1150/harness/capture-foreign.sh does it (argv
 # bytes, cwd, a copy of Renode's cwd, the CLI's tool scratch under HOME). Inside the pinned tools image.
-# Usage: capture.sh NAME WINDOW    -> /cache/cap/NAME
+# Usage: capture.sh NAME WINDOW [SPEC] [ELF]    -> /cache/cap/NAME   (default: sentinel-02-own and its CI ELF)
 set -u
 O=/cache/cap/$1; w=$2; rm -rf "$O"; mkdir -p "$O"
-spec=crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
+spec=${3:-crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json}
+elf=${4:-/cache/boards/sentinel-02/arducopter.elf}
 A=target/debug/aethelgard
 (
   declare -A seen; n=0
@@ -23,9 +24,9 @@ A=target/debug/aethelgard
   done
 ) &
 wp=$!
-$A generate --spec $spec --out "$O/gen" > "$O/generate.json"
-AET4400H_WALL_S=600 AET4400H_RSS_KIB=6291456 $A simulate --platform "$O/gen/board/sentinel-02-own.repl" --spec $spec \
-  --firmware /cache/boards/sentinel-02/arducopter.elf --foreign "$w" > "$O/verdict.json" 2> "$O/stderr.txt"
+$A generate --spec "$spec" --out "$O/gen" > "$O/generate.json"
+AET4400H_WALL_S=600 AET4400H_RSS_KIB=6291456 $A simulate --platform "$(ls "$O"/gen/board/*.repl | head -1)" --spec "$spec" \
+  --firmware "$elf" --foreign "$w" > "$O/verdict.json" 2> "$O/stderr.txt"
 echo "simulate exit $?" > "$O/index.txt"
 kill $wp
 ls "$O" >> "$O/index.txt"
