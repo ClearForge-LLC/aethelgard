@@ -104,6 +104,73 @@ impl RingRule {
     }
 }
 
+/// The supply gate's junction regions, as the router keeps them apart
+/// (`AET-WO-1324`, ruled 2026-11-24). `extract` prices each via of a net it
+/// judges with a junction region of cells ([`crate::supply`]), and refuses
+/// two that meet (`ViaRegionsOverlap`): its certified bound carries one
+/// flow per piece of copper, and a region's field is written for one hole.
+/// KiCad's DRC passes two such vias, so meeting regions are a limit of the
+/// supply model, not a fabrication fault; the router keeps the model
+/// unchanged by routing around that limit. Built only where the gate runs:
+/// the specification declares `power.drop_limits` and each stackup and
+/// tolerance input the gate reads. Every field is the specification's.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct JunctionRule {
+    /// The nets the gate judges, by the board's name: each limited domain
+    /// and `GND`, its return.
+    pub nets: Vec<String>,
+    /// `fab_tolerances.hole_size_plus_um`, `fab_tolerances.hole_position_um`
+    /// and `plating_min_um`, nm.
+    pub hole_plus_nm: i64,
+    pub hole_offset_nm: i64,
+    pub plating_nm: i64,
+}
+
+impl JunctionRule {
+    /// The rule a specification declares, or `None` where the gate does not
+    /// run: no drop limit, or any stackup or tolerance input the gate reads
+    /// undeclared (the gate refuses that by name, `SupplyInputUndeclared`,
+    /// and reads no board, so no routing moves for it).
+    pub fn of(spec: &Specification) -> Option<JunctionRule> {
+        let limits = spec.power.as_ref()?.drop_limits.as_ref()?;
+        if limits.is_empty() {
+            return None;
+        }
+        let st = &spec.board.stackup;
+        let fab = st.fab_tolerances.as_ref()?;
+        // the gate's other inputs (`supply::supplies`), each required
+        for read in [
+            &st.outer_copper_min_um,
+            &st.plane_copper_min_um,
+            &st.copper_temperature_max_c,
+            &fab.hole_size_minus_um,
+            &fab.track_width_permille,
+        ] {
+            read.as_ref()?;
+        }
+        let mut nets: Vec<String> = limits.iter().map(|l| l.domain.clone()).collect();
+        nets.push(crate::route::GROUND.to_owned());
+        Some(JunctionRule {
+            nets,
+            hole_plus_nm: nm(fab.hole_size_plus_um.as_ref()?.value),
+            hole_offset_nm: nm(fab.hole_position_um.as_ref()?.value),
+            plating_nm: nm(st.plating_min_um.as_ref()?.value),
+        })
+    }
+
+    /// The junction reach of a hole drilled `drill_nm`, as the gate prices
+    /// it ([`crate::supply::junction_reach`] at [`crate::supply::BETA_NM`]).
+    pub fn reach(&self, drill_nm: i64) -> i64 {
+        crate::supply::junction_reach(
+            drill_nm,
+            self.hole_plus_nm,
+            self.plating_nm,
+            crate::supply::BETA_NM,
+            self.hole_offset_nm,
+        )
+    }
+}
+
 /// The declared board, in nanometres.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stack {
@@ -161,6 +228,8 @@ pub struct Stack {
     /// Each declared IMU's seat, by reference (`AET-WO-4400d`): the gate
     /// holds the board's footprint to it ([`crate::route::declared`]).
     pub imus: Vec<(String, crate::schematic::Seat)>,
+    /// The supply gate's junction rule, where the gate runs.
+    pub junction: Option<JunctionRule>,
 }
 
 /// How a through-hole pad meets a fill of its own net.
@@ -391,6 +460,7 @@ impl Stack {
             // part's axes cited, and the embedded parts table parsed.
             imus: crate::schematic::seats(spec)
                 .expect("a validated specification's IMU seats are complete"),
+            junction: JunctionRule::of(spec),
         };
         // The ring rule (`AET-WO-1314`, ruling 6982875594 D1, D2): the
         // board's own via is sized by it; a thermal array's via, the
@@ -558,6 +628,7 @@ pub(crate) fn reference() -> Stack {
         joins: vec![],
         thermal: vec![],
         imus: vec![],
+        junction: None,
     }
 }
 

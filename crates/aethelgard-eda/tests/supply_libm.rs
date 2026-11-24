@@ -93,6 +93,7 @@ fn board4(parts: Vec<Part>) -> Board {
         joins: vec![],
         thermal: vec![],
         imus: vec![],
+        junction: None,
     };
     Board {
         outline: Rect {

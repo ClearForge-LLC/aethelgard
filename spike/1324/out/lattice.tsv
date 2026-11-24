@@ -1,0 +1,6 @@
+N	400	pitch_nm	2000000	wall_s	2.115	route_s	2.114	scan_s	1.970	seed_s	0.097	judge_s	0.006	other_s	0.042	work	27759	scan_pairs	383119800	seeds	2868411	segments	399	vias	0
+N	900	pitch_nm	2000000	wall_s	16.489	route_s	16.488	scan_s	16.216	seed_s	0.201	judge_s	0.016	other_s	0.055	work	63539	scan_pairs	4369544550	seeds	14553911	segments	899	vias	0
+N	1600	pitch_nm	2000000	wall_s	70.362	route_s	70.361	scan_s	69.662	seed_s	0.573	judge_s	0.039	other_s	0.087	work	113919	scan_pairs	24561919200	seeds	46033611	segments	1599	vias	0
+N	400	pitch_nm	2000000	wall_s	0.981	route_s	0.981	scan_s	0.931	seed_s	0.034	judge_s	0.003	other_s	0.014	work	27759	scan_pairs	383119800	seeds	2868411	index	2858436	segments	399	vias	0
+N	900	pitch_nm	2000000	wall_s	10.891	route_s	10.890	scan_s	10.669	seed_s	0.172	judge_s	0.013	other_s	0.037	work	63539	scan_pairs	4369544550	seeds	14553911	index	14531436	segments	899	vias	0
+N	1600	pitch_nm	2000000	wall_s	71.789	route_s	71.788	scan_s	71.053	seed_s	0.593	judge_s	0.039	other_s	0.103	work	113919	scan_pairs	24561919200	seeds	46033611	index	45993636	segments	1599	vias	0
