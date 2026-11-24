@@ -5007,7 +5007,7 @@ mod battery_sag {
 
     #[test]
     fn sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats() {
-        let spec = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+        let spec = "examples/sentinel-03.json";
         let elf = firmware(spec, "s03");
         let archive = scratch("s03-a").join("archive");
         let lines = campaign("scenarios/sentinel-03", &elf, &archive);

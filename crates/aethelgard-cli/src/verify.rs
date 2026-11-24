@@ -3116,7 +3116,7 @@ mod tests {
                    "masked": [], "subjects": subjects})
         };
         // Sentinel-03's VDD_5V: both ports.
-        let (spec, t) = solved("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+        let (spec, t) = solved("examples/sentinel-03.json");
         let rail = |d: &str| match stress(
             &spec,
             &t,

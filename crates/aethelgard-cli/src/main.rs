@@ -3498,7 +3498,7 @@ mod tests {
             drc_parts(Some(&unpaired), None, None)[0],
             Ran::off("drc.pairs", "diff_pairs")
         );
-        let powered = fixture("sentinel-03.json", |_| ());
+        let powered = fixture("../../../../examples/sentinel-03.json", |_| ());
         assert_eq!(
             drc_parts(Some(&powered), None, Some(0))[1],
             Ran::judged("drc.power", 0),

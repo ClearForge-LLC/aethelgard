@@ -250,7 +250,7 @@ fn a_control_wire_on_an_mcu_net_is_unbounded() {
 /// `twin_limits`, never in `validate`'s output).
 #[test]
 fn off_board_ends_are_unbounded_and_never_judged() {
-    let s03 = fixture("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+    let s03 = fixture("examples/sentinel-03.json");
     let all = walk(&s03);
     let n = |c: Class| all.iter().filter(|p| p.class == c).count();
     assert_eq!((n(Class::Connector), n(Class::TestPoint)), (16, 19));

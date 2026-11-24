@@ -71,10 +71,7 @@ const SCAR: [(&str, &[&str]); 26] = [
         "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json",
         &["SPI1", "SPI2"],
     ),
-    (
-        "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
-        &["SPI1", "SPI2"],
-    ),
+    ("examples/sentinel-03.json", &["SPI1", "SPI2"]),
     (
         "crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json",
         &["SPI1"],

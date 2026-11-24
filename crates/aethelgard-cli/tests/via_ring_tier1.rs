@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use common::verify::{root, scratch};
 use serde_json::{Value, json};
 
-const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const S03: &str = "examples/sentinel-03.json";
 
 fn run(args: &[&str]) -> (i32, Value) {
     let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))

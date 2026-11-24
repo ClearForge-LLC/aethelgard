@@ -1800,7 +1800,7 @@ fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
     let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).unwrap();
-    let spec_path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
+    let spec_path = root().join("examples/sentinel-03.json");
     let (outline, code, x) = bounded_gates(&spec_path, &base).unwrap();
     assert_eq!(code, Some(0), "extract: {x}");
     assert_eq!(x["verdict"], "pass", "extract: {x}");
@@ -1830,8 +1830,7 @@ fn each_size_sample_passes_every_gate_or_is_refused_by_name() {
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).unwrap();
     let fixture: Value = serde_json::from_str(
-        &fs::read_to_string(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json"))
-            .unwrap(),
+        &fs::read_to_string(root().join("examples/sentinel-03.json")).unwrap(),
     )
     .unwrap();
     for len in [2, 6, 8] {

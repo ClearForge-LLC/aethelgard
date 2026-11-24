@@ -54,10 +54,7 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// outside this work order's fence.
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger() {
-    let (code, v) = verify_fab_out(
-        "crates/aethelgard-cli/tests/fixtures/sentinel-03.json",
-        "scenarios/sentinel-03",
-    );
+    let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
     assert_eq!(code, Some(2), "{v}");
     assert_eq!(v["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{v}");
     assert!(
@@ -115,7 +112,7 @@ fn decoupling(path: &str) -> BTreeMap<String, u64> {
 fn a_regulator_s_output_capacitors_count_in_its_rail_s_decoupling() {
     let pins: [(&str, &[(&str, u64)]); 4] = [
         (
-            "tests/fixtures/sentinel-03.json",
+            "../../examples/sentinel-03.json",
             &[("VDD_3V3", 54_710_000), ("VDD_5V", 44_000_000)],
         ),
         (

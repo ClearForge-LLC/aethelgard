@@ -17,7 +17,7 @@ use std::sync::OnceLock;
 
 use serde_json::{Value, json};
 
-const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const S03: &str = "examples/sentinel-03.json";
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()

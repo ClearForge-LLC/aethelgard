@@ -541,7 +541,7 @@ mod tests {
     /// whatever the specification declares (`AET-WO-1609` §2).
     #[test]
     fn every_part_has_a_row_in_order() {
-        let s = spec("sentinel-03.json", |_| ());
+        let s = spec("../../../../examples/sentinel-03.json", |_| ());
         let gates: Vec<String> = parts(&s, 0, 0, 0, 0).into_iter().map(|r| r.gate).collect();
         assert_eq!(
             gates,
@@ -565,17 +565,17 @@ mod tests {
     #[test]
     fn the_supply_part_is_off_until_a_drop_limit_is_declared() {
         let off = Ran::off("extract.supply", "power.drop_limits");
-        let absent = spec("sentinel-03.json", |_| ());
+        let absent = spec("../../../../examples/sentinel-03.json", |_| ());
         assert!(absent.power.is_some() && absent.power.as_ref().unwrap().drop_limits.is_none());
         assert_eq!(row(&parts(&absent, 3, 0, 0, 0), "extract.supply"), off);
-        let empty = spec("sentinel-03.json", |v| {
+        let empty = spec("../../../../examples/sentinel-03.json", |v| {
             v["power"]["drop_limits"] = json!([]);
         });
         assert_eq!(row(&parts(&empty, 3, 0, 0, 0), "extract.supply"), off);
         let no_power = spec("sentinel-01-bench.json", |_| ());
         assert!(no_power.power.is_none());
         assert_eq!(row(&parts(&no_power, 3, 0, 0, 0), "extract.supply"), off);
-        let limited = spec("sentinel-03.json", |v| {
+        let limited = spec("../../../../examples/sentinel-03.json", |v| {
             v["power"]["drop_limits"] =
                 json!([{"domain": "VDD_3V3", "max_millivolts": 165, "source": "test"}]);
         });

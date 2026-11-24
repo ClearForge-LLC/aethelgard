@@ -16,7 +16,7 @@ use aethelgard_ir::{PinTable, SolvedTopology, Specification};
 use common::rename;
 use serde_json::{Value, json};
 
-const FIXTURE: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const FIXTURE: &str = "examples/sentinel-03.json";
 
 fn root() -> PathBuf {
     PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."))

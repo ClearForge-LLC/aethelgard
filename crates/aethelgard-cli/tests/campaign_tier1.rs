@@ -2855,10 +2855,7 @@ fn a_scenario_on_a_power_tree_passes_every_check_before_its_run() {
 /// Sentinel-03, as committed (`AET-WO-2304b` §1.2: a healthy 1 mΩ, each
 /// output's `esc` declared `none`).
 fn s03() -> Value {
-    serde_json::from_slice(
-        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap(),
-    )
-    .unwrap()
+    serde_json::from_slice(&fs::read(root().join("examples/sentinel-03.json")).unwrap()).unwrap()
 }
 
 fn sag(r: u64, from_boot_word_ns: i64) -> Value {

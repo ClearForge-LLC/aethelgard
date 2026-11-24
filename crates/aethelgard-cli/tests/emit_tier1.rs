@@ -958,7 +958,10 @@ fn every_motor_net_carries_its_declared_pull_down_in_the_emitted_files() {
         for board in MOTOR_BOARDS {
             let (fixtures, d, nets) = (&fixtures, &d, &nets);
             s.spawn(move || {
-                let path = fixtures.join(format!("{board}.json"));
+                let path = match board {
+                    "sentinel-03" => fixtures.join("../../../../examples/sentinel-03.json"),
+                    _ => fixtures.join(format!("{board}.json")),
+                };
                 let v: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
                 for m in v["motor_outputs"].as_array().unwrap() {
                     assert_eq!(m["pull"]["fitment"], "fitted", "{board}");

@@ -1565,7 +1565,7 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
 fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
     let _turn = beside_others();
     let dir = scratch("2310-deck");
-    let spec = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+    let spec = "examples/sentinel-03.json";
     let generated = dir.join("gen");
     let (code, out) = aethelgard(&[
         "generate",

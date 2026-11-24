@@ -144,7 +144,7 @@ fn the_schematic_emitter_refuses_a_pin_device_by_reference_and_part() {
 #[test]
 fn a_power_sense_input_is_not_generated() {
     let bytes = std::fs::read(format!(
-        "{}/tests/fixtures/sentinel-03.json",
+        "{}/../../examples/sentinel-03.json",
         env!("CARGO_MANIFEST_DIR")
     ))
     .unwrap();

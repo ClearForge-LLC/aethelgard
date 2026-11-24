@@ -918,7 +918,7 @@ fn a_board_without_test_points_states_no_probe() {
 
 /// Sentinel-03's `fab_tolerances` block (cited, JLCPCB), the one the
 /// capacitance ladder needs (`AET-WO-1314`).
-const S03: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
+const S03: &str = "examples/sentinel-03.json";
 
 /// The reference with Sentinel-03's `fab_tolerances` copied in.
 fn with_tolerances(v: &mut Value) {

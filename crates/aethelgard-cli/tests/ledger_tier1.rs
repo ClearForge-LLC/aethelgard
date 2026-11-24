@@ -1196,8 +1196,8 @@ fn a_partial_entry_is_reported_completed_with_its_reason_emptied() {
 /// row outside its register and class.
 #[test]
 fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
-    let spec = spec_of("crates/aethelgard-cli/tests/fixtures/sentinel-03.json");
-    let (t, table) = fixture("sentinel-03");
+    let spec = spec_of("examples/sentinel-03.json");
+    let (t, table) = solve(&fs::read(root().join("examples/sentinel-03.json")).unwrap()).unwrap();
     let mut l = ledger::build(&t, &table).unwrap();
     assert_eq!(ledger::stale(&l, &spec), None);
     let missing = ledger::acknowledge(&mut l, &spec);
@@ -1270,8 +1270,7 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
 /// Table 10's limit at VDD = 0.
 #[test]
 fn every_unbounded_path_is_a_twin_limit_never_judged() {
-    let bytes =
-        fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03.json")).unwrap();
+    let bytes = fs::read(root().join("examples/sentinel-03.json")).unwrap();
     let spec: Specification = serde_json::from_slice(&bytes).unwrap();
     let (t, _) = solve(&bytes).unwrap();
     let rows = ledger::off_domain_rows(&spec, &t).unwrap();
