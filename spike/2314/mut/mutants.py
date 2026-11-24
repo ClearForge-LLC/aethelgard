@@ -23,7 +23,7 @@ M = [
     ("F6", C + "renode/foreign.rs", "if f.next().is_some() || !handlers.contains(&(n, handler)) {", "if f.next().is_some() {", T_BOOT),
     ("F7", C + "renode/foreign.rs", "        PANIC_MARK,\n        FAULT_MARK,\n", "        PANIC_MARK,\n", T_UNIT),
     ("F8", C + "renode/foreign.rs", "    c.extend(fault_hooks(faults));\n", "", T_BOOT),
-    ("F9", C + "renode/foreign.rs", "            .map_or(\"a fault\", |v| v.1);", "            .map_or(\"a fault\", |_| \"HardFault\");", T_BOOT),
+    ("F9", C + "renode/foreign.rs", "        .map_or(\"a fault\", |v| v.1);", "        .map_or(\"a fault\", |_| \"HardFault\");", T_BOOT),
     ("F10", C + "renode/foreign.rs", "    findings.extend(fault_finding(&text, faults));\n", "", T_BOOT),
     ("F11", C + "renode/foreign.rs", "from PC {stacked:#010x} (read from its stack frame at {frame:#010x});", "from PC {stacked:#010x};", T_BOOT),
     ("B1", C + "main.rs", "                findings.extend(renode::foreign::fault_finding(&out.text(), &r.faults));\n", "", T_BOOT),
