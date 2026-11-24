@@ -210,7 +210,21 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
     - Gm_crit exactly at 1.5 mA/V (16 MHz, CL 1 pF, ESR 37,104,895 mΩ, refused, against 37,104,894, which holds);
     - FAB-NOTES' sha line after a line that is not the specification's lead;
     - the pour's nearer-pad tie (the split factored into `pour::nearest` with a unit test).
-- **Gates:** PENDING (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (also with `with-tools`), `cargo test --workspace`, after `main` is merged).
+- **Gates on the merged head (`main` 1cb994c1 merged, with 1324's router):**
+  - `cargo fmt --all -- --check` passes.
+  - `cargo clippy --workspace --all-targets -- -D warnings` is clean, and so is `-p aethelgard-cli --features with-tools`.
+  - `cargo test --workspace`: 3,127 passed and 2 failed on the merge.
+    - One was 1324's `the_routers_junction_rule_is_on_where_the_gate_runs`, written against `main`'s JLCPCB Sentinel-03. It is re-pinned to OSH Park's tolerances (reach 282,126 nm, hand-checked by `junction_reach`), and the rule is on for Sentinel-03 as committed (D6's limit).
+    - Two tests wait on the dispatch (the bootstrap): `bench_board_tier1`'s specification binding, and its new `sentinel_03_s_bench_sheet_names_its_package_elf`.
+- **Sentinel-03's own `--fab-out` in the image, on the merged head:**
+  - It passes with readiness met. Every gate passes, the 11 scenarios run, and 19 files are written.
+  - The local ELF's sha256 is `6e4a81f2…`. BENCH.md binds to it, and the dispatch's package is held to it by the new tier-1 test.
+- **`fab/sentinel-03/BENCH.md` (8):** seven rows, one per condition acknowledged as "a bench row":
+  - the input path's drop;
+  - the supervisor's thresholds and delay;
+  - U10's and U11's temperature;
+  - the crystal's drive level and safety factor (AN2867 Rev 25 §3.5.2 and §3.8.3, Table 4: Sf ≥ 5).
+  - Each pass line is cited.
 - **Tier 2 in the image (16G, swap 0):**
   - The Sentinel-01 re-bind passed every gate. Only the binding moved, and `ORDERED.sha256` checks.
   - `against_fab_tier2` passed 3/3, the re-bind test included (1036 s). `four_layer_fab_tier2` passed 2/2 (453 s).
