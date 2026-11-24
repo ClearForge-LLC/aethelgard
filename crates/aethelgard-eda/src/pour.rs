@@ -45,22 +45,21 @@ enum Shape {
     Disk((i64, i64), i64),
 }
 
-fn segment_distance_sq(p: (i64, i64), a: (i64, i64), b: (i64, i64)) -> i128 {
-    let (px, py) = (i128::from(p.0), i128::from(p.1));
-    let (ax, ay) = (i128::from(a.0), i128::from(a.1));
-    let (bx, by) = (i128::from(b.0), i128::from(b.1));
-    let (dx, dy) = (bx - ax, by - ay);
+/// The distance from `p` to segment `ab`, nm, in floating point: board
+/// coordinates are under 2^31 nm, so it is good to far under 1 nm, and a
+/// capsule grown by 1 nm more ([`Shape::covers`]) errs only toward blocking.
+#[allow(clippy::cast_precision_loss)]
+fn segment_distance(p: (i64, i64), a: (i64, i64), b: (i64, i64)) -> f64 {
+    let f = |v: i64| v as f64;
+    let (dx, dy) = (f(b.0 - a.0), f(b.1 - a.1));
     let len = dx * dx + dy * dy;
-    let t_num = ((px - ax) * dx + (py - ay) * dy).clamp(0, len.max(0));
-    // The nearest point a + t·d, t = t_num / len, kept exact in i128.
-    if len == 0 {
-        return (px - ax).pow(2) + (py - ay).pow(2);
-    }
-    let qx = ax * len + t_num * dx;
-    let qy = ay * len + t_num * dy;
-    let ex = px * len - qx;
-    let ey = py * len - qy;
-    (ex * ex + ey * ey) / (len * len)
+    let t = if len == 0.0 {
+        0.0
+    } else {
+        ((f(p.0 - a.0) * dx + f(p.1 - a.1) * dy) / len).clamp(0.0, 1.0)
+    };
+    let (ex, ey) = (f(p.0 - a.0) - t * dx, f(p.1 - a.1) - t * dy);
+    (ex * ex + ey * ey).sqrt()
 }
 
 impl Shape {
@@ -85,9 +84,8 @@ impl Shape {
     fn covers(&self, p: (i64, i64)) -> bool {
         match *self {
             Shape::Rect(r) => p.0 >= r.x0 && p.0 <= r.x1 && p.1 >= r.y0 && p.1 <= r.y1,
-            Shape::Capsule(a, b, r) => {
-                segment_distance_sq(p, a, b) <= i128::from(r) * i128::from(r)
-            }
+            #[allow(clippy::cast_precision_loss)]
+            Shape::Capsule(a, b, r) => segment_distance(p, a, b) <= r as f64 + 1.0,
             Shape::Disk(c, r) => {
                 let (dx, dy) = (i128::from(p.0 - c.0), i128::from(p.1 - c.1));
                 dx * dx + dy * dy <= i128::from(r) * i128::from(r)
@@ -157,7 +155,6 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
     let stack = &board.stack;
     let half_diagonal = CELL_NM * 3 / 4;
     let neck = route::MIN_THICKNESS_NM / 2;
-    let margin = stack.clearance_nm + neck + half_diagonal;
     // Each pad: its centre, its net and its rectangle.
     let found: Vec<Option<((i64, i64), String, Rect)>> = pads
         .iter()
@@ -177,79 +174,91 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
     let mut layers: Vec<(String, String)> = stack.pours.clone();
     layers.extend(stack.planes.iter().cloned());
     let o = board.outline;
-    let edge = route::EDGE_NM + neck + half_diagonal;
     let w = usize::try_from((o.x1 - o.x0) / CELL_NM).unwrap_or(0);
     let h = usize::try_from((o.y1 - o.y0) / CELL_NM).unwrap_or(0);
+    // The fill's minimum width as an opening: the flood runs on the cells
+    // clear by half of it more (`core`), and the component it reaches is
+    // grown back by `DILATE` cells, under that half, inside the cells clear
+    // of every obstacle (`full`). A neck narrower than the width is never
+    // crossed, and no band the fill keeps is counted twice.
+    const DILATE: usize = 2;
     let mut areas: BTreeMap<usize, Vec<(String, u64)>> = BTreeMap::new();
     for (layer, fill_net) in &layers {
-        let mut g = Grid {
-            x0: o.x0,
-            y0: o.y0,
-            w,
-            h,
-            free: vec![true; w * h],
-        };
-        // The edge.
-        for j in 0..h {
-            for i in 0..w {
-                let c = g.centre(i, j);
-                if c.0 - o.x0 < edge || o.x1 - c.0 < edge || c.1 - o.y0 < edge || o.y1 - c.1 < edge
-                {
-                    g.free[j * w + i] = false;
-                }
-            }
-        }
         let outer = layer == "F.Cu" || layer == "B.Cu";
-        for part in &board.parts {
-            for k in &part.keepouts {
-                if k.layer.name() == layer.as_str() {
-                    g.block(&Shape::Rect(grow(k.rect, neck + half_diagonal)));
+        let raster = |extra: i64| {
+            let margin = stack.clearance_nm + extra + half_diagonal;
+            let edge = route::EDGE_NM + extra + half_diagonal;
+            let mut g = Grid {
+                x0: o.x0,
+                y0: o.y0,
+                w,
+                h,
+                free: vec![true; w * h],
+            };
+            for j in 0..h {
+                for i in 0..w {
+                    let c = g.centre(i, j);
+                    if c.0 - o.x0 < edge
+                        || o.x1 - c.0 < edge
+                        || c.1 - o.y0 < edge
+                        || o.y1 - c.1 < edge
+                    {
+                        g.free[j * w + i] = false;
+                    }
                 }
             }
-            for p in &part.pads {
-                let on_layer = p.drill_nm.is_some() || layer == "F.Cu";
-                if !on_layer {
-                    continue;
+            for part in &board.parts {
+                for k in &part.keepouts {
+                    if k.layer.name() == layer.as_str() {
+                        g.block(&Shape::Rect(grow(k.rect, extra + half_diagonal)));
+                    }
                 }
-                let own = p.net.as_deref() == Some(fill_net.as_str());
-                let solid = pads
-                    .iter()
-                    .any(|(r, n)| *r == part.reference && *n == p.number)
-                    || p.join == Some(crate::stack::Join::Solid);
-                if own && solid {
-                    continue;
-                }
-                if own {
-                    // A relief: its gap and spokes are not counted.
-                    g.block(&Shape::Rect(grow(
-                        p.rect,
-                        route::THERMAL_GAP_NM + neck + half_diagonal,
-                    )));
-                } else if outer || p.drill_nm.is_some() {
-                    g.block(&Shape::Rect(grow(p.rect, margin)));
-                }
-            }
-        }
-        if outer {
-            for s in &routed.segments {
-                if s.layer.name() == layer.as_str() && s.net != *fill_net {
-                    let r = stack.rule(&s.net).width_nm / 2 + margin;
-                    g.block(&Shape::Capsule(s.start, s.end, r));
+                for p in &part.pads {
+                    let on_layer = p.drill_nm.is_some() || layer == "F.Cu";
+                    if !on_layer {
+                        continue;
+                    }
+                    let own = p.net.as_deref() == Some(fill_net.as_str());
+                    // Read from the board: a pad the file joins solid.
+                    let solid = p.join == Some(crate::stack::Join::Solid);
+                    if own && solid {
+                        continue;
+                    }
+                    if own {
+                        // A relief: its gap and spokes are not counted.
+                        g.block(&Shape::Rect(grow(
+                            p.rect,
+                            route::THERMAL_GAP_NM + extra + half_diagonal,
+                        )));
+                    } else if outer || p.drill_nm.is_some() {
+                        g.block(&Shape::Rect(grow(p.rect, margin)));
+                    }
                 }
             }
-        }
-        for v in &routed.vias {
-            if v.net != *fill_net {
-                g.block(&Shape::Disk(v.at, stack.rule(&v.net).via_nm / 2 + margin));
-            }
-        }
-        for a in &routed.arrays {
-            if a.net != *fill_net {
-                for &at in &a.at {
-                    g.block(&Shape::Disk(at, a.via_nm / 2 + margin));
+            if outer {
+                for s in &routed.segments {
+                    if s.layer.name() == layer.as_str() && s.net != *fill_net {
+                        let r = stack.rule(&s.net).width_nm / 2 + margin;
+                        g.block(&Shape::Capsule(s.start, s.end, r));
+                    }
                 }
             }
-        }
+            for v in &routed.vias {
+                if v.net != *fill_net {
+                    g.block(&Shape::Disk(v.at, stack.rule(&v.net).via_nm / 2 + margin));
+                }
+            }
+            for a in &routed.arrays {
+                if a.net != *fill_net {
+                    for &at in &a.at {
+                        g.block(&Shape::Disk(at, a.via_nm / 2 + margin));
+                    }
+                }
+            }
+            g
+        };
+        let core = raster(neck);
+        let full = raster(0);
         // Each pad's component, seeded at the pad (F.Cu) or its thermal vias.
         for (k, f) in found.iter().enumerate() {
             let Some((centre, net, rect)) = f else {
@@ -271,37 +280,21 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
                 seeds.extend(a.at.iter().copied());
             }
             let mut seen = vec![false; w * h];
-            let mut stack_cells: Vec<usize> = seeds
+            let mut todo: Vec<usize> = seeds
                 .iter()
-                .filter_map(|&s| g.cell(s))
+                .filter_map(|&s| core.cell(s))
                 .map(|(i, j)| j * w + i)
-                .filter(|&c| g.free[c])
+                .filter(|&c| core.free[c])
                 .collect();
-            for &c in &stack_cells {
+            for &c in &todo {
                 seen[c] = true;
             }
-            let mut count: u64 = 0;
-            while let Some(c) = stack_cells.pop() {
+            while let Some(c) = todo.pop() {
                 let (i, j) = (c % w, c / w);
-                // Nearer this pad's centre than every other pad's, strictly.
-                let p = g.centre(i, j);
-                let d = |q: (i64, i64)| {
-                    let (dx, dy) = (i128::from(p.0 - q.0), i128::from(p.1 - q.1));
-                    dx * dx + dy * dy
-                };
-                let mine = d(*centre);
-                let nearer = found
-                    .iter()
-                    .enumerate()
-                    .filter(|(m, o)| *m != k && o.is_some())
-                    .all(|(_, o)| d(o.as_ref().map(|x| x.0).unwrap_or(*centre)) > mine);
-                if nearer {
-                    count += 1;
-                }
                 let mut push = |n: usize| {
-                    if g.free[n] && !seen[n] {
+                    if core.free[n] && !seen[n] {
                         seen[n] = true;
-                        stack_cells.push(n);
+                        todo.push(n);
                     }
                 };
                 if i > 0 {
@@ -315,6 +308,46 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
                 }
                 if j + 1 < h {
                     push(c + w);
+                }
+            }
+            // Grown back inside `full`, each cell once.
+            let mut counted = vec![false; w * h];
+            let reach = i64::try_from(DILATE).unwrap_or(0);
+            for c in (0..w * h).filter(|&c| seen[c]) {
+                let (i, j) = (c % w, c / w);
+                for dj in -reach..=reach {
+                    for di in -reach..=reach {
+                        if di * di + dj * dj > reach * reach {
+                            continue;
+                        }
+                        let (Ok(ni), Ok(nj)) = (
+                            usize::try_from(i64::try_from(i).unwrap_or(0) + di),
+                            usize::try_from(i64::try_from(j).unwrap_or(0) + dj),
+                        ) else {
+                            continue;
+                        };
+                        if ni < w && nj < h && full.free[nj * w + ni] {
+                            counted[nj * w + ni] = true;
+                        }
+                    }
+                }
+            }
+            let mut count: u64 = 0;
+            for c in (0..w * h).filter(|&c| counted[c]) {
+                // Nearer this pad's centre than every other pad's, strictly.
+                let p = full.centre(c % w, c / w);
+                let d = |q: (i64, i64)| {
+                    let (dx, dy) = (i128::from(p.0 - q.0), i128::from(p.1 - q.1));
+                    dx * dx + dy * dy
+                };
+                let mine = d(*centre);
+                if found
+                    .iter()
+                    .enumerate()
+                    .filter(|(m, o)| *m != k && o.is_some())
+                    .all(|(_, o)| o.as_ref().is_some_and(|x| d(x.0) > mine))
+                {
+                    count += 1;
                 }
             }
             // cells × (0.05 mm)² = mm² / 400, rounded down.

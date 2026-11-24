@@ -2365,22 +2365,16 @@ pub(crate) fn write_placed_at(
 ///
 /// [`Join::token`]: crate::stack::Join::token
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
-    // `AET-WO-4300k` (a): a buck's thermal pad joins the pours solid, so the
-    // copper `extract` measures is the copper its heat reaches.
-    if let Some(reference) = fp.property("Reference").map(str::to_owned)
-        && !stack.pours.is_empty()
-    {
-        let pads: Vec<String> = stack
-            .thermal
-            .iter()
-            .filter(|t| t.reference == reference)
-            .map(|t| t.pad.clone())
-            .collect();
+    // `AET-WO-4300k` (a), lean of Q2: on a board with thermal pours, every
+    // SMD pad on `GND` joins them solid (a buck's thermal pad among them), so
+    // the copper `extract` measures is the copper the heat reaches, with no
+    // relief gap round each pad.
+    if !stack.pours.is_empty() {
         for pad in fp.items_mut().into_iter().flatten() {
-            if pad.head() == Some("pad")
-                && pad.arg(1).is_some_and(|n| pads.iter().any(|p| p == n))
-                && let Some(items) = pad.items_mut()
-            {
+            let on_ground = pad.head() == Some("pad")
+                && pad.arg(2) == Some("smd")
+                && pad.child("net").and_then(|n| n.arg(1)) == Some(aethelgard_ir::GND);
+            if on_ground && let Some(items) = pad.items_mut() {
                 items.push(Sx::node("zone_connect", &["2"]));
             }
         }

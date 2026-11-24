@@ -71,7 +71,15 @@ fn refuse(kind: Refusal, id: &str, detail: String, citation: String) -> IrValida
 
 /// The reset's falling minimum, mV, and what sets it with its citation.
 pub fn reset_floor(spec: &Specification) -> Result<(u32, String), IrValidationError> {
-    let table = crate::power_parts::table()?;
+    reset_floor_against(spec, crate::power_parts::table()?)
+}
+
+/// [`reset_floor`] against `table`: the embedded one in every caller but a
+/// test, which holds a row with one limit changed.
+pub fn reset_floor_against(
+    spec: &Specification,
+    table: &crate::power_parts::PowerPartsTable,
+) -> Result<(u32, String), IrValidationError> {
     if let Some(s) = &spec.mcu.reset_supervisor {
         let row = table.get(&s.part).ok_or_else(|| {
             refuse(
@@ -203,12 +211,20 @@ pub fn check(
     spec: &Specification,
     checked: Option<&power::Checked>,
 ) -> Result<Vec<(String, String)>, IrValidationError> {
+    check_against(spec, checked, crate::power_parts::table()?)
+}
+
+/// [`check`] against `table` (see [`reset_floor_against`]).
+pub fn check_against(
+    spec: &Specification,
+    checked: Option<&power::Checked>,
+    table: &crate::power_parts::PowerPartsTable,
+) -> Result<Vec<(String, String)>, IrValidationError> {
     let Some(s) = &spec.mcu.reset_supervisor else {
         return Ok(Vec::new());
     };
     const RULE: &str = "AET-WO-4300k (9)";
-    let table = crate::power_parts::table()?;
-    let (reset_min, _) = reset_floor(spec)?;
+    let (reset_min, _) = reset_floor_against(spec, table)?;
     let row = table.get(&s.part).ok_or_else(|| {
         refuse(
             Refusal::PowerPartUnknown,
