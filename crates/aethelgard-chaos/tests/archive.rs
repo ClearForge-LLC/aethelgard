@@ -411,10 +411,10 @@ fn an_unknown_version_is_refused() {
 #[test]
 fn an_older_trace_is_refused_with_what_changed_since_it() {
     use aethelgard_chaos::event::{TRACE_CHANGES, TRACE_VERSION, changes_since};
-    assert_eq!(TRACE_VERSION, 19);
+    assert_eq!(TRACE_VERSION, 20);
     assert_eq!(TRACE_CHANGES.last().map(|c| c.version), Some(TRACE_VERSION));
     let versions: Vec<u64> = TRACE_CHANGES.iter().map(|c| c.version).collect();
-    assert_eq!(versions, (2..=19).collect::<Vec<_>>());
+    assert_eq!(versions, (2..=20).collect::<Vec<_>>());
     let at = 1 + 1 + "aethelgard-trace".len();
     let refused = |found: u8| {
         let mut trace = header_bytes();
@@ -422,7 +422,7 @@ fn an_older_trace_is_refused_with_what_changed_since_it() {
         let dir = commit_raw(&format!("since-v{found}"), &trace, 0, [0; 32]);
         replay_dir(&dir).expect_err("refused")
     };
-    for (found, want) in [(14u8, vec![15, 16, 17, 18, 19]), (18, vec![19])] {
+    for (found, want) in [(14u8, vec![15, 16, 17, 18, 19, 20]), (19, vec![20])] {
         let e = refused(found);
         let E::UnknownVersion {
             item: "header",
@@ -438,7 +438,7 @@ fn an_older_trace_is_refused_with_what_changed_since_it() {
         let text = e.to_string();
         assert!(
             text.starts_with(&format!(
-                "unknown format version {found} in header; this reader is version 19, and since then: {} (",
+                "unknown format version {found} in header; this reader is version 20, and since then: {} (",
                 found + 1
             )),
             "{text}"
@@ -456,24 +456,29 @@ fn an_older_trace_is_refused_with_what_changed_since_it() {
             .contains("since then: 19 (AET-WO-2310)")
     );
     assert!(
+        refused(19)
+            .to_string()
+            .contains("since then: 20 (AET-WO-4400i)")
+    );
+    assert!(
         refused(14)
             .to_string()
             .contains("since then: 15 (AET-WO-2304b)")
     );
-    let e = refused(20);
+    let e = refused(21);
     assert!(
         matches!(
             e,
             E::UnknownVersion {
                 item: "header",
-                found: 20,
+                found: 21,
                 changes: [],
             }
         ),
         "{e:?}"
     );
-    assert_eq!(e.to_string(), "unknown format version 20 in header");
-    assert!(changes_since(19).is_empty() && changes_since(20).is_empty());
+    assert_eq!(e.to_string(), "unknown format version 21 in header");
+    assert!(changes_since(20).is_empty() && changes_since(21).is_empty());
 }
 
 /// A header with `tools`, `[name, version, [] or [sha256]]` each, as
@@ -1058,4 +1063,84 @@ fn a_two_mebibyte_manifest_is_refused_by_name() {
         replay_dir(&dir),
         Err(E::ManifestTooLarge { limit }) if limit == 1 << 20
     ));
+}
+
+/// `AET-WO-4400i`: a foreign run's records (kinds 38 to 40) round-trip in
+/// parts under the event bound, each refuses its malformed shapes, and a
+/// campaign run never carries one.
+#[test]
+fn a_foreign_runs_records_round_trip_in_parts_and_refuse_their_bad_shapes() {
+    use aethelgard_chaos::record::{FOREIGN_PART_BYTES, FOREIGN_PART_STIMULI, Record};
+    let input = |part, parts, file: Vec<u8>| Record::ForeignInput {
+        label: "CONSOLE".into(),
+        peripheral: "USART1".into(),
+        spacing_ns: 100_000,
+        part,
+        parts,
+        file,
+    };
+    let stimuli = |part, parts, n: usize| Record::Stimuli {
+        part,
+        parts,
+        entries: (0..n as u64)
+            .map(|k| (k * 83_300_000, "i2c1.u7".into(), "Pressure".into(), "101325.080".into()))
+            .collect(),
+    };
+    let capture = |part, parts, bytes: Vec<u8>| Record::SerialCaptured {
+        label: "CONSOLE".into(),
+        end_ns: 5_000_000_000,
+        part,
+        parts,
+        bytes,
+    };
+    let records = vec![
+        input(0, 2, vec![b'{'; FOREIGN_PART_BYTES]),
+        input(1, 2, b"}".to_vec()),
+        stimuli(0, 1, FOREIGN_PART_STIMULI),
+        capture(0, 2, vec![0xFD; FOREIGN_PART_BYTES]),
+        capture(1, 2, Vec::new()),
+    ];
+    assert_eq!(
+        records.iter().map(Record::kind).collect::<Vec<_>>(),
+        [38, 38, 39, 40, 40]
+    );
+    let events: Vec<Event> = records
+        .iter()
+        .cloned()
+        .map(|record| Event::Record {
+            timestamp: record.timestamp(5_000_000_000),
+            record,
+        })
+        .collect();
+    let (dir, _) = write_run("foreign-roundtrip", 10, &events);
+    assert_eq!(replay_dir(&dir).unwrap().state.records, records);
+    for r in &records {
+        assert_eq!(Record::from_fields(r.kind(), &r.fields()).as_ref(), Some(r));
+    }
+    // Each shape the reader refuses.
+    for (bad, why) in [
+        (input(2, 2, b"x".to_vec()), "part"),
+        (input(0, 1, Vec::new()), "part"),
+        (input(0, 1, vec![0; FOREIGN_PART_BYTES + 1]), "part"),
+        (stimuli(0, 1, FOREIGN_PART_STIMULI + 1), "part"),
+        (capture(1, 1, Vec::new()), "part"),
+        (capture(0, 1, vec![0; FOREIGN_PART_BYTES + 1]), "part"),
+    ] {
+        let e = bad.check().expect_err(why);
+        assert!(e.contains("part"), "{e}");
+    }
+    let unordered = Record::Stimuli {
+        part: 0,
+        parts: 1,
+        entries: vec![
+            (2, "d".into(), "p".into(), "1".into()),
+            (1, "d".into(), "p".into(), "1".into()),
+        ],
+    };
+    assert_eq!(unordered.check(), Err("a run's stimuli are not in time order"));
+    // A campaign run carrying one is refused by its rules.
+    assert_eq!(
+        aethelgard_chaos::campaign::check_run(&records).unwrap_err(),
+        "a foreign run's record (kinds 38 to 40) is not a campaign's"
+    );
 }
