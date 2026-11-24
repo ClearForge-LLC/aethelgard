@@ -2189,6 +2189,27 @@ fn simulate_with(
         }
         _ => None,
     };
+    // The input's timeline, a script in the scratch, and the port's capture,
+    // both made before any tool runs, so the first hand-over seals them with
+    // the rest of the scratch: root writes nowhere a tool has had.
+    let timeline = match (&declared, &ready) {
+        (Some((d, _)), Some((_, r))) => {
+            let capture = capture_dir(&scratch, "capture-input")?;
+            let script = scratch.tool.join("input.resc");
+            fs::write(
+                &script,
+                renode::foreign::timeline(d, &capture, r.virtual_ns),
+            )
+            .map_err(|e| {
+                run::Stop::tool_error(
+                    "aethelgard",
+                    format!("cannot write the input's timeline: {e}"),
+                )
+            })?;
+            Some((script, capture))
+        }
+        _ => None,
+    };
     // The analog pre-pass runs before Renode is looked for, and its fault
     // decision fixes the platform the boot loads (AET-WO-2200 §1.4).
     let analog = match &ready {
@@ -2354,25 +2375,6 @@ fn simulate_with(
             }
         }
     }
-    // The input's timeline, a script in the scratch, and the port's capture.
-    let timeline = match (&declared, &ready) {
-        (Some((d, _)), Some(r)) => {
-            let capture = capture_dir(&scratch, "capture-input")?;
-            let script = scratch.tool.join("input.resc");
-            fs::write(
-                &script,
-                renode::foreign::timeline(d, &capture, r.virtual_ns),
-            )
-            .map_err(|e| {
-                run::Stop::tool_error(
-                    "aethelgard",
-                    format!("cannot write the input's timeline: {e}"),
-                )
-            })?;
-            Some((script, capture))
-        }
-        _ => None,
-    };
     let commands = match (&plan, foreign) {
         (Some(plan), Some(_)) => renode::foreign::commands(
             plan,
@@ -2492,21 +2494,32 @@ fn simulate_with(
     if let (Some(report), Some((d, archive)), Some((_, capture)), Some(r)) =
         (foreign_report.as_mut(), &declared, &timeline, &ready)
     {
+        // Read beneath its directory, never through a link the tool made,
+        // and bounded: a capture past the bound is neither judged nor
+        // archived, since replay would refuse it.
+        let max = aethelgard_chaos::record::MAX_FOREIGN_BYTES as u64;
         let path = capture.join(format!("{}.bin", d.renode));
-        let captured = match fs::read(&path) {
-            Ok(bytes) => bytes,
+        let (captured, whole) = match firmware::read_beneath(capture, &path, max) {
+            Ok(bytes) if bytes.len() as u64 <= max => (bytes, true),
+            Ok(_) => {
+                findings.push(verdict::Finding::plain(
+                    renode::foreign::CAPTURE_UNREADABLE,
+                    format!("{}'s transmission is past {max} bytes", d.peripheral),
+                ));
+                (Vec::new(), false)
+            }
             Err(e) => {
                 findings.push(verdict::Finding::plain(
                     renode::foreign::CAPTURE_UNREADABLE,
                     format!("{}'s transmission could not be read: {e}", d.peripheral),
                 ));
-                Vec::new()
+                (Vec::new(), false)
             }
         };
         let (witness, more) = renode::foreign::witness_report(&captured, &d.parsed)?;
         findings.extend(more);
         let run_id = match (archive, &out.ended) {
-            (Some(dir), ended) if !matches!(ended, run::Ended::Bounded(_)) => {
+            (Some(dir), ended) if whole && !matches!(ended, run::Ended::Bounded(_)) => {
                 Some(renode::foreign::archive(
                     dir,
                     d,
@@ -2514,7 +2527,17 @@ fn simulate_with(
                     &r.firmware.sha256,
                     &r.specification_sha256,
                     &input.sha256,
-                    &version,
+                    // As a campaign's header names them (`AET-WO-2205` §1.1).
+                    vec![
+                        (
+                            aethelgard_chaos::campaign::ENGINE.to_owned(),
+                            env!("CARGO_PKG_VERSION").to_owned(),
+                        ),
+                        (
+                            aethelgard_chaos::campaign::RENODE.to_owned(),
+                            build.clone().unwrap_or_else(|| version.clone()),
+                        ),
+                    ],
                     r.virtual_ns,
                 )?)
             }

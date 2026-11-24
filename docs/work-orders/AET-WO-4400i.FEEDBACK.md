@@ -91,6 +91,35 @@ Nothing labelled `belt-and-suspenders:` was touched.
 - On `sentinel-02-own`: `U5: the parts table's witness stimulus (X 0, Y 1, Z 0 g) is not at rest by its declared orientation (X 0, Y 0, Z 1 g)`.
 - This adds a field to every such foreign verdict. No committed verdict holds one, and CI's positive case gains a check reading it.
 
+**F14. Found in the review before the push, each fixed with a test and a mutant:**
+- **A root write into the tool's scratch after it was handed over.**
+  - The timeline file and the capture directory were made after Renode's first invocation (`--version`). By then the CLI, as root under CI's uid boundary, has handed the scratch to the tool uid, and "root acts there by no path" (`run.rs` `hand_over`).
+  - Under the boundary that was a root path write where the tool could have planted a link.
+  - Both are now made as soon as the input is declared, before any tool, and sealed with the rest. The capture is read with `firmware::read_beneath` (never through a link, bounded) as the generated path reads its own.
+  - Furnace cannot run the boundary: rootless podman gives `uid_boundary_unmet: user_namespace`. The CI cases were run as container root (`img.sh` `ROOT=1`), and they pass. The boundary itself is CI's first test.
+- **`ARMING_REQUIRE` 0.5 removed the checks past the guard.**
+  - ArduPilot stores an integer parameter as the value plus 0.01 away from zero, truncated (`AP_Param::set_float`, `AP_Param.cpp`:2234–2263). So ±0.5 is stored as 0.
+  - `InputSkipsChecks` now judges the integer ArduPilot would store (`mavlink::stored`): `ARMING_REQUIRE` refused when it would be 0, `ARMING_SKIPCHK` when it would not be.
+  - The pymavlink vectors at ±0.5 and the 0.995 boundary are tested; mutants m36 and m37.
+- **`replay`'s `verdict` was the input's witness, not the run's.** The trace holds the input, the stimuli and the transmission, not the run's other findings, so a run that failed on a fault replayed as `pass`. The field is now `input_verdict`, documented as what it is.
+- **The archive header named only `renode` and its version.** It now names the engine and the Renode build, as a campaign's header does (`AET-WO-2205` §1.1). Replay prints the artifacts and the tools.
+- **A capture past `MAX_FOREIGN_BYTES` would have been archived, and then refused by replay.** It is now `foreign_capture_unreadable` and is not archived, as a missing capture is.
+- **Refusals that had no test:**
+  - `MalformedMessageTable` and `MalformedRestTable` (the parsers now take their text, as `dma_rows` does);
+  - `RestNoiseUndeclared` (`rest::stimuli_with`, with the noise table emptied);
+  - `foreign_capture_unreadable`;
+  - replay's part order, early count, other-port and port-versus-record reasons;
+  - the chaos records' label and spacing checks.
+
+  Still untested, named:
+  - `RestUnmodelled`: unreachable with today's models; each IMU model has all three axes, and the BMP581 has pressure;
+  - replay's over-bounds reason: needs an archive over 1 MiB, which the writer no longer makes.
+
+**F15. CI.**
+- `ardupilot-image.yml` runs `ci/foreign-judge.sh` on this PR (paths `crates/**` and the script).
+- The ELF its added cases were checked against locally (`5eace4ca`) is main `29b3a97d`'s, from before `AET-WO-4410` changed sentinel-02's hwdef. CI builds its own, so CI's run is their first on that ELF.
+- The mid-script `run_spec=` lines are per-call prefixes, so the added block sees the script's own `spec`, `platform`, `elf` and `window`.
+
 **F13. Kit facts for the next builder:**
 - A Renode write hook on a peripheral displaces `LogPeripheralAccess`'s write lines for it (measured, `spike/4400i` §Inputs).
 - The CLI capture's first process is the reaper, not Renode.
@@ -100,13 +129,16 @@ Nothing labelled `belt-and-suspenders:` was touched.
 
 Run locally in the pinned tools image, on the branch with main `2cbbb354` merged:
 - `cargo fmt --all -- --check`: clean. `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- **`cargo test --workspace --no-fail-fast`:** 3,090 passed. One failed, `workspace_shape::twin_has_only_its_known_files_keys_and_dependencies`, on the twin's new files. It is fixed (F5), and the three changed crates were then run again in full: 1,610 passed, 0 failed.
-- **CI guards:** `ci/route.sh check ci/docs-tests.tsv`, `ci/test-route.sh` and `ci/test-shard.sh` pass. `ci/shard.sh build` and `ci/shard.sh plan` in the image: 12 shards, guard ok, 3,345 test names (28 new).
-- **`ci/foreign-judge.sh`:** its added cases, run on `sentinel-02-own`'s CI ELF (`5eace4ca`) with a trimmed copy that keeps the script's setup and positive case. All pass, the not-at-rest check on the positive run included. The other existing cases need CI's `noimu`, `four-port` and `udf` ELFs, which are not on Furnace at this main; they run in CI.
+- **`cargo test --workspace --no-fail-fast`:** 3,090 passed. One failed, `workspace_shape::twin_has_only_its_known_files_keys_and_dependencies`, on the twin's new files. It is fixed (F5).
+- **After the review's fixes (F14),** the three changed crates (`aethelgard-twin`, `-chaos`, `-cli`) were run again in full: 1,614 passed, 0 failed.
+- **CI guards:** `ci/route.sh check ci/docs-tests.tsv`, `ci/test-route.sh` and `ci/test-shard.sh` pass. `ci/shard.sh build` and `ci/shard.sh plan` in the image: 12 shards, guard ok, 3,349 test names.
+- **`ci.yml`'s package step,** run in the image with the network, `jq` replaced by an equivalent Python line: every crate packages with every include target inside, under 10 MiB, and the CLI builds from the packages alone, offline. The examples validate.
+- **`ci/foreign-judge.sh`:** its added cases, run on `sentinel-02-own`'s CI ELF (`5eace4ca`, F15) with a trimmed copy that keeps the script's setup and positive case. All pass, also as container root (`uid_boundary` unmet on Furnace: `user_namespace`). The other existing cases need CI's `noimu`, `four-port` and `udf` ELFs; they run in CI.
 
 ## Mutants
 
-`spike/4400i/mutants/`: 34 mutants, one per guard this work order adds, each run against the suite it lives in. All are killed:
-- **33 by `run.sh`** over `mutants.tsv`.
-- **m14 survived on the first pass.** It found the redundant "echoed" guard, which was removed with its mutant; m13 was re-pointed at the guard that remains.
-- **m34, run by hand against Renode:** the rest's data witnesses dropped from the judge. `input-arm` fails `i2c_transaction_unwitnessed`.
+`spike/4400i/mutants/`: one mutant per guard this work order adds, each run against the suite it lives in.
+- **`run.sh` over `mutants.tsv`:** 41 mutants, all killed (`result-final.txt`). Two needed attention:
+  - **m14** survived the first pass. It found the redundant "echoed" guard, which was removed with its mutant; m13 was re-pointed at the guard that remains.
+  - **m37** survived until the 0.995 boundary was tested.
+- **m34**, run by hand against Renode: the rest's data witnesses dropped from the judge. `input-arm` fails `i2c_transaction_unwitnessed`.

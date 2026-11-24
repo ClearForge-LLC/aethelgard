@@ -14,7 +14,11 @@ case $1 in
 esac
 exec 9>"$CACHE/kit/container.lock"; flock 9
 echo "$(date -u -Is) image=$IMAGE mem=${MEM:-4G} cmd: $2" >> "$CACHE/kit/caps.log"
-exec nice -n 10 ~/bin/capped-run --mem "${MEM:-4G}" --tasks 8192 -- --rm --userns=keep-id --user "$(id -u):$(id -g)" --network none \
+# ROOT=1: the container's root (rootless podman: this uid on the host), as CI runs the CLI, so its uid boundary engages.
+who=(--userns=keep-id --user "$(id -u):$(id -g)"); [ "${ROOT:-0}" = 1 ] && who=()
+# NET=1: the network (cargo package reads the crates.io index); otherwise none.
+net=(--network none); [ "${NET:-0}" = 1 ] && net=()
+exec nice -n 10 ~/bin/capped-run --mem "${MEM:-4G}" --tasks 8192 -- --rm "${who[@]}" "${net[@]}" \
   -v "$REPO:/repo" -v "$CACHE:/cache" -v /home/forge/aethelgard-4400i/spike/4400i:/spike:ro --tmpfs "/run/user/$(id -u):rw,mode=0700,U" \
   -e CARGO_HOME=/cache/cargo-home -e CARGO_TARGET_DIR=/repo/target -e HOME=/cache/home -w /repo \
   "$IMAGE" bash -c "export PATH=/usr/local/cargo/bin:\$PATH; mkdir -p /cache/home; $2"

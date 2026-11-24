@@ -2467,7 +2467,7 @@ pub fn archive(
     firmware_sha256: &str,
     specification_sha256: &str,
     platform_sha256: &str,
-    renode: &str,
+    tools: Vec<(String, String)>,
     virtual_ns: u64,
 ) -> Result<String, Stop> {
     use aethelgard_chaos::event::{Event, Header};
@@ -2488,7 +2488,7 @@ pub fn archive(
             ("platform".to_owned(), platform),
             ("specification".to_owned(), spec),
         ],
-        tools: vec![("renode".to_owned(), renode.to_owned())],
+        tools,
         tool_sha256: Vec::new(),
     };
     use aethelgard_chaos::record::{FOREIGN_PART_BYTES, FOREIGN_PART_STIMULI};
@@ -2560,14 +2560,17 @@ pub fn archive(
 }
 
 /// What `replay` prints of a foreign run (ruling D6, R1): re-judged from the
-/// archive alone, with no file and no Renode.
+/// archive alone, with no file and no Renode. `input_verdict` is the input's
+/// witness re-judged (`fail` with a `foreign_param_rejected`): the trace holds
+/// the input, the stimuli and the transmission, not the run's other findings,
+/// so it is not the run's verdict.
 #[derive(Serialize)]
 pub struct Replayed {
     pub ok: bool,
     pub check: &'static str,
     pub judge: &'static str,
     pub run_id: String,
-    pub verdict: &'static str,
+    pub input_verdict: &'static str,
     pub input_sha256: String,
     pub port: String,
     pub peripheral: String,
@@ -2575,6 +2578,8 @@ pub struct Replayed {
     pub stimuli: usize,
     pub witness: WitnessReport,
     pub findings: Vec<Finding>,
+    pub artifacts: std::collections::BTreeMap<String, String>,
+    pub tools: std::collections::BTreeMap<String, String>,
     pub event_count: u64,
     pub state_sequence_hash: String,
 }
@@ -2797,7 +2802,7 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
         ok: true,
         check: "replay",
         judge: JUDGE,
-        verdict: if findings.is_empty() { "pass" } else { "fail" },
+        input_verdict: if findings.is_empty() { "pass" } else { "fail" },
         run_id: crate::input::hex(replayed.header.run_id),
         input_sha256: crate::input::hex(sha),
         port: label.to_owned(),
@@ -2806,6 +2811,13 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
         stimuli,
         witness,
         findings,
+        artifacts: replayed
+            .header
+            .artifacts
+            .iter()
+            .map(|(n, h)| (n.clone(), crate::input::hex(h)))
+            .collect(),
+        tools: replayed.header.tools.iter().cloned().collect(),
         event_count: replayed.manifest.event_count,
         state_sequence_hash: crate::input::hex(replayed.manifest.state_hash),
     })

@@ -31,6 +31,10 @@ const SIGNED_HEARTBEAT: &str =
     "fd09010000ffbe000000000000000608000003bbd3000100000000003bc231d90cb8";
 const V1_HEARTBEAT: &str = "fe0900ffbe000000000006080000032842";
 
+const REQUIRE_0_5: &str = "fd17000000ffbe1700000000003f010141524d494e475f524551554952450000098f6c";
+const REQUIRE_M0_5: &str = "fd17000000ffbe170000000000bf010141524d494e475f524551554952450000092403";
+const SKIPCHK_0_5: &str = "fd17000000ffbe1700000000003f010141524d494e475f534b495043484b0000098b4c";
+
 /// The early-fill run's USART1 transmission: ArduPilot arms at 8.608 s.
 const EARLY_FILL_TX: &[u8] = include_bytes!("../../tests/data/4400i/early-fill-tx.bin");
 /// The reject run's: `PARAM_ERROR` for `AET_NOT_A_PARAM`.
@@ -149,6 +153,30 @@ fn a_skipped_or_removed_check_is_refused_and_its_harmless_value_is_not() {
         }
     ));
     assert!(check(&[one(SKIPCHK_0, 0), one(REQUIRE_1, 10_000_000)]).is_ok());
+    // Judged by what ArduPilot stores (`AP_Param::set_float`: 0.01 away from
+    // zero, truncated): ±0.5 is 0, so `ARMING_REQUIRE` ±0.5 removes the
+    // checks, and `ARMING_SKIPCHK` 0.5 skips none.
+    for s in [REQUIRE_0_5, REQUIRE_M0_5] {
+        let e = check(&[one(s, 0)]).unwrap_err();
+        assert!(
+            matches!(
+                e,
+                InputRefusal::SkipsChecks {
+                    param: "ARMING_REQUIRE",
+                    ..
+                }
+            ),
+            "{e}"
+        );
+    }
+    assert!(check(&[one(SKIPCHK_0_5, 0)]).is_ok());
+    assert_eq!(stored(0.98), Some(0));
+    assert_eq!(stored(-0.98), Some(0));
+    assert_eq!(stored(1.0), Some(1));
+    // The 0.01 decides here: 0.995 is stored as 1, -0.995 as -1.
+    assert_eq!(stored(0.995), Some(1));
+    assert_eq!(stored(-0.995), Some(-1));
+    assert_eq!(stored(f32::NAN), None);
 }
 
 #[test]
@@ -361,4 +389,26 @@ fn a_payload_longer_than_its_message_is_refused() {
             reason: Malformed::TooLong { len: 10, max: 9 }
         }
     );
+}
+
+#[test]
+fn a_malformed_message_row_is_refused_by_name() {
+    for row in [
+        "HEARTBEAT\t0\t50\t9\t9",
+        "HEARTBEAT\t0\t256\t9\t9\tin",
+        "HEARTBEAT\t0\t50\t0\t9\tin",
+        "HEARTBEAT\t0\t50\t10\t9\tin",
+        "HEARTBEAT\t0\t50\t9\t256\tin",
+        "HEARTBEAT\t0\t50\t9\t9\tboth",
+        "HEARTBEAT\tx\t50\t9\t9\tin",
+    ] {
+        let text: &'static str = Box::leak(row.to_owned().into_boxed_str());
+        assert!(
+            matches!(
+                messages_in(text),
+                Err(TwinError::MalformedMessageTable { .. })
+            ),
+            "{row}"
+        );
+    }
 }

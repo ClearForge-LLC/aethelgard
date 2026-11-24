@@ -1136,6 +1136,22 @@ fn a_foreign_runs_records_round_trip_in_parts_and_refuse_their_bad_shapes() {
         let e = bad.check().expect_err(why);
         assert!(e.contains("part"), "{e}");
     }
+    // A port's label and a spacing of 0.
+    let mut bad = input(0, 1, b"x".to_vec());
+    if let Record::ForeignInput { label, .. } = &mut bad {
+        *label = String::new();
+    }
+    assert!(bad.check().unwrap_err().contains("label"));
+    let mut bad = input(0, 1, b"x".to_vec());
+    if let Record::ForeignInput { spacing_ns, .. } = &mut bad {
+        *spacing_ns = 0;
+    }
+    assert!(bad.check().unwrap_err().contains("spacing"));
+    let mut bad = capture(0, 1, Vec::new());
+    if let Record::SerialCaptured { label, .. } = &mut bad {
+        *label = " ".into();
+    }
+    assert!(bad.check().unwrap_err().contains("label"));
     let unordered = Record::Stimuli {
         part: 0,
         parts: 1,

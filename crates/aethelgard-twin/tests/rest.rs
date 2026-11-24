@@ -63,3 +63,13 @@ fn a_witness_stimulus_that_is_not_at_rest_is_named() {
         ]
     );
 }
+
+/// A pressure part with no noise row has no rest: refused by name
+/// (`INV-06`), with the table emptied.
+#[test]
+fn a_barometer_with_no_noise_row_is_refused() {
+    let t = topology(true);
+    let checks = boot::expected(&t).unwrap().identity.checks;
+    let e = rest::stimuli_with(&t, &checks, 1_000_000_000, "# no rows\n").unwrap_err();
+    assert_eq!(e.kind(), "RestNoiseUndeclared", "{e}");
+}

@@ -3339,12 +3339,23 @@ fn input_run(
 /// then writes `capture` where the backend names, as Renode's would, and
 /// prints the good foreign transcript.
 fn toolbox_input(capture: &[u8], expected: Option<&str>) -> Dir {
+    toolbox_input_writing(Some(capture), expected)
+}
+
+/// As [`toolbox_input`], writing no capture at all with `None`.
+fn toolbox_input_writing(capture: Option<&[u8]>, expected: Option<&str>) -> Dir {
     let tb = Dir::new("tb-input");
     let out = tb.write(
         "renode.out",
         foreign_transcript(&good_foreign_log(), "0x00000800").as_bytes(),
     );
-    let bytes = tb.write("capture.bin", capture);
+    let write = match capture {
+        Some(c) => format!(
+            "/bin/cat '{}' > \"$cap\" || exit 91",
+            tb.write("capture.bin", c).display()
+        ),
+        None => String::new(),
+    };
     let check = match expected {
         Some(e) => format!(
             "/bin/sed 1d \"$script\" | /bin/cmp -s - '{}' || exit 90",
@@ -3363,10 +3374,9 @@ script=$(printf '%s' "$7" | /bin/sed -n 's/.*; include @\([^;]*\); echo .*/\1/p'
 cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$script")
 [ -n "$cap" ] || exit 92
 {check}
-/bin/cat '{bytes}' > "$cap" || exit 91
+{write}
 /bin/cat '{out}'
 "#,
-        bytes = bytes.display(),
         out = out.display()
     );
     common::stub::write_executable(&tb.0.join("renode"), body.as_bytes());
@@ -3651,7 +3661,15 @@ fn an_archived_input_run_replays_from_its_trace_alone() {
     assert_eq!(r.status.code(), Some(0), "{rv}");
     assert_eq!(rv["judge"], "foreign", "{rv}");
     assert_eq!(rv["run_id"], id, "{rv}");
-    assert_eq!(rv["verdict"], "pass", "{rv}");
+    assert_eq!(rv["input_verdict"], "pass", "{rv}");
+    assert!(
+        rv["tools"]["aethelgard"].is_string() && rv["tools"]["renode"].is_string(),
+        "{rv}"
+    );
+    assert_eq!(
+        rv["artifacts"]["input"], v["boot"]["input"]["input"]["sha256"],
+        "{rv}"
+    );
     assert_eq!(
         rv["input_sha256"], v["boot"]["input"]["input"]["sha256"],
         "{rv}"
@@ -3772,7 +3790,7 @@ fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
     );
     let (code, v) = replay(&good);
     assert_eq!(code, Some(0), "{v}");
-    assert_eq!(v["verdict"], "fail", "{v}");
+    assert_eq!(v["input_verdict"], "fail", "{v}");
     assert_eq!(v["findings"][0]["kind"], "foreign_param_rejected", "{v}");
     let (code, v) = replay(&write(
         2,
@@ -3784,10 +3802,70 @@ fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
         (Some(2), &Value::from("InputHashMismatch")),
         "{v}"
     );
-    let (code, v) = replay(&write(3, sha, vec![input, capture, stimuli]));
+    let (code, v) = replay(&write(
+        3,
+        sha,
+        vec![input.clone(), capture.clone(), stimuli.clone()],
+    ));
     assert_eq!(
         (code, &v["error"]["kind"]),
         (Some(2), &Value::from("NotAForeignRun")),
+        "{v}"
+    );
+    // Parts out of order, and a kind that ends before its count.
+    let part = |part, parts| {
+        let mut r = input.clone();
+        if let Record::ForeignInput {
+            part: p, parts: n, ..
+        } = &mut r
+        {
+            (*p, *n) = (part, parts);
+        }
+        r
+    };
+    for (seed, first, why) in [
+        (4u8, part(1, 2), "part 1 of 2 where part 0"),
+        (5, part(0, 2), "before its count"),
+    ] {
+        let (code, v) = replay(&write(
+            seed,
+            sha,
+            vec![first, stimuli.clone(), capture.clone()],
+        ));
+        assert_eq!(
+            (code, &v["error"]["kind"]),
+            (Some(2), &Value::from("NotAForeignRun")),
+            "{v}"
+        );
+        assert!(v["error"]["message"].as_str().unwrap().contains(why), "{v}");
+    }
+    // A capture on another port than the input's.
+    let mut other = capture.clone();
+    if let Record::SerialCaptured { label, .. } = &mut other {
+        *label = "RADIO".into();
+    }
+    let (code, v) = replay(&write(6, sha, vec![input.clone(), stimuli.clone(), other]));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("another port"),
+        "{v}"
+    );
+    assert_eq!(code, Some(2), "{v}");
+    // The file names CONSOLE; a record that says RADIO is not that input.
+    let mut relabelled = input;
+    if let Record::ForeignInput { label, .. } = &mut relabelled {
+        *label = "RADIO".into();
+    }
+    let mut capture = capture;
+    if let Record::SerialCaptured { label, .. } = &mut capture {
+        *label = "RADIO".into();
+    }
+    let (code, v) = replay(&write(7, sha, vec![relabelled, stimuli, capture]));
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("InputHashMismatch")),
         "{v}"
     );
 }
@@ -3805,4 +3883,39 @@ fn an_input_file_over_its_bound_is_refused() {
         v["error"]["message"].as_str().unwrap().contains("over the"),
         "{v}"
     );
+}
+
+/// `AET-WO-4400i`: a transmission the judge cannot read whole is a finding,
+/// and is not archived: none written, or past `MAX_FOREIGN_BYTES` (1 MiB),
+/// which replay would refuse.
+#[test]
+fn a_capture_that_cannot_be_read_whole_is_named_and_not_archived() {
+    for (capture, said) in [
+        (None, "could not be read"),
+        (Some(vec![0u8; (1 << 20) + 1]), "is past"),
+    ] {
+        let tb = toolbox_input_writing(capture.as_deref(), None);
+        let dir = Dir::new("nocapture");
+        let archive = dir.0.join("archive");
+        fs::create_dir(&archive).unwrap();
+        let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
+        let out = input_run(
+            &tb.0,
+            &input,
+            None,
+            &[OsStr::new("--archive"), archive.as_os_str()],
+        );
+        let v = report(&out);
+        assert_eq!(out.status.code(), Some(1), "{v}");
+        let f: Vec<&Value> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["kind"] == "foreign_capture_unreadable")
+            .collect();
+        assert_eq!(f.len(), 1, "{v}");
+        assert!(f[0]["message"].as_str().unwrap().contains(said), "{v}");
+        assert!(v["boot"]["input"].get("run_id").is_none(), "{v}");
+        assert_eq!(fs::read_dir(&archive).unwrap().count(), 0, "{v}");
+    }
 }

@@ -48,8 +48,8 @@ impl Stimulus {
 }
 
 /// A row of [`REST`]: (part, amplitude in mPa, period in ns, citation).
-fn rows() -> Result<Vec<(&'static str, u32, u64, &'static str)>, TwinError> {
-    REST.lines()
+fn rows(text: &'static str) -> Result<Vec<(&'static str, u32, u64, &'static str)>, TwinError> {
+    text.lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
             let bad = || TwinError::MalformedRestTable { row: l.to_owned() };
@@ -120,8 +120,18 @@ pub fn stimuli(
     checks: &[StepCheck],
     window_ns: u64,
 ) -> Result<Vec<Stimulus>, TwinError> {
+    stimuli_with(topology, checks, window_ns, REST)
+}
+
+/// [`stimuli`] with the noise table `rest` (in [`REST`]'s format).
+pub fn stimuli_with(
+    topology: &SolvedTopology,
+    checks: &[StepCheck],
+    window_ns: u64,
+    rest: &'static str,
+) -> Result<Vec<Stimulus>, TwinError> {
     let table = parts::table().map_err(TwinError::InvalidTopology)?;
-    let rows = rows()?;
+    let rows = rows(rest)?;
     let mut out = Vec::new();
     for check in checks.iter().filter(|c| c.step == StepKind::Data) {
         let part = topology
@@ -429,8 +439,26 @@ mod tests {
     }
 
     #[test]
+    fn a_malformed_noise_row_is_refused_by_name() {
+        for row in [
+            "BMP581\t0\t83300000\tcited",
+            "BMP581\t80\t83300001\tcited",
+            "BMP581\t80\t0\tcited",
+            "BMP581\t80\t83300000\t",
+            "BMP581\t80\t83300000",
+            "BMP581\tx\t83300000\tcited",
+        ] {
+            let text: &'static str = Box::leak(row.to_owned().into_boxed_str());
+            assert!(
+                matches!(rows(text), Err(TwinError::MalformedRestTable { .. })),
+                "{row}"
+            );
+        }
+    }
+
+    #[test]
     fn the_noise_row_parses_on_the_quantum() {
-        let r = rows().unwrap();
+        let r = rows(REST).unwrap();
         assert_eq!(r.len(), 1);
         assert_eq!((r[0].0, r[0].1, r[0].2), ("BMP581", 80, 83_300_000));
     }

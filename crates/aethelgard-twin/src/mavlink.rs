@@ -39,11 +39,23 @@ pub const SAFETY_ARMED: u8 = 0x80;
 /// The parameters whose setting skips or removes ArduPilot's arming checks
 /// (ruling D8): `ARMING_SKIPCHK` to anything but 0 (`AP_Arming.cpp`:195–201,
 /// default 0), and `ARMING_REQUIRE` to 0, "no requirements (arm
-/// immediately)" (`AP_Arming.cpp`:119–124).
+/// immediately)" (`AP_Arming.cpp`:119–124). Each judged by the integer
+/// ArduPilot would store ([`stored`]), so 0.5 is 0.
 pub const SKIP_CHECKS: [(&str, Refused); 2] = [
     ("ARMING_SKIPCHK", Refused::NonZero),
     ("ARMING_REQUIRE", Refused::Zero),
 ];
+
+/// The integer ArduPilot stores when an integer parameter is set to `value`:
+/// 0.01 added away from zero, then truncated; NaN and infinities are not
+/// stored at all (`AP_Param::set_float`, `AP_Param.cpp`:2234–2263).
+pub fn stored(value: f32) -> Option<i64> {
+    if !value.is_finite() {
+        return None;
+    }
+    let add = if value < 0.0 { -0.01f32 } else { 0.01f32 };
+    Some((value + add).trunc() as i64)
+}
 
 /// Which values of a [`SKIP_CHECKS`] parameter are refused.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,8 +86,12 @@ pub struct Message {
 /// the stated kinds, or whose lengths are not 1 ≤ base ≤ max ≤ 255, is
 /// refused by name.
 pub fn messages() -> Result<Vec<Message>, TwinError> {
-    MESSAGES
-        .lines()
+    messages_in(MESSAGES)
+}
+
+/// The rows of a table in [`MESSAGES`]' format.
+pub(crate) fn messages_in(text: &'static str) -> Result<Vec<Message>, TwinError> {
+    text.lines()
         .filter(|l| !l.is_empty() && !l.starts_with('#'))
         .map(|l| {
             let bad = || TwinError::MalformedMessageTable { row: l.to_owned() };
@@ -471,8 +487,8 @@ pub fn check_input(
             Decoded::ParamSet { id, value } => {
                 for (param, refused) in SKIP_CHECKS {
                     let hit = match refused {
-                        Refused::NonZero => value != 0.0,
-                        Refused::Zero => value == 0.0,
+                        Refused::NonZero => stored(value).is_some_and(|v| v != 0),
+                        Refused::Zero => stored(value) == Some(0),
                     };
                     if id == param && hit {
                         return Err(InputRefusal::SkipsChecks {

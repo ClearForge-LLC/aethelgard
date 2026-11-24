@@ -418,8 +418,8 @@ python3 -I - "$work/input-archive.json" "$work/input-replay.json" <<'PY'
 import json, sys
 v, r = (json.load(open(p)) for p in sys.argv[1:])
 w = v["boot"]["input"]
-print(f"ANSWER 4400e: input-replay judge={r['judge']} verdict={r['verdict']} run_id={r['run_id']} "
+print(f"ANSWER 4400e: input-replay judge={r['judge']} input_verdict={r['input_verdict']} run_id={r['run_id']} "
       f"events={r['event_count']} same_witness={r['witness'] == w['witness']}")
-assert r["judge"] == "foreign" and r["verdict"] == "pass" and r["run_id"] == w["run_id"]
+assert r["judge"] == "foreign" and r["input_verdict"] == "pass" and r["run_id"] == w["run_id"]
 assert r["input_sha256"] == w["input"]["sha256"] and r["witness"] == w["witness"]
 PY

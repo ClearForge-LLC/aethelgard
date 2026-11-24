@@ -532,7 +532,7 @@ aethelgard replay --archive <dir>/<run id>
 - `params`: each parameter the input set, with the firmware's echo or its `PARAM_ERROR`. A `PARAM_ERROR` is the finding `foreign_param_rejected`.
 - `texts`: each `STATUSTEXT`.
 
-**`--archive`** writes the run (trace 20, kinds 38 to 40: the input file verbatim, the stimuli, the transmission) to `<dir>/<run id>`, the id a function of the input's, the specification's and the firmware's hashes. **`replay`** re-judges it from the run directory alone: the input's hash against the header's, its frames refused again, and the witness from the archived transmission. It prints `{"ok":true,"check":"replay","judge":"foreign",…}`.
+**`--archive`** writes the run (trace 20, kinds 38 to 40: the input file verbatim, the stimuli, the transmission) to `<dir>/<run id>`, the id a function of the input's, the specification's and the firmware's hashes. **`replay`** re-judges it from the run directory alone: the input's hash against the header's, its frames refused again, and the witness from the archived transmission. It prints `{"ok":true,"check":"replay","judge":"foreign","input_verdict":…}`: `input_verdict` is the input's witness re-judged (`fail` with a `foreign_param_rejected`), not the run's verdict, whose other findings the trace does not hold. The header names the input, the firmware, the platform and the specification, and the engine and the Renode build, as a campaign's does.
 
 ### The analog pre-pass (`simulate --firmware`)
 
