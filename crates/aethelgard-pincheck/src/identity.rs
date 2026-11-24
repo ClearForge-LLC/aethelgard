@@ -333,8 +333,8 @@ fn battery(t: &SolvedTopology, h: &Preprocessed, out: &mut Out) -> Result<(), Re
         }
         return Ok(());
     };
+    let input = t.adc_inputs.get(net);
     let net = Some(net.as_str());
-    let input = t.adc_inputs.get(net.unwrap_or_default());
     let channel = input
         .filter(|a| a.peripheral == "ADC1")
         .and_then(|a| a.channel.strip_prefix("INP"))

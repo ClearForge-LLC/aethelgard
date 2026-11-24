@@ -154,7 +154,7 @@ Writes ArduPilot `Copter-4.7.2`'s board definition for a `SolvedTopology`, from 
 | Exit | When |
 |---|---|
 | `0` | written |
-| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `LabelTakesAfPrefix`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotEmitted`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
+| `2` | the topology is the wrong shape (`SchemaViolation`), `validate` refuses it, or the generator cannot state it, each by name: `NoSerialPort`, `NoConsole`, `ConsoleTwice`, `RcInputTwice`, `TooManySerialPorts`, `InvertedConsole`, `FramingNotImplied`, `ConsoleBaud`, `SerialBaud`, `UnsupportedSignal`, `LabelCollision`, `LabelTakesAfPrefix`, `DuplicateSpidev`, `SpiBelowArduPilotDivider`, `SpiKernelNotCited`, `NoSystemTimer`, `SenseNotOnAdc1`, `SenseTwice`, `DividerNotExact`, `SwdPinSolved`, `UnknownMcu`, `UnsupportedSeries`, `OscillatorNotCited`, `PinNotEmitted` |
 | `3` | the topology cannot be read or is not JSON, or `<hwdef.dat>` exists or cannot be written (`UnwritableOutput`) |
 
 ## The tool subcommands
