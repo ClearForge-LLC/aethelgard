@@ -31,3 +31,4 @@ m30	crates/aethelgard-cli/src/renode/foreign.rs	    if named.as_deref() != Some(
 m31	crates/aethelgard-cli/src/renode/foreign.rs	    if body.starts_with("[INFO] machine-")	    if false && body.starts_with("[INFO] machine-")	-p aethelgard-cli --bin aethelgard pause_lines
 m32	crates/aethelgard-cli/src/main.rs	            Some(Ok(r)) => return emit(&r, 0),	            Some(Ok(_)) => return campaign::replay(&archive),	-p aethelgard-cli --test boot_tier1 an_archived_input
 m33	crates/aethelgard-cli/src/renode/foreign.rs	        if kind != phase && kind != phase + 1 || kind < 38 {	        if false {	-p aethelgard-cli --test boot_tier1 replay_refuses
+m35	crates/aethelgard-twin/src/rest.rs	            Some((x, y, z)) if [i32::from(x), i32::from(y), i32::from(z)] == g[..] => {}	            Some(_) => {}	-p aethelgard-twin --test rest

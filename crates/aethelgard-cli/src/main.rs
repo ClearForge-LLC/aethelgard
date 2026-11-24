@@ -2483,7 +2483,12 @@ fn simulate_with(
     };
     // A declared input's run (`AET-WO-4400i`): the witness from the port's
     // own transmission, never from the input (`INV-07`), and the archive,
-    // only of a run that reached its end.
+    // only of a run that reached its end. Without one, each IMU left at a
+    // witness stimulus that is not at rest is named.
+    if let (Some(report), None, Some(r)) = (foreign_report.as_mut(), &declared, &ready) {
+        report.not_at_rest =
+            aethelgard_twin::rest::not_at_rest(&r.topology, &r.image.identity.checks);
+    }
     if let (Some(report), Some((d, archive)), Some((_, capture)), Some(r)) =
         (foreign_report.as_mut(), &declared, &timeline, &ready)
     {

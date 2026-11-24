@@ -3442,19 +3442,19 @@ fn each_declared_input_refusal_is_named_before_any_tool() {
     assert_eq!(out.status.code(), Some(4), "{}", report(&out));
 }
 
-/// `AET-WO-4400i` D4: a board with an IMU whose orientation is undeclared
-/// has no rest to start an input run from: refused by name, before any tool.
-#[test]
-fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
-    let empty = Dir::new("empty");
-    let dir = Dir::new("noorient");
+/// `sentinel-02-own` (U5, an ICM-42688-P, x right and z up), with U5's
+/// orientation or without it, written with its emitted platform:
+/// (specification, platform).
+fn s02_board(dir: &Dir, orientation: bool) -> (PathBuf, PathBuf) {
     let mut v: Value = serde_json::from_slice(
         &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json"))
             .unwrap(),
     )
     .unwrap();
-    for d in v["spi_devices"].as_array_mut().unwrap() {
-        d.as_object_mut().unwrap().remove("orientation");
+    if !orientation {
+        for d in v["spi_devices"].as_array_mut().unwrap() {
+            d.as_object_mut().unwrap().remove("orientation");
+        }
     }
     let bytes = serde_json::to_vec_pretty(&v).unwrap();
     let spec = dir.write("spec.json", &bytes);
@@ -3471,8 +3471,18 @@ fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
             .unwrap()
             .as_bytes(),
     );
+    (spec, platform)
+}
+
+/// `AET-WO-4400i` D4: a board with an IMU whose orientation is undeclared
+/// has no rest to start an input run from: refused by name, before any tool.
+#[test]
+fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
+    let empty = Dir::new("empty");
+    let dir = Dir::new("noorient");
+    let board = s02_board(&dir, false);
     let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
-    let out = input_run(&empty.0, &input, Some((spec, platform)), &[]);
+    let out = input_run(&empty.0, &input, Some(board), &[]);
     let r = report(&out);
     assert_eq!(r["error"]["kind"], "RestOrientationUndeclared", "{r}");
     assert_eq!(out.status.code(), Some(2), "{r}");

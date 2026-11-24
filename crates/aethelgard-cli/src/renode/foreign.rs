@@ -377,6 +377,10 @@ pub struct ForeignBoot {
     /// a run without one reports as before.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub input: Option<InputRun>,
+    /// Without an input, each IMU at a witness stimulus that is not at rest,
+    /// named (`AET-WO-4400i` §2); absent when none is.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub not_at_rest: Vec<String>,
 }
 
 /// The panic hook's evidence (`AET-WO-1609`): the symbol, the address the
@@ -1452,6 +1456,7 @@ pub fn report(
             .collect(),
         clock,
         input: None,
+        not_at_rest: Vec::new(),
     }
 }
 

@@ -377,7 +377,17 @@ and [(r["reference"], r["property"], r["values"]) for r in boot["input"]["rest"]
 and (witnessed.get(("U7", "data (rest 0)")) or witnessed.get(("U7", "data (rest 1)")))
 and witnessed.get(("U5", "data (reads[0])"))
 and any(u.startswith("usart_idle_unmodelled") for u in boot["unobservable"])
+and "not_at_rest" not in boot
 ' --platform "$platform" --firmware "$elf" --foreign "$window" --input "$inputs/arm5.json"
+
+# Without an input (the positive case above), U5 at the parts table's witness stimulus is named not at rest.
+python3 -I - "$work/positive.json" <<'PY2'
+import json, sys
+v = json.load(open(sys.argv[1]))
+n = v["boot"].get("not_at_rest")
+print(f"ANSWER 4400e: positive-not-at-rest {n}")
+assert n == ["U5: the parts table's witness stimulus (X 0, Y 1, Z 0 g) is not at rest by its declared orientation (X 0, Y 0, Z 1 g)"], n
+PY2
 
 # A planted force code, and a frame that is not MAVLink: each refused by name before a boot (D8).
 run input-force 2 'v["error"]["kind"] == "InputForcesArm"' \

@@ -207,6 +207,60 @@ pub fn stimuli(
     Ok(out)
 }
 
+/// Each accelerometer a run without an input leaves at the parts table's
+/// witness stimulus, which is not at rest (`AET-WO-4400i` §2: "a witness
+/// stimulus that is not at rest is named"): the stimulus in g on X, Y and Z
+/// (an axis the table does not set is the model's default, 0), against the
+/// rest its declared orientation gives, or that none is declared.
+pub fn not_at_rest(topology: &SolvedTopology, checks: &[StepCheck]) -> Vec<String> {
+    let mut out = Vec::new();
+    for check in checks.iter().filter(|c| c.step == StepKind::Data) {
+        let Some(d) = topology.spi_devices.get(&check.reference) else {
+            continue;
+        };
+        let Some(model) = parts::table()
+            .ok()
+            .and_then(|t| t.get(&d.part))
+            .and_then(|p| p.renode.as_deref())
+            .and_then(Model::from_renode)
+        else {
+            continue;
+        };
+        let axes = [
+            Quantity::AccelerationX,
+            Quantity::AccelerationY,
+            Quantity::AccelerationZ,
+        ];
+        let props: Vec<Option<&str>> = axes.iter().map(|q| model.stimulus(*q)).collect();
+        let stimulus = check.stimulus.as_deref().unwrap_or(&[]);
+        if !stimulus.iter().any(|(p, _)| props.contains(&Some(*p))) {
+            continue;
+        }
+        let g: Vec<i32> = props
+            .iter()
+            .map(|p| {
+                stimulus
+                    .iter()
+                    .find(|(q, _)| Some(*q) == *p)
+                    .map_or(0, |(_, v)| *v)
+            })
+            .collect();
+        let at = format!("X {}, Y {}, Z {} g", g[0], g[1], g[2]);
+        match d.orientation.as_ref().and_then(accel_at_rest) {
+            Some((x, y, z)) if [i32::from(x), i32::from(y), i32::from(z)] == g[..] => {}
+            Some((x, y, z)) => out.push(format!(
+                "{}: the parts table's witness stimulus ({at}) is not at rest by its declared orientation (X {x}, Y {y}, Z {z} g)",
+                check.reference
+            )),
+            None => out.push(format!(
+                "{}: the parts table's witness stimulus ({at}); no orientation is declared, so its rest is unknown",
+                check.reference
+            )),
+        }
+    }
+    out
+}
+
 /// A stimulus value in thousandths: `101325.080` is 101325080, `-1` is
 /// -1000. `None` for any other text.
 fn milli(v: &str) -> Option<i64> {
