@@ -112,8 +112,8 @@ impl RingRule {
 /// KiCad's DRC passes two such vias, so meeting regions are a limit of the
 /// supply model, not a fabrication fault; the router keeps the model
 /// unchanged by routing around that limit. Built only where the gate runs:
-/// the specification declares `power.drop_limits` and each input the
-/// region's reach reads. Every field is the specification's.
+/// the specification declares `power.drop_limits` and each stackup and
+/// tolerance input the gate reads. Every field is the specification's.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct JunctionRule {
     /// The nets the gate judges, by the board's name: each limited domain
@@ -128,8 +128,9 @@ pub struct JunctionRule {
 
 impl JunctionRule {
     /// The rule a specification declares, or `None` where the gate does not
-    /// run: no drop limit, or an input its region's reach reads undeclared
-    /// (the gate refuses that by name, `SupplyInputUndeclared`).
+    /// run: no drop limit, or any stackup or tolerance input the gate reads
+    /// undeclared (the gate refuses that by name, `SupplyInputUndeclared`,
+    /// and reads no board, so no routing moves for it).
     pub fn of(spec: &Specification) -> Option<JunctionRule> {
         let limits = spec.power.as_ref()?.drop_limits.as_ref()?;
         if limits.is_empty() {
@@ -137,6 +138,16 @@ impl JunctionRule {
         }
         let st = &spec.board.stackup;
         let fab = st.fab_tolerances.as_ref()?;
+        // the gate's other inputs (`supply::supplies`), each required
+        for read in [
+            &st.outer_copper_min_um,
+            &st.plane_copper_min_um,
+            &st.copper_temperature_max_c,
+            &fab.hole_size_minus_um,
+            &fab.track_width_permille,
+        ] {
+            read.as_ref()?;
+        }
         let mut nets: Vec<String> = limits.iter().map(|l| l.domain.clone()).collect();
         nets.push(crate::route::GROUND.to_owned());
         Some(JunctionRule {

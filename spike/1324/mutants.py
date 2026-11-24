@@ -54,6 +54,12 @@ MUTANTS = [
      lib("two_junction_regions_meet_where_their_cells_do_not_where_a_disc_does")),
     ("M19 the rule is never built", S, "            junction: JunctionRule::of(spec),", "            junction: None,",
      cli("the_two_layer_power_fixture_on_the_pc0_sense_keeps_its_vias_regions_apart")),
+    ("M20 unhop flattens a pair with a via between", R, "            if path[j].0 != outer {\n                self.banned.insert(path[j].1);\n                return None;\n            }\n", "",
+     lib("a_close_pair_with_a_via_between_is_banned_not_flattened")),
+    ("M21 meeting runs: one end wrong", R, ".push((lo_a - hi_b, hi_a - lo_b));", ".push((lo_a - hi_b, hi_a - hi_b));",
+     lib("the_meeting_offsets_by_runs_are_every_cell_difference")),
+    ("M22 rule ignores the gate's other inputs", S, "            read.as_ref()?;", "            let _ = read;",
+     cli("the_routers_junction_rule_is_on_where_the_gate_runs")),
 ]
 
 only = set(sys.argv[3].split(",")) if len(sys.argv) > 3 else None

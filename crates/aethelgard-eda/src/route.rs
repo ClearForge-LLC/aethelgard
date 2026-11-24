@@ -560,12 +560,45 @@ struct Junction {
 }
 
 /// The cell offsets `d` at which a region `b` centred `d` cells from a
-/// region `a`'s centre shares a cell with it: every `ca − cb`.
+/// region `a`'s centre shares a cell with it: every `ca − cb`. Taken row by
+/// row: two runs of cells, `a`'s in row `ja` and `b`'s in row `jb`, give
+/// exactly the offsets `(lo_a − hi_b ..= hi_a − lo_b, ja − jb)`; their union
+/// per row offset is the set, at a cost of runs squared plus its size, not
+/// cells squared (`AET-WO-1324` adversarial A2: a 3 mm plating minimum,
+/// which `validate` admits, took 6.6 s cell by cell).
 fn meeting(a: &crate::flow::Region, b: &crate::flow::Region) -> BTreeSet<(i64, i64)> {
+    // each region's runs: (row, first cell, last cell)
+    let runs = |r: &crate::flow::Region| {
+        let mut cells: Vec<(i64, i64)> = r.cells.iter().map(|&(i, j)| (j, i)).collect();
+        cells.sort_unstable();
+        let mut out: Vec<(i64, i64, i64)> = Vec::new();
+        for (j, i) in cells {
+            match out.last_mut() {
+                Some((rj, _, hi)) if *rj == j && *hi + 1 == i => *hi = i,
+                _ => out.push((j, i, i)),
+            }
+        }
+        out
+    };
+    let (ra, rb) = (runs(a), runs(b));
+    let mut spans: BTreeMap<i64, Vec<(i64, i64)>> = BTreeMap::new();
+    for &(ja, lo_a, hi_a) in &ra {
+        for &(jb, lo_b, hi_b) in &rb {
+            spans
+                .entry(ja - jb)
+                .or_default()
+                .push((lo_a - hi_b, hi_a - lo_b));
+        }
+    }
     let mut out = BTreeSet::new();
-    for &(ai, aj) in &a.cells {
-        for &(bi, bj) in &b.cells {
-            out.insert((ai - bi, aj - bj));
+    for (dj, mut s) in spans {
+        s.sort_unstable();
+        let mut done = i64::MIN;
+        for (lo, hi) in s {
+            for di in lo.max(done.saturating_add(1))..=hi {
+                out.insert((di, dj));
+            }
+            done = done.max(hi);
         }
     }
     out
@@ -1361,6 +1394,14 @@ impl<'a> Router<'a> {
     fn unhop(&mut self, net: usize, path: &mut Vec<Node>, soft: bool) -> Option<()> {
         while let Some((i, j)) = self.close_vias(net, path) {
             let outer = path[i].0;
+            // A via between the two: the second does not return to the
+            // layer the first left, so the run between cannot be laid flat
+            // (`AET-WO-1324` adversarial A1: flattened, it left a layer
+            // change no search had judged, a via laid unchecked).
+            if path[j].0 != outer {
+                self.banned.insert(path[j].1);
+                return None;
+            }
             // path[i] and path[j] are the hop's ends on the outer layer;
             // path[i + 1..j] is the hop itself, its ends included.
             let flat: Vec<Node> = path[i + 2..j - 1]
@@ -6454,5 +6495,60 @@ mod tests {
             work[2] >= 8 * work[0] && work[2] <= 24 * work[0],
             "{work:?}"
         );
+    }
+
+    /// A2: the regions' meeting offsets, taken run by run, are exactly every
+    /// `ca − cb`, for equal and unequal regions, small and large.
+    #[test]
+    fn the_meeting_offsets_by_runs_are_every_cell_difference() {
+        use crate::flow::Region;
+        let h = crate::supply::PITCH_NM;
+        for (ra, rb) in [
+            (349_068, 349_068),
+            (699_068, 349_068),
+            (349_068, 699_068),
+            (1_000_000, 250_001),
+            (62_500, 62_499),
+        ] {
+            let (a, b) = (Region::new(h, ra), Region::new(h, rb));
+            let mut every = BTreeSet::new();
+            for &(ai, aj) in &a.cells {
+                for &(bi, bj) in &b.cells {
+                    every.insert((ai - bi, aj - bj));
+                }
+            }
+            assert_eq!(meeting(&a, &b), every, "{ra} {rb}");
+        }
+    }
+
+    /// A1: a path whose first and third vias' regions meet, with a second via
+    /// between, cannot be laid flat (the run between ends on the far layer);
+    /// the third via's node is banned, never laid unchecked. Under the hole
+    /// gap alone, the same.
+    #[test]
+    fn a_close_pair_with_a_via_between_is_banned_not_flattened() {
+        for (rule, far) in [(Some(jlc()), 5), (None, 4)] {
+            let board = judged(rule, Vec::new());
+            let mut r = router(&board, &[]);
+            let (x, y) = (10 * MM, 8 * MM);
+            let n = |r: &Router<'_>, i: i64, j: i64| node_at(r, x + i * PITCH_NM, y + j * PITCH_NM);
+            let mut p = vec![(Layer::F, n(&r, 0, 0)), (Layer::B, n(&r, 0, 0))];
+            for k in 1..=6 {
+                p.push((Layer::B, n(&r, 0, k)));
+            }
+            p.push((Layer::F, n(&r, 0, 6)));
+            for k in 1..=far {
+                p.push((Layer::F, n(&r, k, 6)));
+            }
+            for k in (0..=5).rev() {
+                p.push((Layer::F, n(&r, far, k)));
+            }
+            p.push((Layer::B, n(&r, far, 0)));
+            p.push((Layer::B, n(&r, far + 1, 0)));
+            let before = p.clone();
+            assert_eq!(r.unhop(0, &mut p, false), None, "{far}");
+            assert!(r.banned.contains(&n(&r, far, 0)), "{far}");
+            assert_eq!(p, before, "{far}");
+        }
     }
 }

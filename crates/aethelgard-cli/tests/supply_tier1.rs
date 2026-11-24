@@ -512,12 +512,65 @@ fn the_two_layer_power_fixture_on_the_pc0_sense_keeps_its_vias_regions_apart() {
             .all(|p| p["refused"]["kind"] == "GroundReturnUnread"),
         "{s}"
     );
+    // The gate stops at the returns before it prices GND, so the regions are
+    // checked here too, on both judged nets (adversarial A4): each routed
+    // via, array via and through-hole pad of the net on the gate's cell grid
+    // holds the region `extract` gives it, and no two share a cell.
+    use aethelgard_eda::{flow::Region, route, stack::Stack, supply};
+    let parsed: aethelgard_ir::Specification =
+        serde_json::from_str(&fs::read_to_string(&spec).unwrap()).unwrap();
+    let stack = Stack::of(&parsed).unwrap();
+    let rule = stack.junction.clone().unwrap();
+    let tree = aethelgard_eda::strict::board(&fs::read_to_string(&board).unwrap()).unwrap();
+    let (read, routed) = route::read(&tree, &stack).unwrap();
+    let h = supply::PITCH_NM;
+    let origin = routed
+        .vias
+        .first()
+        .map(|v| (v.at.0.rem_euclid(h), v.at.1.rem_euclid(h)))
+        .unwrap();
+    for net in ["VDD_3V3", "GND"] {
+        let mut holes: Vec<((i64, i64), i64)> = routed
+            .vias
+            .iter()
+            .filter(|v| v.net == net)
+            .map(|v| (v.at, read.stack.rule(net).drill_nm))
+            .collect();
+        for a in routed.arrays.iter().filter(|a| a.net == net) {
+            holes.extend(a.at.iter().map(|&at| (at, a.drill_nm)));
+        }
+        for p in read.parts.iter().flat_map(|p| &p.pads) {
+            if let (Some(d), Some(n)) = (p.drill_nm, p.net.as_deref())
+                && n == net
+            {
+                let r = p.rect;
+                holes.push((((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), d));
+            }
+        }
+        let mut owner = std::collections::BTreeMap::new();
+        let mut judged = 0;
+        for (k, &(at, drill)) in holes.iter().enumerate() {
+            let (dx, dy) = (at.0 - origin.0, at.1 - origin.1);
+            if dx.rem_euclid(h) != 0 || dy.rem_euclid(h) != 0 {
+                continue;
+            }
+            judged += 1;
+            for &(i, j) in &Region::new(h, rule.reach(drill)).cells {
+                let cell = (dx / h + i, dy / h + j);
+                if let Some(other) = owner.insert(cell, k) {
+                    panic!("{net}: {:?} and {at:?} meet at {cell:?}", holes[other].0);
+                }
+            }
+        }
+        assert!(judged >= 20, "{net}: {judged}");
+    }
 }
 
 /// `AET-WO-1324` Q1: the router's junction rule is on exactly where the
 /// gate runs: on each limited domain and `GND`, at the specification's
 /// tolerances and plating, so its reach is the gate's; off with no limit, or
-/// with an input the reach reads undeclared.
+/// with any stackup or tolerance input the gate reads undeclared
+/// (adversarial A3: once on with `outer_copper_min_um` missing).
 #[test]
 fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     use aethelgard_eda::stack::{JunctionRule, Stack};
@@ -540,8 +593,13 @@ fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     assert_eq!(rule(&v), None);
     for (path, key) in [
         ("board/stackup", "plating_min_um"),
+        ("board/stackup", "outer_copper_min_um"),
+        ("board/stackup", "plane_copper_min_um"),
+        ("board/stackup", "copper_temperature_max_c"),
         ("board/stackup/fab_tolerances", "hole_size_plus_um"),
         ("board/stackup/fab_tolerances", "hole_position_um"),
+        ("board/stackup/fab_tolerances", "hole_size_minus_um"),
+        ("board/stackup/fab_tolerances", "track_width_permille"),
     ] {
         let mut v = gated(s03(), 165);
         let at = format!("/{path}");
