@@ -1,6 +1,7 @@
 # AET-WO-1609 — FEEDBACK: one "ran or not" table in every verdict, and the foreign judge's late panic
 
-**Branch:** `wo/aet-1609-ran-or-not` from `main` `e5984c86`; `main` `9b246a6a`, then `ee239949` (`4240e`), merged.
+**Branch:** `wo/aet-1609-ran-or-not` from `main` `e5984c86`; `main` `9b246a6a`, `ee239949` (`4240e`), `7d48feb6`
+and `82abd45a` (`2313`) merged.
 **Builder:** Claude (Opus 5.5) as project manager.
 - **Subagents** did the read-only parts: the measurement's gate and reader inventories, spot-checked at source (one
   corrected), and an independent adversarial review of the build (§5).
@@ -226,9 +227,15 @@ did, `bench-package` was red on each head before its package commit.
 
 ## 9. Signal
 
-**READY.** CI is green on `7c94f103`, the package head with main `7d48feb6` merged:
-- `ci` 45295427079: tier 2 206 passed, floor 205; `bench-package` green against the committed package.
-- `ardupilot-image` 45295427086 and `engine-image` 45295427062: green.
+**READY.** CI is green on `c304d17f`, the final code head, with main `82abd45a` merged (`2313`, merged first):
+- `ci` 45303356488: tier 2 206 passed, floor 205.
+- `bench-package` green against the committed package (`--against-fab`), so `2313`'s merge does not move its verdict
+  hash and no dispatch is needed.
+- `ardupilot-image` 45303356587 and `engine-image` 45303356633: green.
+- **The `2313` merge** (the architect, 01:05Z: 1609 re-applies). Git merged every shared line, in `foreign.rs`, the
+  README and the tests, with 2313's text kept (the 1.5 GiB bound, 1,572,864 KiB) and 1609's changes beside it.
+  FEEDBACK R1 and R3 are restated for the new cap.
+- Host `cargo test --workspace`: 3,028 passed, 0 failed, on the merged head.
 
 The last push is the commit "AET-WO-1609 READY: …", which changes only this file. Nothing is pushed after it unless
 asked. The architect merges; the PR's title and body are in `~/.cache/aet-1609/pr-title-body.md`.
