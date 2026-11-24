@@ -2,13 +2,16 @@
 # Scotty's: the fixture lives in tests/, never in examples/). Adds one serial
 # port of the module's own (ruled D7: a UART of its own, J7 kept) and one
 # ESP32-C3-WROOM-02-N4 on it. Re-run after #390 against examples/sentinel-03.json.
-# Usage: python3 -I derive.py <sentinel-03.json> <out.json>
+# Usage: python3 -I derive.py <sentinel-03.json> <out.json> [--keep-name]
 import json
 import sys
 
 src, out = sys.argv[1:3]
 s = json.load(open(src))
-s["project_name"] = "sentinel-03-radio"
+# A third argument keeps the board's own name (D6: the module goes on
+# Sentinel-03 itself); without it, the tests/ fixture's.
+if len(sys.argv) < 4:
+    s["project_name"] = "sentinel-03-radio"
 s["serial_ports"].append({
     "label": "WIFI",
     "peripheral": None,
