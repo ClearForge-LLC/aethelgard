@@ -1,0 +1,10 @@
+[package]
+name = "place3309"
+version = "0.0.0"
+edition = "2024"
+publish = false
+[dependencies]
+aethelgard-chaos = { path = "../../../crates/aethelgard-chaos" }
+aethelgard-evolve = { path = "../../../crates/aethelgard-evolve" }
+serde_json = "1"
+[workspace]
