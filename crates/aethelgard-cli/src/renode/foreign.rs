@@ -740,6 +740,14 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
 /// judge does, so its filter keeps them. ArduPilot's console writes about
 /// 600 in 5 s; this trims the log and does not move Renode's own memory.
 fn unread_access_line(line: &str) -> bool {
+    // Each `RunFor` of an input's timeline pauses and resumes the machine,
+    // two `[INFO]` lines per byte sent, which no rule reads (`AET-WO-4400i`).
+    let body = log_body(line).unwrap_or("");
+    if body.starts_with("[INFO] machine-")
+        && (body.ends_with(": Machine paused.") || body.ends_with(": Machine resumed."))
+    {
+        return true;
+    }
     unjudged_access_line(line)
         || log_body(line)
             .and_then(aethelgard_twin::serial::access)
@@ -2475,33 +2483,48 @@ pub fn archive(
         tools: vec![("renode".to_owned(), renode.to_owned())],
         tool_sha256: Vec::new(),
     };
-    let records = [
-        Record::ForeignInput {
+    use aethelgard_chaos::record::{FOREIGN_PART_BYTES, FOREIGN_PART_STIMULI};
+    let mut records = Vec::new();
+    let file: Vec<&[u8]> = d.file.chunks(FOREIGN_PART_BYTES).collect();
+    for (k, part) in file.iter().enumerate() {
+        records.push(Record::ForeignInput {
             label: d.label.clone(),
             peripheral: d.peripheral.clone(),
             spacing_ns: d.spacing_ns,
-            file: d.file.clone(),
-        },
-        Record::Stimuli {
-            entries: d
-                .stimuli
-                .iter()
-                .map(|s| {
-                    (
-                        s.at_ns,
-                        s.device.clone(),
-                        s.property.to_owned(),
-                        s.value.clone(),
-                    )
-                })
-                .collect(),
-        },
-        Record::SerialCaptured {
+            part: k as u64,
+            parts: file.len() as u64,
+            file: part.to_vec(),
+        });
+    }
+    let entries: Vec<(u64, String, String, String)> = d
+        .stimuli
+        .iter()
+        .map(|s| (s.at_ns, s.device.clone(), s.property.to_owned(), s.value.clone()))
+        .collect();
+    let stimuli: Vec<&[(u64, String, String, String)]> = match entries.is_empty() {
+        true => vec![&[]],
+        false => entries.chunks(FOREIGN_PART_STIMULI).collect(),
+    };
+    for (k, part) in stimuli.iter().enumerate() {
+        records.push(Record::Stimuli {
+            part: k as u64,
+            parts: stimuli.len() as u64,
+            entries: part.to_vec(),
+        });
+    }
+    let capture: Vec<&[u8]> = match captured.is_empty() {
+        true => vec![&[]],
+        false => captured.chunks(FOREIGN_PART_BYTES).collect(),
+    };
+    for (k, part) in capture.iter().enumerate() {
+        records.push(Record::SerialCaptured {
             label: d.label.clone(),
             end_ns: virtual_ns,
-            bytes: captured.to_vec(),
-        },
-    ];
+            part: k as u64,
+            parts: capture.len() as u64,
+            bytes: part.to_vec(),
+        });
+    }
     let id = crate::input::hex(run_id);
     let dir = archive.join(&id);
     (|| {
@@ -2543,38 +2566,101 @@ pub struct Replayed {
 
 /// Whether an archived run is a foreign input run (its kind 38).
 pub fn is_foreign(replayed: &aethelgard_chaos::Replayed) -> bool {
-    foreign_records(replayed).is_some()
+    use aethelgard_chaos::record::Record;
+    matches!(replayed.state.records.first(), Some(Record::ForeignInput { .. }))
 }
 
-type ForeignRecords<'a> = (
-    (&'a str, &'a str, u64, &'a [u8]),
-    usize,
-    &'a [u8],
-    u64,
-);
+/// A foreign run's records joined: the input's (label, peripheral, spacing,
+/// file), the number of stimuli, the capture and the run's end.
+type ForeignRecords = ((String, String, u64, Vec<u8>), usize, Vec<u8>, u64);
 
-fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Option<ForeignRecords<'_>> {
-    use aethelgard_chaos::record::Record;
-    let mut input = None;
-    let mut stimuli = None;
-    let mut captured = None;
+/// The parts of a foreign run joined, or why they cannot be: every record is
+/// one of kinds 38 to 40, in that order, each kind's parts numbered 0 to
+/// `parts` − 1 in order with one count, and the fields every part repeats
+/// equal across them.
+fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecords, String> {
+    use aethelgard_chaos::record::{MAX_FOREIGN_BYTES, MAX_STIMULI, Record};
+    let mut input: Option<(String, String, u64, Vec<u8>, u64, u64)> = None;
+    let mut stimuli: Option<(usize, u64, u64)> = None;
+    let mut captured: Option<(String, u64, Vec<u8>, u64, u64)> = None;
+    // Each kind's next part and its count: a part out of order, a count that
+    // changes, or a kind after a later one is refused.
+    fn next(seen: Option<(u64, u64)>, part: u64, parts: u64) -> Result<(), String> {
+        let want = seen.map_or((0, parts), |(p, n)| (p + 1, n));
+        if (part, parts) == want {
+            Ok(())
+        } else {
+            Err(format!("a part {part} of {parts} where part {} of {} was due", want.0, want.1))
+        }
+    }
     for r in &replayed.state.records {
         match r {
             Record::ForeignInput {
                 label,
                 peripheral,
                 spacing_ns,
+                part,
+                parts,
                 file,
-            } => input = Some((label.as_str(), peripheral.as_str(), *spacing_ns, file.as_slice())),
-            Record::Stimuli { entries } => stimuli = Some(entries.len()),
-            Record::SerialCaptured { bytes, end_ns, .. } => {
-                captured = Some((bytes.as_slice(), *end_ns));
+            } if stimuli.is_none() && captured.is_none() => {
+                next(input.as_ref().map(|i| (i.4, i.5)), *part, *parts)?;
+                match &mut input {
+                    None => {
+                        input = Some((label.clone(), peripheral.clone(), *spacing_ns, file.clone(), *part, *parts));
+                    }
+                    Some(i) => {
+                        if (&i.0, &i.1, i.2) != (label, peripheral, *spacing_ns) {
+                            return Err("the input's parts name two ports".to_owned());
+                        }
+                        i.3.extend_from_slice(file);
+                        i.4 = *part;
+                    }
+                }
             }
-            _ => return None,
+            Record::Stimuli {
+                part,
+                parts,
+                entries,
+            } if input.is_some() && captured.is_none() => {
+                next(stimuli.map(|s| (s.1, s.2)), *part, *parts)?;
+                let n = stimuli.map_or(0, |s| s.0) + entries.len();
+                stimuli = Some((n, *part, *parts));
+            }
+            Record::SerialCaptured {
+                label,
+                end_ns,
+                part,
+                parts,
+                bytes,
+            } if stimuli.is_some() => {
+                next(captured.as_ref().map(|c| (c.3, c.4)), *part, *parts)?;
+                match &mut captured {
+                    None => captured = Some((label.clone(), *end_ns, bytes.clone(), *part, *parts)),
+                    Some(c) => {
+                        if (&c.0, c.1) != (label, *end_ns) {
+                            return Err("the capture's parts name two ports or two ends".to_owned());
+                        }
+                        c.2.extend_from_slice(bytes);
+                        c.3 = *part;
+                    }
+                }
+            }
+            _ => return Err("it holds a record that is not a foreign run's, or one out of order".to_owned()),
         }
     }
-    let (bytes, end) = captured?;
-    Some((input?, stimuli?, bytes, end))
+    let (label, peripheral, spacing, file, last, parts) = input.ok_or("it holds no input")?;
+    let (n, slast, sparts) = stimuli.ok_or("it holds no stimuli")?;
+    let (clabel, end_ns, bytes, clast, cparts) = captured.ok_or("it holds no capture")?;
+    if last + 1 != parts || slast + 1 != sparts || clast + 1 != cparts {
+        return Err("a kind's parts end before its count".to_owned());
+    }
+    if clabel != label {
+        return Err("the capture names another port than the input".to_owned());
+    }
+    if file.len() > MAX_FOREIGN_BYTES || bytes.len() > MAX_FOREIGN_BYTES || n > MAX_STIMULI {
+        return Err("its input, capture or stimuli are over their bounds".to_owned());
+    }
+    Ok(((label, peripheral, spacing, file), n, bytes, end_ns))
 }
 
 /// Re-judges a foreign run from its archive: the input's frames re-read and
@@ -2582,12 +2668,13 @@ fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Option<ForeignRecor
 /// and the witness from the transmitted bytes the trace holds.
 pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
     let ((label, peripheral, spacing_ns, file), stimuli, captured, end_ns) =
-        foreign_records(replayed).ok_or_else(|| {
+        foreign_records(replayed).map_err(|why| {
             invalid(
                 "NotAForeignRun",
-                "the archive holds no foreign input run (kinds 38 to 40, and nothing else)".to_owned(),
+                format!("the archive is not one foreign input run (kinds 38 to 40, in order): {why}"),
             )
         })?;
+    let (label, peripheral, file, captured) = (label.as_str(), peripheral.as_str(), file.as_slice(), captured.as_slice());
     use sha2::Digest;
     let sha: [u8; 32] = sha2::Sha256::digest(file).into();
     let named = replayed

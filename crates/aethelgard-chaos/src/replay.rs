@@ -72,11 +72,10 @@ impl State {
 pub const MAX_RECORDS: usize = 65_536;
 
 /// The wire kinds of the records a run holds at most once: scenario, topology,
-/// boot, verdict, the declared rail and the expected counts; and a foreign
-/// run's input, stimuli and capture (`AET-WO-4400i`). The fold refuses a
-/// second here, by its index, before `check_run`'s counts see the run
+/// boot, verdict, the declared rail and the expected counts. The fold refuses
+/// a second here, by its index, before `check_run`'s counts see the run
 /// (review round 3 B6: kept, since it names what `check_run` cannot).
-const ONCE_KINDS: [u64; 9] = [5, 6, 10, 14, 16, 20, 38, 39, 40];
+const ONCE_KINDS: [u64; 6] = [5, 6, 10, 14, 16, 20];
 
 /// The incremental fold. The writer and the reader both drive it, so a
 /// trace's `state_hash` is computed one way only.
@@ -88,7 +87,7 @@ pub struct Replayer {
     scratch: Vec<u8>,
     /// Which of the once-only record kinds (scenario, topology, boot, verdict)
     /// have been folded in.
-    once_seen: [bool; 9],
+    once_seen: [bool; 6],
 }
 
 impl Replayer {
@@ -100,7 +99,7 @@ impl Replayer {
             count: 0,
             last_timestamp: 0,
             scratch: Vec::new(),
-            once_seen: [false; 9],
+            once_seen: [false; 6],
         }
     }
 

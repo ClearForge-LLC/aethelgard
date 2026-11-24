@@ -19,11 +19,17 @@ pub const FIRST_KIND: u64 = 5;
 /// The last kind (40, a foreign run's transmitted bytes, since
 /// `AET-WO-4400i`).
 pub const LAST_KIND: u64 = 40;
-/// The most bytes kind 38 holds of an input file, and kind 40 of a capture
-/// (`AET-WO-4400i`): far past a 5 s window's frames at 115200 Bd.
+/// The most bytes an input file may be, in all its kind 38 parts, and a
+/// capture in all its kind 40 parts (`AET-WO-4400i`): far past a 5 s
+/// window's frames at 115200 Bd.
 pub const MAX_FOREIGN_BYTES: usize = 1 << 20;
-/// The most stimuli kind 39 holds.
+/// The most stimuli a run's kind 39 parts hold.
 pub const MAX_STIMULI: usize = 100_000;
+/// The most bytes one part of kind 38 or 40 holds, and the most stimuli one
+/// part of kind 39: every event stays under `archive::MAX_EVENT_BYTES`
+/// (4096), so a long file or capture is several parts, in order.
+pub const FOREIGN_PART_BYTES: usize = 3072;
+pub const FOREIGN_PART_STIMULI: usize = 48;
 
 /// A pin's level, as the `pin_held` override and kinds 33 and 34 name it
 /// (`AET-WO-1211c`). Chaos-owned: this crate reads no IR type (`RUL-16`).
@@ -931,27 +937,34 @@ pub enum Record {
     },
     /// Kind 38: a foreign run's declared input (`AET-WO-4400i`): the serial
     /// port's label and its USART, the time between two bytes in ns (the
-    /// port's character time, a whole number of quanta), and the input file's
-    /// bytes verbatim. Replay recomputes the file's sha256, its frames and
-    /// every byte's instant from it, with no file (`INV-04`).
+    /// port's character time, a whole number of quanta), and part `part` of
+    /// `parts` of the input file's bytes verbatim. Replay joins the parts and
+    /// recomputes the file's sha256, its frames and every byte's instant
+    /// from it, with no file (`INV-04`).
     ForeignInput {
         label: String,
         peripheral: String,
         spacing_ns: u64,
+        part: u64,
+        parts: u64,
         file: Vec<u8>,
     },
-    /// Kind 39: every stimulus a foreign input run set, in time order, as
-    /// `[at_ns, device, property, value]`, the value exactly as Renode was
-    /// given it (the board at rest, `AET-WO-4400i` D4).
+    /// Kind 39: part `part` of `parts` of every stimulus a foreign input run
+    /// set, in time order, as `[at_ns, device, property, value]`, the value
+    /// exactly as Renode was given it (the board at rest, `AET-WO-4400i` D4).
     Stimuli {
+        part: u64,
+        parts: u64,
         entries: Vec<(u64, String, String, String)>,
     },
-    /// Kind 40: the bytes the firmware transmitted on the input's port, in
-    /// order, read from the port's file backend at the run's end, `end_ns`
-    /// (`AET-WO-4400i`): the witness's only source.
+    /// Kind 40: part `part` of `parts` of the bytes the firmware transmitted
+    /// on the input's port, in order, read from the port's file backend at
+    /// the run's end, `end_ns` (`AET-WO-4400i`): the witness's only source.
     SerialCaptured {
         label: String,
         end_ns: u64,
+        part: u64,
+        parts: u64,
         bytes: Vec<u8>,
     },
 }
@@ -2003,9 +2016,22 @@ impl Record {
                 label,
                 peripheral,
                 spacing_ns,
+                part,
+                parts,
                 file,
-            } => vec![t(label), t(peripheral), u(*spacing_ns), Value::Bytes(file.clone())],
-            Self::Stimuli { entries } => vec![Value::Array(
+            } => vec![
+                t(label),
+                t(peripheral),
+                u(*spacing_ns),
+                u(*part),
+                u(*parts),
+                Value::Bytes(file.clone()),
+            ],
+            Self::Stimuli {
+                part,
+                parts,
+                entries,
+            } => vec![u(*part), u(*parts), Value::Array(
                 entries
                     .iter()
                     .map(|(at, device, property, value)| {
@@ -2016,8 +2042,16 @@ impl Record {
             Self::SerialCaptured {
                 label,
                 end_ns,
+                part,
+                parts,
                 bytes,
-            } => vec![t(label), u(*end_ns), Value::Bytes(bytes.clone())],
+            } => vec![
+                t(label),
+                u(*end_ns),
+                u(*part),
+                u(*parts),
+                Value::Bytes(bytes.clone()),
+            ],
             Self::BatterySagDeclared {
                 sag,
                 start_ns,
@@ -2478,9 +2512,13 @@ impl Record {
                 label: f.text()?,
                 peripheral: f.text()?,
                 spacing_ns: f.uint()?,
+                part: f.uint()?,
+                parts: f.uint()?,
                 file: f.bytes()?,
             },
             39 => {
+                let part = f.uint()?;
+                let parts = f.uint()?;
                 let mut entries = Vec::new();
                 for item in f.array()? {
                     let Value::Array(e) = item else {
@@ -2490,11 +2528,17 @@ impl Record {
                     entries.push((g.uint()?, g.text()?, g.text()?, g.text()?));
                     g.end()?;
                 }
-                Self::Stimuli { entries }
+                Self::Stimuli {
+                    part,
+                    parts,
+                    entries,
+                }
             }
             40 => Self::SerialCaptured {
                 label: f.text()?,
                 end_ns: f.uint()?,
+                part: f.uint()?,
+                parts: f.uint()?,
                 bytes: f.bytes()?,
             },
             31 => {
@@ -3251,21 +3295,27 @@ impl Record {
                 label,
                 peripheral,
                 spacing_ns,
+                part,
+                parts,
                 file,
             } => {
                 if !name_ok(label) || !name_ok(peripheral) {
                     Err("a foreign input's port label or peripheral is malformed")
                 } else if *spacing_ns == 0 {
                     Err("a foreign input's byte spacing is 0")
-                } else if file.is_empty() || file.len() > MAX_FOREIGN_BYTES {
-                    Err("a foreign input's file is empty or over MAX_FOREIGN_BYTES")
+                } else if part >= parts || file.is_empty() || file.len() > FOREIGN_PART_BYTES {
+                    Err("a foreign input's part is not one of its parts, or empty, or over FOREIGN_PART_BYTES")
                 } else {
                     Ok(())
                 }
             }
-            Self::Stimuli { entries } => {
-                if entries.len() > MAX_STIMULI {
-                    Err("a run's stimuli are over MAX_STIMULI")
+            Self::Stimuli {
+                part,
+                parts,
+                entries,
+            } => {
+                if part >= parts || entries.len() > FOREIGN_PART_STIMULI {
+                    Err("a run's stimuli part is not one of its parts, or over FOREIGN_PART_STIMULI")
                 } else if !entries.windows(2).all(|w| w[0].0 <= w[1].0) {
                     Err("a run's stimuli are not in time order")
                 } else if !entries
@@ -3277,11 +3327,17 @@ impl Record {
                     Ok(())
                 }
             }
-            Self::SerialCaptured { label, bytes, .. } => {
+            Self::SerialCaptured {
+                label,
+                part,
+                parts,
+                bytes,
+                ..
+            } => {
                 if !name_ok(label) {
                     Err("a capture's port label is malformed")
-                } else if bytes.len() > MAX_FOREIGN_BYTES {
-                    Err("a capture is over MAX_FOREIGN_BYTES")
+                } else if part >= parts || bytes.len() > FOREIGN_PART_BYTES {
+                    Err("a capture's part is not one of its parts, or over FOREIGN_PART_BYTES")
                 } else {
                     Ok(())
                 }
