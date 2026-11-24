@@ -80,8 +80,7 @@ fn parts(
     let drop_limits = spec
         .power
         .as_ref()
-        .and_then(|p| p.drop_limits.as_ref())
-        .is_some_and(|l| !l.is_empty());
+        .is_some_and(|p| !p.drop_limits.is_empty());
     let crystal = matches!(spec.mcu.hse, Some(aethelgard_ir::clock::Hse::Crystal(_)));
     vec![
         Ran::judged("extract.lines", lines as u64),

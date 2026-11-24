@@ -1,5 +1,5 @@
 {
-  "schema_version": 11,
+  "schema_version": 12,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -149,6 +149,30 @@
       "title": "ArduPilot libraries/AP_HAL_ChibiOS/SPIDevice.cpp",
       "revision": "Copter-4.7.2, fb773567896014da007bca58358704d4a0d8516f",
       "sha256": "e678f0ec0130536861e9fbefacf93b9ee3314bcd89f25f66fb5691150b244f26",
+      "pending": null
+    },
+    "DIODES_DS37198": {
+      "title": "Diodes Incorporated DMP6023LSS datasheet DS37198",
+      "revision": "Rev. 2-2 (January 2015)",
+      "sha256": "3dc01428a76cd4de4f5149e8218f735f337ab3f1782ece0df56ba2d9fcee95e4",
+      "pending": null
+    },
+    "ONSEMI_MMSZ5221BT1": {
+      "title": "onsemi MMSZ5221BT1 series datasheet MMSZ5221BT1/D",
+      "revision": "Rev. 17 (March 2024)",
+      "sha256": "e74e36bed008d20bd2d23671d249fc4a0aa7bc85072829a00388a46bf02c83fb",
+      "pending": null
+    },
+    "BOURNS_SF1206F": {
+      "title": "Bourns SinglFuse SF-1206F series datasheet",
+      "revision": "Rev. J 04/21",
+      "sha256": "883c2e01a128242695ed9fd5903573387263c76df1a09188d84e6aca3b3579a3",
+      "pending": null
+    },
+    "SBVS157E": {
+      "title": "TI TLV803, TLV853, TLV863 datasheet SBVS157E",
+      "revision": "E (December 2020)",
+      "sha256": "1645cfe12f99eca88937402ac080dd3fe48f0e957fd7ddb1101fef26cd39aabb",
       "pending": null
     }
   },
@@ -410,7 +434,7 @@
                   "document": "SNVSAN3F",
                   "section": "p. 23, 9.2.2.6: a minimum of 10 uF of ceramic capacitance; p. 19 note: capacitances are effective, under DC bias and temperature (ruled D2 (c) on PR #158)"
                 },
-                "on_shortfall": "report"
+                "on_shortfall": "enforce"
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -958,6 +982,36 @@
               "at": {
                 "document": "DS12117",
                 "section": "p. 212, Table 115, VBOR3 falling max 2.68 V"
+              }
+            }
+          ],
+          "bor_falling_min_millivolts": [
+            {
+              "value": 1580,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115 = p. 107, Table 16, VBOR0 falling min 1.58 V"
+              }
+            },
+            {
+              "value": 1950,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115 = p. 107, Table 16, VBOR1 falling min 1.95 V"
+              }
+            },
+            {
+              "value": 2250,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115 = p. 107, Table 16, VBOR2 falling min 2.25 V"
+              }
+            },
+            {
+              "value": 2540,
+              "at": {
+                "document": "DS12117",
+                "section": "p. 212, Table 115 = p. 107, Table 16, VBOR3 falling min 2.54 V"
               }
             }
           ],
@@ -2619,6 +2673,288 @@
             }
           },
           "esr_condition": "at 20 C and 100 kHz, initial; 3.50 ohm max at -40 C (p. 2); no figure between"
+        }
+      }
+    },
+    {
+      "part": "DMP6023LSS-13",
+      "lifecycle": "unread",
+      "symbol": "Aethelgard_Power:DMP6023LSS",
+      "footprint": "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm",
+      "pins": {
+        "D": "5,6,7,8",
+        "G": "4",
+        "S": "1,2,3"
+      },
+      "temperature_celsius": {
+        "min": -55,
+        "max": 150,
+        "at": {
+          "document": "DIODES_DS37198",
+          "section": "p. 2, Thermal Characteristics, operating and storage temperature range -55 to +150 C"
+        }
+      },
+      "kind": {
+        "pfet": {
+          "vds_max_millivolts": {
+            "value": 60000,
+            "at": {
+              "document": "DIODES_DS37198",
+              "section": "p. 2, Maximum Ratings (TA = +25 C), drain-source voltage VDSS -60 V"
+            }
+          },
+          "vgs_max_millivolts": {
+            "value": 20000,
+            "at": {
+              "document": "DIODES_DS37198",
+              "section": "p. 2, Maximum Ratings, gate-source voltage VGSS +/-20 V"
+            }
+          },
+          "id_max_milliamps": {
+            "value": 5300,
+            "at": {
+              "document": "DIODES_DS37198",
+              "section": "p. 2, Maximum Ratings, continuous drain current ID -5.3 A at VGS -10 V, TA +70 C (note 6); none is printed at 85 C"
+            }
+          },
+          "rds_on_max": [
+            {
+              "vgs_millivolts": 4500,
+              "max_milliohms": {
+                "value": 33,
+                "at": {
+                  "document": "DIODES_DS37198",
+                  "section": "p. 2, Electrical Characteristics, RDS(ON) max 33 mOhm at VGS -4.5 V, ID -4 A"
+                }
+              }
+            },
+            {
+              "vgs_millivolts": 10000,
+              "max_milliohms": {
+                "value": 25,
+                "at": {
+                  "document": "DIODES_DS37198",
+                  "section": "p. 2, Electrical Characteristics, RDS(ON) max 25 mOhm at VGS -10 V, ID -5 A"
+                }
+              }
+            }
+          ],
+          "advance_information": {
+            "document": "DIODES_DS37198",
+            "section": "every page's text layer carries ADVANCE INFORMATION as white text in the left margin, not visible on the rendered page (AET-WO-4300k)"
+          }
+        }
+      }
+    },
+    {
+      "part": "MMSZ5242BT1G",
+      "lifecycle": "unread",
+      "symbol": "Device:D_Zener",
+      "footprint": "Diode_SMD:D_SOD-123",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -55,
+        "max": 150,
+        "at": {
+          "document": "ONSEMI_MMSZ5221BT1",
+          "section": "p. 1, Maximum Ratings, operating and storage temperature range TJ, Tstg -55 to +150 C"
+        }
+      },
+      "kind": {
+        "zener": {
+          "vz_millivolts": {
+            "min": 11400,
+            "max": 12600,
+            "at": {
+              "document": "ONSEMI_MMSZ5221BT1",
+              "section": "p. 3, electrical characteristics, MMSZ5242BT1G (H2), VZ min 11.40 V, max 12.60 V at IZT 20 mA"
+            }
+          },
+          "izt_microamps": {
+            "value": 20000,
+            "at": {
+              "document": "ONSEMI_MMSZ5221BT1",
+              "section": "p. 3, electrical characteristics, MMSZ5242BT1G (H2), IZT 20 mA"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "SF-1206F400-2",
+      "lifecycle": "unread",
+      "symbol": "Device:Fuse",
+      "footprint": "Fuse:Fuse_1206_3216Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -20,
+        "max": 105,
+        "at": {
+          "document": "BOURNS_SF1206F",
+          "section": "PDF p. 1, Environmental Characteristics, operating temperature -20 C to +105 C"
+        }
+      },
+      "kind": {
+        "fuse": {
+          "rated_milliamps": {
+            "value": 4000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F400-2, rated current 4.00 A"
+            }
+          },
+          "voltage_max_millivolts": {
+            "value": 32000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F400-2, rated voltage 32 VDC, interrupting rating 50 A at 32 VDC"
+            }
+          },
+          "resistance_typ_microohms": {
+            "value": 16000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F400-2, resistance 0.016 Ohm typical (note ***, at <= 10 % rated current, 25 C)"
+            }
+          },
+          "resistance_tolerance_permille": {
+            "value": 250,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, note ***: tolerance +/-25 %"
+            }
+          },
+          "melting_i2t_milliamp2_seconds": {
+            "value": 954000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F400-2, typical I2t 0.954 A2s (note ****)"
+            }
+          },
+          "melting_condition": "typical, melting, calculated at 10 times rated current (note ****)",
+          "kept_at_85c_permille": {
+            "value": 910,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 3, thermal derating curve, about 91 % of rating at 85 C, read from the graph (80 C about 92 %, 90 C about 90 %)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "SF-1206F700-2",
+      "lifecycle": "unread",
+      "symbol": "Device:Fuse",
+      "footprint": "Fuse:Fuse_1206_3216Metric",
+      "pins": {},
+      "temperature_celsius": {
+        "min": -20,
+        "max": 105,
+        "at": {
+          "document": "BOURNS_SF1206F",
+          "section": "PDF p. 1, Environmental Characteristics, operating temperature -20 C to +105 C"
+        }
+      },
+      "kind": {
+        "fuse": {
+          "rated_milliamps": {
+            "value": 7000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F700-2, rated current 7.00 A"
+            }
+          },
+          "voltage_max_millivolts": {
+            "value": 32000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F700-2, rated voltage 32 VDC, interrupting rating 50 A at 32 VDC"
+            }
+          },
+          "resistance_typ_microohms": {
+            "value": 7500,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F700-2, resistance 0.0075 Ohm typical (note ***, at <= 10 % rated current, 25 C)"
+            }
+          },
+          "resistance_tolerance_permille": {
+            "value": 250,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, note ***: tolerance +/-25 %"
+            }
+          },
+          "melting_i2t_milliamp2_seconds": {
+            "value": 3250000,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 1, Electrical Characteristics, SF-1206F700-2, typical I2t 3.250 A2s (note ****)"
+            }
+          },
+          "melting_condition": "typical, melting, calculated at 10 times rated current (note ****)",
+          "kept_at_85c_permille": {
+            "value": 910,
+            "at": {
+              "document": "BOURNS_SF1206F",
+              "section": "PDF p. 3, thermal derating curve, about 91 % of rating at 85 C, read from the graph (80 C about 92 %, 90 C about 90 %)"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "TLV803SDBZR",
+      "lifecycle": "unread",
+      "symbol": "Aethelgard_Power:TLV803S",
+      "footprint": "Package_TO_SOT_SMD:SOT-23-3",
+      "pins": {
+        "GND": "1",
+        "RESET": "2",
+        "VDD": "3"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "SBVS157E",
+          "section": "p. 5, 7.4 Recommended Operating Conditions, TJ -40 to 125 C"
+        }
+      },
+      "kind": {
+        "supervisor": {
+          "falling_millivolts": {
+            "min": 2870,
+            "max": 2990,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 6, 7.5 Electrical Characteristics, VIT- TLV803S min 2.87 V, max 2.99 V, TJ -40 to +125 C"
+            }
+          },
+          "hysteresis_typ_millivolts": {
+            "value": 40,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 6, 7.5 Electrical Characteristics, Vhys TLV803S 40 mV in the TYP column only, at TJ 25 C, IOL 50 uA"
+            }
+          },
+          "vdd_millivolts": {
+            "min": 1100,
+            "max": 6000,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 5, 7.4 Recommended Operating Conditions, VDD 1.1 to 6 V"
+            }
+          },
+          "pull_up_ohms": {
+            "min": 10000,
+            "max": 1000000,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 4, Pin Functions, RESET: use a 10-kOhm to 1-MOhm pullup resistor on this pin"
+            }
+          }
         }
       }
     }

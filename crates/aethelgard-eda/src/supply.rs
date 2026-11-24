@@ -1349,9 +1349,7 @@ pub fn supplies(
     let Some(power) = &spec.power else {
         return Ok(Vec::new());
     };
-    let Some(limits) = &power.drop_limits else {
-        return Ok(Vec::new());
-    };
+    let limits = &power.drop_limits;
     if limits.is_empty() {
         return Ok(Vec::new());
     }

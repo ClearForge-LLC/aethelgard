@@ -895,6 +895,20 @@ pub(crate) fn resolve_battery_sag(
             ),
         ));
     }
+    if let Some(m) = spec
+        .motor_outputs
+        .iter()
+        .find(|m| matches!(m.esc, Some(aethelgard_ir::motor::Esc::BoardVbat(_))))
+    {
+        return Err(ScenarioError::new(
+            "EscCurrentUnmodelled",
+            Some(&m.label),
+            format!(
+                "motor output `{}` declares an ESC fed through the board's VBAT copper, whose current no part row models yet (AET-WO-4500), so the sag cannot be computed",
+                m.label
+            ),
+        ));
+    }
     let chain = battery::SagChain {
         v_open_microvolts: side.v_open_microvolts,
         healthy_milliohms: healthy.value,

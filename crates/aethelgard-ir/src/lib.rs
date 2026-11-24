@@ -33,6 +33,7 @@ pub mod serial;
 pub mod silicon;
 mod solve;
 pub mod speeds;
+pub mod supervisor;
 pub mod thermal;
 pub mod versions;
 pub mod vos;
@@ -385,6 +386,15 @@ pub struct Mcu {
     /// as the work order states, and `false` is not written back.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reset_switch: bool,
+    /// A voltage supervisor on `NRST` (`AET-WO-4300k` (9), Path B). Absent is
+    /// none, the stricter case: the BOR level is then the reset every
+    /// supply-bounded device is judged against ([`supervisor`]).
+    #[serde(
+        default,
+        deserialize_with = "board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reset_supervisor: Option<supervisor::ResetSupervisor>,
     /// The kernel clocks a foreign firmware programs (`AET-WO-4400g` §1.2):
     /// `simulate --foreign` requires it and a run of the generated firmware
     /// refuses it. Absent is none, and none is not written back.
@@ -1111,6 +1121,7 @@ impl<'de> Deserialize<'de> for Mcu {
                     supply_source: w.supply_source,
                     reset_switch: w.reset_switch,
                     foreign_clock: w.foreign_clock,
+                    reset_supervisor: w.reset_supervisor,
                     reserved_pins: w.reserved_pins,
                 })
             }
@@ -1139,6 +1150,8 @@ struct McuWire {
     reset_switch: bool,
     #[serde(default, deserialize_with = "board::present")]
     foreign_clock: Option<motor::ForeignClock>,
+    #[serde(default, deserialize_with = "board::present")]
+    reset_supervisor: Option<supervisor::ResetSupervisor>,
     reserved_pins: Vec<ReservedPin>,
 }
 
@@ -3233,7 +3246,9 @@ impl Specification {
         // 15a (`AET-WO-1312`)
         bench::validate(self)?;
         // 16 (`AET-WO-4300d`)
-        power::check(self)?;
+        let checked = power::check(self)?;
+        // 16a (`AET-WO-4300k` (9))
+        supervisor::check(self, checked.as_ref())?;
         // 17, 18 (`AET-WO-4300g`)
         connectors::programming_path(self)?;
         connectors::supply_source(self)?;
@@ -4165,8 +4180,17 @@ impl Specification {
         for (i, m) in self.motor_outputs.iter().enumerate() {
             plain(&m.label, || format!("motor_outputs[{i}].label"))?;
             optional_identifier(&m.pin, || format!("motor_outputs[{i}].pin"))?;
-            if let Some(motor::Esc::NoEsc(n)) = &m.esc {
-                board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
+            match &m.esc {
+                Some(motor::Esc::NoEsc(n)) => {
+                    board::source(&n.source, &format!("motor_outputs[{i}].esc.none.source"))?;
+                }
+                Some(motor::Esc::BoardVbat(n)) => {
+                    board::source(
+                        &n.source,
+                        &format!("motor_outputs[{i}].esc.board_vbat.source"),
+                    )?;
+                }
+                None => {}
             }
             let r = &m.pull.resistor;
             let at = format!("motor_outputs[{i}].pull");
