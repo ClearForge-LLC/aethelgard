@@ -956,14 +956,19 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     ),
                 ));
             }
-            for (what, v, max) in [("loss_milliwatts", &j.loss_milliwatts, 1_000_000)] {
-                crate::board::source(&v.source, &format!("{path}.junction.{what}.source"))?;
-                if v.value == 0 || v.value > max {
-                    return Err(invalid(
-                        &r.reference,
-                        format!("{path}.junction.{what} is {}, not 1 to {max}", v.value),
-                    ));
-                }
+            let v = &j.loss_milliwatts;
+            crate::board::source(
+                &v.source,
+                &format!("{path}.junction.loss_milliwatts.source"),
+            )?;
+            if v.value == 0 || v.value > 1_000_000 {
+                return Err(invalid(
+                    &r.reference,
+                    format!(
+                        "{path}.junction.loss_milliwatts is {}, not 1 to 1000000",
+                        v.value
+                    ),
+                ));
             }
         }
     }
