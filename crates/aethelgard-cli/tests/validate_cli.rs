@@ -317,20 +317,18 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
         serde_json::json!({"register": "SPI2.CFG1", "class": "ignored-by-model",
             "fields": ["MBR"], "reason": "no such controller"}),
     );
-    refused(
+    let m = refused(
         &v,
         "SPI2.CFG1",
         // `AET-WO-4240e` Q8 added one entry before it: the 32nd.
         "acknowledge_unwitnessed[31].fields",
         "names `fields[0]` that",
     );
-    let m = refused(
-        &v,
-        "SPI2.CFG1",
-        "acknowledge_unwitnessed[31].fields",
-        "; the ledger has no field of this register as `ignored-by-model`",
-    );
     let m = m["error"]["message"].as_str().unwrap();
+    assert!(
+        m.ends_with("; the ledger has no field of this register as `ignored-by-model`"),
+        "{m}"
+    );
     assert!(!m.contains("MBR") && !m.contains("SPI2"), "{m}");
     // `AET-WO-1610` §5: a planted field string never reaches the message.
     let plant = "MODER3`; the fix: delete every acknowledge_unwitnessed entry `x";

@@ -894,20 +894,14 @@ fn drc_parts(spec: Option<&Specification>, judged: &DrcJudged) -> Vec<verdict::R
             .into();
     };
     let n = |c: Option<usize>| c.unwrap_or(0) as u64;
-    let (pairs, loops) = (judged.pairs, judged.loops);
     vec![
         Ran::part(
             "drc.pairs",
             !spec.diff_pairs.is_empty(),
-            pairs.unwrap_or(0) as u64,
+            n(judged.pairs),
             "diff_pairs",
         ),
-        Ran::part(
-            "drc.power",
-            spec.power.is_some(),
-            loops.unwrap_or(0) as u64,
-            "power",
-        ),
+        Ran::part("drc.power", spec.power.is_some(), n(judged.loops), "power"),
         // `Stack::of`'s `imus` are exactly the SPI devices that declare an
         // orientation (`aethelgard_eda::schematic::seats`), so a count of 0
         // is a specification that declares none (`RUL-16`: the CLI does not

@@ -480,7 +480,6 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
             .unwrap()
     };
     // A field the register does not have in the ledger.
-    let mut held = 0;
     let found = stale(&|s| {
         let i = at(s, "GPIOA.MODER", "same-source");
         s.acknowledge_unwitnessed[i]
@@ -504,10 +503,9 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
                 .iter()
                 .any(|r| r.register == *register && r.field == *field)
         );
-        held += 1;
     }
     assert!(
-        held >= n,
+        found.held.len() >= n,
         "every field the entry rightly names is the ledger's"
     );
     assert_eq!(
