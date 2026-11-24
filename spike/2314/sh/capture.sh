@@ -4,9 +4,9 @@
 # monitor script) and the booted platform from /proc. Output /cache/cap. Usage: capture.sh ELF
 set -u
 cd /repo
-A=/repo/target/debug/aethelgard; O=/cache/cap; rm -rf $O; mkdir -p $O /cache/run
-S=crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
-[ -d /cache/run/gen ] || $A generate --spec $S --out /cache/run/gen > /cache/run/generate.json
+A=/repo/target/debug/aethelgard; O=${CAP:-/cache/cap}; rm -rf $O; mkdir -p $O /cache/run
+S=${SPEC:-crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json}; G=${GEN:-/cache/run/gen}
+[ -d $G ] || $A generate --spec $S --out $G > $G.json
 ( for _ in $(seq 1 6000); do
     for p in /proc/[0-9]*; do
       c=$(tr '\0' '\n' < $p/cmdline 2>/dev/null) || continue
@@ -16,7 +16,7 @@ S=crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json
     done
     sleep 0.02
   done ) &
-$A simulate --spec $S --platform /cache/run/gen/board/sentinel-02-own.repl --firmware "$1" --foreign 5000ms > $O/simulate.json 2> $O/stderr.txt; echo "simulate exit=$?"
+$A simulate --spec $S --platform $(ls $G/board/*.repl) --firmware "$1" --foreign 5000ms > $O/simulate.json 2> $O/stderr.txt; echo "simulate exit=$?"
 wait
 python3 -I - $O <<'PY'
 import sys

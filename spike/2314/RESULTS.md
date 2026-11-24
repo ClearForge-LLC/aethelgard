@@ -54,8 +54,19 @@ more were planted because the code has them: *no write*, and *magic with no hook
 
 **P1.3 was wrong in its argument.** I read job 138183630071's "firmware build" line at 1795490050.48 as the BMP581
 test's start. That line is printed by another test's helper (`ANSWER 2100:`). `battery_sag::firmware` prints nothing.
-What the log does bound: libtest printed no "running for over 60 seconds" line for the test, so it ran under 60 s.
-That leaves room for a 30 s boot. The wall bound is **not** ruled out.
+**The test's span, derived from libtest's own stamps.** The binary runs 9 tests on 4 threads, started in name order as
+each thread frees. Each "running for over 60 seconds" line lands 60.0 s after the start this derives: 8 of 8 lines
+check within 0.03 s.
+
+| Job (commit) | Started (after) | Ended | Span |
+|---|---|---|---|
+| 138183630071 (09c2ff8d) | …005.35 (`a_step_sent…` ok) | FAILED …060.34 | **55.0 s** |
+| 138173503045 (e39c84c5) | …401.66 (`an_echo…` ok) | FAILED …459.20 | **57.5 s** |
+| 138219678879 (046fdbfa, same packing, passed) | …762.03 (`a_firmware…` ok) | ok …858.20 | 96.2 s |
+
+The failure comes at the campaign's first boot (`boot(None)`), after `generate` and the firmware's `build`. A
+55–57.5 s span is what a build of about 25 s plus a boot killed at the 30 s wall bound would give. So the wall bound
+fits the stamps; it is still not proven.
 
 **The BMP581's margins, measured** (`sh/bmp.sh`, `sh/contend.sh`; `examples/sentinel-01-ext-bmp581.json`, the
 undisturbed boot as the campaign's `boot(None)` runs it, the whole 100 ms window):
@@ -70,7 +81,7 @@ undisturbed boot as the campaign's `boot(None)` runs it, the whole 100 ms window
   from their bounds: memory at 47 % at worst, the log at 0.1 %. The word is the same in every run, so a fault word is
   out.
 - **CI history** (`ci.yml`, the last 60 runs): shard 11 failed only on `4410`'s branch, at e39c84c5 and 09c2ff8d
-  (×2), 02:24–02:50Z. Their `shard.tsv` (288 tests) is byte-identical to 046fdbfa's, which passed. Every main run passed.
+  (×2), 02:24–02:50Z. Their `shard.tsv` (288 tests) is byte-identical (`cmp`, sha256 `24495afd…`) to 046fdbfa's, which passed. Every main run passed.
 - So the same packing gave 3 fails and 1 pass. Neither packing alone nor the code decides it; the runner's load does.
   That fits the wall bound, and memory less well.
 - The shard-11 replay (that `shard.tsv` at 4 CPUs until a failure or 10 passes) runs in the build, after (1). On
@@ -97,7 +108,9 @@ every 0.1 s):
 | udf, Renode alone, no hook, access log | 0 | 53.3 | **3,036,176** | — | 2.35 GB of stdout |
 | udf + logging hook, no access log | 0 | 15.5 | 1,227,316 | 1 | — |
 | udf, probe hook, no access log | 0 | 30.8 | 1,613,120 | 1 | — |
-| **udf + halting hook, access log** | **0** | **8.2** | **856,180** | **1** | 0 firmware lines after; markers and every read intact |
+| **udf + halting hook, access log** (4 runs) | **0** | **8.2–8.9** | **856,180–872,564** | **1** | 0 firmware lines after; markers and every read intact; the same hook line each time |
+| noimu ELF (`aa9aecd3…`) + halting hooks | 0 | 8.6 | 885,436 | **0** | VTOR, entries = ELF's; CFSR, HFSR 0 |
+| four-port ELF (`da2b1976…`, its own capture, CI's derived spec) + halting hooks | 0 | 7.7 | 683,640 | **0** | VTOR, entries = ELF's; CFSR, HFSR 0; its CLI run passes (662,796 KiB) |
 
 - **The hook's line:** `[00:00:04.392440830] … AETHELGARD-FAULT HardFault pc=8000340 icsr=803 lr=ffffffed sp=30000600
   osp=30027310 stacked=80360aa vtor=8000000 n=72565519`. The stacked PC, read from the PSP frame (EXC_RETURN bit 2
@@ -110,6 +123,11 @@ every 0.1 s):
 - **Without the access log, the HardFault still passes the cap on one run of two** (1,613,120 KiB in 30.8 s;
   1,227,316 KiB in 15.5 s). `1609` measured 1,101,724 KiB. So the halt, not the log, is what keeps a faulted run under
   the cap.
+- **Coverage:** only HardFault was exercised: a `udf` with UsageFault disabled escalates to it. MemManage, BusFault
+  and UsageFault are hooked the same way but never entered. Renode answers an unmapped read with a log line, not
+  a bus error, so a BusFault plant may not be reachable in the twin. The three CI ELFs whose normal boot `foreign-judge.sh`
+  runs enter no handler. Its other cases are these ELFs with a panic call or a float default patched; none was run
+  with the hooks.
 - **What co-occurs:** the foreign judge keeps `core_in_exception` (ICSR.VECTACTIVE 3 at the end, `foreign.rs:1547`).
   A halted run therefore also fails `core_in_exception`. Every witness came before the fault (U5's data at
   4.392420560 s), so no `*_unwitnessed` is expected.
@@ -192,7 +210,10 @@ A read-only sub-measurement in Python (`r4/`; run from `~/.cache/aet-2314/r4`, w
 
 ## Decisions for the ruling
 
-**D1. The refusal's carried end (1).** When the undisturbed boot yields no boot word, `PlantedEventUnplaced` appends
+**D1. The refusal's carried end (1).** `place` is reached with no word from two call sites, the droop's `boot(None)`
+and the battery sag's, where the run's own boot is the undisturbed one (`campaign.rs:1229-1245`). Both carry the
+end, and the plants cover both: the six endings under the droop, and at least one under a sag scenario. When the
+undisturbed boot yields no boot word, `PlantedEventUnplaced` appends
 that boot's end, taken from the verdict `boot(None)` returned:
 - every non-info finding, as `kind: message`;
 - `renode_log_flood` when present;
@@ -215,6 +236,15 @@ committed verdict. One planted test per ending (six), each with a mutant.
   - It fires only when `ICSR.VECTACTIVE` equals the vector's number. That way a handler reached by a call, or through
     a moved table that routes it elsewhere, never fails a run falsely.
 - **The finding:** `foreign_fault`, naming the vector, the PC and the entry's virtual time.
+- **A table the hooks cannot use:** an entry that is 0, outside every executable `PT_LOAD`, or the table itself
+  outside the loaded image. The four CI ELFs have none, and four distinct handlers. Tier-1 fixture ELFs, which are
+  tiny, probably will have them.
+  - (i) A named refusal before the boot (`ForeignFaultVectorUnusable`, naming the entry), as `1609`'s missing panic
+    symbol is. It is fail-closed, and the fixtures need a table.
+  - (ii) Hook only the usable entries, and name the unusable ones as `unhooked` in the rule row's text and in the
+    finding-less report. **Lean (i)** for a missing table or an entry outside the image.
+  - Entries shared by several vectors are hooked once, and the vector is named from `ICSR.VECTACTIVE`, not from the
+    address (measured: ICSR reads `0x803` in the hook).
 - **Where the evidence goes:**
   - (a) In the finding's message only, plus one `RULES` row. **Lean,** because it adds no report field.
   - (b) A `boot.fault` report beside `boot.panic`, as `1609` did. It is a new key in the foreign verdict, so I ask
