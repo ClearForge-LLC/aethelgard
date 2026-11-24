@@ -1,6 +1,6 @@
 # AET-WO-1610 — FEEDBACK: no harness is not "off", three silent skips, an enum left `{}`, and a stale acknowledgement that quotes the ledger
 
-**Branch:** `wo/aet-1610-cli-backlog` from `main` `72d85eef`; `main` `7bf6163d` merged (§7).
+**Branch:** `wo/aet-1610-cli-backlog` from `main` `72d85eef`; `main` `7bf6163d` and `1cb994c1` merged (§7).
 **Builder:** Claude (Opus 5.5) as project manager.
 - **A fresh Opus subagent** did the independent adversarial review (§5). It was read-only, and given the code and the
   WO, not my conclusions.
@@ -205,7 +205,13 @@ Each finding was checked at source before acting on it.
 ## 7. Main, and the package
 
 - **`main` `7bf6163d` merged** (`aa80e023`): docs only (`AET-WO-2314`, the roadmap). No code moved and nothing
-  conflicted. `4300k`'s build is not on `main` yet; if it merges first, I merge again and rerun the gates.
+  conflicted.
+- **`main` `1cb994c1` merged** (`5807f09b`, the architect's ruling of 12:20Z): `1324`'s router rule and index in
+  `eda`, its tests, and docs. Nothing conflicted. Rerun on the merged head:
+  - the CLAUDE.md gates: fmt and clippy clean; `cargo test --workspace` 3,068 passed, 0 failed, 173 suites;
+  - tier 2 in the image: `with_tools`' turned IMU; `board_tier2`'s motor driver, 149 s; `verify_2k2_tier2`,
+    2 passed, 402 s.
+- `4300k`'s build is not on `main` yet.
 - **The bench package:** removing `judged_nothing` and adding `drc.orientation` and `drc.outline` move the `verify`
   verdict line. So `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256` moves, and nothing else in the
   package should. It is never hand-edited: it needs the architect's `write` dispatch of `ci.yml`'s `bench-package`,
