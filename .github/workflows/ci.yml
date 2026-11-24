@@ -623,6 +623,14 @@ jobs:
       - name: build the CLI and the analog bridge, with the network
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
 
+      # Ruled 2026-11-24T21:38Z (ii): the runner's disk and memory around the verify, and the
+      # largest process's peak RSS, sampled from the host every 2 s (it sees the container's
+      # processes), so a crash names the resource it ran out of (run 45475807268's cargo-kani 101).
+      - name: Sentinel-03, disk and memory before the verify, and the RSS sampler
+        run: |
+          df -h; free -g
+          nohup bash -c 'while :; do ps -eo rss=,comm= --sort=-rss | head -1; sleep 2; done' > "$RUNNER_TEMP/rss.log" 2>&1 &
+
       - name: Sentinel-03, verify --against-fab, the committed package derived again
         if: ${{ !inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
@@ -630,6 +638,12 @@ jobs:
       - name: Sentinel-03, verify --fab-out, the package written for committing
         if: ${{ inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
+
+      - name: Sentinel-03, disk and memory after the verify, and the peak RSS
+        if: always()
+        run: |
+          df -h; free -g
+          sort -n "$RUNNER_TEMP/rss.log" | tail -1 | awk '{printf "peak single-process RSS: %.2f GiB (%s)\n", $1 / 1048576, $2}'
 
       - name: keep Sentinel-03's written package
         if: ${{ inputs.write }}

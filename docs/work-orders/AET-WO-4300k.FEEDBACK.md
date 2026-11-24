@@ -248,6 +248,16 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
     - the power fixture's 20 loops and its supply gate;
     - `battery_sag_tier1` by uid;
     - `campaign_tier2`'s d1. CI killed its boot at the 30 s wall bound; it passed twice in the image at about 17 s. This is a row: the bound is tight on a loaded runner.
+- **`bench-package-s03`'s `cargo kani exited 101`** (run 45475807268, `--against-fab` on 2a9f8459; ruled 20:50Z and 21:38Z).
+  - **Unreproduced:** in the image, on the same head and in CI's shape, all 20 harnesses pass.
+  - **Measured there:** `kani-driver`'s peak RSS is **15.69 GB (14.97 GiB)**, with 15.93 GB across every process, inside a 16 GiB cap.
+  - A GitHub `ubuntu-latest` runner has 16 GB of RAM, with the OS and Docker beside it. The margin is about nothing, so a process killed for memory, which cargo-kani reports as 101, is the leading candidate (a).
+  - The runner's disk is (b): the image is 5.0 GB, the debug target 4.5 GB, and Kani's per-harness builds go in the container's scratch, unmeasured.
+  - The dispatch's `--fab-out` passed `prove` on the same harnesses, consistent with a margin that varies from run to run.
+- **What the next failure will say (ruled 21:38Z, built):**
+  - `said.rs` now quotes a `panicked at` line and names a child killed by a signal (`signal 9 is SIGKILL`).
+  - `bench-package-s03` prints `df -h` and `free -g` before and after its verify, and the largest process's peak RSS, sampled from the host.
+  - If it fails again, the fix follows its named cause: fewer Kani jobs at once, the heavy harness made smaller, a larger runner, or scratch on the larger disk. If it passes, the peak it logs is the margin.
 - **CI weights for `readiness_tier1` (run 45475807268 red, ruled 20:50Z).**
   - Five of its tests emit Sentinel-03 and run 52–80 s each in CI, in debug, each in its own shard. They had no row, so the shard timer failed five shards.
   - The dispatch run's shards 0, 1 and 8 had failed the same way; I read only that run's failing tests.
