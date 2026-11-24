@@ -63,8 +63,8 @@ M = [
     ("M20 -min without a claim", R,
      "                && observed.records[k].0 == aethelgard_twin::boot::STATUS_OK", "", RENODE),
     ("M21 order never checked", R, "unplaced[g[0]].out_of_order |= s < reached;", "", RENODE),
-    ("M22 an unread form unnamed", R, "let unread = aethelgard_evolve::lines::form(&script, &c.device).is_none();",
-     "let unread = false;", RENODE),
+    ("M22 an unread form unnamed", R, "unplaced[g[0]].unread = form.is_none();",
+     "", RENODE),
     ("M23 an error to the first step", R, ".max_by_key(|&s| begun[s])", ".min_by_key(|&s| begun[s])", RENODE),
 ]
 for name, f, old, new, suite in M:

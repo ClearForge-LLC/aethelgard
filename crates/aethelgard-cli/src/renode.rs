@@ -1001,6 +1001,9 @@ pub struct Unplaced {
     /// Its placed transactions were logged out of its script's order, which
     /// the count rule failed and placement alone would not.
     pub out_of_order: bool,
+    /// No reader knows its model's line form, so none of its lines is placed
+    /// (`INV-06`).
+    pub unread: bool,
 }
 
 /// A boot's findings, the listing, and what the reads gave.
@@ -1362,16 +1365,15 @@ fn attribute<'a>(
                     .map(String::as_str)
                     .collect();
                 let bodies: Vec<&str> = lines.iter().map(|&(_, b)| b).collect();
-                let owner = match aethelgard_evolve::lines::form(&script, &c.device) {
-                    Some(form) => {
-                        let steps: Vec<(&[u8], u8)> = g
-                            .iter()
-                            .map(|&k| (checks[k].write.as_slice(), checks[k].width))
-                            .collect();
-                        aethelgard_evolve::lines::place(&steps, &bodies, &c.device, form)
-                    }
-                    None => vec![None; bodies.len()],
-                };
+                let form = aethelgard_evolve::lines::form(&script, &c.device);
+                unplaced[g[0]].unread = form.is_none();
+                let steps: Vec<(&[u8], u8)> = g
+                    .iter()
+                    .map(|&k| (checks[k].write.as_slice(), checks[k].width))
+                    .collect();
+                let owner = form.map_or(vec![None; bodies.len()], |form| {
+                    aethelgard_evolve::lines::place(&steps, &bodies, &c.device, form)
+                });
                 // Each step's first line, for the `[ERROR]` lines (D-A1).
                 let mut begun: Vec<Option<usize>> = vec![None; g.len()];
                 let mut reached = 0;
@@ -4081,19 +4083,13 @@ fn witness_findings(
         if u.lines.is_empty() && !u.out_of_order {
             continue;
         }
-        let script: Vec<&String> = checks
-            .iter()
-            .filter(|k| k.reference == c.reference)
-            .flat_map(|k| k.witness.iter().flatten())
-            .collect();
-        let unread = aethelgard_evolve::lines::form(&script, &c.device).is_none();
         let mut said = Vec::new();
         if !u.lines.is_empty() {
             said.push(format!(
                 "Renode logged {:?} for `{}`, which no step of its script is{}",
                 u.lines,
                 c.device,
-                if unread {
+                if u.unread {
                     ": no reader knows its model's line form (INV-06), so none of its lines is placed"
                 } else {
                     ""
@@ -7630,6 +7626,42 @@ mod tests {
         ]
     }
 
+    /// `lines` as Renode logs them, each with a host timestamp.
+    fn stamp(lines: &[&str]) -> Vec<String> {
+        lines
+            .iter()
+            .map(|b| format!("[00:00:00.010040000] {b}"))
+            .collect()
+    }
+
+    /// `checks`' lines and unplaced lines over `lines` ([`stamp`]).
+    fn placed(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        lines: &[&str],
+    ) -> (Vec<Vec<String>>, Vec<Unplaced>) {
+        let log = stamp(lines);
+        let (seen, _, unplaced) = attribute(
+            checks,
+            &[],
+            &log.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        (seen, unplaced)
+    }
+
+    /// [`step_findings_with`] over `lines` ([`stamp`]).
+    fn judged(
+        checks: &[aethelgard_twin::boot::StepCheck],
+        lines: &[&str],
+        records: Vec<(u32, u64)>,
+    ) -> Vec<Finding> {
+        let log = stamp(lines);
+        step_findings_with(
+            checks,
+            &log.iter().map(String::as_str).collect::<Vec<_>>(),
+            records,
+        )
+    }
+
     const ID: &str = "[NOISY] i2c1.u7: read 0x01 -> 0x50";
     const CFG: &str = "[NOISY] i2c1.u7: write 0x36 <- 0x40 0x81";
     const DATA: &str = "[NOISY] i2c1.u7: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
@@ -8196,12 +8228,7 @@ mod tests {
     fn an_i2c_line_goes_to_the_step_whose_transaction_it_is() {
         let checks = bmp581_steps();
         let place = |log: &[&str]| {
-            let log: Vec<String> = log
-                .iter()
-                .map(|b| format!("[00:00:00.010040000] {b}"))
-                .collect();
-            let log: Vec<&str> = log.iter().map(String::as_str).collect();
-            let (seen, _, unplaced) = attribute(&checks, &[], &log);
+            let (seen, unplaced) = placed(&checks, log);
             (seen, unplaced[0].clone())
         };
         let warn = "[WARNING] i2c1.u7: write to read-only register 0x38 ignored";
@@ -8238,14 +8265,8 @@ mod tests {
             step(i2c(), "i2c1.u7", Identity, &[a]),
             step(i2c(), "i2c1.u7", Data, &[b]),
         ];
-        let (ta, tb) = (
-            format!("[00:00:00.010040000] {a}"),
-            format!("[00:00:00.010040000] {b}"),
-        );
-        let (seen, _, _) = attribute(&twin, &[], &[&ta, &tb]);
-        assert_eq!(seen, [vec![a], vec![b]]);
-        let (seen, _, _) = attribute(&twin, &[], &[&tb]);
-        assert_eq!(seen, [vec![b], vec![]]);
+        assert_eq!(placed(&twin, &[a, b]).0, [vec![a], vec![b]]);
+        assert_eq!(placed(&twin, &[b]).0, [vec![b], vec![]]);
         // `Write`/`Read`: a warning between a write and its read is no
         // transaction, and the write stays open (D1): the read is its own.
         let bme = aethelgard_twin::boot::StepCheck {
@@ -8259,12 +8280,7 @@ mod tests {
         };
         let w = "[WARNING] i2c1.u2: Unhandled read from offset 0xD1.";
         let log = ["[NOISY] i2c1.u2: Write D0", w, "[NOISY] i2c1.u2: Read 60"];
-        let stamped: Vec<String> = log
-            .iter()
-            .map(|b| format!("[00:00:00.010040000] {b}"))
-            .collect();
-        let stamped: Vec<&str> = stamped.iter().map(String::as_str).collect();
-        let (seen, _, unplaced) = attribute(std::slice::from_ref(&bme), &[], &stamped);
+        let (seen, unplaced) = placed(std::slice::from_ref(&bme), &log);
         assert_eq!(seen, [vec![log[0], log[2]]]);
         assert_eq!(unplaced[0].lines, [w]);
     }
@@ -8277,14 +8293,8 @@ mod tests {
     #[test]
     fn what_no_step_shows_fails_the_boot_once_and_is_quoted() {
         let checks = bmp581_steps();
-        let judge = |log: &[&str]| -> Vec<Finding> {
-            let log: Vec<String> = log
-                .iter()
-                .map(|b| format!("[00:00:00.010040000] {b}"))
-                .collect();
-            let log: Vec<&str> = log.iter().map(String::as_str).collect();
-            step_findings(&checks, &log)
-        };
+        let ok = || vec![(aethelgard_twin::boot::STATUS_OK, 0); checks.len()];
+        let judge = |log: &[&str]| judged(&checks, log, ok());
         let kinds = |f: &[Finding]| f.iter().map(|f| f.kind.clone()).collect::<Vec<_>>();
         assert!(judge(&[ID, CFG, DATA]).is_empty());
         // A stray warning beside the right transactions: one finding, on the
@@ -8300,13 +8310,8 @@ mod tests {
         assert!(f[0].message.contains(warn), "{}", f[0].message);
         // With no record that claims its read completed, no witness is
         // judged, and the line adds no finding: the records fail the boot.
-        let stamped: Vec<String> = [ID, warn, CFG, DATA]
-            .iter()
-            .map(|b| format!("[00:00:00.010040000] {b}"))
-            .collect();
-        let stamped: Vec<&str> = stamped.iter().map(String::as_str).collect();
         let txis = vec![(aethelgard_twin::boot::STATUS_TXIS, 0); checks.len()];
-        assert!(step_findings_with(&checks, &stamped, txis).is_empty());
+        assert!(judged(&checks, &[ID, warn, CFG, DATA], txis).is_empty());
         // Beside a failing step: quoted in its finding, and no more findings.
         let f = judge(&[ID, warn, "[NOISY] i2c1.u7: write 0x37 <- 0x40 0x81", DATA]);
         assert_eq!(kinds(&f), ["i2c_transaction_unwitnessed"]);
@@ -8333,13 +8338,8 @@ mod tests {
             step(i2c(), "i2c1.u7", Identity, &["[NOISY] i2c1.u7: id"]),
             step(i2c(), "i2c1.u7", Configure, &["[NOISY] i2c1.u7: cfg"]),
         ];
-        let f = step_findings(
-            &odd,
-            &[
-                "[00:00:00.010040000] [NOISY] i2c1.u7: id",
-                "[00:00:00.010040000] [NOISY] i2c1.u7: cfg",
-            ],
-        );
+        let ok2 = vec![(aethelgard_twin::boot::STATUS_OK, 0); odd.len()];
+        let f = judged(&odd, &["[NOISY] i2c1.u7: id", "[NOISY] i2c1.u7: cfg"], ok2);
         assert_eq!(
             kinds(&f),
             ["i2c_transaction_unwitnessed", "i2c_transaction_unwitnessed"]

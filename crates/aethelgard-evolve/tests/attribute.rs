@@ -2940,6 +2940,15 @@ fn wrong_at(r: &[Record], i: usize) -> Vec<(String, Option<u64>)> {
         .collect()
 }
 
+/// A verdict naming one unwitnessed read.
+fn unwitnessed(r: &mut Vec<Record>) {
+    replace(
+        r,
+        is_verdict,
+        verdict(&[("i2c_transaction_unwitnessed", 1)]),
+    );
+}
+
 /// The index of U5's witness of `step` in a [`bme_bmp`] run.
 fn u5_step(r: &[Record], step: &str) -> usize {
     find(
@@ -2954,13 +2963,6 @@ fn u5_step(r: &[Record], step: &str) -> usize {
 /// and is wrong by its count.
 #[test]
 fn a_witness_compares_counts_as_well_as_values() {
-    let unwitnessed = |r: &mut Vec<Record>| {
-        replace(
-            r,
-            is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 1)]),
-        );
-    };
     let id = "[NOISY] i2c1.u5: read 0x01 -> 0x50";
     let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
     let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
@@ -3033,13 +3035,6 @@ fn a_witness_compares_counts_as_well_as_values() {
 /// elsewhere. The acceptance: a configure write sent twice is a surplus.
 #[test]
 fn a_bmp581_log_is_read_whole_for_a_surplus_and_a_step_sent_elsewhere() {
-    let unwitnessed = |r: &mut Vec<Record>| {
-        replace(
-            r,
-            is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 1)]),
-        );
-    };
     let id = "[NOISY] i2c1.u5: read 0x01 -> 0x50";
     let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
     let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
@@ -3083,13 +3078,6 @@ fn a_bmp581_log_is_read_whole_for_a_surplus_and_a_step_sent_elsewhere() {
 /// value are in different transactions: the step's own read nothing.
 #[test]
 fn a_step_s_write_and_read_are_one_transaction_never_stitched() {
-    let unwitnessed = |r: &mut Vec<Record>| {
-        replace(
-            r,
-            is_verdict,
-            verdict(&[("i2c_transaction_unwitnessed", 1)]),
-        );
-    };
     let r = two_bme(&[], |r| {
         observe(r, "U5", &["Write D0", "Write D1", "Read 60"]);
         unwitnessed(r);
