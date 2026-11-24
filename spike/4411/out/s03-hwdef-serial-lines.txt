@@ -1,0 +1,13 @@
+7:# Serial pulls: FLOATING holds from reset; ArduPilot's set_options then pulls up TX and RX on every port it opens (UARTDriver.cpp:1611, 1624): SERIAL1 to SERIAL9 at init (AP_SerialManager.cpp:451-457), and SERIAL0 when GCS looks up its MAVLink console (GCS_Common.cpp:2810; AP_SerialManager.cpp:605, 656). It pulls down a line it inverts, and no line here removes that.
+8:# Not emitted: CRSF (rc_crsf) on SERIAL1: no DEFAULT_SERIAL1_BAUD or _OPTIONS; ArduPilot's RC input sets the UART itself and runs CRSF at 416666 baud, 8N1 (AP_RCProtocol.cpp:351), not the declared 420000 baud.
+27:SERIAL_ORDER USART1 USART2 USART3                          # [T] serial_ports: the console first, then the specification's order
+30:define DEFAULT_SERIAL0_BAUD 115200                         # [T] serial_ports.CONSOLE.framing.baud
+33:define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN        # [T] serial_ports.CRSF.role rc_crsf
+36:define DEFAULT_SERIAL2_PROTOCOL SerialProtocol_MAVLink2    # [T] serial_ports.MAVLINK.role mavlink
+37:define DEFAULT_SERIAL2_BAUD 57600                          # [T] serial_ports.MAVLINK.framing.baud
+38:define DEFAULT_SERIAL2_OPTIONS 0                           # [T] serial_ports.MAVLINK.framing.inverted false (UARTDriver.h:90-91)
+50:#define DEFAULT_SERIAL0_BAUD 115200
+51:#define DEFAULT_SERIAL1_PROTOCOL SerialProtocol_RCIN
+52:#define DEFAULT_SERIAL2_PROTOCOL SerialProtocol_MAVLink2
+53:#define DEFAULT_SERIAL2_BAUD 57600
+54:#define DEFAULT_SERIAL2_OPTIONS 0

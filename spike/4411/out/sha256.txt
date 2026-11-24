@@ -1,0 +1,6 @@
+622db737a711a75e89185aed850f3854c77d515c32ddf0ba9886653663cfdabe  ds/esp32-c3-wroom-02_datasheet_en.pdf
+4c7a345d1c1bfec34c38665639e39a7f43b79a35a12f6adcc2c7c0f83850f8b8  ds/esp32-wroom-32e_esp32-wroom-32ue_datasheet_en.pdf
+c67f1e366d84da19a1985dabf560fa48adec16e66cd0201f8140ebb6653a532e  ds/hdg-esp32c3.pdf
+707e70a91d0fddefdb42aef2dddaded63444cb746f996988454cbedd9e365614  ds/hdg-esp32.pdf
+2eb3ceb2324d141108b2f5a46480e74117f3f2181b36f0a5dd9791efb847816b  kicad/ESP32-C3-WROOM-02.kicad_mod
+b0690fed21a0929c7c43fb16f03ba0e6e5eaf9cf4eb36743f57651bfa00153d6  kicad/ESP32-WROOM-32E.kicad_mod
