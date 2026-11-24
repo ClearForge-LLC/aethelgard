@@ -39,7 +39,7 @@
 | F4 | **A window's end can land on a firmware transient.** At exactly 6.000 s, GPIOB PB13 reads output/AF0 (`register_mismatch`) with and without the log. 5, 7 and 8 s read clean. A new bound needs its end placed, or the read repeated | RESULTS §1.4 | D2 |
 | F5 | **The twin cannot deliver bytes to a foreign firmware's DMA-received USART.** Renode's USART `ReceiveDmaRequest` is never wired to `dmamux1`, and `IDLE`/`IDLEIE` are tags. SERIAL0 has no `OPTIONS` parameter, so ArduPilot cannot be told to avoid DMA | RESULTS §2 | D3 |
 | F6 | **No CI-built ELF has motors and an IMU,** so TIM1/TIM2 cannot be reached by arming any ELF CI has. `sentinel-02-own` has `motor_outputs: []`. `serial-dshot-9600` has no IMU. | bus, 2026-11-24 | D5 |
-| F7 | `docs/work-orders/AET-WO-4400h.md` is not on main at `29b3a97d`, although the kickoff says it is. I worked from `~/.cache/aet-4400h-wo.md` and did not add it | — | the architect |
+| F7 | `docs/work-orders/AET-WO-4400h.md` was not on main at `29b3a97d`, though the kickoff said it was. It landed in `ef3b43d9` (#391) during the spike, identical to `~/.cache/aet-4400h-wo.md`, the copy I worked from. Main is merged into the branch | — | none |
 | F8 | `spike/4400h/sh/window.sh` writes `log` and `stop` fields that are always `[]` and `null`. They were kept because the committed rows were produced by this script as it stands | `sh/window.sh` | none (a spike file) |
 | F9 | The WO says "four builders"; the kickoff says about eight. Measured load ran from 2 to 28 on 20 cores during this spike, so a quiet-host number is a time-of-day number | `out/win/*/load.txt` | the architect |
 
