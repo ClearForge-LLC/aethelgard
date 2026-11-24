@@ -1,0 +1,13 @@
+# The DMAMUX1 request input of each USART's receive DMA (AET-WO-4400i, ruled D2: emitted on a foreign board only,
+# under each declared serial port). Transcribed from RM0433 Rev 9, Table 124 "DMAMUX1: assignment of multiplexer
+# inputs to resources", p. 697 (PDF sha256 672a9433d6602da224e5215f571beed2be0e683cb025526f4afe9db61c26b6a0), the
+# copy dmamux1-spi-rx.tsv cites. LPUART1 has no DMAMUX1 input (its requests are on DMAMUX2), so it has no row.
+# Columns, tab-separated: ST's peripheral, the table's resource, its DMA request MUX input.
+USART1	usart1_rx_dma	41
+USART2	usart2_rx_dma	43
+USART3	usart3_rx_dma	45
+UART4	uart4_rx_dma	63
+UART5	uart5_rx_dma	65
+USART6	usart6_rx_dma	71
+UART7	uart7_rx_dma	79
+UART8	uart8_rx_dma	81

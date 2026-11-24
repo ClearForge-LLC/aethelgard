@@ -124,6 +124,25 @@ pub(crate) fn dma_rows(text: &str) -> Result<Vec<(&str, &str, u32)>, TwinError> 
         .collect()
 }
 
+/// Each USART's receive DMA request on DMAMUX1, from RM0433 Rev 9 Table 124
+/// (`AET-WO-4400i` D2). Renode 1.17.0's `STM32F7_USART` raises
+/// `ReceiveDmaRequest` while `CR3.DMAR` is set and its receive queue is not
+/// empty (`STM32F7_USART.cs` L100-111), so a firmware that receives by DMA
+/// (ArduPilot) reads no byte without the line (`spike/4400i` `noreq`).
+pub const DMAMUX1_USART_RX: &str = include_str!("../data/dmamux1-usart-rx.tsv");
+
+/// The DMAMUX1 input of `peripheral`'s (a USART's) receive DMA; any USART
+/// with no row is refused (`INV-06`).
+pub fn usart_rx_request(peripheral: &str) -> Result<u32, TwinError> {
+    dma_rows(DMAMUX1_USART_RX)?
+        .into_iter()
+        .find(|(p, _, _)| *p == peripheral)
+        .map(|(_, _, n)| n)
+        .ok_or_else(|| TwinError::UnsupportedPeripheral {
+            peripheral: peripheral.to_owned(),
+        })
+}
+
 /// The DMAMUX1 input of `peripheral`'s receive DMA. `None` for SPI6, whose
 /// request is on DMAMUX2 (RM0433 Table 128), which Renode 1.17.0's platform
 /// does not declare; the emitted entry says so. Any other SPI with no row is
@@ -819,7 +838,7 @@ pub fn emit_faulted(
     emit_spi(&mut out, &spi)?;
     emit_observers(&mut out, topology)?;
     out.push_str(&crate::boot::brown_out(topology)?.presentation());
-    emit_clock(&mut out, topology);
+    emit_clock(&mut out, topology)?;
     if topology.foreign_clock.is_none() {
         out.push_str(&pwr_override()?);
     }
@@ -988,7 +1007,11 @@ pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
 /// `BaudRate` and the receiver timeout in this build; upstream `88afd12bb`
 /// paces received characters at `BaudRate`, so from the next Renode a wrong
 /// frequency changes what the firmware receives.
-fn emit_clock(out: &mut String, topology: &SolvedTopology) {
+///
+/// On a foreign board, each declared serial port's USART also carries its
+/// receive DMA request ([`usart_rx_request`], `AET-WO-4400i` D2: foreign
+/// boards only, so no generated board's platform moves).
+fn emit_clock(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinError> {
     let whose = if topology.foreign_clock.is_some() {
         format!(
             "the specification's mcu.foreign_clock; {} keep the stock file's",
@@ -1008,8 +1031,20 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) {
     );
     for (name, hz) in clocked(topology) {
         let _ = write!(out, "{name}:\n    frequency: {hz}\n");
+        if topology.foreign_clock.is_none() {
+            continue;
+        }
+        if let Some(port) = topology
+            .serial_ports
+            .values()
+            .find(|p| p.peripheral.eq_ignore_ascii_case(&name))
+        {
+            let n = usart_rx_request(&port.peripheral)?;
+            let _ = write!(out, "    ReceiveDmaRequest -> dmamux1@{n}\n");
+        }
     }
     emit_hse(out, topology);
+    Ok(())
 }
 
 /// The stock RCC's HSE frequency on a board with an HSE (`AET-WO-4240b`

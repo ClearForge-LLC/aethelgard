@@ -1,0 +1,7 @@
+# A sensor at rest that a firmware must see move (AET-WO-4400i D4): each pressure part's intrinsic noise, as the run's
+# rest stimulus alternates it about the parts table's stimulus. ArduPilot calls a barometer unhealthy whose reading
+# has not changed for 2 s (AP_Baro_Backend.cpp:36-41), and a real one's never holds; the amplitude and the rate are the
+# datasheet's, never the firmware's (INV-07): its smallest typical RMS noise, and that oversampling's typical rate.
+# Columns, tab-separated: part, its amplitude in mPa, the period of one alternation in ns (a whole number of the
+# 100 us quantum), and the citation.
+BMP581	80	83300000	Bosch Sensortec BST-BMP581-DS004-13 rev 1.13 (sha256 ddcf4202c4fdf2ab6ad86f22b67ba4d2471d76b9ce510397cacfe398400ab439) §4.4.2 Table 9, p. 19: the x128 row, 0.08 Pa typical pressure RMS noise at 100 kPa and 12 Hz typical ODR in CONTINUOUS mode; 1/12 Hz is 83.333 ms, rounded down to the quantum
