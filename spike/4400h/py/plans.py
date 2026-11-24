@@ -83,4 +83,11 @@ again = [(ms(17900), "heartbeat", {}),
 write("dshot", head + params[:5] + reboot + again, end=after + 2 * S)
 # The DShot and persistence run, short enough for the 4 GiB cap: the parameters and MOT_PWM_TYPE 6 (DShot600), a
 # reboot over MAVLink at 7.8 s, then every parameter read back at 16 s. No arm: DShot runs disarmed.
+# MOT_PWM_TYPE is read at motor init (AP_Motors_Class.cpp:119-154, called from AP_MotorsMatrix.cpp:126), which a
+# FRAME_CLASS change re-runs: so DShot set before FRAME_CLASS takes effect with no reboot. The arm plan otherwise.
+pre = [(ms(9420), "param_set", {"id": "MOT_PWM_TYPE", "value": 6})]
+write("dshot-pre-s", shift(head + pre + params + armed + tail, SH), end=ms(13000))
+# The fewest parameters: only the two whose failures were measured (COMPASS_USE, FRAME_CLASS), then prearm and arm.
+write("min-s", shift(head + params[:2] + [(ms(10500), "command_long", {"command": 401}), (ms(10900), "heartbeat", {}),
+                                     (ms(11000), "command_long", {"command": 400, "params": [1, 0]})], SH), end=ms(11000))
 write("dshot-s", shift(head + params[:5] + reboot, SH) + [(t - ms(2000), k, f) for t, k, f in again[:2] + read_back], end=ms(17000))

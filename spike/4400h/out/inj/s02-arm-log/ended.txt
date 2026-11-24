@@ -1,1 +1,1 @@
-last console timestamp [00:00:14.869800000]; the 16 s window's post-run reads never printed: killed at the 4 GiB cap (capped-run) between RSS samples
+last console timestamp [00:00:14.869800000]; OutOfMemoryException lines: 1: Renode's managed out-of-memory under the 4 GiB cap, before the window's end (16 s); the post-run reads never printed

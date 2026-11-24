@@ -29,7 +29,7 @@
 - **Sentinel-03's ELF:**
   - **Spec:** `crates/aethelgard-cli/tests/fixtures/sentinel-03.json` (main, sha256 `c85cec0d…`), with three declarations copied from `sentinel-02-own` by `../../py/derive.py`: `mcu.foreign_clock`, U5's orientation and `board.forward`. The result is sha256 `135c96fa…`. `AET-WO-4300k`'s `examples/sentinel-03.json` (`e82feda9`, schema 30) declares the same orientation and forward.
   - **hwdef.dat:** `2b5a8fb24235f3db…`.
-  - **Build:** unmodified Copter-4.7.2 `fb773567`, built by CI's own `container/ardupilot-build.sh boards sentinel-03` in the pinned ArduPilot image (`container/ARDUPILOT-IMAGE`), on 6 cores (`../../sh/s03.sh`). That gives `arducopter.elf` `dbf598d8b77f57d1945315b9fff611848f7d7f57992443a33eec0790a511d451` and `hwdef.h` `aa4f4e09…`. No ELF is committed.
+  - **Build:** unmodified Copter-4.7.2 `fb773567`, built by CI's own `container/ardupilot-build.sh boards sentinel-03` in the pinned ArduPilot image (`container/ARDUPILOT-IMAGE`), on 6 cores (`../../sh/s03.sh`). That gives `arducopter.elf` `dbf598d8b77f57d1945315b9fff611848f7d7f57992443a33eec0790a511d451` and `hwdef.h` `aa4f4e09…`. No ELF is committed. `check pinout` passes it against its topology (exit 0, ok, no failing finding), so `AET-WO-4406`'s `ParamDefaultsOverride` guard finds no defaults route (`../s03/pinout.json`). The derived spec, the hwdef, the hashes and the build line are in `../s03/`.
 
 **How to read the pairs:**
 - `s0N-delta.tsv` holds every register whose firmware writes differ between the arm and the same frames without it (`params-s`).

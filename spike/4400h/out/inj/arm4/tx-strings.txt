@@ -1,0 +1,28 @@
+      2 FRAME_CLASS
+      1 pInit Gyro*
+      1 Storage: Using flash pages 14 and 15
+      1 PreArm: Motors: Check frame class and type
+      1 No Compass backends available
+      1 Mode change to Guided failed: requires position
+      1 Initialised Storage type=2
+      1 Init ArduCopter V4.7.2 (fb773567)
+      1 INS_ACC_ID
+      1 INS_ACCSCAL_Z
+      1 INS_ACCSCAL_Y
+      1 INS_ACCSCAL_X
+      1 INS_ACCOFFS_Z
+      1 INS_ACCOFFS_Y
+      1 INS_ACCOFFS_X
+      1 Free RAM: 978880
+      1 Firmware change: erasing EEPROM...
+      1 FS_THR_ENABLE
+      1 EKF3 IMU0 tilt alignment complete
+      1 Dataflash: erase started
+      1 Dataflash: erase done (1837 ms)
+      1 DISARM_DELAY
+      1 Chip erase started
+      1 COMPASS_USE
+      1 BARO1_GND_PRESS
+      1 Arm: Motors: Check frame class and type
+      1 AP_Logger_Block: buffer size=65536
+      1 0 0 0 SPI Flash 0x00EF4017 found pages=32768 erase=64k

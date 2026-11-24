@@ -2,7 +2,7 @@
 
 **STOPPED on §7, "the cap fails before 10 s"** (ruled fired, 2026-11-24T15:50Z), with the curve (`spike/4400h/RESULTS.md` §1). The decisions are in RESULTS §5 (D1–D5).
 - Parts (2)–(4) were run as ruled, in replay outside the CLI's bounds, each container capped at 4 GiB.
-- ArduPilot armed with no defaults file, no skip and no force. The armed queues are in `spike/4400h/out/queue/`.
+- ArduPilot armed with no defaults file, no skip and no force: four parameters and two named stimuli (the fewest, measured). The armed queues are in `spike/4400h/out/queue/`.
 - The branch commits only `spike/4400h/` and this file.
 
 ## 0. Gates and passes
@@ -46,11 +46,12 @@
 | F7 | `docs/work-orders/AET-WO-4400h.md` was not on main at `29b3a97d`, though the kickoff said it was. It landed in `ef3b43d9` (#391) during the spike, identical to `~/.cache/aet-4400h-wo.md`, the copy I worked from. Main is merged into the branch | — | none |
 | F8 | `spike/4400h/sh/window.sh` writes `log` and `stop` fields that are always `[]` and `null`. They were kept because the committed rows were produced by this script as it stands | `sh/window.sh` | none (a spike file) |
 | F9 | The WO says "four builders"; the kickoff says about eight. Measured load ran from 2 to 28 on 20 cores during this spike, so a quiet-host number is a time-of-day number | `out/win/*/load.txt` | the architect |
-| F10 | **The twin cannot reboot a foreign firmware.** `SYSRESETREQ` meets no `reset` macro. With one, the second boot exhausts 4 GiB within 2.1 s virtual, three times. So persistence across a reboot, and reboot-applied parameters (`MOT_PWM_TYPE`), are unmeasurable | RESULTS §2.3 | D4 (a) |
-| F11 | **Sentinel-03 declares `dshot600`, but its hwdef emits no `MOT_PWM_TYPE`,** so unmodified ArduPilot runs 400 Hz PWM on it (`DIER` 0, `ARR` 0x9C3) | RESULTS §3 | D4 (b) |
+| F10 | **The twin cannot reboot a foreign firmware.** `SYSRESETREQ` meets no `reset` macro. With one, Renode throws a managed `OutOfMemoryException` 2.1 s into the second boot (three times, under the 4 GiB cap, cause not found). So persistence across a reboot is unmeasurable | RESULTS §2.3 | D4 (a) |
+| F11 | **Sentinel-03 declares `dshot600`, but its hwdef emits no `MOT_PWM_TYPE`,** so unmodified ArduPilot runs 400 Hz PWM on it (`DIER` 0, `ARR` 0x9C3). Set over MAVLink before `FRAME_CLASS`, DShot takes effect with no reboot | RESULTS §3 | D4 (b) |
 | F12 | **The twin's rest stimuli:** the parts table's IMU witness stimulus (1 g on y) is "Leaning" to an armed ArduPilot, and a constant barometer is "not healthy". An armed run needs declared rest stimuli | RESULTS §2.2 | D3 |
 | F13 | **Main's Sentinel-03 fixture cannot emit an hwdef** (`ImuOrientationUndeclared`, then `ForwardUndeclared`). `4300k`'s unmerged `examples/sentinel-03.json` can | RESULTS §5 D5 | `4300k` |
 | F14 | **A subagent's source reading said the compass check passes on a board with no compass.** It fails (`COMPASS_USE` defaults to 1). The run caught it | RESULTS §2.2 | none: a process note |
+| F15 | **DShot drives the twin out of memory:** a managed `OutOfMemoryException` 1.65 s after `UDE` is set, with `DCR` and DMAMUX request 15 re-armed 1,986 times and no request ever moving data. It may share a cause with F3 and F10 | RESULTS §3 | D4 (a2) |
 
 ## 2. What I would do next, in order
 
