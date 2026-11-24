@@ -208,6 +208,9 @@ pub struct Protection {
     pub fet: Placed,
     pub zener: Placed,
     pub gate_resistor: Resistor,
+    /// Why these parts, as the ruling chose them (ruled Q1: the fuse's
+    /// rating set by the hot-plug's I²t, not by twice the input current).
+    pub source: String,
 }
 
 /// A part on the board by its reference and its row.
@@ -866,6 +869,26 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         id(&h.reference, format!("power.input.hot_plug[{i}].reference"))?;
         id(&h.part, format!("power.input.hot_plug[{i}].part"))?;
         references.push(&h.reference);
+    }
+    if let Some(x) = &power.input.protection {
+        for (what, part) in [("fuse", &x.fuse), ("fet", &x.fet), ("zener", &x.zener)] {
+            id(
+                &part.reference,
+                format!("power.input.protection.{what}.reference"),
+            )?;
+            id(&part.part, format!("power.input.protection.{what}.part"))?;
+            references.push(&part.reference);
+        }
+        id(
+            &x.gate_resistor.reference,
+            "power.input.protection.gate_resistor.reference".to_owned(),
+        )?;
+        id(
+            &x.gate_resistor.part,
+            "power.input.protection.gate_resistor.part".to_owned(),
+        )?;
+        references.push(&x.gate_resistor.reference);
+        crate::board::source(&x.source, "power.input.protection.source")?;
     }
     let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
         for (i, c) in list.iter().enumerate() {
@@ -1871,10 +1894,10 @@ fn protection(
         ));
     }
     ctx.screen(
-        "fuse_i2t_typical",
+        "fuse_hot_plug_bound_fuse_only",
         &x.fuse.reference,
         format!(
-            "{}: the hot-plug's I²t is at most {i2t} mA²s against {}'s melting I²t of {melting} mA²s, which is {} ({}); the bound counts the fuse's own minimum resistance only (a derivation)",
+            "{}: the hot-plug's I²t is at most {i2t} mA²s against {}'s melting I²t of {melting} mA²s, which is {} ({}); the bound, a derivation, counts only the fuse's own minimum resistance, because no FET, copper, connector or pack minimum is held (ruled Q1 (a); holding one is a backlog row)",
             x.fuse.reference,
             x.fuse.part,
             fuse.melting_condition,

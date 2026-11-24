@@ -44,6 +44,7 @@ p["input"]["protection"] = OD([
     ("fet", OD([("reference", "Q1"), ("part", "DMP6023LSS-13")])),
     ("zener", OD([("reference", "D1"), ("part", "MMSZ5242BT1G")])),
     ("gate_resistor", OD([("reference", "R60"), ("part", "CRCW0603_F_K"), ("ohms", 100000)])),
+    ("source", "AET-WO-4300k (10), ruled Q1 (a) 2026-11-24T10:00Z: the 7 A fuse, as the hot-plug I2t bound (fuse-only R) clears no smaller rating; 2x the input amended"),
 ])
 # A6 (ruled D8): two input ceramics per buck; (a): the copper is measured, the loss keeps its current
 extra = {"U10": "C60", "U11": "C61"}
@@ -57,6 +58,11 @@ for r in p["regulators"]:
     r["external"] = ext
     j = r["junction"]
     r["junction"] = OD([("loss_milliwatts", j["loss_milliwatts"]), ("loss_at_milliamps", loss_at[r["reference"]])])
+# (9): the supervisor and its pull-up load VDD_3V3 (extract's SupplySinkUncounted)
+p["loads"].extend([
+    OD([("domain", "VDD_3V3"), ("milliamps", 1), ("source", "TI SBVS157E p. 6, 7.5: IDD at most 30 uA at VDD 6 V, output unconnected; rounded up"), ("reference", "U12")]),
+    OD([("domain", "VDD_3V3"), ("milliamps", 1), ("source", "derived: 3.465 V (3.3 V + 5 %) / 100 kOhm = 0.035 mA, rounded up"), ("reference", "R61")]),
+])
 # (2), D6, D13: the MCU's supply limited, at most 110 mV
 p["drop_limits"] = [OD([("domain", "VDD_3V3"), ("max_millivolts", 110),
     ("source", "AET-WO-4300k D6 (ruled): VDD_3V3's solved minimum less this stays above TLV803S's VIT- max plus its typical hysteresis, 3030 mV")])]

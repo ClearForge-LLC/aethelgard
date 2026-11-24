@@ -139,6 +139,13 @@ fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
         )
         .chain(test_points.iter().map(|t| t.reference.as_str()))
         .chain(crate::pin_devices::references(spec))
+        .chain(spec.mcu.reset_supervisor.iter().flat_map(|s| {
+            [
+                s.reference.as_str(),
+                s.pull_up.reference.as_str(),
+                s.bypass.reference.as_str(),
+            ]
+        }))
         .chain(
             spec.motor_outputs
                 .iter()

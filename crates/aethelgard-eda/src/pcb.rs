@@ -1838,8 +1838,16 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         // the silkscreen, its box above the top row of pins pushed that row's
         // capacitors 2.49 mm out (`AET-WO-4300g` §3, measured).
         let rings = parts.iter().any(|x| anchored_to(x, &part.reference));
+        // A connector turned 180 degrees to put its opening on the edge
+        // (`AET-WO-4300k` (4)): a footprint whose reference text sits past its
+        // courtyard at the opening's end (the XT30PW-M's, at y -14.5 against
+        // -13.6) would print it across the edge.
+        let turned = schematic::is_connector(part)
+            && aethelgard_ir::connectors::opening(&part.value)
+                .is_some_and(|o| o.toward == aethelgard_ir::connectors::Toward::MinusY);
         if part.owner.as_ref().is_some_and(|o| o.anchor.is_some())
             || (rings && part.lib_id == schematic::MCU)
+            || turned
         {
             reference_on_fab(&mut fp);
         }
