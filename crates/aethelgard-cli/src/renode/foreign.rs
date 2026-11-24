@@ -2021,6 +2021,9 @@ pub const INPUT_VERSION: u64 = 1;
 /// silicon does, and what the input's declared fill stands in for.
 pub const IDLE_GAP: &str = "usart_idle_unmodelled: Renode 1.17.0's USART raises no IDLE (STM32F7_USART.cs:154, :231, a tag), and its DMA neither ends a stream with TCIF when software clears EN nor restarts the next at M0AR (STM32DMA.cs:237-262; RM0433 Rev 9 §15.3.16), so a firmware that receives by DMA reads a frame only when its buffer fills; an input fills it with the zero bytes it declares as `fill`, which silicon would not see (AET-WO-4400i D3)";
 
+/// What a foreign run's `replay` says its `input_verdict` is.
+pub const INPUT_VERDICT_IS: &str = "the input's witness re-judged from the trace (the input, the stimuli and the firmware's transmission), not the run's verdict: the trace does not hold the run's other findings";
+
 /// A `PARAM_SET` the firmware answered with `PARAM_ERROR` (ruling D9).
 pub const PARAM_REJECTED: &str = "foreign_param_rejected";
 /// The input's port transmitted nothing the judge could read.
@@ -2571,6 +2574,8 @@ pub struct Replayed {
     pub judge: &'static str,
     pub run_id: String,
     pub input_verdict: &'static str,
+    /// What `input_verdict` is, in the output itself (ruled 2026-11-24).
+    pub input_verdict_is: &'static str,
     pub input_sha256: String,
     pub port: String,
     pub peripheral: String,
@@ -2803,6 +2808,7 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
         check: "replay",
         judge: JUDGE,
         input_verdict: if findings.is_empty() { "pass" } else { "fail" },
+        input_verdict_is: INPUT_VERDICT_IS,
         run_id: crate::input::hex(replayed.header.run_id),
         input_sha256: crate::input::hex(sha),
         port: label.to_owned(),

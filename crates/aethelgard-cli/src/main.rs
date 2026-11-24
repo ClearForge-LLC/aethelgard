@@ -227,7 +227,7 @@ enum Command {
         #[arg(long)]
         archive: PathBuf,
     },
-    /// Replay one archived campaign run from its trace alone, and print its state-sequence hash.
+    /// Replay one archived run from its trace alone, and print its state-sequence hash: a campaign run's verdict, or for a foreign input run (simulate --foreign --input --archive) its input_verdict, the input's witness re-judged from the trace, which is not the run's verdict.
     Replay {
         /// The run directory.
         #[arg(long)]

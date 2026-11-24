@@ -3663,6 +3663,13 @@ fn an_archived_input_run_replays_from_its_trace_alone() {
     assert_eq!(rv["run_id"], id, "{rv}");
     assert_eq!(rv["input_verdict"], "pass", "{rv}");
     assert!(
+        rv["input_verdict_is"]
+            .as_str()
+            .unwrap()
+            .contains("not the run's verdict"),
+        "{rv}"
+    );
+    assert!(
         rv["tools"]["aethelgard"].is_string() && rv["tools"]["renode"].is_string(),
         "{rv}"
     );

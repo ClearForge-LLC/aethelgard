@@ -153,30 +153,6 @@ fn a_skipped_or_removed_check_is_refused_and_its_harmless_value_is_not() {
         }
     ));
     assert!(check(&[one(SKIPCHK_0, 0), one(REQUIRE_1, 10_000_000)]).is_ok());
-    // Judged by what ArduPilot stores (`AP_Param::set_float`: 0.01 away from
-    // zero, truncated): ±0.5 is 0, so `ARMING_REQUIRE` ±0.5 removes the
-    // checks, and `ARMING_SKIPCHK` 0.5 skips none.
-    for s in [REQUIRE_0_5, REQUIRE_M0_5] {
-        let e = check(&[one(s, 0)]).unwrap_err();
-        assert!(
-            matches!(
-                e,
-                InputRefusal::SkipsChecks {
-                    param: "ARMING_REQUIRE",
-                    ..
-                }
-            ),
-            "{e}"
-        );
-    }
-    assert!(check(&[one(SKIPCHK_0_5, 0)]).is_ok());
-    assert_eq!(stored(0.98), Some(0));
-    assert_eq!(stored(-0.98), Some(0));
-    assert_eq!(stored(1.0), Some(1));
-    // The 0.01 decides here: 0.995 is stored as 1, -0.995 as -1.
-    assert_eq!(stored(0.995), Some(1));
-    assert_eq!(stored(-0.995), Some(-1));
-    assert_eq!(stored(f32::NAN), None);
 }
 
 #[test]
@@ -411,4 +387,36 @@ fn a_malformed_message_row_is_refused_by_name() {
             "{row}"
         );
     }
+}
+
+/// Ruled 2026-11-24 (D8, item 4): `ARMING_REQUIRE` set to 0.5 is stored as 0
+/// (`AP_Param::set_float`: 0.01 added away from zero, then truncated), so it
+/// removes the checks and is refused; `ARMING_SKIPCHK` 0.5 is stored as 0 and
+/// skips none.
+#[test]
+fn arming_require_one_half_is_stored_as_zero_and_refused() {
+    // Judged by what ArduPilot stores (`AP_Param::set_float`: 0.01 away from
+    // zero, truncated): ±0.5 is 0, so `ARMING_REQUIRE` ±0.5 removes the
+    // checks, and `ARMING_SKIPCHK` 0.5 skips none.
+    for s in [REQUIRE_0_5, REQUIRE_M0_5] {
+        let e = check(&[one(s, 0)]).unwrap_err();
+        assert!(
+            matches!(
+                e,
+                InputRefusal::SkipsChecks {
+                    param: "ARMING_REQUIRE",
+                    ..
+                }
+            ),
+            "{e}"
+        );
+    }
+    assert!(check(&[one(SKIPCHK_0_5, 0)]).is_ok());
+    assert_eq!(stored(0.98), Some(0));
+    assert_eq!(stored(-0.98), Some(0));
+    assert_eq!(stored(1.0), Some(1));
+    // The 0.01 decides here: 0.995 is stored as 1, -0.995 as -1.
+    assert_eq!(stored(0.995), Some(1));
+    assert_eq!(stored(-0.995), Some(-1));
+    assert_eq!(stored(f32::NAN), None);
 }

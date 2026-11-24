@@ -12,7 +12,7 @@
 | …and replays from the trace alone | **R1:** `replay --archive` re-judges the archived run from its directory alone (`boot_tier1::an_archived_input_run_replays_from_its_trace_alone`; CI `input-archive`/`input-replay`: the same witness). **R2:** the input, read back from the trace with no Aethelgard code (`py/archive.py`), re-drives Renode to a byte-identical `trace.cbor` and manifest (`out/build/archive`, `archive-r2`) |
 | No forced arm, no skipped check, no defaults file; a planted force code and a non-MAVLink input refused by name | `InputForcesArm` and `InputNotMavlink`, exit 2, before any tool (tier 1 and CI). `InputSkipsChecks` refuses `ARMING_SKIPCHK` ≠ 0 and `ARMING_REQUIRE` = 0 (D8) |
 | A rejected `PARAM_SET` reported from ArduPilot's own reply | `foreign_param_rejected`, read from its `PARAM_ERROR` (D9; CI `input-reject`, tier 1) |
-| Every committed verdict unchanged, or named and ruled | No committed verdict moves. The receive request lines are on foreign boards only (D2). A run without `--input` reports as before, except for `boot.not_at_rest` (F12). The golden trace moved in its version byte alone (19 → 20; version 19's hash is kept and checked) |
+| Every committed verdict unchanged, or named and ruled | **One moves, in hashes only: §7's stop, F16.** The bench package's `verify` verdict moves, so its committed `MANIFEST.json` no longer matches. The receive request lines are on foreign boards only (D2). A run without `--input` reports as before, except for `boot.not_at_rest` (F12, ruled). The golden trace moved in its version byte alone (19 → 20; version 19's hash is kept and checked) |
 | The CLAUDE.md gates and every CI guard run locally | §Gates below |
 
 ## Findings
@@ -101,7 +101,9 @@ Nothing labelled `belt-and-suspenders:` was touched.
   - ArduPilot stores an integer parameter as the value plus 0.01 away from zero, truncated (`AP_Param::set_float`, `AP_Param.cpp`:2234–2263). So ±0.5 is stored as 0.
   - `InputSkipsChecks` now judges the integer ArduPilot would store (`mavlink::stored`): `ARMING_REQUIRE` refused when it would be 0, `ARMING_SKIPCHK` when it would not be.
   - The pymavlink vectors at ±0.5 and the 0.995 boundary are tested; mutants m36 and m37.
-- **`replay`'s `verdict` was the input's witness, not the run's.** The trace holds the input, the stimuli and the transmission, not the run's other findings, so a run that failed on a fault replayed as `pass`. The field is now `input_verdict`, documented as what it is.
+- **`replay`'s `verdict` was the input's witness, not the run's.** The trace holds the input, the stimuli and the transmission, not the run's other findings, so a run that failed on a fault replayed as `pass`. The field is now `input_verdict` (ruled 2026-11-24, item 5).
+  - The output says what it is (`input_verdict_is`), and so does `replay --help`, which the MCP tool list's description carries.
+  - The 0.5 → 0 case is its own named test, `arming_require_one_half_is_stored_as_zero_and_refused` (item 4).
 - **The archive header named only `renode` and its version.** It now names the engine and the Renode build, as a campaign's header does (`AET-WO-2205` §1.1). Replay prints the artifacts and the tools.
 - **A capture past `MAX_FOREIGN_BYTES` would have been archived, and then refused by replay.** It is now `foreign_capture_unreadable` and is not archived, as a missing capture is.
 - **Refusals that had no test:**
@@ -119,6 +121,19 @@ Nothing labelled `belt-and-suspenders:` was touched.
 - `ardupilot-image.yml` runs `ci/foreign-judge.sh` on this PR (paths `crates/**` and the script).
 - The ELF its added cases were checked against locally (`5eace4ca`) is main `29b3a97d`'s, from before `AET-WO-4410` changed sentinel-02's hwdef. CI builds its own, so CI's run is their first on that ELF.
 - The mid-script `run_spec=` lines are per-call prefixes, so the added block sees the script's own `spec`, `platform`, `elf` and `window`.
+
+**F16. STOP (§7, "a committed verdict moves"): the trace version moves the bench package's verdict.**
+- CI's `bench-package` on 902d4917 fails `against_differs`, with `MANIFEST.json` alone differing.
+- Diffed against main's last green run (`45456542716` on 352a6813), `verify`'s verdict differs in exactly the five campaign runs' `state_sequence_hash`:
+  - pullup-3k3 `7ec61f16…` → `a4c18827…`
+  - droop-bor3 `4fcf5f63…` → `2d2c6caf…`
+  - spi-absent-u4 `fa5380e1…` → `904be070…`
+  - pullup-2k2 `d437e01d…` → `dd7667ef…`
+  - serial-rx-open-console `9059924e…` → `0f7429b7…`
+- Nothing else differs: every gate, finding, file and outcome is the same.
+- The cause is trace 20: the state hash chain starts from the header, whose version byte moved, as the golden state hash did (`tests/golden.rs`).
+- My §2.3 comparison measured the request line, not the version bump, so the claim that no committed verdict moves was wrong.
+- **Asked:** the bench package re-derived on this branch (`bench-package`'s write dispatch), and its `MANIFEST.json` committed. `fab/` is outside this fence.
 
 **F13. Kit facts for the next builder:**
 - A Renode write hook on a peripheral displaces `LogPeripheralAccess`'s write lines for it (measured, `spike/4400i` §Inputs).
