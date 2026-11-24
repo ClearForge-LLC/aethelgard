@@ -147,6 +147,16 @@ impl Grid {
     }
 }
 
+/// Whether `p` is nearer `mine` than every one of `others`, strictly: a
+/// cell equally near two pads counts for neither (the nearer-pad split).
+fn nearest(p: (i64, i64), mine: (i64, i64), others: &[(i64, i64)]) -> bool {
+    let d = |q: (i64, i64)| {
+        let (dx, dy) = (i128::from(p.0 - q.0), i128::from(p.1 - q.1));
+        dx * dx + dy * dy
+    };
+    others.iter().all(|&q| d(q) > d(mine))
+}
+
 /// A thermal pad as found on the board: its centre, its net, its rectangle.
 type Found = ((i64, i64), String, Rect);
 
@@ -341,20 +351,14 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
                 }
             }
             let mut count: u64 = 0;
+            let others: Vec<(i64, i64)> = found
+                .iter()
+                .enumerate()
+                .filter(|(m, _)| *m != k)
+                .filter_map(|(_, o)| o.as_ref().map(|x| x.0))
+                .collect();
             for c in (0..w * h).filter(|&c| counted[c]) {
-                // Nearer this pad's centre than every other pad's, strictly.
-                let p = full.centre(c % w, c / w);
-                let d = |q: (i64, i64)| {
-                    let (dx, dy) = (i128::from(p.0 - q.0), i128::from(p.1 - q.1));
-                    dx * dx + dy * dy
-                };
-                let mine = d(*centre);
-                if found
-                    .iter()
-                    .enumerate()
-                    .filter(|(m, o)| *m != k && o.is_some())
-                    .all(|(_, o)| o.as_ref().is_some_and(|x| d(x.0) > mine))
-                {
+                if nearest(full.centre(c % w, c / w), *centre, &others) {
                     count += 1;
                 }
             }
@@ -377,4 +381,19 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::nearest;
+
+    /// The split is strict: a cell nearer one pad counts for it, a tie for
+    /// neither, and a cell with no other pad counts.
+    #[test]
+    fn a_cell_equally_near_two_pads_counts_for_neither() {
+        assert!(nearest((1, 0), (0, 0), &[(4, 0)]));
+        assert!(!nearest((2, 0), (0, 0), &[(4, 0)]));
+        assert!(!nearest((3, 0), (0, 0), &[(4, 0)]));
+        assert!(nearest((3, 0), (0, 0), &[]));
+    }
 }

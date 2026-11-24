@@ -160,7 +160,7 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
 - **D10:**
   - Sentinel-03's 46 ledger register/class entries are in. Every row is acknowledged.
   - Four held reasons the crystal and the new pins made false were rewritten: USART1.CR1 (FIFOEN set), GPIOB.OTYPER (PB10/PB11 open-drain), RCC.CR ignored-by-model (the HSE bring-up writes it), RCC.D1CCIPR (SPI1/2 on pll1_q).
-  - **The reasons, for review:** PENDING (listed at the close from the specification).
+  - **The reasons, for review:** every acknowledgement is listed in §8, as `examples/sentinel-03.json` holds it.
 - **D11:** W25Q64JV's §9.2 rows are held by read clock (`supply_by_read_clock`); at 20 MHz, 2.7 V applies.
 - **D12:** the flash floor is refused by `--fab-out` (`FabricationNotReady`, id `U4`) and is otherwise listed by `supervisor::floors_above_reset`. The Sentinel-01 bench row asks: did the board ever run under 2.7 V?
 - **D13:** `DropLimitUndeclared` for the MCU's supply; every other regulated domain is `drop_not_judged`.
@@ -184,4 +184,193 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
 
 ## 7. Gates, CI, package
 
-PENDING.
+- **Reduction pass (diff), by a fresh read-only subagent; every proposal spot-checked before it was applied:**
+  - −145 net (commit `f0e5986c`: 141 added, 286 removed).
+  - 7 duplicates removed:
+    - the pour-zone swap and predicate (`Stack::pour_zones`, `Stack::is_pour`, in place of 7 copies);
+    - three identical JST GH openings (one const);
+    - `tree::same` on `tree::regular`;
+    - `opening.rs`'s second row lookup;
+    - one `hex64`;
+    - the ready fixture's consts and argument lists in `fab_tier1`;
+    - the power tests' five helpers in `ir/tests/common/power_table.rs`.
+  - 1 dead path removed: `OnShortfall`, since every row enforces after A6.
+  - 2 kept as deliberate:
+    - the fuse's 85 °C guard (a review ruling);
+    - `pour`'s f64 geometry beside `supply`'s exact integer one (it errs toward blocking).
+  - 1 rejected on spot-check: P8. `GmCrit.an2867_margin_hundredths_uncited` is in `TreeVerdict`, ruled at 4240a as information.
+  - Findings out of scope:
+    - `root()` is re-declared in about 15 CLI test files beside `common::verify::root`;
+    - `fab_tier1::rebased_verify` duplicates `common/ready.rs::rebased`;
+    - three private `Shape` types (pour, supply, route);
+    - `spec`/`refused` copies in 7 more IR test files.
+- **Mutations: 41 of 41 killed.** One mutant per guard this work order adds or changes, against the suite it lives in (`~/.cache/aet-4300k/mut/{mutants.py,run.py,results.tsv}`, capped scope).
+  - The first sweep left 4 survivors, each closed by a new edge test:
+    - the doubled pack at one millivolt of VIN absolute maximum (37,999 mV);
+    - Gm_crit exactly at 1.5 mA/V (16 MHz, CL 1 pF, ESR 37,104,895 mΩ, refused, against 37,104,894, which holds);
+    - FAB-NOTES' sha line after a line that is not the specification's lead;
+    - the pour's nearer-pad tie (the split factored into `pour::nearest` with a unit test).
+- **Gates:** PENDING (`cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings` (also with `with-tools`), `cargo test --workspace`, after `main` is merged).
+- **Tier 2 in the image (16G, swap 0):**
+  - The Sentinel-01 re-bind passed every gate. Only the binding moved, and `ORDERED.sha256` checks.
+  - `against_fab_tier2` passed 3/3, the re-bind test included (1036 s). `four_layer_fab_tier2` passed 2/2 (453 s).
+  - `verify_47k_tier2` passed 2/2, `verify_2k2_tier2` 2/2 and `board_tier2`'s identifier test 1/1, run by the tier-2 worker.
+- **Package:** the bootstrap is accepted (12:45Z). `fab/sentinel-03/package` and Sentinel-01's re-bound MANIFEST and FAB-NOTES come from the architect's write dispatch on the final head, committed unchanged. Until then `bench-package` refuses `--against-fab` on Sentinel-03, and `bench_board_tier1` fails on the specification hash.
+
+## 8. Appendix: Sentinel-03's acknowledgements (D10)
+
+Generated from `examples/sentinel-03.json`. There are 76 conditions (`acknowledge_conditions`) and 68 ledger entries (`acknowledge_unwitnessed`).
+
+### Conditions
+
+| id | reason |
+|---|---|
+| `buck_junction_screened:U10` | TI's Figure 9-3 is typical; U10's 1170 mW is screened at the copper extract measures on this board (>= 15 cm2 needed), and the bench reads its case temperature at 2 A |
+| `buck_junction_screened:U11` | TI's Figure 9-3 is typical; U11's 550 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature |
+| `buck_timing_conditions:U10` | tOFF-MIN, RDS(on) and fSW are stated at VIN 12 V; U10 runs 9.0 to 17.4 V, inside the 3S-4S range the headroom and on-time checks use with margin |
+| `buck_timing_conditions:U11` | tOFF-MIN, RDS(on) and fSW are stated at VIN 12 V; U11 runs 9.0 to 17.4 V, inside the 3S-4S range the headroom and on-time checks use with margin |
+| `bulk_esr_condition:C1` | C1's ESR is stated at 20 C and -40 C only; the board's -20 C floor sits between them, and the doubled-pack bound does not rely on its damping |
+| `datasheet_advance_information:Q1` | DS37198 is marked advance information in its text layer; Q1's VDS, VGS and RDS(on) margins are large (60 V vs 34.8 V), re-read when a final sheet is held |
+| `derating_declared:X5R+X7R+X7S` | no maker DC-bias curve is held for the output and VCC ceramics; TI's 50 % rule is applied, and the cin ceramics use Murata's own curve |
+| `dielectric_accepted:C10` | C10 is X7S (GCM32EC71H106KA03), accepted where TI's example says X7R or better (ruled D-B8); its effective value at 4S is counted from its own curve |
+| `dielectric_accepted:C20` | C20 is X7S (GCM32EC71H106KA03), accepted where TI's example says X7R or better (ruled D-B8); its effective value at 4S is counted from its own curve |
+| `dielectric_accepted:C60` | C60, U10's second cin (A6, ruled D8), is X7S like C10, accepted under ruling D-B8; the two give 10.87 uF effective at 17.4 V |
+| `dielectric_accepted:C61` | C61, U11's second cin (A6, ruled D8), is X7S like C20, accepted under ruling D-B8; the two give 10.87 uF effective at 17.4 V |
+| `drop_not_judged:VDD_5V` | VDD_5V feeds only J6.1 and J7.1 off-board (DS-009 ports); no on-board load pin exists for the supply gate (ruled D13) |
+| `effective_no_minimum:U10.cout` | U10's output ceramics have no effective minimum in TI's row; their 44 uF is a placeholder derating until Murata's curve for GRM32ER61C226KE20 is held |
+| `effective_no_minimum:U11.cout` | U11's output ceramics have no effective minimum in TI's row; their 44 uF is a placeholder derating until Murata's curve for GRM32ER71A226KE20 is held |
+| `effective_typical:U10.cin` | Murata's DC-bias chart is typical at 25 C; U10's two cin are counted worst case (curve, -10 % tolerance, -22 % X7S) and clear 10 uF by 8.7 % |
+| `effective_typical:U11.cin` | Murata's DC-bias chart is typical at 25 C; U11's two cin are counted worst case (curve, -10 % tolerance, -22 % X7S) and clear 10 uF by 8.7 % |
+| `fuse_hot_plug_bound_fuse_only:F1` | F1's I2t bound counts only its own minimum resistance (no FET, copper, connector or pack minimum is held), so 7 A was ruled (Q1 (a)); holding one is a row |
+| `hot_plug_doubled_pack:U10` | the ring at U10's VIN is bounded by twice the 17.4 V pack, a derivation (ruled D7), under 38 V; C1's damping only lowers it |
+| `hot_plug_doubled_pack:U11` | the ring at U11's VIN is bounded by twice the 17.4 V pack, a derivation (ruled D7), under 38 V; C1's damping only lowers it |
+| `hse_drive_level_unmeasured:HSE` | AN2867 Rev 25 Step 4 needs a measured Vpp at OSC_IN; Y1's drive level is a bench row before the order |
+| `hse_safety_factor_unmeasured:HSE` | AN2867 Rev 25 Step 3's negative-resistance safety factor needs the board; gmcrit 0.555 mA/V is under the 1.5 mA/V limit; a bench row |
+| `inductor_dcr_at_25c:U10` | L1's DCR is stated at 25 C and not raised for 85 C; the headroom check counts it, with the input path's 70 mV, and holds at 9.0 V |
+| `inductor_dcr_at_25c:U11` | L2's DCR is stated at 25 C and not raised for 85 C; the headroom check counts it, with the input path's 70 mV, and holds at 9.0 V |
+| `inductor_ripple_outside_guidance:U10` | 8.2 uH meets Equation 5 but not Equation 4's 20-40 % ripple over the whole 3S-4S range (ruled D6); the peak current stays under the high-side limit |
+| `inductor_ripple_outside_guidance:U11` | 8.2 uH meets Equation 5 but not Equation 4's 20-40 % ripple over the whole 3S-4S range (ruled D6); the peak current stays under the high-side limit |
+| `input_path_resistance_at_25c:Q1` | Q1's RDS(on) and F1's resistance are 25 C figures; hotter, the 71 mV drop grows, a small part of the volts the bucks keep above their need at the 9 V pack minimum; a bench row |
+| `inrush_bulk_at_rated:C1` | C1 enters the hot-plug I2t at its rated 47 uF (no tolerance in its row); at +20 % the bound is 2.72 A2s, still under F1's 3.25 A2s |
+| `inrush_ceramic_at_rated:C11` | C11 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin |
+| `inrush_ceramic_at_rated:C21` | C21 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin |
+| `isat_typical:L1` | IHLP-5050FD's 16 A saturation is typical only; it is 3.2 times U10's 5.05 A high-side limit maximum (ruled D-B3) |
+| `isat_typical:L2` | IHLP-5050FD's 16 A saturation is typical only; it is 3.2 times U11's 5.05 A high-side limit maximum (ruled D-B3) |
+| `lifecycle_unread:CRCW0603_F_K` | CRCW0603_F_K: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:DMP6023LSS-13` | DMP6023LSS-13: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GCM188R71H104KA57` | GCM188R71H104KA57: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GCM188R71H224KA64` | GCM188R71H224KA64: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GCM32EC71H106KA03` | GCM32EC71H106KA03: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GRM188R71C105KA12` | GRM188R71C105KA12: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GRM32ER61C226KE20` | GRM32ER61C226KE20: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:GRM32ER71A226KE20` | GRM32ER71A226KE20: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:IHLP5050FDER8R2M01` | IHLP5050FDER8R2M01: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:MMSZ5242BT1G` | MMSZ5242BT1G: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:SF-1206F700-2` | SF-1206F700-2: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:TNPW0603_B_E` | TNPW0603_B_E: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `lifecycle_unread:UCZ1H470MCL1GS` | UCZ1H470MCL1GS: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK) |
+| `loss_current_gap:U11` | U11's loss is read at 679 mA and its solved load is 749 mA; the 70 mA gap adds little loss at 81 % efficiency, and refusing it needs a ruling (4300d3 F9) |
+| `mcu_load_excludes:STM32H753ZITx` | Table 120's run maximum excludes I/O source currents, VDDA and VDD33USB; USB is unused, and each I/O load is a declared power.loads row |
+| `offboard_declared:J8.2` | J8's EXT_SCL off-board 20 pF is declared for a 100 mm JST cable and one remote pin; a longer cable or second device is outside the bound |
+| `offboard_declared:J8.3` | J8's EXT_SDA off-board 20 pF is declared for a 100 mm JST cable and one remote pin; a longer cable or second device is outside the bound |
+| `pin_capacitance_declared:U5` | TDK prints C_I < 10 pF typical only for the ICM-42688-P; U5's pins are counted at 10 pF, and IMU_SCK keeps 8.5 pF margin to its bound |
+| `pin_capacitance_declared:U7` | Bosch prints no pin capacitance for the BMP581; U7 is counted at UM10204's 10 pF limit for an I2C pin |
+| `plane_not_joined:U10.In2.Cu` | In2.Cu is the VDD_3V3 plane, which U10's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu |
+| `plane_not_joined:U11.In2.Cu` | In2.Cu is the VDD_3V3 plane, which U11's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu |
+| `power_in_rating_underated:J4` | J4 is rated 15 A by AMASS V1.2, with no derating held for 85 C; the branch draws 1.65 A, and no motor current crosses the board |
+| `rated_only:U10.cboot` | TI's row states no effective minimum for U10's 0.1 uF boot capacitor; GCM188R71H104KA57 at 50 V rating sees 5 V across it |
+| `rated_only:U10.cin_hf` | TI's row states no effective minimum for U10's 0.22 uF HF input capacitor; its bulk cin pair carries the 10 uF effective minimum |
+| `rated_only:U10.cvcc` | TI's row states no effective minimum for U10's 1 uF VCC capacitor; GRM188R71C105KA12 at 16 V rating sees VCC, nominally 5 V and above 5.5 V in some conditions (SNVSAN3F pp. 6, 23) |
+| `rated_only:U11.cboot` | TI's row states no effective minimum for U11's 0.1 uF boot capacitor; GCM188R71H104KA57 at 50 V rating sees 5 V across it |
+| `rated_only:U11.cin_hf` | TI's row states no effective minimum for U11's 0.22 uF HF input capacitor; its bulk cin pair carries the 10 uF effective minimum |
+| `rated_only:U11.cvcc` | TI's row states no effective minimum for U11's 1 uF VCC capacitor; GRM188R71C105KA12 at 16 V rating sees VCC, nominally 5 V and above 5.5 V in some conditions (SNVSAN3F pp. 6, 23) |
+| `regulation_not_production_tested:U10` | TI states VOUT regulation as a design limit, not production tested; U10's 5 V feeds only the DS-009 ports J6 and J7, off the MCU's rail |
+| `regulation_not_production_tested:U11` | TI states VOUT regulation as a design limit, not production tested; VDD_3V3's floor is held by its feedback, its drop limit and U12 |
+| `reservoir_cadc_typical:VBAT_SENSE` | CADC is typical 4 pF; C50's 100 nF is 3.05 times the 32.8 nF the single-conversion reservoir rule needs (AN2834 p. 45-46, ruled D-B3) |
+| `stackup_condition:copper-max-2oz` | OSH Park states 1 oz outer and 1/2 oz inner copper, nominal; 70 um (2 oz) is the engine's stated upper bound for every layer |
+| `stackup_condition:copper-temperature-max` | no fabricator page states the copper's temperature limit; 125 C is the declared ceiling the supply gate's resistivity uses |
+| `stackup_condition:outer-copper-min` | OSH Park states 1 oz outer copper, nominal (35 um); 30 um is the declared minimum the supply gate's resistance uses |
+| `stackup_condition:permittivity-fr4-max` | IPC-4101's FR-4 maximum is not held; OSH Park's FR408HR is 3.61 nominal, and 5.4 is the declared upper bound for the capacitance bound |
+| `stackup_condition:plane-copper-min` | OSH Park states 1/2 oz inner copper, nominal (17.5 um); 15 um is the declared minimum for the GND and VDD_3V3 planes |
+| `stackup_condition:plating-min` | OSH Park states via plating 1 mil, nominal (25 um); 18 um is the declared minimum the supply gate's via barrels use |
+| `stackup_condition:track-width-tolerance` | OSH Park publishes no track-width tolerance; 20 % is declared for the supply gate's tracks, as JLCPCB states for its own process |
+| `supervisor_delay_unstated:U12` | TI states U12's 120-280 ms delay only from 3.19 V, above the rail's 3.034 V worst case; below it the delay is unstated, not absent; a bench row times the release |
+| `supervisor_hysteresis_typical:U12` | TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4 mV under VDD_3V3's 3034 mV floor at its pin (ruled D6); a bench row |
+| `theta_ja_copper_mismatch:U10` | TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U10's 117.8 C screen has less margin than it shows; a bench thermal row (Q2 options stand) |
+| `theta_ja_copper_mismatch:U11` | TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U11's 104.8 C screen has less margin than it shows; a bench thermal row |
+| `usb_pair_undeclared:PA11` | PA11/PA12 are reserved for USB (AET-WO-3400 F5) with no connector drawn on Sentinel-03, so no differential pair exists to judge |
+| `vref_is_vdda:VBAT_SENSE` | Sentinel-03 has no separate VREF+; VDDA is VDD_3V3, and the sense's full scale is judged against VDD_3V3's minimum |
+| `zener_below_test_current:D1` | D1's VZ is stated at 20 mA; through R60 it carries about 60 uA at 17.4 V, where VZ is lower, so Q1's gate stays under 12.6 V of its 20 V |
+
+### Ledger entries
+
+| register | class | fields | reason |
+|---|---|---|---|
+| `PWR.CSR1` | silicon-only | 1 | Polled by the bring-up before VOS is raised: the twin's PWR model reads it 1 always (AET-WO-4240v D-3), so no wait is witnessed; bench row B-2 reads PWR_CSR1 after boot. |
+| `PWR.D3CR` | silicon-only | 1 | Polled after VOS Scale 2 is written: the twin's PWR model reads it 1 always (AET-WO-4240v D-3), so no wait is witnessed; bench row B-2 reads PWR_D3CR after boot. |
+| `FLASH.OPTSR_CUR` | silicon-only | 1 | No model: the twin presents level 3 itself (4230 FEEDBACK section 2 m1). FAB-NOTES programs it by read-modify-write of OPTSR as read; the bench row reads bits 3:2 back as 11. |
+| `GPIOA.AFRH` | same-source | 3 | PA8 at AF1 for TIM1_CH1 (MOTOR1), PA9/PA10 at AF7 for USART1: Renode routes PA8 by AFR (4300 FEEDBACK section 0) but the table cannot see its role; USART has no pin. Bench reads AFRH. |
+| `GPIOA.AFRL` | same-source | 5 | PA2/PA3 at AF7 for USART2 (CRSF), PA5-PA7 at AF5 for SPI1 (flash): Renode's USART has no pin (4300b FEEDBACK section 0); AFR routes only a timer channel. The bench row reads AFRL. |
+| `GPIOA.MODER` | same-source | 9 | PA0 output (FLASH_CS); PA2/PA3, PA5-PA10 alternate (USART2, SPI1, MOTOR1, USART1): BSRR drives a pin whatever MODER says (4200 FEEDBACK); only PA8's TIM1 route reads it. Bench reads MODER. |
+| `GPIOA.OSPEEDR` | same-source | 9 | PA5/PA7 medium for SPI1 at 16 MHz; PA0, PA2/PA3, PA6, PA8-PA10 low: no edge rate is modelled, and check speeds judges each fmax with svd-hal's own table, not an ir rule. Bench reads OSPEEDR. |
+| `GPIOA.OTYPER` | ignored-by-model | 16 | OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port A pin. The bench row reads it back, as 3302 B2 asked for GPIOB. |
+| `GPIOA.PUPDR` | same-source | 15 | Written whole: no pull on PA0-PA7, PA9/PA10, nor PA11/PA12 (kept for USB); debug pulls kept (PA13 up, PA14 down, PA15 up); PA8's is the motor rule's. No pull is modelled. Bench reads PUPDR. |
+| `GPIOB.AFRL` | same-source | 2 | PB6/PB7 at AF4 for I2C1: the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRL back; 3302 B2 predicted 0x44 there. |
+| `GPIOB.MODER` | same-source | 8 | PB6/PB7, PB10/PB11 alternate for I2C1/I2C2, PB13-PB15 for SPI2, PB12 output (IMU_CS): BSRR drives a pin whatever MODER says (4200 FEEDBACK); no timer pin here. Bench reads MODER. |
+| `GPIOB.OSPEEDR` | same-source | 8 | All low: PB6/PB7 I2C1 at 400 kHz, PB10/PB11 I2C2 at 100 kHz, PB12-PB15 SPI2 at 2 MHz. No edge rate is modelled; check speeds judges fmax with svd-hal's own table. Bench reads OSPEEDR. |
+| `GPIOB.OTYPER` | ignored-by-model | 16 | OTYPER is not stored by Renode (4300b FEEDBACK section 10): PB6/PB7 (I2C1) and PB10/PB11 (I2C2, EXT) open-drain, the rest push-pull. 3302 B2 reads it on silicon; the bench row compares it. |
+| `GPIOB.PUPDR` | same-source | 16 | No pull is modelled. Written whole by split: no internal pull on PB6/PB7 (the bus has 2.2 kOhm), PB4's reset pull-up kept. The bench row reads PUPDR back. |
+| `I2C1.CR1` | same-source | 1 | PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, with no reaction claimed. The bench row reads PE as 1; the bus records on the bench need it. |
+| `I2C1.CR2` | same-source | 7 | 7-bit addressing, no reload, no PEC, written 0 (AUTOEND set at run time): STM32F7_I2C.cs is not held, no reaction claimed. The bench row reads CR2 back, all but AUTOEND. |
+| `I2C1.ICR` | same-source | 9 | Write-1-to-clear (RM0433 Rev 9 section 47.9.8, p. 2015), so no bench row: STOPCF and NACKCF after each transfer. The next record's OK status on the bench (3302 B3) shows the clear took. |
+| `RCC.CR` | ignored-by-model | 13 | D2CKRDY: not polled (Q-F), a tag reading 0 (STM32H7_RCC.cs L175). The rest: tags or read-only flags of the RCC_CR words the HSE bring-up writes. Bench rows: HSIKERON, CSIKERON, HSEBYP, D2CKRDY. |
+| `RCC.CR` | silicon-only | 3 | HSE bring-up waits on HSERDY (ABM8AIG 16 MHz, 20 ms ruled) and PLL1RDY; Renode sets each with its ON bit (L185, L197). CSSHSEON is set after HSERDY: stored, no detection. Bench reads CR. |
+| `RCC.D1CCIPR` | ignored-by-model | 1 | A tag in Renode (STM32H7_RCC.cs L401, reads 0 whatever is written, 4230 FEEDBACK section 2). SPI1 and SPI2 run on pll1_q here (the topology), not per_ck. The bench row reads it. |
+| `RCC.D2CCIP1R` | ignored-by-model | 2 | ResetClock reads them at reset before the select write; a tag (STM32H7_RCC.cs L408-410) reads 0 whatever silicon holds. The written SPI123SEL is judged by spi_words. |
+| `RCC.D2CCIP2R` | ignored-by-model | 3 | Left at reset (rcc_pclk2/pclk1 kernels the BRR and TIMINGR rules assume); a tag (STM32H7_RCC.cs L420-425) reads 0 whatever silicon holds. The bench row reads each. |
+| `SCB.CPACR` | same-source | 2 | The FPU enable in the generated Reset, outside every Kani harness; whether Renode faults a float with CPACR clear is not held. The bench row reads CP10/CP11 as full access. |
+| `SPI1.CR2` | ignored-by-model | 1 | A tag (STM32H7_SPI.cs L149), written 0 with TSIZE: no reload is used. The bench row reads it back as 0. |
+| `SPI1.IFCR` | ignored-by-model | 7 | Tags in Renode (STM32H7_SPI.cs L258-266), written 0 beside EOTC; write-only, so no bench row. The boot record's flash identity, read on silicon, shows each transfer ended. |
+| `SPI1.SR` | ignored-by-model | 1 | MODF is a tag (STM32H7_SPI.cs L238) and MASTER always reads 1: no mode fault in the twin. SSM\|SSI before SPE is proved by Kani; the bench row reads MODF as 0 (3302 saw it 1). |
+| `USART1.CR1` | ignored-by-model | 13 | Not stored by Renode's USART (4300b FEEDBACK section 0; M0, M1 measured P4.1): console USART1 on PA9/PA10, 8 data bits, FIFOEN set, no wake-up, interrupts off. The bench row reads CR1 back. |
+| `USART1.CR1` | same-source | 8 | Stored with no reaction claimed (4300b FEEDBACK section 0): no parity, oversampling by 16, interrupts off, compared with the topology only. The bench row reads CR1 back. |
+| `USART1.CR2` | ignored-by-model | 19 | STOP is the only CR2 field Renode stores (4300b FEEDBACK section 0; RXINV, TXINV measured P4.1): asynchronous, no swap, no inversion, LSB first. The bench row reads CR2 back. |
+| `USART1.CR2` | same-source | 1 | One stop bit: stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00. |
+| `GPIOB.AFRH` | same-source | 5 | PB10/PB11 at AF4 for I2C2 (EXT, J8), PB13-PB15 at AF5 for SPI2 (IMU U5): the model routes a pin by AFR only for a timer channel (4300 FEEDBACK section 0). The bench row reads AFRH. |
+| `GPIOC.AFRH` | same-source | 2 | PC10/PC11 at AF7 for USART3 (MAVLINK, J7): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries MAVLINK bytes in the twin. The bench row reads AFRH. |
+| `GPIOC.MODER` | same-source | 2 | PC10/PC11 alternate for USART3 (MAVLINK, J7): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER. |
+| `GPIOC.OSPEEDR` | same-source | 2 | PC10/PC11 low for USART3 at 57600 baud (MAVLINK): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back. |
+| `GPIOC.OTYPER` | ignored-by-model | 16 | OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port C pin, USART3's PC10/PC11 included. The bench row reads it back. |
+| `GPIOC.PUPDR` | same-source | 16 | Written whole as 0: no pull on PC10/PC11 (USART3, MAVLINK) nor PC0 (VBAT_SENSE, ADC1 INP10), every other port C pin at reset. No pull is modelled. The bench row reads PUPDR. |
+| `GPIOE.AFRH` | same-source | 3 | PE11/PE13/PE14 at AF1 for TIM1_CH2-4 (MOTOR2-4): Renode forwards TIM1 only while AFR picks AF1 (4300 FEEDBACK section 0), but the table cannot see a pin's role. Bench reads AFRH. |
+| `GPIOE.MODER` | same-source | 3 | PE11/PE13/PE14 alternate for MOTOR2-4: Renode forwards TIM1's level only while MODER is AF (4300 FEEDBACK section 0); the table cannot see a pin's role, so the weaker class. Bench reads MODER. |
+| `GPIOE.OSPEEDR` | same-source | 3 | PE11/PE13/PE14 low for MOTOR2-4 DShot600: no edge rate is modelled; check speeds judges that speed's fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR. |
+| `GPIOE.OTYPER` | ignored-by-model | 16 | OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port E pin, MOTOR2-4 on PE11/PE13/PE14 included. Bench row reads it back. |
+| `GPIOE.PUPDR` | same-source | 13 | Written whole as 0 on port E but MOTOR2-4 (PE11/13/14, the motor rule's); PE9, MOTOR1 until 4300h D3 moved it to PA8, has no pull now. No pull is modelled. Bench reads PUPDR. |
+| `I2C2.CR1` | same-source | 1 | I2C2 runs EXT (PB10/PB11, J8) at 100 kHz: PE is set by the enable, not by silicon::i2c_cr1 (whose word has PE clear); stored, no reaction claimed. The bench row reads PE as 1. |
+| `I2C2.CR2` | same-source | 7 | 7-bit, no reload, no PEC: 0 in I2C2's transfer code. STM32F7_I2C.cs is not held, no reaction claimed; EXT (J8) declares no device, so none runs. Bench reads all but AUTOEND. |
+| `I2C2.ICR` | same-source | 9 | Write-1-to-clear (RM0433 Rev 9 section 47.9.8): STOPCF\|NACKCF in I2C2's transfer, held by its Kani harness only; no bench row, and EXT (J8) has no device, so no record shows a clear. |
+| `RCC.AHB4ENR` | same-source | 2 | GPIOC (USART3, VBAT_SENSE) and GPIOE (MOTOR2-4) clocks: 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows ports C/E registered with its RCC. Bench reads AHB4ENR. |
+| `RCC.APB1LENR` | same-source | 1 | I2C2's clock for EXT (J8): 3302 B2 read Renode's APB1LENR as 0x00200000, I2C1 only; no held measurement shows i2c2 registered with its RCC, so the gate goes unseen. Bench reads I2C2EN. |
+| `RCC.CFGR` | ignored-by-model | 9 | Written whole with SW = PLL1 by the 16 MHz HSE bring-up: SWS read-only, the rest tags (STM32H7_RCC.cs L226-236). MCO1/MCO2 0; PC9 (MCO2) is not set AF. Bench rows read all but SWS. |
+| `SPI2.CR2` | ignored-by-model | 1 | SPI2 to U5 (ICM-42688-P) on PB13-PB15: TSER is a tag (STM32H7_SPI.cs L149), written 0 with TSIZE, as no IMU transfer reloads. The bench row reads it back as 0. |
+| `SPI2.IFCR` | ignored-by-model | 7 | Tags in Renode (STM32H7_SPI.cs L258-266), written 0 beside EOTC after each U5 transfer; write-only, so no bench row. U5's identity read (0x47 expected), on silicon, shows the transfers ended. |
+| `SPI2.SR` | ignored-by-model | 1 | SPI2 masters U5 with PB12 a GPIO select: MODF is a tag (STM32H7_SPI.cs L238) and MASTER reads 1, so no mode fault shows in the twin. Kani proves SSM\|SSI before SPE; bench reads MODF 0. |
+| `TIM1.BDTR` | ignored-by-model | 12 | Written as MOE alone (4240b FEEDBACK): no break or dead time on MOTOR1-4. Every BDTR field is a tag (4300a FEEDBACK section 0); toggling MOE moves no observer (2302 A2-4). Bench reads BDTR. |
+| `TIM1.CCER` | ignored-by-model | 3 | CC1NE-CC3NE 0: no complementary output. TIM1's CH1N pins include PA7 (SPI_MOSI) and PB13 (IMU_SCK), here at AF5. Tags in Renode (4300a FEEDBACK section 0). Bench reads CCER. |
+| `TIM1.CCER` | same-source | 16 | CC1E-CC4E set for MOTOR1-4, CC5/CC6 off, every polarity 0: stored with no reaction claimed; Renode's output path never reads CCxP (4300 FEEDBACK section 0). The bench row reads CCER. |
+| `TIM1.CCMR1` | ignored-by-model | 8 | MOTOR1/MOTOR2 (PA8, PE11): OC1PE/OC2PE set, OCxFE/OCxCE 0, all tags; OCxM[3] is reserved in the model (4300a FEEDBACK section 0); the twin lists OCxPE unobservable. Bench reads CCMR1. |
+| `TIM1.CCMR1` | same-source | 2 | CC1S/CC2S 00 make channels 1-2 outputs for MOTOR1 (PA8) and MOTOR2 (PE11): stored (STM32_Timer.cs L425-445), no reaction claimed; the image compares the topology. Bench reads CCMR1. |
+| `TIM1.CCMR2` | ignored-by-model | 8 | MOTOR3/MOTOR4 (PE13, PE14): OC3PE/OC4PE set, OCxFE/OCxCE 0, all tags; OCxM[3] is reserved in the model (4300a FEEDBACK section 0); the twin lists OCxPE unobservable. Bench reads CCMR2. |
+| `TIM1.CCMR2` | same-source | 2 | CC3S/CC4S 00 make channels 3-4 outputs for MOTOR3 (PE13) and MOTOR4 (PE14): stored (STM32_Timer.cs L425-445), no reaction claimed; the image compares the topology. Bench reads CCMR2. |
+| `TIM1.CR1` | ignored-by-model | 2 | TIM1 for MOTOR1-4 DShot600: CKD and UIFREMAP written 0, outside the CR1 bits 0-7 Renode stores (CKD a tag; 4300a FEEDBACK section 0), so the twin cannot show them. Bench reads CR1. |
+| `TIM1.CR1` | same-source | 5 | ARPE set, edge-aligned up-count (CMS 0, DIR 0), UDIS/URS 0 for MOTOR1-4's DShot600 frames: stored (bits 0-7) with no reaction claimed; the image compares the topology. Bench reads CR1. |
+| `TIM1.EGR` | same-source | 8 | EGR carries UG alone for TIM1 (MOTOR1-4): CC1G-CC4G, COMG, TG, BG, B2G written 0, raising no event. Write-only, so no bench row; no held source line shows Renode's handling of them. |
+| `USART2.CR1` | ignored-by-model | 13 | CRSF on USART2 (PA2/PA3, J6) at 420000: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1. |
+| `USART2.CR1` | same-source | 8 | CRSF is 8N1 (validate refuses other framing): PCE/PS 0, OVER8 0 (the column its tolerance check takes), interrupts off; stored, no reaction claimed (4300b FEEDBACK section 0). Bench reads CR1. |
+| `USART2.CR2` | ignored-by-model | 19 | CRSF must be non-inverted 8N1 (4300b FEEDBACK section 0): RXINV/TXINV/SWAP are tags (P4.1, measured), so a wrong inversion on PA2/PA3 passes the twin. Only STOP is stored. Bench reads CR2. |
+| `USART2.CR2` | same-source | 1 | One stop bit for CRSF 8N1 at 420000 on USART2: stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00. |
+| `USART3.CR1` | ignored-by-model | 13 | MAVLINK on USART3 (PC10/PC11, J7) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1. |
+| `USART3.CR1` | same-source | 8 | MAVLINK 8N1 at 57600, BRR 1111: PCE/PS 0, OVER8 0 (oversampling by 16), interrupts off; stored with no reaction claimed (4300b FEEDBACK section 0), compared with the topology. Bench reads CR1. |
+| `USART3.CR2` | ignored-by-model | 19 | MAVLINK on PC10/PC11: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2. |
+| `USART3.CR2` | same-source | 1 | One stop bit for MAVLINK 8N1 at 57600 on USART3 (J7): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00. |

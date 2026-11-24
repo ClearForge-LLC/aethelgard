@@ -103,6 +103,17 @@ fn a_doubled_pack_over_a_regulators_absolute_maximum_is_refused() {
     assert_eq!(spec(&v).validate(), Ok(()));
     v["power"]["battery"]["cell_max_millivolts"]["value"] = json!(4751);
     assert_power(&refused(&v), Refusal::DoubledPackOverAbsoluteMaximum, "U10");
+    // One millivolt of absolute maximum: at 4750 mV cells (38000 doubled),
+    // an absolute maximum of 37999 mV is refused.
+    let mut v = base();
+    v["power"]["battery"]["cell_max_millivolts"]["value"] = json!(4750);
+    let mut t = table_json();
+    row(&mut t, "LMR33630ADDA")["kind"]["buck"]["vin_abs_max_millivolts"]["value"] = json!(37_999);
+    assert_power(
+        &against(&v, &t).expect_err("37999 mV"),
+        Refusal::DoubledPackOverAbsoluteMaximum,
+        "U10",
+    );
 }
 
 #[test]
