@@ -2131,10 +2131,10 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
         fields_of(&r, witness_index(&r, "U5")).iter().all(|f| !f.4),
         "a repeat the script holds is no evidence"
     );
-    // One write, two reads: one transaction, not the script's. It read two
-    // bytes where the step reads one: wrong by its count, so S1, where it was
-    // I4 while a witness read its first `Read` line alone (`AET-WO-3309` (1),
-    // (4)). It is still no surplus: there is no transaction count.
+    // One write, two reads: one transaction, not the script's. Its first
+    // write and read are the solved ones, so it stays I4 as before. Each
+    // read is a transfer of its own (`architecture.md` §2.7): the second is
+    // never the first's byte count (`AET-WO-3309` adversarial 2).
     let r = two_bme(&[], |r| {
         observe(r, "U5", &["Write D0", "Read 60", "Read 60"]);
         replace(
@@ -2143,13 +2143,7 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
             verdict(&[("i2c_transaction_unwitnessed", 1)]),
         );
     });
-    assert_eq!(attributed(&r).rule, Rule::S1);
-    let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
-        .into_iter()
-        .filter(|f| f.4)
-        .map(|f| f.0)
-        .collect();
-    assert_eq!(wrong, ["i2c1.u5.Read", "i2c1.u5.Read.bytes"]);
+    assert_eq!(attributed(&r).rule, Rule::I4);
     // An extra write with the script's own missing: not the script's
     // transactions with one more. U5's first write is wrong: S1 as before,
     // with no transaction count.
@@ -2169,8 +2163,8 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
     );
     // A warning line among the device's lines: not a transaction, and no
     // `Write` (`AET-WO-3309` D1): the `Write D0` before it stays open, so the
-    // `Read 60` after it is that transaction's second read. Two bytes where
-    // the step reads one: S1 by its count, with no transaction count.
+    // `Read 60` after it is that transaction's second read, never the first
+    // read's count. I4 as before.
     let r = two_bme(&[], |r| {
         let i = witness_index(r, "U5");
         if let Record::I2cWitness { observed, .. } = &mut r[i] {
@@ -2187,13 +2181,7 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
             verdict(&[("i2c_transaction_unwitnessed", 1)]),
         );
     });
-    assert_eq!(attributed(&r).rule, Rule::S1);
-    let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
-        .into_iter()
-        .filter(|f| f.4)
-        .map(|f| f.0)
-        .collect();
-    assert_eq!(wrong, ["i2c1.u5.Read", "i2c1.u5.Read.bytes"]);
+    assert_eq!(attributed(&r).rule, Rule::I4);
 }
 
 /// One more device's identity step (register 0xD0, a read of `width` bytes)
@@ -3068,7 +3056,10 @@ fn a_bmp581_log_is_read_whole_for_a_surplus_and_a_step_sent_elsewhere() {
         "{a:?}"
     );
     // U5's configure write sent to U2 (a BME280 at 0x76), which logs it: U5's
-    // own log lacks it, so U2's surplus names U5's step's address.
+    // own log lacks it, so U2's surplus names U5's step's address. This is the
+    // reader alone: today's judge places that write in no step of U2's, so
+    // its archive does not hold it (carrier B, ruled; measured I1 on the
+    // planted bmp-cfg-u2, `AET-WO-3309` FEEDBACK, the D2(c) row).
     let r = bme_bmp(
         |r| {
             observe(r, "U2", &["Write D0", "Read 60", "Write 36 40 81"]);

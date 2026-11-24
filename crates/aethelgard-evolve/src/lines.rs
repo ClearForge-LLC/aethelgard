@@ -27,13 +27,14 @@ pub enum Form {
 }
 
 /// One transaction: the positions of its lines, the bytes written (empty
-/// for a read the log shows no pointer for), and the bytes read (`None` for
-/// a write alone).
+/// for a read the log shows no pointer for), and the bytes each read after
+/// it returned, one read per transfer (Renode calls a device's `Read(count)`
+/// once per transfer, `architecture.md` §2.7); none for a write alone.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Transaction {
     pub lines: Vec<usize>,
     pub written: Vec<u8>,
-    pub read: Option<Vec<u8>>,
+    pub reads: Vec<Vec<u8>>,
 }
 
 /// What a `[NOISY]` line of `device`'s model says, after `{device}: `.
@@ -156,7 +157,7 @@ pub fn transactions<S: AsRef<str>>(
                 out.push(Transaction {
                     lines: vec![i],
                     written,
-                    read,
+                    reads: read.into_iter().collect(),
                 });
             }),
             Form::WriteRead | Form::Icp => {
@@ -170,20 +171,20 @@ pub fn transactions<S: AsRef<str>>(
                         out.push(Transaction {
                             lines: vec![i],
                             written: bytes,
-                            read: None,
+                            reads: Vec::new(),
                         });
                         open = true;
                     }
                     (true, true) => {
                         let t = out.last_mut().expect("an open transaction");
                         t.lines.push(i);
-                        t.read.get_or_insert_with(Vec::new).extend(bytes);
+                        t.reads.push(bytes);
                     }
                     (true, false) => {
                         out.push(Transaction {
                             lines: vec![i],
                             written: Vec::new(),
-                            read: Some(bytes),
+                            reads: vec![bytes],
                         });
                         open = true;
                     }
@@ -219,7 +220,7 @@ pub fn place<S: AsRef<str>>(
     let mut to: Vec<Option<usize>> = vec![None; ts.len()];
     let mut taken: Vec<usize> = vec![0; steps.len()];
     for (t, tx) in ts.iter().enumerate() {
-        let k = key(&tx.written, tx.read.is_some());
+        let k = key(&tx.written, !tx.reads.is_empty());
         if k.0.is_none() {
             continue;
         }
@@ -240,7 +241,7 @@ pub fn place<S: AsRef<str>>(
         if to[t].is_some() {
             continue;
         }
-        let read = tx.read.is_some();
+        let read = !tx.reads.is_empty();
         if let Some(s) = (0..steps.len()).find(|&s| (steps[s].1 > 0) == read && taken[s] == 0) {
             taken[s] += 1;
             to[t] = Some(s);

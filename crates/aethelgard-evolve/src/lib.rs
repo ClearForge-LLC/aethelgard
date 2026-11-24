@@ -694,7 +694,7 @@ type Shape = (Option<(u64, usize)>, usize);
 /// A transaction's shape (`AET-WO-3306`): its write packed, and the bytes
 /// its reads return in all.
 fn shape(t: &Transaction) -> Shape {
-    (packed(&t.written), t.read.as_ref().map_or(0, Vec::len))
+    (packed(&t.written), t.reads.iter().map(Vec::len).sum())
 }
 
 /// A step's write and read width as a transaction's [`shape`].
@@ -973,7 +973,7 @@ impl<'a> Run<'a> {
         let value_want = if *read_width == 0 {
             None
         } else {
-            let want = packed(want.read.as_deref()?)?;
+            let want = packed(want.reads.first()?)?;
             if want.1 != usize::from(*read_width) || (want.0 ^ *value) & *value_mask != 0 {
                 return None;
             }
@@ -987,12 +987,13 @@ impl<'a> Run<'a> {
             .as_ref()
             .map(|t| t.written.as_slice())
             .filter(|w| !w.is_empty());
-        // A step's read is its transaction's, never another's (`AET-WO-3309`
-        // (4)). One that read nothing read no bytes, when the record claims
+        // A step's read is its transaction's first, never another
+        // transaction's (`AET-WO-3309` (4)); a later read is a transfer of its
+        // own, never this one's count. One that read nothing read no bytes, when the record claims
         // the read completed and every line is the model's transaction: a
         // timeout cuts a transfer short, and a line no reader knows may be
         // the read.
-        let returned = got.as_ref().and_then(|t| match &t.read {
+        let returned = got.as_ref().and_then(|t| match t.reads.first() {
             Some(r) => Some(r.as_slice()),
             None => (claimed && none.is_empty()).then_some(&[][..]),
         });

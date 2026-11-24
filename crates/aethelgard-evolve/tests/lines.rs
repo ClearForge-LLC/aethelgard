@@ -22,7 +22,7 @@ fn the_icp_101xx_s_lines_are_read_exactly_as_its_model_writes_them() {
     assert!(none.is_empty());
     assert_eq!(ts.len(), 1);
     assert_eq!(ts[0].written, [0xEF, 0xC8]);
-    assert_eq!(ts[0].read.as_deref(), Some(&[0x00, 0x08][..]));
+    assert_eq!(ts[0].reads, [vec![0x00, 0x08]]);
     // None of these is a line of the model's.
     for line in [
         icp("Received command: [0xef, 0xC8]"),
