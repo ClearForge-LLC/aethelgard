@@ -3414,40 +3414,27 @@ fn an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal() {
             .replacen(first_read, &format!("AETHELGARD-BOOT-BEGIN\n{w}\n"), 1)
     };
     let flooded = || text(&format!("{GOOD_WITNESS}{flood}"), GOOD_RECORD, CPU_LISTING);
-    let no_hook =
-        "its boot word reads 0x2100b007 at the run's end, but its hook saw no write of it";
     let plants: Vec<Plant> = vec![
-        (
-            "memory",
-            good(),
-            common::HOLD_PAST_CAP,
-            vec![
-                "memory_cap_exceeded: Renode's resident memory passed the 1536 MiB cap",
-                "memory: Renode peaked at ",
-                "KiB against the bound's 1572864 KiB",
-            ],
-            vec![no_hook],
-        ),
         (
             "flood",
             flooded(),
             "",
             vec!["renode_log_flood: Renode's output passed 8 MiB"],
-            vec![no_hook, "memory:"],
+            vec![NO_HOOK, "memory:"],
         ),
         (
             "fault word",
             word(good(), "0xDEADBEEF", "deadbeef"),
             "",
             vec!["boot_word_missing: the boot word at 0x20000000 reads 0xdeadbeef, not 0x2100b007"],
-            vec![no_hook, "memory:"],
+            vec![NO_HOOK, "memory:"],
         ),
         (
             "park code",
             word(good(), "0x2100B0F5", "2100b0f5"),
             "",
             vec!["reads 0x2100b0f5, not 0x2100b007: boot_pll1_not_locked"],
-            vec![no_hook],
+            vec![NO_HOOK],
         ),
         (
             "no write",
@@ -3458,13 +3445,13 @@ fn an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal() {
             ),
             "",
             vec!["boot_word_missing: the boot word at 0x20000000 reads 0x00000000"],
-            vec![no_hook],
+            vec![NO_HOOK],
         ),
         (
             "magic, no hook",
             good().replacen(&injection(0), "", 1),
             "",
-            vec![no_hook],
+            vec![NO_HOOK],
             vec!["memory:"],
         ),
         (
@@ -3472,9 +3459,37 @@ fn an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal() {
             word(flooded(), "0xDEADBEEF", "deadbeef"),
             "",
             vec!["renode_log_flood: ", "reads 0xdeadbeef"],
-            vec![no_hook],
+            vec![NO_HOOK],
         ),
     ];
+    refused_with_its_end(plants);
+}
+
+/// The magic-without-hook sentence, which no planted end but that one says.
+const NO_HOOK: &str =
+    "its boot word reads 0x2100b007 at the run's end, but its hook saw no write of it";
+
+/// As [`an_undisturbed_boot_with_no_boot_word_names_its_end_in_the_refusal`],
+/// for a boot the reaper killed at its memory cap: the bound and the memory
+/// it reached (apart, since the hog alone takes seconds).
+#[test]
+fn an_undisturbed_boot_killed_at_a_bound_names_the_bound_and_its_memory() {
+    refused_with_its_end(vec![(
+        "memory",
+        good(),
+        common::HOLD_PAST_CAP,
+        vec![
+            "memory_cap_exceeded: Renode's resident memory passed the 1536 MiB cap",
+            "memory: Renode peaked at ",
+            "KiB against the bound's 1572864 KiB",
+        ],
+        vec![NO_HOOK],
+    )]);
+}
+
+/// Each plant through the stub droop's campaign: refused by name, its
+/// message holding what it must say and none of what it must not.
+fn refused_with_its_end(plants: Vec<Plant>) {
     for (name, out, then, says, not) in plants {
         let tb = toolbox_built_then(&out, BUILD, then);
         let work = Work::new();

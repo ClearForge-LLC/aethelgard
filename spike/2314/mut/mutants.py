@@ -5,7 +5,7 @@ suite fails. python3 -I mutants.py [ID...]"""
 import subprocess, sys, os
 REPO = "/home/forge/aethelgard-2314"
 C = "crates/aethelgard-cli/src/"
-T_CAMPAIGN = ["--test", "campaign_tier1", "an_undisturbed_boot_with_no_boot_word_names_its_end"]
+T_CAMPAIGN = ["--test", "campaign_tier1", "an_undisturbed_boot"]
 T_BOOT = ["--test", "boot_tier1", "foreign"]
 T_UNIT = ["--bin", "aethelgard", "foreign::tests"]
 M = [
