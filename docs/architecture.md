@@ -682,6 +682,15 @@ Each names a decider and what it blocks. None is a placeholder.
   - It holds only for a dependency-free crate (`RUL-04`) whose harness is generated from the specification and pinned by regeneration (`INV-07`).
 - **`OQ-05` Tool server language: Rust via `rmcp` in the workspace, or TypeScript per the ClearForge fleet standard?** **Ruled 2026-10-19, see `RUL-10` and `RUL-12`.** Rust, as an `mcp` subcommand of the engine binary on the official Rust SDK. No longer blocks anything.
 - **`OQ-06` Who proposes mutations in the evolution loop: deterministic rules, a language model, or both in sequence?** Decider: Scotty and Argon, informed by P3's spike. Blocks `AET-WO-3200`. Northstar `NG-04` fixes that the proposer never judges; it does not fix who proposes. **Ruled 2026-11-12 by Scotty: see `RUL-18`.** No longer blocks anything.
+- **`OQ-07` What crosses the seam with the antenna sibling, and in what form?** The sibling designs and solves an antenna for a declared board. It is a standalone repository, functionally independent of Aethelgard as Tviburi is (northstar §3.1), and private until Scotty publishes it. The seam must be nearly seamless in both directions:
+  - **Aethelgard gives:** the declared board's stackup (layers; each dielectric's thickness, material and published permittivity range; copper weight), the outline region given to the antenna, and which layers carry planes.
+  - **Aethelgard takes:**
+    - a footprint with its keep-out on every copper layer;
+    - its matching network as parts in the BOM;
+    - the sibling's verdict, by hash.
+  - **The form:** a file, never a shared type. `INV-01` keeps Aethelgard's specification types in `aethelgard-ir`, and the sibling depends on no Aethelgard crate. The candidates are a stackup export the sibling reads, or Aethelgard's specification read by its published JSON schema.
+  - **Not twinned:** Tviburi has no part in it. A radio is refused by name in the twin and bench-tested (roadmap P5, Path B).
+  - **Decider:** the architect, with the seam work order (roadmap §7.1), ratified by Scotty. The sibling holds the same question as its own `OQ-03`. **Blocks:** the seam work order only.
 
 ## 9. What this document does not cover
 
@@ -741,6 +750,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-18 | §2.27 | The `RETTOBASE` correction is retired: the pinned Renode carries upstream's NVIC fixes (`AET-WO-1605`) | PR #223 |
 | 2026-11-19 | §2.27 | Why the twin's timers run at 250 MHz (Renode's RCC push undone by ChibiOS's timer reset), Renode's whole-ns realization and the dropped USART mux; the ruling: a frequency set at construction, solved or declared (`AET-WO-4400f`, built by `4400g`) | PR #229, comment 6996346321 |
 | 2026-11-23 | `RUL-13` | Renode's resident cap raised from 1 GiB to 1.5 GiB; the bridge keeps 1 GiB | Scotty, on Tviburi `TVI-WO-1301`'s CI measurements; `AET-WO-2313` |
+| 2026-11-24 | §8 | `OQ-07` added: the seam with the antenna sibling, what each side gives and takes, and that it is a file, never a shared type | Scotty, 2026-11-24: crossover needs belong in Aethelgard's steering documents |
 
 New sections continue the sequence and never reuse a number.
 
