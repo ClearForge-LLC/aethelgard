@@ -11,6 +11,9 @@ import concurrent.futures
 import importlib.util
 import json
 import os
+import sys
+
+sys.dont_write_bytecode = True  # no __pycache__ beside spike/1608/corpus.py
 
 here = os.path.dirname(os.path.abspath(__file__))
 spec = importlib.util.spec_from_file_location(

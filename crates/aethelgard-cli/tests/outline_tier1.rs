@@ -798,6 +798,13 @@ fn check_drc_judges_the_declared_outline_on_the_board() {
             e.board.replacen(&rect, &format!("{rect}{far}"), 1),
             "has 2: `gr_rect`, `gr_circle`",
         ),
+        // One outline, but not a rectangle: the bound has no width and
+        // height to judge it by.
+        (
+            "1610-only-circle",
+            e.board.replacen(&rect, far, 1),
+            "has 1: `gr_circle`",
+        ),
     ] {
         let (_, v) = drc_without_tools(label, &bound(w, h), &board);
         assert_eq!(v["error"]["kind"], "BoardUnreadable", "{label}: {v}");
