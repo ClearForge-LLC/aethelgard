@@ -119,15 +119,15 @@ run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"
 
 # Timers declared at 250 MHz: the twin runs them there, and ArduPilot's RCC
 # registers, read back, decode to 200 MHz on both buses, so the run fails by
-# name with both figures. AET-WO-4202 (ruled 23:10Z): without U2 there is no
-# BMP280 probe, so ArduPilot's boot timeline shifts and the 5 s cut lands
-# before PB13 is configured: GPIOB.MODER and GPIOB.AFRH read short of the
-# solved words, exactly these two (main 96517013 with U2: the two
-# contradictions alone, measured). Any other kind or register still fails.
+# name with both figures, and with nothing else: any register_mismatch fails
+# the case. AET-WO-4202 had added two (GPIOB.MODER and GPIOB.AFRH, its 5 s cut
+# landing before PB13 was configured, without U2's BMP280 probe). AET-WO-4410
+# (Q14, ruled 2026-11-24): with the SWD lines in sentinel-02's generated
+# hwdef, the run gives the two contradictions alone, as main 96517013 with U2
+# measured; every other case unchanged (measured in the tools image on the
+# branch's ELF; AET-WO-4410.FEEDBACK.md §7).
 run_spec=$work/spec-contradicted.json run clock-contradicted 1 '
-kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted", "register_mismatch", "register_mismatch"]
-and sorted(f["message"].split(" ")[0] for f in v["findings"] if f["kind"] == "register_mismatch")
-    == ["GPIOB.AFRH", "GPIOB.MODER"]
+kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted"]
 and [(c["declared_hz"], c["decoded_hz"]) for c in boot["clock"]["checked"]]
     == [(250000000, 200000000), (250000000, 200000000)]
 ' --platform "$work/gen-contradicted/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
