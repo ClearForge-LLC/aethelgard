@@ -280,6 +280,19 @@ fn nm(um: u32) -> i64 {
 }
 
 impl Stack {
+    /// The thermal pours as zones, `(net, layer)` (`AET-WO-4300k` (a)).
+    pub fn pour_zones(&self) -> Vec<(String, String)> {
+        self.pours
+            .iter()
+            .map(|(l, n)| (n.clone(), l.clone()))
+            .collect()
+    }
+
+    /// Whether `net` on `layer` is a thermal pour.
+    pub fn is_pour(&self, net: &str, layer: &str) -> bool {
+        self.pours.iter().any(|(l, n)| l == layer && n == net)
+    }
+
     /// The declared board of a specification that `validate` accepted.
     /// Refused with the first field the ring rule needs that a declared
     /// `fab_tolerances` block lacks ([`RingRule::of`]), never read with the

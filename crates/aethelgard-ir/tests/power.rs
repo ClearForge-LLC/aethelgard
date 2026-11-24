@@ -10,11 +10,15 @@ use aethelgard_ir::{IrValidationError as E, Specification};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+#[path = "common/power_table.rs"]
+mod power_table;
+use power_table::{assert_power, refused, row, spec, table_json};
+
 /// The sha256 of `data/power-parts.json`. It moves only with the file.
 /// `AET-WO-4300k`: schema 12 (rows DMP6023LSS-13, MMSZ5242BT1G,
 /// SF-1206F400-2, SF-1206F700-2, TLV803SDBZR and their four documents, the
 /// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
-const TABLE_SHA256: &str = "f4eec72c1aef68d2bf82610e27a8b79bfcd4ea08da5c06e2ecf8156670f6f292";
+const TABLE_SHA256: &str = "01bfd34a5412f3bedbc39a6aea984e5dc0d174a97a8ab86ffdefe95c845c9034";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -57,23 +61,6 @@ fn base() -> Value {
     v
 }
 
-fn spec(v: &Value) -> Specification {
-    serde_json::from_value(v.clone()).expect("a specification")
-}
-
-fn refused(v: &Value) -> E {
-    spec(v).validate().expect_err("refused")
-}
-
-fn assert_power(err: &E, kind: Refusal, id: &str) {
-    match err {
-        E::Power { kind: k, id: i, .. } => {
-            assert_eq!((*k, i.as_str()), (kind, id), "{err}");
-        }
-        other => panic!("not a power refusal: {other}"),
-    }
-}
-
 /// [`assert_power`], naming the case that failed.
 fn assert_case(err: &E, kind: Refusal, id: &str, what: &str) {
     match err {
@@ -95,20 +82,6 @@ fn curve(doc: &str, points: &[(i64, i64)], tol: i64, temp: i64) -> Value {
 }
 
 const GRM_SHEET: &str = "MURATA_GRM188R71C105KA12";
-
-/// The embedded table as JSON, for a copy with one limit changed.
-fn table_json() -> Value {
-    serde_json::from_str(POWER_PARTS_JSON).unwrap()
-}
-
-fn row<'v>(t: &'v mut Value, part: &str) -> &'v mut Value {
-    t["parts"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|r| r["part"] == part)
-        .unwrap()
-}
 
 /// The fixture checked against `table`, with the sensor table's own output
 /// delays (`K6`: the ICM-20948's tVD.SDO, 59 ns).
@@ -1277,8 +1250,8 @@ fn the_fixture_passes_every_new_check_and_names_each_condition() {
     // D14, enforced, with two ceramics per buck at 4S. Murata's curve at
     // 17.4 V, between 15 V's -172 and 17.5 V's -228: -172 + ⌊-56 × 2400 /
     // 2500⌋ = -172 - 54 = -226; 10 µF x 0.774 x 0.9 (tolerance) x 0.78
-    // (X7S) = 5433480 pF each, 10866960 pF for two, 1.08 times 10 µF. The
-    // named shortfall (one ceramic, `report`) is held in
+    // (X7S) = 5433480 pF each, 10866960 pF for two, 1.08 times 10 µF. One
+    // ceramic's refusal is held in
     // `a_bias_lie_and_a_short_effective_capacitance_are_refused`.
     assert!(has(
         "U10: `cin` holds 10866960 pF effective at 17400 mV under DC bias"
@@ -1619,22 +1592,10 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
             curve(GRM_SHEET, &[(0, 200), (16_000, 0)], 0, 0);
     });
     assert!(r.contains("above the rated capacitance"), "{r}");
-    // The buck's `cin` rule with its shortfall only reported, as it was
-    // before `AET-WO-4300k` D14 enforced it.
-    let report = |t: &mut Value| {
-        row(t, "LMR33630ADDA")["kind"]["buck"]["external"]
-            .as_array_mut()
-            .unwrap()
-            .iter_mut()
-            .find(|e| e["role"] == "cin")
-            .unwrap()["effective_min_picofarads"]["on_shortfall"] = json!("report");
-    };
-    // Past the curve's last point it is refused by name, never extrapolated,
-    // even where the shortfall would only be reported (the buck's input):
+    // Past the curve's last point it is refused by name, never extrapolated:
     // the curve cut at 15 V, under the 4S pack's 17400 mV (at 6S it was cut
     // at 25 V, under 26100 mV).
     let mut t = table_json();
-    report(&mut t);
     row(&mut t, "GCM32EC71H106KA03")["kind"]["capacitor"]["dc_bias"] = curve(
         "MURATA_GCM32EC71H106KA03_DCBIAS",
         &[(0, 3), (15_000, -172)],
@@ -1656,17 +1617,6 @@ fn a_bias_lie_and_a_short_effective_capacitance_are_refused() {
             .contains("holds 5433480 pF effective at 17400 mV"),
         "{err}"
     );
-    // Where the row only reports it, the shortfall is named, not blocking:
-    // 10000000 - 5433480 = 4566520 pF, 4.566 µF short.
-    let mut t = table_json();
-    report(&mut t);
-    let c = conditions(&v, &t);
-    let has = |s: &str| c.iter().any(|x| x.contains(s));
-    assert!(has(
-        "U10: `cin` holds 5.433 µF effective at 17400 mV under DC bias"
-    ));
-    assert!(has("4.566 µF short of the 10.000 µF minimum"));
-    assert!(has("a named shortfall, not blocking"));
     // A declared class-2 derating keeps at most 50 % (ruled on PR #158); a
     // C0G band may keep all of it.
     let mut v = base();
@@ -1927,7 +1877,8 @@ fn the_new_guards_hold_at_their_edges() {
         .iter_mut()
         .find(|e| e["role"] == "cboot")
         .unwrap();
-    ext["effective_min_picofarads"] = json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}, "on_shortfall": "enforce"});
+    ext["effective_min_picofarads"] =
+        json!({"value": 1, "at": {"document": "SNVSAN3F", "section": "test only"}});
     assert_power(
         &against(&base(), &t).unwrap_err(),
         Refusal::EffectiveCapacitanceBelowMinimum,

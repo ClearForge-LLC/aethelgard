@@ -4010,13 +4010,11 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
             // A thermal pour (`AET-WO-4300k` (a)) may share the layer: KiCad's
             // refill keeps it out of the keepout, the DRC gate judges the
             // filled board, and `pour` counts the keepout as no copper.
-            let pour =
-                |n: &str, l: &str| board.stack.pours.iter().any(|(pl, pn)| pl == l && pn == n);
             if k.fill
                 && routed
                     .zones
                     .iter()
-                    .any(|(n, layer)| layer == name && !pour(n, layer))
+                    .any(|(n, layer)| layer == name && !board.stack.is_pour(n, layer))
             {
                 return Err(format!(
                     "a fill on {name} would meet {}'s keepout",
@@ -4331,7 +4329,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     // `AET-WO-4300k` (a): the thermal pours are declared zones too; a board
     // the router has not yet poured holds only the planes.
     let planes = declared.len();
-    declared.extend(stack.pours.iter().map(|(l, n)| (n.clone(), l.clone())));
+    declared.extend(stack.pour_zones());
     let mut zones = routed.zones.clone();
     zones.sort();
     zones.dedup();
@@ -4341,10 +4339,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
             routed.zones
         ));
     }
-    let poured = zones
-        .iter()
-        .filter(|(n, l)| stack.pours.iter().any(|(pl, pn)| pl == l && pn == n))
-        .count();
+    let poured = zones.iter().filter(|(n, l)| stack.is_pour(n, l)).count();
     if stack.has_planes() && zones.len() - poured != planes {
         return Err(format!(
             "planes {:?}; the specification declares {declared:?}",
@@ -4354,10 +4349,7 @@ pub fn connectivity(board: &Board, routed: &Routed) -> Result<(), String> {
     // A thermal pour (`AET-WO-4300k` (a)) joins nothing a plane does not:
     // KiCad drops its islands, and it adds only its own net's copper, so it
     // is not flooded here.
-    for (net, layer) in zones
-        .iter()
-        .filter(|(n, l)| !stack.pours.iter().any(|(pl, pn)| pl == l && pn == n))
-    {
+    for (net, layer) in zones.iter().filter(|(n, l)| !stack.is_pour(n, l)) {
         let b_cu = layer == "B.Cu";
         let core = zone_core(
             &grid,

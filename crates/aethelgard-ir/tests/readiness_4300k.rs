@@ -3,9 +3,9 @@
 //! a copy of the embedded power parts table) and checked by name, each
 //! passing case beside it.
 
+use aethelgard_ir::IrValidationError as E;
 use aethelgard_ir::power::{self, Refusal};
-use aethelgard_ir::power_parts::{POWER_PARTS_JSON, parse_power_parts};
-use aethelgard_ir::{IrValidationError as E, Specification};
+use aethelgard_ir::power_parts::parse_power_parts;
 use serde_json::{Value, json};
 
 const SPEC_PATH: &str = concat!(
@@ -18,29 +18,8 @@ fn base() -> Value {
         .expect("json")
 }
 
-fn spec(v: &Value) -> Specification {
-    serde_json::from_value(v.clone()).expect("a specification")
-}
-
-fn refused(v: &Value) -> E {
-    spec(v).validate().expect_err("refused")
-}
-
 fn checked(v: &Value) -> power::Checked {
     power::check(&spec(v)).expect("checks").expect("a tree")
-}
-
-fn table_json() -> Value {
-    serde_json::from_str(POWER_PARTS_JSON).unwrap()
-}
-
-fn row<'v>(t: &'v mut Value, part: &str) -> &'v mut Value {
-    t["parts"]
-        .as_array_mut()
-        .unwrap()
-        .iter_mut()
-        .find(|r| r["part"] == part)
-        .unwrap()
 }
 
 fn table(t: &Value) -> aethelgard_ir::power_parts::PowerPartsTable {
@@ -52,16 +31,6 @@ fn against(v: &Value, t: &Value) -> Result<Vec<String>, E> {
     let sensors = aethelgard_ir::parts::table().unwrap();
     power::check_against(&spec(v), &table(t), sensors, &power::output_delays(sensors))
         .map(|c| c.expect("a tree").screened.into_keys().collect())
-}
-
-fn assert_power(err: &E, kind: Refusal, id: &str) {
-    match err {
-        E::Power { kind: k, id: i, .. } => {
-            assert_eq!((*k, i.as_str()), (kind, id), "{err}");
-            assert_eq!(err.kind(), kind.name(), "{err}");
-        }
-        other => panic!("not a power refusal: {other}"),
-    }
 }
 
 #[test]
@@ -354,6 +323,10 @@ fn one_cin_short_of_the_effective_minimum_is_refused() {
 // ---- the reset supervisor (`AET-WO-4300k` (9)) ----
 
 use aethelgard_ir::supervisor;
+
+#[path = "common/power_table.rs"]
+mod power_table;
+use power_table::{assert_power, refused, row, spec, table_json};
 
 fn without_supervisor(v: &mut Value) {
     v["mcu"].as_object_mut().unwrap().remove("reset_supervisor");

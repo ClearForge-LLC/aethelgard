@@ -620,11 +620,7 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .map(|(l, n)| (n.clone(), l.clone()))
         .collect();
     // `AET-WO-4300k` (a): the thermal pours are declared zones too.
-    let pours: Vec<(String, String)> = stack
-        .pours
-        .iter()
-        .map(|(l, n)| (n.clone(), l.clone()))
-        .collect();
+    let pours = stack.pour_zones();
     let (zones, extra): (Vec<_>, Vec<_>) = zones.into_iter().partition(|z| !pours.contains(z));
     let mut found = extra.clone();
     found.sort();

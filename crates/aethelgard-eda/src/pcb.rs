@@ -2469,11 +2469,7 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
             ]));
         }
     }
-    let pours: Vec<(String, String)> = stack
-        .pours
-        .iter()
-        .map(|(l, n)| (n.clone(), l.clone()))
-        .collect();
+    let pours = stack.pour_zones();
     for (n, l) in routed.zones.iter().chain(&pours) {
         let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
         out.push(Sx::List(vec![

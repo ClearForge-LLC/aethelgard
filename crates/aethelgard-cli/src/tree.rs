@@ -230,21 +230,7 @@ fn walk<T: AsRef<[u8]>>(
 /// Whether the regular file at `path` holds exactly `want`, reading at most
 /// one byte more than `want`.
 fn same(path: &Path, want: &[u8]) -> Result<bool, Stop> {
-    let opened = fs::OpenOptions::new()
-        .read(true)
-        .custom_flags((OFlags::NOFOLLOW | OFlags::NONBLOCK).bits() as i32)
-        .open(path);
-    let Ok(file) = opened else {
-        return Ok(false);
-    };
-    if !file.metadata().is_ok_and(|m| m.is_file()) {
-        return Ok(false);
-    }
-    let mut have = Vec::with_capacity(want.len());
-    file.take(want.len() as u64 + 1)
-        .read_to_end(&mut have)
-        .map_err(|e| Stop::unreadable(format!("cannot read {}: {e}", path.display())))?;
-    Ok(have == want)
+    Ok(regular(path, want.len() as u64)?.is_some_and(|have| have == want))
 }
 
 use std::os::unix::fs::OpenOptionsExt;

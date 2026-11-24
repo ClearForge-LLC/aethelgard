@@ -56,12 +56,12 @@ pub fn judge(board: &Board, value_of: impl Fn(&str) -> Option<String>) -> (usize
                 }),
             );
         };
-        let o = board.outline;
+        let b = board.outline;
         let (gap, edge) = match d {
-            (0, 1) => (o.y1 - y1, "bottom"),
-            (0, -1) => (y0 - o.y0, "top"),
-            (1, 0) => (o.x1 - x1, "right"),
-            _ => (x0 - o.x0, "left"),
+            (0, 1) => (b.y1 - y1, "bottom"),
+            (0, -1) => (y0 - b.y0, "top"),
+            (1, 0) => (b.x1 - x1, "right"),
+            _ => (x0 - b.x0, "left"),
         };
         if !(0..=TOLERANCE_NM).contains(&gap) {
             return (
@@ -72,17 +72,11 @@ pub fn judge(board: &Board, value_of: impl Fn(&str) -> Option<String>) -> (usize
                         "{} ({value}) at rotation {} opens toward the board's {edge} edge, and its courtyard is {gap} nm from it, not within {TOLERANCE_NM} nm: its mating opening ({}) does not face out of the board",
                         part.reference,
                         part.rotation,
-                        o_cite(&value)
+                        format!("{}, {}", o.cited.document, o.cited.section)
                     ),
                 }),
             );
         }
     }
     (judged, None)
-}
-
-fn o_cite(value: &str) -> String {
-    connectors::opening(value).map_or_else(String::new, |o| {
-        format!("{}, {}", o.cited.document, o.cited.section)
-    })
 }

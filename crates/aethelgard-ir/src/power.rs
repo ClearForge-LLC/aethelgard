@@ -2658,7 +2658,7 @@ format!(
                         format!(
                             "`{role}`: no working voltage is known for the role, so the screen cannot clear it"
                         ),
-                        ctx.cite(&min.limit.at),
+                        ctx.cite(&min.at),
                     ));
                 }
                 (Some(min), Some(Err((kind, why)))) => {
@@ -2666,30 +2666,10 @@ format!(
                         kind,
                         o.reference,
                         format!("`{role}`: {why}, so the screen cannot clear it"),
-                        ctx.cite(&min.limit.at),
-                    ));
-                }
-                (Some(min), Some(Ok((eff, how, w))))
-                    if eff <= min.limit.value && min.on_shortfall == pp::OnShortfall::Report =>
-                {
-                    // Ruled D2 (c), and again with the maker's curve held:
-                    // named, not blocking; enforcing it, with the fixture's
-                    // input re-picked, is the next power work order's.
-                    let short = min.limit.value - eff;
-                    ctx.note(format!(
-                        "{}: `{role}` holds {}.{:03} µF effective at {w} mV under DC bias ({how}), {}.{:03} µF short of the {}.{:03} µF minimum ({}); a named shortfall, not blocking: its enforcement and the re-pick of the input capacitance are the next power work order's (ruled D2 (c))",
-                        o.reference,
-                        eff / 1_000_000,
-                        eff % 1_000_000 / 1000,
-                        short / 1_000_000,
-                        short % 1_000_000 / 1000,
-                        min.limit.value / 1_000_000,
-                        min.limit.value % 1_000_000 / 1000,
-                        ctx.cite(&min.limit.at)
+                        ctx.cite(&min.at),
                     ));
                 }
                 (Some(min), Some(Ok((eff, how, w)))) => {
-                    let min = &min.limit;
                     if eff <= min.value {
                         return Err(refuse(
                             Refusal::EffectiveCapacitanceBelowMinimum,

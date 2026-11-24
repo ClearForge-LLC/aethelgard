@@ -23,19 +23,21 @@ const SCENARIOS: [&str; 5] = [
     "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
 ];
 
-/// `AET-WO-4300k` (T), ruled 11:25Z: the reference made ready for a package
-/// (its reset supervisor, `fab_tolerances`, a fabricator, every condition
-/// acknowledged; `spike/4300k/build/ready_fixture.py`), with the seeded set
-/// rebased on it. A `--fab-out` test whose point lies past the readiness
-/// gate runs on it; the reference itself is refused `FabricationNotReady`.
-const READY: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json";
-const READY_SCENARIOS: [&str; 5] = [
-    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-3k3.json",
-    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/droop-bor3.json",
-    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/spi-absent-u4.json",
-    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-2k2.json",
-    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/serial-rx-open-console.json",
-];
+/// `AET-WO-4300k` (T), ruled 11:25Z: a `--fab-out` test whose point lies
+/// past the readiness gate runs on the ready fixture (`common/ready.rs`);
+/// the reference itself is refused `FabricationNotReady`.
+mod common;
+#[path = "common/ready.rs"]
+mod ready;
+use ready::{READY, READY_SCENARIOS};
+
+/// `verify --spec READY --scenarios READY_SCENARIOS... rest...`, as [`run`].
+fn ready_run(rest: &[&str]) -> (Option<i32>, Value) {
+    let mut args = vec!["verify", "--spec", READY, "--scenarios"];
+    args.extend(READY_SCENARIOS);
+    args.extend(rest);
+    run(&args)
+}
 
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
@@ -121,19 +123,7 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
 #[test]
 fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
     let absent = scratch("absent");
-    let (code, v) = run(&[
-        "verify",
-        "--spec",
-        READY,
-        "--scenarios",
-        READY_SCENARIOS[0],
-        READY_SCENARIOS[1],
-        READY_SCENARIOS[2],
-        READY_SCENARIOS[3],
-        READY_SCENARIOS[4],
-        "--fab-out",
-        s(&absent),
-    ]);
+    let (code, v) = ready_run(&["--fab-out", s(&absent)]);
     assert_eq!(code, Some(4), "{v}");
     assert!(
         !absent.exists(),
@@ -230,21 +220,7 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     // `AET-WO-2308` L4: an empty directory in the tree is named too.
     fs::create_dir_all(tree.join("stray")).unwrap();
     let out = scratch("against-out");
-    let (code, v) = run(&[
-        "verify",
-        "--spec",
-        READY,
-        "--scenarios",
-        READY_SCENARIOS[0],
-        READY_SCENARIOS[1],
-        READY_SCENARIOS[2],
-        READY_SCENARIOS[3],
-        READY_SCENARIOS[4],
-        "--against",
-        s(&tree),
-        "--fab-out",
-        s(&out),
-    ]);
+    let (code, v) = ready_run(&["--against", s(&tree), "--fab-out", s(&out)]);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["against"], "differs");
     assert!(
@@ -801,21 +777,7 @@ fn the_acknowledged_reference_passes_the_check_before_any_gate() {
     let empty = dir.join("empty");
     fs::create_dir_all(&empty).unwrap();
     let out = dir.join("pkg");
-    let (code, v) = run(&[
-        "verify",
-        "--spec",
-        READY,
-        "--scenarios",
-        READY_SCENARIOS[0],
-        READY_SCENARIOS[1],
-        READY_SCENARIOS[2],
-        READY_SCENARIOS[3],
-        READY_SCENARIOS[4],
-        "--against",
-        s(&empty),
-        "--fab-out",
-        s(&out),
-    ]);
+    let (code, v) = ready_run(&["--against", s(&empty), "--fab-out", s(&out)]);
     assert_eq!(code, Some(1), "{v}");
     assert_eq!(v["against"], "differs", "{v}");
     assert_eq!(v["fab"]["status"], "not_written", "{v}");

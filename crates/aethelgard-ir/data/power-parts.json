@@ -433,8 +433,7 @@
                 "at": {
                   "document": "SNVSAN3F",
                   "section": "p. 23, 9.2.2.6: a minimum of 10 uF of ceramic capacitance; p. 19 note: capacitances are effective, under DC bias and temperature (ruled D2 (c) on PR #158)"
-                },
-                "on_shortfall": "enforce"
+                }
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -718,8 +717,7 @@
                 "at": {
                   "document": "SBVS320D",
                   "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
-                },
-                "on_shortfall": "enforce"
+                }
               },
               "rated_min_millivolts": null,
               "rated_step": null,
@@ -742,8 +740,7 @@
                 "at": {
                   "document": "SBVS320D",
                   "section": "p. 3, Table 4-1 note 1: make sure the effective capacitance at the pin is greater than 0.47 uF (nominal derating 50 %)"
-                },
-                "on_shortfall": "enforce"
+                }
               },
               "rated_min_millivolts": null,
               "rated_step": null,

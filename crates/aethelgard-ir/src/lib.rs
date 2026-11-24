@@ -4103,9 +4103,6 @@ impl Specification {
         self.validate_condition_acknowledgements()
     }
 
-    /// Step 13e (`AET-WO-4300k` (d)): each entry's id is `<kind>:<reference>`,
-    /// a kind of lower-case letters, digits and `_` and a reference by the
-    /// base identifier set; its reason a source; no id twice.
     /// The values the specification declares where a datasheet maximum would
     /// stand (`AET-WO-4300k` (d)): each device's pin capacitance on a bounded
     /// line, `pin_capacitance_declared:<reference>`, and each connector pin's
@@ -4148,6 +4145,9 @@ impl Specification {
         out
     }
 
+    /// Step 13e (`AET-WO-4300k` (d)): each entry's id is `<kind>:<reference>`,
+    /// a kind of lower-case letters, digits and `_` and a reference by the
+    /// base identifier set; its reason a source; no id twice.
     fn validate_condition_acknowledgements(&self) -> Result<(), IrValidationError> {
         let mut ids = BTreeSet::new();
         for (i, a) in self.acknowledge_conditions.iter().enumerate() {

@@ -81,6 +81,16 @@ pub enum Toward {
     MinusY,
 }
 
+/// Every JST GH side-entry header's opening, one drawing for the series.
+const JST_GH_OPENING: Opening = Opening {
+    toward: Toward::PlusY,
+    cited: Cited {
+        document: JST_GH,
+        sha256: JST_GH_SHA256,
+        section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
+    },
+};
+
 /// The opening of a connector or power-in row named `name`.
 pub fn opening(name: &str) -> Option<Opening> {
     part(name)
@@ -100,14 +110,7 @@ pub const PARTS: [Part; 4] = [
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM04B-GHS-TB, 4 circuits)",
         },
-        opening: Opening {
-            toward: Toward::PlusY,
-            cited: Cited {
-                document: JST_GH,
-                sha256: JST_GH_SHA256,
-                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
-            },
-        },
+        opening: JST_GH_OPENING,
     },
     Part {
         name: "SM06B-GHS-TB",
@@ -118,14 +121,7 @@ pub const PARTS: [Part; 4] = [
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM06B-GHS-TB, 6 circuits)",
         },
-        opening: Opening {
-            toward: Toward::PlusY,
-            cited: Cited {
-                document: JST_GH,
-                sha256: JST_GH_SHA256,
-                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
-            },
-        },
+        opening: JST_GH_OPENING,
     },
     Part {
         name: "SM10B-GHS-TB",
@@ -136,14 +132,7 @@ pub const PARTS: [Part; 4] = [
             sha256: JST_GH_SHA256,
             section: "p. 3, Header, side entry type (SM10B-GHS-TB, 10 circuits)",
         },
-        opening: Opening {
-            toward: Toward::PlusY,
-            cited: Cited {
-                document: JST_GH,
-                sha256: JST_GH_SHA256,
-                section: "p. 3, Header, side entry type, the profile drawing: the solder tails leave the rear wall and the cavity opens at the other end; in the footprint the tails are at y -1.85 and the body runs to +2.45, so the opening faces +y",
-            },
-        },
+        opening: JST_GH_OPENING,
     },
     Part {
         name: "SM06B-SRSS-TB",

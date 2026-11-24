@@ -954,24 +954,9 @@ pub struct ExternalRule {
     pub dielectrics: Vec<Dielectric>,
     pub at: At,
     /// The least effective capacitance (under DC bias) the datasheet states
-    /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3).
-    pub effective_min_picofarads: Option<EffectiveMin>,
-}
-
-/// A role's effective minimum, and what a shortfall does: refuse, or be
-/// reported by name, not blocking (ruled D2 (c) on PR #158: the buck's input,
-/// whose enforcement and re-pick are the next power work order's).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EffectiveMin {
-    pub limit: Limit,
-    pub on_shortfall: OnShortfall,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OnShortfall {
-    Enforce,
-    Report,
+    /// for the role, where it states one, pF (`AET-WO-4300d3` §1.3); a
+    /// shortfall is refused (`AET-WO-4300k` A6, enforced on every row).
+    pub effective_min_picofarads: Option<Limit>,
 }
 
 /// The thermal-via rule of an exposed pad, as the datasheet states it. The
@@ -1580,7 +1565,6 @@ struct RawExternal {
 struct RawEffective {
     value: i64,
     at: RawAt,
-    on_shortfall: OnShortfall,
 }
 
 #[derive(Deserialize)]
@@ -1806,16 +1790,13 @@ impl Reader<'_> {
                 Some(_) if inductor => {
                     return Err(format!("`{f}`: an inductor has no effective capacitance"));
                 }
-                Some(m) => Some(EffectiveMin {
-                    limit: self.positive(
-                        RawLimit {
-                            value: m.value,
-                            at: m.at,
-                        },
-                        &format!("{f}.effective_min_picofarads"),
-                    )?,
-                    on_shortfall: m.on_shortfall,
-                }),
+                Some(m) => Some(self.positive(
+                    RawLimit {
+                        value: m.value,
+                        at: m.at,
+                    },
+                    &format!("{f}.effective_min_picofarads"),
+                )?),
                 None => None,
             };
             out.push(ExternalRule {

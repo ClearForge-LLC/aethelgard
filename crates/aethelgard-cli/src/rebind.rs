@@ -128,8 +128,7 @@ fn hash_line(line: &str) -> Option<(&str, &str, &str)> {
     let (body, comma) = body.strip_suffix(',').map_or((body, ""), |b| (b, ","));
     let (key, value) = body.strip_prefix('"')?.split_once("\": \"")?;
     let hex = value.strip_suffix('"')?;
-    (hex.len() == 64 && hex.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f')))
-        .then_some((indent, key, comma))
+    hex64(hex).then_some((indent, key, comma))
 }
 
 /// `MANIFEST.json` alike, line for line, but for a binding hash line: one of
@@ -175,9 +174,12 @@ fn notes_bound_alike(held: &str, derived: &str) -> bool {
 fn sha_line(line: &str) -> bool {
     line.strip_prefix('`')
         .and_then(|l| l.strip_suffix("`."))
-        .is_some_and(|hex| {
-            hex.len() == 64 && hex.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
-        })
+        .is_some_and(hex64)
+}
+
+/// 64 lowercase hex digits, a sha256.
+fn hex64(hex: &str) -> bool {
+    hex.len() == 64 && hex.bytes().all(|c| matches!(c, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[cfg(test)]
