@@ -25,8 +25,8 @@ pub const JUDGE: &str = "foreign";
 /// declared 200 MHz, not 250): unmodified ArduPilot's last witness, the ICM's
 /// first FIFO read, is at 4.394 s (it was 3.6105 s at 1.25× virtual time),
 /// so 5 s leaves 0.61 s. Its RSS margin under concurrency is FEEDBACK's F1
-/// measurement; the 1 GiB bound itself is a ruling of its own, never widened
-/// here.
+/// measurement; the memory bound itself is a ruling of its own, never widened
+/// here: 1.5 GiB since `AET-WO-2313` (`renode::BOOT_BOUNDS`).
 pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 5_000_000_000;
 pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 
@@ -178,7 +178,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "wall, memory and abort bounds",
         "kept",
-        "30 s, 1 GiB, an aborted machine",
+        "30 s, 1.5 GiB, an aborted machine",
     ),
     (
         "device_unmodelled",

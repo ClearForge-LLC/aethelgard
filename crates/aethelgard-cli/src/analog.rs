@@ -242,6 +242,16 @@ pub fn identified(stdout: &str) -> Result<(Identity, &str), run::Stop> {
     ))
 }
 
+/// The bounds on the bridge's own runs (`measure`, `rail`, `chain`, and
+/// `doctor`'s probe): 30 s and 1 GiB (`RUL-13`, corrected 2026-11-12, A8.6;
+/// kept at 1 GiB when Renode's cap rose to 1.5 GiB, `AET-WO-2313`). A droop's
+/// boot, where the bridge owns Renode, is a Renode boot and takes
+/// [`crate::renode::BOOT_BOUNDS`].
+pub const BRIDGE_BOUNDS: run::Bounds = run::Bounds {
+    wall: std::time::Duration::from_secs(30),
+    rss_kib: 1024 * 1024,
+};
+
 /// The bridge beside this executable, or `BridgeUnavailable` (exit 4).
 pub fn bridge() -> Result<run::Tool, run::Stop> {
     let unavailable = |message: String| run::Stop {
@@ -362,7 +372,7 @@ fn measure(
         read_only: tool.dirs(),
         read_write: Vec::new(),
     }
-    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    .run_bounded(BRIDGE_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let (identity, stdout) = identified(&stdout)?;
@@ -451,7 +461,7 @@ pub fn rail(rail: &Rail, span_ns: u64, dir: &Path, status: &Path) -> Result<Solv
         read_only: tool.dirs(),
         read_write: Vec::new(),
     }
-    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    .run_bounded(BRIDGE_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let (identity, stdout) = identified(&stdout)?;
@@ -564,7 +574,7 @@ pub fn chain(
         read_only: tool.dirs(),
         read_write: Vec::new(),
     }
-    .run_bounded(crate::renode::BOOT_BOUNDS)?;
+    .run_bounded(BRIDGE_BOUNDS)?;
     let code = out.code(BRIDGE)?;
     let stdout = String::from_utf8_lossy(&out.stdout);
     let (identity, stdout) = identified(&stdout)?;

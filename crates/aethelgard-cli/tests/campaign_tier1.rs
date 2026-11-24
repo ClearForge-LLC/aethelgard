@@ -2731,10 +2731,10 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
 
 /// A droop boot the reaper kills at its memory cap is a verdict, not an
 /// error: the cap's finding, and the release's probe never read counted as
-/// unrecovered; replay agrees.
+/// unrecovered; replay agrees (the plant: `common::HOLD_PAST_CAP`).
 #[test]
 fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
-    let hog = "x=$(/usr/bin/yes | /usr/bin/head -c 1300000000); /bin/sleep 60";
+    let hog = common::HOLD_PAST_CAP;
     let tb = droop_toolbox_then(
         ["0x2100B007", "0x22020000", "0x00000060"],
         Witness::BeforeProbe,
@@ -2760,6 +2760,38 @@ fn a_droop_boot_killed_at_a_bound_is_a_verdict_and_replays() {
     let run = PathBuf::from(all[0]["run"].as_str().unwrap());
     let r = lines(&replay(&tb.0, &run));
     assert_eq!(r[0]["verdict"], "fail", "{r:?}");
+}
+
+/// A droop's boot is Renode's, under the bridge, so it takes the boot's
+/// 1.5 GiB and not the bridge's 1 GiB (`AET-WO-2313` D1): a tree of about
+/// 1,357,000 KiB (`common::HOLD_BETWEEN_CAPS`) is not reaped, and the
+/// campaign passes as the plain droop scenario does.
+#[test]
+fn a_droop_boot_between_one_and_one_and_a_half_gib_is_not_reaped() {
+    let tb = droop_toolbox_then(
+        ["0x2100B007", "0x22020000", "0x00000060"],
+        Witness::BeforeProbe,
+        common::HOLD_BETWEEN_CAPS,
+    );
+    let work = Work::new();
+    let archive = Dir::new("archive");
+    let out = campaign(
+        &cli(Some(DROOP_BRIDGE)),
+        &tb.0,
+        &work.dir.0,
+        &[STUB_DROOP],
+        &work.firmware,
+        &archive.0.join("a"),
+    );
+    let all = lines(&out);
+    assert_eq!(out.status.code(), Some(0), "{all:?}");
+    assert_eq!(all[0]["matched"], true, "{all:?}");
+    assert!(
+        !all[0]["findings"]
+            .to_string()
+            .contains("memory_cap_exceeded"),
+        "{all:?}"
+    );
 }
 
 /// `AET-WO-1102` merged under `AET-WO-2301`: every identifier the two reference
