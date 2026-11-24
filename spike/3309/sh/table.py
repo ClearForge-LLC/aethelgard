@@ -42,7 +42,7 @@ for g in sorted((runs / "camp").iterdir()):
         p = by_run.get(run)
         rows.append((g.name, j["scenario"], p))
 
-V = ["R1A", "R1B", "R2A", "R2B"]
+V = ["R1A", "R1B", "R2A", "R2B", "R2B-line", "R2B-dev", "R2B-min", "R3B", "R3B-min"]
 with open(out, "w") as f:
     f.write("| group | scenario | main | " + " | ".join(V) + " |\n|---|---|---|" + "---|" * len(V) + "\n")
     for g, s, p in rows:

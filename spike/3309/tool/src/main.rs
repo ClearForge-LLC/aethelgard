@@ -18,6 +18,28 @@ use serde_json::{Value, json};
 enum Form {
     Bmp581,
     WriteRead,
+    /// The ICP-101xx's `[DEBUG]` lines (D4(a)): `Received command: [0x78, 0x66]` writes the command,
+    /// `Reading data with CRC: [..], …` reads after it.
+    Icp,
+}
+
+/// An ICP-101xx line: ("w", command bytes) or ("r", bytes read).
+fn icp(line: &str, device: &str) -> Option<(&'static str, Vec<u8>)> {
+    let rest = line
+        .strip_prefix("[DEBUG] ")?
+        .strip_prefix(device)?
+        .strip_prefix(": ")?;
+    let list = |t: &str| -> Option<Vec<u8>> {
+        let t = t.strip_prefix('[')?.split(']').next()?;
+        t.split(", ")
+            .map(|b| u8::from_str_radix(b.strip_prefix("0x")?, 16).ok())
+            .collect()
+    };
+    if let Some(t) = rest.strip_prefix("Received command: ") {
+        return Some(("w", list(t)?));
+    }
+    let t = rest.strip_prefix("Reading data with CRC: ")?;
+    Some(("r", list(t)?))
 }
 
 /// A BMP581 line as (pointer, read bytes count or None for a write, written byte count incl. pointer, value read/written).
@@ -91,6 +113,22 @@ fn txs(lines: &[String], device: &str, form: Form) -> (Vec<Tx>, Vec<usize>) {
                     read: is_read.then_some(r),
                 }),
                 None => none.push(i),
+            },
+            Form::Icp => match icp(l, device) {
+                Some(("w", b)) => {
+                    out.push(Tx {
+                        lines: vec![i],
+                        written: b,
+                        read: None,
+                    });
+                    open = true;
+                }
+                Some((_, b)) if open => {
+                    let t = out.last_mut().unwrap();
+                    t.lines.push(i);
+                    t.read.get_or_insert_with(Vec::new).extend(b);
+                }
+                _ => none.push(i),
             },
             Form::WriteRead => match wr(l, device) {
                 Some(("Write", b)) => {
@@ -173,7 +211,7 @@ fn by_match(
     log: &[String],
     device: &str,
     form: Form,
-    r2: bool,
+    fallback: u8,
     carrier_a: bool,
 ) -> (Vec<Vec<String>>, Vec<String>) {
     let errors: Vec<usize> = (0..log.len())
@@ -184,27 +222,41 @@ fn by_match(
     let (t, none) = txs(&lines, device, form);
     // owner of each log index
     let mut owner: Vec<Option<usize>> = vec![None; log.len()];
-    let key = |w: &[u8], read: bool| (w.first().copied(), read);
-    let mut used: std::collections::BTreeMap<(Option<u8>, bool), usize> = Default::default();
-    for tx in &t {
+    // The key: the pointer (the command, two bytes, for the ICP) and the direction.
+    let n = if form == Form::Icp { 2 } else { 1 };
+    let key = |w: &[u8], read: bool| ((w.len() >= n).then(|| w[..n].to_vec()), read);
+    let mut used: std::collections::BTreeMap<(Option<Vec<u8>>, bool), usize> = Default::default();
+    let mut placed: Vec<Option<usize>> = vec![None; t.len()];
+    // Pass 1: by key.
+    for (x, tx) in t.iter().enumerate() {
         let k = key(&tx.written, tx.read.is_some());
         let cands: Vec<usize> = (0..steps.len())
-            .filter(|&s| key(&steps[s].write, steps[s].width > 0) == k && k.0.is_some())
+            .filter(|&s| k.0.is_some() && key(&steps[s].write, steps[s].width > 0) == k)
             .collect();
-        let s = if !cands.is_empty() {
+        if !cands.is_empty() {
             let n = used.entry(k).or_insert(0);
-            let s = cands[(*n).min(cands.len() - 1)];
+            placed[x] = Some(cands[(*n).min(cands.len() - 1)]);
             *n += 1;
-            Some(s)
-        } else if r2 {
-            let dir: Vec<usize> = (0..steps.len())
-                .filter(|&s| (steps[s].width > 0) == k.1)
-                .collect();
-            (dir.len() == 1).then(|| dir[0])
-        } else {
-            None
+        }
+    }
+    // Pass 2: by direction, in log order. 1: the device's one step of that direction; 2: the first
+    // step of that direction, in script order, that holds no transaction yet.
+    for x in 0..t.len() {
+        if placed[x].is_some() {
+            continue;
+        }
+        let dir = t[x].read.is_some();
+        let same: Vec<usize> = (0..steps.len())
+            .filter(|&s| (steps[s].width > 0) == dir)
+            .collect();
+        placed[x] = match fallback {
+            1 => (same.len() == 1).then(|| same[0]),
+            2 => same.into_iter().find(|s| !placed.contains(&Some(*s))),
+            _ => None,
         };
-        if let Some(s) = s {
+    }
+    for (x, tx) in t.iter().enumerate() {
+        if let Some(s) = placed[x] {
             for &l in &tx.lines {
                 owner[body[l]] = Some(s);
             }
@@ -348,12 +400,22 @@ fn main() {
             }
         }
         let mut dev_out = Vec::new();
-        let mut variants: Vec<(&str, Vec<(usize, Vec<String>)>, Vec<(String, String)>)> = vec![
-            ("R1A", vec![], vec![]),
-            ("R1B", vec![], vec![]),
-            ("R2A", vec![], vec![]),
-            ("R2B", vec![], vec![]),
+        // (name, fallback, carrier A, D3): D3 0 = no finding for an unplaced line; 1 = one more
+        // `i2c_transaction_unwitnessed` per unplaced line; 2 = per device with one; 3 = per device with
+        // one and no witness that already fails.
+        let spec: [(&str, u8, bool, u8); 9] = [
+            ("R1A", 0, true, 0),
+            ("R1B", 0, false, 0),
+            ("R2A", 1, true, 0),
+            ("R2B", 1, false, 0),
+            ("R2B-line", 1, false, 1),
+            ("R2B-dev", 1, false, 2),
+            ("R2B-min", 1, false, 3),
+            ("R3B", 2, false, 0),
+            ("R3B-min", 2, false, 3),
         ];
+        let mut variants: Vec<(&str, Vec<(usize, Vec<String>)>, Vec<(String, String)>)> =
+            spec.iter().map(|v| (v.0, vec![], vec![])).collect();
         let mut unread = false;
         for (reference, device, steps) in &devices {
             let mut log = Vec::new();
@@ -379,6 +441,8 @@ fn main() {
                 .collect();
             let form = if script.iter().any(|l| bmp(l, device).is_some()) {
                 Form::Bmp581
+            } else if script.iter().any(|l| icp(l, device).is_some()) {
+                Form::Icp
             } else {
                 Form::WriteRead
             };
@@ -433,11 +497,8 @@ fn main() {
                 Value::Null
             };
             let mut placed = serde_json::Map::new();
-            for (vi, (r2, a)) in [(false, true), (false, false), (true, true), (true, false)]
-                .into_iter()
-                .enumerate()
-            {
-                let (seen, unplaced) = by_match(steps, &log, device, form, r2, a);
+            for (vi, &(_, fallback, a, _)) in spec.iter().enumerate() {
+                let (seen, unplaced) = by_match(steps, &log, device, form, fallback, a);
                 let moved: Vec<Value> = (0..steps.len())
                     .filter(|&k| seen[k] != today[k])
                     .map(|k| json!({"step": step_name(&recs[steps[k].rec]), "today": today[k], "placed": seen[k],
@@ -462,7 +523,8 @@ fn main() {
             );
         }
         let mut var_out = serde_json::Map::new();
-        for (name, rewrites, unplaced) in &variants {
+        for (vi, (name, rewrites, unplaced)) in variants.iter().enumerate() {
+            let d3 = spec[vi].3;
             let mut r2 = aethelgard_chaos::archive::Replayed {
                 header: r.header.clone(),
                 manifest: r.manifest.clone(),
@@ -480,7 +542,7 @@ fn main() {
             // The boot's verdict as the re-placed witnesses give it: `i2c_transaction_unwitnessed` once per
             // I2C witness whose record claims `ok` and whose lines are not the script's (an `[ERROR]` line
             // names `i2c_step_error` instead, kept as recorded). Every other finding as recorded.
-            if changed {
+            if changed || (d3 > 0 && !unplaced.is_empty()) {
                 let ok = |rr: &str, st: &str| {
                     r2.state.records.iter().any(|c| {
                         matches!(c, Record::I2cCheck { reference, step, status, .. }
@@ -506,6 +568,28 @@ fn main() {
                         _ => false,
                     })
                     .count() as u64;
+                // D3: the unplaced lines' own findings, counted as `i2c_transaction_unwitnessed`.
+                let failing = |rr: &str| {
+                    r2.state.records.iter().any(|w| match w {
+                        Record::I2cWitness {
+                            reference,
+                            step,
+                            expected,
+                            observed: Some(o),
+                            ..
+                        } => reference == rr && ok(reference, step) && o != expected,
+                        _ => false,
+                    })
+                };
+                let mut devs: Vec<&str> = unplaced.iter().map(|(d, _)| d.as_str()).collect();
+                devs.dedup();
+                let extra = match d3 {
+                    1 => unplaced.len() as u64,
+                    2 => devs.len() as u64,
+                    3 => devs.iter().filter(|d| !failing(d)).count() as u64,
+                    _ => 0,
+                };
+                let unwitnessed = unwitnessed + extra;
                 for x in r2.state.records.iter_mut() {
                     if let Record::Verdict { pass, findings } = x {
                         findings.retain(|f| f.0 != "i2c_transaction_unwitnessed");
