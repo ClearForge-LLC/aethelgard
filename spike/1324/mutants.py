@@ -46,7 +46,7 @@ MUTANTS = [
      lib("one_net_of_1600_pads_is_charged_its_quadratic_work")),
     ("M15 final check uncharged", R, "r.work += judge_work(board, &routed);", "let _ = judge_work(board, &routed);",
      lib("the_final_check_is_charged_its_pairs")),
-    ("M16 rule leaves GND out", S, "nets.push(crate::route::GROUND.to_owned());", "",
+    ("M16 rule leaves GND out", S, "        nets.push(crate::route::GROUND.to_owned());\n", "",
      cli("the_routers_junction_rule_is_on_where_the_gate_runs")),
     ("M17 rule on with an empty limit list", S, "        if limits.is_empty() {\n            return None;\n        }\n        let st", "        let st",
      cli("the_routers_junction_rule_is_on_where_the_gate_runs")),

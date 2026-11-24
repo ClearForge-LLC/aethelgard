@@ -139,8 +139,6 @@ impl JunctionRule {
         let fab = st.fab_tolerances.as_ref()?;
         let mut nets: Vec<String> = limits.iter().map(|l| l.domain.clone()).collect();
         nets.push(crate::route::GROUND.to_owned());
-        nets.sort();
-        nets.dedup();
         Some(JunctionRule {
             nets,
             hole_plus_nm: nm(fab.hole_size_plus_um.as_ref()?.value),

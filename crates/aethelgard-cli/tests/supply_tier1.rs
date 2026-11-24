@@ -528,7 +528,7 @@ fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     // the board's stack carries it
     let stack = Stack::of(&spec(&gated(s03(), 165))).unwrap();
     assert_eq!(stack.junction.as_ref(), Some(&on));
-    assert_eq!(on.nets, ["GND", "VDD_3V3"]);
+    assert_eq!(on.nets, ["VDD_3V3", "GND"]);
     assert_eq!(
         (on.hole_plus_nm, on.hole_offset_nm, on.plating_nm),
         (130_000, 75_000, 18_000)

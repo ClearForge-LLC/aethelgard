@@ -634,14 +634,10 @@ impl Junction {
 /// The node at `(x, y)`, if one stands there.
 fn grid_node(grid: &Grid, x: i64, y: i64) -> Option<usize> {
     let (dx, dy) = (x - grid.x0, y - grid.y0);
-    if dx < 0 || dy < 0 || dx % PITCH_NM != 0 || dy % PITCH_NM != 0 {
+    if dx % PITCH_NM != 0 || dy % PITCH_NM != 0 {
         return None;
     }
-    let (ix, iy) = (
-        usize::try_from(dx / PITCH_NM).ok()?,
-        usize::try_from(dy / PITCH_NM).ok()?,
-    );
-    (ix < grid.nx && iy < grid.ny).then_some(iy * grid.nx + ix)
+    node_at(grid, dx / PITCH_NM, dy / PITCH_NM)
 }
 
 /// Each remaining pad's nearest node of a growing tree, kept as the tree
