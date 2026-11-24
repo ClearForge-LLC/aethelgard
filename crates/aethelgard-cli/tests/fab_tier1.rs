@@ -23,6 +23,20 @@ const SCENARIOS: [&str; 5] = [
     "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
 ];
 
+/// `AET-WO-4300k` (T), ruled 11:25Z: the reference made ready for a package
+/// (its reset supervisor, `fab_tolerances`, a fabricator, every condition
+/// acknowledged; `spike/4300k/build/ready_fixture.py`), with the seeded set
+/// rebased on it. A `--fab-out` test whose point lies past the readiness
+/// gate runs on it; the reference itself is refused `FabricationNotReady`.
+const READY: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json";
+const READY_SCENARIOS: [&str; 5] = [
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-3k3.json",
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/droop-bor3.json",
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/spi-absent-u4.json",
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-2k2.json",
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/serial-rx-open-console.json",
+];
+
 fn root() -> PathBuf {
     fs::canonicalize(Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap()
 }
@@ -110,13 +124,13 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
     let (code, v) = run(&[
         "verify",
         "--spec",
-        SPEC,
+        READY,
         "--scenarios",
-        SCENARIOS[0],
-        SCENARIOS[1],
-        SCENARIOS[2],
-        SCENARIOS[3],
-        SCENARIOS[4],
+        READY_SCENARIOS[0],
+        READY_SCENARIOS[1],
+        READY_SCENARIOS[2],
+        READY_SCENARIOS[3],
+        READY_SCENARIOS[4],
         "--fab-out",
         s(&absent),
     ]);
@@ -219,13 +233,13 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
     let (code, v) = run(&[
         "verify",
         "--spec",
-        SPEC,
+        READY,
         "--scenarios",
-        SCENARIOS[0],
-        SCENARIOS[1],
-        SCENARIOS[2],
-        SCENARIOS[3],
-        SCENARIOS[4],
+        READY_SCENARIOS[0],
+        READY_SCENARIOS[1],
+        READY_SCENARIOS[2],
+        READY_SCENARIOS[3],
+        READY_SCENARIOS[4],
         "--against",
         s(&tree),
         "--fab-out",
@@ -778,10 +792,66 @@ fn a_new_field_in_an_acknowledged_register_is_refused_on_the_fab_path() {
 
 /// The reference, acknowledged, passes the check: with `--against` an empty
 /// directory the run reaches the tree comparison and fails there, writing
-/// nothing, so no package precondition before it refused.
+/// nothing, so no package precondition before it refused. Under `--fab-out`
+/// on the ready fixture (`AET-WO-4300k` (T)), the readiness gate included;
+/// under `--against-fab` on the reference itself, which it does not judge.
 #[test]
 fn the_acknowledged_reference_passes_the_check_before_any_gate() {
     let dir = scratch("acknowledged");
+    let empty = dir.join("empty");
+    fs::create_dir_all(&empty).unwrap();
+    let out = dir.join("pkg");
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        READY,
+        "--scenarios",
+        READY_SCENARIOS[0],
+        READY_SCENARIOS[1],
+        READY_SCENARIOS[2],
+        READY_SCENARIOS[3],
+        READY_SCENARIOS[4],
+        "--against",
+        s(&empty),
+        "--fab-out",
+        s(&out),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs", "{v}");
+    assert_eq!(v["fab"]["status"], "not_written", "{v}");
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    assert!(!out.exists());
+    let pkg = dir.join("committed");
+    fs::create_dir_all(&pkg).unwrap();
+    let (code, v) = run(&[
+        "verify",
+        "--spec",
+        SPEC,
+        "--scenarios",
+        SCENARIOS[0],
+        SCENARIOS[1],
+        SCENARIOS[2],
+        SCENARIOS[3],
+        SCENARIOS[4],
+        "--against",
+        s(&empty),
+        "--against-fab",
+        s(&pkg),
+    ]);
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(v["against"], "differs", "{v}");
+    assert_eq!(v["fab"]["status"], "not_derived", "{v}");
+    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+/// `AET-WO-4300k` (1), (c) as ruled: `--fab-out` on a specification the
+/// readiness gate refuses names the first gap (the reference declares no
+/// `fab_tolerances`, `AET-WO-4300k` (2)), exit 2, after every other refusal
+/// before a gate and before `--against`, and creates nothing.
+#[test]
+fn fab_out_on_a_specification_not_ready_is_refused_by_the_key() {
+    let dir = scratch("not-ready");
     let empty = dir.join("empty");
     fs::create_dir_all(&empty).unwrap();
     let out = dir.join("pkg");
@@ -800,10 +870,96 @@ fn the_acknowledged_reference_passes_the_check_before_any_gate() {
         "--fab-out",
         s(&out),
     ]);
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(v["against"], "differs", "{v}");
-    assert_eq!(v["fab"]["status"], "not_written", "{v}");
-    assert_eq!(v["ledger"]["counts"]["unacknowledged"], 0, "{v}");
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "FabricationNotReady", "{v}");
+    assert_eq!(v["error"]["id"], "board.stackup.fab_tolerances", "{v}");
     assert!(!out.exists());
     fs::remove_dir_all(&dir).unwrap();
 }
+
+/// `AET-WO-4300k`, ruled 11:25Z (R): `--rebind` needs `--fab-out` (usage,
+/// 64); a directory that holds no committed package (`RebindNoPackage`) and
+/// another board's package (`RebindOtherBoard`) are refused before any
+/// gate, exit 3, creating nothing. The reference re-binding to the bench's
+/// committed package is the second; the committed package re-bound to its own
+/// board passes these checks and the readiness gate it does not judge,
+/// reaching the first gate's tool.
+#[test]
+fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
+    let dir = scratch("rebind");
+    let out = dir.join("pkg");
+    let committed = "fab/sentinel-01-bench/package";
+    let args = |spec: &'static str, scenarios: [&'static str; 5], rest: Vec<String>| {
+        let mut a: Vec<String> = ["verify", "--spec", spec, "--scenarios"]
+            .map(str::to_owned)
+            .to_vec();
+        a.extend(scenarios.map(str::to_owned));
+        a.extend(rest);
+        a
+    };
+    let call = |a: Vec<String>| {
+        let r: Vec<&str> = a.iter().map(String::as_str).collect();
+        run(&r)
+    };
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec!["--rebind".into(), committed.into()],
+    ));
+    assert_eq!(code, Some(64), "{v}");
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            "scenarios/sentinel-01".into(),
+        ],
+    ));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "RebindNoPackage", "{v}");
+    let (code, v) = call(args(
+        SPEC,
+        SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            committed.into(),
+        ],
+    ));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "RebindOtherBoard", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("is the package of `sentinel-01-bench`, not of `sentinel-01`"),
+        "{v}"
+    );
+    assert!(!out.exists());
+    let (code, v) = call(args(
+        "examples/sentinel-01.json",
+        BENCH_SCENARIOS,
+        vec![
+            "--fab-out".into(),
+            s(&out).into(),
+            "--rebind".into(),
+            committed.into(),
+        ],
+    ));
+    assert_eq!(code, Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolMissing", "{v}");
+    assert!(!out.exists());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The bench's scenarios, in the order its MANIFEST records them (`ci.yml`).
+const BENCH_SCENARIOS: [&str; 5] = [
+    "scenarios/sentinel-01-bench/pullup-3k3.json",
+    "scenarios/sentinel-01-bench/droop-bor3.json",
+    "scenarios/sentinel-01-bench/spi-absent-u4.json",
+    "scenarios/sentinel-01-bench/pullup-2k2.json",
+    "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+];

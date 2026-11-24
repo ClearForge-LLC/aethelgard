@@ -900,17 +900,18 @@ fn a_motor_link_off_its_nets_fails_by_name() {
 #[test]
 fn a_motor_link_of_another_part_or_footprint_fails_by_name() {
     let (spec, pads, board, _) = motors();
-    assert_eq!(pads.0[LINK], "0");
+    assert_eq!(pads.0[LINK], "0 CRCW0402_Z_0");
     assert_eq!(pads.2[LINK], "Resistor_SMD:R_0402_1005Metric");
-    for value in ["10k", "0R", "0 CRCW0402_Z_0", ""] {
+    for value in ["10k", "0R", "0", ""] {
         let mut p = pads.clone();
         p.0.insert(LINK.into(), value.into());
         let f = judge(&spec, &p, &board);
         assert_eq!(motor_kinds(&f), ["motor_link_part"], "{value}");
     }
     let text = netlist_text(&pads);
-    let lib =
-        format!("(comp (ref \"{LINK}\") (value \"0\") (libsource (lib \"Device\") (part \"R\"))");
+    let lib = format!(
+        "(comp (ref \"{LINK}\") (value \"0 CRCW0402_Z_0\") (libsource (lib \"Device\") (part \"R\"))"
+    );
     assert!(text.contains(&lib), "{text}");
     let f = judge_text(
         &spec,
@@ -942,7 +943,7 @@ fn a_motor_link_of_another_part_or_footprint_fails_by_name() {
 #[test]
 fn a_motor_links_fitment_that_disagrees_with_the_declaration_fails_by_name() {
     let (spec, pads, board, _) = motors();
-    let comp = format!("(comp (ref \"{LINK}\") (value \"0\")");
+    let comp = format!("(comp (ref \"{LINK}\") (value \"0 CRCW0402_Z_0\")");
     let text = netlist_text(&pads);
     assert!(text.contains(&comp));
     for mark in ["dnp", "exclude_from_bom", "exclude_from_board"] {

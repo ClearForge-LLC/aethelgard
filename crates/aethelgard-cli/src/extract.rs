@@ -612,7 +612,10 @@ mod tests {
     #[test]
     fn every_part_has_a_row_in_order() {
         let s = spec("../../../../examples/sentinel-03.json", |_| ());
-        let gates: Vec<String> = parts(&s, 0, 0, 0, 0, 0, 0).into_iter().map(|r| r.gate).collect();
+        let gates: Vec<String> = parts(&s, 0, 0, 0, 0, 0, 0)
+            .into_iter()
+            .map(|r| r.gate)
+            .collect();
         assert_eq!(
             gates,
             [
@@ -644,7 +647,10 @@ mod tests {
         assert_eq!(row(&parts(&empty, 3, 0, 0, 0, 0, 0), "extract.supply"), off);
         let no_power = spec("sentinel-01-bench.json", |_| ());
         assert!(no_power.power.is_none());
-        assert_eq!(row(&parts(&no_power, 3, 0, 0, 0, 0, 0), "extract.supply"), off);
+        assert_eq!(
+            row(&parts(&no_power, 3, 0, 0, 0, 0, 0), "extract.supply"),
+            off
+        );
         let limited = spec("../../../../examples/sentinel-03.json", |_| ());
         assert_eq!(
             row(&parts(&limited, 3, 1, 0, 0, 0, 0), "extract.supply"),
@@ -671,7 +677,10 @@ mod tests {
         );
         let none = spec("sentinel-01-bench.json", |_| ());
         assert!(none.mcu.hse.is_none());
-        assert_eq!(row(&parts(&none, 3, 0, 0, 0, 0, 0), "extract.oscillator"), off);
+        assert_eq!(
+            row(&parts(&none, 3, 0, 0, 0, 0, 0), "extract.oscillator"),
+            off
+        );
     }
 
     /// The pair part, both ways: judged by its conductors under

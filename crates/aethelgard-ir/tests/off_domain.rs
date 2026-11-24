@@ -184,12 +184,15 @@ fn a_pin_device_pull_to_a_leading_rail_is_judged() {
     spec(&v).validate().unwrap();
 }
 
-/// The battery divider: Sentinel-02's 26.1 V through R50/R51 at their
-/// worst corners is 2536 mV, judged (the battery always leads) and passed.
+/// The battery divider: Sentinel-02's 4S pack, 4 × 4350 = 17400 mV
+/// (`AET-WO-4300k` D14; 26.1 V at 6S gave 2536 mV), through R50 100 k /
+/// R51 10 k at their worst corners, each CRCW at 10000 + 100 × 65 + 20000 =
+/// 36500 ppm, R51 high and R50 low: ⌈17400 × 10365 / (10365 + 96350)⌉ =
+/// 1691 mV, judged (the battery always leads) and passed.
 #[test]
 fn the_battery_divider_is_judged_at_the_battery_s_maximum() {
     let p = &of(&s02(), Class::BatteryDivider)[0];
-    assert_eq!((p.net.as_str(), mv(p)), ("VBAT_SENSE", 2536));
+    assert_eq!((p.net.as_str(), mv(p)), ("VBAT_SENSE", 1691));
     assert!(p.judged());
     assert_eq!(p.rails, ["battery"]);
     spec(&s02()).validate().unwrap();

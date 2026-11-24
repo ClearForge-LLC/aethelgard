@@ -159,8 +159,8 @@ use sha2::{Digest, Sha256};
 /// each topology gains `clock.kernel_switch`; with it taken out,
 /// `"schema_version":17` and the specification-24 sha256 put back, each still
 /// hashes to `1211c`'s digest. Before: `17515df2…1ce7` and `2c4cb557…890e`.
-const REFERENCE_DIGEST: &str = "7a9e40e273ee3c8e7d73e195d3f0a37c16052ca18274f25b593f06d2d2872240";
-const STRESS_DIGEST: &str = "67aa0587502402bc8af3956d1e2d187fca0e78d4d89dcc66749e1bc417852012";
+const REFERENCE_DIGEST: &str = "bf3cce92e66c2a3de6d8f0af191f41f50948cc023a99136c4f1523f4951c4f68";
+const STRESS_DIGEST: &str = "11d2153ddfa33a22e277c9ac177f2364f9a6e4f27d07946a91e024fa9ef720f2";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";

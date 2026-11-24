@@ -910,7 +910,7 @@ fn assert_motor_chains(board: &str, spec_path: &Path, emitted: &Value) -> usize 
             assert_eq!(reference, want, "{board} {}", m.label);
             let is_link = *want == link.reference;
             if is_link {
-                assert_eq!(value, "0", "{board} {reference}");
+                assert_eq!(*value, format!("0 {part}"), "{board} {reference}");
             } else {
                 let (token, p) = value.split_once(' ').unwrap();
                 assert_eq!(

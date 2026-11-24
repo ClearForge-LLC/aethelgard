@@ -531,9 +531,15 @@ mod tests {
 
     #[test]
     fn a_pinned_file_the_data_crate_lacks_is_refused() {
-        let held = &aethelgard_kicad_lib::FILES[1..];
+        // The file `PINS[0]` names, by path: FILES' order is not PINS'.
+        let held: Vec<_> = aethelgard_kicad_lib::FILES
+            .iter()
+            .copied()
+            .filter(|(p, _)| *p != PINS[0].0)
+            .collect();
+        assert_eq!(held.len(), PINS.len() - 1);
         assert!(matches!(
-            verify(&PINS, held),
+            verify(&PINS, &held),
             Err(LibraryError::MissingFile { path }) if path == PINS[0].0
         ));
     }
@@ -656,10 +662,14 @@ mod tests {
             "(lib (name \"Aethelgard_Sensor\") (type \"KiCad\") (uri \"/s/lib/symbols/Aethelgard_Sensor.kicad_symdir\")"
         ));
         assert!(fp.contains("(uri \"/s/lib/footprints/Aethelgard_Sensor.pretty\")"));
-        assert_eq!(sym.matches("(lib ").count(), 16);
+        assert_eq!(sym.matches("(lib ").count(), 17);
         // `AET-WO-4240c`: the crystal's footprint library.
         assert!(fp.contains("(uri \"/s/lib/footprints/Crystal.pretty\")"));
-        assert_eq!(fp.matches("(lib ").count(), 16);
+        // `AET-WO-4300k`: our power library, and the diode and fuse footprints.
+        assert!(sym.contains("(uri \"/s/lib/symbols/Aethelgard_Power.kicad_symdir\")"));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Diode_SMD.pretty\")"));
+        assert!(fp.contains("(uri \"/s/lib/footprints/Fuse.pretty\")"));
+        assert_eq!(fp.matches("(lib ").count(), 18);
         assert!(sexpr::parse(&sym).is_ok() && sexpr::parse(&fp).is_ok());
     }
 }

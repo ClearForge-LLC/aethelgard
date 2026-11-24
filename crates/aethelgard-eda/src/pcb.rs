@@ -3201,6 +3201,9 @@ mod tests {
         conns.push(("MP".into(), Conn::Rail("GND".into())));
         let mut p = part(sym, fp, reference, &[]);
         p.conns = conns.into_iter().collect();
+        // The row's name is its value, as the emitter writes it: placement
+        // reads the row's opening by it (`AET-WO-4300k` (4)).
+        p.value = name.to_owned();
         p
     }
 

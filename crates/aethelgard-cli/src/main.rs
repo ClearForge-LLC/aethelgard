@@ -21,6 +21,7 @@ mod mcp;
 mod pinout;
 mod pinwitness;
 mod propose;
+mod rebind;
 mod renode;
 mod run;
 mod said;
@@ -143,6 +144,9 @@ enum Command {
         /// Requires --scenarios. Derive the fabrication package again and compare it with this directory, file by file; any file that differs, is missing or is extra fails.
         #[arg(long, requires = "scenarios")]
         against_fab: Option<PathBuf>,
+        /// With --fab-out: re-bind this committed package to the specification (AET-WO-4300k, ruled 11:25Z). Readiness is not judged; the package is written only if every file equals the committed one byte for byte but MANIFEST.json's binding hashes and FAB-NOTES.md's specification line.
+        #[arg(long, requires = "fab_out")]
+        rebind: Option<PathBuf>,
     },
     /// Bound each I2C line's capacitance, and each SPI bus's SCK and MOSI, from above from a routed board's copper, and judge each bound against the specification's declared bound. Runs no tool.
     Extract {
@@ -482,8 +486,12 @@ fn main() -> ExitCode {
             against,
             fab_out,
             against_fab,
+            rebind,
         } => {
             let fab = match (fab_out, against_fab) {
+                (Some(out), _) if let Some(committed) = rebind => {
+                    Some(verify::FabMode::Rebind { out, committed })
+                }
                 (Some(dir), _) => Some(verify::FabMode::Write(dir)),
                 (None, Some(dir)) => Some(verify::FabMode::Compare(dir)),
                 (None, None) => None,

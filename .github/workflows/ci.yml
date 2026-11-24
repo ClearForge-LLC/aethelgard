@@ -581,7 +581,9 @@ jobs:
 
       - name: verify --fab-out, the package written for committing
         if: ${{ inputs.write }}
-        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package
+        # AET-WO-4300k, ruled 2026-11-24T11:25Z (R): Sentinel-01 is re-bound to its committed
+        # package (readiness not judged; refused unless only the binding moves).
+        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package --rebind fab/sentinel-01-bench/package
 
       # AET-WO-4300k (8): Sentinel-03's package, derived again from the committed one, or
       # written for committing on a dispatch with `write` (FabricationNotReady is judged then).

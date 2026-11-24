@@ -97,8 +97,8 @@ fn a_version_one_specification_is_refused_by_name() {
 fn an_older_specification_lists_every_change_it_lacks() {
     let dir = scratch("entries");
     for (version, rows) in [
-        (20, vec![21, 22, 23, 24, 25, 26, 27, 28, 29]),
-        (1, (2..=29).collect()),
+        (20, vec![21, 22, 23, 24, 25, 26, 27, 28, 29, 30]),
+        (1, (2..=30).collect()),
         (aethelgard_ir::SPECIFICATION_SCHEMA_VERSION + 1, vec![]),
         (0, vec![]),
     ] {
@@ -120,7 +120,7 @@ fn an_older_specification_lists_every_change_it_lacks() {
                 assert_eq!(
                     *e,
                     json!({"kind": "UnsupportedSchemaVersion", "id": null,
-                           "message": format!("schema_version is {version}, not 29")}),
+                           "message": format!("schema_version is {version}, not 30")}),
                     "{args:?}"
                 );
                 continue;
@@ -166,7 +166,7 @@ fn an_older_specification_lists_every_change_it_lacks() {
                 e["message"]
                     .as_str()
                     .unwrap()
-                    .starts_with(&format!("schema_version is {version}, not 29; ")),
+                    .starts_with(&format!("schema_version is {version}, not 30; ")),
                 "{e}"
             );
         }

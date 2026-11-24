@@ -49,27 +49,15 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// `AET-WO-2305` §1.4 no longer counts `droop-tolerated`, which crosses
 /// none), `VDD_5V` (its consumers' absence), `battery` (a tolerated sag),
 /// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
-/// Coverage is judged first, so the next precondition is what refuses: the
-/// ledger's 280 unacknowledged rows (measured on `ee835bde`), a §7 stop
-/// outside this work order's fence.
+/// Since `AET-WO-4300k` D10 its ledger is acknowledged (it was 280 rows,
+/// measured on `ee835bde`), and the readiness gate is met, so no refusal
+/// before a gate stops it: with the environment cleared, the first thing
+/// it cannot do is make its scratch (`ScratchUnsafe`), and nothing is written.
 #[test]
-fn sentinel_03_s_scenarios_cover_every_row_and_the_package_waits_on_its_ledger() {
+fn sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it() {
     let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
-    assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "UnwitnessedFieldNotAcknowledged", "{v}");
-    assert!(
-        v["error"]["message"]
-            .as_str()
-            .unwrap()
-            .starts_with("no package: 280 unwitnessed ledger row(s)"),
-        "{v}"
-    );
-    // `AET-WO-2307` §1.1: the entries they need, measured in `spike/2307/`:
-    // 43 then, 44 since `AET-WO-4300i` moved MOTOR1 to PA8, whose rows
-    // complete the held `GPIOA.AFRH` entry.
-    let entries = v["error"]["entries"].as_array().unwrap();
-    assert_eq!(entries.len(), 44, "{v}");
-    assert!(entries.iter().all(|a| a["reason"] == ""), "{v}");
+    assert_eq!(code, Some(4), "{v}");
+    assert_eq!(v["error"]["kind"], "ScratchUnsafe", "{v}");
 }
 
 /// §2: the power fixture's campaign is for the campaign only. Its

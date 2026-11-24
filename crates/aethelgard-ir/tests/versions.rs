@@ -50,12 +50,12 @@ fn the_last_row_is_the_version_literal_and_none_is_skipped() {
 }
 
 #[test]
-fn a_version_20_file_lists_21_to_29_with_their_work_orders() {
+fn a_version_20_file_lists_21_to_30_with_their_work_orders() {
     let e = refused(20);
     assert_eq!(e.kind(), "UnsupportedSchemaVersion");
     assert_eq!(e.id(), None);
     let c = changes(&e);
-    assert_eq!(versions_of(c), [21, 22, 23, 24, 25, 26, 27, 28, 29]);
+    assert_eq!(versions_of(c), [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
     assert_eq!(
         c.iter().map(|c| c.work_order).collect::<Vec<_>>(),
         [
@@ -67,11 +67,12 @@ fn a_version_20_file_lists_21_to_29_with_their_work_orders() {
             "AET-WO-1217",
             "AET-WO-1218",
             "AET-WO-4300i",
-            "AET-WO-4300j"
+            "AET-WO-4300j",
+            "AET-WO-4300k"
         ]
     );
     let m = e.to_string();
-    assert!(m.starts_with("schema_version is 20, not 29; "), "{m}");
+    assert!(m.starts_with("schema_version is 20, not 30; "), "{m}");
     for (v, wo) in [
         (21, "AET-WO-1210"),
         (22, "AET-WO-1211a"),
@@ -82,6 +83,7 @@ fn a_version_20_file_lists_21_to_29_with_their_work_orders() {
         (27, "AET-WO-1218"),
         (28, "AET-WO-4300i"),
         (29, "AET-WO-4300j"),
+        (30, "AET-WO-4300k"),
     ] {
         assert!(m.contains(&format!(" {v} ({wo})")), "{m}");
     }
@@ -109,13 +111,18 @@ fn a_version_20_file_lists_21_to_29_with_their_work_orders() {
         ),
         "{m}"
     );
+    assert!(m.contains("power.drop_limits"), "{m}");
+    assert!(
+        m.contains("removes [power.regulators[].junction.copper_square_centimetres]"),
+        "{m}"
+    );
     assert!(!m.contains(" 20 ("), "{m}");
 }
 
 #[test]
-fn a_version_1_file_lists_2_to_29() {
+fn a_version_1_file_lists_2_to_30() {
     let c = changes(&refused(1));
-    assert_eq!(versions_of(c), (2..=29).collect::<Vec<_>>());
+    assert_eq!(versions_of(c), (2..=30).collect::<Vec<_>>());
     assert_eq!(c, CHANGES);
 }
 
@@ -124,7 +131,7 @@ fn a_newer_file_and_version_0_name_the_current_version_only() {
     for v in [SPECIFICATION_SCHEMA_VERSION + 1, 0, u32::MAX] {
         let e = refused(v);
         assert!(changes(&e).is_empty(), "{v}");
-        assert_eq!(e.to_string(), format!("schema_version is {v}, not 29"));
+        assert_eq!(e.to_string(), format!("schema_version is {v}, not 30"));
     }
 }
 

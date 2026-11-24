@@ -44,6 +44,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode, Stdio};
 
 use serde::Serialize;
+
+use crate::rebind;
 use serde_json::Value;
 
 use aethelgard_cli::generate::{BOARD_DIR, KICAD_DIR};
@@ -146,6 +148,13 @@ struct Report {
 pub enum FabMode {
     Write(PathBuf),
     Compare(PathBuf),
+    /// `--fab-out OUT --rebind COMMITTED` (`AET-WO-4300k`, ruled 11:25Z):
+    /// written as `Write` writes, without the readiness gate, and only if the
+    /// derived package equals `COMMITTED` but for its binding ([`rebind`]).
+    Rebind {
+        out: PathBuf,
+        committed: PathBuf,
+    },
 }
 
 #[derive(Serialize)]
@@ -174,7 +183,7 @@ struct FabReport {
     /// The readiness gate (`AET-WO-4300k` (c)): judged before any gate under
     /// `--fab-out`; under `--against-fab`, named as not judged.
     #[serde(skip_serializing_if = "Option::is_none")]
-    fabrication_ready: Option<&'static str>,
+    fabrication_ready: Option<String>,
     /// Each part on the board whose lifecycle no held vendor page states,
     /// named with the page it must be read from: a purchase never meets an
     /// unread lifecycle silently (`AET-WO-4210` D1).
@@ -1861,6 +1870,7 @@ pub fn verify(
     let command = match fab_mode {
         Some(FabMode::Write(_)) => "verify --fab-out",
         Some(FabMode::Compare(_)) => "verify --against-fab",
+        Some(FabMode::Rebind { .. }) => "verify --fab-out --rebind",
         None => "verify",
     };
     if fab_mode.is_some()
@@ -1998,6 +2008,9 @@ pub fn verify(
     let fab_checked = match fab_mode {
         Some(FabMode::Write(dir)) => fab_out_usable(dir),
         Some(FabMode::Compare(dir)) => crate::input::dir_check(dir),
+        Some(FabMode::Rebind { out, committed }) => {
+            fab_out_usable(out).and_then(|()| rebind::committed(committed, &spec.project_name))
+        }
         None => Ok(()),
     };
     if let Err(s) = fab_checked {
@@ -2024,17 +2037,6 @@ pub fn verify(
     // before any gate (`AET-WO-3303` D1, ruled): the gates then decide
     // whether each run survived or detected its fault.
     let seeded: Vec<Seeded> = expected.iter().map(|e| e.seeded.clone()).collect();
-    // `AET-WO-4300k` (1), ruled (c): `--fab-out` only, before any gate.
-    if matches!(fab_mode, Some(FabMode::Write(_)))
-        && let Err(g) = aethelgard_cli::readiness::check(&spec, &topology, &conditions)
-    {
-        return refuse(
-            aethelgard_cli::readiness::KIND,
-            Some(&g.id),
-            g.message,
-            EXIT_INVALID_SPEC,
-        );
-    }
     if fab_mode.is_some() {
         let short = coverage(&spec, &topology, &seeded, None);
         if !short.unmet.is_empty() {
@@ -2095,6 +2097,21 @@ pub fn verify(
                 EXIT_INVALID_SPEC,
             );
         }
+    }
+
+    // `AET-WO-4300k` (1), ruled (c): `--fab-out` only (a re-bind is judged by
+    // its bytes instead), the last refusal before `--against` and any gate,
+    // so a board refused for its campaign, a stand-in or its ledger keeps
+    // that refusal.
+    if matches!(fab_mode, Some(FabMode::Write(_)))
+        && let Err(g) = aethelgard_cli::readiness::check(&spec, &topology, &conditions)
+    {
+        return refuse(
+            aethelgard_cli::readiness::KIND,
+            Some(&g.id),
+            g.message,
+            EXIT_INVALID_SPEC,
+        );
     }
 
     // `--against` first: a directory that is not the tree fails, naming
@@ -2343,7 +2360,7 @@ fn silicon_findings(s: &aethelgard_cli::ledger::Silicon) -> Vec<Finding> {
 /// A run that failed writes and compares nothing, and says so.
 fn not_packaged(report: &mut Report, mode: &FabMode) {
     let (status, against) = match mode {
-        FabMode::Write(_) => ("not_written", None),
+        FabMode::Write(_) | FabMode::Rebind { .. } => ("not_written", None),
         FabMode::Compare(_) => ("not_derived", Some("not_compared")),
     };
     report.fab = Some(FabReport::none(status, report.lifecycle_unheld.clone()));
@@ -2400,8 +2417,17 @@ fn package(
         lifecycle_unheld: report.lifecycle_unheld.clone(),
         fabrication_ready: None,
     };
+    if let FabMode::Rebind { committed, .. } = mode {
+        let mut derived = exported.files.clone();
+        derived.insert(fab::MANIFEST.to_owned(), manifest.clone());
+        rebind::matches(committed, &derived).map_err(crate::stopped)?;
+        fab_report.fabrication_ready = Some(format!(
+            "readiness not judged: a re-bind of {}",
+            committed.display()
+        ));
+    }
     match mode {
-        FabMode::Write(dir) => {
+        FabMode::Write(dir) | FabMode::Rebind { out: dir, .. } => {
             fab_out_usable(dir).map_err(crate::stopped)?;
             let ordered = exported
                 .files
@@ -2417,12 +2443,13 @@ fn package(
                 crate::stopped(s)
             })?;
             fab_report.status = "written";
-            fab_report.fabrication_ready =
-                Some("judged before any gate (aethelgard_cli::readiness), and met");
+            fab_report.fabrication_ready.get_or_insert_with(|| {
+                "judged before any gate (aethelgard_cli::readiness), and met".to_owned()
+            });
         }
         FabMode::Compare(dir) => {
             fab_report.fabrication_ready = Some(
-                "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))",
+                "not judged under --against-fab: the package binds the specification's sha256 (AET-WO-4300k (c))".to_owned(),
             );
             let mut package = exported.files;
             package.insert(fab::MANIFEST.to_owned(), manifest);

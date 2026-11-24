@@ -268,18 +268,24 @@ fn digests() -> Vec<(&'static str, String)> {
 /// `spike/4240e/order_back.rs`), and `firmware/src/main.rs` also by the
 /// kernel-clock switch's fault arm and its two constants (it was
 /// `5dbf904c…ca39`); the boot image did not move.
+/// Moved in `AET-WO-4300k` (specification 30) the same way: the three texts by
+/// their specification sha line alone (with the specification-29 document's
+/// sha `c69c34cb…773c` put back for `760f1234…2521`, each hashes to the digest
+/// before, `ff60a9ae…e087`, `f336f19c…3250` and `31998ce6…7319`, measured by
+/// `spike/4300j/order_back.rs` with the specification-29 document read from
+/// `ee239949`); the boot image did not move.
 const BEFORE: [(&str, &str); 4] = [
     (
         "firmware/src/main.rs",
-        "ff60a9ae94b792a3bc2d94a51c788047c2399ee6a17c1590156d27b3fda1e087",
+        "29fa379b77ec4c9c30230c78287a381b29171f06298ac4932606890043718f30",
     ),
     (
         "platform",
-        "f336f19c3d710dcfd78334daf06587fb68714f90f1d88f10e39710ece7863250",
+        "401d49dfe3aac1e0993dcfe00bbf2d08821e20dd681f12e82bb81f9ff805de45",
     ),
     (
         "platform faulted",
-        "31998ce61d579e7cc74396c24b360cfaea901308dcc1f89c9d1d816ec4ac7319",
+        "95c8fbe38099bbd43b7d550f8bd9f169615ed50cc6e5314ae400a6c8a7990995",
     ),
     (
         "boot image",
