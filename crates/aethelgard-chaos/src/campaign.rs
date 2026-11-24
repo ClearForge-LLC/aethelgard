@@ -1756,6 +1756,10 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::SerialFramingCheck { .. } => 16,
             Record::SerialWitness { .. } => 17,
             Record::Verdict { .. } => 18,
+            // A foreign run's (`AET-WO-4400i`), refused below.
+            Record::ForeignInput { .. } | Record::Stimuli { .. } | Record::SerialCaptured { .. } => {
+                u8::MAX
+            }
         }
     }
     /// Within rank 7: time in ps, then crossing, reset, observation.
@@ -1766,6 +1770,9 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
             Record::FirmwareObserved { at_ns, .. } => (at_ns.saturating_mul(1000), 2),
             _ => (0, 0),
         }
+    }
+    if records.iter().any(|r| rank(r) == u8::MAX) {
+        return Err("a foreign run's record (kinds 38 to 40) is not a campaign's");
     }
     let count_rank = |n: u8| records.iter().filter(|r| rank(r) == n).count();
     let ordered = records.windows(2).all(|w| {

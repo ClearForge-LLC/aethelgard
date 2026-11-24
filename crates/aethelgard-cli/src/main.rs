@@ -200,6 +200,18 @@ enum Command {
         /// window. Needs --firmware; not with --for.
         #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
         foreign: Option<u64>,
+        /// A declared input for a foreign run (AET-WO-4400i): a JSON file of
+        /// timed MAVLink 2 frames for one declared serial port, sent at their
+        /// stated virtual times, the board at rest. Its sha256 is the
+        /// verdict's; a frame that is not MAVLink, forces the arm or skips a
+        /// check is refused by name. Needs --foreign.
+        #[arg(long, value_name = "FILE", requires = "foreign")]
+        input: Option<PathBuf>,
+        /// Archive the input run in DIR, a new directory named by its run id
+        /// (trace 20), which `replay --archive` re-judges with no file. Needs
+        /// --input.
+        #[arg(long, value_name = "DIR", requires = "input")]
+        archive: Option<PathBuf>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
     Campaign {
@@ -543,6 +555,8 @@ fn main() -> ExitCode {
             spec,
             for_time,
             foreign,
+            input,
+            archive,
         } => match (firmware, spec, for_time.or(foreign)) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
                 let topology = match solved(&spec) {
@@ -553,7 +567,7 @@ fn main() -> ExitCode {
                     Ok(p) => p,
                     Err(e) => return stopped(twin_stop(e)),
                 };
-                simulate(
+                simulate_with(
                     &platform,
                     Some(Boot {
                         firmware,
@@ -567,6 +581,7 @@ fn main() -> ExitCode {
                         foreign: foreign.is_some(),
                         pins,
                     }),
+                    input.map(|i| (i, archive)),
                 )
             }
             // clap's `requires` makes the three all-or-none.
@@ -2129,6 +2144,16 @@ fn renode_config(dir: &Path) -> Result<PathBuf, run::Stop> {
 }
 
 fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run::Stop> {
+    simulate_with(platform, boot, None)
+}
+
+/// `simulate`, with a foreign run's declared input and its archive
+/// directory (`AET-WO-4400i`).
+fn simulate_with(
+    platform: &Path,
+    boot: Option<Boot>,
+    declared: Option<(PathBuf, Option<PathBuf>)>,
+) -> Result<verdict::Verdict, run::Stop> {
     let scratch = Scratch::new()?;
     let ready = match boot {
         Some(boot) => Some(ready(platform, boot, &scratch)?),
@@ -2138,6 +2163,25 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             }
             None
         }
+    };
+    // A declared input is read, checked and given its rest before any tool
+    // is looked for, so each refusal needs no Renode (`AET-WO-4400i`).
+    let declared = match (&ready, declared) {
+        (Some((_, r)), Some((path, archive))) => {
+            if let Some(dir) = &archive {
+                input::dir_check(dir)?;
+            }
+            let (shown, file) = renode::foreign::read_input(&path)?;
+            let d = renode::foreign::declare(
+                shown,
+                file,
+                &r.topology,
+                &r.image.identity.checks,
+                r.virtual_ns,
+            )?;
+            Some((d, archive))
+        }
+        _ => None,
     };
     // The analog pre-pass runs before Renode is looked for, and its fault
     // decision fixes the platform the boot loads (AET-WO-2200 §1.4).
@@ -2293,6 +2337,29 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         (Some(r), Some(_)) => aethelgard_twin::serial::options(&r.topology).map_err(twin_stop)?,
         _ => Vec::new(),
     };
+    // The data witnesses at the rest's values, by device (`AET-WO-4400i` D4).
+    let mut rest_witnesses = std::collections::BTreeMap::new();
+    if let (Some((d, _)), Some(r)) = (&declared, &ready) {
+        for check in &r.image.identity.checks {
+            let w = aethelgard_twin::rest::data_witnesses(&r.topology, check, &d.stimuli)
+                .map_err(twin_stop)?;
+            if !w.is_empty() {
+                rest_witnesses.insert(check.reference.clone(), w);
+            }
+        }
+    }
+    // The input's timeline, a script in the scratch, and the port's capture.
+    let timeline = match (&declared, &ready) {
+        (Some((d, _)), Some(r)) => {
+            let capture = capture_dir(&scratch, "capture-input")?;
+            let script = scratch.tool.join("input.resc");
+            fs::write(&script, renode::foreign::timeline(d, &capture, r.virtual_ns)).map_err(
+                |e| run::Stop::tool_error("aethelgard", format!("cannot write the input's timeline: {e}")),
+            )?;
+            Some((script, capture))
+        }
+        _ => None,
+    };
     let commands = match (&plan, foreign) {
         (Some(plan), Some(_)) => renode::foreign::commands(
             plan,
@@ -2303,6 +2370,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 .and_then(|r| r.panic)
                 .expect("ready holds a foreign firmware's panic"),
             &ready.as_ref().expect("foreign is ready's").faults,
+            timeline.as_ref().map(|(script, _)| script.as_path()),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2384,6 +2452,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 r.topology.clock.hse_hz,
                 &foreign_serial,
                 &r.faults,
+                &rest_witnesses,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))
@@ -2399,6 +2468,49 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             (code, (findings, machine, None))
         }
     };
+    // A declared input's run (`AET-WO-4400i`): the witness from the port's
+    // own transmission, never from the input (`INV-07`), and the archive,
+    // only of a run that reached its end.
+    if let (Some(report), Some((d, archive)), Some((_, capture)), Some(r)) =
+        (foreign_report.as_mut(), &declared, &timeline, &ready)
+    {
+        let path = capture.join(format!("{}.bin", d.renode));
+        let captured = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                findings.push(verdict::Finding::plain(
+                    renode::foreign::CAPTURE_UNREADABLE,
+                    format!("{}'s transmission could not be read: {e}", d.peripheral),
+                ));
+                Vec::new()
+            }
+        };
+        let (witness, more) = renode::foreign::witness_report(&captured, &d.parsed)?;
+        findings.extend(more);
+        let run_id = match (archive, &out.ended) {
+            (Some(dir), ended) if !matches!(ended, run::Ended::Bounded(_)) => {
+                Some(renode::foreign::archive(
+                    dir,
+                    d,
+                    &captured,
+                    &r.firmware.sha256,
+                    &r.specification_sha256,
+                    &input.sha256,
+                    &version,
+                    r.virtual_ns,
+                )?)
+            }
+            _ => None,
+        };
+        report.unobservable.push(renode::foreign::IDLE_GAP.to_owned());
+        report.input = Some(renode::foreign::InputRun {
+            input: renode::foreign::input_report(d),
+            rest: renode::foreign::rest_report(&d.stimuli),
+            witness,
+            gap: renode::foreign::IDLE_GAP,
+            run_id,
+        });
+    }
     // The motor outputs' static check judges the topology, never the run
     // (`4300` D3), so a boot killed at a bound reports it too.
     if let Some(plan) = &plan {

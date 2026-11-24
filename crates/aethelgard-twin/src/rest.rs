@@ -205,6 +205,110 @@ pub fn stimuli(
     Ok(out)
 }
 
+/// A stimulus value in thousandths: `101325.080` is 101325080, `-1` is
+/// -1000. `None` for any other text.
+fn milli(v: &str) -> Option<i64> {
+    let (neg, v) = v.strip_prefix('-').map_or((false, v), |r| (true, r));
+    let (whole, frac) = v.split_once('.').unwrap_or((v, ""));
+    if whole.is_empty() || frac.len() > 3 || !(whole.bytes().chain(frac.bytes())).all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    let m = whole.parse::<i64>().ok()? * 1000 + format!("{frac:0<3}").parse::<i64>().ok()?;
+    Some(if neg { -m } else { m })
+}
+
+/// A channel's bytes on the wire for a value in thousandths of its unit:
+/// `Channel::raw`'s rule (`round((value - zero) · lsb.0 / lsb.1)`, half away
+/// from zero, two's complement in `bytes` bytes), at a thousandth's
+/// resolution, which the models of our own round alike (`Raw24(Pressure ·
+/// 64)`, `BMP581.cs`).
+fn wire_at(c: &parts::Channel, value_milli: i64) -> Vec<u8> {
+    let num = (i128::from(value_milli) - i128::from(c.zero) * 1000) * i128::from(c.lsb.0);
+    let den = i128::from(c.lsb.1) * 1000;
+    let rounded = (2 * num + num.signum() * den) / (2 * den);
+    let mask = (1u128 << (8 * u32::from(c.bytes))) - 1;
+    let raw = ((rounded as u128) & mask) as u32;
+    let mut bytes = raw.to_le_bytes()[..usize::from(c.bytes)].to_vec();
+    if c.big_endian {
+        bytes.reverse();
+    }
+    bytes
+}
+
+/// The data step's witness for each distinct set of values the rest gives
+/// the device over the run (`AET-WO-4400i` D4): the step's exact lines as
+/// its model writes them, from the same conversion the witness stimulus's
+/// lines come from. Empty for a device the rest does not move.
+pub fn data_witnesses(
+    topology: &SolvedTopology,
+    check: &StepCheck,
+    stimuli: &[Stimulus],
+) -> Result<Vec<Vec<String>>, TwinError> {
+    let mine: Vec<&Stimulus> = stimuli.iter().filter(|s| s.device == check.device).collect();
+    if check.step != StepKind::Data || mine.is_empty() {
+        return Ok(Vec::new());
+    }
+    let table = parts::table().map_err(TwinError::InvalidTopology)?;
+    let part = topology
+        .spi_devices
+        .get(&check.reference)
+        .map(|d| d.part.as_str())
+        .or_else(|| topology.i2c_devices.get(&check.reference).map(|d| d.part.as_str()));
+    let Some(p) = part.and_then(|part| table.get(part)) else {
+        return Ok(Vec::new());
+    };
+    let (Some(renode), Some(script)) = (&p.renode, &p.script) else {
+        return Ok(Vec::new());
+    };
+    let Some(model) = Model::from_renode(renode) else {
+        return Ok(Vec::new());
+    };
+    let Some(data) = p.steps().into_iter().find(|s| s.kind == StepKind::Data) else {
+        return Ok(Vec::new());
+    };
+    // Each channel's value in thousandths, from its witness stimulus, then
+    // as each rest stimulus sets it, in time order.
+    let mut now: Vec<i64> = script.channels.iter().map(|c| i64::from(c.stimulus) * 1000).collect();
+    let mut sets: Vec<Vec<i64>> = Vec::new();
+    let mut k = 0;
+    while k < mine.len() {
+        let at = mine[k].at_ns;
+        while k < mine.len() && mine[k].at_ns == at {
+            let s = mine[k];
+            let value = milli(&s.value).ok_or_else(|| TwinError::RestUnmodelled {
+                reference: check.reference.clone(),
+                property: s.property,
+            })?;
+            for (i, c) in script.channels.iter().enumerate() {
+                if model.stimulus(c.quantity) == Some(s.property) {
+                    now[i] = value;
+                }
+            }
+            k += 1;
+        }
+        if !sets.contains(&now) {
+            sets.push(now.clone());
+        }
+    }
+    let mut out = Vec::new();
+    for set in sets {
+        let wire: Vec<u8> = script
+            .channels
+            .iter()
+            .zip(&set)
+            .flat_map(|(c, v)| wire_at(c, *v))
+            .collect();
+        let step = parts::Step {
+            expected: wire.iter().fold(0u64, |v, &b| (v << 8) | u64::from(b)),
+            ..data.clone()
+        };
+        if let Some(lines) = model.witness(&check.device, &step) {
+            out.push(lines);
+        }
+    }
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -226,6 +330,25 @@ mod tests {
         assert_eq!(accel_at_rest(&o(Right, Forward)), Some((0, -1, 0)));
         // Not at right angles: no rest.
         assert_eq!(accel_at_rest(&o(Up, Down)), None);
+    }
+
+    #[test]
+    fn a_value_in_thousandths_converts_as_the_parts_table_does() {
+        assert_eq!(milli("101325.080"), Some(101_325_080));
+        assert_eq!(milli("-1"), Some(-1000));
+        assert_eq!(milli("0"), Some(0));
+        assert_eq!(milli("1.5"), Some(1500));
+        assert_eq!(milli("1.0005"), None);
+        assert_eq!(milli("x"), None);
+        // The BMP581's pressure channel: 64 counts a pascal, 3 bytes, little
+        // endian. 101325 Pa is the parts table's own word; ±0.08 Pa is ±5.12
+        // counts, rounded half away from zero to ±5.
+        let table = parts::table().unwrap();
+        let c = table.get("BMP581").unwrap().script.as_ref().unwrap().channels[1];
+        assert_eq!(wire_at(&c, 101_325_000), c.wire());
+        let n = |b: Vec<u8>| u32::from(b[0]) | u32::from(b[1]) << 8 | u32::from(b[2]) << 16;
+        assert_eq!(n(wire_at(&c, 101_325_080)), 101_325 * 64 + 5);
+        assert_eq!(n(wire_at(&c, 101_324_920)), 101_325 * 64 - 5);
     }
 
     #[test]
