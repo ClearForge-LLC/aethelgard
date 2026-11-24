@@ -69,10 +69,8 @@ pub fn judge(board: &Board, value_of: impl Fn(&str) -> Option<String>) -> (usize
                 Some(Inward {
                     reference: part.reference.clone(),
                     message: format!(
-                        "{} ({value}) at rotation {} opens toward the board's {edge} edge, and its courtyard is {gap} nm from it, not within {TOLERANCE_NM} nm: its mating opening ({}) does not face out of the board",
-                        part.reference,
-                        part.rotation,
-                        format!("{}, {}", o.cited.document, o.cited.section)
+                        "{} ({value}) at rotation {} opens toward the board's {edge} edge, and its courtyard is {gap} nm from it, not within {TOLERANCE_NM} nm: its mating opening ({}, {}) does not face out of the board",
+                        part.reference, part.rotation, o.cited.document, o.cited.section
                     ),
                 }),
             );
