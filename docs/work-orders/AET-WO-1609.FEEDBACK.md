@@ -1,6 +1,6 @@
 # AET-WO-1609 — FEEDBACK: one "ran or not" table in every verdict, and the foreign judge's late panic
 
-**Branch:** `wo/aet-1609-ran-or-not` from `main` `e5984c86` (main has not moved).
+**Branch:** `wo/aet-1609-ran-or-not` from `main` `e5984c86`; `main` `9b246a6a`, then `ee239949` (`4240e`), merged.
 **Builder:** Claude (Opus 5.5) as project manager.
 - **Subagents** did the read-only parts: the measurement's gate and reader inventories, spot-checked at source (one
   corrected), and an independent adversarial review of the build (§5).
@@ -182,7 +182,8 @@ Ten findings, each checked at source:
   - `cargo fmt --all -- --check`: clean.
   - `cargo clippy --workspace --all-targets -- -D warnings`: clean on the host, and in the image with tier 2 compiled
     (`--features aethelgard-cli/with-tools`).
-  - `cargo test --workspace`: 2,995 passed, 0 failed, 169 suites, on `1d9a6078` (host, a 32 GiB scope with swap 0).
+  - `cargo test --workspace`: 3,025 passed, 0 failed, 173 suites, on the merged head `c36776ee`; 2,995 passed, 0
+    failed, on `1d9a6078` (host, each in a capped scope with swap 0).
     - The first host run, on `fffadf1a`, failed 8 tier-1 foreign tests: their fixture ELFs had no symbol table, so the new
       refusal stopped them. The refusal stayed, and the fixtures gained the symbol.
 - **Tier 2, locally in the pinned tools image** (16 GiB scope, swap 0), each green:
@@ -207,18 +208,22 @@ Ten findings, each checked at source:
 ## 8. The package
 
 `ran` moves the verdict line, and so `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256`. As `2306`'s
-did, `bench-package` is red on the head before the package commit. The dispatch was asked for on the bus (21:44Z) and queued by the architect at 22:10Z
-(`ci.yml` run 45276370686, `write`, on `1d9a6078`). Its artifact (`bench-package`, the dispatch green) is committed byte for byte.
-- Of its 17 files, only `MANIFEST.json` differs from `main`'s, and only at line 48: `verdict_sha256` `ecef5719…` becomes
-  `e17cf038…`.
-- The ten ordered files (`ORDERED.sha256`, `3308`) are unchanged, and `bench_board_tier1` passes.
-- The PR's own `ci` run on `1d9a6078` (45272647013) failed only `bench-package`, as expected before this commit.
-  `ardupilot-image` (45272646998) is green, its `foreign` job running `late-panic` (`foreign_panic`) and `panic-unnamed`
-  (`ForeignPanicSymbolMissing`).
-**`4240e` also moves this package and is ahead of 1609** (the architect, 22:12Z): whichever of the two merges second
-merges main and asks for a fresh dispatch.
+did, `bench-package` was red on each head before its package commit.
+- **First dispatch** (asked 21:44Z, queued 22:10Z, `ci.yml` run 45276370686 on `1d9a6078`): only `MANIFEST.json`
+  differed, at line 48. It was committed in `d22ad30a`, and CI went green on `da75a39b` (tier 2 206, floor 205).
+- **`4240e` merged first** (the architect, 23:10Z) and moved the same package. Main `ee239949` was merged, and the
+  conflict was taken as main's.
+- **The fresh dispatch** (queued 23:47Z, run 45291563000 on `c36776ee`, `bench-package` green) is committed byte for
+  byte.
+  - Of its 17 files, only `MANIFEST.json` differs from main's, at line 48: `verdict_sha256` `59e26a4b…` (4240e's)
+    becomes `6ed83396…`.
+  - The ten ordered files (`ORDERED.sha256`, `3308`) are unchanged, and `bench_board_tier1` passes.
+- **`ardupilot-image`** on `1d9a6078` (45272646998) and on `da75a39b` is green. Its `foreign` job ran `late-panic`
+  (`foreign_panic`) and `panic-unnamed` (`ForeignPanicSymbolMissing`).
 
 ## 9. Signal
 
 The last push is the commit "AET-WO-1609 READY: …". Nothing is pushed after it unless asked. The architect merges.
-**`4240e` also moves the bench package:** whichever of the two merges second merges main and asks for a fresh dispatch.
+**`4240e` merged first;** main was merged here and the package re-dispatched.
+**`2313` (#380) carries the boot bound's text on the same `foreign.rs` lines** (the architect, 23:52Z): whichever of
+the two merges second re-applies.

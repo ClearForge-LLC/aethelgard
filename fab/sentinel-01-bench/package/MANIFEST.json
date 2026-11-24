@@ -45,7 +45,7 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "59e26a4ba92e4f8c33182be02e33f0c751d7f869573efe426eb1ede0969b4dc5",
+  "verdict_sha256": "6ed83396734c1d578267da859e664d8a210ed516142eb67380ea8f5f92861741",
   "files": {
     "FAB-NOTES.md": "5596fb89dbd6e95cc56c08dc5dc61602c8a4dd3a2884f6b673c6dd5e56674207",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
