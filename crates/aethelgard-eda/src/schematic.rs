@@ -33,6 +33,8 @@ mod hse;
 mod arms;
 #[path = "schematic_power.rs"]
 mod power;
+#[path = "schematic_radio.rs"]
+mod radio;
 #[path = "schematic_support.rs"]
 mod support;
 use aethelgard_ir::power::BATTERY_NET;
@@ -1659,6 +1661,8 @@ pub(crate) fn design(
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
     motor_pulls(&mut b)?;
+    // `AET-WO-4411`: last, so no other part's reference or place moves.
+    radio::draw(&mut b)?;
     Ok((b.parts, b.rails))
 }
 

@@ -2486,6 +2486,19 @@ pub fn thermal_arrays(spec: &Specification) -> Vec<(String, String, crate::therm
             vias(&b.thermal_vias, layers.clone()),
         ));
     }
+    // Each radio module's ground pad (`AET-WO-4411` D4), after the
+    // regulators' so none of theirs moves.
+    if let Ok(t) = crate::radio::table() {
+        for m in spec.declared_radio_modules() {
+            if let Some(row) = t.get(&m.part) {
+                out.push((
+                    m.reference.clone(),
+                    row.thermal_vias.pad.clone(),
+                    row.thermal_vias.vias(layers.clone()),
+                ));
+            }
+        }
+    }
     out
 }
 

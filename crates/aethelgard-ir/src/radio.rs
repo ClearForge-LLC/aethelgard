@@ -118,6 +118,7 @@ pub struct Status {
 #[serde(deny_unknown_fields)]
 pub struct Supply {
     pub pin: String,
+    pub number: String,
     pub min_mv: u32,
     pub max_mv: u32,
     pub at: At,
@@ -128,6 +129,51 @@ pub struct Supply {
 pub struct Cited {
     pub value: u32,
     pub at: At,
+}
+
+/// The ground pad's thermal vias, as a power row's rule is written
+/// (`AET-WO-1309`): the engine emits them inside the pad.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThermalRule {
+    pub pad: String,
+    pub columns: u8,
+    pub rows: u8,
+    pub pitch_um: u32,
+    pub drill_um: u32,
+    pub ring_um: u32,
+    pub sources: ThermalSources,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThermalSources {
+    pub count: String,
+    pub pitch: String,
+    pub drill: String,
+    pub ring: String,
+    pub layers: String,
+}
+
+impl ThermalRule {
+    /// The rule as `1309`'s array, on `layers`.
+    pub fn vias(&self, layers: Vec<String>) -> crate::thermal::ThermalVias {
+        crate::thermal::ThermalVias {
+            columns: self.columns,
+            rows: self.rows,
+            pitch_um: self.pitch_um,
+            drill_um: self.drill_um,
+            ring_um: self.ring_um,
+            layers,
+            sources: crate::thermal::ThermalSources {
+                count: self.sources.count.clone(),
+                pitch: self.sources.pitch.clone(),
+                drill: self.sources.drill.clone(),
+                ring: self.sources.ring.clone(),
+                layers: self.sources.layers.clone(),
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
@@ -220,6 +266,7 @@ pub struct RadioPart {
     pub supply_current_min_ma: Cited,
     pub tx_peak_ma_typical: Cited,
     pub ground_pins: Vec<String>,
+    pub thermal_vias: ThermalRule,
     pub enable: EnablePin,
     pub straps: Vec<StrapRow>,
     pub uart: Uart,
@@ -327,10 +374,21 @@ pub fn parse(text: &str) -> Result<RadioTable, String> {
             }
         }
         let mut pins = BTreeSet::new();
+        if !m.ground_pins.contains(&m.thermal_vias.pad) {
+            return Err(format!(
+                "`{}`: the thermal vias' pad is no ground pin",
+                m.part
+            ));
+        }
         let numbers = m
             .ground_pins
             .iter()
-            .chain([&m.enable.number, &m.uart.tx_number, &m.uart.rx_number])
+            .chain([
+                &m.supply.number,
+                &m.enable.number,
+                &m.uart.tx_number,
+                &m.uart.rx_number,
+            ])
             .chain(m.straps.iter().map(|s| &s.number));
         for n in numbers {
             if !pins.insert(n.as_str()) {

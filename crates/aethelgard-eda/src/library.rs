@@ -209,7 +209,7 @@ const PINS: [(&str, &str); 60] = [
     // Derived from KiCad's (`AET-WO-4411` D4), so CC-BY-SA-4.0, not MIT OR Apache-2.0.
     (
         "footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
-        "60813259ffcb61f6b479aeea1161728b30c3352ae7e00741f4eefea6c10031bf",
+        "717b47456bd39fd5335dce1f33b0b6b9b1006b206cea658dc3fac7e6549b49b4",
     ),
     (
         "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",

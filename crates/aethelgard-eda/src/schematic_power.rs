@@ -94,7 +94,13 @@ const HOT_PLUG_RULE: &str = "SNVSAN3F p. 23, 9.2.2.6: the bulk capacitor that da
 const RESERVOIR_RULE: &str = "AN2834 p. 45, 4.4.3: a large external capacitor at the ADC input pin (3.0 mm, an engine choice: no distance is stated)";
 
 /// Anchors the part just drawn to `ic`'s pads.
-fn anchor(b: &mut Builder<'_>, ic: &str, pads: &[(&str, &str)], bound_nm: i64, rule: &'static str) {
+pub(super) fn anchor(
+    b: &mut Builder<'_>,
+    ic: &str,
+    pads: &[(&str, &str)],
+    bound_nm: i64,
+    rule: &'static str,
+) {
     let pads = pads
         .iter()
         .map(|(own, theirs)| ((*own).to_owned(), (*theirs).to_owned()))
@@ -193,7 +199,7 @@ pub(super) fn two_pin(
 
 /// A declared capacitor, valued by its row's rated capacitance and named by
 /// its part number.
-fn capacitor(
+pub(super) fn capacitor(
     b: &mut Builder<'_>,
     reference: &str,
     part: &str,

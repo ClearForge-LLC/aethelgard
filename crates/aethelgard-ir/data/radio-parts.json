@@ -32,6 +32,7 @@
       "footprint": "Aethelgard_RF:ESP32-C3-WROOM-02",
       "supply": {
         "pin": "3V3",
+        "number": "1",
         "min_mv": 3000,
         "max_mv": 3600,
         "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-2: VDD33 power supply voltage 3.0 min, 3.3 typ, 3.6 max V" }
@@ -45,6 +46,21 @@
         "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 22, Table 6-4: TX 802.11b 1 Mbps @20.5 dBm, 345 mA peak, measured at 3.3 V and 25 C, 100 % duty cycle; a single condition, never a bound" }
       },
       "ground_pins": ["9", "19"],
+      "thermal_vias": {
+        "pad": "19",
+        "columns": 2,
+        "rows": 2,
+        "pitch_um": 1100,
+        "drill_um": 300,
+        "ring_um": 150,
+        "sources": {
+          "count": "ESP32-C3-WROOM-02 datasheet v1.7 p. 37, Figure 11-1: vias for the thermal pad in the gaps of its 3 x 3 land pattern; 2 x 2, one at each crossing of the gaps (KiCad's footprint drew 12 at 0.2 mm on a 0.55 mm pitch, which a 0.3 mm drill cannot keep apart: AET-WO-4411 D4)",
+          "pitch": "p. 37, Figure 11-1: the land pattern's 1.1 mm pitch (0.7 mm pads, 0.4 mm gaps)",
+          "drill": "the engine's via drill, 0.3 mm (AET-WO-4411 D4, ruled: vias at the engine's drill); the datasheet states none",
+          "ring": "the engine's via ring for a 0.3 mm drill in a 0.6 mm pad; the datasheet states none",
+          "layers": "p. 37, Figure 11-1: vias for the thermal pad, which is ground (pin 19); to the ground fill on every copper layer, an engine choice: no layer is stated"
+        }
+      },
       "enable": {
         "pin": "EN",
         "number": "2",
