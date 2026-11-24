@@ -42,3 +42,71 @@ Each line carries a figure or a yes/no and its source:
 - **P1.7 The §7 stop "the cap fails before 10 s" does not fire:** no 5 s or 10 s run passes 1,572,864 KiB.
 - **P1.8 The proposal.** The longest window whose worst peak stays at or under 900‰ is **10 s** (20 s is marginal), and it needs main's 30 s wall bound raised with it. Keeping the 30 s wall bound means keeping 5 s.
 - **P1.9 A CPU-restricted run passes a higher share of the cap than an unrestricted one at the same window,** because RSS follows wall time. Restricting to 2 cores with `taskset` stands in for a loaded host.
+
+## Parts 2–4: arming, what it reaches, a commanded step
+
+Written after part 1's first runs, before any injection run. The source lines were read by subagents and spot-checked:
+- Renode: `STM32F7_USART.cs`:87, :109, :154, :231 and `STM32DMA.cs`:237–245, in renode-infrastructure `cd4b002a`, the tools image's pin.
+- ArduPilot: `UARTDriver.h`:25, `UARTDriver.cpp`:549–566 and :606–622, `AP_SerialManager.cpp`:172–180, `AP_Arming.cpp`:201 and :1885, `AP_InertialSensor.cpp`:1639–1660, `GCS_Common.cpp`:4966, and `ArduCopter/Parameters.cpp`:26–30, all at `fb773567`.
+
+### How the twin injects into a foreign firmware's USART today
+
+- **P2.1 It does not.** Bytes written into `usart1` from the monitor are queued and raise RXNE, but ArduPilot never reads them [R: TVI-WO-1302 §2.6].
+  - ArduPilot clears `RXNEIE` and receives by DMA1 stream 0 (`CR3.DMAR`).
+  - The emitted platform does not connect Renode's USART `ReceiveDmaRequest` to `dmamux1`. Request 41 never rises, and NDTR never moves [S].
+  - **The twin lacks one platform line:** `ReceiveDmaRequest -> dmamux1@41` in `usart1`'s block, which the twin already writes for SPI (`platform.rs`:789–790).
+- **P2.2 With that line, a byte moves into the bounce buffer, but ArduPilot reads it only when 64 bytes have arrived.** NDTR reaching 0 raises transfer-complete, since TCIE is set [S].
+  - On silicon, a short frame is handed over by the USART's IDLE interrupt. The model has no IDLE (a tag) [S].
+  - So each injected frame is padded with zero bytes to exactly 64. The second twin gap, IDLE, is named and not modelled.
+  - **No parameter can route around this.** SERIAL0 has no `OPTIONS` parameter (no `NoDMA_RX`) [S]. Changing the ELF would be a §7 stop.
+- **P2.3 This is neither a defaults file nor a rebuilt ELF,** so §7's third stop does not fire. Parameters arrive at run time, over MAVLink.
+
+### Arming
+
+- **P2.4 Before any parameter is set, `MAV_CMD_RUN_PREARM_CHECKS` and an arm attempt report at least these, classed** [S, M]:
+
+  | message | class |
+  |---|---|
+  | `Motors: Check frame class and type` | a parameter: `FRAME_CLASS` 0 |
+  | `3D Accel calibration needed` | a parameter: no saved calibration on a new board; a real board needs it too |
+  | `RC not found` or `Throttle below failsafe` | a parameter, not a twin gap: an agent-flown vehicle has no RC, and `FS_THR_ENABLE` must say so |
+
+  Held loosely:
+
+  | message | class |
+  |---|---|
+  | `Main loop slow` | a twin cost |
+  | `Logging failed` | a twin model gap, if the W25Q model misanswers |
+  | `Leaning` | a twin model gap, if the IMU model's gravity is off-axis after `ROLL_180_YAW_90` |
+  | `AHRS: …` / `EKF3 not started` | a twin model gap |
+
+  No real fault is predicted.
+- **P2.5 The smallest set that arms without skipping or forcing:**
+  - `FRAME_CLASS` = 1;
+  - `FS_THR_ENABLE` = 0;
+  - `DISARM_DELAY` = 0, so it stays armed (a choice, not a check);
+  - `INS_ACCOFFS_X` = 0.001, then `MAV_CMD_PREFLIGHT_CALIBRATION` with param5 = 76, which accepts the accel calibration as valid.
+
+  Then arm in STABILIZE, the boot mode. I predict this arms with no `ARMING_SKIPCHK` bit and no force, held moderately. A skip bit is used only if a twin-gap check remains, and it is named. The force code (21196) is used only if a check no bit skips remains. A forced arm still runs the mandatory checks.
+- **P2.6 Persistence.**
+  - A `PARAM_SET` is saved: it is echoed as `PARAM_VALUE`, and within the same run its value is written to flash storage page 14 (`0x081C0000`, bank 2 sector 6).
+  - The write is 32-byte flash words under `CR2.PG`, read back with memcmp.
+  - Renode's `STM32H7_FlashController` models bank 2, keys, PG, 32-byte words and sector erase. So the write succeeds and no `Storage: failed` is printed.
+  - The boot itself already erases page 14 and page 15 and writes their headers before any `PARAM_SET` (the twin's flash starts blank). `2314`'s erase hook names those erases in the verdict.
+  - Across a twin restart nothing persists, because each run starts from the ELF alone. Persistence on silicon is bank 2 sectors 6–7: an input to `TVI-WO-1304`.
+- **P2.7 The arm is an arm.** HEARTBEAT `base_mode` gets `MAV_MODE_FLAG_SAFETY_ARMED`, and `SERVO_OUTPUT_RAW` servo1–4 move from 1000 to about 1100 (`MOT_SPIN_ARM`). But no register changes: the board has no PWM output, and ArduPilot writes to `Empty::RCOutput`. This is the §5 "armed while its outputs stay disabled" case, by construction of the board, not of the twin.
+
+### Part 3: what arming reaches (the access log, armed against unarmed)
+
+- **P3.1 Armed against the injection control, no TIM1 or TIM2 row is reached,** and no DMA stream newly starts, because the board has no motor output. The control is the same frames as zero padding.
+- **P3.2 Arming starts no peripheral.** If logging starts at arm (`LOG_DISARMED` = 0), SPI1 (the W25Q dataflash) traffic rises after arming: more writes to `spi1` and DMA2's SPI1 streams. That is the one change, held loosely.
+- **P3.3 With `MOT_PWM_TYPE` = 6 (DShot600), no timer DMA moves.** There is no output, `Empty::RCOutput` ignores the mode, and the stock timer has no DMA request [R: TVI-WO-1303 P2].
+- **P3.4 The injection's own traffic is DMA1 stream 0's re-arm.** Each 64-byte frame is followed by `S0CR` disable/enable, `S0NDTR`, `S0M0AR` and a `LIFCR` clear, plus ArduPilot's USART1 TX of the replies. The zero-padding control produces the DMA rows but not the reply TX, so the replies are the arming run's own rows, which the queue file marks.
+
+### Part 4: a GUIDED command
+
+- **P4.1 Armed in STABILIZE, `MAV_CMD_DO_SET_MODE` GUIDED is refused** with STATUSTEXT `Mode change failed: GUIDED requires position` (or the ACK `FAILED`): there is no position estimate, since no GPS model exists.
+  - `MAV_CMD_NAV_TAKEOFF` is then refused, because the mode is not GUIDED.
+  - No output changes; `SERVO_OUTPUT_RAW` stays at ground idle.
+  - Class: a twin model gap (no GPS). A real flight would have one.
+- **P4.2 In GUIDED_NOGPS** (an extra row, not the WO's command), `SET_ATTITUDE_TARGET` with thrust 0.6 changes `SERVO_OUTPUT_RAW` above ground idle. The baro and IMU do not respond (no dynamics), so the outputs stay where the controller puts them, and the EKF sees no climb.
