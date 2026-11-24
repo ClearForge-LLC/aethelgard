@@ -1,0 +1,1 @@
+{"name": "f1-CN-w7", "window": "7000ms", "exit": 1, "wall_s": 14.06, "peak_rss_kib": 1020844, "permille_of_1572864": 649, "load1_min": 9.07, "load1_max": 9.46, "cpus": "all", "ok": false, "kinds": ["serial_options_unwritten"], "log": [], "stop": null}
