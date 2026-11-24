@@ -911,6 +911,29 @@ fn a_ratio_no_decimal_states_is_judged_exactly() {
     }
 }
 
+/// `AET-WO-4410` §3: the scale reader's edges. A quotient over zero is no
+/// fraction, even `0/0`; a literal too long for exact arithmetic is named,
+/// never overflowed; and a pin written in hex is read as C reads it.
+#[test]
+fn the_battery_monitor_s_literals_are_read_exactly_at_their_edges() {
+    let t = with_battery(100_000, 10_000, "ADC1");
+    for scale in [
+        "(110000.0f/0.0f)",
+        "(0.0f/0.0f)",
+        // 39 decimals: the digits parse, and 10^39 is past u128.
+        "0.000000000000000000000000000000000000011",
+    ] {
+        assert_eq!(
+            kinds(&judge(&t, &battery_header(scale), &[EMPTY]).unwrap()),
+            ["WrongBattVoltScale"],
+            "{scale}"
+        );
+    }
+    let hex = battery_header("11.0").replace("HAL_BATT_VOLT_PIN 10", "HAL_BATT_VOLT_PIN 0xA");
+    assert_ne!(hex, battery_header("11.0"));
+    assert_eq!(judge(&t, &hex, &[EMPTY]).unwrap(), Vec::<String>::new());
+}
+
 /// A battery monitor with no solved sense, and a sense on ADC3, are each named.
 #[test]
 fn a_battery_monitor_with_no_adc1_sense_is_named() {

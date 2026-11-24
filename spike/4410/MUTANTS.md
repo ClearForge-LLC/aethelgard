@@ -52,3 +52,17 @@ Not mutable to a kill: the `ODR` level rule's `low` branch. Every `gpio` entry t
 | p-fraction-frac | a decimal's denominator | `the_battery_monitor_is_judged_against_the_solved_sense` | killed |
 | p-notanalog | `NotAnalog` on any non-analog mode | `check::a_battery_sense_pin_that_is_not_analog_is_named` | killed |
 | p-sense-allow | the allow-list may not name a sense pin | same | killed |
+
+## After the reduction pass
+
+Three mutant texts moved with the reduced code (`ir-adc1-first`, `p-swd-named`, `r-fn-blank`); with eight others on the touched guards, **11 of 11 killed** on `09c2ff8d`.
+
+## The close-out: FEEDBACK §3's claims, each now tested
+
+| id | guard | test | result |
+|---|---|---|---|
+| h-batt-label | `BATT_VOLTAGE_SENS` joins the label collision check | `a_chip_select_named_like_the_battery_label_is_refused` | killed |
+| p-fraction-zero | a quotient over zero is no fraction | `the_battery_monitor_s_literals_are_read_exactly_at_their_edges` | killed (`0/0` is the case that tells) |
+| p-fraction-cap | a 30-digit cap on a literal | same | **survived**: the `u128` parse already refused a longer literal. The cap was replaced by `checked_pow`, which holds the real edge (digits that parse, 10^decimals past `u128`) |
+| p-fraction-pow | `checked_pow`, not `pow` | same | killed (the 39-decimal literal) |
+| p-fraction-frac | re-run on the new text | `the_battery_monitor_is_judged_against_the_solved_sense` | killed |

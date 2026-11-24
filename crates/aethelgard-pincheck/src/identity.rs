@@ -283,12 +283,11 @@ fn fraction(text: &str) -> Option<(u128, u128)> {
                 .bytes()
                 .chain(frac.bytes())
                 .all(|b| b.is_ascii_digit())
-            || whole.len() + frac.len() > 30
         {
             return None;
         }
         let n: u128 = format!("{whole}{frac}").parse().ok()?;
-        Some((n, 10u128.pow(u32::try_from(frac.len()).ok()?)))
+        Some((n, 10u128.checked_pow(u32::try_from(frac.len()).ok()?)?))
     };
     let t = text.trim();
     let t = t

@@ -366,6 +366,24 @@ fn a_divider_with_no_exact_float_quotient_is_refused() {
     assert!(generate(&with_sense(16_777_215, 1, "ADC1", "INP10")).is_ok());
 }
 
+/// `AET-WO-4410` §5: a chip select named like the battery line's label
+/// would be a second pin keyed `BATT_VOLTAGE_SENS`; ArduPilot keys pins by
+/// label, so it is refused by name.
+#[test]
+fn a_chip_select_named_like_the_battery_label_is_refused() {
+    let t = with_sense(100_000, 10_000, "ADC1", "INP10");
+    let text = serde_json::to_string(&t)
+        .unwrap()
+        .replace("\"FLASH_CS\"", "\"BATT_VOLTAGE_SENS\"");
+    let v: Value = serde_json::from_str(&text).unwrap();
+    assert_eq!(
+        refused(&v),
+        Refusal::LabelCollision {
+            net: "BATT_VOLTAGE_SENS".into()
+        }
+    );
+}
+
 /// `AET-WO-4410` (1): ArduPilot has one `HAL_BATT_VOLT_PIN`.
 #[test]
 fn two_battery_senses_are_refused() {
