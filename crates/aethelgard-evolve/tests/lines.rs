@@ -36,7 +36,7 @@ fn the_icp_101xx_s_lines_are_read_exactly_as_its_model_writes_them() {
         icp("Reading data with CRC: [0x0, 0x8]"),
         icp("Reading data: [0x0, 0x8], current command: 0xEFC8 (Id), requested: 2 bytes"),
         format!("[NOISY] {DEVICE}: Received command: [0xEF, 0xC8]"),
-        format!("[DEBUG] i2c1.u66: Received command: [0xEF, 0xC8]"),
+        "[DEBUG] i2c1.u66: Received command: [0xEF, 0xC8]".to_owned(),
     ] {
         let (ts, none) = transactions(std::slice::from_ref(&line), DEVICE, Form::Icp);
         assert!(ts.is_empty() && none == [0], "{line}");

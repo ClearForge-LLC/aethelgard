@@ -2941,7 +2941,7 @@ fn wrong_at(r: &[Record], i: usize) -> Vec<(String, Option<u64>)> {
 }
 
 /// A verdict naming one unwitnessed read.
-fn unwitnessed(r: &mut Vec<Record>) {
+fn unwitnessed(r: &mut [Record]) {
     replace(
         r,
         is_verdict,
@@ -2967,7 +2967,7 @@ fn a_witness_compares_counts_as_well_as_values() {
     let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
     let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
     let r = bme_bmp(
-        unwitnessed,
+        |r| unwitnessed(r),
         [
             &[id],
             &["[NOISY] i2c1.u5: write 0x00 <- 0x36 0x40 0x81"],
@@ -2988,7 +2988,7 @@ fn a_witness_compares_counts_as_well_as_values() {
     );
     // A byte appended, and a read of the right value at another length.
     let r = bme_bmp(
-        unwitnessed,
+        |r| unwitnessed(r),
         [
             &[id],
             &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81 0x00"],
@@ -3003,7 +3003,7 @@ fn a_witness_compares_counts_as_well_as_values() {
         ]
     );
     let r = bme_bmp(
-        unwitnessed,
+        |r| unwitnessed(r),
         [
             &["[NOISY] i2c1.u5: read 0x01 -> 0x00 0x50"],
             &[cfg],
@@ -3026,7 +3026,7 @@ fn a_witness_compares_counts_as_well_as_values() {
     );
     assert_eq!(attributed(&r).rule, Rule::S1);
     // The right counts: nothing is wrong.
-    let r = bme_bmp(unwitnessed, [&[id], &[cfg], &[data]]);
+    let r = bme_bmp(|r| unwitnessed(r), [&[id], &[cfg], &[data]]);
     assert!(wrong_at(&r, u5_step(&r, "configure")).is_empty());
 }
 
@@ -3038,7 +3038,7 @@ fn a_bmp581_log_is_read_whole_for_a_surplus_and_a_step_sent_elsewhere() {
     let id = "[NOISY] i2c1.u5: read 0x01 -> 0x50";
     let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
     let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
-    let r = bme_bmp(unwitnessed, [&[id], &[cfg, cfg], &[data]]);
+    let r = bme_bmp(|r| unwitnessed(r), [&[id], &[cfg, cfg], &[data]]);
     let configure = u5_step(&r, "configure");
     assert_eq!(
         wrong_at(&r, configure),
@@ -3089,7 +3089,7 @@ fn a_step_s_write_and_read_are_one_transaction_never_stitched() {
     assert_eq!(attributed(&r).rule, Rule::S1);
     let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
     let r = bme_bmp(
-        unwitnessed,
+        |r| unwitnessed(r),
         [
             &[
                 "[NOISY] i2c1.u5: write 0x01 <- (none)",
