@@ -284,7 +284,7 @@ jobs:
           retention-days: 7
 
   tools:
-    needs: [route, tools-build, tools-shard]
+    needs: [route, tools-build, tools-shard, bench-package-s03]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -496,10 +496,15 @@ jobs:
           case $CLASS in
             docs)
               test "${{ needs.tools-build.result }}" = skipped && test "${{ needs.tools-shard.result }}" = skipped \
-                || { echo "docs-only, but tools-build ${{ needs.tools-build.result }}, tools-shard ${{ needs.tools-shard.result }}"; exit 1; }
+                && test "${{ needs.bench-package-s03.result }}" = skipped \
+                || { echo "docs-only, but tools-build ${{ needs.tools-build.result }}, tools-shard ${{ needs.tools-shard.result }}, bench-package-s03 ${{ needs.bench-package-s03.result }}"; exit 1; }
               echo "docs-only: no tier-2 test runs on this pull request, by the route job's decision; main's push runs them all" ;;
-            # A shard that was skipped or cancelled is not a pass.
-            code) test "${{ needs.tools-shard.result }}" = success || { echo "tools-shard ${{ needs.tools-shard.result }}"; exit 1; } ;;
+            # A shard that was skipped or cancelled is not a pass; nor is Sentinel-03's
+            # package job (AET-WO-4300k, ruled 16:50Z: the package Scotty orders is judged
+            # on the pull request that moves it).
+            code)
+              test "${{ needs.tools-shard.result }}" = success || { echo "tools-shard ${{ needs.tools-shard.result }}"; exit 1; }
+              test "${{ needs.bench-package-s03.result }}" = success || { echo "bench-package-s03 ${{ needs.bench-package-s03.result }}"; exit 1; } ;;
             *) echo "no class: '$CLASS'"; exit 1 ;;
           esac
 
@@ -556,15 +561,6 @@ jobs:
         --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
         scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
         scenarios/sentinel-01-bench/serial-rx-open-console.json
-      # AET-WO-4300k (8): Sentinel-03, every scenario in its directory's order.
-      VERIFY_S03: >-
-        target/debug/aethelgard verify --spec examples/sentinel-03.json
-        --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json
-        scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json
-        scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx-open-console.json
-        scenarios/sentinel-03/serial-rx-open-crsf.json scenarios/sentinel-03/serial-rx-open-mavlink.json
-        scenarios/sentinel-03/spi-absent-u4.json scenarios/sentinel-03/spi-absent-u5.json
-        scenarios/sentinel-03/vdd5v-out-of-band.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -585,16 +581,6 @@ jobs:
         # package (readiness not judged; refused unless only the binding moves).
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package --rebind fab/sentinel-01-bench/package
 
-      # AET-WO-4300k (8): Sentinel-03's package, derived again from the committed one, or
-      # written for committing on a dispatch with `write` (FabricationNotReady is judged then).
-      - name: Sentinel-03, verify --against-fab, or --fab-out on a write
-        run: |
-          if [ "${{ inputs.write }}" = "true" ]; then
-            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
-          else
-            $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
-          fi
-
       - name: keep the written package
         if: ${{ inputs.write }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -604,8 +590,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # AET-WO-4300k (8): its own artifact, committed unchanged as fab/sentinel-03/package
-      # (never inside Sentinel-01's, which a re-bind would then refuse).
+
+  # AET-WO-4300k (8), ruled 2026-11-24T16:50Z (a): Sentinel-03's package, the one Scotty
+  # orders from OSH Park, in its own job beside bench-package: its verify ran past 37 min on
+  # CI (run 45428821122, cancelled by bench-package's 45-min limit) against 16 min on Furnace.
+  # `--against-fab` on every code pull request, so a change that moves the package is seen
+  # on the pull request that makes it (3401's lesson, #232); `--fab-out` on a dispatch with
+  # `write`, under its own artifact, committed unchanged as fab/sentinel-03/package (the
+  # readiness gate, FabricationNotReady, is judged then). `tools` counts it: skipped,
+  # cancelled or failed on a code pull request is red.
+  bench-package-s03:
+    needs: route
+    if: needs.route.outputs.class == 'code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      # Every scenario in its directory's order.
+      VERIFY_S03: >-
+        target/debug/aethelgard verify --spec examples/sentinel-03.json
+        --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json
+        scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json
+        scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx-open-console.json
+        scenarios/sentinel-03/serial-rx-open-crsf.json scenarios/sentinel-03/serial-rx-open-mavlink.json
+        scenarios/sentinel-03/spi-absent-u4.json scenarios/sentinel-03/spi-absent-u5.json
+        scenarios/sentinel-03/vdd5v-out-of-band.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      - name: build the CLI and the analog bridge, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
+
+      - name: Sentinel-03, verify --against-fab, the committed package derived again
+        if: ${{ !inputs.write }}
+        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
+
+      - name: Sentinel-03, verify --fab-out, the package written for committing
+        if: ${{ inputs.write }}
+        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
+
       - name: keep Sentinel-03's written package
         if: ${{ inputs.write }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

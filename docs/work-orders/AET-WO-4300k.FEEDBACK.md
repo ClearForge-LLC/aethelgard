@@ -176,6 +176,14 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
 - **The fuse's pulse I²t:** SF-1206F's melting I²t is typical and stated around 0.6 ms, while a hot-plug pulse lasts microseconds, and repeated plugs or contact bounce add up. Hold a minimum or pulse-derated figure (beside Q1 (c)).
 - **θJA at this board's copper (F2):** the figure is for 2 oz/1 oz, and the board declares 1 oz/½ oz, so U10's 117.8 °C screen has less margin than it shows. A derating needs a ruling or a bench thermal row; until then it is the condition `theta_ja_copper_mismatch`.
 - **`ViaRegionsOverlap` fires in no test.** The pours re-routed the two-layer power fixture before 1324 merged, and since 1324 the router keeps a judged net's vias one region apart. Its `supply_tier1` test checks the regions on both nets (taken on the merge), but nothing fires the refusal itself: a planted via either keeps its region apart or is refused for clearance first. A synthetic witness belongs with the router's owner.
+- **Sentinel-03's verify is slow in CI** (ruled 16:50Z as a row for the next CI work order).
+  - **Measured:** 16 min on Furnace (the pinned image, a debug CLI as CI builds it), against at least 37.7 min in CI. Run 45428821122's step was cancelled at the job's 45-min limit, so the true time is unknown.
+  - **The slowest gate is not in the logs:** a cancelled run prints no verdict, and the verdict holds no per-gate times.
+  - **Candidates by the work it does:**
+    - 20 Kani harnesses;
+    - 11 Renode campaign runs;
+    - `extract`'s capacitance ladder and the new pour measure, which is a 50 µm raster per layer, run in a debug build.
+  - Timing each gate in the verdict would name it. Since 16:50Z the step runs in its own job (`bench-package-s03`, 90-min limit), counted by `tools`.
 - **`fabrication_ready` is not in `verdict_sha256`** (the gate review's F2, ruled 12:45Z as a row): the verdict line is built before the `fab` report, so a package's bytes carry no mark of whether readiness was judged, skipped by a re-bind, or not judged under `--against-fab`. The CI pin test is the control.
 - **`ci/colocate.tsv`:** `verify_2k2_tier2` roughly doubled (+~450 s); re-weigh it from CI's own times after the first green run, by the REFIT RULE (ruled 12:45Z).
 - **The re-bind's trust root is CI** (the gate review's F2). A tool-side check that the directory is the committed one (git-tracked, under `fab/`) would make the tool itself the control.
@@ -229,6 +237,7 @@ Two Opus reviewers ran read-only, one per lens. They were given the code and the
   - The Sentinel-01 re-bind passed every gate. Only the binding moved, and `ORDERED.sha256` checks.
   - `against_fab_tier2` passed 3/3, the re-bind test included (1036 s). `four_layer_fab_tier2` passed 2/2 (453 s).
   - `verify_47k_tier2` passed 2/2, `verify_2k2_tier2` 2/2 and `board_tier2`'s identifier test 1/1, run by the tier-2 worker.
+- **CI (8), ruled 16:50Z (a):** Sentinel-03's package runs in its own job, `bench-package-s03` (90 min), counted by the required `tools` check. A skipped, cancelled, failed or missing run on a code pull request is red. `fab_tier1::the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job` runs the check's own text from `ci.yml` with each planted result; a mutant that drops the check fails it. `ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path` pins the job's two commands.
 - **Package:** the bootstrap is accepted (12:45Z). `fab/sentinel-03/package` and Sentinel-01's re-bound MANIFEST and FAB-NOTES come from the architect's write dispatch on the final head, committed unchanged. Until then `bench-package` refuses `--against-fab` on Sentinel-03, and `bench_board_tier1` fails on the specification hash.
 
 ## 8. Appendix: Sentinel-03's acknowledgements (D10)

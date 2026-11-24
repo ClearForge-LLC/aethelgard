@@ -945,3 +945,108 @@ fn ci_rebinds_only_sentinel_01_s_committed_package() {
         "{uses:?}"
     );
 }
+
+/// The text of `job`'s block in `ci.yml`: from its `  job:` line to the next
+/// job's.
+fn ci_job(ci: &str, job: &str) -> String {
+    let start = ci
+        .find(&format!("\n  {job}:\n"))
+        .unwrap_or_else(|| panic!("job {job}"));
+    let rest = &ci[start + 1..];
+    let end = rest[1..]
+        .find("\n  ")
+        .map(|i| {
+            // the next line indented exactly two spaces and starting a key
+            let mut at = i + 1;
+            loop {
+                let line = &rest[at + 1..];
+                if line.starts_with("  ") && !line.starts_with("   ") && !line.starts_with("  #") {
+                    break at;
+                }
+                match rest[at + 1..].find("\n  ") {
+                    Some(n) => at += n + 1,
+                    None => break rest.len(),
+                }
+            }
+        })
+        .unwrap_or(rest.len());
+    rest[..end].to_owned()
+}
+
+/// `AET-WO-4300k` (8), ruled 16:50Z (a): Sentinel-03's package job runs its
+/// verify on one specification, `--against-fab` on the committed package and
+/// `--fab-out` into its own artifact's path, each once, and no other job
+/// names Sentinel-03's package.
+#[test]
+fn ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let job = ci_job(&ci, "bench-package-s03");
+    assert!(job.contains("timeout-minutes: 90"), "{job}");
+    assert!(
+        job.contains("target/debug/aethelgard verify --spec examples/sentinel-03.json"),
+        "{job}"
+    );
+    let uses = |needle: &str| {
+        ci.lines()
+            .filter(|l| !l.trim_start().starts_with('#') && l.contains(needle))
+            .count()
+    };
+    for line in [
+        "$VERIFY_S03 --against-fab fab/sentinel-03/package",
+        "$VERIFY_S03 --fab-out target/sentinel-03-package",
+    ] {
+        assert_eq!(uses(line), 1, "{line}");
+        assert!(job.contains(line), "{line} is in bench-package-s03");
+    }
+    assert_eq!(uses("fab/sentinel-03/package"), 1);
+    assert_eq!(uses("examples/sentinel-03.json"), 1);
+}
+
+/// `AET-WO-4300k`, ruled 16:50Z (a): the required `tools` check counts
+/// Sentinel-03's package job. Its "the routing decided" step, run with each
+/// planted result: on a code pull request anything but `success` (skipped,
+/// cancelled, failed, or missing) is red, as a shard's is; on a docs-only
+/// one it must be skipped.
+#[test]
+fn the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job() {
+    let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
+    let tools = ci_job(&ci, "tools");
+    assert!(
+        tools.contains("needs: [route, tools-build, tools-shard, bench-package-s03]"),
+        "{tools}"
+    );
+    let at = tools.find("- name: the routing decided").unwrap();
+    let body: Vec<&str> = tools[at..]
+        .lines()
+        .skip(2)
+        .take_while(|l| l.starts_with("          ") || l.trim().is_empty())
+        .map(|l| l.get(10..).unwrap_or(""))
+        .collect();
+    let script = body.join("\n");
+    let decide = |class: &str, build: &str, shard: &str, s03: &str| {
+        let s = script
+            .replace("${{ needs.route.result }}", "success")
+            .replace("${{ needs.tools-build.result }}", build)
+            .replace("${{ needs.tools-shard.result }}", shard)
+            .replace("${{ needs.bench-package-s03.result }}", s03);
+        assert!(!s.contains("${{"), "{s}");
+        Command::new("bash")
+            .args(["-e", "-c", &s])
+            .env("CLASS", class)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    };
+    assert!(decide("code", "success", "success", "success"));
+    for planted in ["skipped", "cancelled", "failure", ""] {
+        assert!(
+            !decide("code", "success", "success", planted),
+            "{planted:?}"
+        );
+    }
+    assert!(!decide("code", "success", "failure", "success"));
+    assert!(decide("docs", "skipped", "skipped", "skipped"));
+    assert!(!decide("docs", "skipped", "skipped", "success"));
+}
