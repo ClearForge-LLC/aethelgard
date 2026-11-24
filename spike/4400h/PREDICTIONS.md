@@ -110,3 +110,28 @@ Written after part 1's first runs, before any injection run. The source lines we
   - No output changes; `SERVO_OUTPUT_RAW` stays at ground idle.
   - Class: a twin model gap (no GPS). A real flight would have one.
 - **P4.2 In GUIDED_NOGPS** (an extra row, not the WO's command), `SET_ATTITUDE_TARGET` with thrust 0.6 changes `SERVO_OUTPUT_RAW` above ground idle. The baro and IMU do not respond (no dynamics), so the outputs stay where the controller puts them, and the EKF sees no climb.
+
+## Part 5: the motored board (ruled 2026-11-24T15:50Z), before any Sentinel-03 run
+
+The board:
+- `crates/aethelgard-cli/tests/fixtures/sentinel-03.json` at main `ef3b43d9`, with `mcu.foreign_clock` copied from `sentinel-02-own`, since `--foreign` needs a declared clock (`py/derive.py`).
+- Four DShot600 motors on TIM1 CH1–CH4: PA8, PE11, PE13, PE14.
+- An ICM-42688-P and a BMP581; the console on USART1.
+- Unmodified Copter-4.7.2, built by CI's own `container/ardupilot-build.sh boards` in the pinned ArduPilot image.
+
+- **P5.1 The hwdef emits and the ELF builds.** `AET-WO-4410` removed `SenseNotEmitted`.
+- **P5.2 Unarmed, TIM1 is reached in the window.**
+  - ArduPilot sets DShot up at init and sends zero-throttle frames while disarmed, so `PSC`, `ARR`, `CCMRx`, `CCER`, `DIER.UDE`, `DCR` and `BDTR.MOE` are written in the first seconds.
+  - So most of Tviburi's 120 "not reached" TIM rows are reached by a motored board without arming. "Not reached in 5 s" was the board, not the arm. Held moderately.
+  - TIM2 stays unreached (no output on it).
+- **P5.3 No timer DMA moves, armed or not.**
+  - The twin's timer raises no DMA request [R: TVI-WO-1303 P2]. The DShot stream (TIM1_UP through DMAMUX1) is configured and enabled, but NDTR never drops, and no DShot bit is ever clocked.
+  - ArduPilot carries on with its DShot DMA timeout, held loosely. A STATUSTEXT may name it.
+- **P5.4 Arming adds no register.**
+  - Armed against the same frames without the arm, no TIM1 or DMA register is newly written. DShot's register traffic is the same armed or disarmed; only the frame values in memory change.
+  - `SERVO_OUTPUT_RAW` rises to ground idle.
+  - **MOT_PWM_TYPE is already DShot on this board**, from its hwdef's default, so the "set DShot" question is answered by the board: it moves no timer DMA.
+- **P5.5 Arming fails more checks than on Sentinel-02.**
+  - The same four parameters, plus the battery monitor: with `VBAT_SENSE` the hwdef enables `BATT_MONITOR`, the ADC model reads 0 V, and a battery check fails.
+  - `BATT_MONITOR` = 0 passes it as a parameter, a disabled check. Class: twin model gap (no analog front end).
+  - Held loosely.
