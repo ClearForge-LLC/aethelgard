@@ -1040,10 +1040,9 @@ fn radio_judged(
             .filter(|i| i.head() == Some("footprint"))
         {
             let reference = fp
-                .all("property")
-                .find(|p| p.arg(1) == Some("Reference"))
-                .and_then(|p| p.arg(2).map(str::to_owned));
-            if reference.as_deref() == Some(r) {
+                .field("Reference")
+                .map_err(|e| unreadable(e.to_string()))?;
+            if reference == Some(r) {
                 found.push(fp);
             }
         }
@@ -1078,23 +1077,23 @@ fn radio_judged(
             return Err(unreadable(format!("`{r}`'s `at` is not two numbers")));
         };
         // Its UART pads, by the nets KiCad's parity holds to the schematic.
-        let net_of = |pad: &str| {
-            fp.all("pad")
-                .filter(|p| p.arg(1) == Some(pad))
-                .filter_map(|p| {
-                    p.one("net")
-                        .ok()
-                        .flatten()
-                        .and_then(|n| n.arg(1).map(str::to_owned))
-                })
-                .next()
+        // Each pad once, and its one net (the strict reader's `one` refuses
+        // a repeat).
+        let net_of = |pad: &str| -> Result<Option<String>, run::Stop> {
+            let pads: Vec<_> = fp.all("pad").filter(|p| p.arg(1) == Some(pad)).collect();
+            let [p] = pads.as_slice() else {
+                return Err(unreadable(format!("`{r}` has {} pads `{pad}`", pads.len())));
+            };
+            Ok(p.one("net")
+                .map_err(|e| unreadable(e.to_string()))?
+                .and_then(|n| n.arg(1).map(str::to_owned)))
         };
         for (pad, want, line) in [
             (&row.uart.tx_number, &port.rx.net, "U0TXD"),
             (&row.uart.rx_number, &port.tx.net, "U0RXD"),
         ] {
             let label = format!("/{}", aethelgard_eda::pcb::escape(want));
-            let got = net_of(pad);
+            let got = net_of(pad)?;
             if got.as_deref() != Some(label.as_str()) {
                 return Err(stop(
                     "RadioUartMiswired",
