@@ -83,6 +83,11 @@ struct Report {
     /// `eol` or `nrnd` part can be drawn today (FEEDBACK, adversarial A3).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     lifecycle: Vec<String>,
+    /// One line per radio module (`AET-WO-4411`): its firmware not judged,
+    /// its radio not simulated. Absent with none, so no verdict on a board
+    /// without one moves (`INV-08`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    radio: Vec<String>,
     /// `--against`: whether the directory matched the tree; absent without it.
     #[serde(skip_serializing_if = "Option::is_none")]
     against: Option<&'static str>,
@@ -1905,6 +1910,7 @@ pub fn verify(
         topology_sha256,
         files: hashes.clone(),
         lifecycle: topology.lifecycle_banner().unwrap_or_default(),
+        radio: aethelgard_ir::radio::not_judged(&spec),
         against: None,
         elf_sha256: None,
         rise_times: RISE_TIMES,
@@ -4165,6 +4171,7 @@ mod tests {
             topology_sha256: topology_sha256.clone(),
             files: BTreeMap::new(),
             lifecycle: Vec::new(),
+            radio: aethelgard_ir::radio::not_judged(spec),
             against: None,
             elf_sha256: None,
             rise_times: RISE_TIMES,

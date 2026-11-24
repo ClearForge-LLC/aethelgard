@@ -434,6 +434,7 @@ pub enum Kind {
     RadioDecouplingUndeclared,
     RadioPassivePartUnknown,
     RadioBoardLayers,
+    RadioModuleTwice,
 }
 
 impl Kind {
@@ -456,6 +457,7 @@ impl Kind {
             Self::RadioDecouplingUndeclared => "RadioDecouplingUndeclared",
             Self::RadioPassivePartUnknown => "RadioPassivePartUnknown",
             Self::RadioBoardLayers => "RadioBoardLayers",
+            Self::RadioModuleTwice => "RadioModuleTwice",
         }
     }
 }
@@ -609,6 +611,16 @@ fn level(strap: &RadioStrap, internal: Internal, supply: &str) -> Option<bool> {
 /// a connector: the port is declared, a `mavlink` port, one module's only,
 /// and on no connector pin.
 pub fn ports(spec: &Specification) -> Result<(), IrValidationError> {
+    // One module per board: its antenna overhangs the one top-right corner
+    // (ruled D2, HDG-C3 Figure 19 position 3).
+    if let [_, second, ..] = spec.declared_radio_modules() {
+        return Err(refuse(
+            Kind::RadioModuleTwice,
+            &second.reference,
+            "radio_modules[1]",
+            "a second radio module: its antenna overhangs the board's one top-right corner, which holds one",
+        ));
+    }
     let mut ports = BTreeSet::new();
     let connector_nets: BTreeSet<&str> = spec
         .declared_connectors()

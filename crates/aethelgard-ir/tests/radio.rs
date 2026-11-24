@@ -209,3 +209,19 @@ fn a_radio_module_needs_a_four_layer_board() {
     assert_eq!(e.kind(), "RadioBoardLayers");
     assert_eq!(e.path(), Some("board.copper_layers"));
 }
+
+#[test]
+fn one_radio_module_per_board() {
+    let (kind, path) = refused(|v| {
+        let mut second = v["radio_modules"][0].clone();
+        second["reference"] = json!("U31");
+        second["enable"]["resistor"]["reference"] = json!("R95");
+        second["enable"]["capacitor"]["reference"] = json!("C95");
+        second["straps"]["IO2"]["resistor"]["reference"] = json!("R96");
+        second["decoupling"][0]["reference"] = json!("C96");
+        second["decoupling"][1]["reference"] = json!("C97");
+        v["radio_modules"].as_array_mut().unwrap().push(second);
+    });
+    assert_eq!(kind, "RadioModuleTwice");
+    assert_eq!(path.as_deref(), Some("radio_modules[1]"));
+}
