@@ -1511,6 +1511,18 @@ pub enum IrValidationError {
         expected: u32,
         changes: &'static [versions::VersionChange],
     },
+    /// `AET-WO-1610` (4), D6 as ruled: an enum's object left `{}` names no
+    /// variant. Found by the CLI at serde's position in a well-formed file
+    /// (serde itself calls it a syntax error), with `expected` the variants
+    /// serde names for that enum, or `None` when serde names none.
+    #[error(
+        "`{path}` is `{{}}`, which names no variant: name exactly one{}",
+        expected.as_ref().map(|e| format!(", {e}")).unwrap_or_default()
+    )]
+    VariantMissing {
+        path: String,
+        expected: Option<String>,
+    },
     #[error("board.copper_layers is {value}; this engine builds 2 or 4 copper layers")]
     UnsupportedLayerCount { value: u8 },
     #[error("`{path}`: {rule}")]
@@ -2453,6 +2465,7 @@ impl IrValidationError {
     pub fn kind(&self) -> &'static str {
         match self {
             Self::UnsupportedSchemaVersion { .. } => "UnsupportedSchemaVersion",
+            Self::VariantMissing { .. } => "VariantMissing",
             Self::UnsupportedLayerCount { .. } => "UnsupportedLayerCount",
             Self::LayerTable { .. } => "LayerTable",
             Self::LayerRole { .. } => "LayerRole",
@@ -2668,6 +2681,7 @@ impl IrValidationError {
     pub fn id(&self) -> Option<&str> {
         match self {
             Self::UnsupportedSchemaVersion { .. }
+            | Self::VariantMissing { .. }
             | Self::UnsupportedLayerCount { .. }
             | Self::LayerTable { .. }
             | Self::LayerRole { .. }
@@ -2851,6 +2865,7 @@ impl IrValidationError {
             Self::PinDevice(r) => Some(&r.path),
             Self::Offboard(r) => Some(&r.path),
             Self::InvalidIdentifier { path, .. }
+            | Self::VariantMissing { path, .. }
             | Self::LayerTable { path, .. }
             | Self::LayerRole { path, .. }
             | Self::DielectricTable { path, .. }

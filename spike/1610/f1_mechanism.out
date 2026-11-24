@@ -1,0 +1,8 @@
+## (a) mcu.hse = {}: exit 3 InvalidJson: expected value at line 9 column 13
+    line 9 col 13: '    "hse": {},' -> char '}'
+## (b) mcu.hse = {"": null}: exit 2 SchemaViolation: unknown variant ``, expected `crystal` or `external` at line 10 column 8
+    line 10 col 8: '      "": null' -> char '"'
+## (c) mcu.core_supply.mode (a unit enum) = {}: exit 3 InvalidJson: expected value at line 21 column 16
+    line 21 col 16: '      "mode": {},' -> char '}'
+## (c) spi_devices[0].orientation.x (a unit enum) = {}: exit 3 InvalidJson: expected value at line 108 column 15
+    line 108 col 15: '        "x": {},' -> char '}'

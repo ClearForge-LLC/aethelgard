@@ -1,0 +1,59 @@
+specifications: 33, deletions: 10377
+skipped (refused at base): crates/aethelgard-ir/tests/fixtures/d2-drv8833.json
+skipped (refused at base): examples/invalid-zero-domain.json
+
+## refused InvalidJson
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json", "at": "mcu.hse.crystal", "exit": 3, "message": "expected value at line 24 column 13", "leaves_empty": true}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-external-8.json", "at": "mcu.hse.external", "exit": 3, "message": "expected value at line 24 column 13", "leaves_empty": true}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].analog[0].full_scale.milliamps", "exit": 3, "message": "expected value at line 412 column 26", "leaves_empty": true}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].analog[0].transfer.current_output", "exit": 3, "message": "expected value at line 399 column 24", "leaves_empty": true}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.IMODE.tie", "exit": 3, "message": "expected value at line 361 column 19", "leaves_empty": true}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.PMODE.tie", "exit": 3, "message": "expected value at line 358 column 19", "leaves_empty": true}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.VREF.tie", "exit": 3, "message": "expected value at line 364 column 18", "leaves_empty": true}
+{"spec": "examples/sentinel-02-bench-hse8.json", "at": "mcu.hse.external", "exit": 3, "message": "expected value at line 9 column 13", "leaves_empty": true}
+
+## deletions leaving {} (any kind)
+{"spec": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json", "at": "motor_outputs[0].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json", "at": "motor_outputs[1].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json", "at": "motor_outputs[2].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json", "at": "motor_outputs[3].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json", "at": "i2c_devices[2].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json", "at": "mcu.hse.crystal", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json", "at": "spi_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-external-8.json", "at": "i2c_devices[2].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-external-8.json", "at": "mcu.hse.external", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/hse-external-8.json", "at": "spi_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json", "at": "motor_outputs[0].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json", "at": "motor_outputs[1].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json", "at": "motor_outputs[2].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/motors-pwm.json", "at": "motor_outputs[3].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json", "at": "i2c_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json", "at": "spi_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json", "at": "i2c_devices[2].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json", "at": "spi_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "i2c_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[0].esc.none", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[0].esc.none.source", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[1].esc.none", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[1].esc.none.source", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[2].esc.none", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[2].esc.none.source", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[3].esc.none", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "motor_outputs[3].esc.none.source", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-cli/tests/fixtures/sentinel-03.json", "at": "spi_devices[1].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "motor_outputs[0].pwm.idle.level", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "motor_outputs[1].pwm.idle.level", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "motor_outputs[2].pwm.idle.pulse_us", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].analog[0].full_scale.milliamps", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].analog[0].transfer.current_output", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].part_limits.input_pwm_max_hz", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.IMODE.tie", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.PMODE.tie", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].straps.VREF.tie", "exit": 3, "kind": "InvalidJson"}
+{"spec": "crates/aethelgard-ir/tests/fixtures/d1-drv8876.json", "at": "pin_devices[0].supplies.VM", "exit": 2, "kind": "SupplyPinUndeclared"}
+{"spec": "examples/sentinel-01-ext-bmp581.json", "at": "i2c_devices[2].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "examples/sentinel-02-bench-hse8.json", "at": "i2c_devices[0].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "examples/sentinel-02-bench-hse8.json", "at": "mcu.hse.external", "exit": 3, "kind": "InvalidJson"}
+{"spec": "examples/sentinel-02-bench-hse8.json", "at": "spi_devices[0].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "examples/sentinel-02-bench.json", "at": "i2c_devices[0].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
+{"spec": "examples/sentinel-02-bench.json", "at": "spi_devices[0].pin_capacitance.declared", "exit": 2, "kind": "SchemaViolation"}
