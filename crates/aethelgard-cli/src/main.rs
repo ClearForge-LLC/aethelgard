@@ -860,23 +860,41 @@ impl Drop for Scratch {
     }
 }
 
+/// What `check drc --spec` judged on the board beside KiCad's rules, for its
+/// parts ([`drc_parts`]): each count `None` when the part was not judged.
+#[derive(Default)]
+struct DrcJudged {
+    /// Coupled pairs judged on the copper.
+    pairs: Option<usize>,
+    /// The power tree's loop rules judged.
+    loops: Option<usize>,
+    /// Declared IMU seats judged by the read-back (`ImuOrientationDisagrees`).
+    seats: Option<usize>,
+    /// The outline judged against `board.max_outline_um` ([`outline_judged`]).
+    outline: Option<usize>,
+}
+
 /// `check drc`'s parts (`AET-WO-1609`, ruled D3): the coupled pairs, judged
 /// on the board's copper only with `--spec` and `diff_pairs` (each pair), and
 /// the power tree's loop rules only with `--spec` and `power` (each loop rule
 /// judged). Each is decided by the predicate `check_kicad` itself tests:
 /// `Stack::of`'s pairs are the specification's `diff_pairs`.
-fn drc_parts(
-    spec: Option<&Specification>,
-    pairs: Option<usize>,
-    loops: Option<usize>,
-) -> Vec<verdict::Ran> {
+///
+/// `AET-WO-1610` (3), D1-D3 as ruled: the IMU seats, judged with `--spec`
+/// for each SPI device that declares `orientation` (`Stack::of`'s `imus`,
+/// counted by `check_kicad`),
+/// and the outline, judged with `--spec` and `board.max_outline_um`. Each is
+/// off by its key when the specification does not set it, so a board with no
+/// declared orientation or bound says so rather than nothing.
+fn drc_parts(spec: Option<&Specification>, judged: &DrcJudged) -> Vec<verdict::Ran> {
     use verdict::Ran;
     let Some(spec) = spec else {
-        return vec![
-            Ran::off("drc.pairs", "--spec"),
-            Ran::off("drc.power", "--spec"),
-        ];
+        return ["drc.pairs", "drc.power", "drc.orientation", "drc.outline"]
+            .map(|g| Ran::off(g, "--spec"))
+            .into();
     };
+    let n = |c: Option<usize>| c.unwrap_or(0) as u64;
+    let (pairs, loops) = (judged.pairs, judged.loops);
     vec![
         Ran::part(
             "drc.pairs",
@@ -890,7 +908,102 @@ fn drc_parts(
             loops.unwrap_or(0) as u64,
             "power",
         ),
+        // `Stack::of`'s `imus` are exactly the SPI devices that declare an
+        // orientation (`aethelgard_eda::schematic::seats`), so a count of 0
+        // is a specification that declares none (`RUL-16`: the CLI does not
+        // read the specification's device list).
+        Ran::part(
+            "drc.orientation",
+            n(judged.seats) > 0,
+            n(judged.seats),
+            "spi_devices[].orientation",
+        ),
+        Ran::part(
+            "drc.outline",
+            spec.board.max_outline_um.is_some(),
+            n(judged.outline),
+            "board.max_outline_um",
+        ),
     ]
+}
+
+/// `AET-WO-1610` (3), D3 as ruled: a declared `board.max_outline_um` judged
+/// on the board `check drc` reads, not only at `validate` and `emit`. The
+/// outline is the board's one `Edge.Cuts` `gr_rect`, read from the strict
+/// tree alone (no wider reader, so `check drc` gains no refusal but this
+/// one's), and compared as the placer compares its own outline (`aethelgard_eda`
+/// `pcb.rs`, `OutlineUnreachable`): its width against the bound's width and
+/// its height against the bound's height. `Some(1)` when judged and held,
+/// `None` with no bound; a board wider or taller is refused
+/// `OutlineExceedsBound`, and one with no single such rectangle
+/// `BoardUnreadable`.
+fn outline_judged(
+    tree: &aethelgard_eda::strict::Tree,
+    spec: &Specification,
+) -> Result<Option<usize>, run::Stop> {
+    use aethelgard_eda::strict;
+    let Some(bound) = spec.board.max_outline_um else {
+        return Ok(None);
+    };
+    let stop = |kind: &'static str, message: String| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind,
+        id: None,
+        message,
+    };
+    let unreadable = |why: String| {
+        stop(
+            "BoardUnreadable",
+            format!("board.max_outline_um is declared, so the board's outline is judged: {why}"),
+        )
+    };
+    let mut edges = Vec::new();
+    for r in tree.root().all("gr_rect") {
+        let layer = r.one("layer").map_err(|e| unreadable(e.to_string()))?;
+        if layer.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {
+            edges.push(r);
+        }
+    }
+    let [edge] = edges.as_slice() else {
+        return Err(unreadable(format!(
+            "it must be one `Edge.Cuts` `gr_rect`, and the board has {}",
+            edges.len()
+        )));
+    };
+    let corner = |head: &str| {
+        let node = edge
+            .one(head)
+            .map_err(|e| unreadable(e.to_string()))?
+            .ok_or_else(|| unreadable(format!("the outline has no `{head}`")))?;
+        match (strict::number(&node, 1), strict::number(&node, 2)) {
+            (Some(x), Some(y)) => Ok((x, y)),
+            _ => Err(unreadable(format!(
+                "the outline's `{head}` is not two numbers"
+            ))),
+        }
+    };
+    let ((x0, y0), (x1, y1)) = (corner("start")?, corner("end")?);
+    let (w, h) = (x1.abs_diff(x0), y1.abs_diff(y0));
+    let (bw, bh) = (
+        u64::from(bound.width) * 1000,
+        u64::from(bound.height) * 1000,
+    );
+    if w > bw || h > bh {
+        let mm = |nm: u64| format!("{:.3}", nm as f64 / 1e6);
+        return Err(stop(
+            "OutlineExceedsBound",
+            format!(
+                "the board's `Edge.Cuts` outline is {} x {} mm, and board.max_outline_um is {} x {} mm: over by {} x {} mm",
+                mm(w),
+                mm(h),
+                mm(bw),
+                mm(bh),
+                mm(w.saturating_sub(bw)),
+                mm(h.saturating_sub(bh)),
+            ),
+        ));
+    }
+    Ok(Some(1))
 }
 
 /// A generated `simulate`'s part (`AET-WO-1609`, ruled D3): the HSE clock
@@ -970,6 +1083,7 @@ fn check_kicad(
     // KiCad runs (`AET-WO-4100`): its copper layers, planes, thickness and
     // vias, by name, never by the board's own claims (`RUL-03`).
     let mut pairs = None;
+    let mut judged = DrcJudged::default();
     if let (Some(stack), Some(tree)) = (&declared, &board) {
         aethelgard_eda::route::declared(tree, stack).map_err(|d| run::Stop {
             code: EXIT_UNREADABLE,
@@ -977,6 +1091,11 @@ fn check_kicad(
             id: None,
             message: d.message,
         })?;
+        // `declared` judged every declared IMU's seat (`AET-WO-1610` D2).
+        judged.seats = Some(stack.imus.len());
+        if let Some((spec, _)) = &read_spec_value {
+            judged.outline = outline_judged(tree, spec)?;
+        }
         // Declared coupled pairs are judged on the board's copper, read and
         // joined by geometry first (`AET-WO-1308` §1.3): KiCad has no rule
         // for a pair it cannot recognise by name. Extraction's allowlist runs
@@ -1074,11 +1193,9 @@ fn check_kicad(
             .map(|(spec, _)| spec.lifecycle_banner().unwrap_or_default())
             .unwrap_or_default();
         v.specification_sha256 = spec_sha256;
-        v.ran = drc_parts(
-            read_spec_value.as_ref().map(|(spec, _)| spec),
-            pairs.as_ref().map(Vec::len),
-            power.as_ref().map(|p| p.loops.len()),
-        );
+        judged.pairs = pairs.as_ref().map(Vec::len);
+        judged.loops = power.as_ref().map(|p| p.loops.len());
+        v.ran = drc_parts(read_spec_value.as_ref().map(|(spec, _)| spec), &judged);
         v.pairs = pairs;
         v.power = power;
         v.schematic = schematic.map(|s| verdict::InputReport {
@@ -3021,9 +3138,10 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
         Err(why) => Err(Refusal::new(
             ledger::Stale::KIND,
             Some(&first.register),
+            // No ledger to quote, and the register is in `id`: the text holds
+            // nothing the entry supplies (`AET-WO-1610` (5)).
             format!(
-                "`acknowledge_unwitnessed` acknowledges register `{}`, but no witness ledger exists for this specification ({why}): an acknowledgement stands only for the ledger's rows (AET-WO-4230 R1)",
-                first.register
+                "`acknowledge_unwitnessed[0]` acknowledges a register, but no witness ledger exists for this specification ({why}): an acknowledgement stands only for the ledger's rows (AET-WO-4230 R1)"
             ),
         )
         .at(Some("acknowledge_unwitnessed[0].fields"))),
@@ -3057,6 +3175,110 @@ fn read_spec(file: Option<&Path>) -> Result<(Specification, String), (Refusal, u
     parse_spec(&input)
 }
 
+/// `AET-WO-1610` (4), D6 as ruled: serde's syntax error `err` on `input`,
+/// when `input` is one JSON document and serde stopped at the `}` of an empty
+/// object: an enum left `{}`, unit or data alike. The path is the JSON path
+/// of that object, found by [`json_path_at`] at serde's own position; the
+/// variants are the ones serde names when the object is re-read as
+/// `{"": null}` (`unknown variant ``, expected …`), so no list is copied
+/// here. `None` for any other syntax error.
+fn variant_missing(
+    input: &[u8],
+    err: &serde_json::Error,
+) -> Option<aethelgard_ir::IrValidationError> {
+    serde_json::from_slice::<serde::de::IgnoredAny>(input).ok()?;
+    // serde's line and column are 1-based, the column in bytes.
+    let line_start = if err.line() == 1 {
+        0
+    } else {
+        input
+            .iter()
+            .enumerate()
+            .filter(|(_, b)| **b == b'\n')
+            .nth(err.line() - 2)?
+            .0
+            + 1
+    };
+    let at = line_start + err.column().checked_sub(1)?;
+    if input.get(at) != Some(&b'}') {
+        return None;
+    }
+    let path = json_path_at(input, at)?;
+    let named = [&input[..at], b"\"\": null", &input[at..]].concat();
+    let expected = match serde_json::from_slice::<Specification>(&named) {
+        Err(e) => e
+            .to_string()
+            .strip_prefix("unknown variant ``, ")
+            .and_then(|m| m.rsplit_once(" at line "))
+            .map(|(expected, _)| expected.to_owned()),
+        Ok(_) => None,
+    };
+    Some(aethelgard_ir::IrValidationError::VariantMissing { path, expected })
+}
+
+/// The JSON path (`a.b[2].c`) of the empty object whose `}` is at byte `at`
+/// of the well-formed document `text`, or `None` when the innermost
+/// container open at `at` is not an object with no key read yet.
+fn json_path_at(text: &[u8], at: usize) -> Option<String> {
+    enum Frame {
+        Object(Option<String>),
+        Array(usize),
+    }
+    let mut stack: Vec<Frame> = Vec::new();
+    let mut key_next = false;
+    let mut i = 0;
+    while i < at {
+        match text[i] {
+            b'"' => {
+                let mut j = i + 1;
+                while text.get(j)? != &b'"' {
+                    j += if text[j] == b'\\' { 2 } else { 1 };
+                }
+                if key_next && let Some(Frame::Object(key)) = stack.last_mut() {
+                    *key = Some(serde_json::from_slice(&text[i..=j]).ok()?);
+                    key_next = false;
+                }
+                i = j;
+            }
+            b'{' => {
+                stack.push(Frame::Object(None));
+                key_next = true;
+            }
+            b'[' => {
+                stack.push(Frame::Array(0));
+                key_next = false;
+            }
+            b'}' | b']' => {
+                stack.pop();
+                key_next = false;
+            }
+            b',' => match stack.last_mut() {
+                Some(Frame::Array(n)) => *n += 1,
+                Some(Frame::Object(_)) => key_next = true,
+                None => {}
+            },
+            _ => {}
+        }
+        i += 1;
+    }
+    let Some(Frame::Object(None)) = stack.pop() else {
+        return None;
+    };
+    let mut path = String::new();
+    for frame in &stack {
+        match frame {
+            Frame::Object(Some(key)) if path.is_empty() => path.push_str(key),
+            Frame::Object(Some(key)) => {
+                path.push('.');
+                path.push_str(key);
+            }
+            Frame::Array(n) => path.push_str(&format!("[{n}]")),
+            Frame::Object(None) => return None,
+        }
+    }
+    (!path.is_empty()).then_some(path)
+}
+
 /// Parses and validates one `Specification` from bytes already read under the
 /// cap, as `read_spec` does.
 fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
@@ -3078,9 +3300,21 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
         ));
     }
     // Well-formed JSON of the wrong shape is an invalid specification;
-    // anything that is not one JSON document is unreadable input.
+    // anything that is not one JSON document is unreadable input. serde calls
+    // an enum's object left `{}` a syntax error, though the file is one JSON
+    // document: it is refused by its own kind and path (`AET-WO-1610` (4)).
     let spec: Specification = serde_json::from_slice(input).map_err(|err| {
-        if err.classify() == Category::Data {
+        if let Some(e) = (err.classify() == Category::Syntax)
+            .then(|| variant_missing(input, &err))
+            .flatten()
+        {
+            (
+                Refusal::new(e.kind(), e.id(), e.to_string()).at(e.path()),
+                EXIT_INVALID_SPEC,
+            )
+        } else if err.classify() == Category::Data
+            || serde_json::from_slice::<serde::de::IgnoredAny>(input).is_ok()
+        {
             (
                 Refusal::new("SchemaViolation", None, err.to_string()),
                 EXIT_INVALID_SPEC,
@@ -3479,34 +3713,72 @@ mod tests {
     #[test]
     fn drc_parts_are_judged_or_off_by_their_key() {
         use verdict::Ran;
+        let j = |pairs, loops| DrcJudged {
+            pairs,
+            loops,
+            ..DrcJudged::default()
+        };
         assert_eq!(
-            drc_parts(None, None, None),
+            drc_parts(None, &j(None, None)),
             [
                 Ran::off("drc.pairs", "--spec"),
-                Ran::off("drc.power", "--spec")
+                Ran::off("drc.power", "--spec"),
+                Ran::off("drc.orientation", "--spec"),
+                Ran::off("drc.outline", "--spec"),
             ]
         );
         let paired = fixture("pair-standin.json", |_| ());
         assert_eq!(
-            drc_parts(Some(&paired), Some(1), None),
+            drc_parts(Some(&paired), &j(Some(1), None))[..2],
             [Ran::judged("drc.pairs", 1), Ran::off("drc.power", "power")]
         );
         let unpaired = fixture("pair-standin.json", |v| {
             v["diff_pairs"] = serde_json::json!([])
         });
         assert_eq!(
-            drc_parts(Some(&unpaired), None, None)[0],
+            drc_parts(Some(&unpaired), &j(None, None))[0],
             Ran::off("drc.pairs", "diff_pairs")
         );
         let powered = fixture("sentinel-03.json", |_| ());
         assert_eq!(
-            drc_parts(Some(&powered), None, Some(0))[1],
+            drc_parts(Some(&powered), &j(None, Some(0)))[1],
             Ran::judged("drc.power", 0),
             "a power tree with no loop rule judges 0, and says so"
         );
         assert_eq!(
-            drc_parts(Some(&powered), None, Some(3))[1],
+            drc_parts(Some(&powered), &j(None, Some(3)))[1],
             Ran::judged("drc.power", 3)
+        );
+    }
+
+    /// `AET-WO-1610` (3), D1-D3 as ruled: the IMU seats and the outline are
+    /// parts of `check drc`, each judged when the specification sets its key
+    /// and `off` by that key when it does not, never omitted.
+    #[test]
+    fn the_seat_and_outline_parts_are_judged_or_off_by_their_key() {
+        use verdict::Ran;
+        let judged = |seats, outline| DrcJudged {
+            seats: Some(seats),
+            outline,
+            ..DrcJudged::default()
+        };
+        // Sentinel-02-own declares U5's orientation and no bound.
+        let own = fixture("sentinel-02-own.json", |_| ());
+        assert_eq!(
+            drc_parts(Some(&own), &judged(1, None))[2..],
+            [
+                Ran::judged("drc.orientation", 1),
+                Ran::off("drc.outline", "board.max_outline_um")
+            ]
+        );
+        // Sentinel-03 declares a bound and no orientation.
+        let bounded = fixture("sentinel-03.json", |_| ());
+        assert_eq!(
+            drc_parts(Some(&bounded), &judged(0, Some(1)))[2..],
+            [
+                Ran::off("drc.orientation", "spi_devices[].orientation"),
+                Ran::judged("drc.outline", 1)
+            ]
         );
     }
 

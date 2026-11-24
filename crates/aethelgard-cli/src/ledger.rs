@@ -2549,15 +2549,27 @@ pub fn missing_entries(ledger: &Ledger, spec: &Specification) -> Vec<Unwitnessed
 }
 
 /// An acknowledgement that names what the ledger lacks.
+///
+/// `AET-WO-1610` (5), D7 as ruled: the message is built from the ledger's
+/// parsed values and indices, never from text the specification supplies,
+/// so a planted field string cannot reach it. The stale fields are named by
+/// their index in the entry's `fields`; the message ends with the ledger's
+/// own fields for that register and class, quoted from its rows.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Stale {
     /// Its index in `acknowledge_unwitnessed`.
     pub index: usize,
+    /// The entry's register, shape-checked by `validate` (the refusal's
+    /// `id`); never in the message.
     pub register: String,
     pub class: &'static str,
-    /// Each field it names that the ledger has no row of for that register
-    /// and class: all of them when the ledger lacks the register.
-    pub fields: Vec<String>,
+    /// The index in the entry's `fields` of each field the ledger has no
+    /// row of for that register and class: all of them when the ledger
+    /// lacks the register.
+    pub at: Vec<usize>,
+    /// The ledger's rows for that register and class, `(register, field)`
+    /// as the ledger holds them, in its order; empty when it has none.
+    pub held: Vec<(String, String)>,
 }
 
 impl Stale {
@@ -2569,15 +2581,27 @@ impl Stale {
     }
 
     pub fn message(&self) -> String {
+        let at: Vec<String> = self.at.iter().map(|i| format!("`fields[{i}]`")).collect();
+        let held = match self.held.first() {
+            None => format!(
+                "the ledger has no field of this register as `{}`",
+                self.class
+            ),
+            Some((register, _)) => format!(
+                "the ledger's fields of `{register}` as `{}`: {}",
+                self.class,
+                self.held
+                    .iter()
+                    .map(|(_, f)| format!("`{f}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+        };
         format!(
-            "`acknowledge_unwitnessed` acknowledges {} of register `{}` as `{}`, which the witness ledger of this specification's firmware has no row of: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1)",
-            self.fields
-                .iter()
-                .map(|f| format!("`{f}`"))
-                .collect::<Vec<_>>()
-                .join(", "),
-            self.register,
-            self.class
+            "`{}` names {} that the witness ledger of this specification's firmware has no row of for this entry's register as `{}`: an acknowledgement names exactly the ledger's fields (AET-WO-4230 R1); {held}",
+            self.path(),
+            at.join(", "),
+            self.class,
         )
     }
 }
@@ -2591,23 +2615,25 @@ pub fn stale(ledger: &Ledger, spec: &Specification) -> Option<Stale> {
         .enumerate()
         .find_map(|(index, a)| {
             let class = a.class_kind()?;
-            let fields: Vec<String> = a
+            let held: Vec<(String, String)> = ledger
+                .rows
+                .iter()
+                .filter(|r| r.register == a.register && r.class.unwitnessed() == Some(class))
+                .map(|r| (r.register.clone(), r.field.clone()))
+                .collect();
+            let at: Vec<usize> = a
                 .fields
                 .iter()
-                .filter(|f| {
-                    !ledger.rows.iter().any(|r| {
-                        r.register == a.register
-                            && r.class.unwitnessed() == Some(class)
-                            && r.field == **f
-                    })
-                })
-                .cloned()
+                .enumerate()
+                .filter(|(_, f)| !held.iter().any(|(_, h)| h == *f))
+                .map(|(i, _)| i)
                 .collect();
-            (!fields.is_empty()).then(|| Stale {
+            (!at.is_empty()).then(|| Stale {
                 index,
                 register: a.register.clone(),
                 class: class.name(),
-                fields,
+                at,
+                held,
             })
         })
 }

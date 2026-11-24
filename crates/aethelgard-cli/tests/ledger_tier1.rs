@@ -480,6 +480,7 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
             .unwrap()
     };
     // A field the register does not have in the ledger.
+    let mut held = 0;
     let found = stale(&|s| {
         let i = at(s, "GPIOA.MODER", "same-source");
         s.acknowledge_unwitnessed[i]
@@ -489,23 +490,58 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
     .unwrap();
     assert_eq!(found.register, "GPIOA.MODER");
     assert_eq!(found.class, "same-source");
-    assert_eq!(found.fields, ["MODER3", "MODER4"]);
+    // `AET-WO-1610` (5): the stale fields by index (after the entry's own),
+    // and the ledger's rows for that register and class, from the ledger.
+    let s = reference_spec();
+    let n = s.acknowledge_unwitnessed[at(&s, "GPIOA.MODER", "same-source")]
+        .fields
+        .len();
+    assert_eq!(found.at, [n, n + 1]);
+    for (register, field) in &found.held {
+        assert_eq!(register, "GPIOA.MODER");
+        assert!(
+            l.rows
+                .iter()
+                .any(|r| r.register == *register && r.field == *field)
+        );
+        held += 1;
+    }
+    assert!(
+        held >= n,
+        "every field the entry rightly names is the ledger's"
+    );
     assert_eq!(
         found.path(),
         format!("acknowledge_unwitnessed[{}].fields", found.index)
     );
+    let m = found.message();
     assert!(
-        found
-            .message()
-            .contains("`MODER3`, `MODER4` of register `GPIOA.MODER`")
+        m.contains(&format!("names `fields[{n}]`, `fields[{}]` that", n + 1)),
+        "{m}"
     );
+    assert!(
+        m.ends_with(
+            &found
+                .held
+                .iter()
+                .map(|(_, f)| format!("`{f}`"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        ),
+        "{m}"
+    );
+    assert!(!m.contains("MODER3") && !m.contains("MODER4"), "{m}");
     // A field the ledger has, under another class.
     let found = stale(&|s| {
         let i = at(s, "I2C1.CR2", "same-source");
         s.acknowledge_unwitnessed[i].fields.push("SADD".into());
     })
     .unwrap();
-    assert_eq!(found.fields, ["SADD"]);
+    assert_eq!(found.at.len(), 1);
+    assert!(
+        found.held.iter().all(|(_, f)| f != "SADD"),
+        "SADD is observed"
+    );
     // A register the ledger lacks: every field.
     let found = stale(&|s| {
         s.acknowledge_unwitnessed.push(UnwitnessedAcknowledgement {
@@ -517,8 +553,17 @@ fn a_new_field_is_unacknowledged_and_an_entry_beyond_the_ledger_is_stale() {
     })
     .unwrap();
     assert_eq!(
-        (found.register.as_str(), found.fields.len()),
-        ("SPI2.CFG1", 2)
+        (
+            found.register.as_str(),
+            found.at.as_slice(),
+            found.held.len()
+        ),
+        ("SPI2.CFG1", &[0, 1][..], 0)
+    );
+    assert!(
+        found
+            .message()
+            .ends_with("; the ledger has no field of this register as `ignored-by-model`")
     );
     assert_eq!(found.index, 31);
 }

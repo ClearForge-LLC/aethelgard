@@ -1653,6 +1653,15 @@ fn a_turned_keepout_is_where_kicad_draws_it() {
         let drc = drc_parity(&board, &sch, &spec_path);
         assert_eq!(drc["verdict"], "pass", "{theta}: {drc}");
         assert_eq!(kinds(&drc), Vec::<&str>::new(), "{theta}: {drc}");
+        // `AET-WO-1610` D2: the line says U5's seat was judged, and the
+        // outline is off by its key (no bound declared).
+        let ran = drc["ran"].as_array().unwrap();
+        for want in [
+            serde_json::json!({"gate": "drc.orientation", "judged": 1}),
+            serde_json::json!({"gate": "drc.outline", "off": "board.max_outline_um"}),
+        ] {
+            assert!(ran.contains(&want), "{theta}: {want} in {drc}");
+        }
     }
 }
 
