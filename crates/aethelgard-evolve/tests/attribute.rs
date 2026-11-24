@@ -2584,12 +2584,16 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
     for (line, want) in [
         ("[NOISY] i2c1.u5: read 0x01 -> 0x51", &[("Read", 0x51)][..]),
         ("[NOISY] i2c1.u5: read 0x02 -> 0x50", &[("Write", 0x02)]),
-        ("[NOISY] i2c1.u5: write 0x02 <- (none)", &[("Write", 0x02)]),
+        // A pointer alone, where the step reads: no bytes read (`AET-WO-3309` (4)).
+        (
+            "[NOISY] i2c1.u5: write 0x02 <- (none)",
+            &[("Write", 0x02), ("Read.bytes", 0)],
+        ),
         // A write of 0x01 then 0x50, shown under the step's one-byte mask:
         // two bytes where the step writes one.
         (
             "[NOISY] i2c1.u5: write 0x01 <- 0x50",
-            &[("Write", 0x50), ("Write.bytes", 2)],
+            &[("Write", 0x50), ("Write.bytes", 2), ("Read.bytes", 0)],
         ),
         // Adversarial 2: a read too wide to judge keeps its pointer; its
         // nine bytes are wrong by their count.
@@ -2601,7 +2605,7 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
         // by their count (it was no line before `AET-WO-3309` (1)).
         (
             "[NOISY] i2c1.u5: write 0x02 <- 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
-            &[("Write.bytes", 9)],
+            &[("Write.bytes", 9), ("Read.bytes", 0)],
         ),
     ] {
         let want: Vec<(String, Option<u64>)> = want
@@ -2936,5 +2940,188 @@ fn a_reached_count_past_its_records_is_unexplained() {
         a.unexplained,
         [format!("event {at}"), "i2c_record_invalid".to_owned()],
         "{a:?}"
+    );
+}
+
+/// The wrong fields of witness `i`: each name, and what it observed.
+fn wrong_at(r: &[Record], i: usize) -> Vec<(String, Option<u64>)> {
+    fields_of(r, i)
+        .into_iter()
+        .filter(|f| f.4)
+        .map(|f| (f.0, f.3))
+        .collect()
+}
+
+/// The index of U5's witness of `step` in a [`bme_bmp`] run.
+fn u5_step(r: &[Record], step: &str) -> usize {
+    find(
+        r,
+        |x| matches!(x, Record::I2cWitness { reference, step: s, .. } if reference == "U5" && s == step),
+    )
+}
+
+/// `AET-WO-3309` (1): a witness's `Write` and `Read` compare their byte
+/// counts as well as their values, in both forms. The acceptance: a zero
+/// byte prepended to the BMP581's configure write packs to the solved value,
+/// and is wrong by its count.
+#[test]
+fn a_witness_compares_counts_as_well_as_values() {
+    let unwitnessed = |r: &mut Vec<Record>| {
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 1)]),
+        );
+    };
+    let id = "[NOISY] i2c1.u5: read 0x01 -> 0x50";
+    let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
+    let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
+    let r = bme_bmp(
+        unwitnessed,
+        [
+            &[id],
+            &["[NOISY] i2c1.u5: write 0x00 <- 0x36 0x40 0x81"],
+            &[data],
+        ],
+    );
+    let configure = u5_step(&r, "configure");
+    assert_eq!(
+        wrong_at(&r, configure),
+        [("i2c1.u5.Write.bytes".to_owned(), Some(4))],
+        "the same value, one byte more"
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::S1, "{a:?}");
+    assert!(
+        a.evidence.iter().any(|e| e.index as usize == configure),
+        "{a:?}"
+    );
+    // A byte appended, and a read of the right value at another length.
+    let r = bme_bmp(
+        unwitnessed,
+        [
+            &[id],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81 0x00"],
+            &[data],
+        ],
+    );
+    assert_eq!(
+        wrong_at(&r, u5_step(&r, "configure")),
+        [
+            ("i2c1.u5.Write".to_owned(), Some(0x40_8100)),
+            ("i2c1.u5.Write.bytes".to_owned(), Some(4))
+        ]
+    );
+    let r = bme_bmp(
+        unwitnessed,
+        [
+            &["[NOISY] i2c1.u5: read 0x01 -> 0x00 0x50"],
+            &[cfg],
+            &[data],
+        ],
+    );
+    assert_eq!(
+        wrong_at(&r, u5_step(&r, "identity")),
+        [("i2c1.u5.Read.bytes".to_owned(), Some(2))],
+        "the right value, one byte longer"
+    );
+    // The `Write`/`Read` form: a pointer widened by a zero byte.
+    let r = two_bme(&[], |r| {
+        observe(r, "U5", &["Write 0 D0", "Read 60"]);
+        unwitnessed(r);
+    });
+    assert_eq!(
+        wrong_at(&r, witness_index(&r, "U5")),
+        [("i2c1.u5.Write.bytes".to_owned(), Some(2))]
+    );
+    assert_eq!(attributed(&r).rule, Rule::S1);
+    // The right counts: nothing is wrong.
+    let r = bme_bmp(unwitnessed, [&[id], &[cfg], &[data]]);
+    assert!(wrong_at(&r, u5_step(&r, "configure")).is_empty());
+}
+
+/// `AET-WO-3309` (2): the whole-log readers read the BMP581's form, so a
+/// BMP581 log can hold a surplus, and a BMP581's step can be told sent
+/// elsewhere. The acceptance: a configure write sent twice is a surplus.
+#[test]
+fn a_bmp581_log_is_read_whole_for_a_surplus_and_a_step_sent_elsewhere() {
+    let unwitnessed = |r: &mut Vec<Record>| {
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 1)]),
+        );
+    };
+    let id = "[NOISY] i2c1.u5: read 0x01 -> 0x50";
+    let cfg = "[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81";
+    let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
+    let r = bme_bmp(unwitnessed, [&[id], &[cfg, cfg], &[data]]);
+    let configure = u5_step(&r, "configure");
+    assert_eq!(
+        wrong_at(&r, configure),
+        [("i2c1.u5.transactions".to_owned(), Some(4))]
+    );
+    let a = attributed(&r);
+    assert_eq!(a.rule, Rule::S1, "{a:?}");
+    assert!(
+        a.evidence.iter().any(|e| e.index as usize == configure),
+        "{a:?}"
+    );
+    // U5's configure write sent to U2 (a BME280 at 0x76), which logs it: U5's
+    // own log lacks it, so U2's surplus names U5's step's address.
+    let r = bme_bmp(
+        |r| {
+            observe(r, "U2", &["Write D0", "Read 60", "Write 36 40 81"]);
+            replace(
+                r,
+                is_verdict,
+                verdict(&[("i2c_transaction_unwitnessed", 2)]),
+            );
+        },
+        [&[id], &[], &[data]],
+    );
+    let named: Vec<String> = wrong_at(&r, witness_index(&r, "U2"))
+        .into_iter()
+        .map(|f| f.0)
+        .collect();
+    assert_eq!(named, ["i2c1.u2.transactions", "i2c1.u5.configure.address"]);
+}
+
+/// `AET-WO-3309` (4), 3307 Adv-3: a step's `Write` and `Read` come from one
+/// transaction, never stitched from two. Here the right write and the right
+/// value are in different transactions: the step's own read nothing.
+#[test]
+fn a_step_s_write_and_read_are_one_transaction_never_stitched() {
+    let unwitnessed = |r: &mut Vec<Record>| {
+        replace(
+            r,
+            is_verdict,
+            verdict(&[("i2c_transaction_unwitnessed", 1)]),
+        );
+    };
+    let r = two_bme(&[], |r| {
+        observe(r, "U5", &["Write D0", "Write D1", "Read 60"]);
+        unwitnessed(r);
+    });
+    assert_eq!(
+        wrong_at(&r, witness_index(&r, "U5")),
+        [("i2c1.u5.Read.bytes".to_owned(), Some(0))]
+    );
+    assert_eq!(attributed(&r).rule, Rule::S1);
+    let data = "[NOISY] i2c1.u5: read 0x1D -> 0x00 0x00 0x19 0x40 0xF3 0x62";
+    let r = bme_bmp(
+        unwitnessed,
+        [
+            &[
+                "[NOISY] i2c1.u5: write 0x01 <- (none)",
+                "[NOISY] i2c1.u5: read 0x02 -> 0x50",
+            ],
+            &["[NOISY] i2c1.u5: write 0x36 <- 0x40 0x81"],
+            &[data],
+        ],
+    );
+    assert_eq!(
+        wrong_at(&r, u5_step(&r, "identity")),
+        [("i2c1.u5.Read.bytes".to_owned(), Some(0))]
     );
 }

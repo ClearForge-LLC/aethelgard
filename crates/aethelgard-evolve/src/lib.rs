@@ -979,12 +979,21 @@ impl<'a> Run<'a> {
         };
         let claimed = status.as_deref() == Some("ok");
         let silent = claimed && observed.is_empty();
-        let got = first(observed);
+        let (got, none) = lines::transactions(observed, device, form);
+        let got = got.into_iter().next();
         let written = got
             .as_ref()
             .map(|t| t.written.as_slice())
             .filter(|w| !w.is_empty());
-        let returned = got.as_ref().and_then(|t| t.read.as_deref());
+        // A step's read is its transaction's, never another's (`AET-WO-3309`
+        // (4)). One that read nothing read no bytes, when the record claims
+        // the read completed and every line is the model's transaction: a
+        // timeout cuts a transfer short, and a line no reader knows may be
+        // the read.
+        let returned = got.as_ref().and_then(|t| match &t.read {
+            Some(r) => Some(r.as_slice()),
+            None => (claimed && none.is_empty()).then_some(&[][..]),
+        });
         let reg = written.and_then(packed).map(|(v, _)| v);
         let read = returned.and_then(packed).map(|(v, _)| v);
         let width_mask = |n: usize| {
