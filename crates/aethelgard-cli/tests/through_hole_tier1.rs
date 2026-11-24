@@ -255,6 +255,7 @@ fn part(reference: &str, pads: Vec<Pad>) -> Part {
         pads,
         courtyard: Vec::new(),
         keepouts: Vec::new(),
+        inner_keepouts: Vec::new(),
     }
 }
 

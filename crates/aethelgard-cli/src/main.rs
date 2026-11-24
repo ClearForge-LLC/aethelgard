@@ -931,13 +931,16 @@ fn drc_parts(spec: Option<&Specification>, judged: &DrcJudged) -> Vec<verdict::R
     .collect()
 }
 
+/// An outline's `(start, end)` corners, in nm.
+type Corners = ((i64, i64), (i64, i64));
+
 /// The board's outline: its one `Edge.Cuts` `gr_rect`, as `(start, end)`
 /// in nm, read from the strict tree alone; anything else on `Edge.Cuts` is
 /// `unreadable`'s refusal ([`outline_judged`], [`radio_judged`]).
 fn edge_rect(
     tree: &aethelgard_eda::strict::Tree,
     unreadable: &dyn Fn(String) -> run::Stop,
-) -> Result<((i64, i64), (i64, i64)), run::Stop> {
+) -> Result<Corners, run::Stop> {
     use aethelgard_eda::strict;
     // Every top-level graphic on `Edge.Cuts`, by `layer` or `layers` (the
     // strict reader takes either), of any shape: one `gr_rect` and nothing

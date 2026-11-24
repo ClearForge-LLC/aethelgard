@@ -5203,6 +5203,7 @@ mod tests {
                 pads: false,
                 fill: false,
             }],
+            inner_keepouts: Vec::new(),
         });
         let e = route(&board).unwrap_err();
         assert_eq!(e.net, "/S", "{e:?}");

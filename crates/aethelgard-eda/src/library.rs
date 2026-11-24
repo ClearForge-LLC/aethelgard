@@ -237,7 +237,7 @@ const PINS: [(&str, &str); 60] = [
     ),
     (
         "aethelgard/README.md",
-        "3d836e2690d1ba863bc947d85cb12478d5edfaa172cb8f4a17f517844046b6fa",
+        "11710f4d4ea07e9eee683d47e495df45684389a24f86d418ee6db6c114bb9d88",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",

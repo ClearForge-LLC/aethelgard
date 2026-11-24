@@ -4171,7 +4171,7 @@ mod tests {
             topology_sha256: topology_sha256.clone(),
             files: BTreeMap::new(),
             lifecycle: Vec::new(),
-            radio: aethelgard_ir::radio::not_judged(spec),
+            radio: aethelgard_ir::radio::not_judged(&spec),
             against: None,
             elf_sha256: None,
             rise_times: RISE_TIMES,
