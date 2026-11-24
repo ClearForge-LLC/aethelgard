@@ -6,19 +6,25 @@ this directory, except where a line says it was read.
 **The short answers:**
 - **The arm does not fit the 5 s window.**
   - Sentinel-03's unmodified ArduPilot arms at 8.602 s virtual and witnesses it in its own heartbeat at 8.754 s.
-  - The binding step is EKF3's tilt alignment (8.564 s). Nothing an input sends moves it.
+  - The binding step is EKF3's tilt alignment (8.564 s). Nothing these plans sent moved it: in the proposed delivery
+    mode, alignment comes at 8.555 s, ARM is accepted at 8.608 s and the armed heartbeat at 8.753 s (`early-fill`).
   - There is no force, no skipped check and no defaults file. The rest stimuli are derived from U5's declared
     orientation and the parts table, each cited.
 - **The receive request lines.**
   - RM0433 Rev 9 Table 124 gives one request per USART. `4400h`'s "Table 121" was a mis-cite.
-  - Emitted on every board, they move one committed verdict, the bench package's: 16 hashes, no outcome (§2.3).
+  - Emitted on every board, they move one committed verdict, the bench package's: 16 hashes, and no outcome (§2.3).
   - Emitted on foreign boards only, they move none.
-- **IDLE.** Padding is not a sound stand-in:
-  - Delivered at one instant, a padded frame over 64 B kills the receive path for the rest of the run.
-  - Hooks that raise IDLE are not enough either. Renode's DMA does not end a stream with TCIF when software clears
-    `EN`, which RM0433 §15.3.16 says it must.
-  - **Proposed: bytes spaced a character time apart, padding declared in the input file as fill, and the gap named
-    in the verdict.** The overlay becomes a row.
+- **IDLE.** Padding at one instant is not a sound stand-in: a padded frame over 64 B delivered at one instant kills
+  the receive path for the rest of the run.
+  - **Hooks that raise IDLE are not enough.** They meet two more model gaps:
+    - Renode's DMA does not end a stream with TCIF when software clears `EN`, which RM0433 §15.3.16 says it must;
+    - it keeps its write offset across the re-arm, so the next frame lands mid-buffer (measured).
+  - **Proposed: bytes spaced a character time apart, fill declared in the input file, and the gap named in the
+    verdict.**
+    - Measured on the request plan (`idle-fill`): every delivered frame was answered at the padded latencies, the
+      98 B frame included.
+    - Measured on the window plan (`early-fill`): it arms.
+  - The models become a row.
 - **The input and the trace:** proposed in §6.
 
 ## Inputs
@@ -89,16 +95,22 @@ LPUART1 has no DMAMUX1 input. `4400h`'s patch said "Table 121"; in Rev 9 it is T
 `sh/req.sh` ran on main's build and on the patch's, in the tools image (`out/req/`; every differing field in
 `out/req/verify-diff.tsv`).
 
-- **Platforms** (`out/req/*/repl.tsv`): nine of the eleven committed specifications' emitted platforms move.
-  - The moved ones: every specification with a serial port, `boards/sentinel-01*` included.
-  - The two that do not: `sentinel-02-bench`, `sentinel-02-bench-hse8`. `invalid-zero-domain` emits nothing.
+- **Platforms** (`out/req/*/repl.tsv`): the six examples and the five `sentinel-0*` fixtures (5 of the 32 fixtures;
+  the others were not emitted).
+  - **Seven move:**
+    - `sentinel-01-ext-bmp581`, `sentinel-01-minimal`, `sentinel-01` (the two `boards/` goldens' specs);
+    - fixtures `sentinel-01-bench`, `sentinel-02-own`, `sentinel-02-shaped` and `sentinel-03`;
+    - also the derived Sentinel-03.
+  - **Two keep their hash:** `sentinel-02-bench`, `sentinel-02-bench-hse8`.
+  - **Two emit nothing on either build:** `invalid-zero-domain`, and `sentinel-02-own-base`, a schema-1 base that
+    `generate` refuses.
 - **Foreign verdicts** (`simulate --foreign 5000ms`, `sentinel-02-own` and Sentinel-03): both pass on both builds.
   - They differ only in `/input/path`, `/input/sha256` (the platform) and the run's own memory reading.
   - Every judge, device step, register and finding is identical.
 - **The bench package** (`ci.yml`'s own `verify … --against-fab fab/sentinel-01-bench/package`):
-  - On Furnace, main's own run already differs from the committed package, in `MANIFEST.json` alone. Its verdict line
-    is host-dependent; the ELF and every other file are identical. So the comparison is main against the patch,
-    both on Furnace.
+  - On Furnace, main's own run already differs from the committed package, in `MANIFEST.json` alone, so in its
+    verdict line. Which field differs from CI's was not read; the ELF and every other file are identical. So the
+    comparison is main against the patch, both on Furnace.
   - **The patch moves 16 fields, every one a hash:**
     - the `board/sentinel-01-bench.repl` file entry;
     - the `input_sha256` of the 12 `prove` gates and the `build` gate, which hash the board crate's tree, `.repl`
@@ -110,6 +122,8 @@ LPUART1 has no DMAMUX1 input. `4400h`'s patch said "Table 121"; in Rev 9 it is T
     job would fail until the package is derived again, and `fab/` is outside this fence.
 - **So:** on foreign boards only, no committed verdict moves. On every board, the bench package's verdict moves
   (hashes only), and so do the two `boards/` goldens.
+- **Not run against the patch:** the workspace's tests that pin emitted platform text (the regeneration test, the
+  twin's platform tests). They are the build's, in its fence.
 
 ## 3. IDLE
 
@@ -122,8 +136,9 @@ Eleven requests from 3.0 s, 200 ms apart, each answered by name: ten `PARAM_REQU
 | run | frames | result |
 |---|---|---|
 | `idle-pad` | padded with zeros to a multiple of 64 B, every byte at one instant (`4400h`'s stand-in) | the first five answered in 55–66 ms. **At the 98 B frame (128 B padded) the receive path dies:** `dma1: Attempting to create DMA request with no data to send` at 4.000 s, and nothing after it is answered |
-| `idle-raw` | unpadded, one character time apart (115200 Bd 8N1: 86.8 µs, rounded up to the 100 µs quantum), no IDLE | answered in bursts, as each 64 B fills: 214–459 ms late. The 98 B frame is answered. **The last three are never answered:** their 89 B sit under 64 B of a new buffer (the stuck tail) |
+| `idle-raw` | unpadded, one character time apart (115200 Bd 8N1: 86.8 µs, rounded up to the 100 µs quantum), no IDLE | answered in bursts, as each 64 B fills: 214–459 ms late. The 98 B frame is answered. **The last three are never answered:** of their 87 B, 26 went out at the 320 B boundary, and 61 sit in a buffer 3 bytes short of 64 (the stuck tail) |
 | `idle-hook` | as `idle-raw`, plus hooks that raise IDLE a character time after a frame's last byte (`sh/replay.sh` `IDLE=1`) | IDLE fires 11 times. The first frame is answered in 56.5 ms, as padded; the second 864 ms late; **none after** |
+| **`idle-fill`** | **padded with fill to a multiple of 64 B and spaced a character time apart: the mode proposed** | **every delivered frame answered at the padded latencies (55–69 ms), the 98 B frame (128 B filled) in 25 ms; the receive path stays alive.** Two requests got no reply: `ARMING_CHECK`, an unknown name, which drew `PARAM_ERROR` in `idle-raw` but nothing here; and the one at 5.0 s, during `Initialising ArduPilot`, as in `idle-pad`. No DMA error after boot |
 
 ### 3.2 Why
 
@@ -147,16 +162,21 @@ Eleven requests from 3.0 s, 200 ms apart, each answered by name: ten `PARAM_REQU
      - RM0433 Rev 9 §15.3.16, p. 654: "The transfer complete interrupt flag (TCIF …) is set in order to indicate the
        end of transfer … The DMA_SxNDTR register contains the number of remaining data items".
      - So after `rx_irq_cb` clears `EN`, ArduPilot's transfer-complete handler never runs. Its 1 kHz fallback drains
-       instead, 0.2–1.0 ms later.
-     - Every frame's bytes were drained with the right count: `NDTR` 0x25, 0x23, 0x25, …, and 64 + 34 for the 98 B
-       frame.
-     - Yet only the first was answered promptly. Why the fallback's bytes stall in ArduPilot was not found. Silicon
-       would not take that path: its stream ends with TCIF.
-- **Is the padding sound?** For a frame of at most 64 B sent alone, delivery is right and prompt. Otherwise:
+       instead, 0.15–0.77 ms later. The counts are right: `NDTR` 0x25, 0x23, 0x25, …, and 64 + 34 for the 98 B frame.
+  3. **Renode's DMA keeps its write offset across a software stop.**
+     - `dataOffset` is zeroed only by `Reset()` and at `NDTR` 0 (`STM32DMA.cs`:158–161, :256–262). Writing `M0AR`,
+        `NDTR` or `EN` leaves it.
+     - So after frame 1 (27 B) and the re-arm, frame 2 was written at the new buffer's byte 27 (0x3800195B), not 0.
+       ArduPilot read that buffer's first 29 bytes, which are zeros (`idle-hook-mem`, the bounce buffers dumped at
+       3.1 s and 3.3 s: `out/inj/idle-hook-mem/bounce-buffers.txt`).
+     - The offset keeps growing. Frames after it would be written past the 64 B buffer, into memory ArduPilot holds
+       other data in (0x38001980 onward).
+     - That is the stall: it is not ArduPilot's. On silicon, a stopped stream restarts at `M0AR`.
+- **Is the padding sound?** Spaced (`idle-fill`), delivery is right and prompt for any length. At one instant, it is
+  right only for a frame of at most 64 B sent alone. In both cases:
   - the zero bytes are input silicon would not see (ArduPilot's parser skips them; `BAD_DATA` is unchanged at 348,
     all of it ArduPilot's own console text);
-  - ArduPilot's IDLE path never runs;
-  - and delivered at one instant, it fails as above.
+  - ArduPilot's IDLE path never runs.
 
   **The 64 is ArduPilot's buffer size, a property of the firmware under test. If the judge chose it, the judge would
   be reading the artifact (`INV-07`).**
@@ -166,8 +186,8 @@ Eleven requests from 3.0 s, 200 ms apart, each answered by name: ten `PARAM_REQU
 | overlay | measured | cost |
 |---|---|---|
 | hooks (USART only) | wall 13.80 s, peak 1,077,472 KiB, against `idle-pad`'s 14.20 s and 1,184,956 KiB | no cost in time. Not sound alone (§3.2). Displaces USART1's access-log writes |
-| hooks (USART and DMA) | not built | also a `dma1` hook: TCIF into `LISR` reads on an `EN` clear, the stream's IRQ raised, and lowered on `LIFCR`. It displaces `dma1`'s access log the same way |
-| models of our own | not built | a USART model with IDLE and a stored `IDLEIE`, plus a DMA stream that ends with TCIF on an `EN` clear. Both written fresh (the models' README: no Renode source copied), pinned, and loaded on foreign boards only. Otherwise `usart_stored` and every generated serial judge's stored-bit list move (`serial.rs`:571–600) |
+| hooks (USART and DMA) | not possible | a hook cannot reset the DMA's private write offset (gap 3). TCIF on an `EN` clear alone would hand ArduPilot the wrong bytes |
+| models of our own | not built | a USART model with IDLE and a stored `IDLEIE`, plus a DMA stream that ends with TCIF on an `EN` clear and restarts at `M0AR` on re-arm. Both written fresh (the models' README: no Renode source copied), pinned, and loaded on foreign boards only. Otherwise `usart_stored` and every generated serial judge's stored-bit list move (`serial.rs`:571–600). The DMA model is shared by every stream: SPI's receive DMA too |
 
 ## 4. The rest stimuli
 
@@ -183,7 +203,7 @@ Eleven requests from 3.0 s, 200 ms apart, each answered by name: ten `PARAM_REQU
     main has none (§7).
 - **The barometer at rest:**
   - 101325 Pa, the parts table's stimulus (`parts.json`:184), inside the 30–125 kPa operating range
-    (BST-BMP581-DS004-13 rev 1.13 §1, sha256 `ddcf4202…`, the parts table's cited copy).
+    (BST-BMP581-DS004-13 rev 1.13 §2 Table 1, p. 8, sha256 `ddcf4202…`, the parts table's cited copy).
   - A constant reading is unhealthy to ArduPilot after 2 s (`AP_Baro_Backend.cpp`:36–41, 63–73).
   - **Proposed:** the intrinsic noise as ±0.08 Pa, Table 9's ×128 row (p. 19, "Typical pressure RMS noise at
     100kPa"), alternating at that row's typical 12 Hz (every 83.333 ms).
@@ -214,7 +234,8 @@ from 0.25 s to 6 s; prearm checks every 500 ms; ARM with no force every 250 ms f
 
 - **The arm needs at least 8.76 s of virtual time;** a run that witnesses it needs a little more.
   - The binding step is EKF3: it starts 2.0 s after `ArduPilot Ready`, and its tilt alignment takes 1.35 s more.
-  - No input moves that.
+  - Nothing these plans sent moved it. `early-fill`, the same plan spaced with fill, aligned at 8.555 s, armed at
+    8.608 s and witnessed at 8.753 s.
   - The heartbeat comes up to 1 s after the ACK; here 0.152 s.
 - **Against `4400h`'s bounds:**
   - 8.8 s lies between its 8 s run (97 % of the 8 MiB log budget, off-peak) and 9 s (over the budget).
@@ -338,12 +359,15 @@ Replay has two possible meanings, for the architect to rule (§7 D6):
     hash (§2.3).
   - **(b) Every declared port on every board.**
     - The generated firmware never sets `DMAR`, so no behaviour moves.
-    - But nine of eleven committed platforms move, and with them the bench package's verdict (§2.3).
+    - But seven of the eleven committed platforms emitted move, and with them the bench package's verdict (§2.3).
     - Its `MANIFEST.json` is in `fab/`, outside this fence, so it would need a ruled re-derive.
 - **D3. IDLE.**
   - **Lean:** declared fill plus spaced bytes, with the gap named in every input verdict (`usart_idle_unmodelled`).
-  - **A row:** the two models of §3.3, a USART with IDLE and a stored `IDLEIE`, and a DMA stream that ends with TCIF
-    on an `EN` clear. Foreign boards only. Two named model gaps, both cited and measured.
+  - Measured: `idle-fill`, and `early-fill` arms.
+  - **A row:** the two models of §3.3:
+    - a USART with IDLE and a stored `IDLEIE`;
+    - a DMA stream that ends with TCIF on an `EN` clear and restarts at `M0AR`.
+  - Foreign boards only. Three named model gaps, each cited and measured.
 - **D4. The rest stimuli** as §6.4, cited, and only on input runs.
 - **D5. The acceptance board and firmware.**
   - Main's Sentinel-03 fixture has no U5 orientation and no `board.forward` (`4400h` D5), and its ELF exists only on
@@ -369,7 +393,8 @@ Replay has two possible meanings, for the architect to rule (§7 D6):
 **Rows (not this work order's):**
 - the IDLE and DMA models (D3);
 - the bench package's re-derive if D2 (b);
-- why ArduPilot's 1 kHz fallback drain stalls its parser (§3.2, cause not found).
+- Renode's DMA write offset kept across a stopped stream (§3.2 gap 3). It is the same model every SPI receive DMA
+  uses, so an SPI firmware that stops a stream early would see it too (not measured).
 
 ## 8. Predictions, graded
 
@@ -381,12 +406,12 @@ Replay has two possible meanings, for the architect to rule (§7 D6):
 | P2.2 | no generated behaviour moves, only the platform's hash; the `.repl` goldens and the fab doc move | **right, and more:** the board crate's tree hash moves too, so 13 gates' input hashes and the bench package's `MANIFEST.json` (§2.3) |
 | P2.3 | foreign verdicts unchanged but for the platform's hash | **right:** both differ only at `/input/*` and the run's memory reading |
 | P3.1 | unpadded: 64 B hand-offs, delayed, the tail stuck, the arm still reached | **right for the first three:** 214–459 ms late, the last three never answered. The arm under unpadded frames was not run |
-| P3.2 | padding sound for delivery; a frame over 64 B is handed over when its multiple fills | **wrong:** an instant padded frame over 64 B kills the receive path (§3.2). The rest right |
-| P3.3 | hooks give every frame in order, about as soon as padded, under 5 % cost | **wrong:** first frame only (56.5 ms); two model gaps (`IDLEIE` a tag, no TCIF on an `EN` clear). No time cost. The subclass question was not checked |
+| P3.2 | padding sound for delivery; a frame over 64 B is handed over when its multiple fills | **wrong at one instant:** a padded frame over 64 B kills the receive path (§3.2). **Right spaced** (`idle-fill`). The rest right |
+| P3.3 | hooks give every frame in order, about as soon as padded, under 5 % cost | **wrong:** first frame only (56.5 ms); three model gaps (`IDLEIE` a tag, no TCIF on an `EN` clear, the DMA's offset kept). No time cost. The subclass question was not checked |
 | P4.1 | the 1 g on y is the parts table's; no z channel | **right** |
 | P4.2 | rest from the orientation is X 0, Y 0, Z +1 g; no Leaning | **right** (`early`) |
 | P4.3 | 101325 Pa ±0.08 Pa at 12 Hz passes the barometer and the arm | **right** (`early`) |
 | P5.1 | ArduPilot reads from about 2.5 s; heartbeat first | **wrong:** first reply at 0.754 s, before the first heartbeat (1.003 s) |
-| P5.2 | earliest arm between 8.6 and 9.0 s, set by EKF3's alignment | **right:** 8.602 s, alignment at 8.564 s |
+| P5.2 | earliest arm between 8.6 and 9.0 s, set by EKF3's alignment | **right:** 8.602 s, alignment at 8.564 s (`early-fill`: 8.608 s, 8.555 s) |
 | P5.3 | witness within 1 s of the ACK | **right:** 0.152 s |
 | P5.4 | does not fit 5 s; needs at least 10 s, past the 9 s log budget | **right that it does not fit; wrong on how much:** about 8.8 s, between `4400h`'s 8 s (97 % of the budget) and 9 s |

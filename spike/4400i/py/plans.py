@@ -16,6 +16,8 @@ Plans (window_ns, frames padded or not, spaced or not, IDLE hooks or not):
                idle-raw    unpadded, bytes one character time apart (115200 Bd, 8N1: 86.806 us, rounded up to the
                            100 us quantum), no IDLE
                idle-hook   idle-raw with the IDLE hooks (replay.sh IDLE=1)
+               idle-fill   padded AND spaced: the mode proposed (D3); early-fill the window plan in it
+               idle-hook-mem  idle-hook to 3.4 s with ArduPilot's RX bounce buffers read after frames 1 and 2
   reject     a parameter ArduPilot does not have, and one it refuses, then read back (acceptance's PARAM_SET); padded
 Usage: python3 -I plans.py OUTDIR"""
 import json, sys
@@ -75,6 +77,13 @@ idle += [(ms(4200) + i * ms(200), "param_request_read", {"id": n}) for i, n in e
 write("idle-pad", idle, ms(6000), pad=True)
 write("idle-raw", idle, ms(6000), pad=False, spacing=CHAR)
 write("idle-hook", idle, ms(6000), pad=False, spacing=CHAR)
+# The mode proposed (D3): padded with declared fill AND spaced a character time apart.
+write("idle-fill", idle, ms(6000), pad=True, spacing=CHAR)
+write("early-fill", early, ms(12000), pad=True, spacing=CHAR)
+# idle-hook to 3.5 s, with ArduPilot's two RX bounce buffers (0x38001940, 0x380019A0: dma1 S0M0AR in idle-hook-dma)
+# read after frames 1 and 2: where does Renode's DMA put frame 2 after a software EN clear?
+mem = [(t, "monitor", {"cmd": "python \"print('AET-MEM %d ' % " + str(t) + " + __import__('System').BitConverter.ToString(self.Machine.SystemBus.ReadBytes(0x38001940, 0xC0)))\""}) for t in (ms(3100), ms(3300))]
+write("idle-hook-mem", [s for s in idle if s[0] < ms(3300)] + mem, ms(3400), pad=False, spacing=CHAR)
 
 reject = [(ms(3000), "param_set", {"id": "AET_NOT_A_PARAM", "value": 1}),
           (ms(3200), "param_set", {"id": "FRAME_CLASS", "value": 99}),

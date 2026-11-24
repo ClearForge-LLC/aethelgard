@@ -2,10 +2,10 @@
 into USART1. Run with the ArduPilot image's venv (pymavlink, unmodified). Usage: python -I frames.py PLAN.json OUT_DIR
 PLAN.json (plans.py): {"window_ns", "pad", "spacing_ns", "steps": [[t_ns, kind, {fields}], ...]} in time order.
   pad true:     each frame padded with 0x00 to a whole multiple of 64 B, ArduPilot's RX bounce buffer
-                (AP_HAL_ChibiOS/UARTDriver.h:25), all bytes at the step's instant (4400h's stand-in for IDLE);
-  pad false:    the frame's bytes only, `spacing_ns` apart from the step's instant, then one more spacing: the
-                line idle for a character time after the last stop bit (RM0433 Rev 9 §48.5: an idle character is a
-                whole frame of 1s), where the IDLE hooks raise IDLE (`AET-IDLE` line; replay.sh IDLE=1).
+                (AP_HAL_ChibiOS/UARTDriver.h:25) (4400h's stand-in for IDLE); pad false: the frame's bytes only;
+  spacing_ns 0: every byte at the step's instant; otherwise `spacing_ns` apart from it, then one more spacing: the
+                line idle for a character time after the last stop bit (RM0433 Rev 9: an idle character is a whole
+                frame of 1s), where the IDLE hooks raise IDLE (`AET-IDLE` line; replay.sh IDLE=1).
 Writes OUT_DIR/inject.resc and OUT_DIR/injected.tsv (t_ns, message, frame length, padded length, frame hex)."""
 import json, struct, sys
 from pymavlink.dialects.v20 import ardupilotmega as mav
@@ -58,12 +58,11 @@ for t, kind, f in plan["steps"]:
     msg = encode(kind, f)
     frame = msg.pack(m)
     name = msg.get_type() + (" " + json.dumps(f, sort_keys=True) if f else "")
-    if plan["pad"]:
-        sent = frame + bytes(-len(frame) % BUF)
+    sent = frame + bytes(-len(frame) % BUF) if plan["pad"] else frame
+    if spacing == 0:
         lines.extend(f"sysbus.usart1 WriteChar 0x{b:02X}" for b in sent)
     else:
-        sent = frame
-        for b in frame:
+        for b in sent:
             lines.append(f"sysbus.usart1 WriteChar 0x{b:02X}")
             run_to(now + spacing)   # the character's own time on the line
         run_to(now + spacing)       # then one idle character
