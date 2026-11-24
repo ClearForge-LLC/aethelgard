@@ -503,6 +503,10 @@ pub enum Refusal {
     FuseMeltsOnHotPlug,
     /// A fuse on a branch that carries motor current (`AET-WO-4300k` (10)).
     FuseInMotorPath,
+    /// A motor output with no ESC declared on a protected input: whether its
+    /// current crosses the fuse is unknown (`AET-WO-4300k`, the power
+    /// review's F1; `INV-06`). The battery sag's name for the same gap.
+    EscUndeclared,
     /// A buck's inductor peak at or above its high-side limit's minimum
     /// (`AET-WO-4300k` A13).
     PeakCurrentOverLimit,
@@ -559,6 +563,7 @@ impl Refusal {
             Self::ProtectionPartOutOfRange => "ProtectionPartOutOfRange",
             Self::FuseMeltsOnHotPlug => "FuseMeltsOnHotPlug",
             Self::FuseInMotorPath => "FuseInMotorPath",
+            Self::EscUndeclared => "EscUndeclared",
             Self::PeakCurrentOverLimit => "PeakCurrentOverLimit",
             Self::SupervisorBelowDeviceFloor => "SupervisorBelowDeviceFloor",
             Self::SupervisorAboveRail => "SupervisorAboveRail",
@@ -1675,17 +1680,31 @@ fn protection(
         .spec
         .motor_outputs
         .iter()
-        .find(|m| matches!(m.esc, Some(crate::motor::Esc::BoardVbat(_))))
+        .find(|m| matches!(m.esc, Some(crate::motor::Esc::BoardVbat(_)) | None))
     {
-        return Err(refuse(
-            Refusal::FuseInMotorPath,
-            &x.fuse.reference,
-            format!(
-                "motor output `{}` declares an ESC fed through the board's `VBAT` copper, so {}'s fuse carries motor current, and a fuse that opens there cuts a motor in flight",
-                m.label, x.fuse.reference
-            ),
-            RULE,
-        ));
+        return Err(if m.esc.is_none() {
+            // Undeclared is not "not through `VBAT`" (`INV-06`; the power
+            // review's F1): the fuse's path is unknown, so it is refused.
+            refuse(
+                Refusal::EscUndeclared,
+                &m.label,
+                format!(
+                    "motor output `{}` declares no ESC (`esc: null`), so whether its current crosses {}'s fuse is unknown: declare `none` with its source, or `board_vbat`",
+                    m.label, x.fuse.reference
+                ),
+                RULE,
+            )
+        } else {
+            refuse(
+                Refusal::FuseInMotorPath,
+                &x.fuse.reference,
+                format!(
+                    "motor output `{}` declares an ESC fed through the board's `VBAT` copper, so {}'s fuse carries motor current, and a fuse that opens there cuts a motor in flight",
+                    m.label, x.fuse.reference
+                ),
+                RULE,
+            )
+        });
     }
     let (bmin, bmax) = battery_range(&ctx.power.battery);
     let (bmin, bmax) = (
@@ -1695,7 +1714,8 @@ fn protection(
     let out_of_range = |reference: &str, detail: String, cite: String| {
         refuse(Refusal::ProtectionPartOutOfRange, reference, detail, cite)
     };
-    // The branch's input current at the pack's minimum, mA, rounded up.
+    // The branch's power: each battery-fed buck's output at its highest plus
+    // its declared loss, µW, and each battery-fed linear regulator's load, mA.
     let mut microwatts: i128 = 0;
     let mut ldo_milliamps: i128 = 0;
     for d in derived.iter().filter(|d| d.reg.input == BATTERY) {
@@ -1713,13 +1733,8 @@ fn protection(
             _ => ldo_milliamps += l,
         }
     }
-    let i_in = div_ceil(microwatts, i128::from(bmin)) + ldo_milliamps;
-    let i_in = i64::try_from(i_in).unwrap_or(i64::MAX);
-    ctx.note(format!(
-        "{}: the branch's input current is {i_in} mA at the pack's minimum of {bmin} mV, from each battery-fed buck's output at its highest plus its declared loss; the tree's input_steady_milliamps is the sum of the outputs, a bound, not the input current",
-        input.reference
-    ));
-    // The P-FET.
+    // The input current at `mv` at the regulators, mA, rounded up.
+    let current = |mv: i64| div_ceil(microwatts, i128::from(mv.max(1))) + ldo_milliamps;
     let fet_row = ctx.row(&x.fet.reference, &x.fet.part)?;
     let Kind::Pfet(fet) = &fet_row.kind else {
         return Err(ctx.kind_err(&x.fet.reference, &x.fet.part, "pfet"));
@@ -1727,6 +1742,10 @@ fn protection(
     let zener_row = ctx.row(&x.zener.reference, &x.zener.part)?;
     let Kind::Zener(zener) = &zener_row.kind else {
         return Err(ctx.kind_err(&x.zener.reference, &x.zener.part, "zener"));
+    };
+    let fuse_row = ctx.row(&x.fuse.reference, &x.fuse.part)?;
+    let Kind::Fuse(fuse) = &fuse_row.kind else {
+        return Err(ctx.kind_err(&x.fuse.reference, &x.fuse.part, "fuse"));
     };
     let doubled = bmax.saturating_mul(2);
     if fet.vds_max_millivolts.value < doubled {
@@ -1754,16 +1773,40 @@ fn protection(
             ctx.cite(&fet.vgs_max_millivolts.at),
         ));
     }
-    // The gate drive at the pack's minimum: the pack itself, or the zener's
-    // VZ minimum if lower. The stated RDS(on) at the highest drive at or
-    // under it bounds the FET's resistance.
-    let drive = bmin.min(zener.vz_millivolts.range.min);
-    let Some(rds) = fet
-        .rds_on_max
-        .iter()
-        .filter(|r| r.vgs_millivolts <= drive)
-        .max_by_key(|r| r.vgs_millivolts)
-    else {
+    // The fuse's resistance, µΩ: its typical less and plus its tolerance.
+    let typ = i128::from(fuse.resistance_typ_microohms.value);
+    let tol = i128::from(fuse.resistance_tolerance_permille.value);
+    let r_min = typ * (1000 - tol) / 1000;
+    let r_max = div_ceil(typ * (1000 + tol), 1000);
+    // mA × µΩ / 10⁶ = mV, rounded up.
+    let volts = |i: i128, microohms: i128| div_ceil(i * microohms, 1_000_000);
+    // The gate drive at `i`: the pack's minimum less the fuse's drop (the gate
+    // returns to ground, its source sits after the fuse), or the zener's VZ
+    // minimum if lower; and the stated RDS(on) at the highest |VGS| at or under
+    // it, µΩ (the power review's F6 (a)).
+    let rds_at = |i: i128| {
+        let fuse_drop = i64::try_from(volts(i, r_max)).unwrap_or(i64::MAX);
+        let drive = bmin
+            .saturating_sub(fuse_drop)
+            .min(zener.vz_millivolts.range.min);
+        let row = fet
+            .rds_on_max
+            .iter()
+            .filter(|r| r.vgs_millivolts <= drive)
+            .max_by_key(|r| r.vgs_millivolts);
+        (drive, row)
+    };
+    // The input current, iterated once (the power review's F4): at the pack's
+    // minimum, then at the pack's minimum less the path's drop at that
+    // current, which the regulators see.
+    let i0 = current(bmin);
+    let (_, row0) = rds_at(i0);
+    let d0 = row0.map_or(0, |r| {
+        volts(i0, i128::from(r.max_milliohms.value) * 1000 + r_max)
+    });
+    let i_wide = current(bmin.saturating_sub(i64::try_from(d0).unwrap_or(i64::MAX)));
+    let (drive, row) = rds_at(i_wide);
+    let Some(rds) = row else {
         return Err(out_of_range(
             &x.fet.reference,
             format!(
@@ -1773,6 +1816,13 @@ fn protection(
             ctx.cite(&fet.rds_on_max[0].max_milliohms.at),
         ));
     };
+    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max;
+    let drop = volts(i_wide, path);
+    let i_in = i64::try_from(i_wide).unwrap_or(i64::MAX);
+    ctx.note(format!(
+        "{}: the branch's input current is {i_in} mA at the pack's minimum of {bmin} mV less the input path's drop, from each battery-fed buck's output at its highest plus its declared loss (one iteration); the tree's input_steady_milliamps is the sum of the outputs, a bound, not the input current",
+        input.reference
+    ));
     if fet.id_max_milliamps.value < i_in {
         return Err(out_of_range(
             &x.fet.reference,
@@ -1807,12 +1857,20 @@ fn protection(
             x.gate_resistor.reference
         ),
     );
+    if drive == zener.vz_millivolts.range.min {
+        // The zener, not the pack, sets the drive, and under its test current
+        // its voltage may sit under VZ's minimum (the power review's F6 (b)).
+        ctx.screen(
+            "gate_drive_at_zener",
+            &x.fet.reference,
+            format!(
+                "{}: its gate drive is {}'s VZ minimum, {drive} mV, stated at {} µA; through {} the zener's voltage may be lower, so RDS(on) is read at a drive the board may not reach",
+                x.fet.reference, x.zener.part, zener.izt_microamps.value, x.gate_resistor.reference
+            ),
+        );
+    }
     ctx.resistor(&x.gate_resistor)?;
     // The fuse.
-    let fuse_row = ctx.row(&x.fuse.reference, &x.fuse.part)?;
-    let Kind::Fuse(fuse) = &fuse_row.kind else {
-        return Err(ctx.kind_err(&x.fuse.reference, &x.fuse.part, "fuse"));
-    };
     let rated = fuse.rated_milliamps.value;
     if fuse.voltage_max_millivolts.value < bmax {
         return Err(out_of_range(
@@ -1832,6 +1890,19 @@ fn protection(
                 x.fuse.part
             ),
             ctx.cite(&fuse.rated_milliamps.at),
+        ));
+    }
+    // The row holds the fuse's derating at 85 °C only: a hotter board has no
+    // held figure (the power review's F5; `INV-06`).
+    let board_max = ctx.power.conditions.board_temperature_celsius.max;
+    if board_max > 85 {
+        return Err(out_of_range(
+            &x.fuse.reference,
+            format!(
+                "the board reaches {board_max} °C, and {}'s row holds its current derating at 85 °C only",
+                x.fuse.part
+            ),
+            ctx.cite(&fuse.kept_at_85c_permille.at),
         ));
     }
     let hot = rated * fuse.kept_at_85c_permille.value / 1000;
@@ -1869,20 +1940,35 @@ fn protection(
         {
             if let Kind::Capacitor(c) = &ctx.row(&e.reference, &e.part)?.kind {
                 let rated = i128::from(c.rated_picofarads.value);
-                picofarads += match &c.tolerance {
-                    Some(pp::Tolerance::Permille(p)) => rated * (1000 + i128::from(p.value)) / 1000,
-                    Some(pp::Tolerance::Femtofarads(f)) => {
+                // The row's tolerance, or its DC-bias block's, which holds the
+                // same maker's figure (the power review's F7); neither held is
+                // named, never assumed.
+                picofarads += match (&c.tolerance, &c.dc_bias) {
+                    (Some(pp::Tolerance::Permille(p)), _) => {
+                        rated * (1000 + i128::from(p.value)) / 1000
+                    }
+                    (Some(pp::Tolerance::Femtofarads(f)), _) => {
                         rated + div_ceil(i128::from(f.value), 1000)
                     }
-                    None => rated,
+                    (None, Some(b)) => div_ceil(
+                        rated * (1000 + i128::from(b.tolerance_permille.value.abs())),
+                        1000,
+                    ),
+                    (None, None) => {
+                        ctx.screen(
+                            "inrush_ceramic_at_rated",
+                            &e.reference,
+                            format!(
+                                "{}: its capacitance enters the hot-plug's I²t bound at its rated value; its row holds no tolerance",
+                                e.reference
+                            ),
+                        );
+                        rated
+                    }
                 };
             }
         }
     }
-    let typ = i128::from(fuse.resistance_typ_microohms.value);
-    let tol = i128::from(fuse.resistance_tolerance_permille.value);
-    let r_min = typ * (1000 - tol) / 1000;
-    let r_max = div_ceil(typ * (1000 + tol), 1000);
     // pF × mV² / (2 × µΩ) × 10⁻⁶ = mA²s.
     let v = i128::from(bmax);
     let i2t = div_ceil(picofarads * v * v, 2 * r_min.max(1) * 1_000_000);
@@ -1909,11 +1995,21 @@ fn protection(
             ctx.cite(&fuse.melting_i2t_milliamp2_seconds.at)
         ),
     );
-    // The drop the input path puts in front of the regulators, mV, rounded
-    // up: the input current through the FET's RDS(on) and the fuse's maximum.
-    // µΩ; mA × µΩ / 10⁶ = mV.
-    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max;
-    let drop = div_ceil(i128::from(i_in) * path, 1_000_000);
+    // The drop the input path puts in front of the regulators: the input
+    // current through the FET's RDS(on) and the fuse's maximum, each a 25 °C
+    // figure (the power review's F3).
+    ctx.screen(
+        "input_path_resistance_at_25c",
+        &x.fet.reference,
+        format!(
+            "{}: the input path's drop is {drop} mV at {i_in} mA through {}'s RDS(on) {} mΩ (|VGS| {} mV) and {}'s {r_max} µΩ, each stated at 25 °C; on a {board_max} °C board both rise, the FET's by its datasheet's RDS(on)-against-temperature figure",
+            x.fet.reference,
+            x.fet.part,
+            rds.max_milliohms.value,
+            rds.vgs_millivolts,
+            x.fuse.part
+        ),
+    );
     ctx.note(format!(
         "{}: {} mΩ ({} at |VGS| {} mV) and {} {r_max} µΩ at most drop {drop} mV at {i_in} mA, counted in every battery-fed regulator's headroom",
         input.reference,
@@ -3299,6 +3395,25 @@ fn junctions(
                 format!(
                     "{}: the board declares {layers} copper layers, outside the θJA figure's {}-layer board, so the screen's θJA is not this board's (FEEDBACK D1)",
                     r.reference, curve.board_copper_layers
+                ),
+            );
+        }
+        // The figure's board carries 2 oz outer and 1 oz inner copper; less
+        // spreads less heat, so its θJA is not this board's (the power
+        // review's F2). An undeclared minimum is less.
+        let st = &ctx.spec.board.stackup;
+        let outer = st.outer_copper_min_um.as_ref().map_or(0, |v| v.value);
+        let inner = st.plane_copper_min_um.as_ref().map_or(0, |v| v.value);
+        if outer < u32::from(curve.outer_copper_um) || inner < u32::from(curve.inner_copper_um) {
+            ctx.screen(
+                "theta_ja_copper_mismatch",
+                &r.reference,
+                format!(
+                    "{}: the board's copper is at least {outer} um outer and {inner} um inner, under the θJA figure's {} um and {} um ({}), so the screen's θJA is lower than this board's",
+                    r.reference,
+                    curve.outer_copper_um,
+                    curve.inner_copper_um,
+                    ctx.cite(&curve.at)
                 ),
             );
         }

@@ -1,7 +1,7 @@
 # AET-WO-4300k (T), ruled 2026-11-24T11:25Z: the ready test fixture. Sentinel-01-minimal with the
 # reset supervisor Sentinel-03 declares, fab tolerances, a fabricator and every condition acknowledged,
 # so a `--fab-out` test whose point is a downstream gate meets the readiness gate. Never ordered.
-# Usage: python3 -I spike/4300k/build/ready_fixture.py [conditions.json]  (the second pass acknowledges).
+# Usage: python3 -I spike/4300k/build/ready_fixture.py spike/4300k/build/ready-acks.json (the reasons, by condition id).
 import json, collections, sys
 OD = collections.OrderedDict
 SRC, OUT = "examples/sentinel-01-minimal.json", "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json"

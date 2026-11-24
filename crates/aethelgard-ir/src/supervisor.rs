@@ -350,6 +350,21 @@ pub fn check_against(
             ),
         ));
     }
+    // The reset delay is stated only above VIT− by an overdrive; a rail
+    // whose minimum sits under that is named (the power review's F9).
+    let stated_from = v.falling_millivolts.range.max + v.delay_overdrive_millivolts.value;
+    if u64::try_from(stated_from).unwrap_or(u64::MAX) > rail_min {
+        out.push((
+            format!("supervisor_delay_unstated:{}", s.reference),
+            format!(
+                "{}: {}'s reset delay is stated at VDD at least {stated_from} mV (VIT− maximum plus {} mV, {}), above the rail's minimum of {rail_min} mV ({how}), so the delay at the rail's minimum is not stated",
+                s.reference,
+                s.part,
+                v.delay_overdrive_millivolts.value,
+                table.cite(&v.delay_overdrive_millivolts.at)
+            ),
+        ));
+    }
     out.push((
         format!("supervisor_hysteresis_typical:{}", s.reference),
         format!(

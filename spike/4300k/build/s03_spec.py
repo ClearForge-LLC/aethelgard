@@ -143,7 +143,7 @@ ACK = {
  "pin_capacitance_declared:U7": "Bosch prints no pin capacitance for the BMP581; U7 is counted at UM10204's 10 pF limit for an I2C pin",
  "plane_not_joined:U10.In2.Cu": "In2.Cu is the VDD_3V3 plane, which U10's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu",
  "plane_not_joined:U11.In2.Cu": "In2.Cu is the VDD_3V3 plane, which U11's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu",
- "power_in_rating_underated:J4": "J4 is rated 15 A by AMASS V1.2, with no derating held for 85 C; the branch draws 1.64 A, and no motor current crosses the board",
+ "power_in_rating_underated:J4": "J4 is rated 15 A by AMASS V1.2, with no derating held for 85 C; the branch draws 1.65 A, and no motor current crosses the board",
  "regulation_not_production_tested:U10": "TI states VOUT regulation as a design limit, not production tested; U10's 5 V feeds only the DS-009 ports J6 and J7, off the MCU's rail",
  "regulation_not_production_tested:U11": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3's floor is held by its feedback, its drop limit and U12",
  "reservoir_cadc_typical:VBAT_SENSE": "CADC is typical 4 pF; C50's 100 nF is 3.05 times the 32.8 nF the single-conversion reservoir rule needs (AN2834 p. 45-46, ruled D-B3)",
@@ -154,6 +154,12 @@ ACK = {
  "stackup_condition:plane-copper-min": "OSH Park states 1/2 oz inner copper, nominal (17.5 um); 15 um is the declared minimum for the GND and VDD_3V3 planes",
  "stackup_condition:plating-min": "OSH Park states via plating 1 mil, nominal (25 um); 18 um is the declared minimum the supply gate's via barrels use",
  "stackup_condition:track-width-tolerance": "OSH Park publishes no track-width tolerance; 20 % is declared for the supply gate's tracks, as JLCPCB states for its own process",
+ "input_path_resistance_at_25c:Q1": "Q1's RDS(on) and F1's resistance are 25 C figures; hotter, the 71 mV drop grows, a small part of the volts the bucks keep above their need at the 9 V pack minimum; a bench row",
+ "inrush_ceramic_at_rated:C11": "C11 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin",
+ "inrush_ceramic_at_rated:C21": "C21 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin",
+ "supervisor_delay_unstated:U12": "TI states U12's 120-280 ms delay only from 3.19 V, above the rail's 3.034 V worst case; below it the delay is unstated, not absent; a bench row times the release",
+ "theta_ja_copper_mismatch:U10": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U10's 117.8 C screen has less margin than it shows; a bench thermal row (Q2 options stand)",
+ "theta_ja_copper_mismatch:U11": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U11's 104.8 C screen has less margin than it shows; a bench thermal row",
  "supervisor_hysteresis_typical:U12": "TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4 mV under VDD_3V3's 3034 mV floor at its pin (ruled D6); a bench row",
  "usb_pair_undeclared:PA11": "PA11/PA12 are reserved for USB (AET-WO-3400 F5) with no connector drawn on Sentinel-03, so no differential pair exists to judge",
  "vref_is_vdda:VBAT_SENSE": "Sentinel-03 has no separate VREF+; VDDA is VDD_3V3, and the sense's full scale is judged against VDD_3V3's minimum",
@@ -166,7 +172,7 @@ ACK = {
  "zener_below_test_current:D1": "D1's VZ is stated at 20 mA; through R60 it carries about 60 uA at 17.4 V, where VZ is lower, so Q1's gate stays under 12.6 V of its 20 V",
 }
 for part in ["CRCW0603_F_K","DMP6023LSS-13","GCM188R71H104KA57","GCM188R71H224KA64","GCM32EC71H106KA03","GRM188R71C105KA12",
-             "GRM32ER61C226KE20","GRM32ER71A226KE20","IHLP5050FDER8R2M01","MMSZ5242BT1G","SF-1206F700-2","TLV803SDBZR","TNPW0603_B_E","UCZ1H470MCL1GS"]:
+             "GRM32ER61C226KE20","GRM32ER71A226KE20","IHLP5050FDER8R2M01","MMSZ5242BT1G","SF-1206F700-2","TNPW0603_B_E","UCZ1H470MCL1GS"]:
     ACK["lifecycle_unread:" + part] = part + ": " + LIFE
 for k, v in ACK.items():
     assert 1 <= len(v.encode()) <= 200 and v.isascii() and v == v.strip(), (k, len(v.encode()))

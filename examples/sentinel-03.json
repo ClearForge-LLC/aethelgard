@@ -2372,8 +2372,20 @@
       "reason": "8.2 uH meets Equation 5 but not Equation 4's 20-40 % ripple over the whole 3S-4S range (ruled D6); the peak current stays under the high-side limit"
     },
     {
+      "id": "input_path_resistance_at_25c:Q1",
+      "reason": "Q1's RDS(on) and F1's resistance are 25 C figures; hotter, the 71 mV drop grows, a small part of the volts the bucks keep above their need at the 9 V pack minimum; a bench row"
+    },
+    {
       "id": "inrush_bulk_at_rated:C1",
       "reason": "C1 enters the hot-plug I2t at its rated 47 uF (no tolerance in its row); at +20 % the bound is 2.72 A2s, still under F1's 3.25 A2s"
+    },
+    {
+      "id": "inrush_ceramic_at_rated:C11",
+      "reason": "C11 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin"
+    },
+    {
+      "id": "inrush_ceramic_at_rated:C21",
+      "reason": "C21 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin"
     },
     {
       "id": "isat_typical:L1",
@@ -2428,10 +2440,6 @@
       "reason": "SF-1206F700-2: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK)"
     },
     {
-      "id": "lifecycle_unread:TLV803SDBZR",
-      "reason": "TLV803SDBZR: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK)"
-    },
-    {
       "id": "lifecycle_unread:TNPW0603_B_E",
       "reason": "TNPW0603_B_E: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK)"
     },
@@ -2473,7 +2481,7 @@
     },
     {
       "id": "power_in_rating_underated:J4",
-      "reason": "J4 is rated 15 A by AMASS V1.2, with no derating held for 85 C; the branch draws 1.64 A, and no motor current crosses the board"
+      "reason": "J4 is rated 15 A by AMASS V1.2, with no derating held for 85 C; the branch draws 1.65 A, and no motor current crosses the board"
     },
     {
       "id": "rated_only:U10.cboot",
@@ -2540,8 +2548,20 @@
       "reason": "OSH Park publishes no track-width tolerance; 20 % is declared for the supply gate's tracks, as JLCPCB states for its own process"
     },
     {
+      "id": "supervisor_delay_unstated:U12",
+      "reason": "TI states U12's 120-280 ms delay only from 3.19 V, above the rail's 3.034 V worst case; below it the delay is unstated, not absent; a bench row times the release"
+    },
+    {
       "id": "supervisor_hysteresis_typical:U12",
       "reason": "TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4 mV under VDD_3V3's 3034 mV floor at its pin (ruled D6); a bench row"
+    },
+    {
+      "id": "theta_ja_copper_mismatch:U10",
+      "reason": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U10's 117.8 C screen has less margin than it shows; a bench thermal row (Q2 options stand)"
+    },
+    {
+      "id": "theta_ja_copper_mismatch:U11",
+      "reason": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U11's 104.8 C screen has less margin than it shows; a bench thermal row"
     },
     {
       "id": "usb_pair_undeclared:PA11",

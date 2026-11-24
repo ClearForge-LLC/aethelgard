@@ -167,14 +167,17 @@ fn protection_refused(v: &Value, t: &Value, id: &str, clause: &str) -> E {
 }
 
 #[test]
-fn the_base_protection_computes_a_1640_ma_input_current() {
+fn the_base_protection_computes_a_1653_ma_input_current() {
     let c = checked(&base());
     // The protection's note carries the branch's input current (the figure the
-    // clauses below are edged against).
+    // clauses below are edged against), iterated once (the power review's
+    // F4): 14754291 uW at 9000 mV is 1640 mA, whose drop through 33 mOhm and
+    // the fuse's 9375 uOhm is 70 mV; at 8930 mV it is 1653 mA, and the drop
+    // 71 mV.
     assert!(
-        c.conditions
-            .iter()
-            .any(|t| t.contains("input current is 1640 mA at the pack's minimum of 9000 mV")),
+        c.conditions.iter().any(|t| t.contains(
+            "input current is 1653 mA at the pack's minimum of 9000 mV less the input path's drop"
+        )),
         "the protection's input-current note is missing or changed"
     );
 }
@@ -206,11 +209,12 @@ fn the_zener_must_hold_the_gate_within_the_fets_rating() {
 #[test]
 fn the_gate_drive_must_reach_a_stated_rds_on() {
     let v = base();
-    // The drive is the lesser of the pack's minimum (3 x 3000 = 9000 mV) and
-    // the zener's VZ minimum (11400 mV).
+    // The drive is the lesser of the pack's minimum (3 x 3000 = 9000 mV) less
+    // the fuse's drop at the input current (1653 mA x 9375 uOhm, 16 mV),
+    // 8984 mV, and the zener's VZ minimum (11400 mV).
     let mut t = table_json();
     row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"] = json!([
-        {"vgs_millivolts": 9000, "max_milliohms": {"value": 33, "at": row(&mut table_json(), "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"][0]["max_milliohms"]["at"].clone()}}
+        {"vgs_millivolts": 8984, "max_milliohms": {"value": 33, "at": row(&mut table_json(), "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"][0]["max_milliohms"]["at"].clone()}}
     ]);
     against(&v, &t).expect("a stated RDS(on) at the drive passes");
     t["parts"]
@@ -218,9 +222,9 @@ fn the_gate_drive_must_reach_a_stated_rds_on() {
         .unwrap()
         .iter_mut()
         .find(|r| r["part"] == "DMP6023LSS-13")
-        .unwrap()["kind"]["pfet"]["rds_on_max"][0]["vgs_millivolts"] = json!(9001);
+        .unwrap()["kind"]["pfet"]["rds_on_max"][0]["vgs_millivolts"] = json!(8985);
     let err = protection_refused(&v, &t, "Q1", "drive");
-    assert!(err.to_string().contains("9000 mV"), "{err}");
+    assert!(err.to_string().contains("8984 mV"), "{err}");
 
     // Or the zener's VZ minimum is the lower drive: under 4500 mV, no row.
     let mut t = table_json();
@@ -234,11 +238,11 @@ fn the_gate_drive_must_reach_a_stated_rds_on() {
 fn the_fet_must_carry_the_input_current() {
     let v = base();
     let mut t = table_json();
-    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1640);
+    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1653);
     against(&v, &t).expect("the input current itself passes");
-    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1639);
+    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1652);
     let err = protection_refused(&v, &t, "Q1", "id");
-    assert!(err.to_string().contains("1640 mA"), "{err}");
+    assert!(err.to_string().contains("1653 mA"), "{err}");
 }
 
 #[test]
@@ -252,20 +256,20 @@ fn the_fuse_must_be_rated_for_the_pack_the_current_and_the_heat() {
     let err = protection_refused(&v, &t, "F1", "voltage");
     assert!(err.to_string().contains("17400 mV"), "{err}");
 
-    // Current: at least twice the input current, 2 x 1640 = 3280 mA.
+    // Current: at least twice the input current, 2 x 1653 = 3306 mA.
     let mut t = table_json();
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3280);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3306);
     against(&v, &t).expect("twice the input current passes");
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3279);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3305);
     let err = protection_refused(&v, &t, "F1", "twice");
     assert!(err.to_string().contains("twice"), "{err}");
 
     // Heat: the rating kept at 85 C is at least the input current.
-    // 7000 x 235 / 1000 = 1645 passes; 7000 x 234 / 1000 = 1638 does not.
+    // 7000 x 237 / 1000 = 1659 passes; 7000 x 236 / 1000 = 1652 does not.
     let mut t = table_json();
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(235);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(237);
     against(&v, &t).expect("the 85 C current at the input current passes");
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(234);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(236);
     let err = protection_refused(&v, &t, "F1", "85 C");
     assert!(err.to_string().contains("85"), "{err}");
 }
@@ -505,10 +509,14 @@ fn the_supervisor_returns_its_conditions_by_id() {
     assert_eq!(
         ids,
         [
-            "lifecycle_unread:TLV803SDBZR",
+            "supervisor_delay_unstated:U12",
             "supervisor_hysteresis_typical:U12"
         ]
     );
+    // SBVS157E p. 6: the delay is stated from VIT- max + 200 mV, 3190 mV,
+    // above the rail's 3034 mV at the pin.
+    assert!(got[0].1.contains("at least 3190 mV"), "{}", got[0].1);
+    assert!(got[0].1.contains("3034 mV"), "{}", got[0].1);
     assert!(got[1].1.contains("3030 mV"), "{}", got[1].1);
 }
 
@@ -836,4 +844,91 @@ fn every_connector_row_has_an_opening_toward_a_side() {
         Toward::MinusY
     );
     assert!(connectors::opening("NO-SUCH-PART").is_none());
+}
+
+/// The power review's F1: an undeclared ESC on a protected input is refused
+/// by name (`INV-06`), as `board_vbat` is; `none` with its source passes.
+#[test]
+fn an_undeclared_esc_on_a_protected_input_is_refused() {
+    let mut v = base();
+    v["motor_outputs"][2]["esc"] = Value::Null;
+    assert_power(&refused(&v), Refusal::EscUndeclared, "MOTOR3");
+    v["motor_outputs"][2]["esc"] = json!({"board_vbat": {"source": "test"}});
+    assert_power(&refused(&v), Refusal::FuseInMotorPath, "F1");
+}
+
+/// The power review's F5: the fuse row holds its derating at 85 °C only, so
+/// a hotter board is refused by the fuse (every other part's limit raised in
+/// the copy, so the fuse decides); 85 °C passes.
+#[test]
+fn a_board_above_the_fuses_held_derating_is_refused() {
+    let mut t = table_json();
+    for r in t["parts"].as_array_mut().unwrap() {
+        if let Some(max) = r["temperature_celsius"]["max"].as_i64() {
+            if max < 125 {
+                r["temperature_celsius"]["max"] = json!(125);
+            }
+        }
+    }
+    let mut v = base();
+    v["power"]["conditions"]["board_temperature_celsius"]["max"] = json!(86);
+    let err = against(&v, &t).expect_err("86 C");
+    assert_power(&err, Refusal::ProtectionPartOutOfRange, "F1");
+    assert!(err.to_string().contains("at 85 °C only"), "{err}");
+    against(&base(), &t).expect("85 C passes");
+}
+
+/// The power review's F2, F3, F6 (b) and F7: each assumption the protection
+/// and the junction screen rest on is named by id where it holds, and only
+/// there.
+#[test]
+fn the_protections_and_junctions_assumptions_are_named_where_they_hold() {
+    let ids = |v: &Value, t: &Value| against(v, t).unwrap();
+    let base_ids = ids(&base(), &table_json());
+    for id in [
+        "input_path_resistance_at_25c:Q1",
+        "inrush_ceramic_at_rated:C11",
+        "inrush_ceramic_at_rated:C21",
+        "theta_ja_copper_mismatch:U10",
+        "theta_ja_copper_mismatch:U11",
+    ] {
+        assert!(base_ids.iter().any(|i| i == id), "{id}: {base_ids:?}");
+    }
+    // A 10 uF input ceramic holds its tolerance in its DC-bias block, so it
+    // is counted at +10 %, not named.
+    assert!(!base_ids.iter().any(|i| i == "inrush_ceramic_at_rated:C10"));
+    // The gate drive is the pack's (8984 mV), not the zener's.
+    assert!(
+        !base_ids
+            .iter()
+            .any(|i| i.starts_with("gate_drive_at_zener:"))
+    );
+    let mut t = table_json();
+    row(&mut t, "MMSZ5242BT1G")["kind"]["zener"]["vz_millivolts"]["min"] = json!(8000);
+    assert!(
+        ids(&base(), &t)
+            .iter()
+            .any(|i| i == "gate_drive_at_zener:Q1")
+    );
+    // The figure's own copper, 70 um outer and 35 um inner, names nothing.
+    let mut v = base();
+    v["board"]["stackup"]["outer_copper_min_um"]["value"] = json!(70);
+    v["board"]["stackup"]["plane_copper_min_um"]["value"] = json!(35);
+    assert!(
+        !ids(&v, &table_json())
+            .iter()
+            .any(|i| i.starts_with("theta_ja_copper_mismatch:"))
+    );
+    v["board"]["stackup"]["plane_copper_min_um"]["value"] = json!(34);
+    assert!(
+        ids(&v, &table_json())
+            .iter()
+            .any(|i| i == "theta_ja_copper_mismatch:U10")
+    );
+    let c = checked(&base());
+    assert!(
+        c.screened["input_path_resistance_at_25c:Q1"].contains("71 mV at 1653 mA"),
+        "{}",
+        c.screened["input_path_resistance_at_25c:Q1"]
+    );
 }

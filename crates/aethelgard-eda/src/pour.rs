@@ -189,7 +189,12 @@ pub fn joined(board: &Board, routed: &Routed, pads: &[(String, String)]) -> Vec<
     for (layer, fill_net) in &layers {
         let outer = layer == "F.Cu" || layer == "B.Cu";
         let raster = |extra: i64| {
-            let margin = stack.clearance_nm + extra + half_diagonal;
+            // KiCad's fill keeps 0.2025 mm at a 0.2 mm clearance (measured,
+            // `supply::FILL_CLEARANCE_NM`): the larger, so no counted cell's
+            // corner sits nearer foreign copper than the fill's (the power
+            // review's F9).
+            let margin =
+                stack.clearance_nm.max(crate::supply::FILL_CLEARANCE_NM) + extra + half_diagonal;
             let edge = route::EDGE_NM + extra + half_diagonal;
             let mut g = Grid {
                 x0: o.x0,

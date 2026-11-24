@@ -541,6 +541,8 @@
           "theta_ja": {
             "package": "DDA",
             "board_copper_layers": 4,
+            "outer_copper_um": 70,
+            "inner_copper_um": 35,
             "condition": "typical and for illustration only: a four-layer board with 2 oz outer and 1 oz inner copper, the area being the copper on each layer",
             "points": [
               {
@@ -2906,7 +2908,7 @@
     },
     {
       "part": "TLV803SDBZR",
-      "lifecycle": "unread",
+      "lifecycle": "active",
       "symbol": "Aethelgard_Power:TLV803S",
       "footprint": "Package_TO_SOT_SMD:SOT-23-3",
       "pins": {
@@ -2953,6 +2955,13 @@
             "at": {
               "document": "SBVS157E",
               "section": "p. 4, Pin Functions, RESET: use a 10-kOhm to 1-MOhm pullup resistor on this pin"
+            }
+          },
+          "delay_overdrive_millivolts": {
+            "value": 200,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 6, 7.6 Switching Characteristics, td delay time 120 to 280 ms at VDD >= VIT- + 0.2 V"
             }
           }
         }

@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 /// `AET-WO-4300k`: schema 12 (rows DMP6023LSS-13, MMSZ5242BT1G,
 /// SF-1206F400-2, SF-1206F700-2, TLV803SDBZR and their four documents, the
 /// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
-const TABLE_SHA256: &str = "694fc8f20a48bd4fc0b331d19981837d36c135f0812e58599a21d9d4d8feeeb7";
+const TABLE_SHA256: &str = "f4eec72c1aef68d2bf82610e27a8b79bfcd4ea08da5c06e2ecf8156670f6f292";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -1353,9 +1353,10 @@ fn an_undamped_battery_input_is_refused_by_name() {
     }
     // Two bulks (94 µF) are inside TI's 20 to 100 µF. On the real fuse they
     // melt it first (`AET-WO-4300k` (10)): 94 µF + the four 10 µF input
-    // ceramics + the two 220 nF, all rated, is 134440000 pF; C·V²/(2·R_min)
-    // with R_min = 7500 µΩ × 0.75 = 5625 µΩ is ⌈134440000 × 17400² /
-    // (2 × 5625 × 10⁶)⌉ = 3618050 mA²s, at or above SF-1206F700-2's
+    // ceramics at their +10 % (their DC-bias rows' tolerance, the power
+    // review's F7) + the two 220 nF at rated, 138440000 pF; C·V²/(2·R_min)
+    // with R_min = 7500 µΩ × 0.75 = 5625 µΩ is ⌈138440000 × 17400² /
+    // (2 × 5625 × 10⁶)⌉ = 3725698 mA²s, at or above SF-1206F700-2's
     // 3250000. With its melting I²t raised past the bound in a table copy,
     // the bulk judge alone decides, and passes.
     let mut v = base();
@@ -1365,10 +1366,10 @@ fn an_undamped_battery_input_is_refused_by_name() {
         .push(json!({"reference": "C2", "part": "UCZ1H470MCL1GS", "side": "board"}));
     let err = refused(&v);
     assert_power(&err, Refusal::FuseMeltsOnHotPlug, "F1");
-    assert!(err.to_string().contains("puts up to 3618050 mA²s"), "{err}");
+    assert!(err.to_string().contains("puts up to 3725698 mA²s"), "{err}");
     let mut t = table_json();
     row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["melting_i2t_milliamp2_seconds"]["value"] =
-        json!(3_618_051);
+        json!(3_725_699);
     assert_eq!(against(&v, &t), Ok(()));
     // A bulk rated at the battery's maximum (4S × 4350 mV), or holding
     // 19 µF, is refused.
@@ -1808,10 +1809,11 @@ fn the_new_guards_hold_at_their_edges() {
     assert_eq!(against(&with_clamp("TVS_TEST_PASS"), &t), Ok(()));
     // Bulk at exactly 20 µF, and two at exactly 100 µF, pass the bulk
     // judge. Two at 100 µF melt the real fuse first (`AET-WO-4300k` (10)):
-    // 100 µF + the 40.44 µF of input ceramics, rated, is 140440000 pF, and
-    // ⌈140440000 × 17400² / (2 × 5625 × 10⁶)⌉ = 3779522 mA²s is at or above
-    // SF-1206F700-2's 3250000; so the copy raises the fuse's melting I²t
-    // past it. One at 20 µF, 60440000 pF, puts 1626562 mA²s, under it.
+    // 100 µF + the 44.44 µF of input ceramics (the 10 µF parts at +10 %) is
+    // 144440000 pF, and ⌈144440000 × 17400² / (2 × 5625 × 10⁶)⌉ = 3887170
+    // mA²s is at or above SF-1206F700-2's 3250000; so the copy raises the
+    // fuse's melting I²t past it. One at 20 µF, 64440000 pF, puts 1734210
+    // mA²s, under it.
     for (pf, parts) in [(20_000_000, 1), (50_000_000, 2)] {
         let mut t = table_json();
         row(&mut t, "UCZ1H470MCL1GS")["kind"]["bulk_capacitor"]["rated_picofarads"]["value"] =
@@ -1824,9 +1826,9 @@ fn the_new_guards_hold_at_their_edges() {
                 .push(json!({"reference": "C2", "part": "UCZ1H470MCL1GS", "side": "board"}));
             let err = against(&v, &t).unwrap_err();
             assert_power(&err, Refusal::FuseMeltsOnHotPlug, "F1");
-            assert!(err.to_string().contains("puts up to 3779522 mA²s"), "{err}");
+            assert!(err.to_string().contains("puts up to 3887170 mA²s"), "{err}");
             row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["melting_i2t_milliamp2_seconds"]["value"] =
-                json!(3_779_523);
+                json!(3_887_171);
         }
         assert_eq!(against(&v, &t), Ok(()), "{pf} x {parts}");
     }

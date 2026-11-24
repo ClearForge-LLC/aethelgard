@@ -769,16 +769,16 @@
   ],
   "acknowledge_conditions": [
     {
-      "id": "lifecycle_unread:TLV803SDBZR",
-      "reason": "test fixture (AET-WO-4300k (T)): never ordered; TI's page states no lifecycle for the part, and a fixture buys nothing, so its production status decides nothing here"
-    },
-    {
       "id": "stackup_condition:test-fixture",
       "reason": "test fixture (AET-WO-4300k (T)): never ordered; every stackup bound rests on the fixture's own condition: no fabricator stands behind a board no one orders"
     },
     {
       "id": "supervisor_hysteresis_typical:U12",
       "reason": "test fixture (AET-WO-4300k (T)): never ordered; the release margin rests on TI's typical 40 mV hysteresis, as Sentinel-03's does (D6); a fixture is never benched"
+    },
+    {
+      "id": "supervisor_delay_unstated:U12",
+      "reason": "test fixture (AET-WO-4300k (T)): never ordered; TI states the reset delay only from 3.19 V, above the domain's declared minimum; a fixture is never benched, so the unstated delay decides nothing"
     }
   ]
 }

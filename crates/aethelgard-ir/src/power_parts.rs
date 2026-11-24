@@ -165,6 +165,10 @@ pub struct ThetaCurve {
     pub package: String,
     /// The copper layers of the board the curve was taken on.
     pub board_copper_layers: u8,
+    /// Its outer and inner copper, µm, as the figure's condition states them
+    /// (`AET-WO-4300k`, the power review's F2): a board with less is named.
+    pub outer_copper_um: u16,
+    pub inner_copper_um: u16,
     pub condition: String,
     /// `(cm² per layer, tenths of a kelvin per watt)`, area rising.
     pub points: Vec<(i64, i64)>,
@@ -443,6 +447,9 @@ pub struct Supervisor {
     pub vdd_millivolts: Ranged,
     /// The open-drain output's pull-up range the maker names, Ω.
     pub pull_up_ohms: Ranged,
+    /// How far above VIT− the supply must sit for the stated reset delay to
+    /// hold, mV (`AET-WO-4300k`, the power review's F9).
+    pub delay_overdrive_millivolts: Limit,
 }
 
 /// A zero-ohm jumper (`AET-WO-4300j` D4): its resistance and current, each
@@ -1171,6 +1178,7 @@ struct RawSupervisor {
     hysteresis_typ_millivolts: RawLimit,
     vdd_millivolts: RawRanged,
     pull_up_ohms: RawRanged,
+    delay_overdrive_millivolts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1212,6 +1220,8 @@ struct RawBuck {
 struct RawTheta {
     package: String,
     board_copper_layers: u8,
+    outer_copper_um: u16,
+    inner_copper_um: u16,
     condition: String,
     points: Vec<RawThetaPoint>,
     at: RawAt,
@@ -1923,6 +1933,9 @@ impl Reader<'_> {
                 t.board_copper_layers
             ));
         }
+        if t.outer_copper_um == 0 || t.inner_copper_um == 0 {
+            return Err(format!("`{f}`'s copper is 0 um"));
+        }
         if t.points.is_empty() {
             return Err(format!("`{f}.points` is empty"));
         }
@@ -1947,6 +1960,8 @@ impl Reader<'_> {
         Ok(ThetaCurve {
             package: t.package,
             board_copper_layers: t.board_copper_layers,
+            outer_copper_um: t.outer_copper_um,
+            inner_copper_um: t.inner_copper_um,
             condition: t.condition,
             points,
             at: self.at(t.at, f)?,
@@ -2466,6 +2481,10 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             vdd_millivolts: r
                 .ranged_positive(s.vdd_millivolts, "kind.supervisor.vdd_millivolts")?,
             pull_up_ohms: r.ranged_positive(s.pull_up_ohms, "kind.supervisor.pull_up_ohms")?,
+            delay_overdrive_millivolts: r.positive(
+                s.delay_overdrive_millivolts,
+                "kind.supervisor.delay_overdrive_millivolts",
+            )?,
         }),
         RawKind::Tvs(t) => {
             text(&t.clamp_condition, "kind.tvs.clamp_condition", 200)?;

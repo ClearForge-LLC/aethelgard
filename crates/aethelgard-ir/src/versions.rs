@@ -327,6 +327,7 @@ pub const CHANGES: &[VersionChange] = &[
             "ProtectionPartOutOfRange",
             "FuseMeltsOnHotPlug",
             "FuseInMotorPath",
+            "EscUndeclared",
             "PeakCurrentOverLimit",
             "EffectiveCapacitanceBelowMinimum",
             "SupervisorBelowDeviceFloor",

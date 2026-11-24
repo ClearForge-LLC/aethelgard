@@ -199,7 +199,7 @@ fn refuses_unsupported_schema_version() {
         26,
         27,
         28,
-        30,
+        29,
         u32::MAX,
     ] {
         let err = refusal(|s| s.schema_version = version);
@@ -928,7 +928,8 @@ fn full_document() -> serde_json::Value {
     v["motor_outputs"] = json!([
         {"label": "M1", "pin": null, "protocol": "pwm",
          "pwm": {"rate_hz": 400, "pulse_min_us": 1000, "pulse_max_us": 2000,
-                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000}, "esc": null,
+                 "idle": {"pulse_us": 1000}, "resolution_ps": 1000000},
+         "esc": {"none": {"source": "its ESC takes the pack's own lead (test)"}},
          "pull": {"resistor": {"reference": "R91", "part": "CRCW0603_F_K", "ohms": 442000, "to": "GND"},
                   "link": {"reference": "R93", "part": "CRCW0402_Z_0"}, "fitment": "fitted",
                   "source": "AET-WO-4300j D1 (a): cross-rail bound 422561 to 895714 ohm"}},
