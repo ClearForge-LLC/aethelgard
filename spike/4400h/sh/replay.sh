@@ -6,14 +6,17 @@
 #   INJ=DIR   `emulation RunFor` replaced by DIR/inject.resc (frames.py)
 #   LOG=1     `sysbus LogAllPeripheralsAccess true` before the run, collapse off, reads dropped from the
 #             stored console (gzipped), and Tviburi 1100's regmap.py after it, as Tviburi (v) (replay-ap.sh `logged`)
+#   NOHOOK=1  the CLI's SPI CFG2 write hooks dropped (the RSS cause, replay against replay)
+#   GCLIMIT=HEX  DOTNET_GCHeapHardLimit for Renode: is the growth live memory or uncollected garbage?
+#   SILENCE=1 `logLevel 3` before the run: the flood's cost on RSS, replay against replay
 # Always: USART1's TX into OUT/tx.bin (UartFileBackend), and the storage sectors' first words read after.
 # Usage: replay.sh CAPDIR OUTDIR     cost line in OUTDIR/cost.txt (tree VmRSS peak at 100 ms, as replay-ap.sh)
 set -u
 cap=$1; O=$2; rm -rf "$O"; mkdir -p "$O"
-rm -rf /var/lib/aethelgard; cp -r "$cap/varlib" /var/lib/aethelgard
 mapfile -d '' args < "$cap/argv.bin"; args=("${args[@]:1}")
 cfg=""; for i in "${!args[@]}"; do [ "${args[$i]}" = "--config" ] && cfg=${args[$((i + 1))]}; done
 d=$(dirname "$cfg"); plat=$d/platform-booted.repl
+rm -rf "$d"; mkdir -p "$(dirname "$d")"; cp -r "$cap/tool" "$d"   # the captured scratch, at its own path
 if [ "${REQ:-0}" = 1 ]; then
   python3 -I - "$plat" <<'PY'
 import sys, re
@@ -31,7 +34,10 @@ for i in "${!args[@]}"; do
   [ "${args[$i]}" = "-e" ] || continue
   c=${args[$((i + 1))]}
   pre="sysbus.usart1 CreateFileBackend @$O/tx.bin true; "
+  [ "${SILENCE:-0}" = 1 ] && pre="${pre}logLevel 3; "   # (1)'s cause: only ERROR lines from the run on
   [ "${LOG:-0}" = 1 ] && { sed -i 's/^collapse-repeated-log-entries = True/collapse-repeated-log-entries = False/' "$cfg"; pre="${pre}sysbus LogAllPeripheralsAccess true; "; }
+  # NOHOOK=1: drop the CLI's two SPI write hooks (foreign.rs cfg2_hook), (1)'s cause: does RSS follow them?
+  [ "${NOHOOK:-0}" = 1 ] && c=$(python3 -I -c 'import re,sys; print(re.sub(r"sysbus SetHookBeforePeripheralWrite sysbus\.spi[0-9] \"[^\"]*\"; ", "", sys.argv[1]), end="")' "$c")
   run=$(grep -o 'emulation RunFor "[0-9.]*"' <<< "$c" | head -1)
   if [ -n "${INJ:-}" ]; then body="include @$INJ/inject.resc"; else body="$run"; fi
   post="; echo \"AET4400H-STORAGE\"; sysbus ReadDoubleWord 0x081C0000; sysbus ReadDoubleWord 0x081C0060; sysbus ReadDoubleWord 0x081E0000; sysbus ReadDoubleWord 0x081E0060"
@@ -43,10 +49,10 @@ printf '%s\n' "${args[@]}" > "$O/argv.txt"
 cd "$d"
 start=$(date +%s.%N)
 if [ "${LOG:-0}" = 1 ]; then
-  env -i HOME="$d" TMPDIR="$d" DOTNET_EnableDiagnostics=0 DOTNET_EnableWriteXorExecute=0 \
+  env -i HOME="$d" TMPDIR="$d" DOTNET_EnableDiagnostics=0 DOTNET_EnableWriteXorExecute=0 ${GCLIMIT:+DOTNET_GCHeapHardLimit=$GCLIMIT} \
     /opt/renode/renode "${args[@]}" < /dev/null 2>&1 | grep -av '\] Read\(UInt\|Byte\|Word\|DoubleWord\|QuadWord\)' | gzip -1 > "$O/console.txt.gz" &
 else
-  env -i HOME="$d" TMPDIR="$d" DOTNET_EnableDiagnostics=0 DOTNET_EnableWriteXorExecute=0 \
+  env -i HOME="$d" TMPDIR="$d" DOTNET_EnableDiagnostics=0 DOTNET_EnableWriteXorExecute=0 ${GCLIMIT:+DOTNET_GCHeapHardLimit=$GCLIMIT} \
     /opt/renode/renode "${args[@]}" < /dev/null 2>&1 | gzip -1 > "$O/console.txt.gz" &
 fi
 sleep 0.05; peak=0; loads=""

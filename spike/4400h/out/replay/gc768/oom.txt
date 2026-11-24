@@ -1,0 +1,2 @@
+178820:[00:00:06.362257060] [ERROR] Exception of type 'System.OutOfMemoryException' was thrown.
+178867:Out of memory.

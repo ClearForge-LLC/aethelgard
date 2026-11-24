@@ -1,7 +1,7 @@
 #!/bin/bash
 # AET-WO-4400h (2)-(4): one `simulate --foreign` by the patched CLI on the held ELF, with each Renode
 # process that loads an ELF captured as Tviburi's spike/1150/harness/capture-foreign.sh does it (argv
-# bytes, cwd, a copy of the CLI's tool scratch /var/lib/aethelgard). Inside the pinned tools image.
+# bytes, cwd, a copy of Renode's cwd, the CLI's tool scratch under HOME). Inside the pinned tools image.
 # Usage: capture.sh NAME WINDOW    -> /cache/cap/NAME
 set -u
 O=/cache/cap/$1; w=$2; rm -rf "$O"; mkdir -p "$O"
@@ -14,10 +14,10 @@ A=target/debug/aethelgard
       p=${c#/proc/}; p=${p%/cmdline}
       [ -n "${seen[$p]:-}" ] && continue
       grep -qa 'sysbus LoadELF' "$c" 2>/dev/null || continue
-      grep -qa -- '--console' "$c" 2>/dev/null || continue
+      grep -qa -- '--config' "$c" 2>/dev/null || continue   # Renode itself, not the CLI's reaper
       seen[$p]=1; n=$((n + 1)); mkdir -p "$O/$n"
       cp "$c" "$O/$n/argv.bin"; readlink "/proc/$p/cwd" > "$O/$n/cwd.txt"
-      cp -r --no-preserve=ownership /var/lib/aethelgard "$O/$n/varlib" 2> "$O/$n/cp.err"
+      cp -r --no-preserve=ownership "$(readlink "/proc/$p/cwd")" "$O/$n/tool" 2> "$O/$n/cp.err"   # the CLI's tool scratch
     done
     sleep 0.02
   done
