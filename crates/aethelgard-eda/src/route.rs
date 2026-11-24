@@ -6503,6 +6503,15 @@ mod tests {
     fn the_meeting_offsets_by_runs_are_every_cell_difference() {
         use crate::flow::Region;
         let h = crate::supply::PITCH_NM;
+        let every = |a: &Region, b: &Region| {
+            let mut out = BTreeSet::new();
+            for &(ai, aj) in &a.cells {
+                for &(bi, bj) in &b.cells {
+                    out.insert((ai - bi, aj - bj));
+                }
+            }
+            out
+        };
         for (ra, rb) in [
             (349_068, 349_068),
             (699_068, 349_068),
@@ -6511,14 +6520,18 @@ mod tests {
             (62_500, 62_499),
         ] {
             let (a, b) = (Region::new(h, ra), Region::new(h, rb));
-            let mut every = BTreeSet::new();
-            for &(ai, aj) in &a.cells {
-                for &(bi, bj) in &b.cells {
-                    every.insert((ai - bi, aj - bj));
-                }
-            }
-            assert_eq!(meeting(&a, &b), every, "{ra} {rb}");
+            assert_eq!(meeting(&a, &b), every(&a, &b), "{ra} {rb}");
         }
+        // any cell set, not only a disc's: rows with gaps, of unequal reach,
+        // whose spans neither nest nor touch
+        let ragged = |cells: &[(i64, i64)]| Region {
+            cells: cells.iter().copied().collect(),
+            faces: Vec::new(),
+        };
+        let a = ragged(&[(0, 0), (1, 0), (5, 0), (9, 0), (-3, 1), (2, 1), (3, 1)]);
+        let b = ragged(&[(0, 0), (7, 0), (8, 0), (-6, 2), (4, 2)]);
+        assert_eq!(meeting(&a, &b), every(&a, &b));
+        assert_eq!(meeting(&b, &a), every(&b, &a));
     }
 
     /// A1: a path whose first and third vias' regions meet, with a second via

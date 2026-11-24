@@ -16,8 +16,10 @@ lib = lambda name: ["cargo", "test", "-q", "-p", "aethelgard-eda", "--lib", "--"
 cli = lambda name: ["cargo", "test", "-q", "-p", "aethelgard-cli", "--test", "supply_tier1", "--", name, "--exact"]
 
 MUTANTS = [
-    ("M1 meeting: a - b -> a + b", R, "out.insert((ai - bi, aj - bj));", "out.insert((ai + bi, aj + bj));",
-     lib("two_junction_regions_meet_where_their_cells_do_not_where_a_disc_does")),
+    # (row offset ja - jb -> jb - ja survives as an equivalent mutant: every
+    # Region::new region is symmetric under j -> -j - 1, so the set is the same)
+    ("M1 meeting: the merge skips an offset", R, "lo.max(done.saturating_add(1))", "lo.max(done.saturating_add(2))",
+     lib("the_meeting_offsets_by_runs_are_every_cell_difference")),
     ("M2 meet keeps (0, 0)", R, "&& (i, j) != (0, 0))", ")",
      lib("two_junction_regions_meet_where_their_cells_do_not_where_a_disc_does")),
     ("M3 junction only on judged nets: every net", R, ".contains(name)", ".contains(name).then_some(true).unwrap_or(true)",
