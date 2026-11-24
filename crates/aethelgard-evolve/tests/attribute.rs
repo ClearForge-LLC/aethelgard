@@ -2131,8 +2131,10 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
         fields_of(&r, witness_index(&r, "U5")).iter().all(|f| !f.4),
         "a repeat the script holds is no evidence"
     );
-    // One write, two reads: one transaction, not the script's. Its first
-    // write and read are the solved ones, so it stays I4 as before.
+    // One write, two reads: one transaction, not the script's. It read two
+    // bytes where the step reads one: wrong by its count, so S1, where it was
+    // I4 while a witness read its first `Read` line alone (`AET-WO-3309` (1),
+    // (4)). It is still no surplus: there is no transaction count.
     let r = two_bme(&[], |r| {
         observe(r, "U5", &["Write D0", "Read 60", "Read 60"]);
         replace(
@@ -2141,7 +2143,13 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
             verdict(&[("i2c_transaction_unwitnessed", 1)]),
         );
     });
-    assert_eq!(attributed(&r).rule, Rule::I4);
+    assert_eq!(attributed(&r).rule, Rule::S1);
+    let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
+        .into_iter()
+        .filter(|f| f.4)
+        .map(|f| f.0)
+        .collect();
+    assert_eq!(wrong, ["i2c1.u5.Read", "i2c1.u5.Read.bytes"]);
     // An extra write with the script's own missing: not the script's
     // transactions with one more. U5's first write is wrong: S1 as before,
     // with no transaction count.
@@ -2159,7 +2167,10 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
             .iter()
             .all(|f| !f.0.ends_with(".transactions"))
     );
-    // A warning line among the device's lines: not a transaction.
+    // A warning line among the device's lines: not a transaction, and no
+    // `Write` (`AET-WO-3309` D1): the `Write D0` before it stays open, so the
+    // `Read 60` after it is that transaction's second read. Two bytes where
+    // the step reads one: S1 by its count, with no transaction count.
     let r = two_bme(&[], |r| {
         let i = witness_index(r, "U5");
         if let Record::I2cWitness { observed, .. } = &mut r[i] {
@@ -2176,7 +2187,13 @@ fn a_repeat_the_script_holds_or_a_wrong_transaction_is_not_a_surplus() {
             verdict(&[("i2c_transaction_unwitnessed", 1)]),
         );
     });
-    assert_eq!(attributed(&r).rule, Rule::I4);
+    assert_eq!(attributed(&r).rule, Rule::S1);
+    let wrong: Vec<String> = fields_of(&r, witness_index(&r, "U5"))
+        .into_iter()
+        .filter(|f| f.4)
+        .map(|f| f.0)
+        .collect();
+    assert_eq!(wrong, ["i2c1.u5.Read", "i2c1.u5.Read.bytes"]);
 }
 
 /// One more device's identity step (register 0xD0, a read of `width` bytes)
@@ -2329,6 +2346,7 @@ fn the_surplus_is_shown_on_the_witness_its_first_line_went_to() {
         [
             "i2c1.u5.Write",
             "i2c1.u5.Read",
+            "i2c1.u5.Read.bytes",
             "i2c1.u5.transactions",
             "i2c1.u2.identity.address"
         ]
@@ -2482,6 +2500,8 @@ fn a_collide_onto_a_bmp581_is_software_by_its_witness() {
                 Some(0x50),
                 true
             ),
+            // `AET-WO-3309` (1): one byte written where the step writes three.
+            ("i2c1.u5.Write.bytes".to_owned(), 0x47, 3, Some(1), true),
         ]
     );
     assert_eq!(
@@ -2551,27 +2571,44 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
             .into_iter()
             .map(|f| (f.3, f.4))
             .collect::<Vec<_>>(),
-        [(None, false), (Some(0x01), false), (None, false)],
-        "the pointer of a read too wide to judge, and no value"
+        [
+            (None, false),
+            (Some(0x01), false),
+            (None, false),
+            (Some(9), true)
+        ],
+        "the pointer of a read too wide to judge, no value, and its count wrong (AET-WO-3309 (1))"
     );
-    for (line, field, observed) in [
-        ("[NOISY] i2c1.u5: read 0x01 -> 0x51", "Read", 0x51),
-        ("[NOISY] i2c1.u5: read 0x02 -> 0x50", "Write", 0x02),
-        ("[NOISY] i2c1.u5: write 0x02 <- (none)", "Write", 0x02),
-        // A write of 0x01 then 0x50, shown under the step's one-byte mask.
-        ("[NOISY] i2c1.u5: write 0x01 <- 0x50", "Write", 0x50),
-        // Adversarial 2: a read too wide to judge keeps its pointer.
+    // Each wrong field, and the count of a transaction that wrote or read
+    // another number of bytes than the step (`AET-WO-3309` (1)).
+    for (line, want) in [
+        ("[NOISY] i2c1.u5: read 0x01 -> 0x51", &[("Read", 0x51)][..]),
+        ("[NOISY] i2c1.u5: read 0x02 -> 0x50", &[("Write", 0x02)]),
+        ("[NOISY] i2c1.u5: write 0x02 <- (none)", &[("Write", 0x02)]),
+        // A write of 0x01 then 0x50, shown under the step's one-byte mask:
+        // two bytes where the step writes one.
+        (
+            "[NOISY] i2c1.u5: write 0x01 <- 0x50",
+            &[("Write", 0x50), ("Write.bytes", 2)],
+        ),
+        // Adversarial 2: a read too wide to judge keeps its pointer; its
+        // nine bytes are wrong by their count.
         (
             "[NOISY] i2c1.u5: read 0x02 -> 0x50 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
-            "Write",
-            0x02,
+            &[("Write", 0x02), ("Read.bytes", 9)],
+        ),
+        // A write too wide to pack has no value, but its nine bytes are wrong
+        // by their count (it was no line before `AET-WO-3309` (1)).
+        (
+            "[NOISY] i2c1.u5: write 0x02 <- 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
+            &[("Write.bytes", 9)],
         ),
     ] {
-        assert_eq!(
-            wrong(line),
-            [(format!("i2c1.u5.{field}"), Some(observed))],
-            "{line}"
-        );
+        let want: Vec<(String, Option<u64>)> = want
+            .iter()
+            .map(|(f, o)| (format!("i2c1.u5.{f}"), Some(*o)))
+            .collect();
+        assert_eq!(wrong(line), want, "{line}");
     }
     for line in [
         // Another model's line, or another form.
@@ -2599,7 +2636,6 @@ fn a_bmp581_witness_reads_only_its_models_lines_whole() {
         "[NOISY] i2c1.u5: read 0x02 <- 0x50",
         "[NOISY] i2c1.u5: write 0x02 -> 0x50",
         "[NOISY] i2c1.u5: Read 0x01 -> 0x51",
-        "[NOISY] i2c1.u5: write 0x02 <- 0x00 0x00 0x00 0x00 0x00 0x00 0x00 0x00",
     ] {
         let f = shown(line);
         assert!(
