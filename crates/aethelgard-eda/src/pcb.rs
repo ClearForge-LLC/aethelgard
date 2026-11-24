@@ -2372,16 +2372,23 @@ pub(crate) fn write_placed_at(
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
     // `AET-WO-4300k` (a), Q2 ruled 10:30Z step 1: on a board with thermal
     // pours, an SMD pad on `GND` joins them solid (a buck's thermal pad among
-    // them), so the copper `extract` measures is the copper the heat reaches;
-    // an 0402 or 0603 passive keeps its relief, against tombstoning.
-    let small = fp.arg(1).is_some_and(|lib| small_passive(lib));
-    if !stack.pours.is_empty() && !small {
+    // them), so the copper `extract` measures is the copper the heat reaches.
+    // An 0402 or 0603 passive's is not joined to the pour at all (`0`): it
+    // keeps its own via to the plane, as before the pours, so no relief can
+    // starve (KiCad's DRC refused C2's and C38's one-spoke reliefs) and no
+    // pour pulls heat from one end (tombstoning).
+    let join = if fp.arg(1).is_some_and(small_passive) {
+        "0"
+    } else {
+        "2"
+    };
+    if !stack.pours.is_empty() {
         for pad in fp.items_mut().into_iter().flatten() {
             let on_ground = pad.head() == Some("pad")
                 && pad.arg(2) == Some("smd")
                 && pad.child("net").and_then(|n| n.arg(1)) == Some(aethelgard_ir::GND);
             if on_ground && let Some(items) = pad.items_mut() {
-                items.push(Sx::node("zone_connect", &["2"]));
+                items.push(Sx::node("zone_connect", &[join]));
             }
         }
     }

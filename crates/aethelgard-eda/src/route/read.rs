@@ -122,8 +122,9 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
             (Some("smd"), ["F.Cu"]) if one(&pad, "drill")?.is_none() => {
                 // `AET-WO-4300k` (a): a pad on a thermal pour may carry its
                 // own solid join, which `pour` reads; nothing else judges it.
+                // `0`: a small passive the pour does not join at all.
                 let join = match one(&pad, "zone_connect")?.map(|z| (z.arg(1), z.arg(2))) {
-                    None => None,
+                    None | Some((Some("0"), None)) => None,
                     Some((Some(t), None)) if let Some(j) = crate::stack::Join::of_token(t) => {
                         Some(j)
                     }
