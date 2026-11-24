@@ -64,7 +64,12 @@ Concretely:
   - It generates board configuration only for firmware ecosystems it has added, one at a time (ArduPilot's hwdef is the first).
   - It writes no operating system (`NG-01`).
 - **Families are added, not rewritten.** Each new chip family or firmware ecosystem arrives as data and adapters behind the one specification (`INV-08`). The intermediate representation never becomes one vendor's register map (§6).
-- **Tviburi is the twin's floor.** Where Tviburi models a peripheral, the verdict rests on a model that refuses what it cannot answer for. Where it does not, the verdict names the gap. A second family's twin is Tviburi's Phase 5, so the two projects add a family together.
+- **Aethelgard and Tviburi each stand alone, and fit together without glue** (Scotty, 2026-11-24: "functionally independent … but the seam between Aet and Tvi should be nearly seamless with cohesive integration").
+  - Aethelgard runs without Tviburi, on the stock twin, and its verdict says so.
+  - Tviburi runs without Aethelgard.
+  - With both present, the seam is one declared step: Aethelgard pins a Tviburi release by hash, and its verdict carries Tviburi's records and ledger hash with nothing for the user to write in between.
+  - Running on the stock twin is a declaration the verdict names, never a fallback when Tviburi is missing (`INV-06`).
+  - Either project can add a family on its own. A combination's verdict is strongest where both carry it.
 - **A cold start reaches a verdict.**
   - Someone on a fresh machine, with nothing but the README, reaches a verdict on a supported combination, with no help from the people who built it.
   - The README's quickstart, which CI runs as written, is the first instance: today it covers the reference probe's board checks.
@@ -111,6 +116,7 @@ Each carries its reason, because the reason is what stops it being relitigated e
 - One microcontroller family is supported so deeply that the intermediate representation is secretly that vendor's register map.
 - A second family or firmware arrives and every verdict on the first has to be re-made (`INV-08`).
 - The cold-start path rots: only the people who built Aethelgard can get a verdict out of it.
+- Aethelgard stops working without Tviburi, or the seam between them needs glue that each user writes for themselves.
 - A firmware is judged by what it says about itself rather than by what the models witness.
 
 ## 7. Amendments
