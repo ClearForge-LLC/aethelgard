@@ -55,17 +55,17 @@ See `spike/4410/RESULTS.md` (M1–M7, predictions scored) and `STOP.md`.
   - `NAME (x)` and `NAME/**/(x)` are object-like (read as values, as GCC reads them);
   - `%:define NAME(x)` and a continuation before `(` are refused.
 - **16 MHz against the 0 row, or the reverse:** a unit test drives SPI4 at 300 kHz: it passes at 0 Hz (floor 281,250 Hz) and is refused at 16 MHz (floor 390,625 Hz).
-- **Mine:**
+- **Mine, each held by a test** (`the_battery_monitor_s_literals_are_read_exactly_at_their_edges`, `a_chip_select_named_like_the_battery_label_is_refused`):
   - `HAL_BATT_VOLT_PIN` written in hex reads as C reads it.
-  - A quotient with a zero denominator is no fraction.
-  - Literals over 30 digits are refused before any multiply.
-  - A chip select named `BATT_VOLTAGE_SENS` collides with the battery line's label (`LabelCollision`).
+  - A quotient over zero is no fraction, `0/0` included (mutant killed).
+  - A literal whose digits parse but whose 10^decimals passes `u128` is named, never overflowed: `checked_pow`, which replaced a 30-digit cap whose mutant survived, since the parse already refused longer literals (mutant killed).
+  - A chip select named `BATT_VOLTAGE_SENS` collides with the battery line's label (`LabelCollision`; mutant killed).
 
 ## 4. Versions and what moved
 
 - **Versions:** solved 19 → 20; power-parts 10 → 11. Specification 29 and `parts.json` do not move.
 - **Topologies:** the 9 committed topologies moved by `solve`, by their version line alone.
-  - 5 inline topology literals moved 19 → 20: 2 in `cli/src`, 2 in the twin's tests, 1 in `analog.rs`. The twin's are a fence edge: a version literal only.
+  - 5 inline topology literals moved 19 → 20: `cli/src/renode.rs` ×2, `cli/src/analog.rs` ×1, and the twin's tests ×2. The twin's are a fence edge: a version literal only.
   - The twin's unsupported-version case moved 20 → 21.
   - `solve_cli`'s two digests and the CLI README line moved by the version alone.
 - **Goldens:** the six hwdef goldens (with 4240e's `sentinel-01-full`) moved by the generator: the SWD lines, F1's sentence, the header's constant.
@@ -121,7 +121,7 @@ See `spike/4410/RESULTS.md` (M1–M7, predictions scored) and `STOP.md`.
 
 ## 7. Gates, CI, package
 
-- **Mutants:** 18/18 on the non-IR guards, 23/23 on the IR half (`spike/4410/MUTANTS.md`; two first-run survivors strengthened).
+- **Mutants:** 18/18 on the non-IR guards and 23/23 on the IR half; 11 re-run after the reduction (3 mutant texts moved with it) and killed; 3 more at the close for §3's claims, 3/3 after one survivor replaced its guard (`spike/4410/MUTANTS.md`).
 - **ArduPilot:** every CI board built in the pinned image from this branch's final files, and `container/ardupilot-pinout.sh` (with its workflow argument) exits 0.
   - Sentinel-03 derived builds with its battery monitor, and `check pinout` finds nothing.
 - **Image gates (tools image `1e0ab105`, `~/bin/capped-run` 16 GiB, swap 0), on `e39c84c5`:** fmt (workspace, bridge) and clippy (plain, `with-tools`, bridge) pass. The workspace suite with `--no-fail-fast` gave 3,049 passed and 1 failed, the bench MANIFEST test, which the dispatch answers.
@@ -135,6 +135,11 @@ See `spike/4410/RESULTS.md` (M1–M7, predictions scored) and `STOP.md`.
 - **Reduction pass (diff):** −9 net · 4 duplicates removed (the topology-pin rule, the `#define` grammar, the ADC1-first channel parse with its `expect`, hwdef's sense walk covered by `adc_inputs`) · 0 dead paths removed · 3 protected kept (`pmcr::WRITERS` as ruled in D1; the SWD pins and the battery parse and ratio in both hwdef and pincheck, now labelled `belt-and-suspenders:` for INV-07) · 1 finding (the test helper `keep_off_adc1` is a third, deliberate ADC1 test).
 - **Foreign judge:** `ci/foreign-judge.sh` as edited (Q14), run in the tools image on this branch's ELFs: 17 cases, exit 0.
 - **CI on `046fdbfa`:** all 39 checks green (`ci` 45326283655, `ardupilot-image` 45326283734, `engine-image` 45326283645), shard 11 included, no re-run spent.
+- **CI on `de8fd9e4`** (§3's claims tested): `ardupilot-image` 45332797900 and `engine-image` 45332797961 green. `ci` 45332797904 was red on shard 3's P3 guard alone.
+  - The guard named 4300j's `emit_tier1::an_open_motor_pulls_link_is_drawn_not_fitted_and_its_resistor_fitted`, which had no weight row, at 13.674 s.
+  - Ruled into this fence: its row was added by the REFIT RULE at its worst in-shard time over this PR's four runs (2.606, 2.630, 3.265, 13.674 s, by `shard.sh times`), and `ci/test-shard.sh` passes.
+  - Every test this PR added is in a colocated binary or ran under 0.5 s.
+- **The READY head's runs** are named in the READY note on the builders' bus.
 - **Package:** `fab/sentinel-01-bench/package/` from dispatch run 45315285414 at `09c2ff8d`, byte for byte (`046fdbfa`).
   - Only `MANIFEST.json` moves: `topology_sha256` `1f04dae2…` → `9d60c7ba…` and `verdict_sha256`. The ELF and the other 15 files are byte-identical.
   - Each of the 16 file hashes matches its file.
