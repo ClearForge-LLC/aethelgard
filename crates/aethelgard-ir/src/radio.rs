@@ -740,6 +740,19 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
+        if m.supply != spec.mcu.supply {
+            return Err(refuse(
+                Kind::RadioSupplyNotMcu,
+                &m.supply,
+                format!("{at}.supply"),
+                format!(
+                    "`{}` is not the MCU's supply `{}`: the module's UART levels are stated against its own supply ({}), and no tolerance of another is stated",
+                    m.supply,
+                    spec.mcu.supply,
+                    t.cite(&row.uart.at)
+                ),
+            ));
+        }
         // The row's supply requirement is judged on a declared regulator's
         // output (D5); with none, nothing judges it (`INV-06`).
         if !spec
@@ -756,19 +769,6 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     m.supply,
                     row.supply_current_min_ma.value,
                     t.cite(&row.supply_current_min_ma.at)
-                ),
-            ));
-        }
-        if m.supply != spec.mcu.supply {
-            return Err(refuse(
-                Kind::RadioSupplyNotMcu,
-                &m.supply,
-                format!("{at}.supply"),
-                format!(
-                    "`{}` is not the MCU's supply `{}`: the module's UART levels are stated against its own supply ({}), and no tolerance of another is stated",
-                    m.supply,
-                    spec.mcu.supply,
-                    t.cite(&row.uart.at)
                 ),
             ));
         }
