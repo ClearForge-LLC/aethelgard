@@ -84,7 +84,11 @@ fn emitted(label: &str, spec: &Path) -> PathBuf {
         .unwrap()
 }
 
-/// Sentinel-03's board, emitted once: the gate's inputs never change it.
+/// Sentinel-03's board, emitted once from its own specification, which
+/// declares no drop limit. The gate's inputs can change a routing: the
+/// router keeps a judged net's vias one junction region apart where the
+/// gate runs (`AET-WO-1324`). Sentinel-03 gated routes byte-identical
+/// (measured, FEEDBACK), so each test here judges this one board.
 fn s03_board() -> &'static Path {
     static BOARD: OnceLock<PathBuf> = OnceLock::new();
     BOARD.get_or_init(|| emitted("s03", &root().join(S03)))
@@ -484,21 +488,68 @@ fn a_declared_pair_gets_each_conductors_bound_and_its_mismatch_named() {
     assert_eq!(r["error"]["kind"], "PairConductorUnbounded", "{r}");
 }
 
-/// `AET-WO-4410` Q12 (ruled 2026-11-24), the evidence of a row for the next
-/// router work order: with the sense on PC0 (S2's ADC1-first rule), the
-/// two-layer power fixture's router draws two vias whose junction regions
-/// meet, and `extract` refuses the board by name, where it reported the
-/// ground return on the PF3 layout. When the router is fixed this test
-/// changes with it; it may not silently disappear.
+/// `AET-WO-4410` Q12, then `AET-WO-1324` (ruled 2026-11-24). With the sense
+/// on PC0, the two-layer power fixture's router drew two VDD_3V3 vias whose
+/// junction regions met, at (93.25, 87.125) mm and (4, 4) pitches from it,
+/// and `extract` refused the board (`ViaRegionsOverlap`). The router now
+/// keeps a judged net's vias one junction region apart, so the gate reads
+/// the board. Every supply pin is bounded, and every return is refused by
+/// its own name, `GroundReturnUnread` (the two-layer ground zone is left
+/// unfilled): the refusal the PF3 layout had, recorded and not chased here.
 #[test]
-fn the_two_layer_power_fixture_on_the_pc0_sense_meets_overlapping_vias() {
+fn the_two_layer_power_fixture_on_the_pc0_sense_keeps_its_vias_regions_apart() {
     let spec = write("s02-pc0", &gated(common::power::power_tree(), 165));
     let board = emitted("s02-pc0", &spec);
     let (code, v) = extract(&board, &spec);
-    assert_eq!(code, 2, "{v}");
-    assert_eq!(v["error"]["kind"], "ViaRegionsOverlap", "{v}");
-    assert_eq!(
-        v["error"]["message"], "the via at (93250000, 87125000)'s junction region meets another's",
-        "{v}"
+    assert_eq!(code, 1, "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    let s = &v["supplies"][0];
+    let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
+    assert_eq!((vdd.len(), vss.len()), (16, 11), "{s}");
+    assert!(vdd.iter().all(|p| p["r_bound_microohms"].is_u64()), "{s}");
+    assert!(
+        vss.iter()
+            .all(|p| p["refused"]["kind"] == "GroundReturnUnread"),
+        "{s}"
     );
+}
+
+/// `AET-WO-1324` Q1: the router's junction rule is on exactly where the
+/// gate runs: on each limited domain and `GND`, at the specification's
+/// tolerances and plating, so its reach is the gate's; off with no limit, or
+/// with an input the reach reads undeclared.
+#[test]
+fn the_routers_junction_rule_is_on_where_the_gate_runs() {
+    use aethelgard_eda::stack::{JunctionRule, Stack};
+    let spec =
+        |v: &Value| -> aethelgard_ir::Specification { serde_json::from_value(v.clone()).unwrap() };
+    let rule = |v: &Value| JunctionRule::of(&spec(v));
+    let on = rule(&gated(s03(), 165)).unwrap();
+    // the board's stack carries it
+    let stack = Stack::of(&spec(&gated(s03(), 165))).unwrap();
+    assert_eq!(stack.junction.as_ref(), Some(&on));
+    assert_eq!(on.nets, ["GND", "VDD_3V3"]);
+    assert_eq!(
+        (on.hole_plus_nm, on.hole_offset_nm, on.plating_nm),
+        (130_000, 75_000, 18_000)
+    );
+    assert_eq!(on.reach(300_000), 349_068);
+    assert_eq!(rule(&s03()), None);
+    let mut v = gated(s03(), 165);
+    v["power"]["drop_limits"] = json!([]);
+    assert_eq!(rule(&v), None);
+    for (path, key) in [
+        ("board/stackup", "plating_min_um"),
+        ("board/stackup/fab_tolerances", "hole_size_plus_um"),
+        ("board/stackup/fab_tolerances", "hole_position_um"),
+    ] {
+        let mut v = gated(s03(), 165);
+        let at = format!("/{path}");
+        v.pointer_mut(&at)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert_eq!(rule(&v), None, "{key}");
+    }
 }
