@@ -87,10 +87,14 @@ pub const GROUND: &str = crate::schematic::GND;
 pub const RIPUPS: usize = 500;
 /// The most work one routing may do before it is refused by name
 /// (`RouterWorkExceeded`, `AET-WO-1323` D1): each state a search expands, and
-/// each node a fill flood visits, counts one. A count, never a clock, so a
-/// board's answer cannot depend on the machine. Sized at §1.1: the heaviest
-/// routing any test makes did 170.1 M (d3 shifted, under U1), the heaviest
-/// committed specification 119.0 M (`sentinel-02-power`); `1307` A4's
+/// each node a fill flood visits, counts one. So do each source a search
+/// seeds, each (pad, tree node) pair the nearest-pad index takes and each
+/// pad it picks from, and each pair the final check judges (`AET-WO-1324`):
+/// every part of a routing that grows faster than its states. A count, never
+/// a clock, so a board's answer cannot depend on the machine. Sized at
+/// `1323` §1.1; measured with `1324`'s charges: the heaviest routing any test
+/// makes did 177.1 M (d3 shifted, under U1), the heaviest committed
+/// specification 136.2 M (`sentinel-02-power`, 38.9 %); `1307` A4's
 /// adversary reaches it in under a minute, where it took 203 s to [`RIPUPS`].
 pub const WORK: u64 = 350_000_000;
 
@@ -531,6 +535,194 @@ enum Stuck {
     Work,
 }
 
+/// A judged net's junction regions, as the router keeps them apart
+/// (`AET-WO-1324`, ruled 2026-11-24; [`crate::stack::JunctionRule`]).
+/// `extract` prices each via of the net, each of its through-hole pads and
+/// each of its array vias on the cell grid with a junction region: the
+/// cells of side [`crate::supply::PITCH_NM`] meeting the open disc of the
+/// junction reach about the hole's centre ([`crate::flow::Region::new`]).
+/// It refuses two regions that share a cell (`ViaRegionsOverlap`), since
+/// its certified bound carries one flow per piece of copper and a region's
+/// field is written for one hole. KiCad's DRC passes two such vias, so this
+/// is a limit of the supply model, not a fabrication fault: the router
+/// keeps the certified model unchanged by routing around it, judging in the
+/// same cells from the same reach, never by a disc (two regions 0.707 mm
+/// apart meet where twice the reach is 0.698 mm).
+struct Junction {
+    /// The grid offsets, in pitches, at which two of the net's vias'
+    /// regions meet (the offset `(0, 0)`, one via, left out).
+    meet: BTreeSet<(i64, i64)>,
+    /// The nodes where a via of the net would meet the region of one of its
+    /// through-hole pads or array vias.
+    fixed: Vec<bool>,
+    /// The same with the net's laid vias too: where it may not stand.
+    near: Vec<bool>,
+}
+
+/// The cell offsets `d` at which a region `b` centred `d` cells from a
+/// region `a`'s centre shares a cell with it: every `ca − cb`. Taken row by
+/// row: two runs of cells, `a`'s in row `ja` and `b`'s in row `jb`, give
+/// exactly the offsets `(lo_a − hi_b ..= hi_a − lo_b, ja − jb)`; their union
+/// per row offset is the set, at a cost of runs squared plus its size, not
+/// cells squared (`AET-WO-1324` adversarial A2: a 3 mm plating minimum,
+/// which `validate` admits, took 6.6 s cell by cell).
+fn meeting(a: &crate::flow::Region, b: &crate::flow::Region) -> BTreeSet<(i64, i64)> {
+    // each region's runs: (row, first cell, last cell)
+    let runs = |r: &crate::flow::Region| {
+        let mut cells: Vec<(i64, i64)> = r.cells.iter().map(|&(i, j)| (j, i)).collect();
+        cells.sort_unstable();
+        let mut out: Vec<(i64, i64, i64)> = Vec::new();
+        for (j, i) in cells {
+            match out.last_mut() {
+                Some((rj, _, hi)) if *rj == j && *hi + 1 == i => *hi = i,
+                _ => out.push((j, i, i)),
+            }
+        }
+        out
+    };
+    let (ra, rb) = (runs(a), runs(b));
+    let mut spans: BTreeMap<i64, Vec<(i64, i64)>> = BTreeMap::new();
+    for &(ja, lo_a, hi_a) in &ra {
+        for &(jb, lo_b, hi_b) in &rb {
+            spans
+                .entry(ja - jb)
+                .or_default()
+                .push((lo_a - hi_b, hi_a - lo_b));
+        }
+    }
+    let mut out = BTreeSet::new();
+    for (dj, mut s) in spans {
+        s.sort_unstable();
+        let mut done = i64::MIN;
+        for (lo, hi) in s {
+            for di in lo.max(done.saturating_add(1))..=hi {
+                out.insert((di, dj));
+            }
+            done = done.max(hi);
+        }
+    }
+    out
+}
+
+// A router node is a cell corner of the supply gate's grid.
+const _: () = assert!(PITCH_NM % crate::supply::PITCH_NM == 0);
+
+impl Junction {
+    /// `net`'s regions, its vias drilled `drill_nm`, under `rule`.
+    fn new(
+        board: &Board,
+        grid: &Grid,
+        arrays: &[Array],
+        rule: &crate::stack::JunctionRule,
+        net: &str,
+        drill_nm: i64,
+    ) -> Junction {
+        use crate::flow::Region;
+        let h = crate::supply::PITCH_NM;
+        let k = PITCH_NM / h;
+        let region = |drill: i64| Region::new(h, rule.reach(drill));
+        let own = region(drill_nm);
+        let meet = meeting(&own, &own)
+            .into_iter()
+            .filter(|&(i, j)| i % k == 0 && j % k == 0 && (i, j) != (0, 0))
+            .map(|(i, j)| (i / k, j / k))
+            .collect();
+        let drilled = board
+            .parts
+            .iter()
+            .flat_map(|p| &p.pads)
+            .filter(|p| p.net.as_deref() == Some(net))
+            .filter_map(|p| {
+                let r = p.rect;
+                Some((((r.x0 + r.x1) / 2, (r.y0 + r.y1) / 2), p.drill_nm?))
+            });
+        let arrayed = arrays
+            .iter()
+            .filter(|a| a.net == net)
+            .flat_map(|a| a.at.iter().map(|&at| (at, a.drill_nm)));
+        let mut fixed = vec![false; grid.len()];
+        let mut by_drill: BTreeMap<i64, BTreeSet<(i64, i64)>> = BTreeMap::new();
+        // One off the cell grid `extract` leaves out (its hole kept clear):
+        // every point a cell step from it is off the grid too, so it marks
+        // no node.
+        for (at, drill) in drilled.chain(arrayed) {
+            let d = by_drill
+                .entry(drill)
+                .or_insert_with(|| meeting(&region(drill), &own));
+            for &(i, j) in d.iter() {
+                let (x, y) = (at.0 + i * h, at.1 + j * h);
+                if let Some(node) = grid_node(grid, x, y) {
+                    fixed[node] = true;
+                }
+            }
+        }
+        Junction {
+            meet,
+            near: fixed.clone(),
+            fixed,
+        }
+    }
+}
+
+/// The node at `(x, y)`, if one stands there.
+fn grid_node(grid: &Grid, x: i64, y: i64) -> Option<usize> {
+    let (dx, dy) = (x - grid.x0, y - grid.y0);
+    if dx % PITCH_NM != 0 || dy % PITCH_NM != 0 {
+        return None;
+    }
+    node_at(grid, dx / PITCH_NM, dy / PITCH_NM)
+}
+
+/// Each remaining pad's nearest node of a growing tree, kept as the tree
+/// grows (`AET-WO-1324` (2), ruled (i)): the least `(distance, node)` over
+/// the tree's nodes, the distance from the pad's centre in x plus y. The
+/// tree only grows inside `route_net`, and the least of a pair is the
+/// least of its parts, so this is exactly what scanning every remaining
+/// pad against the whole tree at every step chose, ties included; at a
+/// cost of each new node against each remaining pad instead of every node.
+struct Nearest {
+    centres: Vec<(i64, i64)>,
+    best: Vec<(i64, usize)>,
+}
+
+impl Nearest {
+    fn new(centres: Vec<(i64, i64)>) -> Nearest {
+        let best = vec![(i64::MAX, 0); centres.len()];
+        Nearest { centres, best }
+    }
+
+    /// Takes `nodes` into the tree; the work, one unit per (pad, node).
+    fn add(&mut self, grid: &Grid, nodes: &[usize]) -> u64 {
+        for &n in nodes {
+            let (x, y) = grid.at(n);
+            for (&(cx, cy), b) in self.centres.iter().zip(&mut self.best) {
+                let d = ((x - cx).abs() + (y - cy).abs(), n);
+                if d < *b {
+                    *b = d;
+                }
+            }
+        }
+        (nodes.len() * self.centres.len()) as u64
+    }
+
+    /// The pad nearest the tree, the first in order on a tie, as its index
+    /// and its nearest node; and the work, one unit per pad.
+    fn pick(&self) -> (Option<(usize, usize)>, u64) {
+        let k = self
+            .best
+            .iter()
+            .enumerate()
+            .min_by_key(|&(k, &(d, _))| (d, k))
+            .map(|(k, &(_, n))| (k, n));
+        (k, self.centres.len() as u64)
+    }
+
+    fn remove(&mut self, k: usize) {
+        self.centres.remove(k);
+        self.best.remove(k);
+    }
+}
+
 struct Router<'a> {
     board: &'a Board,
     grid: Grid,
@@ -581,6 +773,9 @@ struct Router<'a> {
     escapes: BTreeMap<BoxKey, Escape>,
     /// The first run of pads that has no escape, if any: the board is refused.
     exhausted: Option<(String, Vec<String>)>,
+    /// Per net the supply gate judges, its junction regions
+    /// (`AET-WO-1324`); `None` for every other net.
+    junction: Vec<Option<Junction>>,
     /// The work done so far, and the most this routing may do ([`WORK`]).
     work: u64,
     limit: u64,
@@ -1063,6 +1258,16 @@ impl<'a> Router<'a> {
                 pending_via[node] += cost;
             }
         }
+        let junction = nets
+            .iter()
+            .zip(&rules)
+            .map(|(name, r)| {
+                let rule = board.stack.junction.as_ref()?;
+                rule.nets
+                    .contains(name)
+                    .then(|| Junction::new(board, &grid, arrays, rule, name, r.drill_nm))
+            })
+            .collect();
         Router {
             board,
             grid,
@@ -1090,6 +1295,7 @@ impl<'a> Router<'a> {
             fixed: vec![false; count],
             escapes,
             exhausted,
+            junction,
             work: 0,
             limit: WORK,
             stamp: vec![0; 2 * n * 5],
@@ -1143,7 +1349,9 @@ impl<'a> Router<'a> {
     }
 
     fn via_open(&self, node: usize, net: usize) -> bool {
-        opens(self.via[self.kind[net]][node], owner(net)) || self.vias.get(&node) == Some(&net)
+        (opens(self.via[self.kind[net]][node], owner(net))
+            && !self.junction[net].as_ref().is_some_and(|j| j.near[node]))
+            || self.vias.get(&node) == Some(&net)
     }
 
     fn hard_via_open(&self, node: usize, net: usize) -> bool {
@@ -1151,11 +1359,13 @@ impl<'a> Router<'a> {
     }
 
     /// The first pair of `path`'s own new vias closer than the hole gap,
-    /// as the indices of the first's lower state and the second's upper
-    /// one. The map keeps vias apart from those already laid, not within a
-    /// path.
+    /// or, on a net the supply gate judges, whose junction regions meet
+    /// (`AET-WO-1324`), as the indices of the first's lower state and the
+    /// second's upper one. The map keeps vias apart from those already
+    /// laid, not within a path.
     fn close_vias(&self, net: usize, path: &[Node]) -> Option<(usize, usize)> {
         let reach = hole_reach(self.rule(net), self.rule(net));
+        let meet = self.junction[net].as_ref().map(|j| &j.meet);
         let mut laid: Vec<(usize, (i64, i64))> = Vec::new();
         for (i, w) in path.windows(2).enumerate() {
             let ((la, a), (lb, _)) = (w[0], w[1]);
@@ -1165,6 +1375,7 @@ impl<'a> Router<'a> {
             let (x, y) = self.grid.at(a);
             if let Some(&(j, _)) = laid.iter().rev().find(|&&(_, (px, py))| {
                 gap2(Rect::point(px, py), Rect::point(x, y)) < reach * reach
+                    || meet.is_some_and(|m| m.contains(&((x - px) / PITCH_NM, (y - py) / PITCH_NM)))
             }) {
                 return Some((j, i + 1));
             }
@@ -1183,6 +1394,14 @@ impl<'a> Router<'a> {
     fn unhop(&mut self, net: usize, path: &mut Vec<Node>, soft: bool) -> Option<()> {
         while let Some((i, j)) = self.close_vias(net, path) {
             let outer = path[i].0;
+            // A via between the two: the second does not return to the
+            // layer the first left, so the run between cannot be laid flat
+            // (`AET-WO-1324` adversarial A1: flattened, it left a layer
+            // change no search had judged, a via laid unchecked).
+            if path[j].0 != outer {
+                self.banned.insert(path[j].1);
+                return None;
+            }
             // path[i] and path[j] are the hop's ends on the outer layer;
             // path[i + 1..j] is the hop itself, its ends included.
             let flat: Vec<Node> = path[i + 2..j - 1]
@@ -1255,6 +1474,12 @@ impl<'a> Router<'a> {
         window: (usize, usize, usize, usize),
         soft: bool,
     ) -> Option<Vec<Node>> {
+        if self.over() {
+            return None;
+        }
+        // Each source is priced and seeded: a search from a whole tree is
+        // work in the tree's size (`AET-WO-1324` (2)).
+        self.work += sources.len() as u64;
         if self.over() {
             return None;
         }
@@ -1628,6 +1853,13 @@ impl<'a> Router<'a> {
 
     fn claim_via(&mut self, net: usize, node: usize) {
         let (x, y) = self.grid.at(node);
+        if let Some(j) = &mut self.junction[net] {
+            for &(a, b) in &j.meet {
+                if let Some(m) = grid_node(&self.grid, x + a * PITCH_NM, y + b * PITCH_NM) {
+                    j.near[m] = true;
+                }
+            }
+        }
         let own = self.rule(net);
         let shape = Shape {
             rect: Rect::point(x, y),
@@ -1667,6 +1899,9 @@ impl<'a> Router<'a> {
     fn remap(&mut self) {
         self.track = self.hard_track.clone();
         self.via = self.hard_via.clone();
+        for j in self.junction.iter_mut().flatten() {
+            j.near.clone_from(&j.fixed);
+        }
         for other in 0..self.edges.len() {
             for l in [Layer::F, Layer::B] {
                 let edges: Vec<(usize, usize)> =
@@ -1757,25 +1992,26 @@ impl<'a> Router<'a> {
         }
         let mut tree: BTreeSet<Node> = start.into_iter().collect();
         let mut remaining: Vec<PadRef> = pads[1..].to_vec();
+        // Each remaining pad's nearest tree node, kept as the tree grows
+        // ([`Nearest`]); its work counts (`AET-WO-1324` (2)).
+        let mut nearest = Nearest::new(
+            remaining
+                .iter()
+                .map(|&p| self.pad(p).rect.centre())
+                .collect(),
+        );
+        let first: Vec<usize> = tree.iter().map(|&(_, n)| n).collect();
+        self.work += nearest.add(&self.grid, &first);
         while !remaining.is_empty() {
             // The pad nearest the tree, then the first in order.
             let nx = self.grid.nx as i64;
-            let near = |pad: &Pad| {
-                let (cx, cy) = pad.rect.centre();
-                tree.iter()
-                    .map(|&(_, n)| {
-                        let (x, y) = self.grid.at(n);
-                        ((x - cx).abs() + (y - cy).abs(), n)
-                    })
-                    .min()
-                    .unwrap_or((i64::MAX, 0))
-            };
-            let (k, (_, from)) = remaining
-                .iter()
-                .enumerate()
-                .map(|(k, &p)| (k, near(self.pad(p))))
-                .min_by_key(|&(k, (d, _))| (d, k))
-                .ok_or_else(|| Stuck::Unroutable("no pad left".into()))?;
+            let (picked, work) = nearest.pick();
+            self.work += work;
+            if self.over() {
+                return Err(Stuck::Work);
+            }
+            let (k, from) = picked.ok_or_else(|| Stuck::Unroutable("no pad left".into()))?;
+            nearest.remove(k);
             let target = remaining.remove(k);
             let name = self.pad_name(target);
             let states = self.ends(self.pad(target), net);
@@ -1801,14 +2037,28 @@ impl<'a> Router<'a> {
             let what = format!("cannot reach {name}");
             let path = self.connect(net, &sources, &window_ends, &goal, &h, true, &what)?;
             self.commit(net, &path);
-            tree.extend(path.iter().copied());
+            let mut grown = Vec::new();
+            let mut grow = |node: Node| {
+                if tree.insert(node) {
+                    grown.push(node.1);
+                }
+            };
+            for &node in &path {
+                grow(node);
+            }
             for &(_, n) in &path {
                 if self.vias.get(&n) == Some(&net) {
-                    tree.insert((Layer::F, n));
-                    tree.insert((Layer::B, n));
+                    grow((Layer::F, n));
+                    grow((Layer::B, n));
                 }
             }
-            tree.extend(states);
+            for node in states {
+                grow(node);
+            }
+            self.work += nearest.add(&self.grid, &grown);
+            if self.over() {
+                return Err(Stuck::Work);
+            }
         }
         Ok(())
     }
@@ -2491,6 +2741,21 @@ pub fn route_measured(board: &Board, rung: Rung, limit: u64) -> Result<(Routed, 
         arrays,
         ripups,
     };
+    // The final check's pairs are work too (`AET-WO-1324` Q4): it judges
+    // every two items, and every two holes, so its cost is charged before
+    // it runs and a board too large for it is refused by name.
+    r.work += judge_work(board, &routed);
+    if r.over() {
+        return Err(Unroutable {
+            net: String::new(),
+            why: format!(
+                "the router's work passed its bound, {limit} search steps and fill nodes, at the final check of the routed board ({} done)",
+                r.work
+            ),
+            exhausted: None,
+            work_bound: Some(limit),
+        });
+    }
     // belt-and-suspenders: the grid's margins already keep the copper clear
     // and joined (no tested board reaches these); the exact judges stand
     // behind them, so a router defect fails closed rather than ships.
@@ -4024,6 +4289,21 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
 /// [`HOLE_GAP_NM`]; tracks run along an axis; no via touches a pad of any
 /// net, and no via's copper is in a part's courtyard, but inside that part's
 /// own ring interior (`AET-WO-1307` K1).
+/// The pairs [`check`] judges: every two copper items, and every two
+/// drilled holes (`AET-WO-1324` Q4).
+fn judge_work(board: &Board, routed: &Routed) -> u64 {
+    let pairs = |n: usize| (n as u64) * (n as u64).saturating_sub(1) / 2;
+    let holes = routed.vias.len()
+        + routed.arrays.iter().map(|a| a.at.len()).sum::<usize>()
+        + board
+            .parts
+            .iter()
+            .flat_map(|p| &p.pads)
+            .filter(|p| p.drill_nm.is_some())
+            .count();
+    pairs(items(board, routed).len()) + pairs(holes)
+}
+
 pub fn check(board: &Board, routed: &Routed) -> Result<(), String> {
     let all = items(board, routed);
     keepouts(board, routed, &all)?;
@@ -5505,6 +5785,7 @@ mod tests {
             joins: vec![],
             thermal: vec![],
             imus: vec![],
+            junction: None,
         }
     }
 
@@ -5595,6 +5876,9 @@ mod tests {
     /// D1: a routing that does `w` units of work routes under a bound of `w`
     /// and is refused by name, with the bound, at `w - 1`. One board routes
     /// signals only; the other stitches ground, so a fill flood counts too.
+    /// The final check is charged last (`AET-WO-1324` Q4), so `w - 1` is
+    /// refused there, and one unit under the routing's own work is refused
+    /// while a net is routed, by that net.
     #[test]
     fn a_routing_one_unit_over_its_bound_is_refused_by_name() {
         let board = |b: &str| Board {
@@ -5610,13 +5894,16 @@ mod tests {
             let (routed, w) = route_measured(&board, Rung::TODAY, WORK).unwrap();
             assert!(w > 0, "{b}");
             let (again, at_w) = route_measured(&board, Rung::TODAY, w).unwrap();
-            assert_eq!((again, at_w), (routed, w), "{b}");
+            assert_eq!((&again, at_w), (&routed, w), "{b}");
             let e = route_measured(&board, Rung::TODAY, w - 1).unwrap_err();
             assert_eq!(e.work_bound, Some(w - 1), "{b}: {e:?}");
+            assert!(e.why.contains("at the final check"), "{b}: {e:?}");
+            let under = w - judge_work(&board, &again) - 1;
+            let e = route_measured(&board, Rung::TODAY, under).unwrap_err();
+            assert_eq!(e.work_bound, Some(under), "{b}: {e:?}");
             assert!(!e.net.is_empty(), "{b}: {e:?}");
             assert!(
-                e.why
-                    .contains(&format!("its bound, {} search steps", w - 1)),
+                e.why.contains(&format!("its bound, {under} search steps")),
                 "{b}: {e:?}"
             );
         }
@@ -5883,5 +6170,398 @@ mod tests {
                 .starts_with("pair `X`: `/P`: the coupled run breaks at"),
             "{e:?}"
         );
+    }
+
+    // ---- `AET-WO-1324` ----
+
+    /// Sentinel-02-power's gate inputs: JLCPCB's +0.13 mm hole and
+    /// ±0.075 mm position, 18 µm plating; `/S` and ground judged.
+    fn jlc() -> crate::stack::JunctionRule {
+        crate::stack::JunctionRule {
+            nets: vec!["/S".into(), GROUND.into()],
+            hole_plus_nm: 130_000,
+            hole_offset_nm: 75_000,
+            plating_nm: 18_000,
+        }
+    }
+
+    /// A 20 mm board with two pads of `/S` and two of `/T` at its corners,
+    /// plus `extra` parts, judged by `rule`.
+    fn judged(rule: Option<crate::stack::JunctionRule>, extra: Vec<Part>) -> Board {
+        let mut stack = crate::stack::reference();
+        stack.junction = rule;
+        let mut parts = vec![
+            resistor("R1", 2 * MM, "/S", "/T"),
+            resistor("R2", 18 * MM, "/T", "/S"),
+        ];
+        parts.extend(extra);
+        Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts,
+            stack,
+        }
+    }
+
+    fn router<'a>(board: &'a Board, arrays: &[Array]) -> Router<'a> {
+        let grid = Grid::new(board.outline).unwrap();
+        Router::new(board, grid, vec!["/S".into(), "/T".into()], arrays)
+    }
+
+    fn node_at(r: &Router<'_>, x: i64, y: i64) -> usize {
+        grid_node(&r.grid, x, y).unwrap()
+    }
+
+    /// The regions of two 0.3 mm vias meet where their cells do: at 108
+    /// offsets of the router's grid, out to (5, 3), and at (4, 4), 0.707 mm
+    /// apart, where twice the reach is only 0.698 mm, so a disc would pass
+    /// the very pair `extract` refused on Sentinel-02-power (PC0).
+    #[test]
+    fn two_junction_regions_meet_where_their_cells_do_not_where_a_disc_does() {
+        let rule = jlc();
+        assert_eq!(rule.reach(300_000), 349_068);
+        let board = judged(Some(rule.clone()), Vec::new());
+        let r = router(&board, &[]);
+        let meet = &r.junction[0].as_ref().unwrap().meet;
+        assert_eq!(meet.len(), 108);
+        for at in [(4, 4), (5, 3), (-5, -3), (0, 5), (-5, 0)] {
+            assert!(meet.contains(&at), "{at:?}");
+        }
+        for at in [(0, 0), (4, 5), (5, 5), (6, 0), (0, -6)] {
+            assert!(!meet.contains(&at), "{at:?}");
+        }
+        let d2 = 2 * (4 * PITCH_NM) * (4 * PITCH_NM);
+        assert!(4 * rule.reach(300_000).pow(2) < d2);
+        // `/T` is not judged, and no net is on a board the gate does not run on
+        assert!(r.junction[1].is_none());
+        let off = judged(None, Vec::new());
+        assert!(router(&off, &[]).junction.iter().all(Option::is_none));
+    }
+
+    /// A judged net's via keeps its laid vias' regions: at (4, 4) pitches
+    /// from one, where the hole gap alone allows it, it may not stand; at
+    /// (6, 0) it may; once the net is taken up, it may again.
+    #[test]
+    fn a_judged_nets_via_stays_out_of_its_laid_vias_regions() {
+        let (x, y) = (10 * MM, 8 * MM);
+        let near = (x + 4 * PITCH_NM, y + 4 * PITCH_NM);
+        let apart = (x + 6 * PITCH_NM, y);
+        let board = judged(Some(jlc()), Vec::new());
+        let mut r = router(&board, &[]);
+        let a = node_at(&r, x, y);
+        r.commit(0, &[(Layer::F, a), (Layer::B, a)]);
+        assert!(r.via_open(a, 0));
+        assert!(!r.via_open(node_at(&r, near.0, near.1), 0));
+        assert!(r.via_open(node_at(&r, apart.0, apart.1), 0));
+        r.rip(0);
+        assert!(r.via_open(node_at(&r, near.0, near.1), 0));
+        // with no rule, the hole gap (0.56 mm) alone admits (4, 4)
+        let free = judged(None, Vec::new());
+        let mut r = router(&free, &[]);
+        let a = node_at(&r, x, y);
+        r.commit(0, &[(Layer::F, a), (Layer::B, a)]);
+        assert!(r.via_open(node_at(&r, near.0, near.1), 0));
+    }
+
+    /// Within one path: two new vias whose regions meet are a close pair,
+    /// as two within the hole gap are; with no rule they are not.
+    #[test]
+    fn a_paths_own_vias_whose_regions_meet_are_a_close_pair() {
+        let path = |r: &Router<'_>| {
+            let (x, y) = (10 * MM, 8 * MM);
+            let mut p = vec![(Layer::F, node_at(r, x, y))];
+            for k in 0..=4 {
+                p.push((Layer::B, node_at(r, x + k * PITCH_NM, y)));
+            }
+            for k in 1..=4 {
+                p.push((Layer::B, node_at(r, x + 4 * PITCH_NM, y + k * PITCH_NM)));
+            }
+            p.push((Layer::F, node_at(r, x + 4 * PITCH_NM, y + 4 * PITCH_NM)));
+            p
+        };
+        let board = judged(Some(jlc()), Vec::new());
+        let r = router(&board, &[]);
+        assert_eq!(r.close_vias(0, &path(&r)), Some((0, 10)));
+        assert_eq!(r.close_vias(1, &path(&r)), None);
+        let free = judged(None, Vec::new());
+        let r = router(&free, &[]);
+        assert_eq!(r.close_vias(0, &path(&r)), None);
+    }
+
+    /// A through-hole pad and an array via of a judged net hold their own
+    /// regions (`extract` prices both as vias): a 1 mm hole's region meets a
+    /// via's 1 mm off and not 1.25 mm off; an array via on the grid keeps a
+    /// routed via (4, 4) pitches off it, where the hole gap would not.
+    #[test]
+    fn a_judged_nets_through_hole_pad_and_array_via_hold_their_regions() {
+        let (x, y) = (10 * MM, 10 * MM);
+        let tht = Part {
+            reference: "J1".into(),
+            rotation: 0,
+            pads: vec![Pad {
+                drill_nm: Some(1_000_000),
+                ..pad(
+                    "1",
+                    Some("/S"),
+                    rect(x - 850_000, y - 850_000, x + 850_000, y + 850_000),
+                )
+            }],
+            courtyard: Vec::new(),
+            keepouts: Vec::new(),
+        };
+        let board = judged(Some(jlc()), vec![tht]);
+        let r = router(&board, &[]);
+        let j = r.junction[0].as_ref().unwrap();
+        assert!(j.fixed[node_at(&r, x + MM, y)]);
+        assert!(!j.fixed[node_at(&r, x + MM + MM / 4, y)]);
+        assert!(
+            !r.junction[1]
+                .as_ref()
+                .is_some_and(|j| j.fixed.contains(&true))
+        );
+        let (ax, ay) = (6 * MM, 14 * MM);
+        let array = Array {
+            reference: "U9".into(),
+            pad: "9".into(),
+            net: "/S".into(),
+            via_nm: 600_000,
+            drill_nm: 300_000,
+            at: vec![(ax, ay)],
+        };
+        let board = judged(Some(jlc()), Vec::new());
+        let r = router(&board, std::slice::from_ref(&array));
+        assert!(!r.via_open(node_at(&r, ax + 4 * PITCH_NM, ay + 4 * PITCH_NM), 0));
+        assert!(r.via_open(node_at(&r, ax + 6 * PITCH_NM, ay), 0));
+        let free = judged(None, Vec::new());
+        let r = router(&free, std::slice::from_ref(&array));
+        assert!(r.via_open(node_at(&r, ax + 4 * PITCH_NM, ay + 4 * PITCH_NM), 0));
+    }
+
+    /// The index picks what scanning every remaining pad against the whole
+    /// tree picked, step by step: the least (distance, node), then the
+    /// first pad in order; on a lattice where distances tie, with nodes
+    /// added out of order and twice, and the picked pad removed each step.
+    #[test]
+    fn the_nearest_index_picks_what_the_whole_scan_picked_ties_included() {
+        let grid = Grid::new(rect(0, 0, 10 * MM, 10 * MM)).unwrap();
+        let mut s = 1324_u64;
+        let mut next = |m: u64| {
+            s = s
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            (s >> 33) % m
+        };
+        let mut centres: Vec<(i64, i64)> = (0..40)
+            .map(|_| ((next(9) as i64 + 1) * MM, (next(9) as i64 + 1) * MM))
+            .collect();
+        let mut index = Nearest::new(centres.clone());
+        let mut tree: Vec<usize> = Vec::new();
+        let mut picks = 0;
+        while !centres.is_empty() {
+            let batch: Vec<usize> = (0..1 + next(12))
+                .map(|_| {
+                    // whole millimetres and half: many equal distances
+                    let (i, j) = (next(21) as usize * 4, next(21) as usize * 4);
+                    j * grid.nx + i
+                })
+                .collect();
+            let work = index.add(&grid, &batch);
+            assert_eq!(work, (batch.len() * centres.len()) as u64);
+            tree.extend(&batch);
+            let scan = centres
+                .iter()
+                .enumerate()
+                .map(|(k, &(cx, cy))| {
+                    let near = tree
+                        .iter()
+                        .map(|&n| {
+                            let (x, y) = grid.at(n);
+                            ((x - cx).abs() + (y - cy).abs(), n)
+                        })
+                        .min()
+                        .unwrap();
+                    (k, near)
+                })
+                .min_by_key(|&(k, (d, _))| (d, k))
+                .map(|(k, (_, n))| (k, n));
+            let (got, work) = index.pick();
+            assert_eq!(got, scan, "step {picks}");
+            assert_eq!(work, centres.len() as u64);
+            let k = got.unwrap().0;
+            index.remove(k);
+            centres.remove(k);
+            picks += 1;
+        }
+        assert_eq!(picks, 40);
+    }
+
+    /// A search charges each source it seeds: ten sources and a goal met at
+    /// the first state expanded cost eleven units.
+    #[test]
+    fn a_search_charges_every_source_it_seeds() {
+        let board = judged(None, Vec::new());
+        let mut r = router(&board, &[]);
+        let sources: Vec<Node> = (0..10)
+            .map(|k| (Layer::B, node_at(&r, 5 * MM + k * PITCH_NM, 10 * MM)))
+            .collect();
+        let all = r.window(&[], None);
+        let found = r.search(0, &sources, &|_, _| true, &|_| 0, true, all, false);
+        assert!(found.is_some());
+        assert_eq!(r.work, 11);
+    }
+
+    /// The final check is charged its pairs before it runs: ten one-pad
+    /// nets lay no copper, and their routing's work is the check's 45 pairs;
+    /// one unit less is refused by name at the final check.
+    #[test]
+    fn the_final_check_is_charged_its_pairs() {
+        let parts = (0..10)
+            .map(|k| Part {
+                reference: format!("P{k}"),
+                rotation: 0,
+                pads: vec![pad(
+                    "1",
+                    Some(&format!("/N{k}")),
+                    rect(
+                        (2 + k) * MM,
+                        10 * MM,
+                        (2 + k) * MM + 300_000,
+                        10 * MM + 300_000,
+                    ),
+                )],
+                courtyard: Vec::new(),
+                keepouts: Vec::new(),
+            })
+            .collect();
+        let board = Board {
+            outline: rect(0, 0, 20 * MM, 20 * MM),
+            parts,
+            stack: crate::stack::reference(),
+        };
+        let (routed, w) = route_measured(&board, Rung::TODAY, WORK).unwrap();
+        assert_eq!((w, judge_work(&board, &routed)), (45, 45));
+        let e = route_measured(&board, Rung::TODAY, 44).unwrap_err();
+        assert_eq!(e.work_bound, Some(44), "{e:?}");
+        assert!(e.net.is_empty(), "{e:?}");
+        assert!(e.why.contains("at the final check"), "{e:?}");
+    }
+
+    /// N one-pad parts on a square lattice at 2 mm, every pad on one net
+    /// that is not stitched (`AET-WO-1324` (2), `1323` D6's board,
+    /// reconstructed).
+    fn lattice(n: usize) -> Board {
+        let side = (n as f64).sqrt().ceil() as i64;
+        let (margin, pitch) = (3 * MM, 2 * MM);
+        let parts = (0..n as i64)
+            .map(|k| {
+                let (x, y) = (margin + (k % side) * pitch, margin + (k / side) * pitch);
+                Part {
+                    reference: format!("P{k}"),
+                    rotation: 0,
+                    pads: vec![pad(
+                        "1",
+                        Some("/BIG"),
+                        rect(x - 250_000, y - 250_000, x + 250_000, y + 250_000),
+                    )],
+                    courtyard: Vec::new(),
+                    keepouts: Vec::new(),
+                }
+            })
+            .collect();
+        let w = 2 * margin + (side - 1) * pitch;
+        Board {
+            outline: rect(0, 0, w, w),
+            parts,
+            stack: crate::stack::reference(),
+        }
+    }
+
+    /// (2), the acceptance: one net of 400, 900 and 1,600 pads routes, and
+    /// the work charged for it is its pairs of (pad, tree node) the index
+    /// takes, the sources each search seeds, the states expanded and the
+    /// final check's pairs: as measured, growing as N² (the scan it
+    /// replaced grew as N³: 24.6 G pairs at 1,600, 130 s in `1323`). The
+    /// bound: 1,600 pads charge under a third of [`WORK`], and between 8
+    /// and 24 times 400 pads' (N² gives 16; an uncharged scan or seed 4).
+    /// Counts only, never a clock.
+    #[test]
+    fn one_net_of_1600_pads_is_charged_its_quadratic_work() {
+        let work: Vec<u64> = [400, 900, 1600]
+            .iter()
+            .map(|&n| route_measured(&lattice(n), Rung::TODAY, WORK).unwrap().1)
+            .collect();
+        assert_eq!(work, [6_163_182, 31_193_212, 98_575_542]);
+        assert!(3 * work[2] < WORK, "{work:?}");
+        assert!(
+            work[2] >= 8 * work[0] && work[2] <= 24 * work[0],
+            "{work:?}"
+        );
+    }
+
+    /// A2: the regions' meeting offsets, taken run by run, are exactly every
+    /// `ca − cb`, for equal and unequal regions, small and large.
+    #[test]
+    fn the_meeting_offsets_by_runs_are_every_cell_difference() {
+        use crate::flow::Region;
+        let h = crate::supply::PITCH_NM;
+        let every = |a: &Region, b: &Region| {
+            let mut out = BTreeSet::new();
+            for &(ai, aj) in &a.cells {
+                for &(bi, bj) in &b.cells {
+                    out.insert((ai - bi, aj - bj));
+                }
+            }
+            out
+        };
+        for (ra, rb) in [
+            (349_068, 349_068),
+            (699_068, 349_068),
+            (349_068, 699_068),
+            (1_000_000, 250_001),
+            (62_500, 62_499),
+        ] {
+            let (a, b) = (Region::new(h, ra), Region::new(h, rb));
+            assert_eq!(meeting(&a, &b), every(&a, &b), "{ra} {rb}");
+        }
+        // any cell set, not only a disc's: rows with gaps, of unequal reach,
+        // whose spans neither nest nor touch
+        let ragged = |cells: &[(i64, i64)]| Region {
+            cells: cells.iter().copied().collect(),
+            faces: Vec::new(),
+        };
+        let a = ragged(&[(0, 0), (1, 0), (5, 0), (9, 0), (-3, 1), (2, 1), (3, 1)]);
+        let b = ragged(&[(0, 0), (7, 0), (8, 0), (-6, 2), (4, 2)]);
+        assert_eq!(meeting(&a, &b), every(&a, &b));
+        assert_eq!(meeting(&b, &a), every(&b, &a));
+    }
+
+    /// A1: a path whose first and third vias' regions meet, with a second via
+    /// between, cannot be laid flat (the run between ends on the far layer);
+    /// the third via's node is banned, never laid unchecked. Under the hole
+    /// gap alone, the same.
+    #[test]
+    fn a_close_pair_with_a_via_between_is_banned_not_flattened() {
+        for (rule, far) in [(Some(jlc()), 5), (None, 4)] {
+            let board = judged(rule, Vec::new());
+            let mut r = router(&board, &[]);
+            let (x, y) = (10 * MM, 8 * MM);
+            let n = |r: &Router<'_>, i: i64, j: i64| node_at(r, x + i * PITCH_NM, y + j * PITCH_NM);
+            let mut p = vec![(Layer::F, n(&r, 0, 0)), (Layer::B, n(&r, 0, 0))];
+            for k in 1..=6 {
+                p.push((Layer::B, n(&r, 0, k)));
+            }
+            p.push((Layer::F, n(&r, 0, 6)));
+            for k in 1..=far {
+                p.push((Layer::F, n(&r, k, 6)));
+            }
+            for k in (0..=5).rev() {
+                p.push((Layer::F, n(&r, far, k)));
+            }
+            p.push((Layer::B, n(&r, far, 0)));
+            p.push((Layer::B, n(&r, far + 1, 0)));
+            let before = p.clone();
+            assert_eq!(r.unhop(0, &mut p, false), None, "{far}");
+            assert!(r.banned.contains(&n(&r, far, 0)), "{far}");
+            assert_eq!(p, before, "{far}");
+        }
     }
 }

@@ -1,0 +1,82 @@
+diff --git a/crates/aethelgard-eda/src/route.rs b/crates/aethelgard-eda/src/route.rs
+index 1b335987..13128c17 100644
+--- a/crates/aethelgard-eda/src/route.rs
++++ b/crates/aethelgard-eda/src/route.rs
+@@ -589,6 +589,7 @@ struct Router<'a> {
+     cost: Vec<u32>,
+     prev: Vec<u8>,
+     generation: u16,
++    proto_junction: Vec<Option<BTreeSet<(i64, i64)>>>,
+ }
+ 
+ // ---- through-hole joins and thermal arrays (`AET-WO-1309`) ----
+@@ -1082,6 +1083,7 @@ impl<'a> Router<'a> {
+             released: vec![false; count],
+             history: [vec![0; n], vec![0; n]],
+             banned: BTreeSet::new(),
++            proto_junction: vec![None; count],
+             no_vias: false,
+             via_cost: vec![VIA_COST; count],
+             via_free: vec![false; count],
+@@ -1143,7 +1145,19 @@ impl<'a> Router<'a> {
+     }
+ 
+     fn via_open(&self, node: usize, net: usize) -> bool {
+-        opens(self.via[self.kind[net]][node], owner(net)) || self.vias.get(&node) == Some(&net)
++        (opens(self.via[self.kind[net]][node], owner(net)) && !self.proto_near(node, net))
++            || self.vias.get(&node) == Some(&net)
++    }
++
++    /// PROTOTYPE (1324 (a)): a laid via of `net` whose junction region would meet one at `node`.
++    fn proto_near(&self, node: usize, net: usize) -> bool {
++        let Some(off) = &self.proto_junction[net] else { return false };
++        let (x, y) = self.grid.at(node);
++        self.vias.iter().any(|(&v, &n)| {
++            if n != net || v == node { return false; }
++            let (vx, vy) = self.grid.at(v);
++            off.contains(&((vx - x) / PITCH_NM, (vy - y) / PITCH_NM))
++        })
+     }
+ 
+     fn hard_via_open(&self, node: usize, net: usize) -> bool {
+@@ -1165,6 +1179,9 @@ impl<'a> Router<'a> {
+             let (x, y) = self.grid.at(a);
+             if let Some(&(j, _)) = laid.iter().rev().find(|&&(_, (px, py))| {
+                 gap2(Rect::point(px, py), Rect::point(x, y)) < reach * reach
++                    || self.proto_junction[net]
++                        .as_ref()
++                        .is_some_and(|o| o.contains(&((px - x) / PITCH_NM, (py - y) / PITCH_NM)))
+             }) {
+                 return Some((j, i + 1));
+             }
+@@ -2316,6 +2333,30 @@ pub fn route_measured(board: &Board, rung: Rung, limit: u64) -> Result<(Routed,
+     let index = |name: &str| nets.iter().position(|n| n == name);
+     let mut r = Router::new(board, grid, nets.clone(), &arrays);
+     r.limit = limit;
++    if let Ok(list) = std::env::var("AET1324_PROTO_NETS") {
++        // reach: shell max + beta + e*sqrt2 + 1, the gate's (plus 130, plating 18, e 75 um)
++        for (k, net) in nets.iter().enumerate() {
++            if list.split(',').any(|n| n == net || n == "*") {
++                let drill = board.rule(net).drill_nm;
++                let reach = (drill + 130_000 + 1) / 2 + 18_000 + 10_000 + crate::stack::diagonal_nm(75_000) + 1;
++                let h = crate::supply::PITCH_NM;
++                let reg = crate::flow::Region::new(h, reach);
++                let k2 = PITCH_NM / h;
++                let mut off = BTreeSet::new();
++                for a in -12i64..=12 {
++                    for b in -12i64..=12 {
++                        if (a, b) != (0, 0)
++                            && reg.cells.iter().any(|&(i, j)| reg.cells.contains(&(i - a * k2, j - b * k2)))
++                        {
++                            off.insert((a, b));
++                        }
++                    }
++                }
++                eprintln!("PROTO {net}: drill {drill} reach {reach} offsets {}", off.len());
++                r.proto_junction[k] = Some(off);
++            }
++        }
++    }
+     for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
+         if board.stack.bounded.iter().any(|b| b == net) {
+             *cost = rung.bounded_via_cost;
