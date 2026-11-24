@@ -2365,6 +2365,26 @@ pub(crate) fn write_placed_at(
 ///
 /// [`Join::token`]: crate::stack::Join::token
 fn join(fp: &mut Sx, stack: &crate::stack::Stack) {
+    // `AET-WO-4300k` (a): a buck's thermal pad joins the pours solid, so the
+    // copper `extract` measures is the copper its heat reaches.
+    if let Some(reference) = fp.property("Reference").map(str::to_owned)
+        && !stack.pours.is_empty()
+    {
+        let pads: Vec<String> = stack
+            .thermal
+            .iter()
+            .filter(|t| t.reference == reference)
+            .map(|t| t.pad.clone())
+            .collect();
+        for pad in fp.items_mut().into_iter().flatten() {
+            if pad.head() == Some("pad")
+                && pad.arg(1).is_some_and(|n| pads.iter().any(|p| p == n))
+                && let Some(items) = pad.items_mut()
+            {
+                items.push(Sx::node("zone_connect", &["2"]));
+            }
+        }
+    }
     let declared = fp
         .property("Reference")
         .and_then(|r| stack.joins.iter().find(|(x, _)| x == r).map(|&(_, j)| j));
@@ -2435,7 +2455,12 @@ fn copper(project: &str, routed: &route::Routed, o: Rect, stack: &crate::stack::
             ]));
         }
     }
-    for (n, l) in &routed.zones {
+    let pours: Vec<(String, String)> = stack
+        .pours
+        .iter()
+        .map(|(l, n)| (n.clone(), l.clone()))
+        .collect();
+    for (n, l) in routed.zones.iter().chain(&pours) {
         let corner = |x, y| Sx::node("xy", &[&mm(x), &mm(y)]);
         out.push(Sx::List(vec![
             Sx::atom("zone"),

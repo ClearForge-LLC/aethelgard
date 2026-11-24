@@ -602,15 +602,27 @@ pub fn declared(tree: &Tree, stack: &crate::stack::Stack) -> Result<(), Disagree
         .iter()
         .map(|(l, n)| (n.clone(), l.clone()))
         .collect();
-    let ok = if stack.has_planes() {
-        let mut z = zones.clone();
-        z.sort();
-        let mut p = planes.clone();
-        p.sort();
-        z == p
-    } else {
-        zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
-    };
+    // `AET-WO-4300k` (a): the thermal pours are declared zones too.
+    let pours: Vec<(String, String)> = stack
+        .pours
+        .iter()
+        .map(|(l, n)| (n.clone(), l.clone()))
+        .collect();
+    let (zones, extra): (Vec<_>, Vec<_>) = zones.into_iter().partition(|z| !pours.contains(z));
+    let mut found = extra.clone();
+    found.sort();
+    let mut want = pours.clone();
+    want.sort();
+    let ok = found == want
+        && if stack.has_planes() {
+            let mut z = zones.clone();
+            z.sort();
+            let mut p = planes.clone();
+            p.sort();
+            z == p
+        } else {
+            zones.len() <= 1 && zones.iter().all(|z| z.0 == GROUND && z.1 == "B.Cu")
+        };
     if !ok {
         return Err(no(
             "PlanesDisagree",

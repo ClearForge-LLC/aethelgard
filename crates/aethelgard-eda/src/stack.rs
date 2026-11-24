@@ -161,6 +161,12 @@ pub struct Stack {
     /// Each declared IMU's seat, by reference (`AET-WO-4400d`): the gate
     /// holds the board's footprint to it ([`crate::route::declared`]).
     pub imus: Vec<(String, crate::schematic::Seat)>,
+    /// The thermal pours, each (layer, net) (`AET-WO-4300k` (a), ruled
+    /// (ii-a)): with a buck declared, `GND` on every outer layer no plane or
+    /// 2-layer ground zone already fills, joined solid to each thermal pad
+    /// ([`Stack::thermal`]); `extract` measures the copper they join. Empty
+    /// with no buck, whose board is then today's.
+    pub pours: Vec<(String, String)>,
 }
 
 /// How a through-hole pad meets a fill of its own net.
@@ -391,7 +397,19 @@ impl Stack {
             // part's axes cited, and the embedded parts table parsed.
             imus: crate::schematic::seats(spec)
                 .expect("a validated specification's IMU seats are complete"),
+            pours: Vec::new(),
         };
+        if !st.thermal.is_empty() {
+            let outer = [st.copper.first(), st.copper.last()];
+            for layer in outer.into_iter().flatten() {
+                let filled = st.planes.iter().any(|(l, _)| l == layer)
+                    || (st.planes.is_empty() && layer == "B.Cu");
+                if !filled && !st.pours.iter().any(|(l, _)| l == layer) {
+                    st.pours
+                        .push((layer.clone(), aethelgard_ir::GND.to_owned()));
+                }
+            }
+        }
         // The ring rule (`AET-WO-1314`, ruling 6982875594 D1, D2): the
         // board's own via is sized by it; a thermal array's via, the
         // engine's own part, is raised to it and noted. A class keeps its
@@ -558,6 +576,7 @@ pub(crate) fn reference() -> Stack {
         joins: vec![],
         thermal: vec![],
         imus: vec![],
+        pours: vec![],
     }
 }
 

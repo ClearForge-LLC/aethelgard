@@ -3238,11 +3238,29 @@ fn junctions(
                 ctx.cite(&curve.at),
             ));
         };
-        ctx.note(format!(
-            "{}: its junction needs at least {need_area} cm² of copper per joined layer by the θJA figure ({}); extract measures the drawn board's",
-            r.reference,
-            ctx.cite(&curve.at)
-        ));
+        ctx.screen(
+            "buck_junction_screened",
+            &r.reference,
+            format!(
+                "{}: its junction is screened, not guaranteed: it needs at least {need_area} cm² of copper per joined layer by the θJA figure, typical and for illustration only ({}); extract measures the drawn board's and screens it (AET-WO-4300k (a))",
+                r.reference,
+                ctx.cite(&curve.at)
+            ),
+        );
+        // A plane of another net is copper the pad does not join; the figure
+        // is copper per layer on a four-layer board (ruled (a)).
+        for l in ctx.spec.board.layers.iter() {
+            if let Some(net) = l.net.as_deref().filter(|n| *n != crate::GND) {
+                ctx.screen(
+                    "plane_not_joined",
+                    &format!("{}.{}", r.reference, l.name),
+                    format!(
+                        "{}: {} is a plane of `{net}`, which its thermal pad does not join, so it counts no copper toward the screen",
+                        r.reference, l.name
+                    ),
+                );
+            }
+        }
         let solved = load[&r.output];
         if solved > u64::from(j.loss_at_milliamps) {
             ctx.screen(

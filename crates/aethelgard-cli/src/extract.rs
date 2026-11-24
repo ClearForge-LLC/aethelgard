@@ -55,6 +55,11 @@ struct Report {
     /// declared, so no other report moves.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     oscillator: Vec<Value>,
+    /// Each buck's thermal pad, with the copper it joins on each layer,
+    /// measured from the board as read (`AET-WO-4300k` (a)); absent with no
+    /// buck, so no other report moves.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    thermal: Vec<Value>,
     /// Each part of the gate, judged or off by the key that turns it on
     /// (`AET-WO-1609`): [`parts`].
     ran: Vec<Ran>,
@@ -76,6 +81,7 @@ fn parts(
     supplies: usize,
     oscillator: usize,
     conductors: usize,
+    thermal: usize,
 ) -> Vec<Ran> {
     let drop_limits = spec
         .power
@@ -101,6 +107,14 @@ fn parts(
             !spec.diff_pairs.is_empty(),
             conductors as u64,
             "diff_pairs",
+        ),
+        Ran::part(
+            "extract.thermal",
+            spec.power
+                .as_ref()
+                .is_some_and(|p| p.regulators.iter().any(|r| r.junction.is_some())),
+            thermal as u64,
+            "power.regulators[].junction",
         ),
     ]
 }
@@ -484,6 +498,46 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     if !oscillator.is_empty() {
         conditions.push(bound::OSC_PIN_CONDITION.to_owned());
     }
+    // `AET-WO-4300k` (a): each buck's thermal pad, the copper it joins
+    // measured on the board as read, and its junction screened at the least
+    // joined layer's area.
+    let pads: Vec<(String, String)> = read
+        .board
+        .stack
+        .thermal
+        .iter()
+        .map(|t| (t.reference.clone(), t.pad.clone()))
+        .collect();
+    let mut thermal = Vec::new();
+    for j in aethelgard_eda::pour::joined(&read.board, &read.routed, &pads) {
+        let layers: serde_json::Map<String, Value> = j
+            .layers
+            .iter()
+            .map(|(l, a)| (l.clone(), json!(a)))
+            .collect();
+        let verdict = match aethelgard_ir::power::junction_screen(&spec, &j.reference, j.min_mm2) {
+            Ok(text) => {
+                conditions.push(text);
+                "pass"
+            }
+            Err(e) => {
+                findings.push(Finding {
+                    kind: e.kind(),
+                    severity: "error",
+                    message: e.to_string(),
+                    cause: None,
+                });
+                "fail"
+            }
+        };
+        thermal.push(json!({
+            "reference": j.reference,
+            "joined_square_millimetres": layers,
+            "least_square_millimetres": j.min_mm2,
+            "bound": "lower, from the board as read",
+            "verdict": verdict,
+        }));
+    }
     let oscillator: Vec<Value> = oscillator.iter().map(oscillator_net).collect();
     let supplies: Vec<Value> = gates.iter().map(supply).collect();
     let scope = Scope::of(
@@ -500,6 +554,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         supplies.len(),
         oscillator.len(),
         conductors,
+        thermal.len(),
     );
     let ok = findings.is_empty();
     let report = Report {
@@ -520,6 +575,7 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         supplies,
         pairs,
         oscillator,
+        thermal,
         ran,
         findings,
     };
