@@ -2441,7 +2441,7 @@
     },
     {
       "id": "loss_current_gap:U11",
-      "reason": "U11's loss is read at 679 mA and its solved load is 747 mA; the 68 mA gap adds little loss at 81 % efficiency, and refusing it needs a ruling (4300d3 F9)"
+      "reason": "U11's loss is read at 679 mA and its solved load is 749 mA; the 70 mA gap adds little loss at 81 % efficiency, and refusing it needs a ruling (4300d3 F9)"
     },
     {
       "id": "mcu_load_excludes:STM32H753ZITx",
@@ -2541,7 +2541,7 @@
     },
     {
       "id": "supervisor_hysteresis_typical:U12",
-      "reason": "TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4.7 mV under VDD_3V3's 3034.7 mV floor at its pin (ruled D6); a bench row"
+      "reason": "TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4 mV under VDD_3V3's 3034 mV floor at its pin (ruled D6); a bench row"
     },
     {
       "id": "usb_pair_undeclared:PA11",
