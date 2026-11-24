@@ -8,7 +8,7 @@
 
 Written 2026-11-24.
 
-**Status:** READY, pending the bench package dispatch (§7).
+**Status:** READY (§7: the bench package committed from the dispatch).
 - **Predictions:** `spike/1610/PREDICTIONS.md`, committed `5ea10b95` before every run.
 - **Measurement and stop:** `spike/1610/MEASURED.md`, `STOP.md`, at `16e639cf` on PR #385. Ruled 10:00Z on the bus.
 - **Mutants:** `spike/1610/mutants.sh` (host), plus the tier-2 ones in `spike/1610/tier2-mutants.sh` (§6).
@@ -216,6 +216,11 @@ Each finding was checked at source before acting on it.
   verdict line. So `fab/sentinel-01-bench/package/MANIFEST.json`'s `verdict_sha256` moves, and nothing else in the
   package should. It is never hand-edited: it needs the architect's `write` dispatch of `ci.yml`'s `bench-package`,
   committed byte for byte. Until then `bench-package` is red, as expected.
+  - On `35797b03` (ci 45383649495), 16 of 17 jobs were green. `bench-package` was red only by `--against-fab`
+    `differs`, and of the 17 file hashes in its log, only `MANIFEST.json`'s differed from the committed package.
+  - **The architect's dispatch** (ci 45396261559, `workflow_dispatch` `write=true` at `79ee6363`, 12:45Z):
+    `bench-package` green. Its artifact (17 files, the same list) differs from the committed package in
+    `MANIFEST.json` alone, and in it only `verdict_sha256`. It is committed byte for byte (`cmp` clean).
 
 ## 8. Signal
 
