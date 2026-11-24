@@ -780,12 +780,23 @@ fn check_drc_judges_the_declared_outline_on_the_board() {
         assert!(rect.contains("\"Edge.Cuts\""), "{rect}");
         rect
     };
+    // Adversarial review 3: a second graphic of any shape on `Edge.Cuts`,
+    // by either spelling (the strict reader takes `layers` as `layer`), is
+    // refused, never passed over.
+    let layers = rect.replace("(layer \"Edge.Cuts\")", "(layers \"Edge.Cuts\")");
+    assert_ne!(layers, rect);
+    let far = "(gr_circle (center 0 0) (end 400 100) (stroke (width 0.05) (type default)) (fill no) (layers \"Edge.Cuts\"))";
     for (label, board, n) in [
         ("1610-none", e.board.replacen(&rect, "", 1), "has 0"),
         (
             "1610-two",
-            e.board.replacen(&rect, &format!("{rect}{rect}"), 1),
-            "has 2",
+            e.board.replacen(&rect, &format!("{rect}{layers}"), 1),
+            "has 2: `gr_rect`, `gr_rect`",
+        ),
+        (
+            "1610-circle",
+            e.board.replacen(&rect, &format!("{rect}{far}"), 1),
+            "has 2: `gr_rect`, `gr_circle`",
         ),
     ] {
         let (_, v) = drc_without_tools(label, &bound(w, h), &board);

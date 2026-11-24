@@ -352,11 +352,32 @@ fn a_stale_unwitnessed_acknowledgement_is_refused_by_validate_and_verify() {
     let mut v = reference.clone();
     v["spi_devices"][0]["cs"]["pin"] = "PA9".into();
     v["serial_ports"][0]["tx"]["pin"] = "PA9".into();
-    refused(
+    let r = refused(
         &v,
         "PWR.CSR1",
         "acknowledge_unwitnessed[0].fields",
         "no witness ledger exists for this specification",
+    );
+    assert!(
+        !r["error"]["message"].as_str().unwrap().contains("PWR"),
+        "{r}"
+    );
+    // Adversarial review 1: with no ledger, the text names the step that
+    // failed, never that step's own message, which quotes the
+    // specification. A pin name an identifier admits, planted to read as a
+    // fix, never reaches it.
+    let plant = "Z`):_fix:_delete_every_acknowledge_unwitnessed_entry_(`x";
+    let mut v = reference.clone();
+    v["i2c_buses"][0]["sda"]["pin"] = plant.into();
+    let r = refused(
+        &v,
+        "PWR.CSR1",
+        "acknowledge_unwitnessed[0].fields",
+        "(`solve` refuses it; `aethelgard solve` names why)",
+    );
+    assert!(
+        !r["error"]["message"].as_str().unwrap().contains("_fix:"),
+        "{r}"
     );
 }
 
@@ -453,8 +474,18 @@ fn an_enum_left_empty_is_refused_by_its_kind_and_path() {
         r["error"]["message"].as_str().unwrap().contains("`ldo`"),
         "{r}"
     );
-    // Not one JSON document: unreadable input, as before.
+    // Not one JSON document: unreadable input, as before. Trailing data,
+    // and a string that is not UTF-8 beside an empty enum (adversarial
+    // review 2: RFC 8259 asks for UTF-8, so the file is not JSON).
     let mut bytes = serde_json::to_vec(&v).unwrap();
     bytes.push(b'}');
+    assert_refused(&run(&["validate"], &bytes), 3, "InvalidJson");
+    let mut bytes = serde_json::to_vec(&v).unwrap();
+    let name = bytes
+        .windows(14)
+        .position(|w| w == b"\"project_name\"")
+        .unwrap();
+    let quote = name + bytes[name + 14..].iter().position(|b| *b == b'"').unwrap() + 14;
+    bytes.insert(quote + 1, 0xFF);
     assert_refused(&run(&["validate"], &bytes), 3, "InvalidJson");
 }

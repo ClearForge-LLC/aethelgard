@@ -957,17 +957,32 @@ fn outline_judged(
             format!("board.max_outline_um is declared, so the board's outline is judged: {why}"),
         )
     };
+    // Every top-level graphic on `Edge.Cuts`, by `layer` or `layers` (the
+    // strict reader takes either), of any shape: one `gr_rect` and nothing
+    // else, or the extent is not that rectangle's (adversarial review 3).
     let mut edges = Vec::new();
-    for r in tree.root().all("gr_rect") {
-        let layer = r.one("layer").map_err(|e| unreadable(e.to_string()))?;
-        if layer.and_then(|l| l.arg(1)) == Some("Edge.Cuts") {
-            edges.push(r);
+    for item in tree.root().lists() {
+        let Some(head) = item.head().filter(|h| h.starts_with("gr_")) else {
+            continue;
+        };
+        for key in ["layer", "layers"] {
+            let named = item.one(key).map_err(|e| unreadable(e.to_string()))?;
+            if named.is_some_and(|l| l.texts().any(|t| t == "Edge.Cuts")) {
+                edges.push((head, item.clone()));
+                break;
+            }
         }
     }
-    let [edge] = edges.as_slice() else {
+    let [("gr_rect", edge)] = edges.as_slice() else {
+        let found: Vec<String> = edges.iter().map(|(h, _)| format!("`{h}`")).collect();
         return Err(unreadable(format!(
-            "it must be one `Edge.Cuts` `gr_rect`, and the board has {}",
-            edges.len()
+            "it must be one `Edge.Cuts` `gr_rect` and nothing else on `Edge.Cuts`, and the board has {}{}",
+            edges.len(),
+            if found.is_empty() {
+                String::new()
+            } else {
+                format!(": {}", found.join(", "))
+            }
         )));
     };
     let corner = |head: &str| {
@@ -3115,16 +3130,20 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
     if spec.mcu.core_supply.mode == aethelgard_ir::vos::CoreSupplyMode::Bypass {
         return Ok(());
     }
+    // Why no ledger exists, by the step that failed, never by that step's
+    // text: a solve refusal quotes the specification's own strings, which
+    // must not reach this message (`AET-WO-1610` (5), adversarial review 1).
     let built = aethelgard_svd_hal::pin_table(&spec.mcu.part)
-        .map_err(|e| e.to_string())
+        .map_err(|_| "the part has no pin table")
         .and_then(|table| {
-            let topology = aethelgard_ir::solve(spec, &table, sha256).map_err(|e| e.to_string())?;
+            let topology = aethelgard_ir::solve(spec, &table, sha256)
+                .map_err(|_| "`solve` refuses it; `aethelgard solve` names why")?;
             if aethelgard_cli::generate::generable(&topology).is_err() {
                 return Ok(None);
             }
             ledger::build(&topology, &table)
                 .map(Some)
-                .map_err(|e| e.message())
+                .map_err(|_| "the ledger cannot be built from its topology")
         });
     match built {
         Ok(None) => Ok(()),
@@ -3139,7 +3158,7 @@ fn acknowledgements_current(spec: &Specification, sha256: &str) -> Result<(), Re
             ledger::Stale::KIND,
             Some(&first.register),
             // No ledger to quote, and the register is in `id`: the text holds
-            // nothing the entry supplies (`AET-WO-1610` (5)).
+            // nothing the specification supplies (`AET-WO-1610` (5)).
             format!(
                 "`acknowledge_unwitnessed[0]` acknowledges a register, but no witness ledger exists for this specification ({why}): an acknowledgement stands only for the ledger's rows (AET-WO-4230 R1)"
             ),
@@ -3186,7 +3205,7 @@ fn variant_missing(
     input: &[u8],
     err: &serde_json::Error,
 ) -> Option<aethelgard_ir::IrValidationError> {
-    serde_json::from_slice::<serde::de::IgnoredAny>(input).ok()?;
+    well_formed(input).then_some(())?;
     // serde's line and column are 1-based, the column in bytes.
     let line_start = if err.line() == 1 {
         0
@@ -3214,6 +3233,13 @@ fn variant_missing(
         Ok(_) => None,
     };
     Some(aethelgard_ir::IrValidationError::VariantMissing { path, expected })
+}
+
+/// Whether `input` is one JSON document: read whole as a `Value`, so its
+/// strings are UTF-8 and its numbers in range, as RFC 8259 asks (serde's
+/// `IgnoredAny` checks neither: adversarial review 2).
+fn well_formed(input: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(input).is_ok()
 }
 
 /// The JSON path (`a.b[2].c`) of the empty object whose `}` is at byte `at`
@@ -3264,13 +3290,23 @@ fn json_path_at(text: &[u8], at: usize) -> Option<String> {
     let Some(Frame::Object(None)) = stack.pop() else {
         return None;
     };
+    // A key of letters, digits and `_` reads bare; any other is quoted as
+    // JSON in brackets (`straps["P.M[1]"]`), so the path is never ambiguous.
+    let plain =
+        |k: &str| !k.is_empty() && k.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_');
     let mut path = String::new();
     for frame in &stack {
         match frame {
-            Frame::Object(Some(key)) if path.is_empty() => path.push_str(key),
-            Frame::Object(Some(key)) => {
-                path.push('.');
+            Frame::Object(Some(key)) if plain(key) => {
+                if !path.is_empty() {
+                    path.push('.');
+                }
                 path.push_str(key);
+            }
+            Frame::Object(Some(key)) => {
+                path.push('[');
+                path.push_str(&serde_json::to_string(key).ok()?);
+                path.push(']');
             }
             Frame::Array(n) => path.push_str(&format!("[{n}]")),
             Frame::Object(None) => return None,
@@ -3312,9 +3348,7 @@ fn parse_spec(input: &[u8]) -> Result<(Specification, String), (Refusal, u8)> {
                 Refusal::new(e.kind(), e.id(), e.to_string()).at(e.path()),
                 EXIT_INVALID_SPEC,
             )
-        } else if err.classify() == Category::Data
-            || serde_json::from_slice::<serde::de::IgnoredAny>(input).is_ok()
-        {
+        } else if err.classify() == Category::Data || well_formed(input) {
             (
                 Refusal::new("SchemaViolation", None, err.to_string()),
                 EXIT_INVALID_SPEC,
@@ -3749,6 +3783,33 @@ mod tests {
             drc_parts(Some(&powered), &j(None, Some(3)))[1],
             Ran::judged("drc.power", 3)
         );
+    }
+
+    /// `AET-WO-1610` (4): the path of the `{}` at a byte, through arrays past
+    /// their first element, escaped and odd keys (quoted, so never
+    /// ambiguous), and nothing for a `}` that does not close an empty object.
+    #[test]
+    fn the_path_of_an_empty_object_is_read_at_its_byte() {
+        let at = |text: &str| {
+            let i = text.find("{}").expect("an empty object") + 1;
+            json_path_at(text.as_bytes(), i)
+        };
+        assert_eq!(
+            at(r#"{"a": [1, {"b": 2}, {"c": {}}]}"#).as_deref(),
+            Some("a[2].c")
+        );
+        assert_eq!(
+            at(r#"{"s": {"P.M[1]": {}}}"#).as_deref(),
+            Some(r#"s["P.M[1]"]"#)
+        );
+        assert_eq!(
+            at("{\"k\\\"q\": [[0], {\"x\":\r\n {}}]}").as_deref(),
+            Some(r#"["k\"q"][1].x"#)
+        );
+        assert_eq!(at(r#"{"a": "}", "b": {}}"#).as_deref(), Some("b"));
+        // A `}` closing an object that holds a key is not an empty one.
+        let text = r#"{"a": {"b": 1}}"#;
+        assert_eq!(json_path_at(text.as_bytes(), text.find('}').unwrap()), None);
     }
 
     /// `AET-WO-1610` (3), D1-D3 as ruled: the IMU seats and the outline are
