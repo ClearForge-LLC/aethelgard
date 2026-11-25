@@ -434,13 +434,13 @@
       "reason": "PC10/PC11 at AF7 for USART3 (MAVLINK, J7): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries MAVLINK bytes in the twin. The bench row reads AFRH."
     },
     {
-      "register": "GPIOD.AFRL",
+      "register": "GPIOG.AFRH",
       "class": "same-source",
       "fields": [
-        "AFSEL0",
-        "AFSEL1"
+        "AFSEL14",
+        "AFSEL9"
       ],
-      "reason": "PD1/PD0 at AF8 for UART4 (WIFI, U30): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries WIFI bytes in the twin. The bench row reads AFRL."
+      "reason": "PG14/PG9 at AF7 for USART6 (WIFI, U30): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries WIFI bytes in the twin. The bench row reads AFRH."
     },
     {
       "register": "GPIOC.MODER",
@@ -452,13 +452,13 @@
       "reason": "PC10/PC11 alternate for USART3 (MAVLINK, J7): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
     },
     {
-      "register": "GPIOD.MODER",
+      "register": "GPIOG.MODER",
       "class": "same-source",
       "fields": [
-        "MODER0",
-        "MODER1"
+        "MODER14",
+        "MODER9"
       ],
-      "reason": "PD1/PD0 alternate for UART4 (WIFI, U30): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
+      "reason": "PG14/PG9 alternate for USART6 (WIFI, U30): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
     },
     {
       "register": "GPIOC.OSPEEDR",
@@ -470,13 +470,13 @@
       "reason": "PC10/PC11 low for USART3 at 57600 baud (MAVLINK): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
     },
     {
-      "register": "GPIOD.OSPEEDR",
+      "register": "GPIOG.OSPEEDR",
       "class": "same-source",
       "fields": [
-        "OSPEED0",
-        "OSPEED1"
+        "OSPEED14",
+        "OSPEED9"
       ],
-      "reason": "PD1/PD0 low for UART4 at 57600 baud (WIFI): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+      "reason": "PG14/PG9 low for USART6 at 57600 baud (WIFI): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
     },
     {
       "register": "GPIOC.OTYPER",
@@ -502,7 +502,7 @@
       "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port C pin, USART3's PC10/PC11 included. The bench row reads it back."
     },
     {
-      "register": "GPIOD.OTYPER",
+      "register": "GPIOG.OTYPER",
       "class": "ignored-by-model",
       "fields": [
         "OT0",
@@ -522,7 +522,7 @@
         "OT8",
         "OT9"
       ],
-      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port D pin, UART4's PD1/PD0 included. The bench row reads it back."
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port G pin, USART6's PG14/PG9 included. The bench row reads it back."
     },
     {
       "register": "GPIOC.PUPDR",
@@ -548,7 +548,7 @@
       "reason": "Written whole as 0: no pull on PC10/PC11 (USART3, MAVLINK) nor PC0 (VBAT_SENSE, ADC1 INP10), every other port C pin at reset. No pull is modelled. The bench row reads PUPDR."
     },
     {
-      "register": "GPIOD.PUPDR",
+      "register": "GPIOG.PUPDR",
       "class": "same-source",
       "fields": [
         "PUPD0",
@@ -568,7 +568,7 @@
         "PUPD8",
         "PUPD9"
       ],
-      "reason": "Written whole as 0: no pull on PD1/PD0 (UART4, WIFI), every other port D pin at reset. No pull is modelled. The bench row reads PUPDR."
+      "reason": "Written whole as 0: no pull on PG14/PG9 (USART6, WIFI), every other port G pin at reset. No pull is modelled. The bench row reads PUPDR."
     },
     {
       "register": "GPIOE.AFRH",
@@ -686,10 +686,10 @@
       "class": "same-source",
       "fields": [
         "GPIOCEN",
-        "GPIODEN",
-        "GPIOEEN"
+        "GPIOEEN",
+        "GPIOGEN"
       ],
-      "reason": "Ports C (USART3, VBAT_SENSE), D (UART4, WIFI), E (MOTOR2-4): 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows C/D/E registered with its RCC. Bench reads AHB4ENR."
+      "reason": "Ports C (USART3, VBAT_SENSE), E (MOTOR2-4), G (USART6, WIFI): 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows C/E/G registered with its RCC. Bench reads AHB4ENR."
     },
     {
       "register": "RCC.APB1LENR",
@@ -698,6 +698,14 @@
         "I2C2EN"
       ],
       "reason": "I2C2's clock for EXT (J8): 3302 B2 read Renode's APB1LENR as 0x00200000, I2C1 only; no held measurement shows i2c2 registered with its RCC, so the gate goes unseen. Bench reads I2C2EN."
+    },
+    {
+      "register": "RCC.APB2ENR",
+      "class": "same-source",
+      "fields": [
+        "USART6EN"
+      ],
+      "reason": "USART6's clock for WIFI (U30): 3302 B2 read Renode's APB2ENR as 0x00001000, SPI1 only; no held measurement shows usart6 registered with its RCC, so the gate goes unseen. Bench reads USART6EN."
     },
     {
       "register": "RCC.CFGR",
@@ -971,7 +979,7 @@
       "reason": "MAVLINK on USART3 (PC10/PC11, J7) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
     },
     {
-      "register": "UART4.CR1",
+      "register": "USART6.CR1",
       "class": "ignored-by-model",
       "fields": [
         "CMIE",
@@ -988,7 +996,7 @@
         "UESM",
         "WAKE"
       ],
-      "reason": "WIFI on UART4 (PD1/PD0, U30) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
+      "reason": "WIFI on USART6 (PG14/PG9, U30) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
     },
     {
       "register": "USART3.CR1",
@@ -1006,7 +1014,7 @@
       "reason": "MAVLINK 8N1 at 57600, BRR 1111: PCE/PS 0, OVER8 0 (oversampling by 16), interrupts off; stored with no reaction claimed (4300b FEEDBACK section 0), compared with the topology. Bench reads CR1."
     },
     {
-      "register": "UART4.CR1",
+      "register": "USART6.CR1",
       "class": "same-source",
       "fields": [
         "OVER8",
@@ -1047,7 +1055,7 @@
       "reason": "MAVLINK on PC10/PC11: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
     },
     {
-      "register": "UART4.CR2",
+      "register": "USART6.CR2",
       "class": "ignored-by-model",
       "fields": [
         "ABREN",
@@ -1070,7 +1078,7 @@
         "SWAP",
         "TXINV"
       ],
-      "reason": "WIFI on PD1/PD0: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
+      "reason": "WIFI on PG14/PG9: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
     },
     {
       "register": "USART3.CR2",
@@ -1081,12 +1089,12 @@
       "reason": "One stop bit for MAVLINK 8N1 at 57600 on USART3 (J7): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
     },
     {
-      "register": "UART4.CR2",
+      "register": "USART6.CR2",
       "class": "same-source",
       "fields": [
         "STOP"
       ],
-      "reason": "One stop bit for WIFI 8N1 at 57600 on UART4 (U30): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
+      "reason": "One stop bit for WIFI 8N1 at 57600 on USART6 (U30): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
     }
   ],
   "accept_lifecycle": [
@@ -2339,11 +2347,11 @@
       "peripheral": null,
       "tx": {
         "net": "WIFI_TX",
-        "pin": "PD1"
+        "pin": "PG14"
       },
       "rx": {
         "net": "WIFI_RX",
-        "pin": "PD0"
+        "pin": "PG9"
       },
       "role": "mavlink",
       "framing": {

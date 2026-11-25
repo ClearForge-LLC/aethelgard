@@ -18,10 +18,12 @@ s["serial_ports"].append({
     "label": "WIFI",
     "peripheral": None,
     # D7: the solver's own choice, UART4 on PA0/PA1, moves FLASH_CS from PA0 to
-    # PA15; UART4 on PD1/PD0 moves no entry of the solved topology (measured,
-    # with UART4 PB9/PB8, UART5 PC12/PD2, USART6, UART7 and UART8 pairs).
-    "tx": {"net": "WIFI_TX", "pin": "PD1"},
-    "rx": {"net": "WIFI_RX", "pin": "PD0"},
+    # PA15. Zero-move pairs (measured): UART4 PD1/PD0 and PB9/PB8, UART5
+    # PC12/PD2, USART6 PC6/PC7 and PG14/PG9, UART7 PE8/PE7 and PF7/PF6, UART8
+    # PE1/PE0. Ruled 2026-11-25T03:03Z: USART6 PG14/PG9, whose route leaves
+    # U11's F.Cu pour 1573 mm2 (UART4 PD1/PD0 left 456, UART5 PC12/PD2 268).
+    "tx": {"net": "WIFI_TX", "pin": "PG14"},
+    "rx": {"net": "WIFI_RX", "pin": "PG9"},
     "role": "mavlink",
     "framing": {"baud": 57600, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": False},
     "negotiated": None,
