@@ -575,6 +575,20 @@ fn main() -> ExitCode {
             archive,
             wall_bound_ms,
         } => match (firmware, spec, for_time.or(foreign)) {
+            // `AET-WO-4400j` D3: past 5 s only with a declared input.
+            (_, _, Some(ns))
+                if foreign.is_some()
+                    && input.is_none()
+                    && ns > renode::foreign::FOREIGN_MAX_VIRTUAL_NS =>
+            {
+                let message = format!(
+                    "--foreign {} ms is more than the ruled {} ms of a run with no --input; {} ms, FOREIGN_INPUT_MAX_VIRTUAL_NS, is a declared input's",
+                    ns as f64 / 1e6,
+                    renode::foreign::FOREIGN_MAX_VIRTUAL_NS / 1_000_000,
+                    renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS / 1_000_000
+                );
+                return emit(&Refusal::new("UsageError", None, message), EXIT_USAGE);
+            }
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
                 let topology = match solved(&spec) {
                     Ok((_, topology, _)) => topology,
@@ -657,9 +671,11 @@ fn virtual_time(s: &str) -> Result<u64, String> {
 }
 
 /// `--foreign`: as `--for`, up to the foreign window
-/// ([`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`], `AET-WO-4400e`).
+/// ([`renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS`], `AET-WO-4400j` D3);
+/// a run with no `--input` is held to [`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`]
+/// once the arguments are read.
 fn foreign_time(s: &str) -> Result<u64, String> {
-    time_up_to(s, renode::foreign::FOREIGN_MAX_VIRTUAL_NS)
+    time_up_to(s, renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS)
 }
 
 fn time_up_to(s: &str, max: u64) -> Result<u64, String> {
@@ -2478,7 +2494,13 @@ fn simulate_with(
         (Some(plan), run::Ended::Bounded(bound)) => {
             if let Some((firmware, spec, regions, _, clock, panic)) = foreign_inputs.clone() {
                 foreign_report = Some(renode::foreign::report(
-                    plan, firmware, spec, regions, clock, panic,
+                    plan,
+                    firmware,
+                    spec,
+                    regions,
+                    clock,
+                    panic,
+                    declared.is_some(),
                 ));
             }
             // A plain wall kill is the host's: refused, never a verdict
@@ -2502,7 +2524,15 @@ fn simulate_with(
                 code,
                 &out,
                 plan,
-                renode::foreign::report(plan, firmware, spec, regions, clock, panic),
+                renode::foreign::report(
+                    plan,
+                    firmware,
+                    spec,
+                    regions,
+                    clock,
+                    panic,
+                    declared.is_some(),
+                ),
                 &parts,
                 &r.flash,
                 r.topology.clock.hse_hz,

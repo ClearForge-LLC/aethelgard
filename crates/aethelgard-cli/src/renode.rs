@@ -7368,7 +7368,7 @@ mod tests {
         assert_eq!(runs(1_018_380), 1_018_380, "{}", run_for(1_018_380));
         // Every nanosecond of the first 2 ms, then a stride to the longest
         // `RunFor` any boot renders (the foreign window's bound).
-        let longest = foreign::FOREIGN_MAX_VIRTUAL_NS;
+        let longest = foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS;
         assert!(longest >= aethelgard_twin::boot::MAX_VIRTUAL_NS);
         for ns in (0..=2_000_000u64)
             .chain((2_000_000..=longest).step_by(9_973))

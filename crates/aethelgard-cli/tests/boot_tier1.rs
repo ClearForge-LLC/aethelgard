@@ -3519,6 +3519,17 @@ fn input_run(
     board: Option<(PathBuf, PathBuf)>,
     extra: &[&OsStr],
 ) -> Output {
+    input_run_for(toolbox, input, board, extra, "10ms")
+}
+
+/// As [`input_run`], for `time` of `--foreign`.
+fn input_run_for(
+    toolbox: &Path,
+    input: &Path,
+    board: Option<(PathBuf, PathBuf)>,
+    extra: &[&OsStr],
+    time: &str,
+) -> Output {
     let dir = Dir::new("input-in");
     let (spec, platform) = board.unwrap_or_else(|| common::foreign::write(&dir.0));
     let fw = dir.write("fw.elf", &foreign_elf());
@@ -3531,7 +3542,7 @@ fn input_run(
         OsStr::new("--spec"),
         spec.as_os_str(),
         OsStr::new("--foreign"),
-        OsStr::new("10ms"),
+        OsStr::new(time),
         OsStr::new("--input"),
         input.as_os_str(),
     ];
@@ -3590,6 +3601,39 @@ cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$scr
     );
     common::stub::write_executable(&tb.0.join("renode"), body.as_bytes());
     tb
+}
+
+/// `AET-WO-4400j` D3, ruled 2026-11-25T18:49Z: a run with a declared input
+/// may run 12 s, and its verdict names that window; 1 ms more is refused by
+/// the argument's own bound. A run with no input keeps 5 s: 12 s without
+/// `--input` is refused (64) by name, before any tool runs.
+#[test]
+fn an_input_run_may_run_twelve_seconds_and_a_plain_one_five() {
+    let tb = toolbox_input(&ardupilot_tx("early-fill"), None);
+    let dir = Dir::new("d3");
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
+    let out = input_run_for(&tb.0, &input, None, &[], "12000ms");
+    let v = report(&out);
+    assert!(v.get("error").is_none(), "{v}");
+    assert_eq!(v["boot"]["window"], "FOREIGN_INPUT_MAX_VIRTUAL_NS", "{v}");
+    assert_eq!(v["boot"]["virtual_time_ns"], 12_000_000_000u64, "{v}");
+    let past = input_run_for(&tb.0, &input, None, &[], "12001ms");
+    assert_eq!(past.status.code(), Some(64), "{past:?}");
+    let empty = Dir::new("empty");
+    let fw = dir.write("fw.elf", &foreign_elf());
+    for time in ["5001ms", "12000ms"] {
+        let plain = foreign_with(&empty.0, &fw, time);
+        let e = report(&plain);
+        assert_eq!(plain.status.code(), Some(64), "{e}");
+        assert_eq!(e["error"]["kind"], "UsageError", "{e}");
+        assert!(
+            e["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("ms of a run with no --input; 12000 ms, FOREIGN_INPUT_MAX_VIRTUAL_NS, is a declared input's"),
+            "{e}"
+        );
+    }
 }
 
 /// `AET-WO-4400i` D8: each refusal of a declared input is named, with exit

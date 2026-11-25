@@ -32,6 +32,16 @@ pub const JUDGE: &str = "foreign";
 pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 5_000_000_000;
 pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 
+/// The longest boot `--foreign` admits with a declared input (`AET-WO-4400j`
+/// D3, ruled 2026-11-25T18:49Z): main's Sentinel-03 arms on `4400i`'s input
+/// at 8.752 s (its armed heartbeat's first byte), and 12 s leaves 3.25 s.
+/// Inside the bounds of `RUL-13` only since D1 (Renode's stdin held open:
+/// 365-371 permille of the cap at 12 s with the input, against 1,756-1,861
+/// before) and D2 (the flood summarised); `spike/4400j/RESULTS.md` §5. A run
+/// with no input keeps [`FOREIGN_MAX_VIRTUAL_NS`], so no such verdict moves.
+pub const FOREIGN_INPUT_MAX_VIRTUAL_NS: u64 = 12_000_000_000;
+pub const FOREIGN_INPUT_WINDOW: &str = "FOREIGN_INPUT_MAX_VIRTUAL_NS";
+
 /// The rule table, in the order of the verdict: each of today's rules, what
 /// a foreign boot does with it, and what that judges or weakens (`INV-07`).
 /// Every row is ruled (PR #212, comments 6958822008, 6965511448 and
@@ -115,7 +125,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "--for at most 100 ms",
         "replaced",
-        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 5 s (the last witness of unmodified ArduPilot at 4.394 s at its declared clock, AET-WO-4400g)",
+        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 5 s, or with a declared input FOREIGN_INPUT_MAX_VIRTUAL_NS, 12 s (main's Sentinel-03 arms at 8.752 s, AET-WO-4400j D3) (the last witness of unmodified ArduPilot at 4.394 s at its declared clock, AET-WO-4400g)",
     ),
     (
         "device identity",
@@ -1528,6 +1538,7 @@ pub fn report(
     regions: Vec<RegionReport>,
     clock: ClockReport,
     panic: u64,
+    input: bool,
 ) -> ForeignBoot {
     ForeignBoot {
         judge: JUDGE,
@@ -1535,7 +1546,11 @@ pub fn report(
         specification_sha256,
         seed: aethelgard_twin::boot::SEED,
         virtual_time_ns: plan.virtual_ns,
-        window: FOREIGN_WINDOW,
+        window: if input {
+            FOREIGN_INPUT_WINDOW
+        } else {
+            FOREIGN_WINDOW
+        },
         memory_regions: regions,
         mips: None,
         instructions: None,

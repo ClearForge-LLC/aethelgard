@@ -404,7 +404,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 `AET-WO-4400e`, ruled on PR #212 (comments 6958822008 and 6965511448), with D4 ruled on PR #215 (comment 6961943794). The foreign judge is a second judge, for a firmware this project did not generate, such as unmodified ArduPilot.
 
 **It is declared, never inferred** (`INV-06`):
-- `simulate --firmware F --spec S --foreign TIME` chooses it. `TIME` is the virtual time the boot runs, as `--for`'s, at most `FOREIGN_MAX_VIRTUAL_NS`.
+- `simulate --firmware F --spec S --foreign TIME` chooses it. `TIME` is the virtual time the boot runs, as `--for`'s, at most `FOREIGN_MAX_VIRTUAL_NS` (5 s), or with `--input` `FOREIGN_INPUT_MAX_VIRTUAL_NS` (12 s: an armed input run, `AET-WO-4400j` D3).
 - **Its clock is declared** (`AET-WO-4400g` §1.2, Q1 ruled on PR #229): `S` must declare `mcu.foreign_clock`, the firmware's timer kernel clocks per APB bus and each USART's, each `{value, source}`; without it the run is refused by name, `ForeignClockUndeclared`, exit `3`, never booted at the solved clock, which is the generated firmware's (ArduPilot would run 0.32× under it, measured). The platform builds every timer and USART at the declared clocks; LPUART1 and the DWT, which no declaration sets, keep the stock file's, and the verdict names them.
 - That bound is 5 s (`AET-WO-4400g` §1.4): at its declared 200 MHz, unmodified ArduPilot's last witness, the ICM's first FIFO read, is at 4.394 s (it was 3.61 s while the twin ran its timers at 250 MHz). Its RSS margin under concurrency is `AET-WO-4400g`'s F1 measurement; the memory bound, 1.5 GiB since `AET-WO-2313`, is a ruling of its own.
 - `--for` and `--foreign` together are refused (exit 64). `--for` keeps its 100 ms bound.
