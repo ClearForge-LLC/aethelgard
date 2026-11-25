@@ -6,8 +6,8 @@ runner's host beside a job's container, it reads /proc every 0.2 s for
     mark, so a missed poll loses only the growth after the last one (kani-driver's last growth
     runs at about 1.25 GiB/s, so at most about 0.25 GiB: AET-WO-1915 section 5);
   - each `cbmc`, labelled `<harness>/cbmc` by the kani-driver beside it, the same way;
-  - each Renode process (`--boot-comm`, default `renode`, the comm AET-WO-1915 measured): its
-    lifetime, first seen to gone, with its argv.
+  - each Renode process (comm `renode`, as AET-WO-1915 measured): its lifetime, first seen to gone,
+    with its argv.
 
 When a watched process is gone, or the probe stops while it lives, it appends one line to OUT:
   PROBE peak harness=<name> vmhwm_kib=<n> seconds=<s>
@@ -15,7 +15,7 @@ When a watched process is gone, or the probe stops while it lives, it appends on
 It stops when the file STOP exists. ci/ceiling.sh judges the peaks against ci/kani-ceiling.
 Stdlib only; run with python3 -I.
 
-usage: probe.py OUT STOP [--boot-comm NAME]...
+usage: probe.py OUT STOP
 """
 import os
 import sys
@@ -37,7 +37,7 @@ def status(pid):
     out = {}
     for line in text.decode(errors="replace").splitlines():
         k, _, v = line.partition(":")
-        if k in ("Name", "VmHWM"):
+        if k == "VmHWM":
             out[k] = v.strip()
     return out
 
@@ -48,16 +48,7 @@ def argv(pid):
 
 
 def main():
-    out, stop = sys.argv[1], sys.argv[2]
-    boots = set()
-    rest = sys.argv[3:]
-    while rest:
-        if rest[0] == "--boot-comm" and len(rest) > 1:
-            boots.add(rest[1])
-            rest = rest[2:]
-        else:
-            sys.exit(f"probe: unknown argument {rest[0]}")
-    boots = boots or {"renode"}
+    out, stop = sys.argv[1:3]
     live = {}  # pid -> [kind, label, first_seen, vmhwm_kib]
 
     def emit(log, pid, now):
@@ -77,7 +68,7 @@ def main():
                     continue
                 pid = int(name)
                 comm = (read(f"/proc/{pid}/comm") or b"").decode(errors="replace").strip()
-                if comm not in ("kani-driver", "cbmc") and comm not in boots:
+                if comm not in ("kani-driver", "cbmc", "renode"):
                     continue
                 st = status(pid)
                 if st is None:

@@ -267,25 +267,16 @@ jobs:
         if: matrix.shard == 0
         run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
 
-      # AET-WO-1918 (1): the runner's CPU, disk and memory, then the probe (ci/probe.py), from the
-      # host: each Kani harness's kani-driver peak, which the step after the test judges against
-      # ci/kani-ceiling, and each Renode boot's wall time (the refit's evidence, by CPU).
+      # AET-WO-1918 (1): the Kani peak and boot probe (ci/probe-step.sh).
       - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
-        run: |
-          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; df -h /; free -g
-          nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+        run: bash ci/probe-step.sh start
 
       - name: cargo test inside the image, this shard's tests
         run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh run target/ci-shard ${{ matrix.shard }}
 
       - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
         if: always()
-        run: |
-          touch "$RUNNER_TEMP/probe.stop"; sleep 1
-          df -h /; free -g
-          grep '^PROBE boot' "$RUNNER_TEMP/probe.log" || true
-          cat "$RUNNER_TEMP/probe.err" 2>/dev/null || true
-          bash ci/ceiling.sh "$RUNNER_TEMP/probe.log" ci/kani-ceiling
+        run: bash ci/probe-step.sh judge
 
       - name: keep what the aggregate checks
         if: always()
@@ -594,13 +585,9 @@ jobs:
       - name: build the CLI and the analog bridge, with the network
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
 
-      # AET-WO-1918 (1): the runner's CPU, disk and memory, then the probe (ci/probe.py), from the
-      # host: each Kani harness's kani-driver peak, which the step after the test judges against
-      # ci/kani-ceiling, and each Renode boot's wall time (the refit's evidence, by CPU).
+      # AET-WO-1918 (1): the Kani peak and boot probe (ci/probe-step.sh).
       - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
-        run: |
-          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; df -h /; free -g
-          nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+        run: bash ci/probe-step.sh start
 
       - name: verify --against-fab, the committed package derived again
         if: ${{ !inputs.write }}
@@ -614,12 +601,7 @@ jobs:
 
       - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
         if: always()
-        run: |
-          touch "$RUNNER_TEMP/probe.stop"; sleep 1
-          df -h /; free -g
-          grep '^PROBE boot' "$RUNNER_TEMP/probe.log" || true
-          cat "$RUNNER_TEMP/probe.err" 2>/dev/null || true
-          bash ci/ceiling.sh "$RUNNER_TEMP/probe.log" ci/kani-ceiling --require-peak
+        run: bash ci/probe-step.sh judge --require-peak
 
       - name: keep the written package
         if: ${{ inputs.write }}
@@ -663,13 +645,9 @@ jobs:
       - name: build the CLI and the analog bridge, with the network
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
 
-      # AET-WO-1918 (1): the runner's CPU, disk and memory, then the probe (ci/probe.py), from the
-      # host: each Kani harness's kani-driver peak, which the step after the test judges against
-      # ci/kani-ceiling, and each Renode boot's wall time (the refit's evidence, by CPU).
+      # AET-WO-1918 (1): the Kani peak and boot probe (ci/probe-step.sh).
       - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
-        run: |
-          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; df -h /; free -g
-          nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+        run: bash ci/probe-step.sh start
 
       - name: Sentinel-03, verify --against-fab, the committed package derived again
         if: ${{ !inputs.write }}
@@ -681,12 +659,7 @@ jobs:
 
       - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
         if: always()
-        run: |
-          touch "$RUNNER_TEMP/probe.stop"; sleep 1
-          df -h /; free -g
-          grep '^PROBE boot' "$RUNNER_TEMP/probe.log" || true
-          cat "$RUNNER_TEMP/probe.err" 2>/dev/null || true
-          bash ci/ceiling.sh "$RUNNER_TEMP/probe.log" ci/kani-ceiling --require-peak
+        run: bash ci/probe-step.sh judge --require-peak
 
       - name: keep Sentinel-03's written package
         if: ${{ inputs.write }}

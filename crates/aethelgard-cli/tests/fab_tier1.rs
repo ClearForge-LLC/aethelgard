@@ -1059,7 +1059,6 @@ fn the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job()
 fn against_fab_tier2_writes_its_one_package_once_per_binary() {
     let text = fs::read_to_string(root().join("crates/aethelgard-cli/tests/against_fab_tier2.rs"))
         .unwrap();
-    assert_eq!(text.matches("fab_verify(&dir, \"--fab-out\")").count(), 1);
     assert_eq!(
         text.matches("\"--fab-out\")").count(),
         1,

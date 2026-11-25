@@ -222,7 +222,7 @@ enum Command {
         /// refusal, never a verdict, so this cannot change any verdict a
         /// boot reaches; the verdict records it (`wall_bound_ms`). `verify`
         /// and `campaign` have no such flag.
-        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..=120_000))]
+        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..=renode::BOOT_BOUNDS.wall.as_secs() * 1000))]
         wall_bound_ms: Option<u64>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
@@ -1670,8 +1670,6 @@ struct Boot {
 /// A boot ready to run: every input copied and checked, every expectation
 /// computed from the topology.
 struct Ready {
-    /// [`Boot::bounds`].
-    bounds: run::Bounds,
     firmware: input::Input,
     image_sha256: String,
     executable: Vec<(u64, u64)>,
@@ -1925,7 +1923,6 @@ fn ready(
             pwr,
             clock,
             pins: boot.pins,
-            bounds: boot.bounds,
         },
     ))
 }
@@ -2190,6 +2187,7 @@ fn simulate_with(
     boot: Option<Boot>,
     declared: Option<(PathBuf, Option<PathBuf>)>,
 ) -> Result<verdict::Verdict, run::Stop> {
+    let bounds = boot.as_ref().map_or(renode::BOOT_BOUNDS, |b| b.bounds);
     let scratch = Scratch::new()?;
     let ready = match boot {
         Some(boot) => Some(ready(platform, boot, &scratch)?),
@@ -2341,7 +2339,6 @@ fn simulate_with(
     // reset, through the same bridge, and its boot word's instant plus one
     // quantum bounds each recovery. Its own capture directory, so the
     // droop's boot opens its files new.
-    let bounds = ready.as_ref().map_or(renode::BOOT_BOUNDS, |r| r.bounds);
     let undisturbed = match plan_with(
         &[],
         None,
@@ -2479,9 +2476,7 @@ fn simulate_with(
             // A plain wall kill is the host's: refused, never a verdict
             // (`AET-WO-1918` (2)), even with a foreign fault in the log, since
             // a faster host would have reached the judge with more findings.
-            let Some(named) = renode::bounded(&out, *bound) else {
-                return Err(renode::hung(bounds.wall));
-            };
+            let named = renode::bounded(&out, *bound, bounds.wall)?;
             // A fault the hook caught before the bound is named too
             // (`AET-WO-2314`): the run ended two ways.
             let mut findings = vec![named];

@@ -1,0 +1,3 @@
+AET-WO-1918 mutants (spike/1918/tools/mutants.py), on the reduced head before the refit: 13 of 13 killed.
+killed: split at the bound, not past it; a binding not glued to its check; a wall kill a finding again; replay accepts the hang guard's finding; a hidden argument offered over MCP; the test's guard not on the verdict; the test's guard ignored; the undisturbed boot's wall kill not refused; a peak at the ceiling refused; a peak over the ceiling passed; the probe drops what lives at its stop; a bench job not requiring a peak; against_fab_tier2 not kept in one shard.
+(First sweep: the at-ceiling mutant hit only the printed label, an equivalent mutant, and was moved to the decision; the guard-ignored mutant did not apply after fmt rewrapped its line. Both then killed.)

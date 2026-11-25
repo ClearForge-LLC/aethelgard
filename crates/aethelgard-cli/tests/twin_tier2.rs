@@ -67,7 +67,9 @@ fn answer(line: &str) {
 /// (`BOOT_BOUNDS`) where alone they take about 5 s; the Sentinel-02-shaped
 /// late-anchor boot reached 40.7 s and was killed (`wall_bound_exceeded`).
 /// Every call that runs Renode takes this turn, so each boot meets the bound
-/// under the condition it was measured for: one boot at a time.
+/// under the condition it was measured for: one boot at a time. Since
+/// `AET-WO-1918` (2) the bound is a 120 s hang guard whose kill is refused,
+/// not a finding; the turn stays, and whether it still pays is a row.
 static RENODE_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn renode_turn() -> std::sync::MutexGuard<'static, ()> {
@@ -263,7 +265,19 @@ fn boot_on(
     elf: &Path,
     time: &str,
 ) -> (Option<i32>, Value) {
-    let (code, v) = aethelgard(&[
+    boot_on_with(label, platform, spec, elf, time, &[])
+}
+
+/// As [`boot_on`], with `extra` arguments after the boot's.
+fn boot_on_with(
+    label: &str,
+    platform: &Path,
+    spec: &Path,
+    elf: &Path,
+    time: &str,
+    extra: &[&str],
+) -> (Option<i32>, Value) {
+    let mut args = vec![
         "simulate",
         "--platform",
         platform.to_str().unwrap(),
@@ -273,7 +287,9 @@ fn boot_on(
         spec.to_str().unwrap(),
         "--for",
         time,
-    ]);
+    ];
+    args.extend(extra);
+    let (code, v) = aethelgard(&args);
     answer(&format!(
         "{label}: exit={code:?} wall_s={:.2} verdict={v}",
         last_call().as_secs_f64()
@@ -568,23 +584,14 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
     });
     // The test's hang guard (`simulate --wall-bound-ms`, `AET-WO-1918` (2)):
     // 30 s, the bound this test was written against, not the 120 s guard.
-    let (code, v) = aethelgard(&[
-        "simulate",
-        "--platform",
-        platform().to_str().unwrap(),
-        "--firmware",
-        elf.to_str().unwrap(),
-        "--spec",
-        spec().to_str().unwrap(),
-        "--for",
+    let (code, v) = boot_on_with(
+        "A6 hole",
+        &platform(),
+        &spec(),
+        &elf,
         "10ms",
-        "--wall-bound-ms",
-        "30000",
-    ]);
-    answer(&format!(
-        "A6 hole: exit={code:?} wall_s={:.2} verdict={v}",
-        last_call().as_secs_f64()
-    ));
+        &["--wall-bound-ms", "30000"],
+    );
     // The call's own time, from the moment it held the turn: never the queue
     // behind other tests' Renode runs (`RENODE_TURN`, `last_call`).
     let took = last_call();

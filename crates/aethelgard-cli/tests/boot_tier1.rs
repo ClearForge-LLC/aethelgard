@@ -444,20 +444,29 @@ fn run_cli(cli: &Path, path: &Path, args: &[&OsStr]) -> Output {
 }
 
 fn boot_with(path: &Path, platform: &Path, firmware: &Path, time: &str) -> Output {
-    run(
-        path,
-        &[
-            OsStr::new("simulate"),
-            OsStr::new("--platform"),
-            platform.as_os_str(),
-            OsStr::new("--firmware"),
-            firmware.as_os_str(),
-            OsStr::new("--spec"),
-            spec().as_os_str(),
-            OsStr::new("--for"),
-            OsStr::new(time),
-        ],
-    )
+    boot_with_args(path, platform, firmware, time, &[])
+}
+
+/// As [`boot_with`], with `extra` arguments after the boot's.
+fn boot_with_args(
+    path: &Path,
+    platform: &Path,
+    firmware: &Path,
+    time: &str,
+    extra: &[&str],
+) -> Output {
+    let mut args = vec![
+        OsStr::new("simulate"),
+        OsStr::new("--platform"),
+        platform.as_os_str(),
+        OsStr::new("--firmware"),
+        firmware.as_os_str(),
+        OsStr::new("--spec"),
+    ];
+    let spec = spec();
+    args.extend([spec.as_os_str(), OsStr::new("--for"), OsStr::new(time)]);
+    args.extend(extra.iter().map(OsStr::new));
+    run(path, &args)
 }
 
 /// One boot of a synthetic ELF on the committed platform, with the stub
@@ -1107,21 +1116,12 @@ fn guarded(output: &str, then: &str, wall_ms: &str) -> (Option<i32>, Value, std:
     let input = Dir::new("in");
     let fw = input.write("fw.elf", &elf());
     let start = std::time::Instant::now();
-    let out = run(
+    let out = boot_with_args(
         &tb.0,
-        &[
-            OsStr::new("simulate"),
-            OsStr::new("--platform"),
-            platform().as_os_str(),
-            OsStr::new("--firmware"),
-            fw.as_os_str(),
-            OsStr::new("--spec"),
-            spec().as_os_str(),
-            OsStr::new("--for"),
-            OsStr::new("10ms"),
-            OsStr::new("--wall-bound-ms"),
-            OsStr::new(wall_ms),
-        ],
+        &platform(),
+        &fw,
+        "10ms",
+        &["--wall-bound-ms", wall_ms],
     );
     (out.status.code(), report(&out), start.elapsed())
 }

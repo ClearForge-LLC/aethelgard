@@ -13,7 +13,6 @@ check() { # NAME WANT(0|1) ARGS...
   if [ "$got" = "$want" ]; then echo "PASS $name"; else echo "FAIL $name (exit $got, want $want)"; cat "$t/out"; fail=1; fi
 }
 ceiling=$(grep -v '^#' ci/kani-ceiling | tr -d '[:space:]')
-case $ceiling in '' | *[!0-9]*) echo "FAIL ci/kani-ceiling holds no number"; exit 1 ;; esac
 [ "$ceiling" = 12582912 ] || { echo "FAIL the ceiling is $ceiling KiB, not the WO's 12 GiB (12582912)"; fail=1; }
 
 printf 'PROBE peak harness=proofs::a vmhwm_kib=%s seconds=1.0\nPROBE boot seconds=3.1 comm=renode argv=renode\n' "$ceiling" > "$t/at.log"
@@ -56,12 +55,12 @@ job() { awk -v j="  $1:" '$0 == j { on = 1; next } on && /^  [a-z][a-z0-9-]*:$/ 
 for spec in "tools-shard:" "bench-package:--require-peak" "bench-package-s03:--require-peak"; do
   name=${spec%%:*} req=${spec#*:}
   body=$(job "$name")
-  probe=$(grep -c 'nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop"' <<<"$body")
-  ceil=$(grep -c "bash ci/ceiling.sh \"\$RUNNER_TEMP/probe.log\" ci/kani-ceiling${req:+ $req}\$" <<<"$body")
-  first_probe=$(grep -n 'ci/probe.py' <<<"$body" | head -1 | cut -d: -f1)
+  probe=$(grep -c 'run: bash ci/probe-step.sh start$' <<<"$body")
+  ceil=$(grep -c "run: bash ci/probe-step.sh judge${req:+ $req}\$" <<<"$body")
+  first_probe=$(grep -n 'probe-step.sh start' <<<"$body" | head -1 | cut -d: -f1)
   first_run=$(grep -n -E 'ci/shard.sh run|\$VERIFY(_S03)? --' <<<"$body" | head -1 | cut -d: -f1)
   last_run=$(grep -n -E 'ci/shard.sh run|\$VERIFY(_S03)? --' <<<"$body" | tail -1 | cut -d: -f1)
-  at=$(grep -n 'bash ci/ceiling.sh' <<<"$body" | head -1 | cut -d: -f1)
+  at=$(grep -n 'probe-step.sh judge' <<<"$body" | head -1 | cut -d: -f1)
   always=$(awk -v at="$at" 'NR < at && /- name:/ { n = NR } END { print n }' <<<"$body")
   guarded=$(sed -n "${always},${at}p" <<<"$body" | grep -c 'if: always()')
   if [ "$probe" = 1 ] && [ "$ceil" = 1 ] && [ -n "$first_run" ] && [ "$first_probe" -lt "$first_run" ] \
