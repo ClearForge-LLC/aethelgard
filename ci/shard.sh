@@ -62,7 +62,10 @@ DEFAULT_WEIGHT=0.05
 #     test from a shared-process run: tests that take a lock (board_tier2) read as their queue time.
 #  3. Set a binary whose tests overlap in ONE process (attribute_seeded) in ci/colocate.tsv to the
 #     worst in-process wall time of the block over recent runs, not the sum of its alone times.
-#  4. ci/SHARDS is 12 (AET-WO-1911 §1.3, measured at 8, 12 and 16 shards, lone and three pull requests at once; ruled D1 by
+#  4. ci/SHARDS is 20 (AET-WO-1918 (3), ruled (i) 2026-11-25T06:37Z: every weight at its worst sample over seven runs and the
+#     throwaway's alone pass; 20 is the count at which every unit but two blocks plans under 783 s, the test step a 20-minute
+#     job leaves after the worst setup measured, 411 s; the two over it, against_fab_tier2 and four_layer_fab_tier2, are named
+#     floors in AET-WO-1918 FEEDBACK §3). It was 12 (AET-WO-1911 §1.3, measured at 8, 12 and 16 shards, lone and three pull requests at once; ruled D1 by
 #     the architect on the builders' bus, 2026-11-19 22:10 UTC, for PR #242; it replaces Scotty's 2026-11-14 "stays 8"). When
 #     measured, before AET-WO-3303b's schedule split, the slowest shard from 11 up was one indivisible block (four_layer_fab_tier2,
 #     about 1,400 s), so 16 bought no wall time over 12 (31.6 min lone against 31.4). After the split that block is 582 s and the
