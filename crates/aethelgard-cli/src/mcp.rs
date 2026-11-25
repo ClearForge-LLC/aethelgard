@@ -113,10 +113,14 @@ fn leaf(cmd: &Command, path: &[String]) -> Leaf {
     );
     let mut args = Vec::new();
     for arg in cmd.get_arguments() {
-        if matches!(
-            arg.get_action(),
-            ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong | ArgAction::Version
-        ) {
+        // A hidden argument is a test's (`simulate --wall-bound-ms`,
+        // `AET-WO-1918` (2)): no tool offers it.
+        if arg.is_hide_set()
+            || matches!(
+                arg.get_action(),
+                ArgAction::Help | ArgAction::HelpShort | ArgAction::HelpLong | ArgAction::Version
+            )
+        {
             continue;
         }
         let id = arg.get_id();

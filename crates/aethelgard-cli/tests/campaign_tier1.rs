@@ -3530,3 +3530,30 @@ fn refused_with_its_end(plants: Vec<Plant>) {
         }
     }
 }
+
+/// `AET-WO-1918` (2), ruled (b): a Renode that never returns from its run is
+/// killed at the 120 s wall-clock hang guard and refused as a `ToolError`, and
+/// the campaign writes no run: a wall kill cannot reach an archive, so no
+/// replay can accept one (`INV-04`). The one slow test in this file (the
+/// guard itself, about 2 min): a campaign has no test's hang guard, by design.
+#[test]
+fn a_renode_that_never_returns_is_refused_and_archives_nothing() {
+    let tb = toolbox_built_then(&good(), BUILD, "/bin/sleep 600");
+    let work = Work::new();
+    work.dir.write(
+        "s.json",
+        scenario("case", "pass", &[], json_of(PULL_UP_2K2)).as_bytes(),
+    );
+    let start = std::time::Instant::now();
+    let out = work.campaign(&cli(Some(BRIDGE_BY_PULL_UP)), &tb.0, &["s.json"]);
+    let took = start.elapsed();
+    let v = expect_refusal(&out, 5, "ToolError");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(message.contains("120 s wall-clock hang guard"), "{v}");
+    assert!(work.runs().is_empty(), "{:?}", work.runs());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(!stdout.contains("wall_bound_exceeded"), "{stdout}");
+    // Killed by the guard, not by the stub's own 600 s: the slack covers a
+    // loaded runner's start-up and teardown, as for `boot_tier1`'s bounds.
+    assert!(took.as_secs() >= 120 && took.as_secs() < 180, "{took:?}");
+}

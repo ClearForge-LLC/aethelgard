@@ -747,6 +747,7 @@ pub fn boot(
     inv: &run::Invocation<'_>,
     renode: &Path,
     filter: run::LogFilter,
+    bounds: run::Bounds,
 ) -> Result<run::Output, run::Stop> {
     let tool = bridge()?;
     let mut args: Vec<std::ffi::OsString> = vec!["--renode".into(), renode.as_os_str().into()];
@@ -763,7 +764,7 @@ pub fn boot(
         read_only,
         read_write: inv.read_write.clone(),
     }
-    .run_bounded_filtered(crate::renode::BOOT_BOUNDS, filter)?;
+    .run_bounded_filtered(bounds, filter)?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let rest = identified(&text)?.1.as_bytes().to_vec();
     out.stdout = rest;

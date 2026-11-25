@@ -84,6 +84,12 @@ pub struct Verdict {
     /// every finding and from the campaign's archive.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory: Option<MemoryReport>,
+    /// `simulate --wall-bound-ms` only (`AET-WO-1918` (2)): the test's
+    /// wall-clock hang guard in place of `renode::BOOT_BOUNDS`'s; absent on
+    /// every other verdict, and so on every verdict `verify` or `campaign`
+    /// makes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wall_bound_ms: Option<u64>,
     /// `check drc` and a generated `simulate` (`AET-WO-1609`): each part of
     /// the check that an optional key, flag or condition switches, as
     /// [`Ran`]; absent on every other verdict.
@@ -1168,6 +1174,7 @@ impl Verdict {
             faults: None,
             droop: None,
             memory: None,
+            wall_bound_ms: None,
             ran: Vec::new(),
             findings,
             tools: Vec::new(),

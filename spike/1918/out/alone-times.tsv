@@ -1,0 +1,122 @@
+0	tests/twin_tier2.rs	kani_proves_every_part_of_both_motor_fixtures	491.99	AMD EPYC 7763 64-Core Processor
+1	tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	313.63	AMD EPYC 9V74 80-Core Processor
+2	tests/board_tier2.rs	a_cargo_configuration_another_uid_plants_in_tmp_is_not_read	0.70	AMD EPYC 9V74 80-Core Processor
+2	tests/twin_tier2.rs	a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds	5.10	AMD EPYC 9V74 80-Core Processor
+2	tests/twin_tier2.rs	adv3_1_an_apb2_prescaler_after_the_bring_up_fails	5.88	AMD EPYC 9V74 80-Core Processor
+2	tests/twin_tier2.rs	battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats	414.51	AMD EPYC 9V74 80-Core Processor
+2	tests/board_tier2.rs	build_gives_one_sha256_at_two_paths	1.12	AMD EPYC 9V74 80-Core Processor
+3	tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.43	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	adv2_6_an_open_drain_tx_read_modify_written_fails	6.04	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	adv_1_a_tx_pin_routed_only_after_the_pattern_fails	5.97	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails	5.81	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	an_echo_the_firmware_never_received_is_forged	5.69	AMD EPYC 7763 64-Core Processor
+3	tests/board_tier2.rs	as_root_a_third_uid_cannot_change_what_build_reads	0.69	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	m2_a_dma_start_of_cen_fails_closed_by_name	6.71	AMD EPYC 7763 64-Core Processor
+3	tests/twin_tier2.rs	the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed	12.40	AMD EPYC 7763 64-Core Processor
+3	tests/board_tier2.rs	verify_names_what_judged_nothing_on_the_motor_driver	200.92	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	a_seeded_imu_fault_is_named_by_its_step	8.84	AMD EPYC 7763 64-Core Processor
+4	tests/board_tier2.rs	a_vacuous_harness_fails	9.07	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	adv_2_a_presc_write_in_the_bring_up_fails	5.89	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	adv_5_a_pattern_on_a_usart_no_port_names_is_forged	5.84	AMD EPYC 7763 64-Core Processor
+4	tests/board_tier2.rs	d1_s_pin_device_generates_builds_and_proves	142.89	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	every_bit_the_reference_writes_is_covered_by_a_ledger_row	5.17	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	the_console_sends_its_pattern_and_echoes_its_frame	5.51	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot	6.35	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	the_imu_and_barometer_fixture_runs_every_script_step_witnessed	8.28	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back	5.76	AMD EPYC 7763 64-Core Processor
+4	tests/twin_tier2.rs	the_reference_firmware_boots_and_two_boots_agree	11.15	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	a_firmware_with_no_vector_table_at_the_boot_address_fails	5.22	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed	12.05	AMD EPYC 7763 64-Core Processor
+5	tests/board_tier2.rs	a_missing_clock_enable_fails	10.21	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	a_step_sent_to_another_devices_address_that_answers_is_the_softwares	6.92	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails	5.61	AMD EPYC 7763 64-Core Processor
+5	tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	582.55	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped	12.53	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af	5.84	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone	8.15	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	the_console_s_rx_on_the_wrong_af_keeps_the_pattern_and_loses_the_echo	5.73	AMD EPYC 7763 64-Core Processor
+5	tests/board_tier2.rs	the_own_parts_fixture_passes_erc_drc_with_parity_and_extract	7.48	AMD EPYC 7763 64-Core Processor
+5	tests/twin_tier2.rs	the_pinned_image_s_renode_is_the_build_the_rettobase_witness_measured	0.07	AMD EPYC 7763 64-Core Processor
+6	tests/twin_tier2.rs	a_firmware_that_skips_the_read_or_its_record_cannot_pass	10.66	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten	4.70	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	a_value_one_bit_off_fails_as_an_identity_mismatch	5.39	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	adv_2b_a_presc_write_from_main_after_the_bring_up_fails	5.39	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	adv_4_sbus_s_inversion_written_after_ue_fails	6.79	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	adversarial_1_a_timer_at_another_rate_with_the_claim_kept_fails	5.37	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	f2_a_late_dshot_anchor_fails_by_name	11.62	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	the_fixture_s_campaign_archives_each_configuration_and_replays	10.54	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	the_four_port_fixture_witnesses_every_port_and_sbus_s_tags	6.73	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/board_tier2.rs	the_generated_board_proves	147.75	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.94	INTEL(R) XEON(R) PLATINUM 8573C
+6	tests/twin_tier2.rs	without_the_cited_wait_each_data_read_answers_its_reset_value	8.15	INTEL(R) XEON(R) PLATINUM 8573C
+7	tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	13.49	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	a_device_named_for_a_renode_instance_or_keyword_breaks_the_load	2.69	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	a_forged_spi_record_fails_unwitnessed	7.42	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	adv2_4_an_unaligned_store_into_afrh_fails	3.66	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	adv2_5_a_locked_tx_pin_fails	3.58	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails	3.71	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail	7.14	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	bor_recovery::the_logger_recovers_with_its_first_devices_later_steps_witnessed	17.88	AMD EPYC 9V45 96-Core Processor
+7	tests/board_tier2.rs	connectors_pass_erc_and_drc_with_parity_at_two_and_four_layers	5.35	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	on_a_bus_with_two_devices_each_read_is_witnessed	10.89	AMD EPYC 9V45 96-Core Processor
+7	tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	71.61	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer	3.48	AMD EPYC 9V45 96-Core Processor
+7	tests/twin_tier2.rs	the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot	4.68	AMD EPYC 9V45 96-Core Processor
+8	tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	5.81	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software	13.04	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	a_firmware_parked_in_its_fault_handler_fails_naming_vectactive	5.67	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed	5.68	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record	8.65	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	a_seeded_barometer_fault_is_named_by_its_step	8.01	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	bor_recovery::the_sentinel_02_shape_recovers_after_its_imus_settle	41.68	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	h1a_a_pin_bit_banged_after_the_window_fails_by_name	6.36	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	l1_bytes_written_before_the_frame_never_count_as_its_echo	13.15	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	the_dshot600_fixture_s_campaign_passes_inside_its_window	24.32	AMD EPYC 7763 64-Core Processor
+8	tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	13.64	AMD EPYC 7763 64-Core Processor
+8	tests/twin_tier2.rs	the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s	5.09	AMD EPYC 7763 64-Core Processor
+8	tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	82.10	AMD EPYC 7763 64-Core Processor
+8	tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	4.57	AMD EPYC 7763 64-Core Processor
+9	tests/twin_tier2.rs	a_forged_record_without_a_transaction_fails_unwitnessed	4.41	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	a_locked_access_late_in_a_flood_reaches_the_judge_whole	7.10	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge	4.52	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	adv2_2_an_open_drain_pulled_down_tx_fails	4.49	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails	4.41	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	an_interrupt_armed_after_the_boot_word_fails_naming_it	8.87	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats	47.08	AMD EPYC 9V74 80-Core Processor
+9	tests/board_tier2.rs	build_names_the_rustc_cargo_ran	0.46	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	h1c_a_dma_restart_after_the_window_fails_by_name	5.08	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	m1_a_core_that_slept_and_wrote_its_boot_word_is_cpu_halted	23.34	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	m1_a_core_that_slept_without_its_boot_word_is_cpu_halted	9.81	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes	17.45	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	the_four_port_fixture_s_campaign_passes_and_replays	6.26	AMD EPYC 9V74 80-Core Processor
+9	tests/board_tier2.rs	the_imu_fixture_s_transfers_prove_within_its_scripts	43.12	AMD EPYC 9V74 80-Core Processor
+9	tests/twin_tier2.rs	the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt	3.17	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding	4.02	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	a_tdr_store_with_ue_clear_sends_no_pattern	4.72	AMD EPYC 9V74 80-Core Processor
+10	tests/board_tier2.rs	a_wrong_alternate_function_fails	27.44	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails	4.69	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	adv_3_sbus_s_m0_cleared_before_ue_fails	5.74	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	each_hse_fixture_boots_to_pass_under_the_clock_rule	19.68	AMD EPYC 9V74 80-Core Processor
+10	tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	45.07	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	h1b_a_16_bit_restart_after_the_window_fails_by_name	5.23	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check	12.94	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo	9.72	AMD EPYC 9V74 80-Core Processor
+10	tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	16.96	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	renode_s_files_are_the_pinned_ones_and_declare_the_stock_table	0.00	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused	4.88	AMD EPYC 9V74 80-Core Processor
+10	tests/board_tier2.rs	the_ordered_board_passes_every_board_gate_with_no_finding	4.93	AMD EPYC 9V74 80-Core Processor
+10	tests/twin_tier2.rs	the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions	7.25	AMD EPYC 9V74 80-Core Processor
+11	tests/twin_tier2.rs	a_firmware_that_rewrites_its_loop_in_flash_is_not_parked	7.67	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	a_pattern_on_the_wrong_port_fails	5.95	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	a_read_no_model_answers_fails_as_a_timeout_at_txis	4.73	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/board_tier2.rs	a_write_past_the_block_fails	33.72	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	adv2_1_a_gpio_reset_through_the_rcc_fails	4.65	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	adv2_3_a_software_reset_at_start_fails	4.40	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	adv3_2_sbus_s_cr2_read_back_and_xored_fails	5.88	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	an_aborted_machine_returns_inside_the_bound_as_cpu_aborted	30.97	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	an_open_rx_line_is_detected_by_name_and_attributed_e3	12.57	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	bor_recovery::the_bmp581_extension_recovers_after_its_settle	25.12	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	10.34	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	the_emitted_platform_loads_and_lists_every_solved_peripheral	2.92	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/twin_tier2.rs	the_sentinel_02_shaped_board_is_witnessed_whole	9.83	INTEL(R) XEON(R) PLATINUM 8573C
+11	tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	554.45	INTEL(R) XEON(R) PLATINUM 8573C
