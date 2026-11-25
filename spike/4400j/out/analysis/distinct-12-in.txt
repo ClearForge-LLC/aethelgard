@@ -1,0 +1,17 @@
+   lines distinct       bytes distinct B  template
+  161141      256  15,860,302     25,328  NOISY spi1.spi1mux.u4: Transmitting data #, current state: HandleCommand
+  160512      256  18,687,876     29,936  NOISY spi1.spi1mux.u4: Handled command: Operation: Program, address length: #, returning #
+   54510        2   3,297,855        121  WARNING spi2: AETHELGARD-CFG2 # #
+   27255        1   3,107,070        114  ERROR spi2: Attempted to set peripheral into SPI slave mode. Only master mode is s
+   27255        1   1,744,320         64  NOISY spi2.spi2mux: GPIO ## set to False
+   27255        1   1,717,065         63  NOISY spi2.spi2mux: GPIO ## set to True
+   27255        1   2,207,655         81  NOISY spi2.spi2mux: Finisihing transmission on device #
+   13295        2   1,010,420        152  NOISY spi2.spi2mux.u5: bank # read # -> # #
+   12590    10792   1,838,140  1,575,632  NOISY spi2.spi2mux.u5: bank # read # -> # # # # # # # # # # # # # # # #
+    7000        1     644,000         92  WARNING adc3: Issued a start event before the last sequence finished
+    3774        2     228,327        121  WARNING spi1: AETHELGARD-CFG2 # #
+    3584       52     298,109      4,362  INFO usart1: ReadByte from # (ReceiveData), returned #
+    1887        1     215,118        114  ERROR spi1: Attempted to set peripheral into SPI slave mode. Only master mode is s
+    1887        1     120,768         64  NOISY spi1.spi1mux: GPIO ## set to False
+    1887        4     194,363        413  NOISY spi1.spi1mux.u4: Transmitting data #, current state: RecognizeOperation
+    1887        1     118,881         63  NOISY spi1.spi1mux: GPIO ## set to True

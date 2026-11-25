@@ -9,14 +9,14 @@
    - Renode's console reader (`ConsoleIOSource`, `isInputRedirected` true) then reads EOF forever. It queues each `-1` into a `BlockingCollection<int>` that nothing drains.
    - That queue is **100.0 % of the managed heap's growth** between two heap dumps (6 s and 10 s). Every item in it is `-1`.
    - It grows about **48 MiB per wall second**, whatever the firmware does: with or without an input, before or after the IMU starts.
-   - **With stdin held open** (a pipe never written), Sentinel-03's peak is **548–585 MB (348–372‰ of the cap) at every window from 5 to 12 s, with or without the input**. Before, it was 622–1,861‰. Every verdict is otherwise identical.
+   - **With stdin held open** (a pipe never written), Sentinel-03's peak is **547,604–584,568 KiB (348–372‰ of the cap) at every window from 5 to 12 s, with or without the input**. Before, it was 622–1,861‰. Every verdict is otherwise identical: all eight cells compared.
 2. **The log is now the only bound a 12 s armed run passes:** 56.07 MB kept against 8 MiB.
    - It has five per-transaction sources, each with very few distinct texts.
    - With them summarised (exact text, plus U5's FIFO data elided once its data step is witnessed), the 12 s armed run would keep **about 0.97 MB (12 %)**. With no input it would keep 0.20 MB.
 3. **The arm is at 8.752 s on main's Sentinel-03** with `4400i`'s `arm12.json` (the armed heartbeat's first byte), not about 9.8 s.
 4. **The window's end lands on firmware state, three kinds of it.** The repeated read cures the first two; the third needs a rule:
-   - SPI2/SPI1 stopped between transactions (pin and clock enable), each at most 101.4 µs;
-   - the core inside an interrupt handler;
+   - SPI2/SPI1 stopped between transactions (pin and clock enable): at most 2 quanta in a row, measured per quantum;
+   - the core inside an interrupt handler: at most 2 quanta in a row;
    - **USART2.CR2 at two stop bits for 2 s of every 6 s:** ArduPilot's RC-protocol search on a CRSF port with no receiver.
 5. **Proposed window: 12 s.**
    - The arm at 8.75 s leaves a 3.25 s margin.
@@ -33,6 +33,7 @@
 | Input | `4400i`'s `arm12.json` (`7f231564…`); for 5, 8 and 10 s, its prefix (`py/cut.py`), since a longer input is refused (`InputPastWindow`) |
 | CLI | main + `patches/measure.patch`: the bounds and the log budget from the environment, the kept log dumped, `MAX_CAPTURE` 256 MiB, the window ceiling 30 s, and `AET4400J_HOLDIN` (stdin a held-open pipe). Unset, these are main's |
 | Runs | **CLI path:** `sh/cli.sh`, `sh/series.sh`, one container per run (`sh/img.sh`: `capped-run` 8 GiB, swap 0, read back), **pinned to 4 cores** (`taskset`, read back in `env.txt`), `nice -n 10`, load 6–16. These runs carry every margin. **Replays:** of the CLI's own capture (`sh/capture.sh`, `sh/replay.sh`), stepped in whole virtual seconds with a probe (`py/stepify.py`). These carry the per-second figures, the dumps and the end-read timeline |
+| Tables | `sh/tables.sh`, one command, regenerates `out/table-*.md`, `out/cli-*.tsv`, `out/analysis/*` (every fact below) and `out/verdicts/` (every CLI run's verdict, gzipped) from the records in `~/.cache/aet-4400j` |
 | Dumps | `dotnet-dump` 9.0.661903 (NuGet, sha512 matches the catalog: `out/dump/dotnet-dump-nuget-sha512.txt`) on the .NET 8.0.12 runtime (sha512 matches Microsoft's release metadata). Its `libcoreclr.so` equals Renode's (`8347a634…`, `out/rep/dump/dac-match.txt`). `createdump` and the DAC were copied beside Renode in the replay's container only. The dumps (1.29 and 1.98 GB) stay in the cache; their sha256 is in `out/dump/dumps.sha256` |
 
 ## 1. The log, by source and virtual second
@@ -93,6 +94,11 @@ No input, 12 s (`L-s03-12000-1`, `py/flood.py`), bytes per virtual second:
 | today | 56,051,844 B (668 %) | 17,353,920 B (207 %) |
 | exact text per listed source (first kept, later counted) | 6,628,687 B (79 %); the 1,024-key cap reached | 2,214,440 B (26 %) |
 | **the same, and U5's FIFO reads by template after its data step is witnessed** | **966,815 B (12 %)**, about 43–75 KB per second from 6 s | **203,234 B (2 %)**, about 12 KB per second |
+
+The last row is reached at the 1,024-key cap, but the cap costs little.
+- From 6 s, lines kept past the cap are 31,807 B (U4).
+- The rest is lines the scheme does not list: USART1's `ReadByte` access lines (213,233 B), U7 (50,280 B) and USART2 (23,353 B) (`out/analysis/residual-12-in.txt`).
+- `py/residual.py` models a simpler scheme than D2 as worded below: no cycle unit, and no wait for multi-line steps. It is a bound on what D2 keeps, not D2 itself.
 
 ## 2. RSS, and what holds it
 
@@ -168,10 +174,15 @@ Two dumps of the `dump` replay, at 6 s and 10 s. At each point the machine was p
 Under main's other bounds (memory cap and log budget not lifted), held stdin at 12 s is **no longer killed by the cap** (366 and 372‰). It fails `renode_log_flood` / `foreign_not_booted` instead: the log is what binds (§1).
 
 **What the fix changes besides memory: nothing** (`py/same.py`; WO §5, "a growth fix that changes behaviour").
-- Verdict against verdict, `/dev/null` against held, same cell: 12 s with no input differs in `memory.*` only.
-- 10 s with the input differs in `memory.*` and `log_kept_bytes` (216 B).
+- Verdict against verdict, `/dev/null` against held, in all eight cells (`out/analysis/same.txt`).
+- With no input, only `memory.*` differs.
+- With the input, `memory.*` and `log_kept_bytes` differ (by 129–303 B).
 - The kept logs, with the scratch path masked and Renode's host-timing line `Thread has been woken up 2 times, verify your condition` dropped, are **byte-identical** (0 differing lines).
-- The 216 B is that host line (no source, so no rule reads it) and the scratch directory's name. Between `/dev/null` runs the same cell already varies 44,979,796–44,980,012 B.
+- Those bytes are that host line (no source, so no rule reads it) and the scratch directory's name. Between `/dev/null` runs the same cell already varies (10 s with the input: 44,979,796–44,980,012 B). F1 below.
+- **Read, not measured:**
+  - That the bridge's Renode inherits the held stdin (`bridge/src/main.rs:429`, `Command::status()` inherits).
+  - No generated or droop boot was run with the fix.
+  - One mechanism was tried: a held pipe. Others, such as Renode run without `--console`, were not.
 - Wall is 2–19 % shorter with the fix (one core no longer spins): 12 s with the input, 53.0–54.5 → 44.2–45.7 s.
 
 **What else this explains** (each consistent with it; none re-measured here):
@@ -188,7 +199,7 @@ The memory share in every Renode verdict has depended on the host's speed. With 
 - **On Furnace, 4 cores pinned, load 6–8, held stdin:** 5 s takes 12.1–14.9 s; 12 s takes 34.6–35.3 s with no input and **44.2–45.7 s with it**. From 5 s each virtual second takes about 3.2 s (no input) and 4.3 s (input).
 - **CI against Furnace on this path, measured.**
   - CI's 5 s runs of `sentinel-02-own` (`no-imu-line`, `late-panic`, `late-hardfault` in `ardupilot-image` runs 45663731874, 45620143404 and 45531323358): **13.4–15.1 s** of wall between consecutive ANSWER lines; `input-arm` 17.8–19.0 s. The first case, `positive`, has no earlier ANSWER, so its own wall is not in the log.
-  - The `positive` case on Furnace (`R0`, `/dev/null`, 4 cores): **12.5–12.9 s**. **CI ≈ 1.04–1.2× Furnace on the foreign path.**
+  - The `positive` case on Furnace (`R0`, `/dev/null`, 4 cores): **12.5–12.9 s**. **CI ≈ 1.04–1.2× Furnace on the foreign path: an estimate.** The firmware differs (CI's planted and no-IMU ELFs against Furnace's `positive`), the Furnace side is n = 2, and CI's runner model is not recorded (`out/analysis/ci-wall.txt`).
   - Furnace's ELF is `4400h`'s copy of CI's `5eace4ca`; today's CI ELF may differ in bytes.
 - **Estimate for 12 s armed on the slowest runner:** about 55 s at the measured 1.2×. It stays under the 120 s guard up to 2.6× Furnace. `1918`'s 1.5–3.5× for generated boots under parallel tests would put its top at 160 s; the foreign job runs alone, one call at a time.
 
@@ -210,6 +221,14 @@ The memory share in every Renode verdict has depended on the host's speed. With 
   - Deterministic: the same phases in every run.
   - It is a firmware state of seconds, not a transient: **no repeated read cures it.**
 - **PB13's episodes** (replay `gpiob`, GPIOB's access log): 28,708 in 12 s, one per SPI2 transaction. Each lasts **at most 101.4 µs** (median under the log's resolution), 36.7 ms in all.
+- **Per quantum**, 11–12 s with the input (replay `quantum`: ICSR, GPIOB `MODER` and `RCC.APB1LENR` read at every 100 µs, 10,001 steps; `out/analysis/quantum-11-12s-in.txt`):
+  - a handler active at 204 steps (201 episodes, the longest **2 quanta**), including 11.9999 s, as the CLI run found;
+  - PB13 as output at 290 steps (285 episodes, the longest 2);
+  - SPI2EN clear at 106 steps (each 1 quantum).
+  - So a rule "fails only if it fails at every one of k reads one quantum apart" needs k ≥ 3; k = 4 leaves one quantum of margin.
+- **USART2.CR1 in the SBUS phase:** ArduPilot writes `0x2000153D` (`PCE`, `M0` set: 8E2), but **the twin reads back `0x10D`**. Renode's USART model drops `PCE` (`out/analysis/cr1-sbus.txt`; the kept log's CR1 writes).
+  - So the frame rule (CR1 mask `0x609`) never failed here, but on silicon it would, in the same 2 s of every 6.
+  - The model's dropped `PCE` is a gap of its own: F2 below.
 - **At the four lengths:** 5, 8 and 12 s are clean. **10 s fails USART2.CR2** in all 12 CLI runs (`register_mismatch`, with and without input, either stdin).
 - **One quantum either side of 12 s** (held stdin):
   - no input: 11.9999 s pass, 12.0001 s pass;
@@ -257,8 +276,14 @@ The memory share in every Renode verdict has depended on the host's speed. With 
 **D3. The window.** 12 s (§5). The next clean RC-search phase on this firmware is `[10.222, 14.2)`. An end of 13 s holds 1.2 s more margin past the arm at about +7 s of wall. **Lean 12 s.**
 
 **D4. The end.**
-- **(i) The end read repeated** at the end and one and two quanta later. A register fails only if it fails at all three; `core_in_exception` likewise. This cures the ≤ 101.4 µs SPI stops and the handler, and each repetition is in the verdict.
-- **(ii) A declared RC port's `CR2` STOP bits not judged at the end** while ArduPilot searches. Name it from `AP_RCProtocol.cpp`; its options stay judged from the access log (`serial_options`). Otherwise every window must avoid two seconds in six (10 s never passes on this board).
+- **(i) The end read repeated four times, one quantum apart, ending at the ruled end** (end − 3q, − 2q, − 1q, end), never past it.
+  - The archive's transmission ends at `end_ns` = the window. Reading past it would capture bytes past the window.
+  - The arm and the log are judged over the window as today.
+  - A register, or `core_in_exception`, fails only if it fails at all four.
+  - Measured episodes are at most 2 quanta.
+- **(ii) A declared RC port's frame not judged at the end** while ArduPilot searches: `CR2`'s STOP bits and `CR1`'s frame bits (`PCE`, `PS`, `M0`), which silicon would also show in the SBUS phase. Name it from `AP_RCProtocol.cpp`.
+  - Its SWAP and inversion options stay judged from the access log (`serial_options`).
+  - Otherwise every window must avoid two seconds in six: 10 s never passes on this board.
 - **Lean (i) + (ii).**
 
 **D5. Where the acceptance run lives.** CI builds no Sentinel-03 ELF.
@@ -279,7 +304,18 @@ The memory share in every Renode verdict has depended on the host's speed. With 
   - D2 moves every foreign verdict's `log_kept_bytes` and `warnings`, and adds summary fields to the verdict schema.
   - D4 adds the repeated reads and the RC exemption to the rule table text (`RULES`), which `ci/foreign-judge.sh`'s cases read only by `kinds`.
   - Each is named again at READY against the 14 generated boards' verdicts, which never take the foreign filter.
-- **`FOREIGN_MAX_VIRTUAL_NS`**, 5 → 12 s, changes `ci/foreign-judge.sh`'s `window`. Its `window-before-u5` cases (4.3 and 4.37 s) are explicit.
+- **`FOREIGN_MAX_VIRTUAL_NS`, 5 → 12 s.** Its readers:
+  - `boot_tier1.rs:3151` refuses `5001ms`; it becomes the ceiling + 1.
+  - `boot_tier1.rs:2867` checks the window's name, unchanged.
+  - `renode.rs:7370`'s rendering test strides 9,973 ns to the ceiling: about 2.4× its iterations.
+  - The CLI README names the constant, not 5 s.
+  - `ci/foreign-judge.sh` hard-codes `window=5000ms` (L76) and passes `--foreign` per call. **Its cases stay at 5 s** unless the ruling moves them. Each moved to 12 s costs about 2.7× its wall on CI: 13–15 s → about 40 s.
+  - Only the acceptance's armed run needs 12 s (D5).
+- **The trace and the archive: no record changes.**
+  - D2 adds verdict fields only.
+  - D4 reads before `end_ns`.
+  - The input archive (kinds 38–40) holds the input, the stimuli and the transmission, not the log or the end reads. No trace version bump, so no bench-package verdict moves through a trace (`4400i` F16's path).
+  - A raised ceiling refuses no archived run.
 
 ## 8. Predictions, graded
 
@@ -312,7 +348,16 @@ The memory share in every Renode verdict has depended on the host's speed. With 
 | P7.3 | arm at 9.4–10.2 s | **wrong:** 8.752 s |
 | P7.4 | no committed package moves | **right as far as read** (§7); confirmed at READY |
 
-## 9. Process notes
+## 9. Findings for FEEDBACK
+
+| # | finding | proposed owner |
+|---|---|---|
+| F1 | **`log_kept_bytes` is host-dependent:** the scratch directory's name is in Renode's echo of its own command, and Renode logs `Thread has been woken up N times` on host timing. Both are kept lines (0–303 B between runs of one cell). No rule reads either, but the field is in every foreign verdict | the architect: a row (mask or drop both from the kept log) |
+| F2 | **Renode 1.17.0's USART model drops `PCE` and `M0` on read-back** (`0x2000153D` written, `0x10D` read), so no parity or word-length change is visible to the twin's frame rule | a row beside `4400i` F8's model gaps |
+| F3 | **Renode 1.17.0's `ConsoleIOSource` queues EOF without bound** when stdin is redirected and at its end (§2.3) | an upstream row, with the dump |
+| F4 | **The memory share in every Renode verdict has depended on host speed** (§2.2), with Tviburi's spread and `RUL-13`'s 1.5 GiB note in its history | the architect: `RUL-13`'s note, if D1 lands |
+
+## 10. Process notes
 
 - **Two runs voided by my own edits:**
   - `series.sh` was edited while `L-s03-12000-in-1` ran; the run itself was complete, only the script's tail broke. It is kept, and matches `L2` and `L3`.

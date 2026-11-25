@@ -6,7 +6,7 @@ PAUSE="6 9": at those seconds, after the probe, a compacting full GC, then OUT/p
 waits until OUT/go-T exists (the dump is taken meanwhile; sh/replay.sh).
 Splitting is at quantum multiples (whole seconds), so the machine runs the same instants; the pause/resume per second
 is the perturbation (an input's timeline already pauses at every byte).
-READS=FILE STEP_MS=10 FROM_MS=4000: also, every STEP_MS from FROM_MS, `echo AET-READ t=<ms>` and the commands in FILE
+READS=FILE STEP_MS=10 (or STEP_US=100) FROM_MS=4000: also, every step from FROM_MS, `echo AET-READ t=<us>` and the commands in FILE
 (the CLI's own end-of-window reads, copied from between its BEGIN and END markers): the end read at every step (F4).
 Usage: stepify.py run   E_ARG OUT    -> the -e argument with its one RunFor stepped (stdout)
        stepify.py file  SCRIPT OUT   -> the timeline script rewritten in place"""
@@ -16,7 +16,7 @@ mode, src, out = sys.argv[1:4]
 full = os.environ.get("FULLGC") == "1"
 pauses = {int(x) for x in os.environ.get("PAUSE", "").split()}
 reads = open(os.environ["READS"]).read().split("; ") if os.environ.get("READS") else []
-g = int(os.environ.get("STEP_MS", "1000")) * 10**6 if reads else 10**9
+g = (int(os.environ["STEP_US"]) * 10**3 if os.environ.get("STEP_US") else int(os.environ.get("STEP_MS", "1000")) * 10**6) if reads else 10**9
 from_ns = int(os.environ.get("FROM_MS", "0")) * 10**6
 
 def run_for(ns):
@@ -43,7 +43,7 @@ def probe(t):
 def at(b):
     out = probe(b // 10**9) if b % 10**9 == 0 else []
     if reads and b >= from_ns:
-        out += ['echo "AET-READ t=%d"' % (b // 10**6)] + reads
+        out += ['echo "AET-READ t=%d"' % (b // 10**3)] + reads   # t in microseconds
     return out
 
 def step(lines):

@@ -1,0 +1,22 @@
+CFG2 tuples (controller, value, CR1):
+     28709 ('spi2', '0x20400000', '0x0')
+     28708 ('spi2', '0x0', '0x0')
+        17 ('spi1', '0x20400000', '0x0')
+        16 ('spi1', '0x0', '0x0')
+sequences from one MASTER-1 CFG2 to the next:
+     28708 spi2 MDS0E
+        16 spi1 MDS0E
+         1 spi1 D
+         1 spi2 D
+distinct sequences: 4
+device line templates on SPI controllers: 32
+     28710 ('spi2.spi2mux', 'NOISY', 'GPIO ## set to True')
+     28710 ('spi2.spi2mux', 'NOISY', 'Finisihing transmission on device #')
+     28709 ('spi2.spi2mux', 'NOISY', 'GPIO ## set to False')
+     13986 ('spi2.spi2mux.u5', 'NOISY', 'bank # read # -> # #')
+     13244 ('spi2.spi2mux.u5', 'NOISY', 'bank # read # -> # # # # # # # # # # # # # # # #')
+       745 ('spi2.spi2mux.u5', 'NOISY', 'bank # read # -> # # # # # # # # # # # # # # # # # # # # # #')
+       702 ('spi2.spi2mux.u5', 'NOISY', 'bank # read # -> #')
+       523 ('spi1.spi1mux.u4', 'NOISY', 'Transmitting data #, current state: HandleCommand')
+       256 ('spi1.spi1mux.u4', 'NOISY', 'Handled command: Operation: Read, address length: #, returni')
+       256 ('spi1.spi1mux.u4', 'NOISY', 'Handled command: Operation: Program, address length: #, retu')

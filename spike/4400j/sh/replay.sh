@@ -24,6 +24,10 @@ for i in "${!args[@]}"; do
   if [ -n "${STEP_MS:-}" ]; then   # the CLI's own end reads, between its markers, for READS (py/stepify.py)
     python3 -I -c 'import sys; c = open(sys.argv[1]).read(); a = c.index("echo \"AETHELGARD-BOOT-BEGIN\"; ") + len("echo \"AETHELGARD-BOOT-BEGIN\"; "); b = c.index("; echo \"AETHELGARD-BOOT-END\""); open(sys.argv[2], "w").write(c[a:b])' "$O/e-orig.txt" "$O/reads.txt" || exit 3
     export READS=$O/reads.txt
+    # READS_ONLY="0xe000ed04 0x58020400": only those reads (a per-quantum timeline of a few registers)
+    if [ -n "${READS_ONLY:-}" ]; then
+      python3 -I -c 'import sys; keep = sys.argv[2].split(); c = open(sys.argv[1]).read().split("; "); open(sys.argv[1], "w").write("; ".join(x for x in c if x.split()[-1] in keep))' "$O/reads.txt" "$READS_ONLY"
+    fi
   fi
   tl=$(grep -o 'include @[^;]*input\.resc' <<< "$c" | head -1 | sed 's/^include @//')
   if [ -n "$tl" ] && [ -f "$tl" ]; then

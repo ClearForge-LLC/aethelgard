@@ -6,6 +6,9 @@ Usage: endreads.py VERDICT READS CONSOLE.gz [LENGTH_MS ...]"""
 import gzip, json, re, sys
 verdict, reads_p, console = sys.argv[1:4]
 lengths = [int(x) for x in sys.argv[4:]]
+US = 1000   # AET-READ stamps are in us (replays before this change stamped ms: pass OLD=1)
+import os
+if os.environ.get("OLD") == "1": US = 1
 regs = {int(r["address"], 16): r for r in json.load(open(verdict))["boot"]["registers"]}
 cmds = open(reads_p).read().split("; ")
 value = re.compile(r"^(0x[0-9A-Fa-f]+|\d+(\.\d+)?)$")
@@ -15,7 +18,7 @@ for raw in gzip.open(console, "rt", errors="replace"):
     m = re.match(r"^AET-READ t=(\d+)$", line)
     if m:
         if cur is not None: steps.append((cur, vals))
-        cur, vals = int(m.group(1)), []
+        cur, vals = int(m.group(1)) // US, []
     elif cur is not None and value.match(line) and len(vals) < len(cmds):
         vals.append(line)
 if cur is not None: steps.append((cur, vals))

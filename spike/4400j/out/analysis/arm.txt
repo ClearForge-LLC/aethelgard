@@ -1,0 +1,1 @@
+7822 bytes written to TDR; first armed heartbeat at offset 7383, virtual 8.751918060 s, base_mode 209

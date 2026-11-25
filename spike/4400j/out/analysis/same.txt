@@ -1,0 +1,36 @@
+== L-s03-5000-1 vs H1-s03-5000-1
+.memory.peak_rss_kib: 1038072  ->  551948
+.memory.share_permille: 659  ->  350
+2 differing paths
+== L-s03-5000-in-1 vs H1-s03-5000-in-1
+.boot.log_kept_bytes: 3801277  ->  3800974
+.memory.peak_rss_kib: 1042568  ->  570096
+.memory.share_permille: 662  ->  362
+3 differing paths
+== L-s03-8000-1 vs H1-s03-8000-1
+.memory.peak_rss_kib: 1507280  ->  568688
+.memory.share_permille: 958  ->  361
+2 differing paths
+== L-s03-8000-in-1 vs H1-s03-8000-in-1
+.boot.log_kept_bytes: 33646862  ->  33646733
+.memory.peak_rss_kib: 1846872  ->  577300
+.memory.share_permille: 1174  ->  367
+3 differing paths
+== L-s03-10000-1 vs H1-s03-10000-1
+.memory.peak_rss_kib: 1908792  ->  558900
+.memory.share_permille: 1213  ->  355
+2 differing paths
+== L-s03-10000-in-1 vs H1-s03-10000-in-1
+.boot.log_kept_bytes: 44980012  ->  44979796
+.memory.peak_rss_kib: 2282580  ->  582556
+.memory.share_permille: 1451  ->  370
+3 differing paths
+== L-s03-12000-1 vs H-s03-12000-1
+.memory.peak_rss_kib: 2141296  ->  568140
+.memory.share_permille: 1361  ->  361
+2 differing paths
+== L-s03-12000-in-1 vs H1-s03-12000-in-1
+.boot.log_kept_bytes: 56072163  ->  56072034
+.memory.peak_rss_kib: 2775724  ->  573752
+.memory.share_permille: 1764  ->  364
+3 differing paths
