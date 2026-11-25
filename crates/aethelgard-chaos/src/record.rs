@@ -3,7 +3,10 @@
 //! 20, a declared supply droop, since `AET-WO-2301`; 31, a declared battery
 //! sag, since `AET-WO-2304b`; 32, a droop's recovery bound, since
 //! `AET-WO-2305`; 33 to 37, a pin device's GPIO and ADC inputs and a motor
-//! output held at a static level, since `AET-WO-1211c`). Every field is an integer, a byte
+//! output held at a static level, since `AET-WO-1211c`). Kinds 38 to 40 are a
+//! foreign run's, which `simulate --foreign --input --archive` archives
+//! (`AET-WO-4400i`): its declared input, its stimuli and what the firmware
+//! transmitted. Every field is an integer, a byte
 //! string, a text string or an array of them; nothing is a float or a map
 //! (`RUL-06`). An absent value is an empty array, a present one an array of
 //! one element.
@@ -13,9 +16,20 @@ use crate::event::{name_ok, text_ok};
 
 /// The first campaign kind; [`Record::kind`] is this plus the variant's index.
 pub const FIRST_KIND: u64 = 5;
-/// The last campaign kind (37, a motor output's static-level witness, since
-/// `AET-WO-1211c`).
-pub const LAST_KIND: u64 = 37;
+/// The last kind (40, a foreign run's transmitted bytes, since
+/// `AET-WO-4400i`).
+pub const LAST_KIND: u64 = 40;
+/// The most bytes an input file may be, in all its kind 38 parts, and a
+/// capture in all its kind 40 parts (`AET-WO-4400i`): far past a 5 s
+/// window's frames at 115200 Bd.
+pub const MAX_FOREIGN_BYTES: usize = 1 << 20;
+/// The most stimuli a run's kind 39 parts hold.
+pub const MAX_STIMULI: usize = 100_000;
+/// The most bytes one part of kind 38 or 40 holds, and the most stimuli one
+/// part of kind 39: every event stays under `archive::MAX_EVENT_BYTES`
+/// (4096), so a long file or capture is several parts, in order.
+pub const FOREIGN_PART_BYTES: usize = 3072;
+pub const FOREIGN_PART_STIMULI: usize = 48;
 
 /// A pin's level, as the `pin_held` override and kinds 33 and 34 name it
 /// (`AET-WO-1211c`). Chaos-owned: this crate reads no IR type (`RUL-16`).
@@ -921,6 +935,38 @@ pub enum Record {
         end_level: Option<u8>,
         status: String,
     },
+    /// Kind 38: a foreign run's declared input (`AET-WO-4400i`): the serial
+    /// port's label and its USART, the time between two bytes in ns (the
+    /// port's character time, a whole number of quanta), and part `part` of
+    /// `parts` of the input file's bytes verbatim. Replay joins the parts and
+    /// recomputes the file's sha256, its frames and every byte's instant
+    /// from it, with no file (`INV-04`).
+    ForeignInput {
+        label: String,
+        peripheral: String,
+        spacing_ns: u64,
+        part: u64,
+        parts: u64,
+        file: Vec<u8>,
+    },
+    /// Kind 39: part `part` of `parts` of every stimulus a foreign input run
+    /// set, in time order, as `[at_ns, device, property, value]`, the value
+    /// exactly as Renode was given it (the board at rest, `AET-WO-4400i` D4).
+    Stimuli {
+        part: u64,
+        parts: u64,
+        entries: Vec<(u64, String, String, String)>,
+    },
+    /// Kind 40: part `part` of `parts` of the bytes the firmware transmitted
+    /// on the input's port, in order, read from the port's file backend at
+    /// the run's end, `end_ns` (`AET-WO-4400i`): the witness's only source.
+    SerialCaptured {
+        label: String,
+        end_ns: u64,
+        part: u64,
+        parts: u64,
+        bytes: Vec<u8>,
+    },
 }
 
 /// The most registers kind 30 reads back: a timer's solved registers
@@ -1121,6 +1167,13 @@ impl<'a> Fields<'a> {
         }
         Some(out)
     }
+    fn bytes(&mut self) -> Option<Vec<u8>> {
+        match self.next()? {
+            Value::Bytes(b) => Some(b.clone()),
+            _ => None,
+        }
+    }
+
     fn u8s(&mut self) -> Option<Vec<u8>> {
         let mut inner = Fields(self.array()?.iter());
         let mut out = Vec::new();
@@ -1342,6 +1395,9 @@ impl Record {
                 Self::PinAdcDeclared { .. } => 30,
                 Self::PinAdcWitness { .. } => 31,
                 Self::MotorLevelWitness { .. } => 32,
+                Self::ForeignInput { .. } => 33,
+                Self::Stimuli { .. } => 34,
+                Self::SerialCaptured { .. } => 35,
             }
     }
 
@@ -1352,6 +1408,7 @@ impl Record {
         match self {
             Self::RailCrossing { at_ps, .. } => at_ps / 1000,
             Self::ResetRendered { at_ns, .. } | Self::FirmwareObserved { at_ns, .. } => *at_ns,
+            Self::SerialCaptured { end_ns, .. } => *end_ns,
             _ if self.before_boot() => 0,
             _ => end_ns,
         }
@@ -1379,6 +1436,8 @@ impl Record {
                 | Self::PinGpioDeclared { .. }
                 | Self::PinAdcDeclared { .. }
                 | Self::ExpectedCounts { .. }
+                | Self::ForeignInput { .. }
+                | Self::Stimuli { .. }
         )
     }
 
@@ -1953,6 +2012,50 @@ impl Record {
                 opt(end_level.map(u64::from)),
                 t(status),
             ],
+            Self::ForeignInput {
+                label,
+                peripheral,
+                spacing_ns,
+                part,
+                parts,
+                file,
+            } => vec![
+                t(label),
+                t(peripheral),
+                u(*spacing_ns),
+                u(*part),
+                u(*parts),
+                Value::Bytes(file.clone()),
+            ],
+            Self::Stimuli {
+                part,
+                parts,
+                entries,
+            } => vec![
+                u(*part),
+                u(*parts),
+                Value::Array(
+                    entries
+                        .iter()
+                        .map(|(at, device, property, value)| {
+                            Value::Array(vec![u(*at), t(device), t(property), t(value)])
+                        })
+                        .collect(),
+                ),
+            ],
+            Self::SerialCaptured {
+                label,
+                end_ns,
+                part,
+                parts,
+                bytes,
+            } => vec![
+                t(label),
+                u(*end_ns),
+                u(*part),
+                u(*parts),
+                Value::Bytes(bytes.clone()),
+            ],
             Self::BatterySagDeclared {
                 sag,
                 start_ns,
@@ -2408,6 +2511,39 @@ impl Record {
                 falls_after: f.uint()?,
                 end_level: f.opt_u8()?,
                 status: f.text()?,
+            },
+            38 => Self::ForeignInput {
+                label: f.text()?,
+                peripheral: f.text()?,
+                spacing_ns: f.uint()?,
+                part: f.uint()?,
+                parts: f.uint()?,
+                file: f.bytes()?,
+            },
+            39 => {
+                let part = f.uint()?;
+                let parts = f.uint()?;
+                let mut entries = Vec::new();
+                for item in f.array()? {
+                    let Value::Array(e) = item else {
+                        return None;
+                    };
+                    let mut g = Fields(e.iter());
+                    entries.push((g.uint()?, g.text()?, g.text()?, g.text()?));
+                    g.end()?;
+                }
+                Self::Stimuli {
+                    part,
+                    parts,
+                    entries,
+                }
+            }
+            40 => Self::SerialCaptured {
+                label: f.text()?,
+                end_ns: f.uint()?,
+                part: f.uint()?,
+                parts: f.uint()?,
+                bytes: f.bytes()?,
             },
             31 => {
                 let sag = BatterySag {
@@ -3155,6 +3291,61 @@ impl Record {
                     Err("an unanchored level witness has a settle time")
                 } else if status == "unreadable" && end_level.is_some() {
                     Err("an unreadable level witness has an end level")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::ForeignInput {
+                label,
+                peripheral,
+                spacing_ns,
+                part,
+                parts,
+                file,
+            } => {
+                if !name_ok(label) || !name_ok(peripheral) {
+                    Err("a foreign input's port label or peripheral is malformed")
+                } else if *spacing_ns == 0 {
+                    Err("a foreign input's byte spacing is 0")
+                } else if part >= parts || file.is_empty() || file.len() > FOREIGN_PART_BYTES {
+                    Err(
+                        "a foreign input's part is not one of its parts, or empty, or over FOREIGN_PART_BYTES",
+                    )
+                } else {
+                    Ok(())
+                }
+            }
+            Self::Stimuli {
+                part,
+                parts,
+                entries,
+            } => {
+                if part >= parts || entries.len() > FOREIGN_PART_STIMULI {
+                    Err(
+                        "a run's stimuli part is not one of its parts, or over FOREIGN_PART_STIMULI",
+                    )
+                } else if !entries.windows(2).all(|w| w[0].0 <= w[1].0) {
+                    Err("a run's stimuli are not in time order")
+                } else if !entries
+                    .iter()
+                    .all(|(_, d, p, v)| name_ok(d) && name_ok(p) && name_ok(v))
+                {
+                    Err("a stimulus's device, property or value is malformed")
+                } else {
+                    Ok(())
+                }
+            }
+            Self::SerialCaptured {
+                label,
+                part,
+                parts,
+                bytes,
+                ..
+            } => {
+                if !name_ok(label) {
+                    Err("a capture's port label is malformed")
+                } else if part >= parts || bytes.len() > FOREIGN_PART_BYTES {
+                    Err("a capture's part is not one of its parts, or over FOREIGN_PART_BYTES")
                 } else {
                     Ok(())
                 }

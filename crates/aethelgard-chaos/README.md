@@ -76,6 +76,7 @@ leaves behind; it must not orphan a committed run).
     | 3 | analog sample | `net` (text), `microvolts` (any `i64`) |
     | 4 | fault injected | `scenario` (text), `detail` (text) |
     | 5–37 | a campaign record | see "Campaign records" |
+    | 38–40 | a foreign input run's record | see "Foreign input runs" |
 
     Pin, net and scenario names are 1 to 64 bytes of `0x21`–`0x7E` (`RUL-14`).
     `detail` is 0 to 1,024 bytes of `0x20`–`0x7E`. An unknown kind, or a payload
@@ -88,7 +89,7 @@ leaves behind; it must not orphan a committed run).
 
 ## Version rule
 
-The trace header carries version 19; every version from 2 and what it
+The trace header carries version 20; every version from 2 and what it
 changed is a row of `event::TRACE_CHANGES`, and an older trace is refused
 `UnknownVersion` with the rows since it (`AET-WO-2310`, `AET-WO-1215`'s
 pattern). `AET-WO-2300` added kinds 5 to 14 at
@@ -131,8 +132,10 @@ instant `from_boot_word_ns`, signed from the undisturbed boot word, and the
 droop no BOR level; kinds 16 and 31 carry the resolved instant, kind 16 the
 specification's level (judged against kind 10's), and kind 32, the
 reference, is archived for every planted run; the golden trace's bytes
-changed in the version byte only. An older trace is refused by name
-(`event::TRACE_VERSION`), never read under version 19's rules. The mirror record
+changed in the version byte only. Version 20 (`AET-WO-4400i`) added kinds 38
+to 40, a foreign input run's (below); the golden trace's bytes changed in the
+version byte only. An older trace is refused by name
+(`event::TRACE_VERSION`), never read under version 20's rules. The mirror record
 carries version 1, and the manifest version 2 (`AET-WO-0400a` changed what
 `state_hash` means, the trace's bytes not at all). A reader refuses any other
 version (`UnknownVersion`), judged before the item's shape. A change to the
@@ -220,6 +223,29 @@ The record goes through the same temporary file, `sync_all`, rename and
 directory sync as the manifest. The step removes a stale `mirror.cbor.tmp`
 before writing its own, so a crash between the two never orphans the run
 (`mirror_step_observed` lets a test stop it there).
+
+## Foreign input runs
+
+Kinds 38 to 40 (`AET-WO-4400i`) are what `aethelgard simulate --foreign
+--input FILE --archive DIR` archives: a foreign firmware's run with a
+declared input, which `aethelgard replay` re-judges from the run directory
+alone, with no file and no Renode (`INV-04`). A run holds these and nothing
+else, each kind's parts in order (38, then 39, then 40), and a campaign run
+never holds one (`campaign::check_run` refuses it). Each record is one part
+of `parts`, so every event stays under the 4,096-byte bound:
+`FOREIGN_PART_BYTES` (3,072) bytes of a file or capture, `FOREIGN_PART_STIMULI`
+(48) stimuli. A run's file and capture are each at most `MAX_FOREIGN_BYTES`
+(1 MiB) in all, its stimuli `MAX_STIMULI`. The header's artifacts are the
+`firmware`, the `input` file, the `platform` and the `specification`; the
+run id is `campaign::run_id(input, specification, firmware)`.
+
+| kind | record | fields |
+|---|---|---|
+| 38 | the declared input | `label` (the serial port), `peripheral` (its USART), `spacing_ns` (the port's character time, a whole number of quanta), `part`, `parts`, `file` (the input file's bytes, verbatim) |
+| 39 | the stimuli | `part`, `parts`, `[[at_ns, device, property, value]…]` in time order, each value as Renode was given it (the board at rest) |
+| 40 | the firmware's transmission | `label`, `end_ns` (the run's end), `part`, `parts`, `bytes` (the port's file backend, in order) |
+
+Kinds 38 and 39 are at virtual time 0; kind 40 at `end_ns`.
 
 ## Campaign records
 

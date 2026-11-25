@@ -1,0 +1,1 @@
+{"by_type": {"BAD_DATA": 348, "HEARTBEAT": 10, "PARAM_VALUE": 12, "STATUSTEXT": 7}, "first_armed_heartbeat_ns": null, "first_heartbeat_ns": 1011168756, "same_bytes": true, "tdr_bytes": 1229, "tx_bin_bytes": 1229}

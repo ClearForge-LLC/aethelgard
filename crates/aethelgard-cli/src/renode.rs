@@ -4682,7 +4682,7 @@ mod tests {
         let p = plan(&image, &[]);
         for c in [
             p.commands(),
-            foreign::commands(&p, &[], &[], PANIC_AT, &[]).unwrap(),
+            foreign::commands(&p, &[], &[], PANIC_AT, &[], None).unwrap(),
         ] {
             assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
             for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
@@ -6222,7 +6222,7 @@ mod tests {
             ..serial_plan(&image, &[], &serial)
         };
         assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
-        let foreign = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[]).unwrap();
+        let foreign = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();
         assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
         assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
     }
@@ -6237,7 +6237,7 @@ mod tests {
     fn a_foreign_boot_hooks_the_panic_before_the_run() {
         let image = image();
         let p = plan(&image, &[]);
-        let c = foreign::commands(&p, &[], &[], PANIC_AT, &[]).unwrap();
+        let c = foreign::commands(&p, &[], &[], PANIC_AT, &[], None).unwrap();
         let hook = "cpu AddHook 0x80c033c ";
         assert_eq!(c.matches("cpu AddHook").count(), 1, "{c}");
         let at = c.find(hook).unwrap();
@@ -6259,7 +6259,7 @@ mod tests {
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
         let serial = aethelgard_twin::serial::options(&topology).unwrap();
-        let c = foreign::commands(&plan(&image, &[]), &[], &serial, PANIC_AT, &[]).unwrap();
+        let c = foreign::commands(&plan(&image, &[]), &[], &serial, PANIC_AT, &[], None).unwrap();
         let (run, begin) = (c.find("emulation RunFor").unwrap(), c.find(BEGIN).unwrap());
         for u in ["usart1", "usart2", "usart3", "uart4"] {
             let log = format!("sysbus LogPeripheralAccess sysbus.{u} true");
@@ -6271,7 +6271,7 @@ mod tests {
             assert_eq!(c.matches(&read).count(), 1, "{pupdr}");
             assert!(c.find(&read).unwrap() > begin, "{pupdr}");
         }
-        let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[]).unwrap();
+        let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();
         assert!(!none.contains("LogPeripheralAccess sysbus.usart"), "{none}");
     }
 

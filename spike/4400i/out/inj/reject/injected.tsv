@@ -1,0 +1,70 @@
+t_ns	message	frame_bytes	sent_bytes	frame_hex
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationX 0	0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationY 0	0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationZ 1	0	0	-
+0	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+83333333	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+166666666	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+249999999	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+333333332	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+416666665	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+499999998	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+583333331	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+666666664	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+749999997	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+833333330	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+916666663	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+999999996	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1083333329	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1166666662	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1249999995	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1333333328	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1416666661	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1499999994	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1583333327	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1666666660	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1749999993	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1833333326	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1916666659	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1999999992	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2083333325	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2166666658	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2249999991	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2333333324	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2416666657	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2499999990	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2583333323	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2666666656	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2749999989	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2833333322	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2916666655	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2999999988	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3000000000	PARAM_SET {"id": "AET_NOT_A_PARAM", "value": 1}	35	64	fd17000000ffbe1700000000803f01014145545f4e4f545f415f504152414d000948ef
+3083333321	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3166666654	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3200000000	PARAM_SET {"id": "FRAME_CLASS", "value": 99}	35	64	fd17000000ffbe1700000000c64201014652414d455f434c4153530000000000096440
+3249999987	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3333333320	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3400000000	PARAM_SET {"id": "STAT_RUNTIME", "value": 5}	35	64	fd17000000ffbe1700000000a0400101535441545f52554e54494d4500000000099d2a
+3416666653	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3499999986	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3583333319	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3600000000	PARAM_REQUEST_READ {"id": "FRAME_CLASS"}	27	64	fd0f000000ffbe140000ffff01014652414d455f434c4153533249
+3666666652	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3749999985	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3800000000	PARAM_REQUEST_READ {"id": "STAT_RUNTIME"}	28	64	fd10000000ffbe140000ffff0101535441545f52554e54494d45088a
+3833333318	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3916666651	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3999999984	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4083333317	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4166666650	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4249999983	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4333333316	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4416666649	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4499999982	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4583333315	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4666666648	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4749999981	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4833333314	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+4916666647	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+4999999980	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-

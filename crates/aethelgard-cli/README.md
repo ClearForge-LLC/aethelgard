@@ -460,6 +460,7 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
 - `AP_HAL::panic` planted straight after U5's last witness (`AET-WO-1609`): `foreign_panic`, every witness present. It passed before the hook;
 - the panic's symbol renamed: `ForeignPanicSymbolMissing`.
 - an undefined instruction at the same site (`AET-WO-2314`): `core_in_exception` and `foreign_fault`, HardFault at the planted PC, under the memory cap.
+- a declared input (`AET-WO-4400i`): ArduPilot echoes each `PARAM_SET` and refuses every ARM with its own `Arm: System not initialised` inside 5 s; a planted force code: `InputForcesArm`; a frame that is text: `InputNotMavlink`; a parameter it does not have: `foreign_param_rejected`; USART1's receive request dropped: `PlatformNotEmitted`; the run archived and replayed to the same witness.
 - **D4:** the SPI model's `Attempted to set peripheral into SPI slave mode` `[ERROR]` is exempt only directly after a `CFG2` write with `MASTER` 0 while `CR1` holds `SPE` 0, and only when that controller's next `CFG2` write sets `MASTER` again before any of its devices logs a line (or nothing follows). That is ChibiOS's `spi_lld_stop` then its next `spi_lld_start`, legal on silicon (RM0433 §50.11.4). A firmware that leaves the controller a slave and keeps using it is not exempt, since Renode's model stays a master where silicon would not clock (adversarial F1, accepted on PR #212, comment 6967529218).
   - The judge reads it from a hook on each SPI controller's writes, which logs only a `CFG2` write, with the value and `CR1` as it stands (D7 (b)); the SPI access log stays off.
   - Every exemption is counted in `boot.spi_errors_exempted`.
@@ -491,6 +492,47 @@ Every `observed` (and `mips`, `pc`) is `null` when nothing was read, as after a 
   - `locked_peripheral_access`, by an `info` finding;
   - the flash-controller access rule, by the flash rule above.
 - **dropped**, each weakening named in the verdict: the instruction count; the self-loop; USART `CR3` and `BRR`; `SysTick.CSR`; `NVIC.ISER`; the configure step; the records; the serial witness; the brown-out record; the motor outputs.
+
+### A declared input (`simulate --foreign --input`, `AET-WO-4400i`)
+
+```
+aethelgard simulate --platform <repl> --spec <json> --firmware <elf> --foreign 5000ms --input in.json [--archive <dir>]
+aethelgard replay --archive <dir>/<run id>
+```
+
+**The input** is a run's file, never the specification's: timed MAVLink 2 frames for one declared serial port.
+
+```json
+{"input_version": 1, "port": "CONSOLE",
+ "frames": [{"at_ns": 750000000, "mavlink": "fd17000000ffbe17…", "fill": 29}]}
+```
+
+- Each frame's first byte goes at `at_ns`, a whole number of the 100 µs quantum; each byte after it one character time later, by the port's solved framing; then `fill` zero bytes.
+  - The fill is declared, never added: Renode 1.17.0's USART raises no IDLE, and its DMA neither ends a stream on an `EN` clear nor restarts it at `M0AR`. So a firmware that receives by DMA reads a frame only when its buffer fills (ArduPilot's is 64 bytes).
+  - Every input verdict names the gap: `usart_idle_unmodelled` in `boot.unobservable`.
+- Each frame must be exactly one unsigned MAVLink 2 frame of a message in the closed table (`aethelgard-twin` `data/mavlink-messages.tsv`, cited to ArduPilot's own `common.xml`), CRC checked.
+- Refused by name, exit `2`, before any tool is looked for:
+  - `InputNotMavlink`, `InputMessageUnlisted` (an unlisted message, or one only the firmware sends), `InputSigned`;
+  - `InputForcesArm`: an ARM with force code 21196 or 2989, as `COMMAND_LONG` or `COMMAND_INT`;
+  - `InputSkipsChecks`: `ARMING_SKIPCHK` set non-zero, or `ARMING_REQUIRE` set to 0;
+  - `InputTimeOffQuantum`, `InputFramesOverlap` (a frame before the last one's end and one idle character), `InputPastWindow`;
+  - `InputPortUndeclared`, `InputMalformed` (the file's JSON, its version or its hex);
+  - `RestOrientationUndeclared` (below).
+  - An unreadable file is exit `3`.
+- The USART of each declared port carries its receive DMA request on a foreign board's platform (RM0433 Rev 9 Table 124).
+
+**The board at rest** (D4): an input run starts from rest, not from the witness stimuli.
+- Each IMU reads +1 g on the chip axis its declared orientation puts up (DS-000347 rev 1.9 §4.7). An IMU with no declared orientation is `RestOrientationUndeclared`.
+- Each barometer reads the parts table's pressure, moved by its datasheet's intrinsic noise (`aethelgard-twin` `data/rest.tsv`: the BMP581 ±0.08 Pa every 83.3 ms). Its data read is witnessed at each value the rest set.
+- `boot.input.rest` lists each, with its citation.
+
+**The witness** (`boot.input.witness`) is read from the bytes the firmware transmitted on the port, never from the input (`INV-07`): every frame whose CRC holds.
+- `armed`: the first heartbeat with `MAV_MODE_FLAG_SAFETY_ARMED`, from a source (system and component id) no input frame has: a heartbeat the input carried, echoed back, is never the firmware's.
+- `acks`: each `COMMAND_ACK` (command, result, count).
+- `params`: each parameter the input set, with the firmware's echo or its `PARAM_ERROR`. A `PARAM_ERROR` is the finding `foreign_param_rejected`.
+- `texts`: each `STATUSTEXT`.
+
+**`--archive`** writes the run (trace 20, kinds 38 to 40: the input file verbatim, the stimuli, the transmission) to `<dir>/<run id>`, the id a function of the input's, the specification's and the firmware's hashes. **`replay`** re-judges it from the run directory alone: the input's hash against the header's, its frames refused again, and the witness from the archived transmission. It prints `{"ok":true,"check":"replay","judge":"foreign","input_verdict":…}`: `input_verdict` is the input's witness re-judged (`fail` with a `foreign_param_rejected`), not the run's verdict, whose other findings the trace does not hold. The header names the input, the firmware, the platform and the specification, and the engine and the Renode build, as a campaign's does.
 
 ### The analog pre-pass (`simulate --firmware`)
 
@@ -612,6 +654,8 @@ Each run line carries its boot's `uid_boundary` and, when it is `false`, `uid_bo
 `matched` is true when the verdict is the one the scenario expects and, for a failure, its finding kinds above `info` are exactly `expect_findings`: a scenario that fails for another reason, or for more, does not match. The last line is the summary, `{"ok":…,"verdict":…,"check":"campaign","scenarios":n,"matched":m,"virtual_time_ns":100000000,"trace_bytes":…}`, with exit `0` only when every scenario matched, and `1` otherwise. A tool that stops one scenario (exit `4` or `5`) stops the campaign with its refusal; runs already committed stay. A campaign therefore asserts what should fail.
 
 **`run_id`** is a function of the scenario's, the overridden specification's and the firmware's hashes, so the same campaign twice names the same runs, with the same state-sequence hash: into one archive the second is `RunExists`, since the archive is append-only.
+
+A run directory a foreign input run archived (`simulate --foreign --input --archive`, its records kinds 38 to 40) is re-judged by the foreign judge instead ([A declared input](#a-declared-input-simulate---foreign---input-aet-wo-4400i)); every other run as below.
 
 **`replay`** reads one run directory through `aethelgard-chaos`'s strict reader and nothing else: no solver, no tool, no scratch directory, no file outside the run directory, no network. It recomputes the state-sequence hash, the chain `crates/aethelgard-chaos/README.md` defines over every event's payload (no timestamp, no wall-clock field), and refuses a run whose hash differs from its manifest's (`ReplayDiverged`), and every other refusal of that reader by its name, with exit `3`. The reader opens the run directory once and reads every file through it, never following a symlink or opening a FIFO. A directory not named by the run id its header holds is `RunIdMismatch` (exit `3`): a run copied under another run's name is not that run. It then judges the records (`NotACampaignRun`, exit `3`): no event but campaign records, a header whose hashes and run id are the ones its records give and whose `tools` are the ones that ran (each reported, never compared with this host's), the records' order, and that every fault, measurement and verdict agrees with the evidence beside it. It prints one line, exit `0`, and two replays of one run print the same bytes:
 

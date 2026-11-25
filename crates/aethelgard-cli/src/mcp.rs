@@ -651,7 +651,10 @@ mod tests {
                 ("firmware", false),
                 ("spec", false),
                 ("for", false),
-                ("foreign", false)
+                ("foreign", false),
+                // AET-WO-4400i: a foreign run's declared input and its archive.
+                ("input", false),
+                ("archive", false)
             ]
         );
     }

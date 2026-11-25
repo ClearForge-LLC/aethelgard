@@ -26,12 +26,12 @@ use common::*;
 /// `AET-WO-2302` (`25392c25…8747`, version 13), `AET-WO-4400g` (`bcd082c2…8383`,
 /// version 14), `AET-WO-2304b` (`10d566b5…fe1a`, version 15) and
 /// `AET-WO-3305` (`7eccc893…5d31`, version 16), `AET-WO-2305` (`3ac943f6…673c`,
-/// version 17), `AET-WO-1211c` (`aec9e66e…9c59`, version 18) and `AET-WO-2310`
-/// (version 19; the synthetic header names no tool, so the tool entries'
-/// third item, a hash or nothing, is absent from it) each changed the version
-/// byte alone.
+/// version 17), `AET-WO-1211c` (`aec9e66e…9c59`, version 18), `AET-WO-2310`
+/// (`c91d20e6…5541`, version 19; the synthetic header names no tool, so the
+/// tool entries' third item, a hash or nothing, is absent from it) and
+/// `AET-WO-4400i` (version 20) each changed the version byte alone.
 const GOLDEN_TRACE_SHA256: &str =
-    "c91d20e6ae46e219bbbc7dca4e00ad667963fb1ede93812844393c44a6b05541";
+    "78853df76f3429ce206f268c4c117ff572127e9921a5dc29120959b737798eb6";
 /// The golden `state_hash`. Same rule. It was `535db225…adac4` (manifest
 /// version 1) until `AET-WO-0400a` made the chain hash each event's delta,
 /// then `af2d46bb…b4939` until `AET-WO-2300` changed the header it starts
@@ -46,8 +46,9 @@ const GOLDEN_TRACE_SHA256: &str =
 /// `AET-WO-4400g` did, then `ada1b631…fdd8f7` until `AET-WO-2304b` did, then
 /// `4b06f855…c3cbf2` until `AET-WO-3305` did, then `f4c133fa…34c693` until
 /// `AET-WO-2305` did, then `707d5af0…970773` until `AET-WO-1211c` did, then
-/// `fb34fc99…4226d1` until `AET-WO-2310` did.
-const GOLDEN_STATE_HASH: &str = "04b7c603aba6139eff642fb62693887ab7af10364eabe369cdcf350d84fa9b68";
+/// `fb34fc99…4226d1` until `AET-WO-2310` did, then `04b7c603…fa9b68` until
+/// `AET-WO-4400i` did.
+const GOLDEN_STATE_HASH: &str = "c357d1b6a4968bb0faf77e532e3d4df72ed2122072c1724a30bc6150e918ed75";
 
 #[test]
 fn golden_trace_and_state_hash_are_pinned() {
@@ -76,6 +77,11 @@ fn golden_trace_and_state_hash_are_pinned() {
     let at = 1 + 1 + "aethelgard-trace".len();
     assert_eq!(u64::from(bytes[at]), aethelgard_chaos::event::TRACE_VERSION);
     let mut bytes = bytes.clone();
+    bytes[at] = 19;
+    assert_eq!(
+        hex(&Sha256::digest(&bytes)),
+        "c91d20e6ae46e219bbbc7dca4e00ad667963fb1ede93812844393c44a6b05541"
+    );
     bytes[at] = 18;
     assert_eq!(
         hex(&Sha256::digest(&bytes)),
