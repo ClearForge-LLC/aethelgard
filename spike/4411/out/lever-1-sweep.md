@@ -15,17 +15,35 @@ Sentinel-03 with U30 on USART6 PG14/PG9, `rank_apart` placement, the gate at 62.
 | R2 | 1.54 | Unroutable: `cannot take U1 pad 16 to a via` | – | – | – | – | – | – | – |
 | R2 | 1.76 | Unroutable, pad 16 | – | – | – | – | – | – | – |
 | R2 | 2.00 | Unroutable, pad 16 | – | – | – | – | – | – | – |
-| **R2** | **2.50** | ok | 5 | 121, 54.5 (pin 30 now 42.2) | **16, 49.8**; 31, 46.5 | **118.3, fail** | 1503 | 85.65 × 96.6 | the same 24 `drill_out_of_range` (U10/U11 thermal vias) as every S03 board; `--spec` pass |
+| **R2** | **2.50** | ok | 5 | 121, 54.5 (pin 30 now 42.2) | **16, 49.8**; 31, 46.5 | **118.3, fail** | 1503 | 85.65 × 96.6 | 24 `drill_out_of_range` (U10/U11 thermal vias), the same as the committed USART6 and top-left boards; `--spec` pass |
 | R2 | 3.00 / 4.00 | ok (rungs 6 / 2) | – | not extracted | – | – | – | – | – |
 
-**Why the drop fails:**
-- **VDD recovers, as the rule intends:** pin 30 goes from 59.7 to 42.2 mΩ, and the worst is pin 121 again at 54.5.
-- **VSS rises on U1's left row:** the decoupling capacitors sit about 2 mm outside it, their VDD pads facing U1: C29 and C2 by pins 14–17, C3 and C30 by pins 30–33 (x = 87.33 mm against the pads' 89.34). Between their pads there is no room for a 0.72 mm via within 2.0 mm of pins 16 or 31. Pin 16's via lands 2.38–2.48 mm away, and pin 31's 2.0 mm away (outward of pins 28–29).
+**First, a correction to my 05:06Z note.** The ruling's premise came from it, and it was wrong for pin 30. On the 1.54 mm board, pin 30 did not rise because an antipad cut In2:
+- Pin 31's GND via took pin 30's own inward escape site at (90.75, 105.75).
+- Pin 30 then reached a VDD via shared with pins 32 and 33, at (90.5, 107.125), by about 5 mm of 0.2 mm F.Cu track around the pad toes (read from that board's tracks). That gave 59.7 mΩ.
+
+**What R2 does, read from the emitted 2.5 mm board (`geom.py`):**
+- **The rule's own choices:** R2 is my reading of the ruling. It leaves the top and right rows where lever (iv) put them, inward. 2.5 mm is the first swept distance that routes, well past the declared 1.54 mm.
+- **VDD:** pin 30 still has no via of its own. It reaches the shared VDD via at (90.625, 107.25), 1.98 mm away, and its bound falls from 59.7 to 42.2 mΩ, so the long loop round the toes is gone.
+- **The VDD floor:** the worst is pin 121 at 54.5. That is 54.5 to 54.7 on every board measured: the committed USART6 board, lever (iv) at 1.54 mm, and R2 at 2.5 mm. Pin 121 has no VDD via within 2.6 mm on this board, and its GND neighbour 120's via sits 1.38 mm in front of it.
+- **VSS, U1's left row:** the decoupling capacitors sit about 2 mm outside it, with their VDD pads facing U1: C29 and C2 by pins 14 to 17, C3 and C30 by pins 30 to 33 (x = 87.33 mm against the pads' 89.34). Under R2, the left-row GND vias must go outward. As emitted, pin 16's via is 2.48 mm away at (87.875, 96.75), and pin 31's is 2.01 mm away at (87.875, 104.875), outward of pins 28 and 29. At 1.54, 1.76 and 2.0 mm the refusal named pad 16, the first pad refused.
 - **The arithmetic:** 0.751 A × (54.5 + 49.8) + 0.5 A × (30.3 + 49.8) = 78.3 + 40.0 = 118.3 mV.
 
-**The module's return (pad 19), not measured:**
+**The pass window:** with VDD at its 54.5 floor, the drop is at most 110 mV only if U1's worst VSS is at most (110 − 0.751 × 54.5 − 0.5 × 30.3) / 1.251 = 43.1 mΩ. Lever (iv) reached 42.4 for pin 31 only by taking pin 30's escape site. So even a directional rule that kept every VSS pin at 42.4 lands about 109 mV, under 1 mV of margin.
+
+**The open term, the module's return (pad 19), not measured:**
 - It stays unbounded, so it is charged at U1's worst VSS, as in every run here.
-- Its four thermal vias form a 1.1 mm array. That pitch is not a multiple of the gate's 62.5 µm, so the gate leaves the vias out as off-grid.
-- One scratch try snapped them by 25 µm or less in the emitted file. `extract` refuses that before measuring: `U30 pad 19's thermal array: a via at (129562000, 36375000) is not at a site the rule's pitch gives`.
-- So pad 19 can't be measured without changing the footprint's array pitch and the module's placement grid.
-- **Sensitivity, arithmetic only:** each 1 mΩ of a pad-19 bound below U1's worst VSS lowers the drop by 0.5 mV. The R2 2.5 mm board would pass with a pad-19 bound of 33 mΩ or less, and lever (iv)'s 1.54 mm board with 36 mΩ or less. The module's VDD pad 1 is bounded at 30.3 mΩ.
+- Its 2 × 2 thermal vias stand at the radio parts row's 1100 µm pitch (`radio-parts.json`, from the datasheet's land pattern). That pitch is not a multiple of the gate's 62.5 µm, and the vias are off the gate's grid, so the gate leaves them out.
+- U10's and U11's thermal arrays are off-grid the same way (`extract`'s notes, 28 GND vias).
+- **One scratch try:** snapping the four vias by 25 µm or less in the emitted file. `extract` refuses it before measuring: `U30 pad 19's thermal array: a via at (129562000, 36375000) is not at a site the rule's pitch gives`.
+- **What measuring it needs:** the array's pitch on a 62.5 µm multiple (1125 µm moves each via 12.5 µm off the land gaps' crossings), and its first via on the gate's grid, which depends on the module's placed origin. Cost not estimated; not built.
+- **Sensitivity, arithmetic only:** each 1 mΩ of a pad-19 bound below U1's worst VSS lowers the drop by 0.5 mV.
+  - The R2 2.5 mm board would pass at a pad-19 bound of 33 mΩ or less; lever (iv)'s 1.54 mm board at 36 mΩ or less.
+  - The module's VDD pad 1 is bounded at 30.3 mΩ.
+
+**Score of the lever (1) prediction (`PREDICTIONS.md`):**
+- **Worst VDD:** about 54.6 at pin 121. **Right** (54.5, pin 121).
+- **Worst VSS:** about 43 at pin 31, outward. **Wrong:** pin 16 decided at 49.8, and pin 31 was 46.5.
+- **The routing risk:** **right.** It was named as outward vias where the neighbouring pins' fanout goes. What it was is narrower: the decoupling capacitors' pads, not the fanout. Pad 16 was refused below 2.5 mm.
+- **The drop:** about 110 mV, too close to call. **Wrong by 8 mV:** 118.3.
+- **U11 at least 700 mm² and the outline unchanged:** **right** (1503; 85.65 × 96.6).
