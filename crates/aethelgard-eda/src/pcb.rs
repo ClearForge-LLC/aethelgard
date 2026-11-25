@@ -473,6 +473,7 @@ pub struct Placed {
     pub keep: Rect,
 }
 
+#[derive(Clone)]
 struct Item<'a> {
     part: &'a Part,
     fp: Sx,
@@ -580,8 +581,11 @@ fn place(
     seed: u64,
 ) -> Result<(Vec<Placed>, Edges), EmitError> {
     // Under a declared bound only, every choice that reference order makes
-    // below is the canonical rank's instead (`AET-WO-1313c`, (k)).
-    let rank = bounded.then(|| canonical_rank(items, seed));
+    // below is the canonical rank's instead (`AET-WO-1313c`, (k)); a radio
+    // module's group is ranked apart, so the rest rank as on the board
+    // without it (`AET-WO-4411`, ruled 2 (a)).
+    let radio = radio_group(items)?;
+    let rank = bounded.then(|| rank_apart(items, &radio, seed));
     let rank = rank.as_deref();
     let order = placing_order(items, rank);
     // An anchored part goes straight after its IC, in drawing order, before
@@ -625,7 +629,6 @@ fn place(
     // no other part is placed around them, and they are held out of
     // compaction and the connectors' edges: [`radio_corner`] sets them at
     // the board's top-right corner afterwards.
-    let radio = radio_group(items)?;
     let (mut order, last): (Vec<usize>, Vec<usize>) =
         grouped.into_iter().partition(|i| !radio.contains(i));
     order.extend(last);
@@ -954,6 +957,52 @@ const COLOUR_ROUNDS: usize = 3;
 /// `AET-WO-1317`): two items' colours are equal under every seed or under
 /// none (a 64-bit collision aside), so a seed reorders only what the colours
 /// order, and the reference decides the same ties it did.
+/// [`canonical_rank`] with `apart` (a radio module's group) ranked last, by
+/// reference, and the rest ranked as on the board without it: its pads are
+/// left out, and a net it leaves with one pad is unconnected, as that pin is
+/// with no module (`AET-WO-4411`, ruled 2 (a): the group added parts and
+/// nets, whose colours reordered the side connectors, so U11's pour lost
+/// copper to the nets that then crossed it).
+fn rank_apart(items: &[Item<'_>], apart: &[usize], seed: u64) -> Vec<usize> {
+    if apart.is_empty() {
+        return canonical_rank(items, seed);
+    }
+    let kept: Vec<usize> = (0..items.len()).filter(|i| !apart.contains(i)).collect();
+    let mut pads: BTreeMap<&str, (bool, usize)> = BTreeMap::new();
+    for (i, it) in items.iter().enumerate() {
+        for (_, net) in it.pads.values() {
+            let e = pads.entry(net.as_str()).or_default();
+            if apart.contains(&i) {
+                e.0 = true;
+            } else {
+                e.1 += 1;
+            }
+        }
+    }
+    let sub: Vec<Item<'_>> = kept
+        .iter()
+        .map(|&i| {
+            let mut it = items[i].clone();
+            for (number, (_, net)) in it.pads.iter_mut() {
+                if pads[net.as_str()] == (true, 1) {
+                    *net = format!("unconnected-({}-{number})", it.part.reference);
+                }
+            }
+            it
+        })
+        .collect();
+    let mut rank = vec![0; items.len()];
+    for (p, r) in canonical_rank(&sub, seed).into_iter().enumerate() {
+        rank[kept[p]] = r;
+    }
+    let mut last: Vec<usize> = apart.to_vec();
+    last.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    for (k, i) in last.into_iter().enumerate() {
+        rank[i] = kept.len() + k;
+    }
+    rank
+}
+
 fn canonical_rank(items: &[Item<'_>], seed: u64) -> Vec<usize> {
     let real = |n: &str| !n.starts_with("unconnected-");
     let mut nets: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
