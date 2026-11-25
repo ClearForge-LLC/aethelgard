@@ -72,6 +72,7 @@
 # AET-WO-1607 (P3, AET-WO-1914): cli_backlog_tier1's tests are Furnace estimates, not runs: the worst of three, each alone (`--exact`, one thread, libtest `finished in`, debug host build), times 2.8 (AET-WO-1310's factor). Most of the three large ones is emitting the same three boards in each test (FEEDBACK F-L). Replace them at the next refit.
 # AET-WO-1916 D2: cli_backlog_tier1 and verify_2k2_tier2 are colocated blocks now (ci/colocate.tsv); their test rows are removed.
 # AET-WO-1916 D6 (ruled 2026-11-23 06:35Z): the stale Furnace-estimate rows above re-weighed from CI's own timings, run 45126254602 (head 9c7c6cb8, its throwaway alone pass, reverted; spike/1916/alone.tsv): each test alone on two runners (REFIT RULE 1 and 2), the worse sample: board_tier2's d1_s_pin_device_generates_builds_and_proves 148.30 (127.08) and build_names_the_rustc_cargo_ran 0.37 (0.36; a lock-serialised binary, so it keeps a row), fab_tier1's a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name 2.71 (2.13), main.rs's verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode 1.40 (1.08), bounds.rs's the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib 7.95 (7.93). with_tools' a_board_not_drawn_runs_its_gates_and_is_never_verified (CPU-heavy, REFIT RULE 5) at its worst in-shard seconds (P3) over runs 45112159401, 45114924858, 45117816997, 45118544871, 45122394199 and 45126254602: 244.010 (173.7-244.0; alone 198.14 and 215.83).
+# AET-WO-4400j: its eight new tests of 0.5 s or more, each alone in the pinned image on Furnace (libtest's `finished in`) times 2.8, the AET-WO-1310 rule, until the refit rule measures them.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.615
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.343
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	2.051
@@ -154,6 +155,8 @@ tests/boot_tier1.rs	a_foreign_boot_is_judged_by_its_models_lines_and_says_so	1.6
 tests/boot_tier1.rs	a_foreign_boot_no_model_witnesses_fails_by_name	2.955
 tests/boot_tier1.rs	a_foreign_boot_s_flash_locked_accesses_and_warnings_are_reported	9.004
 tests/boot_tier1.rs	a_foreign_clock_the_rcc_registers_contradict_fails_by_name	3.125
+tests/boot_tier1.rs	a_foreign_end_read_fails_only_if_it_fails_at_all_four	14.56
+tests/boot_tier1.rs	a_foreign_run_without_exactly_four_end_reads_is_untrusted	4.09
 tests/boot_tier1.rs	a_halted_core_fails_and_a_set_word_beside_one_is_untrusted	3.115
 tests/boot_tier1.rs	a_line_past_its_ceiling_fails_names_its_bus_and_reaches_the_platform	1.398
 tests/boot_tier1.rs	a_listing_without_a_solved_peripheral_is_untrusted	2.726
@@ -173,6 +176,7 @@ tests/boot_tier1.rs	a_witness_that_shows_the_read_passes_and_is_reported	3.814
 tests/boot_tier1.rs	a_write_the_bring_up_never_makes_fails_and_another_source_s_does_not_count	5.701
 tests/boot_tier1.rs	an_aborted_machine_killed_at_a_bound_is_cpu_aborted	4.222
 tests/boot_tier1.rs	an_armed_interrupt_after_the_boot_word_fails	5.457
+tests/boot_tier1.rs	an_input_run_may_run_twelve_seconds_and_a_plain_one_five	3.02
 tests/boot_tier1.rs	an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot	3.034
 tests/boot_tier1.rs	another_renode_is_unusable_for_a_boot	1.059
 tests/boot_tier1.rs	any_witness_but_the_model_s_exact_lines_fails	13.278
@@ -182,7 +186,9 @@ tests/boot_tier1.rs	inputs_are_refused_before_renode_is_looked_for	2.945
 tests/boot_tier1.rs	log_text_inside_a_value_is_refused	3.608
 tests/boot_tier1.rs	markers_must_appear_once_each_as_whole_lines	6.512
 tests/boot_tier1.rs	more_instructions_than_the_run_holds_or_another_speed_is_untrusted	2.821
+tests/boot_tier1.rs	repeated_exempt_cycles_are_summarised_and_counted_and_a_bad_one_is_not	4.40
 tests/boot_tier1.rs	the_bridge_cannot_write_what_renode_reads	1.346
+tests/boot_tier1.rs	the_bridges_stdin_is_held_open_as_renodes_is	3.42
 tests/boot_tier1.rs	the_expected_value_is_the_tables_whatever_the_record_says_it_expects	1.234
 tests/boot_tier1.rs	the_flash_controller_is_read_once_and_never_written_or_the_boot_fails	4.958
 tests/boot_tier1.rs	the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions	5.380
@@ -382,6 +388,7 @@ tests/support_tier1.rs	the_reference_passes_the_support_gate	2.338
 tests/tools_tier1.rs	a_daemon_in_its_own_session_does_not_outlive_the_call	1.435
 tests/tools_tier1.rs	a_stub_written_while_other_threads_fork_always_execs	1.767
 tests/tools_tier1.rs	crate_over_the_file_cap_is_input_too_large	1.647
+tests/tools_tier1.rs	renodes_stdin_is_held_open_and_never_ends	1.57
 tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	13.490
 tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.430
 tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	5.810
@@ -535,6 +542,8 @@ unittests src/lib.rs	tests::only_this_packages_functions_are_kept	2.820
 unittests src/lib.rs	tests::the_platform_presents_the_declared_brown_out_level	0.582
 unittests src/main.rs	elf::tests::overlapping_segments_are_refused_by_their_memory_not_their_file_bytes	0.121
 unittests src/main.rs	fab::tests::the_notes_describe_every_file_and_the_package_names_them_after_the_project	0.055
+unittests src/main.rs	renode::foreign::tests::a_planted_difference_in_any_source_reads_as_in_the_whole_log	2.66
+unittests src/main.rs	renode::foreign::tests::only_an_rc_ports_search_fields_are_left_unjudged_at_the_end	0.67
 unittests src/main.rs	renode::tests::a_core_that_slept_is_cpu_halted_and_its_anchors_fall_back_to_their_stamps	0.408
 unittests src/main.rs	renode::tests::a_hook_line_out_of_shape_is_refused_and_one_lagging_is_cpu_halted	1.718
 unittests src/main.rs	renode::tests::a_port_s_wire_time_must_fit_its_bound_from_the_injection	0.884
