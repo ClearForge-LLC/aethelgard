@@ -3261,3 +3261,668 @@ fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
         assert_eq!(e["error"]["message"], says, "{e}");
     }
 }
+
+// ---------------------------------------------------------------------------
+// `AET-WO-4400i`: a declared input (`simulate --foreign --input`).
+// ---------------------------------------------------------------------------
+
+/// Frames pymavlink 2.4.50 wrote in the pinned ArduPilot image, an encoder
+/// that is not the judge's (the twin's `mavlink` tests hold the same).
+const HB_GCS: &str = "fd09000000ffbe0000000000000006080000035c2b";
+const ARM: &str =
+    "fd20000000ffbe4c00000000803f000000000000000000000000000000000000000000000000900101019e4e";
+const ARM_FORCE_21196: &str =
+    "fd20000000ffbe4c00000000803f0098a546000000000000000000000000000000000000000090010101abb2";
+const ARM_FORCE_2989: &str =
+    "fd20000000ffbe4c00000000803f00d03a45000000000000000000000000000000000000000090010101b8e6";
+const SKIPCHK_1: &str = "fd17000000ffbe1700000000803f010141524d494e475f534b495043484b000006f5d4";
+const REQUIRE_0: &str = "fd17000000ffbe17000000000000010141524d494e475f52455155495245000002470c";
+const SYSTEM_TIME: &str = "fd01000000ffbe020000008edf";
+const SIGNED_HB: &str = "fd09010000ffbe000000000000000608000003bbd3000100000000003bc231d90cb8";
+const UNKNOWN_PARAM: &str =
+    "fd17000000ffbe1700000000803f01014145545f4e4f545f415f504152414d000948ef";
+
+/// Copter 4.7.2's own USART1 transmissions from `spike/4400i` (the twin's
+/// fixtures): `early-fill` arms (its first armed heartbeat at byte 11339),
+/// `reject` answers `AET_NOT_A_PARAM` with `PARAM_ERROR`.
+fn ardupilot_tx(name: &str) -> Vec<u8> {
+    fs::read(root().join(format!(
+        "crates/aethelgard-twin/tests/data/4400i/{name}-tx.bin"
+    )))
+    .unwrap()
+}
+
+/// An input file: `(at_ns, hex, fill)` frames for `port`.
+fn input_file(dir: &Dir, name: &str, port: &str, frames: &[(u64, &str, u32)]) -> PathBuf {
+    let frames: Vec<Value> = frames
+        .iter()
+        .map(|(t, h, f)| serde_json::json!({"at_ns": t, "mavlink": h, "fill": f}))
+        .collect();
+    let v = serde_json::json!({"input_version": 1, "port": port, "frames": frames});
+    dir.write(name, &serde_json::to_vec(&v).unwrap())
+}
+
+/// A `--foreign 10ms` run of the foreign ELF with `input` (and `extra`
+/// arguments), on `board` (a specification and its emitted platform; the
+/// reference's by default), with `toolbox`'s `renode`.
+fn input_run(
+    toolbox: &Path,
+    input: &Path,
+    board: Option<(PathBuf, PathBuf)>,
+    extra: &[&OsStr],
+) -> Output {
+    let dir = Dir::new("input-in");
+    let (spec, platform) = board.unwrap_or_else(|| common::foreign::write(&dir.0));
+    let fw = dir.write("fw.elf", &foreign_elf());
+    let mut args = vec![
+        OsStr::new("simulate"),
+        OsStr::new("--platform"),
+        platform.as_os_str(),
+        OsStr::new("--firmware"),
+        fw.as_os_str(),
+        OsStr::new("--spec"),
+        spec.as_os_str(),
+        OsStr::new("--foreign"),
+        OsStr::new("10ms"),
+        OsStr::new("--input"),
+        input.as_os_str(),
+    ];
+    args.extend_from_slice(extra);
+    run(toolbox, &args)
+}
+
+/// A stub `renode` for an input run: the command line includes the input's
+/// timeline; the stub checks that file's first line is USART1's
+/// `CreateFileBackend`, and, with `expected`, that every line after it is
+/// exactly `expected` (the sandbox lets it write nothing outside its
+/// scratch, so the test states the timeline rather than reading it back);
+/// then writes `capture` where the backend names, as Renode's would, and
+/// prints the good foreign transcript.
+fn toolbox_input(capture: &[u8], expected: Option<&str>) -> Dir {
+    toolbox_input_writing(Some(capture), expected)
+}
+
+/// As [`toolbox_input`], writing no capture at all with `None`.
+fn toolbox_input_writing(capture: Option<&[u8]>, expected: Option<&str>) -> Dir {
+    let tb = Dir::new("tb-input");
+    let out = tb.write(
+        "renode.out",
+        foreign_transcript(&good_foreign_log(), "0x00000800").as_bytes(),
+    );
+    let write = match capture {
+        Some(c) => format!(
+            "/bin/cat '{}' > \"$cap\" || exit 91",
+            tb.write("capture.bin", c).display()
+        ),
+        None => String::new(),
+    };
+    let check = match expected {
+        Some(e) => format!(
+            "/bin/sed 1d \"$script\" | /bin/cmp -s - '{}' || exit 90",
+            tb.write("expected.resc", e.as_bytes()).display()
+        ),
+        None => String::new(),
+    };
+    let body = format!(
+        r#"#!/bin/sh
+[ "$1" = --config ] || exit 97
+if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {RENODE_BUILD}\n'; exit 0; fi
+case "$7" in *"; include @"*"/input.resc; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 95;; esac
+case "$7" in *"emulation RunFor"*) exit 94;; esac
+script=$(printf '%s' "$7" | /bin/sed -n 's/.*; include @\([^;]*\); echo .*/\1/p')
+[ -r "$script" ] || exit 93
+cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$script")
+[ -n "$cap" ] || exit 92
+{check}
+{write}
+/bin/cat '{out}'
+"#,
+        out = out.display()
+    );
+    common::stub::write_executable(&tb.0.join("renode"), body.as_bytes());
+    tb
+}
+
+/// `AET-WO-4400i` D8: each refusal of a declared input is named, with exit
+/// 2, before any tool is looked for (no `renode` on `PATH`).
+#[test]
+fn each_declared_input_refusal_is_named_before_any_tool() {
+    let empty = Dir::new("empty");
+    let dir = Dir::new("inputs");
+    let refused = |input: &Path, kind: &str| {
+        let out = input_run(&empty.0, input, None, &[]);
+        let v = report(&out);
+        assert_eq!(v["error"]["kind"], kind, "{v}");
+        assert_eq!(out.status.code(), Some(2), "{v}");
+        v
+    };
+    let one = |name: &str, hex: &str| input_file(&dir, name, "CONSOLE", &[(1_000_000, hex, 0)]);
+    let v = refused(&one("force.json", ARM_FORCE_21196), "InputForcesArm");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("21196"),
+        "{v}"
+    );
+    refused(&one("force2989.json", ARM_FORCE_2989), "InputForcesArm");
+    refused(&one("skip.json", SKIPCHK_1), "InputSkipsChecks");
+    refused(&one("require.json", REQUIRE_0), "InputSkipsChecks");
+    refused(&one("unlisted.json", SYSTEM_TIME), "InputMessageUnlisted");
+    refused(&one("signed.json", SIGNED_HB), "InputSigned");
+    refused(&one("text.json", &hex(b"ARM NOW")), "InputNotMavlink");
+    refused(
+        &input_file(&dir, "late.json", "CONSOLE", &[(9_000_000, HB_GCS, 0)]),
+        "InputPastWindow",
+    );
+    refused(
+        &input_file(&dir, "off.json", "CONSOLE", &[(1_000_050, HB_GCS, 0)]),
+        "InputTimeOffQuantum",
+    );
+    refused(
+        &input_file(
+            &dir,
+            "overlap.json",
+            "CONSOLE",
+            &[(1_000_000, HB_GCS, 0), (3_000_000, ARM, 0)],
+        ),
+        "InputFramesOverlap",
+    );
+    refused(
+        &input_file(&dir, "port.json", "RADIO", &[(1_000_000, HB_GCS, 0)]),
+        "InputPortUndeclared",
+    );
+    refused(
+        &dir.write("json.json", b"{\"input_version\": 1,"),
+        "InputMalformed",
+    );
+    refused(
+        &dir.write(
+            "v2.json",
+            br#"{"input_version": 2, "port": "CONSOLE", "frames": []}"#,
+        ),
+        "InputMalformed",
+    );
+    refused(
+        &dir.write("odd.json", br#"{"input_version": 1, "port": "CONSOLE", "frames": [{"at_ns": 0, "mavlink": "fd0"}]}"#),
+        "InputMalformed",
+    );
+    // A missing file is unreadable (exit 3).
+    let out = input_run(&empty.0, &dir.0.join("absent.json"), None, &[]);
+    assert_eq!(out.status.code(), Some(3), "{}", report(&out));
+    // Good frames, with the tool missing: the tool is what stops it.
+    let out = input_run(&empty.0, &one("good.json", ARM), None, &[]);
+    assert_eq!(out.status.code(), Some(4), "{}", report(&out));
+}
+
+/// `sentinel-02-own` (U5, an ICM-42688-P, x right and z up), with U5's
+/// orientation or without it, written with its emitted platform:
+/// (specification, platform).
+fn s02_board(dir: &Dir, orientation: bool) -> (PathBuf, PathBuf) {
+    let mut v: Value = serde_json::from_slice(
+        &fs::read(root().join("crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json"))
+            .unwrap(),
+    )
+    .unwrap();
+    if !orientation {
+        for d in v["spi_devices"].as_array_mut().unwrap() {
+            d.as_object_mut().unwrap().remove("orientation");
+        }
+    }
+    let bytes = serde_json::to_vec_pretty(&v).unwrap();
+    let spec = dir.write("spec.json", &bytes);
+    let s: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&s.mcu.part).unwrap();
+    let hash: String = <sha2::Sha256 as sha2::Digest>::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    let topology = aethelgard_ir::solve(&s, &table, &hash).unwrap();
+    let platform = dir.write(
+        "platform.repl",
+        aethelgard_twin::platform::emit(&topology)
+            .unwrap()
+            .as_bytes(),
+    );
+    (spec, platform)
+}
+
+/// `AET-WO-4400i` D4: a board with an IMU whose orientation is undeclared
+/// has no rest to start an input run from: refused by name, before any tool.
+#[test]
+fn an_input_run_on_an_imu_with_no_orientation_is_refused() {
+    let empty = Dir::new("empty");
+    let dir = Dir::new("noorient");
+    let board = s02_board(&dir, false);
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
+    let out = input_run(&empty.0, &input, Some(board), &[]);
+    let r = report(&out);
+    assert_eq!(r["error"]["kind"], "RestOrientationUndeclared", "{r}");
+    assert_eq!(out.status.code(), Some(2), "{r}");
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
+}
+
+/// `AET-WO-4400i` §2: each byte is sent at its stated instant from the
+/// timeline file, the gap is named, and the arm is read from the firmware's
+/// own transmission, never from the input.
+#[test]
+fn an_input_run_reads_the_arm_from_the_firmwares_own_heartbeat() {
+    let tx = ardupilot_tx("early-fill");
+    // The timeline, stated by hand: 1 ms, then the heartbeat's 21 bytes 100 us
+    // apart; the ARM's 44 bytes and 11 bytes of fill from 4 ms; then the rest
+    // of the 10 ms. The reference board has no IMU or barometer: no rest.
+    let mut want = String::from("emulation RunFor \"0.0010000005\"\n");
+    let send = |want: &mut String, hex: &str, fill: usize| {
+        let mut bytes: Vec<u8> = (0..hex.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+            .collect();
+        bytes.resize(bytes.len() + fill, 0);
+        for (k, b) in bytes.iter().enumerate() {
+            if k > 0 {
+                want.push_str("emulation RunFor \"0.0001000005\"\n");
+            }
+            want.push_str(&format!("sysbus.usart1 WriteChar 0x{b:02X}\n"));
+        }
+    };
+    send(&mut want, HB_GCS, 0);
+    // From 3.0 ms (the heartbeat's last byte at 3.0 ms) to 4 ms.
+    want.push_str("emulation RunFor \"0.0010000005\"\n");
+    send(&mut want, ARM, 11);
+    // The ARM is 44 bytes (a 32-byte payload): with its fill, 55 bytes, the
+    // last at 4 + 54 × 0.1 = 9.4 ms; 0.6 ms to the end.
+    want.push_str("emulation RunFor \"0.0006000005\"\n");
+    let tb = toolbox_input(&tx, Some(&want));
+    let dir = Dir::new("arm");
+    // A heartbeat at 1 ms, then an ARM at 4 ms with 11 bytes of fill.
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
+    let out = input_run(&tb.0, &input, None, &[]);
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(0), "{v}");
+    let i = &v["boot"]["input"];
+    assert_eq!(i["input"]["frames"], 2, "{v}");
+    assert_eq!(i["input"]["fill_bytes"], 11, "{v}");
+    assert_eq!(i["input"]["spacing_ns"], 100_000, "{v}");
+    let sha: String = <sha2::Sha256 as sha2::Digest>::digest(fs::read(&input).unwrap())
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    assert_eq!(i["input"]["sha256"], sha, "{v}");
+    assert_eq!(i["witness"]["armed"]["offset"], 11339, "{v}");
+    assert_eq!(i["witness"]["armed"]["base_mode"], 209, "{v}");
+    assert_eq!(i["witness"]["captured_bytes"], tx.len(), "{v}");
+    assert!(
+        v["boot"]["unobservable"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|u| u.as_str().unwrap().starts_with("usart_idle_unmodelled")),
+        "{v}"
+    );
+    // No input: no `input`, so a run without one reports as before.
+    let (_, plain) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert!(plain["boot"].get("input").is_none(), "{plain}");
+}
+
+/// `AET-WO-4400i` §5: an armed heartbeat the input itself carried, echoed
+/// back on the port, is not the firmware's: it never witnesses the arm.
+#[test]
+fn an_armed_heartbeat_the_input_carried_never_witnesses_the_arm() {
+    let tx = ardupilot_tx("early-fill");
+    let forged = &tx[11339..11339 + 21];
+    let tb = toolbox_input(forged, None);
+    let dir = Dir::new("forged");
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, &hex(forged), 0)]);
+    let out = input_run(&tb.0, &input, None, &[]);
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(0), "{v}");
+    assert!(v["boot"]["input"]["witness"]["armed"].is_null(), "{v}");
+    assert_eq!(v["boot"]["input"]["witness"]["heartbeats"], 0, "{v}");
+}
+
+/// `AET-WO-4400i` D9: a parameter the firmware does not have is reported
+/// rejected, from its own `PARAM_ERROR`, and fails the run.
+#[test]
+fn a_parameter_the_firmware_rejects_is_reported_from_its_own_reply() {
+    let tb = toolbox_input(&ardupilot_tx("reject"), None);
+    let dir = Dir::new("reject");
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, UNKNOWN_PARAM, 0)]);
+    let out = input_run(&tb.0, &input, None, &[]);
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(1), "{v}");
+    let rejected: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_param_rejected")
+        .collect();
+    assert_eq!(rejected.len(), 1, "{v}");
+    assert!(
+        rejected[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("AET_NOT_A_PARAM"),
+        "{v}"
+    );
+    assert_eq!(
+        v["boot"]["input"]["witness"]["params"][0]["error"], 1,
+        "{v}"
+    );
+}
+
+/// `AET-WO-4400i` D6 (R1): an input run archived with `--archive` is named by
+/// its run id, re-judged by `replay` from the trace alone (the input's file
+/// and the firmware's transmission, no file and no Renode) to the same
+/// witness, refused as existing when written again, and refused under
+/// another name. A campaign's archive still replays as before
+/// (`campaign_tier1`: the 2k2 reference replays to its verdict and hash; a
+/// run with neither a scenario nor a kind 38 is `NotACampaignRun`).
+#[test]
+fn an_archived_input_run_replays_from_its_trace_alone() {
+    let tx = ardupilot_tx("early-fill");
+    let tb = toolbox_input(&tx, None);
+    let dir = Dir::new("archived");
+    let archive = dir.0.join("archive");
+    fs::create_dir(&archive).unwrap();
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
+    let out = input_run(
+        &tb.0,
+        &input,
+        None,
+        &[OsStr::new("--archive"), archive.as_os_str()],
+    );
+    let v = report(&out);
+    assert_eq!(out.status.code(), Some(0), "{v}");
+    let id = v["boot"]["input"]["run_id"].as_str().unwrap().to_owned();
+    let run_dir = archive.join(&id);
+    assert!(run_dir.join("manifest.cbor").is_file(), "{v}");
+    // The input file is gone; replay needs nothing but the run directory.
+    fs::remove_file(&input).unwrap();
+    let empty = Dir::new("empty");
+    let r = run(
+        &empty.0,
+        &[
+            OsStr::new("replay"),
+            OsStr::new("--archive"),
+            run_dir.as_os_str(),
+        ],
+    );
+    let rv = report(&r);
+    assert_eq!(r.status.code(), Some(0), "{rv}");
+    assert_eq!(rv["judge"], "foreign", "{rv}");
+    assert_eq!(rv["run_id"], id, "{rv}");
+    assert_eq!(rv["input_verdict"], "pass", "{rv}");
+    assert!(
+        rv["input_verdict_is"]
+            .as_str()
+            .unwrap()
+            .contains("not the run's verdict"),
+        "{rv}"
+    );
+    assert!(
+        rv["tools"]["aethelgard"].is_string() && rv["tools"]["renode"].is_string(),
+        "{rv}"
+    );
+    assert_eq!(
+        rv["artifacts"]["input"], v["boot"]["input"]["input"]["sha256"],
+        "{rv}"
+    );
+    assert_eq!(
+        rv["input_sha256"], v["boot"]["input"]["input"]["sha256"],
+        "{rv}"
+    );
+    assert_eq!(rv["frames"], 2, "{rv}");
+    assert_eq!(rv["witness"], v["boot"]["input"]["witness"], "{rv}");
+    // 16 KiB of capture is six parts of at most 3 KiB; the input one; the
+    // stimuli one (none, on the reference board).
+    assert_eq!(rv["event_count"], 1 + 1 + tx.len().div_ceil(3072), "{rv}");
+    // Written again: the run exists.
+    let input = input_file(
+        &dir,
+        "in.json",
+        "CONSOLE",
+        &[(1_000_000, HB_GCS, 0), (4_000_000, ARM, 11)],
+    );
+    let again = input_run(
+        &tb.0,
+        &input,
+        None,
+        &[OsStr::new("--archive"), archive.as_os_str()],
+    );
+    let av = report(&again);
+    assert_eq!(av["error"]["kind"], "ArchiveWriteFailed", "{av}");
+    assert_eq!(again.status.code(), Some(3), "{av}");
+    // Under another name, it is not that run.
+    let renamed = archive.join("run");
+    fs::rename(&run_dir, &renamed).unwrap();
+    let r = run(
+        &empty.0,
+        &[
+            OsStr::new("replay"),
+            OsStr::new("--archive"),
+            renamed.as_os_str(),
+        ],
+    );
+    let rv = report(&r);
+    assert_eq!(rv["error"]["kind"], "RunIdMismatch", "{rv}");
+    assert_eq!(r.status.code(), Some(3), "{rv}");
+}
+
+/// `AET-WO-4400i` D6 (R1): replay re-judges what the trace holds and refuses
+/// what does not hold together, each archive written here with the chaos
+/// writer: a header naming another input than the one the trace holds
+/// (`InputHashMismatch`), and a capture before the stimuli
+/// (`NotAForeignRun`). The well-formed one re-judges the rejected parameter
+/// from the archived transmission alone.
+#[test]
+fn replay_refuses_a_foreign_archive_that_does_not_hold_together() {
+    use aethelgard_chaos::event::{Event, Header};
+    use aethelgard_chaos::record::Record;
+    let dir = Dir::new("crafted");
+    let file = serde_json::to_vec(&serde_json::json!({
+        "input_version": 1, "port": "CONSOLE",
+        "frames": [{"at_ns": 1_000_000, "mavlink": UNKNOWN_PARAM, "fill": 0}]
+    }))
+    .unwrap();
+    let sha: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(&file).into();
+    let input = Record::ForeignInput {
+        label: "CONSOLE".into(),
+        peripheral: "USART1".into(),
+        spacing_ns: 100_000,
+        part: 0,
+        parts: 1,
+        file: file.clone(),
+    };
+    let stimuli = Record::Stimuli {
+        part: 0,
+        parts: 1,
+        entries: Vec::new(),
+    };
+    let capture = Record::SerialCaptured {
+        label: "CONSOLE".into(),
+        end_ns: 10_000_000,
+        part: 0,
+        parts: 1,
+        bytes: ardupilot_tx("reject"),
+    };
+    let write = |seed: u8, named: [u8; 32], records: Vec<Record>| -> PathBuf {
+        let header = Header {
+            run_id: [seed; 16],
+            artifacts: vec![
+                ("firmware".into(), [1; 32]),
+                ("input".into(), named),
+                ("platform".into(), [2; 32]),
+                ("specification".into(), [3; 32]),
+            ],
+            tools: vec![("renode".into(), "1.17.0".into())],
+            tool_sha256: Vec::new(),
+        };
+        let run_dir = dir.0.join(hex(&[seed; 16]));
+        let mut w = aethelgard_chaos::TraceWriter::create(&run_dir, &header).unwrap();
+        // In the order given, each later than the last, so the reader, not
+        // the writer's clock, judges the order.
+        for (timestamp, record) in records.into_iter().enumerate() {
+            let timestamp = timestamp as u64;
+            w.append(&Event::Record { timestamp, record }).unwrap();
+        }
+        w.commit().unwrap();
+        run_dir
+    };
+    let empty = Dir::new("empty");
+    let replay = |run_dir: &Path| {
+        let out = run(
+            &empty.0,
+            &[
+                OsStr::new("replay"),
+                OsStr::new("--archive"),
+                run_dir.as_os_str(),
+            ],
+        );
+        (out.status.code(), report(&out))
+    };
+    let good = write(
+        1,
+        sha,
+        vec![input.clone(), stimuli.clone(), capture.clone()],
+    );
+    let (code, v) = replay(&good);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["input_verdict"], "fail", "{v}");
+    assert_eq!(v["findings"][0]["kind"], "foreign_param_rejected", "{v}");
+    let (code, v) = replay(&write(
+        2,
+        [9; 32],
+        vec![input.clone(), stimuli.clone(), capture.clone()],
+    ));
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("InputHashMismatch")),
+        "{v}"
+    );
+    let (code, v) = replay(&write(
+        3,
+        sha,
+        vec![input.clone(), capture.clone(), stimuli.clone()],
+    ));
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("NotAForeignRun")),
+        "{v}"
+    );
+    // Parts out of order, and a kind that ends before its count.
+    let part = |part, parts| {
+        let mut r = input.clone();
+        if let Record::ForeignInput {
+            part: p, parts: n, ..
+        } = &mut r
+        {
+            (*p, *n) = (part, parts);
+        }
+        r
+    };
+    for (seed, first, why) in [
+        (4u8, part(1, 2), "part 1 of 2 where part 0"),
+        (5, part(0, 2), "before its count"),
+    ] {
+        let (code, v) = replay(&write(
+            seed,
+            sha,
+            vec![first, stimuli.clone(), capture.clone()],
+        ));
+        assert_eq!(
+            (code, &v["error"]["kind"]),
+            (Some(2), &Value::from("NotAForeignRun")),
+            "{v}"
+        );
+        assert!(v["error"]["message"].as_str().unwrap().contains(why), "{v}");
+    }
+    // A capture on another port than the input's.
+    let mut other = capture.clone();
+    if let Record::SerialCaptured { label, .. } = &mut other {
+        *label = "RADIO".into();
+    }
+    let (code, v) = replay(&write(6, sha, vec![input.clone(), stimuli.clone(), other]));
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("another port"),
+        "{v}"
+    );
+    assert_eq!(code, Some(2), "{v}");
+    // The file names CONSOLE; a record that says RADIO is not that input.
+    let mut relabelled = input;
+    if let Record::ForeignInput { label, .. } = &mut relabelled {
+        *label = "RADIO".into();
+    }
+    let mut capture = capture;
+    if let Record::SerialCaptured { label, .. } = &mut capture {
+        *label = "RADIO".into();
+    }
+    let (code, v) = replay(&write(7, sha, vec![relabelled, stimuli, capture]));
+    assert_eq!(
+        (code, &v["error"]["kind"]),
+        (Some(2), &Value::from("InputHashMismatch")),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4400i`: an input file over 1 MiB is refused before it is parsed.
+#[test]
+fn an_input_file_over_its_bound_is_refused() {
+    let empty = Dir::new("empty");
+    let dir = Dir::new("big");
+    let big = dir.write("big.json", &vec![b' '; (1 << 20) + 1]);
+    let out = input_run(&empty.0, &big, None, &[]);
+    let v = report(&out);
+    assert_eq!(v["error"]["kind"], "InputMalformed", "{v}");
+    assert!(
+        v["error"]["message"].as_str().unwrap().contains("over the"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4400i`: a transmission the judge cannot read whole is a finding,
+/// and is not archived: none written, or past `MAX_FOREIGN_BYTES` (1 MiB),
+/// which replay would refuse.
+#[test]
+fn a_capture_that_cannot_be_read_whole_is_named_and_not_archived() {
+    for (capture, said) in [
+        (None, "could not be read"),
+        (Some(vec![0u8; (1 << 20) + 1]), "is past"),
+    ] {
+        let tb = toolbox_input_writing(capture.as_deref(), None);
+        let dir = Dir::new("nocapture");
+        let archive = dir.0.join("archive");
+        fs::create_dir(&archive).unwrap();
+        let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
+        let out = input_run(
+            &tb.0,
+            &input,
+            None,
+            &[OsStr::new("--archive"), archive.as_os_str()],
+        );
+        let v = report(&out);
+        assert_eq!(out.status.code(), Some(1), "{v}");
+        let f: Vec<&Value> = v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|f| f["kind"] == "foreign_capture_unreadable")
+            .collect();
+        assert_eq!(f.len(), 1, "{v}");
+        assert!(f[0]["message"].as_str().unwrap().contains(said), "{v}");
+        assert!(v["boot"]["input"].get("run_id").is_none(), "{v}");
+        assert_eq!(fs::read_dir(&archive).unwrap().count(), 0, "{v}");
+    }
+}

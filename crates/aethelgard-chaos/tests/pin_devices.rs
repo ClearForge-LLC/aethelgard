@@ -354,7 +354,8 @@ fn every_record_and_override_round_trips_and_has_its_kind() {
         .collect();
     let (dir, _) = write_run("pins-roundtrip", 9, &events);
     assert_eq!(replay_dir(&dir).unwrap().state.records, records);
-    assert_eq!(LAST_KIND, 37);
+    // 38 to 40 since AET-WO-4400i: a foreign run's, round-tripped in archive.rs.
+    assert_eq!(LAST_KIND, 40);
     let kinds: Vec<u64> = records[1..4].iter().map(Record::kind).collect();
     assert_eq!(kinds, [33, 33, 35]);
     assert_eq!(records[5].kind(), 34);

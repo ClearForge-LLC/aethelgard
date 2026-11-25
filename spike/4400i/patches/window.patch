@@ -1,0 +1,60 @@
+diff --git a/crates/aethelgard-cli/src/main.rs b/crates/aethelgard-cli/src/main.rs
+index 018000f4..ac3a4347 100644
+--- a/crates/aethelgard-cli/src/main.rs
++++ b/crates/aethelgard-cli/src/main.rs
+@@ -2383,11 +2383,28 @@ fn simulate_with(
+     let out = match (&plan, &droop) {
+         (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter())?,
+         (Some(_), None) if foreign.is_some() => {
+-            run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::foreign::FOREIGN_LOG_FILTER)?
++            {
++                // AET-WO-4400i spike patch (as 4400h's): the wall and RSS bounds and the log budget from the
++                // environment, for the armed run past them; main keeps BOOT_BOUNDS and the 8 MiB budget.
++                let env = |k: &str, d: u64| std::env::var(k).ok().and_then(|v| v.parse().ok()).unwrap_or(d);
++                let b = run::Bounds {
++                    wall: std::time::Duration::from_secs(env("AET4400I_WALL_S", renode::BOOT_BOUNDS.wall.as_secs())),
++                    rss_kib: env("AET4400I_RSS_KIB", renode::BOOT_BOUNDS.rss_kib),
++                };
++                let f = run::LogFilter {
++                    budget: env("AET4400I_LOG_BYTES", renode::foreign::FOREIGN_LOG_FILTER.budget as u64) as usize,
++                    ..renode::foreign::FOREIGN_LOG_FILTER
++                };
++                run.run_bounded_filtered(b, f)?
++            }
+         }
+         (Some(plan), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, plan.log_filter())?,
+         (None, _) => run.run()?,
+     };
++    // AET-WO-4400i spike patch: the kept log, to a file named by the environment.
++    if let Some(p) = std::env::var_os("AET4400I_DUMP_LOG") {
++        let _ = fs::write(p, out.text());
++    }
+     // The foreign judge's report (`AET-WO-4400e`): its firmware, its
+     // specification, its memory regions and every device's part.
+     let foreign_inputs = ready.as_ref().and_then(|r| {
+diff --git a/crates/aethelgard-cli/src/renode/foreign.rs b/crates/aethelgard-cli/src/renode/foreign.rs
+index 388b7958..975c317c 100644
+--- a/crates/aethelgard-cli/src/renode/foreign.rs
++++ b/crates/aethelgard-cli/src/renode/foreign.rs
+@@ -29,7 +29,7 @@ pub const JUDGE: &str = "foreign";
+ /// so 5 s leaves 0.61 s. Its RSS margin under concurrency is FEEDBACK's F1
+ /// measurement; the memory bound itself is a ruling of its own, never widened
+ /// here: 1.5 GiB since `AET-WO-2313` (`renode::BOOT_BOUNDS`).
+-pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 5_000_000_000;
++pub const FOREIGN_MAX_VIRTUAL_NS: u64 = 30_000_000_000; // AET-WO-4400i spike patch: 5 s on main
+ pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
+ 
+ /// The rule table, in the order of the verdict: each of today's rules, what
+diff --git a/crates/aethelgard-cli/src/run.rs b/crates/aethelgard-cli/src/run.rs
+index 0c7bde9d..529ff13d 100644
+--- a/crates/aethelgard-cli/src/run.rs
++++ b/crates/aethelgard-cli/src/run.rs
+@@ -69,7 +69,7 @@ pub const REAPER_ARG: &str = "--aethelgard-internal-reaper";
+ pub const CONFINE_ARG: &str = "--aethelgard-internal-confine";
+ 
+ /// Captured stdout, stderr and reports are bounded; more is a `ToolError`.
+-pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
++pub const MAX_CAPTURE: usize = 256 * 1024 * 1024; // AET-WO-4400i spike patch: 16 MiB on main
+ 
+ /// Read-only for every tool: the system's executables, libraries and config.
+ const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"];

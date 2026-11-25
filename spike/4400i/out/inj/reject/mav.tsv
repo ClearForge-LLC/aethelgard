@@ -1,0 +1,17 @@
+t_ns	type	src	fields
+167669616	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase started"}
+1011168756	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+1767948973	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2020231432	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2755784199	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3014074130	PARAM_ERROR	1/1	{"error": 1, "param_id": "AET_NOT_A_PARAM", "param_index": -1, "target_component": 190, "target_system": 255}
+3014074130	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3205802530	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 99.0}
+3416700163	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "STAT_RUNTIME", "param_index": 65535, "param_type": 6, "param_value": 5.0}
+3664906740	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 99.0}
+3770837435	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3854584648	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "STAT_RUNTIME", "param_index": 65535, "param_type": 6, "param_value": 5.0}
+4022110794	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+4560222482	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Barometer 1 calibration complete"}
+4561238602	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "BARO1_GND_PRESS", "param_index": 65535, "param_type": 9, "param_value": 101325.0}
+4761943131	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}

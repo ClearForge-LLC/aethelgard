@@ -1,0 +1,22 @@
+# The MAVLink 2 messages the foreign judge reads (AET-WO-4400i D8: a closed table). Each CRC_EXTRA and payload length
+# is computed from the message definitions in ArduPilot Copter-4.7.2's own submodule (fb773567,
+# modules/mavlink/message_definitions/v1.0): common.xml sha256
+# 43b194d1d025d07d455c6d6b70819677dc6d80db8c7f84aff49219a49be45b29, which includes standard.xml (sha256
+# 1c92c50e0a4d4cc29e4125dff33b16062e1e285a6271292fb3a4266576487e65), which includes minimal.xml (sha256
+# b3627df397e3354f26efe63559e1bcec4e72a4e4562ab52cbee1bab8f9e9999e, HEARTBEAT). CRC_EXTRA is the MAVLink rule: the
+# X.25 CRC of the name and each base field's type and name (sorted by size, arrays with their length), its two bytes
+# XORed; every value equals pymavlink 2.4.50's in the pinned ArduPilot image (spike/4400i/RESULTS.md §6.1).
+# Columns, tab-separated: name, id, CRC_EXTRA, base payload length, payload length with extensions, and its use:
+#   in   an input may carry it, and the judge decodes it when ArduPilot sends it;
+#   out  only ArduPilot's own, decoded for the witness: an input carrying it is refused (InputMessageUnlisted).
+HEARTBEAT	0	50	9	9	in
+PARAM_REQUEST_READ	20	214	20	20	in
+PARAM_REQUEST_LIST	21	159	2	2	in
+PARAM_VALUE	22	220	25	25	out
+PARAM_SET	23	168	23	23	in
+COMMAND_INT	75	158	35	35	in
+COMMAND_LONG	76	152	33	33	in
+COMMAND_ACK	77	143	3	10	out
+SET_ATTITUDE_TARGET	82	49	39	39	in
+STATUSTEXT	253	83	51	54	out
+PARAM_ERROR	345	209	21	21	out

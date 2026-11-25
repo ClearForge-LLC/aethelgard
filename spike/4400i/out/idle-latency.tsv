@@ -1,0 +1,34 @@
+run	request	sent_s	replied_s	latency_ms
+idle-pad	FRAME_CLASS	3.000	3.0554	55.4
+idle-pad	FS_THR_ENABLE	3.200	3.2664	66.4
+idle-pad	COMPASS_USE	3.400	3.4560	56.0
+idle-pad	INS_ACCOFFS_X	3.600	3.6659	65.9
+idle-pad	DISARM_DELAY	3.800	3.8556	55.6
+idle-pad	FTP seq 7	4.000		none
+idle-pad	ARMING_CHECK	4.200		none
+idle-pad	SERIAL0_BAUD	4.400		none
+idle-pad	LOG_BACKEND_TYPE	4.600		none
+idle-pad	INS_ACC_ID	4.800		none
+idle-pad	SYSID_THISMAV	5.000		none
+idle-raw	FRAME_CLASS	3.000	3.4550	455.0
+idle-raw	FS_THR_ENABLE	3.200	3.4550	255.0
+idle-raw	COMPASS_USE	3.400	3.8546	454.6
+idle-raw	INS_ACCOFFS_X	3.600	3.8546	254.6
+idle-raw	DISARM_DELAY	3.800	4.0645	264.5
+idle-raw	FTP seq 7	4.000	4.2139	213.9
+idle-raw	ARMING_CHECK	4.200	4.6590	459.0
+idle-raw	SERIAL0_BAUD	4.400	4.6590	259.0
+idle-raw	LOG_BACKEND_TYPE	4.600		none
+idle-raw	INS_ACC_ID	4.800		none
+idle-raw	SYSID_THISMAV	5.000		none
+idle-hook	FRAME_CLASS	3.000	3.0565	56.5
+idle-hook	FS_THR_ENABLE	3.200	4.0645	864.5
+idle-hook	COMPASS_USE	3.400		none
+idle-hook	INS_ACCOFFS_X	3.600		none
+idle-hook	DISARM_DELAY	3.800		none
+idle-hook	FTP seq 7	4.000		none
+idle-hook	ARMING_CHECK	4.200		none
+idle-hook	SERIAL0_BAUD	4.400		none
+idle-hook	LOG_BACKEND_TYPE	4.600		none
+idle-hook	INS_ACC_ID	4.800		none
+idle-hook	SYSID_THISMAV	5.000		none

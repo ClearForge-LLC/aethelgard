@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"InputNotMavlink","id":null,"message":"frame 41 is not one MAVLink 2 frame: it starts with 0x41, not MAVLink 2's 0xfd"}}

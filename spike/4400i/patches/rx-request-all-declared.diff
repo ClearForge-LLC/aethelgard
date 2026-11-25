@@ -1,0 +1,20 @@
+diff --git a/crates/aethelgard-twin/src/platform.rs b/crates/aethelgard-twin/src/platform.rs
+index fa0b9020..5263e402 100644
+--- a/crates/aethelgard-twin/src/platform.rs
++++ b/crates/aethelgard-twin/src/platform.rs
+@@ -1006,8 +1006,15 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) {
+         out,
+         "\n// The clock (AET-WO-4400g): each timer, USART and the DWT at {whose}.\n"
+     );
++    // AET-WO-4400i (1) measurement only: each declared serial port's receive request, RM0433 Rev 9 Table 124.
++    const RX: [(&str, u32); 8] = [("usart1", 41), ("usart2", 43), ("usart3", 45), ("uart4", 63), ("uart5", 65), ("usart6", 71), ("uart7", 79), ("uart8", 81)];
+     for (name, hz) in clocked(topology) {
+         let _ = write!(out, "{name}:\n    frequency: {hz}\n");
++        if topology.serial_ports.values().any(|p| p.peripheral.to_ascii_lowercase() == name) {
++            if let Some((_, n)) = RX.iter().find(|(u, _)| *u == name) {
++                let _ = write!(out, "    ReceiveDmaRequest -> dmamux1@{n}\n");
++            }
++        }
+     }
+     emit_hse(out, topology);
+ }
