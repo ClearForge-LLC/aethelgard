@@ -2603,6 +2603,10 @@ pub struct ForeignSummary {
     next_slot: u64,
     /// Between a read block's markers.
     inside: bool,
+    /// A lone `CFG2` write was just kept as written: the next line of the
+    /// run's log is kept too, so the write never sits beside a later error it
+    /// was apart from.
+    pin_next: bool,
 }
 
 impl ForeignSummary {
@@ -2680,6 +2684,7 @@ impl ForeignSummary {
             queue: std::collections::VecDeque::new(),
             next_slot: 0,
             inside: false,
+            pin_next: false,
         })
     }
 
@@ -2737,7 +2742,10 @@ impl ForeignSummary {
         };
         match std::mem::take(&mut c.cycle) {
             Cycle::Idle => {}
-            Cycle::Stopped(s0) => self.emit(vec![Emit::Keep(s0)], out),
+            Cycle::Stopped(s0) => {
+                self.pin_next = true;
+                self.emit(vec![Emit::Keep(s0)], out);
+            }
             Cycle::Errored(s0, e, slot) => {
                 c.owed = true;
                 self.fill(slot, vec![Emit::Keep(s0), Emit::Keep(e)], out);
@@ -2875,7 +2883,7 @@ impl crate::run::Summarise for ForeignSummary {
         }
         // A lone CFG2 write this line is not the error of: released, and this
         // line kept, so the write stays apart from any later error.
-        let mut force = false;
+        let mut force = std::mem::take(&mut self.pin_next);
         let stopped: Vec<String> = self
             .controllers
             .iter()
@@ -2888,6 +2896,8 @@ impl crate::run::Summarise for ForeignSummary {
             self.release(&n, out);
             force = true;
         }
+        // That release pinned this line, not the next.
+        self.pin_next = false;
         // The devices learn from every line of theirs.
         let learnt = self.learn(line, &source);
         self.prev = line.to_owned();
@@ -2896,7 +2906,9 @@ impl crate::run::Summarise for ForeignSummary {
             if !master && cr1 & 1 == 0 {
                 self.release(&spi, out);
                 if force {
-                    // Kept by force: never held, so never dropped with a cycle.
+                    // Kept by force: never held, so never dropped with a cycle;
+                    // a lone write kept as written pins the next line.
+                    self.pin_next = true;
                     return self.emit(vec![Emit::Keep(line.to_owned())], out);
                 }
                 self.controllers.entry(spi).or_default().cycle = Cycle::Stopped(line.to_owned());
@@ -4483,6 +4495,7 @@ mod tests {
             queue: std::collections::VecDeque::new(),
             next_slot: 0,
             inside: false,
+            pin_next: false,
         }
     }
 
@@ -5116,6 +5129,63 @@ mod tests {
                         log.push(END.to_owned());
                     }
                     log.push("AETHELGARD-FLASH 8000000 00".to_owned());
+                }),
+            ),
+            // Adversarial review G2: a lone write kept as written (by force:
+            // a third controller's lone write released), then a repeated line
+            // the summary drops, then the lone write's error.
+            (
+                "a lone write kept by force, a dropped line, then its error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("spi2.spi2mux: GPIO #0 set to True"))
+                        .nth(600)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    for (k, l) in [
+                        format!("[WARNING] spi3: {CFG2_MARK}0 0"),
+                        format!("[WARNING] spi1: {CFG2_MARK}0 0"),
+                        "[NOISY] spi2.spi2mux: GPIO #0 set to True".to_owned(),
+                        format!("[ERROR] spi1: {SLAVE_MODE}"),
+                        format!("[WARNING] spi1: {CFG2_MARK}20400000 0"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        log.insert(i + 1 + k, format!("{st}{l}"));
+                    }
+                }),
+            ),
+            // G2 across a read block: the lone write the last line before it,
+            // a repeated line first after it, then the write's error.
+            (
+                "a lone write before a read block, a dropped line after it, then its error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("spi2.spi2mux: GPIO #0 set to True"))
+                        .nth(650)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    for (k, l) in [
+                        format!("{st}[WARNING] spi1: {CFG2_MARK}0 0"),
+                        BEGIN.to_owned(),
+                        "0x00000000".to_owned(),
+                        END.to_owned(),
+                        format!("{st}[NOISY] spi2.spi2mux: GPIO #0 set to True"),
+                        format!("{st}[ERROR] spi1: {SLAVE_MODE}"),
+                        format!("{st}[WARNING] spi1: {CFG2_MARK}20400000 0"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        log.insert(i + 1 + k, l);
+                    }
                 }),
             ),
             // A marker (a read) between a write and its error, as at the end.
