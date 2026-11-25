@@ -434,6 +434,15 @@
       "reason": "PC10/PC11 at AF7 for USART3 (MAVLINK, J7): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries MAVLINK bytes in the twin. The bench row reads AFRH."
     },
     {
+      "register": "GPIOD.AFRL",
+      "class": "same-source",
+      "fields": [
+        "AFSEL0",
+        "AFSEL1"
+      ],
+      "reason": "PD1/PD0 at AF8 for UART4 (WIFI, U30): Renode's USART has no pin (4300b FEEDBACK section 0), so a wrong AF still carries WIFI bytes in the twin. The bench row reads AFRL."
+    },
+    {
       "register": "GPIOC.MODER",
       "class": "same-source",
       "fields": [
@@ -443,6 +452,15 @@
       "reason": "PC10/PC11 alternate for USART3 (MAVLINK, J7): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
     },
     {
+      "register": "GPIOD.MODER",
+      "class": "same-source",
+      "fields": [
+        "MODER0",
+        "MODER1"
+      ],
+      "reason": "PD1/PD0 alternate for UART4 (WIFI, U30): MODER is read only on a timer route (4300 FEEDBACK section 0) and USART has no pin; the serial pin judge compares the topology. Bench reads MODER."
+    },
+    {
       "register": "GPIOC.OSPEEDR",
       "class": "same-source",
       "fields": [
@@ -450,6 +468,15 @@
         "OSPEED11"
       ],
       "reason": "PC10/PC11 low for USART3 at 57600 baud (MAVLINK): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
+    },
+    {
+      "register": "GPIOD.OSPEEDR",
+      "class": "same-source",
+      "fields": [
+        "OSPEED0",
+        "OSPEED1"
+      ],
+      "reason": "PD1/PD0 low for UART4 at 57600 baud (WIFI): no edge rate is modelled; check speeds judges the fmax with svd-hal's own table, not an ir rule. The bench row reads OSPEEDR back."
     },
     {
       "register": "GPIOC.OTYPER",
@@ -475,6 +502,29 @@
       "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port C pin, USART3's PC10/PC11 included. The bench row reads it back."
     },
     {
+      "register": "GPIOD.OTYPER",
+      "class": "ignored-by-model",
+      "fields": [
+        "OT0",
+        "OT1",
+        "OT10",
+        "OT11",
+        "OT12",
+        "OT13",
+        "OT14",
+        "OT15",
+        "OT2",
+        "OT3",
+        "OT4",
+        "OT5",
+        "OT6",
+        "OT7",
+        "OT8",
+        "OT9"
+      ],
+      "reason": "OTYPER is not stored by Renode (4300b FEEDBACK section 10, measured): written whole, push-pull on every port D pin, UART4's PD1/PD0 included. The bench row reads it back."
+    },
+    {
       "register": "GPIOC.PUPDR",
       "class": "same-source",
       "fields": [
@@ -496,6 +546,29 @@
         "PUPD9"
       ],
       "reason": "Written whole as 0: no pull on PC10/PC11 (USART3, MAVLINK) nor PC0 (VBAT_SENSE, ADC1 INP10), every other port C pin at reset. No pull is modelled. The bench row reads PUPDR."
+    },
+    {
+      "register": "GPIOD.PUPDR",
+      "class": "same-source",
+      "fields": [
+        "PUPD0",
+        "PUPD1",
+        "PUPD10",
+        "PUPD11",
+        "PUPD12",
+        "PUPD13",
+        "PUPD14",
+        "PUPD15",
+        "PUPD2",
+        "PUPD3",
+        "PUPD4",
+        "PUPD5",
+        "PUPD6",
+        "PUPD7",
+        "PUPD8",
+        "PUPD9"
+      ],
+      "reason": "Written whole as 0: no pull on PD1/PD0 (UART4, WIFI), every other port D pin at reset. No pull is modelled. The bench row reads PUPDR."
     },
     {
       "register": "GPIOE.AFRH",
@@ -613,9 +686,10 @@
       "class": "same-source",
       "fields": [
         "GPIOCEN",
+        "GPIODEN",
         "GPIOEEN"
       ],
-      "reason": "GPIOC (USART3, VBAT_SENSE) and GPIOE (MOTOR2-4) clocks: 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows ports C/E registered with its RCC. Bench reads AHB4ENR."
+      "reason": "Ports C (USART3, VBAT_SENSE), D (UART4, WIFI), E (MOTOR2-4): 3302 B2 read Renode's AHB4ENR as 0x3, ports A/B; no held measurement shows C/D/E registered with its RCC. Bench reads AHB4ENR."
     },
     {
       "register": "RCC.APB1LENR",
@@ -897,6 +971,26 @@
       "reason": "MAVLINK on USART3 (PC10/PC11, J7) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
     },
     {
+      "register": "UART4.CR1",
+      "class": "ignored-by-model",
+      "fields": [
+        "CMIE",
+        "DEAT",
+        "DEDT",
+        "EOBIE",
+        "FIFOEN",
+        "IDLEIE",
+        "M0",
+        "M1",
+        "MME",
+        "RXFFIE",
+        "TXFEIE",
+        "UESM",
+        "WAKE"
+      ],
+      "reason": "WIFI on UART4 (PD1/PD0, U30) at 57600: 8 data bits (M0/M1), FIFOEN set, no wake-up or mute, no DE timing, those interrupts off; none stored by Renode (4300b FEEDBACK section 0). Bench reads CR1."
+    },
+    {
       "register": "USART3.CR1",
       "class": "same-source",
       "fields": [
@@ -910,6 +1004,21 @@
         "TXEIE_TXFNFIE"
       ],
       "reason": "MAVLINK 8N1 at 57600, BRR 1111: PCE/PS 0, OVER8 0 (oversampling by 16), interrupts off; stored with no reaction claimed (4300b FEEDBACK section 0), compared with the topology. Bench reads CR1."
+    },
+    {
+      "register": "UART4.CR1",
+      "class": "same-source",
+      "fields": [
+        "OVER8",
+        "PCE",
+        "PEIE",
+        "PS",
+        "RTOIE",
+        "RXNEIE_RXFNEIE",
+        "TCIE",
+        "TXEIE_TXFNFIE"
+      ],
+      "reason": "WIFI 8N1 at 57600, BRR 1111: PCE/PS 0, OVER8 0 (oversampling by 16), interrupts off; stored with no reaction claimed (4300b FEEDBACK section 0), compared with the topology. Bench reads CR1."
     },
     {
       "register": "USART3.CR2",
@@ -938,12 +1047,46 @@
       "reason": "MAVLINK on PC10/PC11: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
     },
     {
+      "register": "UART4.CR2",
+      "class": "ignored-by-model",
+      "fields": [
+        "ABREN",
+        "ABRMODE",
+        "ADD",
+        "ADDM7",
+        "CLKEN",
+        "CPHA",
+        "CPOL",
+        "DATAINV",
+        "DIS_NSS",
+        "LBCL",
+        "LBDIE",
+        "LBDL",
+        "LINEN",
+        "MSBFIRST",
+        "RTOEN",
+        "RXINV",
+        "SLVEN",
+        "SWAP",
+        "TXINV"
+      ],
+      "reason": "WIFI on PD1/PD0: asynchronous, no swap, no inversion, LSB first, all tags or unstored (4300b FEEDBACK section 0; RXINV/TXINV measured P4.1); only STOP is stored. Bench reads CR2."
+    },
+    {
       "register": "USART3.CR2",
       "class": "same-source",
       "fields": [
         "STOP"
       ],
       "reason": "One stop bit for MAVLINK 8N1 at 57600 on USART3 (J7): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
+    },
+    {
+      "register": "UART4.CR2",
+      "class": "same-source",
+      "fields": [
+        "STOP"
+      ],
+      "reason": "One stop bit for WIFI 8N1 at 57600 on UART4 (U30): stored, no reaction claimed (4300b FEEDBACK section 0), compared with the topology only. The bench row reads CR2.STOP back as 00."
     }
   ],
   "accept_lifecycle": [
@@ -1965,9 +2108,9 @@
         "junction": {
           "loss_milliwatts": {
             "value": 760,
-            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 85 % on the 36 V curve at 1.25 A (read 85.9 to 86.5 %, AET-WO-4411, spike/4411/curve); P_loss = 3.417 V x 1249 mA x (1/0.85 - 1) = 754 mW, rounded up"
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 85 % on the 36 V curve at 1.25 A (read 85.9 to 86.5 %, AET-WO-4411, spike/4411/curve); P_loss = 3.417 V x 1251 mA x (1/0.85 - 1) = 755 mW, rounded up"
           },
-          "loss_at_milliamps": 1249
+          "loss_at_milliamps": 1251
         },
         "controls": [
           {
