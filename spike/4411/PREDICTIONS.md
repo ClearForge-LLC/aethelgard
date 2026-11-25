@@ -34,3 +34,12 @@ A declared VSS escape distance on Sentinel-03 (each U1 VSS pin's nearest GND via
 - The drop under ruled 1 (a') is about 0.751 A x (54.7 + 37) + 0.5 A x (30.3 + 37) = 68.9 + 33.7 = about 103 mV, under 110 (pad 19 unbounded: its return charged at U1's worst, then 37).
 - U11's F.Cu copper stays at least 700 mm2 (1573 before the rule); the outline stays 85.65 x 96.6 mm.
 - Every board that does not declare the rule emits byte for byte as before.
+
+## Lever (1) prediction, directional GND escapes, committed before any routing (2026-11-25T13:08:48Z)
+
+Ruled 2026-11-25T13:05Z. Each of U1's GND escape vias within the declared 1.54 mm of its pad's centre, its antipad (via radius plus the board's clearance) wholly in the half-plane through the pad's centre facing away from the plane's feed (L2 pad 2), and wholly in the half-plane facing away from the centroid of U1's nearest VDD_3V3 pads (no constraint when that centroid is the pad's centre, as at pin 31 between VDD pins 30 and 32). Measured from the 1.54 mm board: pin 31's GND via sat inward at (90.75, 105.75), in front of VDD pin 30, whose own escape was pushed to a shared via 1.80 mm away; pin 30 went to 59.7 mOhm.
+- **Worst VDD:** about 54.6 mOhm, pin 121 (the top row, nearest the feed, where the half-plane rule still sends pin 120's via inward). Pin 30 recovers to below it.
+- **Worst VSS:** about 43 mOhm, pin 31, its via now on the outward side at about the same distance (42.4 inward on the 1.54 mm board; the In1 path from there to U11 adds well under 1 mOhm at this pitch).
+- **Drop under 1 (a'):** 0.751 A x (54.6 + 43) + 0.5 A x (30.3 + 43) = 73.3 + 36.7 = **about 110.0 mV**. Every 1 mOhm of VSS moves it 1.25 mV, so I cannot call pass or fail from this arithmetic: within about 1.5 mV of the limit either way.
+- **Risk to routing:** outward vias sit where the neighbouring pins' fanout goes; pins whose neighbours are signals (16, 38, 51, 61, 83, 94, 107, 120, 130) may be refused, or the capacitance ladder may fall a rung. U11's F.Cu stays at least 700 mm2 (1503 on the 1.54 mm board); the outline stays 85.65 x 96.6 mm.
+- Pad 19 (the module's return) stays unbounded (its thermal vias are off the gate's grid), so its return is charged at U1's worst VSS, as in the ruling's arithmetic.
