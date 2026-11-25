@@ -3245,7 +3245,7 @@ fn a_boot_that_read_nothing_names_its_bound() {
     let mut f = others.to_vec();
     f.extend([
         ("i2c_timeout", "error", 1),
-        ("wall_bound_exceeded", "error", 1),
+        ("memory_cap_exceeded", "error", 1),
     ]);
     f.sort();
     assert_eq!(
@@ -3267,12 +3267,18 @@ fn a_boot_that_read_nothing_names_its_bound() {
     let mut r = unread();
     r.retain(|x| !matches!(x, Record::RiseComputed { .. } | Record::BusFault { .. }));
     assert_eq!(check_run(&with_findings(r, &[])).unwrap_err(), UNBOUND);
+    // `AET-WO-1918` (2), ruled (b): a kill at the wall-clock hang guard is
+    // refused by the CLI and never archived, so a run naming one as its bound
+    // is a forgery, and replay refuses it.
+    let mut wall = others.to_vec();
+    wall.push(("wall_bound_exceeded", "error", 1));
+    wall.sort();
+    assert!(check_run(&with_findings(unread(), &wall)).is_err());
     for bound in [
         "cpu_aborted",
         "firmware_load_error",
         "memory_cap_exceeded",
         "platform_load_error",
-        "wall_bound_exceeded",
     ] {
         let mut f = others.to_vec();
         f.push((bound, "error", 1));

@@ -7024,6 +7024,7 @@ fn emit_schedule(
     }
 
     // The final-state oracle.
+    let check_at = w.len();
     let i2c_in_scope = || {
         plan.peripherals
             .iter()
@@ -7340,6 +7341,7 @@ fn emit_schedule(
     }
     emit_bridge_idle(w, plan, facts, scope);
     let _ = writeln!(w, "}}\n");
+    let harness_at = w.len();
 
     // The scheduler.
     let usarts = if plan.serials.is_empty() {
@@ -7859,6 +7861,119 @@ fn emit_schedule(
          }}",
         timingr_args.concat()
     );
+    // A part's final check past the bound is proved in parts (`AET-WO-1918`
+    // (1)); a whole schedule is a small board's, and stays one proof.
+    if part.is_some() {
+        let split = split_final(&w[check_at..harness_at], &w[harness_at..], &sfx);
+        w.truncate(check_at);
+        w.push_str(&split);
+    }
+}
+
+/// The most top-level statements one part's final check holds
+/// (`AET-WO-1918` (1), ruled (S)). Kani's assertion reach checks give each
+/// reachable assertion a trace of the whole schedule, and kani-driver holds
+/// them all: Sentinel-03's `tim1` part, 160 statements, peaked at 15.09 GiB,
+/// and split at this bound its largest part peaked at 7.98 GiB, every
+/// property, cover and reach check kept (`spike/1918/results.md` §1.4). A
+/// proxy: the peak per statement varies by part (0.02 to 0.094 GiB), so the
+/// control is CI's ceiling on each harness's measured peak (`ci/kani-ceiling`).
+pub const FINAL_STATEMENTS_MAX: usize = 80;
+
+/// A generated final check's body as its top-level statements, each with the
+/// comments and the bindings before it: a binding or an assignment carries no
+/// assertion, so it is glued to the check that follows and uses it, and a
+/// split never parts the two. Every assertion is in exactly one statement.
+fn final_statements(body: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for line in body {
+        cur.push_str(line);
+        cur.push('\n');
+        let top = line.starts_with("    ") && !line.starts_with("     ");
+        let ends = top && !line.starts_with("    //") && (line.ends_with(';') || *line == "    }");
+        if ends && cur.contains("kani::assert(") {
+            out.push(std::mem::take(&mut cur));
+        }
+    }
+    // A trailing binding no check follows (none is generated) stays with the last.
+    match out.last_mut() {
+        Some(last) => last.push_str(&cur),
+        None => out.push(cur),
+    }
+    out
+}
+
+/// `check` and `harness`, one schedule part's final check and its harness as
+/// generated, proved in parts once the check holds more than
+/// [`FINAL_STATEMENTS_MAX`] statements (`AET-WO-1918` (1), ruled (S)): K
+/// checks `check_final<sfx>_<i>`, each a contiguous run of the statements in
+/// order, and K harnesses `every_valid_sequence<sfx>_<i>`, each the whole
+/// harness (its schedule, unwind and covers) calling its own check. The parts'
+/// statements together are the check's, each once. At or under the bound, both
+/// come back unchanged.
+fn split_final(check: &str, harness: &str, sfx: &str) -> String {
+    let lines: Vec<&str> = check.lines().collect();
+    let sig = lines
+        .iter()
+        .position(|l| l.starts_with(&format!("fn check_final{sfx}(")))
+        .expect("the final check's signature");
+    let end = lines
+        .iter()
+        .rposition(|l| *l == "}")
+        .expect("the final check's closing brace");
+    let units = final_statements(&lines[sig + 1..end]);
+    if units.len() <= FINAL_STATEMENTS_MAX {
+        return format!("{check}{harness}");
+    }
+    let k = units.len().div_ceil(FINAL_STATEMENTS_MAX);
+    let cut = |i: usize| i * units.len() / k;
+    let call = format!("check_final{sfx}(&before");
+    let name = format!("fn every_valid_sequence{sfx}()");
+    assert_eq!(harness.matches(&call).count(), 1, "one call of the check");
+    assert_eq!(harness.matches(&name).count(), 1, "one harness");
+    assert_eq!(harness.matches("#[kani::proof]").count(), 1, "one proof");
+    let mut out = String::new();
+    for i in 0..k {
+        for l in &lines[..sig] {
+            let _ = writeln!(out, "{l}");
+        }
+        let _ = writeln!(
+            out,
+            "/// Part {} of {k} (`AET-WO-1918` (1)): statements {} to {} of {}, in\n\
+             /// order; the parts are the whole check, each proved over the whole schedule.",
+            i + 1,
+            cut(i) + 1,
+            cut(i + 1),
+            units.len()
+        );
+        let _ = writeln!(
+            out,
+            "{}",
+            lines[sig].replacen(
+                &format!("check_final{sfx}("),
+                &format!("check_final{sfx}_{i}("),
+                1
+            )
+        );
+        out.extend(units[cut(i)..cut(i + 1)].iter().map(String::as_str));
+        let _ = writeln!(out, "}}\n");
+    }
+    for i in 0..k {
+        let h = harness
+            .replacen(&call, &format!("check_final{sfx}_{i}(&before"), 1)
+            .replacen(&name, &format!("fn every_valid_sequence{sfx}_{i}()"), 1)
+            .replacen(
+                "#[kani::proof]",
+                &format!(
+                    "/// Part {} of {k}: this schedule, checked by `check_final{sfx}_{i}`.\n#[kani::proof]",
+                    i + 1
+                ),
+                1,
+            );
+        out.push_str(&h);
+    }
+    out
 }
 
 /// Each bridge whose enable this scope holds (`AET-WO-1211b`; `1211` §2.5,
@@ -10574,6 +10689,82 @@ mod tests {
         assert_eq!(
             proofs.matches("        if block != Block::Pwr {\n").count(),
             parts
+        );
+    }
+
+    /// A synthetic part: `n` assertions, a binding and its loop between the
+    /// first and the second, and its harness.
+    fn synthetic_part(n: usize) -> (String, String) {
+        let mut check = String::from(
+            "/// The x part's share.\nfn check_final_x(before: &ImageX, after: &ImageX) {\n",
+        );
+        for i in 0..n {
+            if i == 1 {
+                check.push_str("    // A binding its loop uses.\n    let mut rely = [0u32; 2];\n    rely[0] = 1;\n    for i in 0..2 {\n        kani::assert(after.x[i] & !rely[i] == 0, \"loop\");\n    }\n");
+            }
+            check.push_str(&format!("    kani::assert(\n        after.x[{i}] == before.x[{i}],\n        \"word {i}\",\n    );\n"));
+        }
+        check.push_str("}\n\n");
+        let harness = "/// The x part.\n#[kani::proof]\n#[kani::unwind(3)]\nfn every_valid_sequence_x() {\n    check_final_x(&before, &img);\n    kani::cover!(true, \"the end\");\n}\n".to_owned();
+        (check, harness)
+    }
+
+    /// The body of `fn <name>(` in `text`, to its closing brace.
+    fn body_of<'t>(text: &'t str, name: &str) -> Option<&'t str> {
+        let at = text.find(&format!("\nfn {name}("))?;
+        let open = at + text[at..].find("{\n")? + 2;
+        let close = open + text[open..].find("\n}\n")? + 1;
+        Some(&text[open..close])
+    }
+
+    /// `AET-WO-1918` (1), ruled (S): a final check past the bound is proved in
+    /// parts, each the whole harness calling a contiguous run of the check's
+    /// statements; the runs together are the check, each statement once, in
+    /// order, and a binding stays with the loop that uses it.
+    #[test]
+    fn a_final_check_past_the_bound_is_proved_in_parts_that_are_the_whole_check() {
+        let n = FINAL_STATEMENTS_MAX * 2 + 3;
+        let (check, harness) = synthetic_part(n);
+        let out = split_final(&check, &harness, "_x");
+        // n assertions and the loop: n + 1 statements, so three parts.
+        let parts: Vec<&str> = (0..)
+            .map_while(|i| body_of(&out, &format!("check_final_x_{i}")))
+            .collect();
+        assert_eq!(parts.len(), 3);
+        assert_eq!(parts.concat(), body_of(&check, "check_final_x").unwrap());
+        assert!(
+            parts
+                .iter()
+                .all(|p| p.matches("kani::assert(").count() <= FINAL_STATEMENTS_MAX + 1)
+        );
+        assert!(parts[0].contains("let mut rely") && parts[0].contains("for i in 0..2"));
+        for i in 0..3 {
+            let h = body_of(&out, &format!("every_valid_sequence_x_{i}")).unwrap();
+            assert_eq!(
+                h.replace(&format!("check_final_x_{i}("), "check_final_x("),
+                body_of(&harness, "every_valid_sequence_x").unwrap()
+            );
+        }
+        assert_eq!(
+            out.matches("#[kani::proof]\n#[kani::unwind(3)]\n").count(),
+            3
+        );
+        assert!(!out.contains("fn every_valid_sequence_x()") && !out.contains("fn check_final_x("));
+    }
+
+    /// At the bound, a part's check and harness are the generator's unchanged
+    /// (both committed Sentinel-01 boards hold 41 to 52 statements).
+    #[test]
+    fn a_final_check_at_the_bound_is_one_proof_unchanged() {
+        let (check, harness) = synthetic_part(FINAL_STATEMENTS_MAX - 1);
+        assert_eq!(
+            split_final(&check, &harness, "_x"),
+            format!("{check}{harness}")
+        );
+        let (check, harness) = synthetic_part(FINAL_STATEMENTS_MAX);
+        assert_ne!(
+            split_final(&check, &harness, "_x"),
+            format!("{check}{harness}")
         );
     }
 }

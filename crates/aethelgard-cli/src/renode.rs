@@ -223,8 +223,16 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
 /// bridge alone keeps [`crate::analog::BRIDGE_BOUNDS`].
 /// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
 /// limit, 256 GiB included (measured), so the reaper polls instead.
+/// **The wall bound is a hang guard, 120 s** (`AET-WO-1918` (2), ruled (b);
+/// it supersedes `RUL-13`'s 30 s): the judged bound is the boot's virtual
+/// time (`aethelgard_twin::boot::MAX_VIRTUAL_NS`), and the wall bound only
+/// ends a Renode that never returns from its run. Against the worst boot
+/// measured, 23.6 s over eight CI runs (`spike/1918/results.md` §2.2), that
+/// is about 5x. A wall kill judges nothing about the firmware, so it is a
+/// `ToolError`, never a finding ([`bounded`]): a host's load cannot reach a
+/// verdict or a campaign's archive (`INV-04`).
 pub const BOOT_BOUNDS: Bounds = Bounds {
-    wall: std::time::Duration::from_secs(30),
+    wall: std::time::Duration::from_secs(120),
     rss_kib: 1_572_864,
 };
 
@@ -294,34 +302,43 @@ fn log_text(line: &str) -> &str {
 }
 
 /// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
-/// Renode logged that its machine aborted, else the bound it exceeded.
-pub fn bounded(out: &Output, bound: Bound) -> Finding {
+/// Renode logged that its machine aborted (a fault of the firmware's, logged
+/// in virtual time before the run hung), the memory cap's, or none for a wall
+/// kill with no such line, which the caller refuses as a `ToolError`
+/// (`AET-WO-1918` (2)).
+pub fn bounded(out: &Output, bound: Bound) -> Option<Finding> {
     let text = out.text();
     if let Some(line) = text.lines().find(|l| l.contains(ABORTED)) {
-        return Finding::plain(
+        return Some(Finding::plain(
             aethelgard_chaos::campaign::CPU_ABORTED_FINDING,
             format!(
                 "the machine aborted and the run never ended; killed at the {bound:?} bound: {}",
                 line.trim_matches(['\r', ' '])
             ),
-        );
+        ));
     }
     match bound {
-        Bound::Wall => Finding::plain(
-            aethelgard_chaos::campaign::WALL_BOUND_FINDING,
-            format!(
-                "the boot ran past the {} s wall-clock bound and was killed",
-                BOOT_BOUNDS.wall.as_secs()
-            ),
-        ),
-        Bound::Memory => Finding::plain(
+        Bound::Wall => None,
+        Bound::Memory => Some(Finding::plain(
             aethelgard_chaos::campaign::MEMORY_CAP_FINDING,
             format!(
                 "Renode's resident memory passed the {} MiB cap and it was killed",
                 BOOT_BOUNDS.rss_kib / 1024
             ),
-        ),
+        )),
     }
+}
+
+/// The refusal for a boot killed at the wall hang guard with no finding of
+/// its own ([`bounded`]): the host, not the firmware, ended it.
+pub fn hung(wall: std::time::Duration) -> Stop {
+    Stop::tool_error(
+        TOOL,
+        format!(
+            "Renode did not return from its run within the {} s wall-clock hang guard and was killed; a hang judges nothing about the firmware, so no verdict is written (AET-WO-1918)",
+            wall.as_secs()
+        ),
+    )
 }
 
 /// The sentinels around a boot's reads. Each is matched as a whole line, so
@@ -4330,7 +4347,8 @@ pub struct Probe {
 /// The instant the undisturbed boot wrote its boot word (`AET-WO-2305`
 /// §1.2): the droop's own prepared boot, run first with no reset, its hook's
 /// count from 0, which is exact (count × 10 ns at the twin's MIPS). `None`
-/// when that boot was killed at a bound, when its log could not be read
+/// when that boot was killed at its memory cap or aborted (a plain wall kill
+/// is refused before this, `AET-WO-1918` (2)), when its log could not be read
 /// whole, or when it wrote none: no bound then, which the judge names. An
 /// output that cannot be trusted is a `Stop`, as for any boot.
 pub fn undisturbed_boot_word_ns(out: &Output) -> Result<Option<u64>, Stop> {

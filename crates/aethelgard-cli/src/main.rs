@@ -37,7 +37,7 @@ use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsE
 use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aethelgard_ir::Specification;
 use clap::error::ErrorKind;
@@ -204,6 +204,14 @@ enum Command {
         /// window. Needs --firmware; not with --for.
         #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
         foreign: Option<u64>,
+        /// Tests only (`AET-WO-1918` (2)): the boot's wall-clock hang guard
+        /// in milliseconds, in place of `renode::BOOT_BOUNDS`'s 120 s, so a
+        /// test that waits a hang out need not wait 120 s. A wall kill is a
+        /// refusal, never a verdict, so this cannot change any verdict a
+        /// boot reaches; the verdict records it (`wall_bound_ms`). `verify`
+        /// and `campaign` have no such flag.
+        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..))]
+        wall_bound_ms: Option<u64>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
     Campaign {
@@ -551,6 +559,7 @@ fn main() -> ExitCode {
             spec,
             for_time,
             foreign,
+            wall_bound_ms,
         } => match (firmware, spec, for_time.or(foreign)) {
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
                 let topology = match solved(&spec) {
@@ -574,6 +583,11 @@ fn main() -> ExitCode {
                         rail: None,
                         foreign: foreign.is_some(),
                         pins,
+                        bounds: run::Bounds {
+                            wall: wall_bound_ms
+                                .map_or(renode::BOOT_BOUNDS.wall, Duration::from_millis),
+                            ..renode::BOOT_BOUNDS
+                        },
                     }),
                 )
             }
@@ -1625,11 +1639,18 @@ struct Boot {
     /// What the twin drives and reads of the specification's pin devices,
     /// with the scenario's holds and values (`AET-WO-1211c`).
     pins: aethelgard_twin::pins::Pins,
+    /// The reaper's bounds on the boot: [`renode::BOOT_BOUNDS`], except under
+    /// `simulate --wall-bound-ms`, a test's hang guard (`AET-WO-1918` (2)),
+    /// which the verdict then records. The campaign, and so `verify`, always
+    /// sets the constant.
+    bounds: run::Bounds,
 }
 
 /// A boot ready to run: every input copied and checked, every expectation
 /// computed from the topology.
 struct Ready {
+    /// [`Boot::bounds`].
+    bounds: run::Bounds,
     firmware: input::Input,
     image_sha256: String,
     executable: Vec<(u64, u64)>,
@@ -1883,6 +1904,7 @@ fn ready(
             pwr,
             clock,
             pins: boot.pins,
+            bounds: boot.bounds,
         },
     ))
 }
@@ -2248,6 +2270,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // reset, through the same bridge, and its boot word's instant plus one
     // quantum bounds each recovery. Its own capture directory, so the
     // droop's boot opens its files new.
+    let bounds = ready.as_ref().map_or(renode::BOOT_BOUNDS, |r| r.bounds);
     let undisturbed = match plan_with(
         &[],
         None,
@@ -2262,7 +2285,14 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 &invocation(args, "status-undisturbed"),
                 &tool.path,
                 base.log_filter(),
+                bounds,
             )?;
+            // A plain wall kill is the host's, as for the boot itself.
+            if let run::Ended::Bounded(b) = out.ended {
+                if renode::bounded(&out, b).is_none() {
+                    return Err(renode::hung(bounds.wall));
+                }
+            }
             Some(renode::undisturbed_boot_word_ns(&out)?)
         }
         _ => None,
@@ -2321,11 +2351,11 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     // A boot's log is read through the filter, so a flood reaches a verdict;
     // a droop's boot is the bridge's, which owns Renode as its child.
     let out = match (&plan, &droop) {
-        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter())?,
+        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
         (Some(_), None) if foreign.is_some() => {
-            run.run_bounded_filtered(renode::BOOT_BOUNDS, renode::foreign::FOREIGN_LOG_FILTER)?
+            run.run_bounded_filtered(bounds, renode::foreign::FOREIGN_LOG_FILTER)?
         }
-        (Some(plan), None) => run.run_bounded_filtered(renode::BOOT_BOUNDS, plan.log_filter())?,
+        (Some(plan), None) => run.run_bounded_filtered(bounds, plan.log_filter())?,
         (None, _) => run.run()?,
     };
     // The foreign judge's report (`AET-WO-4400e`): its firmware, its
@@ -2371,9 +2401,14 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
             }
             // A fault the hook caught before the bound is named too
             // (`AET-WO-2314`): the run ended two ways.
-            let mut findings = vec![renode::bounded(&out, *bound)];
+            let mut findings: Vec<_> = renode::bounded(&out, *bound).into_iter().collect();
             if let Some(r) = ready.as_ref().filter(|_| foreign_inputs.is_some()) {
                 findings.extend(renode::foreign::fault_finding(&out.text(), &r.faults));
+            }
+            // A wall kill with nothing of the firmware's to name is the
+            // host's: refused, never a verdict (`AET-WO-1918` (2)).
+            if findings.is_empty() {
+                return Err(renode::hung(bounds.wall));
             }
             (-1, (findings, None, None))
         }
@@ -2480,6 +2515,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
         v.memory = out
             .peak_rss_kib
             .map(|k| verdict::MemoryReport::of(k, renode::BOOT_BOUNDS.rss_kib));
+        // A test's hang guard is on the verdict, so no run with one passes
+        // for a run without (`simulate --wall-bound-ms`).
+        v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
+            .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     }
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.

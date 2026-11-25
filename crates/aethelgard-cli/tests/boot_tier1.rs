@@ -1051,7 +1051,7 @@ fn a_boot_past_the_memory_cap_fails_and_names_it() {
     assert!(memory["peak_rss_kib"].as_u64().unwrap() > CAP_KIB, "{v}");
     // The kind already proves the reaper fired. The wall time need only show
     // the kill came before the stub's own 60 s sleep could end, so it is
-    // bounded at 50 s: 10 s of margin, as for the wall bound below, for a
+    // bounded at 50 s: 10 s of margin for a
     // loaded runner's start-up and teardown (31.8 s was measured on CI, PR
     // #185, run 43970150780, against the former 30 s bound).
     assert!(took.as_secs() < 50, "{took:?}");
@@ -1100,16 +1100,81 @@ fn an_aborted_machine_killed_at_a_bound_is_cpu_aborted() {
     assert_eq!(kinds(&v), ["cpu_aborted"]);
 }
 
+/// `simulate` with the test's hang guard (`--wall-bound-ms`, `AET-WO-1918`
+/// (2)), on the stub printing `output` and then running `then`.
+fn guarded(output: &str, then: &str, wall_ms: &str) -> (Option<i32>, Value, std::time::Duration) {
+    let tb = toolbox_then(output, "Renode v1.17.0", then);
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &elf());
+    let start = std::time::Instant::now();
+    let out = run(
+        &tb.0,
+        &[
+            OsStr::new("simulate"),
+            OsStr::new("--platform"),
+            platform().as_os_str(),
+            OsStr::new("--firmware"),
+            fw.as_os_str(),
+            OsStr::new("--spec"),
+            spec().as_os_str(),
+            OsStr::new("--for"),
+            OsStr::new("10ms"),
+            OsStr::new("--wall-bound-ms"),
+            OsStr::new(wall_ms),
+        ],
+    );
+    (out.status.code(), report(&out), start.elapsed())
+}
+
+/// `AET-WO-1918` (2), ruled (b): a Renode that never returns is killed at the
+/// wall-clock hang guard and refused as a `ToolError`, never a verdict, so a
+/// host's load cannot reach one (`INV-04`). The guard is 120 s
+/// (`renode::BOOT_BOUNDS`); the test's hang guard sets 2 s here, so the test
+/// need not wait 120 s.
 #[test]
-fn a_boot_past_the_wall_bound_fails_and_names_it() {
-    // The one slow test: the bound is 30 s (`renode::BOOT_BOUNDS`).
-    let (code, v, took) = bounded("", "/bin/sleep 60");
-    assert_eq!(code, Some(1), "{v}");
-    assert_eq!(kinds(&v), ["wall_bound_exceeded"]);
-    // The bound is 30 s and the stub sleeps 60 s, so any upper limit below
-    // 60 s shows the bound killed it; the slack covers teardown on a loaded
-    // runner (35.29 s was measured on CI).
-    assert!(took.as_secs() >= 30 && took.as_secs() < 50, "{took:?}");
+fn a_boot_that_never_returns_is_refused_at_the_hang_guard() {
+    let (code, v, took) = guarded("", "/bin/sleep 60", "2000");
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("within the 2 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(v.get("findings").is_none(), "{v}");
+    // The guard, not the stub's own 60 s, ended it.
+    assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
+}
+
+/// The test's hang guard is on the verdict of a boot that ends, and absent
+/// without it, so no boot run under one passes for one run under the
+/// constant; `campaign` and `verify` take no such flag (`AET-WO-1918` (2)).
+#[test]
+fn the_test_s_hang_guard_is_on_the_verdict_and_only_simulate_takes_it() {
+    let (code, v, _) = guarded(&good(), "", "60000");
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["wall_bound_ms"], 60000, "{v}");
+    let (code, v) = boot(&good());
+    assert_eq!(code, Some(0), "{v}");
+    assert!(v.get("wall_bound_ms").is_none(), "{v}");
+    let tb = toolbox(&good());
+    for sub in ["campaign", "verify"] {
+        let out = run(
+            &tb.0,
+            &[
+                OsStr::new(sub),
+                OsStr::new("--wall-bound-ms"),
+                OsStr::new("1"),
+            ],
+        );
+        assert_ne!(out.status.code(), Some(0), "{sub}");
+        let said = format!(
+            "{}{}",
+            String::from_utf8_lossy(&out.stdout),
+            String::from_utf8_lossy(&out.stderr)
+        );
+        assert!(said.contains("--wall-bound-ms"), "{sub}: {said}");
+    }
 }
 
 // ---- The analog pre-pass (AET-WO-2200 §1.4), with a stub bridge -----------

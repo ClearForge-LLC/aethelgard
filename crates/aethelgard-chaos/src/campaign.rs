@@ -110,18 +110,18 @@ pub const FIRMWARE_LOAD_FINDING: &str = "firmware_load_error";
 pub const MEMORY_CAP_FINDING: &str = "memory_cap_exceeded";
 /// A platform Renode could not load (`renode::judge_boot`).
 pub const PLATFORM_LOAD_FINDING: &str = "platform_load_error";
-/// A boot killed at its wall-clock bound (`renode::bounded`).
-pub const WALL_BOUND_FINDING: &str = "wall_bound_exceeded";
 /// The findings of a boot that read nothing, one of which the judge names
 /// (`AET-WO-3201` B2): killed at a bound (the CLI's `renode::bounded`), or a
 /// platform or firmware that did not load (`renode::judge_boot`; adversarial
 /// pass, F1). The judge names each by the constant above (`AET-WO-2310`).
-pub const UNREAD_FINDINGS: [&str; 5] = [
+/// A kill at the wall-clock hang guard is none of these: the CLI refuses it
+/// as a `ToolError` and writes no run, so a replay meets it only as a
+/// forgery (`AET-WO-1918` (2), `INV-04`).
+pub const UNREAD_FINDINGS: [&str; 4] = [
     CPU_ABORTED_FINDING,
     FIRMWARE_LOAD_FINDING,
     MEMORY_CAP_FINDING,
     PLATFORM_LOAD_FINDING,
-    WALL_BOUND_FINDING,
 ];
 /// The identity reads' findings the judge makes only once the boot word is
 /// set (`renode::judge_boot`): a record is judged at the fixed point, and

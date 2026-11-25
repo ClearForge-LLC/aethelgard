@@ -566,7 +566,25 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
             "    unsafe { core::arch::asm!(\"ldr r0, =0x0A000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
         );
     });
-    let (code, v) = boot_elf("A6 hole", &elf, "10ms");
+    // The test's hang guard (`simulate --wall-bound-ms`, `AET-WO-1918` (2)):
+    // 30 s, the bound this test was written against, not the 120 s guard.
+    let (code, v) = aethelgard(&[
+        "simulate",
+        "--platform",
+        platform().to_str().unwrap(),
+        "--firmware",
+        elf.to_str().unwrap(),
+        "--spec",
+        spec().to_str().unwrap(),
+        "--for",
+        "10ms",
+        "--wall-bound-ms",
+        "30000",
+    ]);
+    answer(&format!(
+        "A6 hole: exit={code:?} wall_s={:.2} verdict={v}",
+        last_call().as_secs_f64()
+    ));
     // The call's own time, from the moment it held the turn: never the queue
     // behind other tests' Renode runs (`RENODE_TURN`, `last_call`).
     let took = last_call();
@@ -577,8 +595,8 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
         "an aborted machine reports exactly cpu_aborted: {v}"
     );
     // The test claims the machine returns instead of hanging (Renode grew
-    // about 55 MB/s without the bound), not that the 30 s bound
-    // (`renode::BOOT_BOUNDS`) is precise: the 30 s of slack covers start-up
+    // about 55 MB/s without the bound), not that the test's 30 s hang guard
+    // is precise: the 30 s of slack covers start-up
     // and reaping under a loaded runner (35.13 s on CI beside a Kani test;
     // ruled on PR #152, comment 6903399822).
     assert!(
@@ -2624,11 +2642,7 @@ fn m2_a_dma_start_of_cen_fails_closed_by_name() {
         4,
         "{v}"
     );
-    for bound in [
-        "renode_log_flood",
-        "wall_bound_exceeded",
-        "memory_cap_exceeded",
-    ] {
+    for bound in ["renode_log_flood", "memory_cap_exceeded"] {
         assert!(!k.contains(&bound), "{v}");
     }
     // No stop ran: `stops` is absent.
