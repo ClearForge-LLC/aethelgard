@@ -185,6 +185,9 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         ("R7", "/U4_HOLD"),
         ("R20", "/U11_FB"),
         ("R61", "/NRST"),
+        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups.
+        ("R90", "/U30_EN"),
+        ("R91", "/U30_IO2"),
     ];
     let rows: Vec<String> = s03()["power"]["loads"]
         .as_array()
