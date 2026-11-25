@@ -91,7 +91,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "USART CR1, CR2",
         "replaced",
-        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing, read back; and CR2's SWAP, TXINV and RXINV, which Renode does not store, from each declared USART's access log (AET-WO-2311, ruled at §1.2): the last CR2 word written while CR1.UE was clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), held to the specification alone: SWAP clear; on RC input TXINV clear; elsewhere TXINV and RXINV each as framing.inverted. A CR2 write with UE set that changes a judged bit fails (it does not take); a write into CR1 or CR2 that is not a word at its own offset, or no CR2 word written with UE clear, fails. Weakens: CR1.RE (receive enable) is not judged, as receive is held; an RC input port's RXINV is AP_RCProtocol's and unjudged; the words are the twin's sequence, not silicon's: a firmware that reads CR2 back before writing it reads every tag as 0 in the twin, so a clearing write silicon would make may be absent (ArduPilot's set_options, UARTDriver.cpp:1574, :1699-1709). At one of the four end reads, as the pins (AET-WO-4400j D4 (i)); on a port the specification declares as an RC input, CR2.STOP and CR1.PCE, PS and M0 are not judged at the end read, rc_protocol_search (D4 (ii)). Weakens: an RC port left at a wrong frame is not caught at the end",
+        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing, read back; and CR2's SWAP, TXINV and RXINV, which Renode does not store, from each declared USART's access log (AET-WO-2311, ruled at §1.2): the last CR2 word written while CR1.UE was clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), held to the specification alone: SWAP clear; on RC input TXINV clear; elsewhere TXINV and RXINV each as framing.inverted. A CR2 write with UE set that changes a judged bit fails (it does not take); a write into CR1 or CR2 that is not a word at its own offset, or no CR2 word written with UE clear, fails. Weakens: CR1.RE (receive enable) is not judged, as receive is held; an RC input port's RXINV is AP_RCProtocol's and unjudged; the words are the twin's sequence, not silicon's: a firmware that reads CR2 back before writing it reads every tag as 0 in the twin, so a clearing write silicon would make may be absent (ArduPilot's set_options, UARTDriver.cpp:1574, :1699-1709). At one of the four end reads, as the pins (AET-WO-4400j D4 (i)); on a declared RC input port, as rc_protocol_search says",
     ),
     (
         "rc_protocol_search",
@@ -1105,22 +1105,34 @@ fn end_commands(
 ) -> Vec<String> {
     let mut out = Vec::new();
     let mut now = now;
-    let mut events = tail.iter().peekable();
+    let mut events = tail.iter().cloned().peekable();
     for at in end_read_instants(virtual_ns) {
-        while let Some((t, cmd)) = events.next_if(|(t, _)| *t <= at) {
-            if *t > now {
-                out.push(run_for(t - now));
-                now = *t;
-            }
-            out.push(cmd.clone());
-        }
-        if at > now {
-            out.push(run_for(at - now));
-            now = at;
-        }
+        let due = std::iter::from_fn(|| events.next_if(|(t, _)| *t <= at));
+        run_to(&mut out, &mut now, due, at);
         out.extend(block.iter().cloned());
     }
     out
+}
+
+/// Each event at its instant from `now`, a `RunFor` before each later one,
+/// then the run to `until`.
+fn run_to(
+    out: &mut Vec<String>,
+    now: &mut u64,
+    events: impl IntoIterator<Item = (u64, String)>,
+    until: u64,
+) {
+    for (t, cmd) in events {
+        if t > *now {
+            out.push(run_for(t - *now));
+            *now = t;
+        }
+        out.push(cmd);
+    }
+    if until > *now {
+        out.push(run_for(until - *now));
+        *now = until;
+    }
 }
 
 /// Each declared serial port's USART, its accesses logged (`AET-WO-2311`
@@ -1854,7 +1866,7 @@ pub fn judge(
         .noted
         .iter()
         .filter(|n| n.key.contains(CFG2_MARK) && n.key.contains(SLAVE_MODE))
-        .map(|n| n.count - n.kept)
+        .map(|n| n.count - 1)
         .sum();
     report.spi_errors_exempted = exempt + summarised_cycles;
     if let Some(line) = error {
@@ -1867,28 +1879,20 @@ pub fn judge(
     report.log_lines_dropped = out.dropped_log_lines;
     // D7 (a): each kind of Renode's `Unhandled write` warning, once.
     let stamp = |t: &str| log_stamped(&format!("[{t}] x")).map(|(ns, _)| ns);
-    report.warnings = out
-        .summaries
-        .iter()
-        .map(|w| WarningReport {
-            line: w.key.clone(),
-            count: w.count,
-            first_ns: stamp(&w.first),
-            last_ns: stamp(&w.last),
-        })
-        .collect();
+    let reports = |v: &[crate::run::Summary]| -> Vec<WarningReport> {
+        v.iter()
+            .map(|w| WarningReport {
+                line: w.key.clone(),
+                count: w.count,
+                first_ns: stamp(&w.first),
+                last_ns: stamp(&w.last),
+            })
+            .collect()
+    };
+    report.warnings = reports(&out.summaries);
     // D2: every summarised line, by its key, with its count and first and
     // last time; and whether the summary reached its cap.
-    report.summarised = out
-        .noted
-        .iter()
-        .map(|w| WarningReport {
-            line: w.key.clone(),
-            count: w.count,
-            first_ns: stamp(&w.first),
-            last_ns: stamp(&w.last),
-        })
-        .collect();
+    report.summarised = reports(&out.noted);
     report.summary_capped = out.summary_capped;
     // An access to an unclocked peripheral: info, each address with its first
     // time and count (ruled on PR #212, comment 6965511448).
@@ -2577,9 +2581,9 @@ const SUMMARY_QUEUE: usize = 65_536;
 /// - (iv) [`unread_model_warning`]s by exact text.
 ///
 /// A device's `[WARNING]` or `[ERROR]` is never summarised, and the line
-/// before it, if dropped, is restored first. A line a [`LogFilter`] kept by
-/// its own summary (an `Unhandled write`'s first) passes as written, in order;
-/// log lines between a
+/// before it, if dropped, is restored first. A line a [`LogFilter`]'s own
+/// summary dropped (a repeated `Unhandled write`) never reaches it; log lines
+/// between a
 /// read block's markers pass untouched, outside every rule, as the judge
 /// reads none of them.
 pub struct ForeignSummary {
@@ -2735,14 +2739,7 @@ impl ForeignSummary {
     fn note(&mut self, key: String, line: &str, out: &mut Vec<Emit>) {
         let stamp = line.get(1..19).unwrap_or_default().to_owned();
         if self.keys.contains(&key) {
-            self.emit(
-                vec![Emit::Note {
-                    key,
-                    stamp,
-                    kept: false,
-                }],
-                out,
-            );
+            self.emit(vec![Emit::Note { key, stamp }], out);
             self.dropped = Some(line.to_owned());
             return;
         }
@@ -2751,11 +2748,7 @@ impl ForeignSummary {
             self.capped = true;
         } else {
             self.keys.insert(key.clone());
-            e.push(Emit::Note {
-                key,
-                stamp,
-                kept: true,
-            });
+            e.push(Emit::Note { key, stamp });
         }
         e.push(Emit::Keep(line.to_owned()));
         self.emit(e, out);
@@ -2835,7 +2828,7 @@ impl ForeignSummary {
 }
 
 impl crate::run::Summarise for ForeignSummary {
-    fn line(&mut self, line: &str, filtered: bool, out: &mut Vec<Emit>) {
+    fn line(&mut self, line: &str, out: &mut Vec<Emit>) {
         // Between a read block's markers: none of the run's log, untouched.
         if self.inside {
             out.push(Emit::Keep(line.to_owned()));
@@ -2879,17 +2872,6 @@ impl crate::run::Summarise for ForeignSummary {
         // The devices learn from every line of theirs.
         let learnt = self.learn(line, &source);
         self.prev = line.to_owned();
-        // A line the filter kept: as written; a device's on a controller is
-        // that controller's next event.
-        if filtered {
-            if on_spi && source.contains('.') {
-                self.release(&controller, out);
-                if let Some(c) = self.controllers.get_mut(&controller) {
-                    c.owed = false;
-                }
-            }
-            return self.emit(vec![Emit::Keep(line.to_owned())], out);
-        }
         if let Some((spi, value, cr1)) = cfg2 {
             let master = value >> 22 & 1 == 1;
             if !master && cr1 & 1 == 0 {
@@ -2917,26 +2899,14 @@ impl crate::run::Summarise for ForeignSummary {
                 let key = cycle_key(&s0, &e, line);
                 let stamp = e.get(1..19).unwrap_or_default().to_owned();
                 if self.keys.contains(&key) {
-                    self.fill(
-                        slot,
-                        vec![Emit::Note {
-                            key,
-                            stamp,
-                            kept: false,
-                        }],
-                        out,
-                    );
+                    self.fill(slot, vec![Emit::Note { key, stamp }], out);
                     self.dropped = Some(line.to_owned());
                     return;
                 }
                 let mut pair = Vec::new();
                 if self.keys.len() < SUMMARY_KEYS {
                     self.keys.insert(key.clone());
-                    pair.push(Emit::Note {
-                        key,
-                        stamp,
-                        kept: true,
-                    });
+                    pair.push(Emit::Note { key, stamp });
                 } else {
                     self.capped = true;
                 }
@@ -3058,16 +3028,8 @@ pub fn timeline(d: &Declared, capture: &Path, virtual_ns: u64) -> String {
         capture.display()
     )];
     let mut now = 0u64;
-    for (t, cmd) in events(d).into_iter().filter(|(t, _)| *t <= first_read) {
-        if t > now {
-            lines.push(run_for(t - now));
-            now = t;
-        }
-        lines.push(cmd);
-    }
-    if first_read > now {
-        lines.push(run_for(first_read - now));
-    }
+    let due = events(d).into_iter().filter(|(t, _)| *t <= first_read);
+    run_to(&mut lines, &mut now, due, first_read);
     lines.join("\n") + "\n"
 }
 
@@ -4524,6 +4486,27 @@ mod tests {
         use crate::run::Summarise;
         let (mut kept, mut cycles, mut out) = (Vec::new(), 0u64, Vec::new());
         let mut unhandled = std::collections::HashSet::new();
+        // A D4 cycle's key holds its write and its error (as the judge counts);
+        // each note after a key's first is a cycle dropped.
+        let mut noted = std::collections::HashSet::new();
+        fn take(
+            out: &mut Vec<Emit>,
+            kept: &mut Vec<String>,
+            cycles: &mut u64,
+            noted: &mut std::collections::HashSet<String>,
+        ) {
+            for e in out.drain(..) {
+                match e {
+                    Emit::Keep(k) => kept.push(k),
+                    Emit::Note { key, .. } => {
+                        if key.contains(CFG2_MARK) && key.contains(SLAVE_MODE) && !noted.insert(key)
+                        {
+                            *cycles += 1;
+                        }
+                    }
+                }
+            }
+        }
         for l in raw {
             if !l.starts_with('[') {
                 s.other(l, &mut out);
@@ -4531,36 +4514,19 @@ mod tests {
                 // The filter's own summary (D7 (a)), before this one: its first
                 // line kept, the rest never reach the summary.
                 if unhandled.insert(key) {
-                    s.line(l, true, &mut out);
+                    s.line(l, &mut out);
                 }
             } else {
-                s.line(l, false, &mut out);
+                s.line(l, &mut out);
             }
-            for e in out.drain(..) {
-                match e {
-                    Emit::Keep(k) => kept.push(k),
-                    // A D4 cycle's key holds its write and its error (as the judge counts).
-                    Emit::Note {
-                        key, kept: false, ..
-                    } if key.contains(CFG2_MARK) && key.contains(SLAVE_MODE) => cycles += 1,
-                    Emit::Note { .. } => {}
-                }
-            }
+            take(&mut out, &mut kept, &mut cycles, &mut noted);
             if !l.starts_with('[') {
                 kept.push(l.clone());
             }
         }
         // The end releases what is held, notes included.
         s.flush(&mut out);
-        for e in out.drain(..) {
-            match e {
-                Emit::Keep(k) => kept.push(k),
-                Emit::Note {
-                    key, kept: false, ..
-                } if key.contains(CFG2_MARK) && key.contains(SLAVE_MODE) => cycles += 1,
-                Emit::Note { .. } => {}
-            }
-        }
+        take(&mut out, &mut kept, &mut cycles, &mut noted);
         (kept, cycles)
     }
 

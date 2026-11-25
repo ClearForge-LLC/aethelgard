@@ -441,10 +441,8 @@ pub struct Output {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     pub key: String,
+    /// Every occurrence; the first is kept as written, the rest dropped.
     pub count: u64,
-    /// How many of `count` were kept as written (a [`Summarise`]'s note);
-    /// 1 for a [`LogFilter`]'s own summary, whose first line is kept.
-    pub kept: u64,
     pub first: String,
     pub last: String,
 }
@@ -455,26 +453,20 @@ pub enum Emit {
     /// A whole log line, without its newline, kept as any line is: against
     /// the budget, and in the order emitted.
     Keep(String),
-    /// One occurrence of `key`, at Renode's timestamp text `stamp`; `kept` if
-    /// its lines were kept as written, else they were dropped, uncounted
-    /// against the budget.
-    Note {
-        key: String,
-        stamp: String,
-        kept: bool,
-    },
+    /// One occurrence of `key`, at Renode's timestamp text `stamp`: the
+    /// first, whose lines are kept as written, or a later one, whose lines are
+    /// dropped, uncounted against the budget.
+    Note { key: String, stamp: String },
 }
 
 /// A summary with state, reading in order every line the capture would keep
 /// without it, after [`LogFilter`]'s `discard` and `summarise`
 /// (`AET-WO-4400j` D2): a log line it may hold until a later one says what it
-/// was, and keep, note or drop. A line `summarise` kept passes through it, so
-/// it sees that log whole; one `summarise` dropped never reaches it.
+/// was, and keep, note or drop. A line `summarise` dropped never reaches it.
 pub trait Summarise: Send {
-    /// One whole log line, without its newline, `kept` if [`LogFilter`]'s
-    /// `summarise` kept it (as written, never summarised again); what is kept
-    /// and noted, in order, into `out`.
-    fn line(&mut self, line: &str, kept: bool, out: &mut Vec<Emit>);
+    /// One whole log line, without its newline; what is kept and noted, in
+    /// order, into `out`.
+    fn line(&mut self, line: &str, out: &mut Vec<Emit>);
     /// A line that is not a log line (a marker, a read), which the capture
     /// keeps as written after `out`: what is held is released into `out`.
     fn other(&mut self, line: &str, out: &mut Vec<Emit>);
@@ -849,24 +841,14 @@ impl Filtered {
                 self.summaries.push(Summary {
                     key,
                     count: 1,
-                    kept: 1,
                     first: stamp.clone(),
                     last: stamp,
                 });
             }
-            // Kept: through a summary, in its place.
-            if self.summary.is_some() {
-                let mut out = Vec::new();
-                if let Some(s) = self.summary.as_mut() {
-                    s.line(text.trim_end_matches(['\n', '\r']), true, &mut out);
-                }
-                return self.emitted(filter, out);
-            }
-        } else if self.summary.is_some() {
+        }
+        if let Some(s) = self.summary.as_mut() {
             let mut out = Vec::new();
-            if let Some(s) = self.summary.as_mut() {
-                s.line(text.trim_end_matches(['\n', '\r']), false, &mut out);
-            }
+            s.line(text.trim_end_matches(['\n', '\r']), &mut out);
             return self.emitted(filter, out);
         }
         self.admit(filter, &line);
@@ -881,11 +863,10 @@ impl Filtered {
                     l.push('\n');
                     self.admit(filter, l.as_bytes());
                 }
-                Emit::Note { key, stamp, kept } => match self.noted_at.get(&key) {
+                Emit::Note { key, stamp } => match self.noted_at.get(&key) {
                     Some(&i) => {
                         let n = &mut self.noted[i];
                         n.count += 1;
-                        n.kept += u64::from(kept);
                         n.last = stamp;
                     }
                     None => {
@@ -893,7 +874,6 @@ impl Filtered {
                         self.noted.push(Summary {
                             key,
                             count: 1,
-                            kept: u64::from(kept),
                             first: stamp.clone(),
                             last: stamp,
                         });
@@ -2006,7 +1986,6 @@ mod tests {
             [Summary {
                 key: "u".to_owned(),
                 count: 3,
-                kept: 1,
                 first: "00:00:00.000000001".to_owned(),
                 last: "00:00:00.000000004".to_owned(),
             }]

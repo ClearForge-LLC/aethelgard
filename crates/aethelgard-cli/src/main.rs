@@ -2448,13 +2448,12 @@ fn simulate_with(
     // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
     // A boot's log is read through the filter, so a flood reaches a verdict;
     // a droop's boot is the bridge's, which owns Renode as its child.
-    let out = match (&plan, &droop) {
-        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
-        (Some(plan), None) if foreign.is_some() => {
-            // The flood summarised as the judge reads it (`AET-WO-4400j` D2).
-            let r = ready.as_ref().expect("foreign is ready's");
-            let parts: std::collections::BTreeMap<String, String> = r
-                .topology
+    // Every declared device's part, by reference: the foreign judge's, and
+    // its log summary's (`AET-WO-4400j` D2).
+    let parts: std::collections::BTreeMap<String, String> = ready
+        .as_ref()
+        .map(|r| {
+            r.topology
                 .i2c_devices
                 .iter()
                 .map(|(k, d)| (k.clone(), d.part.clone()))
@@ -2464,7 +2463,13 @@ fn simulate_with(
                         .iter()
                         .map(|(k, d)| (k.clone(), d.part.clone())),
                 )
-                .collect();
+                .collect()
+        })
+        .unwrap_or_default();
+    let out = match (&plan, &droop) {
+        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
+        (Some(plan), None) if foreign.is_some() => {
+            // The flood summarised as the judge reads it (`AET-WO-4400j` D2).
             let summary = renode::foreign::ForeignSummary::of(plan, &parts, &rest_witnesses)?;
             run.run_bounded_summarised(
                 bounds,
@@ -2479,18 +2484,7 @@ fn simulate_with(
     // specification, its memory regions and every device's part.
     let foreign_inputs = ready.as_ref().and_then(|r| {
         r.foreign.as_ref().map(|regions| {
-            let parts: std::collections::BTreeMap<String, String> = r
-                .topology
-                .i2c_devices
-                .iter()
-                .map(|(k, d)| (k.clone(), d.part.clone()))
-                .chain(
-                    r.topology
-                        .spi_devices
-                        .iter()
-                        .map(|(k, d)| (k.clone(), d.part.clone())),
-                )
-                .collect();
+            let parts = parts.clone();
             (
                 verdict::FirmwareReport {
                     path: r.firmware.original.display().to_string(),
