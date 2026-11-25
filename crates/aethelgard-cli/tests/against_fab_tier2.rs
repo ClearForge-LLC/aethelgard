@@ -3,7 +3,11 @@
 //! 11:25Z: the reference made ready, `common/ready.rs`) with its seeded set,
 //! written once and read by two tests (`AET-WO-1909` A, ruled on PR #115). Each test
 //! compares its own copy, so one test's changed bytes never reach the other.
-//! The two comparisons run one at a time: each `verify` peaks at about 3.5 GB.
+//! The package is written once per binary (`AET-WO-1918` (3), ruled (ii)):
+//! `ci/colocate.tsv` keeps the binary in one shard, and every test reads it
+//! through [`package_copy`]. Each `verify` peaks at about 3.5 GiB, so the
+//! tests' own verifies run in two lanes, at most two at once: the
+//! `--against-fab` pair in one, the re-bind pair in the other.
 
 #![cfg(feature = "with-tools")]
 
@@ -20,7 +24,8 @@ use common::verify::{Shared, aethelgard, copy_tree, one, package_files, scratch}
 use ready::{READY, READY_SCENARIOS};
 use serde_json::Value;
 
-static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
+/// The two lanes: `--against-fab` (0) and the re-bind (1).
+static LANES: [Mutex<()>; 2] = [Mutex::new(()), Mutex::new(())];
 
 /// The package `--fab-out` wrote: its directory, the verdict and its files.
 struct Package {
@@ -71,7 +76,7 @@ fn verify_against_fab_finds_the_package_it_wrote_identical() {
         "--against-fab finds the package it wrote identical",
         "against-same",
     );
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = LANES[0].lock().unwrap_or_else(|e| e.into_inner());
     let (code, out) = fab_verify(&dir, "--against-fab");
     let w = one(&out);
     assert_eq!(
@@ -113,7 +118,7 @@ fn verify_against_fab_names_every_changed_and_extra_file() {
     }
     fs::write(a.join("extra.gbr"), "").unwrap();
     fs::create_dir_all(a.join("empty")).unwrap();
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = LANES[0].lock().unwrap_or_else(|e| e.into_inner());
     let (code, out) = fab_verify(&a, "--against-fab");
     let w = one(&out);
     assert_eq!(code, Some(1), "a changed package fails --against-fab: {w}");
@@ -179,7 +184,7 @@ fn rebind_verify(out: &Path, committed: &Path) -> (Option<i32>, String) {
 fn a_rebind_of_the_package_it_wrote_writes_the_same_package() {
     let (p, committed) = package_copy("a re-bind writes the same package", "rebind-same");
     let out = scratch("rebind-out").join("pkg");
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = LANES[1].lock().unwrap_or_else(|e| e.into_inner());
     let (code, o) = rebind_verify(&out, &committed);
     let w = one(&o);
     assert_eq!(code, Some(0), "{w}");
@@ -209,7 +214,7 @@ fn a_rebind_refuses_a_package_with_one_moved_byte() {
     bytes[at] ^= 0x01;
     fs::write(moved.join(&gerber), bytes).unwrap();
     let out = scratch("rebind-out-moved").join("pkg");
-    let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
+    let _turn = LANES[1].lock().unwrap_or_else(|e| e.into_inner());
     let (code, o) = rebind_verify(&out, &moved);
     let w = one(&o);
     assert_eq!(code, Some(3), "{w}");

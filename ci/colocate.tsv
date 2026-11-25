@@ -63,5 +63,11 @@ tests/via_ring_tier1.rs	61
 # estimate) at its worst `finished in` over the nine runs held, 97.0 s (45114924858, shard 5; 56.3-97.0), rounded up: 98.
 # AET-WO-1916, after this PR's second CI run 45134177463 (head 12699d7f, REFIT RULE 3 and 5): verify_2k2_tier2 623.40 s (shard 4) and
 # cli_backlog_tier1 63.5 s (shard 10), each over its first run's figure, so each block at its worse `finished in` of the two, rounded up.
-tests/verify_2k2_tier2.rs	624
+# AET-WO-1918 (3), ruled (i): verify_2k2_tier2's two tests read separate runs since AET-WO-4300k (T) (REFERENCE, PACKAGE), so it is no
+# longer a block; its tests carry rows in ci/test-weights.tsv.
 tests/cli_backlog_tier1.rs	64
+# AET-WO-1918 (3), ruled (ii): against_fab_tier2 writes its one --fab-out package once per binary, so the binary is one block
+# (fab_tier1::against_fab_tier2_writes_its_one_package_once_per_binary holds it). An ESTIMATE until the throwaway run measures it: the
+# package's verify (about 460 s, the worst half of a test's in-shard 918.8 s, which held it and one verify) and two rounds of the two lanes'
+# verifies at once, rounded up.
+tests/against_fab_tier2.rs	1500

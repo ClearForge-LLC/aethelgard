@@ -75,7 +75,7 @@ DEFAULT_WEIGHT=0.05
 #     board_tier2, the colocated blocks, twin_tier2's timing test) is weighed at its WORST IN-SHARD time over the
 #     measured normal runs, not its alone time: cargo runs test binaries one after another and a binary's tests in
 #     parallel threads, so a block's in-shard time is its libtest `finished in`; a test serialized behind a lock
-#     (board_tier2, against_fab_tier2 ONE_AT_A_TIME) is its `ok` timestamp less the previous lock-holder's; any other
+#     (board_tier2) is its `ok` timestamp less the previous lock-holder's; any other
 #     CPU-heavy test is its `ok` timestamp less its binary's `Running` line (an upper bound).
 #     The clause: plan every shard's test step at or under 1006 s, and the head's final run green with every shard
 #     under 20 min; if one shard is over while the plan holds, ONE re-run of the same head decides; a shard over on

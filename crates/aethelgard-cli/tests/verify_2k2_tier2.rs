@@ -13,7 +13,9 @@
 //! (`common/ready.rs`), `--against` the tree `generate` and `emit` write for
 //! it. `--against` with no fab flag is also `with_tools`' board-not-drawn
 //! test (LP1). Each test reads what it checks from its runs and never writes
-//! into them; the runs go one at a time: each `verify` peaks at about 3.5 GB.
+//! into them. Each `verify` peaks at about 3.5 GiB: a pair's two runs go at
+//! once, and one pair at a time (`PAIR`), so at most two run together
+//! (`AET-WO-1918` (3), ruled (ii)), under CI's Kani ceiling of 12 GiB.
 
 #![cfg(feature = "with-tools")]
 
@@ -45,6 +47,11 @@ struct Runs {
     second: String,
 }
 
+/// One pair of runs at a time in this process, whichever test asks first:
+/// the binary is not colocated (`AET-WO-1918` (3)), so both tests may share a
+/// shard, and two pairs at once would be four verifies.
+static PAIR: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 static REFERENCE: Shared<Runs> =
     Shared::new("verify of the reference, seeded set, --against the committed tree, twice");
 static PACKAGE: Shared<Runs> =
@@ -54,6 +61,7 @@ static PACKAGE: Shared<Runs> =
 /// with `--fab-out` at its own path when `fab`. The tree is `board_crate` as
 /// `board/` and the KiCad files `emit` writes for `spec` as `kicad/`.
 fn two_runs(label: &str, spec: &str, scenarios: &[&str], board_crate: &Path, fab: bool) -> Runs {
+    let _pair = PAIR.lock().unwrap_or_else(|e| e.into_inner());
     let base = scratch(label);
     let tree = base.join("against");
     copy_tree(board_crate, &tree.join("board"));
@@ -74,8 +82,13 @@ fn two_runs(label: &str, spec: &str, scenarios: &[&str], board_crate: &Path, fab
         }
         aethelgard(&args)
     };
-    let (code_a, first) = run(0);
-    let (code_b, second) = run(1);
+    // The two runs are independent, so they run at once (`AET-WO-1918` (3),
+    // ruled (ii)): the job's peak is two verifies', under CI's Kani ceiling
+    // (`ci/kani-ceiling`, which `ci/ceiling.sh` holds for every shard).
+    let ((code_a, first), (code_b, second)) = std::thread::scope(|s| {
+        let b = s.spawn(|| run(1));
+        (run(0), b.join().unwrap())
+    });
     Runs {
         base,
         tree,
