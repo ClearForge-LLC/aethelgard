@@ -3,8 +3,9 @@
 //!
 //! The CLI never runs a tool directly. It starts a copy of itself as a
 //! *reaper*, in a new process group (so a signal to the CLI's group does not
-//! reach it), with an empty environment, stdin from `/dev/null` and its
-//! working directory inside the call's private temporary directory. The reaper
+//! reach it), with an empty environment, stdin from `/dev/null` (Renode's, a
+//! held pipe: [`HELD_STDIN`]) and its working directory inside the call's
+//! private temporary directory. The reaper
 //! starts a *trampoline*, a third copy, in a process group of its own; the
 //! trampoline confines itself with Landlock, installs the seccomp filter that
 //! refuses every socket Landlock cannot see (AET-WO-0300a) and the non-socket
@@ -67,6 +68,20 @@ pub const REAPER_ARG: &str = "--aethelgard-internal-reaper";
 
 /// The first argument that turns this binary into the trampoline.
 pub const CONFINE_ARG: &str = "--aethelgard-internal-confine";
+
+/// The tools whose stdin is a pipe the CLI holds open, unwritten, until the
+/// reaper has been waited for, not `/dev/null` (`AET-WO-4400j` D1, ruled
+/// 2026-11-25T18:49Z): Renode, and the analog bridge, whose Renode inherits
+/// its stdin. Started with `--console`, Renode 1.17.0's `ConsoleIOSource`
+/// reads a redirected stdin and queues every byte, `-1` at its end
+/// included, in an unbounded `BlockingCollection<int>` that nothing drains:
+/// at `/dev/null`'s end, about 6 million `-1`s and 48 MiB of live heap per
+/// wall second, 100.0 % of the heap's growth between two dumps of a
+/// Sentinel-03 run (`spike/4400j/RESULTS.md` §2.3). A pipe nobody writes is
+/// never at its end, so the reader blocks. Every other tool keeps
+/// `/dev/null`: one that reads its stdin would wait on a held pipe until the
+/// wall bound.
+pub const HELD_STDIN: [&str; 2] = ["renode", crate::analog::BRIDGE];
 
 /// Captured stdout, stderr and reports are bounded; more is a `ToolError`.
 pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
@@ -553,12 +568,22 @@ impl Invocation<'_> {
             cmd.arg("--rw").arg(p);
         }
         cmd.arg("--").arg(&self.tool.path).args(&self.args);
+        // The write end lives until this call returns, after the reaper is
+        // waited for; it is close-on-exec, so no child holds it.
+        let (stdin, _held) = if HELD_STDIN.contains(&self.tool.name) {
+            let (read, write) = io::pipe().map_err(|e| {
+                Stop::tool_error(self.tool.name, format!("cannot open its stdin pipe: {e}"))
+            })?;
+            (Stdio::from(read), Some(write))
+        } else {
+            (Stdio::null(), None)
+        };
         cmd.env_clear()
             .env("HOME", self.workdir)
             .env("TMPDIR", self.workdir)
             .envs(self.env.iter().map(|(k, v)| (k, v)))
             .current_dir(&self.cwd)
-            .stdin(Stdio::null())
+            .stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);

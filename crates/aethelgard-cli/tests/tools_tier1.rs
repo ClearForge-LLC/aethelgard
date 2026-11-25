@@ -1140,6 +1140,44 @@ fn prove_hash_changes_with_a_file_name() {
 
 // ---------------------------------------------------------------- 9. Renode
 
+/// `AET-WO-4400j` D1: Renode's stdin is a pipe the CLI holds open and never
+/// writes, so a read of it waits; at `/dev/null` it would end at once, and
+/// Renode's console queues every end it reads, without bound
+/// (`spike/4400j/RESULTS.md` §2.3). The stub reads its stdin for 0.5 s and
+/// exits 89 unless the read was still waiting (`timeout`'s 124).
+#[test]
+fn renodes_stdin_is_held_open_and_never_ends() {
+    let tb = Dir::new("tb");
+    tb.write("renode.out", CPU_LISTING.as_bytes());
+    let body = format!(
+        "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n/usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89\n/bin/cat '{}'\n",
+        Version::Good.shell(&format!(
+            "Renode v1.17.0\n  build: {}",
+            aethelgard_twin::platform::RENODE_BUILD
+        )),
+        tb.join("renode.out").display()
+    );
+    tb.script("renode", &body);
+    let p = input("p.repl", b"cpu: CPU.CortexM @ sysbus\n");
+    let report = judged(&simulate(&tb, p.path.as_os_str()), "pass", "simulate");
+    assert_eq!(report["tool"]["exit_code"], 0, "{report}");
+}
+
+/// D1's other half: every tool but Renode and the bridge keeps `/dev/null`,
+/// whose end a read reaches at once. A held pipe would leave a tool that
+/// reads its stdin waiting until the wall bound; this stub exits 88 if its
+/// read is still waiting after 2 s.
+#[test]
+fn another_tools_stdin_is_dev_null_and_ends() {
+    let tb = Dir::new("tb");
+    let mut k = Kicad::new(0, Some(drc_report(vec![])));
+    k.pre = "/usr/bin/timeout 2 /bin/cat > /dev/null || exit 88".to_owned();
+    k.install(&tb);
+    let b = board();
+    let report = judged(&drc(&tb, &b.path), "pass", "drc");
+    assert_eq!(report["tool"]["exit_code"], 0, "{report}");
+}
+
 #[test]
 fn simulate_with_a_cpu_and_no_error_passes() {
     let tb = Dir::new("tb");

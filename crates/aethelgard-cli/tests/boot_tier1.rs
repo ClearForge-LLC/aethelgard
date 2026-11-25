@@ -1225,6 +1225,22 @@ fn pre_pass_on(
     (out.status.code(), report(&out))
 }
 
+/// [`PASSING_BRIDGE`], answering only if its stdin is still waiting after
+/// 0.5 s (`timeout`'s 124): the bridge's own Renode inherits the bridge's
+/// stdin, so the bridge gets the held pipe Renode does (`AET-WO-4400j` D1,
+/// `run::HELD_STDIN`).
+const BRIDGE_ON_A_HELD_STDIN: &str = r#"#!/bin/sh
+/usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+#[test]
+fn the_bridges_stdin_is_held_open_as_renodes_is() {
+    let (code, v) = pre_pass(Some(BRIDGE_ON_A_HELD_STDIN), false);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+}
+
 #[test]
 fn each_line_is_recorded_apart_from_the_boot_and_no_fault_leaves_the_platform_as_emitted() {
     let (code, v) = pre_pass(Some(PASSING_BRIDGE), false);
