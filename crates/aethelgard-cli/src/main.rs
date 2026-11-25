@@ -2288,10 +2288,10 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 bounds,
             )?;
             // A plain wall kill is the host's, as for the boot itself.
-            if let run::Ended::Bounded(b) = out.ended {
-                if renode::bounded(&out, b).is_none() {
-                    return Err(renode::hung(bounds.wall));
-                }
+            if let run::Ended::Bounded(b) = out.ended
+                && renode::bounded(&out, b).is_none()
+            {
+                return Err(renode::hung(bounds.wall));
             }
             Some(renode::undisturbed_boot_word_ns(&out)?)
         }
