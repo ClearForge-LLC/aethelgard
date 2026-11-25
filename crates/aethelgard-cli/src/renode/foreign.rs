@@ -2690,6 +2690,25 @@ impl ForeignSummary {
             out.extend(e);
         } else {
             self.queue.push_back(Slot::Ready(e));
+            self.bound(out);
+        }
+    }
+
+    /// Past [`SUMMARY_QUEUE`] places, the oldest held pair (always the
+    /// queue's front: decided places there are emitted at once) is kept as
+    /// written, its next event owed, until the queue is within the bound.
+    fn bound(&mut self, out: &mut Vec<Emit>) {
+        while self.queue.len() > SUMMARY_QUEUE {
+            let Some(Slot::Pair(front)) = self.queue.front() else {
+                return;
+            };
+            let front = *front;
+            let Some(owner) = self.controllers.iter().find_map(|(n, c)| {
+                matches!(c.cycle, Cycle::Errored(_, _, id) if id == front).then(|| n.clone())
+            }) else {
+                return;
+            };
+            self.release(&owner, out);
         }
     }
 
@@ -2939,20 +2958,7 @@ impl crate::run::Summarise for ForeignSummary {
                     c.cycle = Cycle::Errored(s0, line.to_owned(), slot);
                 }
                 self.held_error = Some(spi);
-                // Bounded: past the queue's length, the oldest pair is kept.
-                if self.queue.len() > SUMMARY_QUEUE {
-                    let oldest = self.controllers.iter().find_map(|(n, c)| {
-                        match (&c.cycle, self.queue.front()) {
-                            (Cycle::Errored(_, _, id), Some(Slot::Pair(f))) if id == f => {
-                                Some(n.clone())
-                            }
-                            _ => None,
-                        }
-                    });
-                    if let Some(n) = oldest {
-                        self.release(&n, out);
-                    }
-                }
+                self.bound(out);
                 return;
             }
             // Not directly after its write: never exempt; kept, and its next
@@ -5176,5 +5182,33 @@ mod tests {
                 .count(),
             3
         );
+    }
+
+    /// The queue is bounded wherever it grows: a pair held while 70,000 lines
+    /// of other sources pass is kept as written once the queue reaches
+    /// [`SUMMARY_QUEUE`], and the judge reads the kept log as the whole one.
+    #[test]
+    fn the_queue_behind_a_held_pair_is_bounded() {
+        use crate::run::Summarise;
+        let devices = shaped_devices();
+        let mut raw = shaped_log(5);
+        let st = "[00:00:01.000000000] ";
+        raw.push(format!("{st}[WARNING] spi2: {CFG2_MARK}0 0"));
+        raw.push(format!("{st}[ERROR] spi2: {SLAVE_MODE}"));
+        for k in 0..70_000 {
+            raw.push(format!("{st}[INFO] usart1: line {k}"));
+        }
+        raw.push(format!("{st}[WARNING] spi2: {CFG2_MARK}20400000 0"));
+        let mut s = summary_of(&devices);
+        let mut out = Vec::new();
+        let mut most = 0;
+        for l in &raw {
+            s.line(l, &mut out);
+            out.clear();
+            most = most.max(s.queue.len());
+        }
+        assert!(most <= SUMMARY_QUEUE, "{most}");
+        let (_, whole, summary) = both(&raw);
+        assert_eq!(summary, whole);
     }
 }

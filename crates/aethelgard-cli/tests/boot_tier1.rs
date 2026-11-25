@@ -3090,6 +3090,83 @@ fn repeated_exempt_cycles_are_summarised_and_counted_and_a_bad_one_is_not() {
     assert_eq!(v["boot"]["spi_errors_exempted"], 49, "{v}");
 }
 
+/// `AET-WO-4400j` D2 through the CLI, per source on the reference board: two
+/// hundred repeats each of a multiplexer's line, a flash (U4) line after its
+/// identity, the BME280's (U2) data read and the ADC's warning are each kept
+/// once and counted, and every step is witnessed where the run without them
+/// witnesses it. A U2 warning among the repeats is never summarised: it
+/// fails by name.
+#[test]
+fn each_repeating_source_is_kept_once_and_counted_and_a_warning_is_not() {
+    let repeated = |warning: bool| {
+        let mut s = good_foreign_log();
+        for k in 0..200usize {
+            let t = 50_000_000 + k * 10_000;
+            s.push_str(&format!(
+                "[00:00:00.{:09}] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.{:09}] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.{:09}] [NOISY] i2c1.u2: Write F7
+[00:00:00.{:09}] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.{:09}] [WARNING] adc3: Issued a start event before the last sequence finished
+",
+                t,
+                t + 1_000,
+                t + 2_000,
+                t + 3_000,
+                t + 4_000
+            ));
+            if warning && k == 150 {
+                s.push_str(&format!(
+                    "[00:00:00.{:09}] [WARNING] i2c1.u2: Read from an unknown register\n",
+                    t + 5_000
+                ));
+            }
+        }
+        s
+    };
+    let steps = |v: &Value| -> Vec<(String, String, Value)> {
+        v["boot"]["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["reference"].to_string(),
+                    d["step"].to_string(),
+                    d["observed_ns"].clone(),
+                )
+            })
+            .collect()
+    };
+    let (code, plain) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{plain}");
+    let (code, v) = foreign(&foreign_transcript(&repeated(false), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(steps(&v), steps(&plain), "{v}");
+    let counted = |part: &str| {
+        v["boot"]["summarised"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["line"].as_str().unwrap().contains(part))
+            .map(|s| s["count"].clone())
+    };
+    for part in [
+        "spi1.spi1mux: GPIO #0 set to True",
+        "spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand",
+        "i2c1.u2: Read 0 0 90 80 0 D0",
+        "adc3: Issued a start event",
+    ] {
+        assert!(
+            counted(part).is_some_and(|c| c.as_u64().unwrap_or(0) >= 200),
+            "{part}: {v}"
+        );
+    }
+    let (code, v) = foreign(&foreign_transcript(&repeated(true), "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_step_error"], "{v}");
+}
+
 /// Ruled on PR #212 (comment 6965511448): the firmware's own loaded flash
 /// bytes, hashed in Renode after the run, must be the ELF's; an access to an
 /// unclocked peripheral is an `info` finding listing each address; Renode's
