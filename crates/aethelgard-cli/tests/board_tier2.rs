@@ -2229,9 +2229,12 @@ fn radio_planted_boards_are_refused_by_name() {
             with_at(format!("(at {} {})", xy[0], xy[1] + 10.0)),
             "RadioAntennaOnBoard",
         ),
+        // The top edge 3 mm up: half the 6 mm antenna area on the board,
+        // inside the declared bound (Sentinel-03 is 96.6 mm tall with the
+        // module, `AET-WO-4411`; 10 mm would trip `OutlineExceedsBound` first).
         (
             "outline-up",
-            radio_outline_up(&text, 10.0),
+            radio_outline_up(&text, 3.0),
             "RadioAntennaOnBoard",
         ),
         // Review M2: the board widened 1 mm right, so the feed side is past
