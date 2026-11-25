@@ -290,7 +290,8 @@ Renode's process lifetime, spawn to exit, which is a little less than the reaper
 ### 6.1 (S) as built: `board.rs` `split_final`, 80 statements
 - **Sentinel-03:** 26 harnesses.
   - Every schedule part is split in two, `gpio` included.
-  - The built split counts a statement as its check plus the bindings before it, so `gpio`'s 122 lines are 110 statements, and its `for` block is one of them; `split_final.py` had refused to cut it.
+  - The built split counts a statement as its check plus the bindings before it, and a `for` block as one statement.
+  - So it cuts `gpio` (55 + 56 of its 111 assertions), which `split_final.py` had refused, and its other cuts sit a statement or two from the spike's (`tim1`: 77 + 77 assertions).
 - **Each split is exact** (`spike/1918/out/`, checked on the generated crate):
   - the parts' bodies, concatenated, are the original check;
   - each harness is the original, but for its one call;
