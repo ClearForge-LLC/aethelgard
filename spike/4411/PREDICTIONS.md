@@ -69,3 +69,23 @@ Predictions:
 - **The outline: does not hold.** A third buck block with at least 7 cm² of its own pour grows 85.65 x 96.6 mm by about 10-20 mm on one side.
 - **DRC:** 36 `drill_out_of_range` (U13's thermal array adds 12 to U10's and U11's 24), nothing else new; `check drc --spec` passes.
 - **Sentinel-01 emits byte for byte as before.**
+
+## Option 1 build prediction, committed before any build code (2026-11-25T21:18:51Z)
+
+Ruled 2026-11-25T21:17Z. U13 = LMR33620ADDA (SNVSAW1E), fed from the battery, with U11's block. The build adds:
+- (a) a placement rule that puts the regulator sourcing a declared module's supply beside the module;
+- (b) U10's and U11's F.Cu copper required at 700 mm² or more;
+- (c) pad 19's array at a 1125 µm pitch, with a module-scoped 10 µm snap;
+- (iii) U13's PG holding U11's EN.
+
+Predictions for the built Sentinel-03:
+- **Outline:** inside 100 x 100 mm, within about 3 mm of board c's 97.65 x 99.6 on each side. If (b) has to reserve F.Cu room it grows, but stays inside 100 x 100.
+- **U1's drop:** about **80 mV** (75-90), pass under 110. The module's term is gone, as on board c (80.5).
+- **The module rail (`VDD_3V3_RF`, limit 144 mV):**
+  - Supply bound at most about **40 mOhm**, with U13's inductor within about 20 mm of U30 pin 1 on the 500 µm class. Board c had 200 at about 61 mm.
+  - Pad 19 bounded, at most U30 pin 9's bound (its 2 x 2 array goes straight to In1). The worst return stays pin 9, about 38 mOhm.
+  - Drop about 0.503 A x (40 + 38) = **at most about 40 mV**. Pass, with no refusal standing.
+- **Copper (least joined layer, needs 700 mm²):** U10 and U11 at least 700 each, as (b) requires; U13 at least 700 (about 2000, board c 2315).
+- **U13's junction:** 482 mW. On Figure 9-3 at its measured area, at most 106.2 °C.
+- **J4:** steady unchanged; fault **14100 mA**.
+- **Sentinel-01 and every board without a radio module:** byte for byte as before. Only Sentinel-03's artifacts move.
