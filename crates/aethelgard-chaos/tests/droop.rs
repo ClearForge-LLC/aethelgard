@@ -1547,7 +1547,7 @@ fn a_killed_boot_has_no_observation_and_every_release_counts_as_unrecovered() {
             (RESET_FINDING, "info", 1),
             (UNRECOVERED_FINDING, "error", 1),
             (BELOW_TOLERANCE_FINDING, "info", 1),
-            ("wall_bound_exceeded", "error", 1),
+            ("memory_cap_exceeded", "error", 1),
         ],
     );
     let Record::Scenario {
@@ -1559,7 +1559,7 @@ fn a_killed_boot_has_no_observation_and_every_release_counts_as_unrecovered() {
         panic!()
     };
     *expect_pass = false;
-    *expect_findings = vec![UNRECOVERED_FINDING.into(), "wall_bound_exceeded".into()];
+    *expect_findings = vec![UNRECOVERED_FINDING.into(), "memory_cap_exceeded".into()];
     r[1] = Record::ExpectedCounts {
         counts: vec![(UNRECOVERED_FINDING.into(), 1)],
     };
@@ -1567,11 +1567,11 @@ fn a_killed_boot_has_no_observation_and_every_release_counts_as_unrecovered() {
     assert!(!s.pass && s.matched);
     assert_eq!(
         s.failing_kinds,
-        [UNRECOVERED_FINDING, "wall_bound_exceeded"]
+        [UNRECOVERED_FINDING, "memory_cap_exceeded"]
     );
     // The same killed boot, claimed recovered, is refused.
     let mut recovered = RECOVERED_FINDINGS.to_vec();
-    recovered.push(("wall_bound_exceeded", "error", 1));
+    recovered.push(("memory_cap_exceeded", "error", 1));
     set_verdict(&mut r, &recovered);
     assert_eq!(refused(&r), MSG_COUNTS);
 }
@@ -1587,7 +1587,7 @@ fn a_killed_boot_that_holds_an_observation_is_refused() {
             (RESET_FINDING, "info", 1),
             (UNRECOVERED_FINDING, "error", 1),
             (BELOW_TOLERANCE_FINDING, "info", 1),
-            ("wall_bound_exceeded", "error", 1),
+            ("memory_cap_exceeded", "error", 1),
         ],
     );
     assert_eq!(refused(&r), MSG_NO_READ);

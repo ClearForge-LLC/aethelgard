@@ -223,8 +223,16 @@ pub fn judge(code: i32, out: &Output) -> Result<(Vec<Finding>, Option<Machine>),
 /// bridge alone keeps [`crate::analog::BRIDGE_BOUNDS`].
 /// `RLIMIT_AS` cannot do this: CoreCLR will not start under any address-space
 /// limit, 256 GiB included (measured), so the reaper polls instead.
+/// **The wall bound is a hang guard, 120 s** (`AET-WO-1918` (2), ruled (b);
+/// it supersedes `RUL-13`'s 30 s): the judged bound is the boot's virtual
+/// time (`aethelgard_twin::boot::MAX_VIRTUAL_NS`), and the wall bound only
+/// ends a Renode that never returns from its run. Against the worst boot
+/// measured, 23.6 s over eight CI runs (`spike/1918/results.md` §2.2), that
+/// is about 5x. A wall kill judges nothing about the firmware, so it is a
+/// `ToolError`, never a finding ([`bounded`]): a host's load cannot reach a
+/// verdict or a campaign's archive (`INV-04`).
 pub const BOOT_BOUNDS: Bounds = Bounds {
-    wall: std::time::Duration::from_secs(30),
+    wall: std::time::Duration::from_secs(120),
     rss_kib: 1_572_864,
 };
 
@@ -294,33 +302,36 @@ fn log_text(line: &str) -> &str {
 }
 
 /// The finding for a boot the reaper killed at a bound: `cpu_aborted` if
-/// Renode logged that its machine aborted, else the bound it exceeded.
-pub fn bounded(out: &Output, bound: Bound) -> Finding {
+/// Renode logged that its machine aborted (a fault of the firmware's, logged
+/// in virtual time before the run hung), or the memory cap's. A wall kill with
+/// no such line is the host's: refused as a `ToolError`, never a verdict, at
+/// the hang guard `wall` (`AET-WO-1918` (2)).
+pub fn bounded(out: &Output, bound: Bound, wall: std::time::Duration) -> Result<Finding, Stop> {
     let text = out.text();
     if let Some(line) = text.lines().find(|l| l.contains(ABORTED)) {
-        return Finding::plain(
+        return Ok(Finding::plain(
             aethelgard_chaos::campaign::CPU_ABORTED_FINDING,
             format!(
                 "the machine aborted and the run never ended; killed at the {bound:?} bound: {}",
                 line.trim_matches(['\r', ' '])
             ),
-        );
+        ));
     }
     match bound {
-        Bound::Wall => Finding::plain(
-            aethelgard_chaos::campaign::WALL_BOUND_FINDING,
+        Bound::Wall => Err(Stop::tool_error(
+            TOOL,
             format!(
-                "the boot ran past the {} s wall-clock bound and was killed",
-                BOOT_BOUNDS.wall.as_secs()
+                "Renode did not return from its run within the {} s wall-clock hang guard and was killed; a hang judges nothing about the firmware, so no verdict is written (AET-WO-1918)",
+                wall.as_secs_f64()
             ),
-        ),
-        Bound::Memory => Finding::plain(
+        )),
+        Bound::Memory => Ok(Finding::plain(
             aethelgard_chaos::campaign::MEMORY_CAP_FINDING,
             format!(
                 "Renode's resident memory passed the {} MiB cap and it was killed",
                 BOOT_BOUNDS.rss_kib / 1024
             ),
-        ),
+        )),
     }
 }
 
@@ -4330,12 +4341,17 @@ pub struct Probe {
 /// The instant the undisturbed boot wrote its boot word (`AET-WO-2305`
 /// §1.2): the droop's own prepared boot, run first with no reset, its hook's
 /// count from 0, which is exact (count × 10 ns at the twin's MIPS). `None`
-/// when that boot was killed at a bound, when its log could not be read
-/// whole, or when it wrote none: no bound then, which the judge names. An
-/// output that cannot be trusted is a `Stop`, as for any boot.
-pub fn undisturbed_boot_word_ns(out: &Output) -> Result<Option<u64>, Stop> {
+/// when that boot was killed at its memory cap or aborted, when its log could
+/// not be read whole, or when it wrote none: no bound then, which the judge
+/// names. A plain kill at the wall hang guard (`wall`) is refused as the
+/// boot's is ([`bounded`], `AET-WO-1918` (2)). An output that cannot be trusted
+/// is a `Stop`, as for any boot.
+pub fn undisturbed_boot_word_ns(
+    out: &Output,
+    wall: std::time::Duration,
+) -> Result<Option<u64>, Stop> {
     let code = match out.ended {
-        crate::run::Ended::Bounded(_) => return Ok(None),
+        crate::run::Ended::Bounded(bound) => return bounded(out, bound, wall).map(|_| None),
         _ => out.code(TOOL)?,
     };
     let text = out.text();
@@ -4573,6 +4589,35 @@ mod tests {
             peak_rss_kib: None,
             summaries: Vec::new(),
         }
+    }
+
+    /// `AET-WO-1918` (2): the droop's undisturbed boot, killed at the wall
+    /// hang guard with nothing of the firmware's to name, is refused as the
+    /// boot is; aborted, or killed at the memory cap, it is a boot with no
+    /// word, which the judge names.
+    #[test]
+    fn an_undisturbed_boot_killed_at_the_hang_guard_is_refused() {
+        let wall = std::time::Duration::from_millis(2500);
+        let killed = |stdout: &str, bound| Output {
+            ended: crate::run::Ended::Bounded(bound),
+            ..output(stdout.as_bytes().to_vec(), 0)
+        };
+        let e = undisturbed_boot_word_ns(&killed("", Bound::Wall), wall).unwrap_err();
+        assert_eq!(e.code, crate::EXIT_TOOL_ERROR);
+        assert!(
+            e.message.contains("within the 2.5 s wall-clock hang guard"),
+            "{}",
+            e.message
+        );
+        let aborted = "[ERROR] machine-0: This machine has aborted.\n";
+        assert_eq!(
+            undisturbed_boot_word_ns(&killed(aborted, Bound::Wall), wall).unwrap(),
+            None
+        );
+        assert_eq!(
+            undisturbed_boot_word_ns(&killed("", Bound::Memory), wall).unwrap(),
+            None
+        );
     }
 
     /// The booted platform's U2, as the listing names it.

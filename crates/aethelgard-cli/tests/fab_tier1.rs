@@ -1050,3 +1050,38 @@ fn the_tools_check_fails_a_code_pull_request_without_sentinel_03_s_package_job()
     assert!(decide("docs", "skipped", "skipped", "skipped"));
     assert!(!decide("docs", "skipped", "skipped", "success"));
 }
+
+/// `AET-WO-1918` (3), ruled (ii): `against_fab_tier2` writes its package
+/// once per binary. One `--fab-out` call writes it, inside `package_copy`;
+/// every test reads it through `package_copy`; and `ci/colocate.tsv` keeps
+/// the binary in one shard, so no shard writes it a second time.
+#[test]
+fn against_fab_tier2_writes_its_one_package_once_per_binary() {
+    let text = fs::read_to_string(root().join("crates/aethelgard-cli/tests/against_fab_tier2.rs"))
+        .unwrap();
+    assert_eq!(
+        text.matches("\"--fab-out\")").count(),
+        1,
+        "one --fab-out of the package"
+    );
+    let copy = text.find("fn package_copy(").unwrap();
+    let write = text.find("fab_verify(&dir, \"--fab-out\")").unwrap();
+    assert!(write > copy && write < copy + text[copy..].find("\n}\n").unwrap());
+    let tests: Vec<&str> = text.split("#[test]\nfn ").skip(1).collect();
+    assert_eq!(tests.len(), 4);
+    for t in tests {
+        let body = &t[..t.find("\n}\n").unwrap()];
+        assert!(
+            body.contains("package_copy("),
+            "{}",
+            &t[..t.find('(').unwrap()]
+        );
+    }
+    let colocate = fs::read_to_string(root().join("ci/colocate.tsv")).unwrap();
+    assert!(
+        colocate
+            .lines()
+            .any(|l| l.split('\t').next() == Some("tests/against_fab_tier2.rs")),
+        "ci/colocate.tsv keeps against_fab_tier2 in one shard"
+    );
+}

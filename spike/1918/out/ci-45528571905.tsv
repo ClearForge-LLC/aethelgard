@@ -1,0 +1,105 @@
+boots	45528571905	bench-package	AMD EPYC 7763 64-Core Processor	10	4.5	4.9	4.9	
+peak	45528571905	bench-package	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.479	106.2
+peak	45528571905	bench-package	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	2.152	44.2
+peak	45528571905	bench-package	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c2	2.026	38.7
+peak	45528571905	bench-package	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.167	23.5
+boots	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	20	11.0	11.8	11.8	
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_tim1	14.780	399.4
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi2	11.407	279.4
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	11.186	277.5
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c2	8.254	161.2
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	8.076	158.8
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_gpio	2.536	34.1
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::spi2_transfer_is_bounded_and_ordered	1.598	41.4
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.448	34.7
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::usart1_start_writes_the_solved_values	1.049	20.3
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::usart2_start_writes_the_solved_values	1.048	20.3
+peak	45528571905	bench-package-s03	AMD EPYC 7763 64-Core Processor	proofs::usart3_start_writes_the_solved_values	1.045	19.1
+boots	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	50	4.5	11.2	11.4	
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.478	105.0
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.478	105.6
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.473	104.4
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.870	40.6
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.870	40.8
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.867	40.4
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	22.5
+peak	45528571905	tools-shard (4)	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	22.3
+boots	45528571905	tools-shard (2)	AMD EPYC 7763 64-Core Processor	15	4.7	11.8	11.8	
+boots	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	34	2.6	5.9	30.1	30.1
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_tim1	3.650	55.0
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.498	79.9
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_tim2	2.717	28.1
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_gpio	1.901	24.0
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.880	28.9
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::usart1_start_writes_the_solved_values	1.499	12.9
+peak	45528571905	tools-shard (0)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.132	15.2
+boots	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	16	0.2	9.7	9.7	
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_tim1	3.927	96.1
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_tim1	3.927	96.8
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_spi1	3.899	112.6
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_spi1	3.899	112.5
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_i2c1	1.867	42.1
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::every_valid_sequence_i2c1	1.867	41.8
+peak	45528571905	tools-shard (8)	INTEL(R) XEON(R) PLATINUM 8573C	proofs::spi1_transfer_is_bounded_and_ordered	1.313	30.9
+boots	45528571905	tools-shard (11)	AMD EPYC 9V45 96-Core Processor	24	2.6	3.8	4.2	
+peak	45528571905	tools-shard (11)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.478	84.5
+peak	45528571905	tools-shard (11)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.870	32.9
+peak	45528571905	tools-shard (11)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	16.8
+boots	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	63	4.7	10.8	15.5	15.5
+peak	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.473	107.2
+peak	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.473	107.5
+peak	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.867	43.0
+peak	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.867	43.0
+peak	45528571905	tools-shard (7)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.784	40.3
+boots	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	35	2.8	3.6	5.3	
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.478	83.7
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.478	83.5
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.870	31.5
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.870	32.6
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::spi2_transfer_is_bounded_and_ordered	1.449	25.7
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.205	18.6
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.117	18.2
+peak	45528571905	tools-shard (6)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.106	16.2
+boots	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	86	3.6	9.4	16.2	15.6,16.2
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::every_valid_sequence_spi1	3.478	95.1
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::every_valid_sequence_spi1	3.478	95.9
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::every_valid_sequence_i2c1	1.870	36.9
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::every_valid_sequence_i2c1	1.870	39.1
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.125	20.3
+peak	45528571905	tools-shard (5)	AMD EPYC 9V74 80-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	20.2
+boots	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	56	2.8	5.3	5.9	
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.476	86.2
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.476	93.8
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_spi1	3.475	86.6
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.868	37.8
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.868	37.0
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::every_valid_sequence_i2c1	1.868	35.4
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.123	17.6
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.123	20.8
+peak	45528571905	tools-shard (1)	AMD EPYC 9V45 96-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.123	18.6
+boots	45528571905	tools-shard (10)	AMD EPYC 7763 64-Core Processor	55	10.4	15.3	20.8	15.1,15.1,15.3,16.3,20.8
+peak	45528571905	tools-shard (10)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_tim1	3.650	75.3
+peak	45528571905	tools-shard (10)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_gpio	1.901	37.3
+boots	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	55	4.7	13.1	30.0	30.0
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.478	108.7
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_spi1	3.478	109.3
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_tim1	3.034	59.3
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_tim2	3.021	58.5
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.870	43.0
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::every_valid_sequence_i2c1	1.870	43.9
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::usart1_start_writes_the_solved_values	1.415	21.9
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	22.5
+peak	45528571905	tools-shard (9)	AMD EPYC 7763 64-Core Processor	proofs::spi1_transfer_is_bounded_and_ordered	1.124	25.0
+boots	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	79	4.5	5.1	6.3	
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_spi1	3.478	126.6
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_spi1	3.478	126.5
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_spi1	3.473	124.4
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_spi1	3.473	124.8
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_i2c1	1.870	49.3
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_i2c1	1.870	50.3
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_i2c1	1.867	50.0
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::every_valid_sequence_i2c1	1.867	50.6
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::spi1_transfer_is_bounded_and_ordered	1.124	28.5
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::spi1_transfer_is_bounded_and_ordered	1.124	28.0
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::spi1_transfer_is_bounded_and_ordered	1.103	28.7
+peak	45528571905	tools-shard (3)	Intel(R) Xeon(R) Platinum 8370C CPU @ 2.80GHz	proofs::spi1_transfer_is_bounded_and_ordered	1.103	28.1

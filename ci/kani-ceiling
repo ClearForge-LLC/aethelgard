@@ -1,0 +1,5 @@
+# The ceiling on any one Kani harness's kani-driver peak in CI, in KiB (AET-WO-1918 (1), the WO's
+# target: 12 GiB, which leaves 3 GiB on a runner with about 15). ci/ceiling.sh reads the one
+# number below and fails a job whose probe (ci/probe.py) measured a harness above it.
+# Measured after the split (spike/1918/results.md): Sentinel-03's largest part 7.98 GiB.
+12582912

@@ -67,7 +67,9 @@ fn answer(line: &str) {
 /// (`BOOT_BOUNDS`) where alone they take about 5 s; the Sentinel-02-shaped
 /// late-anchor boot reached 40.7 s and was killed (`wall_bound_exceeded`).
 /// Every call that runs Renode takes this turn, so each boot meets the bound
-/// under the condition it was measured for: one boot at a time.
+/// under the condition it was measured for: one boot at a time. Since
+/// `AET-WO-1918` (2) the bound is a 120 s hang guard whose kill is refused,
+/// not a finding; the turn stays, and whether it still pays is a row.
 static RENODE_TURN: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn renode_turn() -> std::sync::MutexGuard<'static, ()> {
@@ -263,7 +265,19 @@ fn boot_on(
     elf: &Path,
     time: &str,
 ) -> (Option<i32>, Value) {
-    let (code, v) = aethelgard(&[
+    boot_on_with(label, platform, spec, elf, time, &[])
+}
+
+/// As [`boot_on`], with `extra` arguments after the boot's.
+fn boot_on_with(
+    label: &str,
+    platform: &Path,
+    spec: &Path,
+    elf: &Path,
+    time: &str,
+    extra: &[&str],
+) -> (Option<i32>, Value) {
+    let mut args = vec![
         "simulate",
         "--platform",
         platform.to_str().unwrap(),
@@ -273,7 +287,9 @@ fn boot_on(
         spec.to_str().unwrap(),
         "--for",
         time,
-    ]);
+    ];
+    args.extend(extra);
+    let (code, v) = aethelgard(&args);
     answer(&format!(
         "{label}: exit={code:?} wall_s={:.2} verdict={v}",
         last_call().as_secs_f64()
@@ -566,7 +582,16 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
             "    unsafe { core::arch::asm!(\"ldr r0, =0x0A000001\", \"bx r0\", options(noreturn)) };\n    // No sleep: the judge requires",
         );
     });
-    let (code, v) = boot_elf("A6 hole", &elf, "10ms");
+    // The test's hang guard (`simulate --wall-bound-ms`, `AET-WO-1918` (2)):
+    // 30 s, the bound this test was written against, not the 120 s guard.
+    let (code, v) = boot_on_with(
+        "A6 hole",
+        &platform(),
+        &spec(),
+        &elf,
+        "10ms",
+        &["--wall-bound-ms", "30000"],
+    );
     // The call's own time, from the moment it held the turn: never the queue
     // behind other tests' Renode runs (`RENODE_TURN`, `last_call`).
     let took = last_call();
@@ -577,8 +602,8 @@ fn an_aborted_machine_returns_inside_the_bound_as_cpu_aborted() {
         "an aborted machine reports exactly cpu_aborted: {v}"
     );
     // The test claims the machine returns instead of hanging (Renode grew
-    // about 55 MB/s without the bound), not that the 30 s bound
-    // (`renode::BOOT_BOUNDS`) is precise: the 30 s of slack covers start-up
+    // about 55 MB/s without the bound), not that the test's 30 s hang guard
+    // is precise: the 30 s of slack covers start-up
     // and reaping under a loaded runner (35.13 s on CI beside a Kani test;
     // ruled on PR #152, comment 6903399822).
     assert!(
@@ -2592,9 +2617,10 @@ fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
 /// `motor_anchor_unobserved`, a forced outcome. An EARLY DMA start (about 98 ms
 /// of DShot) is the named residual: it fails closed only by a bound, the
 /// flood's names on Furnace (8.4 MB kept, 98.5 % of the memory bound) but
-/// `wall_bound_exceeded` on a CI shard (run 44007663813, job 133786836234:
-/// 34 s against the 30 s bound, 851 per mille of memory); the outcome
-/// depends on the machine's speed, so no test asserts it.
+/// the then 30 s wall bound on a CI shard (run 44007663813, job 133786836234:
+/// 34 s, 851 per mille of memory; since `AET-WO-1918` (2) a `ToolError` under
+/// the 120 s hang guard); the outcome depends on the machine's speed, so no
+/// test asserts it.
 /// Since `AET-WO-4241` the board's unmodelled TMP117 is read before the
 /// outputs start, and its TXIS wait in the twin moves everything after it
 /// 3 600 810 ns later (measured on this board, `spike/4241/out/rejudge`): at
@@ -2624,11 +2650,7 @@ fn m2_a_dma_start_of_cen_fails_closed_by_name() {
         4,
         "{v}"
     );
-    for bound in [
-        "renode_log_flood",
-        "wall_bound_exceeded",
-        "memory_cap_exceeded",
-    ] {
+    for bound in ["renode_log_flood", "memory_cap_exceeded"] {
         assert!(!k.contains(&bound), "{v}");
     }
     // No stop ran: `stops` is absent.

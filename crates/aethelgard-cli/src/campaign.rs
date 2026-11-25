@@ -488,12 +488,7 @@ fn undisturbed(v: &Verdict) -> Result<u64, String> {
         .map(|f| format!("{}: {}", f.kind, f.message))
         .collect();
     let bounded = v.findings.iter().any(|f| {
-        [
-            rules::CPU_ABORTED_FINDING,
-            rules::MEMORY_CAP_FINDING,
-            rules::WALL_BOUND_FINDING,
-        ]
-        .contains(&f.kind.as_str())
+        [rules::CPU_ABORTED_FINDING, rules::MEMORY_CAP_FINDING].contains(&f.kind.as_str())
     });
     if let Some(m) = v.memory.as_ref().filter(|_| bounded) {
         end.push(format!(
@@ -1283,6 +1278,9 @@ fn run_one(
                 rail,
                 foreign: false,
                 pins: p.pins.clone(),
+                // Never a test's hang guard: a campaign, and so `verify`,
+                // boots under the constant (`AET-WO-1918` (2)).
+                bounds: crate::renode::BOOT_BOUNDS,
             }),
         )
         .map_err(stop)

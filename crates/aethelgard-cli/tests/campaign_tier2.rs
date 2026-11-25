@@ -30,9 +30,10 @@ mod common;
 
 use common::verify::root;
 
-/// The flood test's boot runs against Renode's 30 s wall bound, and this binary's other tests boot Renode in
+/// The flood test's boot ran against Renode's then 30 s wall bound, and this binary's other tests boot Renode in
 /// parallel threads. On a 4-vCPU runner they slowed it past that bound (AET-WO-2310, CI run 45133448578: run 0
-/// killed at 34.17 s, against 3.7 s alone). The flood test takes this lock alone; every other test shares it, so
+/// killed at 34.17 s, against 3.7 s alone). Since AET-WO-1918 (2) the bound is a 120 s hang guard; the lock
+/// stays, and whether it still pays is a row. The flood test takes this lock alone; every other test shares it, so
 /// the rest still run beside one another but never beside the flood boot.
 static FLOOD_ALONE: RwLock<()> = RwLock::new(());
 
