@@ -126,7 +126,7 @@ pub const RULES: &[(&str, &str, &str)] = &[
     (
         "--for at most 100 ms",
         "replaced",
-        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 5 s, or with a declared input FOREIGN_INPUT_MAX_VIRTUAL_NS, 12 s (main's Sentinel-03 arms at 8.752 s, AET-WO-4400j D3) (the last witness of unmodified ArduPilot at 4.394 s at its declared clock, AET-WO-4400g)",
+        "--foreign's own bound, FOREIGN_MAX_VIRTUAL_NS, 5 s, or with a declared input FOREIGN_INPUT_MAX_VIRTUAL_NS, 12 s (unmodified ArduPilot's armed heartbeat at 8.752 s on an input run, AET-WO-4400j D3) (the last witness of unmodified ArduPilot at 4.394 s at its declared clock, AET-WO-4400g)",
     ),
     (
         "device identity",
@@ -2496,8 +2496,9 @@ enum Cycle {
     Idle,
     /// A `CFG2` write with `MASTER` 0 while `CR1.SPE` was 0, its line.
     Stopped(String),
-    /// That write and the slave-mode `[ERROR]` directly after it.
-    Errored(String, String),
+    /// That write and the slave-mode `[ERROR]` directly after it, and the
+    /// queue slot that holds their place.
+    Errored(String, String, u64),
 }
 
 /// One controller's summary state.
@@ -2541,29 +2542,46 @@ impl Device {
     }
 }
 
+/// One place in the summary's output: decided, or a held pair's.
+enum Slot {
+    Ready(Vec<Emit>),
+    Pair(u64),
+}
+
+/// The most lines the summary queues behind an undecided pair: past it, the
+/// oldest pair is kept as written (its next event owed), so the CLI's memory
+/// stays bounded whatever the firmware does.
+const SUMMARY_QUEUE: usize = 65_536;
+
 /// The foreign log's summary (`AET-WO-4400j` D2, ruled 2026-11-25T18:49Z):
 /// each repeating per-transaction line is kept the first time and counted
-/// after, with its first and last time, and the judge reads the kept log as
-/// it would the whole one:
+/// after, with its first and last time. It never reorders: the kept log is
+/// the whole log less the lines it drops, so every line the judge reads
+/// beside another (an `[ERROR]` after its `CFG2` write, a warning after a
+/// finish line, across read blocks too, since the judge joins the run's log
+/// around them) is beside the same line, or the dropped one is restored.
 /// - (i) the D4 cycle, per SPI controller: a `CFG2` write with `MASTER` 0
 ///   and `SPE` 0, the slave-mode `[ERROR]` on the very next line, then the
-///   controller's next event. A `CFG2` with `MASTER` 1 makes it an exempt
-///   cycle, kept the first time its three lines occur and counted after; any
-///   other event releases the pair as written and is kept too, so a
-///   non-exempt `[ERROR]` is never summarised, and every kept `[ERROR]`'s next
-///   event is kept;
+///   controller's next event. Their place is held in the queue. A `CFG2` with
+///   `MASTER` 1 makes it an exempt cycle, kept the first time its three lines
+///   occur and counted after; any other event, a device warning straight
+///   after the error, a marker or the end releases the pair as written, and
+///   then the controller's next event is kept, so every kept `[ERROR]` is
+///   judged by the event that follows it in the whole log;
 /// - (ii) each declared device's lines and its multiplexer's, by exact text,
 ///   only once its identity and every multi-line candidate are found, so a
 ///   step's lines stay together and each candidate's first line after the
 ///   identity is kept;
 /// - (iii) a candidate's single-line pattern (U5's FIFO read), its values
-///   elided, after its first match, unless the line matches a candidate not
-///   yet found;
+///   elided, after its first match;
 /// - (iv) [`unread_model_warning`]s by exact text.
 ///
 /// A device's `[WARNING]` or `[ERROR]` is never summarised, and the line
-/// before it, if dropped, is released first (a model's idle warning is
-/// skipped only directly after its multiplexer's finish line).
+/// before it, if dropped, is restored first. A line a [`LogFilter`] kept by
+/// its own summary (an `Unhandled write`'s first) passes as written, in order;
+/// log lines between a
+/// read block's markers pass untouched, outside every rule, as the judge
+/// reads none of them.
 pub struct ForeignSummary {
     devices: Vec<Device>,
     /// The multiplexers of SPI devices (`spi2.spi2mux`).
@@ -2571,10 +2589,16 @@ pub struct ForeignSummary {
     controllers: std::collections::BTreeMap<String, Controller>,
     keys: std::collections::HashSet<String>,
     capped: bool,
-    /// The previous line, if it was dropped (see the type's last rule).
+    /// The previous line of the run's log, if it was dropped.
     dropped: Option<String>,
-    /// The previous line, whatever became of it.
+    /// The previous line of the run's log, whatever became of it.
     prev: String,
+    /// The controller whose held `[ERROR]` was the previous line.
+    held_error: Option<String>,
+    queue: std::collections::VecDeque<Slot>,
+    next_slot: u64,
+    /// Between a read block's markers.
+    inside: bool,
 }
 
 impl ForeignSummary {
@@ -2648,47 +2672,93 @@ impl ForeignSummary {
             capped: false,
             dropped: None,
             prev: String::new(),
+            held_error: None,
+            queue: std::collections::VecDeque::new(),
+            next_slot: 0,
+            inside: false,
         })
     }
 
-    /// A key's occurrence, the line dropped and counted, or kept as written
+    /// Emits in order: straight out with nothing queued, else behind the
+    /// queue.
+    fn emit(&mut self, e: Vec<Emit>, out: &mut Vec<Emit>) {
+        if self.queue.is_empty() {
+            out.extend(e);
+        } else {
+            self.queue.push_back(Slot::Ready(e));
+        }
+    }
+
+    /// Fills a held pair's place, then emits every decided slot at the
+    /// queue's front.
+    fn fill(&mut self, slot: u64, e: Vec<Emit>, out: &mut Vec<Emit>) {
+        if let Some(s) = self
+            .queue
+            .iter_mut()
+            .find(|s| matches!(s, Slot::Pair(id) if *id == slot))
+        {
+            *s = Slot::Ready(e);
+        }
+        while let Some(Slot::Ready(_)) = self.queue.front() {
+            if let Some(Slot::Ready(e)) = self.queue.pop_front() {
+                out.extend(e);
+            }
+        }
+    }
+
+    /// Releases a controller's held lines as written; a released `[ERROR]`
+    /// owes its next event.
+    fn release(&mut self, name: &str, out: &mut Vec<Emit>) {
+        let Some(c) = self.controllers.get_mut(name) else {
+            return;
+        };
+        match std::mem::take(&mut c.cycle) {
+            Cycle::Idle => {}
+            Cycle::Stopped(s0) => self.emit(vec![Emit::Keep(s0)], out),
+            Cycle::Errored(s0, e, slot) => {
+                c.owed = true;
+                self.fill(slot, vec![Emit::Keep(s0), Emit::Keep(e)], out);
+            }
+        }
+    }
+
+    /// Releases every controller's held lines.
+    fn release_all(&mut self, out: &mut Vec<Emit>) {
+        let names: Vec<String> = self.controllers.keys().cloned().collect();
+        for n in names {
+            self.release(&n, out);
+        }
+    }
+
+    /// A key's occurrence: the line dropped and counted, or kept as written
     /// the first time (and past the cap).
     fn note(&mut self, key: String, line: &str, out: &mut Vec<Emit>) {
         let stamp = line.get(1..19).unwrap_or_default().to_owned();
         if self.keys.contains(&key) {
-            out.push(Emit::Note {
-                key,
-                stamp,
-                kept: false,
-            });
+            self.emit(
+                vec![Emit::Note {
+                    key,
+                    stamp,
+                    kept: false,
+                }],
+                out,
+            );
             self.dropped = Some(line.to_owned());
             return;
         }
+        let mut e = Vec::new();
         if self.keys.len() >= SUMMARY_KEYS {
             self.capped = true;
         } else {
             self.keys.insert(key.clone());
-            out.push(Emit::Note {
+            e.push(Emit::Note {
                 key,
                 stamp,
                 kept: true,
             });
         }
-        out.push(Emit::Keep(line.to_owned()));
-    }
-
-    /// Releases a controller's held lines as written; a released `[ERROR]`
-    /// owes its next event.
-    fn release(c: &mut Controller, out: &mut Vec<Emit>) {
-        match std::mem::take(&mut c.cycle) {
-            Cycle::Idle => {}
-            Cycle::Stopped(s0) => out.push(Emit::Keep(s0)),
-            Cycle::Errored(s0, e) => {
-                out.push(Emit::Keep(s0));
-                out.push(Emit::Keep(e));
-                c.owed = true;
-            }
-        }
+        e.push(Emit::Keep(line.to_owned()));
+        self.emit(e, out);
     }
 
     /// What a declared device's or multiplexer's line may be, once the
@@ -2764,21 +2834,15 @@ impl ForeignSummary {
     }
 }
 
-/// What the summary does with the line in hand.
-enum Decide {
-    /// Held: nothing yet.
-    Held,
-    /// Kept as written.
-    Keep,
-    /// Summarised by this key.
-    Key(String),
-    /// Already emitted.
-    Done,
-}
-
 impl crate::run::Summarise for ForeignSummary {
-    fn line(&mut self, line: &str, out: &mut Vec<Emit>) {
+    fn line(&mut self, line: &str, filtered: bool, out: &mut Vec<Emit>) {
+        // Between a read block's markers: none of the run's log, untouched.
+        if self.inside {
+            out.push(Emit::Keep(line.to_owned()));
+            return;
+        }
         let dropped = self.dropped.take();
+        let held_error = self.held_error.take();
         let body = log_text(line);
         let source = log_source(body).unwrap_or_default().to_owned();
         let controller = source.split('.').next().unwrap_or_default().to_owned();
@@ -2787,131 +2851,191 @@ impl crate::run::Summarise for ForeignSummary {
             && (body.starts_with("[WARNING] ") || body.starts_with("[ERROR] "));
         let cfg2 = cfg2_write(body).map(|(s, v, c)| (s.to_owned(), v, c));
         let error = error_source(line).map(str::to_owned);
-        // A device's warning or error: the line before it, if it was dropped,
-        // first (the judge reads a warning's predecessor).
-        if device_level && let Some(d) = dropped {
-            out.push(Emit::Keep(d));
+        // A device's warning or error: the line before it as in the whole log,
+        // a held error released, a dropped line restored.
+        if device_level {
+            if let Some(name) = held_error {
+                self.release(&name, out);
+            }
+            if let Some(d) = dropped {
+                self.emit(vec![Emit::Keep(d)], out);
+            }
         }
         // A lone CFG2 write this line is not the error of: released, and this
         // line kept, so the write stays apart from any later error.
         let mut force = false;
-        for (name, c) in &mut self.controllers {
-            if matches!(c.cycle, Cycle::Stopped(_)) && error.as_deref() != Some(name.as_str()) {
-                Self::release(c, out);
-                force = true;
-            }
+        let stopped: Vec<String> = self
+            .controllers
+            .iter()
+            .filter(|(n, c)| {
+                matches!(c.cycle, Cycle::Stopped(_)) && error.as_deref() != Some(n.as_str())
+            })
+            .map(|(n, _)| n.clone())
+            .collect();
+        for n in stopped {
+            self.release(&n, out);
+            force = true;
         }
         // The devices learn from every line of theirs.
         let learnt = self.learn(line, &source);
-        let decide = if let Some((spi, value, cr1)) = cfg2 {
-            let c = self.controllers.entry(spi).or_default();
+        self.prev = line.to_owned();
+        // A line the filter kept: as written; a device's on a controller is
+        // that controller's next event.
+        if filtered {
+            if on_spi && source.contains('.') {
+                self.release(&controller, out);
+                if let Some(c) = self.controllers.get_mut(&controller) {
+                    c.owed = false;
+                }
+            }
+            return self.emit(vec![Emit::Keep(line.to_owned())], out);
+        }
+        if let Some((spi, value, cr1)) = cfg2 {
             let master = value >> 22 & 1 == 1;
             if !master && cr1 & 1 == 0 {
-                Self::release(c, out);
-                c.cycle = Cycle::Stopped(line.to_owned());
-                Decide::Held
-            } else if master {
-                match std::mem::take(&mut c.cycle) {
-                    Cycle::Errored(s0, e) if !c.owed => {
-                        let key = cycle_key(&s0, &e, line);
-                        let stamp = e.get(1..19).unwrap_or_default().to_owned();
-                        if self.keys.contains(&key) {
-                            out.push(Emit::Note {
-                                key,
-                                stamp,
-                                kept: false,
-                            });
-                            self.dropped = Some(line.to_owned());
-                        } else {
-                            if self.keys.len() < SUMMARY_KEYS {
-                                self.keys.insert(key.clone());
-                                out.push(Emit::Note {
-                                    key,
-                                    stamp,
-                                    kept: true,
-                                });
-                            } else {
-                                self.capped = true;
-                            }
-                            out.extend([
-                                Emit::Keep(s0),
-                                Emit::Keep(e),
-                                Emit::Keep(line.to_owned()),
-                            ]);
-                        }
-                        Decide::Done
-                    }
-                    held => {
-                        // An earlier kept error owes this event: the pair,
-                        // then this line, as written.
-                        c.cycle = held;
-                        let owed = c.owed || matches!(c.cycle, Cycle::Errored(..));
-                        Self::release(c, out);
-                        c.owed = false;
-                        if owed {
-                            Decide::Keep
-                        } else {
-                            Decide::Key(log_text(line).to_owned())
-                        }
-                    }
+                self.release(&spi, out);
+                if force {
+                    // Kept by force: never held, so never dropped with a cycle.
+                    return self.emit(vec![Emit::Keep(line.to_owned())], out);
                 }
-            } else {
+                self.controllers.entry(spi).or_default().cycle = Cycle::Stopped(line.to_owned());
+                return;
+            }
+            if !master {
                 // A CFG2 write that is neither: as written, after what is held.
-                Self::release(c, out);
-                Decide::Keep
+                self.release(&spi, out);
+                return self.emit(vec![Emit::Keep(line.to_owned())], out);
             }
-        } else if let Some(spi) = error {
-            let c = self.controllers.entry(spi).or_default();
-            match std::mem::take(&mut c.cycle) {
-                Cycle::Stopped(s0) => {
-                    c.cycle = Cycle::Errored(s0, line.to_owned());
-                    Decide::Held
+            let c = self.controllers.entry(spi.clone()).or_default();
+            if let Cycle::Errored(..) = c.cycle
+                && !c.owed
+                && !force
+            {
+                let Cycle::Errored(s0, e, slot) = std::mem::take(&mut c.cycle) else {
+                    unreachable!("matched just above");
+                };
+                let key = cycle_key(&s0, &e, line);
+                let stamp = e.get(1..19).unwrap_or_default().to_owned();
+                if self.keys.contains(&key) {
+                    self.fill(
+                        slot,
+                        vec![Emit::Note {
+                            key,
+                            stamp,
+                            kept: false,
+                        }],
+                        out,
+                    );
+                    self.dropped = Some(line.to_owned());
+                    return;
                 }
-                held => {
-                    // Not directly after its write: never exempt; kept, and
-                    // its next event owed.
-                    c.cycle = held;
-                    Self::release(c, out);
-                    c.owed = true;
-                    Decide::Keep
+                let mut pair = Vec::new();
+                if self.keys.len() < SUMMARY_KEYS {
+                    self.keys.insert(key.clone());
+                    pair.push(Emit::Note {
+                        key,
+                        stamp,
+                        kept: true,
+                    });
+                } else {
+                    self.capped = true;
                 }
+                pair.extend([Emit::Keep(s0), Emit::Keep(e)]);
+                self.fill(slot, pair, out);
+                return self.emit(vec![Emit::Keep(line.to_owned())], out);
             }
-        } else if on_spi && source.contains('.') {
+            // An earlier kept error owes this event: what is held, then this
+            // line, as written.
+            let owed = c.owed || matches!(c.cycle, Cycle::Errored(..));
+            self.release(&spi, out);
+            if let Some(c) = self.controllers.get_mut(&spi) {
+                c.owed = false;
+            }
+            if owed || force {
+                return self.emit(vec![Emit::Keep(line.to_owned())], out);
+            }
+            return self.note(log_text(line).to_owned(), line, out);
+        }
+        if let Some(spi) = error {
+            let c = self.controllers.entry(spi.clone()).or_default();
+            if let Cycle::Stopped(_) = c.cycle {
+                let Cycle::Stopped(s0) = std::mem::take(&mut c.cycle) else {
+                    unreachable!("matched just above");
+                };
+                let slot = self.next_slot;
+                self.next_slot += 1;
+                self.queue.push_back(Slot::Pair(slot));
+                if let Some(c) = self.controllers.get_mut(&spi) {
+                    c.cycle = Cycle::Errored(s0, line.to_owned(), slot);
+                }
+                self.held_error = Some(spi);
+                // Bounded: past the queue's length, the oldest pair is kept.
+                if self.queue.len() > SUMMARY_QUEUE {
+                    let oldest = self.controllers.iter().find_map(|(n, c)| {
+                        match (&c.cycle, self.queue.front()) {
+                            (Cycle::Errored(_, _, id), Some(Slot::Pair(f))) if id == f => {
+                                Some(n.clone())
+                            }
+                            _ => None,
+                        }
+                    });
+                    if let Some(n) = oldest {
+                        self.release(&n, out);
+                    }
+                }
+                return;
+            }
+            // Not directly after its write: never exempt; kept, and its next
+            // event owed.
+            self.release(&spi, out);
+            if let Some(c) = self.controllers.get_mut(&spi) {
+                c.owed = true;
+            }
+            return self.emit(vec![Emit::Keep(line.to_owned())], out);
+        }
+        if on_spi && source.contains('.') {
             // A device's or multiplexer's line on a controller: the event that
             // resolves what is held there, kept as written if it does.
-            let c = self.controllers.entry(controller).or_default();
+            let c = self.controllers.entry(controller.clone()).or_default();
             if c.owed || !matches!(c.cycle, Cycle::Idle) {
-                Self::release(c, out);
-                c.owed = false;
-                Decide::Keep
-            } else {
-                match learnt {
-                    Some(Some(key)) if !device_level => Decide::Key(key),
-                    _ => Decide::Keep,
+                self.release(&controller, out);
+                if let Some(c) = self.controllers.get_mut(&controller) {
+                    c.owed = false;
                 }
+                return self.emit(vec![Emit::Keep(line.to_owned())], out);
             }
-        } else {
-            match learnt {
-                Some(Some(key)) if !device_level => Decide::Key(key),
-                Some(_) => Decide::Keep,
-                // (iv) a model warning no rule reads.
-                None if unread_model_warning(body) => Decide::Key(body.to_owned()),
-                None => Decide::Keep,
-            }
-        };
-        match decide {
-            Decide::Key(_) | Decide::Keep if force => out.push(Emit::Keep(line.to_owned())),
-            Decide::Key(key) => self.note(key, line, out),
-            Decide::Keep => out.push(Emit::Keep(line.to_owned())),
-            Decide::Held | Decide::Done => {}
         }
-        self.prev = line.to_owned();
+        let key = match learnt {
+            Some(Some(key)) if !device_level => Some(key),
+            Some(_) => None,
+            // (iv) a model warning no rule reads.
+            None if unread_model_warning(body) => Some(body.to_owned()),
+            None => None,
+        };
+        match key {
+            Some(key) if !force => self.note(key, line, out),
+            _ => self.emit(vec![Emit::Keep(line.to_owned())], out),
+        }
+    }
+
+    fn other(&mut self, line: &str, out: &mut Vec<Emit>) {
+        // Nothing held passes a line that is not the log's.
+        self.release_all(out);
+        let line = line.trim_end();
+        if line == BEGIN {
+            self.inside = true;
+        } else if line == END {
+            self.inside = false;
+        } else if !self.inside {
+            // A line of the run's log the judge reads beside the next.
+            self.prev = line.to_owned();
+            self.dropped = None;
+            self.held_error = None;
+        }
     }
 
     fn flush(&mut self, out: &mut Vec<Emit>) {
-        for c in self.controllers.values_mut() {
-            Self::release(c, out);
-        }
+        self.release_all(out);
         self.dropped = None;
     }
 
@@ -4387,6 +4511,10 @@ mod tests {
             capped: false,
             dropped: None,
             prev: String::new(),
+            held_error: None,
+            queue: std::collections::VecDeque::new(),
+            next_slot: 0,
+            inside: false,
         }
     }
 
@@ -4395,11 +4523,18 @@ mod tests {
     fn summarised(s: &mut ForeignSummary, raw: &[String]) -> (Vec<String>, u64) {
         use crate::run::Summarise;
         let (mut kept, mut cycles, mut out) = (Vec::new(), 0u64, Vec::new());
+        let mut unhandled = std::collections::HashSet::new();
         for l in raw {
             if !l.starts_with('[') {
-                s.flush(&mut out);
+                s.other(l, &mut out);
+            } else if let Some(key) = unhandled_write_key(l) {
+                // The filter's own summary (D7 (a)), before this one: its first
+                // line kept, the rest never reach the summary.
+                if unhandled.insert(key) {
+                    s.line(l, true, &mut out);
+                }
             } else {
-                s.line(l, &mut out);
+                s.line(l, false, &mut out);
             }
             for e in out.drain(..) {
                 match e {
@@ -4415,10 +4550,15 @@ mod tests {
                 kept.push(l.clone());
             }
         }
+        // The end releases what is held, notes included.
         s.flush(&mut out);
         for e in out.drain(..) {
-            if let Emit::Keep(k) = e {
-                kept.push(k);
+            match e {
+                Emit::Keep(k) => kept.push(k),
+                Emit::Note {
+                    key, kept: false, ..
+                } if key.contains(CFG2_MARK) && key.contains(SLAVE_MODE) => cycles += 1,
+                Emit::Note { .. } => {}
             }
         }
         (kept, cycles)
@@ -4440,7 +4580,25 @@ mod tests {
         devices: &[(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)],
         cycles: u64,
     ) -> View {
-        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        // As the judge's `run_log`: every line outside the read blocks, and
+        // none after the last.
+        let last = log.iter().rposition(|l| l == END).unwrap_or(log.len());
+        let mut inside = false;
+        let lines: Vec<&str> = log[..last.min(log.len())]
+            .iter()
+            .map(String::as_str)
+            .filter(|l| {
+                let marker = *l == BEGIN || *l == END;
+                if *l == BEGIN {
+                    inside = true;
+                }
+                let keep = !inside && !marker;
+                if *l == END {
+                    inside = false;
+                }
+                keep
+            })
+            .collect();
         let (first, exempt) = error_lines(&lines);
         let mut per = Vec::new();
         for (c, cands) in devices {
@@ -4475,7 +4633,7 @@ mod tests {
     /// carrying changing samples; U4 programming bytes with its idle warning
     /// directly after each finish; the ADC's warning between; `n`
     /// transactions.
-    fn sentinel_log(n: usize) -> Vec<String> {
+    fn shaped_log(n: usize) -> Vec<String> {
         let mut log = Vec::new();
         let mut t = 100_000_000u64;
         let mut at = |log: &mut Vec<String>, body: String| {
@@ -4562,7 +4720,7 @@ mod tests {
         log
     }
 
-    fn sentinel_devices() -> Vec<(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)> {
+    fn shaped_devices() -> Vec<(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)> {
         let fifo = Line::Pattern(aethelgard_twin::model::WitnessLine::Bytes {
             prefix: "[NOISY] spi2.spi2mux.u5: bank 0 read 0x30 -> ".into(),
             at_least: 16,
@@ -4611,9 +4769,17 @@ mod tests {
 
     /// The judge's reading of the raw log and of the summarised one.
     fn both(raw: &[String]) -> (Vec<String>, View, View) {
-        let devices = sentinel_devices();
+        let devices = shaped_devices();
         let (kept, cycles) = summarised(&mut summary_of(&devices), raw);
-        let whole = view(raw, &devices, 0);
+        // The whole log as the judge reads it without this summary: the
+        // filter's own `Unhandled write` summary applied (D7 (a)).
+        let mut seen = std::collections::HashSet::new();
+        let filtered: Vec<String> = raw
+            .iter()
+            .filter(|l| unhandled_write_key(l).is_none_or(|k| seen.insert(k)))
+            .cloned()
+            .collect();
+        let whole = view(&filtered, &devices, 0);
         let summary = view(&kept, &devices, cycles);
         (kept, whole, summary)
     }
@@ -4624,7 +4790,7 @@ mod tests {
     /// times from it as from the whole log.
     #[test]
     fn the_summarised_log_reads_as_the_whole_one() {
-        let raw = sentinel_log(1000);
+        let raw = shaped_log(1000);
         let (kept, whole, summary) = both(&raw);
         assert_eq!(summary, whole);
         assert_eq!(whole.0, None);
@@ -4671,7 +4837,7 @@ mod tests {
     /// the clean log's (the planted difference is a finding, or moves one).
     #[test]
     fn a_planted_difference_in_any_source_reads_as_in_the_whole_log() {
-        let clean = view(&sentinel_log(1000), &sentinel_devices(), 0);
+        let clean = view(&shaped_log(1000), &shaped_devices(), 0);
         let device = |l: &str| l.contains("] [NOISY] spi2.spi2mux.u5: bank 0 read 0x2E");
         let plants: Vec<Plant> = vec![
             // A later cycle left a slave while a device speaks: not exempt.
@@ -4819,6 +4985,167 @@ mod tests {
                     );
                 }),
             ),
+            // Adversarial review F1: two controllers' cycles interleaved; spi2's
+            // error comes straight after spi1's, so it is not exempt.
+            (
+                "two controllers' cycles interleaved",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(300)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    // spi2: CFG2 0 0 at i-1, its error at i; put spi1's pair between.
+                    log.insert(i, format!("{st}[ERROR] spi1: {SLAVE_MODE}"));
+                    log.insert(i, format!("{st}[WARNING] spi1: {CFG2_MARK}0 0"));
+                    log.insert(i + 4, format!("{st}[WARNING] spi1: {CFG2_MARK}20400000 0"));
+                }),
+            ),
+            // F1: a device's warning straight after another controller's error.
+            (
+                "a device warning straight after another controller's error",
+                Box::new(|log: &mut Vec<String>| {
+                    // The first finish line, kept: only this pair stands between
+                    // it and the warning.
+                    let i = log
+                        .iter()
+                        .position(|l| l.contains("spi1.spi1mux: Finisihing"))
+                        .unwrap();
+                    let st = log[i][..21].to_owned();
+                    // finish, [idle warning], deselect...: put spi2's pair between the
+                    // finish line and the idle warning.
+                    log.insert(i + 1, format!("{st}[ERROR] spi2: {SLAVE_MODE}"));
+                    log.insert(i + 1, format!("{st}[WARNING] spi2: {CFG2_MARK}0 0"));
+                    // And one spi2 cycle first, so that pair is a repeat, which a
+                    // summary would drop unless the warning releases it.
+                    let first = log[0][..21].to_owned();
+                    for (k, l) in [
+                        format!("[WARNING] spi2: {CFG2_MARK}0 0"),
+                        format!("[ERROR] spi2: {SLAVE_MODE}"),
+                        format!("[WARNING] spi2: {CFG2_MARK}20400000 0"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        log.insert(k, format!("{first}{l}"));
+                    }
+                }),
+            ),
+            // F2: another source's error between a pair and its device line.
+            (
+                "another error between a pair and its device line",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(200)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    log.insert(
+                        i + 1,
+                        format!("{st}[NOISY] spi2.spi2mux: GPIO #0 set to False"),
+                    );
+                    log.insert(i + 1, format!("{st}[ERROR] i2c1: x"));
+                }),
+            ),
+            // F3: a dropped finish line, a read block, then the idle warning.
+            (
+                "a read block between a finish line and its idle warning",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("spi1.spi1mux: Finisihing"))
+                        .nth(120)
+                        .unwrap()
+                        .0;
+                    log.insert(i + 1, END.to_owned());
+                    log.insert(i + 1, "0x00000000".to_owned());
+                    log.insert(i + 1, BEGIN.to_owned());
+                }),
+            ),
+            // F4: the filter's own summary between a write and its error.
+            (
+                "an Unhandled write between a write and its error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(250)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    log.insert(
+                        i,
+                        format!("{st}[WARNING] rcc: Unhandled write to offset 0x0, value 0x1"),
+                    );
+                }),
+            ),
+            // A lone CFG2 write released by another controller's write kept
+            // by force: that controller's cycle, dropped, would leave the lone
+            // write beside a later error of its own.
+            (
+                "a lone write, another controller's cycle, then the lone write's error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("spi2.spi2mux: GPIO #0 set to True"))
+                        .nth(500)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    for (k, l) in [
+                        format!("[WARNING] spi1: {CFG2_MARK}0 0"),
+                        format!("[WARNING] spi2: {CFG2_MARK}0 0"),
+                        format!("[ERROR] spi2: {SLAVE_MODE}"),
+                        format!("[WARNING] spi2: {CFG2_MARK}20400000 0"),
+                        format!("[ERROR] spi1: {SLAVE_MODE}"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        log.insert(i + 1 + k, format!("{st}{l}"));
+                    }
+                }),
+            ),
+            // A lone CFG2 write released by a MASTER that resolves another
+            // controller's exempt cycle: that MASTER is kept by force.
+            (
+                "a lone write before another controller's MASTER, then its error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(450)
+                        .unwrap()
+                        .0;
+                    let st = log[i][..21].to_owned();
+                    log.insert(i + 1, format!("{st}[WARNING] spi1: {CFG2_MARK}0 0"));
+                    // i + 2 is spi2's MASTER: spi1's error after it.
+                    log.insert(i + 3, format!("{st}[ERROR] spi1: {SLAVE_MODE}"));
+                }),
+            ),
+            // The reads at the end, then the flash hash: a pair still held there
+            // must be in the run's log, before the first marker.
+            (
+                "a pair held to the end, then the reads",
+                Box::new(|log: &mut Vec<String>| {
+                    for _ in 0..4 {
+                        log.push(BEGIN.to_owned());
+                        log.push("0x00000000".to_owned());
+                        log.push(END.to_owned());
+                    }
+                    log.push("AETHELGARD-FLASH 8000000 00".to_owned());
+                }),
+            ),
             // A marker (a read) between a write and its error, as at the end.
             (
                 "a marker between a pair and its MASTER",
@@ -4837,11 +5164,27 @@ mod tests {
             ),
         ];
         for (name, plant) in plants {
-            let mut raw = sentinel_log(1000);
+            let mut raw = shaped_log(1000);
             plant(&mut raw);
+            // A run's log ends in its four reads and the flash hash, as every
+            // real one does; nothing after the last read is the run's.
+            if !raw
+                .last()
+                .is_some_and(|l| l.starts_with("AETHELGARD-FLASH"))
+            {
+                for _ in 0..4 {
+                    raw.extend([BEGIN.to_owned(), "0x00000000".to_owned(), END.to_owned()]);
+                }
+                raw.push("AETHELGARD-FLASH 8000000 00".to_owned());
+            }
             let (_, whole, summary) = both(&raw);
             assert_eq!(summary, whole, "{name}");
-            if !name.starts_with("other sources") && !name.starts_with("a marker") {
+            if !name.starts_with("other sources")
+                && !name.starts_with("a marker")
+                && !name.starts_with("a pair held to the end")
+                && !name.starts_with("a read block")
+                && !name.starts_with("another error")
+            {
                 assert_ne!(whole, clean, "{name}: the plant moves the judge");
             }
         }
@@ -4851,7 +5194,7 @@ mod tests {
     /// once its device's lines are: every one stays in the log.
     #[test]
     fn a_devices_warnings_are_never_summarised() {
-        let mut raw = sentinel_log(300);
+        let mut raw = shaped_log(300);
         for k in [2000, 2400, 2800] {
             let stamp = raw[k][..21].to_owned();
             raw.insert(
