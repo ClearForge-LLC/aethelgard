@@ -114,6 +114,11 @@ pub const TRACE_CHANGES: &[TraceChange] = &[
         "AET-WO-2310",
         "each header tool is [name, version, sha256 or nothing], with ngspice's library and rust-toolchain's sysroot; overrides 3 and 6 plant their instant from_boot_word_ns, signed, and the droop states no bor_level; kinds 16 and 31 carry the resolved instant, kind 16 the specification's BOR level; kind 32 is archived for every planted run",
     ),
+    row(
+        20,
+        "AET-WO-4400i",
+        "kinds 38 to 40, a foreign run's declared input (the file verbatim), its stimuli and the firmware's transmitted bytes",
+    ),
 ];
 
 /// The rows after `found`, oldest first: what an archive of `found` lacks.

@@ -1,0 +1,8 @@
+t_ns	type	src	fields
+167669616	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase started"}
+1011175449	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+1767948979	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2020237759	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2756811559	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3014142729	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3771899998	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}

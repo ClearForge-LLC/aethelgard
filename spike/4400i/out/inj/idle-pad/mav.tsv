@@ -1,0 +1,30 @@
+t_ns	type	src	fields
+167669616	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase started"}
+1011168756	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+1767948973	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2020231432	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+2755784199	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3014074130	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3055443030	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+3266354467	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+3456044773	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+3665920770	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+3771860375	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+3855612638	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "DISARM_DELAY", "param_index": 65535, "param_type": 2, "param_value": 10.0}
+4023097540	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+4561177620	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Barometer 1 calibration complete"}
+4562199980	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "BARO1_GND_PRESS", "param_index": 65535, "param_type": 9, "param_value": 101325.0}
+4763727658	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+5002364917	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Initialising ArduPilot"}
+5014979647	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+5176419183	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "ArduPilot Ready"}
+5176419183	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "AHRS: DCM active"}
+5178666643	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase complete"}
+5178666643	STATUSTEXT	1/1	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "RCOut: PWM:1-4"}
+5262156296	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_GYROFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+5262165976	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_GYROFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+5262165976	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_GYROFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+5262176576	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_GYR_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+5263191286	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "INS_GYR1_CALTEMP", "param_index": 65535, "param_type": 9, "param_value": 28.864734649658203}
+5263202086	PARAM_VALUE	1/1	{"param_count": 924, "param_id": "ARMING_SKIPCHK", "param_index": 65535, "param_type": 6, "param_value": 0.0}
+5751682954	HEARTBEAT	1/1	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}

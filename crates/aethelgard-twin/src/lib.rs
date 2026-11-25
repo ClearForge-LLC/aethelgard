@@ -39,9 +39,11 @@
 pub mod analog;
 pub mod boot;
 pub mod hse;
+pub mod mavlink;
 pub mod model;
 pub mod pins;
 pub mod platform;
+pub mod rest;
 pub mod serial;
 pub mod timer;
 
@@ -63,6 +65,27 @@ pub enum TwinError {
         "the DMAMUX1 table (`data/dmamux1-spi-rx.tsv`) has a row that is not ST's peripheral, the resource and a decimal input, tab-separated: `{row}`"
     )]
     MalformedDmaTable { row: String },
+    #[error(
+        "the MAVLink table (`data/mavlink-messages.tsv`) has a row that is not a name, a decimal id, CRC_EXTRA (at most 255), base and full payload lengths (1 to 255, base at most full) and `in` or `out`, tab-separated: `{row}`"
+    )]
+    MalformedMessageTable { row: String },
+    #[error(
+        "the rest table (`data/rest.tsv`) has a row that is not a part, a non-zero amplitude in mPa, a period that is a whole number of the 100 us quantum, and a citation, tab-separated: `{row}`"
+    )]
+    MalformedRestTable { row: String },
+    #[error(
+        "`{reference}` is an IMU with no declared orientation, so the board has no rest to start from (AET-WO-4400i D4): declare its `orientation` and `board.forward`"
+    )]
+    RestOrientationUndeclared { reference: String },
+    #[error(
+        "`{part}` is a pressure part with no row in the rest table (`data/rest.tsv`): its intrinsic noise is not declared, so the board has no rest to start from"
+    )]
+    RestNoiseUndeclared { part: String },
+    #[error("`{reference}`'s model has no {property} stimulus, which its rest needs")]
+    RestUnmodelled {
+        reference: String,
+        property: &'static str,
+    },
     #[error("`{peripheral}` is not in Renode's {file}, and only an SPI instance is added")]
     NotInRenode {
         peripheral: String,
@@ -148,6 +171,11 @@ impl TwinError {
             Self::InvalidPin { .. } => "InvalidPin",
             Self::UnsupportedPeripheral { .. } => "UnsupportedPeripheral",
             Self::MalformedDmaTable { .. } => "MalformedDmaTable",
+            Self::MalformedMessageTable { .. } => "MalformedMessageTable",
+            Self::MalformedRestTable { .. } => "MalformedRestTable",
+            Self::RestOrientationUndeclared { .. } => "RestOrientationUndeclared",
+            Self::RestNoiseUndeclared { .. } => "RestNoiseUndeclared",
+            Self::RestUnmodelled { .. } => "RestUnmodelled",
             Self::NotInRenode { .. } => "NotInRenode",
             Self::AddressMismatch { .. } => "AddressMismatch",
             Self::UnknownFaultedBus { .. } => "UnknownFaultedBus",

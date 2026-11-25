@@ -539,9 +539,23 @@ const TWIN_RENODE_DATA: [&str; 5] = [
     "tests/renode-1.17.0/platforms/cpus/stm32h753.repl",
 ];
 
-/// The data files the twin reads at build time: the DMAMUX1 request table,
-/// transcribed with its citation from RM0433 Rev 9 Table 124 (`AET-WO-4400c2`).
-const TWIN_DATA: [&str; 1] = ["data/dmamux1-spi-rx.tsv"];
+/// The data files the twin reads at build time: the DMAMUX1 request tables,
+/// transcribed with their citation from RM0433 Rev 9 Table 124 (`AET-WO-4400c2`;
+/// the USARTs' since `AET-WO-4400i`), and since `AET-WO-4400i` the closed
+/// MAVLink table and the barometer's rest, each with its citation.
+const TWIN_DATA: [&str; 4] = [
+    "data/dmamux1-spi-rx.tsv",
+    "data/dmamux1-usart-rx.tsv",
+    "data/mavlink-messages.tsv",
+    "data/rest.tsv",
+];
+
+/// ArduPilot Copter 4.7.2's own USART1 transmissions, which the twin's
+/// `mavlink` tests read (`AET-WO-4400i`, from `spike/4400i`'s runs).
+const TWIN_FIXTURES: [&str; 2] = [
+    "tests/data/4400i/early-fill-tx.bin",
+    "tests/data/4400i/reject-tx.bin",
+];
 
 /// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
 /// the judge's half of a boot (`AET-WO-2100`, ruled on PR #56, R6), so it is
@@ -558,10 +572,15 @@ fn twin_has_only_its_known_files_keys_and_dependencies() {
             || (file.starts_with("src/") && file.ends_with(".rs"))
             || (file.starts_with("tests/") && file.ends_with(".rs"))
             || TWIN_RENODE_DATA.contains(&file.as_str())
-            || TWIN_DATA.contains(&file.as_str());
+            || TWIN_DATA.contains(&file.as_str())
+            || TWIN_FIXTURES.contains(&file.as_str());
         assert!(allowed, "twin has a file outside the allowed set: {file}");
     }
-    for file in TWIN_RENODE_DATA.iter().chain(&TWIN_DATA) {
+    for file in TWIN_RENODE_DATA
+        .iter()
+        .chain(&TWIN_DATA)
+        .chain(&TWIN_FIXTURES)
+    {
         assert!(root().join(TWIN).join(file).exists(), "missing {file}");
     }
     let twin = manifest(TWIN);

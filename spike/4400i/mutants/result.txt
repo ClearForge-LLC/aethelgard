@@ -1,0 +1,11 @@
+AET-WO-4400i mutants (spike/4400i/mutants/run.sh over mutants.tsv, the tools image, 2026-11-24)
+First pass (result-1.txt): 31 of 32 killed. m14 (the heartbeat "echoed" guard removed) SURVIVED: a heartbeat
+byte-identical to an input frame has that frame's source, so the source guard already refuses it. The echoed
+guard was removed (reduction), and m13 re-pointed at the one guard left: KILLED.
+m33 (replay's single part-order rule, after three overlapping guards were reduced to it): KILLED.
+m34, run by hand against ci/foreign-judge.sh's input-arm case (Renode, sentinel-02-own's CI ELF): the rest's data
+witnesses dropped from the judge (`rest.get(reference)` -> `rest.get("")`): KILLED, input-arm exit 1,
+i2c_transaction_unwitnessed (U7).
+m35 (rest::not_at_rest names nothing when a witness stimulus is off rest): KILLED.
+Final: 33 mutants in mutants.tsv (m01-m35 less m14, removed with its guard, and m34, run by hand), each KILLED;
+m34 KILLED by hand against Renode.

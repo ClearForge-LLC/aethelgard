@@ -11,6 +11,8 @@
 //! replaced or dropped, [`RULES`], and the verdict names each, with what is
 //! weakened.
 
+use std::path::Path;
+
 use serde::Serialize;
 
 use super::*;
@@ -371,6 +373,14 @@ pub struct ForeignBoot {
     /// ArduPilot's `AP_HAL::panic`, hooked where its symbol is, and every
     /// entry the hook logged (`AET-WO-1609`).
     pub panic: PanicReport,
+    /// A declared input's run (`AET-WO-4400i`); absent without `--input`, so
+    /// a run without one reports as before.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<InputRun>,
+    /// Without an input, each IMU at a witness stimulus that is not at rest,
+    /// named (`AET-WO-4400i` §2); absent when none is.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub not_at_rest: Vec<String>,
 }
 
 /// The panic hook's evidence (`AET-WO-1609`): the symbol, the address the
@@ -734,6 +744,14 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
 /// judge does, so its filter keeps them. ArduPilot's console writes about
 /// 600 in 5 s; this trims the log and does not move Renode's own memory.
 fn unread_access_line(line: &str) -> bool {
+    // Each `RunFor` of an input's timeline pauses and resumes the machine,
+    // two `[INFO]` lines per byte sent, which no rule reads (`AET-WO-4400i`).
+    let body = log_body(line).unwrap_or("");
+    if body.starts_with("[INFO] machine-")
+        && (body.ends_with(": Machine paused.") || body.ends_with(": Machine resumed."))
+    {
+        return true;
+    }
     unjudged_access_line(line)
         || log_body(line)
             .and_then(aethelgard_twin::serial::access)
@@ -981,6 +999,7 @@ pub fn commands(
     serial: &[aethelgard_twin::serial::Options],
     panic: u64,
     faults: &[(u32, u64)],
+    input: Option<&Path>,
 ) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -1004,7 +1023,12 @@ pub fn commands(
     c.push(panic_hook(panic));
     c.extend(fault_hooks(faults));
     c.extend(plan.stimuli());
-    c.push(run_for(plan.virtual_ns));
+    // A declared input's timeline (`AET-WO-4400i`): its stimuli, bytes and
+    // run to the window's end, from a script file.
+    match input {
+        Some(script) => c.push(format!("include @{}", script.display())),
+        None => c.push(run_for(plan.virtual_ns)),
+    }
     c.push(format!("echo \"{BEGIN}\""));
     c.extend(reads(plan, serial)?.into_iter().map(|(cmd, _)| cmd));
     c.push(format!("echo \"{END}\""));
@@ -1431,6 +1455,8 @@ pub fn report(
             })
             .collect(),
         clock,
+        input: None,
+        not_at_rest: Vec::new(),
     }
 }
 
@@ -1447,6 +1473,7 @@ pub fn judge(
     hse_hz: u32,
     serial: &[aethelgard_twin::serial::Options],
     faults: &[(u32, u64)],
+    rest: &std::collections::BTreeMap<String, Vec<Vec<String>>>,
 ) -> Result<(Vec<Finding>, Option<Machine>, ForeignBoot), Stop> {
     let text = out.text();
     let untrusted = |what: String| {
@@ -1863,6 +1890,14 @@ pub fn judge(
                 w.iter().cloned().map(Line::Exact).collect(),
             ));
         }
+        // A declared input's rest moves the device's values (`AET-WO-4400i`
+        // D4): the same read, at each value the rest set.
+        for (i, w) in rest.get(reference).into_iter().flatten().enumerate() {
+            candidates.push((
+                format!("data (rest {i})"),
+                w.iter().cloned().map(Line::Exact).collect(),
+            ));
+        }
         let part = parts
             .get(reference)
             .and_then(|p| table.get(p))
@@ -1970,9 +2005,851 @@ pub fn judge(
     Ok((findings, Some(machine), report))
 }
 
+// ---------------------------------------------------------------------------
+// A declared input (`AET-WO-4400i`, ruled on PR #396): timed MAVLink frames
+// for one declared serial port, sent at their stated virtual times, the board
+// at rest, the witness read from the firmware's own transmission, and the run
+// archived so replay needs no file (`INV-04`).
+// ---------------------------------------------------------------------------
+
+use aethelgard_twin::{mavlink, rest};
+
+/// The input file's format version.
+pub const INPUT_VERSION: u64 = 1;
+
+/// The gap every input run names (ruling D3): what the twin cannot do that
+/// silicon does, and what the input's declared fill stands in for.
+pub const IDLE_GAP: &str = "usart_idle_unmodelled: Renode 1.17.0's USART raises no IDLE (STM32F7_USART.cs:154, :231, a tag), and its DMA neither ends a stream with TCIF when software clears EN nor restarts the next at M0AR (STM32DMA.cs:237-262; RM0433 Rev 9 §15.3.16), so a firmware that receives by DMA reads a frame only when its buffer fills; an input fills it with the zero bytes it declares as `fill`, which silicon would not see (AET-WO-4400i D3)";
+
+/// What a foreign run's `replay` says its `input_verdict` is.
+pub const INPUT_VERDICT_IS: &str = "the input's witness re-judged from the trace (the input, the stimuli and the firmware's transmission), not the run's verdict: the trace does not hold the run's other findings";
+
+/// A `PARAM_SET` the firmware answered with `PARAM_ERROR` (ruling D9).
+pub const PARAM_REJECTED: &str = "foreign_param_rejected";
+/// The input's port transmitted nothing the judge could read.
+pub const CAPTURE_UNREADABLE: &str = "foreign_capture_unreadable";
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct InputFile {
+    input_version: u64,
+    port: String,
+    frames: Vec<FrameFile>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FrameFile {
+    at_ns: u64,
+    mavlink: String,
+    #[serde(default)]
+    fill: u32,
+}
+
+/// A declared input, read and checked before any tool is looked for.
+pub struct Declared {
+    pub path: String,
+    pub sha256: String,
+    /// The file's bytes, verbatim: the trace holds them (kind 38).
+    pub file: Vec<u8>,
+    pub label: String,
+    pub peripheral: String,
+    pub renode: String,
+    pub spacing_ns: u64,
+    pub frames: Vec<mavlink::InputFrame>,
+    pub parsed: Vec<mavlink::Frame>,
+    pub stimuli: Vec<rest::Stimulus>,
+}
+
+fn invalid(kind: &'static str, message: String) -> Stop {
+    Stop {
+        code: crate::EXIT_INVALID_SPEC,
+        kind,
+        id: None,
+        message,
+    }
+}
+
+fn twin_refused(e: aethelgard_twin::TwinError) -> Stop {
+    invalid(e.kind(), e.to_string())
+}
+
+/// The input file's bytes: a regular file, still one once open (no swap to
+/// a FIFO between the check and the open), read to at most
+/// [`aethelgard_chaos::record::MAX_FOREIGN_BYTES`].
+pub fn read_input(path: &Path) -> Result<(String, Vec<u8>), Stop> {
+    use std::io::Read;
+    let original = crate::input::file_check(path)?;
+    let unreadable = |e: std::io::Error| Stop::unreadable(format!("{}: {e}", original.display()));
+    let file = std::fs::File::open(&original).map_err(unreadable)?;
+    if !file.metadata().map_err(unreadable)?.is_file() {
+        return Err(Stop::unreadable(format!(
+            "{} is not a regular file",
+            original.display()
+        )));
+    }
+    let max = aethelgard_chaos::record::MAX_FOREIGN_BYTES;
+    let mut bytes = Vec::new();
+    file.take(max as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(unreadable)?;
+    if bytes.len() > max {
+        return Err(invalid(
+            "InputMalformed",
+            format!(
+                "{} is over the {max} bytes an input may be",
+                original.display()
+            ),
+        ));
+    }
+    Ok((original.display().to_string(), bytes))
+}
+
+fn unhex(s: &str) -> Option<Vec<u8>> {
+    if !s.len().is_multiple_of(2) || !s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).ok())
+        .collect()
+}
+
+/// An input's port label, its USART, the time between two of its bytes, and
+/// its frames, as written and as parsed.
+type Frames = (
+    String,
+    String,
+    u64,
+    Vec<mavlink::InputFrame>,
+    Vec<mavlink::Frame>,
+);
+
+/// The port's label, its USART, the time between two of its bytes, and the
+/// input's frames, as the file states them: every refusal but the rest's.
+pub fn frames_of(
+    file: &[u8],
+    ports: &std::collections::BTreeMap<String, aethelgard_ir::serial::SolvedSerialPort>,
+    window_ns: u64,
+) -> Result<Frames, Stop> {
+    let f: InputFile = serde_json::from_slice(file)
+        .map_err(|e| invalid("InputMalformed", format!("the input file: {e}")))?;
+    if f.input_version != INPUT_VERSION {
+        return Err(invalid(
+            "InputMalformed",
+            format!(
+                "the input file is version {}; this reader is version {INPUT_VERSION}",
+                f.input_version
+            ),
+        ));
+    }
+    let port = ports.get(&f.port).ok_or_else(|| {
+        invalid(
+            "InputPortUndeclared",
+            format!(
+                "the input names port `{}`, which the specification does not declare (it declares {})",
+                f.port,
+                ports.keys().cloned().collect::<Vec<_>>().join(", ")
+            ),
+        )
+    })?;
+    let spacing_ns = aethelgard_twin::serial::spacing_ns(&port.framing, port.actual_millibaud)
+        .ok_or_else(|| {
+            invalid(
+                "InputMalformed",
+                format!("port `{}` has no character time", f.port),
+            )
+        })?;
+    let mut frames = Vec::with_capacity(f.frames.len());
+    for (index, fr) in f.frames.iter().enumerate() {
+        let bytes = unhex(&fr.mavlink).ok_or_else(|| {
+            invalid(
+                "InputMalformed",
+                format!("frame {index}'s `mavlink` is not an even number of hex digits"),
+            )
+        })?;
+        frames.push(mavlink::InputFrame {
+            at_ns: fr.at_ns,
+            bytes,
+            fill: fr.fill,
+        });
+    }
+    let table = mavlink::messages().map_err(twin_refused)?;
+    let parsed = mavlink::check_input(&frames, spacing_ns, window_ns, &table)
+        .map_err(|e| invalid(e.kind(), e.to_string()))?;
+    Ok((f.port, port.peripheral.clone(), spacing_ns, frames, parsed))
+}
+
+/// A declared input read, checked and given its rest stimuli.
+pub fn declare(
+    path: String,
+    file: Vec<u8>,
+    topology: &aethelgard_ir::SolvedTopology,
+    checks: &[aethelgard_twin::boot::StepCheck],
+    window_ns: u64,
+) -> Result<Declared, Stop> {
+    let (label, peripheral, spacing_ns, frames, parsed) =
+        frames_of(&file, &topology.serial_ports, window_ns)?;
+    let stimuli = rest::stimuli(topology, checks, window_ns).map_err(twin_refused)?;
+    use sha2::Digest;
+    Ok(Declared {
+        path,
+        sha256: crate::input::hex(sha2::Sha256::digest(&file)),
+        renode: peripheral.to_ascii_lowercase(),
+        file,
+        label,
+        peripheral,
+        spacing_ns,
+        frames,
+        parsed,
+        stimuli,
+    })
+}
+
+/// The run's timeline from virtual time 0, as a Renode script: the port's
+/// transmission into `capture`, then each rest stimulus and each byte at its
+/// instant (a stimulus first at a shared instant), then the run to
+/// `virtual_ns`. A file, never the `-e` argument: one command per byte would
+/// pass the 128 KiB a single argument may be.
+pub fn timeline(d: &Declared, capture: &Path, virtual_ns: u64) -> String {
+    let mut events: Vec<(u64, String)> = d.stimuli.iter().map(|s| (s.at_ns, s.command())).collect();
+    events.extend(
+        mavlink::schedule(&d.frames, d.spacing_ns)
+            .into_iter()
+            .map(|(t, b)| (t, format!("sysbus.{} WriteChar 0x{b:02X}", d.renode))),
+    );
+    // Stable: at a shared instant, the stimuli (pushed first) go first.
+    events.sort_by_key(|e| e.0);
+    let mut lines = vec![format!(
+        "sysbus.{0} CreateFileBackend @{1}/{0}.bin true",
+        d.renode,
+        capture.display()
+    )];
+    let mut now = 0u64;
+    for (t, cmd) in events {
+        if t > now {
+            lines.push(run_for(t - now));
+            now = t;
+        }
+        lines.push(cmd);
+    }
+    if virtual_ns > now {
+        lines.push(run_for(virtual_ns - now));
+    }
+    lines.join("\n") + "\n"
+}
+
+/// What the verdict says of an input run.
+#[derive(Serialize)]
+pub struct InputRun {
+    pub input: InputReport,
+    pub rest: Vec<RestReport>,
+    pub witness: WitnessReport,
+    pub gap: &'static str,
+    /// The archived run's id, with `--archive`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub run_id: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct InputReport {
+    pub path: String,
+    pub sha256: String,
+    pub port: String,
+    pub peripheral: String,
+    pub spacing_ns: u64,
+    pub frames: usize,
+    pub fill_bytes: u64,
+}
+
+/// One stimulus of the rest, over the run: its values in order of first
+/// use, how many times it was set, and when first and last.
+#[derive(Serialize)]
+pub struct RestReport {
+    pub reference: String,
+    pub device: String,
+    pub property: &'static str,
+    pub values: Vec<String>,
+    pub set: u64,
+    pub first_ns: u64,
+    pub last_ns: u64,
+    pub citation: String,
+}
+
+#[derive(Serialize)]
+pub struct WitnessReport {
+    pub captured_bytes: u64,
+    pub heartbeats: u64,
+    /// The first heartbeat with `MAV_MODE_FLAG_SAFETY_ARMED`, from the
+    /// firmware's own transmission; `null` when none.
+    pub armed: Option<ArmedReport>,
+    pub acks: Vec<AckReport>,
+    /// Each parameter the input set, with the firmware's last answer.
+    pub params: Vec<ParamReport>,
+    pub texts: Vec<TextReport>,
+}
+
+#[derive(Serialize)]
+pub struct ArmedReport {
+    pub offset: usize,
+    pub system: u8,
+    pub component: u8,
+    pub base_mode: u8,
+}
+
+#[derive(Serialize, PartialEq)]
+pub struct AckReport {
+    pub command: u16,
+    pub result: u8,
+    pub count: u64,
+}
+
+#[derive(Serialize)]
+pub struct ParamReport {
+    pub id: String,
+    pub set: f32,
+    pub echoed: Option<f32>,
+    pub error: Option<u8>,
+}
+
+#[derive(Serialize)]
+pub struct TextReport {
+    pub text: String,
+    pub count: u64,
+}
+
+/// The rest stimuli as the verdict names them.
+pub fn rest_report(stimuli: &[rest::Stimulus]) -> Vec<RestReport> {
+    let mut out: Vec<RestReport> = Vec::new();
+    for s in stimuli {
+        match out
+            .iter_mut()
+            .find(|r| r.device == s.device && r.property == s.property)
+        {
+            Some(r) => {
+                if !r.values.contains(&s.value) {
+                    r.values.push(s.value.clone());
+                }
+                r.set += 1;
+                r.last_ns = s.at_ns;
+            }
+            None => out.push(RestReport {
+                reference: s.reference.clone(),
+                device: s.device.clone(),
+                property: s.property,
+                values: vec![s.value.clone()],
+                set: 1,
+                first_ns: s.at_ns,
+                last_ns: s.at_ns,
+                citation: s.citation.clone(),
+            }),
+        }
+    }
+    out
+}
+
+/// The witness in `captured`, the firmware's transmission on the input's
+/// port, and its findings: each parameter the input set that the firmware
+/// answered with `PARAM_ERROR` (ruling D9).
+pub fn witness_report(
+    captured: &[u8],
+    frames: &[mavlink::Frame],
+) -> Result<(WitnessReport, Vec<Finding>), Stop> {
+    let table = mavlink::messages().map_err(twin_refused)?;
+    let w = mavlink::witness(captured, frames, &table);
+    let mut acks: Vec<AckReport> = Vec::new();
+    for &(command, result) in &w.acks {
+        match acks
+            .iter_mut()
+            .find(|a| (a.command, a.result) == (command, result))
+        {
+            Some(a) => a.count += 1,
+            None => acks.push(AckReport {
+                command,
+                result,
+                count: 1,
+            }),
+        }
+    }
+    let mut params: Vec<ParamReport> = Vec::new();
+    for f in frames {
+        if let mavlink::Decoded::ParamSet { id, value } = f.decode() {
+            params.retain(|p| p.id != id);
+            params.push(ParamReport {
+                echoed: w
+                    .values
+                    .iter()
+                    .rev()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, v)| *v),
+                error: w
+                    .errors
+                    .iter()
+                    .rev()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, e)| *e),
+                id,
+                set: value,
+            });
+        }
+    }
+    let findings = params
+        .iter()
+        .filter_map(|p| {
+            p.error.map(|e| {
+                Finding::plain(
+                    PARAM_REJECTED,
+                    format!(
+                        "the input set `{}` to {}, and the firmware answered PARAM_ERROR error {e}{}",
+                        p.id,
+                        p.set,
+                        if e == 1 {
+                            " (MAV_PARAM_ERROR_DOES_NOT_EXIST)"
+                        } else {
+                            ""
+                        }
+                    ),
+                )
+            })
+        })
+        .collect();
+    let mut texts: Vec<TextReport> = Vec::new();
+    for t in &w.texts {
+        match texts.iter_mut().find(|r| r.text == *t) {
+            Some(r) => r.count += 1,
+            None => texts.push(TextReport {
+                text: t.clone(),
+                count: 1,
+            }),
+        }
+    }
+    Ok((
+        WitnessReport {
+            captured_bytes: captured.len() as u64,
+            heartbeats: w.heartbeats,
+            armed: w
+                .armed
+                .map(|(offset, system, component, base_mode)| ArmedReport {
+                    offset,
+                    system,
+                    component,
+                    base_mode,
+                }),
+            acks,
+            params,
+            texts,
+        },
+        findings,
+    ))
+}
+
+/// The input's report.
+pub fn input_report(d: &Declared) -> InputReport {
+    InputReport {
+        path: d.path.clone(),
+        sha256: d.sha256.clone(),
+        port: d.label.clone(),
+        peripheral: d.peripheral.clone(),
+        spacing_ns: d.spacing_ns,
+        frames: d.frames.len(),
+        fill_bytes: d.frames.iter().map(|f| u64::from(f.fill)).sum(),
+    }
+}
+
+fn digest(hex: &str) -> Option<[u8; 32]> {
+    unhex(hex)?.try_into().ok()
+}
+
+/// The run archived under `archive` (trace 20, kinds 38 to 40), named by
+/// its id, a function of the input, the specification and the firmware.
+#[allow(clippy::too_many_arguments)]
+pub fn archive(
+    archive: &Path,
+    d: &Declared,
+    captured: &[u8],
+    firmware_sha256: &str,
+    specification_sha256: &str,
+    platform_sha256: &str,
+    tools: Vec<(String, String)>,
+    virtual_ns: u64,
+) -> Result<String, Stop> {
+    use aethelgard_chaos::event::{Event, Header};
+    use aethelgard_chaos::record::Record;
+    let bad = |what: &str| Stop::tool_error("aethelgard", format!("{what} is not a sha256"));
+    let (input, spec, firmware, platform) = (
+        digest(&d.sha256).ok_or_else(|| bad("the input's hash"))?,
+        digest(specification_sha256).ok_or_else(|| bad("the specification's hash"))?,
+        digest(firmware_sha256).ok_or_else(|| bad("the firmware's hash"))?,
+        digest(platform_sha256).ok_or_else(|| bad("the platform's hash"))?,
+    );
+    let run_id = aethelgard_chaos::campaign::run_id(&input, &spec, &firmware);
+    let header = Header {
+        run_id,
+        artifacts: vec![
+            ("firmware".to_owned(), firmware),
+            ("input".to_owned(), input),
+            ("platform".to_owned(), platform),
+            ("specification".to_owned(), spec),
+        ],
+        tools,
+        tool_sha256: Vec::new(),
+    };
+    use aethelgard_chaos::record::{FOREIGN_PART_BYTES, FOREIGN_PART_STIMULI};
+    let mut records = Vec::new();
+    let file: Vec<&[u8]> = d.file.chunks(FOREIGN_PART_BYTES).collect();
+    for (k, part) in file.iter().enumerate() {
+        records.push(Record::ForeignInput {
+            label: d.label.clone(),
+            peripheral: d.peripheral.clone(),
+            spacing_ns: d.spacing_ns,
+            part: k as u64,
+            parts: file.len() as u64,
+            file: part.to_vec(),
+        });
+    }
+    let entries: Vec<(u64, String, String, String)> = d
+        .stimuli
+        .iter()
+        .map(|s| {
+            (
+                s.at_ns,
+                s.device.clone(),
+                s.property.to_owned(),
+                s.value.clone(),
+            )
+        })
+        .collect();
+    let stimuli: Vec<&[(u64, String, String, String)]> = match entries.is_empty() {
+        true => vec![&[]],
+        false => entries.chunks(FOREIGN_PART_STIMULI).collect(),
+    };
+    for (k, part) in stimuli.iter().enumerate() {
+        records.push(Record::Stimuli {
+            part: k as u64,
+            parts: stimuli.len() as u64,
+            entries: part.to_vec(),
+        });
+    }
+    let capture: Vec<&[u8]> = match captured.is_empty() {
+        true => vec![&[]],
+        false => captured.chunks(FOREIGN_PART_BYTES).collect(),
+    };
+    for (k, part) in capture.iter().enumerate() {
+        records.push(Record::SerialCaptured {
+            label: d.label.clone(),
+            end_ns: virtual_ns,
+            part: k as u64,
+            parts: capture.len() as u64,
+            bytes: part.to_vec(),
+        });
+    }
+    let id = crate::input::hex(run_id);
+    let dir = archive.join(&id);
+    (|| {
+        let mut writer = aethelgard_chaos::TraceWriter::create(&dir, &header)?;
+        for record in records {
+            let timestamp = record.timestamp(virtual_ns);
+            writer.append(&Event::Record { timestamp, record })?;
+        }
+        writer.commit()
+    })()
+    .map_err(|e| Stop {
+        code: crate::EXIT_UNREADABLE,
+        kind: "ArchiveWriteFailed",
+        id: Some(id.clone()),
+        message: e.to_string(),
+    })?;
+    Ok(id)
+}
+
+/// What `replay` prints of a foreign run (ruling D6, R1): re-judged from the
+/// archive alone, with no file and no Renode. `input_verdict` is the input's
+/// witness re-judged (`fail` with a `foreign_param_rejected`): the trace holds
+/// the input, the stimuli and the transmission, not the run's other findings,
+/// so it is not the run's verdict.
+#[derive(Serialize)]
+pub struct Replayed {
+    pub ok: bool,
+    pub check: &'static str,
+    pub judge: &'static str,
+    pub run_id: String,
+    pub input_verdict: &'static str,
+    /// What `input_verdict` is, in the output itself (ruled 2026-11-24).
+    pub input_verdict_is: &'static str,
+    pub input_sha256: String,
+    pub port: String,
+    pub peripheral: String,
+    pub frames: usize,
+    pub stimuli: usize,
+    pub witness: WitnessReport,
+    pub findings: Vec<Finding>,
+    pub artifacts: std::collections::BTreeMap<String, String>,
+    pub tools: std::collections::BTreeMap<String, String>,
+    pub event_count: u64,
+    pub state_sequence_hash: String,
+}
+
+/// `replay --archive` of a foreign input run (ruling D6, R1, granted
+/// 2026-11-24T19:13Z): `None` when the directory is not one (its records
+/// hold no kind 38, or the strict reader refuses it), which `replay` reads
+/// exactly as before; else the run re-judged, or why not.
+pub fn replay_archive(dir: &Path) -> Option<Result<Replayed, Stop>> {
+    use aethelgard_chaos::record::Record;
+    let replayed = aethelgard_chaos::replay_dir(dir).ok()?;
+    if !replayed
+        .state
+        .records
+        .iter()
+        .any(|r| matches!(r, Record::ForeignInput { .. }))
+    {
+        return None;
+    }
+    // A run directory is named by its run id, as a campaign's is.
+    let id = crate::input::hex(replayed.header.run_id);
+    let named = std::fs::canonicalize(dir)
+        .ok()
+        .and_then(|d| d.file_name().map(std::ffi::OsStr::to_owned));
+    if named.as_deref() != Some(std::ffi::OsStr::new(&id)) {
+        return Some(Err(Stop {
+            code: crate::EXIT_UNREADABLE,
+            kind: "RunIdMismatch",
+            id: Some(id.clone()),
+            message: format!(
+                "{} holds run {id}: a run directory is named by its run id",
+                dir.display()
+            ),
+        }));
+    }
+    Some(replay(&replayed))
+}
+
+/// A foreign run's records joined: the input's (label, peripheral, spacing,
+/// file), the number of stimuli, the capture and the run's end.
+type ForeignRecords = ((String, String, u64, Vec<u8>), usize, Vec<u8>, u64);
+
+/// The parts of a foreign run joined, or why they cannot be: every record is
+/// one of kinds 38 to 40, in that order, each kind's parts numbered 0 to
+/// `parts` − 1 in order with one count, and the fields every part repeats
+/// equal across them.
+fn foreign_records(replayed: &aethelgard_chaos::Replayed) -> Result<ForeignRecords, String> {
+    use aethelgard_chaos::record::{MAX_FOREIGN_BYTES, MAX_STIMULI, Record};
+    let mut input: Option<(String, String, u64, Vec<u8>, u64, u64)> = None;
+    let mut stimuli: Option<(usize, u64, u64)> = None;
+    let mut captured: Option<(String, u64, Vec<u8>, u64, u64)> = None;
+    // The kinds in order, 38 then 39 then 40, none skipped: each record's
+    // kind is the current one or the next.
+    let mut phase = 38u64;
+    // Each kind's next part and its count: a part out of order, or a count
+    // that changes, is refused.
+    fn next(seen: Option<(u64, u64)>, part: u64, parts: u64) -> Result<(), String> {
+        let want = seen.map_or((0, parts), |(p, n)| (p + 1, n));
+        if (part, parts) == want {
+            Ok(())
+        } else {
+            Err(format!(
+                "a part {part} of {parts} where part {} of {} was due",
+                want.0, want.1
+            ))
+        }
+    }
+    for r in &replayed.state.records {
+        let kind = r.kind();
+        if kind != phase && kind != phase + 1 || kind < 38 {
+            return Err(
+                "it holds a record that is not a foreign run's, or one out of order".to_owned(),
+            );
+        }
+        phase = kind;
+        match r {
+            Record::ForeignInput {
+                label,
+                peripheral,
+                spacing_ns,
+                part,
+                parts,
+                file,
+            } => {
+                next(input.as_ref().map(|i| (i.4, i.5)), *part, *parts)?;
+                match &mut input {
+                    None => {
+                        input = Some((
+                            label.clone(),
+                            peripheral.clone(),
+                            *spacing_ns,
+                            file.clone(),
+                            *part,
+                            *parts,
+                        ));
+                    }
+                    Some(i) => {
+                        if (&i.0, &i.1, i.2) != (label, peripheral, *spacing_ns) {
+                            return Err("the input's parts name two ports".to_owned());
+                        }
+                        i.3.extend_from_slice(file);
+                        i.4 = *part;
+                    }
+                }
+            }
+            Record::Stimuli {
+                part,
+                parts,
+                entries,
+            } => {
+                next(stimuli.map(|s| (s.1, s.2)), *part, *parts)?;
+                let n = stimuli.map_or(0, |s| s.0) + entries.len();
+                stimuli = Some((n, *part, *parts));
+            }
+            Record::SerialCaptured {
+                label,
+                end_ns,
+                part,
+                parts,
+                bytes,
+            } => {
+                next(captured.as_ref().map(|c| (c.3, c.4)), *part, *parts)?;
+                match &mut captured {
+                    None => captured = Some((label.clone(), *end_ns, bytes.clone(), *part, *parts)),
+                    Some(c) => {
+                        if (&c.0, c.1) != (label, *end_ns) {
+                            return Err("the capture's parts name two ports or two ends".to_owned());
+                        }
+                        c.2.extend_from_slice(bytes);
+                        c.3 = *part;
+                    }
+                }
+            }
+            _ => {
+                return Err(
+                    "it holds a record that is not a foreign run's, or one out of order".to_owned(),
+                );
+            }
+        }
+    }
+    let (label, peripheral, spacing, file, last, parts) = input.ok_or("it holds no input")?;
+    let (n, slast, sparts) = stimuli.ok_or("it holds no stimuli")?;
+    let (clabel, end_ns, bytes, clast, cparts) = captured.ok_or("it holds no capture")?;
+    if last + 1 != parts || slast + 1 != sparts || clast + 1 != cparts {
+        return Err("a kind's parts end before its count".to_owned());
+    }
+    if clabel != label {
+        return Err("the capture names another port than the input".to_owned());
+    }
+    if file.len() > MAX_FOREIGN_BYTES || bytes.len() > MAX_FOREIGN_BYTES || n > MAX_STIMULI {
+        return Err("its input, capture or stimuli are over their bounds".to_owned());
+    }
+    Ok(((label, peripheral, spacing, file), n, bytes, end_ns))
+}
+
+/// Re-judges a foreign run from its archive: the input's frames re-read and
+/// re-refused from the file the trace holds, its hash against the header's,
+/// and the witness from the transmitted bytes the trace holds.
+pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
+    let ((label, peripheral, spacing_ns, file), stimuli, captured, end_ns) =
+        foreign_records(replayed).map_err(|why| {
+            invalid(
+                "NotAForeignRun",
+                format!(
+                    "the archive is not one foreign input run (kinds 38 to 40, in order): {why}"
+                ),
+            )
+        })?;
+    let (label, peripheral, file, captured) = (
+        label.as_str(),
+        peripheral.as_str(),
+        file.as_slice(),
+        captured.as_slice(),
+    );
+    use sha2::Digest;
+    let sha: [u8; 32] = sha2::Sha256::digest(file).into();
+    let named = replayed
+        .header
+        .artifacts
+        .iter()
+        .find(|(n, _)| n == "input")
+        .map(|(_, h)| *h);
+    if named != Some(sha) {
+        return Err(invalid(
+            "InputHashMismatch",
+            "the input the trace holds is not the one its header names".to_owned(),
+        ));
+    }
+    // The port as the run declared it: its label, USART and spacing, so the
+    // file's frames are refused exactly as they were.
+    let f: InputFile = serde_json::from_slice(file)
+        .map_err(|e| invalid("InputMalformed", format!("the archived input: {e}")))?;
+    if f.port != label {
+        return Err(invalid(
+            "InputHashMismatch",
+            format!(
+                "the archived input names port `{}`, its record `{label}`",
+                f.port
+            ),
+        ));
+    }
+    let mut frames = Vec::with_capacity(f.frames.len());
+    for (index, fr) in f.frames.iter().enumerate() {
+        frames.push(mavlink::InputFrame {
+            at_ns: fr.at_ns,
+            bytes: unhex(&fr.mavlink).ok_or_else(|| {
+                invalid(
+                    "InputMalformed",
+                    format!("archived frame {index}'s `mavlink` is not hex"),
+                )
+            })?,
+            fill: fr.fill,
+        });
+    }
+    let table = mavlink::messages().map_err(twin_refused)?;
+    let parsed = mavlink::check_input(&frames, spacing_ns, end_ns, &table)
+        .map_err(|e| invalid(e.kind(), e.to_string()))?;
+    let (witness, findings) = witness_report(captured, &parsed)?;
+    Ok(Replayed {
+        ok: true,
+        check: "replay",
+        judge: JUDGE,
+        input_verdict: if findings.is_empty() { "pass" } else { "fail" },
+        input_verdict_is: INPUT_VERDICT_IS,
+        run_id: crate::input::hex(replayed.header.run_id),
+        input_sha256: crate::input::hex(sha),
+        port: label.to_owned(),
+        peripheral: peripheral.to_owned(),
+        frames: frames.len(),
+        stimuli,
+        witness,
+        findings,
+        artifacts: replayed
+            .header
+            .artifacts
+            .iter()
+            .map(|(n, h)| (n.clone(), crate::input::hex(h)))
+            .collect(),
+        tools: replayed.header.tools.iter().cloned().collect(),
+        event_count: replayed.manifest.event_count,
+        state_sequence_hash: crate::input::hex(replayed.manifest.state_hash),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-4400i`: an input's timeline pauses and resumes the machine at
+    /// every byte; the filter drops those two lines and nothing like them.
+    #[test]
+    fn the_timelines_pause_lines_are_dropped_and_nothing_else() {
+        assert!(unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine paused."
+        ));
+        assert!(unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine resumed."
+        ));
+        assert!(!unread_access_line(
+            "[00:00:01.000000000] [INFO] machine-0: Machine started."
+        ));
+        assert!(!unread_access_line(
+            "[00:00:01.000000000] [WARNING] machine-0: Machine paused."
+        ));
+    }
 
     /// D4: the slave-mode `[ERROR]` is exempt only directly after a `CFG2`
     /// write with `MASTER` 0 while the last `CR1` write left `SPE` 0, as

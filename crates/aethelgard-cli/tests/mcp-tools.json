@@ -350,6 +350,10 @@
     "inputSchema": {
       "additionalProperties": false,
       "properties": {
+        "archive": {
+          "description": "Archive the input run in DIR, a new directory named by its run id (trace 20), which `replay --archive` re-judges with no file. Needs --input",
+          "type": "string"
+        },
         "firmware": {
           "description": "Boot this ELF on the platform and judge the boot by the specification. Needs --spec, and --for or --foreign",
           "type": "string"
@@ -360,6 +364,10 @@
         },
         "foreign": {
           "description": "Judge the boot as a foreign firmware's, one this project did not generate (AET-WO-4400e): declared here, never inferred from the ELF; the verdict's boot says judge foreign. Its value is the virtual time the boot runs, as --for's, at most the foreign window. Needs --firmware; not with --for",
+          "type": "string"
+        },
+        "input": {
+          "description": "A declared input for a foreign run (AET-WO-4400i): a JSON file of timed MAVLink 2 frames for one declared serial port, sent at their stated virtual times, the board at rest. Its sha256 is the verdict's; a frame that is not MAVLink, forces the arm or skips a check is refused by name. Needs --foreign",
           "type": "string"
         },
         "platform": {
@@ -410,7 +418,7 @@
     "name": "campaign"
   },
   {
-    "description": "Replay one archived campaign run from its trace alone, and print its state-sequence hash",
+    "description": "Replay one archived run from its trace alone, and print its state-sequence hash: a campaign run's verdict, or for a foreign input run (simulate --foreign --input --archive) its input_verdict, the input's witness re-judged from the trace, which is not the run's verdict",
     "inputSchema": {
       "additionalProperties": false,
       "properties": {

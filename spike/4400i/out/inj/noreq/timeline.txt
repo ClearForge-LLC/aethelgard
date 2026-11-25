@@ -1,0 +1,1 @@
+{"by_type": {"BAD_DATA": 336, "HEARTBEAT": 6, "STATUSTEXT": 1}, "first_armed_heartbeat_ns": null, "first_heartbeat_ns": 1011175449, "same_bytes": true, "tdr_bytes": 493, "tx_bin_bytes": 493}

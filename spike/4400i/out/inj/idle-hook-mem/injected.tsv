@@ -1,0 +1,49 @@
+t_ns	message	frame_bytes	sent_bytes	frame_hex
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationX 0	0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationY 0	0	0	-
+0	monitor sysbus.spi2.spi2mux.u5 AccelerationZ 1	0	0	-
+0	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+83333333	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+166666666	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+249999999	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+333333332	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+416666665	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+499999998	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+583333331	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+666666664	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+749999997	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+833333330	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+916666663	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+999999996	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1083333329	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1166666662	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1249999995	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1333333328	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1416666661	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1499999994	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1583333327	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1666666660	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1749999993	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1833333326	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+1916666659	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+1999999992	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2083333325	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2166666658	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2249999991	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2333333324	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2416666657	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2499999990	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2583333323	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2666666656	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2749999989	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2833333322	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+2916666655	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+2999999988	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3000000000	PARAM_REQUEST_READ {"id": "FRAME_CLASS"}	27	27	fd0f000000ffbe140000ffff01014652414d455f434c4153533249
+3083333321	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3100000000	monitor python "print('AET-MEM %d ' % 3100000000 + __import__('System').BitConverter.ToString(self.Machine.SystemBus.ReadBytes(0x38001940, 0xC0)))"	0	0	-
+3166666654	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
+3200000000	PARAM_REQUEST_READ {"id": "FS_THR_ENABLE"}	29	29	fd11000000ffbe140000ffff010146535f5448525f454e41424c45b55c
+3249999987	monitor sysbus.i2c1.u7 Pressure 101325.08	0	0	-
+3300000000	monitor python "print('AET-MEM %d ' % 3300000000 + __import__('System').BitConverter.ToString(self.Machine.SystemBus.ReadBytes(0x38001940, 0xC0)))"	0	0	-
+3333333320	monitor sysbus.i2c1.u7 Pressure 101324.92	0	0	-
