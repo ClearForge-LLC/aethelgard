@@ -696,3 +696,136 @@ jobs:
           path: target/sentinel-03-package/
           if-no-files-found: error
           retention-days: 7
+
+  # AET-WO-1918 (3) THROWAWAY (reverted before READY): opt-level=1, measured not adopted (ruled (iii)).
+  tools-build-o1:
+    needs: route
+    if: needs.route.outputs.class == 'code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      # AET-WO-2200: the bridge builds into target/debug/, beside the aethelgard
+      # binary the tier-2 tests run, because the CLI looks for it there.
+      - name: fetch crates and build every test binary and the analog bridge, with the network
+        run: $RUN -e CARGO_PROFILE_DEV_OPT_LEVEL=1 "$(cat container/IMAGE)" bash ci/shard.sh build
+
+      - name: pack target/ with its stamp
+        run: bash ci/shard.sh pack "$RUNNER_TEMP/tools-build-o1"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: tools-build-o1
+          path: ${{ runner.temp }}/tools-build-o1/
+          if-no-files-found: error
+          # The archive is zstd already.
+          compression-level: 0
+          overwrite: true
+          retention-days: 1
+
+
+  tools-shard-o1:
+    name: tools-shard-o1 (${{ matrix.shard }})
+    needs: [route, tools-build-o1]
+    if: needs.route.outputs.class == 'code'
+    runs-on: ubuntu-latest
+    # A hang guard, not a budget (AET-WO-4230 Q-K, ruled on PR #161, comment 6911424608): the gate is a
+    # balanced plan (ci/shard.sh), and 20 minutes per shard is a target. 45 -> 60 (AET-WO-1314, ruled
+    # on PR #227, comment 6991936758): one plan, shard 4 at 36.0 min on run 44382374239 and cut at
+    # 45.3 min on run 44392056403, runner variance; still catches a hang, 15 minutes later.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJSON(needs.route.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      # AET-WO-1911 §1.2: this run's tools-build archive (ci/shard.sh unpack).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: tools-build-o1
+          path: ${{ runner.temp }}/tools-build-o1
+
+      - name: unpack the shared build
+        run: bash ci/shard.sh unpack "$RUNNER_TEMP/tools-build-o1"
+
+      # The full test list, the assignment and the guard (ci/shard.sh plan).
+      # The bridge's tests are in the list, so they are assigned like any other.
+      - name: list every test, assign the shards, run the guard
+        run: $RUN -e CARGO_PROFILE_DEV_OPT_LEVEL=1 --network none "$(cat container/IMAGE)" bash ci/shard.sh plan target/ci-shard
+
+      # AET-WO-1918 (1): the runner's CPU, disk and memory, then the probe (ci/probe.py), from the
+      # host: each Kani harness's kani-driver peak, which the step after the test judges against
+      # ci/kani-ceiling, and each Renode boot's wall time (the refit's evidence, by CPU).
+      - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
+        run: |
+          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; df -h /; free -g
+          nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+
+      - name: cargo test inside the image, this shard's tests
+        run: $RUN -e CARGO_PROFILE_DEV_OPT_LEVEL=1 --network none "$(cat container/IMAGE)" bash ci/shard.sh run target/ci-shard ${{ matrix.shard }}
+
+      - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
+        if: always()
+        run: |
+          touch "$RUNNER_TEMP/probe.stop"; sleep 1
+          df -h /; free -g
+          grep '^PROBE boot' "$RUNNER_TEMP/probe.log" || true
+          cat "$RUNNER_TEMP/probe.err" 2>/dev/null || true
+          bash ci/ceiling.sh "$RUNNER_TEMP/probe.log" ci/kani-ceiling
+
+
+
+  bench-package-o1:
+    needs: route
+    if: needs.route.outputs.class == 'code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # The scenarios in the order MANIFEST.json records (bench_board_tier1.rs, SCENARIOS).
+      VERIFY: >-
+        target/debug/aethelgard verify --spec examples/sentinel-01.json
+        --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
+        scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
+        scenarios/sentinel-01-bench/serial-rx-open-console.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+
+      # The bridge builds beside the aethelgard binary, where the CLI looks for it.
+      - name: build the CLI and the analog bridge, with the network
+        run: $RUN -e CARGO_PROFILE_DEV_OPT_LEVEL=1 "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
+
+      # AET-WO-1918 (1): the runner's CPU, disk and memory, then the probe (ci/probe.py), from the
+      # host: each Kani harness's kani-driver peak, which the step after the test judges against
+      # ci/kani-ceiling, and each Renode boot's wall time (the refit's evidence, by CPU).
+      - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
+        run: |
+          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; df -h /; free -g
+          nohup python3 -I ci/probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+
+      - name: verify --against-fab, the committed package derived again
+        if: ${{ !inputs.write }}
+        run: $RUN -e CARGO_PROFILE_DEV_OPT_LEVEL=1 --network none "$(cat container/IMAGE)" $VERIFY --against-fab fab/sentinel-01-bench/package
+
+      - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
+        if: always()
+        run: |
+          touch "$RUNNER_TEMP/probe.stop"; sleep 1
+          df -h /; free -g
+          grep '^PROBE boot' "$RUNNER_TEMP/probe.log" || true
+          cat "$RUNNER_TEMP/probe.err" 2>/dev/null || true
+          bash ci/ceiling.sh "$RUNNER_TEMP/probe.log" ci/kani-ceiling --require-peak
+
+
+
