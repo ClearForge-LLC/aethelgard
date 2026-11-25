@@ -180,7 +180,7 @@ The 25 harnesses were proved one container each, on Kani's defaults with reach c
   - That needs the generator to name its guards, and `verify` to read every prove gate's statuses together. It is a new judge, not CI headroom.
   - Under (S) the reach checks stay on, so the row can be built on them later. Under (R) there would be nothing left to read.
 
-### 1.6 CI's own peaks (diagnostic run 45528571905, head `9c06e112`; `tools/ci_probe.py`, `tools/ci_diag.py`)
+### 1.6 CI's own peaks (diagnostic run 45528571905, head `9c06e112`; `ci/probe.py` (measured as `tools/ci_probe.py`, moved at the build), `tools/ci_diag.py`)
 
 The host probe reads each kani-driver's VmHWM every 0.2 s. VmHWM is a high-water mark, so a missed poll loses only the growth after the last read.
 
