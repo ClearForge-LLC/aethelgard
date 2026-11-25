@@ -75,7 +75,51 @@ Each subagent's report was spot-checked at source before use.
 
 ## 3. (3) The refit
 
-[the throwaway run and the final plan: filled when measured]
+- **Measured before (the stop):** 3 runs of the 12-shard plan, every shard planned at 994 s.
+  - The test steps ran 648–2,072 s.
+  - Setup (image pull, artifact, unpack) took 127–411 s.
+  - The floors: `verify_2k2_tier2`'s block, up to 1,683 s, and `against_fab_tier2`'s tests, up to 918 s each, every one recomputing the shared `--fab-out` in its own shard.
+- **Built, (ii)** (the fence widened to two test files):
+  - **`verify_2k2_tier2`:** each pair's two verifies run at once, one pair at a time (`PAIR`), so at most two verifies run together, under the ceiling.
+    - It is decolocated: its two tests have read separate runs since `4300k` (T).
+    - Measured in CI (run 45572067977): the package test 529 s, the reference test 376 s, against up to 1,683 s.
+  - **`against_fab_tier2`:** the `--fab-out` package is written once per binary.
+    - The binary is colocated, held by `fab_tier1::against_fab_tier2_writes_its_one_package_once_per_binary`.
+    - Its four verifies run in two lanes (`LANES`), at most two at once. That is my addition, so the shard is not five verifies in a row.
+    - **The block is 1,715 s (run 45572067977, EPYC 9V74): a floor, over 20 minutes.** Its four tests, each in its own shard, had taken up to 918 s. Writing the package once costs one shard's wall time.
+    - The only lever left is more lanes, which the 12 GiB ceiling forbids (about 3.5 GiB per verify).
+- **Built, (i):** `spike/1918/tools/refit.py`.
+  - **439 tests** at their worst in-shard sample (REFIT RULE 5) over seven runs:
+    - 45528571905, attempts 1–4;
+    - 45539991165;
+    - 45561825388, the write dispatch;
+    - the throwaway, 45572067977.
+  - **The 122 tests of the locked binaries** (`board_tier2`, `twin_tier2`) at their alone time, from the throwaway's alone pass (REFIT RULE 1–2).
+  - **10 blocks** at their worst `finished in` (REFIT RULE 3), for example:
+    - `via_ring_tier1` 61 → 367 s;
+    - `campaign_tier2` 98 → 266 s;
+    - `outline_tier1` 251 → 400 s;
+    - `verify_47k_tier2` 278 → 431 s;
+    - `four_layer_fab_tier2` 741 → 931 s.
+  - A test or block this WO changed is weighed from the throwaway run only.
+  - Every decision is in `spike/1918/out/refit.tsv`.
+- **The plan:** `ci/SHARDS` 12 → 20.
+  - **The cap:** 20 minutes less the worst setup measured (411 s) and the after-steps leaves 783 s for the test step.
+    - At 18 shards the largest unit is 740 s; at 20 it is 703 s, which is 18.7 min with the worst setup.
+  - **The plan at 20** (`ci/shard.sh plan`, guard ok, 3,429 test names):
+    - shard 0, `against_fab_tier2`, 1,715 s: **a floor**;
+    - shard 1, `four_layer_fab_tier2`, 931 s: **a floor**. It is one block (`3303b`'s split already applied), so it can only get cheaper, never split;
+    - shard 2, 703 s;
+    - 17 shards at 655 s.
+  - **The account's concurrent-job ceiling** (about 60, `ci/shard.sh` rule 4): one pull request's run is 20 shards plus about 6 other jobs. Two at once queue.
+- **The final head's measured per-shard table:** in the READY post, on the bus.
+- **(iii), `opt-level=1`, measured, not adopted (ruled).** Throwaway run 45572067977 had `tools-build-o1`, `tools-shard-o1` and `bench-package-o1`.
+  - Shard by shard, the normal pass ran 0.71–1.50× the opt-level-0 time, on runners that differed.
+  - The one pair on the same CPU (shard 8, EPYC 7763 both) is 1.01×. Summed, it is −3 %, inside runner noise (`spike/1918/out/o1-compare.tsv`).
+  - The heavy work is Kani, Renode and KiCad, and `aethelgard-eda`, `svd-hal` and `sha2` are already built at `opt-level=2`.
+  - **No verdict byte moved at opt-level 1:** `bench-package-o1`'s `--against-fab` of Sentinel-01's committed package passed, and every test in the 12 `-o1` shards passed.
+- **(iv), the clause less setup: refused (ruled).** The floors above are named instead.
+- **The throwaway** (`8d9fca24`) is reverted in `cbaf4fb1`.
 
 ## 4. Rows for the roadmap
 
@@ -94,11 +138,66 @@ Each subagent's report was spot-checked at source before use.
 - **`--wall-bound-ms` on the verdict.** A run under it records `wall_bound_ms`, but a campaign archive has no field for it, by design: a campaign cannot set it.
 - **The `opt-level=1` test profile:** §3, measured, not adopted (ruled).
 - **The `4411` module board:** not measured. Its branch holds no specification yet, and its schedule parts will split by the same rule.
+- **The two floor shards (§3):**
+  - `against_fab_tier2`, 1,715 s: its four verifies after the one `--fab-out`, in two lanes;
+  - `four_layer_fab_tier2`, 931 s.
+  - Each would need its verifies made cheaper, or fewer. That is a test-shape question for a later CI work order.
+- **`RENODE_TURN` (`twin_tier2`) and `FLOOD_ALONE` (`campaign_tier2`)** were made only because parallel boots hit the 30 s bound, now a 120 s hang guard.
+  - Removing either changes those binaries' timing and weights, so it needs CI timing first.
+  - Found by the reduction pass; not removed.
+- **Twenty shards against the account's concurrent-job ceiling** (about 60): two pull requests' runs at once queue. Watch it if queueing shows.
 
 ## 5. Gates, CI, the adversarial pass
 
-[filled at READY]
+- **The adversarial pass (Opus, read-only, `~/.cache/aet-1918/adversarial.md`): 2 blocking and 8 should-fix findings, all built.**
+  - **B1:** the hidden flag was offered over MCP. Hidden arguments are now skipped, held by `simulate_keeps_its_name…`.
+  - **B2:** the removed wall test's weight row would have failed every shard's plan; dropped, and the 120 s test weighed.
+  - **S1:** a foreign fault beside a wall kill is refused.
+  - **S2:** the split's statements are tested on every shape the generator writes.
+  - **S3, S4:** the probe watches cbmc, writes what is alive at its stop, and is tested on planted processes.
+  - **S5:** crate docs.
+  - **S6:** 26 harnesses are recorded.
+  - **S7:** replay refuses `wall_bound_exceeded` on a read boot too.
+  - **S8:** the undisturbed boot's guard is unit-tested.
+- **Found nothing:**
+  - no assertion dropped, duplicated or misassigned by the split;
+  - the covers and unwind kept in every copy;
+  - the renames safe;
+  - the flag unable to reach `verify` or `campaign`;
+  - `if: always()` unable to pass a failed job;
+  - the ceiling failing closed.
+- **Mutations: 13 of 13 killed** (`spike/1918/tools/mutants.py`, `spike/1918/out/mutants.txt`). One mutant per guard this WO adds or changes, against its suite:
+  - the split's bound and its binding glue;
+  - the wall kill as a refusal, at the boot and at the undisturbed boot;
+  - replay's refusal;
+  - the MCP skip;
+  - the flag on the verdict, and the flag honoured;
+  - the ceiling's comparison, both ways;
+  - the probe's flush at its stop;
+  - a bench job's required peak;
+  - `against_fab_tier2`'s colocation.
+  - One first-sweep mutant hit only a printed label (equivalent) and was moved to the decision.
+- **Gates on the final head (`main` `4e5b0d3b` merged):**
+  - `cargo fmt --all -- --check` passes;
+  - `cargo clippy --workspace --all-targets -- -D warnings` is clean, and so is `-p aethelgard-cli --features with-tools`;
+  - `cargo test --workspace`: 3,194 passed, 0 failed;
+  - `ci/test-ceiling.sh`, `test-shard.sh`, `test-route.sh` and the inventory guard pass.
+- **CI:**
+  - the final head's run is in the READY post;
+  - the throwaway run 45572067977 was green on every job, including both bench jobs against the committed packages.
 
 ## 6. Reduction pass
 
-[filled at READY]
+Reduction pass (diff): −22 net in `crates`, `ci` and `.github` · 4 duplicates removed · 2 dead paths removed · 3 protected kept · 3 findings in §4.
+- **The duplicates removed:**
+  - `renode::bounded` and `hung` are one `Result`, the wall-kill rule stated once;
+  - three copies of the probe and ceiling steps became `ci/probe-step.sh`;
+  - the flag's 120,000 is derived from `BOOT_BOUNDS`;
+  - the test helpers take extra arguments, where two had rebuilt `simulate`'s arguments.
+- **The dead paths removed:** `Ready.bounds`, and the probe's unused `--boot-comm` and `Name`.
+- **Kept as deliberate, unlabelled, for the owner:**
+  - `test-ceiling.sh`'s pin of the ceiling's number;
+  - `split_final`'s three shape asserts;
+  - `check_run`'s refusal of `HANG_GUARD_FINDING` beside the unread count.
+- **The findings** (`RENODE_TURN`, `FLOOD_ALONE`; the protected `RUL-13` and the roadmap's 30 s lines) are in §4, and in §2 for `RUL-13`.
+- **The pass** was a fresh read-only subagent (`~/.cache/aet-1918/reduction.md`), and every proposal was spot-checked before it was applied.
