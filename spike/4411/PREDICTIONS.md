@@ -50,3 +50,22 @@ Ruled 2026-11-25T13:05Z. Each of U1's GND escape vias within the declared 1.54 m
 - **What moved pin 30 on the 1.54 mm board (read from its tracks, not predicted):** not pin 31's antipad. Pin 31's GND via took pin 30's own inward escape at (90.75, 105.75), so pin 30 reaches a shared VDD via at (90.5, 107.125) by about 5 mm of 0.2 mm F.Cu track around the pad toes. My 05:06Z "antipads" explanation was wrong for pin 30.
 - **Second reading (the one measured):** the pad's long axis has two ends; the end facing the feed is the path's. The via's antipad lies wholly beyond the pad's centre on the other end (left and bottom rows outward, top and right rows inward), and the via is not nearer the centroid of the nearest VDD pads (projection at most 0). Within 1.54 mm.
 - **Prediction unchanged:** worst VDD about 54.6 (pin 121), worst VSS about 43 (pin 31, outward), drop about 110 mV, too close to call; the outward vias on the left and bottom rows are the routing risk.
+
+## Option 1 prediction, the module on its own regulator, committed before any emission (2026-11-25T20:14:05Z)
+
+Ruled 2026-11-25T20:10Z. The design measured: a third LMR33630ADDA (U13), fed from the battery like U11, its own output `VDD_3V3_RF` (no plane: In2.Cu stays `VDD_3V3`). Its block copies U11's (R30/R31 105 k / 46.4 k, C30/C63 cin, C31 cin_hf, C32 cboot, C33 cvcc, C34-C37 cout, L3), and U30, C91/C92, R90 and R91 move to the new rail. The part was chosen before measuring:
+- **The LDO is out on its datasheet:** the only held LDO family (TLV755P, SBVS320D) is rated 500 mA (p. 4, 5.3), which leaves no margin over the module's 500 mA. From `VDD_5V` it loses (5.237 - 3.3) V x 0.5 A = 0.97 W, at the DBV's θJA of 231.1 °C/W (p. 5, 5.4), a rise of 224 °C, against a junction limit of 125 °C.
+- **The LMR33630 is the one buck the library holds with a θJA-versus-copper figure,** which the junction screen needs. At 0.5 A, Figure 9-8 (p. 27) reads 76.7-78.7 % on the 36 V curve, taken as 76 % (U11's convention): P_loss = 3.417 V x 500 mA x (1/0.76 - 1) = 540 mW. At the figure's smallest area, 7 cm² (θJA 42 °C/W), the junction is 85 + 22.7 = 107.7 °C, under 125.
+- **Fed from the battery,** not `VDD_5V`. U10's 2000 mA is DS-009's port budget, and taking 0.37 A more from it would re-judge U10. From the battery, U10 does not move, and the module's current reaches the battery through the same fuse as before.
+
+Predictions:
+- **U1's drop:** about **88 mV** (0.751 A x (54.7 + 62.5)), the module's term gone, within 80-95 mV if U13's block moves the escapes. It passes 110.
+- **The module rail's drop:** the limit is floor(3,144,727 µV) - 3.0 V = **144 mV**.
+  - The supply side is tracks, at most about 60 mOhm. Pad 19 stays unbounded, so the return is charged as in 1 (a') at U1's worst VSS, about 62.5 mOhm.
+  - Drop at most about 0.5 A x (60 + 62.5) = **61 mV**. It passes.
+  - The gate as built refuses the rail by name before judging it: `SupplyTerminalMissing`, since U1 has no pin on `VDD_3V3_RF`. The scratch measurement needs a scratch patch that makes U30 the load.
+- **U13:** 540 mW. It needs **at least 700 mm²** per joined layer, the figure's smallest point. U10 and U11 stay at least 700 mm² each (U11 1503 before).
+- **U11's loss row:** its load returns to about 751 mA, so U11's row is re-read there (Figure 9-8, about 83 %, about 530 mW). U11's copper need does not change (7 cm², the figure's smallest point).
+- **The outline: does not hold.** A third buck block with at least 7 cm² of its own pour grows 85.65 x 96.6 mm by about 10-20 mm on one side.
+- **DRC:** 36 `drill_out_of_range` (U13's thermal array adds 12 to U10's and U11's 24), nothing else new; `check drc --spec` passes.
+- **Sentinel-01 emits byte for byte as before.**
