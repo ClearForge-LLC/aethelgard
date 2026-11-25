@@ -1467,7 +1467,8 @@ pub fn supplies(
         }
         // every part on the domain that can draw current is a declared
         // load naming it (the load ruling): cited, derived or declared,
-        // never zeroed; the MCU and child regulators come from their rows,
+        // never zeroed; the MCU, child regulators and radio modules come
+        // from their rows,
         // and capacitors, inductors and test pads draw none
         let children: BTreeSet<&str> = power
             .regulators
@@ -1487,10 +1488,16 @@ pub fn supplies(
                     .iter()
                     .any(|r| &r.output == d && r.reference == p.reference)
                 && !children.contains(p.reference.as_str());
-            let named = power
-                .loads
-                .iter()
-                .any(|l| &l.domain == d && l.reference.as_deref() == Some(p.reference.as_str()));
+            // A radio module on the domain is counted from its row
+            // (`aethelgard_ir::radio::load_ma`, in `checked`'s load); a load
+            // naming it is refused (`LoadNamesCountedPart`, `AET-WO-4411` D5).
+            let named =
+                power.loads.iter().any(|l| {
+                    &l.domain == d && l.reference.as_deref() == Some(p.reference.as_str())
+                }) || spec
+                    .declared_radio_modules()
+                    .iter()
+                    .any(|m| &m.supply == d && m.reference == p.reference);
             if draws && !named {
                 return Err(refusal(
                     "SupplySinkUncounted",

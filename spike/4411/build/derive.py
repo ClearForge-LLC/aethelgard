@@ -28,6 +28,13 @@ s["serial_ports"].append({
     "peer_deviation_ppm": 5000,
     "peer_deviation_source": "declared",
 })
+# The supply gate's load ruling: each pull-up on the rail is a declared load
+# (as R3/R4 and the supervisor's R61 are); the module itself is counted from
+# its row, and a load naming it is refused (D5).
+s["power"]["loads"] += [
+    {"domain": "VDD_3V3", "milliamps": 1, "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's EN pull-up, AET-WO-4411)", "reference": "R90"},
+    {"domain": "VDD_3V3", "milliamps": 1, "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's IO2 strap pull-up, AET-WO-4411)", "reference": "R91"},
+]
 s["radio_modules"] = [{
     "reference": "U30",
     "part": "ESP32-C3-WROOM-02-N4",

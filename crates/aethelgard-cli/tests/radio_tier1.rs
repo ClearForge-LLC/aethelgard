@@ -212,7 +212,11 @@ fn the_modules_port_moves_no_pin() {
     let (code, radio) = run(&["solve", "--file", SPEC]);
     assert_eq!(code, 0, "{radio}");
     let port = &radio["serial_ports"][label.as_str()];
-    let own = [label.as_str(), port["tx"].as_str().unwrap(), port["rx"].as_str().unwrap()];
+    let own = [
+        label.as_str(),
+        port["tx"].as_str().unwrap(),
+        port["rx"].as_str().unwrap(),
+    ];
     let mut keys = 0;
     for (key, a) in base.as_object().unwrap() {
         if key == "specification_sha256" || key == "power" {

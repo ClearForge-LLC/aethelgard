@@ -502,12 +502,19 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     }
     // `AET-WO-4300k` (a): each buck's thermal pad, the copper it joins
     // measured on the board as read, and its junction screened at the least
-    // joined layer's area.
+    // joined layer's area. A radio module's ground pad has its own thermal
+    // vias (`AET-WO-4411`) and no buck's junction to screen.
+    let bucks: Vec<&str> = spec
+        .power
+        .iter()
+        .flat_map(|p| p.regulators.iter().map(|r| r.reference.as_str()))
+        .collect();
     let pads: Vec<(String, String)> = read
         .board
         .stack
         .thermal
         .iter()
+        .filter(|t| bucks.contains(&t.reference.as_str()))
         .map(|t| (t.reference.clone(), t.pad.clone()))
         .collect();
     let mut thermal = Vec::new();

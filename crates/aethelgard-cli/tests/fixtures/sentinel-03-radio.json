@@ -2078,6 +2078,18 @@
         "milliamps": 1,
         "source": "derived: 3.465 V (3.3 V + 5 %) / 100 kOhm = 0.035 mA, rounded up",
         "reference": "R61"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's EN pull-up, AET-WO-4411)",
+        "reference": "R90"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's IO2 strap pull-up, AET-WO-4411)",
+        "reference": "R91"
       }
     ],
     "sense": [
