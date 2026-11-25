@@ -6257,7 +6257,8 @@ mod tests {
         }
         for pupdr in ["0x5802000c", "0x5802040c"] {
             let read = format!("sysbus ReadDoubleWord {pupdr}");
-            assert_eq!(c.matches(&read).count(), 1, "{pupdr}");
+            // Once at each end read (`AET-WO-4400j` D4).
+            assert_eq!(c.matches(&read).count(), foreign::END_READS, "{pupdr}");
             assert!(c.find(&read).unwrap() > begin, "{pupdr}");
         }
         let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();

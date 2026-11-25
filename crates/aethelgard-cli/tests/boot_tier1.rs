@@ -2657,7 +2657,8 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
 /// A `renode` stub for a foreign boot (`AET-WO-4400e`): it answers
 /// `--version`, accepts only the foreign command line (the ELF right after
 /// the platform, SPI1's access log for D4,
-/// a `RunFor` of `time`, and none of the generated runtime's contract: no
+/// a `RunFor` of `time` to the first end read, then a quantum before each
+/// later one (`AET-WO-4400j` D4), and none of the generated runtime's contract: no
 /// boot word written, no hook of ours, no capture), and prints `stdout`.
 /// A stub Renode for a foreign boot. With `flash`, the run must hash
 /// [`elf`]'s one flash segment (64 bytes at `0x08000000`) after the reads and
@@ -2688,7 +2689,8 @@ case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBacke
 case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
-case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
+case "$7" in *"emulation RunFor \"{time}\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 95;; esac
+case "$7" in *"echo \"AETHELGARD-BOOT-END\"; emulation RunFor \"0.0001000005\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 90;; esac
 case "$7" in *"cpu AddHook 0x8000030 \"r = lambda x: "*"ok = v in (3, 4, 5, 6, ); "*"setattr(self, 'IsHalted', True)\"; "*"emulation RunFor"*) ;; *) exit 91;; esac
 {hash}
 /bin/cat '{out}'
@@ -2744,12 +2746,23 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
     );
     s.push_str(CONSOLE_BRINGUP);
     s.push_str(run_log);
-    s.push_str("AETHELGARD-BOOT-BEGIN\n");
-    // Then the RCC registers the clock check reads (`AET-WO-4400g`).
-    // Then each serial line's `PUPDR` (`AET-WO-2311`).
+    // The reads, at each of the four end reads (`AET-WO-4400j` D4), alike.
+    for _ in 0..4 {
+        s.push_str(&foreign_reads(icsr, &GOOD_REGISTERS, rcc));
+    }
+    s.push_str(flash);
+    s.push_str(CPU_LISTING);
+    s
+}
+
+/// One end read's block: the markers around executed instructions, MIPS,
+/// PC, `icsr`, then `registers`, then the RCC registers the clock check reads
+/// (`AET-WO-4400g`), then each serial line's `PUPDR` (`AET-WO-2311`).
+fn foreign_reads(icsr: &str, registers: &[&str], rcc: &[&str; 6]) -> String {
+    let mut s = String::from("AETHELGARD-BOOT-BEGIN\n");
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
-        .chain(GOOD_REGISTERS.iter())
+        .chain(registers.iter())
         .chain(rcc.iter())
         .chain([CONSOLE_PULLS].iter())
     {
@@ -2757,8 +2770,6 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
         s.push('\n');
     }
     s.push_str("AETHELGARD-BOOT-END\n");
-    s.push_str(flash);
-    s.push_str(CPU_LISTING);
     s
 }
 
@@ -2788,7 +2799,7 @@ fn foreign(stdout: &str) -> (Option<i32>, Value) {
 }
 
 fn foreign_of(stdout: &str, firmware: &[u8]) -> (Option<i32>, Value) {
-    let tb = toolbox_foreign(stdout, "0.0100000005", true);
+    let tb = toolbox_foreign(stdout, "0.0097000005", true);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", firmware);
     let out = foreign_with(&tb.0, &fw, "10ms");
@@ -3180,7 +3191,7 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     // The D2 firmware loads nothing into flash, so nothing is hashed.
     let tf = toolbox_foreign(
         &foreign_transcript_flash(&good_foreign_log(), "0x00000800", ""),
-        "0.0100000005",
+        "0.0097000005",
         false,
     );
     // It passes the memory rule, and is refused next because nothing it
@@ -3206,7 +3217,7 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     );
     let tt = toolbox_foreign(
         &foreign_transcript(&good_foreign_log(), "0x00000800"),
-        "0.0100000005",
+        "0.0097000005",
         true,
     );
     let loaded = foreign_with(&tt.0, &with_table, "10ms");
@@ -3296,7 +3307,7 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
     );
     let tb = toolbox_foreign_then(
         &foreign_transcript(&log, "0x00000803"),
-        "0.0100000005",
+        "0.0097000005",
         true,
         common::HOLD_PAST_CAP,
     );
@@ -3308,6 +3319,122 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
     assert_eq!(kinds(&v), ["memory_cap_exceeded", "foreign_fault"], "{v}");
 }
 
+/// A foreign transcript whose four end reads (`AET-WO-4400j` D4) each have
+/// their own ICSR and image registers.
+fn foreign_transcript_reads(blocks: &[(&str, &[&str])]) -> String {
+    let mut s = String::from(
+        "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
+    );
+    s.push_str(CONSOLE_BRINGUP);
+    s.push_str(&good_foreign_log());
+    for (icsr, registers) in blocks {
+        s.push_str(&foreign_reads(
+            icsr,
+            registers,
+            &common::foreign::RCC_AT_RESET,
+        ));
+    }
+    s.push_str(&flash_unchanged());
+    s.push_str(CPU_LISTING);
+    s
+}
+
+/// `AET-WO-4400j` D4 (i), ruled 2026-11-25T18:49Z: the end is read four
+/// times, one quantum apart, the last at the window's end, and a register,
+/// or the core in an exception, fails only if it fails at every read. A
+/// firmware stopping its SPI controller between transactions (SCK as GPIO)
+/// or in a handler for up to two quanta at the end passes; one that stays
+/// there fails; every read is in the verdict.
+#[test]
+fn a_foreign_end_read_fails_only_if_it_fails_at_all_four() {
+    let good: &[&str] = &GOOD_REGISTERS;
+    let mut moved = GOOD_REGISTERS;
+    moved[4] = "0x00000000";
+    let bad: &[&str] = &moved;
+    let modera = |v: &Value| {
+        v["boot"]["registers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == "GPIOA.MODER")
+            .cloned()
+            .unwrap()
+    };
+    let ok = "0x00000800";
+    let hard = "0x00000803";
+    for (blocks, mismatch) in [
+        ([bad, bad, bad, good], false),
+        ([good, bad, bad, bad], false),
+        ([bad, good, bad, bad], false),
+        ([bad, bad, bad, bad], true),
+    ] {
+        let reads: Vec<(&str, &[&str])> = blocks.iter().map(|r| (ok, *r)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(if mismatch { 1 } else { 0 }), "{v}");
+        assert_eq!(
+            kinds(&v).contains(&"register_mismatch".to_owned()),
+            mismatch,
+            "{v}"
+        );
+        let r = modera(&v);
+        let earlier: Vec<&str> = r["earlier"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = blocks[..3]
+            .iter()
+            .map(|b| {
+                if std::ptr::eq(*b, bad) {
+                    "0x00000000"
+                } else {
+                    "0x0028a801"
+                }
+            })
+            .collect();
+        assert_eq!(earlier, want, "{v}");
+    }
+    for (icsrs, in_exception) in [
+        ([hard, hard, hard, ok], false),
+        ([ok, hard, hard, hard], false),
+        ([hard, hard, hard, hard], true),
+    ] {
+        let reads: Vec<(&str, &[&str])> = icsrs.iter().map(|i| (*i, good)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(if in_exception { 1 } else { 0 }), "{v}");
+        assert_eq!(
+            kinds(&v).contains(&"core_in_exception".to_owned()),
+            in_exception,
+            "{v}"
+        );
+        assert_eq!(v["boot"]["icsr"], icsrs[3].to_lowercase(), "{v}");
+        assert_eq!(
+            v["boot"]["icsr_earlier"].as_array().unwrap().len(),
+            3,
+            "{v}"
+        );
+    }
+}
+
+/// D4 (i): a run whose output holds three end reads, or five, is untrusted
+/// output (exit 5), never judged on what it holds.
+#[test]
+fn a_foreign_run_without_exactly_four_end_reads_is_untrusted() {
+    let good: &[&str] = &GOOD_REGISTERS;
+    for n in [3, 5] {
+        let reads: Vec<(&str, &[&str])> = (0..n).map(|_| ("0x00000800", good)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(5), "{v}");
+        assert!(
+            v["error"]["message"].as_str().unwrap().contains(&format!(
+                "renode printed {n} begin and {n} end markers, not 4 of each"
+            )),
+            "{v}"
+        );
+    }
+}
+
 /// `AET-WO-2314` D2 (i): a vector table whose fault entry is 0, or outside
 /// every executable `PT_LOAD`, cannot be hooked, so the firmware is refused
 /// by name before a boot (the stub would exit 99 on any boot); the D2-only
@@ -3316,7 +3443,7 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
 /// the foreign judge admits).
 #[test]
 fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
-    let tb = toolbox_foreign("", "0.0100000005", true);
+    let tb = toolbox_foreign("", "0.0097000005", true);
     let input = Dir::new("in");
     let mut far = foreign_code();
     far[0x14..0x18].copy_from_slice(&0x0900_0001u32.to_le_bytes());
@@ -3449,7 +3576,8 @@ fn toolbox_input_writing(capture: Option<&[u8]>, expected: Option<&str>) -> Dir 
 [ "$1" = --config ] || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {RENODE_BUILD}\n'; exit 0; fi
 case "$7" in *"; include @"*"/input.resc; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 95;; esac
-case "$7" in *"emulation RunFor"*) exit 94;; esac
+case "$7" in *"emulation RunFor"*"; include @"*) exit 94;; esac
+case "$7" in *"echo \"AETHELGARD-BOOT-END\"; emulation RunFor \"0.0001000005\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 89;; esac
 script=$(printf '%s' "$7" | /bin/sed -n 's/.*; include @\([^;]*\); echo .*/\1/p')
 [ -r "$script" ] || exit 93
 cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$script")
@@ -3611,8 +3739,9 @@ fn an_input_run_reads_the_arm_from_the_firmwares_own_heartbeat() {
     want.push_str("emulation RunFor \"0.0010000005\"\n");
     send(&mut want, ARM, 11);
     // The ARM is 44 bytes (a 32-byte payload): with its fill, 55 bytes, the
-    // last at 4 + 54 × 0.1 = 9.4 ms; 0.6 ms to the end.
-    want.push_str("emulation RunFor \"0.0006000005\"\n");
+    // last at 4 + 54 × 0.1 = 9.4 ms; 0.3 ms to the first of the four end
+    // reads at 9.7 ms (`AET-WO-4400j` D4).
+    want.push_str("emulation RunFor \"0.0003000005\"\n");
     let tb = toolbox_input(&tx, Some(&want));
     let dir = Dir::new("arm");
     // A heartbeat at 1 ms, then an ARM at 4 ms with 11 bytes of fill.

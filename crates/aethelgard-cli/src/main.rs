@@ -2234,7 +2234,13 @@ fn simulate_with(
                     format!("cannot write the input's timeline: {e}"),
                 )
             })?;
-            Some((script, capture))
+            // Its events after the first end read run between the end reads
+            // (`AET-WO-4400j` D4), in `commands`.
+            Some((
+                script,
+                capture,
+                renode::foreign::timeline_tail(d, r.virtual_ns),
+            ))
         }
         _ => None,
     };
@@ -2414,7 +2420,9 @@ fn simulate_with(
                 .and_then(|r| r.panic)
                 .expect("ready holds a foreign firmware's panic"),
             &ready.as_ref().expect("foreign is ready's").faults,
-            timeline.as_ref().map(|(script, _)| script.as_path()),
+            timeline
+                .as_ref()
+                .map(|(script, _, tail)| (script.as_path(), tail.as_slice())),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2524,7 +2532,7 @@ fn simulate_with(
         report.not_at_rest =
             aethelgard_twin::rest::not_at_rest(&r.topology, &r.image.identity.checks);
     }
-    if let (Some(report), Some((d, archive)), Some((_, capture)), Some(r)) =
+    if let (Some(report), Some((d, archive)), Some((_, capture, _)), Some(r)) =
         (foreign_report.as_mut(), &declared, &timeline, &ready)
     {
         // Read beneath its directory, never through a link the tool made,

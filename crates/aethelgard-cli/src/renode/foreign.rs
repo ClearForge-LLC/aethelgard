@@ -59,8 +59,8 @@ pub const RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "core_in_exception",
-        "kept",
-        "ICSR.VECTACTIVE is 0 at the run's end",
+        "kept, with AET-WO-4400j D4 (i)",
+        "ICSR.VECTACTIVE is 0 at one of the run's four end reads, one quantum apart, the last at the window's end. Weakens: a core in handlers for three quanta at the end, then still in one at its end, is caught; one in handlers at every read is; one out of a handler for a single quantum among four passes (measured on ArduPilot: at most two quanta in a row, AET-WO-4400j)",
     ),
     (
         "pc_outside_firmware",
@@ -74,13 +74,18 @@ pub const RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "solved pins' MODER and AFR",
-        "kept",
-        "each solved pin's mode and alternate function, exactly",
+        "kept, with AET-WO-4400j D4 (i)",
+        "each solved pin's mode and alternate function, exactly, at one of the run's four end reads one quantum apart (a register fails only if it fails at all four). Weakens: a register right for one quantum of the last four passes (an SPI controller stopped between transactions holds its pins at most two quanta, measured, AET-WO-4400j)",
     ),
     (
         "USART CR1, CR2",
         "replaced",
-        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing, read back; and CR2's SWAP, TXINV and RXINV, which Renode does not store, from each declared USART's access log (AET-WO-2311, ruled at §1.2): the last CR2 word written while CR1.UE was clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), held to the specification alone: SWAP clear; on RC input TXINV clear; elsewhere TXINV and RXINV each as framing.inverted. A CR2 write with UE set that changes a judged bit fails (it does not take); a write into CR1 or CR2 that is not a word at its own offset, or no CR2 word written with UE clear, fails. Weakens: CR1.RE (receive enable) is not judged, as receive is held; an RC input port's RXINV is AP_RCProtocol's and unjudged; the words are the twin's sequence, not silicon's: a firmware that reads CR2 back before writing it reads every tag as 0 in the twin, so a clearing write silicon would make may be absent (ArduPilot's set_options, UARTDriver.cpp:1574, :1699-1709)",
+        "CR1's frame bits (UE, TE, PS, PCE, M0, M1) and CR2's STOP against the solved framing, read back; and CR2's SWAP, TXINV and RXINV, which Renode does not store, from each declared USART's access log (AET-WO-2311, ruled at §1.2): the last CR2 word written while CR1.UE was clear, the word silicon keeps (RM0433 Rev 9 §48.8.3, p. 2075), held to the specification alone: SWAP clear; on RC input TXINV clear; elsewhere TXINV and RXINV each as framing.inverted. A CR2 write with UE set that changes a judged bit fails (it does not take); a write into CR1 or CR2 that is not a word at its own offset, or no CR2 word written with UE clear, fails. Weakens: CR1.RE (receive enable) is not judged, as receive is held; an RC input port's RXINV is AP_RCProtocol's and unjudged; the words are the twin's sequence, not silicon's: a firmware that reads CR2 back before writing it reads every tag as 0 in the twin, so a clearing write silicon would make may be absent (ArduPilot's set_options, UARTDriver.cpp:1574, :1699-1709). At one of the four end reads, as the pins (AET-WO-4400j D4 (i)); on a port the specification declares as an RC input, CR2.STOP and CR1.PCE, PS and M0 are not judged at the end read, rc_protocol_search (D4 (ii)). Weakens: an RC port left at a wrong frame is not caught at the end",
+    ),
+    (
+        "rc_protocol_search",
+        "added, AET-WO-4400j D4 (ii)",
+        "on a declared RC input port, ArduPilot's protocol search (AP_RCProtocol.cpp L336-396) cycles six serial configurations, 1 s each; CR2.STOP and CR1.PCE, PS and M0 are its, and are not judged at the end read there, each named in boot.rc_search and an info finding. Weakens: an RC port left at a wrong stop, parity or word length at the run's end is not caught",
     ),
     (
         "serial pins' PUPDR",
@@ -224,7 +229,11 @@ pub struct RegisterReport {
     pub rule: &'static str,
     pub mask: String,
     pub expected: String,
+    /// At the end read, the window's end.
     pub observed: String,
+    /// At the end reads before it, one quantum apart, in order
+    /// (`AET-WO-4400j` D4 (i)).
+    pub earlier: Vec<String>,
 }
 
 /// One device step the foreign judge looks for, and where it found it.
@@ -340,6 +349,11 @@ pub struct ForeignBoot {
     pub instructions: Option<u64>,
     pub pc: Option<String>,
     pub icsr: Option<String>,
+    /// ICSR at the end reads before the last, in order (`AET-WO-4400j` D4 (i)).
+    pub icsr_earlier: Vec<String>,
+    /// Each RC port's register whose search fields the end read left
+    /// unjudged, and those bits ([`RC_SEARCH`], `AET-WO-4400j` D4 (ii)).
+    pub rc_search: Vec<String>,
     pub booted: Option<Booted>,
     pub registers: Vec<RegisterReport>,
     pub devices: Vec<StepReport>,
@@ -999,7 +1013,7 @@ pub fn commands(
     serial: &[aethelgard_twin::serial::Options],
     panic: u64,
     faults: &[(u32, u64)],
-    input: Option<&Path>,
+    input: Option<(&Path, &[(u64, String)])>,
 ) -> Result<String, Stop> {
     let mut c = vec![
         format!("emulation SetSeed {}", aethelgard_twin::boot::SEED),
@@ -1024,18 +1038,71 @@ pub fn commands(
     c.extend(fault_hooks(faults));
     c.extend(plan.stimuli());
     // A declared input's timeline (`AET-WO-4400i`): its stimuli, bytes and
-    // run to the window's end, from a script file.
-    match input {
-        Some(script) => c.push(format!("include @{}", script.display())),
-        None => c.push(run_for(plan.virtual_ns)),
-    }
-    c.push(format!("echo \"{BEGIN}\""));
-    c.extend(reads(plan, serial)?.into_iter().map(|(cmd, _)| cmd));
-    c.push(format!("echo \"{END}\""));
+    // run to the first end read, from a script file; its events after that
+    // instant are the tail, run between the end reads.
+    let mut block = vec![format!("echo \"{BEGIN}\"")];
+    block.extend(reads(plan, serial)?.into_iter().map(|(cmd, _)| cmd));
+    block.push(format!("echo \"{END}\""));
+    let (now, tail) = match input {
+        Some((script, tail)) => {
+            c.push(format!("include @{}", script.display()));
+            (end_read_instants(plan.virtual_ns)[0], tail)
+        }
+        None => (0, &[][..]),
+    };
+    c.extend(end_commands(now, plan.virtual_ns, tail, &block));
     c.extend(flash.iter().map(flash_hash));
     c.push("peripherals".to_owned());
     c.push("quit".to_owned());
     Ok(c.join("; "))
+}
+
+/// How many times the end of the run is read (`AET-WO-4400j` D4 (i), ruled
+/// 2026-11-25T18:49Z): four reads one quantum apart, the last at the
+/// window's end, never past it. A register, or the core in an exception, is
+/// judged at the end only if it fails at every one. Measured on
+/// Sentinel-03's ArduPilot, per quantum over a second: an SPI controller
+/// stopped between transactions, or the core in a handler, held at most two
+/// quanta in a row (`spike/4400j/RESULTS.md` §4), and either fails a single
+/// read about one end in fifty.
+pub const END_READS: usize = 4;
+
+/// The instants of the [`END_READS`] end reads, one quantum apart, the last
+/// at `virtual_ns`; for a window shorter than three quanta, the earlier ones
+/// are at 0, so no read is ever past the window.
+pub fn end_read_instants(virtual_ns: u64) -> [u64; END_READS] {
+    let q = aethelgard_twin::boot::QUANTUM_NS;
+    std::array::from_fn(|k| virtual_ns.saturating_sub((END_READS - 1 - k) as u64 * q))
+}
+
+/// The run from `now` to the window's end with the end reads: each `tail`
+/// event (an input's, after the first end read's instant) at its instant, and
+/// `block` (the markers and the reads) at each of [`end_read_instants`],
+/// after the events at the same instant.
+fn end_commands(
+    now: u64,
+    virtual_ns: u64,
+    tail: &[(u64, String)],
+    block: &[String],
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut now = now;
+    let mut events = tail.iter().peekable();
+    for at in end_read_instants(virtual_ns) {
+        while let Some((t, cmd)) = events.next_if(|(t, _)| *t <= at) {
+            if *t > now {
+                out.push(run_for(t - now));
+                now = *t;
+            }
+            out.push(cmd.clone());
+        }
+        if at > now {
+            out.push(run_for(at - now));
+            now = at;
+        }
+        out.extend(block.iter().cloned());
+    }
+    out
 }
 
 /// Each declared serial port's USART, its accesses logged (`AET-WO-2311`
@@ -1165,6 +1232,54 @@ fn frame_bits() -> Result<u32, Stop> {
         mask |= 1 << at;
     }
     Ok(mask)
+}
+
+/// What the end read leaves unjudged on a port the specification declares
+/// as an RC input (`AET-WO-4400j` D4 (ii), ruled 2026-11-25T18:49Z).
+pub const RC_SEARCH: &str = "rc_protocol_search: on a port the specification declares as an RC input (rc_crsf, rc_sbus), unmodified ArduPilot searches for the protocol: Copter-4.7.2's AP_RCProtocol.cpp (serial_configs, L336-352; check_added_uart, L359-396) applies the next of six serial configurations every 1 s until one is detected, two of them 8E2, so a run with no receiver leaves the port at two stop bits for 2 s of every 6 (spike/4400j/RESULTS.md section 4). At the end read, that port's CR2.STOP and CR1.PCE, PS and M0 are not judged; every other field of its CR1 and CR2, and every other port, is";
+
+/// The fields [`RC_SEARCH`] leaves unjudged, as `(CR1 mask, CR2 mask)`, each
+/// position from ST's header (`RUL-16`): `CR1`'s `PCE`, `PS` and `M0`, and
+/// `CR2`'s `STOP`.
+fn rc_search_fields() -> Result<(u32, u32), Stop> {
+    let hal = |e: aethelgard_svd_hal::cmsis::RegisterError| {
+        Stop::tool_error("aethelgard-svd-hal", e.to_string())
+    };
+    let f = aethelgard_svd_hal::cmsis::register_facts().map_err(hal)?;
+    let mut cr1 = 0u32;
+    for name in ["PCE", "PS", "M0"] {
+        cr1 |= 1 << f.position(&format!("USART_CR1_{name}_Pos")).map_err(hal)?;
+    }
+    let (at, width) = f.field("USART_CR2_STOP").map_err(hal)?;
+    Ok((cr1, ((1u32 << width) - 1) << at))
+}
+
+/// The mask the end read judges register `name` (`USART3.CR2`) under, and
+/// the bits D4 (ii) took out of `mask`: [`rc_search_fields`]' (`rc`), on a
+/// port the specification declares as an RC input, of its `CR1` and `CR2`
+/// alone; 0 everywhere else.
+fn end_mask(
+    name: &str,
+    mask: u32,
+    serial: &[aethelgard_twin::serial::Options],
+    rc: (u32, u32),
+) -> (u32, u32) {
+    let Some((instance, register)) = name.split_once('.') else {
+        return (mask, 0);
+    };
+    let is_rc = serial.iter().any(|o| {
+        o.peripheral == instance
+            && matches!(
+                o.role,
+                aethelgard_ir::SerialRole::RcCrsf | aethelgard_ir::SerialRole::RcSbus
+            )
+    });
+    let fields = match (is_rc, register) {
+        (true, "CR1") => rc.0,
+        (true, "CR2") => rc.1,
+        _ => 0,
+    };
+    (mask & !fields, mask & fields)
 }
 
 /// One expected line of a step: the model's whole line, or a listed read's
@@ -1426,6 +1541,8 @@ pub fn report(
         instructions: None,
         pc: None,
         icsr: None,
+        icsr_earlier: Vec::new(),
+        rc_search: Vec::new(),
         booted: None,
         registers: Vec::new(),
         devices: Vec::new(),
@@ -1510,61 +1627,97 @@ pub fn judge(
         };
         return Ok((vec![Finding::plain(kind, message)], None, report));
     }
-    let (&[begin], &[end]) = (begins.as_slice(), ends.as_slice()) else {
+    // `AET-WO-4400j` D4: the reads are taken [`END_READS`] times, one quantum
+    // apart, each between its own pair of markers, the last at the end.
+    if begins.len() != END_READS || ends.len() != END_READS {
         return Err(untrusted(format!(
-            "renode printed {} begin and {} end markers, not one of each",
+            "renode printed {} begin and {} end markers, not {END_READS} of each",
             begins.len(),
             ends.len()
         )));
-    };
-    if end < begin {
+    }
+    if (0..END_READS).any(|k| ends[k] < begins[k] || (k > 0 && begins[k] < ends[k - 1])) {
         return Err(untrusted(
-            "renode printed the end marker before the begin marker".into(),
+            "renode printed the begin and end markers out of order".into(),
         ));
     }
-    let run_log: Vec<&str> = lines[..begin].to_vec();
+    let end = ends[END_READS - 1];
+    // The run's log: every line outside the read blocks, up to the last.
+    let mut run_log: Vec<&str> = lines[..begins[0]].to_vec();
+    for k in 1..END_READS {
+        run_log.extend_from_slice(&lines[ends[k - 1] + 1..begins[k]]);
+    }
     let wanted = reads(plan, serial)?;
-    let mut values = Vec::with_capacity(wanted.len());
-    for line in &lines[begin + 1..end] {
-        if value(line).is_some() {
-            values.push(*line);
-        } else if !is_log_line(line) {
+    let mut blocks: Vec<Vec<&str>> = Vec::with_capacity(END_READS);
+    for k in 0..END_READS {
+        let mut values = Vec::with_capacity(wanted.len());
+        for line in &lines[begins[k] + 1..ends[k]] {
+            if value(line).is_some() {
+                values.push(*line);
+            } else if !is_log_line(line) {
+                return Err(untrusted(format!(
+                    "`{}` between the markers is neither a read nor a whole log line",
+                    line.escape_debug()
+                        .to_string()
+                        .chars()
+                        .take(120)
+                        .collect::<String>()
+                )));
+            }
+        }
+        if values.len() != wanted.len() {
             return Err(untrusted(format!(
-                "`{}` between the markers is neither a read nor a whole log line",
-                line.escape_debug()
-                    .to_string()
-                    .chars()
-                    .take(120)
-                    .collect::<String>()
+                "renode printed {} values between the markers, not the {} reads",
+                values.len(),
+                wanted.len()
             )));
         }
+        blocks.push(values);
     }
-    if values.len() != wanted.len() {
-        return Err(untrusted(format!(
-            "renode printed {} values between the markers, not the {} reads",
-            values.len(),
-            wanted.len()
-        )));
-    }
-    let mut observed = vec![0u32; plan.image.registers.len()];
+    // Each image register and ICSR at every end read; the rest at the end's.
+    let mut observed = vec![[0u32; END_READS]; plan.image.registers.len()];
+    let mut icsr = [0u32; END_READS];
     let mut rcc = [0u32; 6];
     let mut pulls = vec![0u32; pull_registers(serial).len()];
-    let (mut pc, mut icsr) = (0u32, 0u32);
-    for ((cmd, read), line) in wanted.iter().zip(values) {
-        let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
-        let word = || u32::try_from(v).map_err(|_| untrusted(format!("`{cmd}` read {v:#x}")));
-        match *read {
-            ForeignRead::Instructions => report.instructions = Some(v),
-            ForeignRead::Mips => report.mips = Some(v),
-            ForeignRead::Pc => pc = word()?,
-            ForeignRead::Icsr => icsr = word()?,
-            ForeignRead::Register(i) => observed[i] = word()?,
-            ForeignRead::Rcc(i) => rcc[i] = word()?,
-            ForeignRead::Pull(i) => pulls[i] = word()?,
+    let mut pc = 0u32;
+    for (k, values) in blocks.iter().enumerate() {
+        let last = k == END_READS - 1;
+        for ((cmd, read), line) in wanted.iter().zip(values) {
+            let v = value(line).ok_or_else(|| untrusted(format!("`{cmd}` read no value")))?;
+            let word = || u32::try_from(v).map_err(|_| untrusted(format!("`{cmd}` read {v:#x}")));
+            match *read {
+                ForeignRead::Instructions if last => report.instructions = Some(v),
+                ForeignRead::Mips if last => report.mips = Some(v),
+                ForeignRead::Instructions | ForeignRead::Mips => {}
+                ForeignRead::Pc => {
+                    let w = word()?;
+                    if last {
+                        pc = w;
+                    }
+                }
+                ForeignRead::Icsr => icsr[k] = word()?,
+                ForeignRead::Register(i) => observed[i][k] = word()?,
+                ForeignRead::Rcc(i) => {
+                    let w = word()?;
+                    if last {
+                        rcc[i] = w;
+                    }
+                }
+                ForeignRead::Pull(i) => {
+                    let w = word()?;
+                    if last {
+                        pulls[i] = w;
+                    }
+                }
+            }
         }
     }
     report.pc = Some(format!("{pc:#010x}"));
-    report.icsr = Some(format!("{icsr:#010x}"));
+    report.icsr = Some(format!("{:#010x}", icsr[END_READS - 1]));
+    report.icsr_earlier = icsr[..END_READS - 1]
+        .iter()
+        .map(|i| format!("{i:#010x}"))
+        .collect();
     let (cpus, peripherals) = listing(&lines[end + 1..]);
     if cpus.is_empty() {
         return Err(untrusted("renode listed no CPU after the reads".into()));
@@ -1730,12 +1883,14 @@ pub fn judge(
             observed_sha256: observed,
         });
     }
-    let vectactive = icsr & 0x1FF;
-    if vectactive != 0 {
+    // In an exception at every end read (D4 (i)); the message is the end's.
+    let vectactive = icsr[END_READS - 1] & 0x1FF;
+    if icsr.iter().all(|i| i & 0x1FF != 0) {
         findings.push(Finding::plain(
             "core_in_exception",
             format!(
-                "the run ended in exception {vectactive} (ICSR {icsr:#010x}), not in thread mode"
+                "the run ended in exception {vectactive} (ICSR {:#010x}), not in thread mode, at each of its {END_READS} end reads one quantum apart",
+                icsr[END_READS - 1]
             ),
         ));
     }
@@ -1751,17 +1906,31 @@ pub fn judge(
             ),
         ));
     }
+    let rc_fields = rc_search_fields()?;
     for (i, reg) in plan.image.registers.iter().enumerate() {
         let Some((rule, narrowed)) = register_rule(&reg.name, frame) else {
             continue;
         };
-        let mask = narrowed.map_or(reg.mask, |n| reg.mask & n);
+        let (mask, unjudged) = end_mask(
+            &reg.name,
+            narrowed.map_or(reg.mask, |n| reg.mask & n),
+            serial,
+            rc_fields,
+        );
+        if unjudged != 0 {
+            report
+                .rc_search
+                .push(format!("{}: {unjudged:#010x} unjudged", reg.name));
+        }
         let expected = reg.value & mask;
-        let got = observed[i];
-        let ok = match rule {
+        let holds = |got: u32| match rule {
             "at_least" => got & expected == expected,
             _ => got & mask == expected,
         };
+        // It fails only if it fails at every end read (D4 (i)); the message
+        // and `observed` are the end's.
+        let got = observed[i][END_READS - 1];
+        let ok = observed[i].iter().any(|&g| holds(g));
         report.registers.push(RegisterReport {
             name: reg.name.clone(),
             address: format!("{:#010x}", reg.address),
@@ -1769,6 +1938,10 @@ pub fn judge(
             mask: format!("{mask:#010x}"),
             expected: format!("{expected:#010x}"),
             observed: format!("{got:#010x}"),
+            earlier: observed[i][..END_READS - 1]
+                .iter()
+                .map(|g| format!("{g:#010x}"))
+                .collect(),
         });
         if !ok {
             findings.push(Finding::plain(
@@ -1787,6 +1960,18 @@ pub fn judge(
                 },
             ));
         }
+    }
+
+    // D4 (ii), by name, with what it left unjudged.
+    if !report.rc_search.is_empty() {
+        findings.push(Finding::info(
+            "rc_protocol_search",
+            format!(
+                "{}; here: {}",
+                RC_SEARCH.trim_start_matches("rc_protocol_search: "),
+                report.rc_search.join(", ")
+            ),
+        ));
     }
 
     // Each declared serial port's options and pulls (`AET-WO-2311`).
@@ -2208,10 +2393,45 @@ pub fn declare(
 
 /// The run's timeline from virtual time 0, as a Renode script: the port's
 /// transmission into `capture`, then each rest stimulus and each byte at its
-/// instant (a stimulus first at a shared instant), then the run to
-/// `virtual_ns`. A file, never the `-e` argument: one command per byte would
-/// pass the 128 KiB a single argument may be.
+/// instant (a stimulus first at a shared instant), then the run to the first
+/// end read ([`end_read_instants`]); the rest is [`timeline_tail`]'s. A file,
+/// never the `-e` argument: one command per byte would pass the 128 KiB a
+/// single argument may be.
 pub fn timeline(d: &Declared, capture: &Path, virtual_ns: u64) -> String {
+    let first_read = end_read_instants(virtual_ns)[0];
+    let mut lines = vec![format!(
+        "sysbus.{0} CreateFileBackend @{1}/{0}.bin true",
+        d.renode,
+        capture.display()
+    )];
+    let mut now = 0u64;
+    for (t, cmd) in events(d).into_iter().filter(|(t, _)| *t <= first_read) {
+        if t > now {
+            lines.push(run_for(t - now));
+            now = t;
+        }
+        lines.push(cmd);
+    }
+    if first_read > now {
+        lines.push(run_for(first_read - now));
+    }
+    lines.join("\n") + "\n"
+}
+
+/// The input's events after the first end read's instant (`AET-WO-4400j`
+/// D4): [`commands`] runs them between the end reads, since the reads are
+/// known only once the boot is planned, after the timeline is sealed.
+pub fn timeline_tail(d: &Declared, virtual_ns: u64) -> Vec<(u64, String)> {
+    let first_read = end_read_instants(virtual_ns)[0];
+    events(d)
+        .into_iter()
+        .filter(|(t, _)| *t > first_read)
+        .collect()
+}
+
+/// The input's stimuli and bytes, each at its instant, in order; at a shared
+/// instant, the stimuli first.
+fn events(d: &Declared) -> Vec<(u64, String)> {
     let mut events: Vec<(u64, String)> = d.stimuli.iter().map(|s| (s.at_ns, s.command())).collect();
     events.extend(
         mavlink::schedule(&d.frames, d.spacing_ns)
@@ -2220,23 +2440,7 @@ pub fn timeline(d: &Declared, capture: &Path, virtual_ns: u64) -> String {
     );
     // Stable: at a shared instant, the stimuli (pushed first) go first.
     events.sort_by_key(|e| e.0);
-    let mut lines = vec![format!(
-        "sysbus.{0} CreateFileBackend @{1}/{0}.bin true",
-        d.renode,
-        capture.display()
-    )];
-    let mut now = 0u64;
-    for (t, cmd) in events {
-        if t > now {
-            lines.push(run_for(t - now));
-            now = t;
-        }
-        lines.push(cmd);
-    }
-    if virtual_ns > now {
-        lines.push(run_for(virtual_ns - now));
-    }
-    lines.join("\n") + "\n"
+    events
 }
 
 /// What the verdict says of an input run.
@@ -3114,6 +3318,90 @@ mod tests {
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
         aethelgard_twin::serial::options(&topology).unwrap()
+    }
+
+    /// `AET-WO-4400j` D4 (i): four end reads one quantum apart, the last at
+    /// the window's end and none past it; a window under three quanta reads
+    /// its earlier ones at 0. An input's events after the first read run
+    /// between the reads, each at its instant, before a read at the same
+    /// instant.
+    #[test]
+    fn the_end_is_read_four_times_ending_at_the_window_and_never_past_it() {
+        let q = aethelgard_twin::boot::QUANTUM_NS;
+        assert_eq!(
+            end_read_instants(10_000_000),
+            [9_700_000, 9_800_000, 9_900_000, 10_000_000]
+        );
+        assert_eq!(end_read_instants(150_000), [0, 0, 50_000, 150_000]);
+        assert_eq!(end_read_instants(0), [0; END_READS]);
+        let block = vec!["R".to_owned()];
+        assert_eq!(
+            end_commands(0, 10_000_000, &[], &block),
+            [
+                run_for(9_700_000),
+                "R".into(),
+                run_for(q),
+                "R".into(),
+                run_for(q),
+                "R".into(),
+                run_for(q),
+                "R".into()
+            ]
+        );
+        let tail = [
+            (9_750_000, "A".to_owned()),
+            (9_800_000, "B".to_owned()),
+            (10_000_000, "C".to_owned()),
+        ];
+        assert_eq!(
+            end_commands(9_700_000, 10_000_000, &tail, &block),
+            [
+                "R".into(),
+                run_for(50_000),
+                "A".into(),
+                run_for(50_000),
+                "B".into(),
+                "R".into(),
+                run_for(q),
+                "R".into(),
+                run_for(q),
+                "C".into(),
+                "R".into()
+            ]
+        );
+    }
+
+    /// `AET-WO-4400j` D4 (ii): on the four-port board, the CRSF port
+    /// (USART3, `rc_crsf`) leaves exactly CR2's STOP and CR1's PCE, PS and M0
+    /// to ArduPilot's protocol search at the end read: its two stop bits and
+    /// 8E2 pass, named; the same on the GPS port (USART2) fails; another
+    /// field of the RC port (CR1's UE) is still judged, as is any other
+    /// register.
+    #[test]
+    fn only_an_rc_ports_search_fields_are_left_unjudged_at_the_end() {
+        let serial = four_port(|_| {});
+        let rc = rc_search_fields().unwrap();
+        // RM0433 Rev 9 §53.8.1-2: PCE 10, PS 9, M0 12; STOP [13:12].
+        assert_eq!(rc, (1 << 10 | 1 << 9 | 1 << 12, 0x3000));
+        let frame = frame_bits().unwrap();
+        let judged = |name: &str, mask: u32, expected: u32, got: u32| {
+            let (m, unjudged) = end_mask(name, mask, &serial, rc);
+            (got & m == expected & m, unjudged)
+        };
+        // Two stop bits (CR2 0x2000) against the solved one stop bit.
+        assert_eq!(judged("USART3.CR2", 0x3000, 0, 0x2000), (true, 0x3000));
+        assert_eq!(judged("USART2.CR2", 0x3000, 0, 0x2000), (false, 0));
+        // 8E2's CR1: PCE, PS and M0 set, as ArduPilot writes 0x2000153D.
+        let e81 = 0x0000_000D & frame;
+        assert_eq!(
+            judged("USART3.CR1", frame, e81, 0x2000_153D),
+            (true, frame & rc.0)
+        );
+        assert!(!judged("USART2.CR1", frame, e81, 0x2000_153D).0);
+        assert!(!judged("USART1.CR1", frame, e81, 0x2000_153D).0);
+        // UE clear on the RC port is still a mismatch; so is a GPIO register.
+        assert!(!judged("USART3.CR1", frame, e81, 0x0000_000C).0);
+        assert_eq!(judged("GPIOA.MODER", 0xFFFF, 0x1234, 0x1235), (false, 0));
     }
 
     /// An access line in Renode 1.17.0's measured shape (`spike/2311/out`,
