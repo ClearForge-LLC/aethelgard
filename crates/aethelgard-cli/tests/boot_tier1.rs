@@ -3038,6 +3038,58 @@ fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
     assert_eq!(v["boot"]["spi_errors_exempted"], 0, "{v}");
 }
 
+/// `AET-WO-4400j` D2 (ruled 2026-11-25T18:49Z), through the CLI: fifty D4
+/// cycles on spi1 (`CFG2` MASTER 1, then MASTER 0 with `SPE` 0 and the
+/// slave-mode error) are kept the first time and counted after: the verdict
+/// counts all fifty exempt and names the cycle with its count; the log keeps
+/// one error. A fifty-first cycle left a slave while its device speaks is
+/// never summarised: it fails, as it would in the whole log.
+#[test]
+fn repeated_exempt_cycles_are_summarised_and_counted_and_a_bad_one_is_not() {
+    let cycles = |n: usize, bad: bool| {
+        let mut s = good_foreign_log();
+        for k in 0..n {
+            let t = 41_000_000 + k * 10_000;
+            s.push_str(&format!(
+                "[00:00:00.{:09}] [WARNING] spi1: AETHELGARD-CFG2 20400000 0
+[00:00:00.{:09}] [WARNING] spi1: AETHELGARD-CFG2 0 0
+[00:00:00.{:09}] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+",
+                t,
+                t + 1_000,
+                t + 2_000
+            ));
+        }
+        if bad {
+            s.push_str("[00:00:00.900000000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+");
+        }
+        s.push_str(
+            "[00:00:00.950000000] [WARNING] spi1: AETHELGARD-CFG2 20400000 0
+",
+        );
+        s
+    };
+    let (code, v) = foreign(&foreign_transcript(&cycles(50, false), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 50, "{v}");
+    let cycle = v["boot"]["summarised"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["line"].as_str().unwrap().contains("slave mode"))
+        .cloned()
+        .unwrap();
+    assert_eq!(cycle["count"], 50, "{v}");
+    assert_eq!(cycle["first_ns"], 41_002_000, "{v}");
+    assert_eq!(cycle["last_ns"], 41_492_000, "{v}");
+    assert_eq!(v["boot"]["summary_capped"], false, "{v}");
+    let (code, v) = foreign(&foreign_transcript(&cycles(50, true), "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["renode_error_log"], "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 49, "{v}");
+}
+
 /// Ruled on PR #212 (comment 6965511448): the firmware's own loaded flash
 /// bytes, hashed in Renode after the run, must be the ELF's; an access to an
 /// unclocked peripheral is an `info` finding listing each address; Renode's

@@ -426,6 +426,12 @@ pub struct Output {
     /// The lines a [`LogFilter`]'s `summarise` took, one per key, in the order
     /// first seen; empty without one (`AET-WO-4400e` D7 (a)).
     pub summaries: Vec<Summary>,
+    /// The occurrences a [`Summarise`] noted, one per key, in the order first
+    /// seen; empty without one (`AET-WO-4400j` D2).
+    pub noted: Vec<Summary>,
+    /// Whether that [`Summarise`] reached its cap of keys, past which it keeps
+    /// every line as written.
+    pub summary_capped: bool,
 }
 
 /// Identical log lines summarised (`AET-WO-4400e` D7 (a)): the first is kept
@@ -436,8 +442,42 @@ pub struct Output {
 pub struct Summary {
     pub key: String,
     pub count: u64,
+    /// How many of `count` were kept as written (a [`Summarise`]'s note);
+    /// 1 for a [`LogFilter`]'s own summary, whose first line is kept.
+    pub kept: u64,
     pub first: String,
     pub last: String,
+}
+
+/// What a [`Summarise`] says of the log lines it has read (`AET-WO-4400j` D2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Emit {
+    /// A whole log line, without its newline, kept as any line is: against
+    /// the budget, and in the order emitted.
+    Keep(String),
+    /// One occurrence of `key`, at Renode's timestamp text `stamp`; `kept` if
+    /// its lines were kept as written, else they were dropped, uncounted
+    /// against the budget.
+    Note {
+        key: String,
+        stamp: String,
+        kept: bool,
+    },
+}
+
+/// A summary with state, reading the log in order after [`LogFilter`]'s
+/// `discard` and `summarise` (`AET-WO-4400j` D2): a line it may hold until a
+/// later one says what it was, and keep, note or drop. Before any line that is
+/// not a log line (a marker, a read), and at the end, it is flushed: what it
+/// holds is released.
+pub trait Summarise: Send {
+    /// One whole log line, without its newline; what is kept and noted, in
+    /// order, into `out`.
+    fn line(&mut self, line: &str, out: &mut Vec<Emit>);
+    /// Releases what is held into `out`.
+    fn flush(&mut self, out: &mut Vec<Emit>);
+    /// Whether it reached its cap of keys.
+    fn capped(&self) -> bool;
 }
 
 /// A bounded reading of a tool's stdout for a tool whose log can flood it
@@ -518,21 +558,37 @@ pub struct Invocation<'a> {
 impl Invocation<'_> {
     /// Runs the tool through the reaper and waits for it.
     pub fn run(&self) -> Result<Output, Stop> {
-        self.start(None, None)
+        self.start(None, None, None)
     }
 
     /// As `run`, with the reaper killing the tool's tree past `bounds`, which
     /// it then reports as `Ended::Bounded`.
     pub fn run_bounded(&self, bounds: Bounds) -> Result<Output, Stop> {
-        self.start(Some(bounds), None)
+        self.start(Some(bounds), None, None)
     }
 
     /// As [`run_bounded`](Self::run_bounded), reading stdout through `filter`.
     pub fn run_bounded_filtered(&self, bounds: Bounds, filter: LogFilter) -> Result<Output, Stop> {
-        self.start(Some(bounds), Some(filter))
+        self.start(Some(bounds), Some(filter), None)
     }
 
-    fn start(&self, bounds: Option<Bounds>, filter: Option<LogFilter>) -> Result<Output, Stop> {
+    /// As [`run_bounded_filtered`](Self::run_bounded_filtered), with `summary`
+    /// reading the log after the filter (`AET-WO-4400j` D2).
+    pub fn run_bounded_summarised(
+        &self,
+        bounds: Bounds,
+        filter: LogFilter,
+        summary: Box<dyn Summarise>,
+    ) -> Result<Output, Stop> {
+        self.start(Some(bounds), Some(filter), Some(summary))
+    }
+
+    fn start(
+        &self,
+        bounds: Option<Bounds>,
+        filter: Option<LogFilter>,
+        summary: Option<Box<dyn Summarise>>,
+    ) -> Result<Output, Stop> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
@@ -590,16 +646,15 @@ impl Invocation<'_> {
         let mut child = cmd.spawn().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot start the reaper: {e}"))
         })?;
-        let stdout = capture(child.stdout.take().expect("piped stdout"), filter);
-        let stderr = capture(child.stderr.take().expect("piped stderr"), None);
+        let stdout = capture(child.stdout.take().expect("piped stdout"), filter, summary);
+        let stderr = capture(child.stderr.take().expect("piped stderr"), None, None);
         let reaper = child.wait();
         let stdout = stdout.join().expect("stdout reader");
         let stderr = stderr.join().expect("stderr reader");
         let reaper = reaper.map_err(|e| {
             Stop::tool_error(self.tool.name, format!("waiting for the reaper: {e}"))
         })?;
-        let (Some((stdout, dropped_log_lines, summaries)), Some((stderr, _, _))) = (stdout, stderr)
-        else {
+        let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
             return Err(Stop::tool_error(
                 self.tool.name,
                 format!("output exceeded {MAX_CAPTURE} bytes"),
@@ -636,12 +691,14 @@ impl Invocation<'_> {
         }
         Ok(Output {
             ended,
-            stdout,
-            stderr,
+            stdout: stdout.kept,
+            stderr: stderr.kept,
             sandbox,
-            dropped_log_lines,
+            dropped_log_lines: stdout.dropped,
             peak_rss_kib: peak_of(&status),
-            summaries,
+            summaries: stdout.summaries,
+            noted: stdout.noted,
+            summary_capped: stdout.capped,
         })
     }
 }
@@ -653,9 +710,11 @@ impl Invocation<'_> {
 fn capture(
     mut pipe: impl Read + Send + 'static,
     filter: Option<LogFilter>,
+    summary: Option<Box<dyn Summarise>>,
 ) -> thread::JoinHandle<Option<Captured>> {
     thread::spawn(move || {
         let mut kept = Filtered::new(filter);
+        kept.summary = summary;
         let mut chunk = [0u8; 64 * 1024];
         loop {
             match pipe.read(&mut chunk) {
@@ -668,8 +727,15 @@ fn capture(
     })
 }
 
-/// A capture's kept bytes, the log lines it dropped, and its summaries.
-type Captured = (Vec<u8>, u64, Vec<Summary>);
+/// A capture's kept bytes, the log lines it dropped, its summaries, its
+/// [`Summarise`]'s notes, and whether that reached its cap.
+struct Captured {
+    kept: Vec<u8>,
+    dropped: u64,
+    summaries: Vec<Summary>,
+    noted: Vec<Summary>,
+    capped: bool,
+}
 
 /// The bytes a capture keeps: all of them without a filter; with one, every
 /// whole line until the budget, then [`LogFilter`]'s rule line by line.
@@ -684,6 +750,11 @@ struct Filtered {
     summaries: Vec<Summary>,
     /// Each summary's index by key.
     summarised: std::collections::HashMap<String, usize>,
+    /// A summary with state (`AET-WO-4400j` D2), its notes and each note's
+    /// index by key; its own cap bounds the keys.
+    summary: Option<Box<dyn Summarise>>,
+    noted: Vec<Summary>,
+    noted_at: std::collections::HashMap<String, usize>,
 }
 
 /// The most kinds a capture summarises (`AET-WO-4400e` adversarial pass,
@@ -703,6 +774,9 @@ impl Filtered {
             overflow: false,
             summaries: Vec::new(),
             summarised: std::collections::HashMap::new(),
+            summary: None,
+            noted: Vec::new(),
+            noted_at: std::collections::HashMap::new(),
         }
     }
 
@@ -746,6 +820,8 @@ impl Filtered {
     fn line(&mut self, filter: LogFilter) {
         let line = std::mem::take(&mut self.partial);
         if !line.starts_with(b"[") {
+            // What a summary holds is released before a marker or a read.
+            self.flush_summary(filter);
             return self.keep(&line);
         }
         let text = String::from_utf8_lossy(&line);
@@ -765,14 +841,67 @@ impl Filtered {
                 self.summaries.push(Summary {
                     key,
                     count: 1,
+                    kept: 1,
                     first: stamp.clone(),
                     last: stamp,
                 });
             }
+        } else if self.summary.is_some() {
+            let mut out = Vec::new();
+            if let Some(s) = self.summary.as_mut() {
+                s.line(text.trim_end_matches(['\n', '\r']), &mut out);
+            }
+            return self.emitted(filter, out);
         }
+        self.admit(filter, &line);
+    }
+
+    /// What a [`Summarise`] emitted: each kept line admitted, in order, and
+    /// each note counted.
+    fn emitted(&mut self, filter: LogFilter, out: Vec<Emit>) {
+        for e in out {
+            match e {
+                Emit::Keep(mut l) => {
+                    l.push('\n');
+                    self.admit(filter, l.as_bytes());
+                }
+                Emit::Note { key, stamp, kept } => match self.noted_at.get(&key) {
+                    Some(&i) => {
+                        let n = &mut self.noted[i];
+                        n.count += 1;
+                        n.kept += u64::from(kept);
+                        n.last = stamp;
+                    }
+                    None => {
+                        self.noted_at.insert(key.clone(), self.noted.len());
+                        self.noted.push(Summary {
+                            key,
+                            count: 1,
+                            kept: u64::from(kept),
+                            first: stamp.clone(),
+                            last: stamp,
+                        });
+                    }
+                },
+            }
+        }
+    }
+
+    /// Releases what a [`Summarise`] holds.
+    fn flush_summary(&mut self, filter: LogFilter) {
+        let mut out = Vec::new();
+        if let Some(s) = self.summary.as_mut() {
+            s.flush(&mut out);
+        }
+        self.emitted(filter, out);
+    }
+
+    /// One log line kept under the budget, past it by [`LogFilter`]'s rule.
+    fn admit(&mut self, filter: LogFilter, line: &[u8]) {
         if self.buf.len() < filter.budget {
-            return self.keep(&line);
+            return self.keep(line);
         }
+        let text = String::from_utf8_lossy(line);
         if let Some(i) = filter
             .keep
             .iter()
@@ -780,7 +909,7 @@ impl Filtered {
             .position(|(i, k)| !self.kept_once[i] && text.contains(k))
         {
             self.kept_once[i] = true;
-            return self.keep(&line);
+            return self.keep(line);
         }
         self.dropped += 1;
     }
@@ -790,7 +919,17 @@ impl Filtered {
         if let Some(filter) = self.filter.filter(|_| !self.partial.is_empty()) {
             self.line(filter);
         }
-        (!self.overflow).then_some((self.buf, self.dropped, self.summaries))
+        if let Some(filter) = self.filter {
+            self.flush_summary(filter);
+        }
+        let capped = self.summary.as_ref().is_some_and(|s| s.capped());
+        (!self.overflow).then_some(Captured {
+            kept: self.buf,
+            dropped: self.dropped,
+            summaries: self.summaries,
+            noted: self.noted,
+            capped,
+        })
     }
 }
 
@@ -1820,7 +1959,7 @@ mod tests {
         for c in chunks {
             f.push(c);
         }
-        f.finish().map(|(b, d, _)| (b, d))
+        f.finish().map(|c| (c.kept, c.dropped))
     }
 
     /// `AET-WO-4400e` D7 (a): lines with one summary key are kept once and
@@ -1839,7 +1978,8 @@ mod tests {
             b"[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n",
         );
         f.push(b"[00:00:00.000000003] [WARNING] a: Unhandled 2\n[00:00:00.000000004] [WARNING] a: Unhandled 3\n");
-        let (buf, dropped, summaries) = f.finish().unwrap();
+        let c = f.finish().unwrap();
+        let (buf, dropped, summaries) = (c.kept, c.dropped, c.summaries);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
             "[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n"
@@ -1850,6 +1990,7 @@ mod tests {
             [Summary {
                 key: "u".to_owned(),
                 count: 3,
+                kept: 1,
                 first: "00:00:00.000000001".to_owned(),
                 last: "00:00:00.000000004".to_owned(),
             }]
@@ -1872,7 +2013,8 @@ mod tests {
             f.push(line.as_bytes());
             f.push(line.as_bytes());
         }
-        let (buf, _, summaries) = f.finish().unwrap();
+        let c = f.finish().unwrap();
+        let (buf, summaries) = (c.kept, c.summaries);
         assert_eq!(summaries.len(), MAX_SUMMARIES);
         assert!(summaries.iter().all(|s| s.count == 2));
         let text = String::from_utf8(buf).unwrap();

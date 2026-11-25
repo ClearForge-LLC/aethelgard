@@ -2450,8 +2450,27 @@ fn simulate_with(
     // a droop's boot is the bridge's, which owns Renode as its child.
     let out = match (&plan, &droop) {
         (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
-        (Some(_), None) if foreign.is_some() => {
-            run.run_bounded_filtered(bounds, renode::foreign::FOREIGN_LOG_FILTER)?
+        (Some(plan), None) if foreign.is_some() => {
+            // The flood summarised as the judge reads it (`AET-WO-4400j` D2).
+            let r = ready.as_ref().expect("foreign is ready's");
+            let parts: std::collections::BTreeMap<String, String> = r
+                .topology
+                .i2c_devices
+                .iter()
+                .map(|(k, d)| (k.clone(), d.part.clone()))
+                .chain(
+                    r.topology
+                        .spi_devices
+                        .iter()
+                        .map(|(k, d)| (k.clone(), d.part.clone())),
+                )
+                .collect();
+            let summary = renode::foreign::ForeignSummary::of(plan, &parts, &rest_witnesses)?;
+            run.run_bounded_summarised(
+                bounds,
+                renode::foreign::FOREIGN_LOG_FILTER,
+                Box::new(summary),
+            )?
         }
         (Some(plan), None) => run.run_bounded_filtered(bounds, plan.log_filter())?,
         (None, _) => run.run()?,

@@ -16,6 +16,7 @@ use std::path::Path;
 use serde::Serialize;
 
 use super::*;
+use crate::run::Emit;
 use crate::verdict::{Finding, FirmwareReport, Machine};
 
 /// What `boot.judge` says on a foreign verdict.
@@ -164,8 +165,8 @@ pub const RULES: &[(&str, &str, &str)] = &[
     ),
     (
         "renode_log_flood",
-        "kept, with D7 (a)",
-        "the 8 MiB budget stands; past it no witness is read whole: every step is unwitnessed. Renode's own Unhandled write warnings are summarised: each kind (peripheral and message, the written value elided) is one line with its count and first and last virtual time in boot.warnings (ruled on PR #212, comment 6965511448, D7 (a)); none is hidden, none floods; at most 1,024 kinds are summarised, and a line of a further kind is kept or dropped as any other, against the budget",
+        "kept, with D7 (a) and AET-WO-4400j D2",
+        "the 8 MiB budget stands; past it no witness is read whole: every step is unwitnessed. Renode's own Unhandled write warnings are summarised: each kind (peripheral and message, the written value elided) is one line with its count and first and last virtual time in boot.warnings (ruled on PR #212, comment 6965511448, D7 (a)); none is hidden, none floods; at most 1,024 kinds are summarised, and a line of a further kind is kept or dropped as any other, against the budget. AET-WO-4400j D2 (ruled 2026-11-25T18:49Z): each repeating per-transaction line is kept the first time and counted after, with its count and first and last time in boot.summarised, the judge reading the kept log as it would the whole one: an SPI controller's D4 cycle (CFG2 MASTER 0 with SPE 0, the slave-mode error directly after, then CFG2 MASTER 1) by its three lines, counted into spi_errors_exempted, and any other cycle kept as written with its next event; each declared device's and multiplexer's lines by exact text, only once the device's identity and every multi-line candidate are found; a listed read's single-line pattern (the ICM FIFO read), its values elided, after its first match; the ADC's start-while-busy warning by text; a device's warning never. At most 4,096 keys, then lines as written (boot.summary_capped). Weakens: a summarised line's later occurrences are counted, not kept, so a value in one that no rule reads is not in the verdict",
     ),
     (
         "locked_peripheral_access",
@@ -372,6 +373,13 @@ pub struct ForeignBoot {
     pub spi_errors_exempted: u64,
     /// Renode's `Unhandled write` warnings, each kind once (D7 (a)).
     pub warnings: Vec<WarningReport>,
+    /// Each line the log's summary counted (`AET-WO-4400j` D2): its key (the
+    /// line without its timestamp; a D4 cycle's three lines; a pattern's
+    /// elided form), how often, and the first and last time.
+    pub summarised: Vec<WarningReport>,
+    /// Whether the summary reached [`SUMMARY_KEYS`] and kept the rest as
+    /// written.
+    pub summary_capped: bool,
     /// The bytes of Renode's output the log filter kept and counted against
     /// `log_budget_bytes`, and the log lines it dropped past it (D7 (c)).
     pub log_kept_bytes: u64,
@@ -1292,8 +1300,71 @@ fn end_mask(
     (mask & !fields, mask & fields)
 }
 
+/// A device's data candidates, as the judge looks for each after its
+/// identity (D5, D6 (i)): its script's read, the same read at each value a
+/// declared input's rest set (`AET-WO-4400i` D4), and each read its parts
+/// row lists, as its model logs it; with a finding for each listed read the
+/// twin knows no witness format for. One list, read by the judge and by the
+/// log's summary (`AET-WO-4400j` D2), which never drops a line a candidate
+/// not yet found would match.
+fn data_candidates(
+    reference: &str,
+    identity: &aethelgard_twin::boot::StepCheck,
+    checks: &[&aethelgard_twin::boot::StepCheck],
+    rest: &std::collections::BTreeMap<String, Vec<Vec<String>>>,
+    parts: &std::collections::BTreeMap<String, String>,
+    table: &aethelgard_ir::parts::PartsTable,
+    bus: &str,
+) -> (Vec<(String, Vec<Line>)>, Vec<Finding>) {
+    let mut findings = Vec::new();
+    let mut candidates: Vec<(String, Vec<Line>)> = Vec::new();
+    if let Some(data) = checks
+        .iter()
+        .find(|c| c.step == aethelgard_ir::parts::StepKind::Data)
+        && let Some(w) = &data.witness
+    {
+        candidates.push((
+            "data (script)".to_owned(),
+            w.iter().cloned().map(Line::Exact).collect(),
+        ));
+    }
+    // A declared input's rest moves the device's values (`AET-WO-4400i`
+    // D4): the same read, at each value the rest set.
+    for (i, w) in rest.get(reference).into_iter().flatten().enumerate() {
+        candidates.push((
+            format!("data (rest {i})"),
+            w.iter().cloned().map(Line::Exact).collect(),
+        ));
+    }
+    let part = parts
+        .get(reference)
+        .and_then(|p| table.get(p))
+        .map(|p| (p.reads.clone(), p.renode.clone()));
+    if let Some((reads, Some(renode))) = part
+        && let Some(model) = aethelgard_twin::model::Model::from_renode(&renode)
+    {
+        for (i, r) in reads.iter().enumerate() {
+            match model.read_witness(&identity.device, r) {
+                    Some(w) => candidates.push((
+                        format!("data (reads[{i}])"),
+                        w.into_iter().map(Line::Pattern).collect(),
+                    )),
+                    None => findings.push(Finding::plain(
+                        &format!("{bus}_witness_unavailable"),
+                        format!(
+                            "{reference} ({}): the twin knows no witness format for its listed read reads[{i}]",
+                            identity.device
+                        ),
+                    )),
+                }
+        }
+    }
+    (candidates, findings)
+}
+
 /// One expected line of a step: the model's whole line, or a listed read's
 /// pattern.
+#[derive(Clone)]
 enum Line {
     Exact(String),
     Pattern(aethelgard_twin::model::WitnessLine),
@@ -1563,6 +1634,8 @@ pub fn report(
         devices: Vec::new(),
         spi_errors_exempted: 0,
         warnings: Vec::new(),
+        summarised: Vec::new(),
+        summary_capped: false,
         log_kept_bytes: 0,
         log_budget_bytes: FOREIGN_LOG_FILTER.budget as u64,
         log_lines_dropped: 0,
@@ -1775,7 +1848,15 @@ pub fn judge(
         ));
     }
     let (error, exempt) = error_lines(&run_log);
-    report.spi_errors_exempted = exempt;
+    // D2 (i): each exempt cycle the summary counted and dropped, beside those
+    // the kept log shows.
+    let summarised_cycles: u64 = out
+        .noted
+        .iter()
+        .filter(|n| n.key.contains(CFG2_MARK) && n.key.contains(SLAVE_MODE))
+        .map(|n| n.count - n.kept)
+        .sum();
+    report.spi_errors_exempted = exempt + summarised_cycles;
     if let Some(line) = error {
         findings.push(Finding::plain(
             "renode_error_log",
@@ -1796,6 +1877,19 @@ pub fn judge(
             last_ns: stamp(&w.last),
         })
         .collect();
+    // D2: every summarised line, by its key, with its count and first and
+    // last time; and whether the summary reached its cap.
+    report.summarised = out
+        .noted
+        .iter()
+        .map(|w| WarningReport {
+            line: w.key.clone(),
+            count: w.count,
+            first_ns: stamp(&w.first),
+            last_ns: stamp(&w.last),
+        })
+        .collect();
+    report.summary_capped = out.summary_capped;
     // An access to an unclocked peripheral: info, each address with its first
     // time and count (ruled on PR #212, comment 6965511448).
     for line in run_log
@@ -2079,48 +2173,9 @@ pub fn judge(
         }
         // Data: one of the part's reads, after the identity.
         let after = k + want.len();
-        let mut candidates: Vec<(String, Vec<Line>)> = Vec::new();
-        if let Some(data) = checks
-            .iter()
-            .find(|c| c.step == aethelgard_ir::parts::StepKind::Data)
-            && let Some(w) = &data.witness
-        {
-            candidates.push((
-                "data (script)".to_owned(),
-                w.iter().cloned().map(Line::Exact).collect(),
-            ));
-        }
-        // A declared input's rest moves the device's values (`AET-WO-4400i`
-        // D4): the same read, at each value the rest set.
-        for (i, w) in rest.get(reference).into_iter().flatten().enumerate() {
-            candidates.push((
-                format!("data (rest {i})"),
-                w.iter().cloned().map(Line::Exact).collect(),
-            ));
-        }
-        let part = parts
-            .get(reference)
-            .and_then(|p| table.get(p))
-            .map(|p| (p.reads.clone(), p.renode.clone()));
-        if let Some((reads, Some(renode))) = part
-            && let Some(model) = aethelgard_twin::model::Model::from_renode(&renode)
-        {
-            for (i, r) in reads.iter().enumerate() {
-                match model.read_witness(&identity.device, r) {
-                    Some(w) => candidates.push((
-                        format!("data (reads[{i}])"),
-                        w.into_iter().map(Line::Pattern).collect(),
-                    )),
-                    None => findings.push(Finding::plain(
-                        &format!("{bus}_witness_unavailable"),
-                        format!(
-                            "{reference} ({}): the twin knows no witness format for its listed read reads[{i}]",
-                            identity.device
-                        ),
-                    )),
-                }
-            }
-        }
+        let (candidates, unavailable) =
+            data_candidates(reference, identity, &checks, rest, parts, table, bus);
+        findings.extend(unavailable);
         // A data step always has a witness: every modelled part's data
         // channels are ones its model can be set to (the twin's test
         // `every_modelled_part_s_data_channels_can_be_stimulated`; adversarial
@@ -2404,6 +2459,465 @@ pub fn declare(
         parsed,
         stimuli,
     })
+}
+
+/// The most keys the foreign log's summary keeps (`AET-WO-4400j` D2): past
+/// them, every line is kept as written, and the verdict says the cap was hit
+/// (`boot.summary_capped`). Measured: a 12 s armed run of Sentinel-03 keys
+/// 1,488 lines (975 of them the flash model's data and address texts) and
+/// keeps 895,449 bytes; at 1,024 keys it was capped and kept 900,373, so the
+/// cap bounds the CLI's memory, not the log.
+pub const SUMMARY_KEYS: usize = 4096;
+
+/// The key of a D4 cycle's summary: the controller's three lines, each
+/// without its timestamp.
+fn cycle_key(s0: &str, e: &str, m: &str) -> String {
+    format!("{} | {} | {}", log_text(s0), log_text(e), log_text(m))
+}
+
+/// A Renode model warning of a peripheral no rule reads, summarised by its
+/// exact text (D2 (iv)): the ADC's (`STM32_ADC`) start-while-busy warning,
+/// one per conversion ArduPilot starts early on Sentinel-03, 92 KB per virtual
+/// second (`spike/4400j/RESULTS.md` §1.1).
+fn unread_model_warning(body: &str) -> bool {
+    body.strip_prefix("[WARNING] adc")
+        .and_then(|r| r.split_once(": "))
+        .is_some_and(|(n, text)| {
+            !n.is_empty()
+                && n.bytes().all(|b| b.is_ascii_digit())
+                && text == "Issued a start event before the last sequence finished"
+        })
+}
+
+/// One SPI controller's D4 cycle, as the summary holds it.
+#[derive(Default)]
+enum Cycle {
+    #[default]
+    Idle,
+    /// A `CFG2` write with `MASTER` 0 while `CR1.SPE` was 0, its line.
+    Stopped(String),
+    /// That write and the slave-mode `[ERROR]` directly after it.
+    Errored(String, String),
+}
+
+/// One controller's summary state.
+#[derive(Default)]
+struct Controller {
+    cycle: Cycle,
+    /// A kept `[ERROR]` whose exemption the judge reads from this
+    /// controller's next event: that event is kept, whatever it is.
+    owed: bool,
+}
+
+/// One declared device's summary state: its lines are summarised by exact
+/// text only once its identity and every multi-line candidate are found.
+struct Device {
+    check: aethelgard_twin::boot::StepCheck,
+    identity: Vec<Line>,
+    candidates: Vec<(Vec<Line>, bool)>,
+    found_identity: bool,
+    /// The device's own line bodies since its identity, as many as its
+    /// longest step.
+    recent: std::collections::VecDeque<String>,
+    longest: usize,
+}
+
+impl Device {
+    fn summarising(&self) -> bool {
+        self.found_identity
+            && self
+                .candidates
+                .iter()
+                .all(|(want, found)| *found || want.len() == 1)
+    }
+
+    /// Whether `want` matches the last `want.len()` own lines.
+    fn matches_recent(recent: &std::collections::VecDeque<String>, want: &[Line]) -> bool {
+        want.len() <= recent.len()
+            && want
+                .iter()
+                .zip(recent.iter().skip(recent.len() - want.len()))
+                .all(|(w, b)| w.matches(b))
+    }
+}
+
+/// The foreign log's summary (`AET-WO-4400j` D2, ruled 2026-11-25T18:49Z):
+/// each repeating per-transaction line is kept the first time and counted
+/// after, with its first and last time, and the judge reads the kept log as
+/// it would the whole one:
+/// - (i) the D4 cycle, per SPI controller: a `CFG2` write with `MASTER` 0
+///   and `SPE` 0, the slave-mode `[ERROR]` on the very next line, then the
+///   controller's next event. A `CFG2` with `MASTER` 1 makes it an exempt
+///   cycle, kept the first time its three lines occur and counted after; any
+///   other event releases the pair as written and is kept too, so a
+///   non-exempt `[ERROR]` is never summarised, and every kept `[ERROR]`'s next
+///   event is kept;
+/// - (ii) each declared device's lines and its multiplexer's, by exact text,
+///   only once its identity and every multi-line candidate are found, so a
+///   step's lines stay together and each candidate's first line after the
+///   identity is kept;
+/// - (iii) a candidate's single-line pattern (U5's FIFO read), its values
+///   elided, after its first match, unless the line matches a candidate not
+///   yet found;
+/// - (iv) [`unread_model_warning`]s by exact text.
+///
+/// A device's `[WARNING]` or `[ERROR]` is never summarised, and the line
+/// before it, if dropped, is released first (a model's idle warning is
+/// skipped only directly after its multiplexer's finish line).
+pub struct ForeignSummary {
+    devices: Vec<Device>,
+    /// The multiplexers of SPI devices (`spi2.spi2mux`).
+    muxes: Vec<String>,
+    controllers: std::collections::BTreeMap<String, Controller>,
+    keys: std::collections::HashSet<String>,
+    capped: bool,
+    /// The previous line, if it was dropped (see the type's last rule).
+    dropped: Option<String>,
+    /// The previous line, whatever became of it.
+    prev: String,
+}
+
+impl ForeignSummary {
+    /// The summary of a foreign boot of `plan`, its candidates as the judge's
+    /// ([`data_candidates`]).
+    pub fn of(
+        plan: &BootPlan<'_>,
+        parts: &std::collections::BTreeMap<String, String>,
+        rest: &std::collections::BTreeMap<String, Vec<Vec<String>>>,
+    ) -> Result<Self, Stop> {
+        let table = aethelgard_ir::parts::table()
+            .map_err(|e| Stop::tool_error("aethelgard-ir", e.to_string()))?;
+        let mut devices = Vec::new();
+        let mut muxes = Vec::new();
+        let mut seen: Vec<&str> = Vec::new();
+        for c in &plan.image.identity.checks {
+            if seen.contains(&c.reference.as_str()) {
+                continue;
+            }
+            seen.push(&c.reference);
+            let checks: Vec<&aethelgard_twin::boot::StepCheck> = plan
+                .image
+                .identity
+                .checks
+                .iter()
+                .filter(|x| x.reference == c.reference)
+                .collect();
+            let Some(identity) = checks
+                .iter()
+                .find(|x| x.step == aethelgard_ir::parts::StepKind::Identity)
+            else {
+                continue;
+            };
+            let bus = match identity.wire {
+                aethelgard_twin::boot::Wire::I2c { .. } => "i2c",
+                aethelgard_twin::boot::Wire::Spi { .. } => {
+                    let mux = mux_of(identity).to_owned();
+                    if !muxes.contains(&mux) {
+                        muxes.push(mux);
+                    }
+                    "spi"
+                }
+            };
+            // No witness: the judge finds nothing, so nothing is summarised.
+            let Some(want) = identity.witness.as_ref() else {
+                continue;
+            };
+            let identity_lines: Vec<Line> = want.iter().cloned().map(Line::Exact).collect();
+            let (candidates, _) =
+                data_candidates(&c.reference, identity, &checks, rest, parts, table, bus);
+            let longest = candidates
+                .iter()
+                .map(|(_, w)| w.len())
+                .chain([identity_lines.len()])
+                .max()
+                .unwrap_or(1);
+            devices.push(Device {
+                check: (*identity).clone(),
+                identity: identity_lines,
+                candidates: candidates.into_iter().map(|(_, w)| (w, false)).collect(),
+                found_identity: false,
+                recent: std::collections::VecDeque::new(),
+                longest,
+            });
+        }
+        Ok(Self {
+            devices,
+            muxes,
+            controllers: std::collections::BTreeMap::new(),
+            keys: std::collections::HashSet::new(),
+            capped: false,
+            dropped: None,
+            prev: String::new(),
+        })
+    }
+
+    /// A key's occurrence, the line dropped and counted, or kept as written
+    /// the first time (and past the cap).
+    fn note(&mut self, key: String, line: &str, out: &mut Vec<Emit>) {
+        let stamp = line.get(1..19).unwrap_or_default().to_owned();
+        if self.keys.contains(&key) {
+            out.push(Emit::Note {
+                key,
+                stamp,
+                kept: false,
+            });
+            self.dropped = Some(line.to_owned());
+            return;
+        }
+        if self.keys.len() >= SUMMARY_KEYS {
+            self.capped = true;
+        } else {
+            self.keys.insert(key.clone());
+            out.push(Emit::Note {
+                key,
+                stamp,
+                kept: true,
+            });
+        }
+        out.push(Emit::Keep(line.to_owned()));
+    }
+
+    /// Releases a controller's held lines as written; a released `[ERROR]`
+    /// owes its next event.
+    fn release(c: &mut Controller, out: &mut Vec<Emit>) {
+        match std::mem::take(&mut c.cycle) {
+            Cycle::Idle => {}
+            Cycle::Stopped(s0) => out.push(Emit::Keep(s0)),
+            Cycle::Errored(s0, e) => {
+                out.push(Emit::Keep(s0));
+                out.push(Emit::Keep(e));
+                c.owed = true;
+            }
+        }
+    }
+
+    /// What a declared device's or multiplexer's line may be, once the
+    /// devices have learnt from it: `None` if it is neither's, `Some(None)` to
+    /// keep it as written, `Some(Some(key))` to summarise it by `key`.
+    fn learn(&mut self, line: &str, source: &str) -> Option<Option<String>> {
+        if self.muxes.iter().any(|m| m == source) {
+            return Some(Some(log_text(line).to_owned()));
+        }
+        let prev = log_body(&self.prev).unwrap_or_default().to_owned();
+        for d in &mut self.devices {
+            let Some(own) = super::device_line(&d.check, line) else {
+                continue;
+            };
+            // As the judge's own lines: the model's idle warning directly
+            // after its multiplexer's finish line is not the device's.
+            if let aethelgard_twin::boot::Wire::Spi { address, .. } = d.check.wire
+                && d.check.idle_warning.as_deref() == Some(own)
+                && prev
+                    == format!(
+                        "[NOISY] {}: Finisihing transmission on device 0x{address:X}",
+                        mux_of(&d.check)
+                    )
+            {
+                return Some(None);
+            }
+            let own = own.to_owned();
+            if !d.found_identity {
+                d.recent.push_back(own);
+                while d.recent.len() > d.identity.len() {
+                    d.recent.pop_front();
+                }
+                if Device::matches_recent(&d.recent, &d.identity) {
+                    d.found_identity = true;
+                    d.recent.clear();
+                }
+                return Some(None);
+            }
+            let already = d.summarising();
+            d.recent.push_back(own.clone());
+            while d.recent.len() > d.longest {
+                d.recent.pop_front();
+            }
+            let mut newly = false;
+            for (want, found) in &mut d.candidates {
+                if !*found && Device::matches_recent(&d.recent, want) {
+                    *found = true;
+                    newly = true;
+                }
+            }
+            if newly || !already {
+                return Some(None);
+            }
+            // (iii) a found single-line pattern: its values elided.
+            let pattern = d
+                .candidates
+                .iter()
+                .find_map(|(want, found)| match want.as_slice() {
+                    [Line::Pattern(p @ aethelgard_twin::model::WitnessLine::Bytes { .. })]
+                        if *found && p.matches(&own) =>
+                    {
+                        Some(format!(
+                            "{}: {}",
+                            d.check.device,
+                            Line::Pattern(p.clone()).describe()
+                        ))
+                    }
+                    _ => None,
+                });
+            return Some(Some(pattern.unwrap_or_else(|| log_text(line).to_owned())));
+        }
+        None
+    }
+}
+
+/// What the summary does with the line in hand.
+enum Decide {
+    /// Held: nothing yet.
+    Held,
+    /// Kept as written.
+    Keep,
+    /// Summarised by this key.
+    Key(String),
+    /// Already emitted.
+    Done,
+}
+
+impl crate::run::Summarise for ForeignSummary {
+    fn line(&mut self, line: &str, out: &mut Vec<Emit>) {
+        let dropped = self.dropped.take();
+        let body = log_text(line);
+        let source = log_source(body).unwrap_or_default().to_owned();
+        let controller = source.split('.').next().unwrap_or_default().to_owned();
+        let on_spi = controller.starts_with("spi");
+        let device_level = source.contains('.')
+            && (body.starts_with("[WARNING] ") || body.starts_with("[ERROR] "));
+        let cfg2 = cfg2_write(body).map(|(s, v, c)| (s.to_owned(), v, c));
+        let error = error_source(line).map(str::to_owned);
+        // A device's warning or error: the line before it, if it was dropped,
+        // first (the judge reads a warning's predecessor).
+        if device_level && let Some(d) = dropped {
+            out.push(Emit::Keep(d));
+        }
+        // A lone CFG2 write this line is not the error of: released, and this
+        // line kept, so the write stays apart from any later error.
+        let mut force = false;
+        for (name, c) in &mut self.controllers {
+            if matches!(c.cycle, Cycle::Stopped(_)) && error.as_deref() != Some(name.as_str()) {
+                Self::release(c, out);
+                force = true;
+            }
+        }
+        // The devices learn from every line of theirs.
+        let learnt = self.learn(line, &source);
+        let decide = if let Some((spi, value, cr1)) = cfg2 {
+            let c = self.controllers.entry(spi).or_default();
+            let master = value >> 22 & 1 == 1;
+            if !master && cr1 & 1 == 0 {
+                Self::release(c, out);
+                c.cycle = Cycle::Stopped(line.to_owned());
+                Decide::Held
+            } else if master {
+                match std::mem::take(&mut c.cycle) {
+                    Cycle::Errored(s0, e) if !c.owed => {
+                        let key = cycle_key(&s0, &e, line);
+                        let stamp = e.get(1..19).unwrap_or_default().to_owned();
+                        if self.keys.contains(&key) {
+                            out.push(Emit::Note {
+                                key,
+                                stamp,
+                                kept: false,
+                            });
+                            self.dropped = Some(line.to_owned());
+                        } else {
+                            if self.keys.len() < SUMMARY_KEYS {
+                                self.keys.insert(key.clone());
+                                out.push(Emit::Note {
+                                    key,
+                                    stamp,
+                                    kept: true,
+                                });
+                            } else {
+                                self.capped = true;
+                            }
+                            out.extend([
+                                Emit::Keep(s0),
+                                Emit::Keep(e),
+                                Emit::Keep(line.to_owned()),
+                            ]);
+                        }
+                        Decide::Done
+                    }
+                    held => {
+                        // An earlier kept error owes this event: the pair,
+                        // then this line, as written.
+                        c.cycle = held;
+                        let owed = c.owed || matches!(c.cycle, Cycle::Errored(..));
+                        Self::release(c, out);
+                        c.owed = false;
+                        if owed {
+                            Decide::Keep
+                        } else {
+                            Decide::Key(log_text(line).to_owned())
+                        }
+                    }
+                }
+            } else {
+                // A CFG2 write that is neither: as written, after what is held.
+                Self::release(c, out);
+                Decide::Keep
+            }
+        } else if let Some(spi) = error {
+            let c = self.controllers.entry(spi).or_default();
+            match std::mem::take(&mut c.cycle) {
+                Cycle::Stopped(s0) => {
+                    c.cycle = Cycle::Errored(s0, line.to_owned());
+                    Decide::Held
+                }
+                held => {
+                    // Not directly after its write: never exempt; kept, and
+                    // its next event owed.
+                    c.cycle = held;
+                    Self::release(c, out);
+                    c.owed = true;
+                    Decide::Keep
+                }
+            }
+        } else if on_spi && source.contains('.') {
+            // A device's or multiplexer's line on a controller: the event that
+            // resolves what is held there, kept as written if it does.
+            let c = self.controllers.entry(controller).or_default();
+            if c.owed || !matches!(c.cycle, Cycle::Idle) {
+                Self::release(c, out);
+                c.owed = false;
+                Decide::Keep
+            } else {
+                match learnt {
+                    Some(Some(key)) if !device_level => Decide::Key(key),
+                    _ => Decide::Keep,
+                }
+            }
+        } else {
+            match learnt {
+                Some(Some(key)) if !device_level => Decide::Key(key),
+                Some(_) => Decide::Keep,
+                // (iv) a model warning no rule reads.
+                None if unread_model_warning(body) => Decide::Key(body.to_owned()),
+                None => Decide::Keep,
+            }
+        };
+        match decide {
+            Decide::Key(_) | Decide::Keep if force => out.push(Emit::Keep(line.to_owned())),
+            Decide::Key(key) => self.note(key, line, out),
+            Decide::Keep => out.push(Emit::Keep(line.to_owned())),
+            Decide::Held | Decide::Done => {}
+        }
+        self.prev = line.to_owned();
+    }
+
+    fn flush(&mut self, out: &mut Vec<Emit>) {
+        for c in self.controllers.values_mut() {
+            Self::release(c, out);
+        }
+        self.dropped = None;
+    }
+
+    fn capped(&self) -> bool {
+        self.capped
+    }
 }
 
 /// The run's timeline from virtual time 0, as a Renode script: the port's
@@ -3797,6 +4311,561 @@ mod tests {
                 ("GPIOA.PUPDR".to_owned(), 0x5802_000C),
                 ("GPIOB.PUPDR".to_owned(), 0x5802_040C)
             ]
+        );
+    }
+
+    // ------------------------------------------------ D2: the summary's oracle
+
+    /// A step check on SPI for the summary's tests: `device` behind its
+    /// multiplexer at `address`, its identity `want`, `idle` its model's edge
+    /// artefact.
+    fn spi_check(
+        device: &str,
+        address: u8,
+        want: &[&str],
+        idle: Option<&str>,
+    ) -> aethelgard_twin::boot::StepCheck {
+        aethelgard_twin::boot::StepCheck {
+            reference: device.rsplit('.').next().unwrap().to_uppercase(),
+            peripheral: "SPI2".into(),
+            wire: aethelgard_twin::boot::Wire::Spi {
+                address,
+                select: "PB12".into(),
+            },
+            step: aethelgard_ir::parts::StepKind::Identity,
+            label: "identity",
+            write: vec![0x80],
+            width: 1,
+            expected: 0,
+            mask: 0,
+            status_at: 0,
+            value_at: 0,
+            level: (-1, "[NOISY] "),
+            device: device.into(),
+            witness: Some(want.iter().map(|w| (*w).to_owned()).collect()),
+            idle_warning: idle.map(str::to_owned),
+            skipped: Vec::new(),
+            stimulus: None,
+        }
+    }
+
+    /// The summary of the two devices below, with `candidates` each.
+    fn summary_of(
+        devices: &[(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)],
+    ) -> ForeignSummary {
+        ForeignSummary {
+            devices: devices
+                .iter()
+                .map(|(c, cands)| Device {
+                    check: c.clone(),
+                    identity: c
+                        .witness
+                        .clone()
+                        .unwrap()
+                        .into_iter()
+                        .map(Line::Exact)
+                        .collect(),
+                    longest: cands
+                        .iter()
+                        .map(Vec::len)
+                        .chain([c.witness.as_ref().unwrap().len()])
+                        .max()
+                        .unwrap(),
+                    candidates: cands.iter().map(|w| (w.clone(), false)).collect(),
+                    found_identity: false,
+                    recent: std::collections::VecDeque::new(),
+                })
+                .collect(),
+            muxes: devices
+                .iter()
+                .map(|(c, _)| mux_of(c).to_owned())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect(),
+            controllers: std::collections::BTreeMap::new(),
+            keys: std::collections::HashSet::new(),
+            capped: false,
+            dropped: None,
+            prev: String::new(),
+        }
+    }
+
+    /// The log as the capture keeps it through the summary (no budget), and
+    /// the exempt cycles it counted and dropped.
+    fn summarised(s: &mut ForeignSummary, raw: &[String]) -> (Vec<String>, u64) {
+        use crate::run::Summarise;
+        let (mut kept, mut cycles, mut out) = (Vec::new(), 0u64, Vec::new());
+        for l in raw {
+            if !l.starts_with('[') {
+                s.flush(&mut out);
+            } else {
+                s.line(l, &mut out);
+            }
+            for e in out.drain(..) {
+                match e {
+                    Emit::Keep(k) => kept.push(k),
+                    // A D4 cycle's key holds its write and its error (as the judge counts).
+                    Emit::Note {
+                        key, kept: false, ..
+                    } if key.contains(CFG2_MARK) && key.contains(SLAVE_MODE) => cycles += 1,
+                    Emit::Note { .. } => {}
+                }
+            }
+            if !l.starts_with('[') {
+                kept.push(l.clone());
+            }
+        }
+        s.flush(&mut out);
+        for e in out.drain(..) {
+            if let Emit::Keep(k) = e {
+                kept.push(k);
+            }
+        }
+        (kept, cycles)
+    }
+
+    /// What the judge reads of one device: its first warning, its identity's
+    /// time, and each candidate's time after it.
+    type DeviceView = (Option<String>, Option<u64>, Vec<Option<u64>>);
+    /// What the judge reads of a log ([`view`]).
+    type View = (Option<String>, u64, Vec<DeviceView>);
+    /// A planted difference, by name.
+    type Plant<'a> = (&'a str, Box<dyn Fn(&mut Vec<String>)>);
+
+    /// What the judge reads of a log: the first unexempted error and the
+    /// exempt count (with `cycles` the summary dropped); for each device, its
+    /// first warning, its identity's time and each candidate's time after it.
+    fn view(
+        log: &[String],
+        devices: &[(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)],
+        cycles: u64,
+    ) -> View {
+        let lines: Vec<&str> = log.iter().map(String::as_str).collect();
+        let (first, exempt) = error_lines(&lines);
+        let mut per = Vec::new();
+        for (c, cands) in devices {
+            let own = own_lines(c, &lines);
+            let stamp = |k: usize| log_stamped(lines[own[k].0]).map(|(ns, _)| ns);
+            let warning = own
+                .iter()
+                .find(|(_, b)| b.starts_with("[WARNING]"))
+                .map(|(_, b)| (*b).to_owned());
+            let want: Vec<Line> = c
+                .witness
+                .clone()
+                .unwrap()
+                .into_iter()
+                .map(Line::Exact)
+                .collect();
+            let at = find(&own, &want, 0);
+            let after = at.map(|k| k + want.len());
+            let found = cands
+                .iter()
+                .map(|w| after.and_then(|a| find(&own, w, a)).and_then(stamp))
+                .collect();
+            per.push((warning, at.and_then(stamp), found));
+        }
+        (first.map(|l| log_text(l).to_owned()), exempt + cycles, per)
+    }
+
+    /// Sentinel-03's shape, per `AET-WO-4400j` §1.2: U5 (the ICM-42688-P) on
+    /// spi2 and U4 (the W25Q64JV) on spi1, each transaction the D4 cycle
+    /// (`CFG2` MASTER 1, the select, the device's lines, the finish, the
+    /// deselect, `CFG2` MASTER 0, the slave-mode error); U5's FIFO reads
+    /// carrying changing samples; U4 programming bytes with its idle warning
+    /// directly after each finish; the ADC's warning between; `n`
+    /// transactions.
+    fn sentinel_log(n: usize) -> Vec<String> {
+        let mut log = Vec::new();
+        let mut t = 100_000_000u64;
+        let mut at = |log: &mut Vec<String>, body: String| {
+            t += 37_000;
+            log.push(format!(
+                "[00:00:{:02}.{:09}] {body}",
+                t / 1_000_000_000,
+                t % 1_000_000_000
+            ));
+        };
+        let cycle = |log: &mut Vec<String>,
+                     at: &mut dyn FnMut(&mut Vec<String>, String),
+                     spi: &str,
+                     mux: &str,
+                     lines: &[String]| {
+            at(log, format!("[WARNING] {spi}: {CFG2_MARK}20400000 0"));
+            at(log, format!("[NOISY] {mux}: GPIO #0 set to False"));
+            for l in lines {
+                at(log, l.clone());
+            }
+            at(
+                log,
+                format!("[NOISY] {mux}: Finisihing transmission on device 0x0"),
+            );
+            // The flash model's edge artefact, directly after its finish line.
+            if spi == "spi1" {
+                at(log, "[WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation".into());
+            }
+            at(log, format!("[NOISY] {mux}: GPIO #0 set to True"));
+            at(log, format!("[WARNING] {spi}: {CFG2_MARK}0 0"));
+            at(log, format!("[ERROR] {spi}: {SLAVE_MODE}"));
+        };
+        let u5 = |b: &str| format!("[NOISY] spi2.spi2mux.u5: {b}");
+        let u4 = |b: &str| format!("[NOISY] spi1.spi1mux.u4: {b}");
+        cycle(
+            &mut log,
+            &mut at,
+            "spi1",
+            "spi1.spi1mux",
+            &[
+                u4("Transmitting data 0x9F, current state: RecognizeOperation"),
+                u4("Handled command: ReadID"),
+            ],
+        );
+        cycle(
+            &mut log,
+            &mut at,
+            "spi2",
+            "spi2.spi2mux",
+            &[u5("bank 0 read 0x75 -> 0x47")],
+        );
+        for k in 0..n {
+            let fifo = format!(
+                "bank 0 read 0x30 -> {}",
+                (0..16)
+                    .map(|i| format!("0x{:X}", (k * 7 + i * 13) % 251))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            );
+            cycle(
+                &mut log,
+                &mut at,
+                "spi2",
+                "spi2.spi2mux",
+                &[u5("bank 0 read 0x2E -> 0x0 0x10"), u5(&fifo)],
+            );
+            if k % 5 == 0 {
+                at(
+                    &mut log,
+                    "[WARNING] adc3: Issued a start event before the last sequence finished".into(),
+                );
+                cycle(
+                    &mut log,
+                    &mut at,
+                    "spi1",
+                    "spi1.spi1mux",
+                    &[u4(&format!(
+                        "Transmitting data 0x{:X}, current state: HandleCommand",
+                        k % 256
+                    ))],
+                );
+            }
+        }
+        log
+    }
+
+    fn sentinel_devices() -> Vec<(aethelgard_twin::boot::StepCheck, Vec<Vec<Line>>)> {
+        let fifo = Line::Pattern(aethelgard_twin::model::WitnessLine::Bytes {
+            prefix: "[NOISY] spi2.spi2mux.u5: bank 0 read 0x30 -> ".into(),
+            at_least: 16,
+        });
+        let exact = |s: &str| Line::Exact(s.to_owned());
+        vec![
+            (
+                spi_check(
+                    "spi2.spi2mux.u5",
+                    0,
+                    &["[NOISY] spi2.spi2mux.u5: bank 0 read 0x75 -> 0x47"],
+                    None,
+                ),
+                vec![
+                    vec![exact(
+                        "[NOISY] spi2.spi2mux.u5: bank 0 read 0x1D -> 0x12 0x02",
+                    )],
+                    vec![fifo],
+                ],
+            ),
+            (
+                spi_check(
+                    "spi1.spi1mux.u4",
+                    0,
+                    &[
+                        "[NOISY] spi1.spi1mux.u4: Transmitting data 0x9F, current state: RecognizeOperation",
+                        "[NOISY] spi1.spi1mux.u4: Handled command: ReadID",
+                    ],
+                    Some(
+                        "[WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation",
+                    ),
+                ),
+                // Two lines each seen before (k = 10 and 5), never in this
+                // order: a summary by text from the identity would drop both.
+                vec![vec![
+                    exact(
+                        "[NOISY] spi1.spi1mux.u4: Transmitting data 0xA, current state: HandleCommand",
+                    ),
+                    exact(
+                        "[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: HandleCommand",
+                    ),
+                ]],
+            ),
+        ]
+    }
+
+    /// The judge's reading of the raw log and of the summarised one.
+    fn both(raw: &[String]) -> (Vec<String>, View, View) {
+        let devices = sentinel_devices();
+        let (kept, cycles) = summarised(&mut summary_of(&devices), raw);
+        let whole = view(raw, &devices, 0);
+        let summary = view(&kept, &devices, cycles);
+        (kept, whole, summary)
+    }
+
+    /// `AET-WO-4400j` D2 (ruled 2026-11-25T18:49Z), every source at once:
+    /// the summary keeps a small share of a Sentinel-03-shaped log, and the
+    /// judge reads the same first error, exempt count, warnings and step
+    /// times from it as from the whole log.
+    #[test]
+    fn the_summarised_log_reads_as_the_whole_one() {
+        let raw = sentinel_log(1000);
+        let (kept, whole, summary) = both(&raw);
+        assert_eq!(summary, whole);
+        assert_eq!(whole.0, None);
+        assert!(whole.1 >= 1000, "{whole:?}");
+        assert!(
+            whole
+                .2
+                .iter()
+                .all(|(w, id, c)| w.is_none() && id.is_some() && !c.is_empty()),
+            "{whole:?}"
+        );
+        // Each flash data text once, and U4's idle warnings (never summarised)
+        // with the finish line before each: about a sixteenth.
+        assert!(
+            kept.len() * 10 < raw.len(),
+            "kept {} of {}",
+            kept.len(),
+            raw.len()
+        );
+        // Each summarised line is kept the first time: the cycle on each
+        // controller, a FIFO read, the ADC's warning once.
+        for once in [
+            SLAVE_MODE,
+            "bank 0 read 0x30 -> ",
+            "adc3: Issued a start event",
+        ] {
+            assert!(kept.iter().any(|l| l.contains(once)), "{once}");
+        }
+        assert_eq!(
+            kept.iter().filter(|l| l.contains("adc3: Issued")).count(),
+            1
+        );
+        // U5's FIFO reads, 251 distinct samples here, elided after the first.
+        let fifo = kept
+            .iter()
+            .filter(|l| l.contains("bank 0 read 0x30 -> "))
+            .count();
+        assert!(fifo < 5, "{fifo} FIFO reads kept");
+    }
+
+    /// WO §5, a summary that hides a finding: each source's later line
+    /// differing in what the judge reads. For each, the judge's reading of the
+    /// summarised log equals its reading of the whole one, and differs from
+    /// the clean log's (the planted difference is a finding, or moves one).
+    #[test]
+    fn a_planted_difference_in_any_source_reads_as_in_the_whole_log() {
+        let clean = view(&sentinel_log(1000), &sentinel_devices(), 0);
+        let device = |l: &str| l.contains("] [NOISY] spi2.spi2mux.u5: bank 0 read 0x2E");
+        let plants: Vec<Plant> = vec![
+            // A later cycle left a slave while a device speaks: not exempt.
+            (
+                "a device line between an error and the next MASTER",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE))
+                        .nth(700)
+                        .unwrap()
+                        .0;
+                    let stamp = log[i][..21].to_owned();
+                    log.insert(
+                        i + 1,
+                        format!("{stamp}[NOISY] spi2.spi2mux.u5: bank 0 read 0x2E -> 0x0 0x10"),
+                    );
+                }),
+            ),
+            // A later CFG2 write with SPE still set: never exempt.
+            (
+                "SPE set in a later CFG2 write",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| {
+                            l.ends_with(&format!("{CFG2_MARK}0 0")) && l.contains("spi2")
+                        })
+                        .nth(800)
+                        .unwrap()
+                        .0;
+                    log[i] = log[i].replace(&format!("{CFG2_MARK}0 0"), &format!("{CFG2_MARK}0 1"));
+                }),
+            ),
+            // A later error not directly after its write.
+            (
+                "a line between a write and its error",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE))
+                        .nth(600)
+                        .unwrap()
+                        .0;
+                    let stamp = log[i][..21].to_owned();
+                    log.insert(i, format!("{stamp}[WARNING] adc3: Issued a start event before the last sequence finished"));
+                }),
+            ),
+            // A device warning not after its multiplexer's finish line.
+            (
+                "a device warning after a deselect",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("spi1.spi1mux: GPIO #0 set to True"))
+                        .nth(150)
+                        .unwrap()
+                        .0;
+                    let stamp = log[i][..21].to_owned();
+                    log.insert(i + 1, format!("{stamp}[WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation"));
+                }),
+            ),
+            // A data candidate first seen late, among many duplicates.
+            (
+                "a candidate first seen at the 900th read",
+                Box::new(move |log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| device(l))
+                        .nth(900)
+                        .unwrap()
+                        .0;
+                    log[i] = log[i].replace(
+                        "bank 0 read 0x2E -> 0x0 0x10",
+                        "bank 0 read 0x1D -> 0x12 0x02",
+                    );
+                }),
+            ),
+            // A multi-line candidate completed late.
+            (
+                "a multi-line candidate at the 150th flash transaction",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("current state: HandleCommand"))
+                        .nth(150)
+                        .unwrap()
+                        .0;
+                    log[i] = format!(
+                        "{}[NOISY] spi1.spi1mux.u4: Transmitting data 0xA, current state: HandleCommand",
+                        &log[i][..21]
+                    );
+                    let stamp = log[i][..21].to_owned();
+                    log.insert(i + 1, format!("{stamp}[NOISY] spi1.spi1mux.u4: Transmitting data 0x5, current state: HandleCommand"));
+                }),
+            ),
+            // Lines of other sources between a held pair and its release.
+            (
+                "other sources between an error and its MASTER",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(500)
+                        .unwrap()
+                        .0;
+                    let stamp = log[i][..21].to_owned();
+                    for _ in 0..3 {
+                        log.insert(i + 1, format!("{stamp}[WARNING] adc3: Issued a start event before the last sequence finished"));
+                    }
+                }),
+            ),
+            // A pair released at a marker owes its next event, the MASTER;
+            // dropped, the pair would read up to a later new device line.
+            (
+                "a marker after a pair, and a new device text later",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(400)
+                        .unwrap()
+                        .0;
+                    log.insert(i + 1, BEGIN.to_owned());
+                    log.insert(i + 2, "0x00000000".to_owned());
+                    log.insert(i + 3, END.to_owned());
+                    let j = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains("] [NOISY] spi2.spi2mux.u5: bank 0 read 0x2E"))
+                        .nth(950)
+                        .unwrap()
+                        .0;
+                    log[j] = log[j].replace(
+                        "bank 0 read 0x2E -> 0x0 0x10",
+                        "bank 0 read 0x2E -> 0x0 0x11",
+                    );
+                }),
+            ),
+            // A marker (a read) between a write and its error, as at the end.
+            (
+                "a marker between a pair and its MASTER",
+                Box::new(|log: &mut Vec<String>| {
+                    let i = log
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, l)| l.contains(SLAVE_MODE) && l.contains("spi2"))
+                        .nth(400)
+                        .unwrap()
+                        .0;
+                    log.insert(i + 1, BEGIN.to_owned());
+                    log.insert(i + 2, "0x00000000".to_owned());
+                    log.insert(i + 3, END.to_owned());
+                }),
+            ),
+        ];
+        for (name, plant) in plants {
+            let mut raw = sentinel_log(1000);
+            plant(&mut raw);
+            let (_, whole, summary) = both(&raw);
+            assert_eq!(summary, whole, "{name}");
+            if !name.starts_with("other sources") && !name.starts_with("a marker") {
+                assert_ne!(whole, clean, "{name}: the plant moves the judge");
+            }
+        }
+    }
+
+    /// D2, ruled: a device's `[WARNING]` is never summarised, even repeated
+    /// once its device's lines are: every one stays in the log.
+    #[test]
+    fn a_devices_warnings_are_never_summarised() {
+        let mut raw = sentinel_log(300);
+        for k in [2000, 2400, 2800] {
+            let stamp = raw[k][..21].to_owned();
+            raw.insert(
+                k,
+                format!("{stamp}[WARNING] spi2.spi2mux.u5: Read from an unknown register"),
+            );
+        }
+        let (kept, whole, summary) = both(&raw);
+        assert_eq!(summary, whole);
+        assert_eq!(
+            kept.iter()
+                .filter(|l| l.contains("u5: Read from an unknown register"))
+                .count(),
+            3
         );
     }
 }

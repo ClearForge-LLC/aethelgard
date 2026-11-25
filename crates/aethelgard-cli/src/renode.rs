@@ -4588,6 +4588,8 @@ mod tests {
             dropped_log_lines: dropped,
             peak_rss_kib: None,
             summaries: Vec::new(),
+            noted: Vec::new(),
+            summary_capped: false,
         }
     }
 
