@@ -196,6 +196,14 @@ fn the_verdict_line_names_firmware_and_radio() {
     assert!(
         lines[0].starts_with("U30 ESP32-C3-WROOM-02-N4: firmware not judged; radio not simulated")
     );
+    // Q-SUP (a): its 3.0 V floor above the TLV803S's 2.87 V VIT- minimum is
+    // named, not judged.
+    assert!(
+        lines[0].contains("its VDD minimum of 3000 mV (ESP32-C3-WROOM-02, p. 21, Table 6-2")
+            && lines[0].contains("is above the reset's falling minimum of 2870 mV ("),
+        "{}",
+        lines[0]
+    );
 }
 
 /// D4: the footprint holds its keepout on each of a 4-layer board's copper

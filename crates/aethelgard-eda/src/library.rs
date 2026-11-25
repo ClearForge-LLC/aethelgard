@@ -241,7 +241,7 @@ const PINS: [(&str, &str); 68] = [
     // Derived from KiCad's (`AET-WO-4411` D4), so CC-BY-SA-4.0, not MIT OR Apache-2.0.
     (
         "footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
-        "11f61c326e92d6f4abf8af609faca83f4837c4b5c6b6603a26020e337db99c7c",
+        "0abeaf58fffdafca6c55c34c9c74b9b99e0144b28247cbae0ef9fd27699c8946",
     ),
     (
         "footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
@@ -269,7 +269,7 @@ const PINS: [(&str, &str); 68] = [
     ),
     (
         "aethelgard/README.md",
-        "ae99fb0eb6b501cc00d40650624522201628a1fa06c3713e56764f8f0185c604",
+        "a080272e3800796827e329ea1f5b11a50ce366a05d56c862b2c12e63fcb1d292",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",

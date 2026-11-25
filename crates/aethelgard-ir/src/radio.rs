@@ -952,13 +952,27 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
 /// The verdict's line for each module (ruled: the firmware named as not
 /// judged, the radio as not simulated), in document order.
 pub fn not_judged(spec: &Specification) -> Vec<String> {
+    // Q-SUP, ruled (a) 2026-11-25T00:00Z: the supervisor floor rule covers I2C
+    // and SPI devices; a module whose VDD minimum is above the reset's falling
+    // minimum is named here, not judged.
+    let reset = crate::supervisor::reset_floor(spec).ok();
     spec.declared_radio_modules()
         .iter()
         .map(|m| {
-            format!(
+            let mut line = format!(
                 "{} {}: firmware not judged; radio not simulated; its ROM prints to UART0, on port `{}`, at every boot, unjudged",
                 m.reference, m.part, m.serial_port
-            )
+            );
+            let row = table().ok().and_then(|t| t.get(&m.part));
+            if let (Some(row), Some((reset_mv, why))) = (row, &reset)
+                && row.supply.min_mv > *reset_mv
+            {
+                line.push_str(&format!(
+                    "; its VDD minimum of {} mV ({}, {}) is above the reset's falling minimum of {reset_mv} mV ({why}), so it may run out of its range before the reset holds, unjudged",
+                    row.supply.min_mv, row.supply.at.document, row.supply.at.section
+                ));
+            }
+            line
         })
         .collect()
 }

@@ -26,7 +26,10 @@ PROVENANCE = (
     "module's body, pads and antenna area, so the keepout lies inside it; "
     "(4) the silkscreen beside and above the antenna area, and the pin 1 triangle crossing it, are "
     "removed: the antenna area overhangs the board edge (D2), where silkscreen meets the edge; "
-    "(5) KiCad's keep-out dimension drawings and texts on Cmts.User are removed with its zone."
+    "(5) KiCad's keep-out dimension drawings and texts on Cmts.User are removed with its zone; "
+    "(6) the ground pad's own zone_connect 2 is removed: the engine sets each ground pad's join to the "
+    "board's thermal pours (AET-WO-4300k (a)), and a second zone_connect on one pad is refused, since "
+    "KiCad reads only the last."
 )
 
 
@@ -65,12 +68,20 @@ def keep(item):
     return True
 
 
+def unjoin(item):
+    """KiCad's own zone_connect removed from a pad (change 6)."""
+    if not item.startswith("(pad"):
+        return item
+    out = re.sub(r"\n\t\t\(zone_connect \d\)", "", item)
+    return out
+
+
 def main():
     src, out = sys.argv[1:3]
     s = open(src).read()
     spans = items(s)
     body = [s[a:b] for a, b in spans]
-    kept = [i for i in body if keep(i)]
+    kept = [unjoin(i) for i in body if keep(i)]
     crtyd = [
         ((-9.75, -13.35), (9.75, -13.35)),
         ((9.75, -13.35), (9.75, 7.15)),

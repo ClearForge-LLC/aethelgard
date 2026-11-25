@@ -41,10 +41,10 @@ files = subprocess.run(["git", "-C", str(repo), "ls-files", "*.json"], capture_o
 moved = []
 for f in files:
     p = repo / f
-    text = p.read_text()
     try:
+        text = p.read_text()
         doc = json.loads(text)
-    except ValueError:
+    except ValueError:  # not UTF-8 JSON (UnicodeDecodeError is a ValueError)
         continue
     if not (isinstance(doc, dict) and "project_name" in doc and "mcu" in doc and doc.get("schema_version") == old):
         continue

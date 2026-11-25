@@ -1,9 +1,11 @@
-//! `AET-WO-4411`, tier 1 (no tool runs): the radio fixture (Sentinel-03 with
-//! an ESP32-C3-WROOM-02 on a UART of its own) emitted, its module at the
-//! board's top-right corner with the antenna area wholly off the board
+//! `AET-WO-4411`, tier 1 (no tool runs): Sentinel-03, which carries an
+//! ESP32-C3-WROOM-02 on a UART of its own (ruled D6), emitted, its module at
+//! the board's top-right corner with the antenna area wholly off the board
 //! (ruled D2), its pads on the nets its row and port name, its keepout on
-//! each copper layer (D4), and no Sentinel-03 pin moved by the module's port
-//! (D7). ERC, DRC and the planted boards in the image are `radio_tier2.rs`'s.
+//! each copper layer (D4), and no pin moved by the module's port against the
+//! same board without it (D7). ERC, DRC and the planted boards (the
+//! `tests/fixtures/sentinel-03-radio.json` fixture) in the image are
+//! `board_tier2.rs`'s.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -13,9 +15,8 @@ use std::sync::OnceLock;
 use aethelgard_eda::strict;
 use serde_json::Value;
 
-const SPEC: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03-radio.json";
-const BASE: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03.json";
-const PCB: &str = "sentinel-03-radio.kicad_pcb";
+const SPEC: &str = "examples/sentinel-03.json";
+const PCB: &str = "sentinel-03.kicad_pcb";
 /// The module's antenna edge and courtyard, about its origin, in nm: the
 /// row's antenna area (y1) and the derived footprint's courtyard.
 const EDGE_NM: i64 = -7_100_000;
@@ -185,10 +186,25 @@ fn the_keepout_is_on_each_copper_layer_off_the_board() {
 }
 
 /// D7: the module's port takes a UART of its own, and no pin of the board
-/// it was derived from moves.
+/// without the module (its module and port removed) moves.
 #[test]
 fn the_modules_port_moves_no_pin() {
-    let (code, base) = run(&["solve", "--file", BASE]);
+    let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let module = spec
+        .as_object_mut()
+        .unwrap()
+        .remove("radio_modules")
+        .unwrap();
+    let label = module[0]["serial_port"].as_str().unwrap().to_owned();
+    let ports = spec["serial_ports"].as_array_mut().unwrap();
+    let n = ports.len();
+    ports.retain(|p| p["label"] != label.as_str());
+    assert_eq!(ports.len(), n - 1, "no port `{label}`");
+    let dir = std::env::temp_dir().join(format!("aet-4411-base-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let base_spec = dir.join("sentinel-03-without-module.json");
+    fs::write(&base_spec, serde_json::to_vec(&spec).unwrap()).unwrap();
+    let (code, base) = run(&["solve", "--file", base_spec.to_str().unwrap()]);
     assert_eq!(code, 0, "{base}");
     let (code, radio) = run(&["solve", "--file", SPEC]);
     assert_eq!(code, 0, "{radio}");
@@ -196,7 +212,8 @@ fn the_modules_port_moves_no_pin() {
     for (net, pin) in a.as_object().unwrap() {
         assert_eq!(&b[net], pin, "{net} moved");
     }
-    let wifi = &radio["serial_ports"]["WIFI"]["peripheral"];
+    let wifi = &radio["serial_ports"][label.as_str()]["peripheral"];
+    assert!(wifi.is_string(), "{label}: {wifi}");
     let taken: Vec<&Value> = base["serial_ports"]
         .as_object()
         .unwrap()

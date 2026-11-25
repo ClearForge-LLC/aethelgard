@@ -612,6 +612,7 @@ jobs:
         scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json
         scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx-open-console.json
         scenarios/sentinel-03/serial-rx-open-crsf.json scenarios/sentinel-03/serial-rx-open-mavlink.json
+        scenarios/sentinel-03/serial-rx-open-wifi.json
         scenarios/sentinel-03/spi-absent-u4.json scenarios/sentinel-03/spi-absent-u5.json
         scenarios/sentinel-03/vdd5v-out-of-band.json
     steps:

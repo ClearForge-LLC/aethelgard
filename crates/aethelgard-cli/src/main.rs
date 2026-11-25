@@ -4068,7 +4068,10 @@ mod tests {
             drc_parts(Some(&bounded), &judged(0, Some(1)))[2..],
             [
                 Ran::off("drc.orientation", "spi_devices[].orientation"),
-                Ran::judged("drc.outline", 1)
+                Ran::judged("drc.outline", 1),
+                // Its radio module (`AET-WO-4411` D6): a part only where one
+                // is declared.
+                Ran::judged("drc.radio", 0)
             ]
         );
     }

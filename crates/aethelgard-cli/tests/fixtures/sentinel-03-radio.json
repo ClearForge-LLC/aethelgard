@@ -1,5 +1,5 @@
 {
-  "schema_version": 30,
+  "schema_version": 31,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -1964,10 +1964,10 @@
         ],
         "junction": {
           "loss_milliwatts": {
-            "value": 550,
-            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 81 % on the 36 V curve at 0.68 A; P_loss = 3.417 V x 679 mA x (1/0.81 - 1) = 544 mW, rounded up"
+            "value": 760,
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 85 % on the 36 V curve at 1.25 A (read 85.9 to 86.5 %, AET-WO-4411, spike/4411/curve); P_loss = 3.417 V x 1249 mA x (1/0.85 - 1) = 754 mW, rounded up"
           },
-          "loss_at_milliamps": 679
+          "loss_at_milliamps": 1249
         },
         "controls": [
           {
@@ -2396,7 +2396,7 @@
     },
     {
       "id": "input_path_resistance_at_25c:Q1",
-      "reason": "Q1's RDS(on) and F1's resistance are 25 C figures; hotter, the 71 mV drop grows, a small part of the volts the bucks keep above their need at the 9 V pack minimum; a bench row"
+      "reason": "Q1's RDS(on) and F1's resistance are 25 C figures; hotter, the 80 mV drop grows, a small part of the volts the bucks keep above their need at the 9 V pack minimum; a bench row"
     },
     {
       "id": "inrush_bulk_at_rated:C1",
@@ -2469,10 +2469,6 @@
     {
       "id": "lifecycle_unread:UCZ1H470MCL1GS",
       "reason": "UCZ1H470MCL1GS: no maker lifecycle page is held; its status is read at order time from the distributor's BOM line (FEEDBACK)"
-    },
-    {
-      "id": "loss_current_gap:U11",
-      "reason": "U11's loss is read at 679 mA and its solved load is 749 mA; the 70 mA gap adds little loss at 81 % efficiency, and refusing it needs a ruling (4300d3 F9)"
     },
     {
       "id": "mcu_load_excludes:STM32H753ZITx",

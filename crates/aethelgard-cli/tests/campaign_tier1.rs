@@ -3063,7 +3063,15 @@ fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
     ] {
         sag_refused(&s03(), o, r, "more than one rail out of band");
     }
+    // Without its radio module (`AET-WO-4411`, its port with it): U11 fed
+    // from `VDD_5V` would pass the module's 500 mA to U10, overloaded
+    // (`RegulatorOverloaded`, 3249 mA of 3000) before the rail is judged.
     let mut spec = s03();
+    spec.as_object_mut().unwrap().remove("radio_modules");
+    spec["serial_ports"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|p| p["label"] != "WIFI");
     let u11 = spec["power"]["regulators"]
         .as_array_mut()
         .unwrap()
