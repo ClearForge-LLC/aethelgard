@@ -367,3 +367,64 @@ The memory share in every Renode verdict has depended on the host's speed. With 
 - **The first held-stdin replay hung** in the script's final `wait` on the held `sleep`. Its stats are complete (`out/rep/stats-holdin`); the container was killed by its id.
 - The no-input 10 ms end-read replay passed Renode's 128 KiB argument limit; its stepped commands now go in a file.
 - Downloads, both checked against their publisher's hash: .NET 8.0.12 runtime and `dotnet-dump`. They are used only inside capped containers with no network.
+
+## 11. The build, to the ruling (2026-11-25T18:49Z; the acceptance question (a) at 19:33Z)
+
+Built on the branch, one commit per decision:
+
+| commit | what |
+|---|---|
+| D1 `8ce1ed6c` | Renode's and the bridge's stdin is a held pipe |
+| D4 `70830466` | four end reads; the RC fields |
+| D3 `cf84b402` | 12 s with an input |
+| D2 `b4fde539` | the summary |
+| `a03534e8` | the adversarial pass's fixes |
+| `5c6f9cc1` | the reduction pass |
+| `cf7b45c8` | the test weights |
+
+Evidence is in `out/build/`.
+
+### 11.1 The acceptance runs
+
+Main's Sentinel-03, ELF `97afa171…` (Copter-4.7.2, built by CI's `container/ardupilot-build.sh` in the pinned image `e1809b90…`, `sh/board.sh`; `out/build/elf.sha256`), with `4400i`'s `arm12.json`. Four cores, held stdin; nothing lifted unless the run says spike.
+
+| run | which | verdict | armed | peak (‰ of 1.5 GiB) | log kept (of 8 MiB) | trace sha256 |
+|---|---|---|---|---|---|---|
+| 11.9999 s | **CLI**, the branch's `simulate --foreign 11999900us --input` | pass | yes | 347‰ | 895,449 B (11 %) | `4bcedee0…` |
+| **12 s** | **CLI**, the branch's `simulate --foreign 12000ms --input --archive` | **pass** | **yes** (`base_mode` 209, offset 7,383) | 424‰ | 895,449 B (11 %), 0 dropped | `ee330dfa…` |
+| 12.0001 s | **spike**: the branch plus `patches/plus-one-quantum.patch` (the input ceiling one quantum higher), since the CLI refuses past its ruled 12 s | pass | yes | 364‰ | 895,449 B | `231e2b19…` |
+| 5 s, no input | CLI | pass | — | 348‰ | 108,786 B | — |
+
+- **The window's end gives one verdict:** pass at 11.9999 s, 12 s and 12.0001 s. Before D4, 11.9999 s failed `core_in_exception` (§4).
+- **Replay:** `replay --archive` of the 12 s run re-judges its input from the trace alone (`input_verdict` pass, `out/build/replay.json`).
+- **Byte for byte:** three separate 12 s runs, by three builds of this branch (`accept-12-in`, `accept4096-12-in`, `F-12000-in`), wrote a byte-identical trace (`ee330dfa…`) and manifest (`3dc5286e…`; `out/build/archives.sha256`).
+- **The peak spread:** 347–424‰ across these runs (352–371‰ in §2.3's), the same bimodal ~100 MB `sentinel-02-own` showed at 5 s (564,024–659,604 KiB). The margin to the cap at worst is 58 %.
+
+### 11.2 Against the unsummarised log, on real runs
+
+- **12 s with the input:** the summarised run (`F-12000-in`) against the unsummarised, lifted-budget run of the same cell (`H1-s03-12000-in-1`).
+- **5 s with none:** `F-s03-5000-1` against `H1-s03-5000-1`.
+- **Identical:** every finding, every step's `observed_ns`, `spi_errors_exempted` (30,650 and 1,468), the serial options, the input's witness, the `Unhandled write` warnings and the locked accesses.
+- **Added only:** D4's `rc_protocol_search` info.
+
+### 11.3 The adversarial pass and its fixes
+
+- A separate reviewer, given the code and no conclusions, found four ways the summarised log could read differently from the whole. All came from one design choice: a held pair let other lines pass ahead of it, so the kept log was reordered.
+- **Fixed in `a03534e8`:** the summary never reorders; the kept log is the whole log less the lines dropped (FEEDBACK §Adversarial pass).
+- **The oracle:** the judge's own reading (first unexempted error, exempt count, each device's warnings and step times; around the read blocks, nothing after the last) of the summarised log against the whole. It covers a Sentinel-03-shaped log and sixteen planted cases, five of them the reviewer's counterexamples.
+- **Mutants:** one per guard, each killed:
+
+| decision | killed |
+|---|---|
+| D1 | 3/3 |
+| D4 | 6/6 |
+| D3 | 4/4 |
+| D2 | 15 of 16 (`out/build/mutants-d2.txt`) |
+
+- **D2's surviving mutant is equivalent:** the first read's instant as `<` or `<=` in the timeline's split. An event at that instant runs before the same block either way.
+
+### 11.4 The reduction pass
+
+- `-61` net lines.
+- Duplicates removed: the summaries' kept counter, always 1; the filter's decision passed to the summary, dead; two copies of the summary-to-row mapping; two copies of the run-to-each-event loop; `parts` built twice; the RC rule stated twice.
+- Proposed, not taken: three `run.rs` plumbing merges, for a few lines each in the capture path; and folding the PC, clock and pull reads to the last block, which would stop validating the earlier blocks' values. FEEDBACK lists them.

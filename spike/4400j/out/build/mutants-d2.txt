@@ -1,0 +1,19 @@
+clippy-done
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 248 filtered out; finished in 0.95s
+test result: ok. 25 passed; 0 failed; 0 ignored; 0 measured; 59 filtered out; finished in 5.73s
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: .map(|n| n.count - 1) -> .map(|n| n.count)
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: if let Some(name) = held_error { -> if let Some(name) = held_error.filter(|
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs ::         if self.queue.is_empty() {
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs ::         } else if !self.inside { ->         } else if true {
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs ::                 if force {
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs ::                 && !force
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: self.release_all(out);
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: if device_level { -> if false {
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs ::             force = true; ->             force = false;
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: let owed = c.owed || matches!(c.cycle, Cycle::Errored(..)); -> let owed = m
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: self.found_identity
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: body.strip_prefix("[WARNING] adc") -> body.strip_prefix("[WARNING] adc-neve
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: Some(Some(key)) if !device_level => Some(key), -> Some(Some(key)) => Some(k
+KILLED: crates/aethelgard-cli/src/renode/foreign.rs :: if *found && p.matches(&own) => -> if *found && p.matches(&own) && false =>
+SURVIVED: crates/aethelgard-cli/src/renode/foreign.rs ::         if filtered { ->         if false {
+SURVIVED: crates/aethelgard-cli/src/renode/foreign.rs ::     let due = events(d).into_iter().filter(|(t, _)| *t <= first_read); ->
