@@ -44,6 +44,8 @@ Measured 2026-11-25 on Furnace (Intel Core Ultra 7 265K, 20 cores, one thread ea
 
 Both are unchanged since `1915` (3.48–3.49). Nothing on Sentinel-01 is near 12 GiB.
 
+**`4411`'s module:** not measured. Its pushed branch (`de132429`) is the spike record: it proposes a `sentinel-03-wifi` specification but holds none.
+
 ### 1.2 What CBMC hands kani-driver (`every_valid_sequence_tim1`; `tools/cbmc-out.sh`, `tools/cbmc_json.py`)
 
 **The setup:** Kani's own CBMC command, taken from `--keep-temps --verbose`, was run again with its output to a file. It took 220 s, and CBMC's own scope peaked at 6.75 GiB, page cache included.
@@ -98,8 +100,13 @@ Both are unchanged since `1915` (3.48–3.49). Nothing on Sentinel-01 is near 12
 - **(S) splits the final check across K harnesses.** Each harness has the same schedule, unwind, covers and reach checks; the union of their statements is the original's, in order.
   - **Lost:** nothing.
   - **Peak:** about half per part.
-  - **Wall:** both halves take 263 s against 336 whole. The driver parses half as much each time, and that outweighs CBMC running twice.
+  - **Wall, back to back in one window:**
+    - whole `tim1` took 395 s (15.02 GiB);
+    - its halves took 229 + 196 = 425 s, that is **+8 %**.
+    - The 128 and 135 s in the table above ran in a quieter window than the 336 s whole run, so they are not comparable with it.
+    - (S)'s effect on `bench-package-s03`'s minutes is therefore near zero to slightly worse [inferred from one harness]. (R) removes about 22 of its 25 prove minutes on Furnace.
   - **Generator change:** `board.rs` splits `check_final_<part>` when its statement count passes a bound, measured to keep each part under the ceiling.
+  - **The bound is a proxy.** The peak per final-check statement runs from about 0.02 GiB (`gpio`, 2.56 GiB / 122) to 0.094 (`tim1`, 15.09 / 160), because a trace's size depends on the part's image and schedule. So a statement bound does not guarantee a peak. **The CI ceiling read from the probe (§1.6) is the control;** the bound only makes it pass.
   - **`spi1` and `spi2`, measured split in two** (71 + 71 of 142 statements):
     - `spi1`: 5.401 and 5.898 GiB, in 86 and 87 s (whole: 11.295 GiB, 202 s);
     - `spi2`: 5.575 and 6.016 GiB, in 88 and 89 s (whole: 11.519 GiB, 180 s).
@@ -131,8 +138,22 @@ The 25 harnesses were proved one container each, on Kani's defaults with reach c
 - **Sentinel-01 would not move at 80.** Its final checks hold 41–52 statements, so `boards/sentinel-01*` stay byte-identical.
 - **Sentinel-03's package does move, in one binding line.** `verdict_sha256` hashes the verify verdict line, and each prove gate in it names its harness and the crate's `input_sha256`.
   - The ELF does not move: `mod proofs` is `#[cfg(kani)]`.
-  - So (S) needs the `--rebind` dispatch (`AET-WO-4300k` R), which exists for exactly this: only the binding moves.
+  - **This is a §7 stop condition: "a harness's peak moves a committed verdict or package".** (S) moves `fab/sentinel-03/package/MANIFEST.json`'s `verdict_sha256`.
+  - **The path back is a `write` dispatch, not `--rebind`.** Sentinel-03's package is written by `bench-package-s03` with plain `--fab-out`, readiness judged. `--rebind` is pinned by a tier-1 test to Sentinel-01's path only (`fab_tier1::ci_rebinds_only_sentinel_01_s_committed_package`). So it would be:
+    - the architect's `write` dispatch on the built head;
+    - the package committed byte for byte, as at `4300k`;
+    - expected to differ only in `verdict_sha256` [inferred: the ELF and the board's files do not move].
   - (R) passes a flag and leaves the crate alone, so its prove gates' `input_sha256` would not move. Whether the verdict line moves under (R) is not measured.
+- **What else (S) renames, at a bound of 80** (`tools/count-finals.sh`: every JSON under `examples/`, `templates/` and the test fixtures, generated; 31 generate a board crate):
+  - Only four crates have a final check over 80:
+    - `examples/sentinel-03.json` (122–161);
+    - `examples/sentinel-02-bench-hse8.json` (`spi1` 166, `i2c1` 131), `1915`'s board that is OOM-killed at 16 GiB, which (S) may also fix [not measured];
+    - the fixtures `hse-crystal-16.json` and `hse-external-8.json` (132–155).
+  - The next largest is `sentinel-02-bench`'s `spi1`, at 77.
+  - **No test names a harness on those four boards:**
+    - every test that names a schedule harness, or counts the parts, builds a board under 80: Sentinel-01, the motor fixtures, `d1-drv8876`, or a synthetic topology in `board.rs`'s own tests;
+    - the only committed `proofs.rs` files are `boards/sentinel-01*`.
+  - So no test's assertion changes at 80 [grep over `crates/*/tests` and `board.rs`'s tests].
 
 ### 1.5 Should the judge read the reach checks? (asked at 02:15Z)
 
@@ -144,10 +165,16 @@ The 25 harnesses were proved one container each, on Kani's defaults with reach c
 - **Across the board's harness set, 1,492 of our own assertion sites:**
   - 1,439 are reached by at least one harness;
   - 37 are `kani::assert(false, …)` guards, whose unreachability is the property;
-  - **16 are reached by no harness.** Of those, 14 were traced:
-    - the SPE ordering checks in `Image::write` (`Spi1/Spi2 SPE set before CFG2 holds MASTER and SSM`, `… without SSI`, 8 sites) are proven at `Spi1Spy`'s own `write` (`proofs.rs:4754`, SUCCESS), which every transfer goes through;
-    - the ODR checks after a BSRR guard in the same branch are dead by the guard.
-  - Two were not traced: `a PWR register other than CR3 and D3CR was written` (`proofs.rs:190`) and `a GpioC MODER write moved a pin the topology does not use` (`proofs.rs:4208`).
+  - **16 are reached by no harness. All 16 were traced, and each property is proven at another site, or the site is dead by design:**
+    - **8 SPE ordering checks** (`… SPE set before CFG2 holds MASTER and SSM`, `… SPE set without SSI`):
+      - the 4 in `Image::write` are dead because every transfer writes SPE through its own spy;
+      - `Spi1Spy`'s and `Spi2Spy`'s copies of both checks are reached and SUCCESS in the two transfer harnesses;
+      - the 4 in the schedule-part images (`proofs.rs:2036–2040`, `2756–2760`) are dead because `init` leaves SPE clear.
+    - **5 ODR checks** sit after a BSRR guard in the same branch, so they are dead by that guard.
+    - **`Tim1 accessed before RCC_APB2ENR bit 0 is set`** in `Image::clocked` (`:109`) is proven in `ImageTim1::clocked` (`:3351`, SUCCESS in both `tim1` parts).
+    - **`a PWR register other than CR3 and D3CR was written`** in `Image::write` (`:190`) is proven in every part image's `write` (SUCCESS in `gpio`, `i2c1`, `i2c2`, `spi1`).
+    - **`a GpioC MODER write moved a pin the topology does not use`** in `ImageGpio::write` (`:4208`) is proven at `Image::write:516` (SUCCESS in `usart3_start_writes_the_solved_values`).
+  - **No assertion of ours was found vacuous on Sentinel-03.**
 - **Lean: a row, not this work order.**
   - The judgement that means something is board-wide: every generated assertion is reached by some harness, guards excepted.
   - That needs the generator to name its guards, and `verify` to read every prove gate's statuses together. It is a new judge, not CI headroom.
@@ -202,7 +229,16 @@ Renode's process lifetime, spawn to exit, which is a little less than the reaper
 | Furnace, `twin_tier2` + `campaign_tier2` pinned to 4 cores, 4 test threads (1 s samples) | Core Ultra 7 265K | 195 | 3 | 9 | 12 (one at 24) |
 | Furnace, unpinned, 4 test threads | Core Ultra 7 265K | 195 | 3 | 7 | 7 (one at 25) |
 
-- **The A6 test is set aside.** It waits out the bound on purpose; its boot reads 30.0–30.1 s, in shards 0 and 9.
+- **The boots at the bound, by their argv:**
+  - **CI shard 9, 30.0 s:** a tier-1 test's stand-in, `/tmp/aet-2100-t1-…/renode`, killed at the bound on purpose (`boot_tier1`'s `a_boot_past_the_wall_bound_fails_and_names_it`).
+  - **CI shard 0, 30.1 s:** a real Renode boot run by the CLI (`--config /var/lib/aethelgard/…`, seed 2100). It fits the A6 test, which runs an aborted machine to the bound and is the only CLI boot that does. The log does not name the test, so this is not confirmed.
+  - **Furnace, 24–25 s, once in each run:** also a CLI boot. It is likewise unidentified, and A6 is the likely one.
+  - These are set aside in the maxima below. `twin_tier2`'s direct `renode` helpers (`record_on`, `writes_at`) run with no `--config` and under no bound, so none of these boots is theirs.
+- **By board, on the same CPU and with no shard load (EPYC 7763, the bench jobs):**
+  - Sentinel-03's boots: median **11.0 s**, max 11.8, over 20 boots;
+  - Sentinel-01's: median 4.5 s, max 4.9, over 10.
+  - **Sentinel-03's boot is the one that needs the margin.** It is 2.4× Sentinel-01's, and under a shard's load it stacks on that runner's own factor. Shard 10's median of 10.4 s and max of 20.8 s are consistent with Sentinel-03 tests [inferred: the probe names no test].
+- **The bridge's 30 s (`BRIDGE_BOUNDS`):** the CI probe did not watch it, so CI is unmeasured. On Furnace (1 s samples), 32 and 30 bridge runs took median 3–4 s and max 10 s.
 - **Earlier CI runs, from the survey:** across 7 runs, each whole `simulate` call's wall time (`ANSWER 2100`) had median 5.5 s, p95 12.0 s and max 23.6 s.
 - **The one kill in those runs** was `bor_recovery::the_bmp581_extension_recovers_after_its_settle` (run 45494968504, shard 11). Its boot ran at least 30 s; its CPU is not logged.
 - **The slowest runner measured is the EPYC 7763.** Its worst shard (shard 10) runs boots at a median of 10.4 s and a maximum of 20.8.
@@ -239,7 +275,7 @@ Renode's process lifetime, spawn to exit, which is a little less than the reaper
 | P2 | Holds | non-schedule harnesses ≤ 1.87 GiB; one harness over 12 |
 | P3 | Holds | 3.52–3.53 GiB, `every_valid_sequence_spi1` |
 | P4 | Holds | 4.12 GiB of CBMC JSON; 97 % of it the final check's 449 reach-check traces |
-| P5 | Holds | split at 80 statements, the largest part is 7.98 GiB, every property and cover kept |
+| P5 | Holds | split at 80 statements, the largest part is 7.98 GiB, every property and cover kept; wall +8 % back to back on `tim1` |
 | P6 | **Not measured as stated** | the killed boot (bmp581) was not isolated. Boot medians run 1.5–3.5× Furnace's, by runner |
 | P7 | Holds on the bound, **wrong on "only a guard"** | `MAX_VIRTUAL_NS` is the judged window, but a wall kill does become a finding (§2.1) |
 | P8 | Pending (3) | the block is 1,303–1,546 s on the slowest runners, before (1) |
