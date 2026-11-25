@@ -151,8 +151,8 @@ fn the_passives_are_declared_and_held() {
 }
 
 /// D5: the row's 500 mA is counted on the module's rail. On the fixture U11
-/// (3,000 mA) has 1,751 mA left with it counted: 1,751 more fits, 1,752 does
-/// not. Without the module's 500 mA, 2,251 would fit.
+/// (3,000 mA) has 1,749 mA left with it and its two pull-ups counted: 1,749
+/// more fits, 1,750 does not. Without the module's 500 mA, 2,249 would fit.
 #[test]
 fn the_rail_counts_the_supply_requirement() {
     let load = |ma: u32| {
@@ -164,9 +164,9 @@ fn the_rail_counts_the_supply_requirement() {
         }
     };
     let mut fits = fixture();
-    load(1751)(&mut fits);
+    load(1749)(&mut fits);
     judged(&fits).unwrap();
-    let (kind, _) = refused(load(1752));
+    let (kind, _) = refused(load(1750));
     assert_eq!(kind, "RegulatorOverloaded");
 }
 

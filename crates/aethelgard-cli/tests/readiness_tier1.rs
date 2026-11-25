@@ -68,12 +68,14 @@ fn stackup(v: &mut Value) -> &mut serde_json::Map<String, Value> {
 }
 
 /// 76 since the power review (`AET-WO-4300k` §3): five named assumptions
-/// added, the supervisor's lifecycle retired (held p. 16, active).
+/// added, the supervisor's lifecycle retired (held p. 16, active). 75 since
+/// `AET-WO-4411`: U11's loss is read at its solved load, so no
+/// `loss_current_gap:U11`.
 #[test]
-fn the_base_passes_the_gate_with_76_conditions_from_every_source_and_none_stale() {
+fn the_base_passes_the_gate_with_75_conditions_from_every_source_and_none_stale() {
     let (spec, t, c) = base();
     assert_eq!(readiness::check(spec, t, c), Ok(()));
-    assert_eq!(c.len(), 76);
+    assert_eq!(c.len(), 75);
     for id in [
         "buck_junction_screened:U10",
         "supervisor_hysteresis_typical:U12",

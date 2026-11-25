@@ -1233,7 +1233,9 @@ fn a_partial_entry_is_reported_completed_with_its_reason_emptied() {
 /// row, each entry with its own reason, none a ledger row's `judge` text and
 /// none covering a row outside its register and class. With its entries
 /// removed, `missing_entries` proposes one entry per register and class for
-/// every row, every reason "", and the same holds of them.
+/// every row, every reason "", and the same holds of them. `AET-WO-4411`'s
+/// WIFI port on UART4 (PD1/PD0) adds 80 rows and fields, 7 registers and 9
+/// entries (469, 57, 68 and 468 fields before).
 #[test]
 fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
     let committed = spec_of("examples/sentinel-03.json");
@@ -1269,18 +1271,18 @@ fn sentinel_03_s_entries_never_carry_the_ledger_s_judge_text() {
         .collect();
     assert_eq!(
         (missing.len(), registers.len(), entries.len(), held.len()),
-        (469, 57, 68, 0)
+        (549, 64, 77, 0)
     );
     // One proposed entry per committed one: D10 wrote exactly these.
     assert_eq!(entries.len(), committed.acknowledge_unwitnessed.len());
-    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 468);
+    assert_eq!(entries.iter().map(|a| a.fields.len()).sum::<usize>(), 548);
     assert_eq!(
         committed
             .acknowledge_unwitnessed
             .iter()
             .map(|a| a.fields.len())
             .sum::<usize>(),
-        468
+        548
     );
     for a in &held {
         let class = a.class_kind().unwrap();
