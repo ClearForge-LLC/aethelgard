@@ -284,3 +284,33 @@ Renode's process lifetime, spawn to exit, which is a little less than the reaper
 ## 5. Still running at the stop
 - **The architect's four re-runs of `9c06e112`:** the further rows of §1.6 and §2.2.
 - **The refit:** from the built head's runs.
+
+## 6. The built head (after the rulings: (1) (S), (2) (b))
+
+### 6.1 (S) as built: `board.rs` `split_final`, 80 statements
+- **Sentinel-03:** 26 harnesses.
+  - Every schedule part is split in two, `gpio` included.
+  - The built split counts a statement as its check plus the bindings before it, so `gpio`'s 122 lines are 110 statements, and its `for` block is one of them; `split_final.py` had refused to cut it.
+- **Each split is exact** (`spike/1918/out/`, checked on the generated crate):
+  - the parts' bodies, concatenated, are the original check;
+  - each harness is the original, but for its one call;
+  - everything else in `proofs.rs` is byte for byte the old.
+- **Sentinel-01's two crates** regenerate byte-identical to `boards/`.
+- **Sentinel-03's whole `verify --fab-out` in the image** (`tools/built.sh s03`, one container, 16G):
+  - all 26 prove gates pass, and every gate passes;
+  - the ELF is `6e4a81f2…`, unchanged;
+  - every package file is byte-identical but `MANIFEST.json`, whose only difference is `verdict_sha256`;
+  - the scope's `memory.peak` is 9.24 GiB for the whole verify, every process included;
+  - 3,090 s, on a Furnace loaded by the gates beside it.
+- **`sentinel-02-bench-hse8`, recorded as ruled:**
+  - its `spi1` parts prove at 7.53 and 7.26 GiB (284 and 254 s), and its `i2c1` parts at 3.86 and 4.42 GiB, each at 16G;
+  - unsplit, 1915 measured the `spi1` part OOM-killed at 16G.
+
+### 6.2 (b) as built
+- **`BOOT_BOUNDS.wall` is 120 s.**
+- **A plain wall kill is `renode::hung`, a `ToolError`.** That holds for the boot, the droop's undisturbed boot (`undisturbed_boot_word_ns`) and a foreign run whose hook caught a fault.
+- **`cpu_aborted` and the memory cap stay findings.**
+- **Replay refuses `wall_bound_exceeded`** on a read or an unread boot (`HANG_GUARD_FINDING`).
+- **`simulate --wall-bound-ms`** is hidden, 1 to 120,000 ms, and absent from the MCP tools. It is recorded as `wall_bound_ms`.
+- **`twin_tier2`'s A6 and `m2` pass in the image.** A6 returned in 25.0 s under the test's 30 s guard.
+- **The planted hang:** `campaign_tier1::a_renode_that_never_returns_is_refused_and_archives_nothing` (122 s on Furnace).

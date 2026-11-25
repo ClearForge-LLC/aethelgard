@@ -17,16 +17,23 @@ import statistics
 import sys
 
 d, run = sys.argv[1], sys.argv[2]
+# A re-run's logs come from the API without `gh run view --log`'s job and step columns; their
+# job names are in DIR/jobs.tsv (`<job id>\t<name>...`).
+names = {}
+if os.path.exists(os.path.join(d, "jobs.tsv")):
+    for row in open(os.path.join(d, "jobs.tsv")):
+        cols = row.rstrip("\n").split("\t")
+        names[cols[0]] = cols[1]
 for path in sorted(glob.glob(os.path.join(d, f"{run}-*.log"))):
-    job = cpu = None
+    job = names.get(os.path.basename(path)[len(run) + 1 : -4])
+    cpu = None
     boots, peaks = [], []
     with open(path, errors="replace") as f:
         for line in f:
             parts = line.rstrip("\n").split("\t", 2)
-            if len(parts) < 3:
-                continue
-            job = job or parts[0]
-            text = re.sub(r"^\S+Z ", "", parts[2].lstrip("﻿"))
+            if len(parts) >= 3:
+                job = job or parts[0]
+            text = re.sub(r"^\S+Z ", "", parts[-1].lstrip("﻿"))
             m = re.match(r"Model name:\s+(.*)", text)
             if m and cpu is None:
                 cpu = m.group(1).strip()
