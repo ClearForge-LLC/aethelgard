@@ -267,8 +267,22 @@ jobs:
         if: matrix.shard == 0
         run: $RUN --network none "$(cat container/IMAGE)" cargo clippy --workspace --all-targets --locked --offline --features aethelgard-cli/with-tools -- -D warnings
 
+      # AET-WO-1918 measurement (spike/1918/predictions.md, removed or kept as ruled at its stop): the
+      # runner's CPU, then a host-side probe (spike/1918/tools/ci_probe.py) that logs each Renode boot's
+      # wall time and each Kani harness's kani-driver VmHWM, read every 0.2 s from /proc.
+      - name: AET-WO-1918, the runner's CPU, and the boot and peak probe
+        run: |
+          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; free -g
+          nohup python3 -I spike/1918/tools/ci_probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+
       - name: cargo test inside the image, this shard's tests
         run: $RUN --network none "$(cat container/IMAGE)" bash ci/shard.sh run target/ci-shard ${{ matrix.shard }}
+
+      - name: AET-WO-1918, the probe's boots and peaks
+        if: always()
+        run: |
+          touch "$RUNNER_TEMP/probe.stop"; sleep 1
+          cat "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.err" 2>/dev/null || echo "AET-WO-1918: no probe log"
 
       - name: keep what the aggregate checks
         if: always()
@@ -571,6 +585,14 @@ jobs:
       - name: build the CLI and the analog bridge, with the network
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked"
 
+      # AET-WO-1918 measurement (spike/1918/predictions.md, removed or kept as ruled at its stop): the
+      # runner's CPU, then a host-side probe (spike/1918/tools/ci_probe.py) that logs each Renode boot's
+      # wall time and each Kani harness's kani-driver VmHWM, read every 0.2 s from /proc.
+      - name: AET-WO-1918, the runner's CPU, and the boot and peak probe
+        run: |
+          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; free -g
+          nohup python3 -I spike/1918/tools/ci_probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+
       - name: verify --against-fab, the committed package derived again
         if: ${{ !inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --against-fab fab/sentinel-01-bench/package
@@ -580,6 +602,12 @@ jobs:
         # AET-WO-4300k, ruled 2026-11-24T11:25Z (R): Sentinel-01 is re-bound to its committed
         # package (readiness not judged; refused unless only the binding moves).
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY --fab-out target/bench-package --rebind fab/sentinel-01-bench/package
+
+      - name: AET-WO-1918, the probe's boots and peaks
+        if: always()
+        run: |
+          touch "$RUNNER_TEMP/probe.stop"; sleep 1
+          cat "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.err" 2>/dev/null || echo "AET-WO-1918: no probe log"
 
       - name: keep the written package
         if: ${{ inputs.write }}
@@ -631,6 +659,14 @@ jobs:
           df -h; free -g
           nohup bash -c 'while :; do ps -eo rss=,comm= --sort=-rss | head -1; sleep 2; done' > "$RUNNER_TEMP/rss.log" 2>&1 &
 
+      # AET-WO-1918 measurement (spike/1918/predictions.md, removed or kept as ruled at its stop): the
+      # runner's CPU, then a host-side probe (spike/1918/tools/ci_probe.py) that logs each Renode boot's
+      # wall time and each Kani harness's kani-driver VmHWM, read every 0.2 s from /proc.
+      - name: AET-WO-1918, the runner's CPU, and the boot and peak probe
+        run: |
+          lscpu | grep -E '^(Model name|CPU\(s\)|Thread|Core|Socket)'; nproc; free -g
+          nohup python3 -I spike/1918/tools/ci_probe.py "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.stop" > "$RUNNER_TEMP/probe.err" 2>&1 &
+
       - name: Sentinel-03, verify --against-fab, the committed package derived again
         if: ${{ !inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
@@ -638,6 +674,12 @@ jobs:
       - name: Sentinel-03, verify --fab-out, the package written for committing
         if: ${{ inputs.write }}
         run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
+
+      - name: AET-WO-1918, the probe's boots and peaks
+        if: always()
+        run: |
+          touch "$RUNNER_TEMP/probe.stop"; sleep 1
+          cat "$RUNNER_TEMP/probe.log" "$RUNNER_TEMP/probe.err" 2>/dev/null || echo "AET-WO-1918: no probe log"
 
       - name: Sentinel-03, disk and memory after the verify, and the peak RSS
         if: always()
