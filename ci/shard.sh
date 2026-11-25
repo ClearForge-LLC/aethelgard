@@ -488,21 +488,6 @@ run() {
     set -e
   fi
   for log in "$out/test-ws.log" "$out/test-bridge.log"; do [ ! -e "$log" ] || compiled_in "$log"; done
-  # AET-WO-1918 THROWAWAY (reverted before READY; REFIT RULE 1, ruled (i)): after the shard's own tests, each name
-  # spike/1918/alone.tsv gives this shard runs alone, one invocation and one thread each; its libtest `finished in` is
-  # its alone time. Not in the opt-level=1 shards (ruled (iii)), which time the normal pass only.
-  if [ -z "${CARGO_PROFILE_DEV_OPT_LEVEL:-}" ]; then
-    grep -m1 'model name' /proc/cpuinfo || true
-    local name alone_names
-    mapfile -t alone_names < <(awk -F'\t' -v k="$k" '!/^#/ && $1 == k { print $2 }' "$here/../spike/1918/alone.tsv")
-    for name in "${alone_names[@]}"; do
-      echo "ALONE $name"
-      set +e
-      cargo test --workspace "${FEATURES[@]}" -- --exact "$name" --test-threads=1 </dev/null 2>&1 | tee -a "$out/alone.log"
-      [ "${PIPESTATUS[0]}" -eq 0 ] || status=1
-      set -e
-    done
-  fi
   [ "$status" -eq 0 ] || die "shard $k: a test run failed"
   result "$k" "$shard" "$out/test-ws.log" "$out/test-bridge.log" "$TIER2_RE" "$here/test-weights.tsv" "$here/colocate.tsv" | tee "$out/result.txt"
 }
