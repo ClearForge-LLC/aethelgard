@@ -2184,11 +2184,11 @@
       "peripheral": null,
       "tx": {
         "net": "WIFI_TX",
-        "pin": null
+        "pin": "PD1"
       },
       "rx": {
         "net": "WIFI_RX",
-        "pin": null
+        "pin": "PD0"
       },
       "role": "mavlink",
       "framing": {

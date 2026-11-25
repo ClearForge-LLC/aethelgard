@@ -185,8 +185,11 @@ fn the_keepout_is_on_each_copper_layer_off_the_board() {
     assert_eq!(layers, ["B.Cu", "F.Cu", "In1.Cu", "In2.Cu"]);
 }
 
-/// D7: the module's port takes a UART of its own, and no pin of the board
-/// without the module (its module and port removed) moves.
+/// D7: the module's port takes a UART of its own, and no entry of the solved
+/// topology of the board without the module (its module and port removed)
+/// moves: not only `assignments` (the solver's own choice, UART4 on PA0/PA1,
+/// kept every assignment but moved `gpio.FLASH_CS` to PA15). `power` moves by
+/// the module's counted 500 mA, which `aethelgard-ir`'s radio tests judge.
 #[test]
 fn the_modules_port_moves_no_pin() {
     let mut spec: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
@@ -208,10 +211,21 @@ fn the_modules_port_moves_no_pin() {
     assert_eq!(code, 0, "{base}");
     let (code, radio) = run(&["solve", "--file", SPEC]);
     assert_eq!(code, 0, "{radio}");
-    let (a, b) = (&base["assignments"], &radio["assignments"]);
-    for (net, pin) in a.as_object().unwrap() {
-        assert_eq!(&b[net], pin, "{net} moved");
+    let port = &radio["serial_ports"][label.as_str()];
+    let own = [label.as_str(), port["tx"].as_str().unwrap(), port["rx"].as_str().unwrap()];
+    let mut keys = 0;
+    for (key, a) in base.as_object().unwrap() {
+        if key == "specification_sha256" || key == "power" {
+            continue;
+        }
+        let mut b = radio[key].clone();
+        if let Some(o) = b.as_object_mut() {
+            o.retain(|k, _| !own.contains(&k.as_str()));
+        }
+        assert_eq!(&b, a, "`{key}` moved");
+        keys += 1;
     }
+    assert!(keys > 10, "{keys} keys compared");
     let wifi = &radio["serial_ports"][label.as_str()]["peripheral"];
     assert!(wifi.is_string(), "{label}: {wifi}");
     let taken: Vec<&Value> = base["serial_ports"]

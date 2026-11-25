@@ -17,8 +17,11 @@ if len(sys.argv) < 4:
 s["serial_ports"].append({
     "label": "WIFI",
     "peripheral": None,
-    "tx": {"net": "WIFI_TX", "pin": None},
-    "rx": {"net": "WIFI_RX", "pin": None},
+    # D7: the solver's own choice, UART4 on PA0/PA1, moves FLASH_CS from PA0 to
+    # PA15; UART4 on PD1/PD0 moves no entry of the solved topology (measured,
+    # with UART4 PB9/PB8, UART5 PC12/PD2, USART6, UART7 and UART8 pairs).
+    "tx": {"net": "WIFI_TX", "pin": "PD1"},
+    "rx": {"net": "WIFI_RX", "pin": "PD0"},
     "role": "mavlink",
     "framing": {"baud": 57600, "data_bits": 8, "parity": "none", "stop_bits": 1, "inverted": False},
     "negotiated": None,
