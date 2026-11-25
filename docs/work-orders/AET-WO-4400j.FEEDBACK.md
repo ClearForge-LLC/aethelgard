@@ -10,10 +10,10 @@
 
 | acceptance | where it holds |
 |---|---|
-| An input run on Sentinel-03's ELF arms inside the CLI's own bounds at the ruled window, witnessed from its heartbeat, replayed from its archive | **CLI, unlifted, 12 s:** ELF `97afa171…` (Copter-4.7.2, CI's `container/ardupilot-build.sh` in the pinned image `e1809b90…`) with `arm12.json`. Verdict pass, armed (`base_mode` 209). 352‰ of the cap; log 895,449 B (11 % of 8 MiB); 0 dropped. Archived; `replay --archive` re-judges it (RESULTS §11) |
-| The log of a 12 s run keeps the first and last line of each repeating source with its count; the judge's findings unchanged against the unsummarised log, a planted firmware per source | **Real log:** against the unsummarised run of the same cell, every finding (but D4's info), every step's time, the exempt count (30,650), the serial options, the witness, the warnings and the locked accesses are identical. **CI:** the oracle runs the judge's own reading on the summarised and the whole log, for a Sentinel-03-shaped log and sixteen planted differences, one per source or rule, five of them the adversarial pass's counterexamples. Fifty cycles also run through the CLI (`boot_tier1`) |
+| An input run on Sentinel-03's ELF arms inside the CLI's own bounds at the ruled window, witnessed from its heartbeat, replayed from its archive | **CLI, unlifted, 12 s, head `02c9b50f`:** ELF `97afa171…` (Copter-4.7.2, CI's `container/ardupilot-build.sh` in the pinned image `e1809b90…`) with `arm12.json`. Verdict pass, armed (`base_mode` 209). 435‰ of the cap (347–435‰ over every acceptance run); log 895,449 B (11 % of 8 MiB), 0 dropped; `simulate` 46.7–47.0 s of wall. Archived; `replay --archive` re-judges it; four builds wrote a byte-identical trace and manifest (RESULTS §11.1) |
+| The log of a 12 s run keeps the first and last line of each repeating source with its count; the judge's findings unchanged against the unsummarised log, a planted firmware per source | **Real log:** against the unsummarised run of the same cell, every finding (but D4's info), every step's time, the exempt count (30,650), the serial options, the witness, the warnings and the locked accesses are identical. **CI:** the oracle runs the judge's own reading on the summarised and the whole log, for a Sentinel-03-shaped log and eighteen planted differences, one per source or rule, seven of them the adversarial pass's counterexamples. Fifty cycles and two hundred repeats per device source also run through the CLI (`boot_tier1`) |
 | The retained growth fixed, or named with its dump | **Fixed (D1):** Renode's stdin is a held pipe. The dump that named it is in `spike/4400j/out/dump/` |
-| The window's end gives the same verdict at the ruled length and one quantum either side | **CLI:** 11.9999 s and 12 s. **Spike:** 12.0001 s, the branch with `patches/plus-one-quantum.patch`, since the CLI refuses past its ruled ceiling (ruled (a), 19:33Z). RESULTS §11 says which run is which |
+| The window's end gives the same verdict at the ruled length and one quantum either side | Pass at all three. **The CLI's own:** 11.9999 s and 12 s. **The spike's:** 12.0001 s, the branch at `02c9b50f` with `patches/plus-one-quantum.patch`, since the CLI refuses past its ruled ceiling (ruled (a), 19:33Z). RESULTS §11.1 says which run is which |
 | The 14 generated boards' committed verdicts unchanged, or each change named | §Moves below |
 | CI green; every new test in a shard at its measured weight | §Gates below |
 
@@ -27,7 +27,7 @@
 | F4 | **Likely explained, to re-measure** (ruled wording): 4400f F1 (RSS follows wall time); Tviburi `TVI-WO-1301`'s 768,856–1,049,556 KiB CI spread; and so `RUL-13`'s 1 → 1.5 GiB raise. Also likely: 4400h F1 (5 s killed at load 22–28), its core-count effect, and `architecture.md:300`'s 55 MB/s hang. Possibly 4400h F10 and F15 (the reboot's and DShot's out-of-memory) | the architect: re-measure from CI's figures after this lands |
 | F5 | **Edits the grant did not name literally, each forced by a ruling:** `run.rs` (D1, granted); `main.rs` (D4's timeline tail, D3's refusal and window, D2's wiring); the CLI README's `--foreign` line (D3); `ci/foreign-judge.sh` (D1's band); `renode.rs` unit tests (D4's four reads, D3's longest `RunFor`) | none |
 | F6 | **CI builds no Sentinel-03 ELF** (D5 (b), ruled a row): an `ardupilot-image` job for it needs a committed spec with `mcu.foreign_clock` derived for its HSE (`spike/4400j/py/derive.py`: USARTs at 100 MHz, not the HSI tree's 72) | a row |
-| F7 | **D1's band test may not discriminate on CI.** On Furnace, held stdin grew 17–113 MB from 1 s to 5 s, and `/dev/null` 238–578. CI's unfixed growth is slower (one runner core spinning), so its `/dev/null` arm was not measured. The stdin stub tests are D1's guard | the architect: read the band's ANSWER line on CI |
+| F7 | **D1's band test may not discriminate on CI.** On Furnace, held stdin grew −102 to +119 MB over ten 1 s / 5 s pairs (bimodal, about 100 MB either way), against the 160 MiB band, and `/dev/null` grew 238–578 MB. CI's unfixed growth is slower (one runner core spinning), so its `/dev/null` arm was not measured. The stdin stub tests are D1's guard | the architect: read the band's ANSWER line on CI |
 | F8 | **D3, a reason to move both (not built):** with D1 and D2, a no-input 12 s run on Sentinel-03 sits at 355–362‰ and would keep about 0.2 MB of log. The no-input bound of 5 s now protects only CI's wall time and today's verdicts | the architect |
 | F9 | **The residual kept log is mostly lines no rule lists:** USART1's `ReadByte` access lines (213 KB over 6 s of the armed run) and U7's reads. Not summarised here (outside D2's ruled list) | a row if the budget tightens |
 | F10 | **D4 adds about 12 KB to every foreign verdict's `log_kept_bytes`** (the longer command echo and four read blocks), and `earlier`, `icsr_earlier` and `rc_search` to its report | none (named) |
@@ -39,7 +39,7 @@
 
 A separate reviewer read the code with no conclusions given; I traced every finding by hand before acting on it.
 
-- **A summary that hides a finding: four found, all fixed.**
+- **A summary that hides a finding: six found over two reads, all fixed.** First read: four. Second read, at the rewritten head: G1, the queue's bound missing in `emit()` (fixed in `b6c825a4`); and G2, a lone `CFG2` write kept as written leaving the next line free to be dropped (fixed in `02c9b50f`: it pins the next line, across a read block too).
   - (F1/F2) A held pair let other sources' lines pass ahead of it, which reordered the kept log. An error, or an idle warning, could then sit beside a different line than in the whole log.
   - (F3) A dropped line before a read block was forgotten, although the judge joins the run's log around the blocks.
   - (F4) The filter's own `Unhandled write` lines bypassed the summary.
@@ -58,7 +58,11 @@ A separate reviewer read the code with no conclusions given; I traced every find
   - A window under three quanta reads at 0 (adversarial pass): cosmetic, since such a run fails `foreign_not_booted`.
 - **D1:** none found. The pipe's ends are close-on-exec, and the write end outlives the reaper's wait. Only `renode` and the bridge get it.
 - **D3:** no path past the guard.
-- **Mutants:** one per guard, each killed: D1 3/3, D4 6/6, D3 4/4. D2: 15 of 16, re-run on the final code (`spike/4400j/out/build/mutants-d2.txt`). The one survivor is equivalent: the first read's instant as `<` or `<=` in the timeline's split, where an event at that instant runs before the same block either way.
+- **Mutants,** one per guard on head `02c9b50f` (`spike/4400j/out/build/mutants.txt`, `mutants/all.py`): D1 3/3, D2 20/20, D3 4/4, D4 6/6, all killed. One more, the first read's instant as `<` or `<=` in the timeline's split, is equivalent and named.
+
+## To name
+
+- **"Last occurrence":** D2 keeps a repeated line's first occurrence as written, and its last occurrence's *time*, with the count, as `Unhandled write` already does. The stop and the ruling said "first and last occurrence". Keeping the last line itself would put a line beside others where the whole log does not, so the judge would read differently. The architect's call.
 
 ## Moves
 
@@ -74,12 +78,15 @@ A separate reviewer read the code with no conclusions given; I traced every find
 
 ## Gates
 
-On the final head, in the pinned tools image `1e0ab105…` under `capped-run --mem 32G`:
+On head `02c9b50f`, in the pinned tools image `1e0ab105…` under `capped-run --mem 32G` (`spike/4400j/out/build/gates.txt`):
 - `cargo fmt --all -- --check`: 0;
 - `cargo clippy --workspace --all-targets -- -D warnings`: 0;
-- `cargo test --workspace --no-fail-fast`: **3,206 passed, 0 failed**.
+- `cargo test --workspace --no-fail-fast`: **3,208 passed, 0 failed**.
 
-`ci/foreign-judge.sh` on the branch, with main's CI-built ELFs (`ardupilot-image` run 45663731874), exit 0. Its new band case: the peak at 1 s is 553,708 KiB, at 5 s 549,528 KiB.
+After it, only the CLI README and a doc comment changed: fmt was rerun, the CLI built, and every test that reads a README passed.
+
+- **Tier 2,** `--features with-tools`: seven tests on Furnace, 7/7 pass. They are the foreign flash tests, our own firmware under `--foreign`, a generated reference boot and the two droops through the bridge. CI runs the rest.
+- **`ci/foreign-judge.sh`** on the branch, with main's CI-built ELFs (`ardupilot-image` run 45663731874): exit 0. Its band case grew 20,344 KiB.
 
 - **Weights:** eight new rows in `ci/test-weights.tsv`, each test alone on Furnace times 2.8 (the AET-WO-1310 rule; `spike/4400j/out/build/weights.txt`).
 - **Reduction pass (diff):** −61 net · 6 duplicates removed · 1 dead path removed · 0 protected kept · 1 finding below (F13).

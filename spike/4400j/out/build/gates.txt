@@ -1,0 +1,9 @@
+fmt 0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.68s
+clippy 0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.04s
+test 0
+foreign-judge 0
+ crates/aethelgard-cli/src/renode/foreign.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+final-done

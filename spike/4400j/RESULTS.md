@@ -179,20 +179,18 @@ Under main's other bounds (memory cap and log budget not lifted), held stdin at 
 - With the input, `memory.*` and `log_kept_bytes` differ (by 129–303 B).
 - The kept logs, with the scratch path masked and Renode's host-timing line `Thread has been woken up 2 times, verify your condition` dropped, are **byte-identical** (0 differing lines).
 - Those bytes are that host line (no source, so no rule reads it) and the scratch directory's name. Between `/dev/null` runs the same cell already varies (10 s with the input: 44,979,796–44,980,012 B). F1 below.
-- **Read, not measured:**
-  - That the bridge's Renode inherits the held stdin (`bridge/src/main.rs:429`, `Command::status()` inherits).
-  - No generated or droop boot was run with the fix.
-  - One mechanism was tried: a held pipe. Others, such as Renode run without `--console`, were not.
+- **The bridge's Renode inherits the held stdin** (`bridge/src/main.rs:429`, `Command::status()` inherits; read). **Run with the fix** (§11): tier 2's two reference droops through the bridge and a generated reference boot, all passing.
+- One mechanism was tried: a held pipe. Others, such as Renode run without `--console`, were not.
 - Wall is 2–19 % shorter with the fix (one core no longer spins): 12 s with the input, 53.0–54.5 → 44.2–45.7 s.
 
-**What else this explains** (each consistent with it; none re-measured here):
+**Likely explained, to re-measure** (the ruling's wording, 18:49Z; each consistent with it, none re-measured here):
 - `4400f` F1 ("RSS follows wall time");
 - `4400h` F1 (5 s killed at load 22–28) and its core-count effect;
 - Tviburi `TVI-WO-1301`'s 768,856–1,049,556 KiB spread across CI runs, which `RUL-13`'s 1.5 GiB amendment cites as "a cause not yet known";
 - `architecture.md:300`'s hang "while Renode grew at about 55 MB/s";
 - possibly `4400h` F10 and F15 (the reboot's and DShot's out-of-memory under a 4 GiB cap).
 
-The memory share in every Renode verdict has depended on the host's speed. With the fix it follows virtual time.
+So the memory share in every Renode verdict has likely depended on the host's speed. With the fix, the growth it measured is gone, and the share should follow virtual time; CI's own figures will say.
 
 ## 3. Wall time
 
@@ -384,21 +382,40 @@ Built on the branch, one commit per decision:
 
 Evidence is in `out/build/`.
 
+Later commits (§11.3–§11.5):
+
+| commit | what |
+|---|---|
+| `b6c825a4` | the queue bound wherever it grows; a CLI test per source |
+| `02c9b50f` | the second adversarial read's G2 |
+| last | the CLI README and this record |
+
+Every number below is from head `02c9b50f` (`sh/final.sh`) unless it says otherwise.
+
 ### 11.1 The acceptance runs
 
 Main's Sentinel-03, ELF `97afa171…` (Copter-4.7.2, built by CI's `container/ardupilot-build.sh` in the pinned image `e1809b90…`, `sh/board.sh`; `out/build/elf.sha256`), with `4400i`'s `arm12.json`. Four cores, held stdin; nothing lifted unless the run says spike.
 
 | run | which | verdict | armed | peak (‰ of 1.5 GiB) | log kept (of 8 MiB) | trace sha256 |
 |---|---|---|---|---|---|---|
-| 11.9999 s | **CLI**, the branch's `simulate --foreign 11999900us --input` | pass | yes | 347‰ | 895,449 B (11 %) | `4bcedee0…` |
-| **12 s** | **CLI**, the branch's `simulate --foreign 12000ms --input --archive` | **pass** | **yes** (`base_mode` 209, offset 7,383) | 424‰ | 895,449 B (11 %), 0 dropped | `ee330dfa…` |
-| 12.0001 s | **spike**: the branch plus `patches/plus-one-quantum.patch` (the input ceiling one quantum higher), since the CLI refuses past its ruled 12 s | pass | yes | 364‰ | 895,449 B | `231e2b19…` |
-| 5 s, no input | CLI | pass | — | 348‰ | 108,786 B | — |
+| 11.9999 s | **CLI**: the branch's `simulate --foreign 11999900us --input --archive` | pass | yes | 431‰ | 895,449 B (11 %), 0 dropped | `4bcedee0…` |
+| **12 s** | **CLI**: the branch's `simulate --foreign 12000ms --input --archive` | **pass** | **yes** (`base_mode` 209, offset 7,383) | 435‰ | 895,449 B (11 %), 0 dropped | **`ee330dfa…`** |
+| 12.0001 s | **spike**: the branch at `02c9b50f` plus `patches/plus-one-quantum.patch` (the input ceiling one quantum higher), since the CLI refuses past its ruled 12 s (ruled (a), 19:33Z) | pass | yes | 430‰ | 895,752 B | `231e2b19…` |
+| 5 s, no input | CLI (`F-s03-5000-1`, `5c6f9cc1`) | pass | — | 348‰ | 108,786 B | — |
 
 - **The window's end gives one verdict:** pass at 11.9999 s, 12 s and 12.0001 s. Before D4, 11.9999 s failed `core_in_exception` (§4).
 - **Replay:** `replay --archive` of the 12 s run re-judges its input from the trace alone (`input_verdict` pass, `out/build/replay.json`).
-- **Byte for byte:** three separate 12 s runs, by three builds of this branch (`accept-12-in`, `accept4096-12-in`, `F-12000-in`), wrote a byte-identical trace (`ee330dfa…`) and manifest (`3dc5286e…`; `out/build/archives.sha256`).
-- **The peak spread:** 347–424‰ across these runs (352–371‰ in §2.3's), the same bimodal ~100 MB `sentinel-02-own` showed at 5 s (564,024–659,604 KiB). The margin to the cap at worst is 58 %.
+- **Byte for byte:** four separate 12 s runs, by four builds of this branch, wrote a byte-identical trace (`ee330dfa…`) and manifest (`3dc5286e…`; `out/build/archives.sha256`).
+- **The peak:** 347–435‰ across this section's runs; the worst margin to the cap is 56 %. The spread is the bimodal ~100 MB `sentinel-02-own` also shows (§11.5). §5's 63 % was the stop's, from three runs.
+- **Wall, on Furnace, four cores, load 10–18, back to back:** 46.7–47.0 s for `simulate` with the summary, 45.7–47.2 s for the unsummarised measurement CLI. So D2 costs no measurable wall.
+  - The archived runs' 73–82 s includes the script's own `generate` of the board (26.9 s alone); main's code took 81.8 s archived the same way.
+  - At CI's estimated 1.04–1.2× (§3), about 56 s against the 120 s guard.
+- **Tier 2,** run on Furnace (`out/build/tier2-subset.txt`), 7 of 7 pass:
+  - the three foreign flash tests and our own firmware under `--foreign`;
+  - a generated reference boot;
+  - `campaign_tier2`'s two droops through the bridge.
+
+  CI runs the rest.
 
 ### 11.2 Against the unsummarised log, on real runs
 
@@ -409,22 +426,37 @@ Main's Sentinel-03, ELF `97afa171…` (Copter-4.7.2, built by CI's `container/ar
 
 ### 11.3 The adversarial pass and its fixes
 
-- A separate reviewer, given the code and no conclusions, found four ways the summarised log could read differently from the whole. All came from one design choice: a held pair let other lines pass ahead of it, so the kept log was reordered.
-- **Fixed in `a03534e8`:** the summary never reorders; the kept log is the whole log less the lines dropped (FEEDBACK §Adversarial pass).
-- **The oracle:** the judge's own reading (first unexempted error, exempt count, each device's warnings and step times; around the read blocks, nothing after the last) of the summarised log against the whole. It covers a Sentinel-03-shaped log and sixteen planted cases, five of them the reviewer's counterexamples.
-- **Mutants:** one per guard, each killed:
+**The first read** (a separate reviewer, given the code and no conclusions) found four ways the summarised log could read differently from the whole. All came from one design choice: a held pair let other lines pass ahead of it, so the kept log was reordered.
+- **Fixed in `a03534e8`:** the summary never reorders; the kept log is the whole log less the lines dropped.
+
+**The second read** (the same reviewer, at the rewritten head) found two:
+- G1: the queue's bound was checked only where a pair was made. Fixed in `b6c825a4`, while the read ran; `emit()` checks it too.
+- G2: a lone `CFG2` write kept as written left the next line free to be dropped. Fixed in `02c9b50f`; it now pins the next line, across a read block too.
+
+**The oracle:** the judge's own reading (first unexempted error, exempt count, each device's warnings and step times; around the read blocks, nothing after the last) of the summarised log against the whole. It covers a Sentinel-03-shaped log and eighteen planted cases, seven of them the reviewer's counterexamples; the queue's bound with 70,000 lines; and, through the CLI, fifty cycles and two hundred repeats per device source.
+
+**Mutants** (`out/build/mutants.txt`, `mutants/all.py`), one per guard on `02c9b50f`:
 
 | decision | killed |
 |---|---|
 | D1 | 3/3 |
-| D4 | 6/6 |
+| D2 | 20/20 |
 | D3 | 4/4 |
-| D2 | 15 of 16 (`out/build/mutants-d2.txt`) |
+| D4 | 6/6 |
 
-- **D2's surviving mutant is equivalent:** the first read's instant as `<` or `<=` in the timeline's split. An event at that instant runs before the same block either way.
+One more mutant, the first read's instant as `<` or `<=` in the timeline's split, is equivalent and named: an event at that instant runs before the same block either way.
+
+**What D2 keeps of a repeated line** (to name): its first occurrence as written, and its last occurrence's *time*, with the count, as `Unhandled write` already does. The stop's D2 and the ruling said "first and last occurrence". The last occurrence's line is not kept, because a later line kept as written could change what the judge reads beside it. The architect's call.
 
 ### 11.4 The reduction pass
 
 - `-61` net lines.
 - Duplicates removed: the summaries' kept counter, always 1; the filter's decision passed to the summary, dead; two copies of the summary-to-row mapping; two copies of the run-to-each-event loop; `parts` built twice; the RC rule stated twice.
 - Proposed, not taken: three `run.rs` plumbing merges, for a few lines each in the capture path; and folding the PC, clock and pull reads to the last block, which would stop validating the earlier blocks' values. FEEDBACK lists them.
+
+### 11.5 D1's band, ten pairs
+
+- **The runs:** `sentinel-02-own` with its CI ELF (`5eace4ca…`), no input, at 1 s and at 5 s; ten pairs, back to back, through the branch's CLI (`out/build/band.jsonl`).
+- **5 s peak less 1 s peak:** −101,772 to **+118,740 KiB**, against the 160 MiB band (163,840 KiB): 45 MiB of margin at the worst pair.
+- **Bimodal:** one run in a pair is sometimes about 100 MB higher, whichever window it is, so a pair's growth swings both ways.
+- **`ci/foreign-judge.sh` on the branch:** +20,344 KiB (`out/build/foreign-judge-band.txt`). Main's `/dev/null` grew 238–578 MB on Furnace. CI's `/dev/null` arm was not measured (FEEDBACK F7).

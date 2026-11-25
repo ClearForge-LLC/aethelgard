@@ -1,0 +1,11 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p251174-i226708901.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
+test a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds ... ok
+test a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding ... ok
+test a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten ... ok
+test the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed ... ok
+test the_reference_firmware_boots_and_two_boots_agree ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 91 filtered out; finished in 22.58s
+test a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays ... ok
+test the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay ... ok
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 34.76s
+exit 0

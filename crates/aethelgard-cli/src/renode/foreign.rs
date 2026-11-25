@@ -37,8 +37,8 @@ pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
 /// D3, ruled 2026-11-25T18:49Z): main's Sentinel-03 arms on `4400i`'s input
 /// at 8.752 s (its armed heartbeat's first byte), and 12 s leaves 3.25 s.
 /// Inside the bounds of `RUL-13` only since D1 (Renode's stdin held open:
-/// 365-371 permille of the cap at 12 s with the input, against 1,756-1,861
-/// before) and D2 (the flood summarised); `spike/4400j/RESULTS.md` §5. A run
+/// 347-435 permille of the cap at 12 s with the input, against 1,756-1,861
+/// before) and D2 (the flood summarised); `spike/4400j/RESULTS.md` §11. A run
 /// with no input keeps [`FOREIGN_MAX_VIRTUAL_NS`], so no such verdict moves.
 pub const FOREIGN_INPUT_MAX_VIRTUAL_NS: u64 = 12_000_000_000;
 pub const FOREIGN_INPUT_WINDOW: &str = "FOREIGN_INPUT_MAX_VIRTUAL_NS";
