@@ -63,7 +63,7 @@ The floor rule is `supervisor::floors_above_reset`, ruled D12 and refused by `ve
   - S keeps the floor (the flash's 2.7 V; the module stays unjudged, as ruled) but allows at most 114 mV.
   - R and Z allow far more drop but leave the flash out of range while the MCU runs.
 - **A supervisor that would do both** needs VIT− min of at least 2700 mV (the flash) and a rising maximum of at most 3144 − 118.3 = 3025 mV for R2, or 3031 mV for lever (iv) at 1.54 mm. With the drop limit kept at 110, the rising maximum must be at most 3034 mV, and S's 3030 already meets that.
-  - So the window is VIT− from 2.70 V up, with VIT− max plus hysteresis at most about 3.03 V, which is a part about 1 % tighter than the S, or set lower than it.
+  - For R2's 118.3 mV, that is a part like the S with its whole window at least 5 mV lower (rising maximum 3025 mV or under), while VIT− min stays at 2.70 V or above.
   - The TLV803 family offers none. The TLV803E is named by TI as pin-to-pin, but its thresholds are not held.
 - **No supervisor brings the module (3.0 V) into the rule:** a VIT− min of at least 3000 mV leaves at most 3144 − 3000 − hysteresis − tolerance for the drop, a few tens of mV.
 
