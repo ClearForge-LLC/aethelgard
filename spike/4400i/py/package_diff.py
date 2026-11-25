@@ -2,7 +2,8 @@
 Usage: python3 -I package_diff.py OLD_PACKAGE_DIR NEW_PACKAGE_DIR [OLD_VERDICT.json NEW_VERDICT.json]
 - Every file but MANIFEST.json must be byte-identical; in MANIFEST.json only `verdict_sha256` may differ.
 - With the two verify verdict lines (the dispatch's and main's), every differing field must be a campaign run's
-  `state_sequence_hash` (and the fab block's own MANIFEST hash, which follows from it).
+  `state_sequence_hash` (and the fab block's own MANIFEST hash, which follows from it), or one of the three
+  fields that say which mode ran (MODE: main's CI runs `--against-fab`, the write dispatch `--fab-out`).
 Prints each difference; exits 1 on any other."""
 import hashlib, json, os, sys
 
@@ -21,6 +22,7 @@ def flat(o, p=""):
         for i, v in enumerate(o): yield from flat(v, f"{p}/{i}")
     else: yield p, o
 
+MODE = {"/against_fab", "/fab/status", "/fab/fabrication_ready"}
 old, new = sys.argv[1], sys.argv[2]
 bad = 0
 a, b = files(old), files(new)
@@ -40,7 +42,10 @@ if len(sys.argv) > 4:
     for k in sorted(set(va) | set(vb)):
         if va.get(k) != vb.get(k):
             ok = k.startswith("/campaign/") and k.endswith("/state_sequence_hash") or k == "/fab/files/MANIFEST.json"
-            print(f"verdict {k}: {va.get(k)} -> {vb.get(k)}{'' if ok else '   <- NOT a state hash'}")
+            # The mode, not the verdict: main's run is `verify --against-fab`, the dispatch's `--fab-out`.
+            mode = k in MODE
+            print(f"verdict {k}: {va.get(k)} -> {vb.get(k)}{'   (mode: --against-fab vs --fab-out)' if mode else '' if ok else '   <- NOT a state hash'}")
+            ok = ok or mode
             if not ok: bad = 1
 print("only state hashes moved" if not bad else "OTHER DIFFERENCES")
 sys.exit(bad)

@@ -137,8 +137,18 @@ Nothing labelled `belt-and-suspenders:` was touched.
 
 **F16, ruled 2026-11-24T21:38Z: the move is accepted.**
 - A trace version bump moves every committed campaign state hash, by design.
-- The order is serialized: #390 (4300k) merges first. Then main is merged here, the architect dispatches `bench-package`'s write on this branch, and both packages (Sentinel-01's bench and Sentinel-03's) are committed byte for byte, with only `state_sequence_hash` moving in each. That is shown below when done.
-- Sentinel-01's `fab/sentinel-01-bench/ORDERED.sha256` still checks on this branch before the dispatch (all 10 ordered files OK); it is to be checked again after.
+- The order is serialized: #390 (4300k) merged first (1b110f35), and main was merged here (12ec62f0).
+- The architect dispatched `write` on 12ec62f0 (run `45514834808`, every job green, shard 11 included).
+- Both packages are committed byte for byte from that run's artifacts: `bench-package` as `fab/sentinel-01-bench/package`, `sentinel-03-package` as `fab/sentinel-03/package`.
+- **What moved,** checked by `spike/4400i/py/package_diff.py` against main's own CI at 1b110f35 (run `45509862564`), package and verify verdict both:
+  - **Files:** in each package, every file but `MANIFEST.json` is byte-identical, and in `MANIFEST.json` only `verdict_sha256` moves:
+    - Sentinel-01: `33bd1714…` → `395a35c6…`;
+    - Sentinel-03: `429c62c9…` → `ed3ce866…`.
+  - **The verdict:** the only fields that differ are the campaign runs' `state_sequence_hash` (Sentinel-01's 5, Sentinel-03's 11), the fab block's hash of the `MANIFEST.json` they move, and three mode fields.
+  - **The mode fields** say which mode ran (main's CI runs `--against-fab`, the dispatch `--fab-out`), not what it found: `against_fab`, `fab.status`, `fab.fabrication_ready`.
+  - Main's state hashes at 1b110f35 are not §F16's above (352a6813's): #390 moved them first. The comparison is against the main this branch merged.
+- Sentinel-01's `fab/sentinel-01-bench/ORDERED.sha256` checks before and after the dispatch: 10 of 10 ordered files OK, so its copper and Gerbers are byte-identical.
+- **`bench-package-s03`'s peak RSS:** 14.72 GiB (`kani-driver`) on a runner with 15 GiB. 4300k's was 14.73 GiB. It did not die, but the margin is under 0.3 GiB.
 
 **F17. CI's shard 11 on 902d4917.**
 - `twin_tier2::bor_recovery::the_bmp581_extension_recovers_after_its_settle` failed with `wall_bound_exceeded`, then `PlantedEventUnplaced`: its undisturbed boot ran past the 30 s wall-clock bound on a loaded runner.
