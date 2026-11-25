@@ -153,14 +153,98 @@ The 25 harnesses were proved one container each, on Kani's defaults with reach c
   - That needs the generator to name its guards, and `verify` to read every prove gate's statuses together. It is a new judge, not CI headroom.
   - Under (S) the reach checks stay on, so the row can be built on them later. Under (R) there would be nothing left to read.
 
+### 1.6 CI's own peaks (diagnostic run 45528571905, head `9c06e112`; `tools/ci_probe.py`, `tools/ci_diag.py`)
+
+The host probe reads each kani-driver's VmHWM every 0.2 s. VmHWM is a high-water mark, so a missed poll loses only the growth after the last read.
+
+| Job (CPU) | Harness | VmHWM GiB | s |
+|---|---|---|---|
+| `bench-package-s03` (EPYC 7763) | `every_valid_sequence_tim1` | **14.780** | 399 |
+| | `spi2` / `spi1` | 11.407 / 11.186 | 279 / 278 |
+| | `i2c2` / `i2c1` | 8.254 / 8.076 | 161 / 159 |
+| `bench-package` (EPYC 7763) | Sentinel-01's `every_valid_sequence_spi1` | 3.479 | 106 |
+| every `tools-shard` | the largest any test proves | 3.93 (`tim1` of a test board, Xeon 8573C) | 96 |
+
+- **CI's peaks equal Furnace's.** Memory is deterministic here: `tim1` is 14.78 GiB of kani-driver VmHWM in CI, against Furnace's `memory.peak` of 15.09, which includes everything else in the scope.
+- So a ceiling read from CI's probe judges the same quantity Furnace measured, minus the small processes beside kani-driver (0.1–0.3 GiB, §1.1).
+- **Time:** CI's EPYC 7763 proves `tim1` in 399 s, against 336 on Furnace.
+
 ## 2. The 30 s wall bound
 
-[the survey, `~/.cache/aet-1918/wall-survey.md`; Furnace's run below; CI's CPU models pending the diagnostic runs]
+### 2.1 The code (from the survey, `~/.cache/aet-1918/wall-survey.md`, spot-checked)
+- **Where it is set and judged:**
+  - `renode.rs:226` `BOOT_BOUNDS` (30 s, 1.5 GiB) bounds every `simulate`, every campaign boot and a droop's boot.
+  - `analog.rs:250` `BRIDGE_BOUNDS` (30 s) bounds the ngspice bridge alone.
+  - The reaper's clock runs from the spawn (`run.rs:1092`), so it includes Renode's start-up.
+- **What a kill becomes:**
+  - A killed boot becomes the error finding `wall_bound_exceeded` and a `fail` verdict.
+  - A droop scenario whose undisturbed boot is killed is refused `PlantedEventUnplaced`.
+  - A killed bridge run is a `ToolError`.
+- **The determinism hole (`INV-04`):** `WALL_BOUND_FINDING` is one of `UNREAD_FINDINGS`, which replay accepts (`chaos/src/campaign.rs:114-125`). So a run killed for host load can be archived, and the same scenario can get a different verdict on a slower host.
+  - The wall time itself is in no verdict or hash.
+  - No committed scenario or package names the finding.
+- **A virtual-time bound already exists, and it is already the judged one:**
+  - `aethelgard_twin::boot::MAX_VIRTUAL_NS` = 100 ms is every boot's `RunFor`.
+  - The firmware's own timing is judged in virtual time (`boot_word_ns`, `boot_word_missing`).
+  - The wall bound only answers whether Renode returned at all. It must stay as a hang guard: after "This machine has aborted", virtual time stops, and `RunFor` never returns (`renode.rs:233`, A6).
+
+### 2.2 Each boot's wall time, measured
+
+Renode's process lifetime, spawn to exit, which is a little less than the reaper's clock:
+
+| Where | CPU | Boots | Median s | p95 s | Max s (A6 aside) |
+|---|---|---|---|---|---|
+| CI run 45528571905, 12 shards plus 2 bench jobs | EPYC 7763 (7 jobs) | 268 | 4.5–11.0 | 4.9–15.3 | **20.8** (shard 10, median 10.4) |
+| | EPYC 9V45 (4) | 149 | 2.6–2.8 | 3.6–5.9 | 5.9 |
+| | EPYC 9V74 (1) | 86 | 3.6 | 9.4 | 16.2 |
+| | Xeon 8370C (1) | 79 | 4.5 | 5.1 | 6.3 |
+| | Xeon 8573C (1) | 16 | 0.2 | 9.7 | 9.7 |
+| Furnace, `twin_tier2` + `campaign_tier2` pinned to 4 cores, 4 test threads (1 s samples) | Core Ultra 7 265K | 195 | 3 | 9 | 12 (one at 24) |
+| Furnace, unpinned, 4 test threads | Core Ultra 7 265K | 195 | 3 | 7 | 7 (one at 25) |
+
+- **The A6 test is set aside.** It waits out the bound on purpose; its boot reads 30.0–30.1 s, in shards 0 and 9.
+- **Earlier CI runs, from the survey:** across 7 runs, each whole `simulate` call's wall time (`ANSWER 2100`) had median 5.5 s, p95 12.0 s and max 23.6 s.
+- **The one kill in those runs** was `bor_recovery::the_bmp581_extension_recovers_after_its_settle` (run 45494968504, shard 11). Its boot ran at least 30 s; its CPU is not logged.
+- **The slowest runner measured is the EPYC 7763.** Its worst shard (shard 10) runs boots at a median of 10.4 s and a maximum of 20.8.
+- **So 30 s holds a 1.4× margin over the slowest boot seen** (20.8 s on this run; 23.6 s in the survey), and the margin is gone at least once in eight runs.
+- **What a boot would need to pass with a 2× margin on that runner:** about 50 s on the evidence so far, more if the bmp581 boot's true time is above 30.
+  - The four further diagnostic runs extend this table (§5).
+
+### 2.3 The options (stop: a product bound, ruled first)
+- **(a) Raise the judged wall bound**, for example to 60–120 s.
+  - Only a run between 30 s and the new bound changes, from `fail` to `pass`.
+  - `boot_tier1`'s `a_boot_past_the_wall_bound_fails_and_names_it` and `twin_tier2`'s A6 test wait out the bound, so their timing assertions need rescaling.
+  - The `INV-04` hole stays, at a higher threshold.
+- **(b) Virtual time is the only judge, and the wall bound becomes a hang guard.**
+  - Set it well above any boot seen, say 120 s.
+  - A guard kill is a `ToolError` refusal, never a finding, so host load can never reach an archived verdict. That closes the `INV-04` hole.
+  - The two tests above keep a short bound through the existing internal `--wall-ms`.
+- **(c) Keep 30 s and cut the load:** serialise `campaign_tier2`, put cargo builds under `RENODE_TURN`, or add shards. This treats the symptom, not the bound.
+- **Lean: (b).** The bound that judges the firmware is already virtual. A verdict that a host's load can change is the defect.
 
 ## 3. The refit
 
-[pending: after the ruling on (1), which changes every Kani-heavy test's time]
+**Pending the ruling on (1).** The shrink changes every Kani-heavy test's time, so the refit is measured from CI runs of the built head.
+
+**What the first diagnostic run gives now:**
+- Each shard's test step ran 14–35 min. The worst were shard 3 (34.5 min, Xeon 8370C), shard 4 (25.1) and shard 9 (22.8).
+- `bench-package-s03` took 58 min of its 90, with the probe running.
+- `verify_2k2_tier2`'s block took 1,303 and 1,546 s on the two runs posted at 23:26Z, against its row of 624.
 
 ## 4. Predictions against the measurements
 
-[pending]
+| # | Verdict | Measured |
+|---|---|---|
+| P1 | **Wrong on the part, right on the shape.** The heaviest is `every_valid_sequence_tim1`, not an SPI part | 15.09 GiB, in the range. kani-driver holds 14.95 of 15.08 GiB in the cgroup, after CBMC exits. Both earlier samples were under the true peak |
+| P2 | Holds | non-schedule harnesses ≤ 1.87 GiB; one harness over 12 |
+| P3 | Holds | 3.52–3.53 GiB, `every_valid_sequence_spi1` |
+| P4 | Holds | 4.12 GiB of CBMC JSON; 97 % of it the final check's 449 reach-check traces |
+| P5 | Holds | split at 80 statements, the largest part is 7.98 GiB, every property and cover kept |
+| P6 | **Not measured as stated** | the killed boot (bmp581) was not isolated. Boot medians run 1.5–3.5× Furnace's, by runner |
+| P7 | Holds on the bound, **wrong on "only a guard"** | `MAX_VIRTUAL_NS` is the judged window, but a wall kill does become a finding (§2.1) |
+| P8 | Pending (3) | the block is 1,303–1,546 s on the slowest runners, before (1) |
+| P9 | Pending (3) | |
+
+## 5. Still running at the stop
+- **The architect's four re-runs of `9c06e112`:** the further rows of §1.6 and §2.2.
+- **The refit:** from the built head's runs.
