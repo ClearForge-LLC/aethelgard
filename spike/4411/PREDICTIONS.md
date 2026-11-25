@@ -26,3 +26,11 @@ Already read before writing (so not predicted): KiCad 10.0.7's `RF_Module` libra
 ## The module
 
 - **P11.** ESP32-C3-WROOM-02 is the pick over ESP32-WROOM-32E: smaller (18 × 20 mm against 18 × 25.5 mm), three strapping pins against five, and a single 3.3 V flash voltage with no VDD_SDIO strap. Its transmit peak is under 400 mA at 3.3 V.
+
+## Lever (iv) prediction, committed before any routing (2026-11-25T04:02:13Z)
+
+A declared VSS escape distance on Sentinel-03 (each U1 VSS pin's nearest GND via within 1.29 mm, the distance measured at pin 31 on the swapped-connector layout, where its bound was about 37 mOhm), with the WIFI port on USART6 PG14/PG9:
+- U1's worst VSS bound falls from about 62.5 to about 37 mOhm; the worst VDD bound stays about 54.7 mOhm.
+- The drop under ruled 1 (a') is about 0.751 A x (54.7 + 37) + 0.5 A x (30.3 + 37) = 68.9 + 33.7 = about 103 mV, under 110 (pad 19 unbounded: its return charged at U1's worst, then 37).
+- U11's F.Cu copper stays at least 700 mm2 (1573 before the rule); the outline stays 85.65 x 96.6 mm.
+- Every board that does not declare the rule emits byte for byte as before.
