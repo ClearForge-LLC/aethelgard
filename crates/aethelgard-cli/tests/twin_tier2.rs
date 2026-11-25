@@ -2610,9 +2610,10 @@ fn m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped() {
 /// `motor_anchor_unobserved`, a forced outcome. An EARLY DMA start (about 98 ms
 /// of DShot) is the named residual: it fails closed only by a bound, the
 /// flood's names on Furnace (8.4 MB kept, 98.5 % of the memory bound) but
-/// `wall_bound_exceeded` on a CI shard (run 44007663813, job 133786836234:
-/// 34 s against the 30 s bound, 851 per mille of memory); the outcome
-/// depends on the machine's speed, so no test asserts it.
+/// the then 30 s wall bound on a CI shard (run 44007663813, job 133786836234:
+/// 34 s, 851 per mille of memory; since `AET-WO-1918` (2) a `ToolError` under
+/// the 120 s hang guard); the outcome depends on the machine's speed, so no
+/// test asserts it.
 /// Since `AET-WO-4241` the board's unmodelled TMP117 is read before the
 /// outputs start, and its TXIS wait in the twin moves everything after it
 /// 3 600 810 ns later (measured on this board, `spike/4241/out/rejudge`): at

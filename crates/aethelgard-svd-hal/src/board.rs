@@ -10767,4 +10767,52 @@ mod tests {
             format!("{check}{harness}")
         );
     }
+
+    /// The shapes the final check is written in (`AET-WO-1918` adversarial
+    /// S2): each binding and assignment, with the comments before it, is glued
+    /// to the check after it; a block is one statement, its `else` with it;
+    /// a comment ending in `;` ends nothing; a `for` may end the body.
+    #[test]
+    fn a_final_check_s_statements_keep_each_binding_with_its_check() {
+        let body = [
+            "    // A comment that ends like a statement;",
+            "    kani::assert(after.a == 1, \"a\");",
+            "    let mut rcc = before.rcc;",
+            "    rcc[56] |= 0x00000011; // the gates",
+            "    let i0 = {",
+            "        let x = after.b;",
+            "        x & 1",
+            "    };",
+            "    if i0 == 0 {",
+            "        kani::assert(rcc[56] != 0, \"if\");",
+            "    } else {",
+            "        kani::assert(rcc[0] == 0, \"else\");",
+            "    }",
+            "    kani::assert(",
+            "        after.c == before.c,",
+            "        \"c\",",
+            "    );",
+            "    let mut rely = [0u32; 2];",
+            "    for i in 0..2 {",
+            "        kani::assert(after.d[i] & !rely[i] == 0, \"loop\");",
+            "    }",
+        ];
+        let units = final_statements(&body);
+        assert_eq!(units.len(), 4, "{units:#?}");
+        assert!(
+            units[0].starts_with("    // A comment that ends") && units[0].ends_with("\"a\");\n")
+        );
+        assert!(
+            units[1].starts_with("    let mut rcc")
+                && units[1].contains("let i0 = {")
+                && units[1].ends_with("    }\n")
+        );
+        assert!(units[1].contains("} else {"));
+        assert!(units[2].starts_with("    kani::assert(\n") && units[2].ends_with("    );\n"));
+        assert!(units[3].starts_with("    let mut rely") && units[3].ends_with("    }\n"));
+        assert_eq!(
+            units.concat(),
+            body.iter().map(|l| format!("{l}\n")).collect::<String>()
+        );
+    }
 }

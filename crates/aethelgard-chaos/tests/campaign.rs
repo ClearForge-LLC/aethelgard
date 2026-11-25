@@ -3273,7 +3273,21 @@ fn a_boot_that_read_nothing_names_its_bound() {
     let mut wall = others.to_vec();
     wall.push(("wall_bound_exceeded", "error", 1));
     wall.sort();
-    assert!(check_run(&with_findings(unread(), &wall)).is_err());
+    let refused = "a run names a kill at the wall-clock hang guard, which no campaign archives";
+    assert_eq!(
+        check_run(&with_findings(unread(), &wall)).unwrap_err(),
+        refused
+    );
+    // And beside a boot that was read (before this diff, the unread count
+    // refused it there; now nothing else would).
+    assert_eq!(
+        check_run(&with_findings(
+            good(),
+            &plus(&[("wall_bound_exceeded", "error", 1)])
+        ))
+        .unwrap_err(),
+        refused
+    );
     for bound in [
         "cpu_aborted",
         "firmware_load_error",

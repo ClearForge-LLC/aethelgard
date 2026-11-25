@@ -205,12 +205,12 @@ enum Command {
         #[arg(long, value_name = "TIME", requires = "firmware", value_parser = foreign_time, group = "window")]
         foreign: Option<u64>,
         /// Tests only (`AET-WO-1918` (2)): the boot's wall-clock hang guard
-        /// in milliseconds, in place of `renode::BOOT_BOUNDS`'s 120 s, so a
+        /// in milliseconds, at most `renode::BOOT_BOUNDS`'s 120 s, so a
         /// test that waits a hang out need not wait 120 s. A wall kill is a
         /// refusal, never a verdict, so this cannot change any verdict a
         /// boot reaches; the verdict records it (`wall_bound_ms`). `verify`
         /// and `campaign` have no such flag.
-        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..))]
+        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..=120_000))]
         wall_bound_ms: Option<u64>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
@@ -2287,13 +2287,7 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                 base.log_filter(),
                 bounds,
             )?;
-            // A plain wall kill is the host's, as for the boot itself.
-            if let run::Ended::Bounded(b) = out.ended
-                && renode::bounded(&out, b).is_none()
-            {
-                return Err(renode::hung(bounds.wall));
-            }
-            Some(renode::undisturbed_boot_word_ns(&out)?)
+            Some(renode::undisturbed_boot_word_ns(&out, bounds.wall)?)
         }
         _ => None,
     };
@@ -2399,16 +2393,17 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
                     plan, firmware, spec, regions, clock, panic,
                 ));
             }
+            // A plain wall kill is the host's: refused, never a verdict
+            // (`AET-WO-1918` (2)), even with a foreign fault in the log, since
+            // a faster host would have reached the judge with more findings.
+            let Some(named) = renode::bounded(&out, *bound) else {
+                return Err(renode::hung(bounds.wall));
+            };
             // A fault the hook caught before the bound is named too
             // (`AET-WO-2314`): the run ended two ways.
-            let mut findings: Vec<_> = renode::bounded(&out, *bound).into_iter().collect();
+            let mut findings = vec![named];
             if let Some(r) = ready.as_ref().filter(|_| foreign_inputs.is_some()) {
                 findings.extend(renode::foreign::fault_finding(&out.text(), &r.faults));
-            }
-            // A wall kill with nothing of the firmware's to name is the
-            // host's: refused, never a verdict (`AET-WO-1918` (2)).
-            if findings.is_empty() {
-                return Err(renode::hung(bounds.wall));
             }
             (-1, (findings, None, None))
         }

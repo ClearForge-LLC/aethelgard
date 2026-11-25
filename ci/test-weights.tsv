@@ -142,7 +142,6 @@ tests/board_tier2.rs	verify_refuses_a_board_swapped_before_extract	3.99
 tests/board_ui.rs	misuse_does_not_compile_and_the_driver_does	73.600
 tests/boot_tier1.rs	a_boot_on_another_renode_build_is_refused_by_name	0.700
 tests/boot_tier1.rs	a_boot_past_the_memory_cap_fails_and_names_it	9.900
-tests/boot_tier1.rs	a_boot_past_the_wall_bound_fails_and_names_it	32.400
 tests/boot_tier1.rs	a_boot_too_short_for_the_injection_fails_closed_on_the_echo	1.000
 tests/boot_tier1.rs	a_boot_word_never_written_fails	0.900
 tests/boot_tier1.rs	a_bridge_that_fails_or_answers_wrong_stops_the_call	2.900
@@ -566,3 +565,7 @@ tests/readiness_tier1.rs	a_zone_the_specification_does_not_declare_is_refused_as
 tests/readiness_tier1.rs	every_connector_opens_off_the_board_on_the_emitted_sentinel_03	80.4
 tests/readiness_tier1.rs	smd_ground_pads_join_the_pour_solid_and_small_passives_keep_a_relief	70.0
 tests/readiness_tier1.rs	the_bucks_join_at_least_their_floor_of_copper_on_exactly_the_three_layers	68.8
+# AET-WO-1918 (2), ruled (b): boot_tier1's wall test is now a_boot_that_never_returns_is_refused_at_the_hang_guard, under the test's 2 s guard (a few seconds, no row);
+# campaign_tier1's a_renode_that_never_returns_is_refused_and_archives_nothing waits out the 120 s guard: an estimate, the guard plus the campaign's own
+# setup (the binary took 122.6 s on Furnace, its other 72 tests under 10 s together), until the refit measures it.
+tests/campaign_tier1.rs	a_renode_that_never_returns_is_refused_and_archives_nothing	135

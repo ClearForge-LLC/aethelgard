@@ -336,7 +336,7 @@ pub fn hung(wall: std::time::Duration) -> Stop {
         TOOL,
         format!(
             "Renode did not return from its run within the {} s wall-clock hang guard and was killed; a hang judges nothing about the firmware, so no verdict is written (AET-WO-1918)",
-            wall.as_secs()
+            wall.as_secs_f64()
         ),
     )
 }
@@ -4347,13 +4347,22 @@ pub struct Probe {
 /// The instant the undisturbed boot wrote its boot word (`AET-WO-2305`
 /// §1.2): the droop's own prepared boot, run first with no reset, its hook's
 /// count from 0, which is exact (count × 10 ns at the twin's MIPS). `None`
-/// when that boot was killed at its memory cap or aborted (a plain wall kill
-/// is refused before this, `AET-WO-1918` (2)), when its log could not be read
-/// whole, or when it wrote none: no bound then, which the judge names. An
-/// output that cannot be trusted is a `Stop`, as for any boot.
-pub fn undisturbed_boot_word_ns(out: &Output) -> Result<Option<u64>, Stop> {
+/// when that boot was killed at its memory cap or aborted, when its log could
+/// not be read whole, or when it wrote none: no bound then, which the judge
+/// names. A plain kill at the wall hang guard (`wall`) is refused as the
+/// boot's is ([`hung`], `AET-WO-1918` (2)). An output that cannot be trusted
+/// is a `Stop`, as for any boot.
+pub fn undisturbed_boot_word_ns(
+    out: &Output,
+    wall: std::time::Duration,
+) -> Result<Option<u64>, Stop> {
     let code = match out.ended {
-        crate::run::Ended::Bounded(_) => return Ok(None),
+        crate::run::Ended::Bounded(bound) => {
+            return match bounded(out, bound) {
+                Some(_) => Ok(None),
+                None => Err(hung(wall)),
+            };
+        }
         _ => out.code(TOOL)?,
     };
     let text = out.text();
@@ -4574,6 +4583,35 @@ mod tests {
 
     /// A tool run that ended with code 0 and printed `stdout`, `dropped`
     /// log lines lost.
+    /// `AET-WO-1918` (2): the droop's undisturbed boot, killed at the wall
+    /// hang guard with nothing of the firmware's to name, is refused as the
+    /// boot is; aborted, or killed at the memory cap, it is a boot with no
+    /// word, which the judge names.
+    #[test]
+    fn an_undisturbed_boot_killed_at_the_hang_guard_is_refused() {
+        let wall = std::time::Duration::from_millis(2500);
+        let killed = |stdout: &str, bound| Output {
+            ended: crate::run::Ended::Bounded(bound),
+            ..output(stdout.as_bytes().to_vec(), 0)
+        };
+        let e = undisturbed_boot_word_ns(&killed("", Bound::Wall), wall).unwrap_err();
+        assert_eq!(e.code, crate::EXIT_TOOL_ERROR);
+        assert!(
+            e.message.contains("within the 2.5 s wall-clock hang guard"),
+            "{}",
+            e.message
+        );
+        let aborted = "[ERROR] machine-0: This machine has aborted.\n";
+        assert_eq!(
+            undisturbed_boot_word_ns(&killed(aborted, Bound::Wall), wall).unwrap(),
+            None
+        );
+        assert_eq!(
+            undisturbed_boot_word_ns(&killed("", Bound::Memory), wall).unwrap(),
+            None
+        );
+    }
+
     fn output(stdout: Vec<u8>, dropped: u64) -> Output {
         Output {
             ended: crate::run::Ended::Code(0),

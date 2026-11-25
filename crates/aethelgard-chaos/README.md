@@ -426,9 +426,11 @@ refuses:
 - a verdict whose `boot_word_missing` is not exactly one error when kind 10
   was read without its boot word, and none otherwise; a boot that read
   nothing whose verdict does not name why once, as an error (killed at a
-  bound: `cpu_aborted`, `memory_cap_exceeded` or `wall_bound_exceeded`; or not
-  loaded: `platform_load_error` or `firmware_load_error`), or a read boot that
-  names one (`AET-WO-3201` B2);
+  bound: `cpu_aborted` or `memory_cap_exceeded`; or not loaded:
+  `platform_load_error` or `firmware_load_error`), or a read boot that names
+  one (`AET-WO-3201` B2);
+- a run that names `wall_bound_exceeded`, read or not: a kill at the CLI's
+  wall-clock hang guard is a `ToolError` and never archived (`AET-WO-1918` (2));
 - a register (kind 11) or an identity read's value or status (kinds 12 and
   21) read when kind 10 is unread, or unread when it is read; a witness
   (kinds 13 and 22) holding observed lines, absent addresses or unrouted

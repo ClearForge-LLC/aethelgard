@@ -110,6 +110,10 @@ pub const FIRMWARE_LOAD_FINDING: &str = "firmware_load_error";
 pub const MEMORY_CAP_FINDING: &str = "memory_cap_exceeded";
 /// A platform Renode could not load (`renode::judge_boot`).
 pub const PLATFORM_LOAD_FINDING: &str = "platform_load_error";
+/// The finding the CLI made, before `AET-WO-1918` (2), for a boot killed at
+/// its wall-clock bound. The bound is now a hang guard whose kill is a
+/// `ToolError`, so no run holds it, and replay refuses one that does.
+pub const HANG_GUARD_FINDING: &str = "wall_bound_exceeded";
 /// The findings of a boot that read nothing, one of which the judge names
 /// (`AET-WO-3201` B2): killed at a bound (the CLI's `renode::bounded`), or a
 /// platform or firmware that did not load (`renode::judge_boot`; adversarial
@@ -1997,6 +2001,12 @@ pub fn check_run(records: &[Record]) -> Result<RunSummary, &'static str> {
     let missing = u64::from(read && !booted);
     if any_severity(BOOT_WORD_FINDING) != missing || count(BOOT_WORD_FINDING) != missing {
         return Err("the verdict's boot_word_missing does not match the boot word");
+    }
+    // A kill at the wall-clock hang guard is refused by the CLI and never
+    // archived (`AET-WO-1918` (2)), so a run naming one, read or not, is a
+    // forgery: host load never reaches a replayed verdict (`INV-04`).
+    if any_severity(HANG_GUARD_FINDING) != 0 {
+        return Err("a run names a kill at the wall-clock hang guard, which no campaign archives");
     }
     let unread: u64 = UNREAD_FINDINGS.iter().map(|k| any_severity(k)).sum();
     let unread_failing: u64 = UNREAD_FINDINGS.iter().map(|k| count(k)).sum();
