@@ -1,0 +1,25 @@
+name	board	input	window	verdict	kinds	wall_s	peak_rss_kib	permille_of_cap	log_kept_bytes	armed	heartbeats	load_min	load_max
+H-s03-12000-1	s03	False	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	34.65	568140	361	17374097	None	None	5.89	6.7
+H1-s03-10000-1	s03	False	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	29.2	558900	355	12844205	None	None	7.65	7.86
+H1-s03-10000-in-1	s03	True	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	36.97	582556	370	44979796	True	14	7.49	7.86
+H1-s03-12000-in-1	s03	True	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	44.2	573752	365	56072034	True	16	7.46	7.9
+H1-s03-5000-1	s03	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	12.27	551948	351	1514994	None	None	5.78	6.11
+H1-s03-5000-in-1	s03	True	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	14.58	570096	362	3800974	False	8	6.09	6.4
+H1-s03-8000-1	s03	False	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	21.97	568688	362	8312197	None	None	6.18	6.49
+H1-s03-8000-in-1	s03	True	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	28.91	577300	367	33646733	False	12	6.49	7.37
+H2-s03-10000-1	s03	False	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	27.92	566868	360	12844205	None	None	7.66	8.08
+H2-s03-10000-in-1	s03	True	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	36.36	584568	372	44979796	True	14	7.27	7.85
+H2-s03-12000-1	s03	False	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	35.26	558612	355	17374097	None	None	7.43	7.59
+H2-s03-12000-in-1	s03	True	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	45.68	583412	371	56072034	True	16	7.87	8.4
+H2-s03-5000-1	s03	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	12.05	547604	348	1514994	None	None	7.08	7.34
+H2-s03-5000-in-1	s03	True	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	14.33	562816	358	3800974	False	8	7.25	7.44
+H2-s03-8000-1	s03	False	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	21.42	565352	359	8312197	None	None	7.28	7.53
+H2-s03-8000-in-1	s03	True	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	30.01	582604	370	33646820	False	12	7.19	7.61
+H3-s03-10000-1	s03	False	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	28.95	576052	366	12844205	None	None	7.87	8.04
+H3-s03-10000-in-1	s03	True	10000ms	fail	['device_unmodelled', 'locked_peripheral_access', 'register_mismatch', 'serial_pull']	36.32	575744	366	44979796	True	14	7.96	8.19
+H3-s03-12000-1	s03	False	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	35.25	569368	362	17374097	None	None	7.43	8.08
+H3-s03-12000-in-1	s03	True	12000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	44.41	577444	367	56072034	True	16	6.75	7.43
+H3-s03-5000-1	s03	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	12.51	553808	352	1514994	None	None	7.57	7.86
+H3-s03-5000-in-1	s03	True	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	14.94	568868	362	3800974	False	8	7.34	7.86
+H3-s03-8000-1	s03	False	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	21.48	555860	353	8312197	None	None	7.46	7.66
+H3-s03-8000-in-1	s03	True	8000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	28.02	574844	365	33646733	False	12	7.61	7.94

@@ -1,0 +1,8 @@
+2026-11-25T17:55:16+00:00 dump at t=6 pid=29 rss=1117836
+Writing dump with heap to /cache/dumps/dump-t6.dmp
+Complete
+exit 0
+2026-11-25T17:55:30+00:00 dump at t=10 pid=29 rss=1813116
+Writing dump with heap to /cache/dumps/dump-t10.dmp
+Complete
+exit 0

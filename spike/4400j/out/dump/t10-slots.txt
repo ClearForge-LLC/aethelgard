@@ -1,0 +1,56 @@
+Loading core dump: /cache/dumps/dump-t10.dmp ...
+Set load path for DAC/DBI to '/cache/dl/rt/shared/Microsoft.NETCore.App/8.0.12'
+Name:        System.Collections.Concurrent.ConcurrentQueue`1[[System.Int32, System.Private.CoreLib]]
+MethodTable: 000078986a8e3708
+EEClass:     000078986a8f00c8
+Tracked Type: false
+Size:        40(0x28) bytes
+File:        /opt/renode/System.Private.CoreLib.dll
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+0000789864db5ad0  40020aa        8        System.Object  0 instance 00007890dd8b95d8 _crossSegmentLock
+000078986a8e3fc8  40020ab       10 ...Private.CoreLib]]  0 instance 00007890e340a0c8 _tail
+000078986a8e3fc8  40020ac       18 ...Private.CoreLib]]  0 instance 00007890dd8b95f0 _head
+Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1[[System.Int32, System.Private.CoreLib]]
+MethodTable: 000078986a8e3fc8
+EEClass:     000078986a8f0350
+Tracked Type: false
+Size:        232(0xe8) bytes
+File:        /opt/renode/System.Private.CoreLib.dll
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+000078986a8e4320  40020b7        8 ...ivate.CoreLib]][]  0 instance 00007890f40000b8 _slots
+0000789864df0980  40020b8       18         System.Int32  1 instance          1048575 _slotsMask
+0000789865b30bf0  40020b9       20 ...PaddedHeadAndTail  1 instance 00007890e385def8 _headAndTail
+0000789864dbcb00  40020ba       1c       System.Boolean  1 instance                0 _preservedForObservation
+0000789864dbcb00  40020bb       1d       System.Boolean  1 instance                1 _frozenForEnqueues
+000078986a8e3fc8  40020bc       10 ...Private.CoreLib]]  0 instance 00007890e385dfc0 _nextSegment
+Name:        System.Collections.Concurrent.BlockingCollection`1[[System.Int32, System.Private.CoreLib]]
+MethodTable: 000078986a8e3200
+EEClass:     000078986a8bff98
+Tracked Type: false
+Size:        72(0x48) bytes
+File:        /opt/renode/System.Collections.Concurrent.dll
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+000078986a8e3908  4000003        8 ...Private.CoreLib]]  0 instance 00007890dd8b95b0 _collection
+0000789864df0980  4000004       30         System.Int32  1 instance               -1 _boundedCapacity
+0000789865b31aa0  4000005       10 ...ing.SemaphoreSlim  0 instance 0000000000000000 _freeNodes
+0000789865b31aa0  4000006       18 ...ing.SemaphoreSlim  0 instance 00007890dd8b9850 _occupiedNodes
+0000789864dbcb00  4000007       38       System.Boolean  1 instance                0 _isDisposed
+0000789865b316b8  4000008       20 ...lationTokenSource  0 instance 00007890dd8b97f0 _consumersCancellationTokenSource
+0000789865b316b8  4000009       28 ...lationTokenSource  0 instance 00007890dd8b9820 _producersCancellationTokenSource
+0000789864df0980  400000a       34         System.Int32  1 instance                0 _currentAdders
+Name:        Antmicro.Renode.UI.ConsoleIOSource
+MethodTable: 000078986a2d1838
+EEClass:     000078986a2c10e0
+Tracked Type: false
+Size:        56(0x38) bytes
+File:        /opt/renode/Infrastructure.dll
+Fields:
+              MT    Field   Offset                 Type VT     Attr            Value Name
+000078986a8e2528  400006c        8 ...Private.CoreLib]]  0 instance 00007890dd8b98a8 ByteRead
+0000789865956138  400006d       10        System.Action  0 instance 00007890dd8dece0 Resized
+0000789864ffd370  400006e       18 ...ignalRegistration  0 instance 00007890dd8b90a0 winchRegistration
+000078986a8e1cc0  400006f       20 ...ource+UTF8Checker  0 instance 00007890dd8b9260 checker
+0000789864dbcb00  4000070       28       System.Boolean  1 instance                1 isInputRedirected

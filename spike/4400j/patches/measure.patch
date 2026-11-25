@@ -46,7 +46,7 @@ index d0029afb..b6c999de 100644
  
  /// The rule table, in the order of the verdict: each of today's rules, what
 diff --git a/crates/aethelgard-cli/src/run.rs b/crates/aethelgard-cli/src/run.rs
-index 0c7bde9d..61224df7 100644
+index 0c7bde9d..1f0e823a 100644
 --- a/crates/aethelgard-cli/src/run.rs
 +++ b/crates/aethelgard-cli/src/run.rs
 @@ -69,7 +69,7 @@ pub const REAPER_ARG: &str = "--aethelgard-internal-reaper";
@@ -58,3 +58,26 @@ index 0c7bde9d..61224df7 100644
  
  /// Read-only for every tool: the system's executables, libraries and config.
  const SYSTEM_DIRS: [&str; 6] = ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"];
+@@ -553,12 +553,21 @@ impl Invocation<'_> {
+             cmd.arg("--rw").arg(p);
+         }
+         cmd.arg("--").arg(&self.tool.path).args(&self.args);
++        // AET-WO-4400j measurement patch: AET4400J_HOLDIN set, stdin is a pipe whose write end this process holds,
++        // unwritten, until the reaper is waited for (Renode's console reader blocks); unset, /dev/null as on main.
++        let (stdin, _held) = match env::var_os("AET4400J_HOLDIN") {
++            Some(_) => {
++                let (r, w) = std::io::pipe().expect("AET4400J_HOLDIN pipe");
++                (Stdio::from(r), Some(w))
++            }
++            None => (Stdio::null(), None),
++        };
+         cmd.env_clear()
+             .env("HOME", self.workdir)
+             .env("TMPDIR", self.workdir)
+             .envs(self.env.iter().map(|(k, v)| (k, v)))
+             .current_dir(&self.cwd)
+-            .stdin(Stdio::null())
++            .stdin(stdin)
+             .stdout(Stdio::piped())
+             .stderr(Stdio::piped())
+             .process_group(0);

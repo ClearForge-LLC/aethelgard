@@ -1,0 +1,104 @@
+Loading core dump: /cache/dumps/dump-t10.dmp ...
+Set load path for DAC/DBI to '/cache/dl/rt/shared/Microsoft.NETCore.App/8.0.12'
+Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]][]
+MethodTable: 000078986a8e4320
+EEClass:     000078986a8e42b0
+Size:        8388632(0x800018) bytes
+Array:       Rank 1, Number of elements 1048576, Type VALUETYPE
+Element Methodtable: 000078986a8e4240
+[0] 00007890f40000c8
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    1     SequenceNumber
+[1] 00007890f40000d0
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    2     SequenceNumber
+[2] 00007890f40000d8
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    3     SequenceNumber
+[3] 00007890f40000e0
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    4     SequenceNumber
+[4] 00007890f40000e8
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    5     SequenceNumber
+[5] 00007890f40000f0
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance                    6     SequenceNumber
+Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]][]
+MethodTable: 000078986a8e4320
+EEClass:     000078986a8e42b0
+Size:        8388632(0x800018) bytes
+Array:       Rank 1, Number of elements 1048576, Type VALUETYPE
+Element Methodtable: 000078986a8e4240
+[500000] 00007890f43d09c8
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance               500001     SequenceNumber
+[500001] 00007890f43d09d0
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance               500002     SequenceNumber
+[500002] 00007890f43d09d8
+    Name:        System.Collections.Concurrent.ConcurrentQueueSegment`1+Slot[[System.Int32, System.Private.CoreLib]]
+    MethodTable: 000078986a8e4240
+    EEClass:     000078986a8f04b0
+    Size:        24(0x18) bytes
+    File:        /opt/renode/System.Private.CoreLib.dll
+    Fields:
+                      MT    Field   Offset                 Type VT     Attr            Value Name
+        0000789864df0980  40020bd        0             System.Int32      1     instance                   -1     Item
+        0000789864df0980  40020be        4             System.Int32      1     instance               500003     SequenceNumber
