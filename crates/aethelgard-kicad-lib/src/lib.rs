@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 68] = [
+pub const FILES: [(&str, &[u8]); 69] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -223,6 +223,12 @@ pub const FILES: [(&str, &[u8]); 68] = [
         "symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym"
         ),
     ),
     (

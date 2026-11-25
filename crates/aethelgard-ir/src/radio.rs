@@ -171,6 +171,9 @@ pub struct Uart {
     pub rx: String,
     pub rx_number: String,
     pub at: At,
+    /// VIH's maximum over the module's own supply, mV: how far above its
+    /// rail a separately supplied driver may go (`AET-WO-4411`).
+    pub vih_over_supply_mv: Cited,
 }
 
 /// A rectangle in the footprint's own coordinates, in µm.
@@ -379,7 +382,6 @@ pub enum Kind {
     RadioPortShared,
     RadioSupplyUnknown,
     RadioSupplyOutOfRange,
-    RadioSupplyNotMcu,
     RadioEnableNotPulled,
     RadioStrapUndeclared,
     RadioStrapUnknown,
@@ -406,7 +408,6 @@ impl Kind {
             Self::RadioPortShared => "RadioPortShared",
             Self::RadioSupplyUnknown => "RadioSupplyUnknown",
             Self::RadioSupplyOutOfRange => "RadioSupplyOutOfRange",
-            Self::RadioSupplyNotMcu => "RadioSupplyNotMcu",
             Self::RadioEnableNotPulled => "RadioEnableNotPulled",
             Self::RadioStrapUndeclared => "RadioStrapUndeclared",
             Self::RadioStrapUnknown => "RadioStrapUnknown",
@@ -701,19 +702,8 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
-        if m.supply != spec.mcu.supply {
-            return Err(refuse(
-                Kind::RadioSupplyNotMcu,
-                &m.supply,
-                format!("{at}.supply"),
-                format!(
-                    "`{}` is not the MCU's supply `{}`: the module's UART levels are stated against its own supply ({}), and no tolerance of another is stated",
-                    m.supply,
-                    spec.mcu.supply,
-                    t.cite(&row.uart.at)
-                ),
-            ));
-        }
+        // A module on a rail of its own is judged with the power tree
+        // (`power::radio_rails`, `AET-WO-4411`, ruled 2026-11-25T21:17Z).
         // The row's supply requirement is judged on a declared regulator's
         // output (D5); with none, nothing judges it (`INV-06`).
         if !spec

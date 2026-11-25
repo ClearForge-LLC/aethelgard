@@ -1474,8 +1474,18 @@ pub fn supplies(
             .collect()
     }
     let mut out = Vec::new();
+    let the_mcu = mcu;
     for limit in limits {
         let d = &limit.domain;
+        // The load: the MCU on its own supply; on a radio module's own rail,
+        // the module (`AET-WO-4411`, ruled 2026-11-25T20:10Z), whose pins
+        // the gate then judges. Any other domain keeps the MCU, and is
+        // refused below when it has no pin there.
+        let mcu = spec
+            .declared_radio_modules()
+            .iter()
+            .find(|m| &m.supply == d && m.supply != spec.mcu.supply)
+            .map_or_else(|| the_mcu.clone(), |m| m.reference.clone());
         // a limited domain the load has no pin on is refused by name: an
         // empty side would leave no drop and no finding
         for side in [d.as_str(), "GND"] {
@@ -1726,7 +1736,7 @@ pub fn supplies(
             .filter(|m| &m.supply == d)
             .map(|m| m.reference.as_str())
             .collect();
-        if gnd_plane && let [reference] = modules[..] {
+        if gnd_plane && mcu == the_mcu && let [reference] = modules[..] {
             let ma = aethelgard_ir::radio::load_ma(spec, d)
                 .map_err(|e| refusal(e.kind(), e.to_string()))?;
             let of = |net: &str| -> Vec<&Pad> {

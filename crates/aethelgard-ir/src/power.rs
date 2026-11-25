@@ -305,9 +305,10 @@ pub struct Junction {
     pub loss_at_milliamps: u32,
 }
 
-/// A control pin and what it is tied to: a strap its row allows, or a wire to
-/// a named net with its stated role. Both keys are required, and exactly one
-/// is `null`.
+/// A control pin and what it is tied to: a strap its row allows, a wire to
+/// a named net with its stated role, or (an enable only) another
+/// regulator's power-good. `strap` and `wire` are required keys; `after`
+/// is optional; exactly one of the three is set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Control {
@@ -316,6 +317,25 @@ pub struct Control {
     pub strap: Option<pp::Strap>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub wire: Option<Wire>,
+    /// `AET-WO-4411` (iii), ruled 2026-11-25T21:17Z: this `EN` follows the
+    /// named regulator's open-drain `PG`, pulled up to that regulator's
+    /// output, so this regulator starts only once that output is good. The
+    /// named regulator's `PG` is declared here, never in its own `controls`.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub after: Option<After>,
+}
+
+/// An enable held by another regulator's power-good (`AET-WO-4411` (iii)).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct After {
+    pub regulator: String,
+    pub pull_up: Resistor,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -431,6 +451,7 @@ crate::object_only!(
     HotPlug,
     Junction,
     Control,
+    After,
     Wire
 );
 
@@ -490,6 +511,19 @@ pub enum Refusal {
     DropLimitUndeclared,
     /// A regulated domain nothing loads (`AET-WO-4300k` A13).
     RegulatedDomainUnloaded,
+    /// An `after` control that names no regulator, itself, a regulator
+    /// whose row has no open-drain `PG`, or sits on a pin that is no enable,
+    /// or a loop of them (`AET-WO-4411` (iii)).
+    ControlAfterInvalid,
+    /// A radio module on its own rail while the MCU's regulator does not
+    /// start after it (`AET-WO-4411` (iii), ruled 2026-11-25T21:17Z).
+    RadioRailUnsequenced,
+    /// The MCU's rail at its highest above a module rail's lowest by more
+    /// than the module's VIH allows over its own supply (`AET-WO-4411`).
+    RadioLevelOverSupply,
+    /// A module rail's guaranteed minimum, less its drop limit, under the
+    /// module's minimum supply (`AET-WO-4411`, ruled 2026-11-25T20:10Z).
+    RadioSupplyBelowMinimum,
     /// With no clamp on the battery input, twice the pack's maximum above a
     /// battery-fed regulator's VIN absolute maximum (`AET-WO-4300k` (6)).
     DoubledPackOverAbsoluteMaximum,
@@ -558,6 +592,10 @@ impl Refusal {
             Self::DcBiasBeyondCurve => "DcBiasBeyondCurve",
             Self::DropLimitUndeclared => "DropLimitUndeclared",
             Self::RegulatedDomainUnloaded => "RegulatedDomainUnloaded",
+            Self::ControlAfterInvalid => "ControlAfterInvalid",
+            Self::RadioRailUnsequenced => "RadioRailUnsequenced",
+            Self::RadioLevelOverSupply => "RadioLevelOverSupply",
+            Self::RadioSupplyBelowMinimum => "RadioSupplyBelowMinimum",
             Self::DoubledPackOverAbsoluteMaximum => "DoubledPackOverAbsoluteMaximum",
             Self::BatteryInputUnprotected => "BatteryInputUnprotected",
             Self::ProtectionPartOutOfRange => "ProtectionPartOutOfRange",
@@ -895,27 +933,33 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         references.push(&x.gate_resistor.reference);
         crate::board::source(&x.source, "power.input.protection.source")?;
     }
+    let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
+        id(&r.reference, format!("{path}.reference"))?;
+        id(&r.part, format!("{path}.part"))?;
+        if r.ohms == 0 {
+            return Err(invalid(&r.reference, "a resistor of 0 ohms".to_owned()));
+        }
+        Ok(())
+    };
     let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
         for (i, c) in list.iter().enumerate() {
             id(&c.pin, format!("{path}[{i}].pin"))?;
-            if c.strap.is_some() == c.wire.is_some() {
+            let set = [c.strap.is_some(), c.wire.is_some(), c.after.is_some()];
+            if set.iter().filter(|x| **x).count() != 1 {
                 return Err(invalid(
                     &format!("{path}[{i}]"),
-                    "a control pin takes exactly one of `strap` and `wire`".to_owned(),
+                    "a control pin takes exactly one of `strap`, `wire` and `after`".to_owned(),
                 ));
             }
             if let Some(w) = &c.wire {
                 id(&w.net, format!("{path}[{i}].wire.net"))?;
                 crate::board::source(&w.role, &format!("{path}[{i}].wire.role"))?;
             }
-        }
-        Ok(())
-    };
-    let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
-        id(&r.reference, format!("{path}.reference"))?;
-        id(&r.part, format!("{path}.part"))?;
-        if r.ohms == 0 {
-            return Err(invalid(&r.reference, "a resistor of 0 ohms".to_owned()));
+            if let Some(a) = &c.after {
+                id(&a.regulator, format!("{path}[{i}].after.regulator"))?;
+                resistor(&a.pull_up, &format!("{path}[{i}].after.pull_up"))?;
+                crate::board::source(&a.source, &format!("{path}[{i}].after.source"))?;
+            }
         }
         Ok(())
     };
@@ -951,6 +995,12 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         externals(&r.external, &format!("{path}.external"))?;
         references.extend(r.external.iter().map(|e| e.reference.as_str()));
         controls(&r.controls, &format!("{path}.controls"))?;
+        references.extend(
+            r.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref())
+                .map(|a| a.pull_up.reference.as_str()),
+        );
         if let Some(j) = &r.junction {
             if j.loss_at_milliamps == 0 || j.loss_at_milliamps > 100_000 {
                 return Err(invalid(
@@ -1027,6 +1077,21 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             ),
             "AET-WO-4300k (2): drop_limits is required wherever power is declared (RUL-14, amended 2026-11-17)",
         ));
+    }
+    // A radio module on its own rail is that rail's load, and the gate
+    // judges its pins there (`AET-WO-4411`, ruled 2026-11-25T20:10Z).
+    for m in spec.declared_radio_modules() {
+        if m.supply != spec.mcu.supply && !limited.contains(m.supply.as_str()) {
+            return Err(refuse(
+                Refusal::DropLimitUndeclared,
+                &m.supply,
+                format!(
+                    "power.drop_limits names no limit for `{}`, {}'s own rail: its minimum supply is judged on that rail less its drop",
+                    m.supply, m.reference
+                ),
+                "AET-WO-4411, ruled 2026-11-25T20:10Z: the module's minimum judged on its own rail, with its own drop gate",
+            ));
+        }
     }
     // A sense net is a new net: folded, it may not be a signal, a domain or
     // `GND` (KiCad's ERC compares labels with case folded, `AET-WO-1204`).
@@ -1428,6 +1493,121 @@ pub(crate) fn mcu_without_tree(spec: &Specification) -> Result<(), IrValidationE
         return Ok(());
     };
     domain_inside_consumer(domain, &mcu_consumer(table, spec, row, m)?)
+}
+
+/// Step 3a (`AET-WO-4411`, ruled 2026-11-25T20:10Z and 21:17Z): a radio
+/// module on a rail of its own, not the MCU's. The MCU's regulator starts
+/// after the module's (`after`), so the MCU's UART never drives an unpowered
+/// module at power-up; the MCU's rail at its highest stays within the
+/// module's VIH over the module rail at its lowest; and that lowest, less
+/// the rail's declared drop limit, stays at the module's minimum supply.
+fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValidationError> {
+    let spec = ctx.spec;
+    let mcu_supply = &spec.mcu.supply;
+    for m in spec.declared_radio_modules() {
+        if &m.supply == mcu_supply {
+            continue;
+        }
+        // `radio::validate` refuses an unknown part and an unsourced rail
+        let (Some(row), Some(lead), Some(mcu)) = (
+            crate::radio::table()?.get(&m.part),
+            derived.iter().find(|d| d.reg.output == m.supply),
+            derived.iter().find(|d| &d.reg.output == mcu_supply),
+        ) else {
+            continue;
+        };
+        let t = crate::radio::table()?;
+        let vih = &row.uart.vih_over_supply_mv;
+        let sequenced = mcu.reg.controls.iter().any(|c| {
+            c.after
+                .as_ref()
+                .is_some_and(|a| a.regulator == lead.reg.reference)
+        });
+        if !sequenced {
+            return Err(refuse(
+                Refusal::RadioRailUnsequenced,
+                &m.reference,
+                format!(
+                    "{} is on `{}` and the MCU on `{mcu_supply}`, and {}'s EN does not follow {}'s PG (`after`): at power-up the MCU's UART can drive the module's RXD while its rail is down, above its VIH maximum of VDD + {} mV",
+                    m.reference, m.supply, mcu.reg.reference, lead.reg.reference, vih.value
+                ),
+                t.cite(&vih.at),
+            ));
+        }
+        let over = u64::from(vih.value) * 1000;
+        if mcu.vout_uv.1 > lead.vout_uv.0 + over {
+            return Err(refuse(
+                Refusal::RadioLevelOverSupply,
+                &m.reference,
+                format!(
+                    "`{mcu_supply}` reaches {} uV and `{}` falls to {} uV: the MCU's high level can stand {} uV above the module's rail, over its VIH maximum of VDD + {} mV",
+                    mcu.vout_uv.1,
+                    m.supply,
+                    lead.vout_uv.0,
+                    mcu.vout_uv.1 - lead.vout_uv.0,
+                    vih.value
+                ),
+                t.cite(&vih.at),
+            ));
+        }
+        let limit = ctx
+            .power
+            .drop_limits
+            .iter()
+            .find(|l| l.domain == m.supply)
+            .map_or(0, |l| u64::from(l.max_millivolts) * 1000);
+        let floor = lead.vout_uv.0.saturating_sub(limit);
+        let min = u64::from(row.supply.min_mv) * 1000;
+        if floor < min {
+            return Err(refuse(
+                Refusal::RadioSupplyBelowMinimum,
+                &m.reference,
+                format!(
+                    "`{}`'s guaranteed {} uV at {}, less its {} uV drop limit, is {floor} uV at {}'s pins, under its minimum of {min} uV",
+                    m.supply, lead.vout_uv.0, lead.reg.reference, limit, m.reference
+                ),
+                t.cite(&row.supply.at),
+            ));
+        }
+        let ds = pp::At {
+            document: "DS12117".into(),
+            section: "p. 103-104, Table 10 note 1: every supply pin connected and within its range; an unpowered I/O's limit is not stated".into(),
+        };
+        ctx.screen(
+            "radio_power_down_order",
+            &m.reference,
+            format!(
+                "{}: `{}` and `{mcu_supply}` are not ordered at power-down: while the module's rail falls first, the MCU's TX may drive its RXD above VDD + {} mV ({}), and while the MCU's falls first, the module's TX drives an unpowered MCU pin, which the MCU's datasheet does not state ({})",
+                m.reference,
+                m.supply,
+                vih.value,
+                t.cite(&vih.at),
+                ctx.cite(&ds)
+            ),
+        );
+        ctx.screen(
+            "radio_rail_ioff",
+            &m.reference,
+            format!(
+                "{}: no buffer with powered-off isolation (Ioff) sits on the MCU's TX to its RXD; one would hold the line whenever `{}` is down (ruled 2026-11-25T21:17Z: a row)",
+                m.reference, m.supply
+            ),
+        );
+        ctx.screen(
+            "radio_rail_monitor",
+            &m.reference,
+            format!(
+                "{}: no monitor holds its EN on `{}`: neither the module's datasheet nor the ESP32-C3 hardware design guidelines state a brown-out detector, and the guidelines recommend a power monitor 'around 3.0 V' for slow or unstable supplies ({})",
+                m.reference,
+                m.supply,
+                t.cite(&crate::radio::At {
+                    document: "ESP32-C3-HDG".into(),
+                    section: "PDF p. 10 (printed 7), Table 1's attention box: reserve a power monitor chip, its threshold around 3.0 V".into(),
+                })
+            ),
+        );
+    }
+    Ok(())
 }
 
 fn mcu<'a>(ctx: &Ctx<'a>) -> Result<(&'a pp::Row, &'a pp::Mcu), IrValidationError> {
@@ -2520,7 +2700,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 "inductor_ripple_outside_guidance",
 o.reference,
 format!(
-                            "{}: the inductance meets Equation 5; Table 9-2 gives 8 uH at 5 V and 6.8 uH at 3.3 V, and Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
+                            "{}: the inductance meets Equation 5; Table 9-2's typical value is in the citation, and Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
                             o.reference,
                             ctx.cite(&rule.at)
                         ));
@@ -3678,6 +3858,64 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         .chain([crate::GND, BATTERY_NET, BATTERY].map(str::to_lowercase))
         .collect();
     let mut wires = Vec::new();
+    // `AET-WO-4411` (iii): each regulator whose `PG` another's `EN` follows,
+    // by the follower; that `PG` is declared there, once.
+    let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
+    for r in &ctx.power.regulators {
+        for c in &r.controls {
+            if let Some(a) = &c.after {
+                let bad = |why: String| {
+                    refuse(
+                        Refusal::ControlAfterInvalid,
+                        &r.reference,
+                        format!("{}.{}: `after` names `{}`: {why}", r.reference, c.pin, a.regulator),
+                        "AET-WO-4411 (iii), ruled 2026-11-25T21:17Z: an enable follows another regulator's open-drain power-good",
+                    )
+                };
+                let Some(lead) = ctx.power.regulators.iter().find(|g| g.reference == a.regulator) else {
+                    return Err(bad("no declared regulator".into()));
+                };
+                if lead.reference == r.reference {
+                    return Err(bad("the regulator itself".into()));
+                }
+                let open_pg = match &ctx.row(&lead.reference, &lead.part)?.kind {
+                    Kind::Buck(b) => b.controls.iter().any(|x| x.pin == "PG" && x.straps.contains(&pp::Strap::Open)),
+                    _ => false,
+                };
+                if !open_pg {
+                    return Err(bad(format!("{}'s row has no open-drain `PG`", lead.part)));
+                }
+                if claimed.insert(lead.reference.as_str(), r.reference.as_str()).is_some() {
+                    return Err(bad("its `PG` already holds another enable".into()));
+                }
+                ctx.resistor(&a.pull_up)?;
+            }
+        }
+    }
+    // a loop of `after`s starts nothing
+    for start in claimed.keys() {
+        let mut at = *start;
+        for _ in 0..=claimed.len() {
+            let Some(next) = ctx
+                .power
+                .regulators
+                .iter()
+                .find(|g| g.reference == at)
+                .and_then(|g| g.controls.iter().find_map(|c| c.after.as_ref()))
+            else {
+                break;
+            };
+            at = next.regulator.as_str();
+            if at == *start {
+                return Err(refuse(
+                    Refusal::ControlAfterInvalid,
+                    start,
+                    format!("{start}'s enable waits on a loop of `after`s that comes back to it: none of them starts"),
+                    "AET-WO-4411 (iii)",
+                ));
+            }
+        }
+    }
     let owners = ctx
         .power
         .regulators
@@ -3726,13 +3964,42 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     ctx.cite(&rule.at),
                 )
             };
+            let follower = (rule.pin == "PG").then(|| claimed.get(reference.as_str())).flatten();
             let Some(c) = declared.iter().find(|c| c.pin == rule.pin) else {
+                if let Some(f) = follower {
+                    ctx.screen(
+                        "control_after",
+                        f,
+                        format!(
+                            "{f}: its EN follows {reference}'s open-drain PG, pulled up to `{}`, so {f} starts only once {reference}'s PG releases, and stops whenever it pulls low ({}); the order at power-down is not set by it",
+                            ctx.power.regulators.iter().find(|g| &g.reference == reference).map_or("", |g| g.output.as_str()),
+                            ctx.cite(&rule.at)
+                        ),
+                    );
+                    continue;
+                }
                 return Err(unwired(format!(
                     "{} is declared neither wired nor strapped (its row allows straps: {})",
                     rule.pin,
                     allowed()
                 )));
             };
+            if let Some(f) = follower {
+                return Err(refuse(
+                    Refusal::PowerValueInvalid,
+                    reference,
+                    format!("`controls` declares PG, which {f}'s `after` declares"),
+                    "AET-WO-4411 (iii): the PG an enable follows is declared there, once",
+                ));
+            }
+            if c.after.is_some() && !rule.straps.contains(&pp::Strap::Input) {
+                return Err(refuse(
+                    Refusal::ControlAfterInvalid,
+                    reference,
+                    format!("{} takes `after`, and its row names it no enable (an enable is strapped to the input)", rule.pin),
+                    ctx.cite(&rule.at),
+                ));
+            }
             match (&c.strap, &c.wire) {
                 (Some(s), _) if !rule.straps.contains(s) => {
                     return Err(unwired(format!(
@@ -3836,6 +4103,7 @@ pub fn check_against(
     thermal(&ctx)?;
     controls(&mut ctx)?;
     let derived = outputs(&mut ctx)?;
+    radio_rails(&mut ctx, &derived)?;
     domains_inside_consumers(&ctx)?;
     bor_rising(&mut ctx)?;
     battery_inputs(&ctx)?;
@@ -3945,7 +4213,7 @@ format!(
                 "drop_not_judged",
                 domain,
                 format!(
-                    "{domain}: no drop limit is declared, and extract's supply gate judges the MCU's pins only (on `{}`), so this domain's copper drop is not judged (ruled D13)",
+                    "{domain}: no drop limit is declared, and extract's supply gate judges the MCU's pins (on `{}`) and a radio module's on its own rail only, so this domain's copper drop is not judged (ruled D13)",
                     ctx.spec.mcu.supply
                 ),
             );

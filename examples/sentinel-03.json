@@ -1170,6 +1170,11 @@
       "id": "VDD_5V",
       "nominal_millivolts": 5000,
       "tolerance_permille": 50
+    },
+    {
+      "id": "VDD_3V3_RF",
+      "nominal_millivolts": 3300,
+      "tolerance_permille": 50
     }
   ],
   "i2c_buses": [
@@ -1766,7 +1771,8 @@
       "via": null,
       "nets": [
         "VBAT",
-        "VDD_5V"
+        "VDD_5V",
+        "VDD_3V3_RF"
       ]
     },
     {
@@ -2115,20 +2121,113 @@
         ],
         "junction": {
           "loss_milliwatts": {
-            "value": 760,
-            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 85 % on the 36 V curve at 1.25 A (read 85.9 to 86.5 %, AET-WO-4411, spike/4411/curve); P_loss = 3.417 V x 1251 mA x (1/0.85 - 1) = 755 mW, rounded up"
+            "value": 570,
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 82 % on the 36 V curve at 0.749 A (read 82.2 to 83.5 %, AET-WO-4411 option 1); P_loss = 3.417 V x 749 mA x (1/0.82 - 1) = 562 mW, rounded up"
           },
-          "loss_at_milliamps": 1251
+          "loss_at_milliamps": 749
+        },
+        "controls": [
+          {
+            "pin": "EN",
+            "strap": null,
+            "wire": null,
+            "after": {
+              "regulator": "U13",
+              "pull_up": {
+                "reference": "R32",
+                "part": "CRCW0603_F_K",
+                "ohms": 100000
+              },
+              "source": "AET-WO-4411 (iii), ruled 2026-11-25T21:17Z: U11 starts once U13's output is good; 100 kOhm to the output is SNVSAW1E p. 11's named PG pull-up"
+            }
+          },
+          {
+            "pin": "PG",
+            "strap": "open",
+            "wire": null
+          }
+        ]
+      },
+      {
+        "reference": "U13",
+        "part": "LMR33620ADDA",
+        "input": "battery",
+        "output": "VDD_3V3_RF",
+        "feedback": {
+          "top": {
+            "reference": "R30",
+            "part": "TNPW0603_B_E",
+            "ohms": 105000
+          },
+          "bottom": {
+            "reference": "R31",
+            "part": "TNPW0603_B_E",
+            "ohms": 46400
+          }
+        },
+        "external": [
+          {
+            "role": "cin",
+            "reference": "C30",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin",
+            "reference": "C63",
+            "part": "GCM32EC71H106KA03"
+          },
+          {
+            "role": "cin_hf",
+            "reference": "C31",
+            "part": "GCM188R71H224KA64"
+          },
+          {
+            "role": "cboot",
+            "reference": "C32",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "cvcc",
+            "reference": "C33",
+            "part": "GRM188R71C105KA12"
+          },
+          {
+            "role": "cout",
+            "reference": "C34",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C35",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C36",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "cout",
+            "reference": "C37",
+            "part": "GRM32ER71A226KE20"
+          },
+          {
+            "role": "inductor",
+            "reference": "L3",
+            "part": "IHLP5050FDER8R2M01"
+          }
+        ],
+        "junction": {
+          "loss_milliwatts": {
+            "value": 490,
+            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.5 A (78.96 % read from its vectors); P_loss = 3.417 V x 504 mA x (1/0.78 - 1) = 486 mW, rounded up"
+          },
+          "loss_at_milliamps": 504
         },
         "controls": [
           {
             "pin": "EN",
             "strap": "input",
-            "wire": null
-          },
-          {
-            "pin": "PG",
-            "strap": "open",
             "wire": null
           }
         ]
@@ -2231,16 +2330,28 @@
         "reference": "R61"
       },
       {
-        "domain": "VDD_3V3",
+        "domain": "VDD_3V3_RF",
         "milliamps": 1,
         "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's EN pull-up, AET-WO-4411)",
         "reference": "R90"
       },
       {
-        "domain": "VDD_3V3",
+        "domain": "VDD_3V3_RF",
         "milliamps": 1,
         "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's IO2 strap pull-up, AET-WO-4411)",
         "reference": "R91"
+      },
+      {
+        "domain": "VDD_3V3_RF",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / (105 kOhm + 46.4 kOhm) = 0.023 mA, rounded up",
+        "reference": "R30"
+      },
+      {
+        "domain": "VDD_3V3_RF",
+        "milliamps": 1,
+        "source": "derived: 3.465 V / 100 kOhm = 0.035 mA, rounded up (U13's PG pull-up, AET-WO-4411 (iii))",
+        "reference": "R32"
       }
     ],
     "sense": [
@@ -2269,6 +2380,11 @@
         "domain": "VDD_3V3",
         "max_millivolts": 110,
         "source": "AET-WO-4300k D6 (ruled): VDD_3V3's solved minimum less this stays above TLV803S's VIT- max plus its typical hysteresis, 3030 mV"
+      },
+      {
+        "domain": "VDD_3V3_RF",
+        "max_millivolts": 144,
+        "source": "AET-WO-4411, ruled 2026-11-25T20:10Z: U13's guaranteed 3144.727 mV (solved) less the module's 3.0 V minimum (ESP32-C3-WROOM-02 v1.7 p. 21, Table 6-2), 144.727 mV, rounded down"
       }
     ]
   },
@@ -2763,13 +2879,13 @@
       "reference": "U30",
       "part": "ESP32-C3-WROOM-02-N4",
       "serial_port": "WIFI",
-      "supply": "VDD_3V3",
+      "supply": "VDD_3V3_RF",
       "enable": {
         "resistor": {
           "reference": "R90",
           "part": "CRCW0603_F_K",
           "ohms": 10000,
-          "to": "VDD_3V3"
+          "to": "VDD_3V3_RF"
         },
         "capacitor": {
           "reference": "C90",
@@ -2782,7 +2898,7 @@
             "reference": "R91",
             "part": "CRCW0603_F_K",
             "ohms": 10000,
-            "to": "VDD_3V3"
+            "to": "VDD_3V3_RF"
           }
         },
         "IO8": "open",

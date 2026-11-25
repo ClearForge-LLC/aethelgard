@@ -119,6 +119,16 @@ const WINDOWS: [usize; 2] = [16, 64];
 const CORRIDOR_DEPTH: i64 = 16;
 const CORRIDOR_COST: u32 = 2;
 
+/// How far past a buck's courtyard its thermal pad's exits are kept clear
+/// on F.Cu (`AET-WO-4411` (b)): an engine choice, measured on Sentinel-03.
+const EXIT_NM: i64 = 2_000_000;
+/// A track's cost per F.Cu node in a buck's thermal exit, against
+/// [`STEP_F`]'s 2 and [`STEP_B`]'s 6: through it is the dearest way across.
+const EXIT_COST: u32 = 40;
+/// A net is a buck's own when every pad of it lies this near the buck's
+/// courtyard: its loop parts' bounds reach 5 mm.
+const LOCAL_NM: i64 = 6_000_000;
+
 const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
 const BEND: u32 = 1;
@@ -760,6 +770,10 @@ struct Router<'a> {
     /// net's share of it, and whether that share is withdrawn.
     pending: Vec<u32>,
     corridors: Vec<Vec<(usize, u32)>>,
+    /// A buck's thermal exits' cost per F.Cu node, and the nets free of it
+    /// (`AET-WO-4411` (b)).
+    exit: Vec<u32>,
+    exit_free: Vec<bool>,
     /// The same for a via, whose copper blocks a corridor from further off.
     pending_via: Vec<u32>,
     via_corridors: Vec<Vec<(usize, u32)>>,
@@ -1258,6 +1272,55 @@ impl<'a> Router<'a> {
                 }
             }
         }
+        // `AET-WO-4411` (b), ruled 2026-11-25T21:17Z: a buck's thermal pad
+        // reaches its F.Cu pour only past the ends its pins leave open, so
+        // each strip from an unflanked edge of the pad to [`EXIT_NM`] past
+        // the courtyard costs a track [`EXIT_COST`] a node on F.Cu, unless
+        // its net is the block's own: every pad of it within [`LOCAL_NM`]
+        // of the buck's courtyard (its divider, CVCC, CBOOT, inductor).
+        let mut exit = vec![0u32; n];
+        let mut exit_free = vec![false; count];
+        if let Some(&g) = index.get(aethelgard_ir::GND) {
+            exit_free[g] = true;
+        }
+        for (reference, number) in &board.stack.exits {
+            let Some(part) = board.parts.iter().find(|p| &p.reference == reference) else {
+                continue;
+            };
+            let (Some(e), Some(yard)) = (
+                part.pads.iter().find(|p| &p.number == number).map(|p| p.rect),
+                part.courtyard.iter().map(|&(a, b)| span(a, b)).reduce(|a, b| a.union(b)),
+            ) else {
+                continue;
+            };
+            let near = yard.grow(LOCAL_NM);
+            for (i, name) in nets.iter().enumerate() {
+                let mut pads = board.parts.iter().flat_map(|q| &q.pads).filter(|p| p.net.as_deref() == Some(name.as_str())).peekable();
+                if pads.peek().is_some() && pads.all(|p| near.contains(p.rect)) {
+                    exit_free[i] = true;
+                }
+            }
+            let strips = [
+                Rect { y0: yard.y0 - EXIT_NM, y1: e.y0, ..e },
+                Rect { y0: e.y1, y1: yard.y1 + EXIT_NM, ..e },
+                Rect { x0: yard.x0 - EXIT_NM, x1: e.x0, ..e },
+                Rect { x0: e.x1, x1: yard.x1 + EXIT_NM, ..e },
+            ];
+            for strip in strips {
+                let flanked = part.pads.iter().any(|p| {
+                    &p.number != number
+                        && p.rect.x0 < strip.x1
+                        && strip.x0 < p.rect.x1
+                        && p.rect.y0 < strip.y1
+                        && strip.y0 < p.rect.y1
+                });
+                if !flanked {
+                    for node in grid.nodes(strip.grow(board.s())) {
+                        exit[node] = EXIT_COST;
+                    }
+                }
+            }
+        }
         let (escapes, exhausted) =
             lay_escapes(board, &grid, &nets, &kinds, &kind, &mut track, &mut via);
         let mut pending = vec![0; n];
@@ -1295,6 +1358,8 @@ impl<'a> Router<'a> {
             nets,
             vias: BTreeMap::new(),
             pending,
+            exit,
+            exit_free,
             corridors,
             pending_via,
             via_corridors,
@@ -1578,7 +1643,11 @@ impl<'a> Router<'a> {
                     };
                     let step = if l == Layer::F { STEP_F } else { STEP_B };
                     let bend = if d != 4 && d != dir { BEND } else { 0 };
-                    let corridor = if l == Layer::F { self.pending[m] } else { 0 };
+                    let corridor = if l == Layer::F {
+                        self.pending[m] + if self.exit_free[net] { 0 } else { self.exit[m] }
+                    } else {
+                        0
+                    };
                     let seen = self.history[l.index()][m];
                     let tc = c + step + bend + corridor + seen + extra;
                     moves.push((id(l, m, dir), m, tc, from));
@@ -5848,6 +5917,7 @@ mod tests {
             thermal: vec![],
             imus: vec![],
             pours: vec![],
+            exits: vec![],
             junction: None,
         }
     }

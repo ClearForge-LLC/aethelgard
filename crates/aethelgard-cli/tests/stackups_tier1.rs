@@ -458,6 +458,7 @@ fn the_reference_declares_todays_two_layer_board() {
             thermal: vec![],
             imus: vec![],
             pours: vec![],
+            exits: vec![],
             junction: None,
         }
     );

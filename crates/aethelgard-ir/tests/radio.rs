@@ -112,11 +112,11 @@ fn the_supply_is_the_mcus_and_in_range() {
     assert_eq!(kind, "RadioSupplyUnknown");
 }
 
-/// Step 27 alone (`radio::validate`): a second 3.3 V domain needs a whole
-/// power tree, whose own checks would refuse first; the rule is the
-/// module's.
+/// Step 27 alone (`radio::validate`): a rail of the module's own is
+/// admitted here (`AET-WO-4411`, ruled 2026-11-25T21:17Z) and judged with the
+/// power tree (`power::radio_rails`); one no regulator outputs is refused.
 #[test]
-fn a_supply_in_range_but_not_the_mcus_is_refused() {
+fn a_rail_of_its_own_no_regulator_outputs_is_unsourced() {
     let mut v = fixture();
     v["voltage_domains"]
         .as_array_mut()
@@ -127,7 +127,7 @@ fn a_supply_in_range_but_not_the_mcus_is_refused() {
     module(&mut v)["straps"]["IO2"] = pull("R91", "VDD_RF");
     let s: Specification = serde_json::from_value(v).unwrap();
     let e = aethelgard_ir::radio::validate(&s).unwrap_err();
-    assert_eq!(e.kind(), "RadioSupplyNotMcu");
+    assert_eq!(e.kind(), "RadioSupplyUnsourced");
 }
 
 #[test]

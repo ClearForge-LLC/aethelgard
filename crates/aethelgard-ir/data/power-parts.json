@@ -13,6 +13,12 @@
       "sha256": "3b0920a4e56a0b3f5f214a6317d3c06cff6e541e5054024adc31c30acc50c04a",
       "pending": null
     },
+    "SNVSAW1E": {
+      "title": "TI LMR33620 datasheet SNVSAW1E",
+      "revision": "E (November 2020)",
+      "sha256": "865af73e62240338821cc0915dae0eeabec94f4602e0e7cc5fb1c1d49d3daf2b",
+      "pending": null
+    },
     "SBVS320D": {
       "title": "TI TLV755P datasheet SBVS320D",
       "revision": "D (September 2024)",
@@ -257,6 +263,368 @@
             "at": {
               "document": "ABM8AIG",
               "section": "p. 1 Drive Level, max 100 uW"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "LMR33620ADDA",
+      "lifecycle": "active",
+      "symbol": "Regulator_Switching:LMR33620ADDA",
+      "footprint": "Package_SO:Texas_HSOP-8-1EP_3.9x4.9mm_P1.27mm",
+      "pins": {
+        "PGND": "1",
+        "VIN": "2",
+        "EN": "3",
+        "PG": "4",
+        "FB": "5",
+        "VCC": "6",
+        "BOOT": "7",
+        "SW": "8",
+        "EP": "9"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 125,
+        "at": {
+          "document": "SNVSAW1E",
+          "section": "p. 5, 7.3 Recommended Operating Conditions, operating temperature range -40 to 125 C (p. 5, 7.1: TJ -40 to 150 C absolute; p. 6, 7.5: limits over TJ -40 to +125 C)"
+        }
+      },
+      "kind": {
+        "buck": {
+          "vin_millivolts": {
+            "min": 3800,
+            "max": 36000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 6, 7.5 VIN minimum operating input voltage, max 3.8 V; p. 5, 7.3 VIN to PGND 3.8 to 36 V"
+            }
+          },
+          "vin_abs_max_millivolts": {
+            "value": 38000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 5, 7.1 Absolute Maximum Ratings, VIN to PGND max 38 V"
+            }
+          },
+          "input_damping_picofarads": {
+            "min": 20000000,
+            "max": 100000000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 31, Power Supply Recommendations: an aluminum or tantalum input capacitor in parallel with the ceramics; a value in the range of 20 uF to 100 uF is usually sufficient to provide input damping"
+            }
+          },
+          "vfb_microvolts": {
+            "min": 985000,
+            "max": 1015000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 6, 7.5 Voltage reference (FB pin), VFB min 0.985 V, max 1.015 V"
+            }
+          },
+          "ifb_max_nanoamps": {
+            "value": 50,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 6, 7.5 IFB, FB = 1 V, max 50 nA"
+            }
+          },
+          "regulation_permille": {
+            "min": -15,
+            "max": 25,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 8, 7.7 System Characteristics, VOUT regulation 0 A to max load, -1.5 % / +2.5 % (5 V row from VIN 7 V, 3.3 V row from VIN 3.8 V), not ensured by production testing"
+            }
+          },
+          "regulation_production_tested": false,
+          "regulation_vin_min": [
+            {
+              "from_vout_millivolts": 3301,
+              "vin_min": {
+                "value": 7000,
+                "at": {
+                  "document": "SNVSAW1E",
+                  "section": "p. 8, 7.7: the VOUT = 5 V rows are stated for VIN 7 V to 36 V; held for any output above 3.3 V (ruled D-B9)"
+                }
+              }
+            },
+            {
+              "from_vout_millivolts": 0,
+              "vin_min": {
+                "value": 3800,
+                "at": {
+                  "document": "SNVSAW1E",
+                  "section": "p. 8, 7.7: the VOUT = 3.3 V rows are stated for VIN 3.8 V to 36 V"
+                }
+              }
+            }
+          ],
+          "fsw_hz": {
+            "min": 340000,
+            "max": 460000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 7, 7.5 Oscillator, fSW \"A\" Version min 340 kHz, typ 400 kHz, max 460 kHz"
+            }
+          },
+          "ton_min_max_ns": {
+            "value": 108,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 7, 7.6 Timing Characteristics, tON-MIN DDA package max 108 ns"
+            }
+          },
+          "toff_min_max_ns": {
+            "value": 85,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 7, 7.6 Timing Characteristics, tOFF-MIN DDA package max 85 ns"
+            }
+          },
+          "rds_high_max_milliohms": {
+            "value": 160,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 7, 7.5 MOSFETs, RDS-ON-HS DDA package max 160 mOhm"
+            }
+          },
+          "rds_low_max_milliohms": {
+            "value": 110,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 7, 7.5 MOSFETs, RDS-ON-LS DDA package max 110 mOhm"
+            }
+          },
+          "high_side_limit_milliamps": {
+            "min": 2900,
+            "max": 4000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 6, 7.5 Current limits, ISC LMR33620 min 2.9 A, typ 3.5 A, max 4 A (note 4: tested open loop in production)"
+            }
+          },
+          "iout_max_milliamps": {
+            "value": 2000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 5, 7.3 Recommended Operating Conditions, IOUT 0 to 2 A"
+            }
+          },
+          "rfbt_max_ohms": {
+            "value": 1000000,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 20, 9.2.2.3: the recommended value for RFBT is 100 kOhm, with a maximum value of 1 MOhm; a feedforward capacitor must be used across a 1 MOhm RFBT"
+            }
+          },
+          "inductor_min_coefficient": {
+            "value": 360,
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 21, 9.2.2.4, Equation 5: L_MIN >= 0.36 x VOUT / fSW; no units printed, read as uH, V and MHz (2.97 uH at 3.3 V and 400 kHz, 3.49 uH at 340 kHz, against Table 9-2's 10 uH)"
+            }
+          },
+          "stated_at": "at VIN = 12 V, VEN = 4 V and TJ -40 to 125 C (SNVSAW1E p. 6, 7.5 header)",
+          "external": [
+            {
+              "role": "cin",
+              "min_picofarads": 10000000,
+              "max_picofarads": null,
+              "effective_min_picofarads": {
+                "value": 10000000,
+                "at": {
+                  "document": "SNVSAW1E",
+                  "section": "p. 22, 9.2.2.6: a minimum of 10 uF of ceramic capacitance is required; p. 18, 9.1 note: capacitances are effective, under DC bias and temperature (ruled D2 (c) on PR #158)"
+                }
+              },
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 22, 9.2.2.6: a minimum of 10 uF of ceramic capacitance, rated for at least the maximum input voltage, preferably twice (p. 19, Table 9-2: 10 uF + 220 nF)"
+              }
+            },
+            {
+              "role": "cin_hf",
+              "min_picofarads": 220000,
+              "max_picofarads": 220000,
+              "effective_min_picofarads": null,
+              "rated_min_millivolts": 50000,
+              "rated_step": null,
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X7R"
+              ],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 22, 9.2.2.6: a small case size 220 nF ceramic capacitor must be used at the input; the 220 nF must be rated at 50 V with an X7R dielectric"
+              }
+            },
+            {
+              "role": "cboot",
+              "min_picofarads": 100000,
+              "max_picofarads": 100000,
+              "effective_min_picofarads": null,
+              "rated_min_millivolts": 10000,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [
+                "C0G",
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 22, 9.2.2.7: a high-quality ceramic capacitor of 100 nF and at least 10 V is required"
+              }
+            },
+            {
+              "role": "cvcc",
+              "min_picofarads": 1000000,
+              "max_picofarads": 1000000,
+              "effective_min_picofarads": null,
+              "rated_min_millivolts": 16000,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 22, 9.2.2.8: a 1 uF, 16 V ceramic capacitor from VCC to GND"
+              }
+            },
+            {
+              "role": "cout",
+              "min_picofarads": 88000000,
+              "max_picofarads": 880000000,
+              "effective_min_picofarads": null,
+              "rated_min_millivolts": 10000,
+              "rated_step": {
+                "from_nominal_millivolts": 5000,
+                "rated_min_millivolts": 16000
+              },
+              "rated_at_least_working": true,
+              "dielectrics": [
+                "X5R",
+                "X7R",
+                "X7S"
+              ],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 21-22, 9.2.2.5: at least 10 V for 3.3 V or less, 16 V or more for 5 V and above; maximum about 10 times the design value, or 1000 uF, whichever is smaller; p. 19, Table 9-2 (4 x 22 uF at 400 kHz) as the design value"
+              }
+            },
+            {
+              "role": "inductor",
+              "min_picofarads": null,
+              "max_picofarads": null,
+              "effective_min_picofarads": null,
+              "rated_min_millivolts": null,
+              "rated_step": null,
+              "rated_at_least_working": false,
+              "dielectrics": [],
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 20-21, 9.2.2.4 and p. 19, Table 9-2 (10 uH at 5 V and 3.3 V, 400 kHz)"
+              }
+            }
+          ],
+          "theta_ja": {
+            "package": "DDA",
+            "board_copper_layers": 4,
+            "outer_copper_um": 70,
+            "inner_copper_um": 35,
+            "condition": "typical and for illustration only: a four-layer board with 2 oz outer and 1 oz inner copper, the area being the copper on each layer",
+            "points": [
+              {
+                "square_centimetres": 7,
+                "decikelvin_per_watt": 410
+              },
+              {
+                "square_centimetres": 10,
+                "decikelvin_per_watt": 360
+              },
+              {
+                "square_centimetres": 15,
+                "decikelvin_per_watt": 295
+              },
+              {
+                "square_centimetres": 20,
+                "decikelvin_per_watt": 280
+              },
+              {
+                "square_centimetres": 30,
+                "decikelvin_per_watt": 270
+              },
+              {
+                "square_centimetres": 40,
+                "decikelvin_per_watt": 265
+              },
+              {
+                "square_centimetres": 50,
+                "decikelvin_per_watt": 255
+              },
+              {
+                "square_centimetres": 58,
+                "decikelvin_per_watt": 250
+              }
+            ],
+            "at": {
+              "document": "SNVSAW1E",
+              "section": "p. 24, 9.2.2.11, Figure 9-3, typical RthetaJA versus copper area, four-layer board, HSOIC (DDA); read from the plot vectors (6.4 to 58.1 cm2), each point rounded up to 0.5 C/W"
+            }
+          },
+          "controls": [
+            {
+              "pin": "EN",
+              "straps": [
+                "input"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 4, Table 6-1 pin functions, EN: high = ON, low = OFF; can be connected directly to VIN; do not float"
+              }
+            },
+            {
+              "pin": "PG",
+              "straps": [
+                "open"
+              ],
+              "wirable": true,
+              "at": {
+                "document": "SNVSAW1E",
+                "section": "p. 4, Table 6-1 pin functions, PG: open drain power-good flag output; can be left open when not used"
+              }
+            }
+          ],
+          "thermal_vias": {
+            "pad": "EP",
+            "columns": 3,
+            "rows": 4,
+            "pitch_um": 900,
+            "drill_um": 254,
+            "ring_um": 150,
+            "sources": {
+              "count": "SNVSAW1E p. 33, 10.1.1: a minimum 4 x 3 array of 10-mil thermal vias, evenly distributed under the PAD",
+              "pitch": "an engine choice, fitted to the exposed pad: SNVSAW1E p. 33 states only an even distribution (p. 47, DDA0008J example board layout shows a 2.6 x 3.1 mm solder-mask opening)",
+              "drill": "SNVSAW1E p. 33, 10.1.1: 10-mil thermal vias (254 um)",
+              "ring": "an engine choice, the engine's via ring for a 0.3 mm drill in a 0.6 mm pad: SNVSAW1E states none",
+              "layers": "SNVSAW1E p. 33, 10.1.1: to the system ground plane heat sink"
             }
           }
         }

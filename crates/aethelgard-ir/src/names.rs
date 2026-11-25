@@ -238,6 +238,13 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
             if let Some(Kind::Buck(_)) = table.get(&r.part).map(|row| &row.kind) {
                 out.extend(BUCK_NETS.iter().map(|s| format!("{}_{s}", r.reference)));
             }
+            // `AET-WO-4411` (iii): the power-good an enable follows
+            out.extend(
+                r.controls
+                    .iter()
+                    .filter_map(|c| c.after.as_ref())
+                    .map(|a| format!("{}_PG", a.regulator)),
+            );
         }
         for c in &p.crossings {
             if let Some(Kind::Translator(t)) = table.get(&c.part).map(|row| &row.kind)
