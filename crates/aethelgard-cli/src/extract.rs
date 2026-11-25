@@ -155,6 +155,15 @@ fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
         "returns": g.returns.iter().map(pin).collect::<Vec<_>>(),
         "conditions": g.conditions,
     });
+    if let Some(m) = &g.shared {
+        v["shared"] = json!({
+            "reference": m.reference,
+            "milliamps": m.milliamps,
+            "supply_bound_microohms": m.supply_bound_microohms,
+            "return_bound_microohms": m.return_bound_microohms,
+            "charge": "on the copper it shares with the load's path: its current at the lesser of the load's largest bound and its own, each side; a side with no bound of its own (null) at the load's (maximum principle; AET-WO-4411, ruled 1 (a'))",
+        });
+    }
     if let Some(n) = &g.note {
         v["note"] = n.clone().into();
     }

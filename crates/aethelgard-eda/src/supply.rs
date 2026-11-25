@@ -1340,14 +1340,40 @@ pub struct Gate {
     pub pins: Vec<PinResult>,
     pub returns: Vec<PinResult>,
     /// (the largest supply bound + the largest return bound) × the load, µV,
-    /// rounded up; `None` when any pin is refused.
+    /// rounded up; `None` when any pin is refused. With a radio module on the
+    /// domain, its current is charged by [`Shared`] instead.
     pub drop_bound_microvolts: Option<u64>,
+    /// A radio module's current, charged only on the copper it shares with
+    /// the load's path (`AET-WO-4411`, ruled 1 (a')); `None` without one.
+    pub shared: Option<Shared>,
     /// Set when the bound comes within 1.5× of the limit: the pitch set the
     /// margin (ruling S4).
     pub note: Option<String>,
     pub conditions: Vec<String>,
     /// What the copper model left out or admitted, per net, for the record.
     pub notes: Vec<String>,
+}
+
+/// A radio module's current on the domain and the bounds that charge it
+/// (`AET-WO-4411`, ruled 1 (a')): its pads' own bounds from the source and to
+/// the return, the largest over its pads on each net, `None` on a side where
+/// any of its pads has none (that side is then charged at the load's own
+/// largest bound, as without the module).
+///
+/// The maximum principle: with the source held as reference, a current
+/// drawn at a node raises no node's voltage above that node's own, so the
+/// voltage it causes at a load pin `k` is at most `I × min(r_kk, r_mm)`, the
+/// lesser of the two driving-point resistances. Each is bounded from above
+/// here (Thomson's principle, on copper the gate reads), so the module's
+/// share of the load's drop is at most its current times the lesser bound,
+/// on each side: the copper it shares with the load's path carries it, and
+/// the load's own branch does not.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Shared {
+    pub reference: String,
+    pub milliamps: u64,
+    pub supply_bound_microohms: Option<u64>,
+    pub return_bound_microohms: Option<u64>,
 }
 
 fn refusal(kind: &'static str, message: String) -> crate::extract::Refused {
@@ -1690,7 +1716,54 @@ pub fn supplies(
                 })
                 .collect()
         };
-        let drop = drop_bound(&pins, &returns, load);
+        // `AET-WO-4411` (ruled 1 (a')): a radio module's current on the
+        // domain, charged on the copper it shares with the load's path; any
+        // of its pads unbounded leaves that side charged as before.
+        let mut shared = None;
+        let modules: Vec<&str> = spec
+            .declared_radio_modules()
+            .iter()
+            .filter(|m| &m.supply == d)
+            .map(|m| m.reference.as_str())
+            .collect();
+        if gnd_plane && let [reference] = modules[..] {
+            let ma = aethelgard_ir::radio::load_ma(spec, d)
+                .map_err(|e| refusal(e.kind(), e.to_string()))?;
+            let of = |net: &str| -> Vec<&Pad> {
+                pads_of(board, reference)
+                    .into_iter()
+                    .filter(|p| p.net.as_deref() == Some(net))
+                    .collect()
+            };
+            let (vdd_m, gnd_m) = (of(d), of(gnd));
+            let largest = |v: &[PinResult]| -> Option<u64> {
+                v.iter()
+                    .map(|r| match r {
+                        PinResult::Bounded {
+                            r_bound_microohms, ..
+                        } => Some(*r_bound_microohms),
+                        PinResult::Refused { .. } => None,
+                    })
+                    .collect::<Option<Vec<u64>>>()
+                    .and_then(|v| v.into_iter().max())
+            };
+            if !vdd_m.is_empty() && !gnd_m.is_empty() {
+                let (a, n1) = run(d, source_pad, &vdd_m)?;
+                let (b, n2) = run(gnd, ret_pad, &gnd_m)?;
+                notes.extend(n1);
+                notes.extend(n2);
+                shared = Some(Shared {
+                    reference: reference.to_owned(),
+                    milliamps: ma,
+                    supply_bound_microohms: largest(&a),
+                    return_bound_microohms: largest(&b),
+                });
+            }
+        }
+        let drop = match &shared {
+            Some(m) => drop_bound_shared(&pins, &returns, load, m),
+            None => drop_bound(&pins, &returns, load),
+        };
         let note = pitch_note(drop, limit.max_millivolts);
         out.push(Gate {
             domain: d.clone(),
@@ -1703,6 +1776,7 @@ pub fn supplies(
             pins,
             returns,
             drop_bound_microvolts: drop,
+            shared,
             note,
             conditions: conditions.clone(),
             notes,
@@ -1728,6 +1802,35 @@ pub fn drop_bound(pins: &[PinResult], returns: &[PinResult], load_milliamps: u64
     };
     let (a, b) = (worst(pins)?, worst(returns)?);
     let nv = (u128::from(a) + u128::from(b)) * u128::from(load_milliamps);
+    u64::try_from(nv.div_ceil(1000)).ok()
+}
+
+/// [`drop_bound`] with `m`'s current charged by [`Shared`]: the rest of the
+/// load at the largest bounds, `m`'s at the lesser of each side's largest
+/// bound and its own, µV, rounded up.
+pub fn drop_bound_shared(
+    pins: &[PinResult],
+    returns: &[PinResult],
+    load_milliamps: u64,
+    m: &Shared,
+) -> Option<u64> {
+    let rest = load_milliamps.checked_sub(m.milliamps)?;
+    let worst = |v: &[PinResult]| -> Option<u64> {
+        v.iter()
+            .map(|r| match r {
+                PinResult::Bounded {
+                    r_bound_microohms, ..
+                } => Some(*r_bound_microohms),
+                PinResult::Refused { .. } => None,
+            })
+            .collect::<Option<Vec<u64>>>()
+            .and_then(|v| v.into_iter().max())
+    };
+    let (a, b) = (worst(pins)?, worst(returns)?);
+    let own =
+        a.min(m.supply_bound_microohms.unwrap_or(a)) + b.min(m.return_bound_microohms.unwrap_or(b));
+    let nv = (u128::from(a) + u128::from(b)) * u128::from(rest)
+        + u128::from(own) * u128::from(m.milliamps);
     u64::try_from(nv.div_ceil(1000)).ok()
 }
 
@@ -2669,6 +2772,30 @@ mod tests {
         }];
         assert_eq!(drop_bound(&pins, &refused, 659), None);
         assert_eq!(drop_bound(&pins, &[], 659), None);
+        // `AET-WO-4411` (ruled 1 (a')): a module's 500 mA of the 659 at the
+        // lesser bound each side; a side with no bound of its own at the
+        // load's: (52055 + 47181) x 159 + (40000 + 47181) x 500 nV,
+        // 59,369,024, rounded up to 59,370 uV.
+        let m = |supply, ret| Shared {
+            reference: "U30".into(),
+            milliamps: 500,
+            supply_bound_microohms: supply,
+            return_bound_microohms: ret,
+        };
+        assert_eq!(
+            drop_bound_shared(&pins, &rets, 659, &m(Some(40_000), None)),
+            Some(59_370)
+        );
+        // an own bound above the load's charges the load's, never more
+        assert_eq!(
+            drop_bound_shared(&pins, &rets, 659, &m(Some(90_000), Some(90_000))),
+            drop_bound(&pins, &rets, 659)
+        );
+        assert_eq!(drop_bound_shared(&pins, &rets, 499, &m(None, None)), None);
+        assert_eq!(
+            drop_bound_shared(&pins, &refused, 659, &m(None, None)),
+            None
+        );
         // the note at more than two thirds of the limit, not at it
         assert!(pitch_note(Some(110_001), 165).is_some());
         assert!(pitch_note(Some(110_000), 165).is_none());
