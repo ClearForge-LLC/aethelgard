@@ -387,8 +387,9 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 67] = [
+    const DATA: [&str; 70] = [
         "data/aethelgard/README.md",
+        "data/aethelgard/footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/TDK_LGA-14_3x2.5mm_P0.5mm.kicad_mod",
         "data/aethelgard/symbols/Aethelgard_Sensor.kicad_symdir/BMP581.kicad_sym",
@@ -424,6 +425,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/symbols/Logic_LevelTranslator.kicad_symdir/TXU0304PW.kicad_sym",
         "data/kicad-10.0.7/symbols/MCU_ST_STM32H7.kicad_symdir/STM32H753ZITx.kicad_sym",
         "data/kicad-10.0.7/symbols/Memory_Flash.kicad_symdir/W25Q32JVSS.kicad_sym",
+        "data/kicad-10.0.7/symbols/RF_Module.kicad_symdir/ESP32-C3-WROOM-02.kicad_sym",
         "data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym",
         "data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym",
         "data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33630ADDA.kicad_sym",
@@ -461,6 +463,8 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/footprints/Package_TO_SOT_SMD.pretty/SOT-23-3.kicad_mod",
         "data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/DMP6023LSS.kicad_sym",
         "data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
+        // `AET-WO-4411`: the radio module's own regulator.
+        "data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym",
     ];
     let mut expected: Vec<&str> = DATA.to_vec();
     expected.extend(["Cargo.toml", "README.md", "src/lib.rs"]);

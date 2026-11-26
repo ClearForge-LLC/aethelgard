@@ -106,6 +106,7 @@ fn qfn24(origin: (i64, i64), theta: u16, wired: &dyn Fn(usize) -> bool) -> Board
                 pads: vec![pad("1", Some(net), rect(p, 300_000, 300_000), 0)],
                 courtyard: vec![],
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             });
         }
     }
@@ -118,6 +119,7 @@ fn qfn24(origin: (i64, i64), theta: u16, wired: &dyn Fn(usize) -> bool) -> Board
             pads,
             courtyard: square(field),
             keepouts: vec![],
+            inner_keepouts: Vec::new(),
         },
     );
     Board {
@@ -344,6 +346,7 @@ fn pocket(gap: i64, pair: bool) -> Board {
                 pads: ic,
                 courtyard: square(yard),
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             },
             Part {
                 reference: "W1".into(),
@@ -351,6 +354,7 @@ fn pocket(gap: i64, pair: bool) -> Board {
                 pads: vec![pad("1", None, wall, 0)],
                 courtyard: vec![],
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             },
             Part {
                 reference: "P1".into(),
@@ -367,6 +371,7 @@ fn pocket(gap: i64, pair: bool) -> Board {
                 },
                 courtyard: vec![],
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             },
         ],
         stack: stack(),
@@ -420,6 +425,7 @@ fn a_run_with_no_escape_is_refused_by_name() {
         )],
         courtyard: vec![],
         keepouts: vec![],
+        inner_keepouts: Vec::new(),
     });
     let e = route::route(&b).unwrap_err();
     assert_eq!(
@@ -445,6 +451,7 @@ fn check_judges_pads_as_rounded_copper() {
             pads: vec![a, b],
             courtyard: vec![],
             keepouts: vec![],
+            inner_keepouts: Vec::new(),
         }],
         stack: stack(),
     };
@@ -533,6 +540,7 @@ fn an_escape_never_takes_a_reached_pads_way_out() {
         )],
         courtyard: vec![],
         keepouts: vec![],
+        inner_keepouts: Vec::new(),
     };
     let b = Board {
         outline: Rect {
@@ -548,6 +556,7 @@ fn an_escape_never_takes_a_reached_pads_way_out() {
                 pads,
                 courtyard: vec![],
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             },
             partner("PA", "A", g - 2 * MM),
             partner("PB", "B", g + 3 * MM),
@@ -608,6 +617,7 @@ fn quad(
                 pads: vec![pad("1", Some(net), rect(p, 300_000, 300_000), 0)],
                 courtyard: vec![],
                 keepouts: vec![],
+                inner_keepouts: Vec::new(),
             });
         }
     }
@@ -620,6 +630,7 @@ fn quad(
             pads,
             courtyard: square(rect(origin, f, f)),
             keepouts: vec![],
+            inner_keepouts: Vec::new(),
         },
     );
     Board {
@@ -647,6 +658,7 @@ fn a_through_hole_pad_in_the_pocket_is_a_way_out() {
         }],
         courtyard: square(rect(at, 500_000, 500_000)),
         keepouts: vec![],
+        inner_keepouts: Vec::new(),
     });
     let r = judged(&b);
     assert!(r.vias.is_empty(), "{r:?}");
@@ -693,6 +705,7 @@ fn a_dual_row_parts_end_pads_escape() {
                         )],
                         courtyard: vec![],
                         keepouts: vec![],
+                        inner_keepouts: Vec::new(),
                     });
                 }
             }
@@ -704,6 +717,7 @@ fn a_dual_row_parts_end_pads_escape() {
                     pads,
                     courtyard: vec![],
                     keepouts: vec![],
+                    inner_keepouts: Vec::new(),
                 },
             );
             let b = Board {
@@ -742,6 +756,7 @@ fn an_escape_never_crosses_another_parts_pad_field() {
             ],
             courtyard: vec![],
             keepouts: vec![],
+            inner_keepouts: Vec::new(),
         });
         if let Ok(routed) = route::route(&b) {
             for s in routed

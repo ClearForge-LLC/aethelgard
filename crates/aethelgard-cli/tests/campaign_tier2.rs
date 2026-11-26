@@ -1556,8 +1556,9 @@ fn d1_s_pin_device_simulates_and_its_faults_run_and_replay() {
 /// the boot (ruled Q-A (a)), and its answer is judged there. A floor the
 /// solve crosses refuses the run by name (`BatterySagSolvedBelowFloor`,
 /// exit 2, `id` the sink), with a crossing named or not; a solved minimum off
-/// the static point (8,087,826 µV at 500 mΩ since `AET-WO-4300k`'s
-/// supervisor, 8,088,314 before) by more than 1 mV is an
+/// the static point (7,928,264 µV at 500 mΩ since `AET-WO-4411`'s U13 and
+/// U31, 8,087,826 since `AET-WO-4300k`'s supervisor, 8,088,314 before) by
+/// more than 1 mV is an
 /// internal error (exit 70), never a verdict, and prints nothing; an answer
 /// that is not the chain's stops the call (`ToolError`, exit 5). No run is
 /// archived. Moved from tier 1 (`campaign_tier1`), where no stub boots a
@@ -1628,7 +1629,7 @@ fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
     };
     let chain = |min: &str, at: &str| {
         format!(
-            r#"{{"accepted_points":1,"chain":"solved","final_microvolts":{min},"initial_microvolts":8998361,"minimum_at_ns":100000000,"minimum_microvolts":{min},"ngspice":"44.2","sinks":[{{"at_ps":{at},"floor_microvolts":7000000,"name":"U10"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U11"}}],"step_ns":10000}}"#
+            r#"{{"accepted_points":1,"chain":"solved","final_microvolts":{min},"initial_microvolts":8998361,"minimum_at_ns":100000000,"minimum_microvolts":{min},"ngspice":"44.2","sinks":[{{"at_ps":{at},"floor_microvolts":7000000,"name":"U10"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U11"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U13"}}],"step_ns":10000}}"#
         )
     };
     let refusal = |out: &std::process::Output| -> Value {
@@ -1650,8 +1651,9 @@ fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
         (Some(2), &"BatterySagSolvedBelowFloor".into()),
         "{v}"
     );
-    // 1001 µV under the static point's 8,087,826.
-    let out = deck(&chain("8086825", "null"), "off");
+    // 1001 µV under the static point's 7,928,264 (the battery rail's three
+    // sinks since `AET-WO-4411`: U10, U11 and the radio module's U13).
+    let out = deck(&chain("7927263", "null"), "off");
     assert_eq!(out.status.code(), Some(70), "{out:?}");
     assert!(out.stdout.is_empty(), "{out:?}");
     let out = deck(r#"{"chain":"solved"}"#, "malformed");

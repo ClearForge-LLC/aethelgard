@@ -400,9 +400,10 @@ fn no_committed_specification_without_a_crystal_draws_one() {
                 // `hse-external-8`), `AET-WO-4240d`'s bypass bench
                 // (`examples/sentinel-02-bench-hse8.json`, an external clock,
                 // `board.drawn: false`) and Sentinel-03's crystal
-                // (`AET-WO-4300k`, `examples/sentinel-03.json`) are judged by
-                // their own runs; every other committed specification declares
-                // none.
+                // (`AET-WO-4300k`, `examples/sentinel-03.json`, and its copy
+                // `sentinel-03-radio.json`, `AET-WO-4411`'s planted board) are
+                // judged by their own runs; every other committed
+                // specification declares none.
                 if spec.mcu.hse.is_some() {
                     hse += 1;
                     continue;
@@ -435,8 +436,8 @@ fn no_committed_specification_without_a_crystal_draws_one() {
     }
     assert!(checked >= 20, "{checked}");
     assert_eq!(
-        hse, 4,
-        "only AET-WO-4240b's two HSE fixtures, AET-WO-4240d's bypass bench and Sentinel-03 (AET-WO-4300k) declare one"
+        hse, 5,
+        "only AET-WO-4240b's two HSE fixtures, AET-WO-4240d's bypass bench, Sentinel-03 (AET-WO-4300k) and its AET-WO-4411 copy declare one"
     );
 }
 

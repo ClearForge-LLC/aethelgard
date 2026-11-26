@@ -156,6 +156,8 @@ fn declared(spec: &Specification, test_points: bool) -> Vec<&str> {
                 .iter()
                 .map(|m| m.pull.link.reference.as_str()),
         )
+        // `AET-WO-4411`: last, so no earlier reference's place moves.
+        .chain(crate::radio::references(spec))
         .collect()
 }
 
@@ -236,12 +238,25 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
             if let Some(Kind::Buck(_)) = table.get(&r.part).map(|row| &row.kind) {
                 out.extend(BUCK_NETS.iter().map(|s| format!("{}_{s}", r.reference)));
             }
+            // `AET-WO-4411` (iii): the power-good an enable follows
+            out.extend(
+                r.controls
+                    .iter()
+                    .filter_map(|c| c.after.as_ref())
+                    .map(|a| pg_net(&a.regulator)),
+            );
         }
         for c in &p.crossings {
             if let Some(Kind::Translator(t)) = table.get(&c.part).map(|row| &row.kind)
                 && let Some(lines) = t.crossing_lines()
             {
                 out.extend(lines.iter().map(|s| format!("{}_{s}", c.reference)));
+            }
+        }
+        // `AET-WO-4411` (c1): a UART crossing's two B-side lines
+        for c in &p.uart_crossings {
+            if let Some((tx, rx)) = crate::power::uart_b_nets(spec, &c.serial_port) {
+                out.extend([tx, rx]);
             }
         }
     }
@@ -267,7 +282,14 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
         );
     }
     out.extend(spec.motor_outputs.iter().map(|m| motor_pull_net(&m.label)));
+    out.extend(crate::radio::own_nets(spec));
     Ok(out)
+}
+
+/// The net of a regulator's power-good that an enable follows
+/// (`AET-WO-4411` (iii)).
+pub fn pg_net(regulator: &str) -> String {
+    format!("{regulator}_PG")
 }
 
 /// The net between a motor output's link and its pull-down resistor
@@ -427,6 +449,12 @@ pub(crate) fn loads(spec: &Specification) -> Result<(), E> {
         }
         let counted_by = if *r == mcu {
             Some("the MCU's table row".to_owned())
+        } else if spec
+            .declared_radio_modules()
+            .iter()
+            .any(|m| m.reference == *r)
+        {
+            Some("its radio parts row's supply requirement (`AET-WO-4411` D5)".to_owned())
         } else {
             power
                 .regulators

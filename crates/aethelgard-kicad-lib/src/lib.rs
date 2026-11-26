@@ -2,7 +2,7 @@
 //! symbols and footprints for parts KiCad lacks, as bytes.
 //!
 //! The vendored files sit under `data/kicad-10.0.7/` (CC-BY-SA 4.0); our own
-//! under `data/aethelgard/` (MIT OR Apache-2.0, `AET-WO-4220b`), each listed
+//! under `data/aethelgard/` (MIT OR Apache-2.0, `AET-WO-4220b`; the ESP32-C3-WROOM-02 footprint, derived from KiCad's, CC-BY-SA-4.0, `AET-WO-4411`), each listed
 //! by its path inside a library directory, as KiCad's are.
 //!
 //! Data only: no hashes, no parsing. `aethelgard-eda` pins each file's sha256
@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 66] = [
+pub const FILES: [(&str, &[u8]); 69] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -208,6 +208,12 @@ pub const FILES: [(&str, &[u8]); 66] = [
         ),
     ),
     (
+        "symbols/RF_Module.kicad_symdir/ESP32-C3-WROOM-02.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/RF_Module.kicad_symdir/ESP32-C3-WROOM-02.kicad_sym"
+        ),
+    ),
+    (
         "symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV70012_SOT23-5.kicad_sym"
@@ -217,6 +223,12 @@ pub const FILES: [(&str, &[u8]); 66] = [
         "symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym",
         include_bytes!(
             "../data/kicad-10.0.7/symbols/Regulator_Linear.kicad_symdir/TLV75518PDBV.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym",
+        include_bytes!(
+            "../data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym"
         ),
     ),
     (
@@ -319,6 +331,12 @@ pub const FILES: [(&str, &[u8]); 66] = [
         "footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod",
         include_bytes!(
             "../data/aethelgard/footprints/Aethelgard_Driver.pretty/TI_HTSSOP-16-1EP_4.4x5mm_P0.65mm_EP3.4x5mm_Mask3.3x3.3mm.kicad_mod"
+        ),
+    ),
+    (
+        "footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
+        include_bytes!(
+            "../data/aethelgard/footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod"
         ),
     ),
     (

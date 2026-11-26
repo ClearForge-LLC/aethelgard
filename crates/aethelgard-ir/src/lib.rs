@@ -19,6 +19,7 @@ mod drawn;
 pub mod ds009;
 pub mod electrical;
 pub mod kernel_clock;
+pub mod levels;
 pub mod motor;
 pub mod names;
 pub mod off_domain;
@@ -29,6 +30,7 @@ pub mod pin_devices;
 pub mod pin_parts;
 pub mod power;
 pub mod power_parts;
+pub mod radio;
 pub mod serial;
 pub mod silicon;
 mod solve;
@@ -157,7 +159,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `mcu.reset_supervisor` and `acknowledge_conditions`.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 30;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 31;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";
@@ -245,6 +247,13 @@ pub struct Specification {
     /// [`Specification::declared_pin_devices`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pin_devices: Vec<pin_devices::PinDevice>,
+    /// Each radio module (`AET-WO-4411`): a part on a declared serial port,
+    /// its supply, enable and straps judged, its firmware not. Absent or
+    /// empty declares none and is not written back, by `pin_devices`'s
+    /// precedent. Private (`RUL-16`): read through
+    /// [`Specification::declared_radio_modules`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    radio_modules: Vec<radio::RadioModule>,
 }
 
 /// One acknowledged lifecycle: the part, its status as the parts table cites
@@ -2464,6 +2473,10 @@ pub enum IrValidationError {
     /// refusal's.
     #[error("{0}")]
     PinDevice(pin_devices::PinDeviceRefusal),
+    /// Step 27 (`AET-WO-4411`): a radio module; the kind is the inner
+    /// refusal's.
+    #[error("{0}")]
+    Radio(radio::RadioRefusal),
     /// Step 26 (`AET-WO-4300i`): a motor pull or pin, a declared
     /// reservation, or a hand pin at a connector; the kind is the inner
     /// refusal's.
@@ -2698,6 +2711,7 @@ impl IrValidationError {
             Self::MotorTiming { .. } => "MotorTiming",
             Self::Pwm(r) => r.kind(),
             Self::PinDevice(r) => r.kind(),
+            Self::Radio(r) => r.kind.name(),
             Self::Offboard(r) => r.kind(),
             Self::OffDomainAboveLimit { .. } => "OffDomainAboveLimit",
             Self::SerialBaudOutOfRange { .. } => "SerialBaudOutOfRange",
@@ -2895,6 +2909,7 @@ impl IrValidationError {
             Self::MotorTiming { output, .. } => Some(output),
             Self::Pwm(r) => Some(r.output()),
             Self::PinDevice(r) => Some(&r.id),
+            Self::Radio(r) => Some(&r.id),
             Self::Offboard(r) => Some(&r.id),
             Self::OffDomainAboveLimit { net, .. } => Some(net),
             Self::SerialBaudOutOfRange { port, .. } | Self::SerialBaudTolerance { port, .. } => {
@@ -2919,6 +2934,7 @@ impl IrValidationError {
     pub fn path(&self) -> Option<&str> {
         match self {
             Self::PinDevice(r) => Some(&r.path),
+            Self::Radio(r) => Some(&r.path),
             Self::Offboard(r) => Some(&r.path),
             Self::InvalidIdentifier { path, .. }
             | Self::VariantMissing { path, .. }
@@ -3290,6 +3306,13 @@ impl Specification {
         &self.pin_devices
     }
 
+    /// The radio modules, in document order (`AET-WO-4411`); fenced as
+    /// [`Specification::declared_connectors`] is (`RUL-16`): no solved field
+    /// carries one, since a module takes no MCU pin beyond its serial port's.
+    pub fn declared_radio_modules(&self) -> &[radio::RadioModule] {
+        &self.radio_modules
+    }
+
     /// Refuses the first malformed value found, in the order of
     /// `crates/aethelgard-ir/README.md`, and in document order within each step.
     /// It does not check that a part, peripheral or pin exists, nor that two
@@ -3302,6 +3325,8 @@ impl Specification {
         self.validate_declared()?;
         let table = parts::table()?;
         self.validate_parts(table)?;
+        // 15's head (`AET-WO-4411`): each radio module's port
+        radio::ports(self)?;
         // 15
         connectors::validate(self)?;
         // 15a (`AET-WO-1312`)
@@ -3331,7 +3356,9 @@ impl Specification {
         off_domain::validate(self)?;
         // 26 (`AET-WO-4300i`): the motor pulls, the declared reservations
         // and the hand pins at a connector
-        offboard::validate(self)
+        offboard::validate(self)?;
+        // 27 (`AET-WO-4411`): each radio module
+        radio::validate(self)
     }
 
     /// Step 21: what `solve` refused from the specification and the reset
@@ -4349,6 +4376,7 @@ impl Specification {
         }
         connectors::identifiers(self)?;
         pin_devices::identifiers(self)?;
+        radio::identifiers(self)?;
         for (i, t) in self.test_points.iter().enumerate() {
             plain(&t.net, || format!("test_points[{i}].net"))?;
             identifier(IdentifierKind::Reference, &t.reference, || {

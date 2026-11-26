@@ -5047,11 +5047,14 @@ mod battery_sag {
             chain["static_microvolts"].as_u64().unwrap(),
             chain["solved_minimum_microvolts"].as_u64().unwrap(),
         );
-        // 9 V open behind 500 mOhm into the sinks' 11645 + 3110 mW:
-        // (9 + sqrt(81 - 2 x 14.755)) / 2 = 8.087826 V. It was 8,088,314 at
-        // 14,748 mW before `AET-WO-4300k`'s supervisor (U12 and R61, 2 mA
-        // on VDD_3V3, +7 mW at U11's input).
-        assert_eq!(s, 8_087_826, "{chain}");
+        // 9 V open behind 500 mOhm into the sinks' 11645 + 3133 + 2216 mW
+        // (U10, U11, and since `AET-WO-4411` U13, the radio module's own
+        // buck; U31's two 1 mA rows since its (c1)): (9 + sqrt(81 - 2 x
+        // 16.994)) / 2 = 7.928264 V; 7,928,702 at 16,988 mW before (c1). It was
+        // 8,087,826 at 14,755 mW before, and 8,088,314 at 14,748 mW before
+        // `AET-WO-4300k`'s supervisor (U12 and R61, 2 mA on VDD_3V3, +7 mW at
+        // U11's input).
+        assert_eq!(s, 7_928_264, "{chain}");
         assert!(m.abs_diff(s) <= 1_000 && m >= 7_000_000, "{chain}");
         assert_eq!(chain["binding"], "U10", "{chain}");
         assert_eq!(chain["binding_floor_microvolts"], 7_000_000, "{chain}");

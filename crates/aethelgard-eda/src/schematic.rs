@@ -33,6 +33,8 @@ mod hse;
 mod arms;
 #[path = "schematic_power.rs"]
 mod power;
+#[path = "schematic_radio.rs"]
+mod radio;
 #[path = "schematic_support.rs"]
 mod support;
 use aethelgard_ir::power::BATTERY_NET;
@@ -173,6 +175,12 @@ pub enum EmitError {
     /// the rung that came nearest, with its figure and bound in fF.
     #[error("no rung of the capacitance ladder routes every bounded net within its bound; nearest: {}", over.iter().map(|(n, c, m)| format!("`{n}` {c} fF over {m} fF")).collect::<Vec<_>>().join(", "))]
     CapacitanceOverBound { over: Vec<(String, u64, u64)> },
+    /// `AET-WO-4411` (b), ruled 2026-11-26T00:22Z: no step of the pour
+    /// ladder routes a rung that holds every capacitance bound with each
+    /// buck's joined copper at its screen's need on every joined layer. The
+    /// nearest rung's shortfalls: (buck, layer, area, need), mm².
+    #[error("no step of the pour ladder keeps every buck's copper at its junction screen's need; nearest: {}", short.iter().map(|(b, l, a, n)| format!("{b} on {l} {a} mm2 under {n} mm2")).collect::<Vec<_>>().join(", "))]
+    BuckPourShort { short: Vec<BuckCopper> },
     /// `AET-WO-1314`: `extract`'s own reader or bound, which the ladder
     /// consults, refused the ladder's own board by name; its kind and path
     /// are `extract`'s.
@@ -256,6 +264,7 @@ impl EmitError {
             Self::FabToleranceUndeclared(_) => "FabToleranceUndeclared",
             Self::ViaRingUnheld { .. } => "ViaRingUnheld",
             Self::CapacitanceOverBound { .. } => "CapacitanceOverBound",
+            Self::BuckPourShort { .. } => "BuckPourShort",
             Self::LadderRefused(r) => r.kind,
             Self::HseSourceNotDrawn => "HseSourceNotDrawn",
             Self::LoadCapacitorNoPart { .. } => "LoadCapacitorNoPart",
@@ -289,6 +298,7 @@ impl EmitError {
             Self::FabToleranceUndeclared(path) => Some(path),
             Self::ViaRingUnheld { class, .. } => Some(class),
             Self::CapacitanceOverBound { over } => over.first().map(|(n, _, _)| n.as_str()),
+            Self::BuckPourShort { short } => short.first().map(|(b, _, _, _)| b.as_str()),
             Self::LadderRefused(r) => r.id.as_deref(),
             Self::OutlineTooSmall { reference, .. } => reference.as_deref(),
             Self::HseSourceNotDrawn => Some("mcu.hse"),
@@ -378,6 +388,10 @@ pub struct Ladder {
     /// `extract` refuses it by the same name (`RUL-20`: the judge names it,
     /// the ladder only records why it did not choose).
     pub unjudged: Option<(&'static str, String)>,
+    /// `AET-WO-4411` (b): on a board with a buck, the pour ladder's step it
+    /// settled on and each buck's joined copper there, (buck, layer, area,
+    /// need), mm²; `None` on a board with none, whose routing is today's.
+    pub pour: Option<(usize, Vec<BuckCopper>)>,
 }
 
 /// A symbol pin: library coordinates in nanometres, Y up.
@@ -1051,6 +1065,7 @@ fn laddered(
                     smallest: None,
                     unrouted: Vec::new(),
                     unjudged: Some((r.kind, r.message)),
+                    pour: None,
                 },
             ));
         }
@@ -1061,77 +1076,170 @@ fn laddered(
             .find(|c| c.net_name == net)
             .map(|c| c.max_capacitance_femtofarads)
     };
-    let mut first_error = None;
-    // placed once ([`place`]); each rung routed on its own thread, its
-    // result kept at its index, so the choice is the rungs' order whatever
-    // the timing
-    let routed: Vec<Result<String, EmitError>> = std::thread::scope(|scope| {
-        let handles: Vec<_> = crate::route::RUNGS
-            .iter()
-            .map(|&rung| {
-                let footprints = footprints.clone();
-                scope.spawn(move || {
-                    crate::pcb::write_placed_at(
-                        &spec.project_name,
-                        footprints,
-                        outline,
-                        stack,
-                        Some(rung),
-                    )
-                })
-            })
-            .collect();
-        handles
-            .into_iter()
-            .map(|h| {
-                h.join()
-                    .unwrap_or_else(|_| Err(EmitError::Internal("a ladder rung panicked".into())))
-            })
-            .collect()
-    });
-    // each rung's text and figures, at its index; `None` where it did not route
-    let mut judged: Vec<Option<(String, Vec<Figure>)>> = Vec::new();
-    for result in routed {
-        let text = match result {
-            Ok(t) => t,
-            Err(e) => {
-                first_error.get_or_insert(e);
-                judged.push(None);
-                continue;
-            }
-        };
-        let read = crate::extract::read(&text, stack).map_err(EmitError::LadderRefused)?;
-        let figures: Vec<Figure> = crate::extract::bound(&read, &lines)
-            .map_err(EmitError::LadderRefused)?
-            .into_iter()
-            .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
-            .collect();
-        judged.push(Some((text, figures)));
-    }
-    let figures: Vec<Option<&[Figure]>> = judged
+    // `AET-WO-4411` (b), ruled 2026-11-26T00:22Z: each buck's thermal pad
+    // and the copper its junction screen needs, which a rung must leave on
+    // every joined layer to fit; with none, step 0 alone, today's ladder.
+    let pads: Vec<(String, String)> = stack
+        .exits
         .iter()
-        .map(|j| j.as_ref().map(|(_, f)| f.as_slice()))
+        .map(|(r, p, _)| (r.clone(), p.clone()))
         .collect();
-    let unrouted: Vec<usize> = (0..judged.len()).filter(|&k| judged[k].is_none()).collect();
-    match choose(&figures) {
-        Choice::Fits { rung, smallest } => {
-            let text = judged[rung].take().map(|(t, _)| t).unwrap_or_default();
-            Ok((
+    let need = |r: &str| {
+        stack
+            .exits
+            .iter()
+            .find(|(b, _, _)| b == r)
+            .map_or(0, |(_, _, n)| u64::try_from(*n).unwrap_or(0))
+    };
+    let steps = if pads.is_empty() {
+        0
+    } else {
+        crate::route::POUR_STEPS.len()
+    };
+    let mut first_error = None;
+    // the step whose rungs came nearest: (its shortfall's worst margin, the
+    // shortfalls), among rungs holding every capacitance bound
+    let mut nearest: Option<((i128, i128), Vec<BuckCopper>)> = None;
+    let mut today: Option<Choice> = None;
+    for step in 0..=steps {
+        // placed once ([`place`]); each rung routed on its own thread, its
+        // result kept at its index, so the choice is the rungs' order whatever
+        // the timing
+        let routed: Vec<Result<String, EmitError>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = crate::route::RUNGS
+                .iter()
+                .map(|&rung| {
+                    let footprints = footprints.clone();
+                    scope.spawn(move || {
+                        crate::pcb::write_placed_at(
+                            &spec.project_name,
+                            footprints,
+                            outline,
+                            stack,
+                            Some(crate::route::Rung {
+                                pour_step: step,
+                                ..rung
+                            }),
+                        )
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|h| {
+                    h.join().unwrap_or_else(|_| {
+                        Err(EmitError::Internal("a ladder rung panicked".into()))
+                    })
+                })
+                .collect()
+        });
+        // each rung's text, figures and buck copper, at its index; `None`
+        // where it did not route
+        let mut judged: Vec<Option<Judged>> = Vec::new();
+        for result in routed {
+            let text = match result {
+                Ok(t) => t,
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                    judged.push(None);
+                    continue;
+                }
+            };
+            let read = crate::extract::read(&text, stack).map_err(EmitError::LadderRefused)?;
+            let figures: Vec<Figure> = crate::extract::bound(&read, &lines)
+                .map_err(EmitError::LadderRefused)?
+                .into_iter()
+                .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
+                .collect();
+            let mut areas: Vec<BuckCopper> = crate::pour::joined(&read.board, &read.routed, &pads)
+                .into_iter()
+                .flat_map(|j| {
+                    let n = need(&j.reference);
+                    j.layers
+                        .into_iter()
+                        .map(move |(l, a)| (j.reference.clone(), l, a, n))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
+            // a buck with no joined layer measured is short of all its
+            // copper, never passed (adversarial F6)
+            for (b, _) in &pads {
+                if !areas.iter().any(|(r, _, _, _)| r == b) {
+                    areas.push((b.clone(), "no joined layer".to_owned(), 0, need(b)));
+                }
+            }
+            judged.push(Some((text, figures, areas)));
+        }
+        let short = |a: &[BuckCopper]| -> Vec<BuckCopper> {
+            a.iter()
+                .filter(|(_, _, area, n)| area < n)
+                .cloned()
+                .collect()
+        };
+        // a rung fits the pour when no buck is short on any layer
+        let figures: Vec<Option<&[Figure]>> = judged
+            .iter()
+            .map(|j| {
+                j.as_ref()
+                    .filter(|(_, _, a)| short(a).is_empty())
+                    .map(|(_, f, _)| f.as_slice())
+            })
+            .collect();
+        let unrouted: Vec<usize> = (0..judged.len()).filter(|&k| judged[k].is_none()).collect();
+        if step == 0 {
+            let all: Vec<Option<&[Figure]>> = judged
+                .iter()
+                .map(|j| j.as_ref().map(|(_, f, _)| f.as_slice()))
+                .collect();
+            today = Some(choose(&all));
+        }
+        if let Choice::Fits { rung, smallest } = choose(&figures) {
+            let (text, _, areas) = judged[rung].take().unwrap_or_default();
+            return Ok((
                 text,
                 Ladder {
                     rung,
                     smallest,
                     unrouted,
                     unjudged: None,
+                    pour: (!pads.is_empty()).then_some((step, areas)),
                 },
-            ))
+            ));
         }
-        Choice::Over(over) => Err(EmitError::CapacitanceOverBound { over }),
-        Choice::Unrouted => {
+        // the nearest: among rungs holding every capacitance bound, the
+        // one whose worst shortfall is the smallest share of its need
+        for (_, f, a) in judged.iter().flatten() {
+            let holds = f.iter().all(|(_, c, m)| c <= m);
+            let s = short(a);
+            let Some(w) = s
+                .iter()
+                .map(|(_, _, area, n)| (i128::from(*area), i128::from(*n)))
+                .reduce(|x, y| if less(x, y) { x } else { y })
+            else {
+                continue;
+            };
+            if holds && nearest.as_ref().is_none_or(|(o, _)| less(*o, w)) {
+                nearest = Some((w, s));
+            }
+        }
+    }
+    // a rung held every bound at some step, short of copper: the pour is
+    // what refuses; otherwise today's capacitance refusal, as before
+    match (nearest, today) {
+        (Some((_, short)), _) => Err(EmitError::BuckPourShort { short }),
+        (None, Some(Choice::Over(over))) => Err(EmitError::CapacitanceOverBound { over }),
+        _ => {
             Err(first_error.unwrap_or_else(|| EmitError::Internal("the ladder has no rung".into())))
         }
     }
 }
+
+/// A buck's joined copper on one layer, `AET-WO-4411` (b): (buck, layer,
+/// area, the need its junction screen holds it to), mm².
+pub type BuckCopper = (String, String, u64, u64);
+
+/// One rung's board text, its bounded nets' figures and its bucks' copper.
+type Judged = (String, Vec<Figure>, Vec<BuckCopper>);
 
 /// A bounded net's figure on one rung: (net, its bound by `extract`'s
 /// arithmetic, its declared bound), fF.
@@ -1659,6 +1767,8 @@ pub(crate) fn design(
     connectors(&mut b)?;
     bench(&mut b, &mcu_ref)?;
     motor_pulls(&mut b)?;
+    // `AET-WO-4411`: last, so no other part's reference or place moves.
+    radio::draw(&mut b)?;
     Ok((b.parts, b.rails))
 }
 

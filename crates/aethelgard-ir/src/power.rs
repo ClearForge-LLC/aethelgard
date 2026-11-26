@@ -109,14 +109,24 @@ pub fn references(p: &Power) -> Vec<&String> {
             out.extend([&d.top.reference, &d.bottom.reference]);
         }
         out.extend(r.external.iter().map(|e| &e.reference));
+        // `AET-WO-4411` (iii): an enable's pull-up to the PG it follows
+        out.extend(
+            r.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref())
+                .map(|a| &a.pull_up.reference),
+        );
     }
     for s in &p.sense {
         out.extend([&s.top.reference, &s.bottom.reference]);
         out.extend(s.reservoir.iter().map(|c| &c.reference));
     }
     for c in &p.crossings {
-        out.extend([&c.reference, &c.cs_pull_up.reference]);
-        out.extend(c.external.iter().map(|e| &e.reference));
+        out.push(&c.cs_pull_up.reference);
+    }
+    for t in p.translators() {
+        out.push(t.reference);
+        out.extend(t.external.iter().map(|e| &e.reference));
     }
     out
 }
@@ -131,6 +141,11 @@ pub struct Power {
     pub loads: Vec<Load>,
     pub sense: Vec<Sense>,
     pub crossings: Vec<Crossing>,
+    /// Each translator on a serial port (`AET-WO-4411` (c1), ruled
+    /// 2026-11-26T04:03Z). Absent or empty declares none and is not written
+    /// back, by `pin_devices`'s precedent.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub uart_crossings: Vec<UartCrossing>,
     /// The supply and ground drop each domain allows its load, VDD and VSS
     /// together (`AET-WO-1303b`, D7), judged by `extract`'s supply gate, which
     /// needs the stackup's minima. **Required** (`AET-WO-4300k` (2), `RUL-14`
@@ -305,9 +320,10 @@ pub struct Junction {
     pub loss_at_milliamps: u32,
 }
 
-/// A control pin and what it is tied to: a strap its row allows, or a wire to
-/// a named net with its stated role. Both keys are required, and exactly one
-/// is `null`.
+/// A control pin and what it is tied to: a strap its row allows, a wire to
+/// a named net with its stated role, or (an enable only) another
+/// regulator's power-good. `strap` and `wire` are required keys; `after`
+/// is optional; exactly one of the three is set.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, remote = "Self")]
 pub struct Control {
@@ -316,6 +332,25 @@ pub struct Control {
     pub strap: Option<pp::Strap>,
     #[serde(deserialize_with = "Option::deserialize")]
     pub wire: Option<Wire>,
+    /// `AET-WO-4411` (iii), ruled 2026-11-25T21:17Z: this `EN` follows the
+    /// named regulator's open-drain `PG`, pulled up to that regulator's
+    /// output, so this regulator starts only once that output is good. The
+    /// named regulator's `PG` is declared here, never in its own `controls`.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub after: Option<After>,
+}
+
+/// An enable held by another regulator's power-good (`AET-WO-4411` (iii)).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct After {
+    pub regulator: String,
+    pub pull_up: Resistor,
+    pub source: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -408,6 +443,61 @@ pub struct Crossing {
     pub controls: Vec<Control>,
 }
 
+/// A translator on a declared serial port (`AET-WO-4411` (c1)): side A on
+/// the MCU's supply carries the port's TX (A to B) and RX (B to A) to the
+/// port's radio module on side B, so each line's driver and receiver share a
+/// rail. Every input it does not carry is tied to `GND`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct UartCrossing {
+    pub reference: String,
+    pub part: String,
+    pub serial_port: String,
+    pub a_domain: String,
+    pub b_domain: String,
+    pub external: Vec<External>,
+    pub controls: Vec<Control>,
+}
+
+/// A translator a power tree declares, on an SPI bus or a serial port: what
+/// the steps that judge any translator read.
+pub struct TranslatorUse<'a> {
+    pub reference: &'a String,
+    pub part: &'a String,
+    pub a_domain: &'a String,
+    pub b_domain: &'a String,
+    pub external: &'a [External],
+    pub controls: &'a [Control],
+    /// On a serial port, not an SPI bus.
+    pub uart: bool,
+}
+
+impl Power {
+    /// Every declared translator, the SPI crossings first.
+    pub fn translators(&self) -> impl Iterator<Item = TranslatorUse<'_>> {
+        self.crossings
+            .iter()
+            .map(|c| TranslatorUse {
+                reference: &c.reference,
+                part: &c.part,
+                a_domain: &c.a_domain,
+                b_domain: &c.b_domain,
+                external: &c.external,
+                controls: &c.controls,
+                uart: false,
+            })
+            .chain(self.uart_crossings.iter().map(|c| TranslatorUse {
+                reference: &c.reference,
+                part: &c.part,
+                a_domain: &c.a_domain,
+                b_domain: &c.b_domain,
+                external: &c.external,
+                controls: &c.controls,
+                uart: true,
+            }))
+    }
+}
+
 crate::object_only!(
     Power,
     Conditions,
@@ -427,10 +517,12 @@ crate::object_only!(
     Sense,
     Reservoir,
     Crossing,
+    UartCrossing,
     Derating,
     HotPlug,
     Junction,
     Control,
+    After,
     Wire
 );
 
@@ -490,6 +582,23 @@ pub enum Refusal {
     DropLimitUndeclared,
     /// A regulated domain nothing loads (`AET-WO-4300k` A13).
     RegulatedDomainUnloaded,
+    /// An `after` control that names no regulator, itself, a regulator
+    /// whose row has no open-drain `PG`, or sits on a pin that is no enable,
+    /// or a loop of them (`AET-WO-4411` (iii)).
+    ControlAfterInvalid,
+    /// A radio module on its own rail while the MCU's regulator does not
+    /// start after it (`AET-WO-4411` (iii), ruled 2026-11-25T21:17Z).
+    RadioRailUnsequenced,
+    /// A UART line's driver level outside its receiver's thresholds at the
+    /// receiver's pin, directly or through a translator (`AET-WO-4411` (c1),
+    /// ruled 2026-11-26T04:03Z).
+    LineLevelUnmet,
+    /// A UART crossing's OE not strapped to VCCA (`AET-WO-4411` (c1), ruled
+    /// 2026-11-26T04:51Z and 08:59Z R1).
+    CrossingOeUnheld,
+    /// A module rail's guaranteed minimum, less its drop limit, under the
+    /// module's minimum supply (`AET-WO-4411`, ruled 2026-11-25T20:10Z).
+    RadioSupplyBelowMinimum,
     /// With no clamp on the battery input, twice the pack's maximum above a
     /// battery-fed regulator's VIN absolute maximum (`AET-WO-4300k` (6)).
     DoubledPackOverAbsoluteMaximum,
@@ -558,6 +667,11 @@ impl Refusal {
             Self::DcBiasBeyondCurve => "DcBiasBeyondCurve",
             Self::DropLimitUndeclared => "DropLimitUndeclared",
             Self::RegulatedDomainUnloaded => "RegulatedDomainUnloaded",
+            Self::ControlAfterInvalid => "ControlAfterInvalid",
+            Self::RadioRailUnsequenced => "RadioRailUnsequenced",
+            Self::LineLevelUnmet => "LineLevelUnmet",
+            Self::CrossingOeUnheld => "CrossingOeUnheld",
+            Self::RadioSupplyBelowMinimum => "RadioSupplyBelowMinimum",
             Self::DoubledPackOverAbsoluteMaximum => "DoubledPackOverAbsoluteMaximum",
             Self::BatteryInputUnprotected => "BatteryInputUnprotected",
             Self::ProtectionPartOutOfRange => "ProtectionPartOutOfRange",
@@ -738,7 +852,7 @@ fn battery_range(b: &Battery) -> (u64, u64) {
 }
 
 /// A domain's range, mV.
-fn range(d: &VoltageDomain) -> (u64, u64) {
+pub(crate) fn range(d: &VoltageDomain) -> (u64, u64) {
     (
         u64::from(minimum_millivolts(d)),
         u64::from(maximum_millivolts(d)),
@@ -869,11 +983,9 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             format!("a cell of {cmin} to {cmax} mV is not 1 <= min <= max <= 10000 mV"),
         ));
     }
-    let mut references = vec![power.input.reference.as_str()];
     for (i, h) in power.input.hot_plug.iter().enumerate() {
         id(&h.reference, format!("power.input.hot_plug[{i}].reference"))?;
         id(&h.part, format!("power.input.hot_plug[{i}].part"))?;
-        references.push(&h.reference);
     }
     if let Some(x) = &power.input.protection {
         for (what, part) in [("fuse", &x.fuse), ("fet", &x.fet), ("zener", &x.zener)] {
@@ -882,7 +994,6 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                 format!("power.input.protection.{what}.reference"),
             )?;
             id(&part.part, format!("power.input.protection.{what}.part"))?;
-            references.push(&part.reference);
         }
         id(
             &x.gate_resistor.reference,
@@ -892,30 +1003,35 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             &x.gate_resistor.part,
             "power.input.protection.gate_resistor.part".to_owned(),
         )?;
-        references.push(&x.gate_resistor.reference);
         crate::board::source(&x.source, "power.input.protection.source")?;
     }
+    let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
+        id(&r.reference, format!("{path}.reference"))?;
+        id(&r.part, format!("{path}.part"))?;
+        if r.ohms == 0 {
+            return Err(invalid(&r.reference, "a resistor of 0 ohms".to_owned()));
+        }
+        Ok(())
+    };
     let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
         for (i, c) in list.iter().enumerate() {
             id(&c.pin, format!("{path}[{i}].pin"))?;
-            if c.strap.is_some() == c.wire.is_some() {
+            let set = [c.strap.is_some(), c.wire.is_some(), c.after.is_some()];
+            if set.iter().filter(|x| **x).count() != 1 {
                 return Err(invalid(
                     &format!("{path}[{i}]"),
-                    "a control pin takes exactly one of `strap` and `wire`".to_owned(),
+                    "a control pin takes exactly one of `strap`, `wire` and `after`".to_owned(),
                 ));
             }
             if let Some(w) = &c.wire {
                 id(&w.net, format!("{path}[{i}].wire.net"))?;
                 crate::board::source(&w.role, &format!("{path}[{i}].wire.role"))?;
             }
-        }
-        Ok(())
-    };
-    let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
-        id(&r.reference, format!("{path}.reference"))?;
-        id(&r.part, format!("{path}.part"))?;
-        if r.ohms == 0 {
-            return Err(invalid(&r.reference, "a resistor of 0 ohms".to_owned()));
+            if let Some(a) = &c.after {
+                id(&a.regulator, format!("{path}[{i}].after.regulator"))?;
+                resistor(&a.pull_up, &format!("{path}[{i}].after.pull_up"))?;
+                crate::board::source(&a.source, &format!("{path}[{i}].after.source"))?;
+            }
         }
         Ok(())
     };
@@ -942,14 +1058,11 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             known(&r.input)?;
         }
         known(&r.output)?;
-        references.push(&r.reference);
         if let Some(f) = &r.feedback {
             resistor(&f.top, &format!("{path}.feedback.top"))?;
             resistor(&f.bottom, &format!("{path}.feedback.bottom"))?;
-            references.extend([f.top.reference.as_str(), f.bottom.reference.as_str()]);
         }
         externals(&r.external, &format!("{path}.external"))?;
-        references.extend(r.external.iter().map(|e| e.reference.as_str()));
         controls(&r.controls, &format!("{path}.controls"))?;
         if let Some(j) = &r.junction {
             if j.loss_at_milliamps == 0 || j.loss_at_milliamps > 100_000 {
@@ -1028,6 +1141,7 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             "AET-WO-4300k (2): drop_limits is required wherever power is declared (RUL-14, amended 2026-11-17)",
         ));
     }
+
     // A sense net is a new net: folded, it may not be a signal, a domain or
     // `GND` (KiCad's ERC compares labels with case folded, `AET-WO-1204`).
     let mut taken: BTreeSet<String> = spec
@@ -1060,11 +1174,9 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         }
         resistor(&s.top, &format!("{path}.top"))?;
         resistor(&s.bottom, &format!("{path}.bottom"))?;
-        references.extend([s.top.reference.as_str(), s.bottom.reference.as_str()]);
         if let Some(c) = &s.reservoir {
             id(&c.reference, format!("{path}.reservoir.reference"))?;
             id(&c.part, format!("{path}.reservoir.part"))?;
-            references.push(&c.reference);
         }
     }
     for (i, c) in power.crossings.iter().enumerate() {
@@ -1077,9 +1189,31 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         resistor(&c.cs_pull_up, &format!("{path}.cs_pull_up"))?;
         externals(&c.external, &format!("{path}.external"))?;
         controls(&c.controls, &format!("{path}.controls"))?;
-        references.push(&c.reference);
-        references.push(&c.cs_pull_up.reference);
-        references.extend(c.external.iter().map(|e| e.reference.as_str()));
+        // `after` is a regulator's enable following another's PG
+        if c.controls.iter().any(|x| x.after.is_some()) {
+            return Err(invalid(
+                &format!("{path}.controls"),
+                "a crossing's control takes a strap or a wire; `after` is a regulator's enable"
+                    .to_owned(),
+            ));
+        }
+    }
+    for (i, c) in power.uart_crossings.iter().enumerate() {
+        let path = format!("power.uart_crossings[{i}]");
+        id(&c.reference, format!("{path}.reference"))?;
+        id(&c.part, format!("{path}.part"))?;
+        id(&c.serial_port, format!("{path}.serial_port"))?;
+        known(&c.a_domain)?;
+        known(&c.b_domain)?;
+        externals(&c.external, &format!("{path}.external"))?;
+        controls(&c.controls, &format!("{path}.controls"))?;
+        if c.controls.iter().any(|x| x.after.is_some()) {
+            return Err(invalid(
+                &format!("{path}.controls"),
+                "a crossing's control takes a strap or a wire; `after` is a regulator's enable"
+                    .to_owned(),
+            ));
+        }
     }
     crate::references_distinct(
         spec.declared_i2c_devices()
@@ -1095,7 +1229,7 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     .iter()
                     .map(|c| c.reference.as_str()),
             )
-            .chain(references),
+            .chain(references(power).into_iter().map(String::as_str)),
     )
 }
 
@@ -1348,14 +1482,15 @@ fn consumers(ctx: &Ctx<'_>, domain: &str) -> Result<Vec<Consumer>, IrValidationE
             cite: ctx.cite(at),
         });
     }
-    for c in &ctx.power.crossings {
-        let row = ctx.row(&c.reference, &c.part)?;
+    for c in ctx.power.translators() {
+        let row = ctx.row(c.reference, c.part)?;
         let Kind::Translator(t) = &row.kind else {
-            return Err(ctx.kind_err(&c.reference, &c.part, "translator"));
+            return Err(ctx.kind_err(c.reference, c.part, "translator"));
         };
+        let s = supplies(ctx, t, c.a_domain, c.b_domain, c.uart);
         for (side, d, v) in [
-            ("VCCA", &c.a_domain, &t.vcca_millivolts),
-            ("VCCB", &c.b_domain, &t.vccb_millivolts),
+            ("VCCA", c.a_domain, &s.vcca_millivolts),
+            ("VCCB", c.b_domain, &s.vccb_millivolts),
         ] {
             if d == domain {
                 out.push(Consumer {
@@ -1428,6 +1563,563 @@ pub(crate) fn mcu_without_tree(spec: &Specification) -> Result<(), IrValidationE
         return Ok(());
     };
     domain_inside_consumer(domain, &mcu_consumer(table, spec, row, m)?)
+}
+
+/// Step 3a (`AET-WO-4411`, ruled 2026-11-25T20:10Z and 21:17Z): a radio
+/// module on a rail of its own, not the MCU's. The MCU's regulator starts
+/// after the module's (`after`), and the module rail's lowest, less its
+/// declared drop limit, stays at the module's minimum supply. Then every
+/// module's UART lines, on its own rail or the MCU's, directly or through a
+/// UART crossing ([`radio_lines`]).
+fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValidationError> {
+    let spec = ctx.spec;
+    let mcu_supply = &spec.mcu.supply;
+    uart_crossings_shape(ctx)?;
+    for m in spec.declared_radio_modules() {
+        // `radio::validate` refuses an unknown part and an unsourced rail
+        let t = crate::radio::table()?;
+        let Some(row) = t.get(&m.part) else {
+            continue;
+        };
+        // a rail outside the module's range is `radio::validate`'s to refuse
+        let (lo, hi) = ctx.domain(&m.supply).map_or((0, 0), range);
+        if lo < u64::from(row.supply.min_mv) || hi > u64::from(row.supply.max_mv) {
+            continue;
+        }
+        let crossing = ctx
+            .power
+            .uart_crossings
+            .iter()
+            .find(|c| c.serial_port == m.serial_port);
+        if &m.supply != mcu_supply {
+            let (Some(lead), Some(mcu)) = (
+                derived.iter().find(|d| d.reg.output == m.supply),
+                derived.iter().find(|d| &d.reg.output == mcu_supply),
+            ) else {
+                continue;
+            };
+            // the module is its rail's load, and the gate judges its pins there
+            let Some(limit) = ctx.power.drop_limits.iter().find(|l| l.domain == m.supply) else {
+                return Err(refuse(
+                    Refusal::DropLimitUndeclared,
+                    &m.supply,
+                    format!(
+                        "power.drop_limits names no limit for `{}`, {}'s own rail: its minimum supply is judged on that rail less its drop",
+                        m.supply, m.reference
+                    ),
+                    "AET-WO-4411, ruled 2026-11-25T20:10Z: the module's minimum judged on its own rail, with its own drop gate",
+                ));
+            };
+            let vih = &row.uart.vih_over_supply_mv;
+            let sequenced = mcu.reg.controls.iter().any(|c| {
+                c.after
+                    .as_ref()
+                    .is_some_and(|a| a.regulator == lead.reg.reference)
+            });
+            if !sequenced {
+                let why = match crossing {
+                    Some(c) => format!(
+                        "the module's rail leads the MCU's (ruled 2026-11-25T21:17Z (iii)); {} holds the UART lines apart while either is down",
+                        c.reference
+                    ),
+                    None => format!(
+                        "at power-up the MCU's UART can drive the module's RXD while its rail is down, above its VIH maximum of VDD + {} mV",
+                        vih.value
+                    ),
+                };
+                return Err(refuse(
+                    Refusal::RadioRailUnsequenced,
+                    &m.reference,
+                    format!(
+                        "{} is on `{}` and the MCU on `{mcu_supply}`, and {}'s EN does not follow {}'s PG (`after`): {why}",
+                        m.reference, m.supply, mcu.reg.reference, lead.reg.reference
+                    ),
+                    t.cite(&vih.at),
+                ));
+            }
+            let limit = u64::from(limit.max_millivolts) * 1000;
+            let floor = lead.vout_uv.0.saturating_sub(limit);
+            let min = u64::from(row.supply.min_mv) * 1000;
+            if floor < min {
+                return Err(refuse(
+                    Refusal::RadioSupplyBelowMinimum,
+                    &m.reference,
+                    format!(
+                        "`{}`'s guaranteed {} uV at {}, less its {} uV drop limit, is {floor} uV at {}'s pins, under its minimum of {min} uV",
+                        m.supply, lead.vout_uv.0, lead.reg.reference, limit, m.reference
+                    ),
+                    t.cite(&row.supply.at),
+                ));
+            }
+            // a UART crossing's Ioff holds the lines apart while either rail
+            // is down (ruled 2026-11-26T04:03Z: it closes these two rows)
+            if crossing.is_none() {
+                ctx.screen(
+                "radio_power_down_order",
+                &m.reference,
+                format!(
+                    "{}: `{}` and `{mcu_supply}` are not ordered at power-down{}: while the module's rail is down, the MCU's TX may drive its RXD above VDD + {} mV ({}); the module's TX onto the MCU while `{mcu_supply}` is down is step 25's (`radio_module_tx`, at VDD = 0)",
+                    m.reference,
+                    m.supply,
+                    {
+                        // off-board ends that can power the MCU's rail ahead of
+                        // the module's (adversarial F3)
+                        let ends: Vec<&str> = spec
+                            .declared_connectors()
+                            .iter()
+                            .filter(|c| c.pins.iter().any(|p| p.net.as_deref() == Some(mcu_supply.as_str())))
+                            .map(|c| c.reference.as_str())
+                            .collect();
+                        if ends.is_empty() {
+                            String::new()
+                        } else {
+                            format!(", and {} carry `{mcu_supply}` from off the board, which can power it while the module's rail is down", ends.join(" and "))
+                        }
+                    },
+                    vih.value,
+                    t.cite(&vih.at)
+                ),
+            );
+                ctx.screen(
+                "radio_rail_ioff",
+                &m.reference,
+                format!(
+                    "{}: no buffer with powered-off isolation (Ioff) sits on the MCU's TX to its RXD; one would hold the line whenever `{}` is down (ruled 2026-11-25T21:17Z: a row)",
+                    m.reference, m.supply
+                ),
+            );
+            }
+            ctx.screen(
+                "radio_rail_monitor",
+                &m.reference,
+                format!(
+                    "{}: no monitor holds its EN on `{}`: neither the module's datasheet nor the ESP32-C3 hardware design guidelines state a brown-out detector, and the guidelines recommend a power monitor 'around 3.0 V' for slow or unstable supplies ({})",
+                    m.reference,
+                    m.supply,
+                    t.cite(&crate::radio::At {
+                        document: "ESP32-C3-HDG".into(),
+                        section: "PDF p. 10 (printed 7), Table 1's attention box: reserve a power monitor chip, its threshold around 3.0 V".into(),
+                    })
+                ),
+            );
+        }
+        radio_lines(ctx, derived, m, row, t, crossing)?;
+    }
+    Ok(())
+}
+
+/// Each UART crossing carries a declared serial port with a radio module
+/// on it, one crossing a port, joins the MCU's supply (side A) to the
+/// module's (side B), and its part is a translator with an A-to-B and a
+/// B-to-A channel.
+fn uart_crossings_shape(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
+    let spec = ctx.spec;
+    for (i, c) in ctx.power.uart_crossings.iter().enumerate() {
+        let row = ctx.row(&c.reference, &c.part)?;
+        let Kind::Translator(t) = &row.kind else {
+            return Err(ctx.kind_err(&c.reference, &c.part, "translator"));
+        };
+        let s = supplies(ctx, t, &c.a_domain, &c.b_domain, true);
+        let invalid = |detail: String| {
+            refuse(
+                Refusal::CrossingInvalid,
+                &c.reference,
+                detail,
+                ctx.cite(&s.vcca_millivolts.at),
+            )
+        };
+        let Some(m) = spec
+            .declared_radio_modules()
+            .iter()
+            .find(|m| m.serial_port == c.serial_port)
+        else {
+            return Err(invalid(format!(
+                "serial port `{}` carries no declared radio module, the one peer a UART crossing judges",
+                c.serial_port
+            )));
+        };
+        if ctx.power.uart_crossings[..i]
+            .iter()
+            .any(|o| o.serial_port == c.serial_port)
+        {
+            return Err(invalid(format!(
+                "serial port `{}` has more than one crossing",
+                c.serial_port
+            )));
+        }
+        if t.uart_channels().is_none() {
+            return Err(invalid(format!(
+                "{} has no A-to-B channel for the MCU's TX and B-to-A channel for its RX",
+                c.part
+            )));
+        }
+        // SCES935A 9.1 (ruled 04:51Z, 08:59Z R1): OE on VCCA, the rail (iii)
+        // raises last, holds the outputs high-impedance through power-up; a
+        // wire's driver and level through partial power-down are not judged
+        if !c
+            .controls
+            .iter()
+            .any(|x| x.pin == "OE" && x.strap == Some(pp::Strap::Vcca))
+        {
+            return Err(refuse(
+                Refusal::CrossingOeUnheld,
+                &c.reference,
+                format!(
+                    "{}'s OE is not strapped to VCCA (`{}`), the rail that rises last: SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
+                    c.reference, c.a_domain
+                ),
+                t.controls
+                    .iter()
+                    .find(|r| r.pin == "OE")
+                    .map_or_else(String::new, |r| ctx.cite(&r.at)),
+            ));
+        }
+        if c.a_domain != spec.mcu.supply || c.b_domain != m.supply {
+            return Err(refuse(
+                Refusal::CrossingDomainMismatch,
+                &c.reference,
+                format!(
+                    "the crossing joins `{}` to `{}`, and port `{}` runs from the MCU on `{}` to {} on `{}`",
+                    c.a_domain, c.b_domain, c.serial_port, spec.mcu.supply, m.reference, m.supply
+                ),
+                ctx.cite(&s.vcca_millivolts.at),
+            ));
+        }
+        if let Some(port) = spec.serial_ports.iter().find(|p| p.label == c.serial_port) {
+            let rate = i64::from(port.framing.baud);
+            for (dir, tmax) in [
+                ("A to B", &s.tmax_a_to_b_bps),
+                ("B to A", &s.tmax_b_to_a_bps),
+            ] {
+                if rate > tmax.value {
+                    return Err(refuse(
+                        Refusal::CrossingTooFast,
+                        &c.reference,
+                        format!(
+                            "port `{}` at {rate} baud needs {rate} bit/s {dir}, above {} bit/s",
+                            port.label, tmax.value
+                        ),
+                        ctx.cite(&tmax.at),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+/// One pin's supply for [`crate::levels`]: its domain's regulator's band
+/// (the domain's declared range where no regulator outputs it) and its drop
+/// limit; `None` without a limit, which steps 3a and 22 refuse by name.
+fn line_supply<'s>(
+    ctx: &Ctx<'_>,
+    derived: &[Derived<'_>],
+    domain: &'s str,
+) -> Option<crate::levels::Supply<'s>> {
+    let wide = |v: u64| i64::try_from(v).unwrap_or(i64::MAX);
+    let band_uv = derived
+        .iter()
+        .find(|d| d.reg.output == domain)
+        .map(|d| (wide(d.vout_uv.0), wide(d.vout_uv.1)))
+        .or_else(|| {
+            ctx.domain(domain).map(|d| {
+                let (lo, hi) = range(d);
+                (wide(lo) * 1000, wide(hi) * 1000)
+            })
+        })?;
+    let drop = ctx.power.drop_limits.iter().find(|l| l.domain == domain)?;
+    Some(crate::levels::Supply {
+        domain,
+        band_uv,
+        drop_uv: i64::from(drop.max_millivolts) * 1000,
+    })
+}
+
+/// Step 3a's lines (`AET-WO-4411` (c1), ruled 2026-11-26T04:03Z): the
+/// port's TX and RX, each driver's VOH and VOL at its pin against the
+/// receiver's VIH and VIL at its own ([`crate::levels::judge`]). Directly,
+/// the MCU and the module; through a UART crossing, each to the
+/// translator's side on its own rail.
+fn radio_lines(
+    ctx: &mut Ctx<'_>,
+    derived: &[Derived<'_>],
+    m: &crate::radio::RadioModule,
+    row: &crate::radio::RadioPart,
+    t: &crate::radio::RadioTable,
+    crossing: Option<&UartCrossing>,
+) -> Result<(), IrValidationError> {
+    use crate::levels::{Driver, Linear, Receiver, judge};
+    let spec = ctx.spec;
+    let lin = |permille: i64, offset_mv: i64| Linear {
+        permille,
+        offset_uv: offset_mv * 1000,
+    };
+    let Some(port) = spec.serial_ports.iter().find(|p| p.label == m.serial_port) else {
+        return Ok(());
+    };
+    let (Some(ms), Some(rs)) = (
+        line_supply(ctx, derived, &spec.mcu.supply),
+        line_supply(ctx, derived, &m.supply),
+    ) else {
+        return Ok(());
+    };
+    let (_, mc) = mcu(ctx)?;
+    let (o, b) = (&mc.io.output, &mc.io.motor_pull_bound);
+    let at = |pin: &Option<String>| pin.as_deref().unwrap_or("its pin").to_owned();
+    let mcu_drv = Driver {
+        who: format!("the MCU's TX ({})", at(&port.tx.pin)),
+        supply: ms,
+        high_min: lin(1000, -o.high_below_supply_millivolts.value),
+        low_max: lin(0, o.low_max_millivolts.value),
+        load_ua: Some(o.load_microamps.value),
+    };
+    // DS12117 Table 10 holds its inputs' maximum, step 25 at VDD = 0
+    let mcu_rcv = Receiver {
+        who: format!("the MCU's RX ({})", at(&port.rx.pin)),
+        supply: ms,
+        high_min: lin(b.input_high_min_permille.value, 0),
+        low_max: lin(b.input_low_max_permille.value, 0),
+        high_max: None,
+        current_na: b.leakage_max_nanoamps.value,
+    };
+    let u = &row.uart;
+    let module_drv = Driver {
+        who: format!("{}'s TXD", m.reference),
+        supply: rs,
+        high_min: lin(i64::from(u.voh_min_permille.value), 0),
+        low_max: lin(i64::from(u.vol_max_permille.value), 0),
+        load_ua: None,
+    };
+    let module_rcv = Receiver {
+        who: format!("{}'s RXD", m.reference),
+        supply: rs,
+        high_min: lin(i64::from(u.vih_min_permille.value), 0),
+        low_max: lin(i64::from(u.vil_max_permille.value), 0),
+        high_max: Some(lin(1000, i64::from(u.vih_over_supply_mv.value))),
+        current_na: i64::from(row.input_leakage_na.value),
+    };
+    let mcu_cite = ctx.cite(&o.high_below_supply_millivolts.at);
+    let module_cite = t.cite(&u.vih_min_permille.at);
+    let mut lines: Vec<(String, Driver<'_>, Receiver<'_>, String)> = Vec::new();
+    let mut subject = m.reference.as_str();
+    match crossing {
+        None => {
+            lines.push((
+                port.tx.net.clone(),
+                mcu_drv,
+                module_rcv,
+                module_cite.clone(),
+            ));
+            lines.push((port.rx.net.clone(), module_drv, mcu_rcv, mcu_cite));
+        }
+        Some(c) => {
+            subject = &c.reference;
+            let tr = ctx.row(&c.reference, &c.part)?;
+            // `uart_crossings_shape` refused any other part
+            let Kind::Translator(tt) = &tr.kind else {
+                return Err(ctx.kind_err(&c.reference, &c.part, "translator"));
+            };
+            let Some([tx, rx]) = tt.uart_channels() else {
+                return Err(ctx.kind_err(&c.reference, &c.part, "translator with two channels"));
+            };
+            let l = &tt.levels;
+            let sr = supplies(ctx, tt, &c.a_domain, &c.b_domain, true);
+            let txu_cite = ctx.cite(&l.input_high_min_permille.at);
+            for s in [&ms, &rs] {
+                let (lo, hi) = (s.band_uv.0 - s.drop_uv, s.band_uv.1);
+                if lo < l.supply_millivolts.range.min * 1000
+                    || hi > l.supply_millivolts.range.max * 1000
+                {
+                    return Err(refuse(
+                        Refusal::LineLevelUnmet,
+                        &c.reference,
+                        format!(
+                            "`{}` reaches {lo} to {hi} uV at {}'s pins, outside the {} to {} mV its levels are stated over",
+                            s.domain,
+                            c.reference,
+                            l.supply_millivolts.range.min,
+                            l.supply_millivolts.range.max
+                        ),
+                        ctx.cite(&l.supply_millivolts.at),
+                    ));
+                }
+            }
+            let drv = |pin: &str, supply| Driver {
+                who: format!("{}'s {pin}", c.reference),
+                supply,
+                high_min: lin(1000, -l.output_high_below_supply_millivolts.value),
+                low_max: lin(0, l.output_low_max_millivolts.value),
+                load_ua: Some(l.output_load_max_microamps.value),
+            };
+            let rcv = |pin: &str, supply| Receiver {
+                who: format!("{}'s {pin}", c.reference),
+                supply,
+                high_min: lin(l.input_high_min_permille.value, 0),
+                low_max: lin(l.input_low_max_permille.value, 0),
+                high_max: Some(lin(0, l.input_max_millivolts.value)),
+                current_na: l.input_current_max_nanoamps.value,
+            };
+            let (b_tx, b_rx) = b_nets(&c.reference, tx, rx);
+            ctx.note(format!(
+                "{}: every input it does not carry is tied to `GND` ({})",
+                c.reference,
+                ctx.cite(&tt.unused_inputs_at)
+            ));
+            lines.push((
+                port.tx.net.clone(),
+                mcu_drv,
+                rcv(&tx.input, ms),
+                txu_cite.clone(),
+            ));
+            lines.push((b_tx.clone(), drv(&tx.output, rs), module_rcv, module_cite));
+            lines.push((b_rx, module_drv, rcv(&rx.input, rs), txu_cite));
+            lines.push((port.rx.net.clone(), drv(&rx.output, ms), mcu_rcv, mcu_cite));
+            ctx.note(format!(
+                "{}: `radio_power_down_order` and `radio_rail_ioff` are closed by {}: each of its outputs is powered from its receiver's own rail, and its Ioff rows hold either side at 0 V (SCES935A p. 8, 7.5; 9.3.4)",
+                m.reference, c.reference
+            ));
+            ctx.screen(
+                "translator_partial_power",
+                &c.reference,
+                format!(
+                    "{}: SCES935A 9.3.5 holds its outputs high-impedance while a supply is under 100 mV with the other in its operating range (1.08 V at least, 7.3); between 100 mV and 1.08 V it states nothing; it recommends inputs low before a supply floats, and a UART idles high; while it isolates, `{}` and `{}` are driven by nothing",
+                    c.reference, port.rx.net, b_tx
+                ),
+            );
+            ctx.screen(
+                "translator_threshold_inferred",
+                &c.reference,
+                format!(
+                    "{}: VT+ and VT- are inferred, not stated: {}; ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up",
+                    c.reference,
+                    ctx.cite(&l.input_high_min_permille.at)
+                ),
+            );
+            ctx.screen(
+                "translator_rate_inferred",
+                &c.reference,
+                format!(
+                    "{}: port `{}`'s {} bit/s is judged against a TMAX inferred from another row, {} bit/s ({}); tpd is as stated, {} ns ({}); ruled 2026-11-26T04:51Z G2",
+                    c.reference,
+                    port.label,
+                    port.framing.baud,
+                    sr.tmax_a_to_b_bps.value,
+                    ctx.cite(&sr.tmax_a_to_b_bps.at),
+                    sr.tpd_a_to_b_max_ns.value,
+                    ctx.cite(&sr.tpd_a_to_b_max_ns.at)
+                ),
+            );
+            ctx.screen(
+                "translator_supply_drop",
+                &c.reference,
+                format!(
+                    "{}: its VCCA and VCCB pins are taken at `{}`'s and `{}`'s drop limits; the supply gate measures each rail at its load, and {} draws microamps (SCES935A p. 8, 7.5 ICCA and ICCB)",
+                    c.reference, c.a_domain, c.b_domain, c.reference
+                ),
+            );
+            ctx.screen(
+                "uart_internal_pulls",
+                &c.reference,
+                format!(
+                    "{}: its output levels are stated at 0.1 mA ({}); the MCU's {} is written FLOATING by the generated hwdef (its pull off), and {}'s RXD pull-up is its firmware's, not judged: on, it draws over 0.1 mA (RPU 45 kOhm typical, no minimum, WROOM-02 Table 6-3)",
+                    c.reference,
+                    ctx.cite(&l.output_load_max_microamps.at),
+                    at(&port.rx.pin),
+                    m.reference
+                ),
+            );
+        }
+    }
+    for (net, d, r, cite) in &lines {
+        let margins = judge(net, d, r)
+            .map_err(|e| refuse(Refusal::LineLevelUnmet, subject, e.0, cite.clone()))?;
+        if crossing.is_some() {
+            ctx.note(format!(
+                "{subject}: `{net}`, {} to {}, holds high by {} uV and low by {} uV{}",
+                d.who,
+                r.who,
+                margins.high_uv,
+                margins.low_uv,
+                margins.over_uv.map_or_else(String::new, |o| format!(
+                    ", and under the receiver's maximum by {o} uV"
+                ))
+            ));
+        }
+        if d.load_ua.is_none() {
+            ctx.screen(
+                "radio_output_load",
+                &m.reference,
+                format!(
+                    "{}: its VOH and VOL are stated at a high-impedance load ({}); {} draws up to {} nA",
+                    d.who,
+                    t.cite(&u.voh_min_permille.at),
+                    r.who,
+                    r.current_na
+                ),
+            );
+        }
+    }
+    Ok(())
+}
+
+/// The B-side nets of the UART crossing on serial port `port`
+/// (`AET-WO-4411` (c1)): the one the port's TX leaves on, to the module's
+/// RXD, and the one its RX arrives on, from the module's TXD. `None` with no
+/// crossing on the port, or one whose part is no translator with both
+/// channels, which `validate` refuses (`CrossingInvalid`).
+pub fn uart_b_nets(spec: &Specification, port: &str) -> Option<(String, String)> {
+    let c = spec
+        .power
+        .iter()
+        .flat_map(|p| &p.uart_crossings)
+        .find(|c| c.serial_port == port)?;
+    let Kind::Translator(t) = &pp::table().ok()?.get(&c.part)?.kind else {
+        return None;
+    };
+    let [tx, rx] = t.uart_channels()?;
+    Some(b_nets(&c.reference, tx, rx))
+}
+
+/// A UART crossing's two B-side net names, from its TX and RX channels.
+fn b_nets(reference: &str, tx: &pp::Channel, rx: &pp::Channel) -> (String, String) {
+    (
+        format!("{reference}_{}", tx.output),
+        format!("{reference}_{}", rx.input),
+    )
+}
+
+/// The nets a radio module's UART pads sit on, `(TXD, RXD)`: through a UART
+/// crossing on `port`, its B side's ([`uart_b_nets`]); else the port's RX
+/// and TX (`AET-WO-4411` (c1)).
+pub fn module_uart_nets(
+    spec: &Specification,
+    port: &crate::serial::SerialPort,
+) -> (String, String) {
+    match uart_b_nets(spec, &port.label) {
+        Some((tx_b, rx_b)) => (rx_b, tx_b),
+        None => (port.rx.net.clone(), port.tx.net.clone()),
+    }
+}
+
+/// The supply row a translator joining `a` to `b` is judged by
+/// ([`pp::Translator::supplies_for`], on the domains' declared ranges).
+fn supplies<'t>(
+    ctx: &Ctx<'_>,
+    t: &'t pp::Translator,
+    a: &str,
+    b: &str,
+    uart: bool,
+) -> &'t pp::Supplies {
+    let mv = |d: &str| {
+        ctx.domain(d).map_or((0, 0), |d| {
+            let (lo, hi) = range(d);
+            (
+                i64::try_from(lo).unwrap_or(i64::MAX),
+                i64::try_from(hi).unwrap_or(i64::MAX),
+            )
+        })
+    };
+    t.supplies_for(mv(a), mv(b), uart)
 }
 
 fn mcu<'a>(ctx: &Ctx<'a>) -> Result<(&'a pp::Row, &'a pp::Mcu), IrValidationError> {
@@ -1560,6 +2252,16 @@ fn loads(
                 .filter(|l| l.domain == d.reg.output)
                 .map(|l| u64::from(l.milliamps))
                 .sum();
+            // Each radio module's stated supply requirement (`AET-WO-4411`
+            // D5), counted from its row, never declared.
+            let radio = crate::radio::load_ma(ctx.spec, &d.reg.output)?;
+            if radio > 0 {
+                sum += radio;
+                ctx.note(format!(
+                    "{}: {radio} mA for its radio modules, each row's stated supply requirement, not its typical transmit peak",
+                    d.reg.output
+                ));
+            }
             if ctx.spec.mcu.supply == d.reg.output {
                 let (_, m) = mcu(ctx)?;
                 sum += u64::try_from(m.idd_max_milliamps.value).unwrap_or(0);
@@ -1607,6 +2309,12 @@ format!(
                 .crossings
                 .iter()
                 .any(|c| c.a_domain == d.reg.output || c.b_domain == d.reg.output)
+                || ctx.power.uart_crossings.iter().any(|c| {
+                    (c.a_domain == d.reg.output || c.b_domain == d.reg.output)
+                        && !ctx.power.loads.iter().any(|l| {
+                            l.domain == d.reg.output && l.reference.as_deref() == Some(&c.reference)
+                        })
+                })
             {
                 ctx.screen(
                     "translator_supply_not_counted",
@@ -2307,6 +3015,13 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
                 .iter()
                 .map(|e| (e.reference.as_str(), e.part.as_str())),
         );
+        // `AET-WO-4411` (iii): an enable's pull-up to the PG it follows
+        v.extend(
+            r.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref())
+                .map(|a| (a.pull_up.reference.as_str(), a.pull_up.part.as_str())),
+        );
     }
     if let Some(x) = &power.input.protection {
         v.extend([
@@ -2327,10 +3042,12 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
         }
     }
     for c in &power.crossings {
-        v.push((&c.reference, &c.part));
         v.push((&c.cs_pull_up.reference, &c.cs_pull_up.part));
+    }
+    for t in power.translators() {
+        v.push((t.reference, t.part));
         v.extend(
-            c.external
+            t.external
                 .iter()
                 .map(|e| (e.reference.as_str(), e.part.as_str())),
         );
@@ -2422,16 +3139,16 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             vout_nominal_millivolts: nominal,
         });
     }
-    for c in &ctx.power.crossings {
-        let row = ctx.row(&c.reference, &c.part)?;
+    for c in ctx.power.translators() {
+        let row = ctx.row(c.reference, c.part)?;
         let Kind::Translator(t) = &row.kind else {
-            return Err(ctx.kind_err(&c.reference, &c.part, "translator"));
+            return Err(ctx.kind_err(c.reference, c.part, "translator"));
         };
-        let a = ctx.domain(&c.a_domain).map_or(0, |d| range(d).1);
-        let b = ctx.domain(&c.b_domain).map_or(0, |d| range(d).1);
+        let a = ctx.domain(c.a_domain).map_or(0, |d| range(d).1);
+        let b = ctx.domain(c.b_domain).map_or(0, |d| range(d).1);
         owners.push(Owner {
-            reference: &c.reference,
-            list: &c.external,
+            reference: c.reference,
+            list: c.external,
             rules: &t.external,
             working: vec![(Role::BypassA, a), (Role::BypassB, b)],
             buck: None,
@@ -2510,7 +3227,7 @@ fn externals(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
 "inductor_ripple_outside_guidance",
 o.reference,
 format!(
-                            "{}: the inductance meets Equation 5; Table 9-2 gives 8 uH at 5 V and 6.8 uH at 3.3 V, and Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
+                            "{}: the inductance meets Equation 5; Table 9-2's typical value is in the citation, and Equation 4's 20 to 40 % ripple and the 10 % ripple floor are not met across the whole battery range (ruled D6) ({})",
                             o.reference,
                             ctx.cite(&rule.at)
                         ));
@@ -2871,12 +3588,13 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         let Kind::Translator(t) = &row.kind else {
             return Err(ctx.kind_err(&c.reference, &c.part, "translator"));
         };
+        let s = supplies(ctx, t, &c.a_domain, &c.b_domain, false);
         let invalid = |detail: String| {
             refuse(
                 Refusal::CrossingInvalid,
                 &c.reference,
                 detail,
-                ctx.cite(&t.vcca_millivolts.at),
+                ctx.cite(&s.vcca_millivolts.at),
             )
         };
         let Some(bus) = ctx.spec.spi_buses.iter().find(|b| b.id == c.bus) else {
@@ -2935,7 +3653,7 @@ fn crossings(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     "the crossing joins `{}` to `{}`, and bus `{}` is on `{}` with `{}` on `{}`",
                     c.a_domain, c.b_domain, bus.id, bus.domain, device.reference, device.supply
                 ),
-                ctx.cite(&t.vcca_millivolts.at),
+                ctx.cite(&s.vcca_millivolts.at),
             ));
         }
         let pmax = t.pull_up_max_ohms.value;
@@ -2964,8 +3682,8 @@ format!(
         // most as often.
         let rate = 2 * u64::from(bus.speed_hz);
         for (dir, tmax) in [
-            ("A to B", &t.tmax_a_to_b_bps),
-            ("B to A", &t.tmax_b_to_a_bps),
+            ("A to B", &s.tmax_a_to_b_bps),
+            ("B to A", &s.tmax_b_to_a_bps),
         ] {
             if i128::from(rate) > i128::from(tmax.value) {
                 return Err(refuse(
@@ -3000,9 +3718,9 @@ format!(
             "{}: the output delay is {tdo_cite}; the translator's delays are stated at its own test load",
             device.reference
         ));
-        let total = i128::from(t.tpd_a_to_b_max_ns.value)
+        let total = i128::from(s.tpd_a_to_b_max_ns.value)
             + i128::from(tdo)
-            + i128::from(t.tpd_b_to_a_max_ns.value)
+            + i128::from(s.tpd_b_to_a_max_ns.value)
             + i128::from(m.spi_input_setup_min_ns.value);
         // Half a period, ns, rounded down, less the SCK phase's own shortfall.
         let half = 500_000_000i128 / i128::from(bus.speed_hz)
@@ -3019,12 +3737,12 @@ format!(
                 &c.reference,
                 format!(
                     "SCK out {} + the device's output delay {tdo} + MISO back {} + the MCU's setup {} = {total} ns, above half of {} Hz's period, {half} ns",
-                    t.tpd_a_to_b_max_ns.value,
-                    t.tpd_b_to_a_max_ns.value,
+                    s.tpd_a_to_b_max_ns.value,
+                    s.tpd_b_to_a_max_ns.value,
                     m.spi_input_setup_min_ns.value,
                     bus.speed_hz
                 ),
-                ctx.cite(&t.tpd_a_to_b_max_ns.at),
+                ctx.cite(&s.tpd_a_to_b_max_ns.at),
             ));
         }
     }
@@ -3084,6 +3802,19 @@ pub fn thermal_arrays(spec: &Specification) -> Vec<(String, String, crate::therm
             pad.clone(),
             vias(&b.thermal_vias, layers.clone()),
         ));
+    }
+    // Each radio module's ground pad (`AET-WO-4411` D4), after the
+    // regulators' so none of theirs moves.
+    if let Ok(t) = crate::radio::table() {
+        for m in spec.declared_radio_modules() {
+            if let Some(row) = t.get(&m.part) {
+                out.push((
+                    m.reference.clone(),
+                    row.thermal_vias.pad.clone(),
+                    vias(&row.thermal_vias, layers.clone()),
+                ));
+            }
+        }
     }
     out
 }
@@ -3309,10 +4040,7 @@ fn junctions(
                 ctx.cite(&curve.at),
             ));
         };
-        let need = curve
-            .points
-            .iter()
-            .find(|(_, theta)| junction_mk(ctx.temperature().max, j, *theta) <= limit_mk(d.row));
+        let need = clearing(&curve.points, ctx.temperature().max, j, d.row);
         let Some(&(need_area, _)) = need else {
             let (at, theta) = curve.points.last().copied().unwrap_or((0, 0));
             return Err(refuse(
@@ -3408,8 +4136,47 @@ fn junction_mk(board_max: i32, j: &Junction, theta: i64) -> i128 {
         + div_ceil(i128::from(j.loss_milliwatts.value) * i128::from(theta), 10)
 }
 
+/// The θJA figure's first point, smallest area first, at which `j`'s loss
+/// keeps the junction at `row`'s limit on a `board_max` °C board: step 9's
+/// screen and [`junction_need_cm2`] alike.
+fn clearing<'p>(
+    points: &'p [(i64, i64)],
+    board_max: i32,
+    j: &Junction,
+    row: &pp::Row,
+) -> Option<&'p (i64, i64)> {
+    points
+        .iter()
+        .find(|(_, theta)| junction_mk(board_max, j, *theta) <= limit_mk(row))
+}
+
 fn limit_mk(row: &pp::Row) -> i128 {
     i128::from(row.temperature_celsius.range.max) * 1000
+}
+
+/// Each buck's copper need: the θJA figure's smallest area, cm² per joined
+/// layer, at which its declared loss keeps the junction at its limit on the
+/// board's hottest declared temperature, as step 9's screen finds it; a buck
+/// with no loss declared, or one no area clears, is absent (`validate`
+/// refuses both). The router sizes the F.Cu it keeps about each buck's
+/// thermal pad from it (`AET-WO-4411` (b)).
+pub fn junction_need_cm2(spec: &Specification) -> BTreeMap<String, i64> {
+    let (Ok(table), Some(power)) = (crate::power_parts::table(), spec.power.as_ref()) else {
+        return BTreeMap::new();
+    };
+    let board_max = power.conditions.board_temperature_celsius.max;
+    power
+        .regulators
+        .iter()
+        .filter_map(|r| {
+            let row = table.get(&r.part)?;
+            let (Kind::Buck(b), Some(j)) = (&row.kind, &r.junction) else {
+                return None;
+            };
+            clearing(&b.theta_ja.points, board_max, j, row)
+                .map(|&(area, _)| (r.reference.clone(), area))
+        })
+        .collect()
 }
 
 /// A buck's junction screened at the copper `area_mm2` (mm²) measured per
@@ -3655,16 +4422,104 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
         .chain([crate::GND, BATTERY_NET, BATTERY].map(str::to_lowercase))
         .collect();
     let mut wires = Vec::new();
+    // `AET-WO-4411` (iii): each regulator whose `PG` another's `EN` follows,
+    // by the follower; that `PG` is declared there, once.
+    let mut claimed: BTreeMap<&str, &str> = BTreeMap::new();
+    for r in &ctx.power.regulators {
+        for c in &r.controls {
+            if let Some(a) = &c.after {
+                let bad = |why: String| {
+                    refuse(
+                        Refusal::ControlAfterInvalid,
+                        &r.reference,
+                        format!(
+                            "{}.{}: `after` names `{}`: {why}",
+                            r.reference, c.pin, a.regulator
+                        ),
+                        "AET-WO-4411 (iii), ruled 2026-11-25T21:17Z: an enable follows another regulator's open-drain power-good",
+                    )
+                };
+                let Some(lead) = ctx
+                    .power
+                    .regulators
+                    .iter()
+                    .find(|g| g.reference == a.regulator)
+                else {
+                    return Err(bad("no declared regulator".into()));
+                };
+                if lead.reference == r.reference {
+                    return Err(bad("the regulator itself".into()));
+                }
+                let open_pg = match &ctx.row(&lead.reference, &lead.part)?.kind {
+                    Kind::Buck(b) => b
+                        .controls
+                        .iter()
+                        .any(|x| x.pin == "PG" && x.straps.contains(&pp::Strap::Open)),
+                    _ => false,
+                };
+                if !open_pg {
+                    return Err(bad(format!("{}'s row has no open-drain `PG`", lead.part)));
+                }
+                if claimed
+                    .insert(lead.reference.as_str(), r.reference.as_str())
+                    .is_some()
+                {
+                    return Err(bad("its `PG` already holds another enable".into()));
+                }
+                ctx.resistor(&a.pull_up)?;
+            }
+        }
+    }
+    // A loop starts nothing: a regulator waits on each regulator its
+    // `after` names and on the one that outputs its input, and none on a
+    // cycle of those ever starts (adversarial F1: a lead fed from its own
+    // follower's rail).
+    if !claimed.is_empty() {
+        let waits = |r: &str| -> Vec<&str> {
+            let Some(g) = ctx.power.regulators.iter().find(|g| g.reference == r) else {
+                return Vec::new();
+            };
+            g.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref().map(|a| a.regulator.as_str()))
+                .chain(
+                    ctx.power
+                        .regulators
+                        .iter()
+                        .filter(|s| s.output == g.input)
+                        .map(|s| s.reference.as_str()),
+                )
+                .collect()
+        };
+        for start in ctx.power.regulators.iter().map(|g| g.reference.as_str()) {
+            let mut seen = BTreeSet::new();
+            let mut todo = waits(start);
+            while let Some(at) = todo.pop() {
+                if at == start {
+                    return Err(refuse(
+                        Refusal::ControlAfterInvalid,
+                        start,
+                        format!(
+                            "{start}'s enable waits on a loop of `after`s and supplies that comes back to it: none of them starts"
+                        ),
+                        "AET-WO-4411 (iii)",
+                    ));
+                }
+                if seen.insert(at) {
+                    todo.extend(waits(at));
+                }
+            }
+        }
+    }
     let owners = ctx
         .power
         .regulators
         .iter()
-        .map(|r| (&r.reference, &r.part, &r.controls))
+        .map(|r| (&r.reference, &r.part, r.controls.as_slice()))
         .chain(
             ctx.power
-                .crossings
-                .iter()
-                .map(|c| (&c.reference, &c.part, &c.controls)),
+                .translators()
+                .map(|c| (c.reference, c.part, c.controls)),
         );
     for (reference, part, declared) in owners {
         let rules: &[pp::ControlRule] = match &ctx.row(reference, part)?.kind {
@@ -3703,13 +4558,47 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                     ctx.cite(&rule.at),
                 )
             };
+            let follower = (rule.pin == "PG")
+                .then(|| claimed.get(reference.as_str()))
+                .flatten();
             let Some(c) = declared.iter().find(|c| c.pin == rule.pin) else {
+                if let Some(f) = follower {
+                    ctx.screen(
+                        "control_after",
+                        f,
+                        format!(
+                            "{f}: its EN follows {reference}'s open-drain PG, pulled up to `{}`, so {f} starts only once {reference}'s PG releases, and stops whenever it pulls low ({}); the order at power-down is not set by it, and the pull-up against PG's low level and EN's threshold is not judged",
+                            ctx.power.regulators.iter().find(|g| &g.reference == reference).map_or("", |g| g.output.as_str()),
+                            ctx.cite(&rule.at)
+                        ),
+                    );
+                    continue;
+                }
                 return Err(unwired(format!(
                     "{} is declared neither wired nor strapped (its row allows straps: {})",
                     rule.pin,
                     allowed()
                 )));
             };
+            if let Some(f) = follower {
+                return Err(refuse(
+                    Refusal::PowerValueInvalid,
+                    reference,
+                    format!("`controls` declares PG, which {f}'s `after` declares"),
+                    "AET-WO-4411 (iii): the PG an enable follows is declared there, once",
+                ));
+            }
+            if c.after.is_some() && !rule.straps.contains(&pp::Strap::Input) {
+                return Err(refuse(
+                    Refusal::ControlAfterInvalid,
+                    reference,
+                    format!(
+                        "{} takes `after`, and its row names it no enable (an enable is strapped to the input)",
+                        rule.pin
+                    ),
+                    ctx.cite(&rule.at),
+                ));
+            }
             match (&c.strap, &c.wire) {
                 (Some(s), _) if !rule.straps.contains(s) => {
                     return Err(unwired(format!(
@@ -3813,6 +4702,7 @@ pub fn check_against(
     thermal(&ctx)?;
     controls(&mut ctx)?;
     let derived = outputs(&mut ctx)?;
+    radio_rails(&mut ctx, &derived)?;
     domains_inside_consumers(&ctx)?;
     bor_rising(&mut ctx)?;
     battery_inputs(&ctx)?;
@@ -3922,7 +4812,7 @@ format!(
                 "drop_not_judged",
                 domain,
                 format!(
-                    "{domain}: no drop limit is declared, and extract's supply gate judges the MCU's pins only (on `{}`), so this domain's copper drop is not judged (ruled D13)",
+                    "{domain}: no drop limit is declared, and extract's supply gate judges the MCU's pins (on `{}`) and a radio module's on its own rail only, so this domain's copper drop is not judged (ruled D13)",
                     ctx.spec.mcu.supply
                 ),
             );
@@ -4235,6 +5125,9 @@ pub struct RailConsumers {
     pub tx_only: BTreeSet<String>,
     /// Each regulator whose input is the domain.
     pub regulators: BTreeSet<String>,
+    /// Each radio module the domain supplies (`AET-WO-4411`): its port's
+    /// RX, which its TX drives, is in `serial_rx`.
+    pub radio_modules: BTreeSet<String>,
     /// `(connector, net)` for each other net on a connector carrying it.
     pub other_nets: Vec<(String, String)>,
 }
@@ -4295,6 +5188,14 @@ pub fn rail_consumers(spec: &Specification, domain: &str) -> RailConsumers {
                 r.other_nets.push((c.reference.clone(), net.to_owned()));
             }
         }
+    }
+    for m in spec
+        .declared_radio_modules()
+        .iter()
+        .filter(|m| on(&m.supply))
+    {
+        r.serial_rx.insert(m.serial_port.clone());
+        r.radio_modules.insert(m.reference.clone());
     }
     let rx = r.serial_rx.clone();
     r.tx_only.retain(|p| !rx.contains(p));

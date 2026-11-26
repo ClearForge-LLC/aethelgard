@@ -8,7 +8,7 @@ The rows to run when the boards arrive (AET-WO-4300k (8)). Each row names:
 
 A failed row is a finding, never a retry.
 
-The board is `examples/sentinel-03.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-03.elf`, sha256 `6e4a81f299a84c37af4491d8d85d2befddeaab54cbd6787109c4f570fc0ca908`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, as `AET-WO-3308` did for Sentinel-01). Every row runs that ELF.
+The board is `examples/sentinel-03.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-03.elf`, sha256 `66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, as `AET-WO-3308` did for Sentinel-01). Every row runs that ELF.
 
 **What each prediction rests on** (`RUL-20`'s terms, as Sentinel-01's sheet labels them):
 - **rule:** an independent rule in `aethelgard-ir`, or a datasheet limit cited at source.
@@ -28,9 +28,10 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 ## Rows
 
 ### B-1 The input path's drop (`input_path_resistance_at_25c:Q1`)
-- **Prediction (rule, at 25 °C):** at 1,653 mA the drop from J4.2 to `VBAT` is at most 71 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F).
+- **Prediction (rule, at 25 °C):** at 1,906 mA the drop from J4.2 to `VBAT` is at most 81 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F).
 - **Instrument:** a bench supply at 9.0 V on J4 with the board running the ELF, a DMM across J4.2 and `VBAT` (Kelvin), and a clamp meter or the supply's ammeter.
-- **Pass line:** drop ≤ 71 mV × (measured current / 1,653 mA), at an ambient near 25 °C.
+- **Source line** (this verdict's condition `input_path_resistance_at_25c:Q1`): "the input path's drop is 81 mV at 1906 mA through DMP6023LSS-13's RDS(on) 33 mΩ (|VGS| 4500 mV) and SF-1206F700-2's 9375 µΩ, each stated at 25 °C". 42.375 mΩ × 1,906 mA is 80.77 mV, rounded up; the acknowledgement's reason says 80.
+- **Pass line:** drop ≤ 81 mV × (measured current / 1,906 mA), at an ambient near 25 °C.
 - **A disagreement adds:** the measured R at 25 °C. Repeated hot (B-4 run), it gives the temperature rise the condition names.
 
 ### B-2 The supervisor's thresholds (`supervisor_hysteresis_typical:U12`)
@@ -48,17 +49,19 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 - **A disagreement adds:** the delay at the rail's worst case. This is the twin's reset row's figure (FEEDBACK §6).
 
 ### B-4 U10's temperature (`buck_junction_screened:U10`, `theta_ja_copper_mismatch:U10`)
-- **Prediction (typical):** at 2 A out on VDD_5V and 1,170 mW of loss, the junction rises about 32.8 K above the board (28.0 °C/W at the 20 cm² the board joins on F.Cu, SNVSAN3F Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more.
+- **Prediction (typical):** at 2 A out on VDD_5V and 1,170 mW of loss, the junction rises about 32.8 K above the board (28.0 °C/W, SNVSAN3F Figure 9-3's point at 20 cm², for the 20.82 cm² the board joins per layer). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more.
 - **Instrument:**
   - an electronic load of 2 A on VDD_5V, at a connector's 5 V pin or a test lead;
   - a thermocouple on U10's case, or a thermal camera with the emissivity set for the package;
   - 30 minutes at a stable ambient.
+- **Source line** (`package/FAB-NOTES.md`, the verdict's condition): "U10: its junction is screened, not guaranteed: 1170 mW of loss … at θJA 28.0 °C/W, the figure's point at 20 cm² for the 20.82 cm² per joined layer measured on the drawn board … is 117760 m°C on a 85 °C board, 7240 mK under 125 °C".
 - **Pass line:** case rise ≤ 40 K above ambient. That is 125 °C less the board's 85 °C maximum, with the case taken as the junction.
 - **A disagreement adds:** the board's own θ, which replaces the screen's typical. This is Q2's (b)/(c) evidence.
 
 ### B-5 U11's temperature (`buck_junction_screened:U11`, `theta_ja_copper_mismatch:U11`)
-- **Prediction (typical):** at its solved 749 mA load and 550 mW of loss, the junction rises about 19.8 K (36.0 °C/W at 10 cm²).
-- **Instrument:** as in B-4, on VDD_3V3 at 749 mA.
+- **Prediction (typical):** at its solved 750 mA load and 570 mW of loss, the junction rises about 20.5 K (36.0 °C/W at 10 cm², for the 13.10 cm² the board joins).
+- **Source line** (`package/FAB-NOTES.md`): "U11: its junction is screened, not guaranteed: 570 mW of loss (… 82 % on the 36 V curve at 0.750 A (82.81 % read from its vectors, AET-WO-4411 (c1)) …) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 13.10 cm² per joined layer … is 105520 m°C on a 85 °C board, 19480 mK under 125 °C".
+- **Instrument:** as in B-4, on VDD_3V3 at 750 mA.
 - **Pass line:** case rise ≤ 40 K above ambient.
 - **A disagreement adds:** the board's own θ.
 
@@ -73,3 +76,21 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 - **Instrument:** a series resistor added between OSC_OUT's capacitor node and the crystal (§3.8.2), raised until the HSE fails to start, on three power-ups each.
 - **Pass line:** Sf ≥ 5, AN2867 Rev 25 p. 19, Table 4 ("safe" for an HSE). Sf is the added resistance at failure over the crystal's 70 Ω ESR maximum.
 - **A disagreement adds:** Sf, with the starts that failed. An Sf under 5 is a crystal or load-capacitor finding.
+
+### B-8 U13's temperature (`buck_junction_screened:U13`, `theta_ja_copper_mismatch:U13`)
+- **Prediction (typical):** at its 505 mA load on `VDD_3V3_RF` and 490 mW of loss, the junction rises about 17.6 K (36.0 °C/W at 10 cm², for the 13.26 cm² the board joins; SNVSAW1E Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more.
+- **Source line** (`package/FAB-NOTES.md`): "U13: its junction is screened, not guaranteed: 490 mW of loss (declared: SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)) …) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 13.26 cm² per joined layer … is 102640 m°C on a 85 °C board, 22360 mK under 125 °C". The θJA curve's copper (2 oz/1 oz against the board's 1 oz/½ oz) is `theta_ja_copper_mismatch:U13`.
+- **Instrument:** as in B-4, on `VDD_3V3_RF` at 505 mA, with U30 held in reset (C90 shorted, so `/U30_EN` is low) so the load sets the current.
+- **Pass line:** case rise ≤ 40 K above ambient.
+- **A disagreement adds:** the board's own θ for U13.
+
+### B-9 U31's input thresholds (`translator_threshold_inferred:U31`)
+- **Prediction (rule, by inference; ruled 04:51Z G1 (a)):** each data input switches with VT+ at most 640 ‰ of its own supply and VT− at least 296 ‰. Those are SCES935A p. 7, 7.5's VCCI 3 V row (1.92 V maximum, 0.89 V minimum) scaled to the rail. The datasheet states no 3.3 V row. The line levels `LineLevelUnmet` judged rest on these figures.
+- **Source line** (this verdict's condition): "U31: VT+ and VT- are inferred, not stated: TI TXU0304 datasheet SCES935A A (November 2021), p. 7, 7.5 VT+ data inputs, VCCI 3 V, TA -40 to 125 C: max 1.92 V = 640 per mille … ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up". VT−'s row: "min 0.89 V, 296 per mille rounded down" (`power-parts.json`).
+- **Instrument:**
+  - a programmable supply, ramped at ≤ 10 mV/s up to the input's rail and back to 0 V, through 1 kΩ into the input;
+  - a scope on the input and on the channel's output; a DMM on the input's rail.
+  - **A1** (pad 2, `/WIFI_TX`, VCCA = VDD_3V3): U1 held in reset through J2's NRST; output B1Y (pad 13).
+  - **B4** (pad 10, `/U31_B4`, VCCB = VDD_3V3_RF): U30 held in reset (C90 shorted); output A4Y (pad 5).
+- **Pass line:** at each input, rising switch ≤ 640 ‰ × that rail's measured voltage, and falling switch ≥ 296 ‰ × it.
+- **A disagreement adds:** the measured VT+ and VT− at 3.3 V, which replace the inference in the parts row. A rising switch above the line is a finding against the UART levels (FEEDBACK §1, (c1)).

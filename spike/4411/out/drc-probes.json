@@ -1,0 +1,195 @@
+[
+ {
+  "board": "c3-base",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-overhang",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-pour-F",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 3,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-track-B",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on B.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-track-F",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on F.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-track-In1",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on In1.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "c3-via",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "silk_edge_clearance": 2,
+   "via_dangling": 1
+  },
+  "items_not_allowed": [
+   "Via [SIG] on F.Cu - B.Cu"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-base",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "lib_footprint_issues": 1
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-overhang",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "lib_footprint_issues": 1
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-pour-F",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 3,
+   "lib_footprint_issues": 1
+  },
+  "items_not_allowed": [],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-track-B",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on B.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-track-F",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on F.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-track-In1",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "track_dangling": 1
+  },
+  "items_not_allowed": [
+   "Track [SIG] on In1.Cu, length 50.0000 mm"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ },
+ {
+  "board": "w32e-via",
+  "kicad_violations": {
+   "drill_out_of_range": 12,
+   "isolated_copper": 2,
+   "items_not_allowed": 1,
+   "lib_footprint_issues": 1,
+   "via_dangling": 1
+  },
+  "items_not_allowed": [
+   "Via [SIG] on F.Cu - B.Cu"
+  ],
+  "aethelgard_check_drc": "MalformedBoard",
+  "aethelgard_message": "kicad_pcb/footprint[1]/zone[1]/layers[1] names the layer \"In3.Cu\", which is not a canonical name in the board's layer table"
+ }
+]

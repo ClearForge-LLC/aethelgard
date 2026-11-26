@@ -2981,6 +2981,7 @@ mod differential {
             serial_ports: vec![],
             test_points: vec![],
             pin_devices: vec![],
+            radio_modules: vec![],
         }
     }
 

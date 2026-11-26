@@ -68,12 +68,20 @@ fn stackup(v: &mut Value) -> &mut serde_json::Map<String, Value> {
 }
 
 /// 76 since the power review (`AET-WO-4300k` §3): five named assumptions
-/// added, the supervisor's lifecycle retired (held p. 16, active).
+/// added, the supervisor's lifecycle retired (held p. 16, active). 75 since
+/// `AET-WO-4411`: U11's loss is read at its solved load, so no
+/// `loss_current_gap:U11`. 96 since the module's own rail (ruled
+/// 2026-11-25T21:17Z): U13's seventeen, as U11's, and four named rows,
+/// U11's EN after U13's PG and U30's power-down order, Ioff buffer and
+/// monitor. 102 since U31 (`AET-WO-4411` (c1), ruled 2026-11-26T04:03Z and
+/// 04:51Z): U30's power-down order and Ioff buffer closed; U31's two
+/// bypasses, its supply drop, partial power-down, inferred thresholds and
+/// TMAX, the firmware's pulls, and U30's high-impedance load named.
 #[test]
-fn the_base_passes_the_gate_with_76_conditions_from_every_source_and_none_stale() {
+fn the_base_passes_the_gate_with_102_conditions_from_every_source_and_none_stale() {
     let (spec, t, c) = base();
     assert_eq!(readiness::check(spec, t, c), Ok(()));
-    assert_eq!(c.len(), 76);
+    assert_eq!(c.len(), 102);
     for id in [
         "buck_junction_screened:U10",
         "supervisor_hysteresis_typical:U12",
@@ -84,6 +92,14 @@ fn the_base_passes_the_gate_with_76_conditions_from_every_source_and_none_stale(
         "usb_pair_undeclared:PA11",
         "theta_ja_copper_mismatch:U10",
         "supervisor_delay_unstated:U12",
+        "buck_junction_screened:U13",
+        "control_after:U11",
+        "radio_output_load:U30",
+        "translator_partial_power:U31",
+        "translator_threshold_inferred:U31",
+        "translator_rate_inferred:U31",
+        "uart_internal_pulls:U31",
+        "radio_rail_monitor:U30",
     ] {
         assert!(c.contains_key(id), "{id} missing from {:?}", c.keys());
     }
@@ -319,7 +335,9 @@ fn the_bucks_join_at_least_their_floor_of_copper_on_exactly_the_three_layers() {
         .map(|t| (t.reference.clone(), t.pad.clone()))
         .collect();
     let joined = aethelgard_eda::pour::joined(&read.board, &read.routed, &pads);
-    for (r, floor) in [("U10", 1500), ("U11", 700)] {
+    // `AET-WO-4411` (b), ruled 2026-11-25T21:17Z: with three bucks, each
+    // keeps its screen's need on F.Cu too (U10 15 cm², U11 and U13 7 cm²).
+    for (r, floor) in [("U10", 1500), ("U11", 700), ("U13", 700)] {
         let j = joined
             .iter()
             .find(|j| j.reference == r)

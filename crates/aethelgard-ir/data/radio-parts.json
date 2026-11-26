@@ -1,0 +1,126 @@
+{
+  "schema_version": 1,
+  "documents": {
+    "ESP32-C3-WROOM-02": {
+      "title": "ESP32-C3-WROOM-02 & WROOM-02U Datasheet",
+      "revision": "v1.7 (2026-03-05)",
+      "sha256": "622db737a711a75e89185aed850f3854c77d515c32ddf0ba9886653663cfdabe",
+      "url": "https://www.espressif.com/sites/default/files/documentation/esp32-c3-wroom-02_datasheet_en.pdf"
+    },
+    "ESP32-C3-HDG": {
+      "title": "ESP32-C3 Hardware Design Guidelines",
+      "revision": "Release master, built 2026-11-12, retrieved 2026-11-24 (a rolling build: a later copy is a new held document)",
+      "sha256": "c67f1e366d84da19a1985dabf560fa48adec16e66cd0201f8140ebb6653a532e",
+      "url": "https://docs.espressif.com/projects/esp-hardware-design-guidelines/en/latest/esp32c3/esp-hardware-design-guidelines-en-master-esp32c3.pdf"
+    },
+    "ESPRESSIF-PRODUCTS": {
+      "title": "Espressif product selector, the JSON products.espressif.com loads",
+      "revision": "retrieved 2026-11-24 (a live database field, not a dated statement)",
+      "sha256": "942911652374043c3fc958ec91507ed711777b2867db78f5e517c4fb07b2f157",
+      "url": "https://products.espressif.com/api/user/products"
+    }
+  },
+  "modules": [
+    {
+      "part": "ESP32-C3-WROOM-02-N4",
+      "u_fl_variant": "ESP32-C3-WROOM-02U-N4",
+      "lifecycle": {
+        "status": "active",
+        "at": { "document": "ESPRESSIF-PRODUCTS", "section": "results[68]: mpn ESP32-C3-WROOM-02-N4, status \"Mass Production\"" }
+      },
+      "symbol": "RF_Module:ESP32-C3-WROOM-02",
+      "footprint": "Aethelgard_RF:ESP32-C3-WROOM-02",
+      "supply": {
+        "pin": "3V3",
+        "number": "1",
+        "min_mv": 3000,
+        "max_mv": 3600,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-2: VDD33 power supply voltage 3.0 min, 3.3 typ, 3.6 max V" }
+      },
+      "supply_current_min_ma": {
+        "value": 500,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-2: IVDD current delivered by external power supply, 0.5 A min" }
+      },
+      "input_leakage_na": {
+        "value": 50,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): IIH and IIL, high- and low-level input current, 50 nA max; at 25 C only, no figure over temperature is held" }
+      },
+      "decoupling_min_pf": {
+        "value": 10000000,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 33, Figure 9-1 Peripheral Schematics: 10 uF and 0.1 uF from 3V3 to GND at the module" }
+      },
+      "tx_peak_ma_typical": {
+        "value": 345,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 22, Table 6-4: TX 802.11b 1 Mbps @20.5 dBm, 345 mA peak, measured at 3.3 V and 25 C, 100 % duty cycle; a single condition, never a bound" }
+      },
+      "ground_pins": ["9", "19"],
+      "thermal_vias": {
+        "pad": "19",
+        "columns": 2,
+        "rows": 2,
+        "pitch_um": 1000,
+        "drill_um": 300,
+        "ring_um": 150,
+        "sources": {
+          "count": "an engine choice (AET-WO-4411 D4): 2 x 2, one at each crossing of the 3 x 3 land pattern's gaps; ESP32-C3-WROOM-02 datasheet v1.7 p. 37, Figure 11-1 draws 12, one in each gap between neighbouring lands, as KiCad's footprint did at 0.2 mm on a 0.55 mm pitch, which the engine's 0.3 mm drill cannot keep apart",
+          "pitch": "an engine choice (AET-WO-4411, re-ruled 2026-11-26T11:51Z): 1.0 mm, 16 of the supply gate's 62.5 um cells, so with the pad's centre on its grid each via is on a gate node and on the 1 um grid a drill file writes (1.125 mm, ruled 21:17Z (c), put them a half micron off: half its pitch is an odd 9 cells); p. 37, Figure 11-1 draws the land pattern's gap crossings at a 1.1 mm pitch (0.7 mm pads, 0.4 mm gaps), and each 0.3 mm hole sits 50 um inward of its crossing, wholly in its gap, inside the fabricator's +/-50.8 um hole position (OSH Park)",
+          "drill": "the engine's via drill, 0.3 mm (AET-WO-4411 D4, ruled: vias at the engine's drill); the datasheet states none",
+          "ring": "the engine's via ring for a 0.3 mm drill in a 0.6 mm pad; the datasheet states none",
+          "layers": "p. 37, Figure 11-1: vias for the thermal pad, which is ground (pin 19); to the ground fill on every copper layer, an engine choice: no layer is stated"
+        }
+      },
+      "enable": {
+        "pin": "EN",
+        "number": "2",
+        "release_permille": 750,
+        "stable_us": 50,
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 33, Peripheral Schematics: an RC delay at EN, \"usually R = 10 kΩ and C = 1 µF\"; p. 15, Table 4-6: tSTBL 50 µs min, the supply stable before CHIP_EN is pulled high; p. 21, Table 6-3: VIH_nRST, the reset release voltage, 0.75 x VDD" }
+      },
+      "straps": [
+        {
+          "pin": "IO2",
+          "number": "16",
+          "internal": "floating",
+          "spi_boot": "high",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO2 floating; p. 13, Table 4-3: SPI boot GPIO2 = 1, note 2: GPIO2 does not determine the mode but a pull-up is recommended against glitches" }
+        },
+        {
+          "pin": "IO8",
+          "number": "7",
+          "internal": "floating",
+          "spi_boot": "any",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO8 floating; p. 13, Table 4-3: SPI boot GPIO8 any value" }
+        },
+        {
+          "pin": "IO9",
+          "number": "8",
+          "internal": "pull_up",
+          "spi_boot": "high",
+          "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 12, Table 4-1: GPIO9 weak pull-up; p. 13, Table 4-3: SPI boot GPIO9 = 1, joint download boot GPIO9 = 0" }
+        }
+      ],
+      "uart": {
+        "tx": "IO21/TXD",
+        "tx_number": "12",
+        "rx": "IO20/RXD",
+        "rx_number": "11",
+        "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 11, Table 3-1: pin 11 RXD (GPIO20, U0RXD), pin 12 TXD (GPIO21, U0TXD); levels (p. 21, Table 6-3) are stated against the module's own supply" },
+        "vih_over_supply_mv": { "value": 300, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3: VIH high-level input voltage, max VDD + 0.3 V (note 1: VDD, the voltage from a power pin of the respective power domain)" } },
+        "vih_min_permille": { "value": 750, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VIH high-level input voltage, min 0.75 x VDD (note 1)" } },
+        "vil_max_permille": { "value": 250, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VIL low-level input voltage, max 0.25 x VDD (note 1)" } },
+        "voh_min_permille": { "value": 800, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VOH high-level output voltage, min 0.8 x VDD; note 2, p. 22: measured using a high-impedance load" } },
+        "vol_max_permille": { "value": 100, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VOL low-level output voltage, max 0.1 x VDD; note 2, p. 22: measured using a high-impedance load" } }
+      },
+      "rom_output": { "document": "ESP32-C3-WROOM-02", "section": "p. 14, Table 4-4: with EFUSE_UART_PRINT_CONTROL at its default 0, the ROM prints to UART0 at every boot whatever GPIO8 is; p. 33: UART0 is used to download firmware and log output" },
+      "antenna": {
+        "area_um": { "x0": -9000, "y0": -13100, "x1": 9000, "y1": -7100 },
+        "area_at": { "document": "ESP32-C3-WROOM-02", "section": "p. 37, Figure 11-1: the antenna area, 18 mm wide and 6 mm deep at the module's top edge (the module 18 x 20 mm)" },
+        "clearance_um": 15000,
+        "clearance_at": { "document": "ESP32-C3-HDG", "section": "PDF p. 26 (printed 23), Figure 21: a clearance area of Min 15 mm left of, right of and above the antenna" },
+        "feed_edge_max_um": 3000,
+        "feed_at": { "document": "ESP32-C3-WROOM-02", "section": "p. 34, Figure 10-1 top view: the antenna trace meets the module's body at its right end, and Figure 10-2 puts the -02U's u.FL connector at the top right (the builder's reading of the drawings), so HDG-C3 Figure 19 (feed point on the right) applies; 3.0 mm from the body's right side to the board's right edge, an engine choice: the figure draws it at the edge without a dimension, and the engine keeps 2 mm beyond the 0.75 mm courtyard" },
+        "placement_at": { "document": "ESP32-C3-HDG", "section": "PDF p. 24 (printed 21), §1.4.7 and Figure 19, position 3 (strongly recommended): the PCB antenna outside the base board, the module at the corner with its feed point (right) at the edge" }
+      }
+    }
+  ]
+}

@@ -521,6 +521,7 @@ fn the_router_goes_around_a_keepout() {
         }],
         courtyard: Vec::new(),
         keepouts: Vec::new(),
+        inner_keepouts: Vec::new(),
     };
     let wall = route::Part {
         reference: "K1".into(),
@@ -540,6 +541,7 @@ fn the_router_goes_around_a_keepout() {
             pads: true,
             fill: true,
         }],
+        inner_keepouts: Vec::new(),
     };
     let (spec, _, _) = fixture();
     let mut stack = Stack::of(&spec).unwrap();

@@ -79,8 +79,19 @@ fn gated(mut v: Value, limit_mv: u32) -> Value {
             st[key]["cites"] = cites;
         }
     }
-    v["power"]["drop_limits"] =
-        json!([{"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"}]);
+    // The MCU's supply's limit replaced; any other domain's kept (the radio
+    // module's own rail's, `AET-WO-4411`).
+    let mut limits =
+        vec![json!({"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"})];
+    limits.extend(
+        v["power"]["drop_limits"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|l| l["domain"] != "VDD_3V3")
+            .cloned(),
+    );
+    v["power"]["drop_limits"] = Value::Array(limits);
     v
 }
 
@@ -177,14 +188,21 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
     // the 3.3 V regulator's feedback divider (3.465 V / (105 + 46.4) kOhm),
     // and the reset supervisor's NRST pull-up (`AET-WO-4300k` (9)).
     let described = [
-        ("R1", "/I2C_SDA"),
-        ("R2", "/I2C_SCL"),
-        ("R3", "/EXT_SDA"),
-        ("R4", "/EXT_SCL"),
-        ("R6", "/U4_WP"),
-        ("R7", "/U4_HOLD"),
-        ("R20", "/U11_FB"),
-        ("R61", "/NRST"),
+        ("R1", "/I2C_SDA", "VDD_3V3"),
+        ("R2", "/I2C_SCL", "VDD_3V3"),
+        ("R3", "/EXT_SDA", "VDD_3V3"),
+        ("R4", "/EXT_SCL", "VDD_3V3"),
+        ("R6", "/U4_WP", "VDD_3V3"),
+        ("R7", "/U4_HOLD", "VDD_3V3"),
+        ("R20", "/U11_FB", "VDD_3V3"),
+        ("R61", "/NRST", "VDD_3V3"),
+        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups; U13's feedback
+        // divider, and its PG's pull-up, which U11's EN follows; each on
+        // the module's own rail.
+        ("R90", "/U30_EN", "VDD_3V3_RF"),
+        ("R91", "/U30_IO2", "VDD_3V3_RF"),
+        ("R30", "/U13_FB", "VDD_3V3_RF"),
+        ("R32", "/U13_PG", "VDD_3V3_RF"),
     ];
     let rows: Vec<String> = s03()["power"]["loads"]
         .as_array()
@@ -194,10 +212,10 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         .filter(|r| r.starts_with('R'))
         .map(str::to_owned)
         .collect();
-    assert_eq!(rows, described.map(|(r, _)| r));
+    assert_eq!(rows, described.map(|(r, _, _)| r));
     let text = fs::read_to_string(s03_board()).unwrap();
     let tree = aethelgard_eda::strict::board(&text).unwrap();
-    for (reference, net) in described {
+    for (reference, net, rail) in described {
         let fp = tree
             .root()
             .all("footprint")
@@ -208,7 +226,9 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
             .filter_map(|pad| pad.one("net").unwrap().and_then(|n| n.last()))
             .collect();
         nets.sort_unstable();
-        assert_eq!(nets, [net, "VDD_3V3"], "{reference}");
+        let mut want = [net, rail];
+        want.sort_unstable();
+        assert_eq!(nets, want, "{reference}");
     }
 }
 
@@ -404,10 +424,27 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 /// 6974760231 (1), 6982875594 D5): 0.57 mm at OSH Park's tolerances since
 /// `AET-WO-4300k` (b) (0.7 mm at JLCPCB's). A class
 /// declaring a via under the ring rule is refused at `emit` instead
-/// (`ViaRingUnheld`, `via_ring_tier1`).
+/// (`ViaRingUnheld`, `via_ring_tier1`). Since `AET-WO-4411` (c1) on
+/// Sentinel-03 without U31, as it placed before: with U31 at a ring of 0 no
+/// pour step keeps U10's B.Cu at its need (`BuckPourShort`, 341 of 1500
+/// mm2), refused before this gate. Without U31 its lines pass only at a
+/// module-rail drop limit under 27.5 mV (`LineLevelUnmet`), so the plant
+/// declares 20, which the module rail's own drop exceeds: a second supply,
+/// not read here.
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
     let mut v = gated(s03(), S03_LIMIT_MV);
+    let p = v["power"].as_object_mut().unwrap();
+    p.remove("uart_crossings");
+    p["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U31");
+    for l in p["drop_limits"].as_array_mut().unwrap() {
+        if l["domain"] == "VDD_3V3_RF" {
+            l["max_millivolts"] = json!(20);
+        }
+    }
     v["board"]["stackup"]["fab_tolerances"]["via_ring_um"]["value"] = json!(0);
     let spec = write("s03-ring0", &v);
     let board = emitted("s03-ring0", &spec);
@@ -624,7 +661,7 @@ fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     // the board's stack carries it
     let stack = Stack::of(&spec(&gated(s03(), S03_LIMIT_MV))).unwrap();
     assert_eq!(stack.junction.as_ref(), Some(&on));
-    assert_eq!(on.nets, ["VDD_3V3", "GND"]);
+    assert_eq!(on.nets, ["VDD_3V3", "VDD_3V3_RF", "GND"]);
     // OSH Park's tolerances since `AET-WO-4300k` (b) (JLCPCB's were 130 and
     // 75 um).
     assert_eq!(
