@@ -1,0 +1,145 @@
+PROBE gate seconds=0.8 start=27.5 argv=check erc --schematic <scratch>/tool/tree/kicad/sentinel-03.kicad_sch
+PROBE gate seconds=1.8 start=28.3 argv=check drc --board <scratch>/tool/tree/kicad/sentinel-03.kicad_pcb --spec <scratch>/tool/spec/specification.json --schematic <scratch>/tool/tree/kicad/sentinel-03.kicad_sch
+PROBE gate seconds=0.6 start=30.1 argv=check support --schematic <scratch>/tool/tree/kicad/sentinel-03.kicad_sch --board <scratch>/tool/tree/kicad/sentinel-03.kicad_pcb --spec <scratch>/tool/spec/specification.
+PROBE gate seconds=505.0 start=30.7 argv=extract --board <scratch>/tool/tree/kicad/sentinel-03.kicad_pcb --spec <scratch>/tool/spec/specification.json
+PROBE compile seconds=0.2 start=553.7 harness=proofs::every_valid_sequence_i2c1_0/compile
+PROBE compile seconds=0.8 start=553.9 harness=proofs::every_valid_sequence_i2c1_0/compile
+PROBE peak harness=proofs::every_valid_sequence_i2c1_0/cbmc vmhwm_kib=821008 seconds=123.5 start=556.3
+PROBE gate seconds=144.6 start=535.7 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_i2c1_0 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_i2c1_0 vmhwm_kib=4067304 seconds=126.6 start=553.7
+PROBE peak harness=? vmhwm_kib=4752 seconds=0.2 start=703.0
+PROBE compile seconds=0.2 start=703.4 harness=proofs::every_valid_sequence_i2c1_1/compile
+PROBE compile seconds=0.6 start=703.6 harness=proofs::every_valid_sequence_i2c1_1/compile
+PROBE peak harness=proofs::every_valid_sequence_i2c1_1/cbmc vmhwm_kib=887652 seconds=83.9 start=706.0
+PROBE gate seconds=110.0 start=680.3 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_i2c1_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_i2c1_1 vmhwm_kib=4661624 seconds=86.9 start=703.4
+PROBE compile seconds=0.2 start=809.5 harness=proofs::every_valid_sequence_i2c2_0/compile
+PROBE compile seconds=0.6 start=809.7 harness=proofs::every_valid_sequence_i2c2_0/compile
+PROBE peak harness=proofs::every_valid_sequence_i2c2_0/cbmc vmhwm_kib=774632 seconds=74.4 start=811.7
+PROBE gate seconds=96.1 start=790.3 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_i2c2_0 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_i2c2_0 vmhwm_kib=3976372 seconds=76.8 start=809.5
+PROBE peak harness=? vmhwm_kib=4780 seconds=0.2 start=911.5
+PROBE compile seconds=0.8 start=912.1 harness=proofs::every_valid_sequence_i2c2_1/compile
+PROBE peak harness=proofs::every_valid_sequence_i2c2_1/cbmc vmhwm_kib=863044 seconds=82.2 start=915.1
+PROBE gate seconds=111.3 start=886.4 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_i2c2_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_i2c2_1 vmhwm_kib=4676576 seconds=85.8 start=911.9
+PROBE compile seconds=0.8 start=1017.1 harness=proofs::every_valid_sequence_spi1_0/compile
+PROBE peak harness=proofs::every_valid_sequence_spi1_0/cbmc vmhwm_kib=1344868 seconds=137.5 start=1020.1
+PROBE gate seconds=160.2 start=997.7 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_spi1_0 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_spi1_0 vmhwm_kib=5427992 seconds=140.9 start=1016.9
+PROBE compile seconds=0.8 start=1178.5 harness=proofs::every_valid_sequence_spi1_1/compile
+PROBE peak harness=proofs::every_valid_sequence_spi1_1/cbmc vmhwm_kib=1441260 seconds=147.3 start=1181.1
+PROBE gate seconds=171.0 start=1157.9 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_spi1_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_spi1_1 vmhwm_kib=6363432 seconds=150.5 start=1178.3
+PROBE compile seconds=0.2 start=1349.7 harness=proofs::every_valid_sequence_spi2_0/compile
+PROBE compile seconds=0.6 start=1349.9 harness=proofs::every_valid_sequence_spi2_0/compile
+PROBE peak harness=proofs::every_valid_sequence_spi2_0/cbmc vmhwm_kib=1354120 seconds=150.2 start=1352.3
+PROBE peak harness=proofs::every_valid_sequence_spi2_0 vmhwm_kib=5552912 seconds=153.0 start=1349.7
+PROBE gate seconds=174.1 start=1328.8 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_spi2_0 --spec <scratch>/tool/spec/specification.json
+PROBE compile seconds=0.2 start=1523.8 harness=proofs::every_valid_sequence_spi2_1/compile
+PROBE compile seconds=0.8 start=1524.0 harness=proofs::every_valid_sequence_spi2_1/compile
+PROBE peak harness=proofs::every_valid_sequence_spi2_1/cbmc vmhwm_kib=1452296 seconds=160.9 start=1527.2
+PROBE gate seconds=185.6 start=1503.0 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_spi2_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_spi2_1 vmhwm_kib=6492368 seconds=164.7 start=1523.8
+PROBE peak harness=? vmhwm_kib=4652 seconds=0.2 start=1710.4
+PROBE compile seconds=0.8 start=1710.6 harness=proofs::every_valid_sequence_tim1_0/compile
+PROBE peak harness=proofs::every_valid_sequence_tim1_0/cbmc vmhwm_kib=1716896 seconds=198.0 start=1714.0
+PROBE gate seconds=223.8 start=1688.5 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_tim1_0 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_tim1_0 vmhwm_kib=7290968 seconds=201.8 start=1710.6
+PROBE compile seconds=0.6 start=1931.2 harness=proofs::every_valid_sequence_tim1_1/compile
+PROBE peak harness=proofs::every_valid_sequence_tim1_1/cbmc vmhwm_kib=2110908 seconds=205.1 start=1933.6
+PROBE gate seconds=227.8 start=1912.3 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_tim1_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_tim1_1 vmhwm_kib=8384340 seconds=209.1 start=1931.0
+PROBE compile seconds=0.2 start=2167.5 harness=proofs::every_valid_sequence_gpio_0/compile
+PROBE compile seconds=0.6 start=2167.7 harness=proofs::every_valid_sequence_gpio_0/compile
+PROBE gate seconds=37.2 start=2140.1 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_gpio_0 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_gpio_0 vmhwm_kib=1168180 seconds=9.8 start=2167.5
+PROBE peak harness=proofs::every_valid_sequence_gpio_0/cbmc vmhwm_kib=125616 seconds=8.0 start=2169.3
+PROBE compile seconds=0.6 start=2199.6 harness=proofs::every_valid_sequence_gpio_1/compile
+PROBE peak harness=proofs::every_valid_sequence_gpio_1/cbmc vmhwm_kib=160964 seconds=11.8 start=2201.6
+PROBE gate seconds=36.3 start=2177.3 argv=prove --crate <scratch>/tool/tree/board --harness proofs::every_valid_sequence_gpio_1 --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::every_valid_sequence_gpio_1 vmhwm_kib=1301044 seconds=14.2 start=2199.4
+PROBE compile seconds=1.2 start=2233.9 harness=proofs::i2c1_transfer_is_bounded_and_ordered/compile
+PROBE gate seconds=48.0 start=2213.6 argv=prove --crate <scratch>/tool/tree/board --harness proofs::i2c1_transfer_is_bounded_and_ordered --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::i2c1_transfer_is_bounded_and_ordered vmhwm_kib=836620 seconds=27.9 start=2233.7
+PROBE peak harness=proofs::i2c1_transfer_is_bounded_and_ordered/cbmc vmhwm_kib=428476 seconds=21.9 start=2239.7
+PROBE compile seconds=0.8 start=2286.5 harness=proofs::i2c2_transfer_is_bounded_and_ordered/compile
+PROBE peak harness=proofs::i2c2_transfer_is_bounded_and_ordered vmhwm_kib=829460 seconds=20.7 start=2286.3
+PROBE peak harness=proofs::i2c2_transfer_is_bounded_and_ordered/cbmc vmhwm_kib=322020 seconds=15.2 start=2291.7
+PROBE gate seconds=45.6 start=2261.6 argv=prove --crate <scratch>/tool/tree/board --harness proofs::i2c2_transfer_is_bounded_and_ordered --spec <scratch>/tool/spec/specification.json
+PROBE compile seconds=0.8 start=2325.2 harness=proofs::spi1_transfer_is_bounded_and_ordered/compile
+PROBE gate seconds=49.1 start=2307.1 argv=prove --crate <scratch>/tool/tree/board --harness proofs::spi1_transfer_is_bounded_and_ordered --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::spi1_transfer_is_bounded_and_ordered vmhwm_kib=1475904 seconds=31.3 start=2325.0
+PROBE peak harness=proofs::spi1_transfer_is_bounded_and_ordered/cbmc vmhwm_kib=440580 seconds=25.7 start=2330.6
+PROBE compile seconds=0.8 start=2374.5 harness=proofs::spi1_transfer_refuses_too_many_frames/compile
+PROBE gate seconds=33.3 start=2356.3 argv=prove --crate <scratch>/tool/tree/board --harness proofs::spi1_transfer_refuses_too_many_frames --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::spi1_transfer_refuses_too_many_frames vmhwm_kib=580272 seconds=15.2 start=2374.3
+PROBE peak harness=proofs::spi1_transfer_refuses_too_many_frames/cbmc vmhwm_kib=267108 seconds=9.8 start=2379.7
+PROBE compile seconds=0.8 start=2408.0 harness=proofs::spi2_transfer_is_bounded_and_ordered/compile
+PROBE peak harness=proofs::spi2_transfer_is_bounded_and_ordered/cbmc vmhwm_kib=511140 seconds=30.5 start=2413.2
+PROBE gate seconds=54.3 start=2389.6 argv=prove --crate <scratch>/tool/tree/board --harness proofs::spi2_transfer_is_bounded_and_ordered --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::spi2_transfer_is_bounded_and_ordered vmhwm_kib=1674424 seconds=36.1 start=2407.8
+PROBE compile seconds=0.2 start=2463.1 harness=proofs::spi2_transfer_refuses_too_many_frames/compile
+PROBE compile seconds=0.8 start=2463.3 harness=proofs::spi2_transfer_refuses_too_many_frames/compile
+PROBE gate seconds=33.9 start=2443.9 argv=prove --crate <scratch>/tool/tree/board --harness proofs::spi2_transfer_refuses_too_many_frames --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::spi2_transfer_refuses_too_many_frames vmhwm_kib=585384 seconds=14.6 start=2463.1
+PROBE peak harness=proofs::spi2_transfer_refuses_too_many_frames/cbmc vmhwm_kib=267408 seconds=9.6 start=2468.2
+PROBE peak harness=? vmhwm_kib=4824 seconds=0.2 start=2495.4
+PROBE compile seconds=0.6 start=2495.6 harness=proofs::reset_clock_is_ok_exactly_at_reset/compile
+PROBE gate seconds=19.4 start=2477.8 argv=prove --crate <scratch>/tool/tree/board --harness proofs::reset_clock_is_ok_exactly_at_reset --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::reset_clock_is_ok_exactly_at_reset vmhwm_kib=14712 seconds=1.6 start=2495.6
+PROBE peak harness=proofs::reset_clock_is_ok_exactly_at_reset/cbmc vmhwm_kib=34948 seconds=0.4 start=2496.8
+PROBE compile seconds=0.6 start=2515.3 harness=proofs::tim1_start_writes_the_solved_values/compile
+PROBE peak harness=proofs::tim1_start_writes_the_solved_values/cbmc vmhwm_kib=309372 seconds=13.0 start=2519.5
+PROBE gate seconds=35.5 start=2497.2 argv=prove --crate <scratch>/tool/tree/board --harness proofs::tim1_start_writes_the_solved_values --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::tim1_start_writes_the_solved_values vmhwm_kib=983616 seconds=17.6 start=2515.1
+PROBE compile seconds=0.6 start=2550.6 harness=proofs::usart1_start_writes_the_solved_values/compile
+PROBE gate seconds=34.7 start=2532.7 argv=prove --crate <scratch>/tool/tree/board --harness proofs::usart1_start_writes_the_solved_values --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::usart1_start_writes_the_solved_values vmhwm_kib=1099636 seconds=17.0 start=2550.4
+PROBE peak harness=proofs::usart1_start_writes_the_solved_values/cbmc vmhwm_kib=269648 seconds=12.6 start=2554.8
+PROBE compile seconds=0.2 start=2587.1 harness=proofs::usart2_start_writes_the_solved_values/compile
+PROBE compile seconds=0.6 start=2587.3 harness=proofs::usart2_start_writes_the_solved_values/compile
+PROBE peak harness=proofs::usart2_start_writes_the_solved_values/cbmc vmhwm_kib=269984 seconds=12.6 start=2591.9
+PROBE gate seconds=37.3 start=2567.4 argv=prove --crate <scratch>/tool/tree/board --harness proofs::usart2_start_writes_the_solved_values --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::usart2_start_writes_the_solved_values vmhwm_kib=1099476 seconds=17.6 start=2587.1
+PROBE compile seconds=0.8 start=2622.5 harness=proofs::usart3_start_writes_the_solved_values/compile
+PROBE gate seconds=34.5 start=2604.7 argv=prove --crate <scratch>/tool/tree/board --harness proofs::usart3_start_writes_the_solved_values --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::usart3_start_writes_the_solved_values vmhwm_kib=1094936 seconds=16.6 start=2622.5
+PROBE peak harness=proofs::usart3_start_writes_the_solved_values/cbmc vmhwm_kib=267852 seconds=12.4 start=2626.8
+PROBE gate seconds=18.4 start=2639.2 argv=prove --crate <scratch>/tool/tree/board --harness proofs::flash_option_status_is_one_read --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::flash_option_status_is_one_read vmhwm_kib=6344 seconds=0.6 start=2657.0
+PROBE compile seconds=0.6 start=2657.0 harness=proofs::flash_option_status_is_one_read/compile
+PROBE compile seconds=0.6 start=2677.1 harness=proofs::pwr_scale2_is_once_in_order_and_bounded/compile
+PROBE gate seconds=20.2 start=2657.6 argv=prove --crate <scratch>/tool/tree/board --harness proofs::pwr_scale2_is_once_in_order_and_bounded --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::pwr_scale2_is_once_in_order_and_bounded vmhwm_kib=6312 seconds=0.8 start=2677.1
+PROBE peak harness=proofs::pwr_scale2_is_once_in_order_and_bounded/cbmc vmhwm_kib=15940 seconds=0.2 start=2677.7
+PROBE compile seconds=0.6 start=2697.3 harness=proofs::hse_start_is_in_order_bounded_and_named/compile
+PROBE gate seconds=21.6 start=2677.9 argv=prove --crate <scratch>/tool/tree/board --harness proofs::hse_start_is_in_order_bounded_and_named --spec <scratch>/tool/spec/specification.json
+PROBE peak harness=proofs::hse_start_is_in_order_bounded_and_named vmhwm_kib=25964 seconds=2.2 start=2697.3
+PROBE peak harness=proofs::hse_start_is_in_order_bounded_and_named/cbmc vmhwm_kib=55856 seconds=1.0 start=2698.5
+PROBE gate seconds=0.4 start=2699.5 argv=build --crate <scratch>/tool/tree/board --out <scratch>/tool/firmware.elf
+PROBE boot seconds=0.2 start=2700.7 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --version
+PROBE gate seconds=6.6 start=2699.9 argv=simulate --platform <scratch>/tool/tree/board/sentinel-03.repl --firmware <scratch>/tool/firmware.elf --spec <scratch>/tool/spec/specification.json --for 100000000ns
+PROBE boot seconds=5.6 start=2700.9 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=0.2 start=2708.4 comm=renode argv=
+PROBE boot seconds=6.6 start=2708.6 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=0.2 start=2716.0 comm=renode argv=
+PROBE boot seconds=7.2 start=2716.2 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.6 start=2724.8 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=0.2 start=2731.3 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --version
+PROBE boot seconds=5.6 start=2731.5 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.6 start=2737.1 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=0.2 start=2743.7 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --version
+PROBE boot seconds=5.6 start=2743.9 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.4 start=2750.7 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.2 start=2757.6 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/ICM42688P.cs; ma
+PROBE boot seconds=5.6 start=2764.0 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.4 start=2770.8 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=0.2 start=2777.2 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --version
+PROBE boot seconds=5.4 start=2777.4 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.4 start=2784.3 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE boot seconds=5.2 start=2790.9 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; mach 
+PROBE boot seconds=5.6 start=2797.4 comm=renode argv=/usr/local/bin/renode --config <scratch>/tool/renode.config --disable-gui --console --plain -e emulation SetSeed 2100; emulation SetGlobalQuantum "0.000100000"; include @<scratch>/tool/models/BMP581.cs; inclu
+PROBE gate seconds=96.6 start=2706.6 argv=campaign --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx
+PROBE gate seconds=0.2 start=2803.2 argv=attribute --archive <scratch>/tool/archive/c164705567f385e71780f93a279ed40c
+PROBE gate seconds=2804.8 start=0.2 argv=verify --spec examples/sentinel-03.json --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json scenarios/sentinel-03/held-low-sda.json s

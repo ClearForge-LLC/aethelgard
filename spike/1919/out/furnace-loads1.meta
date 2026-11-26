@@ -1,0 +1,10 @@
+tag=loads1 mem=8G net=none tree=/home/forge/.cache/aet-1919/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T02:34:36+00:00
+host_avail_kB=47487876
+loadavg=19.33 13.95 12.48
+Mem:              60          15          19           6          32          45
+cmd: bash spike/1919/tools/ctl.sh loads1 bash spike/1919/tools/loads.sh 3
+exit=0
+end=2026-11-26T02:36:46+00:00
+CTL1919 tag=loads1 rc=0 wall_s=129.754 memory.peak=690794496

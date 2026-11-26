@@ -1,0 +1,16 @@
+tag=micro-debug mem=8G net=none tree=/home/forge/.cache/aet-1919/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T03:25:03+00:00
+host_avail_kB=48038292
+loadavg=9.97 13.12 15.01
+Mem:              60          15          10           6          41          45
+cmd: bash spike/1919/tools/ctl.sh micro-debug bash spike/1919/tools/micro.sh target/debug debug
+exit=0
+end=2026-11-26T03:33:46+00:00
+MICRO debug generate rc=0 wall_s=17.84
+MICRO debug extract rc=0 wall_s=466.55
+MICRO debug prove-spec-1 rc=0 wall_s=18.49
+MICRO debug prove-nospec-1 rc=0 wall_s=0.76
+MICRO debug prove-spec-2 rc=0 wall_s=18.57
+MICRO debug prove-nospec-2 rc=0 wall_s=0.76
+CTL1919 tag=micro-debug rc=0 wall_s=522.98 memory.peak=699371520

@@ -1,0 +1,16 @@
+tag=micro-rel mem=8G net=none tree=/home/forge/.cache/aet-1919/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T03:34:43+00:00
+host_avail_kB=47363532
+loadavg=15.62 12.38 13.41
+Mem:              60          15          11           6          40          45
+cmd: bash spike/1919/tools/ctl.sh micro-rel bash spike/1919/tools/micro.sh target/release rel
+exit=0
+end=2026-11-26T03:42:44+00:00
+MICRO rel generate rc=0 wall_s=16.41
+MICRO rel extract rc=0 wall_s=428.49
+MICRO rel prove-spec-1 rc=0 wall_s=16.88
+MICRO rel prove-nospec-1 rc=0 wall_s=0.78
+MICRO rel prove-spec-2 rc=0 wall_s=16.92
+MICRO rel prove-nospec-2 rc=0 wall_s=0.76
+CTL1919 tag=micro-rel rc=0 wall_s=480.246 memory.peak=692146176
