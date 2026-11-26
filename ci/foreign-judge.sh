@@ -446,7 +446,8 @@ PY
 # defaults.parm, so DShot600 from boot), each in a 12 s window. Their inputs are pymavlink 2.4.50's, written in
 # the pinned ArduPilot image by `python -I spike/4412/py/input.py NAME OUT.json` on CONSOLE (sha256:
 # armread12 1f1f6a3c, dshot12 adcc235b, reboot12 d46aaf76). Each is held by name only, never by a count or a
-# stamp: a DShot run's instruction count and end PC are not_rerun_stable (15:27Z (ii)). Each prints its wall,
+# stamp: a DShot run's instruction count and end PC are not_rerun_stable (15:27Z (ii)), held here as present with
+# their reasons (the unit test names them; boot_tier1's no-binding test keeps their names out of CI). Each prints its wall,
 # the runner's CPU and nproc: the worst of the three is the CI wall figure, against the 120 s guard (14:09Z (b)).
 s03=examples/sentinel-03.json
 "$bin" generate --spec "$s03" --out "$work/gen-s03" > "$work/generate-s03.json"
@@ -457,7 +458,7 @@ s03_dshot='
 v["verdict"] == "pass" and "foreign_motor_protocol_unmet" not in [f["kind"] for f in v["findings"]]
 and [(s["timer"], s["request"]) for s in boot["dshot"]["transfers"]] == [("TIM1", 15)]
 and all(p["frames"] > 0 and p["malformed"] == 0 for s in boot["dshot"]["transfers"] for p in s["positions"])
-and [u["field"] for u in boot["not_rerun_stable"]] == ["boot.instructions", "boot.pc"]'
+and len(boot["not_rerun_stable"]) == 2 and all(u["why"] for u in boot["not_rerun_stable"])'
 s03run() {
   local name=$1 check=$2 t0 t1
   t0=$(date +%s.%N)
