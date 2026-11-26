@@ -287,3 +287,9 @@ Renode's own lifetime, first seen to gone (`ci/probe.py`, 0.2 s polls). In CI, t
 - **Memory:** `PROBE combined peak_rss_kib=8516944` (8.12 GiB) and `PROBE host peak_used_kib=9503244` (9.06 GiB, the whole runner). Both are under `1918`'s 12 GiB, so the campaign need not wait for the prove lane.
 - **`--against-fab`:** `identical` on both bench packages (Sentinel-03, and Sentinel-01's bench board in 6.8 min). No package and no verdict moved.
 - That run was red on one shard: the swap test, the architect's 07:01Z finding (FEEDBACK §1), fixed after it.
+
+**In CI, `d507f8fb`** (run 45784116105, `out/ci-45784116105-gates.txt`): the lanes stopped on every path, and the re-checks at each turn and at the end.
+- `bench-package-s03` took **32.2 min** on an AMD EPYC 9V74, against 71.6–74.3 min on that CPU before. `verify` took 29.8 min; the CLI's own prove time was 7 s.
+- **Memory:** combined 8.14 GiB, host 9.06 GiB.
+- **`--against-fab`:** `identical` on both bench packages.
+- Red on shard 13 only: the two lane-process tests' observation, FEEDBACK F10.
