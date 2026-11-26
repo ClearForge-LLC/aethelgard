@@ -2333,6 +2333,23 @@ fn twin_refused(e: aethelgard_twin::TwinError) -> Stop {
     invalid(e.kind(), e.to_string())
 }
 
+/// An input with no frame sends nothing, so a run under it is the no-input
+/// run with a declared input's window and archive (`AET-WO-4400j` F11): it is
+/// refused by its field, as the reader and replay read it (`AET-WO-1919` (3),
+/// `INV-06`).
+fn frames_present(f: &InputFile) -> Result<(), Stop> {
+    if f.frames.is_empty() {
+        return Err(Stop {
+            code: crate::EXIT_INVALID_SPEC,
+            kind: "InputMalformed",
+            id: Some("frames".to_owned()),
+            message: "the input's `frames` is empty: a declared input sends at least one frame"
+                .to_owned(),
+        });
+    }
+    Ok(())
+}
+
 /// The input file's bytes: a regular file, still one once open (no swap to
 /// a FIFO between the check and the open), read to at most
 /// [`aethelgard_chaos::record::MAX_FOREIGN_BYTES`].
@@ -2402,6 +2419,7 @@ pub fn frames_of(
             ),
         ));
     }
+    frames_present(&f)?;
     let port = ports.get(&f.port).ok_or_else(|| {
         invalid(
             "InputPortUndeclared",
@@ -3614,6 +3632,7 @@ pub fn replay(replayed: &aethelgard_chaos::Replayed) -> Result<Replayed, Stop> {
     // file's frames are refused exactly as they were.
     let f: InputFile = serde_json::from_slice(file)
         .map_err(|e| invalid("InputMalformed", format!("the archived input: {e}")))?;
+    frames_present(&f)?;
     if f.port != label {
         return Err(invalid(
             "InputHashMismatch",

@@ -1,0 +1,90 @@
+45620143376-a1	3377a9a7	bench-package	success	Intel(R) Xeon(R) 6975P-C x4	7.2 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.5  pull the tools image by its pinned digest
+		   1.4  build the CLI and the analog bridge, with the network
+		   5.2  verify --against-fab, the committed package derived again
+45620143376-a1	3377a9a7	bench-package-s03	success	INTEL(R) XEON(R) PLATINUM 8573C x4	70.4 min
+		   0.7  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  68.0  Sentinel-03, verify --against-fab, the committed package derived again
+45663730941-a1	1cc2d01c	bench-package	success	AMD EPYC 7763 64-Core Processor x4	8.4 min
+		   0.5  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		   6.2  verify --against-fab, the committed package derived again
+45663730941-a1	1cc2d01c	bench-package-s03	success	AMD EPYC 9V74 80-Core Processor x4	60.7 min
+		   0.6  pull the tools image by its pinned digest
+		   1.5  build the CLI and the analog bridge, with the network
+		  58.5  Sentinel-03, verify --against-fab, the committed package derived again
+45664966472-a1	589030ca	bench-package	success	AMD EPYC 9V74 80-Core Processor x4	7.8 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.7  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		   5.4  verify --against-fab, the committed package derived again
+45664966472-a1	589030ca	bench-package-s03	success	AMD EPYC 7763 64-Core Processor x4	69.7 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.5  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  67.4  Sentinel-03, verify --against-fab, the committed package derived again
+45678279272-a1	a8d84779	bench-package-s03	success	AMD EPYC 7763 64-Core Processor x4	68.5 min
+		   0.6  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  66.3  Sentinel-03, verify --against-fab, the committed package derived again
+45678279272-a1	a8d84779	bench-package	success	AMD EPYC 9V45 96-Core Processor x4	7.1 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.7  pull the tools image by its pinned digest
+		   1.4  build the CLI and the analog bridge, with the network
+		   4.8  verify --against-fab, the committed package derived again
+45709090931-a1	1ec33945	bench-package	success	AMD EPYC 7763 64-Core Processor x4	8.6 min
+		   0.6  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		   6.2  verify --against-fab, the committed package derived again
+45709090931-a1	1ec33945	bench-package-s03	success	AMD EPYC 9V74 80-Core Processor x4	60.0 min
+		   0.7  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  57.7  Sentinel-03, verify --against-fab, the committed package derived again
+45733269794-a1	b5bac764	bench-package-s03	success	AMD EPYC 9V45 96-Core Processor x4	47.8 min
+		   0.6  pull the tools image by its pinned digest
+		   1.3  build the CLI and the analog bridge, with the network
+		  45.8  Sentinel-03, verify --against-fab, the committed package derived again
+45733269794-a1	b5bac764	bench-package	success	Intel(R) Xeon(R) 6975P-C x4	6.5 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.6  pull the tools image by its pinned digest
+		   1.4  build the CLI and the analog bridge, with the network
+		   4.3  verify --against-fab, the committed package derived again
+45743010585-a1	4254a2a0	bench-package	success	AMD EPYC 7763 64-Core Processor x4	11.8 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.6  pull the tools image by its pinned digest
+		   2.1  build the CLI and the analog bridge, with the network
+		   8.9  verify --against-fab, the committed package derived again
+45743010585-a1	4254a2a0	bench-package-s03	success	AMD EPYC 9V74 80-Core Processor x4	74.3 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.7  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  71.9  Sentinel-03, verify --against-fab, the committed package derived again
+45743010585-a2	4254a2a0	bench-package	success	AMD EPYC 9V45 96-Core Processor x4	6.6 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.7  pull the tools image by its pinned digest
+		   1.3  build the CLI and the analog bridge, with the network
+		   4.5  verify --against-fab, the committed package derived again
+45743010585-a2	4254a2a0	bench-package-s03	success	INTEL(R) XEON(R) PLATINUM 8573C x4	76.2 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.9  pull the tools image by its pinned digest
+		   1.8  build the CLI and the analog bridge, with the network
+		  73.3  Sentinel-03, verify --against-fab, the committed package derived again
+45743010585-a3	4254a2a0	bench-package-s03	success	AMD EPYC 9V74 80-Core Processor x4	71.6 min
+		   0.6  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  69.3  Sentinel-03, verify --against-fab, the committed package derived again
+45743010585-a3	4254a2a0	bench-package	success	AMD EPYC 9V74 80-Core Processor x4	7.7 min
+		   0.1  Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+		   0.6  pull the tools image by its pinned digest
+		   1.5  build the CLI and the analog bridge, with the network
+		   5.5  verify --against-fab, the committed package derived again
+45770483030-a1	4752028a	bench-package	success	AMD EPYC 9V74 80-Core Processor x4	6.8 min
+		   0.6  pull the tools image by its pinned digest
+		   1.5  build the CLI and the analog bridge, with the network
+		   4.6  verify --against-fab, the committed package derived again
+45770483030-a1	4752028a	bench-package-s03	success	AMD EPYC 7763 64-Core Processor x4	33.6 min
+		   0.5  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  31.3  Sentinel-03, verify --against-fab, the committed package derived again

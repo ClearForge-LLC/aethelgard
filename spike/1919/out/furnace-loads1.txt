@@ -1,0 +1,36 @@
+LOAD boards/sentinel-01/sentinel-01.repl 1 rc=0 wall_s=2.14 verdict=pass
+LOAD boards/sentinel-01/sentinel-01.repl 2 rc=0 wall_s=2.20 verdict=pass
+LOAD boards/sentinel-01/sentinel-01.repl 3 rc=0 wall_s=2.20 verdict=pass
+LOAD boards/sentinel-01-bench/sentinel-01-bench.repl 1 rc=0 wall_s=2.16 verdict=pass
+LOAD boards/sentinel-01-bench/sentinel-01-bench.repl 2 rc=0 wall_s=2.22 verdict=pass
+LOAD boards/sentinel-01-bench/sentinel-01-bench.repl 3 rc=0 wall_s=2.22 verdict=pass
+LOAD /repo/target/gen/sentinel-01-ext-bmp581/board/sentinel-01-ext-bmp581.repl 1 rc=0 wall_s=3.67 verdict=pass
+LOAD /repo/target/gen/sentinel-01-ext-bmp581/board/sentinel-01-ext-bmp581.repl 2 rc=0 wall_s=3.29 verdict=pass
+LOAD /repo/target/gen/sentinel-01-ext-bmp581/board/sentinel-01-ext-bmp581.repl 3 rc=0 wall_s=4.79 verdict=pass
+LOAD /repo/target/gen/sentinel-01-minimal/board/sentinel-01.repl 1 rc=0 wall_s=2.20 verdict=pass
+LOAD /repo/target/gen/sentinel-01-minimal/board/sentinel-01.repl 2 rc=0 wall_s=2.26 verdict=pass
+LOAD /repo/target/gen/sentinel-01-minimal/board/sentinel-01.repl 3 rc=0 wall_s=2.16 verdict=pass
+LOAD /repo/target/gen/sentinel-01/board/sentinel-01-bench.repl 1 rc=0 wall_s=2.28 verdict=pass
+LOAD /repo/target/gen/sentinel-01/board/sentinel-01-bench.repl 2 rc=0 wall_s=2.19 verdict=pass
+LOAD /repo/target/gen/sentinel-01/board/sentinel-01-bench.repl 3 rc=0 wall_s=2.18 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench-hse8/board/sentinel-02-bench-hse8.repl 1 rc=0 wall_s=3.51 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench-hse8/board/sentinel-02-bench-hse8.repl 2 rc=0 wall_s=3.53 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench-hse8/board/sentinel-02-bench-hse8.repl 3 rc=0 wall_s=3.51 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench/board/sentinel-02-bench.repl 1 rc=0 wall_s=3.63 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench/board/sentinel-02-bench.repl 2 rc=0 wall_s=3.57 verdict=pass
+LOAD /repo/target/gen/sentinel-02-bench/board/sentinel-02-bench.repl 3 rc=0 wall_s=3.77 verdict=pass
+LOAD /repo/target/gen/sentinel-03/board/sentinel-03.repl 1 rc=0 wall_s=6.14 verdict=pass
+LOAD /repo/target/gen/sentinel-03/board/sentinel-03.repl 2 rc=0 wall_s=7.35 verdict=pass
+LOAD /repo/target/gen/sentinel-03/board/sentinel-03.repl 3 rc=0 wall_s=6.87 verdict=pass
+LOAD @platforms/boards/nucleo_h753zi.repl 1 rc=0 wall_s=2.17 verdict=pass
+LOAD @platforms/boards/nucleo_h753zi.repl 2 rc=0 wall_s=2.08 verdict=pass
+LOAD @platforms/boards/nucleo_h753zi.repl 3 rc=0 wall_s=2.14 verdict=pass
+LOAD @platforms/cpus/stm32h753.repl 1 rc=1 wall_s=1.59 verdict=fail
+LOAD @platforms/cpus/stm32h753.repl 2 rc=1 wall_s=1.50 verdict=fail
+LOAD @platforms/cpus/stm32h753.repl 3 rc=1 wall_s=1.42 verdict=fail
+TEST with_tools::simulate_loads_the_reference_board rc=0 wall_s=2.17 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 2.05s
+TEST with_tools::simulate_fails_a_platform_that_does_not_load rc=0 wall_s=1.46 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 1.38s
+TEST with_tools::mcp_simulate_loads_the_nucleo_board rc=0 wall_s=2.13 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 32 filtered out; finished in 2.05s
+TEST twin_tier2::the_emitted_platform_loads_and_lists_every_solved_peripheral rc=0 wall_s=2.32 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 2.24s
+TEST twin_tier2::a_device_named_for_a_renode_instance_or_keyword_breaks_the_load rc=0 wall_s=2.91 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 2.84s
+TEST twin_tier2::the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused rc=0 wall_s=3.88 test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 95 filtered out; finished in 3.80s

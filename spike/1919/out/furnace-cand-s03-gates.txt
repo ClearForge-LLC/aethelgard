@@ -1,0 +1,82 @@
+verify	1954 s	(32.6 min)
+  before the first gate (in-process)	26 s
+  after the last gate (in-process)	2 s
+
+start_s	seconds	gate
+26	0.8	check erc
+27	1.4	check drc
+28	0.4	check support
+29	366.4	extract
+395	56.9	prove proofs::every_valid_sequence_i2c1_0
+452	63.9	prove proofs::every_valid_sequence_i2c1_1
+516	48.3	prove proofs::every_valid_sequence_i2c2_0
+564	57.9	prove proofs::every_valid_sequence_i2c2_1
+622	109.9	prove proofs::every_valid_sequence_spi1_0
+732	144.4	prove proofs::every_valid_sequence_spi1_1
+877	136.8	prove proofs::every_valid_sequence_spi2_0
+1013	158.7	prove proofs::every_valid_sequence_spi2_1
+1172	203.7	prove proofs::every_valid_sequence_tim1_0
+1376	206.7	prove proofs::every_valid_sequence_tim1_1
+1582	10.6	prove proofs::every_valid_sequence_gpio_0
+1593	14.1	prove proofs::every_valid_sequence_gpio_1
+1607	25.9	prove proofs::i2c1_transfer_is_bounded_and_ordered
+1633	20.3	prove proofs::i2c2_transfer_is_bounded_and_ordered
+1653	30.7	prove proofs::spi1_transfer_is_bounded_and_ordered
+1684	14.9	prove proofs::spi1_transfer_refuses_too_many_frames
+1699	36.0	prove proofs::spi2_transfer_is_bounded_and_ordered
+1735	15.3	prove proofs::spi2_transfer_refuses_too_many_frames
+1750	2.0	prove proofs::reset_clock_is_ok_exactly_at_reset
+1752	18.5	prove proofs::tim1_start_writes_the_solved_values
+1771	18.1	prove proofs::usart1_start_writes_the_solved_values
+1789	17.7	prove proofs::usart2_start_writes_the_solved_values
+1806	18.7	prove proofs::usart3_start_writes_the_solved_values
+1825	1.0	prove proofs::flash_option_status_is_one_read
+1826	1.2	prove proofs::pwr_scale2_is_once_in_order_and_bounded
+1827	2.6	prove proofs::hse_start_is_in_order_bounded_and_named
+1830	0.2	build
+1830	7.6	simulate --firmware
+1838	113.8	campaign
+1952	0.2	attribute
+1952	0.2	attribute
+
+prove gates, by seconds:
+harness	gate_s	driver_s	compile_s	cbmc_s	parse_s	cli_s	peak_GiB
+every_valid_sequence_tim1_1	206.7	206.5	0.8	203.5	2.2	0.2	7.997
+every_valid_sequence_tim1_0	203.7	203.5	0.6	200.5	2.4	0.2	6.954
+every_valid_sequence_spi2_1	158.7	158.5	0.6	155.4	2.5	0.2	6.193
+every_valid_sequence_spi1_1	144.4	144.2	0.6	141.2	2.4	0.2	6.070
+every_valid_sequence_spi2_0	136.8	136.6	0.6	133.6	2.4	0.2	5.297
+every_valid_sequence_spi1_0	109.9	109.7	0.6	107.5	1.6	0.2	5.178
+every_valid_sequence_i2c1_1	63.9	63.7	0.6	61.7	1.4	0.2	4.447
+every_valid_sequence_i2c2_1	57.9	57.7	0.6	55.9	1.2	0.2	4.461
+every_valid_sequence_i2c1_0	56.9	56.7	0.6	54.9	1.2	0.2	3.880
+every_valid_sequence_i2c2_0	48.3	48.1	0.6	46.3	1.2	0.2	3.794
+spi2_transfer_is_bounded_and_ordered	36.0	35.6	1.0	30.5	4.1	0.4	1.597
+spi1_transfer_is_bounded_and_ordered	30.7	30.3	0.8	25.1	4.4	0.4	1.408
+i2c1_transfer_is_bounded_and_ordered	25.9	25.5	1.0	19.9	4.6	0.4	0.799
+i2c2_transfer_is_bounded_and_ordered	20.3	20.1	0.8	15.5	3.8	0.2	0.792
+usart3_start_writes_the_solved_values	18.7	18.5	0.8	13.9	3.8	0.2	1.045
+tim1_start_writes_the_solved_values	18.5	18.3	0.8	14.1	3.4	0.2	0.939
+usart1_start_writes_the_solved_values	18.1	17.9	0.6	13.5	3.8	0.2	1.048
+usart2_start_writes_the_solved_values	17.7	17.5	0.6	13.1	3.8	0.2	1.048
+spi2_transfer_refuses_too_many_frames	15.3	15.1	0.8	10.2	4.1	0.2	0.558
+spi1_transfer_refuses_too_many_frames	14.9	14.7	1.0	9.6	4.1	0.2	0.554
+every_valid_sequence_gpio_1	14.1	13.9	0.8	11.8	1.3	0.2	1.241
+every_valid_sequence_gpio_0	10.6	10.4	0.8	8.8	0.8	0.2	1.114
+hse_start_is_in_order_bounded_and_named	2.6	2.4	0.6	1.0	0.8	0.2	0.079
+reset_clock_is_ok_exactly_at_reset	2.0	1.6	0.6	0.4	0.6	0.4	0.044
+pwr_scale2_is_once_in_order_and_bounded	1.2	0.8	0.4	0.2	0.2	0.4	0.006
+flash_option_status_is_one_read	1.0	0.8	0.6	0.0	0.2	0.2	0.006
+ALL 26	1435	1429	18	1348	62	6
+
+by kind:
+kind	count	seconds	minutes
+prove	26	1435	23.9
+extract	1	366	6.1
+campaign	1	114	1.9
+simulate --firmware	1	8	0.1
+check drc	1	1	0.0
+check erc	1	1	0.0
+check support	1	0	0.0
+attribute	2	0	0.0
+build	1	0	0.0

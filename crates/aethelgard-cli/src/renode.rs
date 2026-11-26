@@ -236,6 +236,33 @@ pub const BOOT_BOUNDS: Bounds = Bounds {
     rss_kib: 1_572_864,
 };
 
+/// The bound on every other Renode the CLI starts (`AET-WO-1919` (2)): a
+/// platform load (`simulate --platform` alone, and the MCP `simulate` tool,
+/// which runs it) and `renode --version`. The wall bound is the boot's 120 s
+/// hang guard: the slowest load measured is 5.1 s in CI and 7.35 s on
+/// Furnace (`spike/1919/results.md` §2.2), so the guard ends only a Renode
+/// that never returns, such as one waiting at its prompt (CI run 45709090931,
+/// `4400j` F14, F15). There is no memory cap on a load (`rss_kib` is never
+/// reached): the work order grants the hang guard only. A kill is a
+/// `ToolError` ([`hung`]), never a finding and never a verdict.
+pub const LOAD_BOUNDS: Bounds = Bounds {
+    wall: BOOT_BOUNDS.wall,
+    rss_kib: u64::MAX,
+};
+
+/// The refusal for a load or a `--version` the reaper killed at `wall`
+/// (`AET-WO-1919` (2)): what hung judges nothing about the platform, so no
+/// verdict is written, as for a boot ([`bounded`]).
+pub fn hung(what: &str, wall: std::time::Duration) -> Stop {
+    Stop::tool_error(
+        TOOL,
+        format!(
+            "Renode did not return from {what} within the {} s wall-clock hang guard and was killed; a hang judges nothing about the platform, so no verdict is written (AET-WO-1919)",
+            wall.as_secs_f64()
+        ),
+    )
+}
+
 /// What Renode logs once its CPU has aborted; `RunFor` then never returns
 /// (adversarial A6).
 const ABORTED: &str = "This machine has aborted";
@@ -4501,6 +4528,15 @@ pub fn status_name(wire: &aethelgard_twin::boot::Wire, status: u32) -> &'static 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `AET-WO-1919` (2): a load and `--version` take the boot's 120 s hang
+    /// guard, and no memory cap (the work order grants the guard alone).
+    #[test]
+    fn a_load_takes_the_boot_s_hang_guard_and_no_memory_cap() {
+        assert_eq!(LOAD_BOUNDS.wall, std::time::Duration::from_secs(120));
+        assert_eq!(LOAD_BOUNDS.wall, BOOT_BOUNDS.wall);
+        assert_eq!(LOAD_BOUNDS.rss_kib, u64::MAX);
+    }
 
     /// `AET-WO-4200` D2: of a device's own lines, exactly those its model
     /// lists as not a transfer are skipped; every other line of the device is

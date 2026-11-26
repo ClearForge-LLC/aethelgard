@@ -247,10 +247,27 @@ fn invocation<'a>(
 
 /// Runs a version probe and reads it as every subcommand reads its tool's.
 fn ran(inv: run::Invocation<'_>) -> Result<Probed, Stop> {
-    let name = inv.tool.name;
     let out = inv.run()?;
+    probed(inv.tool.name, &out)
+}
+
+/// As [`ran`], under the hang guard `simulate` puts on its own `renode
+/// --version` (`AET-WO-1919` (2c)): a Renode that never answers is killed
+/// and refused, never waited for.
+fn ran_renode(inv: run::Invocation<'_>) -> Result<Probed, Stop> {
+    let out = inv.run_bounded(crate::renode::LOAD_BOUNDS)?;
+    if matches!(out.ended, run::Ended::Bounded(_)) {
+        return Err(crate::renode::hung(
+            "its `--version`",
+            crate::renode::LOAD_BOUNDS.wall,
+        ));
+    }
+    probed(inv.tool.name, &out)
+}
+
+fn probed(name: &str, out: &run::Output) -> Result<Probed, Stop> {
     Ok(Probed {
-        version: crate::version_of(name, &out)?,
+        version: crate::version_of(name, out)?,
         build: crate::renode::build(&out.stdout),
         sandbox: out.sandbox,
     })
@@ -348,7 +365,7 @@ fn kicad_cli(missing: &mut Vec<Missing>) -> ToolLine {
 }
 
 /// `renode --config <file> --version`, as `simulate` asks it, with its
-/// variables and grants; pinned as a boot pins it.
+/// variables, grants and hang guard; pinned as a boot pins it.
 fn renode(missing: &mut Vec<Missing>) -> ToolLine {
     let r = match crate::renode_tool() {
         Ok(r) => r,
@@ -364,7 +381,7 @@ fn renode(missing: &mut Vec<Missing>) -> ToolLine {
     let probed = crate::renode_config(&scratch.tool).and_then(|config| {
         let mut args = run::args(["--config".as_ref(), config.as_os_str()]);
         args.push("--version".into());
-        ran(invocation(
+        ran_renode(invocation(
             scratch,
             &r.tool,
             args,

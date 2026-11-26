@@ -1,0 +1,10 @@
+tag=s03-1 mem=16G net=none tree=/home/forge/.cache/aet-1919/tree
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T02:37:00+00:00
+host_avail_kB=46243612
+loadavg=17.26 15.27 13.18
+Mem:              60          16           6           6          44          44
+cmd: bash spike/1919/tools/ctl.sh s03-1 bash spike/1919/tools/verify-s03.sh s03-1
+exit=1
+end=2026-11-26T03:23:45+00:00
+CTL1919 tag=s03-1 rc=1 wall_s=2804.98 memory.peak=9229295616

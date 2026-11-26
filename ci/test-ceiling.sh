@@ -34,11 +34,22 @@ cp /bin/bash "$t/kani-driver"; cp /bin/bash "$t/cbmc"
 python3 -I ci/probe.py "$t/probe.log" "$t/probe.stop" &
 probe=$!
 sleep 0.5
-"$t/kani-driver" -c 'x=$(head -c 60000000 /dev/zero | tr "\0" a); sleep 1' --harness proofs::planted_grows
+# The trailing `:` keeps the planted driver alive as itself after it grows: without it bash execs
+# the last command, so the process becomes `sleep` the moment its growth ends and the probe keeps
+# only what it sampled mid-growth (AET-WO-1919 FEEDBACK; CI run 45743010585, attempt 2). The
+# `$(...)` subshell is a fork of the same driver, so the harness also has a small line of its own:
+# the highest line is the driver's.
+"$t/kani-driver" -c 'x=$(head -c 60000000 /dev/zero | tr "\0" a); sleep 1; :' --harness proofs::planted_grows
 "$t/kani-driver" -c 'sleep 30; :' --harness proofs::planted_alive &
 alive=$!
 sleep 0.5
 "$t/cbmc" -c 'sleep 1; :' --planted
+# AET-WO-1919: a gate (an `aethelgard` subcommand) and a compile under the live driver are timed;
+# the CLI's internal reaper is no gate.
+cp /bin/bash "$t/aethelgard"; cp /bin/bash "$t/kani-compiler"
+"$t/kani-compiler" -c 'sleep 1; :' --planted
+"$t/aethelgard" -c 'sleep 1.5; :' prove --harness proofs::planted_gate
+"$t/aethelgard" -c 'sleep 1; :' --aethelgard-internal-reaper
 touch "$t/probe.stop"; wait "$probe"
 kill "$alive" 2>/dev/null; wait "$alive" 2>/dev/null
 grown=$(sed -n 's/^PROBE peak harness=proofs::planted_grows vmhwm_kib=\([0-9]*\) .*/\1/p' "$t/probe.log" | sort -n | tail -1)
@@ -48,6 +59,22 @@ grep -q '^PROBE peak harness=proofs::planted_alive/cbmc ' "$t/probe.log" && echo
   || { echo "FAIL no cbmc line under proofs::planted_alive"; cat "$t/probe.log"; fail=1; }
 grep -q '^PROBE peak harness=proofs::planted_alive ' "$t/probe.log" && echo "PASS a driver alive at the stop is written" \
   || { echo "FAIL the live driver was dropped at the stop"; cat "$t/probe.log"; fail=1; }
+grep -q '^PROBE compile seconds=[0-9.]* start=[0-9.]* harness=proofs::planted_alive/compile$' "$t/probe.log" \
+  && echo "PASS a kani-compiler is timed under the harness its kani-driver proves" \
+  || { echo "FAIL no compile line under proofs::planted_alive"; cat "$t/probe.log"; fail=1; }
+# A lifetime is counted in polls of at least 0.2 s each, so 1.5 s reads within a poll period P either side, 1.5 ± P; 1.0 to 2.5 holds for P up to 0.5 s (adversarial F4).
+gs=$(sed -n 's/^PROBE gate seconds=\([0-9.]*\) start=[0-9.]* argv=-c sleep 1\.5; : prove --harness proofs::planted_gate$/\1/p' "$t/probe.log")
+awk -v s="${gs:-0}" 'BEGIN { exit !(s >= 1.0 && s <= 2.5) }' \
+  && echo "PASS a gate is timed with its argv" || { echo "FAIL no gate line for proofs::planted_gate"; cat "$t/probe.log"; fail=1; }
+grep -q 'aethelgard-internal' "$t/probe.log" && { echo "FAIL the internal reaper was timed as a gate"; cat "$t/probe.log"; fail=1; } \
+  || echo "PASS the CLI's internal reaper is not a gate"
+# AET-WO-1919 (X): the combined resident peak counts the planted driver's growth, and the host's
+# used memory is at least that.
+comb=$(sed -n 's/^PROBE combined peak_rss_kib=\([0-9]*\) at=.*/\1/p' "$t/probe.log")
+hostu=$(sed -n 's/^PROBE host peak_used_kib=\([0-9]*\) at=.*/\1/p' "$t/probe.log")
+[ -n "$comb" ] && [ "$comb" -ge 50000 ] && [ -n "$hostu" ] && [ "$hostu" -ge "$comb" ] \
+  && echo "PASS the combined resident peak ($comb KiB) and the host's used peak ($hostu KiB) are written" \
+  || { echo "FAIL no combined or host peak: combined=$comb host=$hostu"; cat "$t/probe.log"; fail=1; }
 
 # The pins: each job that proves harnesses starts the probe before its test or verify, and
 # judges the ceiling after it on always(); a bench job requires a measured peak.

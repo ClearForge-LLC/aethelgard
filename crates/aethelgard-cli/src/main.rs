@@ -216,13 +216,14 @@ enum Command {
         /// --input.
         #[arg(long, value_name = "DIR", requires = "input")]
         archive: Option<PathBuf>,
-        /// Tests only (`AET-WO-1918` (2)): the boot's wall-clock hang guard
-        /// in milliseconds, at most `renode::BOOT_BOUNDS`'s 120 s, so a
-        /// test that waits a hang out need not wait 120 s. A wall kill is a
-        /// refusal, never a verdict, so this cannot change any verdict a
-        /// boot reaches; the verdict records it (`wall_bound_ms`). `verify`
-        /// and `campaign` have no such flag.
-        #[arg(long, hide = true, value_name = "MS", requires = "firmware", value_parser = clap::value_parser!(u64).range(1..=renode::BOOT_BOUNDS.wall.as_secs() * 1000))]
+        /// Tests only (`AET-WO-1918` (2), `AET-WO-1919` (2)): the wall-clock
+        /// hang guard of this call's every Renode, a boot's or a load's, in
+        /// milliseconds, at most `renode::BOOT_BOUNDS`'s 120 s, so a test
+        /// that waits a hang out need not wait 120 s. A wall kill is a
+        /// refusal, never a verdict, so this cannot change any verdict a run
+        /// reaches; the verdict records it (`wall_bound_ms`). `verify`,
+        /// `campaign` and the MCP tools have no such flag.
+        #[arg(long, hide = true, value_name = "MS", value_parser = clap::value_parser!(u64).range(1..=renode::BOOT_BOUNDS.wall.as_secs() * 1000))]
         wall_bound_ms: Option<u64>,
     },
     /// Run each fault scenario through simulate --firmware's path, archive every record of each run, and print one JSON line per scenario, then a summary.
@@ -618,10 +619,16 @@ fn main() -> ExitCode {
                         },
                     }),
                     input.map(|i| (i, archive)),
+                    renode::LOAD_BOUNDS.wall,
                 )
             }
             // clap's `requires` makes the three all-or-none.
-            _ => simulate(&platform, None),
+            _ => simulate_with(
+                &platform,
+                None,
+                None,
+                wall_bound_ms.map_or(renode::LOAD_BOUNDS.wall, Duration::from_millis),
+            ),
         },
         Command::Campaign {
             scenarios,
@@ -1489,6 +1496,9 @@ fn power_gate(
 /// The board crate `generate` writes for the specification in `file`, its
 /// paths relative to the crate, and the specification's lifecycle banner;
 /// every refusal as a `Stop`, with `solve`'s and `generate`'s kinds and codes.
+/// The crate is generated alone ([`aethelgard_cli::generate::board_tree`]):
+/// the schematic and the routed board are neither drawn nor judged here
+/// (`AET-WO-1919` (1) (G)).
 type GeneratedBoard = (std::collections::BTreeMap<String, String>, Vec<String>);
 
 fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
@@ -1517,8 +1527,8 @@ fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
     })?;
     let topology = aethelgard_ir::solve(&spec, &table, &sha256)
         .map_err(|err| invalid(err.kind(), err.id(), err.to_string()))?;
-    let files =
-        aethelgard_cli::generate::tree(&spec, &topology, &table).map_err(|err| run::Stop {
+    let files = aethelgard_cli::generate::board_tree(&spec, &topology, &table).map_err(|err| {
+        run::Stop {
             code: if err.internal() {
                 EXIT_INTERNAL
             } else {
@@ -1527,7 +1537,8 @@ fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
             kind: err.kind(),
             id: err.id().map(str::to_owned),
             message: err.to_string(),
-        })?;
+        }
+    })?;
     Ok((
         tree::subtree(&files, &format!("{}/", aethelgard_cli::generate::BOARD_DIR)),
         spec.lifecycle_banner().unwrap_or_default(),
@@ -2193,17 +2204,25 @@ fn renode_config(dir: &Path) -> Result<PathBuf, run::Stop> {
 }
 
 fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run::Stop> {
-    simulate_with(platform, boot, None)
+    simulate_with(platform, boot, None, renode::LOAD_BOUNDS.wall)
 }
 
 /// `simulate`, with a foreign run's declared input and its archive
-/// directory (`AET-WO-4400i`).
+/// directory (`AET-WO-4400i`). A load's Renode, with no boot, is bounded by
+/// `load_wall` (`AET-WO-1919` (2)).
 fn simulate_with(
     platform: &Path,
     boot: Option<Boot>,
     declared: Option<(PathBuf, Option<PathBuf>)>,
+    load_wall: Duration,
 ) -> Result<verdict::Verdict, run::Stop> {
-    let bounds = boot.as_ref().map_or(renode::BOOT_BOUNDS, |b| b.bounds);
+    let bounds = boot.as_ref().map_or(
+        run::Bounds {
+            wall: load_wall,
+            ..renode::LOAD_BOUNDS
+        },
+        |b| b.bounds,
+    );
     let scratch = Scratch::new()?;
     let ready = match boot {
         Some(boot) => Some(ready(platform, boot, &scratch)?),
@@ -2304,7 +2323,15 @@ fn simulate_with(
         a.extend(run::args(rest));
         a
     };
-    let reported = invocation(with_config(&["--version"]), "status-version").run()?;
+    // Under the call's hang guard, with no memory cap (`AET-WO-1919` (2)).
+    let reported =
+        invocation(with_config(&["--version"]), "status-version").run_bounded(run::Bounds {
+            wall: bounds.wall,
+            ..renode::LOAD_BOUNDS
+        })?;
+    if matches!(reported.ended, run::Ended::Bounded(_)) {
+        return Err(renode::hung("its `--version`", bounds.wall));
+    }
     let version = version_of("renode", &reported)?;
     // Every verdict names the build Renode reported (`AET-WO-4400g` §1.5),
     // and a boot's archive does (`AET-WO-2205` §1.1); every call, a plain
@@ -2445,7 +2472,8 @@ fn simulate_with(
     };
     let args = with_config(&["--disable-gui", "--console", "--plain", "-e", &commands]);
     let run = invocation(args, "status-run");
-    // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
+    // A boot is bounded by `BOOT_BOUNDS` (`RUL-13` as amended, PR #56 B1), a
+    // load by `LOAD_BOUNDS`'s hang guard alone (`AET-WO-1919` (2)).
     // A boot's log is read through the filter, so a flood reaches a verdict;
     // a droop's boot is the bridge's, which owns Renode as its child.
     // Every declared device's part, by reference: the foreign judge's, and
@@ -2478,7 +2506,7 @@ fn simulate_with(
             )?
         }
         (Some(plan), None) => run.run_bounded_filtered(bounds, plan.log_filter())?,
-        (None, _) => run.run()?,
+        (None, _) => run.run_bounded(bounds)?,
     };
     // The foreign judge's report (`AET-WO-4400e`): its firmware, its
     // specification, its memory regions and every device's part.
@@ -2561,6 +2589,8 @@ fn simulate_with(
             let captured = plan.capture.map(read_capture).unwrap_or_default();
             (code, renode::judge_boot(code, &out, plan, &captured)?)
         }
+        // A load killed at its guard is the host's: refused, never a verdict.
+        (None, run::Ended::Bounded(_)) => return Err(renode::hung("its load", bounds.wall)),
         (None, _) => {
             let code = out.code("renode")?;
             let (findings, machine) = renode::judge(code, &out)?;
@@ -2711,11 +2741,12 @@ fn simulate_with(
         v.memory = out
             .peak_rss_kib
             .map(|k| verdict::MemoryReport::of(k, renode::BOOT_BOUNDS.rss_kib));
-        // A test's hang guard is on the verdict, so no run with one passes
-        // for a run without (`simulate --wall-bound-ms`).
-        v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
-            .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     }
+    // A test's hang guard is on the verdict, a boot's or a load's
+    // (`AET-WO-1919` (2)), so no run with one passes for a run without
+    // (`simulate --wall-bound-ms`).
+    v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
+        .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.
         v.lifecycle = r.topology.lifecycle_banner().unwrap_or_default();

@@ -660,3 +660,14 @@ unittests src/main.rs	renode::tests::a_port_held_open_is_skipped_by_name	0.533
 unittests src/main.rs	renode::tests::a_serial_witness_is_read_from_its_capture_pins_and_log	0.615
 unittests src/main.rs	renode::tests::judge_boot_names_a_wire_past_the_run_and_an_injection_out_of_order	0.535
 unittests src/main.rs	renode::tests::judge_boot_reads_a_dshot_boot_s_window_and_stop	0.584
+# AET-WO-1919: PREDICTED weights of its new tests of 0.5 s or more, to be replaced at the next refit. doctor_tier1's waits out the 120 s
+# hang guard (doctor takes no test guard), so its weight is the guard's, not the CPU's; the two load-guard tests wait out a 2 s test guard;
+# the board_tree unit test routes one board (1.0 s on Furnace, times 2.8, AET-WO-1310's factor).
+tests/doctor_tier1.rs	a_renode_that_never_says_its_version_is_killed_at_the_hang_guard	125
+tests/tools_tier1.rs	a_load_waiting_at_its_prompt_is_refused_at_the_hang_guard	3
+tests/tools_tier1.rs	a_renode_version_that_never_returns_is_refused_at_the_hang_guard	3
+unittests src/lib.rs	generate::tests::board_tree_is_tree_s_board	3
+# AET-WO-1919, after the 06:49Z and 07:01Z findings, PREDICTED: board_tier2's swap after extract's turn runs a whole Sentinel-01 verify
+# to its end check (173-186 s on Furnace in the image, times 1.54, Sentinel-03's verify: 4,312 s in CI 45743010585 against 2,805 s on
+# Furnace), rounded up to 300.
+tests/board_tier2.rs	verify_refuses_a_board_swapped_after_extract_ran_ahead	300

@@ -4295,6 +4295,83 @@ fn an_input_file_over_its_bound_is_refused() {
     );
 }
 
+/// `AET-WO-1919` (3), `4400j` F11: an input with no frame sends nothing, so
+/// it is refused by its field, `frames`, before any tool is looked for; and
+/// replay refuses an archive whose input holds none, as the reader would.
+#[test]
+fn an_input_with_no_frame_is_refused_by_its_field_and_in_replay() {
+    use aethelgard_chaos::event::{Event, Header};
+    use aethelgard_chaos::record::Record;
+    let named = |code: Option<i32>, v: &Value| {
+        assert_eq!(code, Some(2), "{v}");
+        assert_eq!(v["error"]["kind"], "InputMalformed", "{v}");
+        assert_eq!(v["error"]["id"], "frames", "{v}");
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("`frames` is empty"),
+            "{v}"
+        );
+    };
+    let empty = Dir::new("empty");
+    let dir = Dir::new("no-frames");
+    let file = br#"{"input_version": 1, "port": "CONSOLE", "frames": []}"#;
+    let out = input_run(&empty.0, &dir.write("none.json", file), None, &[]);
+    named(out.status.code(), &report(&out));
+
+    let sha: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(file).into();
+    let header = Header {
+        run_id: [1; 16],
+        artifacts: vec![
+            ("firmware".into(), [1; 32]),
+            ("input".into(), sha),
+            ("platform".into(), [2; 32]),
+            ("specification".into(), [3; 32]),
+        ],
+        tools: vec![("renode".into(), "1.17.0".into())],
+        tool_sha256: Vec::new(),
+    };
+    let run_dir = dir.0.join(hex(&[1; 16]));
+    let mut w = aethelgard_chaos::TraceWriter::create(&run_dir, &header).unwrap();
+    let records = [
+        Record::ForeignInput {
+            label: "CONSOLE".into(),
+            peripheral: "USART1".into(),
+            spacing_ns: 100_000,
+            part: 0,
+            parts: 1,
+            file: file.to_vec(),
+        },
+        Record::Stimuli {
+            part: 0,
+            parts: 1,
+            entries: Vec::new(),
+        },
+        Record::SerialCaptured {
+            label: "CONSOLE".into(),
+            end_ns: 10_000_000,
+            part: 0,
+            parts: 1,
+            bytes: ardupilot_tx("reject"),
+        },
+    ];
+    for (timestamp, record) in records.into_iter().enumerate() {
+        let timestamp = timestamp as u64;
+        w.append(&Event::Record { timestamp, record }).unwrap();
+    }
+    w.commit().unwrap();
+    let out = run(
+        &empty.0,
+        &[
+            OsStr::new("replay"),
+            OsStr::new("--archive"),
+            run_dir.as_os_str(),
+        ],
+    );
+    named(out.status.code(), &report(&out));
+}
+
 /// `AET-WO-4400i`: a transmission the judge cannot read whole is a finding,
 /// and is not archived: none written, or past `MAX_FOREIGN_BYTES` (1 MiB),
 /// which replay would refuse.
