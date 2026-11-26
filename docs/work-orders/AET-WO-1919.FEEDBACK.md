@@ -32,6 +32,29 @@
     - `of_two_refusals_in_two_lanes_the_earlier_in_today_s_order_is_reported`: `build` refuses at once, the first prove gate after 3 s, and the prove refusal is the one reported;
     - `the_prove_lane_and_build_s_lane_run_beside_each_other`: measured against the host's own prove-lane time.
 - **No byte moved.** The built head's whole Sentinel-03 verify on Furnace, pinned to 4 cores, gave a verdict line byte-identical to the baseline's (`out/furnace-built-s03.meta`, sha256 `5ba5f66b…`, all 26 prove gates). CI's `--against-fab` on both bench packages: §8.
+- **What a stop does to the lanes (the architect's 06:49Z finding).**
+  - **Measured first.** A planted early refusal (the first prove gate refuses while `build`'s lane runs a 30 s stand-in). On `4752028a` the lane's gate, its reaper and the stand-in outlived `verify` by 1.1–1.2 s, three runs. The parent-death signal each gate arms (`PARENT_PID_VAR`) killed them when the lane's thread ended with the process; mutating it away left them running.
+  - **Fixed, `stop_lanes`, on every path out of the gates:**
+    - no lane starts another gate;
+    - every descendant of `verify` is killed, the tools under each gate's reaper included. The tools are in the reaper's own process group, so the gate's group would not reach them;
+    - each killed gate's scratch guardian is waited for, never killed, so its directory is gone;
+    - `verify`'s own guardian is spared;
+    - the lane threads are joined.
+  - `verify` is a child subreaper from the lanes' start, so nothing a killed gate leaves goes to init.
+  - **After the fix:** nothing is left one `/proc` scan (about 4 ms) after `verify` exits, and the call's scratch is empty and stays so (`a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file`).
+  - **A `verify` killed outright** (SIGKILL, so `stop_lanes` never runs) still takes its lanes with it in 1.15 s, through the same parent-death signal (`a_verify_killed_outright_leaves_no_lane_gate`).
+- **A file changed after a gate ran ahead (the architect's 07:01Z finding; CI run 45770483030 shard 13).**
+  - `board_tier2::verify_refuses_a_board_swapped_before_extract` passed a swapped board on `4752028a`. `extract` had read the board ahead of its turn, so its own binding matched, and nothing read the board again.
+  - **Fixed, two checks against the generated hashes** (`EXPECTED`: every generated file, the specification's copy, the ELF once `build` wrote it, each scenario file and each resolved base):
+    - **at its turn,** a gate that ran ahead has the files on its argv hashed again (`recheck`). A change is `BindingMismatch` naming that gate, as when it read the changed file in its turn. So the kept test still gets `extract`, unchanged, timing included.
+    - **after the last gate,** before anything is written to `--fab-out`, every file is hashed again (`recheck_all`). A change is `BindingMismatch` naming the last gate in today's order that judged the file: the board's is `extract`, the crate's `build`, the ELF's the campaign (or `simulate`), a scenario's or base's the campaign.
+  - **Why that `id`:** the gate named is the one whose judgement the change voids, and the board's is `extract` whichever check sees it first.
+  - **Before (X), a change after a gate's turn was never seen.** The end check now refuses it too.
+  - **Planted:**
+    - `board_tier2::verify_refuses_a_board_swapped_after_extract_ran_ahead`: the swap lands 0.5 s after the support gate's process has ended, so after `extract`'s turn. Five passes in the image, 173–186 s each.
+    - `verify::tests::a_gate_run_ahead_is_refused_at_its_turn_if_its_file_changed`, through the real `gate()`;
+    - `a_file_changed_after_every_turn_is_refused_at_the_end`.
+  - **What else (X) moved:** every lane gate's binding: `extract` (the board and the specification's copy), each prove gate and `build` (the crate), `simulate` (the platform, the ELF, the specification's copy), and the campaign (the ELF, the scenarios, their base). All are in `EXPECTED`, so each is re-checked at its turn when it is on the gate's argv, and at the end. The base is on no argv, so only the end check sees it, naming the campaign; a refusal between the campaign's turn and the end (an `attribute` gate's) would then come first. The scenario files and the specification are the caller's own, read once before any gate, as before.
 - **The combined peak (ruled condition):**
   - Furnace (the probe inside the container): 8.53 GiB of watched-process RSS, at a `tim1` part after the campaign had ended. The container's whole `memory.peak` was 9.68 GiB.
   - CI: `PROBE combined` and `PROBE host` in the bench job's log (§8).
@@ -95,7 +118,7 @@
 
 ## 6. Mutants
 
-`spike/1919/mutants/run.py`, one per guard this work order adds, each against its test, counted killed only when the test ran and failed: **15/15 killed** (`out.txt`). The probe's two mutants, run by hand, were killed too.
+`spike/1919/mutants/run.py`, one per guard this work order adds, each against its test, counted killed only when the test ran and failed: **21/21 killed** (`out.txt`). That counts six for the two findings: the lanes not stopped, a gate's guardian killed, the parent-death signal, the turn check, the end check blinded, and the end check removed (run in the image against the tier-2 test). The probe's two mutants, run by hand, were killed too.
 
 ## 7. Gates
 
@@ -120,3 +143,5 @@
 | F5 | **Reduction finding, not cut:** `renode::bounded`'s wall message and `renode::hung` are two texts for one kind of kill (the firmware's run against a load or `--version`) | merge them at a later pass if the boot's message may move |
 | F6 | **(M), two matrix prove jobs, is held in reserve.** After (G)+(X), CBMC is the long lane, about 32 min on the slowest runner | when `4411`'s `uart4` harness or another board takes the room |
 | F7 | **Process:** I edited my own line in `architect.md` once, after appending it, to put in a commit SHA. Next time I will append a correction instead | none |
+| F8 | **Process:** three runs of the new swap test failed in the image on a stale binary. A mutant run had built `verify` with no end check, then restored and touched the file. My next `rsync -a` copied the branch's older mtime back over it, so cargo kept the mutant's binary. Every run since touches the synced sources: 5 of 5 pass. The lesson matches `Mutant restore needs touch` | none |
+| F9 | **A gate's stderr is held until its turn,** so a hung prove shows none while it runs | none: diagnostics only |
