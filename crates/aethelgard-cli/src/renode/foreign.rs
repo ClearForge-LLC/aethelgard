@@ -1229,6 +1229,67 @@ fn reads(
     Ok(r)
 }
 
+/// A motor declared DShot whose timer, at the run's end, does not run at its
+/// protocol's bit rate (`AET-WO-4412` D3, ruled 2026-11-26): the expectation
+/// is the specification's (`motor_outputs[].protocol`, its bit rate), the
+/// observation the end read's `PSC` and `ARR` at the frequency the platform
+/// builds the timer at. Below half the bit rate the timer is not counting
+/// DShot bits: unmodified ArduPilot runs PWM until a `MOT_PWM_TYPE` is set
+/// (its default is PWM, and the generated hwdef sets none). Info, never a
+/// failure, one per timer; `None` where the image does not read the timer.
+pub const MOTOR_PROTOCOL_UNMET: &str = "foreign_motor_protocol_unmet";
+
+pub(crate) fn motor_protocol_unmet(
+    plan: &BootPlan<'_>,
+    observed: &[[u32; END_READS]],
+) -> Vec<Finding> {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out = Vec::new();
+    for m in plan.motors {
+        let o = &m.observer;
+        let Some(bit_rate) = o.protocol.bit_rate() else {
+            continue;
+        };
+        if !seen.insert(o.timer) {
+            continue;
+        }
+        let at = |r: &str| {
+            let name = format!("TIM{}.{r}", o.timer);
+            plan.image
+                .registers
+                .iter()
+                .position(|reg| reg.name == name)
+                .map(|i| observed[i][END_READS - 1])
+        };
+        let (Some(psc), Some(arr)) = (at("PSC"), at("ARR")) else {
+            continue;
+        };
+        let cycles = (u64::from(psc) + 1) * (u64::from(arr) + 1);
+        let rate = o.kernel_hz / cycles.max(1);
+        if rate * 2 >= u64::from(bit_rate) {
+            continue;
+        }
+        let labels: Vec<&str> = plan
+            .motors
+            .iter()
+            .filter(|n| n.observer.timer == o.timer)
+            .map(|n| n.observer.label.as_str())
+            .collect();
+        out.push(Finding::info(
+            MOTOR_PROTOCOL_UNMET,
+            format!(
+                "ArduPilot runs PWM on a board declared DShot: {} on TIM{} are declared {} ({bit_rate} bit/s), but at the run's end TIM{} updates at {rate} Hz (PSC {psc:#x}, ARR {arr:#x} at {} Hz), not at a DShot bit rate. MOT_PWM_TYPE is an ArduPilot parameter, PWM by default, which the generated hwdef does not set (AET-WO-4412 D3)",
+                labels.join(", "),
+                o.timer,
+                o.protocol.name(),
+                o.timer,
+                o.kernel_hz
+            ),
+        ));
+    }
+    out
+}
+
 /// How the foreign judge reads a register of the image, by its name, or
 /// `None` when the rule table drops it.
 fn register_rule(name: &str, frame: u32) -> Option<(&'static str, Option<u32>)> {
@@ -2032,6 +2093,7 @@ pub fn judge(
             ),
         ));
     }
+    findings.extend(motor_protocol_unmet(plan, &observed));
     let rc_fields = rc_search_fields()?;
     for (i, reg) in plan.image.registers.iter().enumerate() {
         let Some((rule, narrowed)) = register_rule(&reg.name, frame) else {

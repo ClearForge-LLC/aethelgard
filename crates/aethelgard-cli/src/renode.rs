@@ -4691,6 +4691,63 @@ mod tests {
         }
     }
 
+    /// `AET-WO-4412` D3: a motor declared DShot whose timer ends at a PWM
+    /// rate is named, once per timer, as info; at the declared bit rate it is
+    /// not. The board is `motors-dshot600` (four outputs on TIM1), its end
+    /// reads every image register at its expected value but TIM1's `PSC` and
+    /// `ARR`, which take ArduPilot's PWM words (400 Hz at 200 MHz: `PSC` 0xC7,
+    /// `ARR` 0x9C3, measured on Sentinel-03, `spike/4412` `arm-s`) or its
+    /// DShot600 words (`PSC` 0x29, `ARR` 7: 595 kHz).
+    #[test]
+    fn a_dshot_motor_whose_timer_runs_pwm_at_the_end_is_named() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let mut motors = motors(&topology).unwrap();
+        for m in &mut motors {
+            m.observer.kernel_hz = 200_000_000;
+        }
+        let p = BootPlan {
+            motors: &motors,
+            ..plan(&image, &[])
+        };
+        let ends = |psc: u32, arr: u32| -> Vec<[u32; foreign::END_READS]> {
+            image
+                .registers
+                .iter()
+                .map(|r| match r.name.as_str() {
+                    "TIM1.PSC" => [psc; foreign::END_READS],
+                    "TIM1.ARR" => [arr; foreign::END_READS],
+                    _ => [r.value; foreign::END_READS],
+                })
+                .collect()
+        };
+        let f = foreign::motor_protocol_unmet(&p, &ends(0xC7, 0x9C3));
+        assert_eq!(
+            f.len(),
+            1,
+            "{:?}",
+            f.iter().map(|f| &f.message).collect::<Vec<_>>()
+        );
+        assert_eq!(f[0].kind, foreign::MOTOR_PROTOCOL_UNMET);
+        assert_eq!(f[0].severity, "info");
+        assert!(
+            f[0].message
+                .contains("ArduPilot runs PWM on a board declared DShot")
+                && f[0]
+                    .message
+                    .contains("MOTOR1, MOTOR2, MOTOR3, MOTOR4 on TIM1")
+                && f[0].message.contains("updates at 400 Hz"),
+            "{}",
+            f[0].message
+        );
+        assert!(foreign::motor_protocol_unmet(&p, &ends(0x29, 7)).is_empty());
+    }
+
     /// A board with no pin device (`AET-WO-1211c`).
     static NO_PINS: aethelgard_twin::pins::Pins = aethelgard_twin::pins::Pins {
         outputs: Vec::new(),
