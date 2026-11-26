@@ -48,7 +48,7 @@ struct Report {
     check: &'static str,
     engine_version: &'static str,
     /// The commit this executable was built from, or `unknown`, and its
-    /// tree, `clean`, `dirty` or `unknown` (`AET-WO-1802` (2)).
+    /// tree, `clean`, `dirty`, `packaged` or `unknown` (`AET-WO-1802` (2)).
     engine_commit: &'static str,
     engine_tree: &'static str,
     /// The scratch base, when it passes the rule.

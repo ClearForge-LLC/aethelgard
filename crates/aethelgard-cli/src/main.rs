@@ -2846,10 +2846,12 @@ fn simulate_with(
                     &input.sha256,
                     // As a campaign's header names them (`AET-WO-2205` §1.1).
                     vec![
-                        // The commit too (`AET-WO-2205` F4, `AET-WO-1802`).
+                        // The version alone: the header seeds the state-sequence hash,
+                        // which the verdict, and so a committed MANIFEST.json, binds
+                        // (`AET-WO-1802` §7 stop 2).
                         (
                             aethelgard_chaos::campaign::ENGINE.to_owned(),
-                            aethelgard_cli::identity::IDENTITY.to_owned(),
+                            aethelgard_cli::identity::VERSION.to_owned(),
                         ),
                         (
                             aethelgard_chaos::campaign::RENODE.to_owned(),
@@ -2958,10 +2960,11 @@ fn simulate_with(
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
     if let Some(build) = build.filter(|_| ready.is_some()) {
         use aethelgard_chaos::campaign::{ENGINE, RENODE};
-        // The commit too (`AET-WO-2205` F4, `AET-WO-1802`): the header is in no
-        // verdict's hash and in no committed byte.
+        // The version alone, never the commit: the archive header seeds the
+        // state-sequence hash (`chaos/src/replay.rs`), which the verdict, and
+        // so a committed MANIFEST.json, binds (`AET-WO-1802` §7 stop 2).
         v.tools
-            .push((ENGINE, aethelgard_cli::identity::IDENTITY.to_owned()));
+            .push((ENGINE, aethelgard_cli::identity::VERSION.to_owned()));
         v.tools.push((RENODE, build));
     }
     if let Some((records, faults)) = analog {

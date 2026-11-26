@@ -243,7 +243,7 @@ fn version_names_the_commit_or_unknown() {
     };
     match (COMMIT, TREE) {
         ("unknown", "unknown") => assert_eq!(IDENTITY, format!("{VERSION} (commit unknown)")),
-        (sha, tree @ ("clean" | "dirty")) => {
+        (sha, tree @ ("clean" | "dirty" | "packaged")) => {
             assert!(hex(sha), "{sha}");
             assert_eq!(IDENTITY, format!("{VERSION} (commit {sha}, {tree})"));
         }

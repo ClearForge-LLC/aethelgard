@@ -7,18 +7,31 @@
 //!   with [`PATH_IN_VCS`] is the manifest directory, and the manifest is
 //!   tracked there. A crate unpacked under `target/package/` of this
 //!   repository, or a registry copy inside some other repository, is not, so
-//!   git never names a commit for a tree it was not built from. The state is
-//!   `dirty` when `git status` names any change or untracked file, anywhere
-//!   in the tree.
+//!   git never names a commit for a tree it was not built from; nor is a
+//!   crate whose `.cargo_vcs_info.json` is tracked (a package committed into
+//!   a repository is that package). The state is `dirty` when `git status`
+//!   names any change or untracked file in the binary's inputs, [`WATCHED`],
+//!   the paths the build script reruns on, or when an index entry there is
+//!   marked skip-worktree or assume-unchanged (which hide a change from
+//!   `git status`); `clean` otherwise.
 //! - **`.cargo_vcs_info.json`**, which `cargo package` writes into a crate's
-//!   root: the commit it was packaged from, `dirty` when cargo recorded that
-//!   it packaged a dirty tree. Its `path_in_vcs` must be [`PATH_IN_VCS`].
+//!   root: the commit it was packaged from. Its `path_in_vcs` must be
+//!   [`PATH_IN_VCS`]. Cargo records `dirty` for this package's own files
+//!   only, never its siblings', and nothing checks the unpacked files, so the
+//!   state is `dirty` when cargo recorded it and otherwise `packaged`, never
+//!   `clean`.
 //!
 //! Otherwise the commit is `unknown`, and so is the state.
 //!
 //! git runs with an empty environment, so no `GIT_DIR`, `GIT_WORK_TREE` or
-//! `GIT_INDEX_FILE` the build inherited can point it at another repository,
-//! and with `--no-optional-locks`, so `git status` never rewrites the index.
+//! `GIT_INDEX_FILE` the build inherited can point it at another repository;
+//! with `--no-replace-objects`, so a replace ref cannot rename `HEAD`; and
+//! with `--no-optional-locks`, so `git status` never rewrites the index.
+//!
+//! The record is of the sources when the script last ran. A source edited
+//! while cargo is still compiling, after the script ran, is in the binary
+//! but not in the record; the next build reruns the script (`AET-WO-1802`
+//! adversarial F4, inherent to any build-time record).
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -29,12 +42,33 @@ pub const PATH_IN_VCS: &str = "crates/aethelgard-cli";
 pub const VCS_INFO: &str = ".cargo_vcs_info.json";
 /// The largest `.cargo_vcs_info.json` read; cargo's is about 120 bytes.
 const MAX_VCS_INFO: u64 = 4096;
+/// The binary's inputs in a checkout, from its toplevel: what the build
+/// script reruns on, and what `dirty` is judged over.
+pub const WATCHED: [&str; 5] = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    "crates",
+    "models",
+];
 
-/// What the build knows of its tree.
+/// What the build knows of its sources against the commit it names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tree {
+    /// A checkout whose inputs are the commit's.
+    Clean,
+    /// A checkout whose inputs differ from it, or a package cargo recorded
+    /// as packaged from a dirty tree.
+    Dirty,
+    /// A package: the commit it was packaged from, its files not checked.
+    Packaged,
+}
+
+/// What the build knows of its commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Commit {
-    /// A commit, and whether the tree it was built from differed from it.
-    Known { sha: String, dirty: bool },
+    /// A commit, and the sources against it.
+    Known { sha: String, tree: Tree },
     /// No source could name one.
     Unknown,
 }
@@ -59,18 +93,25 @@ impl Commit {
         }
     }
 
-    /// `clean`, `dirty` or `unknown`.
+    /// `clean`, `dirty`, `packaged` or `unknown`.
     pub fn tree(&self) -> &'static str {
         match self {
-            Commit::Known { dirty: false, .. } => "clean",
-            Commit::Known { dirty: true, .. } => "dirty",
+            Commit::Known {
+                tree: Tree::Clean, ..
+            } => "clean",
+            Commit::Known {
+                tree: Tree::Dirty, ..
+            } => "dirty",
+            Commit::Known {
+                tree: Tree::Packaged,
+                ..
+            } => "packaged",
             Commit::Unknown => "unknown",
         }
     }
 
     /// The engine's identity, `version` and the commit: `0.3.0 (commit
-    /// <sha>, clean)`, `0.3.0 (commit <sha>, dirty)` or `0.3.0 (commit
-    /// unknown)`.
+    /// <sha>, clean|dirty|packaged)` or `0.3.0 (commit unknown)`.
     pub fn identity(&self, version: &str) -> String {
         match self {
             Commit::Known { sha, .. } => format!("{version} (commit {sha}, {})", self.tree()),
@@ -101,6 +142,7 @@ fn git(dir: &Path, args: &[&str]) -> Option<String> {
     let out = c
         .env("LC_ALL", "C")
         .arg("--no-optional-locks")
+        .arg("--no-replace-objects")
         .arg("-C")
         .arg(dir)
         .args(args)
@@ -126,6 +168,10 @@ fn from_git(dir: &Path) -> Option<(Commit, PathBuf)> {
         return None;
     }
     git(dir, &["ls-files", "--error-unmatch", "--", "Cargo.toml"])?;
+    // A package committed into a repository is that package (F6).
+    if git(dir, &["ls-files", "--error-unmatch", "--", VCS_INFO]).is_some() {
+        return None;
+    }
     let sha = git(
         &top,
         &["rev-parse", "--verify", "--end-of-options", "HEAD^{commit}"],
@@ -134,19 +180,33 @@ fn from_git(dir: &Path) -> Option<(Commit, PathBuf)> {
     if !is_sha(sha) {
         return None;
     }
-    let status = git(
-        &top,
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=normal",
-            "--ignore-submodules=none",
-        ],
-    )?;
+    let mut args = vec![
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=normal",
+        "--ignore-submodules=none",
+        "--",
+    ];
+    args.extend(WATCHED);
+    let status = git(&top, &args)?;
+    // `ls-files -v` tags an assume-unchanged entry in lower case and a
+    // skip-worktree one `S`: either hides a change from `git status` (F3).
+    let mut args = vec!["ls-files", "-v", "--"];
+    args.extend(WATCHED);
+    let hidden = git(&top, &args)?.lines().any(|l| {
+        l.bytes()
+            .next()
+            .is_some_and(|t| t == b'S' || t.is_ascii_lowercase())
+    });
+    let tree = if status.is_empty() && !hidden {
+        Tree::Clean
+    } else {
+        Tree::Dirty
+    };
     Some((
         Commit::Known {
             sha: sha.to_owned(),
-            dirty: !status.is_empty(),
+            tree,
         },
         top,
     ))
@@ -161,9 +221,9 @@ fn from_package(dir: &Path) -> Option<Commit> {
     parse_vcs_info(&std::fs::read(&path).ok()?)
 }
 
-/// `.cargo_vcs_info.json`'s commit: `git.sha1`, and `git.dirty` when cargo
-/// wrote it (only `true` or `false`), for [`PATH_IN_VCS`]. Anything else is
-/// no commit.
+/// `.cargo_vcs_info.json`'s commit: `git.sha1`, `dirty` when cargo wrote
+/// `git.dirty` true and `packaged` otherwise (`dirty` only `true` or
+/// `false`), for [`PATH_IN_VCS`]. Anything else is no commit.
 pub fn parse_vcs_info(bytes: &[u8]) -> Option<Commit> {
     let v: serde_json::Value = serde_json::from_slice(bytes).ok()?;
     if v.get("path_in_vcs")?.as_str()? != PATH_IN_VCS {
@@ -174,13 +234,14 @@ pub fn parse_vcs_info(bytes: &[u8]) -> Option<Commit> {
     if !is_sha(sha) {
         return None;
     }
-    let dirty = match git.get("dirty") {
-        None => false,
-        Some(d) => d.as_bool()?,
+    let tree = match git.get("dirty") {
+        None => Tree::Packaged,
+        Some(d) if d.as_bool()? => Tree::Dirty,
+        Some(_) => Tree::Packaged,
     };
     Some(Commit::Known {
         sha: sha.to_owned(),
-        dirty,
+        tree,
     })
 }
 
@@ -247,7 +308,7 @@ mod tests {
             c,
             Commit::Known {
                 sha: sha.clone(),
-                dirty: false
+                tree: Tree::Clean
             }
         );
         assert_eq!(s, Source::Git(top.clone()));
@@ -255,32 +316,54 @@ mod tests {
         fs::remove_dir_all(top).unwrap();
     }
 
-    /// A tracked file changed, one staged, one untracked file, one change
-    /// outside the crate: each is `dirty`, with the commit it differs from.
+    /// A tracked file changed, one staged, one untracked file, a change in
+    /// another crate, an entry hidden by skip-worktree or assume-unchanged:
+    /// each is `dirty`, with the commit it differs from. A change outside
+    /// the binary's inputs (a document at the root) is not (F5).
     #[test]
     fn a_dirty_checkout_says_dirty() {
         let (top, krate, sha) = repo("dirty");
         let dirty = Commit::Known {
             sha: sha.clone(),
-            dirty: true,
+            tree: Tree::Dirty,
+        };
+        let clean = Commit::Known {
+            sha: sha.clone(),
+            tree: Tree::Clean,
         };
         fs::write(krate.join("Cargo.toml"), "[package]\nx = 1\n").unwrap();
         assert_eq!(decide(&krate).0, dirty, "a tracked file changed");
         run_git(&top, &["add", "-A"]);
         assert_eq!(decide(&krate).0, dirty, "a change staged");
         run_git(&top, &["reset", "-q", "--hard"]);
-        assert_eq!(
-            decide(&krate).0,
-            Commit::Known {
-                sha: sha.clone(),
-                dirty: false
-            }
-        );
+        assert_eq!(decide(&krate).0, clean);
         fs::write(krate.join("new.rs"), "").unwrap();
         assert_eq!(decide(&krate).0, dirty, "an untracked file");
         fs::remove_file(krate.join("new.rs")).unwrap();
+        fs::write(top.join("crates/aethelgard-ir.rs"), "").unwrap();
+        assert_eq!(decide(&krate).0, dirty, "another crate's file");
+        fs::remove_file(top.join("crates/aethelgard-ir.rs")).unwrap();
         fs::write(top.join("README.md"), "changed\n").unwrap();
-        assert_eq!(decide(&krate).0, dirty, "a change outside the crate");
+        assert_eq!(decide(&krate).0, clean, "a document outside the inputs");
+        run_git(&top, &["checkout", "-q", "--", "README.md"]);
+        for flag in ["--skip-worktree", "--assume-unchanged"] {
+            run_git(
+                &top,
+                &["update-index", flag, &format!("{PATH_IN_VCS}/Cargo.toml")],
+            );
+            fs::write(krate.join("Cargo.toml"), "[package]\nhidden = 1\n").unwrap();
+            assert_eq!(decide(&krate).0, dirty, "{flag}");
+            run_git(
+                &top,
+                &[
+                    "update-index",
+                    &flag.replace("--", "--no-"),
+                    &format!("{PATH_IN_VCS}/Cargo.toml"),
+                ],
+            );
+            run_git(&top, &["checkout", "-q", "--", "."]);
+            assert_eq!(decide(&krate).0, clean, "{flag} undone");
+        }
         assert_eq!(
             dirty.identity("0.3.0"),
             format!("0.3.0 (commit {sha}, dirty)")
@@ -304,17 +387,17 @@ mod tests {
         fs::remove_dir_all(d).unwrap();
     }
 
-    /// A packaged crate names the commit it was packaged from, and `dirty`
-    /// only as cargo recorded it.
+    /// A packaged crate names the commit it was packaged from, `packaged`,
+    /// never `clean` (F2), and `dirty` only as cargo recorded it.
     #[test]
     fn a_package_names_the_commit_it_was_packaged_from() {
         let d = scratch("package");
         let krate = d.join("aethelgard-cli-0.3.0");
         fs::create_dir_all(&krate).unwrap();
-        for (field, dirty) in [
-            ("", false),
-            (r#","dirty":false"#, false),
-            (r#","dirty":true"#, true),
+        for (field, tree) in [
+            ("", Tree::Packaged),
+            (r#","dirty":false"#, Tree::Packaged),
+            (r#","dirty":true"#, Tree::Dirty),
         ] {
             fs::write(krate.join(VCS_INFO), vcs_info(field)).unwrap();
             assert_eq!(
@@ -322,7 +405,7 @@ mod tests {
                 (
                     Commit::Known {
                         sha: SHA.to_owned(),
-                        dirty
+                        tree
                     },
                     Source::Package
                 ),
@@ -373,8 +456,50 @@ mod tests {
         let (top, krate, sha) = repo("planted");
         fs::write(krate.join(VCS_INFO), vcs_info("")).unwrap();
         let (c, s) = decide(&krate);
-        assert_eq!(c, Commit::Known { sha, dirty: true });
+        assert_eq!(
+            c,
+            Commit::Known {
+                sha,
+                tree: Tree::Dirty
+            }
+        );
         assert_eq!(s, Source::Git(top.clone()));
+        fs::remove_dir_all(top).unwrap();
+    }
+
+    /// A package committed into a repository at this crate's path is that
+    /// package, never the repository's commit (F6).
+    #[test]
+    fn a_tracked_package_file_is_the_package() {
+        let (top, krate, sha) = repo("tracked");
+        fs::write(krate.join(VCS_INFO), vcs_info("")).unwrap();
+        run_git(&top, &["add", "-A"]);
+        run_git(&top, &["commit", "-q", "-m", "pkg"]);
+        let (c, s) = decide(&krate);
+        assert_eq!((c.sha(), c.tree(), s), (SHA, "packaged", Source::Package));
+        assert_ne!(c.sha(), sha);
+        fs::remove_dir_all(top).unwrap();
+    }
+
+    /// A replace ref cannot hide a difference (F3): `HEAD` names A while
+    /// the index and the work tree are B, and `git replace A B` makes A's
+    /// tree read as B's. git is asked with replace refs off, so it is A,
+    /// dirty.
+    #[test]
+    fn a_replace_ref_cannot_hide_a_difference() {
+        let (top, krate, a) = repo("replace");
+        fs::write(krate.join("Cargo.toml"), "[package]\nb = 1\n").unwrap();
+        run_git(&top, &["commit", "-q", "-am", "b"]);
+        let b = git(&top, &["rev-parse", "HEAD"]).unwrap().trim().to_owned();
+        run_git(&top, &["update-ref", "HEAD", &a]);
+        run_git(&top, &["replace", &a, &b]);
+        assert_eq!(
+            decide(&krate).0,
+            Commit::Known {
+                sha: a,
+                tree: Tree::Dirty
+            }
+        );
         fs::remove_dir_all(top).unwrap();
     }
 
