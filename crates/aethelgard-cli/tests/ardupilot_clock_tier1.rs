@@ -242,10 +242,15 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
             .model
     };
     assert_eq!(timer1(&s03), "AethelgardSTM32Timer");
-    assert_eq!(
-        timer1(&read(&common::example("sentinel-03.json"))),
-        "STM32_Timer"
-    );
+    // The stock control: the committed board with its declaration removed
+    // (it declares `foreign_clock` since `AET-WO-4412` D1 (a)).
+    let mut undeclared = read(&common::example("sentinel-03.json"));
+    undeclared["mcu"]
+        .as_object_mut()
+        .unwrap()
+        .remove("foreign_clock")
+        .unwrap();
+    assert_eq!(timer1(&undeclared), "STM32_Timer");
     let foreign = std::fs::read_to_string(out.join("board/sentinel-03.foreign.repl")).unwrap();
     let generated = std::fs::read_to_string(out.join("board/sentinel-03.repl")).unwrap();
     assert!(

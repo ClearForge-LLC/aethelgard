@@ -1158,7 +1158,55 @@
         "pin": "PC9",
         "reason": "MCO2: AET-WO-3400 E5's clock-out, moved from MCO1/PA8 when MOTOR1 took PA8 (AET-WO-4300h D3, ruled 2026-11-23)"
       }
-    ]
+    ],
+    "foreign_clock": {
+      "apb1_timers_hz": {
+        "value": 200000000,
+        "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: PLL1 HSE/2*100/2 = 400 MHz (L134-139, L184-207), HPRE /2, D2PPRE1/2 /2 (L292-293), TIMPRE 1 (L312; RM0433 Rev 9 Table 57)"
+      },
+      "apb2_timers_hz": {
+        "value": 200000000,
+        "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: PLL1 HSE/2*100/2 = 400 MHz (L134-139, L184-207), HPRE /2, D2PPRE1/2 /2 (L292-293), TIMPRE 1 (L312; RM0433 Rev 9 Table 57)"
+      },
+      "vos": {
+        "value": "scale1",
+        "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: STM32_VOS_SCALE1 (L109)"
+      },
+      "usarts": {
+        "UART4": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "UART5": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "UART7": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "UART8": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "USART1": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "USART2": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "USART3": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        },
+        "USART6": {
+          "value": 100000000,
+          "source": "Copter-4.7.2 stm32h7_mcuconf.h, OSCILLATOR_HZ 16000000: USART16SEL, USART234578SEL PLL2_Q (L343-344), HSE/2*75/6 = 100 MHz (L134-139, L184-207)"
+        }
+      }
+    }
   },
   "voltage_domains": [
     {

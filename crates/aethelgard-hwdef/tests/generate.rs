@@ -11,7 +11,7 @@ use aethelgard_hwdef::{Refusal, generate};
 use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 
-const BOARDS: [(&str, &str, &str); 6] = [
+const BOARDS: [(&str, &str, &str); 7] = [
     (
         "sentinel-01",
         include_str!("fixtures/sentinel-01.topology.json"),
@@ -43,6 +43,13 @@ const BOARDS: [(&str, &str, &str); 6] = [
         "sentinel-01-full",
         include_str!("fixtures/sentinel-01-full.topology.json"),
         include_str!("fixtures/sentinel-01-full.hwdef.dat"),
+    ),
+    // AET-WO-4412 (ruled 2026-11-26T10:43Z D1 (a)): Sentinel-03, its DShot outputs and
+    // its foreign clock, built and judged in CI.
+    (
+        "sentinel-03",
+        include_str!("fixtures/sentinel-03.topology.json"),
+        include_str!("fixtures/sentinel-03.hwdef.dat"),
     ),
 ];
 
@@ -84,6 +91,10 @@ fn a_dshot_board_carries_its_mot_pwm_type_in_defaults_parm() {
         (
             "serial-dshot-9600-open",
             include_str!("fixtures/serial-dshot-9600-open.defaults.parm"),
+        ),
+        (
+            "sentinel-03",
+            include_str!("fixtures/sentinel-03.defaults.parm"),
         ),
     ];
     for (name, t, _) in BOARDS {

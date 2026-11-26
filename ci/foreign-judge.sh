@@ -8,7 +8,8 @@
 #
 # BOARDS holds sentinel-02/arducopter.elf (the generated job's),
 # sentinel-02-noimu/arducopter.elf (the same hwdef without its IMU line) and
-# four-port/arducopter.elf (the generated job's four-port board, AET-WO-2311).
+# four-port/arducopter.elf (the generated job's four-port board, AET-WO-2311) and
+# sentinel-03/arducopter.elf (the generated job's, with its defaults.parm; AET-WO-4412).
 # The CLI and the analog bridge are built in target/ (CARGO_TARGET_DIR).
 # Each run prints one `ANSWER 4400e:` line with its exit code and verdict.
 # AET-WO-4400g: the specification declares ArduPilot's clock
@@ -439,3 +440,36 @@ print(f"ANSWER 4400e: input-replay judge={r['judge']} input_verdict={r['input_ve
 assert r["judge"] == "foreign" and r["input_verdict"] == "pass" and r["run_id"] == w["run_id"]
 assert r["input_sha256"] == w["input"]["sha256"] and r["witness"] == w["witness"]
 PY
+
+# AET-WO-4412 (ruled 2026-11-26T10:43Z D1 (a), 14:09Z (b), 15:27Z (ii), 19:38Z): Sentinel-03's three foreign runs,
+# on its committed specification (its foreign_clock) and the generated job's ELF (MOT_PWM_TYPE 6 from its
+# defaults.parm, so DShot600 from boot), each in a 12 s window. Their inputs are pymavlink 2.4.50's, written in
+# the pinned ArduPilot image by `python -I spike/4412/py/input.py NAME OUT.json` on CONSOLE (sha256:
+# armread12 1f1f6a3c, dshot12 adcc235b, reboot12 d46aaf76). Each is held by name only, never by a count or a
+# stamp: a DShot run's instruction count and end PC are not_rerun_stable (15:27Z (ii)). Each prints its wall,
+# the runner's CPU and nproc: the worst of the three is the CI wall figure, against the 120 s guard (14:09Z (b)).
+s03=examples/sentinel-03.json
+"$bin" generate --spec "$s03" --out "$work/gen-s03" > "$work/generate-s03.json"
+s03plat=$work/gen-s03/board/sentinel-03.foreign.repl
+s03elf=$boards/sentinel-03/arducopter.elf
+s03in=crates/aethelgard-cli/tests/fixtures/4412
+s03_dshot='
+v["verdict"] == "pass" and "foreign_motor_protocol_unmet" not in [f["kind"] for f in v["findings"]]
+and [(s["timer"], s["request"]) for s in boot["dshot"]["transfers"]] == [("TIM1", 15)]
+and all(p["frames"] > 0 and p["malformed"] == 0 for s in boot["dshot"]["transfers"] for p in s["positions"])
+and [u["field"] for u in boot["not_rerun_stable"]] == ["boot.instructions", "boot.pc"]'
+s03run() {
+  local name=$1 check=$2 t0 t1
+  t0=$(date +%s.%N)
+  run_spec=$s03 run "$name" 0 "$check" --platform "$s03plat" --firmware "$s03elf" --foreign 12000ms --input "$s03in/$3.json"
+  t1=$(date +%s.%N)
+  echo "ANSWER 4412: $name wall_s=$(python3 -I -c "print(round($t1 - $t0, 2))") cpu=\"$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')\" nproc=$(nproc)"
+}
+s03run s03-arm "$s03_dshot"'
+and boot["input"]["witness"]["armed"] is not None
+and [(r["id"], r["value"]) for r in boot["input"]["witness"]["reads"]] == [("MOT_PWM_TYPE", 6.0)]' armread12
+s03run s03-dshot "$s03_dshot"'
+and boot["input"]["witness"]["armed"] is not None' dshot12
+s03run s03-reboot "$s03_dshot"'
+and "foreign_reboot" in [f["kind"] for f in v["findings"]] and len(boot["resets_ns"]) == 1
+and boot["input"]["witness"]["armed"] is None' reboot12
