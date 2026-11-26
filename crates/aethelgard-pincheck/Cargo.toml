@@ -13,6 +13,7 @@ categories = ["embedded","development-tools"]
 # that generates firmware or hwdef.dat (tests/separation.rs).
 [dependencies]
 aethelgard-ir.workspace = true
+miniz_oxide.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

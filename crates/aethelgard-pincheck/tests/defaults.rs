@@ -31,7 +31,7 @@ fn board() -> Elf {
 /// The signatures `elf` shows, each line up to its first `: `, or the
 /// refusal's kind.
 fn signatures(elf: &Elf) -> Result<Vec<String>, &'static str> {
-    elf::defaults_signatures(&elf.bytes())
+    elf::defaults_signatures(&elf.bytes(), None)
         .map(|found| {
             found
                 .iter()
@@ -201,7 +201,9 @@ fn every_malformed_read_is_refused_by_name() {
     assert_eq!(romfs(long), Err("RomfsNameTooLong"));
     assert_eq!(romfs(&long[..128]), Ok(vec![]));
     assert_eq!(
-        elf::defaults_signatures(b"not an elf").unwrap_err().kind(),
+        elf::defaults_signatures(b"not an elf", None)
+            .unwrap_err()
+            .kind(),
         "Truncated"
     );
 }
@@ -287,4 +289,129 @@ fn a_malformed_scripting_table_is_refused_by_name() {
         }),
         Err("VarInfoUnterminated")
     );
+}
+
+/// Sentinel-03's ROMFS `defaults.parm`, cut from its ELF (1cfc5e02, built in
+/// the pinned image from `generate hwdef`'s files, `spike/4412`): 430 bytes
+/// of raw deflate, and the 597 they inflate to, which `generate hwdef`
+/// wrote for its topology (the same sha256, 14f29607).
+const S03_DEFLATE: &[u8] = include_bytes!("fixtures/sentinel-03.defaults.parm.deflate");
+const S03_DEFAULTS: &str = include_str!("fixtures/sentinel-03.defaults.parm");
+
+/// A ROMFS `defaults.parm` holding `deflated`, which inflates to `len` bytes.
+fn defaults_file(deflated: Vec<u8>, len: usize) -> RomfsFile {
+    RomfsFile {
+        compressed: deflated.len() as u32,
+        decompressed: len as u32,
+        contents: deflated,
+        ..ROMFS_DEFAULTS
+    }
+}
+
+/// A board that links `load_defaults_file` and embeds `file` as its ROMFS
+/// `defaults.parm`, beside `hwdef.dat`.
+fn embedding(file: RomfsFile) -> Elf {
+    Elf {
+        functions: vec![
+            RELOAD_DEFAULTS_FILE.to_owned(),
+            function(LOAD_DEFAULTS_FILE),
+        ],
+        romfs: Some(vec![file, ROMFS_HWDEF]),
+        ..board()
+    }
+}
+
+fn deflated(text: &str) -> RomfsFile {
+    defaults_file(
+        miniz_oxide::deflate::compress_to_vec(text.as_bytes(), 6),
+        text.len(),
+    )
+}
+
+/// The signatures with `defaults` admitted, each line whole.
+fn admitting(elf: &Elf, defaults: &str) -> Result<Vec<String>, &'static str> {
+    elf::defaults_signatures(&elf.bytes(), Some(defaults)).map_err(|e| e.kind())
+}
+
+/// `AET-WO-4412` (ruled 2026-11-26T17:35Z): the one defaults file admitted
+/// is the one `generate hwdef` writes for the topology, byte for byte, and
+/// with it `load_defaults_file`, which loads only that file on ChibiOS.
+/// Sentinel-03's own, as its ELF embeds it, is admitted; with no file to
+/// admit it is refused as `AET-WO-4406` built it.
+#[test]
+fn sentinel_03s_own_defaults_parm_is_admitted_and_nothing_else() {
+    let s03 = embedding(defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len()));
+    assert_eq!(admitting(&s03, S03_DEFAULTS), Ok(vec![]));
+    assert!(elf::read_admitting(&s03.bytes(), Some(S03_DEFAULTS)).is_ok());
+    assert_eq!(signatures(&s03), Ok(vec![FILE.into(), ROMFS.into()]));
+    assert_eq!(
+        elf::read(&s03.bytes()).unwrap_err().kind(),
+        "ParamDefaultsOverride"
+    );
+    // Every other signature still refuses beside an admitted file.
+    let lua = Elf {
+        romfs: Some(vec![
+            defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len()),
+            ROMFS_HWDEF,
+            ROMFS_ADVLUA,
+        ]),
+        scripting: Some(scripting_var_info(1.0)),
+        ..s03.clone()
+    };
+    let lua = admitting(&lua, S03_DEFAULTS).unwrap();
+    assert_eq!(lua.len(), 2, "{lua:?}");
+    assert!(
+        lua[0].starts_with(LUA) && lua[1].starts_with(SCR_ENABLE),
+        "{lua:?}"
+    );
+    // `load_defaults_file` with no ROMFS defaults.parm is not admitted.
+    let no_file = Elf {
+        romfs: Some(vec![ROMFS_HWDEF]),
+        ..s03
+    };
+    assert_eq!(admitting(&no_file, S03_DEFAULTS).map(|f| f.len()), Ok(1));
+}
+
+/// An extra line, and `MOT_PWM_TYPE` contradicting the topology, are each
+/// refused, naming the first line that differs; `load_defaults_file` stays a
+/// signature beside each. A file that does not inflate to its stated size is
+/// refused by name.
+#[test]
+fn a_defaults_parm_other_than_the_topologys_is_refused_by_its_first_differing_line() {
+    let extra = embedding(deflated(&format!("{S03_DEFAULTS}SERIAL1_PROTOCOL 2\n")));
+    let found = admitting(&extra, S03_DEFAULTS).unwrap();
+    assert_eq!(found.len(), 2, "{found:?}");
+    assert_eq!(
+        found[0],
+        FILE.to_owned() + ": a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406)"
+    );
+    assert!(
+        found[1].starts_with(ROMFS)
+            && found[1].ends_with(
+                "it is not the one generate hwdef writes for this topology: its line 5 is `SERIAL1_PROTOCOL 2`, the topology's ``"
+            ),
+        "{found:?}"
+    );
+    let pwm = embedding(deflated(
+        &S03_DEFAULTS.replace("MOT_PWM_TYPE 6", "MOT_PWM_TYPE 5"),
+    ));
+    let found = admitting(&pwm, S03_DEFAULTS).unwrap();
+    assert!(
+        found[1].ends_with("its line 4 is `MOT_PWM_TYPE 5`, the topology's `MOT_PWM_TYPE 6`"),
+        "{found:?}"
+    );
+    for elf in [extra, pwm] {
+        assert_eq!(
+            elf::read_admitting(&elf.bytes(), Some(S03_DEFAULTS))
+                .unwrap_err()
+                .kind(),
+            "ParamDefaultsOverride"
+        );
+    }
+    let short = embedding(defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len() - 1));
+    assert_eq!(admitting(&short, S03_DEFAULTS), Err("MalformedRomfs"));
+    let long = embedding(defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len() + 1));
+    assert_eq!(admitting(&long, S03_DEFAULTS), Err("MalformedRomfs"));
+    let garbage = embedding(defaults_file(vec![0xff; 40], 57));
+    assert_eq!(admitting(&garbage, S03_DEFAULTS), Err("MalformedRomfs"));
 }

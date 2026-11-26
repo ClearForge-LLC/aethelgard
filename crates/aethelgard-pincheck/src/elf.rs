@@ -277,11 +277,18 @@ fn loaded_offset(bytes: &[u8], value: u32, size: u32) -> Result<u64, Refusal> {
 /// (`ParamDefaultsOverride`, [`defaults_signatures`]): this check reads the
 /// defaults it compiles, and those would not be what runs (`AET-WO-4406`).
 pub fn read(bytes: &[u8]) -> Result<GpioConfig, Refusal> {
+    read_admitting(bytes, None)
+}
+
+/// [`read`], admitting one ROMFS `defaults.parm`: `defaults`, the file
+/// `generate hwdef` writes for the topology, if the ELF's is byte for byte
+/// that file ([`defaults_signatures`]; `AET-WO-4412`, ruled 2026-11-26T17:35Z).
+pub fn read_admitting(bytes: &[u8], defaults: Option<&str>) -> Result<GpioConfig, Refusal> {
     let data = object(bytes, SYMBOL, |size| {
         (size != SYMBOL_SIZE)
             .then(|| format!("{size} bytes, not {SYMBOL_SIZE} (11 ports x 7 words)"))
     })?;
-    let overrides = defaults_signatures(bytes)?;
+    let overrides = defaults_signatures(bytes, defaults)?;
     if !overrides.is_empty() {
         return refuse(
             "ParamDefaultsOverride",
@@ -867,6 +874,12 @@ const ROMFS_ENTRY_LEN: u32 = 20;
 /// The longest ROMFS file name read: a path such as `scripts/<name>.lua`.
 const ROMFS_NAME_MAX: usize = 128;
 
+/// `load_defaults_file`'s signature line: admitted only with an admitted
+/// `defaults.parm`, since on ChibiOS its one caller loads that file
+/// (`reload_defaults_file`, `AP_Param.cpp:1599-1632`; the SITL callers do not
+/// build for this target).
+const LOAD_DEFAULTS_FILE_LINKED: &str = "AP_Param::load_defaults_file is linked: a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406)";
+
 /// The file ChibiOS loads defaults from: `get_custom_defaults_file` is
 /// `@ROMFS/defaults.parm` on every board (`AP_HAL_ChibiOS/Util.h:43-45`), and
 /// ROMFS finds it by this name (`AP_Param.cpp:1647-1666`, `AP_ROMFS.cpp:37-46`).
@@ -882,15 +895,20 @@ const ROMFS_DEFAULTS: &str = "defaults.parm";
 /// `AP_Param::reload_defaults_file` is defined in every build and is not a
 /// signature. A symbol that is absent is not read: a board without ROMFS
 /// lists no file. A symbol that is present but malformed is refused by name.
-pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
+///
+/// One file is admitted (`AET-WO-4412`, ruled 2026-11-26T17:35Z): a ROMFS
+/// `defaults.parm` that inflates to exactly `defaults`, the file `generate
+/// hwdef` writes for the topology, and with it `load_defaults_file`, which
+/// loads only that file here. Any other content is a signature naming its
+/// first differing line; with no `defaults`, the file is a signature as
+/// `AET-WO-4406` built it.
+pub fn defaults_signatures(bytes: &[u8], defaults: Option<&str>) -> Result<Vec<String>, Refusal> {
     let sections = header(bytes)?;
     let named = |symbol: &[u8]| symbols_named(bytes, &sections, symbol);
     let mut found = Vec::new();
+    let mut admitted = false;
     for (symbol, what) in [
-        (
-            LOAD_DEFAULTS_FILE,
-            "AP_Param::load_defaults_file is linked: a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406)",
-        ),
+        (LOAD_DEFAULTS_FILE, LOAD_DEFAULTS_FILE_LINKED),
         (
             LOAD_EMBEDDED_PARAM_DEFAULTS,
             "AP_Param::load_embedded_param_defaults is linked: defaults embedded in the image, which apj_tool can write after the build, are read at boot (AP_Param.cpp:1618-1622, :2602-2605)",
@@ -945,9 +963,21 @@ pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
                 ["RomfsNameTooLong", "MalformedRomfs"],
             )?;
             if name == ROMFS_DEFAULTS {
-                found.push(format!(
+                let listed = format!(
                     "ROMFS lists {ROMFS_DEFAULTS}, which ChibiOS loads at boot as @ROMFS/{ROMFS_DEFAULTS} (AP_HAL_ChibiOS/Util.h:43-45, AP_Param.cpp:1647-1666)"
-                ));
+                );
+                match defaults {
+                    None => found.push(listed),
+                    Some(expected) => {
+                        let text = romfs_inflated(bytes, e)?;
+                        match first_difference(&text, expected.as_bytes()) {
+                            None => admitted = true,
+                            Some((n, got, want)) => found.push(format!(
+                                "{listed}, and it is not the one generate hwdef writes for this topology: its line {n} is `{got}`, the topology's `{want}`"
+                            )),
+                        }
+                    }
+                }
             } else if name.starts_with("scripts") && name.ends_with(".lua") {
                 found.push(format!(
                     "ROMFS lists {name}, a Lua script ArduPilot runs from @ROMFS/scripts when scripting is enabled, and a script can set parameters (boards.py:669-672, lua_scripts.cpp:548-550)"
@@ -983,7 +1013,53 @@ pub fn defaults_signatures(bytes: &[u8]) -> Result<Vec<String>, Refusal> {
             ));
         }
     }
+    if admitted {
+        found.retain(|line| line != LOAD_DEFAULTS_FILE_LINKED);
+    }
     Ok(found)
+}
+
+/// A ROMFS entry's contents, inflated as ArduPilot does (raw deflate,
+/// `AP_ROMFS.cpp`'s `find_decompress`) to exactly its `decompressed_size`;
+/// anything else, a build with `HAL_ROMFS_UNCOMPRESSED` included, is refused
+/// by name. Its `crc` is not read: a wrong one makes ArduPilot drop the file
+/// (`AP_ROMFS.cpp:96`), never apply it.
+fn romfs_inflated(bytes: &[u8], entry: &[u8]) -> Result<Vec<u8>, Refusal> {
+    let (compressed, decompressed, at) = (u32_at(entry, 4), u32_at(entry, 8), u32_at(entry, 16));
+    let off = usize::try_from(loaded_offset(bytes, at, compressed)?).unwrap_or(usize::MAX);
+    let raw = bytes
+        .get(off..off + compressed as usize)
+        .unwrap_or_default();
+    match miniz_oxide::inflate::decompress_to_vec_with_limit(raw, decompressed as usize) {
+        Ok(text) if text.len() == decompressed as usize => Ok(text),
+        _ => refuse(
+            "MalformedRomfs",
+            format!(
+                "ROMFS {ROMFS_DEFAULTS}'s {compressed} bytes at {at:#010x} do not inflate (raw deflate, AP_ROMFS.cpp find_decompress) to its {decompressed} bytes"
+            ),
+        ),
+    }
+}
+
+/// The first line, numbered from 1, where `got` and `want` differ, each
+/// shown as text (`(none)` past either's end); `None` when they are equal.
+fn first_difference(got: &[u8], want: &[u8]) -> Option<(usize, String, String)> {
+    if got == want {
+        return None;
+    }
+    let mut a = got.split(|b| *b == b'\n');
+    let mut b = want.split(|b| *b == b'\n');
+    (1..).find_map(|n| match (a.next(), b.next()) {
+        (x, y) if x == y && x.is_some() => None,
+        (x, y) => {
+            let show = |l: Option<&[u8]>| {
+                l.map_or("(none)".to_owned(), |l| {
+                    String::from_utf8_lossy(l).into_owned()
+                })
+            };
+            Some((n, show(x), show(y)))
+        }
+    })
 }
 
 /// The serial table, SERIAL0 first: a whole number of `SerialDef`s, at most
