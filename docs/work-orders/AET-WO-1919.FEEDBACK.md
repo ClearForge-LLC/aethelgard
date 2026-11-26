@@ -10,7 +10,7 @@
   - Then the probe that times every gate was pushed (`4254a2a0`), so that CI's own logs would hold the profile.
   - The stop was posted on the bus on 2026-11-26 at 04:08Z, with an addendum at 04:42Z. It was ruled at 04:51Z: (1) (G)+(X), (2a)–(2e), (2c) granted, (3a)–(3c).
 - **The record:** `spike/1919/results.md`. The architect re-ran `4254a2a0` twice, so the table has three CI runs of one head.
-- **Pushed once, after the third run**, as ruled.
+- **Pushed three times after the stop:** `4752028a` (the build, after the third run, as ruled), `d507f8fb` (the 06:49Z and 07:01Z findings, one push as ruled), `2efdee9c` (the 08:49Z finding, the tests' observation). This FEEDBACK's final text is a local commit after `2efdee9c`, not pushed (ruled 09:38Z: no further push; the architect carries it in the docs PR).
 
 ## 1. (1) `bench-package-s03`
 
@@ -115,6 +115,7 @@
   - Nothing that runs Renode is left unbounded.
   - Noted: campaign boots now run beside CBMC. They were measured serially, but a slow one is still a `ToolError`, not a verdict.
 - **Lens 3, an empty input by another name:** nothing beyond what was ruled.
+- **What the pass missed:** it cleared the lanes' paths on a normal run. It missed what a stop leaves running (06:49Z) and a swap after a gate ran ahead (07:01Z); the architect found both (§1).
 
 ## 6. Mutants
 
@@ -123,14 +124,31 @@
 ## 7. Gates
 
 - `cargo fmt --all -- --check` and `cargo clippy --workspace --all-targets -- -D warnings`: clean.
-- `cargo test --workspace` at `72b51e0e`: 3,219 passed, 0 failed. The later commits ran their own binaries again: `tools_tier1`, `boot_tier1`, `cli_backlog_tier1`, `doctor_tier1`, and the CLI's unit tests.
+- `cargo test --workspace` at `3cb73690`: 3,223 passed, 0 failed (3,219 at `72b51e0e`). After it, only the two lane-process tests changed, and they were run on the host and in the image as root (F10).
+- Mutants 21/21 at the final head (`spike/1919/mutants/out.txt`).
 - `ci/test-ceiling.sh` and `ci/test-shard.sh`: pass.
-- **Reduction pass (diff):** −7 net · 1 duplicate removed (the `wall_bound_ms` line for a load and a boot) · 1 wrapper inlined (`simulate_load`) · 0 protected kept · 1 finding below.
+- **Reduction pass (diff), before the two findings:** −7 net · 1 duplicate removed (the `wall_bound_ms` line for a load and a boot) · 1 wrapper inlined (`simulate_load`) · 0 protected kept · 1 finding below. The lane stop and the re-checks (about 350 lines with their tests) had no reduction pass of their own.
 - **New tests' shard weights** (predicted, to be replaced at the next refit): `doctor_tier1`'s guard test 125 s; the two load-guard tests 3 s each; the `board_tree` unit test 3 s; `cli_backlog_tier1`'s block 32 → 62 s.
 
 ## 8. CI
 
-(filled from the pushed head's run)
+**`2efdee9c`, the final head:** ci 45788933494 (26/26 jobs), ardupilot-image 45788933242, engine-image 45788933264, all success.
+- **`bench-package-s03`: 28.0 min** on an Intel Xeon 6975P-C: pull 0.5, build 1.3, `verify` 26.0. Inside `verify`, the 26 prove gates took 1,502 s (CBMC 1,434) and the CLI's own time 6 s.
+- **Peaks:** `PROBE combined peak_rss_kib=8535320` (8.14 GiB) and `PROBE host peak_used_kib=9438552` (9.00 GiB), under `1918`'s 12 GiB.
+- **`--against-fab`:** `identical` on Sentinel-03 and on Sentinel-01's bench board (6.2 min).
+- **Every gate and harness, by name:** the verify verdict line in both bench jobs is identical to `4254a2a0`'s (main's `verify`, run 45743010585): Sentinel-03 40 gates (26 prove), Sentinel-01 21 gates (12 prove).
+- **Tier 2:** 209 passed against `TIER2_MIN` 205; 3,466 tests passed across the shards; the shards took 9.3–19.3 min.
+- **Boots beside CBMC:** the longest Sentinel-03 boot was 7.5 s, and the longest whole CLI load call 3.5 s.
+
+**Measured on the branch's three built heads,** against 60–76 min before:
+
+| head | CPU | `bench-package-s03` |
+|---|---|---|
+| `4752028a` | EPYC 7763 | 33.6 min |
+| `d507f8fb` | EPYC 9V74 | 32.2 min |
+| `2efdee9c` | Xeon 6975P-C | 28.0 min |
+
+`crates/*/src` is unchanged from `d507f8fb` to `2efdee9c`. No built head ran on a Xeon 8573C, the slowest runner measured (76.2 min). For it, about 35.5 min is a projection, not a measurement.
 
 ## 9. Rows for the architect
 
@@ -145,4 +163,8 @@
 | F7 | **Process:** I edited my own line in `architect.md` once, after appending it, to put in a commit SHA. Next time I will append a correction instead | none |
 | F8 | **Process:** three runs of the new swap test failed in the image on a stale binary. A mutant run had built `verify` with no end check, then restored and touched the file. My next `rsync -a` copied the branch's older mtime back over it, so cargo kept the mutant's binary. Every run since touches the synced sources: 5 of 5 pass. The lesson matches `Mutant restore needs touch` | none |
 | F9 | **A gate's stderr is held until its turn,** so a hung prove shows none while it runs | none: diagnostics only |
+| F11 | **`TIER2_MIN` is 205 while 209 tier-2 tests pass.** Main's code had 208, and this WO adds one | the architect: raise it to 209 in the docs PR |
+| F12 | **New tests' weights, predicted against measured (45788933494):** `verify_refuses_a_board_swapped_after_extract_ran_ahead` predicted 300 s, measured about 194 s; `doctor_tier1`'s guard test predicted 125 s, measured about 121 s | replace at the next refit, with F2 |
+| F13 | **`stop_lanes`, low:** it signals pids from a `/proc` snapshot, so a pid a lane thread reaped in between could be reused on a busy host (a pidfd per gate would close it). A gate's guardian that ends after its gate stays `verify`'s zombie until `verify` exits | a row |
+| F14 | **The end check is a new user-visible refusal:** `BindingMismatch` (exit 5) also covers the caller's own scenario files and their base changing during `verify`, named for the campaign. The CLI README's exit-5 row doesn't name it | a docs line |
 | F10 | **The two lane-process tests failed in CI (the 08:49Z note; run 45784116105, shard 13); `verify` was right, the tests' observation was wrong.** They found a lane's processes by their environment. In CI the tests run as root, so the CLI runs each tool under uid 65534, which leaves it non-dumpable. A container's root has no `CAP_SYS_PTRACE` to read such a process's `environ`; its `cmdline` stays readable. Shown: (1) CI's own probe logged both tests' lane gates at 39.3 s, and the early-stop test's `build` gate lived 2.2 s, killed when the prove gate refused at 2 s, though its stand-in sleeps 30 s: `verify` killed its lane in CI; (2) in the pinned image as root, a non-dumpable process's `environ` is "Permission denied" (`CapEff` `0x800405fb`) and its `cmdline` readable; (3) `d507f8fb`'s tests fail there exactly as in CI (`:618`, `:694`), and this head's pass twice (`out/ci-repro-image-root.txt`, `tools/ci-repro.sh`). **Fixed in the tests:** a process is matched by its command line, which names the toolbox, the call's scratch or a stand-in's marker unique to the run (a fixed one also matched my own shell's command line). The call's own guardian, which outlives `verify` by design, is left out. The same two properties are tested, and their three mutants are killed again | none |
