@@ -1,6 +1,6 @@
 # Releasing
 
-`AET-WO-1800` made every publishable crate package and made CI prove it, in the `package every publishable crate` step of `.github/workflows/ci.yml`. `AET-WO-1801` extends this file from the first publish (0.1.0) to every later release.
+`AET-WO-1800` made every publishable crate package and made CI prove it, in the `package every publishable crate` step of `.github/workflows/ci.yml`. `AET-WO-1801` extended this file from the first publish (0.1.0) to every later release, and `AET-WO-1802` added the engine's identity: the version between releases and the commit (below).
 
 The publish itself is the operator's, from his own machine. This file holds no token, and asks for none in a file or an argument. Each release has a one-page checklist at the repository root, `RELEASE-<version>.md`, with the exact commands in order. This file is the procedure behind it.
 
@@ -12,16 +12,16 @@ A published release is a pinned snapshot with no promise of updates (`RUL-21`).
 - **Logging in:** run `cargo login` once. It reads the token from the terminal prompt, not from an argument.
 - **The token's scopes:**
   - `publish-update`, which every release needs;
-  - `publish-new`, only when the release brings a crate that crates.io has never seen. 0.2.0 does: `aethelgard-evolve`, `aethelgard-pincheck` and `aethelgard-renode-models` answered 404 on 2026-11-17.
-- **Crate scopes:** limit the token to the ten crate names below, or to the pattern `aethelgard-*`.
+  - `publish-new`, only when the release brings a crate that crates.io has never seen. 0.3.0 does: `aethelgard-hwdef` answered 404 on 2026-11-26 (0.2.0 brought `aethelgard-evolve`, `aethelgard-pincheck` and `aethelgard-renode-models`).
+- **Crate scopes:** limit the token to the eleven crate names below, or to the pattern `aethelgard-*`.
 - **Expiry:** give it a short expiry. Revoke it on crates.io when the last crate is up.
 
 ## Before the first publish of a release
 
 1. `git switch main && git pull`. `git status` is clean, and `git log -1` is the commit CI passed on: the release's bump commit, or a later one.
 2. CI's packaging step is green on that commit.
-3. `[workspace.package] version` in `Cargo.toml` is the release's version, and so is the `version` on every path entry in `[workspace.dependencies]`.
-4. **`cargo publish --workspace --dry-run --locked` succeeds, run in a fresh cargo home and target directory:** `d=$(mktemp -d); CARGO_HOME="$d/home" CARGO_TARGET_DIR="$d/target" cargo publish --workspace --dry-run --locked; rm -rf "$d"`. Cargo treats a name and version as immutable. It reuses an earlier dry run's unpacked copy and compiled crates of the same version even when the code has changed since, which can make the dry run fail, or pass, for the wrong code (`AET-WO-1801` §9). It needs no token. It packages every crate, verifies each against the others' local packages (a version not yet on crates.io resolves to them), and stops before uploading. It prints `Uploading <crate> v<version>` and then `warning: aborting upload due to dry run` for each of the ten.
+3. `[workspace.package] version` in `Cargo.toml` is the release's version, with no `-dev`, and so is the `version` on every path entry in `[workspace.dependencies]`. A `-dev` version is `main` between releases: stop.
+4. **`cargo publish --workspace --dry-run --locked` succeeds, run in a fresh cargo home and target directory:** `d=$(mktemp -d); CARGO_HOME="$d/home" CARGO_TARGET_DIR="$d/target" cargo publish --workspace --dry-run --locked; rm -rf "$d"`. Cargo treats a name and version as immutable. It reuses an earlier dry run's unpacked copy and compiled crates of the same version even when the code has changed since, which can make the dry run fail, or pass, for the wrong code (`AET-WO-1801` §9). It needs no token. It packages every crate, verifies each against the others' local packages (a version not yet on crates.io resolves to them), and stops before uploading. It prints `Uploading <crate> v<version>` and then `warning: aborting upload due to dry run` for each of the eleven.
 
 ## The order
 
@@ -36,7 +36,7 @@ Dependencies first. The order is the dependency graph's: no crate comes before o
 7. `aethelgard-chaos`
 8. `aethelgard-evolve` (needs 4, 7)
 9. `aethelgard-pincheck` (needs 1)
-10. `aethelgard-hwdef` (needs 1; `AET-WO-4400b`, first published at the release after 0.2.0)
+10. `aethelgard-hwdef` (needs 1; `AET-WO-4400b`, first published at 0.3.0)
 11. `aethelgard-cli` (needs 1, 4, 5, 6, 7, 8, 9, 10)
 
 `aethelgard-svd-hal`'s dev-dependencies on `aethelgard-cli` and `aethelgard-twin` are path-only, so `cargo package` drops them from the published manifest, and they do not bind the order.
@@ -80,6 +80,19 @@ If a publish stops halfway, the crates already up stay up. Resume at the failed 
 - Run the checklist's verification: install from crates.io in a clean root, then `validate` the reference specification.
 - Revoke the token.
 - The README's install line is the architect's to update.
+- **The commit right after the release sets `main` to the next version with `-dev`** (below), by its own pull request.
+
+## The engine's identity: the version and the commit
+
+`AET-WO-1802`. Two facts name a build, and each is written only where it cannot make a committed byte stale.
+
+- **The version** is `[workspace.package] version`. It is written into committed and hashed bytes: `FAB-NOTES.md`'s `Generated by aethelgard <version>` line, the KiCad files' `generator_version`, the hwdef header, and the verdict's `engine_version`, which `MANIFEST.json` binds through `verdict_sha256`. So it moves only at a release and in the commit right after it, and each time it moves, the committed packages and the hwdef fixtures move with it (the release's work order lists them).
+- **Between releases, `main` carries the next version with a `-dev` suffix** (after 0.3.0, `0.4.0-dev`). A package built from `main` then says `aethelgard 0.4.0-dev`, never a published version it is not. The release's bump removes the suffix. **A `-dev` version is never published:** the checklist's first step refuses one. CI's packaging step admits no suffix but `-dev`, from the pull request that first sets one (`AET-WO-1802` (4)).
+- **The commit** is written only at run time, never into a committed or hashed byte: `aethelgard --version` (`aethelgard 0.3.0 (commit <sha>, clean)`), `doctor`'s `engine_commit` and `engine_tree`, the MCP server's info, and a campaign run's archive header. `crates/aethelgard-cli/build.rs` records it:
+  - from git, when the crate is built in its own checkout: the commit, and `dirty` if `git status` names any change or untracked file;
+  - from `.cargo_vcs_info.json`, which `cargo package` writes, for a build from a published crate: the commit it was packaged from;
+  - otherwise `commit unknown`, never a default. The engine image is built with neither, so inside it `--version` says `commit unknown`. The image's commit is its `org.opencontainers.image.revision` label (`engine-image.yml`).
+- So a release is published from a clean checkout of the bump commit (`git status` clean, step 1 above), and `cargo install aethelgard-cli --version <v>` prints that commit, clean.
 
 ## Why CI's packaging step keeps `--no-verify`
 
