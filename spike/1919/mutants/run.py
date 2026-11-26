@@ -29,7 +29,7 @@ M = [
      ["--bin", "aethelgard", "--", "a_load_takes_the_boot_s_hang_guard_and_no_memory_cap"]),
     ("guard-memory-cap", CLI + "renode.rs", "    rss_kib: u64::MAX,\n};", "    rss_kib: BOOT_BOUNDS.rss_kib,\n};",
      ["--bin", "aethelgard", "--", "a_load_takes_the_boot_s_hang_guard_and_no_memory_cap"]),
-    ("load-guard-unrecorded", CLI + "main.rs", "    if plan.is_none() && bounds.wall != renode::LOAD_BOUNDS.wall {", "    if false {",
+    ("load-guard-unrecorded", CLI + "main.rs", "    v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)\n        .then(", "    v.wall_bound_ms = (plan.is_some() && bounds.wall != renode::BOOT_BOUNDS.wall)\n        .then(",
      ["--test", "tools_tier1", "--", "a_load_s_test_guard_is_on_its_verdict", "--exact"]),
     ("flag-firmware-only", CLI + "main.rs",
      '#[arg(long, hide = true, value_name = "MS", value_parser = clap::value_parser!(u64).range(1..=renode::BOOT_BOUNDS.wall.as_secs() * 1000))]',

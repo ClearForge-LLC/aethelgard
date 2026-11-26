@@ -623,8 +623,10 @@ fn main() -> ExitCode {
                 )
             }
             // clap's `requires` makes the three all-or-none.
-            _ => simulate_load(
+            _ => simulate_with(
                 &platform,
+                None,
+                None,
                 wall_bound_ms.map_or(renode::LOAD_BOUNDS.wall, Duration::from_millis),
             ),
         },
@@ -2205,12 +2207,6 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
     simulate_with(platform, boot, None, renode::LOAD_BOUNDS.wall)
 }
 
-/// `simulate --platform` alone, its Renode under a hang guard of `wall`
-/// (`AET-WO-1919` (2)).
-fn simulate_load(platform: &Path, wall: Duration) -> Result<verdict::Verdict, run::Stop> {
-    simulate_with(platform, None, None, wall)
-}
-
 /// `simulate`, with a foreign run's declared input and its archive
 /// directory (`AET-WO-4400i`). A load's Renode, with no boot, is bounded by
 /// `load_wall` (`AET-WO-1919` (2)).
@@ -2745,15 +2741,12 @@ fn simulate_with(
         v.memory = out
             .peak_rss_kib
             .map(|k| verdict::MemoryReport::of(k, renode::BOOT_BOUNDS.rss_kib));
-        // A test's hang guard is on the verdict, so no run with one passes
-        // for a run without (`simulate --wall-bound-ms`).
-        v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
-            .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     }
-    // A load's test guard is on its verdict too, as a boot's is (`AET-WO-1919` (2)).
-    if plan.is_none() && bounds.wall != renode::LOAD_BOUNDS.wall {
-        v.wall_bound_ms = Some(u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
-    }
+    // A test's hang guard is on the verdict, a boot's or a load's
+    // (`AET-WO-1919` (2)), so no run with one passes for a run without
+    // (`simulate --wall-bound-ms`).
+    v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
+        .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.
         v.lifecycle = r.topology.lifecycle_banner().unwrap_or_default();
