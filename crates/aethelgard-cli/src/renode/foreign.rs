@@ -747,6 +747,7 @@ impl ClockReport {
         values: [u32; 6],
         hse_hz: u32,
         hse: Option<aethelgard_ir::clock::Budget>,
+        d3cfgr: Option<u32>,
     ) -> Vec<Finding> {
         use aethelgard_ir::motor::{Apb, RccRegisters};
         self.registers = RccRegisters::OFFSETS
@@ -778,7 +779,7 @@ impl ClockReport {
             .iter()
             .map(|d| (d.instance.clone(), d.declared_hz))
             .collect();
-        let vos = aethelgard_ir::vos::judge_foreign(&registers, &decoded, &usarts, hse);
+        let vos = aethelgard_ir::vos::judge_foreign(&registers, &decoded, &usarts, hse, d3cfgr);
         self.conditions.extend(vos.conditions.iter().cloned());
         self.vos = Some(vos);
         let mut out = Vec::new();
@@ -1239,6 +1240,8 @@ enum ForeignRead {
     Register(usize),
     /// The RCC register at this index of `RccRegisters::OFFSETS`.
     Rcc(usize),
+    /// `RCC_D3CFGR`, for `fPCLK4` (`AET-WO-4412` D2).
+    D3cfgr,
     /// The `PUPDR` at this index of [`pull_registers`].
     Pull(usize),
 }
@@ -1280,6 +1283,13 @@ fn reads(
             ForeignRead::Rcc(i),
         ));
     }
+    r.push((
+        format!(
+            "sysbus ReadDoubleWord {:#010x}",
+            rcc + aethelgard_ir::motor::RCC_D3CFGR.1
+        ),
+        ForeignRead::D3cfgr,
+    ));
     for (i, (_, address)) in pull_registers(serial).iter().enumerate() {
         r.push((
             format!("sysbus ReadDoubleWord {address:#010x}"),
@@ -1907,6 +1917,7 @@ pub fn judge(
     let mut observed = vec![[0u32; END_READS]; plan.image.registers.len()];
     let mut icsr = [0u32; END_READS];
     let mut rcc = [0u32; 6];
+    let mut d3cfgr: Option<u32> = None;
     let mut pulls = vec![0u32; pull_registers(serial).len()];
     let mut pc = 0u32;
     for (k, values) in blocks.iter().enumerate() {
@@ -1930,6 +1941,12 @@ pub fn judge(
                     let w = word()?;
                     if last {
                         rcc[i] = w;
+                    }
+                }
+                ForeignRead::D3cfgr => {
+                    let w = word()?;
+                    if last {
+                        d3cfgr = Some(w);
                     }
                 }
                 ForeignRead::Pull(i) => {
@@ -1984,6 +2001,7 @@ pub fn judge(
             .hse
             .as_ref()
             .map(aethelgard_ir::clock::SolvedHse::budget),
+        d3cfgr,
     );
     let whole = out.dropped_log_lines == 0;
     if !whole {
@@ -4119,7 +4137,7 @@ mod tests {
             vos: aethelgard_ir::vos::Vos::Scale1,
         };
         let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
-        assert!(r.check(regs, 0, None).is_empty());
+        assert!(r.check(regs, 0, None, None).is_empty());
         assert!(
             r.checked
                 .iter()
@@ -4130,7 +4148,7 @@ mod tests {
         assert_eq!(r.declared_only.len(), 8);
         assert!(r.conditions[0].starts_with("usart_clock_declared_unchecked:"));
         let mut r = ClockReport::of(&declared(250_000_000), vec![]);
-        let f = r.check(regs, 0, None);
+        let f = r.check(regs, 0, None, None);
         assert_eq!(
             f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
             [CLOCK_CONTRADICTED, CLOCK_CONTRADICTED]
@@ -4147,6 +4165,7 @@ mod tests {
         let f = r.check(
             [regs[0], 0x8023, regs[2], regs[3], regs[4], regs[5]],
             0,
+            None,
             None,
         );
         assert_eq!(f.len(), 1);
@@ -4286,12 +4305,15 @@ mod tests {
             slow_ppm: 102,
         };
         let mut r = ClockReport::of(&declared, vec![]);
-        assert!(r.check(regs, 16_000_000, Some(crystal)).is_empty());
+        assert!(
+            r.check(regs, 16_000_000, Some(crystal), Some(0x40))
+                .is_empty()
+        );
         let v = r.vos.as_ref().unwrap();
-        assert_eq!(v.clocks.len(), 15);
-        assert_eq!(v.not_judged, ["fPCLK4: D3PPRE is not read"]);
+        assert_eq!(v.clocks.len(), 16);
+        assert!(v.not_judged.is_empty());
         let mut r = ClockReport::of(&declared, vec![]);
-        assert!(r.check(regs, 16_000_000, None).is_empty());
+        assert!(r.check(regs, 16_000_000, None, None).is_empty());
         assert!(r.vos.as_ref().unwrap().clocks.is_empty());
     }
 

@@ -571,8 +571,9 @@ pub struct ForeignVerdict {
 /// feeds every PLL), and the declared crystal's fast ppm when it is the
 /// HSE's (`SWS` HSE, or PLL1 with `PLLSRC` `10`; `AET-WO-4412` D2, ruled
 /// 2026-11-26). On any other source, or an HSE with none declared, no
-/// deviation is declared and nothing is judged. `fPCLK4` is not judged:
-/// `D3PPRE` is not read. The USART kernels are declared, never read back
+/// deviation is declared and nothing is judged. `fPCLK4` is judged at
+/// `d3cfgr`'s `D3PPRE` when the run read `RCC_D3CFGR` ([`crate::motor::RCC_D3CFGR`]),
+/// and named not judged otherwise. The USART kernels are declared, never read back
 /// (Renode 1.17.0 drops `RCC_D2CCIP2R`), and are judged as derived from the
 /// tree's source.
 pub fn judge_foreign(
@@ -580,17 +581,27 @@ pub fn judge_foreign(
     decoded: &SolvedClock,
     usarts: &std::collections::BTreeMap<String, u64>,
     hse: Option<crate::clock::Budget>,
+    d3cfgr: Option<u32>,
 ) -> ForeignVerdict {
     let pllsrc = registers.pllckselr & 0b11;
     let hsi = decoded.source == "HSI" || (decoded.source == "PLL1" && pllsrc == 0b00);
     let on_hse = decoded.source == "HSE" || (decoded.source == "PLL1" && pllsrc == 0b10);
     // The declared crystal's deviation, on the HSE's tree only.
     let budget = if on_hse { hse } else { None };
+    // `fPCLK4` at `D3PPRE` as read (`AET-WO-4412` D2), else unjudged, named.
+    let decoded = &SolvedClock {
+        d3ppre: d3cfgr.map_or(decoded.d3ppre, crate::motor::d3ppre),
+        ..decoded.clone()
+    };
     let mut clocks: Vec<Clock> = bus_clocks(decoded)
         .into_iter()
-        .filter(|c| c.name != "fPCLK4")
+        .filter(|c| d3cfgr.is_some() || c.name != "fPCLK4")
         .collect();
-    let mut not_judged = vec!["fPCLK4: D3PPRE is not read".to_owned()];
+    let mut not_judged = if d3cfgr.is_some() {
+        Vec::new()
+    } else {
+        vec!["fPCLK4: D3PPRE is not read".to_owned()]
+    };
     for (name, timer) in [("APB1 timers kernel", 2), ("APB2 timers kernel", 1)] {
         match timer_kernel(decoded, timer) {
             Some(hz) => clocks.push(Clock {

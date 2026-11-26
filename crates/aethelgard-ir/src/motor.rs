@@ -628,7 +628,19 @@ impl RccRegisters {
     }
 }
 
-/// Why six RCC registers do not decode to a clock.
+/// `RCC_D3CFGR` (RM0433 Rev 9 §8.7.10, p. 397: offset 0x020), whose
+/// `D3PPRE` [`SolvedClock::from_rcc`] leaves at 1, read on its own by the
+/// foreign judge to judge `fPCLK4` (`AET-WO-4412` D2, ruled 11:51Z).
+pub const RCC_D3CFGR: (&str, u32) = ("RCC_D3CFGR", 0x020);
+
+/// `D3PPRE[2:0]` (`RCC_D3CFGR` bits 6:4, RM0433 Rev 9 §8.7.10, p. 397) as
+/// its divider: `0xx` 1, `100` 2, `101` 4, `110` 8, `111` 16.
+pub fn d3ppre(d3cfgr: u32) -> u32 {
+    let v = (d3cfgr >> 4) & 0b111;
+    if v & 0b100 == 0 { 1 } else { 2 << (v & 0b11) }
+}
+
+/// Why six RCC registers do not decode to a clock./// Why six RCC registers do not decode to a clock.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RccDecodeError {
     #[error(

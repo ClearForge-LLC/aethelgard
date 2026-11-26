@@ -247,7 +247,7 @@ fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
         .iter()
         .map(|p| ((*p).to_owned(), 72_000_000))
         .collect();
-    let v = vos::judge_foreign(&regs, &decoded, &usarts, None);
+    let v = vos::judge_foreign(&regs, &decoded, &usarts, None, None);
     let named: Vec<&str> = v
         .conditions
         .iter()
@@ -275,9 +275,10 @@ fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
 /// ArduPilot leaves them on its 16 MHz crystal (measured, `spike/4412`
 /// `arm-1`: `PLLSRC` `10`, PLL1 400 MHz), with Sentinel-03's solved budget
 /// (±102 ppm): every clock but `fPCLK4` is judged, none is left "not
-/// declared", and every one of the 15, each at VOS1's maximum (the USARTs'
-/// 100 MHz kernels too, which the HSI tree's 72 MHz kept under theirs), is a
-/// named condition at the crystal's fastest, reported and never refused.
+/// declared", and every one of the 16 (`fPCLK4` at `D3PPRE` as read, D2
+/// 11:51Z), each at VOS1's maximum (the USARTs' 100 MHz kernels too, which
+/// the HSI tree's 72 MHz kept under theirs), is a named condition at the
+/// crystal's fastest, reported and never refused.
 /// With no deviation declared the same tree judges nothing.
 #[test]
 fn an_hse_tree_is_judged_at_the_crystals_fast_ppm() {
@@ -298,9 +299,22 @@ fn an_hse_tree_is_judged_at_the_crystals_fast_ppm() {
         fast_ppm: 102,
         slow_ppm: 102,
     };
-    let v = vos::judge_foreign(&regs, &decoded, &usarts, Some(crystal));
-    assert_eq!(v.not_judged, ["fPCLK4: D3PPRE is not read"], "{v:?}");
-    assert_eq!(v.clocks.len(), 15, "{v:?}");
+    // `D3PPRE` unread: `fPCLK4` named, the other 15 judged.
+    let unread = vos::judge_foreign(&regs, &decoded, &usarts, Some(crystal), None);
+    assert_eq!(
+        unread.not_judged,
+        ["fPCLK4: D3PPRE is not read"],
+        "{unread:?}"
+    );
+    assert_eq!(unread.clocks.len(), 15, "{unread:?}");
+    // Read, as ArduPilot leaves it (`STM32_D3PPRE4_DIV2`, `stm32h7_mcuconf.h`
+    // L294: `D3PPRE` 100, `RCC_D3CFGR` 0x40): all 16 judged, `fPCLK4` at
+    // 100 MHz, VOS1's maximum.
+    let v = vos::judge_foreign(&regs, &decoded, &usarts, Some(crystal), Some(0x40));
+    assert!(v.not_judged.is_empty(), "{v:?}");
+    assert_eq!(v.clocks.len(), 16, "{v:?}");
+    let p4 = v.clocks.iter().find(|c| c.clock == "fPCLK4").unwrap();
+    assert_eq!(p4.nominal_hz, 100_000_000);
     for c in &v.clocks {
         assert_eq!(
             c.fastest_hz,
@@ -317,13 +331,13 @@ fn an_hse_tree_is_judged_at_the_crystals_fast_ppm() {
     assert_eq!(
         named,
         [
-            "fCPU", "fHCLK", "fPCLK1", "fPCLK2", "fPCLK3", "APB1", "APB2", "UART4", "UART5",
-            "UART7", "UART8", "USART1", "USART2", "USART3", "USART6"
+            "fCPU", "fHCLK", "fPCLK1", "fPCLK2", "fPCLK3", "fPCLK4", "APB1", "APB2", "UART4",
+            "UART5", "UART7", "UART8", "USART1", "USART2", "USART3", "USART6"
         ],
         "{v:?}"
     );
     assert!(v.clocks.iter().all(|c| c.holds == Some(false)), "{v:?}");
-    let unjudged = vos::judge_foreign(&regs, &decoded, &usarts, None);
+    let unjudged = vos::judge_foreign(&regs, &decoded, &usarts, None, None);
     assert!(unjudged.clocks.is_empty(), "{unjudged:?}");
     assert_eq!(unjudged.not_judged.len(), 16, "{unjudged:?}");
     assert!(unjudged.not_judged[1].contains("PLLSRC 10"), "{unjudged:?}");
@@ -337,7 +351,7 @@ fn a_foreign_tree_off_the_hsi_is_not_judged() {
     regs.cfgr = (regs.cfgr & !0b11_1111) | (0b001 << 3) | 0b001;
     regs.cr |= 1 << 8;
     let decoded = SolvedClock::from_rcc(&regs, 0, Vos::Scale1).unwrap();
-    let v = vos::judge_foreign(&regs, &decoded, &Default::default(), None);
+    let v = vos::judge_foreign(&regs, &decoded, &Default::default(), None, None);
     assert!(v.clocks.is_empty() && v.conditions.is_empty(), "{v:?}");
     assert!(
         v.not_judged.iter().any(|n| n.contains("the tree is CSI")),
@@ -482,4 +496,27 @@ fn flash_wait_states_are_judged_at_the_fastest_axi_clock() {
     c.sysclk_hz = 225_000_000;
     let f = vos::flash_at_reset(&c);
     assert_eq!((f.needed, f.holds), (None, false));
+}
+
+/// `AET-WO-4412` D2: `RCC_D3CFGR.D3PPRE` (bits 6:4) as its divider, each row
+/// of RM0433 Rev 9 §8.7.10 (p. 397); the other bits are not read.
+#[test]
+fn d3ppre_decodes_each_row_of_rm0433() {
+    use aethelgard_ir::motor::{RCC_D3CFGR, d3ppre};
+    assert_eq!(RCC_D3CFGR, ("RCC_D3CFGR", 0x020));
+    for (field, divider) in [
+        (0b000, 1),
+        (0b011, 1),
+        (0b100, 2),
+        (0b101, 4),
+        (0b110, 8),
+        (0b111, 16),
+    ] {
+        assert_eq!(d3ppre(field << 4), divider, "{field:03b}");
+        assert_eq!(
+            d3ppre((field << 4) | 0xFFFF_FF8F),
+            divider,
+            "{field:03b} among other bits"
+        );
+    }
 }

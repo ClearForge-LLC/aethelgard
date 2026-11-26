@@ -2783,11 +2783,20 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
 /// PC, `icsr`, then `registers`, then the RCC registers the clock check reads
 /// (`AET-WO-4400g`), then each serial line's `PUPDR` (`AET-WO-2311`).
 fn foreign_reads(icsr: &str, registers: &[&str], rcc: &[&str; 6]) -> String {
+    // `RCC_D3CFGR` after the six (`AET-WO-4412` D2): at reset with the reset
+    // words, else as ArduPilot leaves it, `D3PPRE` /2 (`stm32h7_mcuconf.h`
+    // L294).
+    let d3cfgr = if *rcc == common::foreign::RCC_AT_RESET {
+        "0x00000000"
+    } else {
+        "0x00000040"
+    };
     let mut s = String::from("AETHELGARD-BOOT-BEGIN\n");
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
         .chain(registers.iter())
         .chain(rcc.iter())
+        .chain([d3cfgr].iter())
         .chain([CONSOLE_PULLS].iter())
     {
         s.push_str(r);
