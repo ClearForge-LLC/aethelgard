@@ -65,6 +65,21 @@ Labels: **[read]** read at source; **[measured]** run on Furnace or CI; **[infer
 - **F11 · Cost: an edit anywhere under `crates/` or `models/` reruns the build script and relinks the CLI** (measured 1.9–2.4 s incremental). A docs edit outside them does not. On CI a shard stays `Fresh` (simulated).
 - **F12 · The fence touched one file outside its list: `crates/aethelgard-cli/README.md`.** It holds the `--version` and `doctor` field documentation, so the identity's contract has one home.
 
+- **F13 · The architect's review (21:56Z), should-fix 2: git keeps HOME and drops only `GIT_*` · built.**
+  - Clearing the whole environment had dropped the global `core.excludesFile`, so a globally ignored swap file read as `dirty`.
+  - It also dropped `safe.directory`, so a checkout another user owns was always `unknown`.
+  - Now `decide_with` takes the environment, so the test plants a `HOME` and a `GIT_DIR` with no `set_var`.
+  - Mutants killed: `GIT_*` passed through; `HOME` dropped.
+  - The module doc says what a global configuration can change.
+- **F14 · Review should-fix 1, `--version` stale after a commit that moves no input · ruling asked (bus 22:0xZ).**
+  - Watching the per-worktree git paths makes every CI shard compile the CLI. A shard's checkout writes `.git` after `tools-build`, and `unpack` dates everything else to the epoch. Measured: `Dirty … HEAD has changed`, then `Compiling aethelgard-cli`.
+  - Dating those paths too keeps it `Fresh` (measured). That is one line in `ci/shard.sh`, outside this fence.
+- **F15 · Review nits, named.**
+  - The integration tests compare the binary with constants from the same build script, and accept `unknown`, so no integration test proves the shipped git or packaged path. `decide()`'s unit tests and §2's builds do.
+  - The replace-ref test's sha assert does not discriminate; its `dirty` assert does.
+  - A relative `CARGO_TARGET_DIR` under `crates/` defeats freshness, because `crates/` is watched.
+  - A malicious `git` on `PATH`, or a repository-local `core.fsmonitor`, can forge the state. That is out of scope.
+
 ## 4. Gates
 
 - `cargo fmt --all -- --check`: clean.

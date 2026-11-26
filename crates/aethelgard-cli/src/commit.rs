@@ -23,9 +23,17 @@
 //!
 //! Otherwise the commit is `unknown`, and so is the state.
 //!
-//! git runs with an empty environment, so no `GIT_DIR`, `GIT_WORK_TREE` or
-//! `GIT_INDEX_FILE` the build inherited can point it at another repository;
-//! with `--no-replace-objects`, so a replace ref cannot rename `HEAD`; and
+//! git runs in the build's environment less every `GIT_*` variable, so no
+//! `GIT_DIR`, `GIT_WORK_TREE`, `GIT_INDEX_FILE` or `GIT_CONFIG_*` the build
+//! inherited can point it at another repository or another configuration.
+//! `HOME` stays, so the builder's global git configuration applies:
+//! `core.excludesFile` keeps a globally ignored file (an editor's swap file)
+//! from reading as `dirty`, and `safe.directory` admits a checkout another
+//! user owns, which is otherwise `unknown`. That configuration could also
+//! hide a change (an `excludesFile` naming a source) or forge the state (a
+//! `core.fsmonitor`, as could a repository's own `.git/config` or another
+//! `git` on `PATH`); those are the builder's own machine, and out of reach
+//! of any build-time record. git also runs with `--no-replace-objects`, so a replace ref cannot rename `HEAD`; and
 //! with `--no-optional-locks`, so `git status` never rewrites the index.
 //!
 //! The record is of the sources when the script last ran. A source edited
@@ -33,6 +41,7 @@
 //! but not in the record; the next build reruns the script (`AET-WO-1802`
 //! adversarial F4, inherent to any build-time record).
 
+use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
@@ -120,9 +129,15 @@ impl Commit {
     }
 }
 
-/// The commit of the crate whose manifest directory is `dir`.
+/// The commit of the crate whose manifest directory is `dir`, git run in
+/// this process's environment.
 pub fn decide(dir: &Path) -> (Commit, Source) {
-    if let Some((commit, top)) = from_git(dir) {
+    decide_with(dir, &std::env::vars_os().collect::<Vec<_>>())
+}
+
+/// [`decide`], git run in `env` less every `GIT_*` variable.
+pub fn decide_with(dir: &Path, env: &[(OsString, OsString)]) -> (Commit, Source) {
+    if let Some((commit, top)) = from_git(dir, env) {
         return (commit, Source::Git(top));
     }
     match from_package(dir) {
@@ -131,13 +146,16 @@ pub fn decide(dir: &Path) -> (Commit, Source) {
     }
 }
 
-/// `git` in `dir`, with an empty environment but `PATH`; its stdout when it
+/// `git` in `dir`, in `env` less every `GIT_*` variable (`GIT_DIR`,
+/// `GIT_WORK_TREE`, `GIT_INDEX_FILE`, `GIT_CONFIG_*`, …); its stdout when it
 /// exits 0.
-fn git(dir: &Path, args: &[&str]) -> Option<String> {
+fn git(dir: &Path, args: &[&str], env: &[(OsString, OsString)]) -> Option<String> {
     let mut c = Command::new("git");
     c.env_clear();
-    if let Some(path) = std::env::var_os("PATH") {
-        c.env("PATH", path);
+    for (k, v) in env {
+        if !k.as_encoded_bytes().starts_with(b"GIT_") {
+            c.env(k, v);
+        }
     }
     let out = c
         .env("LC_ALL", "C")
@@ -161,7 +179,8 @@ pub fn is_sha(s: &str) -> bool {
     (s.len() == 40 || s.len() == 64) && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
-fn from_git(dir: &Path) -> Option<(Commit, PathBuf)> {
+fn from_git(dir: &Path, env: &[(OsString, OsString)]) -> Option<(Commit, PathBuf)> {
+    let git = |dir: &Path, args: &[&str]| git(dir, args, env);
     let top = PathBuf::from(git(dir, &["rev-parse", "--show-toplevel"])?.trim_end_matches('\n'));
     let top = top.canonicalize().ok()?;
     if top.join(PATH_IN_VCS) != dir.canonicalize().ok()? {
@@ -281,6 +300,16 @@ mod tests {
         assert!(ok, "git {args:?} in {}", dir.display());
     }
 
+    fn head(top: &Path) -> String {
+        let out = Command::new("git")
+            .arg("-C")
+            .arg(top)
+            .args(["rev-parse", "HEAD"])
+            .output()
+            .unwrap();
+        String::from_utf8(out.stdout).unwrap().trim().to_owned()
+    }
+
     /// A repository with this crate at [`PATH_IN_VCS`], one commit, clean.
     fn repo(name: &str) -> (PathBuf, PathBuf, String) {
         let top = scratch(name);
@@ -291,7 +320,7 @@ mod tests {
         run_git(&top, &["init", "-q"]);
         run_git(&top, &["add", "-A"]);
         run_git(&top, &["commit", "-q", "-m", "c"]);
-        let sha = git(&top, &["rev-parse", "HEAD"]).unwrap().trim().to_owned();
+        let sha = head(&top);
         (top, krate, sha)
     }
 
@@ -490,7 +519,7 @@ mod tests {
         let (top, krate, a) = repo("replace");
         fs::write(krate.join("Cargo.toml"), "[package]\nb = 1\n").unwrap();
         run_git(&top, &["commit", "-q", "-am", "b"]);
-        let b = git(&top, &["rev-parse", "HEAD"]).unwrap().trim().to_owned();
+        let b = head(&top);
         run_git(&top, &["update-ref", "HEAD", &a]);
         run_git(&top, &["replace", &a, &b]);
         assert_eq!(
@@ -501,6 +530,60 @@ mod tests {
             }
         );
         fs::remove_dir_all(top).unwrap();
+    }
+
+    /// The builder's global git configuration applies, through `HOME`
+    /// (`AET-WO-1802` review 21:56Z): a globally ignored swap file is not
+    /// `dirty`. Every `GIT_*` variable is dropped, so a `GIT_DIR` naming
+    /// another repository changes nothing.
+    #[test]
+    fn the_global_config_applies_and_git_variables_do_not() {
+        let (top, krate, sha) = repo("global");
+        let home = scratch("global-home");
+        fs::write(home.join("ignore"), "*.swp\n").unwrap();
+        fs::write(
+            home.join(".gitconfig"),
+            format!(
+                "[core]\n\texcludesFile = {}\n",
+                home.join("ignore").display()
+            ),
+        )
+        .unwrap();
+        fs::write(krate.join(".main.rs.swp"), "").unwrap();
+        let path = std::env::var_os("PATH").unwrap_or_default();
+        let with_home = vec![
+            ("PATH".into(), path.clone()),
+            ("HOME".into(), home.clone().into()),
+        ];
+        let tree = |env: &[(OsString, OsString)]| decide_with(&krate, env).0.tree();
+        assert_eq!(
+            tree(&with_home),
+            "clean",
+            "ignored by the global excludesFile"
+        );
+        let no_home = vec![
+            ("PATH".into(), path.clone()),
+            ("HOME".into(), scratch("no-home").into()),
+        ];
+        assert_eq!(
+            tree(&no_home),
+            "dirty",
+            "the same file with no global config"
+        );
+        let (other, _, _) = repo("global-other");
+        fs::write(other.join("notes.txt"), "other\n").unwrap();
+        run_git(&other, &["commit", "-q", "-am", "other"]);
+        let other_sha = head(&other);
+        let mut planted = with_home.clone();
+        planted.push(("GIT_DIR".into(), other.join(".git").into()));
+        planted.push(("GIT_WORK_TREE".into(), other.clone().into()));
+        planted.push(("GIT_CONFIG_GLOBAL".into(), "/dev/null".into()));
+        let (c, _) = decide_with(&krate, &planted);
+        assert_eq!((c.sha(), c.tree()), (sha.as_str(), "clean"));
+        assert_ne!(c.sha(), other_sha);
+        for d in [top, home, other] {
+            fs::remove_dir_all(d).unwrap();
+        }
     }
 
     /// Every `.cargo_vcs_info.json` that is not cargo's shape names no
