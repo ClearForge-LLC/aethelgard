@@ -256,6 +256,14 @@ jobs:
           "$bin" solve --file "${{ matrix.spec }}" > "$gen/${{ matrix.board }}.topology.json"
           "$bin" generate hwdef --topology "$gen/${{ matrix.board }}.topology.json" --out "$gen/${{ matrix.board }}.hwdef.dat"
           cmp "$gen/${{ matrix.board }}.hwdef.dat" "crates/aethelgard-hwdef/tests/fixtures/${{ matrix.fixture || matrix.board }}.hwdef.dat"
+          # AET-WO-4412 (3): a DShot board's defaults.parm (MOT_PWM_TYPE), held to its committed one; a
+          # board with none has neither.
+          f="crates/aethelgard-hwdef/tests/fixtures/${{ matrix.fixture || matrix.board }}.defaults.parm"
+          if [ -f "$f" ]; then
+            cmp "$gen/${{ matrix.board }}.defaults.parm" "$f"
+          else
+            test ! -e "$gen/${{ matrix.board }}.defaults.parm"
+          fi
           # A mutant drops exactly one line, which must be there.
           if [ -n "${{ matrix.drop }}" ]; then
             f="$gen/${{ matrix.board }}.hwdef.dat"

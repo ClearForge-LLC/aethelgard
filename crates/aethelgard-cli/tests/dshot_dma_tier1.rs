@@ -80,3 +80,68 @@ fn a_dshot_output_on_a_timer_with_no_dma_request_is_refused_by_name() {
         assert_eq!(aethelgard_ir::motor::up_request(timer), None, "TIM{timer}");
     }
 }
+
+/// `serial-dshot-9600`, the CI's DShot board, with its console.
+fn serial_dshot() -> Value {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/serial-dshot-9600.json");
+    serde_json::from_slice(&std::fs::read(p).unwrap()).unwrap()
+}
+
+/// `AET-WO-4412` (3): ArduPilot's `MOT_PWM_TYPE` is one parameter for every
+/// motor, so a board whose outputs mix protocols (two DShot600 outputs on
+/// TIM1, two PWM outputs the solver places on another timer) is refused by
+/// `generate hwdef` by name, and writes neither file; the all-DShot board
+/// writes `defaults.parm` beside `hwdef.dat`.
+#[test]
+fn a_board_mixing_motor_protocols_has_no_mot_pwm_type_and_is_refused_by_name() {
+    let dir = common::private_tmp("mot-pwm-type");
+    let run = |args: &[&str]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(args)
+            .env("TMPDIR", &dir.0)
+            .current_dir(&dir.0)
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            String::from_utf8_lossy(&out.stdout).into_owned(),
+        )
+    };
+    let hwdef = |name: &str, v: &Value| {
+        let (code, topology) = solve(&dir.0, &format!("{name}.json"), v);
+        assert_eq!(code, Some(0), "{topology}");
+        let t = dir.0.join(format!("{name}.topology.json"));
+        std::fs::write(&t, serde_json::to_vec(&topology).unwrap()).unwrap();
+        let out = dir.0.join(format!("{name}.hwdef.dat"));
+        let r = run(&[
+            "generate",
+            "hwdef",
+            "--topology",
+            t.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ]);
+        (r, out)
+    };
+    let ((code, r), out) = hwdef("all-dshot", &serial_dshot());
+    assert_eq!(code, Some(0), "{r}");
+    let defaults = std::fs::read_to_string(dir.0.join("all-dshot.defaults.parm")).unwrap();
+    assert!(defaults.ends_with("\nMOT_PWM_TYPE 6\n"), "{defaults}");
+    assert!(out.exists());
+    let mut v = serial_dshot();
+    for m in ["MOTOR3", "MOTOR4"] {
+        let motor = v["motor_outputs"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|o| o["label"] == m)
+            .unwrap();
+        motor["protocol"] = "pwm".into();
+        motor["pwm"] = serde_json::json!({"rate_hz": 400, "pulse_min_us": 1000,
+            "pulse_max_us": 2000, "idle": {"pulse_us": 1000}, "resolution_ps": 1_000_000});
+    }
+    let ((code, r), out) = hwdef("mixed", &v);
+    assert_eq!(code, Some(2), "{r}");
+    assert!(r.contains("\"MotorProtocolsMixed\""), "{r}");
+    assert!(!out.exists() && !dir.0.join("mixed.defaults.parm").exists());
+}
