@@ -51,6 +51,18 @@ M = [
      ["--test", "cli_backlog_tier1", "--", "the_prove_lane_and_build_s_lane_run_beside_each_other", "--exact"]),
     ("doctor-unbounded", CLI + "doctor.rs", "        ran_renode(invocation(", "        ran(invocation(",
      ["--test", "doctor_tier1", "--", "a_renode_that_never_says_its_version_is_killed_at_the_hang_guard", "--exact"]),
+    ("x-gate-outlives-verify", CLI + "verify.rs", "        .env(run::PARENT_PID_VAR, std::process::id().to_string())\n        .stdin(Stdio::null())\n        .output()", "        .stdin(Stdio::null())\n        .output()",
+     ["--test", "cli_backlog_tier1", "--", "a_verify_killed_outright_leaves_no_lane_gate", "--exact"]),
+    ("x-lanes-not-stopped", CLI + "verify.rs", "    stop_lanes();\n    if let Err(code) = gated.and_then(|()| recheck_all()) {", "    if let Err(code) = gated.and_then(|()| recheck_all()) {",
+     ["--test", "cli_backlog_tier1", "--", "a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file", "--exact"]),
+    ("x-gate-guardians-killed", CLI + "verify.rs", "            let into = if guardians.contains(&c) {", "            let into = if false && guardians.contains(&c) {",
+     ["--test", "cli_backlog_tier1", "--", "a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file", "--exact"]),
+    ("x-no-turn-recheck", CLI + "verify.rs", "    if ahead {\n        recheck(name, &args)?;", "    if false {\n        recheck(name, &args)?;",
+     ["--bin", "aethelgard", "--", "verify::tests::a_gate_run_ahead_is_refused_at_its_turn_if_its_file_changed", "--exact"]),
+    ("x-no-end-recheck", CLI + "verify.rs", "    if let Err(code) = gated.and_then(|()| recheck_all()) {", "    if let Err(code) = gated {",
+     ["--test", "board_tier2", "--features", "with-tools", "--", "verify_refuses_a_board_swapped_after_extract_ran_ahead", "--exact"]),
+    ("x-end-recheck-blind", CLI + "verify.rs", "        (have.as_deref() != Some(want.as_str())).then(", "        (false && have.as_deref() != Some(want.as_str())).then(",
+     ["--bin", "aethelgard", "--", "verify::tests::a_file_changed_after_every_turn_is_refused_at_the_end", "--exact"]),
 ]
 only = set(sys.argv[1:])
 bad = 0

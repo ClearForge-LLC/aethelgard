@@ -540,6 +540,178 @@ fn the_prove_lane_and_build_s_lane_run_beside_each_other() {
     );
 }
 
+/// Every live process whose environment names `dir` (this test's toolbox, on
+/// its `PATH`): the gates, their reapers and the stand-ins they run, by
+/// command line.
+fn processes_naming(dir: &Path) -> Vec<String> {
+    let needle = dir.as_os_str().as_encoded_bytes();
+    let mut found = Vec::new();
+    for entry in fs::read_dir("/proc").unwrap().flatten() {
+        let pid = entry.file_name();
+        if !pid.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        let Ok(env) = fs::read(entry.path().join("environ")) else {
+            continue;
+        };
+        if env.windows(needle.len()).any(|w| w == needle) {
+            let cmd = fs::read(entry.path().join("cmdline")).unwrap_or_default();
+            found.push(String::from_utf8_lossy(&cmd).replace('\0', " "));
+        }
+    }
+    found
+}
+
+/// Every path beneath `dir`, sorted.
+fn listing(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        for e in fs::read_dir(&d).into_iter().flatten().flatten() {
+            if e.file_type().is_ok_and(|t| t.is_dir()) {
+                stack.push(e.path());
+            }
+            out.push(e.path());
+        }
+    }
+    out.sort();
+    out
+}
+
+/// `AET-WO-1919` (X), the architect's 06:49Z finding: a `verify` that stops
+/// early leaves no lane's gate running and writes nothing after it exits.
+/// `build`'s lane is seen running its stand-in (a `sleep` of 30 s), then the
+/// first prove gate refuses and `verify` exits with that refusal. `verify`
+/// kills and waits for its lanes before it exits, so at once (one scan) no
+/// process naming this test's toolbox is left (the gate, its reaper, the
+/// stand-in), the call's scratch is empty (the killed gate's own directory
+/// removed by its guardian, which `verify` waited for), and it stays so.
+/// Before the fix, the gates outlived `verify` by 1.1–1.2 s.
+#[test]
+fn a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file() {
+    let tb = toolbox();
+    lanes_cargo(&tb.0, "/bin/sleep 2; exit 7", "/bin/sleep 30.1919; exit 7");
+    let homes = Scratch::new(&format!("1919-orphans-{}", next()));
+    let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
+    fs::create_dir(&k).unwrap();
+    fs::create_dir(&r).unwrap();
+    let tmp = private_tmp(&format!("1919-orphans-tmp-{}", next()));
+    let child = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["verify", "--spec", &spec(NO_BOARD)])
+        .current_dir(root())
+        .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+        .env("PATH", &tb.0)
+        .env("TMPDIR", &tmp.0)
+        .env("KANI_HOME", &k)
+        .env("RUSTUP_HOME", &r)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    while !processes_naming(&tb.0)
+        .iter()
+        .any(|c| c.contains("30.1919"))
+    {
+        assert!(start.elapsed().as_secs() < 20, "build's lane never started");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    let out = child.wait_with_output().unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    assert_eq!(stdout.lines().count(), 1, "{stdout}");
+    let v: Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(out.status.code(), Some(5), "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .starts_with("gate `prove`: "),
+        "{v}"
+    );
+    let exited = std::time::Instant::now();
+    let left = processes_naming(&tb.0);
+    let scanned = exited.elapsed();
+    eprintln!("ANSWER 1919 scanned {scanned:?} after verify exited: {left:?}");
+    assert!(
+        left.is_empty(),
+        "left running after verify exited: {left:?}"
+    );
+    assert!(scanned.as_millis() < 500, "{scanned:?}");
+    assert_eq!(
+        listing(&tmp.0),
+        Vec::<PathBuf>::new(),
+        "left in the scratch"
+    );
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    assert_eq!(
+        listing(&tmp.0),
+        Vec::<PathBuf>::new(),
+        "a file appeared after verify exited"
+    );
+}
+
+/// `AET-WO-1919` (X): a `verify` killed outright (SIGKILL, so [`stop_lanes`]
+/// never runs) still takes its lanes' gates with it. Each gate's parent-death
+/// signal fires when its lane's thread ends with the process, and each gate's
+/// reaper then ends its tool. Measured: gone 1.1–1.2 s after the kill.
+#[test]
+fn a_verify_killed_outright_leaves_no_lane_gate() {
+    let tb = toolbox();
+    lanes_cargo(
+        &tb.0,
+        "/bin/sleep 30.1919; exit 7",
+        "/bin/sleep 30.1919; exit 7",
+    );
+    let homes = Scratch::new(&format!("1919-killed-{}", next()));
+    let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
+    fs::create_dir(&k).unwrap();
+    fs::create_dir(&r).unwrap();
+    let tmp = private_tmp(&format!("1919-killed-tmp-{}", next()));
+    let mut child = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(["verify", "--spec", &spec(NO_BOARD)])
+        .current_dir(root())
+        .env_clear()
+        .env("HOME", std::env::var_os("HOME").unwrap_or_default())
+        .env("PATH", &tb.0)
+        .env("TMPDIR", &tmp.0)
+        .env("KANI_HOME", &k)
+        .env("RUSTUP_HOME", &r)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let start = std::time::Instant::now();
+    // Both lanes' stand-ins running.
+    while processes_naming(&tb.0)
+        .iter()
+        .filter(|c| c.contains("30.1919"))
+        .count()
+        < 2
+    {
+        assert!(start.elapsed().as_secs() < 20, "the lanes never started");
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    child.kill().unwrap();
+    child.wait().unwrap();
+    let killed = std::time::Instant::now();
+    let mut left = processes_naming(&tb.0);
+    while !left.is_empty() && killed.elapsed().as_secs() < 10 {
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        left = processes_naming(&tb.0);
+    }
+    eprintln!(
+        "ANSWER 1919 killed verify: lanes gone {:?} after",
+        killed.elapsed()
+    );
+    assert!(
+        left.is_empty(),
+        "left running after verify was killed: {left:?}"
+    );
+}
+
 /// The first `#[kani::proof]` harness of a generated `proofs.rs`, by path.
 fn aethelgard_first_harness(proofs: &str) -> String {
     let mut armed = false;
