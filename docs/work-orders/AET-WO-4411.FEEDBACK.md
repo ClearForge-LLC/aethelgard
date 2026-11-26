@@ -1,10 +1,11 @@
 # AET-WO-4411: FEEDBACK
 
-A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel-03 (specification 31). It is on USART6 (TX PG14, RX PG9), with the antenna hung off the board's top-right corner. Since the 2026-11-25T21:17Z ruling it is fed by **a 3.3 V regulator of its own** (U13, LMR33620ADDA), from the battery. The measurement, the stops and every ruling are in `spike/4411/`:
+A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel-03 (specification 31). It is on USART6 (TX PG14, RX PG9), with the antenna hung off the board's top-right corner. Since the 2026-11-25T21:17Z ruling it is fed by **a 3.3 V regulator of its own** (U13, LMR33620ADDA), from the battery. Since (c1) (2026-11-26T04:03Z) its UART runs through **U31, a TXU0304PW** between the two rails. The measurement, the stops and every ruling are in `spike/4411/`:
 - `STOP.md`, `RESULTS.md` and `FACTS.md`: §1.1.
 - `out/lever-iv-sweep.md` and `out/lever-1-sweep.md`: the escape levers.
 - `out/fallback-2.md`: a lower-threshold supervisor, on paper.
 - `out/option-1.md`: the module on its own rail.
+- `out/option-1e.md`: F2's lever (e), on paper, which has no window.
 - `PREDICTIONS.md`: every prediction, committed before its run and scored.
 
 ## 1. What was built, against the rulings
@@ -104,16 +105,16 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
 
 | Measure | Result |
 |---|---|
-| Outline | **85.65 x 98.75 mm**: Scotty's approved width; approved up to the declared 100 x 100 mm (2026-11-25T21:44Z) |
-| U1's drop, `VDD_3V3` (limit 110 mV, 749 mA) | 82.6 mV. Worst VDD pin 30, 64.4 mOhm; worst VSS pin 107, 45.8 mOhm |
-| The module rail's drop, `VDD_3V3_RF` (limit 144 mV, 504 mA) | 122.2 mV. Supply U30.1 216.1 mOhm; return U30.9 26.5, U30.19 18.0 mOhm |
-| U10 / U11 / U13 copper, F.Cu / B.Cu / In1.Cu (need 1500 / 700 / 700 mm²) | 1590 / 2551 / 3062; 2061 / 2824 / 3311; 1115 / 1386 / 1489. All pass |
-| Capacitance ladder | rung 3, bounded via cost 320, nearest EXT_SCL at 89,557 of 100,000 fF |
+| Outline | **85.00 x 99.75 mm** since (c1) (85.65 x 98.75 before U31); approved up to the declared 100 x 100 mm (2026-11-25T21:44Z) |
+| U1's drop, `VDD_3V3` (limit 110 mV, 750 mA) | 85.7 mV (82.6 before U31). Worst VDD pin 33, 49.0 mOhm; worst VSS pin 31, 65.3 mOhm |
+| The module rail's drop, `VDD_3V3_RF` (limit 144 mV, 505 mA) | 122.7 mV. Supply U30.1 216.2 mOhm; return U30.9 26.8, U30.19 18.1 mOhm |
+| U10 / U11 / U13 copper, F.Cu / B.Cu / In1.Cu (need 1500 / 700 / 700 mm²) | 2082 / 2750 / 3382; 1310 / 2354 / 2763; 1326 / 1578 / 1649. All pass |
+| Capacitance ladder | rung 7, bounded via cost 320, bounded nets first, nearest EXT_SDA at 84,703 of 100,000 fF |
 | Pour ladder | **step 1** (squares at 1.0 x each buck's need) |
 | `extract` | verdict pass, no finding |
-| Raw DRC | 36 `drill_out_of_range`: the three bucks' 0.254 mm thermal drills, as before with two |
-| `check drc --spec` | pass: `drc.power` 31, `drc.radio` 1, `drc.outline` 1 |
-| Battery input current | 1905 mA (1869 before); J4's fault 14,100 mA |
+| Tier 2 (`board_tier2`, in the image) | Sentinel-03 passes every gate inside its bound (ERC, DRC, `check drc --spec`, extract), and the radio fixture and its planted boards pass (850 s) |
+| Battery input current | 1906 mA (1869 before the module); J4's fault 14,100 mA |
+| UART lines (four, through U31) | high 388.0-733.4 mV, low 498.3-810.4 mV; under U30's VDD + 0.3 V by 156.0 mV |
 
 ## 3. The pour ladder (b)
 
@@ -176,6 +177,16 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
 - **Why it is kept:** it is the pricing's design, so a block's own SW, FB, VCC and BOOT tracks are never pushed off F.Cu. It is named here.
 - **Not planted:** the ladder's treatment of a buck with no measured layer (adversarial F6). No board reaches that case.
 - **Earlier phases:** 40 mutants of the radio rules and placement, 39 killed. M23 (references distinct) survived, named in §9.
+- **(c1): 31 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, and `radio_tier1` for the emitter's and the loops'.
+  - **The level judge (C01-C05):** high, low, the receiver's maximum, the stated load, and the one-rail corner model.
+  - **The crossing's shape (C06-C11):** no module on the port, twice on a port, no B-to-A channel, the rails, TMAX, and the levels' supply window.
+  - **The off-domain gate (C12)** and the closed rows (C13).
+  - **The supply-row selection (C14)** and its UART-only filter (C31).
+  - **The emitter (C15, C16, C18):** A2/A3 tied to GND, the module on the B-side nets, and `own_nets`.
+  - **The screens and refusals (C20-C30, C32, C33):**
+    - the screens: the firmware's pulls, U30's load, U31's drop, partial power-down, the inferred thresholds and TMAX;
+    - the uncounted translator, the `after` and wired-OE refusals, the loops' LINES condition, and the readers' order and empty-supplies checks.
+  - C01 was re-run by hand to confirm its kill, by `each_line_level_through_the_translator_is_judged_at_its_receivers_pin`.
 
 ## 7. Adversarial pass
 
@@ -274,4 +285,13 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 ## 10. Gates
 
-PENDING: fmt, clippy, `cargo test --workspace`, the CI guards, tier 2.
+On bd42ea94 (8057a3da with main 649e81a8 merged):
+- `cargo fmt --all -- --check`: pass.
+- `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- **`cargo test --workspace`: 3260 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
+- **The CI guards:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass.
+- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0):
+  - `board_tier2`: Sentinel-03, the radio fixture and its planted boards pass (850 s, on 8057a3da's tree before the merge, which touched none of their code).
+  - `twin_tier2`'s battery-sag campaign on bd42ea94: Sentinel-03's scenarios meet every expectation, replay and repeat, with the sag point at 7,928,264 µV (325 s).
+- **Mutants:** 31 of 31 killed, §6.
+- **INV-08:** §5.
