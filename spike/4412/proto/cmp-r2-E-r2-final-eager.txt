@@ -1,0 +1,19 @@
+A = rep/dshot-r2-E-q/console.txt.gz
+B = rep/dshot-r2-final-eager-q/console.txt.gz
+dma1    A=529573 B=529573 same_without_stamps=True same_with_stamps=True
+dma2    A=645825 B=645825 same_without_stamps=True same_with_stamps=True
+timer1  A=539573 B=539573 same_without_stamps=False same_with_stamps=False
+    first difference at #473058: A=(11280174680, b'0x8000EDE', b'WUInt32', b'0x4C', b'0x3') B=(11280174680, b'0x8000EB0', b'WUInt32', b'0x4C', b'0x3')
+    differing positions (of the common length 539573): 4
+usart1  A=8306 B=8306 same_without_stamps=True same_with_stamps=True
+usart2  A=430 B=430 same_without_stamps=True same_with_stamps=True
+usart3  A=399 B=399 same_without_stamps=True same_with_stamps=True
+xfer    A=6986 B=6986 same_without_stamps=True same_with_stamps=True
+end-of-window read blocks: A=4 B=4
+  last block: 63 lines vs 63; differing lines: 1
+    (0, b'0x0000000018305D8C', b'0x0000000018305D92')
+  block 0 differs in 1 lines
+  block 1 differs in 1 lines
+  block 2 differs in 1 lines
+  block 3 differs in 1 lines
+warnings/errors, A count, B count (only where they differ):

@@ -549,10 +549,12 @@ const TWIN_DATA: [&str; 4] = [
 ];
 
 /// ArduPilot Copter 4.7.2's own USART1 transmissions, which the twin's
-/// `mavlink` tests read (`AET-WO-4400i`, from `spike/4400i`'s runs).
-const TWIN_FIXTURES: [&str; 2] = [
+/// `mavlink` tests read (`AET-WO-4400i`, from `spike/4400i`'s runs; the
+/// reboot run's since `AET-WO-4412` (4), from `spike/4412`'s `reboot-h`).
+const TWIN_FIXTURES: [&str; 3] = [
     "tests/data/4400i/early-fill-tx.bin",
     "tests/data/4400i/reject-tx.bin",
+    "tests/data/4412/reboot-tx.bin",
 ];
 
 /// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
