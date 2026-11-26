@@ -247,7 +247,7 @@ fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
         .iter()
         .map(|p| ((*p).to_owned(), 72_000_000))
         .collect();
-    let v = vos::judge_foreign(&regs, &decoded, &usarts);
+    let v = vos::judge_foreign(&regs, &decoded, &usarts, None);
     let named: Vec<&str> = v
         .conditions
         .iter()
@@ -270,6 +270,65 @@ fn ardupilot_at_vos1_names_each_clock_at_the_boundary() {
     );
 }
 
+/// `AET-WO-4412` D2 (ruled 2026-11-26): an HSE tree is judged at the
+/// declared crystal's fast ppm. Sentinel-03's RCC registers as unmodified
+/// ArduPilot leaves them on its 16 MHz crystal (measured, `spike/4412`
+/// `arm-1`: `PLLSRC` `10`, PLL1 400 MHz), with Sentinel-03's solved budget
+/// (±102 ppm): every clock but `fPCLK4` is judged, none is left "not
+/// declared", and every one of the 15, each at VOS1's maximum (the USARTs'
+/// 100 MHz kernels too, which the HSI tree's 72 MHz kept under theirs), is a
+/// named condition at the crystal's fastest, reported and never refused.
+/// With no deviation declared the same tree judges nothing.
+#[test]
+fn an_hse_tree_is_judged_at_the_crystals_fast_ppm() {
+    let regs = aethelgard_ir::motor::RccRegisters::from_values([
+        0x3F03_3025,
+        0x0000_801B,
+        0x48,
+        0x440,
+        0x0040_2022,
+        0x0109_0263,
+    ]);
+    let decoded = SolvedClock::from_rcc(&regs, 16_000_000, Vos::Scale1).unwrap();
+    let usarts: std::collections::BTreeMap<String, u64> = aethelgard_ir::serial::PERIPHERALS
+        .iter()
+        .map(|p| ((*p).to_owned(), 100_000_000))
+        .collect();
+    let crystal = aethelgard_ir::clock::Budget {
+        fast_ppm: 102,
+        slow_ppm: 102,
+    };
+    let v = vos::judge_foreign(&regs, &decoded, &usarts, Some(crystal));
+    assert_eq!(v.not_judged, ["fPCLK4: D3PPRE is not read"], "{v:?}");
+    assert_eq!(v.clocks.len(), 15, "{v:?}");
+    for c in &v.clocks {
+        assert_eq!(
+            c.fastest_hz,
+            Some(crystal.fastest_hz(c.nominal_hz)),
+            "{c:?}"
+        );
+    }
+    let named: Vec<&str> = v
+        .conditions
+        .iter()
+        .filter(|c| c.starts_with(VOS_LIMIT_AT_BOUNDARY))
+        .map(|c| c.split(' ').nth(1).unwrap())
+        .collect();
+    assert_eq!(
+        named,
+        [
+            "fCPU", "fHCLK", "fPCLK1", "fPCLK2", "fPCLK3", "APB1", "APB2", "UART4", "UART5",
+            "UART7", "UART8", "USART1", "USART2", "USART3", "USART6"
+        ],
+        "{v:?}"
+    );
+    assert!(v.clocks.iter().all(|c| c.holds == Some(false)), "{v:?}");
+    let unjudged = vos::judge_foreign(&regs, &decoded, &usarts, None);
+    assert!(unjudged.clocks.is_empty(), "{unjudged:?}");
+    assert_eq!(unjudged.not_judged.len(), 16, "{unjudged:?}");
+    assert!(unjudged.not_judged[1].contains("PLLSRC 10"), "{unjudged:?}");
+}
+
 /// A tree not on the HSI judges nothing: no deviation is declared for it.
 #[test]
 fn a_foreign_tree_off_the_hsi_is_not_judged() {
@@ -278,7 +337,7 @@ fn a_foreign_tree_off_the_hsi_is_not_judged() {
     regs.cfgr = (regs.cfgr & !0b11_1111) | (0b001 << 3) | 0b001;
     regs.cr |= 1 << 8;
     let decoded = SolvedClock::from_rcc(&regs, 0, Vos::Scale1).unwrap();
-    let v = vos::judge_foreign(&regs, &decoded, &Default::default());
+    let v = vos::judge_foreign(&regs, &decoded, &Default::default(), None);
     assert!(v.clocks.is_empty() && v.conditions.is_empty(), "{v:?}");
     assert!(
         v.not_judged.iter().any(|n| n.contains("the tree is CSI")),

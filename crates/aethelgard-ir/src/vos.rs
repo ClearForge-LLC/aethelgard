@@ -564,20 +564,28 @@ pub struct ForeignVerdict {
 /// The rule at a foreign run's end (`AET-WO-4240v` D-4): `decoded` is the
 /// tree [`SolvedClock::from_rcc`](crate::SolvedClock::from_rcc) decoded from
 /// `registers`, at the declared `vos`; `usarts` the declared USART kernel
-/// clocks. Every clock is judged at the HSI's fastest when the tree is HSI's
-/// (`RCC_CFGR.SWS` HSI, or PLL1 with `RCC_PLLCKSELR.PLLSRC` `00`, HSI, RM0433
-/// Rev 9 §8.7.11 p. 399; one source feeds every PLL); on any other source no
+/// clocks; `hse` the declared HSE's deviation, when the specification
+/// declares one. Every clock is judged at its source's fastest: the HSI's
+/// when the tree is HSI's (`RCC_CFGR.SWS` HSI, or PLL1 with
+/// `RCC_PLLCKSELR.PLLSRC` `00`, HSI, RM0433 Rev 9 §8.7.11 p. 399; one source
+/// feeds every PLL), and the declared crystal's fast ppm when it is the
+/// HSE's (`SWS` HSE, or PLL1 with `PLLSRC` `10`; `AET-WO-4412` D2, ruled
+/// 2026-11-26). On any other source, or an HSE with none declared, no
 /// deviation is declared and nothing is judged. `fPCLK4` is not judged:
 /// `D3PPRE` is not read. The USART kernels are declared, never read back
-/// (Renode 1.17.0 drops `RCC_D2CCIP2R`), and are judged as HSI-derived when
-/// the tree is.
+/// (Renode 1.17.0 drops `RCC_D2CCIP2R`), and are judged as derived from the
+/// tree's source.
 pub fn judge_foreign(
     registers: &crate::motor::RccRegisters,
     decoded: &SolvedClock,
     usarts: &std::collections::BTreeMap<String, u64>,
+    hse: Option<crate::clock::Budget>,
 ) -> ForeignVerdict {
     let pllsrc = registers.pllckselr & 0b11;
     let hsi = decoded.source == "HSI" || (decoded.source == "PLL1" && pllsrc == 0b00);
+    let on_hse = decoded.source == "HSE" || (decoded.source == "PLL1" && pllsrc == 0b10);
+    // The declared crystal's deviation, on the HSE's tree only.
+    let budget = if on_hse { hse } else { None };
     let mut clocks: Vec<Clock> = bus_clocks(decoded)
         .into_iter()
         .filter(|c| c.name != "fPCLK4")
@@ -603,7 +611,7 @@ pub fn judge_foreign(
             None => not_judged.push(format!("{usart} kernel: no Table 60 row")),
         }
     }
-    if !hsi {
+    if !hsi && budget.is_none() {
         not_judged.extend(clocks.drain(..).map(|c| {
             format!(
                 "{}: the tree is {} (PLLSRC {pllsrc:02b}), whose deviation is not declared",
@@ -611,7 +619,10 @@ pub fn judge_foreign(
             )
         }));
     }
-    let judged = judge(decoded.vos, &clocks, hsi_fastest);
+    let judged = match budget {
+        Some(b) => judge(decoded.vos, &clocks, |hz| Some(b.fastest_hz(hz))),
+        None => judge(decoded.vos, &clocks, hsi_fastest),
+    };
     let mut conditions: Vec<String> = judged
         .iter()
         .filter(|c| c.holds == Some(false))

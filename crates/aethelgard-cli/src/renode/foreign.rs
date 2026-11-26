@@ -679,13 +679,19 @@ impl ClockReport {
     }
 
     /// The check at the run's end: `values`, the RCC registers in
-    /// [`RccRegisters::OFFSETS`]' order, decoded with the declared
-    /// crystal `hse_hz` (RM0433 Rev 9, `SolvedClock::from_rcc`), and each
+    /// [`RccRegisters::OFFSETS`]' order, decoded with the solved `clock`'s
+    /// declared crystal (RM0433 Rev 9, `SolvedClock::from_rcc`) and judged at
+    /// its declared deviation on an HSE tree (`AET-WO-4412` D2), and each
     /// timer bus's decoded clock held to its declaration. Each disagreement
     /// is a failing finding with both figures.
     ///
     /// [`RccRegisters::OFFSETS`]: aethelgard_ir::motor::RccRegisters::OFFSETS
-    fn check(&mut self, values: [u32; 6], hse_hz: u32) -> Vec<Finding> {
+    fn check(
+        &mut self,
+        values: [u32; 6],
+        hse_hz: u32,
+        hse: Option<aethelgard_ir::clock::Budget>,
+    ) -> Vec<Finding> {
         use aethelgard_ir::motor::{Apb, RccRegisters};
         self.registers = RccRegisters::OFFSETS
             .iter()
@@ -716,7 +722,7 @@ impl ClockReport {
             .iter()
             .map(|d| (d.instance.clone(), d.declared_hz))
             .collect();
-        let vos = aethelgard_ir::vos::judge_foreign(&registers, &decoded, &usarts);
+        let vos = aethelgard_ir::vos::judge_foreign(&registers, &decoded, &usarts, hse);
         self.conditions.extend(vos.conditions.iter().cloned());
         self.vos = Some(vos);
         let mut out = Vec::new();
@@ -1687,7 +1693,7 @@ pub fn judge(
     mut report: ForeignBoot,
     parts: &std::collections::BTreeMap<String, String>,
     flash: &[crate::elf::FlashLoad],
-    hse_hz: u32,
+    clock: &aethelgard_ir::SolvedClock,
     serial: &[aethelgard_twin::serial::Options],
     faults: &[(u32, u64)],
     rest: &std::collections::BTreeMap<String, Vec<Vec<String>>>,
@@ -1848,7 +1854,14 @@ pub fn judge(
     }
 
     // The timers' declared clock held to the RCC registers (`AET-WO-4400g`).
-    let mut findings = report.clock.check(rcc, hse_hz);
+    let mut findings = report.clock.check(
+        rcc,
+        clock.hse_hz,
+        clock
+            .hse
+            .as_ref()
+            .map(aethelgard_ir::clock::SolvedHse::budget),
+    );
     let whole = out.dropped_log_lines == 0;
     if !whole {
         findings.push(Finding::info(
@@ -3926,7 +3939,7 @@ mod tests {
             vos: aethelgard_ir::vos::Vos::Scale1,
         };
         let mut r = ClockReport::of(&declared(200_000_000), vec!["dwt", "lpuart1"]);
-        assert!(r.check(regs, 0).is_empty());
+        assert!(r.check(regs, 0, None).is_empty());
         assert!(
             r.checked
                 .iter()
@@ -3937,7 +3950,7 @@ mod tests {
         assert_eq!(r.declared_only.len(), 8);
         assert!(r.conditions[0].starts_with("usart_clock_declared_unchecked:"));
         let mut r = ClockReport::of(&declared(250_000_000), vec![]);
-        let f = r.check(regs, 0);
+        let f = r.check(regs, 0, None);
         assert_eq!(
             f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
             [CLOCK_CONTRADICTED, CLOCK_CONTRADICTED]
@@ -3951,10 +3964,44 @@ mod tests {
         assert!(r.checked.iter().all(|c| !c.holds));
         // SWS 100 is reserved: no clock to hold the declaration to.
         let mut r = ClockReport::of(&declared(200_000_000), vec![]);
-        let f = r.check([regs[0], 0x8023, regs[2], regs[3], regs[4], regs[5]], 0);
+        let f = r.check(
+            [regs[0], 0x8023, regs[2], regs[3], regs[4], regs[5]],
+            0,
+            None,
+        );
         assert_eq!(f.len(), 1);
         assert_eq!(f[0].kind, CLOCK_UNDECODABLE);
         assert!(r.checked.iter().all(|c| !c.holds && c.decoded_hz.is_none()));
+    }
+
+    /// `AET-WO-4412` D2: on Sentinel-03's crystal tree (its RCC registers as
+    /// ArduPilot leaves them, measured, `PLLSRC` `10`), the check passes the
+    /// declared crystal's deviation to the clock rule, which judges every
+    /// clock but `fPCLK4`; without one it judges none.
+    #[test]
+    fn an_hse_tree_is_judged_at_the_declared_crystals_deviation() {
+        let regs = [0x3F03_3025, 0x801B, 0x48, 0x440, 0x0040_2022, 0x0109_0263];
+        let declared = aethelgard_ir::motor::SolvedForeignClock {
+            apb1_timers_hz: 200_000_000,
+            apb2_timers_hz: 200_000_000,
+            usarts: aethelgard_ir::serial::PERIPHERALS
+                .iter()
+                .map(|p| ((*p).to_owned(), 100_000_000))
+                .collect(),
+            vos: aethelgard_ir::vos::Vos::Scale1,
+        };
+        let crystal = aethelgard_ir::clock::Budget {
+            fast_ppm: 102,
+            slow_ppm: 102,
+        };
+        let mut r = ClockReport::of(&declared, vec![]);
+        assert!(r.check(regs, 16_000_000, Some(crystal)).is_empty());
+        let v = r.vos.as_ref().unwrap();
+        assert_eq!(v.clocks.len(), 15);
+        assert_eq!(v.not_judged, ["fPCLK4: D3PPRE is not read"]);
+        let mut r = ClockReport::of(&declared, vec![]);
+        assert!(r.check(regs, 16_000_000, None).is_empty());
+        assert!(r.vos.as_ref().unwrap().clocks.is_empty());
     }
 
     /// The four-port fixture (`AET-WO-4408`), solved, with `edit` applied to

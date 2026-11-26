@@ -2576,7 +2576,7 @@ fn simulate_with(
                 ),
                 &parts,
                 &r.flash,
-                r.topology.clock.hse_hz,
+                &r.topology.clock,
                 &foreign_serial,
                 &r.faults,
                 &rest_witnesses,
