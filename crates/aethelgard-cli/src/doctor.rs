@@ -47,6 +47,10 @@ struct Report {
     verdict: &'static str,
     check: &'static str,
     engine_version: &'static str,
+    /// The commit this executable was built from, or `unknown`, and its
+    /// tree, `clean`, `dirty` or `unknown` (`AET-WO-1802` (2)).
+    engine_commit: &'static str,
+    engine_tree: &'static str,
     /// The scratch base, when it passes the rule.
     scratch: Option<String>,
     /// What the sandbox achieved for this executable's own probe; absent
@@ -149,7 +153,9 @@ pub fn doctor() -> ExitCode {
         ok,
         verdict: if ok { "pass" } else { "fail" },
         check: "doctor",
-        engine_version: env!("CARGO_PKG_VERSION"),
+        engine_version: aethelgard_cli::identity::VERSION,
+        engine_commit: aethelgard_cli::identity::COMMIT,
+        engine_tree: aethelgard_cli::identity::TREE,
         scratch,
         sandbox,
         tools,

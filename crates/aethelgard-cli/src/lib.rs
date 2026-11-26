@@ -6,6 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(test)]
+mod commit;
 pub mod generate;
+pub mod identity;
 pub mod ledger;
 pub mod readiness;
