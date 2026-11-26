@@ -57,3 +57,10 @@ Each row was measured on Sentinel-03's ArduPilot under the reset macro (`py/rese
 - **To close:**
   - CI's sentinel-03 ELF sha256 against the write dispatch's package ELF (the one the bench flashes).
   - The bench-package-s03 target held (`1919`).
+
+## A defaults file on a DShot board (found by CI, 76113fed): **ruled 2026-11-26T17:35Z, (a) made strict**
+
+- **Found:** `MOT_PWM_TYPE` by `defaults.parm` (D3) collides with `4406`'s guard. `check pinout` refused `serial-dshot-9600` with `ParamDefaultsOverride` (two signatures: `load_defaults_file` linked, ROMFS lists `defaults.parm`).
+  - **Locally:** Sentinel-03's ELF 1cfc5e02 is refused the same way; ELF 97afa171, without the file, is judged.
+  - **My gap:** I never ran `check pinout` on a `defaults.parm` ELF before the push.
+- **Ruled:** pincheck inflates the embedded file (raw deflate) and admits it only if it is byte for byte the one `generate hwdef` writes for the topology. Every other signature still refuses. Built next, in this order: the guard, then its plants and mutants, then `check pinout` on every DShot board's ELF locally.
