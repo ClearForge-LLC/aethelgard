@@ -23,8 +23,8 @@ Classes: **committed** (a golden, a package file or a fixture holds the bytes); 
 | 8 | `aethelgard-cli/src/speeds.rs:197` | `check speeds`' `engine_version` | runtime | |
 | 9 | `aethelgard-cli/src/doctor.rs:152` | `doctor`'s `engine_version` | runtime | |
 | 10 | `aethelgard-cli/src/mcp.rs:369` | the MCP server's info | runtime | |
-| 11 | `aethelgard-cli/src/main.rs:2850` | a foreign run's archive header, `aethelgard` | runtime: see §3 | |
-| 12 | `aethelgard-cli/src/main.rs:2959` | `simulate`'s tools, a campaign run's archive header (`2205` F4) | runtime: see §3 | |
+| 11 | `aethelgard-cli/src/main.rs:2850` | a foreign run's archive header, `aethelgard` | **hashed**: the state-sequence hash, so `verdict_sha256` (§3, corrected) | |
+| 12 | `aethelgard-cli/src/main.rs:2959` | `simulate`'s tools, a campaign run's archive header (`2205` F4) | **hashed**, as 11 (§3) | |
 | 13 | `aethelgard-cli/tests/campaign_tier1.rs:577` | the header, compared at run time | runtime (test) | |
 | 14 | `aethelgard-cli/tests/doctor_tier1.rs:180` | doctor's, compared at run time | runtime (test) | |
 | 15 | `aethelgard-cli/tests/verify_2k2_tier2.rs:178` | the verdict's, compared at run time | runtime (test) | |
@@ -75,18 +75,19 @@ No committed file holds any of the hashes the bump moves: each package's `verdic
 
 ## 3. The archive header (`2205` F4)
 
+**Corrected after the adversarial pass.** This section first said the header was in no hash, from the README's description of the chain; that was wrong, and the replayer was not read.
+
 **Not committed anywhere that is compared** [read].
 - Archives (`trace.cbor`) are committed only under `spike/`, as records.
 - `aethelgard-chaos/tests/golden.rs` pins a golden trace whose header the test builds itself, with no engine version.
 
-**In no hash that a committed byte holds** [read].
-- `run_id` is a function of the scenario's, the specification's and the firmware's hashes (`chaos/src/campaign.rs:1689`).
-- The state-sequence hash chains the events' payloads, not the header.
-- `verify` reads the header only for the Renode build (`verify.rs:2828`).
-- `verify`'s runs carry no `tools` and no `trace_bytes`.
-- The chaos reader holds a header's tool *names* to its records, and each value only to 1–256 printable ASCII bytes (`event.rs:414`).
+**But hashed into a committed byte** [read, and demonstrated by the adversarial pass].
+- `Replayer::new` seeds the state-sequence hash with the sha256 of the header's bytes (`chaos/src/replay.rs:96`, from the writer at `archive.rs:144`), and the header's `tools` hold the engine's entry.
+- That hash is each run's `state_sequence_hash`, in `verify`'s `campaign` runs (`verify.rs:461`), so it reaches the verdict and `MANIFEST.json`'s `verdict_sha256`.
+- Two headers that differ only in the engine string give different seeds: `…, clean` against `…, dirty`, and one commit against another.
+- What does not depend on it: `run_id`, a function of the scenario's, the specification's and the firmware's hashes (`chaos/src/campaign.rs:1689`); and `verify`'s reading of the header, which is only for the Renode build (`verify.rs:2828`).
 
-So the header can carry the commit (§7's second stop does not arise).
+**So the header cannot carry the commit:** that is §7's second stop, reported. It names the version alone, as before this work order. A version change already moves `verdict_sha256` through `engine_version`, so the bump moves no further committed byte through the header (no test pins a real run's state hash; `git grep`).
 
 ## 4. `.cargo_vcs_info.json`, today
 
