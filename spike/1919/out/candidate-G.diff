@@ -1,0 +1,40 @@
+--- /dev/fd/63	2026-11-26 04:42:35.557979629 +0000
++++ /dev/fd/62	2026-11-26 04:42:35.558979653 +0000
+@@ -237,6 +237,28 @@
+     Ok(files)
+ }
+ 
++/// SPIKE AET-WO-1919 candidate (G): the board/ subtree of [`tree`] alone, without the
++/// schematic and the routed board, which `prove --spec` discards.
++pub fn board_tree(
++    spec: &Specification,
++    topology: &SolvedTopology,
++    table: &PinTable,
++) -> Result<BTreeMap<String, String>, GenerateError> {
++    generable(topology)?;
++    let project = &spec.project_name;
++    let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
++    let board =
++        aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
++            .map_err(GenerateError::Board)?;
++    let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
++    let mut files = BTreeMap::new();
++    for (path, text) in board {
++        files.insert(format!("{BOARD_DIR}/{path}"), text);
++    }
++    files.insert(format!("{BOARD_DIR}/{project}.repl"), platform);
++    Ok(files)
++}
++
+ #[cfg(test)]
+ mod tests {
+     use super::*;
+@@ -1795,7 +1817,7 @@
+     let topology = aethelgard_ir::solve(&spec, &table, &sha256)
+         .map_err(|err| invalid(err.kind(), err.id(), err.to_string()))?;
+     let files =
+-        aethelgard_cli::generate::tree(&spec, &topology, &table).map_err(|err| run::Stop {
++        aethelgard_cli::generate::board_tree(&spec, &topology, &table).map_err(|err| run::Stop {
+             code: if err.internal() {
+                 EXIT_INTERNAL
+             } else {

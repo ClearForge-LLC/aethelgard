@@ -1,0 +1,11 @@
+tag=cand-s03 mem=16G net=none tree=/home/forge/.cache/aet-1919/cand
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T04:08:59+00:00
+host_avail_kB=49200424
+loadavg=5.18 5.80 6.94
+Mem:              60          13          18           6          35          46
+cmd: taskset -c 0-3 bash spike/1919/tools/ctl.sh cand-s03 bash spike/1919/tools/verify-s03.sh cand-s03
+exit=1
+end=2026-11-26T04:41:34+00:00
+CTL1919 tag=cand-s03 rc=1 wall_s=1954.12 memory.peak=9081290752
+verdict line sha256 (s03-1 baseline and cand-s03): 5ba5f66beda556ddaf607779672c20a3c9fcddfef6c9f1f7305803a110b1429e, cmp identical

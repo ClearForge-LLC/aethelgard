@@ -94,6 +94,11 @@ Every peak equals `1918`'s split figures (largest 7.997 GiB, under the 12 GiB ce
 | **candidate (G): `board/` generated alone, pinned to 4 cores** | **0.83 / 0.83** | 0.70 / 0.70 | 25.26 | — |
 
   - Under (G), the prove verdict line is byte for byte the debug build's, apart from the `--crate` path each run was given. It is still `pass`, with provenance `generated`.
+  - **(G) over the whole verify** (`cand-s03`: the scratch copy with `out/candidate-G.diff`, pinned to 4 cores, `out/furnace-cand-s03-gates.txt`):
+    - its verdict line is **byte-identical** to the baseline Furnace run `s03-1` (sha256 `5ba5f66b…`), all 26 prove gates included;
+    - against CI's verdict line, it differs in the uid fields only, as `s03-1` does (§1.4);
+    - the CLI's own time across the 26 prove gates fell from 524 s (`s03-1`) to **6 s**;
+    - `verify` took 32.6 min on 4 pinned cores, against `s03-1`'s 46.7 on 20 unpinned cores under a heavier load. The two are not comparable as times.
   - **A release build is not the lever.** It takes 8–9 % off, because the time is in `aethelgard-eda`, which `[profile.dev.package.aethelgard-eda]` already builds at opt-level 2.
 - **`extract` is the in-process copper work,** at eda's opt-level 2: 265 s in CI, and 428–505 s on Furnace. The CLI build does not change it.
   - **Why Furnace is slower here is not explained.** CBMC ran faster on Furnace in the same verify, so this is not the box's load. The projections use CI's figure.
