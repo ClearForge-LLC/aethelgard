@@ -1251,68 +1251,6 @@ fn present<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
     Option::<V>::deserialize(deserializer).map(Some)
 }
 
-/// A declared foreign clock is ArduPilot's tree for the declared oscillator
-/// (`AET-WO-4412` D1 (a)): every timer and USART kernel clock and the voltage
-/// scale equal [`ardupilot_clock::tree`]'s row for `mcu.hse`'s frequency, or
-/// for no oscillator (the HSI) when none is declared. A specification only:
-/// a topology carries no oscillator declaration of its own.
-fn foreign_clock_is_ardupilots(
-    c: &motor::SolvedForeignClock,
-    mcu: &Mcu,
-) -> Result<(), IrValidationError> {
-    use IrValidationError as E;
-
-    let oscillator_hz = match &mcu.hse {
-        None => 0,
-        Some(h) => match clock::source_hz(h)? {
-            (hz, 1) => hz,
-            (num, den) => {
-                return Err(E::ForeignClockOscillatorUnsupported {
-                    oscillator: format!("{num}/{den} Hz"),
-                    held: ardupilot_clock::oscillators(),
-                });
-            }
-        },
-    };
-    let Some(t) = ardupilot_clock::tree(oscillator_hz) else {
-        return Err(E::ForeignClockOscillatorUnsupported {
-            oscillator: format!("{oscillator_hz} Hz"),
-            held: ardupilot_clock::oscillators(),
-        });
-    };
-    let wrong = |field: String, declared: String, expected: String| E::ForeignClockNotArduPilots {
-        field,
-        declared,
-        expected,
-        oscillator_hz,
-        lines: t.lines.to_owned(),
-    };
-    for (field, hz) in [
-        ("apb1_timers_hz".to_owned(), c.apb1_timers_hz),
-        ("apb2_timers_hz".to_owned(), c.apb2_timers_hz),
-    ]
-    .into_iter()
-    .chain(c.usarts.iter().map(|(k, v)| (format!("usarts.{k}"), *v)))
-    {
-        let want = if field.starts_with("usarts.") {
-            t.usarts_hz
-        } else {
-            t.timers_hz
-        };
-        if hz != want {
-            return Err(wrong(field, format!("{hz} Hz"), format!("{want} Hz")));
-        }
-    }
-    if c.vos != t.vos {
-        return Err(wrong(
-            "vos".to_owned(),
-            c.vos.to_string(),
-            t.vos.to_string(),
-        ));
-    }
-    Ok(())
-}
-
 /// A foreign clock's values (`AET-WO-4400g` §1.2), in the specification
 /// and in a topology alike: no zero, each USART the platform carries
 /// ([`serial::PERIPHERALS`]) and no other, and the USARTs one mux selects
@@ -3922,7 +3860,6 @@ impl Specification {
                 )?;
             }
             foreign_clock_values(&motor::SolvedForeignClock::from(c))?;
-            foreign_clock_is_ardupilots(&motor::SolvedForeignClock::from(c), &self.mcu)?;
         }
         // 3
         if self.voltage_domains.is_empty() {

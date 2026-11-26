@@ -68,6 +68,70 @@ pub fn tree(oscillator_hz: u64) -> Option<Tree> {
     })
 }
 
+/// A foreign firmware that is ArduPilot runs this tree (`AET-WO-4412` D1 (b),
+/// ruled 2026-11-26T11:26Z): `simulate --foreign` holds a declared
+/// `mcu.foreign_clock` to it when the ELF names `AP_HAL::panic`. Every timer
+/// and USART kernel clock and the scale equal [`tree`]'s row for `hse`'s
+/// frequency, or for no oscillator (the HSI) when none is declared; an
+/// oscillator with no row is refused too. `validate` holds a declaration to
+/// its own consistency only, so a firmware of the user's own declares its own.
+pub fn hold(
+    c: &crate::motor::SolvedForeignClock,
+    hse: Option<&crate::clock::Hse>,
+) -> Result<(), crate::IrValidationError> {
+    use crate::IrValidationError as E;
+
+    let oscillator_hz = match hse {
+        None => 0,
+        Some(h) => match crate::clock::source_hz(h)? {
+            (hz, 1) => hz,
+            (num, den) => {
+                return Err(E::ForeignClockOscillatorUnsupported {
+                    oscillator: format!("{num}/{den} Hz"),
+                    held: oscillators(),
+                });
+            }
+        },
+    };
+    let Some(t) = tree(oscillator_hz) else {
+        return Err(E::ForeignClockOscillatorUnsupported {
+            oscillator: format!("{oscillator_hz} Hz"),
+            held: oscillators(),
+        });
+    };
+    let wrong = |field: String, declared: String, expected: String| E::ForeignClockNotArduPilots {
+        field,
+        declared,
+        expected,
+        oscillator_hz,
+        lines: t.lines.to_owned(),
+    };
+    for (field, hz) in [
+        ("apb1_timers_hz".to_owned(), c.apb1_timers_hz),
+        ("apb2_timers_hz".to_owned(), c.apb2_timers_hz),
+    ]
+    .into_iter()
+    .chain(c.usarts.iter().map(|(k, v)| (format!("usarts.{k}"), *v)))
+    {
+        let want = if field.starts_with("usarts.") {
+            t.usarts_hz
+        } else {
+            t.timers_hz
+        };
+        if hz != want {
+            return Err(wrong(field, format!("{hz} Hz"), format!("{want} Hz")));
+        }
+    }
+    if c.vos != t.vos {
+        return Err(wrong(
+            "vos".to_owned(),
+            c.vos.to_string(),
+            t.vos.to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Every oscillator the table holds, in order.
 pub fn oscillators() -> Vec<u64> {
     rows().map(|(osc, _, _)| osc).collect()

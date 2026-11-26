@@ -1875,6 +1875,16 @@ fn ready(
         ),
         None => None,
     };
+    // A firmware that names ArduPilot's panic is ArduPilot, which runs its own
+    // clock tree for the oscillator: the declared clock is held to it, by name
+    // (`AET-WO-4412` D1 (b), ruled 2026-11-26T11:26Z).
+    if let (Some(_), Some(c)) = (&panic, &boot.topology.foreign_clock) {
+        aethelgard_ir::ardupilot_clock::hold(
+            c,
+            boot.topology.clock.hse.as_ref().map(|h| &h.declared),
+        )
+        .map_err(|e| run::Stop::refused(e.kind(), e.to_string()))?;
+    }
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     // The fault handlers the foreign judge hooks (`AET-WO-2314`), from the

@@ -4457,3 +4457,65 @@ fn a_foreign_reboot_is_named_and_its_reset_artefact_is_not_a_step_error() {
     assert_eq!(code, Some(0), "{v}");
     assert!(v["boot"].get("resets_ns").is_none(), "{v}");
 }
+
+/// `AET-WO-4412` D1 (b) (ruled 2026-11-26T11:26Z): `validate` holds a
+/// declared foreign clock to its own consistency only, so a firmware of the
+/// user's own may declare its own (here the reset clock's 64 MHz at VOS
+/// Scale 2); `simulate --foreign` holds it to ArduPilot's tree only when the
+/// ELF names `AP_HAL::panic`. Both refusals come before any tool is looked
+/// for (exit 3, no `renode` on `PATH`): an ArduPilot ELF on that clock is
+/// `ForeignClockNotArduPilots`, naming the field and both figures; an ELF that
+/// names no panic is `ForeignPanicSymbolMissing` first, as before.
+#[test]
+fn an_ardupilot_firmware_on_a_clock_not_its_trees_is_refused_at_the_run() {
+    let empty = Dir::new("empty");
+    let input = Dir::new("own-clock");
+    let (spec, platform) = common::foreign::write_with(&input.0, |v| {
+        let c = &mut v["mcu"]["foreign_clock"];
+        for bus in ["apb1_timers_hz", "apb2_timers_hz"] {
+            c[bus]["value"] = 64_000_000.into();
+        }
+        for (_, u) in c["usarts"].as_object_mut().unwrap() {
+            u["value"] = 64_000_000.into();
+        }
+        c["vos"]["value"] = "scale2".into();
+    });
+    let out = run(
+        &empty.0,
+        &[
+            OsStr::new("validate"),
+            OsStr::new("--file"),
+            spec.as_os_str(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", report(&out));
+    let boot = |elf: &[u8]| {
+        let fw = input.write("fw.elf", elf);
+        let out = run(
+            &empty.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                fw.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--foreign"),
+                OsStr::new("10ms"),
+            ],
+        );
+        (out.status.code(), report(&out))
+    };
+    let (code, v) = boot(&foreign_elf());
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ForeignClockNotArduPilots", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("apb1_timers_hz declares 64000000 Hz") && m.contains("runs it at 200000000 Hz"),
+        "{m}"
+    );
+    let (code, v) = boot(&elf_at(0x0800_0000, &foreign_code(), 40));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ForeignPanicSymbolMissing", "{v}");
+}

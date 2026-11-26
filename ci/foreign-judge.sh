@@ -27,9 +27,9 @@ trap 'rm -rf "$work"' EXIT
 platform=$work/gen/board/sentinel-02-own.foreign.repl
 
 # AET-WO-4400g: the board with its declaration removed, which an undeclared
-# foreign run takes, with its own emitted platform; and with its timers
-# declared at the stock file's 250 MHz, which since AET-WO-4412 D1 (a) is not
-# ArduPilot's tree and is refused at validate, so it emits nothing.
+# foreign run takes; and with its timers declared at the stock file's 250 MHz,
+# which validates (a firmware's own clock) and is not ArduPilot's tree. Each
+# with its own emitted platforms, since the declaration builds the foreign one.
 derive() {
   python3 -I - "$spec" "$work/spec-$1.json" "$1" <<'PY'
 import json, sys
@@ -42,9 +42,7 @@ else:
         d["mcu"]["foreign_clock"][bus]["value"] = 250000000
 json.dump(d, open(dst, "w"), indent=2)
 PY
-  if [ "$1" = undeclared ]; then
-    "$bin" generate --spec "$work/spec-$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
-  fi
+  "$bin" generate --spec "$work/spec-$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
 }
 derive undeclared
 derive contradicted
@@ -141,13 +139,14 @@ run clock-on-generated-run-foreign-platform 3 'v["error"]["kind"] == "PlatformNo
   --platform "$platform" --firmware "$elf" --for 100ms
 
 # Timers declared at 250 MHz: not ArduPilot's tree for no crystal (200 MHz,
-# aethelgard-ir data/ardupilot-h7-clock.tsv), so refused at validate by name
-# before a boot (AET-WO-4412 D1 (a)). The judge's read-back check, which this
-# case reached before (AET-WO-4400g §1.2), is held by boot_tier1's
+# aethelgard-ir data/ardupilot-h7-clock.tsv), and the ELF names AP_HAL::panic,
+# so the run is refused by name before a boot (AET-WO-4412 D1 (b), ruled
+# 2026-11-26T11:26Z). The judge's read-back check, which this case reached
+# before (AET-WO-4400g §1.2), is held by boot_tier1's
 # a_foreign_clock_the_rcc_registers_contradict_fails_by_name.
 run_spec=$work/spec-contradicted.json run clock-not-ardupilots 3 '
 v["error"]["kind"] == "ForeignClockNotArduPilots"
-' --platform "$platform" --firmware "$elf" --foreign "$window"
+' --platform "$work/gen-contradicted/board/sentinel-02-own.foreign.repl" --firmware "$elf" --foreign "$window"
 
 # SPI2's receive DMA line dropped from the platform, and U5's model removed:
 # neither is the platform the specification emits.

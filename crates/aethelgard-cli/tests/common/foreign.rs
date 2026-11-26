@@ -1,8 +1,10 @@
 //! The reference board as a foreign firmware's (`AET-WO-4400g` §1.2): its
 //! specification with `mcu.foreign_clock` declared, and the platform emitted
-//! for it, which `simulate --foreign` requires. The clock is ArduPilot's tree
-//! with no crystal (`AET-WO-4412` D1 (a): `aethelgard_ir::ardupilot_clock`'s
-//! HSI row, 200 MHz timers and 72 MHz USARTs at VOS Scale 1), and the RCC
+//! for it, which `simulate --foreign` requires. Every foreign firmware here
+//! names ArduPilot's panic, so the clock is ArduPilot's tree with no crystal
+//! (`AET-WO-4412` D1 (b): `aethelgard_ir::ardupilot_clock`'s HSI row, 200 MHz
+//! timers and 72 MHz USARTs at VOS Scale 1, which `--foreign` holds an
+//! ArduPilot ELF's declaration to), and the RCC
 //! registers a stub prints are those ArduPilot leaves on that tree
 //! ([`RCC_ARDUPILOT_HSI`]), so the timer check holds.
 
@@ -60,7 +62,14 @@ pub fn spec_json() -> serde_json::Value {
 /// the clock dropped (`AET-WO-4412` D1 (a)), is written beside them as
 /// `generated-platform.repl`.
 pub fn write(dir: &Path) -> (PathBuf, PathBuf) {
-    let bytes = serde_json::to_vec_pretty(&spec_json()).unwrap();
+    write_with(dir, |_| {})
+}
+
+/// [`write`], with `edit` applied to [`spec_json`] first.
+pub fn write_with(dir: &Path, edit: impl FnOnce(&mut serde_json::Value)) -> (PathBuf, PathBuf) {
+    let mut v = spec_json();
+    edit(&mut v);
+    let bytes = serde_json::to_vec_pretty(&v).unwrap();
     let spec_path = dir.join("foreign-spec.json");
     fs::write(&spec_path, &bytes).unwrap();
     let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();

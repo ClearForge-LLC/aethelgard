@@ -1,11 +1,13 @@
-//! `AET-WO-4412` D1 (a), ruled 2026-11-26: a specification's
+//! `AET-WO-4412` D1, ruled 2026-11-26: an ArduPilot firmware's
 //! `mcu.foreign_clock` is ArduPilot's tree for the declared oscillator, and a
-//! generated run drops it.
+//! generated run drops the declaration.
 //!
-//! - `validate` refuses a declaration that is not ArduPilot's tree for
-//!   `mcu.hse`'s frequency (`ForeignClockNotArduPilots`), and an oscillator
-//!   ArduPilot's `stm32h7_mcuconf.h` has no tree for
-//!   (`ForeignClockOscillatorUnsupported`).
+//! - `simulate --foreign` refuses, for an ELF that names `AP_HAL::panic`, a
+//!   declaration that is not ArduPilot's tree for `mcu.hse`'s frequency
+//!   (`ForeignClockNotArduPilots`), and an oscillator ArduPilot's
+//!   `stm32h7_mcuconf.h` has no tree for (`ForeignClockOscillatorUnsupported`);
+//!   `validate` holds it to its own consistency only (D1 (b), ruled
+//!   2026-11-26T11:26Z).
 //! - `generate` writes the same tree with the declaration and without it, but
 //!   for the specification's hash, plus the foreign platform beside the
 //!   generated one (`<project>.foreign.repl`).
@@ -61,25 +63,47 @@ fn declared(oscillator_hz: u64) -> Value {
     })
 }
 
-/// Sentinel-03's 16 MHz crystal: its own row validates; the HSI's values,
-/// which `4400h` once copied, do not, and the refusal names the field and
-/// both figures; another scale is refused too. An external oscillator at
-/// 12 MHz has no tree, and one at 8 MHz has one.
+/// `hold` on `spec`'s solved topology: what `simulate --foreign` asks of an
+/// ArduPilot ELF.
+fn held(spec: &Value) -> Result<(), aethelgard_ir::IrValidationError> {
+    let s: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&s.mcu.part).unwrap();
+    let t = aethelgard_ir::solve(&s, &table, &"0".repeat(64)).unwrap();
+    aethelgard_ir::ardupilot_clock::hold(
+        t.foreign_clock.as_ref().unwrap(),
+        t.clock.hse.as_ref().map(|h| &h.declared),
+    )
+}
+
+/// D1 (b), ruled 2026-11-26T11:26Z: `validate` holds a declared foreign
+/// clock to its own consistency only, so each variant below validates; the
+/// tree is held at the run, for an ELF that names `AP_HAL::panic`
+/// (`boot_tier1`'s planted pair). Sentinel-03's 16 MHz crystal holds its own
+/// row; the HSI's values, which `4400h` once copied, are refused, naming the
+/// field and both figures; so is another scale. An external oscillator at
+/// 12 MHz has no row, and one at 8 MHz has one.
 #[test]
-fn a_foreign_clock_that_is_not_ardupilots_tree_for_the_oscillator_is_refused() {
+fn validate_holds_consistency_and_the_run_holds_ardupilots_tree() {
     let dir = common::private_tmp("ap-clock");
+    let validates = |name: &str, v: &Value| {
+        let p = write(&dir.0, name, v);
+        let (code, r) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
+        assert_eq!(
+            (code, &r["ok"]),
+            (Some(0), &Value::Bool(true)),
+            "{name}: {r}"
+        );
+    };
     let mut s03 = read(&common::example("sentinel-03.json"));
     s03["mcu"]["foreign_clock"] = declared(16_000_000);
-    let p = write(&dir.0, "s03.json", &s03);
-    let (code, v) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
-    assert_eq!((code, &v["ok"]), (Some(0), &Value::Bool(true)), "{v}");
+    validates("s03.json", &s03);
+    held(&s03).unwrap();
 
     s03["mcu"]["foreign_clock"] = declared(0);
-    let p = write(&dir.0, "s03-hsi.json", &s03);
-    let (code, v) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
-    assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "ForeignClockNotArduPilots", "{v}");
-    let m = v["error"]["message"].as_str().unwrap();
+    validates("s03-hsi.json", &s03);
+    let e = held(&s03).unwrap_err();
+    assert_eq!(e.kind(), "ForeignClockNotArduPilots");
+    let m = e.to_string();
     assert!(
         m.contains("usarts.UART4 declares 72000000 Hz")
             && m.contains("16000000 Hz oscillator")
@@ -90,30 +114,20 @@ fn a_foreign_clock_that_is_not_ardupilots_tree_for_the_oscillator_is_refused() {
 
     s03["mcu"]["foreign_clock"] = declared(16_000_000);
     s03["mcu"]["foreign_clock"]["vos"]["value"] = "scale2".into();
-    let p = write(&dir.0, "s03-vos.json", &s03);
-    let (code, v) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
-    assert_eq!(code, Some(2), "{v}");
-    assert_eq!(v["error"]["kind"], "ForeignClockNotArduPilots", "{v}");
-    assert!(
-        v["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("mcu.foreign_clock.vos"),
-        "{v}"
-    );
+    validates("s03-vos.json", &s03);
+    let e = held(&s03).unwrap_err();
+    assert_eq!(e.kind(), "ForeignClockNotArduPilots");
+    assert!(e.to_string().contains("mcu.foreign_clock.vos"), "{e}");
 
     let mut ext = read(&fixture("hse-external-8.json"));
     ext["mcu"]["foreign_clock"] = declared(8_000_000);
-    let p = write(&dir.0, "ext8.json", &ext);
-    let (code, v) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
-    assert_eq!(code, Some(0), "{v}");
+    validates("ext8.json", &ext);
+    held(&ext).unwrap();
     ext["mcu"]["hse"]["external"]["hz_num"] = 12_000_000.into();
-    let p = write(&dir.0, "ext12.json", &ext);
-    let (code, v) = aethelgard(&dir.0, &["validate", "--file", p.to_str().unwrap()]);
-    assert_eq!(code, Some(2), "{v}");
+    validates("ext12.json", &ext);
     assert_eq!(
-        v["error"]["kind"], "ForeignClockOscillatorUnsupported",
-        "{v}"
+        held(&ext).unwrap_err().kind(),
+        "ForeignClockOscillatorUnsupported"
     );
 }
 
