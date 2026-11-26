@@ -2252,6 +2252,22 @@ fn simulate_with(
         }
         _ => None,
     };
+    // A foreign run's reset macro (`AET-WO-4412` (4)), a script in the
+    // scratch, made before any tool runs, as the timeline below is.
+    let reset_script = match &ready {
+        Some((_, r)) if r.foreign.is_some() => {
+            let script = scratch.tool.join("reset.resc");
+            fs::write(
+                &script,
+                renode::foreign::reset_script(&r.image, r.vector_table),
+            )
+            .map_err(|e| {
+                run::Stop::tool_error("aethelgard", format!("cannot write the reset macro: {e}"))
+            })?;
+            Some(script)
+        }
+        _ => None,
+    };
     // The input's timeline, a script in the scratch, and the port's capture,
     // both made before any tool runs, so the first hand-over seals them with
     // the rest of the scratch: root writes nowhere a tool has had.
@@ -2466,6 +2482,7 @@ fn simulate_with(
             timeline
                 .as_ref()
                 .map(|(script, _, tail)| (script.as_path(), tail.as_slice())),
+            reset_script.as_deref(),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2580,6 +2597,7 @@ fn simulate_with(
                 &foreign_serial,
                 &r.faults,
                 &rest_witnesses,
+                &renode::motors(&r.topology).map_err(twin_stop)?,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))

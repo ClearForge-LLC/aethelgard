@@ -4410,3 +4410,50 @@ fn a_capture_that_cannot_be_read_whole_is_named_and_not_archived() {
         assert_eq!(fs::read_dir(&archive).unwrap().count(), 0, "{v}");
     }
 }
+
+/// `AET-WO-4412` (4), ruled D5: a firmware that resets the core by
+/// `SYSRESETREQ` is judged across the reboot. The reset is named, info,
+/// with what the twin's reset keeps and loses, and its instant is in
+/// `boot.resets_ns`; the flash model's idle warning within a quantum of the
+/// reset, where Renode's reset of every peripheral ends its transaction
+/// (measured on Sentinel-03), is not a step error; the same warning a
+/// second later, with no reset or finish line before it, still is.
+#[test]
+fn a_foreign_reboot_is_named_and_its_reset_artefact_is_not_a_step_error() {
+    const RESET: &str = "[00:00:00.006708893] [INFO] nvic: Resetting platform with SYSRESETREQ\n";
+    const IDLE_AT_RESET: &str = "[00:00:00.006708900] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation\n";
+    const IDLE_LATER: &str = "[00:00:00.008000000] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation\n";
+    let log = format!("{}{RESET}{IDLE_AT_RESET}", good_foreign_log());
+    let (code, v) = foreign(&foreign_transcript(&log, "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"foreign_reboot"), "{v}");
+    assert!(!kinds.contains(&"spi_step_error"), "{v}");
+    assert_eq!(
+        v["boot"]["resets_ns"],
+        serde_json::json!([6_708_893]),
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{log}{IDLE_LATER}"),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "spi_step_error"),
+        "{v}"
+    );
+    // With no reset, no record of one.
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert!(v["boot"].get("resets_ns").is_none(), "{v}");
+}

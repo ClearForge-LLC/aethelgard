@@ -25,6 +25,19 @@ mode = os.environ.get("MODE", "boot")
 lines = {"boot": boot, "probe": [], "vtor": [c for c in boot if not c.startswith("sysbus LoadELF")]}[mode]
 if mode == "vtor" and os.environ.get("RSR"):
     lines = lines + ["sysbus WriteDoubleWord 0x580244D0 %s" % os.environ["RSR"]]
+if os.environ.get("RSRHOOK") == "1":
+    # D5 (ruled 11:06Z): after the reset, RCC_RSR reads Table 56 row 4 (p. 333): SFTRSTF|PINRSTF|CPURSTF
+    # (0x01420000), and a write with RMVF (bit 16) clears it; installed here, so never before a reset.
+    log = "__import__('Antmicro.Renode.Logging').Renode.Logging.Logger.Log(self, __import__('Antmicro.Renode.Logging').Renode.Logging.LogLevel.Warning, '%s %%x' %% %s)"
+    lines = lines + [
+        "python \"__import__('sys').aet_rsr = 0x01420000\"",
+        "sysbus SetHookAfterPeripheralRead sysbus.rcc \"if offset == 0xD0: value = __import__('sys').aet_rsr; " + (log % ("AET-RSR-READ", "value")).replace('"', '\\"') + "\"",
+        "sysbus SetHookBeforePeripheralWrite sysbus.rcc \"if offset == 0xD0 and value & 0x10000: __import__('sys').aet_rsr = 0; " + (log % ("AET-RSR-RMVF", "value")).replace('"', '\\"') + "\"",
+    ]
+    if os.environ.get("RSRSELFTEST") == "1":   # the shared state crosses the two hooks: RMVF, read (0), then re-arm
+        lines = lines + ["echo \"AET-RSR-SELFTEST\"", "sysbus WriteDoubleWord 0x580244D0 0x10000",
+                         "sysbus ReadDoubleWord 0x580244D0", "python \"__import__('sys').aet_rsr = 0x01420000\"",
+                         "sysbus ReadDoubleWord 0x580244D0"]
 body = probe("AT-MACRO") + lines + probe("AFTER-BOOT-LINES")
 with open(out, "w") as f:
     f.write('macro reset\n"""\n' + "\n".join(body) + '\n"""\n')
