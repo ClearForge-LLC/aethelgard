@@ -448,7 +448,8 @@ PY
 # armread12 1f1f6a3c, dshot12 adcc235b, reboot12 d46aaf76). Each is held by name only, never by a count or a
 # stamp: a DShot run's instruction count and end PC are not_rerun_stable (15:27Z (ii)), held here as present with
 # their reasons (the unit test names them; boot_tier1's no-binding test keeps their names out of CI). Each prints its wall,
-# the runner's CPU and nproc: the worst of the three is the CI wall figure, against the 120 s guard (14:09Z (b)).
+# the runner's CPU and nproc: the worst of the three is the CI wall figure (14:09Z (b)), under a foreign run's hang guard,
+# renode::foreign_boot_wall, 729.3 s for a 12 s window (21:47Z (a), from the s03-wall measurement: arm 145.85 s on CI).
 s03=examples/sentinel-03.json
 "$bin" generate --spec "$s03" --out "$work/gen-s03" > "$work/generate-s03.json"
 s03plat=$work/gen-s03/board/sentinel-03.foreign.repl

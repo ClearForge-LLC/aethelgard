@@ -679,3 +679,8 @@ tests/board_tier2.rs	verify_refuses_a_board_swapped_after_extract_ran_ahead	300
 # the circular paced stream 1.50 s, the lazy timer that differed 0.78 s; replace them at the next refit.
 tests/boot_tier1.rs	a_circular_paced_stream_is_refused_by_name	4.2
 tests/boot_tier1.rs	a_lazy_timer_that_differed_fails_the_run_by_name	2.184
+# AET-WO-4412 (ruled 2026-11-26T21:47Z (a)): the scaled foreign hang guard's two plants wait on a stub's sleep, so each weighs its
+# wall, not its CPU: 125 s past 120 for the slow Renode, and the 182.325 s guard for the one that never returns (both 184.24 s
+# together on Furnace, run in parallel), each plus 5 s; predicted, to be replaced at the next refit.
+tests/boot_tier1.rs	a_long_window_foreign_run_under_its_scaled_guard_passes	130
+tests/boot_tier1.rs	a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard	188

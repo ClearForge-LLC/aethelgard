@@ -236,6 +236,35 @@ pub const BOOT_BOUNDS: Bounds = Bounds {
     rss_kib: 1_572_864,
 };
 
+/// `AET-WO-1918` (2)'s factor: a hang guard is about 5x the worst wall
+/// measured for its class of boot.
+pub const HANG_GUARD_FACTOR: u64 = 5;
+
+/// The worst CI wall per virtual second of a foreign run (`AET-WO-4412`,
+/// ruled 2026-11-26T21:47Z (c)), in ms: Sentinel-03's armed run with DShot600
+/// from boot, 145.85 s of `simulate` (an upper bound on its Renode's) over its
+/// 12 s window on CI's slowest runner measured (AMD EPYC 7763, nproc 4),
+/// ardupilot-image run 45901122965, the throwaway `s03-wall` job, three runs
+/// of each input (arm 144.23-145.85 s, reboot 78.35-78.91 s on a Xeon 6973P-C,
+/// DShot 65.26-70.65 s on an EPYC 9V45); 145.85 / 12, rounded up.
+pub const FOREIGN_WALL_MS_PER_VIRTUAL_S: u64 = 12_155;
+
+/// A foreign run's hang guard (`AET-WO-4412`, ruled 2026-11-26T21:47Z (a)):
+/// [`BOOT_BOUNDS`]' rule applied to its own class of boot, a DShot foreign
+/// run's wall growing with its window, so `max(BOOT_BOUNDS.wall,
+/// HANG_GUARD_FACTOR x FOREIGN_WALL_MS_PER_VIRTUAL_S x the declared window)`:
+/// 729.3 s for a 12 s window. As [`BOOT_BOUNDS`]' is, it is a hang guard
+/// only: the judged bound is the window, and a kill is a `ToolError`.
+pub fn foreign_boot_wall(window_ns: u64) -> std::time::Duration {
+    let scaled_ms = u128::from(HANG_GUARD_FACTOR)
+        * u128::from(FOREIGN_WALL_MS_PER_VIRTUAL_S)
+        * u128::from(window_ns)
+        / 1_000_000_000;
+    BOOT_BOUNDS.wall.max(std::time::Duration::from_millis(
+        u64::try_from(scaled_ms).unwrap_or(u64::MAX),
+    ))
+}
+
 /// The bound on every other Renode the CLI starts (`AET-WO-1919` (2)): a
 /// platform load (`simulate --platform` alone, and the MCP `simulate` tool,
 /// which runs it) and `renode --version`. The wall bound is the boot's 120 s
@@ -4545,6 +4574,25 @@ mod tests {
 
     /// `AET-WO-1919` (2): a load and `--version` take the boot's 120 s hang
     /// guard, and no memory cap (the work order grants the guard alone).
+    #[test]
+    fn a_foreign_run_s_hang_guard_scales_with_its_window_above_the_boot_s() {
+        // 5 x 12.155 s per virtual second x the window, never under 120 s.
+        assert_eq!(foreign_boot_wall(10_000_000), BOOT_BOUNDS.wall);
+        assert_eq!(foreign_boot_wall(1_974_000_000), BOOT_BOUNDS.wall);
+        assert_eq!(
+            foreign_boot_wall(3_000_000_000),
+            std::time::Duration::from_millis(182_325)
+        );
+        assert_eq!(
+            foreign_boot_wall(5_000_000_000),
+            std::time::Duration::from_millis(303_875)
+        );
+        assert_eq!(
+            foreign_boot_wall(12_000_000_000),
+            std::time::Duration::from_millis(729_300)
+        );
+    }
+
     #[test]
     fn a_load_takes_the_boot_s_hang_guard_and_no_memory_cap() {
         assert_eq!(LOAD_BOUNDS.wall, std::time::Duration::from_secs(120));

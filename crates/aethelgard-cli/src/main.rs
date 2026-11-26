@@ -613,8 +613,10 @@ fn main() -> ExitCode {
                         foreign: foreign.is_some(),
                         pins,
                         bounds: run::Bounds {
-                            wall: wall_bound_ms
-                                .map_or(renode::BOOT_BOUNDS.wall, Duration::from_millis),
+                            wall: wall_bound_ms.map_or(
+                                default_wall(foreign.is_some(), virtual_ns),
+                                Duration::from_millis,
+                            ),
                             ..renode::BOOT_BOUNDS
                         },
                     }),
@@ -2422,12 +2424,26 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
 /// `simulate`, with a foreign run's declared input and its archive
 /// directory (`AET-WO-4400i`). A load's Renode, with no boot, is bounded by
 /// `load_wall` (`AET-WO-1919` (2)).
+/// A boot's hang guard when no test sets one: [`renode::BOOT_BOUNDS`]'s, or a
+/// foreign run's scaled to its window ([`renode::foreign_boot_wall`],
+/// `AET-WO-4412`, ruled 2026-11-26T21:47Z (a)).
+fn default_wall(foreign: bool, virtual_ns: u64) -> Duration {
+    if foreign {
+        renode::foreign_boot_wall(virtual_ns)
+    } else {
+        renode::BOOT_BOUNDS.wall
+    }
+}
+
 fn simulate_with(
     platform: &Path,
     boot: Option<Boot>,
     declared: Option<(PathBuf, Option<PathBuf>)>,
     load_wall: Duration,
 ) -> Result<verdict::Verdict, run::Stop> {
+    let default = boot.as_ref().map_or(renode::LOAD_BOUNDS.wall, |b| {
+        default_wall(b.foreign, b.virtual_ns)
+    });
     let bounds = boot.as_ref().map_or(
         run::Bounds {
             wall: load_wall,
@@ -2975,7 +2991,7 @@ fn simulate_with(
     // A test's hang guard is on the verdict, a boot's or a load's
     // (`AET-WO-1919` (2)), so no run with one passes for a run without
     // (`simulate --wall-bound-ms`).
-    v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
+    v.wall_bound_ms = (bounds.wall != default)
         .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.

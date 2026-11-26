@@ -4690,3 +4690,55 @@ fn no_committed_file_binds_a_not_rerun_stable_field() {
     want.sort();
     assert_eq!(found, want);
 }
+
+/// A foreign boot of the reference board in a 3 s window on a stub that
+/// answers and then runs `then` (`AET-WO-4412`, ruled 2026-11-26T21:47Z (a)):
+/// its guard is `renode::foreign_boot_wall`'s 182.3 s, not 120 s.
+fn foreign_3s_then(then: &str) -> (Option<i32>, Value, std::time::Duration) {
+    let tb = toolbox_foreign_then(
+        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        "2.9997000005",
+        true,
+        then,
+    );
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &foreign_elf());
+    let start = std::time::Instant::now();
+    let out = foreign_with(&tb.0, &fw, "3000ms");
+    (out.status.code(), report(&out), start.elapsed())
+}
+
+/// `AET-WO-4412`, ruled 2026-11-26T21:47Z (a): a foreign run whose Renode
+/// takes longer than the boot's 120 s, inside its window's scaled guard,
+/// reaches its verdict; under a flat 120 s it would be a `ToolError`.
+#[test]
+fn a_long_window_foreign_run_under_its_scaled_guard_passes() {
+    let (code, v, took) = foreign_3s_then(SLOW_RENODE);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert!(v.get("wall_bound_ms").is_none(), "{v}");
+    assert!(took.as_secs() > 120, "{took:?}");
+}
+
+/// The same run on a Renode that never returns is still killed, as a
+/// `ToolError`, at its scaled guard, 182.3 s, and not before.
+#[test]
+fn a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard() {
+    let (code, v, took) = foreign_3s_then("/bin/sleep 600");
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("within the 182.325 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(
+        took.as_millis() >= 182_325 && took.as_secs() < 240,
+        "{took:?}"
+    );
+}
+
+/// A Renode slower than the boot's guard: 125 s, past 120 s.
+const SLOW_RENODE: &str = "/bin/sleep 125";
