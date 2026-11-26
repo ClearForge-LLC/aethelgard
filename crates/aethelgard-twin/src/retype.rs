@@ -173,9 +173,9 @@ pub fn emit(
         let _ = write!(
             out,
             "{name}: @none\n\
-             aethelgard{cap}: {DMA_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{alias}\n    }} as \"{name}\"\n    \
+             aethelgardDma{n}: {DMA_MODEL} @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{alias}\n    }} as \"{name}\"\n    \
              dmamux: dmamux1\n    firstMuxChannel: {first}\n    pacedRequests: \"{paced}\"\n    {irqs}\n",
-            cap = format!("Dma{}", &name[3..]),
+            n = &name[3..],
         );
     }
     out.push_str(

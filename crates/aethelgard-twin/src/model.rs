@@ -80,7 +80,7 @@ pub const OWN_PERIPHERALS: [(&str, &str, &str); 2] = [
     (
         "DMA.AethelgardSTM32DMA",
         "AethelgardSTM32DMA.cs",
-        "b2f0e261af6582c0c07f83f40d58de3b715a4875599e40a313302240a7e8626d",
+        "4aed951997b373d76ec98f76bf8db5942fe0e707f405a2b97b014c936bff4a55",
     ),
     (
         "Timers.AethelgardSTM32Timer",

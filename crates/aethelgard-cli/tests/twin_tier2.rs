@@ -4138,10 +4138,14 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
     let (dir, platform, spec_path) = own_board("fixture");
     let text = fs::read_to_string(&platform).unwrap();
     assert_eq!(
-        aethelgard_twin::platform::own_models(&text).unwrap(),
+        aethelgard_twin::platform::own_models(&text)
+            .unwrap()
+            .iter()
+            .map(|o| o.renode)
+            .collect::<Vec<_>>(),
         [
-            aethelgard_twin::model::Model::Bmp581,
-            aethelgard_twin::model::Model::Icm42688p
+            aethelgard_twin::model::Model::Bmp581.renode(),
+            aethelgard_twin::model::Model::Icm42688p.renode()
         ]
     );
     let elf = mutant_of(&dir, "own", |_| {});

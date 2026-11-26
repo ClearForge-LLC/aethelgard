@@ -405,6 +405,10 @@ pub struct ForeignBoot {
     /// ArduPilot's `AP_HAL::panic`, hooked where its symbol is, and every
     /// entry the hook logged (`AET-WO-1609`).
     pub panic: PanicReport,
+    /// The DShot frames each paced transfer moved (`AET-WO-4412` D4), on a
+    /// platform with the timer and DMA models; absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dshot: Option<DshotReport>,
     /// Each reset the firmware asked for (`SYSRESETREQ`), by its virtual time
     /// (`AET-WO-4412` (4)); absent from a run with none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -506,7 +510,153 @@ pub fn reset_script(image: &aethelgard_twin::boot::Image, vector_table: u32) -> 
     format!("macro reset\n\"\"\"\n{}\n\"\"\"\n", lines.join("\n"))
 }
 
-/// The virtual time of a [`RESET_MARK`] line, or `None` for any other.
+/// The DMA model's line for a paced stream in circular mode (`AET-WO-4412`
+/// (a)).
+pub const UNBOUNDED_MARK: &str = "AETHELGARD-DMA-UNBOUNDED";
+/// A paced stream that would never end, refused by name.
+pub const DMA_STREAM_UNBOUNDED: &str = "foreign_dma_stream_unbounded";
+/// A DShot frame whose checksum fails, or that is not 16 pulses.
+pub const DSHOT_FRAME_MALFORMED: &str = "foreign_dshot_frame_malformed";
+
+/// Where the judge read the DShot frames (`AET-WO-4412` D4, D2 of `2302`):
+/// stated in every verdict that has them.
+pub const DSHOT_READ_AT: &str = "each paced transfer's words, from the DMA model's line as it ended (models/renode/AethelgardSTM32DMA.cs): the compare values the timer's update requests burst into CCRx through DMAR. The timer is never stopped by the judge: it runs on to the window's end, where its PSC and ARR are read";
+
+/// The DShot frames of a foreign run, per burst position.
+#[derive(Serialize, Clone)]
+pub struct DshotReport {
+    pub read: &'static str,
+    pub transfers: Vec<DshotStream>,
+}
+
+/// One paced stream's transfers.
+#[derive(Serialize, Clone)]
+pub struct DshotStream {
+    pub timer: String,
+    pub request: u32,
+    pub stream: u32,
+    pub count: u64,
+    pub first_ns: u64,
+    pub last_ns: u64,
+    /// Per burst position (`CCR(DBA + k)`): frames, malformed ones, and the
+    /// last good frame's throttle and telemetry request.
+    pub positions: Vec<DshotPosition>,
+}
+
+#[derive(Serialize, Clone)]
+pub struct DshotPosition {
+    pub position: usize,
+    pub frames: u64,
+    pub malformed: u64,
+    pub last_throttle: Option<u16>,
+    pub telemetry_requests: u64,
+}
+
+/// The DShot report and its findings from the run's kept lines: each line of
+/// the DMA model's, decoded at its timer's period (`ARR + 1`, as the end
+/// read found it).
+fn dshot_report(
+    lines: &[&str],
+    image: &aethelgard_twin::boot::Image,
+    observed: &[[u32; END_READS]],
+) -> (Option<DshotReport>, Vec<Finding>) {
+    use aethelgard_twin::dshot::{Frame, frames, transfer};
+    let mut streams: Vec<DshotStream> = Vec::new();
+    let mut findings = Vec::new();
+    for line in lines {
+        let text = log_text(line);
+        let Some(body) = text
+            .strip_prefix("[NOISY] dma1: ")
+            .or_else(|| text.strip_prefix("[NOISY] dma2: "))
+        else {
+            continue;
+        };
+        let Some(t) = transfer(body) else {
+            continue;
+        };
+        let Some(&(timer, _)) = aethelgard_ir::motor::UP_REQUESTS
+            .iter()
+            .find(|(_, r)| *r == t.request)
+        else {
+            continue;
+        };
+        let arr = image
+            .registers
+            .iter()
+            .position(|r| r.name == format!("TIM{timer}.ARR"))
+            .map(|i| observed[i][END_READS - 1]);
+        let width = if t.requests == 0 {
+            0
+        } else {
+            t.words.len() / t.requests as usize
+        };
+        let s = match streams
+            .iter_mut()
+            .find(|s| s.stream == t.stream && s.request == t.request)
+        {
+            Some(s) => s,
+            None => {
+                streams.push(DshotStream {
+                    timer: format!("TIM{timer}"),
+                    request: t.request,
+                    stream: t.stream,
+                    count: 0,
+                    first_ns: t.end_ns,
+                    last_ns: t.end_ns,
+                    positions: (0..width)
+                        .map(|position| DshotPosition {
+                            position,
+                            frames: 0,
+                            malformed: 0,
+                            last_throttle: None,
+                            telemetry_requests: 0,
+                        })
+                        .collect(),
+                });
+                streams.last_mut().expect("just pushed")
+            }
+        };
+        s.count += 1;
+        s.last_ns = t.end_ns;
+        let Some(arr) = arr else {
+            continue;
+        };
+        for (k, f) in frames(&t, width, arr + 1).into_iter().enumerate() {
+            let Some(p) = s.positions.get_mut(k) else {
+                continue;
+            };
+            p.frames += 1;
+            match f {
+                Frame::Packet {
+                    throttle,
+                    telemetry,
+                } => {
+                    p.last_throttle = Some(throttle);
+                    p.telemetry_requests += u64::from(telemetry);
+                }
+                bad => {
+                    p.malformed += 1;
+                    if p.malformed == 1 {
+                        findings.push(Finding::plain(
+                            DSHOT_FRAME_MALFORMED,
+                            format!(
+                                "TIM{timer}'s DShot frame at burst position {k}, the transfer ending at {} ns (DMA stream {}, request {}): {bad:?}",
+                                t.end_ns, t.stream, t.request
+                            ),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+    let report = (!streams.is_empty()).then_some(DshotReport {
+        read: DSHOT_READ_AT,
+        transfers: streams,
+    });
+    (report, findings)
+}
+
+/// The virtual time of a [`RESET_MARK`] line, or `None` for any other./// The virtual time of a [`RESET_MARK`] line, or `None` for any other.
 fn reset_entry(line: &str) -> Option<Option<u64>> {
     (log_text(line) == RESET_MARK).then(|| log_stamped(line).map(|(ns, _)| ns))
 }
@@ -828,6 +978,7 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
         PANIC_MARK,
         FAULT_MARK,
         RESET_MARK,
+        UNBOUNDED_MARK,
     ],
     discard: unread_access_line,
     summarise: unhandled_write_key,
@@ -1115,6 +1266,18 @@ pub fn commands(
     c.push(plan.vtor());
     // The reboot (`AET-WO-4412` (4)): the macro Renode runs on SYSRESETREQ.
     c.extend(reset.map(|r| format!("include @{}", r.display())));
+    // The DMA model's one line per paced transfer (`AET-WO-4412` D4), its
+    // only `Noisy` line, where the platform loads it.
+    if plan
+        .models
+        .iter()
+        .any(|m| m.file_name().is_some_and(|f| f == "AethelgardSTM32DMA.cs"))
+    {
+        c.extend([
+            "logLevel -1 sysbus.dma1".to_owned(),
+            "logLevel -1 sysbus.dma2".to_owned(),
+        ]);
+    }
     c.extend(plan.witness_levels());
     c.extend(spi_controllers(plan).iter().map(|s| cfg2_hook(s)));
     c.extend(usart_logs(serial));
@@ -1798,6 +1961,7 @@ pub fn report(
             address: format!("{panic:#010x}"),
             entered_ns: None,
         },
+        dshot: None,
         resets_ns: Vec::new(),
         locked: Vec::new(),
         unobservable: plan.image.unobservable.clone(),
@@ -2430,6 +2594,23 @@ pub fn judge(
         ));
     }
     report.resets_ns = resets;
+    // A paced stream in circular mode, refused by the DMA model (`AET-WO-4412`
+    // (a)): it would run until the wall bound.
+    for line in lines
+        .iter()
+        .filter(|l| log_text(l).contains(UNBOUNDED_MARK))
+    {
+        findings.push(Finding::plain(
+            DMA_STREAM_UNBOUNDED,
+            format!(
+                "{}: the DMA model refused it, not started (CIRC, RM0433 Rev 9 p. 664; §15.3.10, p. 647: NDTR is reloaded and the requests go on being served)",
+                log_text(line)
+            ),
+        ));
+    }
+    let (dshot, malformed) = dshot_report(&lines, plan.image, &observed);
+    findings.extend(malformed);
+    report.dshot = dshot;
     // A fault exception, as its hook logs the entry that halted the core
     // (`AET-WO-2314`), before the handler's own loop could reach a bound.
     findings.extend(fault_finding(&text, faults));
@@ -4282,6 +4463,70 @@ mod tests {
             ),
             "{m}"
         );
+    }
+
+    /// `AET-WO-4412` D4: the DShot report from the DMA model's lines, on
+    /// `motors-dshot600` (four outputs on TIM1) with TIM1's `ARR` read at 7
+    /// (DShot600 on Sentinel-03, measured): a measured line of packet 0, a
+    /// line with position 0's last bit flipped (its checksum fails, named
+    /// once), where the judge read them, and nothing for a line of no paced
+    /// request or no DMA.
+    #[test]
+    fn dshot_frames_are_judged_from_the_dma_models_lines() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let observed: Vec<[u32; END_READS]> = image
+            .registers
+            .iter()
+            .map(|r| {
+                if r.name == "TIM1.ARR" {
+                    [7; END_READS]
+                } else {
+                    [r.value; END_READS]
+                }
+            })
+            .collect();
+        let zero = format!("{}{}{}", "0 ".repeat(4), "3 ".repeat(64), "0 ".repeat(8));
+        let mut bad: Vec<&str> = zero.split_whitespace().collect();
+        bad[4 + 15 * 4] = "6";
+        let line = |words: &str, end: u64| {
+            format!(
+                "[00:00:06.180697230] [NOISY] dma2: stream 1 req 15 NDTR 76 EN 6180670750 end {end} reqs 19: {}",
+                words.trim_end()
+            )
+        };
+        let good = line(&zero, 6_180_697_224);
+        let flipped = line(&bad.join(" "), 6_180_997_224);
+        let other =
+            "[00:00:06.180697230] [NOISY] dma1: stream 0 req 41 NDTR 4 EN 1 end 2 reqs 4: 1 2 3 4"
+                .to_owned();
+        let lines = [good.as_str(), flipped.as_str(), other.as_str()];
+        let (report, findings) = dshot_report(&lines, &image, &observed);
+        let r = report.unwrap();
+        assert_eq!(r.read, DSHOT_READ_AT);
+        assert_eq!(r.transfers.len(), 1);
+        let s = &r.transfers[0];
+        assert_eq!(
+            (s.timer.as_str(), s.stream, s.request, s.count),
+            ("TIM1", 1, 15, 2)
+        );
+        assert_eq!(s.positions.len(), 4);
+        assert_eq!((s.positions[0].frames, s.positions[0].malformed), (2, 1));
+        assert_eq!(s.positions[1].last_throttle, Some(0));
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].kind, DSHOT_FRAME_MALFORMED);
+        assert!(
+            findings[0].message.contains("6180997224"),
+            "{}",
+            findings[0].message
+        );
+        let (none, f) = dshot_report(&[other.as_str()], &image, &observed);
+        assert!(none.is_none() && f.is_empty());
     }
 
     /// `AET-WO-4412` D2: on Sentinel-03's crystal tree (its RCC registers as

@@ -259,7 +259,7 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
                 "line {i}: `{l}` updates cancelled `{name}`"
             );
             let routes_to = l
-                .split(|c: char| c == ' ' || c == '|')
+                .split([' ', '|'])
                 .any(|t| t.starts_with(&format!("{name}@")));
             assert!(!routes_to, "line {i}: `{l}` routes to cancelled `{name}`");
         }
@@ -271,7 +271,7 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
                 "line {i}: `{l}` updates cancelled `{name}`"
             );
             let routes_to = l
-                .split(|c: char| c == ' ' || c == '|')
+                .split([' ', '|'])
                 .any(|t| t.starts_with(&format!("{name}@")));
             assert!(!routes_to, "line {i}: `{l}` routes to cancelled `{name}`");
         }

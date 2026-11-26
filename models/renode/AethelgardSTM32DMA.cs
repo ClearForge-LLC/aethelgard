@@ -18,6 +18,7 @@
 // Registers as [stock] defines them: LISR/HISR TCIF read (FEIF, DMEIF, TEIF, HTIF read 0), LIFCR/HIFCR CTCIF,
 // SxCR EN/TCIE/DIR/PINC/MINC/PSIZE/MSIZE (the rest stored as tags), SxNDTR, SxPAR, SxM0AR, SxFCR FTH/DMDIS.
 // Not modelled (both behaviours): HTIF, TEIF, FEIF, DMEIF, circular and double-buffer modes, PINCOS, bursts, priority.
+// A paced stream in circular mode is refused, AETHELGARD-DMA-UNBOUNDED (AET-WO-4412 (a)).
 //
 // Log contract (ruling D-b): one Noisy line per paced transfer that ends, nothing per item or burst:
 //   "stream S req R NDTR N EN t0 end t1 reqs Q: w0 w1 ..." -- the stream, its DMAMUX request, NDTR at EN, the EN and end
@@ -219,7 +220,10 @@ namespace Antmicro.Renode.Peripherals.DMA
                     .WithTaggedFlag("TRBUFF", 20)
                     .WithTag("PBURST", 21, 2)
                     .WithTag("MBURST", 23, 2)
-                    .WithReservedBits(25, 7);
+                    .WithReservedBits(25, 7)
+                    // After every field's handler (Renode's PeripheralRegister.Write): a paced stream's first
+                    // service waits for the whole word, so its CIRC bit is known (AET-WO-4412 (a)).
+                    .WithWriteCallback((_, value) => OnControlWritten(value));
                 map[b + 0x4] = new DoubleWordRegister(parent)
                     .WithValueField(0, 16, out ndt, name: "NDT")
                     .WithReservedBits(16, 16);
@@ -302,10 +306,7 @@ namespace Antmicro.Renode.Peripherals.DMA
                     {
                         parent.Log(LogLevel.Warning, "stream {0}: enabled with NDTR 0", id);
                     }
-                    if(level)
-                    {
-                        Serve();
-                    }
+                    pendingFirst = true; // served, or refused, in OnControlWritten
                     return;
                 }
                 // [stock]: memory-to-peripheral and memory-to-memory move everything at EN.
@@ -468,7 +469,30 @@ namespace Antmicro.Renode.Peripherals.DMA
             private IEnumRegisterField<FifoThreshold> fth;
             private IValueRegisterField ndt, par, m0a;
             private ulong dataOffset;
-            private bool pacedActive, level, serving;
+            private bool pacedActive, level, serving, pendingFirst;
+
+            // A paced stream in circular mode (CIRC, DMA_SxCR bit 8, RM0433 Rev 9 p. 664; §15.3.10, p. 647: NDTR is
+            // reloaded "and the DMA requests continue to be served") never ends while its timer's update request does
+            // not: the twin would serve it at every update until its wall bound. It is refused by name and not started
+            // (AET-WO-4412, ruled 2026-11-26T14:09Z (a)); the foreign judge fails the run on the line.
+            private void OnControlWritten(uint value)
+            {
+                if(!pendingFirst)
+                {
+                    return;
+                }
+                pendingFirst = false;
+                if((value & (1u << 8)) != 0)
+                {
+                    pacedActive = false;
+                    parent.Log(LogLevel.Warning, "AETHELGARD-DMA-UNBOUNDED stream {0} req {1}: a circular stream paced by a timer request", id, request);
+                    return;
+                }
+                if(level)
+                {
+                    Serve();
+                }
+            }
             private ulong served, moved, enabledAt, startNdt;
             private int request;
             private readonly System.Text.StringBuilder words = new System.Text.StringBuilder();

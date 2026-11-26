@@ -38,6 +38,7 @@
 
 pub mod analog;
 pub mod boot;
+pub mod dshot;
 pub mod hse;
 pub mod mavlink;
 pub mod model;

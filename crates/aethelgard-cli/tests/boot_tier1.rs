@@ -4528,3 +4528,33 @@ fn an_ardupilot_firmware_on_a_clock_not_its_trees_is_refused_at_the_run() {
     assert_eq!(code, Some(3), "{v}");
     assert_eq!(v["error"]["kind"], "ForeignPanicSymbolMissing", "{v}");
 }
+
+/// `AET-WO-4412` (a), ruled 2026-11-26T14:09Z: the DMA model's line for a
+/// circular stream paced by a timer request, which it refuses and does not
+/// start, fails the run as `foreign_dma_stream_unbounded`, by name; a run
+/// without it does not.
+#[test]
+fn a_circular_paced_stream_is_refused_by_name() {
+    const UNBOUNDED: &str = "[00:00:00.006000000] [WARNING] dma2: AETHELGARD-DMA-UNBOUNDED stream 1 req 15: a circular stream paced by a timer request\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{UNBOUNDED}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let unbounded: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_dma_stream_unbounded")
+        .collect();
+    assert_eq!(unbounded.len(), 1, "{v}");
+    assert!(
+        unbounded[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("stream 1 req 15"),
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+}
