@@ -238,6 +238,16 @@ The pass ran as a fresh read-only review of 3a35be0f..7cde17de, with the WO's §
     - Its "off" case had read 8,086,825 µV, 158 mV off the new static point. It is now 1 mV under it: 7,927,263.
     - No other test cans a Sentinel-03 sink list.
   - **`bench-package-s03`'s drill finding:** the pitch above.
+- **Write dispatch 45836037268 on 3c5af138 (14:08Z): `bench-package-s03` cancelled at its 90-minute limit** (`verify --fab-out` 87.9 min, EPYC 7763). `bench-package` wrote Sentinel-01's package, which is not committed, because half a pair isn't.
+  - **The cause was the architect's hold on main, by the architect's own ruling (16:00Z).** "Hold main unmerged" sent the write onto a tree without AET-WO-1919's (G). The architect: "My hold traded a known-clean merge for a write on a tree that won't land."
+  - **The mechanism.**
+    - A `workflow_dispatch` checks out the branch head: 3c5af138 alone.
+    - A `pull_request` run checks out `refs/pull/395/merge`, the merge with main: d62f1de, with 1919.
+    - Without (G), `prove --spec` runs `generate::tree` for each of the 27 prove gates. This WO took Sentinel-03's `generate` from 17.8 s to 109 s (§9, slice H).
+  - **The mode is not the cause.**
+    - The compare on 20235acb, merged with a pre-1919 main, was cancelled at 87.8 min too. The compare on 3c5af138's merge finished in 34.0 min.
+    - `--fab-out` and `--against-fab` run the same gates and `fab::derive`. Only `readiness::check`, a table read, and the final write or compare differ.
+  - **Fixed by merging main (ruled 16:00Z (a)).** The merge commit 99f266bd has tree 5312df07, GitHub's own d62f1de tree.
 - **The independent review (08:59Z), fixed:**
   - **R1:** OE on VCCB passed. It is now `CrossingOeUnheld` (§1).
   - **R3, checked, not a defect.** `drc.radio`'s `strict::number(&at, 3).unwrap_or(0)` never sees an angle that is not a number. The strict reader refuses the board first (`MalformedBoard`, "where KiCad reads a number"), for a quoted `"90"` and a bare `ninety` alike.
@@ -315,6 +325,11 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 - **`supply_tier1`'s ring-0 plant** now emits Sentinel-03 without U31, as it placed before (c1). With U31 at a ring of 0, no pour step keeps U10's B.Cu at its need (341 of 1500 mm²), so the board is refused before the gate the plant reaches.
   - The plant's module rail declares 20 mV, since without U31 the direct lines pass only under 27.5 mV.
   - s024l was tried as a carrier, and a ring of 0 trips nothing there.
+- **Slice H (ruled 16:00Z, a row): Sentinel-03's `generate` is now the largest single cost in `bench-package-s03` after 1919's (G).** It went from 17.8 s wall on Furnace (1919's figure, before this WO) to 109 s wall, 351–372 s CPU (two runs on the 3c5af138 binary, load 12–15).
+  - **What dominates, from the code** (`schematic.rs` `laddered`): each pour step routes all eight capacitance rungs, one thread each. Then, serially, each rung is read (`extract::read`), bounded (`extract::bound`) and has its buck copper joined (`pour::joined`).
+  - Sentinel-03's step 0 is short of buck copper, so its step 1 (`pour_step` 1, 1.0 square) is **a second full eight-rung pass**: 16 routings and 16 extract reads, where a board with no buck pour has 8.
+  - The board is also larger, with U13 and U31's nets.
+  - The split between routing and the serial reads is not measured.
 - **Fixed in passing:** two LMR33630-only texts that a second buck part exposed.
   - The inductor condition's hard-coded "Table 9-2 gives 8 uH at 5 V and 6.8 uH at 3.3 V".
   - The loop rules' SNVSAN3F citations, now per datasheet.
@@ -329,11 +344,11 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 ## 10. Gates
 
-On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, the 08:59Z/09:01Z review's fixes, and the CI findings ruled 10:30Z, 10:40Z and 11:51Z: the deck test, the 1.0 mm pitch and the grid guard):
+On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, the 08:59Z/09:01Z review's fixes, and the CI findings ruled 10:30Z, 10:40Z and 11:51Z: the deck test, the 1.0 mm pitch and the grid guard; then main 20971352, AET-WO-1919, merged as 99f266bd, ruled 16:00Z (a)). Every run on the merge used `CARGO_BUILD_JOBS=6` and 6 test threads:
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- **`cargo test --workspace`: 3264 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
-- **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` (re-run after the grid guard's two tests) gives guard ok: 3503 test names, 3510 listed occurrences, 20 shards.
+- **`cargo test --workspace` on the merge: 3278 passed, 1 failed** (3264 and 1 on 3c5af138). The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
+- **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` gives guard ok: 3503 test names, 3510 listed occurrences and 20 shards on 3c5af138, after the grid guard's two tests. On the merge, with 1919's weight rows, it gives **3518 names, 3525 occurrences, 20 shards**.
   - The plan had refused on 20235acb, because three `board_tier2` tests of this WO had no row.
   - Each is now a Furnace estimate, its alone time in the image times 2.8 (AET-WO-1310's factor): `a_track_in_the_antenna_keepout_…` 24.78 s → 69.384, `radio_planted_boards_…` 23.72 → 66.416, and `the_radio_fixture_…` 25.82 → 72.296. A refit replaces them.
 - **`bench-package-s03` on Furnace,** in the pinned image under `capped-run` (16 GiB, swap 0): `verify --spec examples/sentinel-03.json --scenarios` (CI's `VERIFY_S03` list, 13 scenarios) `--fab-out`: **pass**, `ok` true, 0 findings.
@@ -341,11 +356,17 @@ On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, t
   - Pad 19's four holes are in the drill file at X129.5/X130.5, Y−36.5/−37.5, whole microns.
   - `uid_boundary` is false here (`user_namespace` unmet under rootless podman), as on every local run; CI's runner meets it.
   - The package was written to the ignored `target/sentinel-03-package` and **is not committed**: the write dispatch writes the one that is.
+- **The merged tree on Furnace (ruled 16:00Z):** `verify --fab-out` on tree 5312df07 (99f266bd's, GitHub's d62f1de's), in the image under `capped-run` 16G with 6 jobs. **Pass, 0 findings, 1,669 s (27.8 min) wall**, against about 88 min for 3c5af138 alone. The two runs are not a clean pair: the earlier one ran at higher load, beside the host suite, without the 6-job cap.
+  - **1919's "no byte moved", checked on Sentinel-03:** the merged tree's package and 3c5af138's are **byte-identical in all 19 files**, `MANIFEST.json` and its verdict line included. Board sha256 `c33a4b14…` and ELF `66d9b7f6…` are the same, and so is the manifest, `7ea0e872…`.
 - **Tier 2, whole, in the same image after the verify:**
   - `campaign_tier2`: 11 passed, 1 refused by the environment. The deck test passes with U13's sink.
     - `d1_s_pin_device_simulates_and_its_faults_run_and_replay` is refused `BaseOutsideRoot`: its base is written under `CARGO_TARGET_TMPDIR`, here `/cache/target/tmp`, outside `/repo`. **CI is its only run** (green on bd0cf7bc). Nothing since touches it.
   - `board_tier2`: 29 passed (1509 s).
   - `twin_tier2`: 96 passed (774 s). Sentinel-03's battery-sag campaign meets every expectation, replays and repeats; its sag point is pinned at 7,928,264 µV.
+- **Tier 2 on the merge 99f266bd,** in the image under `capped-run` 16G, 6 jobs and 6 test threads (16:59Z to 17:48Z):
+  - `campaign_tier2`: 11 passed. `d1_…` is refused `BaseOutsideRoot` for the same reason as above, the target dir outside `/repo`, so CI is its only run.
+  - `board_tier2`: 30 passed (1,814 s), 1919's `verify_refuses_a_board_swapped_after_extract_ran_ahead` included.
+  - `twin_tier2`: 96 passed (905 s).
   - From 2026-11-26T13:53Z every cargo run here carries `CARGO_BUILD_JOBS=6` and `RUST_TEST_THREADS=6`: the plan below did, and the tier-2 run above, started at 11:54Z, did not.
 - **Mutants:** 33 of 33 (c1) mutants killed, C35 the grid guard's, §6.
 - **INV-08 and identities, with the final binary (after the 1.0 mm pitch and the grid guard):**
