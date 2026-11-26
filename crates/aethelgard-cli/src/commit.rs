@@ -287,7 +287,7 @@ mod tests {
         let krate = top.join(PATH_IN_VCS);
         fs::create_dir_all(&krate).unwrap();
         fs::write(krate.join("Cargo.toml"), "[package]\n").unwrap();
-        fs::write(top.join("README.md"), "r\n").unwrap();
+        fs::write(top.join("notes.txt"), "r\n").unwrap();
         run_git(&top, &["init", "-q"]);
         run_git(&top, &["add", "-A"]);
         run_git(&top, &["commit", "-q", "-m", "c"]);
@@ -343,9 +343,9 @@ mod tests {
         fs::write(top.join("crates/aethelgard-ir.rs"), "").unwrap();
         assert_eq!(decide(&krate).0, dirty, "another crate's file");
         fs::remove_file(top.join("crates/aethelgard-ir.rs")).unwrap();
-        fs::write(top.join("README.md"), "changed\n").unwrap();
+        fs::write(top.join("notes.txt"), "changed\n").unwrap();
         assert_eq!(decide(&krate).0, clean, "a document outside the inputs");
-        run_git(&top, &["checkout", "-q", "--", "README.md"]);
+        run_git(&top, &["checkout", "-q", "--", "notes.txt"]);
         for flag in ["--skip-worktree", "--assume-unchanged"] {
             run_git(
                 &top,
@@ -440,9 +440,9 @@ mod tests {
         let top = scratch("untracked");
         let krate = top.join(PATH_IN_VCS);
         fs::create_dir_all(&krate).unwrap();
-        fs::write(top.join("README.md"), "r\n").unwrap();
+        fs::write(top.join("notes.txt"), "r\n").unwrap();
         run_git(&top, &["init", "-q"]);
-        run_git(&top, &["add", "README.md"]);
+        run_git(&top, &["add", "notes.txt"]);
         run_git(&top, &["commit", "-q", "-m", "c"]);
         fs::write(krate.join("Cargo.toml"), "[package]\n").unwrap();
         assert_eq!(decide(&krate), (Commit::Unknown, Source::None));
