@@ -277,4 +277,13 @@ Renode's own lifetime, first seen to gone (`ci/probe.py`, 0.2 s polls). In CI, t
 - **28.2 min** on 4 pinned cores. With (G) alone it was 32.6, and the baseline 46.7 on 20 unpinned cores.
 - **Memory:** the combined resident peak of the watched processes was 8.53 GiB, at 1,431 s (a `tim1` part, after the campaign had ended). The container's `memory.peak` was 9.68 GiB. Both are under `1918`'s 12 GiB.
 
-**In CI:** (from the pushed head's runs)
+**In CI, `4752028a`** (run 45770483030, `out/ci-45770483030-gates.txt`), the build before the two findings:
+- `bench-package-s03` took **33.6 min** on an AMD EPYC 7763: `verify` 31.3, the CLI build 1.6, the pull 0.5. On the same CPU before, it took 68.5 and 69.7 min (§1.1).
+- Inside `verify`:
+  - generation 69 s;
+  - `extract` started at 70 s beside the first prove gate and ran 236.6 s;
+  - the 26 prove gates 1,806 s, of which CBMC 1,717 s and the CLI's own time **8 s** (1,785–1,809 s before);
+  - the prove lane was the long one.
+- **Memory:** `PROBE combined peak_rss_kib=8516944` (8.12 GiB) and `PROBE host peak_used_kib=9503244` (9.06 GiB, the whole runner). Both are under `1918`'s 12 GiB, so the campaign need not wait for the prove lane.
+- **`--against-fab`:** `identical` on both bench packages (Sentinel-03, and Sentinel-01's bench board in 6.8 min). No package and no verdict moved.
+- That run was red on one shard: the swap test, the architect's 07:01Z finding (FEEDBACK §1), fixed after it.
