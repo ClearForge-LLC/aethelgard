@@ -4559,6 +4559,31 @@ fn a_circular_paced_stream_is_refused_by_name() {
     assert_eq!(code, Some(0), "{v}");
 }
 
+/// `AET-WO-4412` D4 (a), "lazy, never different": the timer model's line for
+/// a skipped event that had an effect fails the run as
+/// `foreign_timer_lazy_differed`, by name (adversarial pass: a firmware that
+/// passes because the twin held its timer back).
+#[test]
+fn a_lazy_timer_that_differed_fails_the_run_by_name() {
+    const LAZY: &str = "[00:00:00.006000000] [WARNING] timer1: lazy: a skipped event at 5999000 ns had an effect (CH1 edge), applied at 6000000 ns\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{LAZY}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let lazy: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_timer_lazy_differed")
+        .collect();
+    assert_eq!(lazy.len(), 1, "{v}");
+    assert!(
+        lazy[0]["message"].as_str().unwrap().contains("(CH1 edge)"),
+        "{v}"
+    );
+}
+
 /// `AET-WO-4412` (ii), ruled 2026-11-26T15:27Z: nothing committed binds a
 /// field the foreign verdict names `not_rerun_stable` (`boot.instructions`,
 /// `boot.pc`). Every committed reader of a verdict's `pc` or `instructions`

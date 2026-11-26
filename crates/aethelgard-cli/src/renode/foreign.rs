@@ -542,8 +542,15 @@ fn loads_dshot_models(models: &[std::path::PathBuf]) -> bool {
 /// The DMA model's line for a paced stream in circular mode (`AET-WO-4412`
 /// (a)).
 pub const UNBOUNDED_MARK: &str = "AETHELGARD-DMA-UNBOUNDED";
+/// The timer model's line for a skipped event that had an effect (ruling D4
+/// (a), "lazy, never different").
+pub const LAZY_MARK: &str = "lazy: a skipped event at";
+/// A run whose timer model differed from its eager reference, refused by name.
+pub const TIMER_LAZY_DIFFERED: &str = "foreign_timer_lazy_differed";
 /// A paced stream that would never end, refused by name.
 pub const DMA_STREAM_UNBOUNDED: &str = "foreign_dma_stream_unbounded";
+/// DShot transfers seen in a log that was not read whole.
+pub const DSHOT_UNWITNESSED: &str = "foreign_dshot_unwitnessed";
 /// A DShot frame whose checksum fails, or that is not 16 pulses.
 pub const DSHOT_FRAME_MALFORMED: &str = "foreign_dshot_frame_malformed";
 
@@ -597,6 +604,7 @@ fn dshot_report(
     lines: &[&str],
     image: &aethelgard_twin::boot::Image,
     observed: &[[u32; END_READS]],
+    whole: bool,
 ) -> (Option<DshotReport>, Vec<Finding>) {
     use aethelgard_twin::dshot::{Frame, frames, transfer};
     let mut streams: Vec<DshotStream> = Vec::new();
@@ -693,6 +701,14 @@ fn dshot_report(
             }
         }
     }
+    // Past the log budget the DMA model's lines are dropped, so a malformed
+    // frame could go unseen: the frames are not judged whole.
+    if !whole && !streams.is_empty() {
+        findings.push(Finding::plain(
+            DSHOT_UNWITNESSED,
+            "Renode's log passed its budget and lines were dropped, so the DShot frames counted are only those kept: a malformed one may be among the dropped".to_owned(),
+        ));
+    }
     let report = (!streams.is_empty()).then_some(DshotReport {
         read: DSHOT_READ_AT,
         transfers: streams,
@@ -700,7 +716,7 @@ fn dshot_report(
     (report, findings)
 }
 
-/// The virtual time of a [`RESET_MARK`] line, or `None` for any other./// The virtual time of a [`RESET_MARK`] line, or `None` for any other.
+/// The virtual time of a [`RESET_MARK`] line, or `None` for any other.
 fn reset_entry(line: &str) -> Option<Option<u64>> {
     (log_text(line) == RESET_MARK).then(|| log_stamped(line).map(|(ns, _)| ns))
 }
@@ -1023,6 +1039,7 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
         FAULT_MARK,
         RESET_MARK,
         UNBOUNDED_MARK,
+        LAZY_MARK,
     ],
     discard: unread_access_line,
     summarise: unhandled_write_key,
@@ -2658,7 +2675,19 @@ pub fn judge(
             ),
         ));
     }
-    let (dshot, malformed) = dshot_report(&lines, plan.image, &observed);
+    // The timer model's own check of "lazy, never different" (ruling D4 (a)):
+    // a skipped event that had an effect was applied late, so the twin
+    // differed from the eager reference; the run is not judged on it.
+    for line in lines.iter().filter(|l| log_text(l).contains(LAZY_MARK)) {
+        findings.push(Finding::plain(
+            TIMER_LAZY_DIFFERED,
+            format!(
+                "{}: the timer model skipped an event whose effect it applied late, so the run differs from its eager reference (models/renode/AethelgardSTM32Timer.cs)",
+                log_text(line)
+            ),
+        ));
+    }
+    let (dshot, malformed) = dshot_report(&lines, plan.image, &observed, whole);
     findings.extend(malformed);
     report.dshot = dshot;
     // A fault exception, as its hook logs the entry that halted the core
@@ -4630,7 +4659,7 @@ mod tests {
             flipped.as_str(),
             other.as_str(),
         ];
-        let (report, findings) = dshot_report(&lines, &image, &observed);
+        let (report, findings) = dshot_report(&lines, &image, &observed, true);
         let r = report.unwrap();
         assert_eq!(r.read, DSHOT_READ_AT);
         assert_eq!(r.transfers.len(), 1);
@@ -4652,8 +4681,15 @@ mod tests {
             "{}",
             findings[0].message
         );
-        let (none, f) = dshot_report(&[other.as_str()], &image, &observed);
+        let (none, f) = dshot_report(&[other.as_str()], &image, &observed, false);
         assert!(none.is_none() && f.is_empty());
+        // A log not read whole: the frames kept are reported, and named partial.
+        let (partial, f) = dshot_report(&[good.as_str()], &image, &observed, false);
+        assert!(partial.is_some());
+        assert_eq!(
+            f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
+            [DSHOT_UNWITNESSED]
+        );
     }
 
     /// `AET-WO-4412` D2: on Sentinel-03's crystal tree (its RCC registers as
@@ -5145,6 +5181,10 @@ mod tests {
         // Past the log budget, the first entry is still kept (review
         // finding 4); every other kind the default filter keeps stays kept.
         assert!(FOREIGN_LOG_FILTER.keep.contains(&PANIC_MARK));
+        // AET-WO-4412: the DMA model's refusal and the timer model's
+        // difference, each a failing line.
+        assert!(FOREIGN_LOG_FILTER.keep.contains(&UNBOUNDED_MARK));
+        assert!(FOREIGN_LOG_FILTER.keep.contains(&LAZY_MARK));
         for k in LOG_FILTER.keep {
             assert!(FOREIGN_LOG_FILTER.keep.contains(k), "{k}");
         }
