@@ -544,3 +544,201 @@ diverged here (3/3 hybrid arm12 plus round 1's stock×2). The flip needs DShot-r
 A fix in our models was not found, so none was made. The only model change this round is the diagnostic counter
 `wakes_off_cpu_thread` in `Stats` (Timer `80b48a46…`, the file `dshot-r3-diag` ran).
 
+
+## 9. Round 4: whose is the flip (architect's ruling 13:53Z), time-boxed to 2 h of wall
+
+### 9.1 Stock dshot12 repeats
+
+Stock dshot12 ran 20 times in all: rounds 3-4, the kit capture `/cache/cap/dshot/2`, round-2 DQ prehook (`batch8.sh`,
+`batch11.sh`, `batch12.sh`, `batch15.sh`). Each was compared with `dshot-stock-rep1` by `tally.sh` (outputs
+`cmp-r3-dshot-stock-rep1--dshot-stock-repN.txt`).
+
+**20 runs (rep1-20; rep2-20 against rep1): 18 identical, 1 divergent (rep16).** rep6-20 are this round's 15.
+
+rep16 is not identical, but its divergence is of a different kind from ours:
+- Every access value, order and PC is equal, every USART byte and stamp is equal, the end reads are equal (instruction
+  count included), and there is no transfer line (stock has no paced path).
+- **18 dma2 access log stamps are 10 ns (one instruction) later**, in 3 episodes at 8.075159890, 8.538168910 and
+  8.627668960 s. Each episode is the same 6 accesses at PCs 0x810488C, 0x8104896, 0x80F9ACE, 0x80F9AD4, 0x80F9ADA,
+  0x80F9AE8: a LISR read, a LIFCR write, then S1CR read/write/read and an IFCR write. That is ChibiOS's DMA2 stream 1
+  interrupt path (`dma_up_irq_callback`'s `dmaStreamDisable`), which stock reaches through the TC raised inside the EN
+  write.
+- A Renode log stamp is the time of the CPU's last report, so in rep16 Renode reported the CPU's time one instruction
+  later at those three moments. The CPU's trajectory is the same (equal instruction count).
+
+Against the ruling's bar: stock did not stay at 0 of 15. It produced 1 non-identical replay in 20, a log-stamp-only
+divergence.
+
+### 9.2 NVIC around 11.2801 s, one stable and one flipping hybrid run
+
+The model gained a diagnostic, `TraceFrom`/`TraceTo` (virtual ns). Inside that window it logs one line at each wake and
+each bus access: the CPU's PC, plus the NVIC's ICSR (0xE000ED04), ISPR0-4 (0xE000E200..) and IABR0-4 (0xE000E300..), read
+side-effect free. Prehook: the DQ string plus
+`logLevel -1 sysbus.timer1; sysbus.timer1 TraceFrom 11280000000; sysbus.timer1 TraceTo 11280300000`.
+
+- **Runs.** `dshot-r4-trace-rep1` and `-rep2` are stable (0x8000EDE). `dshot-r4-trace-rep3` flipped (0x8000EB0). Each is
+  identical to its class reference in every compared stream (`tally.sh`), so the trace does not perturb the run.
+- **Lines.** 297 trace lines per run, in `~/.cache/aet-4412/proto/dshot-r4-trace-rep{1,3}.nvic.txt`. Diffed, **the two
+  runs differ only in the PC at 11.280174678** (the model's clock instant; Renode's log stamp shows 11.280174680), 5 lines:
+
+  ```
+  stable : nvic w4C  t=11280174678 pc=0x8000EDE icsr=0x00000800 ispr=0,0,00010000,0,0 iabr=0   (x4, then the wake)
+  flipped: nvic w4C  t=11280174678 pc=0x8000EB0 icsr=0x00000800 ispr=0,0,00010000,0,0 iabr=0   (x4, then the wake)
+  ```
+- **The NVIC state is the same in both, at every sampled instant of the 300 µs window.**
+  - Nothing is active: IABR is all 0. ICSR is 0x800 (RETTOBASE, VECTACTIVE 0), so the CPU is in thread mode at the
+    instant, between `__port_exit_from_isr` and `__port_switch` in both.
+  - IRQ 80 (RNG) is pending throughout.
+  - IRQ 59 (DMA2 stream 3, a stock-behaving stream) is pending from 11.280067 to 11.280123 s.
+  - IRQ 57 (DMA2 stream 1, our paced transfer's TC) is pending only at the transfer's end (11.280196743).
+  - IRQs 24-27 (TIM1) are never pending.
+- **Which ISR exits.** It ran between the compare wake at 11.280173838 (PC 0x810704E, the same in both) and 11.280174678.
+  It touched no logged peripheral (timer1, dma1, dma2, usart1-3). Naming it needed a hook at ChibiOS's
+  `__port_irq_epilogue` (0x08108058) logging ICSR (`epi.resc`). With that Python hook the run took about 100 s per
+  virtual second (12 s ≈ 20 min); one run was stopped at t ≈ 2.5 s, and the attempt was abandoned at the box. **The
+  exiting ISR is not named.**
+
+### 9.3 The TIM1 interrupt path at the burst instants
+
+What the ruling asks for already holds in every run, by construction and by the trace above:
+- TIM1's `DIER` has no `UIE` or `CCxIE` (ArduPilot sets only `UDE`), and TIM1's lines 24-27 are never pending.
+- Our paced DMA raises its only interrupt, TC, at the end of the transfer (11.280196743), after the flip instant
+  (11.280174678). No interrupt of ours is raised during a paced transfer.
+
+The flip appears under that condition (above, and §8). A variant masking DMA2 lines for the burst window would also
+mask IRQ 59, which belongs to another stream. That changes ArduPilot's own trajectory and was not run.
+
+### 9.4 Classification
+
+**Per the ruling's rule, stock flips too, so the flip is Renode's.** I report it with this precision rather than as a
+clean answer:
+- **Stock dshot12** is not replay-identical: 1 of 20 differs, in log stamps only. Renode reported the CPU's time one
+  instruction later around stock's DMA2 stream 1 interrupt path. Neither stock's model state nor the CPU's instruction
+  count differs.
+- **Ours (hybrid, eager, and the no-re-arm-return variant)** is not replay-identical: 5 of 19 hybrid/eager runs (19 = 16
+  from round 3 + 3 traced), plus 1 of 6 no-return runs. Each time the CPU's position at the 11.2801747 s event differs
+  by a few instructions (`__port_exit_from_isr` against `__port_switch`), and the end reads by 6 instructions. Every value,
+  instant, USART byte and stamp, and transfer line is equal.
+- **Both are run-to-run variation in where Renode's CPU stands relative to an event or report** (an ISR boundary, a report
+  instant), with no difference in any model's state:
+  - nothing in our models varies between the two outcomes, by every check made (§8.3, §9.2);
+  - both kinds sit on ChibiOS interrupt-return paths at DShot rates;
+  - arm12 never varied (7 of 7 across rounds).
+- **Ours is stronger in kind.** It reaches the CPU's instruction count, where stock's reached only log stamps. Whether
+  stock's path can also move the instruction count was not observed in 20 runs.
+
+The ruling's alternative ("stock never flips (0/15+5) and ours does, so ours") is not what was measured. "Can't tell" would
+fit only if stock's stamp-only divergence were judged unrelated to ours. I report it as Renode's, with the caveat above.
+
+### 9.5 Extra, in the box's remaining time: our models making no CPU-return request at all
+
+`r4-quiet` is the hybrid with `rearmReturns: false` and `stockExits: false` (`batch16.sh`), run 8 times on dshot12 and
+compared against its own first run, because without stock's exits the trajectory differs from the hybrid's (round 1):
+- **7 identical, 1 divergent (rep5).**
+- rep5's first difference is again a burst near 11.28 s. At 11.2828745 s, the DMAR writes carry PC 0x80FABB0 against
+  0x80FABC0 (same instant, same values).
+- Here it cascades:
+  - transfer lines differ from #6129 (11.2854 s), 681 of 6,987;
+  - dma1/dma2 sequences differ from 11.315 s;
+  - USART1/3 bytes are equal, but 65/21 stamps are later by 1.47-23.5 µs, from 11.409 s;
+  - the end reads differ in PC and instruction count.
+- So the flip does not need any CPU-return request from our models, and once it happens it can reach the DShot data's
+  timing.
+
+**Round-4 not established:**
+- which ISR exits before the 11.2801747 s event (the epilogue hook was too slow to finish a run);
+- whether stock's path can move the CPU's instruction count (0 of 20 did);
+- a masked-IRQ variant (§9.3: not run; it would change ArduPilot's own trajectory);
+- the mechanism inside Renode.
+
+## 10. Round 5: the frozen pair (architect's ruling 15:27Z: (ii) is built, the models are frozen)
+
+### 10.1 What was run
+
+- **Files.** Frozen bytes from `~/.cache/aet-4412/frozen/`: Timer `1e6242ef6caf578bb8d1b03c7824a2c5e39d269126377265a38838ae629ff3bb`
+  and DMA `4aed951997b373d76ec98f76bf8db5942fe0e707f405a2b97b014c936bff4a55`.
+- **Timer diff, read against `timer-prestrip.cs` (`f6055ff6…`).** Only removals: TraceFrom/TraceTo/TraceNvic, TraceEdges,
+  Stats and its counters (violations kept), and the `rearmReturns`/`syncWrites` parameters. Each is replaced by its old
+  default: the re-arm still asks for a CPU return, and CPU accesses are not synced except CNT.
+- **DMA diff against `b2f0e261…`.** Only the CIRC refusal. A paced EN now sets `pendingFirst`, and the register's write
+  callback, which runs after every field handler of the same write, either refuses a circular paced stream
+  (`AETHELGARD-DMA-UNBOUNDED`) or serves a pending request. Before, the serve ran inside the EN field handler of the same
+  write. It is the same write, the same instant and the same CPU context.
+- **Captures.** `cap/{arm,dshot}-r5-frozen` are `mk.sh … r2-final` (hybrid, defaults) with the two frozen files copied over.
+  The `sysbus.timer1 Stats` command was removed from `-e`, because the frozen timer has no `Stats`. Batch: `batch17.sh`,
+  using the round-2 EQ (arm12) and DQ (dshot12) prehooks.
+- **Compile and load.** Both compiled and loaded; no `AETHELGARD-DMA-UNBOUNDED` line appeared.
+
+### 10.2 Each frozen run against the hybrid class references (`tally.sh`, outputs `cmp-r3-<ref>--<run>.txt`)
+
+| run | wall | identical to | differs from the other class only in |
+|---|---|---|---|
+| `arm-r5-frozen-rep1` | 40.84 s | `arm-r2-final-eq`: every access, USART byte and stamp, LED edge and stamp, end read; no warning count differs | — |
+| `arm-r5-frozen-rep2` | 41.04 s | `arm-r2-final-eq`, the same | — |
+| `dshot-r5-frozen-rep1` | 70.61 s | **stable** class `dshot-r2-final-q` (0x8000EDE), every stream, stamps and end reads | the flipped class: 4 DMAR PCs at 11.280174680, the end read's instruction count |
+| `dshot-r5-frozen-rep2` | 72.25 s | stable class | as rep1 |
+| `dshot-r5-frozen-rep3` | 72.59 s | **flipped** class `dshot-r2-final-rep1` (0x8000EB0) | the stable class, the same two items |
+| `dshot-r5-frozen-rep4` | 70.07 s | stable class | as rep1 |
+
+**Every frozen run is identical to one existing class. None matches neither.** The flip appeared in 1 of 4, as before.
+
+### 10.3 For FEEDBACK: the judged figures across the 19 hybrid/eager dshot12 runs (plus the 4 frozen)
+
+Runs, all under `~/.cache/aet-4412/proto/rep/`:
+- `dshot-r2-final-q` and `dshot-r2-final-rep1`…`rep6` (rep1 and rep2 are the coordinator's);
+- `dshot-r3-diag`, `dshot-r2-E-q`, `dshot-r2-final-eager-q`;
+- `dshot-r3-H0-rep1`…`rep6` (no re-arm returns);
+- `dshot-r4-trace-rep1`…`rep3`;
+- this round's `dshot-r5-frozen-rep1`…`rep4`.
+
+Tool: `digest.py`, output `digest-19.txt`, `digest-r5-frozen.txt`.
+
+| figure | result (19 + 4 runs) |
+|---|---|
+| transfer lines: count, first EN ns, last end ns | **identical in all 23**: 6,986 lines, first EN 6180670750, last end 11999183297 |
+| transfer lines: every word and every EN/end stamp (md5 of the lines' text) | **identical in all 23** |
+| frame decode (packet histogram per channel) | **identical in all 23** |
+| USART1/2/3 bytes | **identical in all 23** |
+| USART1/2/3 stamps | **identical in all 23** |
+| end reads: PC | **identical in all 23** (0x810883c) |
+| end reads: every line except the instruction count | **identical in all 23** |
+| end reads: `cpu ExecutedInstructions` | **differs**: 0x18305D92 in `dshot-r2-final-rep1`, `-rep6`, `dshot-r2-final-eager-q`, `dshot-r3-H0-rep2`, `dshot-r4-trace-rep3`, `dshot-r5-frozen-rep3` (6 of 23), against 0x18305D8C in the other 17 |
+
+So the flip reaches no judged figure except the end read's executed-instruction count, which moves by 6. The other
+difference, the 4 DMAR-write PCs at 11.280174680 s, is in the TIM1 access log, which no judge reads.
+
+## 11. Round 6: the ISR before the flip (FEEDBACK row), frozen pair, windowed hooks
+
+**Method.** The hooks were inserted into the capture's own timeline, not the whole run. The `RunFor` covering 11.2455-11.3288 s
+was split into three: run to 11.2795 s, add the hooks, run to 11.2802 s, remove them, run on. The copies are
+`cap/dshot-r6-epi` (hook at `__port_irq_epilogue` 0x08108058) and `cap/dshot-r6-epi2` (also `SVC_Handler` 0x08107fe8,
+`__port_switch_from_isr` 0x08000EDA, `__port_switch` 0x08000EB0); `batch18.sh`, `batch19.sh`. Each hook logs ICSR and
+VECTACTIVE. Every hooked run equals its class reference in every stream, stamps included (`tally.sh`), so the hooks do
+not perturb the run.
+
+| run | class | hook log against the other class |
+|---|---|---|
+| `dshot-r6-epi-rep1` | stable (0x8000EDE) | epilogue hits identical to `-rep5` (15 each) |
+| `dshot-r6-epi-rep5` | flipped (0x8000EB0) | same as above |
+| `dshot-r6-epi2-rep1` | stable | differs only in two lines: `__port_switch` 11.280174620, SVC 11.280174690 |
+| `dshot-r6-epi2-rep4` | flipped | `__port_switch` 11.280174680, SVC 11.280174750 |
+
+**Sequence (both classes, the same up to the last row):**
+
+| instant (s) | what |
+|---|---|
+| 11.280139290 | epilogue of exception 66 = IRQ 50, **TIM5** (ChibiOS's system timer; handler `Vector108`, 0x08108704) |
+| 11.280139600 | `__port_switch_from_isr` |
+| 11.280140070 | `__port_switch`: TIM5's ISR pre-empts the running thread |
+| 11.280174620 / 11.280174680 | `__port_switch` back to the pre-empted thread (stable / flipped) |
+| 11.280174690 / 11.280174750 | `__port_exit_from_isr`'s SVC (exception 11, `SVC_Handler`) ends that ISR exit |
+
+No other ISR epilogue fires between 11.280139 and 11.280198 s. The next is exception 73, IRQ 57 (DMA2 stream 1,
+`Vector124`), our transfer's completion interrupt.
+
+**Answer.**
+- The ISR is TIM5's, exception 66 (`Vector108`), in both classes.
+- What flips is the instant its pre-empted thread is switched back in: 60 ns (6 instructions) later in the flipped class.
+  These are the same 6 instructions as the end read. Our DMAR burst at 11.280174680 then lands before or after that
+  switch's final instructions.
+- The 6-instruction difference arises between 11.280140070 and 11.280174620. Where, exactly, is not established.

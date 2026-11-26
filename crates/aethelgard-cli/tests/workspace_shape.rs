@@ -488,6 +488,9 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
 #[test]
 fn renode_models_has_only_its_known_files_keys_and_no_dependencies() {
     let mut expected = vec![
+        // AET-WO-4412 D4: the DShot timer and the DMA that paces it.
+        "AethelgardSTM32DMA.cs",
+        "AethelgardSTM32Timer.cs",
         "BMP581.cs",
         "Cargo.toml",
         "ICM42688P.cs",

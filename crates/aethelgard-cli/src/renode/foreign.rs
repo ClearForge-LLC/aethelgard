@@ -529,7 +529,7 @@ pub struct Unstable {
 /// lie in the firmware's flash.
 pub const NOT_RERUN_STABLE: [&str; 2] = ["boot.instructions", "boot.pc"];
 
-pub const NOT_RERUN_STABLE_WHY: &str = "Renode 1.17.0 re-simulation is not bit-stable: on Sentinel-03 dshot12, 5 of 19 runs with the same inputs ended 6 instructions apart (the CPU at __port_switch, not __port_exit_from_isr, from 11.280174680 s), with no model state, transfer word, USART byte or stamp differing; stock Renode moved 18 log stamps by 10 ns in 1 of 20 (AET-WO-4412 spike/4412/proto/NOTES.md §9). A replay of this run's trace is deterministic (INV-04); a fresh re-simulation is not";
+pub const NOT_RERUN_STABLE_WHY: &str = "Renode 1.17.0 re-simulation is not bit-stable: on the dshot12 input (AET-WO-4412), 6 of 23 runs with the same inputs ended 6 instructions apart (the CPU at __port_switch, not __port_exit_from_isr, at 11.280174680 s), every transfer word, frame, USART byte and stamp identical; the end PC moved only in a diagnostic variant; stock Renode moved 18 log stamps by 10 ns in 1 of 20 (AET-WO-4412 spike/4412/proto/NOTES.md §9, §10). A replay of this run's trace is deterministic (INV-04); a fresh re-simulation is not";
 
 /// Whether the platform loads the DShot timer and DMA models.
 fn loads_dshot_models(models: &[std::path::PathBuf]) -> bool {
