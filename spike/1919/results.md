@@ -253,3 +253,17 @@ Renode's own lifetime, first seen to gone (`ci/probe.py`, 0.2 s polls). In CI, t
 | P15 | Holds | §3 |
 | P16 | Holds | §3 (3c) |
 | P17 | Holds on the branch | `de132429` is the spike record. The harness half is not measurable yet |
+
+## 6. The built head (after the 04:51Z ruling: (1) (G)+(X), (2a)–(2e), (3a)–(3c))
+
+**On Furnace** (`out/furnace-built-s03-gates.txt`, `out/furnace-built-s03.meta`): the built head `72b51e0e`, Sentinel-03's whole `verify --against-fab`, pinned to 4 cores.
+- **Its verdict line is byte-identical to the baseline `s03-1`** (sha256 `5ba5f66b…`). Every gate, all 26 prove gates included, and every binding are unchanged. Against CI, the only differences are the uid fields (§1.4).
+- **The lanes, as the probe saw them:**
+  - `extract` started at 29 s beside the first prove gate, and ran 478.6 s;
+  - build, `simulate` and the campaign were done by 630 s;
+  - the prove lane ran to 1,693 s.
+  - The CLI's own time across the 26 prove gates is 7 s.
+- **28.2 min** on 4 pinned cores. With (G) alone it was 32.6, and the baseline 46.7 on 20 unpinned cores.
+- **Memory:** the combined resident peak of the watched processes was 8.53 GiB, at 1,431 s (a `tim1` part, after the campaign had ended). The container's `memory.peak` was 9.68 GiB. Both are under `1918`'s 12 GiB.
+
+**In CI:** (from the pushed head's runs)
