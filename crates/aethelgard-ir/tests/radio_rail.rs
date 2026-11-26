@@ -111,7 +111,8 @@ fn u31(v: &mut Value) -> &mut Value {
     &mut v["power"]["uart_crossings"][0]
 }
 
-/// OE floats nowhere (ruled 04:03Z): left `open`, or not declared, refused.
+/// OE floats nowhere (ruled 04:03Z) and is held on VCCA (04:51Z, 08:59Z
+/// R1): left `open`, not declared, on VCCB or wired, refused.
 #[test]
 fn a_translator_oe_left_floating_is_refused() {
     let mut v = base();
@@ -120,11 +121,16 @@ fn a_translator_oe_left_floating_is_refused() {
     let mut v = base();
     u31(&mut v)["controls"] = json!([]);
     assert!(refused(&v, "ControlPinUnwired").contains("OE is declared neither"));
-    // a wire's driver and level through partial power-down are not judged
+    // strapped to VCCB, or wired: refused by name (ruled 04:51Z, 08:59Z
+    // R1; the row allows VCCB for an SPI crossing)
+    let mut v = base();
+    u31(&mut v)["controls"][0]["strap"] = json!("vccb");
+    let e = refused(&v, "CrossingOeUnheld");
+    assert!(e.contains("U31's OE is not strapped to VCCA"), "{e}");
     let mut v = base();
     u31(&mut v)["controls"][0] =
         json!({"pin": "OE", "strap": null, "wire": {"net": "WIFI_TX", "role": "drive"}});
-    assert!(refused(&v, "PowerValueInvalid").contains("a UART crossing's control takes a strap"));
+    assert!(refused(&v, "CrossingOeUnheld").contains("not strapped to VCCA"));
 }
 
 /// A crossing's control takes a strap or a wire: `after` is a regulator's

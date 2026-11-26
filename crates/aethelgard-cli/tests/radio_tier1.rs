@@ -368,3 +368,47 @@ fn the_crossings_bypasses_are_judged_loops() {
         assert!(r.pads.iter().any(|(_, p)| p == pin), "{part}: {:?}", r.pads);
     }
 }
+
+/// `drc.radio` reads U30's angle as `strict::number(&at, 3).unwrap_or(0)`:
+/// absent is KiCad's unturned. One written but not a number (`"90"`, a
+/// string, or `ninety`, a bare symbol) never reaches it: the strict reader
+/// refuses the board first (`MalformedBoard`, "where KiCad reads a number";
+/// the review's R3, ruled 08:59Z: shown, the line left).
+#[test]
+fn a_modules_angle_that_is_no_number_is_refused_before_drc_radio_reads_it() {
+    let text = board();
+    let at = text
+        .find("(footprint \"Aethelgard_RF:ESP32-C3-WROOM-02\"")
+        .expect("U30's footprint");
+    let open = at + text[at..].find("(at ").unwrap();
+    let close = open + text[open..].find(')').unwrap();
+    let dir = std::env::temp_dir().join(format!("aet-4411-angle-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    for angle in ["\"90\"", "ninety"] {
+        let b = dir.join("b.kicad_pcb");
+        fs::write(&b, format!("{} {angle}{}", &text[..close], &text[close..])).unwrap();
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args([
+                "check",
+                "drc",
+                "--board",
+                b.to_str().unwrap(),
+                "--spec",
+                SPEC,
+            ])
+            .current_dir(root())
+            .env("PATH", "/nonexistent")
+            .stdin(Stdio::null())
+            .output()
+            .unwrap();
+        let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert_eq!(v["error"]["kind"], "MalformedBoard", "{angle}: {v}");
+        assert!(
+            v["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("where KiCad reads a number"),
+            "{angle}: {v}"
+        );
+    }
+}

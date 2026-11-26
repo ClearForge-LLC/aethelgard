@@ -112,6 +112,7 @@ tests/board.rs	the_firmware_follows_the_judges_record_layout	1.618
 tests/board.rs	two_generations_are_byte_identical	3.311
 tests/board_tier2.rs	a_cargo_configuration_another_uid_plants_in_tmp_is_not_read	0.700
 tests/board_tier2.rs	a_missing_clock_enable_fails	10.210
+tests/board_tier2.rs	a_track_in_the_antenna_keepout_is_found_on_every_copper_layer	69.384
 tests/board_tier2.rs	a_vacuous_harness_fails	9.070
 tests/board_tier2.rs	a_write_past_the_block_fails	33.720
 tests/board_tier2.rs	a_wrong_alternate_function_fails	27.440
@@ -124,6 +125,7 @@ tests/board_tier2.rs	each_size_sample_passes_every_gate_or_is_refused_by_name	58
 tests/board_tier2.rs	every_admitted_identifier_character_survives_every_output	313.630
 tests/board_tier2.rs	every_corpus_file_the_reader_accepts_gets_its_stated_kicad_verdict	45.070
 tests/board_tier2.rs	prove_with_spec_tells_a_hand_written_harness_from_the_generated_one	16.960
+tests/board_tier2.rs	radio_planted_boards_are_refused_by_name	66.416
 tests/board_tier2.rs	the_bench_board_passes_every_gate_at_two_and_four_layers	10.340
 tests/board_tier2.rs	the_full_power_fixture_routes_and_passes_every_gate_it_reaches	13.640
 tests/board_tier2.rs	the_generated_board_proves	147.750
@@ -132,6 +134,7 @@ tests/board_tier2.rs	the_ordered_board_passes_every_board_gate_with_no_finding	4
 tests/board_tier2.rs	the_own_parts_fixture_passes_erc_drc_with_parity_and_extract	7.480
 tests/board_tier2.rs	the_own_parts_fixture_s_transfers_prove_within_its_scripts	82.100
 tests/board_tier2.rs	the_power_fixture_passes_erc_drc_its_loop_rules_and_extract	71.610
+tests/board_tier2.rs	the_radio_fixture_passes_erc_and_drc_and_judges_its_module	72.296
 tests/board_tier2.rs	the_reference_passes_the_support_gate_and_a_capacitor_moved_off_fails	5.940
 tests/board_tier2.rs	the_sentinel_03_fixture_passes_every_gate_inside_its_bound	554.450
 tests/board_tier2.rs	verify_names_what_judged_nothing_on_the_motor_driver	200.920
@@ -582,6 +585,7 @@ tests/verify_2k2_tier2.rs	verify_fab_out_writes_the_package_its_verdict_names_at
 # AET-WO-1918: fab_tier1's re-bind refusal test took 15.865 s in shard 8 of the write dispatch (run 45561825388) with no row, which P3 refused; its sample.
 tests/fab_tier1.rs	a_rebind_needs_fab_out_a_committed_package_and_its_board	15.865
 # AET-WO-1918 (3) refit: rows new at the refit (each its worst sample; see the decisions above it in spike/1918/out/refit.tsv).
+# AET-WO-4411: board_tier2's three radio tests are Furnace estimates, not runs: each alone in the pinned image on Furnace (libtest `finished in`, its own invocation, one thread), times 2.8 (AET-WO-1310's factor): a_track_in_the_antenna_keepout 24.78 s, radio_planted_boards 23.72 s, the_radio_fixture 25.82 s; replace them at the next refit.
 tests/attribute.rs	a_bmp581_witness_reads_only_its_models_lines_whole	1.145
 tests/board.rs	the_unmodelled_read_moves_no_modelled_step	2.926
 tests/board_names.rs	no_board_name_in_engine_code	0.516

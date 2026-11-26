@@ -2285,14 +2285,16 @@ fn a_track_in_the_antenna_keepout_is_found_on_every_copper_layer() {
         .split(' ')
         .map(|v| v.parse().unwrap())
         .collect();
-    // Across the antenna area, 3 mm inside it from the antenna edge.
-    let y = ((xy[1] - 10.1) * 1e6).round() / 1e6;
+    // Across the antenna area, 3 mm inside it from the antenna edge; each
+    // coordinate at KiCad's six decimals (a float's shortest form can carry
+    // more, which the strict reader refuses)
+    let y = format!("{:.6}", xy[1] - 10.1);
     let tracks: String = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
         .iter()
         .enumerate()
         .map(|(n, l)| {
             format!(
-                "\t(segment (start {} {y}) (end {} {y}) (width 0.25) (layer \"{l}\") (net \"GND\") (uuid \"4411aaaa-0000-4000-8000-00000000000{n}\"))\n",
+                "\t(segment (start {:.6} {y}) (end {:.6} {y}) (width 0.25) (layer \"{l}\") (net \"GND\") (uuid \"4411aaaa-0000-4000-8000-00000000000{n}\"))\n",
                 xy[0] - 5.0,
                 xy[0] + 5.0
             )

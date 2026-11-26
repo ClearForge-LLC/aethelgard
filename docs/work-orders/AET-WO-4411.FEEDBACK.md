@@ -58,7 +58,7 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
   - A1 hears `WIFI_TX`, and B1Y drives U30's RXD on `U31_B1Y`. B4 hears U30's TXD on `U31_B4`, and A4Y drives `WIFI_RX`.
   - **OE is strapped to VCCA** (ruled 04:51Z). Under (iii), `VDD_3V3` is the rail that rises last, so OE is low through power-up, as SCES935A 9.1 asks ("left floating or externally pulled down … during power up or power down"). 9.3.5's isolation holds the outputs while either supply is under 100 mV.
     - The first bus note said VCCB. The adversarial pass showed that VCCB holds OE high while VCCA ramps from 0, against 9.1, so it moved to VCCA.
-    - A wired OE is refused (`PowerValueInvalid`): a wire's driver and level through partial power-down are not judged.
+    - **A UART crossing's OE must be strapped to VCCA** (`CrossingOeUnheld`, ruled 08:59Z R1). The review found OE on VCCB passing `validate`: the row allows both, since an SPI crossing may take either. On a UART crossing, VCCB or a wire is refused by name (planted).
   - **A2 and A3 are tied to `GND`** (9.3.1.1's pull-down rule made explicit; ruled: no floating input). B2Y and B3Y are left open as outputs, and NC 6 and 9 have no internal connection (p. 4, Table 6-1).
   - **Bypasses:** C93 on VCCA and C94 on VCCB, 0.1 µF each (p. 25, 12.1).
   - **Loads:** 1 mA rows on both rails (ICCA and ICCB 6 µA max, rounded up). U11's loss is restated at 750 mA (82.81 % read) and U13's at 505 mA (79.09 % read). Both losses hold: 563 and 487 mW, under the declared 570 and 490.
@@ -190,6 +190,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
   - C01 was re-run by hand to confirm its kill, by `each_line_level_through_the_translator_is_judged_at_its_receivers_pin`.
   - **`drc.radio` on the crossing's nets (C17):** killed in the image by `board_tier2`'s Sentinel-03 test (`RadioUartMiswired`, U30 pad 12 on `U31_B4`).
   - **C12 and C16 were re-run after the reduction** moved their code into `uart_b_nets` and `module_uart_nets`. Both are killed.
+  - **C27 was re-aimed at R1's rule,** OE on VCCA, and is killed. Each kill's test passes un-mutated in the suite (§10).
   - **C19** (`RadioRailUnsequenced`'s reason, which reads differently with a crossing) is wording, not a guard, so it was not planted.
 
 ## 7. Adversarial pass
@@ -226,6 +227,15 @@ The pass ran as a fresh read-only review of 3a35be0f..7cde17de, with the WO's §
   - **(6)** `translator_supply_not_counted` scanned SPI crossings only. A UART crossing no load names is now screened (planted).
   - **(7)** The radio row's UART levels were not checked in order. Now they are (`RadioTableMalformed`, planted).
   - **(9)** U31's load source said 250 nA for U1's RX. It is 350 nA, the row's.
+- **The independent review (08:59Z), fixed:**
+  - **R1:** OE on VCCB passed. It is now `CrossingOeUnheld` (§1).
+  - **R3, checked, not a defect.** `drc.radio`'s `strict::number(&at, 3).unwrap_or(0)` never sees an angle that is not a number. The strict reader refuses the board first (`MalformedBoard`, "where KiCad reads a number"), for a quoted `"90"` and a bare `ninety` alike.
+    - `radio_tier1`'s `a_modules_angle_that_is_no_number_is_refused_before_drc_radio_reads_it` shows it. The line is left as it was.
+    - A first fix refused the angle in `drc.radio` itself. Its mutant (C34) reported killed only because the test failed either way, so the fix is reverted and C34 withdrawn.
+  - **`board_tier2`'s `a_track_in_the_antenna_keepout_is_found_on_every_copper_layer` failed,** unseen until the weights were measured (my tier-2 filters never matched its name).
+    - Its planted tracks printed the module's x ± 5 mm in a float's shortest form (`124.03999999999999` once F4 moved the module fixture), which the strict reader refuses.
+    - It now prints each coordinate at KiCad's six decimals, and it passes.
+  - **CI's shard planner:** `board_tier2`'s three radio tests had no `ci/test-weights.tsv` row (a lock-serialised binary). They are added as Furnace estimates (§10), and `ci/shard.sh build` and `plan` now run in the image before the push.
 - **The close-out review found one more, now fixed.** "PUPDR is 0" had not been checked. ArduPilot's `chibios_hwdef.py` gives every UART TX and RX pin PULLUP unless its hwdef line names another pull. Aethelgard's hwdef writes every serial-port pin `PUSHPULL FLOATING` (`aethelgard-hwdef`'s UART lines). Sentinel-03's generated hwdef has `PG9 USART6_RX USART6 SPEED_VERYLOW PUSHPULL FLOATING`, so U1's side is a generated fact.
   - `uart_internal_pulls:U31` now names only U30's RXD pull-up: the module's firmware, not judged.
   - Its earlier "over 0.1 mA at 3.0 V" was wrong (3.0 V over 30 kΩ is exactly 0.1 mA), and it is gone.
@@ -277,7 +287,10 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 - **Q-SUP on the new rail (a row):** no Espressif document states a brown-out detector. The HDG's monitor, "around 3.0 V" (PDF p. 10), is not fitted, so R90/C90 is U30's only reset (`radio_rail_monitor:U30`, acknowledged).
 - **Power-down order and the Ioff buffer:** closed by U31 ((c1), §1). Its residual, 9.3.5's window between 100 mV and 1.08 V and the undriven idle, is `translator_partial_power:U31`.
 - **G1's bench row (`RUL-20` (3)):** U31's VT+ and VT− measured at the board's rails at bring-up (`translator_threshold_inferred:U31`).
-- **S2 (ruled 04:51Z, a row):** split each drop limit into its VDD and VSS shares. The level judge takes the whole limit on the VDD side, which leaves a VSS rise unmodelled, worth at most about 36 mV on U30's high check. Every Sentinel-03 margin is 156 mV or more.
+- **S2 (ruled 04:51Z, a row) with R2 (ruled 08:59Z) as its second half;** `AET-WO-4310`'s slice D takes both.
+  - **S2:** split each drop limit into its VDD and VSS shares. The level judge takes the whole limit on the VDD side.
+  - **R2:** it also takes every pin's ground at 0 V (`levels.rs`). A rise in the driver's or the receiver's ground, up to its drop, moves both edges: the low arrives higher, and the receiver's VIH reference shifts by a quarter of its drop.
+  - Sentinel-03's margins (388 mV and more on high and low, 156 mV under U30's maximum) absorb both.
 - **Q-R (ruled 06:25Z (a), a row): the placer is not monotone at the outline bound.** Removing a test point stops size 1 fitting 100 x 100 on all nine seeds: least-over 88.450 x 100.100 mm without Q_TP14, and 88.950 x 100.250 without Q_TP28.
   - The two are pinned exactly in `outline_tier1`'s removal sweep, so a third still fails.
   - A refused placement writes no board, so which part moves is not seen without a build. A placer work order takes it.
@@ -305,16 +318,19 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 ## 10. Gates
 
-On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, then the close-out fixes and reduction):
+On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, and the 08:59Z/09:01Z review's fixes):
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- **`cargo test --workspace`: 3261 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
-- **The CI guards:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass.
-- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0), on the final code:
-  - `board_tier2`: Sentinel-03 passes every gate inside its bound, and the radio fixture and its planted boards pass (840 s).
-  - `twin_tier2`: Sentinel-03's battery-sag campaign meets every expectation, replays and repeats, with the sag point at 7,928,264 µV (388 s).
+- **`cargo test --workspace`: 3262 passed, 1 failed.** That is 3261 plus `a_modules_angle_…` re-run alone after its revision. The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
+- **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` gives guard ok: 3501 test names, 3508 listed occurrences, 20 shards.
+  - The plan had refused on 20235acb, because three `board_tier2` tests of this WO had no row.
+  - Each is now a Furnace estimate, its alone time in the image times 2.8 (AET-WO-1310's factor): `a_track_in_the_antenna_keepout_…` 24.78 s → 69.384, `radio_planted_boards_…` 23.72 → 66.416, and `the_radio_fixture_…` 25.82 → 72.296. A refit replaces them.
+- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0):
+  - `board_tier2`: Sentinel-03 passes every gate inside its bound, and the radio fixture, its planted boards and the antenna keepout pass (790 s, after R1).
+  - `twin_tier2`: Sentinel-03's battery-sag campaign meets every expectation, replays and repeats, with the sag point at 7,928,264 µV (388 s, before R1, which only refuses a VCCB OE that Sentinel-03 does not declare).
 - **Mutants:** 32 of 32 (c1) mutants killed, §6.
-- **INV-08 and identities, with the final binary:**
+- **INV-08 and identities, with the binary built after the reduction:**
   - the 25 boards are byte-identical against 3a35be0f's outputs, and the 16 refusals keep their kinds;
   - `sentinel-03-radio` is byte-identical against 081a463b;
   - Sentinel-03's board is the same bytes as the board §2 measured.
+  - R1 adds a refusal only, so no emitted byte moves.

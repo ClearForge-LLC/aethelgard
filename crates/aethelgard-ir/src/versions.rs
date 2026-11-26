@@ -356,6 +356,7 @@ pub const CHANGES: &[VersionChange] = &[
             "RadioSupplyUnsourced",
             "RadioRailUnsequenced",
             "LineLevelUnmet",
+            "CrossingOeUnheld",
             "RadioSupplyBelowMinimum",
             "RadioEnableNotPulled",
             "RadioStrapUndeclared",

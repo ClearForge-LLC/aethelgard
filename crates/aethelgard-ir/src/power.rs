@@ -593,6 +593,9 @@ pub enum Refusal {
     /// receiver's pin, directly or through a translator (`AET-WO-4411` (c1),
     /// ruled 2026-11-26T04:03Z).
     LineLevelUnmet,
+    /// A UART crossing's OE not strapped to VCCA (`AET-WO-4411` (c1), ruled
+    /// 2026-11-26T04:51Z and 08:59Z R1).
+    CrossingOeUnheld,
     /// A module rail's guaranteed minimum, less its drop limit, under the
     /// module's minimum supply (`AET-WO-4411`, ruled 2026-11-25T20:10Z).
     RadioSupplyBelowMinimum,
@@ -667,6 +670,7 @@ impl Refusal {
             Self::ControlAfterInvalid => "ControlAfterInvalid",
             Self::RadioRailUnsequenced => "RadioRailUnsequenced",
             Self::LineLevelUnmet => "LineLevelUnmet",
+            Self::CrossingOeUnheld => "CrossingOeUnheld",
             Self::RadioSupplyBelowMinimum => "RadioSupplyBelowMinimum",
             Self::DoubledPackOverAbsoluteMaximum => "DoubledPackOverAbsoluteMaximum",
             Self::BatteryInputUnprotected => "BatteryInputUnprotected",
@@ -1210,14 +1214,6 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     .to_owned(),
             ));
         }
-        // ruled 2026-11-26T04:03Z: OE referenced and held through partial
-        // power-down, which a wire's driver and level, unjudged, are not
-        if c.controls.iter().any(|x| x.wire.is_some()) {
-            return Err(invalid(
-                &format!("{path}.controls"),
-                "a UART crossing's control takes a strap: a wire's driver and level through partial power-down are not judged".to_owned(),
-            ));
-        }
     }
     crate::references_distinct(
         spec.declared_i2c_devices()
@@ -1756,6 +1752,27 @@ fn uart_crossings_shape(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
                 "{} has no A-to-B channel for the MCU's TX and B-to-A channel for its RX",
                 c.part
             )));
+        }
+        // SCES935A 9.1 (ruled 04:51Z, 08:59Z R1): OE on VCCA, the rail (iii)
+        // raises last, holds the outputs high-impedance through power-up; a
+        // wire's driver and level through partial power-down are not judged
+        if !c
+            .controls
+            .iter()
+            .any(|x| x.pin == "OE" && x.strap == Some(pp::Strap::Vcca))
+        {
+            return Err(refuse(
+                Refusal::CrossingOeUnheld,
+                &c.reference,
+                format!(
+                    "{}'s OE is not strapped to VCCA (`{}`), the rail that rises last: SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
+                    c.reference, c.a_domain
+                ),
+                t.controls
+                    .iter()
+                    .find(|r| r.pin == "OE")
+                    .map_or_else(String::new, |r| ctx.cite(&r.at)),
+            ));
         }
         if c.a_domain != spec.mcu.supply || c.b_domain != m.supply {
             return Err(refuse(
