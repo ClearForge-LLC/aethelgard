@@ -6,6 +6,17 @@ PROTOTYPE, not the build. Two C# Renode 1.17.0 models, run in place of stock thr
 
 ## The answer first
 
+**Round 2 (§7, after the architect's ruling) supersedes the log format and the schedule below.**
+- The log is now one line per transfer: 1.74 MB on dshot12.
+- Of the three candidates for the lazy/eager gap, the re-arm return requests have no effect. The stale write instant
+  shifts the frame phase, but fixing it does not close the gap. The stops themselves move ArduPilot at DShot rates.
+- So the timer is now a hybrid, eager while a DMA request or interrupt is enabled. Hybrid equals one eager run of dshot12
+  exactly and equals stock on arm12 except CCMR's OCxPE read-back.
+- Cost: dshot12 takes 63 s (hybrid) against stock's 164 s.
+
+Round 1 as measured:
+
+
 1. **Fast: dshot12 replays in 40.6 / 42.5 s with our models, against stock's 164.3 s in the same session** (load 9-12).
    That is 1.11x the arm12 replay with our models (36.5 s) and close to stock arm12 (38.2 s). After DShot starts, the cost
    is 3.8 s of wall per virtual second (stock: 24.6 s; arm with our models: 3.1 s).
@@ -271,7 +282,7 @@ logs usart1-3.
 - Every "stamps differ" in the equal rows is a log stamp only. The value, order and PC are equal, the USART stamps are
   equal, and so is `cpu ExecutedInstructions` at the end. The TIM1 ones are the setup writes at 0.1004 s (up to −6.4 µs);
   the DMA ones are 12 accesses at 5.6401 s (−5.1 µs).
-- **Warnings** (grep diff; `compare.py`'s own tally printed nothing even where they differ):
+- **Warnings** (grep diff. Correction, round 2: `compare.py`'s tally works; my `sed -n '1,/warnings/p'` cut it off):
   - stock's 8 TIM1 lines are 2 each of "Unhandled write" for CCMR1 (OC1PE), CCMR2, BDTR (MOE) and 0x54;
   - ours has 2 "write to unmodelled offset 0x54";
   - stock also has 1 "Thread has been woken up 2 times";
@@ -346,3 +357,190 @@ The ns fields on the end line add about 30 B of each 140.
 
 **Reduction notes for the build:** `ckd` is stored and never read. The `lazy` switch and `TraceEdges` are prototype
 evidence tools. `Stats` is likewise.
+
+## 7. Round 2 (architect's ruling, bus 12:21Z): preload on, stock period, one line per transfer, the lazy/eager gap
+
+Ruling: D-a preload ON (RM p.1603). D-d keep stock's `ARR`-tick period. D-b one log line per completed transfer. D-c close
+the dshot12 lazy/eager gap: isolate the three candidates one at a time; if none closes it, build the hybrid.
+
+### 7.1 Code changes (from `92d42133`)
+
+- **Timer.**
+  - `schedule` (`"lazy"` | `"eager"` | `"hybrid"`, default `"hybrid"`) replaces the `lazy` bool.
+  - `rearmReturns` and `syncWrites` are new DIAGNOSTIC switches for (ii) and (i). The wake is now a bare `ClockEntry`. A
+    re-arm asks the CPU for a return only if `rearmReturns` (default true, as the `LimitTimer` setter did).
+  - The per-burst log line is gone; the burst count stays in `Stats`.
+  - Hybrid: `Observable()` returns true (wake at every limit) while `UDE`, any `CCxDE`, `UIE` or any `CCxIE` is set, and
+    otherwise applies the lazy rule.
+- **DMA.** One Noisy line per completed paced transfer:
+  `stream S req R NDTR N EN t0 end t1 reqs Q[ (disabled, NDTR k)]: w0 w1 …`. That is the stream, its DMAMUX request, NDTR
+  at EN, the EN and end instants in virtual ns, the requests served, and every item moved (hex, read from memory before
+  the copy). Example:
+  `dma2: stream 1 req 15 NDTR 76 EN 6180670750 end 6180697224 reqs 19: 0 0 0 0 3 3 3 3 … 0 0 0 0`
+
+### 7.2 D-b: bytes on dshot12 (12 s window; DShot from 6.18 s)
+
+`decode2.py rep/dshot-r2-L-q/console.txt.gz`: **6,986 lines, 1,744,314 B (249.7 B/line)**, about 21 % of 8 MiB. The old
+per-burst line plus end line was 8,541,659 B. Every frame decodes as before: 76 words, 19 requests, NDTR 76, 0 malformed;
+CH1-4 0x0000 ×5,385, 0x1F0E (248) ×1,205, then the ramp.
+
+### 7.3 D-c: the three candidates, one at a time (dshot12, final-round files, same logging)
+
+Logging for every run in this section: `PREHOOK="logLevel -1 sysbus.dma2; sysbus LogPeripheralAccess sysbus.timer1 true; sysbus LogPeripheralAccess sysbus.dma1 true; sysbus LogPeripheralAccess sysbus.dma2 true"`.
+USART1-3 are logged by the CLI's own argv. Command:
+`CPUS=0-3 MEM=8G spike/4412/sh/img.sh tools 'PREHOOK="…" timeout 1500 bash /spike/sh/replay3.sh /cache/proto/cap/dshot-<v> /cache/proto/rep/dshot-<v>-q'`
+(`proto/batch6.sh`, `batch7.sh`). Comparisons: `compare.py`, saved as `~/.cache/aet-4412/proto/cmp-r2-*.txt` and
+`cmp-r2-*-r2-*.txt`.
+
+| variant | `schedule` | `rearmReturns` | `syncWrites` |
+|---|---|---|---|
+| E (reference) | eager | true | false |
+| L | lazy | true | false |
+| E0 | eager | **false** | false |
+| L0 | lazy | **false** | false |
+| ES | eager | true | **true** |
+| LS | lazy | true | **true** |
+| E0S | eager | false | true |
+| L0S | lazy | false | true |
+
+Files: batch 6 (E, L, E0, L0, ES, LS) ran Timer `9ec91499…`, the round-2 code with default `schedule: "lazy"`. Batch 7
+ran the final files: Timer `811e9ea16871fea4fcf81d99d07b16768bdd9e25b9e86f8df33a02a66554fe58` and DMA
+`b2f0e261af6582c0c07f83f40d58de3b715a4875599e40a313302240a7e8626d`. The two timer files differ only in that default, and
+every variant run passes `schedule` explicitly.
+
+**First transfer** (the exact EN/end instants from the transfer line):
+
+| E, E0 | L, L0 | ES | LS |
+|---|---|---|---|
+| EN 6180670750, end 6180697224 | EN 6180645370, end 6180670746 | EN 6180671740, end 6180697224 | EN 6180671350, end 6180697224 |
+
+Lazy takes the CPU's EN write at the clock source's last report, which is 25.4 µs stale here. Eager's report is at most
+one update old. With `syncWrites` both take the CPU's own instant, and the bursts land on the same update instants as
+eager.
+
+**The isolation.** All runs are on dshot12; the comparison is every USART1/2/3 byte and stamp, the dma1/dma2/timer1
+access sequences (value, order, PC), the transfer lines (exact instants) and the end reads.
+
+| pair | what differs between them | result | file |
+|---|---|---|---|
+| E vs L | the whole gap | USART1/2 bytes equal, stamps differ from 6.186 s; USART3 4 bytes differ at 10.0036 s; dma2 from 6.1807 s; transfer lines 6,985 of 6,986 differ; end-read instruction count differs | `cmp-r2-E-L.txt` |
+| **(ii)** E vs E0 | re-arm return requests only (eager) | **identical**: every access, byte, stamp, transfer line and end read | `cmp-r2-E-E0.txt` |
+| (ii) E vs L0 | lazy without re-arm returns | still differs, same shape as E vs L | `cmp-r2-E-L0.txt` |
+| **(i)** E vs ES | write instant only (eager) | the firmware is identical (USART bytes and stamps, dma1, end reads); only the transfer lines' EN stamps and log stamps differ | `cmp-r2-E-ES.txt` |
+| (i) E vs LS | lazy with fresh write instants | still differs: dma2 from 6.188 s, USART3 4 bytes at 10.0 s, instruction count | `cmp-r2-E-LS.txt` |
+| (i) ES vs LS | stops and re-arm returns differ, write instant equal | still differs, as E vs LS | `cmp-r2-ES-LS.txt` |
+| **(iii)** E0S vs L0S | **only the stops**: no re-arm returns on either side, fresh write instants on both | **still differs**: dma1/dma2 from 6.188 s, USART1 4 bytes at 10.0036 s, USART2/3 stamps, transfer lines, instruction count | `cmp-r2-E0S-r2-L0S.txt` |
+
+**Findings.**
+- (ii) has no effect.
+- (i) is real. It sets the frame phase (the stale EN), and fixing it alone (`syncWrites`) does not close the gap.
+- (iii), the stops themselves, is what remains. With returns removed and write instants equal on both sides, a run that
+  stops the CPU at every update (680 kHz) and one that does not still run ArduPilot differently, from 6.188 s.
+- The mechanism inside Renode 1.17.0 is not identified. One observation: on arm12 (400 Hz, 1 µs ticks) the stops did not
+  move the firmware (round 1, `arm-eagerx` against `arm-lazyx`); at DShot's 1,471 ns they do.
+
+**None of the three closes the gap with a lazy timer, so per the ruling the hybrid is built and is the default.**
+
+### 7.4 The hybrid
+
+`schedule: "hybrid"` is the default. On dshot12 `UDE` is set from 6.1786 s and stays set, so from then on hybrid wakes at
+every limit. Before that it skips 49 50 Hz updates, as on arm12.
+
+| comparison | result | file |
+|---|---|---|
+| **hybrid vs eager (E, batch 6)**, dshot12 | **every USART1/2/3 byte and stamp equal; every transfer line equal (exact instants); timer1, dma1 and dma2 access sequences equal (value, order, PC); end reads equal, instruction count included.** Log stamps only: 3 dma1 + 2 dma2 at 5.28 s (−14.1 µs, the pre-`UDE` lazy stretch), 1 timer1 (−30 ns) | `cmp-r2-E-r2-final.txt` |
+| hybrid vs eager (batch 7, the same final file, `schedule: "eager"`) | as above, except 4 DMAR writes at 11.2802 s carry PC 0x8000EB0 in this eager run and 0x8000EDE in hybrid and E (same instant, same values), and each end read's instruction count differs by 6 | `cmp-r2-final-eager-r2-final.txt` |
+| eager (batch 6) vs eager (batch 7), same code but the default | the same 4 PCs and 6 instructions | `cmp-r2-E-r2-final-eager.txt` |
+| **hybrid vs stock on arm12** (`arm-r2-final-eq`, preload on) | **every access, USART byte and stamp, LED edge and stamp equal; end reads equal except CCMR1/CCMR2 0x6868 against 0x6060 (OCxPE read back)**. Log stamps: 8 timer1 + 12 + 12 DMA, as in round 1. Warnings: stock's 8 TIM1 "Unhandled write" lines against our 2 "write to unmodelled offset 0x54". `Stats`: 49 skipped updates, 0 violations | `cmp-r2-arm-stock-final.txt` |
+
+The second and third rows are a difference between two eager runs, and are not averaged away: the eager DShot run was
+not instruction-identical to itself across sessions. Hybrid matched one of the two eager runs exactly. Whether hybrid
+(or eager) DShot runs are deterministic at the instruction level under load is NOT established; it would need repeated
+runs.
+
+**Wall, final files** (`batch7.sh`, no extra logging; load in brackets):
+
+| | hybrid (default) | eager | lazy (batch 6, logged) | stock |
+|---|---|---|---|---|
+| dshot12 | **63.08 s** (23.9); 7.6 s/vs after 6 s | 62.24 s (19.0); 7.3 s/vs | 45.45 s (23.8) | 164.27 s (12.1, round 1) |
+| arm12 | **36.63 s** (17.3); 3.1 s/vs | 35.95 s (15.9) | — | 38.15 s (17.6, round 1) |
+
+The hybrid's DShot cost is 1.7× arm12 here (lazy was 1.1×), and 2.6× faster than stock. Arithmetic only: at 1.5-3.5×
+slower runners, dshot12 would take 95-221 s against the CLI's 120 s guard. Peak RSS 704-798 MB (the 150 MB compile cost of
+§5.1 is unchanged).
+
+### 7.5 What round 2 did NOT establish
+
+- **Why stops move the CPU at DShot rates** (the mechanism inside Renode; only the isolation is measured), and so whether
+  any lazy schedule could ever equal eager there.
+- **Determinism of eager/hybrid DShot runs at the instruction level**: one difference between two eager runs (§7.4).
+- **The hybrid's triggers.** It is eager for `UDE`, `CCxDE`, `UIE`, `CCxIE` as ruled. No run exercised `CCxDE`, `UIE` or
+  `CCxIE` on our timer: ArduPilot's TIM1 sets none of them.
+- **Generated boards** (by ruling, not tried). Nor were other timers retyped; `pacedRequests` is still "15".
+- **CI**: no run on a CI runner; the projection is arithmetic. No bound was raised or worked around.
+
+
+## 8. Round 3: replay determinism (INV-04), time-boxed
+
+The coordinator's finding: of two more hybrid dshot12 runs, one was byte-identical to `dshot-r2-final-q`. The other
+differed exactly as round 2's second eager run did: 4 DMAR-write PCs at 11.280174680 s, and 6 instructions in each end read.
+
+### 8.1 The neighbourhood of 11.280174680 s
+
+- **Input timeline** (`timeline-stepped.resc`, 8,320 `WriteChar` and 145 `Pressure` commands): nothing within 3 ms. The
+  nearest commands are `Pressure` at 11.2455 s and 11.3288 s, and `WriteChar` at 11.1563 s and 11.4000 s.
+- **Stepify probes** are at whole seconds (11.0 s, 12.0 s). The global quantum is 100 µs, so 11.280174680 s is 74.68 µs into
+  the quantum starting at 11.2801 s, not on a boundary.
+- **The DShot transfer.** ArduPilot's EN write is at 11.280170270 (CPU, in `send_pulses_DMAR`). Its bursts land at 171740,
+  173210 (CPU in `vt_enqueue`) and **174680**, the third update after EN. The transfer ends at 11.280196743. From 176150
+  the CPU is in `__idle_thread` (WFI, 0x810883C).
+- **What differs.** At 174680 the CPU is at **0x8000EDE `__port_exit_from_isr`** in one class of runs and at **0x8000EB0
+  `__port_switch`** in the other (`arm-none-eabi-addr2line` and `nm` on the capture's `firmware.elf`, in the ArduPilot
+  image). That is the same ChibiOS ISR-exit-to-context-switch path, a few instructions apart. The values, the instants and
+  every USART byte and stamp are equal; each end read differs by 6 instructions. Which ISR is exiting is not logged.
+- **Our events are on the CPU thread.** A diagnostic counter (`Stats: wakes_off_cpu_thread`, this round) was 0 of
+  4,069,483 wakes in `dshot-r3-diag`. None of our model's events ran on another thread.
+
+### 8.2 Repeat counts (identical = every access, USART byte and stamp, transfer line, end read; `tally.sh` over `compare.py`, outputs `~/.cache/aet-4412/proto/cmp-r3-*.txt`)
+
+Each run was compared against its class reference: `dshot-r2-final-q` for dshot12, `arm-r2-final-eq` for arm12,
+`dshot-stock-rep1` for stock dshot12. All runs used the round-2 DQ (or EQ) prehook. "Class" names the CPU PC at the
+11.280174680 s burst.
+
+| class | runs | identical to reference | divergent | where |
+|---|---|---|---|---|
+| hybrid dshot12, final files | ref + rep1-6 + `dshot-r3-diag` = 8 (rep1/rep2 are the coordinator's) | 6 (ref, rep2, rep3, rep4, rep5, diag; all 0x8000EDE) | **2 (rep1, rep6; 0x8000EB0)**. rep1 and rep6 are identical to each other | always the same burst: 11.280174680 s, 4 DMAR-write PCs; end reads 6 instructions apart; nothing else |
+| eager dshot12 (round 2) | 2 (`dshot-r2-E-q`, `dshot-r2-final-eager-q`) | 1 (0x8000EDE) | 1 (0x8000EB0) | the same burst |
+| hybrid with `rearmReturns: false` (`r3-H0`), dshot12 | 6 | 5 (0x8000EDE), each identical to the hybrid reference too | **1 (rep2; 0x8000EB0)** | the same burst |
+| hybrid arm12 | ref + rep1-2 = 3, + `arm-r3-H0-eq` | 4 of 4 | 0 | — |
+| stock dshot12 | 5 (rep1-5) | 5 of 5 | 0 | — |
+
+Every divergence across the 16 hybrid/eager dshot12 runs is the same binary choice at the same instant, between two
+outcomes that are each self-consistent. 4 of 16 took the 0x8000EB0 outcome.
+
+### 8.3 Cause
+
+**Not found.** Ruled out, each by measurement:
+- **An input-timeline pause/resume or monitor command near the instant.** None within 34 ms (§8.1). Step 3 of the ruling
+  (move the events) therefore had nothing to move.
+- **A quantum or stepify-probe boundary.** The instant is 74.68 µs into a quantum; probes are at whole seconds.
+- **Our events running on another thread.** `wakes_off_cpu_thread` = 0 (§8.1).
+- **Our re-arm's CPU-return requests.** Without them (`r3-H0`) the same bimodal divergence appears (1 in 6), and the
+  identical runs equal the hybrid reference byte for byte. So the requests change nothing and are not the cause.
+- **Our model's arithmetic.** Every value, instant, transfer line and USART byte and stamp is identical in both outcomes;
+  only the CPU's position at one event, a few instructions apart, differs.
+
+**What remains.** At that event the CPU is between `__port_exit_from_isr` and `__port_switch` (an ISR returning into a
+ChibiOS context switch). Which of the two it has reached is not reproducible run to run. The races left to suspect are in
+Renode (when a pending interrupt is taken relative to a clock event), but this is not shown. Stock arm12-class runs never
+diverged here (3/3 hybrid arm12 plus round 1's stock×2). The flip needs DShot-rate events, which only our paced path
+(hybrid/eager) and stock's 680 kHz timer produce. Stock dshot12 is 5 of 5 identical. That is weak evidence, not proof: at the 4-in-16 rate seen above, five identical runs would happen by chance about a third of the time.
+
+**Not established.**
+- Which ISR is exiting at 11.2801747 s.
+- Whether the race is Renode's or depends on host scheduling (CPU pinning, load).
+- Whether more stock dshot12 repeats would show it.
+
+A fix in our models was not found, so none was made. The only model change this round is the diagnostic counter
+`wakes_off_cpu_thread` in `Stats` (Timer `80b48a46…`, the file `dshot-r3-diag` ran).
+

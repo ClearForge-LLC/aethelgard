@@ -19,8 +19,10 @@
 // SxCR EN/TCIE/DIR/PINC/MINC/PSIZE/MSIZE (the rest stored as tags), SxNDTR, SxPAR, SxM0AR, SxFCR FTH/DMDIS.
 // Not modelled (both behaviours): HTIF, TEIF, FEIF, DMEIF, circular and double-buffer modes, PINCOS, bursts, priority.
 //
-// Log contract: one Noisy line per paced transfer that ends (items moved, requests served, the EN and end instants in
-// virtual ns; Renode's own log stamps are coarser than one DShot bit).
+// Log contract (ruling D-b): one Noisy line per paced transfer that ends, nothing per item or burst:
+//   "stream S req R NDTR N EN t0 end t1 reqs Q: w0 w1 ..." -- the stream, its DMAMUX request, NDTR at EN, the EN and end
+//   instants in virtual ns (Renode's own log stamps are coarser than one DShot bit), the requests served, then every item
+//   moved, in hex as read from memory; " (disabled, NDTR k)" before the colon when software ended it early.
 //
 using System;
 using System.Collections.Generic;
@@ -49,7 +51,8 @@ namespace Antmicro.Renode.Peripherals.DMA
             {
                 throw new Exceptions.ConstructionException("pacedRequests needs the dmamux that routes them");
             }
-            engine = new DmaEngine(machine.GetSystemBus(this));
+            sysbus = machine.GetSystemBus(this);
+            engine = new DmaEngine(sysbus);
             tcif = new IFlagRegisterField[Streams];
             streams = Enumerable.Range(0, Streams).Select(i => new Stream(this, i)).ToArray();
             Connections = Enumerable.Range(0, Streams).ToDictionary(i => i, i => (IGPIO)streams[i].IRQ);
@@ -162,6 +165,7 @@ namespace Antmicro.Renode.Peripherals.DMA
         private readonly int firstMuxChannel;
         private readonly HashSet<int> paced;
         private readonly DmaEngine engine;
+        private readonly IBusController sysbus;
         private readonly IFlagRegisterField[] tcif;
         private readonly Stream[] streams;
         private readonly DoubleWordRegisterCollection registers;
@@ -276,7 +280,7 @@ namespace Antmicro.Renode.Peripherals.DMA
                         {
                             // Disabled before the end [RM p.654, 15.3.16]: TCIF is set, NDTR keeps what is left.
                             parent.tcif[id].Value = true;
-                            End("disabled by software");
+                            End("disabled");
                         }
                     }
                     return;
@@ -291,6 +295,9 @@ namespace Antmicro.Renode.Peripherals.DMA
                     served = 0;
                     moved = 0;
                     enabledAt = parent.NowNs;
+                    startNdt = ndt.Value;
+                    request = parent.MuxRequest(id);
+                    words.Clear();
                     if(ndt.Value == 0)
                     {
                         parent.Log(LogLevel.Warning, "stream {0}: enabled with NDTR 0", id);
@@ -328,7 +335,7 @@ namespace Antmicro.Renode.Peripherals.DMA
                         en.Value = false; // cleared by hardware at the end [RM p.654]
                         parent.tcif[id].Value = true;
                         dataOffset = 0;
-                        End("NDTR 0");
+                        End(null);
                     }
                 }
                 finally
@@ -345,12 +352,28 @@ namespace Antmicro.Renode.Peripherals.DMA
                 ndt.Value -= 1;
                 dataOffset += (ulong)size;
                 moved++;
+                ulong item;
+                switch(msize.Value)
+                {
+                case DataSize.Byte:
+                    item = parent.sysbus.ReadByte(src);
+                    break;
+                case DataSize.HalfWord:
+                    item = parent.sysbus.ReadWord(src);
+                    break;
+                default:
+                    item = parent.sysbus.ReadDoubleWord(src);
+                    break;
+                }
+                words.Append(' ').Append(item.ToString("X"));
                 parent.engine.IssueCopy(new Request(src, dst, size, TypeOf(msize.Value), TypeOf(psize.Value), minc.Value, pinc.Value));
             }
 
             private void End(string why)
             {
-                parent.Log(LogLevel.Noisy, "stream {0} paced end ({1}): {2} items on {3} requests, NDTR {4}, TCIF; EN {5} ns, end {6} ns", id, why, moved, served, ndt.Value, enabledAt, parent.NowNs);
+                parent.Log(LogLevel.Noisy, "stream {0} req {1} NDTR {2} EN {3} end {4} reqs {5}{6}:{7}", id, request, startNdt, enabledAt, parent.NowNs, served,
+                    why == null ? "" : string.Format(" ({0}, NDTR {1})", why, ndt.Value), words.ToString());
+                words.Clear();
                 parent.UpdateInterrupts();
             }
 
@@ -446,7 +469,9 @@ namespace Antmicro.Renode.Peripherals.DMA
             private IValueRegisterField ndt, par, m0a;
             private ulong dataOffset;
             private bool pacedActive, level, serving;
-            private ulong served, moved, enabledAt;
+            private ulong served, moved, enabledAt, startNdt;
+            private int request;
+            private readonly System.Text.StringBuilder words = new System.Text.StringBuilder();
             private readonly AethelgardSTM32DMA parent;
             private readonly int id;
 
