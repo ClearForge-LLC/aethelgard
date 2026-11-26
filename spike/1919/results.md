@@ -25,7 +25,18 @@ Measured 2026-11-26, base `main` `649e81a8`, branch heads `f6ba23c0` (prediction
   - **The shards run the same probe** over many more `aethelgard`, Renode and Kani processes. Their test step averaged 9.7 min in 45743010585, against 9.8–10.4 min in the earlier runs (14.9 in 45709090931, which hung).
   - **The runners were slow before the probe started.** This run's `bench-package` (Sentinel-01, a 7763) took 11.8 min against 8.4–8.6 on the same CPU, and its build step, which runs before the probe starts, took 2.1 min against 1.6.
   - **On Furnace,** the old probe and this one each used 0.8 s of CPU per minute; this one added 0.08 s. That test saw only 70 processes and no Kani or `aethelgard` process, so it is the weaker evidence.
-- The architect's two re-runs of `4254a2a0` will add two more rows here.
+**The three runs of `4254a2a0`** (run 45743010585, attempts 1–3; `out/ci-45743010585*-gates.txt`), in seconds:
+
+| Attempt | CPU | Job min | `verify` | generation | `extract` | 26 prove gates | – CBMC | – the CLI's own | campaign |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | AMD EPYC 9V74 | 74.3 | 4,312 | 73 | 265 | 3,794 | 1,896 | 1,809 | 162 |
+| 2 | **Intel Xeon Platinum 8573C** | **76.2** | 4,400 | 72 | 531 | 3,632 | 1,746 | 1,803 | 148 |
+| 3 | AMD EPYC 9V74 | 71.6 | 4,158 | 71 | 258 | 3,651 | 1,781 | 1,785 | 158 |
+
+- **The slowest run measured is attempt 2, 76.2 min, on a Xeon 8573C.**
+- The CLI's own share of the prove gates was 1,785–1,809 s in every run: (G)'s target.
+- Attempt 2's `tools` job failed on the probe's self-test. Its cause and fix are in FEEDBACK §4. Every other job ran.
+- **Projected for the built head on attempt 2's runner:** 76.2 − 29.2 (G) − 11.5 ((X): extract 531 s, the campaign 148 s and `simulate` 10 s, beside the prove lane) ≈ **35.5 min**, plus contention on 4 vCPUs. The pushed head's own runs are in §6.
 
 ### 1.2 Inside `verify`, gate by gate (`tools/gates.py` on the probe's lines)
 
@@ -111,7 +122,7 @@ Furnace's `s03-1` passed every gate and all 26 prove gates. `--against-fab` then
 
 Rootless podman is not the initial user namespace. So the verdict line, and with it `verdict_sha256`, differs on Furnace by construction. **The committed package can be re-derived only where the uid boundary holds, which today means CI.** `1918` §6.1's Furnace run also differed in `MANIFEST.json` alone, which that work order read as its split's expected move. Under the same rootless podman it would have differed in any case [inferred: its uid fields were not compared]. This is recorded so that a Furnace `--against-fab` is not read as a moved package.
 
-### 1.5 The options: under 45 min on the slowest runner measured (74.3 min), every proof and gate kept
+### 1.5 The options: under 45 min on the slowest runner measured (74.3 min at the stop; 76.2 since), every proof and gate kept
 
 Projected from 45743010585's own parts. (G)'s per-gate CLI time in CI is taken as 2 s, against 0.83 s measured on 4 Furnace cores, where the whole-tree generation took 27.5 s against CI's 73.
 
