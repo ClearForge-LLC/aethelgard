@@ -274,3 +274,22 @@ fn the_modules_regulator_sits_in_the_modules_strip_turned_away() {
         .and_then(|a| a.arg(3).map(str::to_owned));
     assert_eq!(turn.as_deref(), Some("180"));
 }
+
+/// Adversarial F4: a module on the MCU's own rail owns no regulator, so the
+/// MCU's (U11, on the `sentinel-03-radio` fixture, whose module is on
+/// `VDD_3V3`) is placed with the board, below the module's strip, never in
+/// the module's group.
+#[test]
+fn a_module_on_the_mcus_rail_owns_no_regulator() {
+    let path = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-03-radio.json");
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let board = aethelgard_eda::schematic::placement(&spec, &solved, &table).unwrap();
+    let tree = strict::board(&board).unwrap();
+    let fps = footprints(&tree);
+    let at = |r: &str| fps.iter().find(|(x, ..)| x == r).unwrap().2;
+    let ((_, my), (_, uy)) = (at("U30"), at("U11"));
+    assert!(uy > my + 7_175_000, "U11 at y {uy}, U30 at y {my}");
+}

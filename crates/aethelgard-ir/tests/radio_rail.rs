@@ -231,3 +231,21 @@ fn an_after_on_a_pg_that_is_no_open_drain_or_already_holds_one_is_refused() {
     en["after"] = json!({"regulator": "U13", "pull_up": {"reference": "R33", "part": "CRCW0603_F_K", "ohms": 100000}, "source": "test: a second enable on U13's PG"});
     assert!(refused(&v, "ControlAfterInvalid").contains("already holds another enable"));
 }
+
+/// A deadlock through a supply (adversarial F1): U13 fed from `VDD_5V`
+/// (U10's), U10's EN after U11's PG, and U11's after U13's: U13 waits on
+/// U10, U10 on U11, U11 on U13, and none starts.
+#[test]
+fn an_after_that_waits_on_its_own_follower_through_a_supply_is_refused() {
+    let mut v = base();
+    regulator(&mut v, "U13")["input"] = json!("VDD_5V");
+    let en = control(&mut v, "U10", "EN");
+    en["strap"] = Value::Null;
+    en["after"] = json!({"regulator": "U11", "pull_up": {"reference": "R33", "part": "CRCW0603_F_K", "ohms": 100000}, "source": "test: a supply loop"});
+    regulator(&mut v, "U11")["controls"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|c| c["pin"] != "PG");
+    let e = refused(&v, "ControlAfterInvalid");
+    assert!(e.contains("loop of `after`s and supplies"), "{e}");
+}

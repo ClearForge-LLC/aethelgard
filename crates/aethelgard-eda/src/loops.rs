@@ -168,6 +168,18 @@ pub fn conditions(spec: &Specification) -> Vec<String> {
         "CLASSES: each declared class's width is not judged against the current it carries: no current-to-width source is held; a buck's SW net is laid at its output domain's class".to_owned(),
         "SILKSCREEN: each loop part's reference is on F.Fab, not the silkscreen".to_owned(),
     ];
+    // `AET-WO-4411`: the LMR33620's SNVSAW1E lists the same layout items
+    // (adversarial F12), cited where a regulator's row is from it
+    let snvsaw1e = aethelgard_ir::power_parts::table().is_ok_and(|t| {
+        p.regulators.iter().any(|r| {
+            matches!(t.get(&r.part).map(|row| &row.kind), Some(aethelgard_ir::power_parts::Kind::Buck(b)) if b.fsw_hz.at.document == "SNVSAW1E")
+        })
+    });
+    if snvsaw1e {
+        out.push(
+            "LAYOUT: SNVSAW1E p. 32, 10.1 lists the same items for the LMR33620 (items 1 to 9), each judged or not as SNVSAN3F's above".to_owned(),
+        );
+    }
     if spec.board.copper_layers == 2 {
         out.push(
             "LAYOUT: not met: SNVSAN3F p. 33, 10.1 item 5 asks for a ground plane on an inner layer; this board has two copper layers".to_owned(),

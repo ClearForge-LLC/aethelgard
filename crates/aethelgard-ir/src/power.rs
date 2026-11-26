@@ -1578,9 +1578,24 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
             "radio_power_down_order",
             &m.reference,
             format!(
-                "{}: `{}` and `{mcu_supply}` are not ordered at power-down: while the module's rail falls first, the MCU's TX may drive its RXD above VDD + {} mV ({}); the module's TX onto the MCU while `{mcu_supply}` is down is step 25's (`radio_module_tx`, at VDD = 0)",
+                "{}: `{}` and `{mcu_supply}` are not ordered at power-down{}: while the module's rail is down, the MCU's TX may drive its RXD above VDD + {} mV ({}); the module's TX onto the MCU while `{mcu_supply}` is down is step 25's (`radio_module_tx`, at VDD = 0)",
                 m.reference,
                 m.supply,
+                {
+                    // off-board ends that can power the MCU's rail ahead of
+                    // the module's (adversarial F3)
+                    let ends: Vec<&str> = spec
+                        .declared_connectors()
+                        .iter()
+                        .filter(|c| c.pins.iter().any(|p| p.net.as_deref() == Some(mcu_supply.as_str())))
+                        .map(|c| c.reference.as_str())
+                        .collect();
+                    if ends.is_empty() {
+                        String::new()
+                    } else {
+                        format!(", and {} carry `{mcu_supply}` from off the board, which can power it while the module's rail is down", ends.join(" and "))
+                    }
+                },
                 vih.value,
                 t.cite(&vih.at)
             ),
@@ -2496,6 +2511,13 @@ fn every_part(power: &Power) -> Vec<(&str, &str)> {
             r.external
                 .iter()
                 .map(|e| (e.reference.as_str(), e.part.as_str())),
+        );
+        // `AET-WO-4411` (iii): an enable's pull-up to the PG it follows
+        v.extend(
+            r.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref())
+                .map(|a| (a.pull_up.reference.as_str(), a.pull_up.part.as_str())),
         );
     }
     if let Some(x) = &power.input.protection {
@@ -3934,29 +3956,44 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
             }
         }
     }
-    // a loop of `after`s starts nothing
-    for start in claimed.keys() {
-        let mut at = *start;
-        for _ in 0..=claimed.len() {
-            let Some(next) = ctx
-                .power
-                .regulators
-                .iter()
-                .find(|g| g.reference == at)
-                .and_then(|g| g.controls.iter().find_map(|c| c.after.as_ref()))
-            else {
-                break;
+    // A loop starts nothing: a regulator waits on each regulator its
+    // `after` names and on the one that outputs its input, and none on a
+    // cycle of those ever starts (adversarial F1: a lead fed from its own
+    // follower's rail).
+    if !claimed.is_empty() {
+        let waits = |r: &str| -> Vec<&str> {
+            let Some(g) = ctx.power.regulators.iter().find(|g| g.reference == r) else {
+                return Vec::new();
             };
-            at = next.regulator.as_str();
-            if at == *start {
-                return Err(refuse(
-                    Refusal::ControlAfterInvalid,
-                    start,
-                    format!(
-                        "{start}'s enable waits on a loop of `after`s that comes back to it: none of them starts"
-                    ),
-                    "AET-WO-4411 (iii)",
-                ));
+            g.controls
+                .iter()
+                .filter_map(|c| c.after.as_ref().map(|a| a.regulator.as_str()))
+                .chain(
+                    ctx.power
+                        .regulators
+                        .iter()
+                        .filter(|s| s.output == g.input)
+                        .map(|s| s.reference.as_str()),
+                )
+                .collect()
+        };
+        for start in ctx.power.regulators.iter().map(|g| g.reference.as_str()) {
+            let mut seen = BTreeSet::new();
+            let mut todo = waits(start);
+            while let Some(at) = todo.pop() {
+                if at == start {
+                    return Err(refuse(
+                        Refusal::ControlAfterInvalid,
+                        start,
+                        format!(
+                            "{start}'s enable waits on a loop of `after`s and supplies that comes back to it: none of them starts"
+                        ),
+                        "AET-WO-4411 (iii)",
+                    ));
+                }
+                if seen.insert(at) {
+                    todo.extend(waits(at));
+                }
             }
         }
     }
@@ -4017,7 +4054,7 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         "control_after",
                         f,
                         format!(
-                            "{f}: its EN follows {reference}'s open-drain PG, pulled up to `{}`, so {f} starts only once {reference}'s PG releases, and stops whenever it pulls low ({}); the order at power-down is not set by it",
+                            "{f}: its EN follows {reference}'s open-drain PG, pulled up to `{}`, so {f} starts only once {reference}'s PG releases, and stops whenever it pulls low ({}); the order at power-down is not set by it, and the pull-up against PG's low level and EN's threshold is not judged",
                             ctx.power.regulators.iter().find(|g| &g.reference == reference).map_or("", |g| g.output.as_str()),
                             ctx.cite(&rule.at)
                         ),

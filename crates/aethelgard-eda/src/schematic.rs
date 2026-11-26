@@ -1151,7 +1151,7 @@ fn laddered(
                 .into_iter()
                 .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
                 .collect();
-            let areas: Vec<BuckCopper> = crate::pour::joined(&read.board, &read.routed, &pads)
+            let mut areas: Vec<BuckCopper> = crate::pour::joined(&read.board, &read.routed, &pads)
                 .into_iter()
                 .flat_map(|j| {
                     let n = need(&j.reference);
@@ -1161,6 +1161,13 @@ fn laddered(
                         .collect::<Vec<_>>()
                 })
                 .collect();
+            // a buck with no joined layer measured is short of all its
+            // copper, never passed (adversarial F6)
+            for (b, _) in &pads {
+                if !areas.iter().any(|(r, _, _, _)| r == b) {
+                    areas.push((b.clone(), "no joined layer".to_owned(), 0, need(b)));
+                }
+            }
             judged.push(Some((text, figures, areas)));
         }
         let short = |a: &[BuckCopper]| -> Vec<BuckCopper> {

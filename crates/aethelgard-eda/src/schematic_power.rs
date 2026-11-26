@@ -801,7 +801,9 @@ fn regulator(
                 .spec
                 .declared_radio_modules()
                 .iter()
-                .find(|m| m.supply == reg.output)
+                // a module on the MCU's own rail owns nothing: that
+                // regulator is the MCU's (adversarial F4)
+                .find(|m| m.supply == reg.output && m.supply != b.spec.mcu.supply)
                 .map(|m| m.reference.clone());
             let own = |b: &mut Builder<'_>, ic: &str| {
                 if let Some(p) = b.parts.last_mut() {
