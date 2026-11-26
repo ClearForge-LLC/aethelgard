@@ -1123,8 +1123,9 @@ fn uart_crossing(
         ended,
     )?;
     let number = numbers(&c.reference, r)?;
-    let tx_b = b.own_net(format!("{}_{}", c.reference, tx.output))?;
-    let rx_b = b.own_net(format!("{}_{}", c.reference, rx.input))?;
+    let (tx_b, rx_b) = aethelgard_ir::power::uart_b_nets(spec, &c.serial_port)
+        .ok_or_else(|| refuse(&c.reference, "no B-side nets for its port"))?;
+    let (tx_b, rx_b) = (b.own_net(tx_b)?, b.own_net(rx_b)?);
     conns.insert(number(&tx.input)?, Conn::Net(port.tx.net.clone()));
     conns.insert(number(&tx.output)?, Conn::Net(tx_b));
     conns.insert(number(&rx.input)?, Conn::Net(rx_b));

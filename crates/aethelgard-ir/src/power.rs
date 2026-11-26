@@ -1942,20 +1942,20 @@ fn radio_lines(
                 high_max: Some(lin(0, l.input_max_millivolts.value)),
                 current_na: l.input_current_max_nanoamps.value,
             };
-            let b_net = |pin: &str| format!("{}_{pin}", c.reference);
+            let (b_tx, b_rx) = b_nets(&c.reference, tx, rx);
+            ctx.note(format!(
+                "{}: every input it does not carry is tied to `GND` ({})",
+                c.reference,
+                ctx.cite(&tt.unused_inputs_at)
+            ));
             lines.push((
                 port.tx.net.clone(),
                 mcu_drv,
                 rcv(&tx.input, ms),
                 txu_cite.clone(),
             ));
-            lines.push((
-                b_net(&tx.output),
-                drv(&tx.output, rs),
-                module_rcv,
-                module_cite,
-            ));
-            lines.push((b_net(&rx.input), module_drv, rcv(&rx.input, rs), txu_cite));
+            lines.push((b_tx.clone(), drv(&tx.output, rs), module_rcv, module_cite));
+            lines.push((b_rx, module_drv, rcv(&rx.input, rs), txu_cite));
             lines.push((port.rx.net.clone(), drv(&rx.output, ms), mcu_rcv, mcu_cite));
             ctx.note(format!(
                 "{}: `radio_power_down_order` and `radio_rail_ioff` are closed by {}: each of its outputs is powered from its receiver's own rail, and its Ioff rows hold either side at 0 V (SCES935A p. 8, 7.5; 9.3.4)",
@@ -1966,7 +1966,7 @@ fn radio_lines(
                 &c.reference,
                 format!(
                     "{}: SCES935A 9.3.5 holds its outputs high-impedance while a supply is under 100 mV with the other in its operating range (1.08 V at least, 7.3); between 100 mV and 1.08 V it states nothing; it recommends inputs low before a supply floats, and a UART idles high; while it isolates, `{}` and `{}` are driven by nothing",
-                    c.reference, port.rx.net, format_args!("{}_{}", c.reference, tx.output)
+                    c.reference, port.rx.net, b_tx
                 ),
             );
             ctx.screen(
@@ -2004,7 +2004,7 @@ fn radio_lines(
                 "uart_internal_pulls",
                 &c.reference,
                 format!(
-                    "{}: its output levels are stated at 0.1 mA ({}), so neither the MCU's {} nor {}'s RXD may enable an internal pull-up (the MCU's RPU is 30 kOhm at least, DS12117 Table 49: over 0.1 mA at 3.0 V); the firmware's",
+                    "{}: its output levels are stated at 0.1 mA ({}); the MCU's {} is written FLOATING by the generated hwdef (its pull off), and {}'s RXD pull-up is its firmware's, not judged: on, it draws over 0.1 mA (RPU 45 kOhm typical, no minimum, WROOM-02 Table 6-3)",
                     c.reference,
                     ctx.cite(&l.output_load_max_microamps.at),
                     at(&port.rx.pin),
@@ -2060,10 +2060,28 @@ pub fn uart_b_nets(spec: &Specification, port: &str) -> Option<(String, String)>
         return None;
     };
     let [tx, rx] = t.uart_channels()?;
-    Some((
-        format!("{}_{}", c.reference, tx.output),
-        format!("{}_{}", c.reference, rx.input),
-    ))
+    Some(b_nets(&c.reference, tx, rx))
+}
+
+/// A UART crossing's two B-side net names, from its TX and RX channels.
+fn b_nets(reference: &str, tx: &pp::Channel, rx: &pp::Channel) -> (String, String) {
+    (
+        format!("{reference}_{}", tx.output),
+        format!("{reference}_{}", rx.input),
+    )
+}
+
+/// The nets a radio module's UART pads sit on, `(TXD, RXD)`: through a UART
+/// crossing on `port`, its B side's ([`uart_b_nets`]); else the port's RX
+/// and TX (`AET-WO-4411` (c1)).
+pub fn module_uart_nets(
+    spec: &Specification,
+    port: &crate::serial::SerialPort,
+) -> (String, String) {
+    match uart_b_nets(spec, &port.label) {
+        Some((tx_b, rx_b)) => (rx_b, tx_b),
+        None => (port.rx.net.clone(), port.tx.net.clone()),
+    }
 }
 
 /// The supply row a translator joining `a` to `b` is judged by

@@ -20,8 +20,8 @@ use power_table::{assert_power, refused, row, spec, table_json};
 /// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
 /// `AET-WO-4411`: the LMR33620ADDA row and SNVSAW1E; (c1) the TXU0304PW's
 /// timing as `supplies` with its VCCB = 3.3 V row (UART only), its `levels`
-/// and `unused_inputs_at`, and the MCU's Table 50 `output`.
-const TABLE_SHA256: &str = "f82d00e8e156d09874a1d0c4f252b7658f531261d1a7d5c9649de2d60615b86e";
+/// and `unused_inputs_at`, and the MCU's Table 50 `output` (schema 13).
+const TABLE_SHA256: &str = "e1ceebd55718d5cf0e136d8fb14beaf96afb178b443b834778322b68c98351a1";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));

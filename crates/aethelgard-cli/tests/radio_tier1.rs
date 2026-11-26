@@ -348,3 +348,23 @@ fn a_uart_crossing_names_its_b_side_lines_unbounded() {
     v["power"].as_object_mut().unwrap().remove("uart_crossings");
     assert!(!lines(&serde_json::from_value(v).unwrap()));
 }
+
+/// U31's two bypasses are loop parts the gate judges (`AET-WO-4411` (c1)):
+/// C93 on its VCCA pin (1) and C94 on its VCCB pin (14), at the translator
+/// bypass rule, as an SPI crossing's.
+#[test]
+fn the_crossings_bypasses_are_judged_loops() {
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+    let solved = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+    let rules = aethelgard_eda::loops::rules(&spec, &solved, &table).unwrap();
+    for (part, pin) in [("C93", "1"), ("C94", "14")] {
+        let r = rules
+            .iter()
+            .find(|r| r.part == part)
+            .unwrap_or_else(|| panic!("{part} is no loop rule"));
+        assert_eq!(r.ic, "U31", "{part}");
+        assert!(r.pads.iter().any(|(_, p)| p == pin), "{part}: {:?}", r.pads);
+    }
+}

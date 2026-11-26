@@ -465,12 +465,6 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
     // Through a UART crossing it drives only the translator's B side, and
     // the translator's A side, on `mcu.supply`, drives the RX (`AET-WO-4411`
     // (c1)): no path from another rail.
-    let crossed = |port: &str| {
-        spec.power
-            .iter()
-            .flat_map(|p| &p.uart_crossings)
-            .any(|c| c.serial_port == port)
-    };
     for (i, m) in spec.declared_radio_modules().iter().enumerate() {
         let (Some(port), Some(d)) = (
             spec.serial_ports.iter().find(|p| p.label == m.serial_port),
@@ -479,7 +473,7 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
             continue;
         };
         if m.supply == spec.mcu.supply
-            || crossed(&port.label)
+            || crate::power::uart_b_nets(spec, &port.label).is_some()
             || !w.mcu_nets.contains(port.rx.net.as_str())
         {
             continue;

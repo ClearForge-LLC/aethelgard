@@ -41,8 +41,11 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// range a declared motor pull-down is held inside (`AET-WO-4300i`, D0).
 /// Version 10 replaced that with `motor_pull_bound`, the inputs the motor
 /// pull-down's bound is computed from per board (`AET-WO-4300j` D3 (a)), and
-/// added the `jumper` kind, the pull's series link (D4).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 12;
+/// added the `jumper` kind, the pull's series link (D4). Version 13 moved a
+/// translator's timing into `supplies`, one row per supply pair with its
+/// `uart_only`, and gave it `levels` and `unused_inputs_at`, and gave the MCU
+/// row's `io` its `output` levels (`AET-WO-4411` (c1)).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 13;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -93,7 +93,7 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
   - **Step 25:** the module's TX now ends at U31's B4 on its own rail, and A4Y drives `WIFI_RX` from `VDD_3V3`. So no path reaches the MCU from another rail, and `radio_module_tx` is no longer a path on Sentinel-03. Without U31 it is judged as before (planted).
 - **Rows it names, acknowledged:**
   - `translator_supply_drop:U31`: U31's pins are taken at each rail's drop limit, and the gate measures the rails at their loads.
-  - `uart_internal_pulls:U31`: the 0.1 mA rows need U1's PG9 and U30's RXD internal pull-ups off, since U1's RPU of at least 30 kΩ draws over 0.1 mA. That is the firmware's to keep.
+  - `uart_internal_pulls:U31`: the 0.1 mA rows need both receivers' internal pull-ups off. U1's PG9 is written `FLOATING` by the generated hwdef. U30's RXD pull-up is its firmware's, not judged.
   - `radio_output_load:U30`: Table 6-3 states VOH and VOL at a high-impedance load, and U31's B4 draws 2 µA.
   - `translator_partial_power:U31`: 9.3.5 states isolation under 100 mV only. Between 100 mV and 1.08 V it states nothing, and it recommends inputs low before a supply floats, while a UART idles high. While U31 isolates, `WIFI_RX` and `U31_B1Y` are driven by nothing.
   - `translator_threshold_inferred:U31` and `translator_rate_inferred:U31` (G1, G2).
@@ -112,6 +112,7 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
 | Capacitance ladder | rung 7, bounded via cost 320, bounded nets first, nearest EXT_SDA at 84,703 of 100,000 fF |
 | Pour ladder | **step 1** (squares at 1.0 x each buck's need) |
 | `extract` | verdict pass, no finding |
+| `check drc --spec` (tier 2) | pass. `drc.power` judges 33 loop rules: the 31 before, plus C93 and C94 at U31's VCCA and VCCB pins (`radio_tier1`'s `the_crossings_bypasses_are_judged_loops`). `drc.radio` checks U30's pads on `U31_B4` and `U31_B1Y`. The raw DRC is as `board_tier2` holds it |
 | Tier 2 (`board_tier2`, in the image) | Sentinel-03 passes every gate inside its bound (ERC, DRC, `check drc --spec`, extract), and the radio fixture and its planted boards pass (850 s) |
 | Battery input current | 1906 mA (1869 before the module); J4's fault 14,100 mA |
 | UART lines (four, through U31) | high 388.0-733.4 mV, low 498.3-810.4 mV; under U30's VDD + 0.3 V by 156.0 mV |
@@ -177,7 +178,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
 - **Why it is kept:** it is the pricing's design, so a block's own SW, FB, VCC and BOOT tracks are never pushed off F.Cu. It is named here.
 - **Not planted:** the ladder's treatment of a buck with no measured layer (adversarial F6). No board reaches that case.
 - **Earlier phases:** 40 mutants of the radio rules and placement, 39 killed. M23 (references distinct) survived, named in §9.
-- **(c1): 31 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, and `radio_tier1` for the emitter's and the loops'.
+- **(c1): 32 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, and `radio_tier1` for the emitter's and the loops'.
   - **The level judge (C01-C05):** high, low, the receiver's maximum, the stated load, and the one-rail corner model.
   - **The crossing's shape (C06-C11):** no module on the port, twice on a port, no B-to-A channel, the rails, TMAX, and the levels' supply window.
   - **The off-domain gate (C12)** and the closed rows (C13).
@@ -187,6 +188,9 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
     - the screens: the firmware's pulls, U30's load, U31's drop, partial power-down, the inferred thresholds and TMAX;
     - the uncounted translator, the `after` and wired-OE refusals, the loops' LINES condition, and the readers' order and empty-supplies checks.
   - C01 was re-run by hand to confirm its kill, by `each_line_level_through_the_translator_is_judged_at_its_receivers_pin`.
+  - **`drc.radio` on the crossing's nets (C17):** killed in the image by `board_tier2`'s Sentinel-03 test (`RadioUartMiswired`, U30 pad 12 on `U31_B4`).
+  - **C12 and C16 were re-run after the reduction** moved their code into `uart_b_nets` and `module_uart_nets`. Both are killed.
+  - **C19** (`RadioRailUnsequenced`'s reason, which reads differently with a crossing) is wording, not a guard, so it was not planted.
 
 ## 7. Adversarial pass
 
@@ -222,6 +226,9 @@ The pass ran as a fresh read-only review of 3a35be0f..7cde17de, with the WO's §
   - **(6)** `translator_supply_not_counted` scanned SPI crossings only. A UART crossing no load names is now screened (planted).
   - **(7)** The radio row's UART levels were not checked in order. Now they are (`RadioTableMalformed`, planted).
   - **(9)** U31's load source said 250 nA for U1's RX. It is 350 nA, the row's.
+- **The close-out review found one more, now fixed.** "PUPDR is 0" had not been checked. ArduPilot's `chibios_hwdef.py` gives every UART TX and RX pin PULLUP unless its hwdef line names another pull. Aethelgard's hwdef writes every serial-port pin `PUSHPULL FLOATING` (`aethelgard-hwdef`'s UART lines). Sentinel-03's generated hwdef has `PG9 USART6_RX USART6 SPEED_VERYLOW PUSHPULL FLOATING`, so U1's side is a generated fact.
+  - `uart_internal_pulls:U31` now names only U30's RXD pull-up: the module's firmware, not judged.
+  - Its earlier "over 0.1 mA at 3.0 V" was wrong (3.0 V over 30 kΩ is exactly 0.1 mA), and it is gone.
 - **Sent for a ruling:**
   - **(4)** The 3.3 V row would have admitted a 3.3 V SPI crossing. Ruled S1: UART only, now `uart_only`.
   - **(5)** The drop limit is taken wholly on the VDD side. Ruled S2, a row (§9).
@@ -244,8 +251,20 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
   - the router's step-0 default under its ratio: now an `if let`.
 - **Mechanism and copies merged:** the radio group's three hand-rolled anchor predicates now use `anchored_to`; the six SNVSAN3F `*_RULE` consts are inlined into their one use; one snap closure; the radio table read once.
 - **Added with the pass, for the gap it found:** an `after` on a crossing's control is refused.
-- **(c1), diff-sized:** −45 lines in `schematic_power.rs`. The SPI and UART crossing drawers now share `sides` (supplies, ground, controls), `numbers` (pin numbers by name) and `bypasses`, in the same call order: `sentinel-02-power`'s board is byte-identical. One B-net lookup, `power::uart_b_nets`, serves the emitter's radio drawing, `own_nets` and `drc.radio`.
-  - **Finding, not acted on:** the UART crossing's value checks repeat the SPI loop's common ones. Merging them would reorder an SPI crossing's first refusal (`bus` sits between `part` and the domains).
+- **(c1), diff-sized:** a fresh read-only pass over 081a463b..HEAD (crates only, main's merge excluded). Reduction pass (diff): 4 duplicates removed · 1 dead path removed · 0 protected kept · 4 findings below.
+  - **Removed while writing (c1), before the pass:** the UART drawer's copy of the SPI drawer. The two now share `sides` (supplies, ground, controls), `numbers` (pin numbers by name) and `bypasses`, in the SPI drawer's call order, and `sentinel-02-power`'s board is byte-identical. (No line count: the unshared drawer was never committed.)
+  - **Duplicates removed:**
+    - the module's UART nets: one `power::module_uart_nets` for the emitter and `drc.radio`;
+    - the B-side net names: one `b_nets`, behind `uart_b_nets`, `own_nets` and the line judge;
+    - the off-domain gate's own scan for a crossing: now `uart_b_nets`;
+    - the translator's power-row reader: one `Supplies` list for both crossings.
+  - **Dead path removed:** `radio_lines`' refusal for a crossing with no two channels, which `uart_crossings_shape` refuses first.
+  - **Field put to use:** `Translator::unused_inputs_at` was read nowhere. It now cites the GND tie in a condition.
+  - **Findings, not acted on:**
+    - `radio_lines` re-reads the translator row that the shape pass judged;
+    - `levels::corners` could be an array;
+    - `UartCrossing` and `Crossing` copy six fields into `TranslatorUse`. Merging them changes the input's JSON shape;
+    - the UART crossing's value checks repeat the SPI loop's common ones. Merging them reorders an SPI crossing's first refusal.
 - **Findings, not acted on:**
   - 4300k's MinusY-to-180 turn mapping is written twice (`items`, `place_connectors`);
   - the joined doc comments above `rank_apart`;
@@ -262,6 +281,7 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 - **Q-R (ruled 06:25Z (a), a row): the placer is not monotone at the outline bound.** Removing a test point stops size 1 fitting 100 x 100 on all nine seeds: least-over 88.450 x 100.100 mm without Q_TP14, and 88.950 x 100.250 without Q_TP28.
   - The two are pinned exactly in `outline_tier1`'s removal sweep, so a third still fails.
   - A refused placement writes no board, so which part moves is not seen without a build. A placer work order takes it.
+- **The `sentinel-03-radio` fixture** (the module on U1's own rail, wired directly) now produces `radio_output_load:U30`, which its acknowledgements do not name. No test packages it; a package of it would need the entry.
 - **Size sample 2** no longer places whole (least-over 89.900 x 100.350 mm) and leaves the sweep's variants, by the size-6 precedent. Size 6 is now 100.600 x 103.100, and size 8 104.850 x 105.500.
 - **U11 follows U13's PG** (`control_after:U11`): U1's rail drops whenever U13's PG pulls low, for example on an out-of-window output, current limit or thermal shutdown (SNVSAW1E p. 11).
 - **The module rail's supply bound is 216 mOhm,** U13 being about 36 mm from pin 1. That passes at 122.2 of 144 mV. A rule that holds the block nearer pin 1 is a refinement, not needed today.
@@ -285,13 +305,16 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 ## 10. Gates
 
-On bd42ea94 (8057a3da with main 649e81a8 merged):
+On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, then the close-out fixes and reduction):
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- **`cargo test --workspace`: 3260 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
+- **`cargo test --workspace`: 3261 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
 - **The CI guards:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass.
-- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0):
-  - `board_tier2`: Sentinel-03, the radio fixture and its planted boards pass (850 s, on 8057a3da's tree before the merge, which touched none of their code).
-  - `twin_tier2`'s battery-sag campaign on bd42ea94: Sentinel-03's scenarios meet every expectation, replay and repeat, with the sag point at 7,928,264 µV (325 s).
-- **Mutants:** 31 of 31 killed, §6.
-- **INV-08:** §5.
+- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0), on the final code:
+  - `board_tier2`: Sentinel-03 passes every gate inside its bound, and the radio fixture and its planted boards pass (840 s).
+  - `twin_tier2`: Sentinel-03's battery-sag campaign meets every expectation, replays and repeats, with the sag point at 7,928,264 µV (388 s).
+- **Mutants:** 32 of 32 (c1) mutants killed, §6.
+- **INV-08 and identities, with the final binary:**
+  - the 25 boards are byte-identical against 3a35be0f's outputs, and the 16 refusals keep their kinds;
+  - `sentinel-03-radio` is byte-identical against 081a463b;
+  - Sentinel-03's board is the same bytes as the board §2 measured.

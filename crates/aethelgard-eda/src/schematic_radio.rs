@@ -48,10 +48,7 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
             .ok_or_else(|| not_drawable(r, format!("no serial port `{}`", m.serial_port)))?;
         // through a UART crossing, on its B side's nets, which the power
         // tree drew and claimed (`AET-WO-4411` (c1))
-        let (txd, rxd) = match aethelgard_ir::power::uart_b_nets(spec, &port.label) {
-            Some((tx_b, rx_b)) => (rx_b, tx_b),
-            None => (port.rx.net.clone(), port.tx.net.clone()),
-        };
+        let (txd, rxd) = aethelgard_ir::power::module_uart_nets(spec, port);
         let supply = b.rail(&m.supply);
         let gnd = b.ground();
         let en = b.own_net(radio::enable_net(r))?;

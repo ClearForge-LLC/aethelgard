@@ -2995,7 +2995,7 @@
     },
     {
       "id": "uart_internal_pulls:U31",
-      "reason": "U31's outputs are judged at their 0.1 mA rows; the firmware leaves the internal pull-ups off on U1's PG9 (USART6 RX) and U30's GPIO20 (U0RXD), each a receiver of a driven line"
+      "reason": "U1's PG9 is written FLOATING by the generated hwdef; U30's firmware leaves GPIO20 (U0RXD) with its internal pull-up off, so U31's outputs stay at their 0.1 mA rows"
     },
     {
       "id": "translator_partial_power:U31",
