@@ -1494,6 +1494,9 @@ fn power_gate(
 /// The board crate `generate` writes for the specification in `file`, its
 /// paths relative to the crate, and the specification's lifecycle banner;
 /// every refusal as a `Stop`, with `solve`'s and `generate`'s kinds and codes.
+/// The crate is generated alone ([`aethelgard_cli::generate::board_tree`]):
+/// the schematic and the routed board are neither drawn nor judged here
+/// (`AET-WO-1919` (1) (G)).
 type GeneratedBoard = (std::collections::BTreeMap<String, String>, Vec<String>);
 
 fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
@@ -1522,8 +1525,8 @@ fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
     })?;
     let topology = aethelgard_ir::solve(&spec, &table, &sha256)
         .map_err(|err| invalid(err.kind(), err.id(), err.to_string()))?;
-    let files =
-        aethelgard_cli::generate::tree(&spec, &topology, &table).map_err(|err| run::Stop {
+    let files = aethelgard_cli::generate::board_tree(&spec, &topology, &table).map_err(|err| {
+        run::Stop {
             code: if err.internal() {
                 EXIT_INTERNAL
             } else {
@@ -1532,7 +1535,8 @@ fn generated_board(file: &Path) -> Result<GeneratedBoard, run::Stop> {
             kind: err.kind(),
             id: err.id().map(str::to_owned),
             message: err.to_string(),
-        })?;
+        }
+    })?;
     Ok((
         tree::subtree(&files, &format!("{}/", aethelgard_cli::generate::BOARD_DIR)),
         spec.lifecycle_banner().unwrap_or_default(),

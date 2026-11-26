@@ -19,6 +19,10 @@ start is the seconds from the probe's own start to the process's first sighting:
   PROBE peak harness=<name> vmhwm_kib=<n> seconds=<s> start=<s>
   PROBE boot seconds=<s> start=<s> comm=<c> argv=<first 300 chars>
   PROBE gate seconds=<s> start=<s> argv=<first 300 chars>
+and at the stop, once (AET-WO-1919 (X), the two lanes' memory side by side):
+  PROBE combined peak_rss_kib=<n> at=<s>   the highest sum, at one poll, of every watched process's
+                                           VmRSS (each kani-driver, cbmc, Renode and gate)
+  PROBE host peak_used_kib=<n> at=<s>      the highest MemTotal - MemAvailable the probe saw
 It stops when the file STOP exists. ci/ceiling.sh judges the peaks against ci/kani-ceiling.
 Stdlib only; run with python3 -I.
 
@@ -44,7 +48,7 @@ def status(pid):
     out = {}
     for line in text.decode(errors="replace").splitlines():
         k, _, v = line.partition(":")
-        if k == "VmHWM":
+        if k in ("VmHWM", "VmRSS"):
             out[k] = v.strip()
     return out
 
@@ -58,6 +62,14 @@ def main():
     out, stop = sys.argv[1:3]
     live = {}  # pid -> [kind, label, first_seen, vmhwm_kib]
     origin = time.monotonic()
+    combined, host = [0, 0.0], [0, 0.0]
+
+    def host_used():
+        info = {}
+        for line in (read("/proc/meminfo") or b"").decode(errors="replace").splitlines():
+            k, _, v = line.partition(":")
+            info[k] = v.split()[0] if v.split() else "0"
+        return int(info.get("MemTotal", 0)) - int(info.get("MemAvailable", 0))
 
     def emit(log, pid, now):
         kind, label, first, hwm = live.pop(pid)
@@ -77,6 +89,7 @@ def main():
             stopping = os.path.exists(stop)
             now = time.monotonic()
             seen = set()
+            rss = 0
             for name in os.listdir("/proc"):
                 if not name.isdigit():
                     continue
@@ -89,6 +102,7 @@ def main():
                     continue
                 seen.add(pid)
                 hwm = int(st.get("VmHWM", "0 kB").split()[0] or 0)
+                rss_now = int(st.get("VmRSS", "0 kB").split()[0] or 0)
                 if pid not in live:
                     a = argv(pid)
                     if comm == "kani-driver":
@@ -108,11 +122,19 @@ def main():
                     else:
                         live[pid] = ["boot", f"comm={comm} argv={' '.join(a)[:300]}", now, hwm]
                 live[pid][3] = max(live[pid][3], hwm)
+                rss += rss_now
+            if rss > combined[0]:
+                combined[:] = [rss, now - origin]
+            used = host_used()
+            if used > host[0]:
+                host[:] = [used, now - origin]
             # A process gone is written; at the stop, so is every one still
             # alive, so nothing measured is dropped.
             for pid in [p for p in live if stopping or p not in seen]:
                 emit(log, pid, now)
             if stopping:
+                log.write(f"PROBE combined peak_rss_kib={combined[0]} at={combined[1]:.1f}\n")
+                log.write(f"PROBE host peak_used_kib={host[0]} at={host[1]:.1f}\n")
                 break
             time.sleep(0.2)
 

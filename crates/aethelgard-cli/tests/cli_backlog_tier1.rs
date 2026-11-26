@@ -377,6 +377,169 @@ fn the_prove_verdict_carries_the_banner_of_its_spec() {
     }
 }
 
+/// `AET-WO-1919` (1) (G), ruled at its stop: `prove --spec` generates the
+/// crate alone. A specification whose board cannot be routed (a 250 µm
+/// clearance, which the LQFP-144's pad gaps break, as `stackups_tier1`
+/// plants) but whose crate generates is refused by `generate` and by
+/// `verify`, before any tool, and `prove --spec` judges its crate
+/// `generated`: routing is not what `prove` judges. Until (G) it was refused
+/// `Unroutable`. `generate` writes no crate for it, so the crate is written
+/// here from the library's `generate::board_tree`; the crate carries the
+/// specification's sha256, so no other crate would be `generated`.
+#[test]
+fn prove_spec_judges_the_crate_of_a_specification_whose_board_does_not_route() {
+    let dir = Scratch::new(&format!("1919-c250-{}", next()));
+    let mut v: Value = serde_json::from_slice(&fs::read(spec(NRND)).unwrap()).unwrap();
+    v["board"]["rules"]["clearance_um"] = Value::from(250);
+    let c250 = dir.0.join("c250.json");
+    fs::write(&c250, serde_json::to_vec(&v).unwrap()).unwrap();
+    let c250 = c250.to_str().unwrap();
+    let out = dir.0.join("gen");
+    let (code, g) = run(
+        &["generate", "--spec", c250, "--out", out.to_str().unwrap()],
+        None,
+        &[],
+    );
+    assert_eq!(
+        (code, &g["error"]["kind"]),
+        (2, &Value::from("Unroutable")),
+        "{g}"
+    );
+    let (code, g) = run(&["verify", "--spec", c250], None, &[]);
+    assert_eq!(
+        (code, &g["error"]["kind"]),
+        (2, &Value::from("Unroutable")),
+        "{g}"
+    );
+    let bytes = fs::read(c250).unwrap();
+    let parsed: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
+    let table = aethelgard_svd_hal::pin_table(&parsed.mcu.part).unwrap();
+    let sha = <sha2::Sha256 as sha2::Digest>::digest(&bytes)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let topology = aethelgard_ir::solve(&parsed, &table, &sha).unwrap();
+    let crate_dir = dir.0.join("crate");
+    let files = aethelgard_cli::generate::board_tree(&parsed, &topology, &table).unwrap();
+    for (path, text) in &files {
+        let rel = path
+            .strip_prefix(&format!("{}/", aethelgard_cli::generate::BOARD_DIR))
+            .unwrap();
+        let to = crate_dir.join(rel);
+        fs::create_dir_all(to.parent().unwrap()).unwrap();
+        fs::write(&to, text).unwrap();
+    }
+    let board = crate_dir.to_str().unwrap().to_owned();
+    let proofs = fs::read_to_string(crate_dir.join("src/proofs.rs")).unwrap();
+    let harness = aethelgard_first_harness(&proofs);
+    let tb = toolbox();
+    kani(&tb.0);
+    let homes = Scratch::new(&format!("1919-homes-{}", next()));
+    let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
+    fs::create_dir(&k).unwrap();
+    fs::create_dir(&r).unwrap();
+    let vars = [("KANI_HOME", k.as_path()), ("RUSTUP_HOME", r.as_path())];
+    let (code, p) = run(
+        &[
+            "prove",
+            "--crate",
+            &board,
+            "--harness",
+            &harness,
+            "--spec",
+            c250,
+        ],
+        Some(&tb.0),
+        &vars,
+    );
+    assert_eq!(code, 0, "{p}");
+    assert_eq!(p["harness_provenance"], "generated", "{p}");
+}
+
+/// A `cargo` for `verify`'s two lanes (`AET-WO-1919` (1) (X)): `cargo kani`
+/// runs `prove`, as [`kani`]'s does, then `prove`; `cargo build` runs
+/// `build`; each version question is answered.
+fn lanes_cargo(tb: &Path, prove: &str, build: &str) {
+    stub::write_executable(
+        &tb.join("cargo"),
+        format!(
+            r#"#!/bin/sh
+if [ "$1" = kani ] && [ "$2" = --version ]; then echo 'Kani Rust Verifier 0.68.0 (cargo plugin)'; exit 0; fi
+if [ "$1" = --version ]; then echo 'cargo 1.99.1 (58cf8f9c3 2026-10-13)'; exit 0; fi
+if [ "$1" = kani ]; then
+  prev=; h=
+  for a in "$@"; do
+    if [ "$prev" = --harness ]; then h=$a; fi
+    prev=$a
+  done
+  {prove}
+  printf 'Checking harness %s...\nVERIFICATION:- SUCCESSFUL\nComplete - 1 successfully verified harnesses, 0 failures, 1 total.\n' "$h"
+  exit 0
+fi
+if [ "$1" = build ]; then {build}; fi
+exit 99
+"#
+        ),
+    );
+    stub::write_executable(&tb.join("cargo-kani"), "#!/bin/sh\nexit 0\n");
+}
+
+/// `verify` with the stand-in `cargo` of [`lanes_cargo`], on a board not
+/// drawn, so its gates are the prove lane and `build`'s lane: its exit code,
+/// its one line, and how long it took.
+fn lanes_verify(prove: &str, build: &str) -> (i32, Value, std::time::Duration) {
+    let tb = toolbox();
+    lanes_cargo(&tb.0, prove, build);
+    let homes = Scratch::new(&format!("1919-lanes-{}", next()));
+    let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
+    fs::create_dir(&k).unwrap();
+    fs::create_dir(&r).unwrap();
+    let vars = [("KANI_HOME", k.as_path()), ("RUSTUP_HOME", r.as_path())];
+    let start = std::time::Instant::now();
+    let (code, v) = run(&["verify", "--spec", &spec(NO_BOARD)], Some(&tb.0), &vars);
+    (code, v, start.elapsed())
+}
+
+/// `AET-WO-1919` (1) (X), ruled: two gates refuse in different lanes, `build`
+/// at once and the first prove gate after 3 s. `build` finished first, but
+/// the prove gate comes first in today's order, so its refusal is the one
+/// reported, and the only line printed.
+#[test]
+fn of_two_refusals_in_two_lanes_the_earlier_in_today_s_order_is_reported() {
+    let (code, v, _) = lanes_verify("/bin/sleep 3; exit 7", "exit 7");
+    assert_eq!(code, 5, "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(m.starts_with("gate `prove`: "), "{v}");
+}
+
+/// `AET-WO-1919` (1) (X), ruled: the lanes run beside each other. Each
+/// prove gate takes 1 s and passes. First `build` refuses at once: `verify`
+/// reports it when the prove lane is done, P s in. Then `build` takes P s
+/// before it refuses. One after another that run would take 2P; side by side
+/// it takes about P. Measured against this host's own P, so a slow runner
+/// slows both. `build`'s refusal, the first in today's order once every
+/// prove gate passed, is reported both times.
+#[test]
+fn the_prove_lane_and_build_s_lane_run_beside_each_other() {
+    let build_refused = |v: &Value| {
+        let m = v["error"]["message"].as_str().unwrap();
+        assert!(m.starts_with("gate `build`: "), "{v}");
+    };
+    let (code, v, p) = lanes_verify("/bin/sleep 1", "exit 7");
+    assert_eq!(code, 5, "{v}");
+    build_refused(&v);
+    let secs = p.as_secs().max(4);
+    let (code, v, took) = lanes_verify("/bin/sleep 1", &format!("/bin/sleep {secs}; exit 7"));
+    assert_eq!(code, 5, "{v}");
+    build_refused(&v);
+    eprintln!("ANSWER 1919 lanes: the prove lane {p:?}; with build {secs} s beside it {took:?}");
+    assert!(
+        took.as_secs_f64() < 1.5 * p.as_secs_f64().max(4.0),
+        "P {p:?}, took {took:?}"
+    );
+}
+
 /// The first `#[kani::proof]` harness of a generated `proofs.rs`, by path.
 fn aethelgard_first_harness(proofs: &str) -> String {
     let mut armed = false;

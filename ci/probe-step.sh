@@ -18,7 +18,7 @@ case ${1:-} in
     df -h /; free -g
     # Every line but the peaks, which ceiling.sh prints: each Renode run, each gate and each
     # compile, with its wall time (AET-WO-1919).
-    grep -E '^PROBE (boot|gate|compile) ' "$log" || true
+    grep -E '^PROBE (boot|gate|compile|combined|host) ' "$log" || true
     # Each harness's wall time and peak, by name (AET-WO-1919).
     grep '^PROBE peak ' "$log" || true
     cat "$err" 2>/dev/null || true

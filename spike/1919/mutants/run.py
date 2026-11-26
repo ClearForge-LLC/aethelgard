@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AET-WO-1919: one mutant per guard this work order adds, each against the test that should kill it.
+"""AET-WO-1919: one mutant per guard (Rust; the probe's two, in ci/test-ceiling.sh, are recorded in out.txt) this work order adds, each against the test that should kill it.
 Each mutant is applied to a copy of its file, the test run, the file restored and touched (cargo keys
 on mtime: a restored file keeps an old one). Run from the repository root, under a capped scope.
 usage: run.py [NAME...]"""
@@ -39,6 +39,18 @@ M = [
      ["--test", "boot_tier1", "--", "an_input_with_no_frame_is_refused_by_its_field_and_in_replay", "--exact"]),
     ("empty-replay", CLI + "renode/foreign.rs", "    frames_present(&f)?;\n    if f.port != label {", "    if f.port != label {",
      ["--test", "boot_tier1", "--", "an_input_with_no_frame_is_refused_by_its_field_and_in_replay", "--exact"]),
+    ("g-whole-tree", CLI + "main.rs", "aethelgard_cli::generate::board_tree(&spec, &topology, &table)", "aethelgard_cli::generate::tree(&spec, &topology, &table)",
+     ["--test", "cli_backlog_tier1", "--", "prove_spec_judges_the_crate_of_a_specification_whose_board_does_not_route", "--exact"]),
+    ("g-board-tree-drops-the-platform", CLI + "generate.rs", '    for (path, text) in board_files(project, topology, table)? {\n        files.insert(', '    for (path, text) in board_files(project, topology, table)? {\n        if path.ends_with(".repl") {\n            continue;\n        }\n        files.insert(',
+     ["--lib", "--", "generate::tests::board_tree_is_tree_s_board", "--exact"]),
+    ("x-lane-reports-its-refusal", CLI + "verify.rs",
+     "            let out = run_gate(&args);\n",
+     "            let out = run_gate(&args);\n            if let Ok(o) = &out {\n                if !matches!(o.status.code(), Some(0 | 1)) {\n                    use std::io::Write;\n                    let _ = std::io::stdout().write_all(&o.stdout);\n                }\n            }\n",
+     ["--test", "cli_backlog_tier1", "--", "of_two_refusals_in_two_lanes_the_earlier_in_today_s_order_is_reported", "--exact"]),
+    ("x-no-lanes", CLI + "verify.rs", "    start_lanes(p, want, expected);\n", "",
+     ["--test", "cli_backlog_tier1", "--", "the_prove_lane_and_build_s_lane_run_beside_each_other", "--exact"]),
+    ("doctor-unbounded", CLI + "doctor.rs", "        ran_renode(invocation(", "        ran(invocation(",
+     ["--test", "doctor_tier1", "--", "a_renode_that_never_says_its_version_is_killed_at_the_hang_guard", "--exact"]),
 ]
 only = set(sys.argv[1:])
 bad = 0

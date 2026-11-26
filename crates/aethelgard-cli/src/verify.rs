@@ -529,34 +529,134 @@ impl Ran {
     }
 }
 
-/// Runs this binary's own subcommand `args` and reads its lines. A gate that
-/// refuses (any code but 0 or 1) stops `verify` with the gate's own refusal
-/// and exit code (`INV-06`).
-fn gate(name: &str, args: Vec<OsString>) -> Result<Ran, ExitCode> {
-    let exe = std::env::current_exe().map_err(|e| {
-        refuse(
-            "ToolError",
-            Some("aethelgard"),
-            format!("cannot find this binary to run gate `{name}`: {e}"),
-            EXIT_TOOL_ERROR,
-        )
-    })?;
+/// Why a gate's process did not run.
+enum Unrun {
+    /// This binary could not be found.
+    Exe(std::io::Error),
+    /// It could not be started or waited for.
+    Spawn(std::io::Error),
+}
+
+/// Runs this binary's own subcommand `args` to its end, its stdout and
+/// stderr captured whole: nothing is judged or printed here.
+fn run_gate(args: &[OsString]) -> Raw {
+    let exe = std::env::current_exe().map_err(Unrun::Exe)?;
     // The gate dies with this process (`run::PARENT_PID_VAR`), and its tool
     // with it, through the gate's own reaper.
-    let out = Command::new(exe)
-        .args(&args)
+    Command::new(exe)
+        .args(args)
         .env(run::PARENT_PID_VAR, std::process::id().to_string())
         .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
         .output()
-        .map_err(|e| {
-            refuse(
+        .map_err(Unrun::Spawn)
+}
+
+/// The gates run ahead of their turn (`AET-WO-1919` (1) (X), ruled): two
+/// lanes, the prove gates in one and `extract`, `build`, `simulate` and the
+/// campaign in the other, each run to its end and kept whole, keyed by its
+/// argv. Nothing a lane runs is judged or printed until [`gate`] takes it,
+/// in today's order, so the report, every binding and the first refusal are
+/// today's whatever finishes first, and no two gates' output interleaves.
+/// A gate's process as it ended, or why it did not run.
+type Raw = Result<std::process::Output, Unrun>;
+
+struct Prefetch {
+    /// Each planned run's argv, and its end once the lane has it.
+    entries: std::sync::Mutex<Vec<(Vec<OsString>, Option<Raw>)>>,
+    done: std::sync::Condvar,
+}
+
+static PREFETCH: Prefetch = Prefetch {
+    entries: std::sync::Mutex::new(Vec::new()),
+    done: std::sync::Condvar::new(),
+};
+
+impl Prefetch {
+    /// Names `args` as a lane's next run, before it starts, so [`gate`]
+    /// waits for it rather than running it a second time.
+    fn plan(&self, args: &[OsString]) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        e.push((args.to_vec(), None));
+    }
+
+    /// `args`'s result, then `next` planned in the same step, so [`gate`]
+    /// never finds a gap between a lane's two runs.
+    fn finish(&self, args: &[OsString], out: Raw, next: Option<&[OsString]>) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(slot) = e.iter_mut().find(|(a, r)| a == args && r.is_none()) {
+            slot.1 = Some(out);
+        }
+        if let Some(n) = next {
+            e.push((n.to_vec(), None));
+        }
+        drop(e);
+        self.done.notify_all();
+    }
+
+    /// The run of `args` a lane planned, waited for; `None` if no lane
+    /// planned it, and [`gate`] runs it now.
+    fn take(&self, args: &[OsString]) -> Option<Raw> {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            let i = e.iter().position(|(a, _)| a == args)?;
+            if e[i].1.is_some() {
+                return e.remove(i).1;
+            }
+            e = self.done.wait(e).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+}
+
+/// Runs one lane: each gate in turn, `next` deciding from what a gate
+/// printed whether the lane runs another, and which.
+fn lane(
+    first: Vec<OsString>,
+    mut next: impl FnMut(&std::process::Output) -> Option<Vec<OsString>> + Send + 'static,
+) {
+    PREFETCH.plan(&first);
+    std::thread::spawn(move || {
+        let mut args = first;
+        loop {
+            let out = run_gate(&args);
+            let then = match &out {
+                Ok(o) if matches!(o.status.code(), Some(0 | 1)) => next(o),
+                _ => None,
+            };
+            PREFETCH.finish(&args, out, then.as_deref());
+            match then {
+                Some(a) => args = a,
+                None => return,
+            }
+        }
+    });
+}
+
+/// Runs this binary's own subcommand `args`, or takes the run a lane made of
+/// it, and reads its lines. Its stderr is written whole, here, in the gates'
+/// order. A gate that refuses (any code but 0 or 1) stops `verify` with the
+/// gate's own refusal and exit code (`INV-06`).
+fn gate(name: &str, args: Vec<OsString>) -> Result<Ran, ExitCode> {
+    let out = PREFETCH
+        .take(&args)
+        .unwrap_or_else(|| run_gate(&args))
+        .map_err(|e| match e {
+            Unrun::Exe(e) => refuse(
+                "ToolError",
+                Some("aethelgard"),
+                format!("cannot find this binary to run gate `{name}`: {e}"),
+                EXIT_TOOL_ERROR,
+            ),
+            Unrun::Spawn(e) => refuse(
                 "ToolError",
                 Some("aethelgard"),
                 format!("cannot run gate `{name}`: {e}"),
                 EXIT_TOOL_ERROR,
-            )
+            ),
         })?;
+    {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(&out.stderr);
+    }
     let Some(code) = out.status.code() else {
         return Err(refuse(
             "ToolError",
@@ -2558,16 +2658,109 @@ fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
     items.iter().map(|i| (**i).as_ref().to_owned()).collect()
 }
 
+fn extract_args(p: &Paths) -> Vec<OsString> {
+    args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec])
+}
+
+fn prove_args(p: &Paths, harness: &str) -> Vec<OsString> {
+    let h = OsString::from(harness);
+    args(&[
+        &"prove",
+        &"--crate",
+        &p.board,
+        &"--harness",
+        &h,
+        &"--spec",
+        &p.spec,
+    ])
+}
+
+fn build_args(p: &Paths) -> Vec<OsString> {
+    args(&[&"build", &"--crate", &p.board, &"--out", &p.elf])
+}
+
+fn simulate_args(p: &Paths, want: &Want<'_>) -> Vec<OsString> {
+    args(&[
+        &"simulate",
+        &"--platform",
+        &p.repl,
+        &"--firmware",
+        &p.elf,
+        &"--spec",
+        &p.spec,
+        &"--for",
+        &want.boot_time,
+    ])
+}
+
+fn campaign_args(p: &Paths, expected: &[Expected]) -> Vec<OsString> {
+    let mut a = vec![OsString::from("campaign"), OsString::from("--scenarios")];
+    a.extend(expected.iter().map(|e| e.path.clone().into_os_string()));
+    a.extend([
+        OsString::from("--firmware"),
+        p.elf.clone(),
+        OsString::from("--archive"),
+        p.archive.clone(),
+    ]);
+    a
+}
+
+/// The ELF a `build` gate's line names, when it passed: what `simulate` and
+/// the campaign need.
+fn built_elf(code: i32, last: &Value) -> Option<String> {
+    last["elf"]["sha256"]
+        .as_str()
+        .map(str::to_owned)
+        .filter(|_| code == 0)
+}
+
+/// Starts the two lanes ([`Prefetch`]): the prove gates in [`gate`]'s
+/// order, and beside them `extract` (on a drawn board), `build`, then
+/// `simulate` when `build` wrote an ELF, then the campaign when there are
+/// scenarios. A lane stops at a gate that refuses; whatever it did not run,
+/// [`gate`] runs in its turn.
+fn start_lanes(p: &Paths, want: &Want<'_>, expected: &[Expected]) {
+    let mut proves: std::collections::VecDeque<Vec<OsString>> =
+        want.harnesses.iter().map(|h| prove_args(p, h)).collect();
+    if let Some(first) = proves.pop_front() {
+        lane(first, move |_| proves.pop_front());
+    }
+    let (build, simulate) = (build_args(p), simulate_args(p, want));
+    let campaign = (!expected.is_empty()).then(|| campaign_args(p, expected));
+    let first = if want.drawn {
+        extract_args(p)
+    } else {
+        build.clone()
+    };
+    lane(first, move |o| {
+        let line = String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .last()
+            .and_then(|l| serde_json::from_str::<Value>(l).ok())
+            .unwrap_or(Value::Null);
+        let code = o.status.code().unwrap_or(-1);
+        match line["check"].as_str() {
+            Some("extract") => Some(build.clone()),
+            Some("build") => built_elf(code, &line).map(|_| simulate.clone()),
+            Some("simulate") => campaign.clone(),
+            _ => None,
+        }
+    });
+}
+
 /// ERC, DRC with parity, `extract`, `prove` of every harness, `build`,
-/// `simulate --firmware` and the campaign, in that order, each bound to the
-/// generated hashes. A refusal or a binding mismatch stops the run. On a
-/// board not drawn, each of [`BOARD_GATES`] is `not_applicable` instead.
+/// `simulate --firmware` and the campaign, judged in that order, each bound
+/// to the generated hashes. A refusal or a binding mismatch stops the run. On
+/// a board not drawn, each of [`BOARD_GATES`] is `not_applicable` instead.
+/// The prove gates and the gates beside them run in two lanes
+/// ([`start_lanes`]); only their judging is in order.
 fn run_gates(
     report: &mut Report,
     p: &Paths,
     want: &Want<'_>,
     expected: &[Expected],
 ) -> Result<(), ExitCode> {
+    start_lanes(p, want, expected);
     if want.drawn {
         board_gates(report, p, want)?;
     } else {
@@ -2625,10 +2818,7 @@ fn board_gates(report: &mut Report, p: &Paths, want: &Want<'_>) -> Result<(), Ex
     });
     report.gates.push(gate_report("support", None, &support));
 
-    let extract = gate(
-        "extract",
-        args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec]),
-    )?;
+    let extract = gate("extract", extract_args(p))?;
     bound("extract", &extract, want, "", "")?;
     // `extract` runs no external tool, so its verdict has no `sandbox` and no
     // uid boundary to report: null, never a value it did not measure.
@@ -2667,33 +2857,18 @@ fn proof_and_boot_gates(
         no_harness(&mut report.findings, &mut report.gates);
     }
     for harness in &want.harnesses {
-        let h = OsString::from(harness);
-        let ran = gate(
-            "prove",
-            args(&[
-                &"prove",
-                &"--crate",
-                &p.board,
-                &"--harness",
-                &h,
-                &"--spec",
-                &p.spec,
-            ]),
-        )?;
+        let ran = gate("prove", prove_args(p, harness))?;
         bound("prove", &ran, want, "", harness)?;
         report
             .gates
             .push(gate_report("prove", Some(harness.clone()), &ran));
     }
 
-    let built = gate(
-        "build",
-        args(&[&"build", &"--crate", &p.board, &"--out", &p.elf]),
-    )?;
+    let built = gate("build", build_args(p))?;
     bound("build", &built, want, "", "")?;
-    let elf = built.last()["elf"]["sha256"].as_str().map(str::to_owned);
+    let elf = built_elf(built.code, built.last());
     report.gates.push(gate_report("build", None, &built));
-    let Some(elf) = elf.filter(|_| built.code == 0) else {
+    let Some(elf) = elf else {
         report.gates.push(not_reached("simulate", NO_ELF));
         if !expected.is_empty() {
             report.gates.push(not_reached("campaign", NO_ELF));
@@ -2702,20 +2877,7 @@ fn proof_and_boot_gates(
     };
     report.elf_sha256 = Some(elf.clone());
 
-    let sim = gate(
-        "simulate",
-        args(&[
-            &"simulate",
-            &"--platform",
-            &p.repl,
-            &"--firmware",
-            &p.elf,
-            &"--spec",
-            &p.spec,
-            &"--for",
-            &want.boot_time,
-        ]),
-    )?;
+    let sim = gate("simulate", simulate_args(p, want))?;
     bound("simulate", &sim, want, &elf, "")?;
     report.gates.push(gate_report("simulate", None, &sim));
     report.gates.extend(pin_gates(&sim, &want.bridges));
@@ -2723,15 +2885,7 @@ fn proof_and_boot_gates(
     if expected.is_empty() {
         return Ok(());
     }
-    let mut a = vec![OsString::from("campaign"), OsString::from("--scenarios")];
-    a.extend(expected.iter().map(|e| e.path.clone().into_os_string()));
-    a.extend([
-        OsString::from("--firmware"),
-        p.elf.clone(),
-        OsString::from("--archive"),
-        p.archive.clone(),
-    ]);
-    let ran = gate("campaign", a)?;
+    let ran = gate("campaign", campaign_args(p, expected))?;
     let firmware = campaign::sha(&elf).map_err(|m| {
         refuse(
             "ToolError",
