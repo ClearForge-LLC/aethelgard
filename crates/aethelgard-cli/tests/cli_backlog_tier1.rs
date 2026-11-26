@@ -540,23 +540,30 @@ fn the_prove_lane_and_build_s_lane_run_beside_each_other() {
     );
 }
 
-/// Every live process whose environment names `dir` (this test's toolbox, on
-/// its `PATH`): the gates, their reapers and the stand-ins they run, by
-/// command line.
-fn processes_naming(dir: &Path) -> Vec<String> {
-    let needle = dir.as_os_str().as_encoded_bytes();
+/// Every live process of one call, by its command line, which names the
+/// toolbox (a stand-in `/bin/sh <toolbox>/cargo …`), the call's scratch (a
+/// gate, a reaper, a gate's guardian) or a stand-in's own `marker` (its
+/// `/bin/sleep`). The command line, not the environment: as root the CLI
+/// runs each tool under another uid, which leaves it undumpable, and a
+/// container's root has no `CAP_SYS_PTRACE` to read its environment (CI run
+/// 45784116105; measured in the pinned image). The guardian of the call
+/// itself (`--cli-pid <verify>`) is left out: it outlives `verify` to remove
+/// the scratch, by design.
+fn processes_of(toolbox: &Path, scratch: &Path, marker: &str, verify: u32) -> Vec<String> {
+    let own_guardian = format!("--aethelgard-internal-guard --cli-pid {verify} ");
     let mut found = Vec::new();
     for entry in fs::read_dir("/proc").unwrap().flatten() {
         let pid = entry.file_name();
         if !pid.to_string_lossy().bytes().all(|b| b.is_ascii_digit()) {
             continue;
         }
-        let Ok(env) = fs::read(entry.path().join("environ")) else {
-            continue;
-        };
-        if env.windows(needle.len()).any(|w| w == needle) {
-            let cmd = fs::read(entry.path().join("cmdline")).unwrap_or_default();
-            found.push(String::from_utf8_lossy(&cmd).replace('\0', " "));
+        let cmd = fs::read(entry.path().join("cmdline")).unwrap_or_default();
+        let cmd = String::from_utf8_lossy(&cmd).replace('\0', " ");
+        let names = |p: &Path| cmd.contains(p.to_str().unwrap());
+        if (names(toolbox) || names(scratch) || cmd.contains(marker))
+            && !cmd.contains(&own_guardian)
+        {
+            found.push(cmd);
         }
     }
     found
@@ -590,7 +597,13 @@ fn listing(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file() {
     let tb = toolbox();
-    lanes_cargo(&tb.0, "/bin/sleep 2; exit 7", "/bin/sleep 30.1919; exit 7");
+    // A stand-in's sleep, unique to this run, so no other process names it.
+    let marker = format!("30.{}{}", std::process::id(), next());
+    lanes_cargo(
+        &tb.0,
+        "/bin/sleep 2; exit 7",
+        &format!("/bin/sleep {marker}; exit 7"),
+    );
     let homes = Scratch::new(&format!("1919-orphans-{}", next()));
     let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
     fs::create_dir(&k).unwrap();
@@ -610,10 +623,11 @@ fn a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file() {
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
+    let verify = child.id();
     let start = std::time::Instant::now();
-    while !processes_naming(&tb.0)
+    while !processes_of(&tb.0, &tmp.0, &marker, verify)
         .iter()
-        .any(|c| c.contains("30.1919"))
+        .any(|c| c.contains(&format!("/bin/sleep {marker}")))
     {
         assert!(start.elapsed().as_secs() < 20, "build's lane never started");
         std::thread::sleep(std::time::Duration::from_millis(50));
@@ -631,7 +645,7 @@ fn a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file() {
         "{v}"
     );
     let exited = std::time::Instant::now();
-    let left = processes_naming(&tb.0);
+    let left = processes_of(&tb.0, &tmp.0, &marker, verify);
     let scanned = exited.elapsed();
     eprintln!("ANSWER 1919 scanned {scanned:?} after verify exited: {left:?}");
     assert!(
@@ -659,11 +673,9 @@ fn a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file() {
 #[test]
 fn a_verify_killed_outright_leaves_no_lane_gate() {
     let tb = toolbox();
-    lanes_cargo(
-        &tb.0,
-        "/bin/sleep 30.1919; exit 7",
-        "/bin/sleep 30.1919; exit 7",
-    );
+    let marker = format!("30.{}{}", std::process::id(), next());
+    let sleep = format!("/bin/sleep {marker}; exit 7");
+    lanes_cargo(&tb.0, &sleep, &sleep);
     let homes = Scratch::new(&format!("1919-killed-{}", next()));
     let (k, r) = (homes.0.join("kani"), homes.0.join("rustup"));
     fs::create_dir(&k).unwrap();
@@ -683,11 +695,12 @@ fn a_verify_killed_outright_leaves_no_lane_gate() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
+    let verify = child.id();
     let start = std::time::Instant::now();
     // Both lanes' stand-ins running.
-    while processes_naming(&tb.0)
+    while processes_of(&tb.0, &tmp.0, &marker, verify)
         .iter()
-        .filter(|c| c.contains("30.1919"))
+        .filter(|c| c.contains(&format!("/bin/sleep {marker}")))
         .count()
         < 2
     {
@@ -697,10 +710,10 @@ fn a_verify_killed_outright_leaves_no_lane_gate() {
     child.kill().unwrap();
     child.wait().unwrap();
     let killed = std::time::Instant::now();
-    let mut left = processes_naming(&tb.0);
+    let mut left = processes_of(&tb.0, &tmp.0, &marker, verify);
     while !left.is_empty() && killed.elapsed().as_secs() < 10 {
         std::thread::sleep(std::time::Duration::from_millis(50));
-        left = processes_naming(&tb.0);
+        left = processes_of(&tb.0, &tmp.0, &marker, verify);
     }
     eprintln!(
         "ANSWER 1919 killed verify: lanes gone {:?} after",

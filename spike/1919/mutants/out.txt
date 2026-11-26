@@ -24,3 +24,7 @@ MUTANT x-no-end-recheck: killed (exit 101, 182 s); restored, the test passes (17
 # The probe's own, in ci/test-ceiling.sh (by hand, sed then restore):
 MUTANT probe-internal-not-skipped (the `--aethelgard-internal` skip removed): killed ("FAIL the internal reaper was timed as a gate")
 MUTANT probe-combined-unsummed (`rss += rss_now` removed): killed ("FAIL no combined or host peak: combined=0")
+# After the 08:49Z finding (the two lane-process tests read the command line, not the environment), re-run:
+MUTANT x-gate-outlives-verify: killed (exit 101, 12 s)
+MUTANT x-lanes-not-stopped: killed (exit 101, 6 s)
+MUTANT x-gate-guardians-killed: killed (exit 101, 6 s)
