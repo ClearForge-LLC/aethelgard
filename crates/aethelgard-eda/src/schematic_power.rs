@@ -400,6 +400,9 @@ pub(crate) fn draw(
     for c in &p.crossings {
         crossing(b, c, spi, behind, ended)?;
     }
+    for c in &p.uart_crossings {
+        uart_crossing(b, c, ended)?;
+    }
     for s in &p.sense {
         let pin = solved
             .power
@@ -934,26 +937,20 @@ fn crossing(
     let b_nets = behind
         .get(&device.reference)
         .ok_or_else(|| EmitError::Internal(format!("{}: no B-side nets", c.reference)))?;
-    let a = b.rail(&c.a_domain);
-    let bside = b.rail(&c.b_domain);
-    let g = b.ground();
-    let mut conns = BTreeMap::new();
-    for (role, conn) in [
-        ("VCCA", a.clone()),
-        ("VCCB", bside.clone()),
-        ("GND", g.clone()),
-    ] {
-        conns.insert(pin(&c.reference, r, role)?, conn);
-    }
-    let tied = controls(b, &c.reference, r, &c.controls, ended, |s| match s {
-        Strap::Vcca => Some(a.clone()),
-        Strap::Vccb => Some(bside.clone()),
-        Strap::Open => Some(Conn::NoConnect),
-        Strap::Input => None,
-    })?;
-    for (role, conn) in tied {
-        conns.insert(pin(&c.reference, r, &role)?, conn);
-    }
+    let Sides {
+        a,
+        b: bside,
+        g,
+        mut conns,
+    } = sides(
+        b,
+        &c.reference,
+        r,
+        &c.a_domain,
+        &c.b_domain,
+        &c.controls,
+        ended,
+    )?;
     let a_net = |line: Line| match line {
         Line::Sck => bus.sck.net.clone(),
         Line::Mosi => bus.mosi.net.clone(),
@@ -968,14 +965,7 @@ fn crossing(
             c.reference, c.part
         )));
     };
-    let sym = crate::library::symbol(r.symbol.as_str())?;
-    let pins = super::pins(&sym).map_err(EmitError::Internal)?;
-    let number = |name: &str| {
-        pins.iter()
-            .find(|p| p.name == name)
-            .map(|p| p.number.clone())
-            .ok_or_else(|| refuse(&c.reference, format!("`{}` has no pin `{name}`", c.part)))
-    };
+    let number = numbers(&c.reference, r)?;
     for (line, b_name) in lines(&c.reference, &c.part)? {
         let ch = t
             .channels
@@ -996,8 +986,81 @@ fn crossing(
         a.clone(),
         Conn::Net(device.cs.net.clone()),
     )?;
-    let (vcca, vccb) = (pin(&c.reference, r, "VCCA")?, pin(&c.reference, r, "VCCB")?);
-    for e in &c.external {
+    bypasses(b, &c.reference, r, &c.external, &a, &bside, &g)
+}
+
+/// A translator's supplies, ground and control pins, both crossings alike.
+struct Sides {
+    a: Conn,
+    b: Conn,
+    g: Conn,
+    conns: BTreeMap<String, Conn>,
+}
+
+fn sides(
+    b: &mut Builder<'_>,
+    reference: &str,
+    r: &Row,
+    a_domain: &str,
+    b_domain: &str,
+    declared: &[aethelgard_ir::power::Control],
+    ended: &BTreeSet<String>,
+) -> Result<Sides, EmitError> {
+    let a = b.rail(a_domain);
+    let bside = b.rail(b_domain);
+    let g = b.ground();
+    let mut conns = BTreeMap::new();
+    for (role, conn) in [
+        ("VCCA", a.clone()),
+        ("VCCB", bside.clone()),
+        ("GND", g.clone()),
+    ] {
+        conns.insert(pin(reference, r, role)?, conn);
+    }
+    let tied = controls(b, reference, r, declared, ended, |s| match s {
+        Strap::Vcca => Some(a.clone()),
+        Strap::Vccb => Some(bside.clone()),
+        Strap::Open => Some(Conn::NoConnect),
+        Strap::Input => None,
+    })?;
+    for (role, conn) in tied {
+        conns.insert(pin(reference, r, &role)?, conn);
+    }
+    Ok(Sides {
+        a,
+        b: bside,
+        g,
+        conns,
+    })
+}
+
+/// A translator symbol's pin number by name.
+fn numbers<'r>(
+    reference: &'r str,
+    r: &'r Row,
+) -> Result<impl Fn(&str) -> Result<String, EmitError> + 'r, EmitError> {
+    let sym = crate::library::symbol(r.symbol.as_str())?;
+    let pins = super::pins(&sym).map_err(EmitError::Internal)?;
+    Ok(move |name: &str| {
+        pins.iter()
+            .find(|p| p.name == name)
+            .map(|p| p.number.clone())
+            .ok_or_else(|| refuse(reference, format!("`{}` has no pin `{name}`", r.part)))
+    })
+}
+
+/// Each bypass on its side's supply, anchored to that supply's pin.
+fn bypasses(
+    b: &mut Builder<'_>,
+    reference: &str,
+    r: &Row,
+    external: &[aethelgard_ir::power::External],
+    a: &Conn,
+    bside: &Conn,
+    g: &Conn,
+) -> Result<(), EmitError> {
+    let (vcca, vccb) = (pin(reference, r, "VCCA")?, pin(reference, r, "VCCB")?);
+    for e in external {
         let (rail, at) = match e.role {
             Role::BypassA => (a.clone(), &vcca),
             Role::BypassB => (bside.clone(), &vccb),
@@ -1009,9 +1072,69 @@ fn crossing(
             }
         };
         capacitor(b, &e.reference, &e.part, rail, g.clone())?;
-        anchor(b, &c.reference, &[("1", at)], NEAR_NM, BYPASS_RULE);
+        anchor(b, reference, &[("1", at)], NEAR_NM, BYPASS_RULE);
     }
     Ok(())
+}
+
+/// A UART crossing (`AET-WO-4411` (c1), ruled 2026-11-26T04:03Z): the
+/// port's TX into side A's first A-to-B input and its RX from side A's first
+/// B-to-A output; the B side on the translator's own nets, which
+/// `schematic_radio` puts the module's RXD and TXD on. Every other channel's
+/// input is tied to `GND` (no input floats) and its output left unconnected.
+fn uart_crossing(
+    b: &mut Builder<'_>,
+    c: &aethelgard_ir::power::UartCrossing,
+    ended: &BTreeSet<String>,
+) -> Result<(), EmitError> {
+    let spec = b.spec;
+    let r = row(&c.reference, &c.part)?;
+    // belt-and-suspenders: `validate` refuses both (`CrossingInvalid`); a
+    // library caller that draws without it is refused here.
+    let port = spec
+        .serial_ports
+        .iter()
+        .find(|x| x.label == c.serial_port)
+        .ok_or_else(|| refuse(&c.reference, format!("no serial port `{}`", c.serial_port)))?;
+    let Kind::Translator(t) = &r.kind else {
+        return Err(refuse(
+            &c.reference,
+            format!("`{}` is not a translator", c.part),
+        ));
+    };
+    let [tx, rx] = t.uart_channels().ok_or_else(|| {
+        refuse(
+            &c.reference,
+            format!("`{}` has no A-to-B and B-to-A channel", c.part),
+        )
+    })?;
+    let Sides {
+        a,
+        b: bside,
+        g,
+        mut conns,
+    } = sides(
+        b,
+        &c.reference,
+        r,
+        &c.a_domain,
+        &c.b_domain,
+        &c.controls,
+        ended,
+    )?;
+    let number = numbers(&c.reference, r)?;
+    let tx_b = b.own_net(format!("{}_{}", c.reference, tx.output))?;
+    let rx_b = b.own_net(format!("{}_{}", c.reference, rx.input))?;
+    conns.insert(number(&tx.input)?, Conn::Net(port.tx.net.clone()));
+    conns.insert(number(&tx.output)?, Conn::Net(tx_b));
+    conns.insert(number(&rx.input)?, Conn::Net(rx_b));
+    conns.insert(number(&rx.output)?, Conn::Net(port.rx.net.clone()));
+    for ch in t.channels.iter().filter(|ch| *ch != tx && *ch != rx) {
+        conns.insert(number(&ch.input)?, g.clone());
+        conns.insert(number(&ch.output)?, Conn::NoConnect);
+    }
+    ic(b, &c.reference, r, conns)?;
+    bypasses(b, &c.reference, r, &c.external, &a, &bside, &g)
 }
 
 #[cfg(test)]

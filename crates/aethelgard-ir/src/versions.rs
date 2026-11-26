@@ -342,7 +342,7 @@ pub const CHANGES: &[VersionChange] = &[
         31,
         "AET-WO-4411",
         &[],
-        &["radio_modules"],
+        &["radio_modules", "power.uart_crossings"],
         &[],
         &[
             "RadioPortUndeclared",
@@ -355,7 +355,7 @@ pub const CHANGES: &[VersionChange] = &[
             "RadioSupplyOutOfRange",
             "RadioSupplyUnsourced",
             "RadioRailUnsequenced",
-            "RadioLevelOverSupply",
+            "LineLevelUnmet",
             "RadioSupplyBelowMinimum",
             "RadioEnableNotPulled",
             "RadioStrapUndeclared",

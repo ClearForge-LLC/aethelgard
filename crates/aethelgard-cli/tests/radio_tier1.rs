@@ -125,26 +125,57 @@ fn the_antenna_overhangs_the_top_right_corner() {
 #[test]
 fn the_modules_pads_are_on_their_nets() {
     let tree = strict::board(board()).unwrap();
-    let fp = tree
-        .root()
-        .lists()
-        .filter(|i| i.head() == Some("footprint"))
-        .find(|fp| {
-            fp.all("property")
-                .any(|p| p.arg(1) == Some("Reference") && p.arg(2) == Some("U30"))
-        })
-        .unwrap();
-    let net = |pad: &str| {
-        fp.all("pad")
-            .find(|p| p.arg(1) == Some(pad))
-            .and_then(|p| p.one("net").unwrap())
-            .and_then(|n| n.arg(1))
-            .unwrap_or("")
-            .to_owned()
+    let pads = |reference: &str| {
+        let fp = tree
+            .root()
+            .lists()
+            .filter(|i| i.head() == Some("footprint"))
+            .find(|fp| {
+                fp.all("property")
+                    .any(|p| p.arg(1) == Some("Reference") && p.arg(2) == Some(reference))
+            })
+            .unwrap();
+        move |pad: &str| {
+            fp.all("pad")
+                .find(|p| p.arg(1) == Some(pad))
+                .and_then(|p| p.one("net").unwrap())
+                .and_then(|n| n.arg(1))
+                .unwrap_or("")
+                .to_owned()
+        }
     };
-    // U0TXD (12) drives the port's RX net; U0RXD (11) hears its TX net.
-    assert_eq!(net("12"), "/WIFI_RX");
-    assert_eq!(net("11"), "/WIFI_TX");
+    let net = pads("U30");
+    // U0TXD (12) drives U31's B4; U0RXD (11) hears U31's B1Y (ruled
+    // 2026-11-26T04:03Z (c1): the port through the translator)
+    assert_eq!(net("12"), "/U31_B4");
+    assert_eq!(net("11"), "/U31_B1Y");
+    // U31, TXU0304PW: A1 hears the port's TX and A4Y drives its RX on the
+    // MCU's rail, B1Y and B4 on the module's; OE strapped to VCCA, the rail
+    // that rises last (SCES935A 9.1: OE low through power-up); A2 and A3
+    // tied to GND, no input floating; B2Y, B3Y and NC (SCES935A p. 4, Table
+    // 6-1: no internal connection) open
+    let txu = pads("U31");
+    for (pad, want) in [
+        ("1", "VDD_3V3"),
+        ("2", "/WIFI_TX"),
+        ("3", "GND"),
+        ("4", "GND"),
+        ("5", "/WIFI_RX"),
+        ("7", "GND"),
+        ("8", "VDD_3V3"),
+        ("10", "/U31_B4"),
+        ("13", "/U31_B1Y"),
+        ("14", "VDD_3V3_RF"),
+    ] {
+        assert_eq!(txu(pad), want, "U31 pad {pad}");
+    }
+    for pad in ["6", "9", "11", "12"] {
+        assert!(
+            txu(pad).starts_with("unconnected-"),
+            "U31 pad {pad}: {}",
+            txu(pad)
+        );
+    }
     // its own rail, U13's (`AET-WO-4411`, ruled 2026-11-25T20:10Z)
     assert_eq!(net("1"), "VDD_3V3_RF");
     assert_eq!(net("2"), "/U30_EN");
@@ -207,6 +238,13 @@ fn the_modules_port_moves_no_pin() {
     let n = ports.len();
     ports.retain(|p| p["label"] != label.as_str());
     assert_eq!(ports.len(), n - 1, "no port `{label}`");
+    // U31 carries the port to the module (`AET-WO-4411` (c1)): it goes too
+    let power = spec["power"].as_object_mut().unwrap();
+    assert!(power.remove("uart_crossings").is_some());
+    power["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U31");
     let dir = std::env::temp_dir().join(format!("aet-4411-base-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let base_spec = dir.join("sentinel-03-without-module.json");
@@ -292,4 +330,21 @@ fn a_module_on_the_mcus_rail_owns_no_regulator() {
     let at = |r: &str| fps.iter().find(|(x, ..)| x == r).unwrap().2;
     let ((_, my), (_, uy)) = (at("U30"), at("U11"));
     assert!(uy > my + 7_175_000, "U11 at y {uy}, U30 at y {my}");
+}
+
+/// The gate's conditions name the translator's B side as unbounded once a
+/// UART crossing is declared, as an SPI crossing's (`AET-WO-4411` (c1)).
+#[test]
+fn a_uart_crossing_names_its_b_side_lines_unbounded() {
+    let spec: aethelgard_ir::Specification =
+        serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    let lines = |s: &aethelgard_ir::Specification| {
+        aethelgard_eda::loops::conditions(s)
+            .iter()
+            .any(|c| c.starts_with("LINES: each line on a translator's B side"))
+    };
+    assert!(lines(&spec));
+    let mut v: Value = serde_json::from_slice(&fs::read(root().join(SPEC)).unwrap()).unwrap();
+    v["power"].as_object_mut().unwrap().remove("uart_crossings");
+    assert!(!lines(&serde_json::from_value(v).unwrap()));
 }

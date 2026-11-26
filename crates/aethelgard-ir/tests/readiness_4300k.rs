@@ -155,17 +155,17 @@ fn protection_refused(v: &Value, t: &Value, id: &str, clause: &str) -> E {
 }
 
 #[test]
-fn the_base_protection_computes_a_1905_ma_input_current() {
+fn the_base_protection_computes_a_1906_ma_input_current() {
     let c = checked(&base());
     // The protection's note carries the branch's input current (the figure the
     // clauses below are edged against), iterated once (the power review's
     // F4): 1653 mA before `AET-WO-4411`'s radio module; its 500 mA on a rail
-    // of its own (U13, 490 mW at 504 mA, ruled 2026-11-25T21:17Z), U11's
-    // loss read at its 749 mA load (570 mW) and the pull-ups raise it to
-    // 1905 mA, and the drop through 33 mOhm and the fuse's 9375 uOhm to 81 mV.
+    // of its own (U13, 490 mW at 505 mA, ruled 2026-11-25T21:17Z), U11's
+    // loss read at its 750 mA load (570 mW), the pull-ups and U31's two 1 mA
+    // rows (`AET-WO-4411` (c1)) raise it to 1906 mA, and the drop through 33 mOhm and the fuse's 9375 uOhm to 81 mV.
     assert!(
         c.conditions.iter().any(|t| t.contains(
-            "input current is 1905 mA at the pack's minimum of 9000 mV less the input path's drop"
+            "input current is 1906 mA at the pack's minimum of 9000 mV less the input path's drop"
         )),
         "the protection's input-current note is missing or changed"
     );
@@ -199,7 +199,7 @@ fn the_zener_must_hold_the_gate_within_the_fets_rating() {
 fn the_gate_drive_must_reach_a_stated_rds_on() {
     let v = base();
     // The drive is the lesser of the pack's minimum (3 x 3000 = 9000 mV) less
-    // the fuse's drop at the input current (1905 mA x 9375 uOhm, 18 mV),
+    // the fuse's drop at the input current (1906 mA x 9375 uOhm, 18 mV),
     // 8982 mV, and the zener's VZ minimum (11400 mV).
     let mut t = table_json();
     row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"] = json!([
@@ -227,11 +227,11 @@ fn the_gate_drive_must_reach_a_stated_rds_on() {
 fn the_fet_must_carry_the_input_current() {
     let v = base();
     let mut t = table_json();
-    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1905);
+    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1906);
     against(&v, &t).expect("the input current itself passes");
     row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1904);
     let err = protection_refused(&v, &t, "Q1", "id");
-    assert!(err.to_string().contains("1905 mA"), "{err}");
+    assert!(err.to_string().contains("1906 mA"), "{err}");
 }
 
 #[test]
@@ -245,11 +245,11 @@ fn the_fuse_must_be_rated_for_the_pack_the_current_and_the_heat() {
     let err = protection_refused(&v, &t, "F1", "voltage");
     assert!(err.to_string().contains("17400 mV"), "{err}");
 
-    // Current: at least twice the input current, 2 x 1905 = 3810 mA.
+    // Current: at least twice the input current, 2 x 1906 = 3812 mA.
     let mut t = table_json();
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3810);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3812);
     against(&v, &t).expect("twice the input current passes");
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3809);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3811);
     let err = protection_refused(&v, &t, "F1", "twice");
     assert!(err.to_string().contains("twice"), "{err}");
 
@@ -460,8 +460,10 @@ fn a_supervisor_that_releases_at_the_rails_minimum_is_refused() {
         Refusal::SupervisorAboveRail,
         "U12",
     );
-    limit(&mut v, 150);
-    // `validate` runs the same judgement.
+    // `validate` runs the same judgement; at 144 mV, since past 144 U31's
+    // VCCA pin falls under the 3.0 V its levels are stated from
+    // (`LineLevelUnmet`, `AET-WO-4411` (c1))
+    limit(&mut v, 144);
     assert_power(&refused(&v), Refusal::SupervisorAboveRail, "U12");
     assert_supervisor(
         supervisor_check(&v, &table_json()),
@@ -769,13 +771,13 @@ fn a_device_whose_load_names_no_reference_is_the_only_one_listed() {
 #[test]
 fn a_loss_read_below_the_solved_load_is_screened_as_a_gap() {
     // Since `AET-WO-4411` Sentinel-03 reads U11's loss at its solved load
-    // (749 mA, the radio module on its own rail since 2026-11-25T21:17Z), so
-    // no gap is screened; one milliamp under it is.
+    // (750 mA: the radio module on its own rail since 2026-11-25T21:17Z,
+    // U31 since (c1)), so no gap is screened; one milliamp under it is.
     let c = checked(&base());
     assert!(!c.screened.contains_key("loss_current_gap:U11"));
     assert!(!c.screened.contains_key("loss_current_gap:U10"));
     let solved = c.domains["VDD_3V3"].load_milliamps;
-    assert_eq!(solved, 749);
+    assert_eq!(solved, 750);
     let mut v = base();
     v["power"]["regulators"][1]["junction"]["loss_at_milliamps"] = json!(solved - 70);
     let gap = &checked(&v).screened["loss_current_gap:U11"];
@@ -926,7 +928,7 @@ fn the_protections_and_junctions_assumptions_are_named_where_they_hold() {
     );
     let c = checked(&base());
     assert!(
-        c.screened["input_path_resistance_at_25c:Q1"].contains("81 mV at 1905 mA"),
+        c.screened["input_path_resistance_at_25c:Q1"].contains("81 mV at 1906 mA"),
         "{}",
         c.screened["input_path_resistance_at_25c:Q1"]
     );

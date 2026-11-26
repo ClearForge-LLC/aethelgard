@@ -1,7 +1,8 @@
 //! Each radio module (`AET-WO-4411`), drawn after every other part so that
 //! no other part's reference or schematic position moves: the module on
 //! its supply and ground, its U0TXD on the port's RX net and its U0RXD on
-//! the port's TX net, its enable's RC delay, each strap's declared pull, and
+//! the port's TX net (through a UART crossing, on the crossing's B-side
+//! nets), its enable's RC delay, each strap's declared pull, and
 //! its decoupling. A strap left `open` and every unused pin get a
 //! no-connect. Each passive is anchored to the module pin it serves.
 
@@ -45,14 +46,20 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
             .iter()
             .find(|p| p.label == m.serial_port)
             .ok_or_else(|| not_drawable(r, format!("no serial port `{}`", m.serial_port)))?;
+        // through a UART crossing, on its B side's nets, which the power
+        // tree drew and claimed (`AET-WO-4411` (c1))
+        let (txd, rxd) = match aethelgard_ir::power::uart_b_nets(spec, &port.label) {
+            Some((tx_b, rx_b)) => (rx_b, tx_b),
+            None => (port.rx.net.clone(), port.tx.net.clone()),
+        };
         let supply = b.rail(&m.supply);
         let gnd = b.ground();
         let en = b.own_net(radio::enable_net(r))?;
         let mut conns = BTreeMap::from([
             (row.supply.number.clone(), supply.clone()),
             (row.enable.number.clone(), Conn::Net(en.clone())),
-            (row.uart.tx_number.clone(), Conn::Net(port.rx.net.clone())),
-            (row.uart.rx_number.clone(), Conn::Net(port.tx.net.clone())),
+            (row.uart.tx_number.clone(), Conn::Net(txd)),
+            (row.uart.rx_number.clone(), Conn::Net(rxd)),
         ]);
         for g in &row.ground_pins {
             conns.insert(g.clone(), gnd.clone());

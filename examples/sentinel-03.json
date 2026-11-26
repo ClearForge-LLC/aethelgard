@@ -2122,9 +2122,9 @@
         "junction": {
           "loss_milliwatts": {
             "value": 570,
-            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 82 % on the 36 V curve at 0.749 A (read 82.2 to 83.5 %, AET-WO-4411 option 1); P_loss = 3.417 V x 749 mA x (1/0.82 - 1) = 562 mW, rounded up"
+            "source": "SNVSAN3F p. 27, Figure 9-8, typical at TA 25 C: 82 % on the 36 V curve at 0.750 A (82.81 % read from its vectors, AET-WO-4411 (c1)); P_loss = 3.417 V x 750 mA x (1/0.82 - 1) = 563 mW, rounded up"
           },
-          "loss_at_milliamps": 749
+          "loss_at_milliamps": 750
         },
         "controls": [
           {
@@ -2220,9 +2220,9 @@
         "junction": {
           "loss_milliwatts": {
             "value": 490,
-            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.5 A (78.96 % read from its vectors); P_loss = 3.417 V x 504 mA x (1/0.78 - 1) = 486 mW, rounded up"
+            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)); P_loss = 3.417 V x 505 mA x (1/0.78 - 1) = 487 mW, rounded up"
           },
-          "loss_at_milliamps": 504
+          "loss_at_milliamps": 505
         },
         "controls": [
           {
@@ -2352,6 +2352,18 @@
         "milliamps": 1,
         "source": "derived: 3.465 V / 100 kOhm = 0.035 mA, rounded up (U13's PG pull-up, AET-WO-4411 (iii))",
         "reference": "R32"
+      },
+      {
+        "domain": "VDD_3V3",
+        "milliamps": 1,
+        "source": "cited: SCES935A p. 8, 7.5 ICCA max 6 uA (IO = 0), and its A side's one output drives the MCU's RX, 350 nA at most; 1 mA rounded up (U31, AET-WO-4411 (c1))",
+        "reference": "U31"
+      },
+      {
+        "domain": "VDD_3V3_RF",
+        "milliamps": 1,
+        "source": "cited: SCES935A p. 8, 7.5 ICCB max 6 uA (IO = 0), and its B side's one output drives U30's RXD, 50 nA; 1 mA rounded up (U31, AET-WO-4411 (c1))",
+        "reference": "U31"
       }
     ],
     "sense": [
@@ -2375,6 +2387,34 @@
       }
     ],
     "crossings": [],
+    "uart_crossings": [
+      {
+        "reference": "U31",
+        "part": "TXU0304PW",
+        "serial_port": "WIFI",
+        "a_domain": "VDD_3V3",
+        "b_domain": "VDD_3V3_RF",
+        "external": [
+          {
+            "role": "bypass_a",
+            "reference": "C93",
+            "part": "GCM188R71H104KA57"
+          },
+          {
+            "role": "bypass_b",
+            "reference": "C94",
+            "part": "GCM188R71H104KA57"
+          }
+        ],
+        "controls": [
+          {
+            "pin": "OE",
+            "strap": "vcca",
+            "wire": null
+          }
+        ]
+      }
+    ],
     "drop_limits": [
       {
         "domain": "VDD_3V3",
@@ -2926,16 +2966,40 @@
       "reason": "In2.Cu is the VDD_3V3 plane, which U13's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu"
     },
     {
-      "id": "radio_power_down_order:U30",
-      "reason": "Ruled 2026-11-25T21:17Z: power-down order is a named condition: U1's TX may drive U30's RXD above VDD + 0.3 V (WROOM-02 Table 6-3); U30's TX onto U1 is judged by step 25"
-    },
-    {
-      "id": "radio_rail_ioff:U30",
-      "reason": "Ruled 2026-11-25T21:17Z: a row; no Ioff buffer sits on WIFI_TX between U1 and U30's RXD, and one would hold the line while VDD_3V3_RF is down"
-    },
-    {
       "id": "radio_rail_monitor:U30",
       "reason": "Ruled 2026-11-25T21:17Z (Q-SUP): a row; no Espressif document states a brown-out detector, the HDG's ~3.0 V monitor is not fitted, R90/C90 is U30's only reset"
+    },
+    {
+      "id": "radio_output_load:U30",
+      "reason": "WROOM-02 Table 6-3 states U30's VOH and VOL at a high-impedance load; U31's B4 draws at most 2 uA (SCES935A p. 8), and U30's 0.8 x VDD clears U31's threshold by 388 mV"
+    },
+    {
+      "id": "rated_only:U31.bypass_a",
+      "reason": "SCES935A's row states no effective minimum for U31's 0.1 uF VCCA bypass; GCM188R71H104KA57 at 50 V rating sees VDD_3V3, 3.4 V"
+    },
+    {
+      "id": "rated_only:U31.bypass_b",
+      "reason": "SCES935A's row states no effective minimum for U31's 0.1 uF VCCB bypass; GCM188R71H104KA57 at 50 V rating sees VDD_3V3_RF, 3.4 V"
+    },
+    {
+      "id": "translator_supply_drop:U31",
+      "reason": "U31 draws microamps (SCES935A p. 8, ICCA and ICCB); its VCCA and VCCB pins are taken at VDD_3V3's 110 mV and VDD_3V3_RF's 144 mV drop limits, which the supply gate measures at each rail's load"
+    },
+    {
+      "id": "translator_rate_inferred:U31",
+      "reason": "Ruled 04:51Z G2: no TMAX is stated 3.3 V to 3.3 V; WIFI's 57600 bit/s is 174 times under the lowest TMAX stated from a 3.0-3.6 V input, 10 Mbit/s"
+    },
+    {
+      "id": "translator_threshold_inferred:U31",
+      "reason": "Ruled 04:51Z G1 (a): VT+ and VT- scaled from SCES935A's 3 V row, an inference; the bench measures them at the board's rails at bring-up (a bench row)"
+    },
+    {
+      "id": "uart_internal_pulls:U31",
+      "reason": "U31's outputs are judged at their 0.1 mA rows; the firmware leaves the internal pull-ups off on U1's PG9 (USART6 RX) and U30's GPIO20 (U0RXD), each a receiver of a driven line"
+    },
+    {
+      "id": "translator_partial_power:U31",
+      "reason": "SCES935A 9.3.5 states isolation under 100 mV only; OE on VCCA, the last rail up (iii), is low through power-up (9.1); each U31 output is powered from its receiver's rail"
     },
     {
       "id": "rated_only:U13.cboot",

@@ -105,7 +105,11 @@
         "rx": "IO20/RXD",
         "rx_number": "11",
         "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 11, Table 3-1: pin 11 RXD (GPIO20, U0RXD), pin 12 TXD (GPIO21, U0TXD); levels (p. 21, Table 6-3) are stated against the module's own supply" },
-        "vih_over_supply_mv": { "value": 300, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3: VIH high-level input voltage, max VDD + 0.3 V (note 1: VDD, the voltage from a power pin of the respective power domain)" } }
+        "vih_over_supply_mv": { "value": 300, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3: VIH high-level input voltage, max VDD + 0.3 V (note 1: VDD, the voltage from a power pin of the respective power domain)" } },
+        "vih_min_permille": { "value": 750, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VIH high-level input voltage, min 0.75 x VDD (note 1)" } },
+        "vil_max_permille": { "value": 250, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VIL low-level input voltage, max 0.25 x VDD (note 1)" } },
+        "voh_min_permille": { "value": 800, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VOH high-level output voltage, min 0.8 x VDD; note 2, p. 22: measured using a high-impedance load" } },
+        "vol_max_permille": { "value": 100, "at": { "document": "ESP32-C3-WROOM-02", "section": "p. 21, Table 6-3 (3.3 V, 25 C): VOL low-level output voltage, max 0.1 x VDD; note 2, p. 22: measured using a high-impedance load" } }
       },
       "rom_output": { "document": "ESP32-C3-WROOM-02", "section": "p. 14, Table 4-4: with EFUSE_UART_PRINT_CONTROL at its default 0, the ROM prints to UART0 at every boot whatever GPIO8 is; p. 33: UART0 is used to download firmware and log output" },
       "antenna": {

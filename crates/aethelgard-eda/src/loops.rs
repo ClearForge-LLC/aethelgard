@@ -191,7 +191,7 @@ pub fn conditions(spec: &Specification) -> Vec<String> {
             "LAYOUT: not met: SNVSAN3F p. 33, 10.1 item 5 asks for a ground plane on an inner layer; this board has two copper layers".to_owned(),
         );
     }
-    if !p.crossings.is_empty() {
+    if !p.crossings.is_empty() || !p.uart_crossings.is_empty() {
         out.push(
             "LINES: each line on a translator's B side is not bounded; the translator drives it"
                 .to_owned(),

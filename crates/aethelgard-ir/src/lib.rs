@@ -19,6 +19,7 @@ mod drawn;
 pub mod ds009;
 pub mod electrical;
 pub mod kernel_clock;
+pub mod levels;
 pub mod motor;
 pub mod names;
 pub mod off_domain;

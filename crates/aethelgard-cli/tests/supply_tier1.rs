@@ -424,10 +424,27 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 /// 6974760231 (1), 6982875594 D5): 0.57 mm at OSH Park's tolerances since
 /// `AET-WO-4300k` (b) (0.7 mm at JLCPCB's). A class
 /// declaring a via under the ring rule is refused at `emit` instead
-/// (`ViaRingUnheld`, `via_ring_tier1`).
+/// (`ViaRingUnheld`, `via_ring_tier1`). Since `AET-WO-4411` (c1) on
+/// Sentinel-03 without U31, as it placed before: with U31 at a ring of 0 no
+/// pour step keeps U10's B.Cu at its need (`BuckPourShort`, 341 of 1500
+/// mm2), refused before this gate. Without U31 its lines pass only at a
+/// module-rail drop limit under 27.5 mV (`LineLevelUnmet`), so the plant
+/// declares 20, which the module rail's own drop exceeds: a second supply,
+/// not read here.
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
     let mut v = gated(s03(), S03_LIMIT_MV);
+    let p = v["power"].as_object_mut().unwrap();
+    p.remove("uart_crossings");
+    p["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U31");
+    for l in p["drop_limits"].as_array_mut().unwrap() {
+        if l["domain"] == "VDD_3V3_RF" {
+            l["max_millivolts"] = json!(20);
+        }
+    }
     v["board"]["stackup"]["fab_tolerances"]["via_ring_um"]["value"] = json!(0);
     let spec = write("s03-ring0", &v);
     let board = emitted("s03-ring0", &spec);

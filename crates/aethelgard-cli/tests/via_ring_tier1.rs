@@ -119,10 +119,12 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden, measured at `AET-WO-4411` (the radio module on
-    // its own regulator, U13 in the module's group; the pour ladder at step
-    // 1): rung 3, a bounded via cost of 320, bounded nets not first, nearest
-    // at EXT_SCL, 89 557 fF of 100 000. Measured at `AET-WO-4300k` (OSH Park's
+    // the fixture's golden, measured at `AET-WO-4411` (c1) (U31, its UART
+    // crossing, drawn; OE on VCCA): rung 7, a bounded via cost of 320,
+    // bounded nets first, nearest at EXT_SDA, 84 703 fF of 100 000, the pour
+    // ladder at step 1. Before (c1) (the radio module on its own regulator,
+    // U13 in the module's group): rung 3, a bounded via cost of 320, bounded
+    // nets not first, nearest at EXT_SCL, 89 557 fF of 100 000. Measured at `AET-WO-4300k` (OSH Park's
     // tolerances, the crystal, protection, supervisor and second input
     // ceramics drawn, J4 turned, the GND pours; the board re-placed): rung 3,
     // a bounded via cost of 320, bounded nets not first, nearest at
@@ -138,11 +140,11 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     // via cost of 320, nearest at EXT_SDA, 75 697 fF. At `AET-WO-1315` it
     // was rung 5 (cost 48), nearest at I2C_SCL, 74 937 fF; at `AET-WO-1314` rung 7,
     // nearest at IMU_SCK, 24 945 fF of 30 000.
-    assert_eq!(ladder["rung"], 3, "{ladder}");
+    assert_eq!(ladder["rung"], 7, "{ladder}");
     assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
-    assert_eq!(ladder["bounded_first"], false, "{ladder}");
-    assert_eq!(margin["net"], "EXT_SCL", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 89_557, "{ladder}");
+    assert_eq!(ladder["bounded_first"], true, "{ladder}");
+    assert_eq!(margin["net"], "EXT_SDA", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 84_703, "{ladder}");
     assert_eq!(ladder["pour_step"], 1, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);

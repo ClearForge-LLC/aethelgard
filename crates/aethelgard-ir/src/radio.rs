@@ -174,6 +174,13 @@ pub struct Uart {
     /// VIH's maximum over the module's own supply, mV: how far above its
     /// rail a separately supplied driver may go (`AET-WO-4411`).
     pub vih_over_supply_mv: Cited,
+    /// VIH's minimum and VIL's maximum, per mille of the module's supply.
+    pub vih_min_permille: Cited,
+    pub vil_max_permille: Cited,
+    /// VOH's minimum and VOL's maximum, per mille of the module's supply,
+    /// stated at a high-impedance load.
+    pub voh_min_permille: Cited,
+    pub vol_max_permille: Cited,
 }
 
 /// A rectangle in the footprint's own coordinates, in µm.
@@ -325,6 +332,11 @@ pub fn parse(text: &str) -> Result<RadioTable, String> {
             &m.antenna.area_at,
             &m.antenna.clearance_at,
             &m.antenna.placement_at,
+            &m.uart.vih_over_supply_mv.at,
+            &m.uart.vih_min_permille.at,
+            &m.uart.vil_max_permille.at,
+            &m.uart.voh_min_permille.at,
+            &m.uart.vol_max_permille.at,
         ];
         for at in ats.into_iter().chain(m.straps.iter().map(|s| &s.at)) {
             if !t.documents.contains_key(&at.document) {
@@ -333,6 +345,23 @@ pub fn parse(text: &str) -> Result<RadioTable, String> {
                     m.part, at.document
                 ));
             }
+        }
+        // the UART's levels in order, each under its supply (`AET-WO-4411`
+        // (c1)): a line is judged by them
+        let u = &m.uart;
+        if u.vil_max_permille.value >= u.vih_min_permille.value
+            || u.vol_max_permille.value >= u.voh_min_permille.value
+            || u.vih_min_permille.value >= 1000
+            || u.voh_min_permille.value > 1000
+        {
+            return Err(format!(
+                "`{}`: the UART's levels are out of order (VIL {} under VIH {} under 1000, VOL {} under VOH {} at most 1000 per mille)",
+                m.part,
+                u.vil_max_permille.value,
+                u.vih_min_permille.value,
+                u.vol_max_permille.value,
+                u.voh_min_permille.value
+            ));
         }
         let mut pins = BTreeSet::new();
         if !m.ground_pins.contains(&m.thermal_vias.pad) {

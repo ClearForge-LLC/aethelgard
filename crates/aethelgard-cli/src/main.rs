@@ -1131,9 +1131,14 @@ fn radio_judged(
                 .map_err(|e| unreadable(e.to_string()))?
                 .and_then(|n| n.arg(1).map(str::to_owned)))
         };
+        // through a UART crossing, the crossing's B side (`AET-WO-4411` (c1))
+        let (txd, rxd) = match aethelgard_ir::power::uart_b_nets(spec, &port.label) {
+            Some((tx_b, rx_b)) => (rx_b, tx_b),
+            None => (port.rx.net.clone(), port.tx.net.clone()),
+        };
         for (pad, want, line) in [
-            (&row.uart.tx_number, &port.rx.net, "U0TXD"),
-            (&row.uart.rx_number, &port.tx.net, "U0RXD"),
+            (&row.uart.tx_number, &txd, "U0TXD"),
+            (&row.uart.rx_number, &rxd, "U0RXD"),
         ] {
             let label = format!("/{}", aethelgard_eda::pcb::escape(want));
             let got = net_of(pad)?;

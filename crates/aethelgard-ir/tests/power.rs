@@ -18,7 +18,10 @@ use power_table::{assert_power, refused, row, spec, table_json};
 /// `AET-WO-4300k`: schema 12 (rows DMP6023LSS-13, MMSZ5242BT1G,
 /// SF-1206F400-2, SF-1206F700-2, TLV803SDBZR and their four documents, the
 /// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
-const TABLE_SHA256: &str = "dd0566f524ddae03cea16f366ea8c0c8378c03f63999fd8bb1b0aaee03d76fd2";
+/// `AET-WO-4411`: the LMR33620ADDA row and SNVSAW1E; (c1) the TXU0304PW's
+/// timing as `supplies` with its VCCB = 3.3 V row (UART only), its `levels`
+/// and `unused_inputs_at`, and the MCU's Table 50 `output`.
+const TABLE_SHA256: &str = "f82d00e8e156d09874a1d0c4f252b7658f531261d1a7d5c9649de2d60615b86e";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -746,7 +749,8 @@ fn the_crossing_is_judged_on_both_sides() {
 #[test]
 fn a_crossing_on_the_wrong_domain_is_refused_by_the_crossing_rule() {
     let mut t = table_json();
-    row(&mut t, "TXU0304PW")["kind"]["translator"]["vcca_millivolts"]["max"] = json!(5500);
+    row(&mut t, "TXU0304PW")["kind"]["translator"]["supplies"][0]["vcca_millivolts"]["max"] =
+        json!(5500);
     let mut v = full();
     v["power"]["crossings"][0]["a_domain"] = json!("VDD_5V");
     let err = against(&v, &t).unwrap_err();
@@ -768,7 +772,8 @@ fn the_miso_round_trip_bounds_the_crossed_bus() {
         assert_power(&err, Refusal::MisoRoundTripTooSlow, "U13");
     }
     let mut t = table_json();
-    row(&mut t, "TXU0304PW")["kind"]["translator"]["tmax_a_to_b_bps"]["value"] = json!(7_000_000);
+    row(&mut t, "TXU0304PW")["kind"]["translator"]["supplies"][0]["tmax_a_to_b_bps"]["value"] =
+        json!(7_000_000);
     assert_power(
         &against(&full(), &t).unwrap_err(),
         Refusal::CrossingTooFast,

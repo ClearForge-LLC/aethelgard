@@ -40,13 +40,65 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
 - **(iii) Sequencing.** U11's `EN` follows U13's open-drain `PG` (a new `after` control, its pull-up R32 to `VDD_3V3_RF`), so U1's rail rises only after the module's.
 - **New refusals, each planted (`crates/aethelgard-ir/tests/radio_rail.rs`):**
   - **`RadioRailUnsequenced`:** a module on its own rail that the MCU's regulator does not follow.
-  - **`RadioLevelOverSupply`:** the MCU's rail at its highest more than VIH's VDD + 0.3 V over the module's rail at its lowest. Edge measured: R20 at 106.0 kOhm passes, 106.3 kOhm is refused.
+  - **`RadioLevelOverSupply`**, compared at the regulators: replaced in (c1) by `LineLevelUnmet`, at the pins (below).
   - **`RadioSupplyBelowMinimum`:** the module rail's guaranteed minimum, less its drop limit, under the module's 3.0 V. A 144 mV limit passes; 145 mV is refused.
   - **`DropLimitUndeclared` on the module's rail.**
   - **`ControlAfterInvalid`:** no regulator, itself, no open-drain PG, a PG already holding an enable, a loop, or a pin that is no enable. A PG also declared in its own `controls` is `PowerValueInvalid`.
 - **The drop gate.** A limited domain the MCU has no pin on takes the radio module there as its load.
-- **Step 25.** `radio_module_tx` is a new step-25 path class. Under (iii), `VDD_3V3_RF` leads `VDD_3V3` at every power-up, so U30's TX onto U1's `WIFI_RX` is judged at VDD = 0: the rail's declared maximum, 3465 mV, against DS12117 Table 10's 4.0 V (ruled 1216 D4). Planted over the limit at a 220 per mille tolerance (4026 mV, `OffDomainAboveLimit`).
+- **Step 25.** `radio_module_tx` is a new step-25 path class. Under (iii), `VDD_3V3_RF` leads `VDD_3V3` at every power-up, so a module driving U1's RX directly is judged at VDD = 0: the rail's declared maximum, 3465 mV, against DS12117 Table 10's 4.0 V (ruled 1216 D4). Planted over the limit at a 220 per mille tolerance (4026 mV, `OffDomainAboveLimit`).
+  - Since (c1), Sentinel-03 has no such path (below). The class judges a module wired directly.
 - **The campaign.** A module on a rail counts as that rail's observed consumer (its port's RX open). A new scenario, `scenarios/sentinel-03/vdd3v3rf-out-of-band.json`, covers `VDD_3V3_RF`.
+
+**F2 and (c1) (ruled 2026-11-26T03:22Z, 04:03Z, 04:51Z and 06:25Z)**
+- **F2 was real:** at U30's pins, U1's high could stand 116.5 mV over the module's VIH maximum (VDD + 0.3 V).
+  - (d) was refused.
+  - **(e), raising U13 by its divider, has no window** (`spike/4411/out/option-1e.md`, 081a463b): VIH maximum needs U13's minimum at least 3,261.2 mV, and VIH minimum (0.75 x VDD against U1's VDD − 0.4 V) needs its maximum at most 3,512.9 mV. That is 251.7 mV of room against a band of about 285 mV.
+- **(c1), built: U31, a TXU0304PW,** with VCCA = `VDD_3V3` and VCCB = `VDD_3V3_RF`.
+  - A1 hears `WIFI_TX`, and B1Y drives U30's RXD on `U31_B1Y`. B4 hears U30's TXD on `U31_B4`, and A4Y drives `WIFI_RX`.
+  - **OE is strapped to VCCA** (ruled 04:51Z). Under (iii), `VDD_3V3` is the rail that rises last, so OE is low through power-up, as SCES935A 9.1 asks ("left floating or externally pulled down … during power up or power down"). 9.3.5's isolation holds the outputs while either supply is under 100 mV.
+    - The first bus note said VCCB. The adversarial pass showed that VCCB holds OE high while VCCA ramps from 0, against 9.1, so it moved to VCCA.
+    - A wired OE is refused (`PowerValueInvalid`): a wire's driver and level through partial power-down are not judged.
+  - **A2 and A3 are tied to `GND`** (9.3.1.1's pull-down rule made explicit; ruled: no floating input). B2Y and B3Y are left open as outputs, and NC 6 and 9 have no internal connection (p. 4, Table 6-1).
+  - **Bypasses:** C93 on VCCA and C94 on VCCB, 0.1 µF each (p. 25, 12.1).
+  - **Loads:** 1 mA rows on both rails (ICCA and ICCB 6 µA max, rounded up). U11's loss is restated at 750 mA (82.81 % read) and U13's at 505 mA (79.09 % read). Both losses hold: 563 and 487 mW, under the declared 570 and 490.
+- **The row (`power-parts.json`):** the translator's timing moved into `supplies`, one row per supply pair: the VCCB = 1.8 V row as before, and the VCCB = 3.3 V row (p. 14, 7.11: tpd 11 ns each way). A crossing reads the first row whose bands hold both its domains. Added beside it:
+  - **`levels`:** VOH ≥ VCCO − 0.1 V and VOL ≤ 0.1 V at |IO| ≤ 0.1 mA (p. 8); VT+ 640 and VT− 296 per mille of VCCI; II 2 µA; VI 5.5 V.
+  - **`unused_inputs_at`:** the citation for the rule that ties every input a crossing does not carry to `GND`.
+  - **The MCU row** gains Table 50's CMOS output (VDD − 0.4 V, 0.4 V, at 8 mA).
+  - **The radio row** gains Table 6-3's VIH, VIL, VOH and VOL.
+- **Two SCES935A gaps (ruled 04:51Z):**
+  - **G1 (a), an inference.** VT+ and VT− are stated at VCCI = 3, 4.5 and 5.5 V, not 3.3 V (p. 7). The 3 V row is taken as a fraction of VCCI: 640 and 296 per mille, which bounds every stated row above it.
+    - It is named in the verdict (`translator_threshold_inferred:U31`) with its bench row: VT+ and VT− measured at the board's rails at bring-up (`RUL-20` (3); the ruling's `RUL-18` was corrected at 06:25Z).
+    - (b), the 4.5 V row's 2.74 V, is a valid bound but about 550 mV loose. It would refuse the board and was not taken.
+  - **G2, a screen.** No TMAX is stated for 3.0-3.6 V to 3.0-3.6 V (p. 9). The port's 57,600 bit/s is judged against 10 Mbit/s, the lowest row stated from a 3.0-3.6 V input (`translator_rate_inferred:U31`). tpd is 11 ns as stated.
+  - **S1 (ruled): UART only.** The 3.3 V row is `uart_only`, so an SPI crossing still reads the 1.8 V row. An SPI crossing between two 3.3 V rails is refused as before, on VCCB's band (tested).
+- **The rule, `LineLevelUnmet`** (it replaces `RadioLevelOverSupply`, `crates/aethelgard-ir/src/levels.rs`):
+  - each line's driver VOH and VOL at its own pin are judged against the receiver's VIH, VIL and maximum input at its own pin, and the receiver's input current against the load the driver's levels are stated at;
+  - two pins on one rail share one source voltage, less each pin's drop limit, so the band is not counted twice;
+  - two rails are judged at each band's ends;
+  - it runs for every module, directly or through a UART crossing, so F2's lesson holds inside the rule.
+- **Sentinel-03's four lines** (worst margins, mV):
+
+| Line | Driver to receiver | High | Low | Under the receiver's maximum |
+|---|---|---|---|---|
+| `WIFI_TX` | U1 PG14 to U31 A1 | 622.1 | 498.3 | 2,082.8 |
+| `U31_B1Y` | U31 B1Y to U30 RXD | 542.2 | 650.2 | 156.0 |
+| `U31_B4` | U30 TXD to U31 B4 | 388.0 | 573.7 | 2,082.8 |
+| `WIFI_RX` | U31 A4Y to U1 PG9 | 733.4 | 810.4 | (Table 10, step 25) |
+
+- **Rows this closes, by name:**
+  - `radio_power_down_order:U30` and `radio_rail_ioff:U30` no longer fire once a crossing carries the port, and their acknowledgements are removed.
+  - A condition names them as closed by U31: each U31 output is powered from its receiver's own rail, and its Ioff rows hold either side at 0 V (p. 8; 9.3.4).
+  - **Step 25:** the module's TX now ends at U31's B4 on its own rail, and A4Y drives `WIFI_RX` from `VDD_3V3`. So no path reaches the MCU from another rail, and `radio_module_tx` is no longer a path on Sentinel-03. Without U31 it is judged as before (planted).
+- **Rows it names, acknowledged:**
+  - `translator_supply_drop:U31`: U31's pins are taken at each rail's drop limit, and the gate measures the rails at their loads.
+  - `uart_internal_pulls:U31`: the 0.1 mA rows need U1's PG9 and U30's RXD internal pull-ups off, since U1's RPU of at least 30 kΩ draws over 0.1 mA. That is the firmware's to keep.
+  - `radio_output_load:U30`: Table 6-3 states VOH and VOL at a high-impedance load, and U31's B4 draws 2 µA.
+  - `translator_partial_power:U31`: 9.3.5 states isolation under 100 mV only. Between 100 mV and 1.08 V it states nothing, and it recommends inputs low before a supply floats, while a UART idles high. While U31 isolates, `WIFI_RX` and `U31_B1Y` are driven by nothing.
+  - `translator_threshold_inferred:U31` and `translator_rate_inferred:U31` (G1, G2).
+  - `rated_only:U31.bypass_a` and `rated_only:U31.bypass_b`.
+  - A UART crossing named by no load on a rail is screened `translator_supply_not_counted`, as an SPI crossing always is.
+- **(iii) is kept as ruled.** `RadioRailUnsequenced`'s reason now reads, with a crossing, as the ruled order rather than the RXD drive the crossing removed.
 
 ## 2. The built board (Sentinel-03, specification 31)
 
@@ -100,6 +152,9 @@ Every committed specification but Sentinel-03 was emitted by 3a35be0f's build (t
 - **26 emit.** 25 are byte-identical: schematic, BOM and board. The one that moves is `tests/fixtures/sentinel-03-radio.json`, which carries the module (its pad 19's pitch and snap, and the pour ladder). INV-08 does not cover a board with a module.
 - **16 are refused by both builds** with the same kind. Ten differ in their message only, because each is `UnsupportedSchemaVersion` on an old-version fixture and lists version 31's rules: `RadioSupplyNotMcu` is gone, and `RadioRailUnsequenced`, `RadioLevelOverSupply` and `RadioSupplyBelowMinimum` are added.
 - **Against main (1cc2d01c), before this WO:** measured at the version bump, 41 committed specifications moved by their version line only.
+- **(c1), re-measured on the working tree against 3a35be0f's outputs:** the same 25 are byte-identical, and the 16 refusals keep their kinds. Their messages differ in the version-31 rules list only (`LineLevelUnmet`).
+  - `sentinel-03-radio` (a module, no U31) is byte-identical against 081a463b's build, so (c1) moves no board but Sentinel-03.
+  - **SPI crossings:** `sentinel-02-power`'s board is byte-identical. Its `solve` against 3a35be0f differs only in condition texts this WO changed before (c1) (the inductor wording and the drop-limit note).
 
 ## 6. Mutants
 
@@ -148,6 +203,22 @@ The pass ran as a fresh read-only review of 3a35be0f..7cde17de, with the WO's §
 - **Coverage:** size sample 6 left the removal sweep.
 - **Hot-plug:** the fuse margin has narrowed.
 
+**(c1), a second fresh read-only pass** over the (c1) working tree against 081a463b. No blockers. Six should-fixes:
+- **Fixed:**
+  - **(1)** An OE wire could float, and step 25's control-wire owners missed UART crossings. Now a UART crossing's OE takes a strap only (planted).
+  - **(2)** OE on VCCB was high while VCCA ramps, against 9.1. Moved to VCCA (ruled).
+  - **(3)** The two closed rows were dropped silently, and 9.3.5's residuals lost with them. Now a condition names them closed, and `translator_partial_power:U31` holds the residuals.
+  - **(6)** `translator_supply_not_counted` scanned SPI crossings only. A UART crossing no load names is now screened (planted).
+  - **(7)** The radio row's UART levels were not checked in order. Now they are (`RadioTableMalformed`, planted).
+  - **(9)** U31's load source said 250 nA for U1's RX. It is 350 nA, the row's.
+- **Sent for a ruling:**
+  - **(4)** The 3.3 V row would have admitted a 3.3 V SPI crossing. Ruled S1: UART only, now `uart_only`.
+  - **(5)** The drop limit is taken wholly on the VDD side. Ruled S2, a row (§9).
+- **Named, not changed:**
+  - **(8)** Table 50's VOH row holds for 2.7 V ≤ VDD; U31's levels window keeps every judged pin at 3.0 V or more.
+  - **(10)** `line_supply`'s fallback to a domain's declared range is reachable (a connector-sourced domain has no regulator), so it is kept.
+- **The pass checked and found sound:** the rounding directions, the corner model (linear levels, independent drops), every U31 pin against the pinout, the same-rail module fixture by hand (smallest margins 190 and 226 mV), the off-domain gate, and every new citation against its page.
+
 ## 8. Reduction pass
 
 Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates removed · 2 dead paths removed · 0 protected kept · 4 findings below. A fresh read-only pass over fa12abf4..bd957c84 proposed the changes; applied in 043162cb:
@@ -162,6 +233,8 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
   - the router's step-0 default under its ratio: now an `if let`.
 - **Mechanism and copies merged:** the radio group's three hand-rolled anchor predicates now use `anchored_to`; the six SNVSAN3F `*_RULE` consts are inlined into their one use; one snap closure; the radio table read once.
 - **Added with the pass, for the gap it found:** an `after` on a crossing's control is refused.
+- **(c1), diff-sized:** −45 lines in `schematic_power.rs`. The SPI and UART crossing drawers now share `sides` (supplies, ground, controls), `numbers` (pin numbers by name) and `bypasses`, in the same call order: `sentinel-02-power`'s board is byte-identical. One B-net lookup, `power::uart_b_nets`, serves the emitter's radio drawing, `own_nets` and `drc.radio`.
+  - **Finding, not acted on:** the UART crossing's value checks repeat the SPI loop's common ones. Merging them would reorder an SPI crossing's first refusal (`bus` sits between `part` and the domains).
 - **Findings, not acted on:**
   - 4300k's MinusY-to-180 turn mapping is written twice (`items`, `place_connectors`);
   - the joined doc comments above `rank_apart`;
@@ -172,12 +245,21 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 - **The rung and the pour step reach neither the verdict nor FAB-NOTES** (ruled 2026-11-26T01:31Z, a row). Today only `emit`'s JSON carries them. A later work order carries both through `extract`.
 - **Q-SUP on the new rail (a row):** no Espressif document states a brown-out detector. The HDG's monitor, "around 3.0 V" (PDF p. 10), is not fitted, so R90/C90 is U30's only reset (`radio_rail_monitor:U30`, acknowledged).
-- **Power-down order (a named condition):** U1's TX may drive U30's RXD above VDD + 0.3 V while `VDD_3V3_RF` falls first (`radio_power_down_order:U30`). An Ioff buffer on that line is a row (`radio_rail_ioff:U30`).
+- **Power-down order and the Ioff buffer:** closed by U31 ((c1), §1). Its residual, 9.3.5's window between 100 mV and 1.08 V and the undriven idle, is `translator_partial_power:U31`.
+- **G1's bench row (`RUL-20` (3)):** U31's VT+ and VT− measured at the board's rails at bring-up (`translator_threshold_inferred:U31`).
+- **S2 (ruled 04:51Z, a row):** split each drop limit into its VDD and VSS shares. The level judge takes the whole limit on the VDD side, which leaves a VSS rise unmodelled, worth at most about 36 mV on U30's high check. Every Sentinel-03 margin is 156 mV or more.
+- **Q-R (ruled 06:25Z (a), a row): the placer is not monotone at the outline bound.** Removing a test point stops size 1 fitting 100 x 100 on all nine seeds: least-over 88.450 x 100.100 mm without Q_TP14, and 88.950 x 100.250 without Q_TP28.
+  - The two are pinned exactly in `outline_tier1`'s removal sweep, so a third still fails.
+  - A refused placement writes no board, so which part moves is not seen without a build. A placer work order takes it.
+- **Size sample 2** no longer places whole (least-over 89.900 x 100.350 mm) and leaves the sweep's variants, by the size-6 precedent. Size 6 is now 100.600 x 103.100, and size 8 104.850 x 105.500.
 - **U11 follows U13's PG** (`control_after:U11`): U1's rail drops whenever U13's PG pulls low, for example on an out-of-window output, current limit or thermal shutdown (SNVSAW1E p. 11).
 - **The module rail's supply bound is 216 mOhm,** U13 being about 36 mm from pin 1. That passes at 122.2 of 144 mV. A rule that holds the block nearer pin 1 is a refinement, not needed today.
 - **Hot-plug margin:** with U13's 20 µF more input ceramics, F1's hot-plug I²t is 3.06 against its 3.25 A²s melting figure. At 4.75 V cells it is over, and `readiness_4300k`'s doubled-pack edge test now judges against a table whose fuse melts later.
-- **The battery sag edge** moves to 824/825 mOhm (6,996,978 µV at 825, measured).
-- **Size sample 6** (`outline_tier1`) no longer places inside 100 x 100 (least-over 98.100 x 102.500 mm). The removal sweep keeps seven variants.
+- **The battery sag edge** moves to 823/824 mOhm (6,999,388 µV at 824, measured; 824/825 before U31's two 1 mA rows). The twin campaign's sag point is 7,928,264 µV (it was 7,928,702).
+- **Size sample 6** (`outline_tier1`) no longer places inside 100 x 100 (98.100 x 102.500 mm before (c1)). With size 2 also out, the removal sweep keeps six variants.
+- **`supply_tier1`'s ring-0 plant** now emits Sentinel-03 without U31, as it placed before (c1). With U31 at a ring of 0, no pour step keeps U10's B.Cu at its need (341 of 1500 mm²), so the board is refused before the gate the plant reaches.
+  - The plant's module rail declares 20 mV, since without U31 the direct lines pass only under 27.5 mV.
+  - s024l was tried as a carrier, and a ring of 0 trips nothing there.
 - **Fixed in passing:** two LMR33630-only texts that a second buck part exposed.
   - The inductor condition's hard-coded "Table 9-2 gives 8 uH at 5 V and 6.8 uH at 3.3 V".
   - The loop rules' SNVSAN3F citations, now per datasheet.

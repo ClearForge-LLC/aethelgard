@@ -253,6 +253,12 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
                 out.extend(lines.iter().map(|s| format!("{}_{s}", c.reference)));
             }
         }
+        // `AET-WO-4411` (c1): a UART crossing's two B-side lines
+        for c in &p.uart_crossings {
+            if let Some((tx, rx)) = crate::power::uart_b_nets(spec, &c.serial_port) {
+                out.extend([tx, rx]);
+            }
+        }
     }
     // `AET-WO-1211d` (Q1, ruled 18:18Z): each pin device's own nets, its
     // row's passive pins (a charge pump's, a regulator's capacitor) and each

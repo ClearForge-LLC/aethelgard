@@ -255,9 +255,30 @@ pub enum Direction {
 /// A fixed-direction translator (the TXU0304PW).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Translator {
-    /// The band each side's supply must lie in for the timing row the checks
-    /// read, mV. It is narrower than the part's operating range, and is the
-    /// range the domains are judged against (ruled D13).
+    /// Each supply pair a timing row is stated for, in the row's order: a
+    /// crossing reads the first whose bands hold both its domains
+    /// ([`Translator::supplies_for`]).
+    pub supplies: Vec<Supplies>,
+    /// The largest pull-up a floating input may take against its internal
+    /// pull-down, Ω (ruled D9).
+    pub pull_up_max_ohms: Limit,
+    /// Its data pins' levels, which a UART crossing's lines are judged by
+    /// (`AET-WO-4411` (c1)).
+    pub levels: Levels,
+    /// Where the rule that ties every input a crossing does not carry to
+    /// `GND` is read (ruled 2026-11-26T04:03Z: no floating input).
+    pub unused_inputs_at: At,
+    pub channels: Vec<Channel>,
+    pub external: Vec<ExternalRule>,
+    pub controls: Vec<ControlRule>,
+}
+
+/// One supply pair's timing row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Supplies {
+    /// The band each side's supply must lie in for this row, mV. It is
+    /// narrower than the part's operating range, and is the range the
+    /// domains are judged against (ruled D13).
     pub vcca_millivolts: Ranged,
     pub vccb_millivolts: Ranged,
     /// Propagation delay, at most, ns, in that row.
@@ -266,12 +287,32 @@ pub struct Translator {
     /// The highest data rate, at least, bit/s, each way, in that row.
     pub tmax_a_to_b_bps: Limit,
     pub tmax_b_to_a_bps: Limit,
-    /// The largest pull-up a floating input may take against its internal
-    /// pull-down, Ω (ruled D9).
-    pub pull_up_max_ohms: Limit,
-    pub channels: Vec<Channel>,
-    pub external: Vec<ExternalRule>,
-    pub controls: Vec<ControlRule>,
+    /// For a UART crossing only (ruled 2026-11-26T04:51Z S1): its TMAX and
+    /// the levels' thresholds are inferred, which a UART's rate tolerates and
+    /// an SPI clock's may not.
+    pub uart_only: bool,
+}
+
+/// A translator's data-pin levels, each against the supply at its own pin:
+/// an output's against VCCO, an input's against VCCI.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Levels {
+    /// The supply, at an input's own pin, its thresholds hold over, mV.
+    pub supply_millivolts: Ranged,
+    /// VOH, at least, is VCCO less this, mV, at the load below.
+    pub output_high_below_supply_millivolts: Limit,
+    /// VOL, at most, mV, at the load below.
+    pub output_low_max_millivolts: Limit,
+    /// The load the two output rows are stated at, at most, µA.
+    pub output_load_max_microamps: Limit,
+    /// VT+ at its maximum, per mille of VCCI: an input reads high above it.
+    pub input_high_min_permille: Limit,
+    /// VT− at its minimum, per mille of VCCI: an input reads low below it.
+    pub input_low_max_permille: Limit,
+    /// An input's current, at most, nA.
+    pub input_current_max_nanoamps: Limit,
+    /// The highest input the part takes in operation, mV.
+    pub input_max_millivolts: Limit,
 }
 
 impl Translator {
@@ -294,6 +335,30 @@ impl Translator {
             a.next()?.output.as_str(),
             miso.input.as_str(),
         ])
+    }
+
+    /// The two channels a UART crossing carries: the first A-to-B (the
+    /// MCU's TX) and the first B-to-A (its RX). `None` when the part has
+    /// neither.
+    pub fn uart_channels(&self) -> Option<[&Channel; 2]> {
+        let first = |d: Direction| self.channels.iter().find(|c| c.direction == d);
+        Some([first(Direction::AToB)?, first(Direction::BToA)?])
+    }
+
+    /// The first supply row whose bands hold `a` and `b` (each a domain's
+    /// declared min and max, mV), a `uart_only` row for a UART crossing
+    /// alone; the first row when none does, so the domain check refuses
+    /// against it (the reader holds at least one).
+    pub fn supplies_for(&self, a: (i64, i64), b: (i64, i64), uart: bool) -> &Supplies {
+        let holds = |r: &Ranged, (lo, hi): (i64, i64)| r.range.min <= lo && hi <= r.range.max;
+        self.supplies
+            .iter()
+            .find(|s| {
+                (uart || !s.uart_only)
+                    && holds(&s.vcca_millivolts, a)
+                    && holds(&s.vccb_millivolts, b)
+            })
+            .unwrap_or(&self.supplies[0])
     }
 }
 
@@ -568,6 +633,19 @@ pub struct McuIo {
     /// from, per board, on `mcu.supply` (`AET-WO-4300j` D3 (a),
     /// `crate::offboard::motor_pull_window`).
     pub motor_pull_bound: MotorPullBound,
+    /// The output levels a UART line from the MCU is judged by (`AET-WO-4411`
+    /// (c1)): VOH at least the supply less `high_below_supply`, VOL at most
+    /// `low_max`, each at `load` µA. Its inputs are `motor_pull_bound`'s
+    /// thresholds and leakage, the same table's.
+    pub output: McuOutput,
+}
+
+/// DS12117 Table 50's CMOS row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McuOutput {
+    pub high_below_supply_millivolts: Limit,
+    pub low_max_millivolts: Limit,
+    pub load_microamps: Limit,
 }
 
 /// The motor pull-down's bound, held as its inputs (`AET-WO-4300j`
@@ -1265,16 +1343,38 @@ struct RawChannel {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawTranslator {
+    supplies: Vec<RawSupplies>,
+    pull_up_max_ohms: RawLimit,
+    levels: RawLevels,
+    unused_inputs_at: RawAt,
+    channels: Vec<RawChannel>,
+    external: Vec<RawExternal>,
+    controls: Vec<RawControl>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSupplies {
     vcca_millivolts: RawRanged,
     vccb_millivolts: RawRanged,
     tpd_a_to_b_max_ns: RawLimit,
     tpd_b_to_a_max_ns: RawLimit,
     tmax_a_to_b_bps: RawLimit,
     tmax_b_to_a_bps: RawLimit,
-    pull_up_max_ohms: RawLimit,
-    channels: Vec<RawChannel>,
-    external: Vec<RawExternal>,
-    controls: Vec<RawControl>,
+    uart_only: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLevels {
+    supply_millivolts: RawRanged,
+    output_high_below_supply_millivolts: RawLimit,
+    output_low_max_millivolts: RawLimit,
+    output_load_max_microamps: RawLimit,
+    input_high_min_permille: RawLimit,
+    input_low_max_permille: RawLimit,
+    input_current_max_nanoamps: RawLimit,
+    input_max_millivolts: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1397,6 +1497,15 @@ struct RawMcuIo {
     absolute_maximum: RawIoAbsoluteMaximum,
     analog_pads: RawAnalogPads,
     motor_pull_bound: RawMotorPullBound,
+    output: RawMcuOutput,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawMcuOutput {
+    high_below_supply_millivolts: RawLimit,
+    low_max_millivolts: RawLimit,
+    load_microamps: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -2287,21 +2396,74 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     direction: c.direction,
                 });
             }
+            if t.supplies.is_empty() {
+                return Err("`kind.translator.supplies` is empty".to_owned());
+            }
+            let mut supplies = Vec::with_capacity(t.supplies.len());
+            for (i, x) in t.supplies.into_iter().enumerate() {
+                let f = format!("kind.translator.supplies[{i}]");
+                supplies.push(Supplies {
+                    vcca_millivolts: r
+                        .ranged_positive(x.vcca_millivolts, &format!("{f}.vcca_millivolts"))?,
+                    vccb_millivolts: r
+                        .ranged_positive(x.vccb_millivolts, &format!("{f}.vccb_millivolts"))?,
+                    tpd_a_to_b_max_ns: r
+                        .positive(x.tpd_a_to_b_max_ns, &format!("{f}.tpd_a_to_b_max_ns"))?,
+                    tpd_b_to_a_max_ns: r
+                        .positive(x.tpd_b_to_a_max_ns, &format!("{f}.tpd_b_to_a_max_ns"))?,
+                    tmax_a_to_b_bps: r
+                        .positive(x.tmax_a_to_b_bps, &format!("{f}.tmax_a_to_b_bps"))?,
+                    tmax_b_to_a_bps: r
+                        .positive(x.tmax_b_to_a_bps, &format!("{f}.tmax_b_to_a_bps"))?,
+                    uart_only: x.uart_only,
+                });
+            }
+            let l = t.levels;
+            let f = "kind.translator.levels";
+            let levels = Levels {
+                supply_millivolts: r
+                    .ranged_positive(l.supply_millivolts, &format!("{f}.supply_millivolts"))?,
+                output_high_below_supply_millivolts: r.positive(
+                    l.output_high_below_supply_millivolts,
+                    &format!("{f}.output_high_below_supply_millivolts"),
+                )?,
+                output_low_max_millivolts: r.positive(
+                    l.output_low_max_millivolts,
+                    &format!("{f}.output_low_max_millivolts"),
+                )?,
+                output_load_max_microamps: r.positive(
+                    l.output_load_max_microamps,
+                    &format!("{f}.output_load_max_microamps"),
+                )?,
+                input_high_min_permille: r.positive(
+                    l.input_high_min_permille,
+                    &format!("{f}.input_high_min_permille"),
+                )?,
+                input_low_max_permille: r.positive(
+                    l.input_low_max_permille,
+                    &format!("{f}.input_low_max_permille"),
+                )?,
+                input_current_max_nanoamps: r.positive(
+                    l.input_current_max_nanoamps,
+                    &format!("{f}.input_current_max_nanoamps"),
+                )?,
+                input_max_millivolts: r
+                    .positive(l.input_max_millivolts, &format!("{f}.input_max_millivolts"))?,
+            };
+            if levels.input_low_max_permille.value >= levels.input_high_min_permille.value
+                || levels.input_high_min_permille.value >= 1000
+            {
+                return Err(format!(
+                    "`{f}` holds input low {} and input high {} per mille: low below high, high below 1000",
+                    levels.input_low_max_permille.value, levels.input_high_min_permille.value
+                ));
+            }
             Kind::Translator(Box::new(Translator {
-                vcca_millivolts: r
-                    .ranged_positive(t.vcca_millivolts, "kind.translator.vcca_millivolts")?,
-                vccb_millivolts: r
-                    .ranged_positive(t.vccb_millivolts, "kind.translator.vccb_millivolts")?,
-                tpd_a_to_b_max_ns: r
-                    .positive(t.tpd_a_to_b_max_ns, "kind.translator.tpd_a_to_b_max_ns")?,
-                tpd_b_to_a_max_ns: r
-                    .positive(t.tpd_b_to_a_max_ns, "kind.translator.tpd_b_to_a_max_ns")?,
-                tmax_a_to_b_bps: r
-                    .positive(t.tmax_a_to_b_bps, "kind.translator.tmax_a_to_b_bps")?,
-                tmax_b_to_a_bps: r
-                    .positive(t.tmax_b_to_a_bps, "kind.translator.tmax_b_to_a_bps")?,
+                supplies,
                 pull_up_max_ohms: r
                     .positive(t.pull_up_max_ohms, "kind.translator.pull_up_max_ohms")?,
+                levels,
+                unused_inputs_at: r.at(t.unused_inputs_at, "kind.translator.unused_inputs_at")?,
                 channels,
                 external: r.external(t.external, "kind.translator.external")?,
                 controls: r.controls(t.controls, &["OE"], "kind.translator.controls")?,
@@ -2690,6 +2852,18 @@ fn mcu_io(m: RawMcuIo, r: &mut Reader<'_>) -> Result<McuIo, String> {
         absolute_maximum,
         analog_pads,
         motor_pull_bound: motor_pull_bound(m.motor_pull_bound, r)?,
+        output: McuOutput {
+            high_below_supply_millivolts: r.positive(
+                m.output.high_below_supply_millivolts,
+                "kind.mcu.io.output.high_below_supply_millivolts",
+            )?,
+            low_max_millivolts: r.positive(
+                m.output.low_max_millivolts,
+                "kind.mcu.io.output.low_max_millivolts",
+            )?,
+            load_microamps: r
+                .positive(m.output.load_microamps, "kind.mcu.io.output.load_microamps")?,
+        },
     })
 }
 

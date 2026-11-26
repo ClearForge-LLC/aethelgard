@@ -2906,8 +2906,8 @@ fn sag_refused(spec: &Value, overrides: Value, kind: &str, says: &str) -> Value 
 /// §1.6: each clause of a battery sag refuses by name before any run, with
 /// its own message; a sag the clauses admit reaches its boot (here, no
 /// bridge: the boot's analog pass, `BridgeUnavailable`, exit 4). The edges
-/// are measured: U10's regulation floor (7,000 mV, D-B9) admits 824 mΩ and
-/// refuses 825 mΩ (`AET-WO-4411`). Its instant is placed from the boot word (`AET-WO-2310`),
+/// are measured: U10's regulation floor (7,000 mV, D-B9) admits 823 mΩ and
+/// refuses 824 mΩ (`AET-WO-4411`). Its instant is placed from the boot word (`AET-WO-2310`),
 /// so before the boot only the offset is judged, and says so; past the span
 /// once placed is `battery_sag_tier2`'s, after a real boot.
 #[test]
@@ -2925,20 +2925,20 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
     sag_refused(&spec, json!([sag(1, start)]), r, "not a fault");
     sag_refused(&spec, json!([sag(1_400, start)]), r, "no operating point");
     // The edge was 948/949 mΩ after `AET-WO-4300k` (the supervisor's two
-    // 1 mA loads, U12 and R61); it is 824/825 mΩ since `AET-WO-4411`, whose
-    // radio module (500 mA on its own rail through U13, 490 mW of loss, and
-    // its pull-ups) raises the constant power: 825 mΩ puts the battery at
-    // 6,996,978 µV, 3,022 µV under U10's 7 V (measured).
-    let v = sag_refused(&spec, json!([sag(825, start)]), r, "below regulation");
+    // 1 mA loads, U12 and R61); it is 823/824 mΩ since `AET-WO-4411`, whose
+    // radio module (500 mA on its own rail through U13, 490 mW of loss, its
+    // pull-ups and U31's two 1 mA rows) raises the constant power: 824 mΩ
+    // puts the battery at 6,999,388 µV, 612 µV under U10's 7 V (measured).
+    let v = sag_refused(&spec, json!([sag(824, start)]), r, "below regulation");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
         m.contains("U10")
-            && m.contains("6996978 µV")
+            && m.contains("6999388 µV")
             && m.contains("7000000 µV")
             && m.contains("3800000 µV"),
         "{m}"
     );
-    sag_refused(&spec, json!([sag(826, start)]), r, "below regulation");
+    sag_refused(&spec, json!([sag(825, start)]), r, "below regulation");
     for offset in [100_000_010, -100_000_010, 99_999_999] {
         sag_refused(
             &spec,
@@ -2951,7 +2951,7 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
         "from_boot_word_ns": -42_929_480, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
         "source_milliohms": 500, "load_milliamps": 100}});
     sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
-    for admitted in [2, 500, 824] {
+    for admitted in [2, 500, 823] {
         let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
         expect_refusal(&out, 4, "BridgeUnavailable");
         assert!(!made);
@@ -3065,15 +3065,24 @@ fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
     ] {
         sag_refused(&s03(), o, r, "more than one rail out of band");
     }
-    // Without its radio module (`AET-WO-4411`, its port with it): U11 fed
-    // from `VDD_5V` would pass the module's 500 mA to U10, overloaded
-    // (`RegulatorOverloaded`, 3249 mA of 3000) before the rail is judged.
+    // Without its radio module (`AET-WO-4411`, its port and U31 with it):
+    // U11 fed from `VDD_5V` would pass the module's 500 mA to U10,
+    // overloaded (`RegulatorOverloaded`, 3249 mA of 3000) before the rail is
+    // judged.
     let mut spec = s03();
     spec.as_object_mut().unwrap().remove("radio_modules");
     spec["serial_ports"]
         .as_array_mut()
         .unwrap()
         .retain(|p| p["label"] != "WIFI");
+    spec["power"]
+        .as_object_mut()
+        .unwrap()
+        .remove("uart_crossings");
+    spec["power"]["loads"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|l| l["reference"] != "U31");
     let u11 = spec["power"]["regulators"]
         .as_array_mut()
         .unwrap()

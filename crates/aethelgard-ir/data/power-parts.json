@@ -1160,56 +1160,171 @@
       },
       "kind": {
         "translator": {
-          "vcca_millivolts": {
-            "min": 3000,
-            "max": 3600,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 14, 7.11 the VCCA = 3.3 V +/- 0.3 V rows (the device's own range is 1.08 to 5.5 V, p. 6, 7.3)"
+          "supplies": [
+            {
+              "vcca_millivolts": {
+                "min": 3000,
+                "max": 3600,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 the VCCA = 3.3 V +/- 0.3 V rows (the device's own range is 1.08 to 5.5 V, p. 6, 7.3)"
+                }
+              },
+              "vccb_millivolts": {
+                "min": 1650,
+                "max": 1950,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 the VCCB = 1.8 V +/- 0.15 V rows"
+                }
+              },
+              "tpd_a_to_b_max_ns": {
+                "value": 19,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 tpd A to B, VCCA 3.3 +/- 0.3 V, VCCB 1.8 +/- 0.15 V, TA -40 to 125 C, max 19 ns (RL 10 kOhm, CL 5 pF, p. 18)"
+                }
+              },
+              "tpd_b_to_a_max_ns": {
+                "value": 15,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 tpd B to A, same supplies, TA -40 to 125 C, max 15 ns"
+                }
+              },
+              "tmax_a_to_b_bps": {
+                "value": 50000000,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 9, 7.6 TMAX, VCCI 3.0 to 3.6 V to VCCO 1.65 to 1.95 V, min 50 Mbps"
+                }
+              },
+              "tmax_b_to_a_bps": {
+                "value": 100000000,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 9, 7.6 TMAX, VCCI 1.65 to 1.95 V to VCCO 3.0 to 3.6 V, min 100 Mbps"
+                }
+              },
+              "uart_only": false
+            },
+            {
+              "vcca_millivolts": {
+                "min": 3000,
+                "max": 3600,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 the VCCA = 3.3 V +/- 0.3 V rows (the device's own range is 1.08 to 5.5 V, p. 6, 7.3)"
+                }
+              },
+              "vccb_millivolts": {
+                "min": 3000,
+                "max": 3600,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 the VCCB = 3.3 V +/- 0.3 V rows"
+                }
+              },
+              "tpd_a_to_b_max_ns": {
+                "value": 11,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 tpd A to B, VCCA 3.3 +/- 0.3 V, VCCB 3.3 +/- 0.3 V, TA -40 to 125 C, max 11 ns"
+                }
+              },
+              "tpd_b_to_a_max_ns": {
+                "value": 11,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 14, 7.11 tpd B to A, same supplies, TA -40 to 125 C, max 11 ns"
+                }
+              },
+              "tmax_a_to_b_bps": {
+                "value": 10000000,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 9, 7.6 TMAX states no VCCI 3.0-3.6 V to VCCO 3.0-3.6 V row; the lowest row from VCCI 3.0-3.6 V, to VCCO 1.1-1.3 V, min 10 Mbps (AET-WO-4411 G2)"
+                }
+              },
+              "tmax_b_to_a_bps": {
+                "value": 10000000,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 9, 7.6 TMAX, as A to B: no 3.0-3.6 V to 3.0-3.6 V row; the lowest from VCCI 3.0-3.6 V, min 10 Mbps (AET-WO-4411 G2)"
+                }
+              },
+              "uart_only": true
             }
-          },
-          "vccb_millivolts": {
-            "min": 1650,
-            "max": 1950,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 14, 7.11 the VCCB = 1.8 V +/- 0.15 V rows"
-            }
-          },
-          "tpd_a_to_b_max_ns": {
-            "value": 19,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 14, 7.11 tpd A to B, VCCA 3.3 +/- 0.3 V, VCCB 1.8 +/- 0.15 V, TA -40 to 125 C, max 19 ns (RL 10 kOhm, CL 5 pF, p. 18)"
-            }
-          },
-          "tpd_b_to_a_max_ns": {
-            "value": 15,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 14, 7.11 tpd B to A, same supplies, TA -40 to 125 C, max 15 ns"
-            }
-          },
-          "tmax_a_to_b_bps": {
-            "value": 50000000,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 9, 7.6 TMAX, VCCI 3.0 to 3.6 V to VCCO 1.65 to 1.95 V, min 50 Mbps"
-            }
-          },
-          "tmax_b_to_a_bps": {
-            "value": 100000000,
-            "at": {
-              "document": "SCES935A",
-              "section": "p. 9, 7.6 TMAX, VCCI 1.65 to 1.95 V to VCCO 3.0 to 3.6 V, min 100 Mbps"
-            }
-          },
+          ],
           "pull_up_max_ohms": {
             "value": 1000000,
             "at": {
               "document": "SCES935A",
               "section": "p. 21, 9.3.1.1: an external pull-up no larger than 1 MOhm against the 5 MOhm internal pull-down"
             }
+          },
+          "levels": {
+            "supply_millivolts": {
+              "min": 3000,
+              "max": 5500,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 7, 7.5: the thresholds below are the VCCI = 3 V rows as a fraction of VCCI, which bound the 4.5 V and 5.5 V rows; p. 6, 7.3 VCC max 5.5 V"
+              }
+            },
+            "output_high_below_supply_millivolts": {
+              "value": 100,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 8, 7.5 VOH, IOH = -0.1 mA, VCCA and VCCB 1.1-5.5 V, TA -40 to 125 C: min VCCO - 0.1 V"
+              }
+            },
+            "output_low_max_millivolts": {
+              "value": 100,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 8, 7.5 VOL, IOL = 0.1 mA, VCCA and VCCB 1.1-5.5 V, TA -40 to 125 C: max 0.1 V"
+              }
+            },
+            "output_load_max_microamps": {
+              "value": 100,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 8, 7.5 VOH at IOH = -0.1 mA and VOL at IOL = 0.1 mA"
+              }
+            },
+            "input_high_min_permille": {
+              "value": 640,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 7, 7.5 VT+ data inputs, VCCI 3 V, TA -40 to 125 C: max 1.92 V = 640 per mille; 2.74 V at 4.5 V and 3.33 V at 5.5 V lie under it (AET-WO-4411 G1)"
+              }
+            },
+            "input_low_max_permille": {
+              "value": 296,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 7, 7.5 VT- data inputs, VCCI 3 V, TA -40 to 125 C: min 0.89 V, 296 per mille rounded down; 1.51 V at 4.5 V and 1.88 V at 5.5 V lie over it (AET-WO-4411 G1)"
+              }
+            },
+            "input_current_max_nanoamps": {
+              "value": 2000,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 8, 7.5 II data inputs, VI = VCCI or GND, TA -40 to 125 C: -2 to 2 uA"
+              }
+            },
+            "input_max_millivolts": {
+              "value": 5500,
+              "at": {
+                "document": "SCES935A",
+                "section": "p. 6, 7.3 VI input voltage, max 5.5 V"
+              }
+            }
+          },
+          "unused_inputs_at": {
+            "document": "SCES935A",
+            "section": "p. 21, 9.3.1.1: every input has a 5 MOhm typical pull-down, for channels not used or fixed low; tied to GND, since no input floats (ruled 2026-11-26T04:03Z)"
           },
           "channels": [
             {
@@ -2478,6 +2593,29 @@
               "peer_rail_tolerance_permille": {
                 "value": 50,
                 "basis": "a stand-in (S1): the ESC regulator's tolerance is not held (FEEDBACK R1); taken as the committed boards' 3V3 +/-50 permille. AET-WO-4300j F2, ruled 2026-11-23T12:25Z"
+              }
+            },
+            "output": {
+              "high_below_supply_millivolts": {
+                "value": 400,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 139, Table 50 (rev Y) = Table 147 p. 243 (rev V): VOH CMOS port, IIO = -8 mA, 2.7 V <= VDD <= 3.6 V, min VDD - 0.4"
+                }
+              },
+              "low_max_millivolts": {
+                "value": 400,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 139, Table 50 (rev Y) = Table 147 p. 243 (rev V): VOL CMOS port, IIO = 8 mA, 2.7 V <= VDD <= 3.6 V, max 0.4"
+                }
+              },
+              "load_microamps": {
+                "value": 8000,
+                "at": {
+                  "document": "DS12117",
+                  "section": "p. 139, Table 50: the CMOS rows' IIO, 8 mA"
+                }
               }
             }
           }
