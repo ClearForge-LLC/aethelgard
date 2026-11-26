@@ -182,7 +182,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
 - **Why it is kept:** it is the pricing's design, so a block's own SW, FB, VCC and BOOT tracks are never pushed off F.Cu. It is named here.
 - **Not planted:** the ladder's treatment of a buck with no measured layer (adversarial F6). No board reaches that case.
 - **Earlier phases:** 40 mutants of the radio rules and placement, 39 killed. M23 (references distinct) survived, named in §9.
-- **(c1): 33 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, `radio_tier1` for the emitter's and the loops', and `aethelgard-eda`'s unit tests for the router's.
+- **(c1): 34 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, `radio_tier1` for the emitter's and the loops', and `aethelgard-eda`'s unit tests for the router's.
   - **The level judge (C01-C05):** high, low, the receiver's maximum, the stated load, and the one-rail corner model.
   - **The crossing's shape (C06-C11):** no module on the port, twice on a port, no B-to-A channel, the rails, TMAX, and the levels' supply window.
   - **The off-domain gate (C12)** and the closed rows (C13).
@@ -196,6 +196,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
   - **C12 and C16 were re-run after the reduction** moved their code into `uart_b_nets` and `module_uart_nets`. Both are killed.
   - **C27 was re-aimed at R1's rule,** OE on VCCA, and is killed. Each kill's test passes un-mutated in the suite (§10).
   - **C35, the array's off-µm refusal in `route::arrays`** (11:51Z): with the check made `if false`, `an_array_via_off_the_drill_files_micron_grid_is_refused` fails (killed, 5 s); un-mutated it passes. C34 (the angle) is withdrawn, §7, so the count is 33, not 34.
+  - **C36, the bench sheet's rows check** (18:38Z): with `rows_are_the_bench_acknowledgements` ignoring missing rows (`if !extra.is_empty()`), `a_bench_sheet_missing_or_adding_a_row_fails` fails with "a row gone: passed" (killed). Un-mutated, `bench_board_tier1` passes 10/10.
   - **C19** (`RadioRailUnsequenced`'s reason, which reads differently with a crossing) is wording, not a guard, so it was not planted.
 
 ## 7. Adversarial pass
@@ -347,6 +348,7 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, the 08:59Z/09:01Z review's fixes, and the CI findings ruled 10:30Z, 10:40Z and 11:51Z: the deck test, the 1.0 mm pitch and the grid guard; then main 20971352, AET-WO-1919, merged as 99f266bd, ruled 16:00Z (a)). Every run on the merge used `CARGO_BUILD_JOBS=6` and 6 test threads:
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
+- **After the artifacts (dac6cca4):** the two tests that read `fab/`, `bench_board_tier1` (10 passed, its 2 new tests included, the Sentinel-01 binding now passing) and `fab_tier1` (19 passed), with clippy on `aethelgard-cli`'s targets and the four guards: pass.
 - **`cargo test --workspace` on the merge: 3278 passed, 1 failed** (3264 and 1 on 3c5af138). The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
 - **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` gives guard ok: 3503 test names, 3510 listed occurrences and 20 shards on 3c5af138, after the grid guard's two tests. On the merge, with 1919's weight rows, it gives **3518 names, 3525 occurrences, 20 shards**.
   - The plan had refused on 20235acb, because three `board_tier2` tests of this WO had no row.
@@ -368,7 +370,29 @@ On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, t
   - `board_tier2`: 30 passed (1,814 s), 1919's `verify_refuses_a_board_swapped_after_extract_ran_ahead` included.
   - `twin_tier2`: 96 passed (905 s).
   - From 2026-11-26T13:53Z every cargo run here carries `CARGO_BUILD_JOBS=6` and `RUST_TEST_THREADS=6`: the plan below did, and the tier-2 run above, started at 11:54Z, did not.
-- **Mutants:** 33 of 33 (c1) mutants killed, C35 the grid guard's, §6.
+- **The write, run 45871309144 on 0d0d4c16 (dispatched 17:52Z):** `bench-package` (`--fab-out --rebind`) 5.0 min and `bench-package-s03` (`--fab-out`) 37.0 min, both success.
+  - `gates` and `tools-shard (6)` failed only on `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`, the old Sentinel-01 binding that this commit's re-bound package ends. `tools` is their sum.
+  - **Committed unchanged from the run's artifacts as 9d418dc0** (each directory byte-compared with the downloaded artifact before committing). Every moved file:
+    - `fab/sentinel-03/package/`, 17 of 19: `FAB-NOTES.md`, `MANIFEST.json`, `sentinel-03-B_Cu.gbl`, `sentinel-03-B_Mask.gbs`, `sentinel-03-Edge_Cuts.gm1`, `sentinel-03-F_Cu.gtl`, `sentinel-03-F_Mask.gts`, `sentinel-03-F_Paste.gtp`, `sentinel-03-F_Silkscreen.gto`, `sentinel-03-In1_Cu.g1`, `sentinel-03-In2_Cu.g2`, `sentinel-03-jlcpcb-bom.csv`, `sentinel-03-jlcpcb-cpl.csv`, `sentinel-03-pos.csv`, `sentinel-03.bom.csv`, `sentinel-03.drl`, `sentinel-03.elf`. `sentinel-03-B_Paste.gbp` and `sentinel-03-B_Silkscreen.gbo` did not move.
+    - `fab/sentinel-01-bench/package/`, 2 of 17: `FAB-NOTES.md` and `MANIFEST.json`. The re-bind moved only `specification_sha256` (now `examples/sentinel-01.json`'s `0f20043a…`), `topology_sha256`, `verdict_sha256` and FAB-NOTES' sha.
+  - CI's Sentinel-03 package equals my local 3c5af138 one in 18 files. `MANIFEST.json` differs in `verdict_sha256` alone, because the verdict records the sandbox: CI meets the uid boundary and rootless podman does not.
+- **The bench sheet was stale, my omission** (stopped 18:35Z, ruled 18:38Z (i)).
+  - `fab/sentinel-03/BENCH.md`, the plan Scotty runs at bring-up, had not been touched since 4300k. It named the old ELF `6e4a81f2…`, which is how `sentinel_03_s_bench_sheet_names_its_package_elf` caught it.
+  - It had no row for three bench conditions this WO acknowledges: `buck_junction_screened:U13`, `theta_ja_copper_mismatch:U13` and `translator_threshold_inferred:U31`.
+  - B-1 predicted 71 mV at 1,653 mA, and B-5 550 mW at 749 mA.
+  - Changing only the hash would have passed the test on a sheet that does not describe the board being ordered.
+  - **Refreshed in dac6cca4:**
+    - the ELF `66d9b7f6…`;
+    - B-1 81 mV at 1,906 mA, B-4 (unchanged figures, its copper per joined layer) and B-5 570 mW at 750 mA, 20.5 K, each quoting its source line from this verdict or `package/FAB-NOTES.md`;
+    - **B-8**, U13's temperature: 505 mA, 490 mW, about 17.6 K, with U30 held in reset by shorting C90;
+    - **B-9**, U31's VT+ ≤ 640 ‰ and VT− ≥ 296 ‰ of each input's own rail, measured at A1 (U1 held in reset by J2's NRST) and at B4 (U30 held by C90).
+    - Every quoted fragment was checked present, verbatim, in its source.
+  - **Held by a check now:** `sentinel_03_s_bench_rows_are_exactly_its_acknowledged_bench_rows`.
+    - It requires set equality between the backticked conditions in the sheet's `### B-` headings and the `acknowledge_conditions` whose reason names the bench (12 of 102).
+    - `a_bench_sheet_missing_or_adding_a_row_fails` plants each way: a row gone, a condition gone from a heading, a row for no acknowledgement, and an acknowledgement with no row. Mutant C36 is killed.
+  - B-1's quote carries F1's part number `SF-1206F700-2`. The ELF check reads its `1206F700` as a digest, so each sheet now names its own non-ELF digests: `NOT_AN_ELF` for Sentinel-01, `S03_NOT_AN_ELF` for Sentinel-03. Each is checked still cited, as before.
+  - **A row, not fixed here:** the reason text on `input_path_resistance_at_25c:Q1` says "the 80 mV drop", but the verdict computes 81 mV (42.375 mΩ × 1,906 mA = 80.77, rounded up). Correcting it moves the specification's hash and so the package. A later spec change takes it.
+- **Mutants:** 34 of 34 (c1) mutants killed: C35 the grid guard's, C36 the bench sheet's rows check, §6.
 - **INV-08 and identities, with the final binary (after the 1.0 mm pitch and the grid guard):**
   - the 25 boards are byte-identical against 3a35be0f's outputs, and the 16 refusals keep their kinds;
   - `sentinel-03-radio` differs from 081a463b in pad 19's four vias alone: (129.4375, 36.1875) and its three mirrors become (129.5, 36.25) and its mirrors, ±0.5 mm about the pad's centre instead of ±0.5625, with the uuids that follow from position. 16 changed lines, nothing else;
