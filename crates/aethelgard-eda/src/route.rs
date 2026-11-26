@@ -5107,6 +5107,7 @@ mod tests {
             Grid::new(board.outline).unwrap(),
             vec!["/P".into()],
             &[],
+            0,
         );
         let node = |x: i64| r.grid.nodes(Rect::point(x, 50 * MM)).next().unwrap();
         assert_eq!(r.via[0][node(hole.x0 + 250_000)], BLOCKED);
@@ -6369,7 +6370,7 @@ mod tests {
 
     fn router<'a>(board: &'a Board, arrays: &[Array]) -> Router<'a> {
         let grid = Grid::new(board.outline).unwrap();
-        Router::new(board, grid, vec!["/S".into(), "/T".into()], arrays)
+        Router::new(board, grid, vec!["/S".into(), "/T".into()], arrays, 0)
     }
 
     fn node_at(r: &Router<'_>, x: i64, y: i64) -> usize {

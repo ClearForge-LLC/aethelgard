@@ -180,9 +180,7 @@ pub enum EmitError {
     /// buck's joined copper at its screen's need on every joined layer. The
     /// nearest rung's shortfalls: (buck, layer, area, need), mm².
     #[error("no step of the pour ladder keeps every buck's copper at its junction screen's need; nearest: {}", short.iter().map(|(b, l, a, n)| format!("{b} on {l} {a} mm2 under {n} mm2")).collect::<Vec<_>>().join(", "))]
-    BuckPourShort {
-        short: Vec<(String, String, u64, u64)>,
-    },
+    BuckPourShort { short: Vec<BuckCopper> },
     /// `AET-WO-1314`: `extract`'s own reader or bound, which the ladder
     /// consults, refused the ladder's own board by name; its kind and path
     /// are `extract`'s.
@@ -393,7 +391,7 @@ pub struct Ladder {
     /// `AET-WO-4411` (b): on a board with a buck, the pour ladder's step it
     /// settled on and each buck's joined copper there, (buck, layer, area,
     /// need), mm²; `None` on a board with none, whose routing is today's.
-    pub pour: Option<(usize, Vec<(String, String, u64, u64)>)>,
+    pub pour: Option<(usize, Vec<BuckCopper>)>,
 }
 
 /// A symbol pin: library coordinates in nanometres, Y up.
@@ -1101,7 +1099,7 @@ fn laddered(
     let mut first_error = None;
     // the step whose rungs came nearest: (its shortfall's worst margin, the
     // shortfalls), among rungs holding every capacitance bound
-    let mut nearest: Option<((i128, i128), Vec<(String, String, u64, u64)>)> = None;
+    let mut nearest: Option<((i128, i128), Vec<BuckCopper>)> = None;
     let mut today: Option<Choice> = None;
     for step in 0..=steps {
         // placed once ([`place`]); each rung routed on its own thread, its
@@ -1137,8 +1135,7 @@ fn laddered(
         });
         // each rung's text, figures and buck copper, at its index; `None`
         // where it did not route
-        let mut judged: Vec<Option<(String, Vec<Figure>, Vec<(String, String, u64, u64)>)>> =
-            Vec::new();
+        let mut judged: Vec<Option<Judged>> = Vec::new();
         for result in routed {
             let text = match result {
                 Ok(t) => t,
@@ -1154,20 +1151,19 @@ fn laddered(
                 .into_iter()
                 .filter_map(|b| Some((b.net.clone(), b.c_bound_femtofarads, max_of(&b.net)?)))
                 .collect();
-            let areas: Vec<(String, String, u64, u64)> =
-                crate::pour::joined(&read.board, &read.routed, &pads)
-                    .into_iter()
-                    .flat_map(|j| {
-                        let n = need(&j.reference);
-                        j.layers
-                            .into_iter()
-                            .map(move |(l, a)| (j.reference.clone(), l, a, n))
-                            .collect::<Vec<_>>()
-                    })
-                    .collect();
+            let areas: Vec<BuckCopper> = crate::pour::joined(&read.board, &read.routed, &pads)
+                .into_iter()
+                .flat_map(|j| {
+                    let n = need(&j.reference);
+                    j.layers
+                        .into_iter()
+                        .map(move |(l, a)| (j.reference.clone(), l, a, n))
+                        .collect::<Vec<_>>()
+                })
+                .collect();
             judged.push(Some((text, figures, areas)));
         }
-        let short = |a: &[(String, String, u64, u64)]| -> Vec<(String, String, u64, u64)> {
+        let short = |a: &[BuckCopper]| -> Vec<BuckCopper> {
             a.iter()
                 .filter(|(_, _, area, n)| area < n)
                 .cloned()
@@ -1230,6 +1226,13 @@ fn laddered(
         }
     }
 }
+
+/// A buck's joined copper on one layer, `AET-WO-4411` (b): (buck, layer,
+/// area, the need its junction screen holds it to), mm².
+pub type BuckCopper = (String, String, u64, u64);
+
+/// One rung's board text, its bounded nets' figures and its bucks' copper.
+type Judged = (String, Vec<Figure>, Vec<BuckCopper>);
 
 /// A bounded net's figure on one rung: (net, its bound by `extract`'s
 /// arithmetic, its declared bound), fF.

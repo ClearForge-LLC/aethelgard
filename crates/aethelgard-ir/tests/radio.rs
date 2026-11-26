@@ -104,10 +104,20 @@ fn a_port_with_no_module_still_ends_at_a_connector() {
     assert_eq!(judged(&v).unwrap_err().0, "SerialPortNotAtConnector");
 }
 
+/// A supply outside the module's range is step 27's (`radio::validate`)
+/// alone: whole, a module on `VDD_5V` is refused first by step 25, its TX
+/// onto the MCU at the rail's 5.25 V over DS12117 Table 10's 4.0 V at
+/// VDD = 0 (`OffDomainAboveLimit`, `AET-WO-4411`).
 #[test]
-fn the_supply_is_the_mcus_and_in_range() {
-    let (kind, _) = refused(|v| module(v)["supply"] = json!("VDD_5V"));
-    assert_eq!(kind, "RadioSupplyOutOfRange");
+fn the_supply_is_declared_and_in_range() {
+    let mut v = fixture();
+    module(&mut v)["supply"] = json!("VDD_5V");
+    let s: Specification = serde_json::from_value(v.clone()).unwrap();
+    assert_eq!(
+        aethelgard_ir::radio::validate(&s).unwrap_err().kind(),
+        "RadioSupplyOutOfRange"
+    );
+    assert_eq!(judged(&v).unwrap_err().0, "OffDomainAboveLimit");
     let (kind, _) = refused(|v| module(v)["supply"] = json!("VDD_9V"));
     assert_eq!(kind, "RadioSupplyUnknown");
 }

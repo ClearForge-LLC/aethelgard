@@ -188,20 +188,21 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
     // the 3.3 V regulator's feedback divider (3.465 V / (105 + 46.4) kOhm),
     // and the reset supervisor's NRST pull-up (`AET-WO-4300k` (9)).
     let described = [
-        ("R1", "/I2C_SDA"),
-        ("R2", "/I2C_SCL"),
-        ("R3", "/EXT_SDA"),
-        ("R4", "/EXT_SCL"),
-        ("R6", "/U4_WP"),
-        ("R7", "/U4_HOLD"),
-        ("R20", "/U11_FB"),
-        ("R61", "/NRST"),
+        ("R1", "/I2C_SDA", "VDD_3V3"),
+        ("R2", "/I2C_SCL", "VDD_3V3"),
+        ("R3", "/EXT_SDA", "VDD_3V3"),
+        ("R4", "/EXT_SCL", "VDD_3V3"),
+        ("R6", "/U4_WP", "VDD_3V3"),
+        ("R7", "/U4_HOLD", "VDD_3V3"),
+        ("R20", "/U11_FB", "VDD_3V3"),
+        ("R61", "/NRST", "VDD_3V3"),
         // `AET-WO-4411`: U30's EN and IO2 strap pull-ups; U13's feedback
-        // divider, and its PG's pull-up, which U11's EN follows.
-        ("R90", "/U30_EN"),
-        ("R91", "/U30_IO2"),
-        ("R30", "/U13_FB"),
-        ("R32", "/U13_PG"),
+        // divider, and its PG's pull-up, which U11's EN follows; each on
+        // the module's own rail.
+        ("R90", "/U30_EN", "VDD_3V3_RF"),
+        ("R91", "/U30_IO2", "VDD_3V3_RF"),
+        ("R30", "/U13_FB", "VDD_3V3_RF"),
+        ("R32", "/U13_PG", "VDD_3V3_RF"),
     ];
     let rows: Vec<String> = s03()["power"]["loads"]
         .as_array()
@@ -211,10 +212,10 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         .filter(|r| r.starts_with('R'))
         .map(str::to_owned)
         .collect();
-    assert_eq!(rows, described.map(|(r, _)| r));
+    assert_eq!(rows, described.map(|(r, _, _)| r));
     let text = fs::read_to_string(s03_board()).unwrap();
     let tree = aethelgard_eda::strict::board(&text).unwrap();
-    for (reference, net) in described {
+    for (reference, net, rail) in described {
         let fp = tree
             .root()
             .all("footprint")
@@ -225,7 +226,9 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
             .filter_map(|pad| pad.one("net").unwrap().and_then(|n| n.last()))
             .collect();
         nets.sort_unstable();
-        assert_eq!(nets, [net, "VDD_3V3"], "{reference}");
+        let mut want = [net, rail];
+        want.sort_unstable();
+        assert_eq!(nets, want, "{reference}");
     }
 }
 

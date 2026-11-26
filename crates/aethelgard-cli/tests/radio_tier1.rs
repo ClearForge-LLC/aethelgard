@@ -244,3 +244,33 @@ fn the_modules_port_moves_no_pin() {
         .collect();
     assert!(!taken.contains(&wifi), "{wifi} is already a port's");
 }
+
+/// (a), ruled 2026-11-25T21:17Z: the regulator whose output is the module's
+/// supply, U13, belongs to the module's group: in the strip the module takes
+/// at the board's top (its origin within the module's courtyard height,
+/// whose y runs from 13.375 mm above the module's origin to 7.175 mm below),
+/// left of the module, and turned 180 degrees so its switch node, whose
+/// inductor is its largest anchored part, faces the open board.
+#[test]
+fn the_modules_regulator_sits_in_the_modules_strip_turned_away() {
+    let tree = strict::board(board()).unwrap();
+    let fps = footprints(&tree);
+    let at = |r: &str| fps.iter().find(|(x, ..)| x == r).unwrap().2;
+    let ((mx, my), (ux, uy)) = (at("U30"), at("U13"));
+    assert!(
+        (my - 13_375_000..=my + 7_175_000).contains(&uy),
+        "U13 at {ux} {uy}, U30 at {mx} {my}"
+    );
+    assert!(ux < mx, "U13 at {ux}, U30 at {mx}");
+    let turn = tree
+        .root()
+        .lists()
+        .filter(|i| i.head() == Some("footprint"))
+        .find(|fp| {
+            fp.all("property")
+                .any(|p| p.arg(1) == Some("Reference") && p.arg(2) == Some("U13"))
+        })
+        .and_then(|fp| fp.one("at").unwrap())
+        .and_then(|a| a.arg(3).map(str::to_owned));
+    assert_eq!(turn.as_deref(), Some("180"));
+}

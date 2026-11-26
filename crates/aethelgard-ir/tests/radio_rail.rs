@@ -162,3 +162,72 @@ fn an_after_that_cannot_start_its_regulator_is_refused() {
         .retain(|c| c["pin"] != "PG");
     assert!(refused(&v, "ControlAfterInvalid").contains("loop"));
 }
+
+/// Step 25 (`AET-WO-1216b`, ruled D4), raised by the 21:17Z ruling's (iii):
+/// `VDD_3V3_RF` leads `VDD_3V3` at every power-up, so U30's TX onto U1's
+/// `WIFI_RX` is judged at VDD = 0, never silently passed: the rail's
+/// declared maximum, 3465 mV, against DS12117 Table 10's 4.0 V; at a 220
+/// per mille tolerance it reaches 4026 mV, and step 25 refuses it before the
+/// module's own range does (step 27).
+#[test]
+fn the_modules_tx_onto_an_unpowered_mcu_is_judged_at_vdd_0() {
+    use aethelgard_ir::off_domain::{Bound, Class, paths};
+    let spec: Specification = serde_json::from_value(base()).unwrap();
+    let p = paths(&spec)
+        .unwrap()
+        .into_iter()
+        .find(|p| p.class == Class::RadioModuleTx)
+        .expect("U30's TX is a path onto the MCU");
+    assert_eq!(p.net, "WIFI_RX");
+    assert!(p.judged(), "{p:?}");
+    assert!(
+        matches!(
+            p.bound,
+            Bound::Stated {
+                millivolts: 3465,
+                ..
+            }
+        ),
+        "{p:?}"
+    );
+    let mut v = base();
+    for d in v["voltage_domains"].as_array_mut().unwrap() {
+        if d["id"] == "VDD_3V3_RF" {
+            d["tolerance_permille"] = json!(220);
+        }
+    }
+    let e = refused(&v, "OffDomainAboveLimit");
+    assert!(e.contains("U30's TX") && e.contains("4026 mV"), "{e}");
+}
+
+/// The two `after` branches the specification alone cannot reach: a
+/// regulator whose row's `PG` is no open drain (the held table, changed),
+/// and a `PG` that already holds another enable.
+#[test]
+fn an_after_on_a_pg_that_is_no_open_drain_or_already_holds_one_is_refused() {
+    use aethelgard_ir::power;
+    use aethelgard_ir::power_parts::parse_power_parts;
+    let mut t: Value = serde_json::from_str(include_str!("../data/power-parts.json")).unwrap();
+    for row in t["parts"].as_array_mut().unwrap() {
+        if row["part"] == "LMR33620ADDA" {
+            for c in row["kind"]["buck"]["controls"].as_array_mut().unwrap() {
+                if c["pin"] == "PG" {
+                    c["straps"] = json!([]);
+                }
+            }
+        }
+    }
+    let table = parse_power_parts(&t.to_string()).unwrap();
+    let sensors = aethelgard_ir::parts::table().unwrap();
+    let spec: Specification = serde_json::from_value(base()).unwrap();
+    let e =
+        power::check_against(&spec, &table, sensors, &power::output_delays(sensors)).unwrap_err();
+    assert_eq!(e.kind(), "ControlAfterInvalid", "{e}");
+    assert!(e.to_string().contains("no open-drain `PG`"), "{e}");
+
+    let mut v = base();
+    let en = control(&mut v, "U10", "EN");
+    en["strap"] = Value::Null;
+    en["after"] = json!({"regulator": "U13", "pull_up": {"reference": "R33", "part": "CRCW0603_F_K", "ohms": 100000}, "source": "test: a second enable on U13's PG"});
+    assert!(refused(&v, "ControlAfterInvalid").contains("already holds another enable"));
+}

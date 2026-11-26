@@ -119,7 +119,10 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     );
     let ladder = &report["capacitance_ladder"];
     let margin = &ladder["smallest_margin"];
-    // the fixture's golden, measured at `AET-WO-4300k` (OSH Park's
+    // the fixture's golden, measured at `AET-WO-4411` (the radio module on
+    // its own regulator, U13 in the module's group; the pour ladder at step
+    // 1): rung 3, a bounded via cost of 320, bounded nets not first, nearest
+    // at EXT_SCL, 89 557 fF of 100 000. Measured at `AET-WO-4300k` (OSH Park's
     // tolerances, the crystal, protection, supervisor and second input
     // ceramics drawn, J4 turned, the GND pours; the board re-placed): rung 3,
     // a bounded via cost of 320, bounded nets not first, nearest at
@@ -138,8 +141,9 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     assert_eq!(ladder["rung"], 3, "{ladder}");
     assert_eq!(ladder["bounded_via_cost"], 320, "{ladder}");
     assert_eq!(ladder["bounded_first"], false, "{ladder}");
-    assert_eq!(margin["net"], "SPI_MOSI", "{ladder}");
-    assert_eq!(margin["c_bound_femtofarads"], 23_454, "{ladder}");
+    assert_eq!(margin["net"], "EXT_SCL", "{ladder}");
+    assert_eq!(margin["c_bound_femtofarads"], 89_557, "{ladder}");
+    assert_eq!(ladder["pour_step"], 1, "{ladder}");
     // `extract`, on its own
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
     assert_eq!(code, 0, "{v}");
