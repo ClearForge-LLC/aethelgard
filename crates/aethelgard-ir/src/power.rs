@@ -914,11 +914,9 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             format!("a cell of {cmin} to {cmax} mV is not 1 <= min <= max <= 10000 mV"),
         ));
     }
-    let mut references = vec![power.input.reference.as_str()];
     for (i, h) in power.input.hot_plug.iter().enumerate() {
         id(&h.reference, format!("power.input.hot_plug[{i}].reference"))?;
         id(&h.part, format!("power.input.hot_plug[{i}].part"))?;
-        references.push(&h.reference);
     }
     if let Some(x) = &power.input.protection {
         for (what, part) in [("fuse", &x.fuse), ("fet", &x.fet), ("zener", &x.zener)] {
@@ -927,7 +925,6 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                 format!("power.input.protection.{what}.reference"),
             )?;
             id(&part.part, format!("power.input.protection.{what}.part"))?;
-            references.push(&part.reference);
         }
         id(
             &x.gate_resistor.reference,
@@ -937,7 +934,6 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             &x.gate_resistor.part,
             "power.input.protection.gate_resistor.part".to_owned(),
         )?;
-        references.push(&x.gate_resistor.reference);
         crate::board::source(&x.source, "power.input.protection.source")?;
     }
     let resistor = |r: &Resistor, path: &str| -> Result<(), IrValidationError> {
@@ -993,21 +989,12 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
             known(&r.input)?;
         }
         known(&r.output)?;
-        references.push(&r.reference);
         if let Some(f) = &r.feedback {
             resistor(&f.top, &format!("{path}.feedback.top"))?;
             resistor(&f.bottom, &format!("{path}.feedback.bottom"))?;
-            references.extend([f.top.reference.as_str(), f.bottom.reference.as_str()]);
         }
         externals(&r.external, &format!("{path}.external"))?;
-        references.extend(r.external.iter().map(|e| e.reference.as_str()));
         controls(&r.controls, &format!("{path}.controls"))?;
-        references.extend(
-            r.controls
-                .iter()
-                .filter_map(|c| c.after.as_ref())
-                .map(|a| a.pull_up.reference.as_str()),
-        );
         if let Some(j) = &r.junction {
             if j.loss_at_milliamps == 0 || j.loss_at_milliamps > 100_000 {
                 return Err(invalid(
@@ -1118,11 +1105,9 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         }
         resistor(&s.top, &format!("{path}.top"))?;
         resistor(&s.bottom, &format!("{path}.bottom"))?;
-        references.extend([s.top.reference.as_str(), s.bottom.reference.as_str()]);
         if let Some(c) = &s.reservoir {
             id(&c.reference, format!("{path}.reservoir.reference"))?;
             id(&c.part, format!("{path}.reservoir.part"))?;
-            references.push(&c.reference);
         }
     }
     for (i, c) in power.crossings.iter().enumerate() {
@@ -1135,9 +1120,14 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
         resistor(&c.cs_pull_up, &format!("{path}.cs_pull_up"))?;
         externals(&c.external, &format!("{path}.external"))?;
         controls(&c.controls, &format!("{path}.controls"))?;
-        references.push(&c.reference);
-        references.push(&c.cs_pull_up.reference);
-        references.extend(c.external.iter().map(|e| e.reference.as_str()));
+        // `after` is a regulator's enable following another's PG
+        if c.controls.iter().any(|x| x.after.is_some()) {
+            return Err(invalid(
+                &format!("{path}.controls"),
+                "a crossing's control takes a strap or a wire; `after` is a regulator's enable"
+                    .to_owned(),
+            ));
+        }
     }
     crate::references_distinct(
         spec.declared_i2c_devices()
@@ -1153,7 +1143,7 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     .iter()
                     .map(|c| c.reference.as_str()),
             )
-            .chain(references),
+            .chain(references(power).into_iter().map(String::as_str)),
     )
 }
 
@@ -1502,14 +1492,14 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
             continue;
         }
         // `radio::validate` refuses an unknown part and an unsourced rail
+        let t = crate::radio::table()?;
         let (Some(row), Some(lead), Some(mcu)) = (
-            crate::radio::table()?.get(&m.part),
+            t.get(&m.part),
             derived.iter().find(|d| d.reg.output == m.supply),
             derived.iter().find(|d| &d.reg.output == mcu_supply),
         ) else {
             continue;
         };
-        let t = crate::radio::table()?;
         // a rail outside the module's range is `radio::validate`'s to refuse
         let (lo, hi) = ctx.domain(&m.supply).map_or((0, 0), range);
         if lo < u64::from(row.supply.min_mv) || hi > u64::from(row.supply.max_mv) {
@@ -3534,10 +3524,7 @@ fn junctions(
                 ctx.cite(&curve.at),
             ));
         };
-        let need = curve
-            .points
-            .iter()
-            .find(|(_, theta)| junction_mk(ctx.temperature().max, j, *theta) <= limit_mk(d.row));
+        let need = clearing(&curve.points, ctx.temperature().max, j, d.row);
         let Some(&(need_area, _)) = need else {
             let (at, theta) = curve.points.last().copied().unwrap_or((0, 0));
             return Err(refuse(
@@ -3633,6 +3620,20 @@ fn junction_mk(board_max: i32, j: &Junction, theta: i64) -> i128 {
         + div_ceil(i128::from(j.loss_milliwatts.value) * i128::from(theta), 10)
 }
 
+/// The θJA figure's first point, smallest area first, at which `j`'s loss
+/// keeps the junction at `row`'s limit on a `board_max` °C board: step 9's
+/// screen and [`junction_need_cm2`] alike.
+fn clearing<'p>(
+    points: &'p [(i64, i64)],
+    board_max: i32,
+    j: &Junction,
+    row: &pp::Row,
+) -> Option<&'p (i64, i64)> {
+    points
+        .iter()
+        .find(|(_, theta)| junction_mk(board_max, j, *theta) <= limit_mk(row))
+}
+
 fn limit_mk(row: &pp::Row) -> i128 {
     i128::from(row.temperature_celsius.range.max) * 1000
 }
@@ -3656,10 +3657,7 @@ pub fn junction_need_cm2(spec: &Specification) -> BTreeMap<String, i64> {
             let (Kind::Buck(b), Some(j)) = (&row.kind, &r.junction) else {
                 return None;
             };
-            b.theta_ja
-                .points
-                .iter()
-                .find(|(_, theta)| junction_mk(board_max, j, *theta) <= limit_mk(row))
+            clearing(&b.theta_ja.points, board_max, j, row)
                 .map(|&(area, _)| (r.reference.clone(), area))
         })
         .collect()

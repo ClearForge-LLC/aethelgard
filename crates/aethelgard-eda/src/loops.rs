@@ -151,6 +151,12 @@ pub fn source_pads(board: &Board, solved: &SolvedTopology) -> Result<(), String>
     Ok(())
 }
 
+/// Whether a buck's row is the LMR33620's, from SNVSAW1E (`AET-WO-4411`):
+/// its layout rules and their citations are that datasheet's.
+pub(crate) fn from_snvsaw1e(row: &aethelgard_ir::power_parts::Row) -> bool {
+    matches!(&row.kind, aethelgard_ir::power_parts::Kind::Buck(b) if b.fsw_hz.at.document == "SNVSAW1E")
+}
+
 /// What the gate does not judge on a board with a power tree, each named once
 /// in the order the datasheets give them (`AET-WO-4300d2` §1.3, §1.4; FAB-NOTES
 /// carries them too, the `4300f` F2 rule). Empty for a specification with no
@@ -171,9 +177,9 @@ pub fn conditions(spec: &Specification) -> Vec<String> {
     // `AET-WO-4411`: the LMR33620's SNVSAW1E lists the same layout items
     // (adversarial F12), cited where a regulator's row is from it
     let snvsaw1e = aethelgard_ir::power_parts::table().is_ok_and(|t| {
-        p.regulators.iter().any(|r| {
-            matches!(t.get(&r.part).map(|row| &row.kind), Some(aethelgard_ir::power_parts::Kind::Buck(b)) if b.fsw_hz.at.document == "SNVSAW1E")
-        })
+        p.regulators
+            .iter()
+            .any(|r| t.get(&r.part).is_some_and(from_snvsaw1e))
     });
     if snvsaw1e {
         out.push(

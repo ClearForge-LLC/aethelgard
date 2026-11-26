@@ -8,14 +8,8 @@ use aethelgard_ir::power::{self, Refusal};
 use aethelgard_ir::power_parts::parse_power_parts;
 use serde_json::{Value, json};
 
-const SPEC_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../examples/sentinel-03.json"
-);
-
 fn base() -> Value {
-    serde_json::from_str(&std::fs::read_to_string(SPEC_PATH).expect("sentinel-03.json"))
-        .expect("json")
+    power_table::sentinel_03()
 }
 
 fn checked(v: &Value) -> power::Checked {

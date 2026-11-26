@@ -2276,14 +2276,7 @@ fn radio_band_at(
     // nothing, so the block never deepens the strip the corner sets across
     // the board; it spreads sideways instead.
     let module = &items[anchor].part.reference;
-    let own = |j: usize| {
-        j == anchor
-            || items[j]
-                .part
-                .owner
-                .as_ref()
-                .is_some_and(|o| &o.ic == module && o.anchor.is_some())
-    };
+    let own = |j: usize| j == anchor || anchored_to(items[j].part, module);
     let below = (!own(i))
         .then(|| {
             (0..items.len())
@@ -2340,13 +2333,7 @@ fn radio_group(items: &[Item<'_>]) -> Result<Vec<usize>, EmitError> {
     let reference = &items[m].part.reference;
     let owned_by = |ic: &str, i: usize| items[i].part.owner.as_ref().is_some_and(|o| o.ic == ic);
     let mut out = vec![m];
-    out.extend((0..items.len()).filter(|&i| {
-        items[i]
-            .part
-            .owner
-            .as_ref()
-            .is_some_and(|o| &o.ic == reference && o.anchor.is_some())
-    }));
+    out.extend((0..items.len()).filter(|&i| anchored_to(items[i].part, reference)));
     // `AET-WO-4411` (a): the regulator the module owns (its supply's), then
     // the parts that regulator owns, anchored ones first, so the block is
     // placed beside the module and moves with it. A board whose module
@@ -2356,13 +2343,7 @@ fn radio_group(items: &[Item<'_>]) -> Result<Vec<usize>, EmitError> {
         let ic = items[r].part.reference.as_str();
         let (anchored, loose): (Vec<usize>, Vec<usize>) = (0..items.len())
             .filter(|&i| owned_by(ic, i))
-            .partition(|&i| {
-                items[i]
-                    .part
-                    .owner
-                    .as_ref()
-                    .is_some_and(|o| o.anchor.is_some())
-            });
+            .partition(|&i| anchored_to(items[i].part, ic));
         out.extend(anchored);
         out.extend(loose);
     }
@@ -2427,24 +2408,24 @@ fn radio_corner(
     // `AET-WO-4411` (c), ruled 2026-11-25T21:17Z: the module's ground pad's
     // centre on the supply gate's grid, so its thermal array, at a pitch of
     // whole cells, is read; a module-scoped finer snap, toward the board.
-    let pad = items[m].pads.get(&row.thermal_vias.pad).map(|(at, _)| *at);
-    let (dx, dy) = match pad {
-        Some((px, py)) => (
-            radio_snap(dx, placed[m].origin.0 + px).ok_or_else(|| {
-                internal(
-                    &items[m].part.reference,
-                    "no 10 um step puts its ground pad on the gate's grid",
-                )
-            })?,
-            radio_snap(dy, placed[m].origin.1 + py).ok_or_else(|| {
-                internal(
-                    &items[m].part.reference,
-                    "no 10 um step puts its ground pad on the gate's grid",
-                )
-            })?,
-        ),
-        None => (dx.div_euclid(SNAP) * SNAP, dy.div_euclid(SNAP) * SNAP),
+    let module = &items[m].part.reference;
+    let (px, py) = items[m]
+        .pads
+        .get(&row.thermal_vias.pad)
+        .map(|(at, _)| *at)
+        .ok_or_else(|| internal(module, "no ground pad on a net"))?;
+    let snap = |raw: i64, at: i64| {
+        radio_snap(raw, at).ok_or_else(|| {
+            internal(
+                module,
+                "no 10 um step puts its ground pad on the gate's grid",
+            )
+        })
     };
+    let (dx, dy) = (
+        snap(dx, placed[m].origin.0 + px)?,
+        snap(dy, placed[m].origin.1 + py)?,
+    );
     for &i in group {
         let p = &mut placed[i];
         p.origin = (p.origin.0 + dx, p.origin.1 + dy);

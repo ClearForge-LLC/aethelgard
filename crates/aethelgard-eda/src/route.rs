@@ -1307,45 +1307,50 @@ impl<'a> Router<'a> {
         if let Some(&g) = index.get(aethelgard_ir::GND) {
             exit_free[g] = true;
         }
-        let ratio = pour_step.checked_sub(1).and_then(|k| POUR_STEPS.get(k));
-        for (reference, number, need_mm2) in ratio.map_or(&[][..], |_| &board.stack.exits[..]) {
-            let Some(part) = board.parts.iter().find(|p| &p.reference == reference) else {
-                continue;
-            };
-            let (Some(e), Some(yard)) = (
-                part.pads
-                    .iter()
-                    .find(|p| &p.number == number)
-                    .map(|p| p.rect),
-                part.courtyard
-                    .iter()
-                    .map(|&(a, b)| span(a, b))
-                    .reduce(|a, b| a.union(b)),
-            ) else {
-                continue;
-            };
-            let near = yard.grow(LOCAL_NM);
-            for (i, name) in nets.iter().enumerate() {
-                let mut pads = board
-                    .parts
-                    .iter()
-                    .flat_map(|q| &q.pads)
-                    .filter(|p| p.net.as_deref() == Some(name.as_str()))
-                    .peekable();
-                if pads.peek().is_some() && pads.all(|p| near.contains(p.rect)) {
-                    exit_free[i] = true;
+        // step 0 prices nothing: today's routing
+        if let Some(ratio) = pour_step
+            .checked_sub(1)
+            .and_then(|k| POUR_STEPS.get(k).copied())
+        {
+            for (reference, number, need_mm2) in &board.stack.exits {
+                let Some(part) = board.parts.iter().find(|p| &p.reference == reference) else {
+                    continue;
+                };
+                let (Some(e), Some(yard)) = (
+                    part.pads
+                        .iter()
+                        .find(|p| &p.number == number)
+                        .map(|p| p.rect),
+                    part.courtyard
+                        .iter()
+                        .map(|&(a, b)| span(a, b))
+                        .reduce(|a, b| a.union(b)),
+                ) else {
+                    continue;
+                };
+                let near = yard.grow(LOCAL_NM);
+                for (i, name) in nets.iter().enumerate() {
+                    let mut pads = board
+                        .parts
+                        .iter()
+                        .flat_map(|q| &q.pads)
+                        .filter(|p| p.net.as_deref() == Some(name.as_str()))
+                        .peekable();
+                    if pads.peek().is_some() && pads.all(|p| near.contains(p.rect)) {
+                        exit_free[i] = true;
+                    }
                 }
-            }
-            let c = e.centre();
-            let half = pour_half_nm(*need_mm2, ratio.copied().unwrap_or(0));
-            let pour = Rect {
-                x0: c.0 - half,
-                y0: c.1 - half,
-                x1: c.0 + half,
-                y1: c.1 + half,
-            };
-            for node in grid.nodes(pour) {
-                exit[node] = EXIT_COST;
+                let c = e.centre();
+                let half = pour_half_nm(*need_mm2, ratio);
+                let pour = Rect {
+                    x0: c.0 - half,
+                    y0: c.1 - half,
+                    x1: c.0 + half,
+                    y1: c.1 + half,
+                };
+                for node in grid.nodes(pour) {
+                    exit[node] = EXIT_COST;
+                }
             }
         }
         let (escapes, exhausted) =

@@ -243,7 +243,7 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
                 r.controls
                     .iter()
                     .filter_map(|c| c.after.as_ref())
-                    .map(|a| format!("{}_PG", a.regulator)),
+                    .map(|a| pg_net(&a.regulator)),
             );
         }
         for c in &p.crossings {
@@ -278,6 +278,12 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
     out.extend(spec.motor_outputs.iter().map(|m| motor_pull_net(&m.label)));
     out.extend(crate::radio::own_nets(spec));
     Ok(out)
+}
+
+/// The net of a regulator's power-good that an enable follows
+/// (`AET-WO-4411` (iii)).
+pub fn pg_net(regulator: &str) -> String {
+    format!("{regulator}_PG")
 }
 
 /// The net between a motor output's link and its pull-down resistor

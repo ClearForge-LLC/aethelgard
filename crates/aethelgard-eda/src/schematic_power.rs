@@ -77,12 +77,6 @@ const NEAR_NM: i64 = 2_000_000;
 const CIN_BULK_NM: i64 = 5_000_000;
 const SW_NM: i64 = 4_000_000;
 const RESERVOIR_NM: i64 = 3_000_000;
-const CIN_HF_RULE: &str = "SNVSAN3F p. 33, 10.1 item 1 and p. 23, 9.2.2.6: the 220 nF input capacitor as close as possible to the VIN and GND terminals (2.0 mm, an engine choice: no distance is stated)";
-const CIN_RULE: &str = "SNVSAN3F p. 33, 10.1 item 1: the bulk input capacitor close to the VIN and GND terminals, behind the high-frequency one (5.0 mm, an engine choice set after measuring the placer: no distance is stated)";
-const CBOOT_RULE: &str = "SNVSAN3F p. 33, 10.1 item 3: CBOOT close to the device, with short traces to the BOOT and SW pins (2.0 mm, an engine choice: no distance is stated)";
-const CVCC_RULE: &str = "SNVSAN3F p. 33, 10.1 item 2: the VCC bypass capacitor close to the VCC pin (2.0 mm, an engine choice: no distance is stated; its GND return is by the ground fill)";
-const FB_RULE: &str = "SNVSAN3F p. 33, 10.1 item 4: the feedback divider as close as possible to the FB pin (2.0 mm, an engine choice: no distance is stated)";
-const SW_RULE: &str = "SNVSAN3F p. 33, 10.1 item 9: the copper from the SW pin to the inductor as short as possible (4.0 mm, an engine choice set after measuring the placer: no distance is stated)";
 /// A buck's loop rules, cited to its own datasheet: the LMR33630's above;
 /// the LMR33620's (`AET-WO-4411`), whose SNVSAW1E 10.1 lists the same items.
 struct BuckRules {
@@ -94,12 +88,12 @@ struct BuckRules {
     sw: &'static str,
 }
 const SNVSAN3F_RULES: BuckRules = BuckRules {
-    cin_hf: CIN_HF_RULE,
-    cin: CIN_RULE,
-    cboot: CBOOT_RULE,
-    cvcc: CVCC_RULE,
-    fb: FB_RULE,
-    sw: SW_RULE,
+    cin_hf: "SNVSAN3F p. 33, 10.1 item 1 and p. 23, 9.2.2.6: the 220 nF input capacitor as close as possible to the VIN and GND terminals (2.0 mm, an engine choice: no distance is stated)",
+    cin: "SNVSAN3F p. 33, 10.1 item 1: the bulk input capacitor close to the VIN and GND terminals, behind the high-frequency one (5.0 mm, an engine choice set after measuring the placer: no distance is stated)",
+    cboot: "SNVSAN3F p. 33, 10.1 item 3: CBOOT close to the device, with short traces to the BOOT and SW pins (2.0 mm, an engine choice: no distance is stated)",
+    cvcc: "SNVSAN3F p. 33, 10.1 item 2: the VCC bypass capacitor close to the VCC pin (2.0 mm, an engine choice: no distance is stated; its GND return is by the ground fill)",
+    fb: "SNVSAN3F p. 33, 10.1 item 4: the feedback divider as close as possible to the FB pin (2.0 mm, an engine choice: no distance is stated)",
+    sw: "SNVSAN3F p. 33, 10.1 item 9: the copper from the SW pin to the inductor as short as possible (4.0 mm, an engine choice set after measuring the placer: no distance is stated)",
 };
 const SNVSAW1E_RULES: BuckRules = BuckRules {
     cin_hf: "SNVSAW1E p. 32, 10.1 item 1 and p. 22, 9.2.2.6: the 220 nF input capacitor as close as possible to the VIN and GND terminals (2.0 mm, an engine choice: no distance is stated)",
@@ -674,7 +668,10 @@ fn controls(
     for rule in rules {
         let pin = &rule.pin;
         if pin == "PG" && follower && !declared.iter().any(|c| &c.pin == pin) {
-            out.push((pin.clone(), Conn::Net(format!("{reference}_PG"))));
+            out.push((
+                pin.clone(),
+                Conn::Net(aethelgard_ir::names::pg_net(reference)),
+            ));
             continue;
         }
         let Some(c) = declared.iter().find(|c| &c.pin == pin) else {
@@ -692,7 +689,7 @@ fn controls(
                     .iter()
                     .find(|g| g.reference == a.regulator)
                     .ok_or_else(|| refuse(reference, format!("{pin} follows `{}`, no declared regulator", a.regulator)))?;
-                let pg = b.own_net(format!("{}_PG", a.regulator))?;
+                let pg = b.own_net(aethelgard_ir::names::pg_net(&a.regulator))?;
                 let up = b.rail(&lead.output);
                 resistor(b, &a.pull_up, up, Conn::Net(pg.clone()))?;
                 Conn::Net(pg)
@@ -817,9 +814,10 @@ fn regulator(
             if let Some(m) = &powers {
                 own(b, m);
             }
-            let rules = match &r.kind {
-                Kind::Buck(k) if k.fsw_hz.at.document == "SNVSAW1E" => &SNVSAW1E_RULES,
-                _ => &SNVSAN3F_RULES,
+            let rules = if crate::loops::from_snvsaw1e(r) {
+                &SNVSAW1E_RULES
+            } else {
+                &SNVSAN3F_RULES
             };
             let [vin, pgnd, fbp, vccp, bootp, swp] =
                 ["VIN", "PGND", "FB", "VCC", "BOOT", "SW"].map(|role| pin(u, r, role));

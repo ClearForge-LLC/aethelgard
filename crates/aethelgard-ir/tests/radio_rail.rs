@@ -7,13 +7,11 @@
 use aethelgard_ir::Specification;
 use serde_json::{Value, json};
 
-const SPEC_PATH: &str = concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../examples/sentinel-03.json"
-);
+#[path = "common/power_table.rs"]
+mod power_table;
 
 fn base() -> Value {
-    serde_json::from_str(&std::fs::read_to_string(SPEC_PATH).unwrap()).unwrap()
+    power_table::sentinel_03()
 }
 
 fn kind(v: &Value) -> Result<(), String> {
