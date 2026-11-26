@@ -1,0 +1,1 @@
+{"name": "today-committed", "board": "committed", "window": "12000ms", "input": true, "rc": 3, "wall_s": 0.05, "load_min": 10.72, "load_max": 10.72, "verdict": null, "kinds": [], "error": "ForeignClockUndeclared", "peak_rss_kib": null, "log_kept_bytes": null, "log_lines_dropped": null}

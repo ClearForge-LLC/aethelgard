@@ -1,0 +1,16 @@
+total 205,866,480 -> 206,133,372 B (+266,892); types 7593 -> 7576
+       +420,480 B           +1 objs  157.5% cum  752fb13f6878  System.Collections.Generic.Dictionary<System.String, Antmicro.Renode.Core.Symbol>+Entry[]
+       +203,832 B         +281 objs  233.9% cum  752fb0aecdf8  Antmicro.Renode.Core.Symbol[]
+       +156,868 B         -123 objs  292.7% cum  752fa92389e0  System.Int32[]
+        +18,240 B         +380 objs  299.5% cum  752fb0b170b0  System.Threading.ThreadLocal<System.Tuple<Antmicro.Renode.Peripherals.IPeripheral, System.Nullable<System.UInt64>>>+LinkedSlot
+        +10,368 B           +1 objs  303.4% cum  752fb13f6af8  System.Collections.Generic.Dictionary<System.String, System.Collections.Generic.List<Antmicro.Renode.Core.Symbol>>+Entry[]
+         +8,928 B         +279 objs  306.8% cum  752fb0aeb1b8  System.Collections.Generic.List<Antmicro.Renode.Core.Symbol>
+         +4,006 B          +22 objs  308.3% cum  752fa9cb1658  System.Byte[]
+         +2,808 B          +27 objs  309.3% cum  752fa9ce24c8  System.Reflection.RuntimeMethodInfo
+         +1,760 B          +44 objs  310.0% cum  752fa9189db8  System.RuntimeType
+         +1,632 B          +17 objs  310.6% cum  752fa9ce8820  System.Reflection.RuntimeParameterInfo
+         +1,472 B          +46 objs  311.1% cum  752faec922e0  System.Reflection.Emit.GenericFieldInfo
+         +1,176 B          +49 objs  311.6% cum  752fa923b298  System.RuntimeTypeHandle
+         +1,000 B          +25 objs  312.0% cum  752fae516280  Microsoft.Scripting.Interpreter.DebugInfo
+           +928 B          +29 objs  312.3% cum  752fae51e940  System.Linq.Expressions.BlockExpressionList
+           +912 B          +38 objs  312.6% cum  752fae4ccf18  System.Collections.ObjectModel.ReadOnlyCollection<System.Linq.Expressions.Expression>

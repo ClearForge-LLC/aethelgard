@@ -1,11 +1,15 @@
-"""AET-WO-4400i (2): a declared input file (`simulate --foreign --input`), written by pymavlink 2.4.50 in the pinned
+"""AET-WO-4412 (1), from AET-WO-4400i (2)'s: a declared input file (`simulate --foreign --input`), written by pymavlink 2.4.50 in the pinned
 ArduPilot image, an encoder that is not the judge's. Usage: python -I input.py NAME OUT.json [PORT]
 Each frame filled with zero bytes to a whole multiple of 64 (ArduPilot's RX bounce buffer; ruling D3: declared fill).
   arm5     within 5 s (ruling D1): heartbeats, the four parameters and the accelerometer accept, prearm checks, ARMs
   arm12    the same to 12 s, ARM every 250 ms from 3.15 s (the spike's armed replay)
   force    arm5 with one ARM carrying the force code 21196 (refused: InputForcesArm)
   junk     arm5 with one frame that is text, not MAVLink (refused: InputNotMavlink)
-  reject   arm5 plus a PARAM_SET of a parameter ArduPilot does not have (ruling D9: PARAM_ERROR)"""
+  reject   arm5 plus a PARAM_SET of a parameter ArduPilot does not have (ruling D9: PARAM_ERROR)
+  dshot12  arm12 with MOT_PWM_TYPE 6 (DShot600) sent before FRAME_CLASS each time (4400h: read at motor init, which a
+           FRAME_CLASS change re-runs)
+  reboot12 arm12's parameters to 6.3 s, then MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN (246, param1 1) at 6.5 s, then
+           PARAM_REQUEST_READ of FRAME_CLASS and COMPASS_USE every 250 ms from 7.0 s, and heartbeats, to 12 s; no arm"""
 import json, sys
 from pymavlink.dialects.v20 import ardupilotmega as mav
 name, out = sys.argv[1], sys.argv[2]
@@ -13,6 +17,8 @@ port = sys.argv[3] if len(sys.argv) > 3 else "CONSOLE"
 m = mav.MAVLink(None, srcSystem=255, srcComponent=190)
 def ms(x): return int(round(x * 1_000_000))
 PARAMS = [("COMPASS_USE", 0), ("FRAME_CLASS", 1), ("FS_THR_ENABLE", 0), ("INS_ACCOFFS_X", 0.001)]
+if name == "dshot12":
+    PARAMS = [("COMPASS_USE", 0), ("MOT_PWM_TYPE", 6), ("FRAME_CLASS", 1), ("FS_THR_ENABLE", 0), ("INS_ACCOFFS_X", 0.001)]
 def plan(end, arm_from, arm_every, params_until):
     s = []
     for t in range(ms(500), end, ms(1000)):
@@ -29,7 +35,17 @@ def plan(end, arm_from, arm_every, params_until):
 def frame(t, msg):
     b = msg.pack(m)
     return {"at_ns": t, "mavlink": b.hex(), "fill": -len(b) % 64}
-if name == "arm12":
+if name == "reboot12":
+    steps = plan(ms(6400), ms(6400), ms(250), ms(6300))   # parameters only: no ARM before 6.4 s
+    steps = [x for x in steps if x[1].get_msgId() != 76 or x[1].command != 400]
+    steps.append((ms(6500), m.command_long_encode(1, 1, 246, 0, 1, 0, 0, 0, 0, 0, 0)))
+    for t in range(ms(7000), ms(12000), ms(250)):
+        for i, p in enumerate([b"FRAME_CLASS", b"COMPASS_USE"]):
+            steps.append((t + i * ms(10), m.param_request_read_encode(1, 1, p, -1)))
+    for t in range(ms(6500), ms(12000), ms(1000)):
+        steps.append((t + ms(200), m.heartbeat_encode(mav.MAV_TYPE_GCS, mav.MAV_AUTOPILOT_INVALID, 0, 0, 0)))
+    steps.sort(key=lambda x: x[0])
+elif name in ("arm12", "dshot12"):
     # The parameters again after `ArduPilot Ready` (5.2 s): sent only before it (arm12-s03-early-params), they
     # are not in force at the arm ("Motors: Check frame class and type"), as in the spike's early plan.
     steps = plan(ms(12000), ms(3150), ms(250), ms(6300))
