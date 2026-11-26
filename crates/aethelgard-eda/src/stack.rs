@@ -234,11 +234,11 @@ pub struct Stack {
     /// ([`Stack::thermal`]); `extract` measures the copper they join. Empty
     /// with no buck, whose board is then today's.
     pub pours: Vec<(String, String)>,
-    /// Each buck's thermal pad, (reference, pad), whose F.Cu pour the
-    /// junction screen measures: the router keeps that pad's exits on F.Cu
-    /// clear of every track but the pour's own (`AET-WO-4411` (b), ruled
-    /// 2026-11-25T21:17Z). Empty with no buck.
-    pub exits: Vec<(String, String)>,
+    /// Each buck's thermal pad, (reference, pad, the copper its junction
+    /// screen needs, mm² per layer), whose F.Cu pour that screen measures:
+    /// the router prices passing tracks about it on F.Cu (`AET-WO-4411` (b),
+    /// ruled 2026-11-25T21:17Z). Empty with no buck.
+    pub exits: Vec<(String, String, i64)>,
     /// The supply gate's junction rule, where the gate runs.
     pub junction: Option<JunctionRule>,
 }
@@ -485,21 +485,16 @@ impl Stack {
             imus: crate::schematic::seats(spec)
                 .expect("a validated specification's IMU seats are complete"),
             pours: Vec::new(),
-            exits: aethelgard_ir::power::thermal_arrays(spec)
-                .iter()
-                .filter(|(reference, _, _)| {
-                    spec.power.iter().flat_map(|p| &p.regulators).any(|r| {
-                        &r.reference == reference
-                            && aethelgard_ir::power_parts::table().is_ok_and(|t| {
-                                matches!(
-                                    t.get(&r.part).map(|row| &row.kind),
-                                    Some(aethelgard_ir::power_parts::Kind::Buck(_))
-                                )
-                            })
+            exits: {
+                let need = aethelgard_ir::power::junction_need_cm2(spec);
+                aethelgard_ir::power::thermal_arrays(spec)
+                    .iter()
+                    .filter_map(|(reference, pad, _)| {
+                        need.get(reference)
+                            .map(|cm2| (reference.clone(), pad.clone(), cm2 * 100))
                     })
-                })
-                .map(|(reference, pad, _)| (reference.clone(), pad.clone()))
-                .collect(),
+                    .collect()
+            },
             junction: JunctionRule::of(spec),
         };
         if !st.thermal.is_empty() {

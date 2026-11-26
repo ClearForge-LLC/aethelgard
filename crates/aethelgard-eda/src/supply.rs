@@ -1736,7 +1736,10 @@ pub fn supplies(
             .filter(|m| &m.supply == d)
             .map(|m| m.reference.as_str())
             .collect();
-        if gnd_plane && mcu == the_mcu && let [reference] = modules[..] {
+        if gnd_plane
+            && mcu == the_mcu
+            && let [reference] = modules[..]
+        {
             let ma = aethelgard_ir::radio::load_ma(spec, d)
                 .map_err(|e| refusal(e.kind(), e.to_string()))?;
             let of = |net: &str| -> Vec<&Pad> {

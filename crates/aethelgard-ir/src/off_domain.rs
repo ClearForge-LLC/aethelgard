@@ -63,6 +63,9 @@ pub enum Class {
     Connector,
     TestPoint,
     ForeignClock,
+    /// A radio module's TX onto the MCU's RX, the module on a rail of its
+    /// own (`AET-WO-4411`).
+    RadioModuleTx,
 }
 
 impl Class {
@@ -78,6 +81,7 @@ impl Class {
             Self::Connector => "connector",
             Self::TestPoint => "test_point",
             Self::ForeignClock => "foreign_clock",
+            Self::RadioModuleTx => "radio_module_tx",
         }
     }
 }
@@ -455,6 +459,35 @@ pub fn paths(spec: &Specification) -> Result<Vec<Path>, IrValidationError> {
                 "a probe, when attached, drives what the bench drives".to_owned(),
             ));
         }
+    }
+    // `AET-WO-4411`: a module on a rail of its own drives its port's RX from
+    // that rail; (iii) has that rail lead `mcu.supply` at every power-up.
+    for (i, m) in spec.declared_radio_modules().iter().enumerate() {
+        let (Some(port), Some(d)) = (
+            spec.serial_ports.iter().find(|p| p.label == m.serial_port),
+            spec.voltage_domains.iter().find(|d| d.id == m.supply),
+        ) else {
+            continue;
+        };
+        if m.supply == spec.mcu.supply || !w.mcu_nets.contains(port.rx.net.as_str()) {
+            continue;
+        }
+        out.extend(w.path(
+            &port.rx.net,
+            Class::RadioModuleTx,
+            format!("{}'s TX on its own rail `{}`", m.reference, m.supply),
+            format!("radio_modules[{i}]"),
+            vec![m.supply.clone()],
+            w.declared_pin(&port.rx.net),
+            Bound::Stated {
+                millivolts: i64::from(maximum_millivolts(d)),
+                basis: Basis::Maximum,
+                figure: format!(
+                    "`{}`'s declared maximum, {} mV + {} permille: the module's output stage is supplied from it, and ESP32-C3-WROOM-02 v1.7 Table 6-3 states its levels against it",
+                    m.supply, d.nominal_millivolts, d.tolerance_permille
+                ),
+            },
+        ));
     }
     if let Some(crate::clock::Hse::External(x)) = &spec.mcu.hse {
         let mut p = w.off_board(

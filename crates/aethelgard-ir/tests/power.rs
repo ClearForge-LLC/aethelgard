@@ -18,7 +18,7 @@ use power_table::{assert_power, refused, row, spec, table_json};
 /// `AET-WO-4300k`: schema 12 (rows DMP6023LSS-13, MMSZ5242BT1G,
 /// SF-1206F400-2, SF-1206F700-2, TLV803SDBZR and their four documents, the
 /// MCU's `bor_falling_min_millivolts`, LMR33630 `cin` enforced).
-const TABLE_SHA256: &str = "01bfd34a5412f3bedbc39a6aea984e5dc0d174a97a8ab86ffdefe95c845c9034";
+const TABLE_SHA256: &str = "dd0566f524ddae03cea16f366ea8c0c8378c03f63999fd8bb1b0aaee03d76fd2";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -128,6 +128,7 @@ fn the_embedded_table_parses_with_every_document_held() {
             "GRM32ER61C226KE20",
             "GRM32ER71A226KE20",
             "IHLP5050FDER8R2M01",
+            "LMR33620ADDA",
             "LMR33630ADDA",
             "MMSZ5242BT1G",
             "SF-1206F400-2",

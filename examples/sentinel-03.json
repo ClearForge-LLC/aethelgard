@@ -2687,7 +2687,7 @@
     },
     {
       "id": "inrush_ceramic_at_rated:C21",
-      "reason": "C21 is 220 nF of the 91.4 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, far inside F1's margin"
+      "reason": "C21 is 220 nF of the 113.7 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, inside F1's margin"
     },
     {
       "id": "isat_typical:L1",
@@ -2872,6 +2872,90 @@
     {
       "id": "zener_below_test_current:D1",
       "reason": "D1's VZ is stated at 20 mA; through R60 it carries about 60 uA at 17.4 V, where VZ is lower, so Q1's gate stays under 12.6 V of its 20 V"
+    },
+    {
+      "id": "buck_junction_screened:U13",
+      "reason": "TI's Figure 9-3 (SNVSAW1E) is typical; U13's 490 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature"
+    },
+    {
+      "id": "buck_timing_conditions:U13",
+      "reason": "tOFF-MIN, RDS(on) and fSW are stated at VIN 12 V; U13 runs 9.0 to 17.4 V, inside the 3S-4S range the headroom and on-time checks use with margin"
+    },
+    {
+      "id": "control_after:U11",
+      "reason": "Ruled 2026-11-25T21:17Z (iii): U11 follows U13's PG, so U1's rail drops whenever U13's PG pulls low; power-down order is named (radio_power_down_order:U30)"
+    },
+    {
+      "id": "dielectric_accepted:C30",
+      "reason": "C30, U13's first cin, is X7S (GCM32EC71H106KA03) like U11's, accepted under ruling D-B8; its effective value at 4S is counted from its own curve"
+    },
+    {
+      "id": "dielectric_accepted:C63",
+      "reason": "C63, U13's second cin, is X7S like C30, accepted under ruling D-B8; the two give 10.87 uF effective at 17.4 V"
+    },
+    {
+      "id": "effective_no_minimum:U13.cout",
+      "reason": "U13's output ceramics have no effective minimum in TI's row; their 44 uF is a placeholder derating until Murata's curve for GRM32ER71A226KE20 is held"
+    },
+    {
+      "id": "effective_typical:U13.cin",
+      "reason": "Murata's DC-bias chart is typical at 25 C; U13's two cin are counted worst case (curve, -10 % tolerance, -22 % X7S) and clear 10 uF by 8.7 %"
+    },
+    {
+      "id": "hot_plug_doubled_pack:U13",
+      "reason": "the ring at U13's VIN is bounded by twice the 17.4 V pack, a derivation (ruled D7), under 38 V; C1's damping only lowers it"
+    },
+    {
+      "id": "inductor_dcr_at_25c:U13",
+      "reason": "L3's DCR is stated at 25 C and not raised for 85 C; the headroom check counts it, with the input path's drop, and holds at 9.0 V"
+    },
+    {
+      "id": "inductor_ripple_outside_guidance:U13",
+      "reason": "8.2 uH meets SNVSAW1E Equation 5 (0.36 x VOUT / fSW) but not Equation 4's 20-40 % ripple over the whole 3S-4S range (ruled D6); the peak stays under the high-side limit"
+    },
+    {
+      "id": "inrush_ceramic_at_rated:C31",
+      "reason": "C31 is 220 nF of the 113.7 uF the hot-plug bound counts; even 20 % over, it moves that I2t under 0.1 %, inside F1's margin"
+    },
+    {
+      "id": "isat_typical:L3",
+      "reason": "IHLP-5050FD's 16 A saturation is typical only; it is 4 times U13's 4.0 A high-side limit maximum (SNVSAW1E p. 6)"
+    },
+    {
+      "id": "plane_not_joined:U13.In2.Cu",
+      "reason": "In2.Cu is the VDD_3V3 plane, which U13's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu"
+    },
+    {
+      "id": "radio_power_down_order:U30",
+      "reason": "Ruled 2026-11-25T21:17Z: power-down order is a named condition: U1's TX may drive U30's RXD above VDD + 0.3 V (WROOM-02 Table 6-3); U30's TX onto U1 is judged by step 25"
+    },
+    {
+      "id": "radio_rail_ioff:U30",
+      "reason": "Ruled 2026-11-25T21:17Z: a row; no Ioff buffer sits on WIFI_TX between U1 and U30's RXD, and one would hold the line while VDD_3V3_RF is down"
+    },
+    {
+      "id": "radio_rail_monitor:U30",
+      "reason": "Ruled 2026-11-25T21:17Z (Q-SUP): a row; no Espressif document states a brown-out detector, the HDG's ~3.0 V monitor is not fitted, R90/C90 is U30's only reset"
+    },
+    {
+      "id": "rated_only:U13.cboot",
+      "reason": "TI's row states no effective minimum for U13's 0.1 uF boot capacitor; GCM188R71H104KA57 at 50 V rating sees 5 V across it"
+    },
+    {
+      "id": "rated_only:U13.cin_hf",
+      "reason": "TI's row states no effective minimum for U13's 0.22 uF HF input capacitor; its bulk cin pair carries the 10 uF effective minimum"
+    },
+    {
+      "id": "rated_only:U13.cvcc",
+      "reason": "TI's row states no effective minimum for U13's 1 uF VCC capacitor; GRM188R71C105KA12 at 16 V rating sees VCC, nominally 5 V (SNVSAW1E)"
+    },
+    {
+      "id": "regulation_not_production_tested:U13",
+      "reason": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3_RF's floor is held by its feedback and its 144 mV drop limit"
+    },
+    {
+      "id": "theta_ja_copper_mismatch:U13",
+      "reason": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U13's screen has less margin than it shows; a bench thermal row"
     }
   ],
   "radio_modules": [

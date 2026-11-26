@@ -665,9 +665,11 @@ fn controls(
     };
     let regulators = spec.power.as_ref().map_or(&[][..], |p| &p.regulators[..]);
     // `AET-WO-4411` (iii): this part's PG, when another's EN follows it
-    let follower = regulators
-        .iter()
-        .any(|g| g.controls.iter().any(|c| c.after.as_ref().is_some_and(|a| a.regulator == reference)));
+    let follower = regulators.iter().any(|g| {
+        g.controls
+            .iter()
+            .any(|c| c.after.as_ref().is_some_and(|a| a.regulator == reference))
+    });
     let mut out = Vec::new();
     for rule in rules {
         let pin = &rule.pin;

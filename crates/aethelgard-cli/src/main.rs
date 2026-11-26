@@ -3973,6 +3973,20 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
                 if let Some((kind, message)) = &l.unjudged {
                     v["unjudged"] = serde_json::json!({"kind": kind, "message": message});
                 }
+                // `AET-WO-4411` (b): on a board with a buck, the pour
+                // ladder's step and each buck's joined copper there
+                if let Some((step, areas)) = &l.pour {
+                    v["pour_step"] = serde_json::json!(step);
+                    v["pour_square_permille"] = serde_json::json!(
+                        step.checked_sub(1).map(|k| aethelgard_eda::route::POUR_STEPS[k])
+                    );
+                    v["buck_copper"] = areas
+                        .iter()
+                        .map(|(b, l, a, n)| {
+                            serde_json::json!({"buck": b, "layer": l, "square_millimetres": a, "need": n})
+                        })
+                        .collect();
+                }
                 v
             }),
             notes: emission.notes.clone(),

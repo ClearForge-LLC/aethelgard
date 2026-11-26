@@ -109,9 +109,12 @@ fn the_antenna_overhangs_the_top_right_corner() {
         "outline {x0} {y0} {x1} {y1}, module at {mx} {my}"
     );
     // The module's courtyard keeps the edge margin (2 mm) at the right,
-    // within one snap (0.05 mm).
+    // within one period of the module's own 10 um snap against the supply
+    // gate's 62.5 um grid (0.25 mm, `AET-WO-4411` (c)), and its ground
+    // pad's centre (0.96, 0.2) mm from its origin is on that grid.
     let gap = x1 - (mx + COURTYARD_X1_NM);
-    assert!((2_000_000..=2_050_000).contains(&gap), "right gap {gap} nm");
+    assert!((2_000_000..2_250_000).contains(&gap), "right gap {gap} nm");
+    assert_eq!(((mx + 960_000) % 62_500, (my + 200_000) % 62_500), (0, 0));
     // Every other part lies below the antenna edge's 2 mm margin.
     for (r, _, (_, y)) in fps.iter().filter(|(r, ..)| r != "U30") {
         assert!(*y > y0 + 2_000_000, "{r} at y {y}, the edge at {y0}");
@@ -142,7 +145,8 @@ fn the_modules_pads_are_on_their_nets() {
     // U0TXD (12) drives the port's RX net; U0RXD (11) hears its TX net.
     assert_eq!(net("12"), "/WIFI_RX");
     assert_eq!(net("11"), "/WIFI_TX");
-    assert_eq!(net("1"), "VDD_3V3");
+    // its own rail, U13's (`AET-WO-4411`, ruled 2026-11-25T20:10Z)
+    assert_eq!(net("1"), "VDD_3V3_RF");
     assert_eq!(net("2"), "/U30_EN");
     assert_eq!(net("9"), "GND");
     assert_eq!(net("19"), "GND");

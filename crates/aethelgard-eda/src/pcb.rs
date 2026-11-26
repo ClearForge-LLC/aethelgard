@@ -636,7 +636,10 @@ fn place(
     let key = |i: &usize| {
         let o = items[*i].part.owner.as_ref();
         let ic = o.map_or(items[*i].part.reference.as_str(), |o| o.ic.as_str());
-        let head = radio.iter().position(|&j| items[j].part.reference == ic).unwrap_or(0);
+        let head = radio
+            .iter()
+            .position(|&j| items[j].part.reference == ic)
+            .unwrap_or(0);
         (head, o.is_some(), o.is_some_and(|o| o.anchor.is_none()))
     };
     last.sort_by_key(key);
@@ -2015,7 +2018,11 @@ fn module_regulator_turn(parts: &[Part], part: &Part, fp: &Sx) -> Result<Option<
     for x in parts.iter().filter(|x| anchored_to(x, &part.reference)) {
         let c = geometry(&library::footprint(&x.footprint)?, &x.reference)?.courtyard;
         let area = (c.x1 - c.x0) * (c.y1 - c.y0);
-        let pad = x.owner.as_ref().and_then(|o| o.anchor.as_ref()).and_then(|a| a.pads.first());
+        let pad = x
+            .owner
+            .as_ref()
+            .and_then(|o| o.anchor.as_ref())
+            .and_then(|a| a.pads.first());
         if let Some((_, theirs)) = pad
             && largest.is_none_or(|(a, _)| area > a)
         {
@@ -2031,7 +2038,9 @@ fn module_regulator_turn(parts: &[Part], part: &Part, fp: &Sx) -> Result<Option<
         .and_then(|p| p.child("at"))
         .ok_or_else(|| internal(&part.reference, format!("no pad {number}")))?;
     let at = xy(at, &part.reference)?;
-    Ok([0u16, 90, 180, 270].into_iter().min_by_key(|&r| route::rotate(r, at).0))
+    Ok([0u16, 90, 180, 270]
+        .into_iter()
+        .min_by_key(|&r| route::rotate(r, at).0))
 }
 
 /// The turn that puts an IMU's cited axes where its seat declares them
@@ -2347,7 +2356,13 @@ fn radio_group(items: &[Item<'_>]) -> Result<Vec<usize>, EmitError> {
         let ic = items[r].part.reference.as_str();
         let (anchored, loose): (Vec<usize>, Vec<usize>) = (0..items.len())
             .filter(|&i| owned_by(ic, i))
-            .partition(|&i| items[i].part.owner.as_ref().is_some_and(|o| o.anchor.is_some()));
+            .partition(|&i| {
+                items[i]
+                    .part
+                    .owner
+                    .as_ref()
+                    .is_some_and(|o| o.anchor.is_some())
+            });
         out.extend(anchored);
         out.extend(loose);
     }
@@ -2415,10 +2430,18 @@ fn radio_corner(
     let pad = items[m].pads.get(&row.thermal_vias.pad).map(|(at, _)| *at);
     let (dx, dy) = match pad {
         Some((px, py)) => (
-            radio_snap(dx, placed[m].origin.0 + px)
-                .ok_or_else(|| internal(&items[m].part.reference, "no 10 um step puts its ground pad on the gate's grid"))?,
-            radio_snap(dy, placed[m].origin.1 + py)
-                .ok_or_else(|| internal(&items[m].part.reference, "no 10 um step puts its ground pad on the gate's grid"))?,
+            radio_snap(dx, placed[m].origin.0 + px).ok_or_else(|| {
+                internal(
+                    &items[m].part.reference,
+                    "no 10 um step puts its ground pad on the gate's grid",
+                )
+            })?,
+            radio_snap(dy, placed[m].origin.1 + py).ok_or_else(|| {
+                internal(
+                    &items[m].part.reference,
+                    "no 10 um step puts its ground pad on the gate's grid",
+                )
+            })?,
         ),
         None => (dx.div_euclid(SNAP) * SNAP, dy.div_euclid(SNAP) * SNAP),
     };

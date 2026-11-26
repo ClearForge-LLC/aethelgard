@@ -47,7 +47,8 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// §2: Sentinel-03's scenarios cover every row before any gate:
 /// `VDD_3V3` (a survived droop that crosses BOR 3, `droop-bor3`, since
 /// `AET-WO-2305` §1.4 no longer counts `droop-tolerated`, which crosses
-/// none), `VDD_5V` (its consumers' absence), `battery` (a tolerated sag),
+/// none), `VDD_5V` (its consumers' absence), `VDD_3V3_RF` (U30's, its WIFI
+/// port's RX open, `AET-WO-4411`), `battery` (a tolerated sag),
 /// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
 /// Since `AET-WO-4300k` D10 its ledger is acknowledged (it was 280 rows,
 /// measured on `ee835bde`), and the readiness gate is met, so no refusal
@@ -109,7 +110,11 @@ fn a_regulator_s_output_capacitors_count_in_its_rail_s_decoupling() {
     let pins: [(&str, &[(&str, u64)]); 4] = [
         (
             "../../examples/sentinel-03.json",
-            &[("VDD_3V3", 54_710_000), ("VDD_5V", 44_000_000)],
+            &[
+                ("VDD_3V3", 54_710_000),
+                ("VDD_3V3_RF", 44_000_000),
+                ("VDD_5V", 44_000_000),
+            ],
         ),
         (
             "../aethelgard-ir/tests/fixtures/sentinel-02-power.json",

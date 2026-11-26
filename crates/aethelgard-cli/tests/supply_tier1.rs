@@ -79,8 +79,19 @@ fn gated(mut v: Value, limit_mv: u32) -> Value {
             st[key]["cites"] = cites;
         }
     }
-    v["power"]["drop_limits"] =
-        json!([{"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"}]);
+    // The MCU's supply's limit replaced; any other domain's kept (the radio
+    // module's own rail's, `AET-WO-4411`).
+    let mut limits =
+        vec![json!({"domain": "VDD_3V3", "max_millivolts": limit_mv, "source": "test: the limit"})];
+    limits.extend(
+        v["power"]["drop_limits"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|l| l["domain"] != "VDD_3V3")
+            .cloned(),
+    );
+    v["power"]["drop_limits"] = Value::Array(limits);
     v
 }
 
@@ -185,9 +196,12 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         ("R7", "/U4_HOLD"),
         ("R20", "/U11_FB"),
         ("R61", "/NRST"),
-        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups.
+        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups; U13's feedback
+        // divider, and its PG's pull-up, which U11's EN follows.
         ("R90", "/U30_EN"),
         ("R91", "/U30_IO2"),
+        ("R30", "/U13_FB"),
+        ("R32", "/U13_PG"),
     ];
     let rows: Vec<String> = s03()["power"]["loads"]
         .as_array()
@@ -627,7 +641,7 @@ fn the_routers_junction_rule_is_on_where_the_gate_runs() {
     // the board's stack carries it
     let stack = Stack::of(&spec(&gated(s03(), S03_LIMIT_MV))).unwrap();
     assert_eq!(stack.junction.as_ref(), Some(&on));
-    assert_eq!(on.nets, ["VDD_3V3", "GND"]);
+    assert_eq!(on.nets, ["VDD_3V3", "VDD_3V3_RF", "GND"]);
     // OSH Park's tolerances since `AET-WO-4300k` (b) (JLCPCB's were 130 and
     // 75 um).
     assert_eq!(

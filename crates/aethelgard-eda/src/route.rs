@@ -119,10 +119,21 @@ const WINDOWS: [usize; 2] = [16, 64];
 const CORRIDOR_DEPTH: i64 = 16;
 const CORRIDOR_COST: u32 = 2;
 
-/// How far past a buck's courtyard its thermal pad's exits are kept clear
-/// on F.Cu (`AET-WO-4411` (b)): an engine choice, measured on Sentinel-03.
-const EXIT_NM: i64 = 2_000_000;
-/// A track's cost per F.Cu node in a buck's thermal exit, against
+/// The half side of the square about a buck's thermal pad where a passing
+/// track is priced on F.Cu (`AET-WO-4411` (b)): its area is `ratio_permille`
+/// of the copper the buck's screen needs, so the pour can reach it with the
+/// block's own pads cut out.
+fn pour_half_nm(need_mm2: i64, ratio_permille: i64) -> i64 {
+    let side_um = (need_mm2 * ratio_permille * 1_000).isqrt();
+    side_um * 1000 / 2
+}
+
+/// The pour ladder's steps after step 0, in the order tried: each the
+/// square's area about a buck's thermal pad, per mille of the copper its
+/// screen needs. Engine constants, as the capacitance ladder's rungs are.
+pub const POUR_STEPS: [i64; 4] = [1_000, 1_250, 1_500, 1_750];
+
+/// A track's cost per F.Cu node about a buck's thermal pad, against
 /// [`STEP_F`]'s 2 and [`STEP_B`]'s 6: through it is the dearest way across.
 const EXIT_COST: u32 = 40;
 /// A net is a buck's own when every pad of it lies this near the buck's
@@ -143,12 +154,17 @@ const VIA_COST: u32 = 24;
 pub struct Rung {
     pub bounded_via_cost: u32,
     pub bounded_first: bool,
+    /// The pour ladder's step (`AET-WO-4411` (b), ruled 2026-11-26T00:22Z):
+    /// 0 prices nothing, today's routing; step k prices a passing track
+    /// about each buck's thermal pad at [`POUR_STEPS`]`[k - 1]`.
+    pub pour_step: usize,
 }
 
 impl Rung {
     pub const TODAY: Rung = Rung {
         bounded_via_cost: VIA_COST,
         bounded_first: false,
+        pour_step: 0,
     };
 }
 
@@ -162,6 +178,7 @@ pub const RUNGS: [Rung; 8] = {
         Rung {
             bounded_via_cost,
             bounded_first,
+            pour_step: 0,
         }
     }
     [
@@ -1096,7 +1113,13 @@ fn opens(o: u32, who: u32) -> bool {
 }
 
 impl<'a> Router<'a> {
-    fn new(board: &'a Board, grid: Grid, nets: Vec<String>, arrays: &[Array]) -> Router<'a> {
+    fn new(
+        board: &'a Board,
+        grid: Grid,
+        nets: Vec<String>,
+        arrays: &[Array],
+        pour_step: usize,
+    ) -> Router<'a> {
         let n = grid.len();
         let count = nets.len();
         // One set of maps per distinct rule: each is the board's arithmetic
@@ -1272,53 +1295,57 @@ impl<'a> Router<'a> {
                 }
             }
         }
-        // `AET-WO-4411` (b), ruled 2026-11-25T21:17Z: a buck's thermal pad
-        // reaches its F.Cu pour only past the ends its pins leave open, so
-        // each strip from an unflanked edge of the pad to [`EXIT_NM`] past
-        // the courtyard costs a track [`EXIT_COST`] a node on F.Cu, unless
-        // its net is the block's own: every pad of it within [`LOCAL_NM`]
-        // of the buck's courtyard (its divider, CVCC, CBOOT, inductor).
+        // `AET-WO-4411` (b), ruled 2026-11-25T21:17Z: a buck's junction
+        // screen reads the F.Cu pour joined to its thermal pad, which tracks
+        // crossing near it cut off, so within [`pour_half_nm`] of the pad's
+        // centre a track costs [`EXIT_COST`] a node on F.Cu, at the rung's
+        // pour step (none at step 0, today's routing), unless its net is
+        // the block's own: every pad of it within [`LOCAL_NM`] of the buck's
+        // courtyard (its divider, CVCC, CBOOT, inductor).
         let mut exit = vec![0u32; n];
         let mut exit_free = vec![false; count];
         if let Some(&g) = index.get(aethelgard_ir::GND) {
             exit_free[g] = true;
         }
-        for (reference, number) in &board.stack.exits {
+        let ratio = pour_step.checked_sub(1).and_then(|k| POUR_STEPS.get(k));
+        for (reference, number, need_mm2) in ratio.map_or(&[][..], |_| &board.stack.exits[..]) {
             let Some(part) = board.parts.iter().find(|p| &p.reference == reference) else {
                 continue;
             };
             let (Some(e), Some(yard)) = (
-                part.pads.iter().find(|p| &p.number == number).map(|p| p.rect),
-                part.courtyard.iter().map(|&(a, b)| span(a, b)).reduce(|a, b| a.union(b)),
+                part.pads
+                    .iter()
+                    .find(|p| &p.number == number)
+                    .map(|p| p.rect),
+                part.courtyard
+                    .iter()
+                    .map(|&(a, b)| span(a, b))
+                    .reduce(|a, b| a.union(b)),
             ) else {
                 continue;
             };
             let near = yard.grow(LOCAL_NM);
             for (i, name) in nets.iter().enumerate() {
-                let mut pads = board.parts.iter().flat_map(|q| &q.pads).filter(|p| p.net.as_deref() == Some(name.as_str())).peekable();
+                let mut pads = board
+                    .parts
+                    .iter()
+                    .flat_map(|q| &q.pads)
+                    .filter(|p| p.net.as_deref() == Some(name.as_str()))
+                    .peekable();
                 if pads.peek().is_some() && pads.all(|p| near.contains(p.rect)) {
                     exit_free[i] = true;
                 }
             }
-            let strips = [
-                Rect { y0: yard.y0 - EXIT_NM, y1: e.y0, ..e },
-                Rect { y0: e.y1, y1: yard.y1 + EXIT_NM, ..e },
-                Rect { x0: yard.x0 - EXIT_NM, x1: e.x0, ..e },
-                Rect { x0: e.x1, x1: yard.x1 + EXIT_NM, ..e },
-            ];
-            for strip in strips {
-                let flanked = part.pads.iter().any(|p| {
-                    &p.number != number
-                        && p.rect.x0 < strip.x1
-                        && strip.x0 < p.rect.x1
-                        && p.rect.y0 < strip.y1
-                        && strip.y0 < p.rect.y1
-                });
-                if !flanked {
-                    for node in grid.nodes(strip.grow(board.s())) {
-                        exit[node] = EXIT_COST;
-                    }
-                }
+            let c = e.centre();
+            let half = pour_half_nm(*need_mm2, ratio.copied().unwrap_or(0));
+            let pour = Rect {
+                x0: c.0 - half,
+                y0: c.1 - half,
+                x1: c.0 + half,
+                y1: c.1 + half,
+            };
+            for node in grid.nodes(pour) {
+                exit[node] = EXIT_COST;
             }
         }
         let (escapes, exhausted) =
@@ -1643,6 +1670,8 @@ impl<'a> Router<'a> {
                     };
                     let step = if l == Layer::F { STEP_F } else { STEP_B };
                     let bend = if d != 4 && d != dir { BEND } else { 0 };
+                    // on F.Cu only: priced on both outer layers, F.Cu is the
+                    // cheaper again and the pad's ends close (measured)
                     let corridor = if l == Layer::F {
                         self.pending[m] + if self.exit_free[net] { 0 } else { self.exit[m] }
                     } else {
@@ -2647,7 +2676,7 @@ pub fn route_measured(board: &Board, rung: Rung, limit: u64) -> Result<(Routed, 
     let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
     let arrays = arrays(board).map_err(|why| fail("", why))?;
     let index = |name: &str| nets.iter().position(|n| n == name);
-    let mut r = Router::new(board, grid, nets.clone(), &arrays);
+    let mut r = Router::new(board, grid, nets.clone(), &arrays, rung.pour_step);
     r.limit = limit;
     for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
         if board.stack.bounded.iter().any(|b| b == net) {
