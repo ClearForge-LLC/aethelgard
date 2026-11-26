@@ -80,3 +80,11 @@
 		   0.6  pull the tools image by its pinned digest
 		   1.5  build the CLI and the analog bridge, with the network
 		   5.5  verify --against-fab, the committed package derived again
+45770483030-a1	4752028a	bench-package	success	AMD EPYC 9V74 80-Core Processor x4	6.8 min
+		   0.6  pull the tools image by its pinned digest
+		   1.5  build the CLI and the analog bridge, with the network
+		   4.6  verify --against-fab, the committed package derived again
+45770483030-a1	4752028a	bench-package-s03	success	AMD EPYC 7763 64-Core Processor x4	33.6 min
+		   0.5  pull the tools image by its pinned digest
+		   1.6  build the CLI and the analog bridge, with the network
+		  31.3  Sentinel-03, verify --against-fab, the committed package derived again

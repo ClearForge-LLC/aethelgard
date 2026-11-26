@@ -2302,6 +2302,21 @@ pub fn verify(
             Ok(e) => e,
             Err(code) => return code,
         };
+        // The campaign reads both again when it runs, which may be ahead of
+        // its turn (`AET-WO-1919` (X)): each is hashed again with the
+        // generated files ([`recheck`], [`recheck_all`]). The base is not on
+        // the campaign's argv, so only the check after the last gate sees it,
+        // naming the campaign.
+        expect(path.clone(), &hex(scenario.sha256));
+        if let Ok(b) =
+            std::fs::canonicalize(path.parent().unwrap_or(Path::new(".")).join(&scenario.base))
+        {
+            expect(b.clone(), &spec_sha256);
+            LAST_READER
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(b, "campaign");
+        }
         expected.push(Expected {
             path: path.clone(),
             name: scenario.name.clone(),

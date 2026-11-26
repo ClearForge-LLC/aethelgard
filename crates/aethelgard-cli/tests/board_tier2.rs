@@ -734,9 +734,11 @@ fn verify_refuses_a_board_swapped_before_extract() {
 /// has ended, is not seen by `extract`'s own binding. `verify` still refuses
 /// it: the board is hashed again at `extract`'s turn and once more after the
 /// last gate, and either way it is `BindingMismatch` naming `extract`, the
-/// last gate that judged the board. The swap waits for the `extract` gate's
-/// process to have ended. Until (X), a board changed after `extract` read it
-/// was never read again.
+/// last gate that judged the board. The swap waits for the support gate's
+/// process to have ended, and 0.5 s more, so it lands after `extract`'s turn
+/// too: the check after the last gate is the one that sees it (the test
+/// before this one swaps before that turn). Until (X), a board changed after
+/// `extract` read it was never read again.
 #[test]
 fn verify_refuses_a_board_swapped_after_extract_ran_ahead() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -750,35 +752,41 @@ fn verify_refuses_a_board_swapped_after_extract_ran_ahead() {
         .stdout(Stdio::piped())
         .spawn()
         .unwrap();
-    // The `extract` gate of this call: a live process whose command line is
-    // `extract --board <this call's scratch>/…`.
-    let extract_running = || {
+    // A gate of this call running: a live process whose command line holds
+    // `what` and this call's scratch.
+    let running = |what: &str| {
         fs::read_dir("/proc").unwrap().flatten().any(|e| {
             let cmd = fs::read(e.path().join("cmdline")).unwrap_or_default();
             let cmd = String::from_utf8_lossy(&cmd).replace('\0', " ");
-            cmd.contains(" extract --board ") && cmd.contains(tmp.to_str().unwrap())
+            cmd.contains(what) && cmd.contains(tmp.to_str().unwrap())
         })
     };
     let start = Instant::now();
-    let mut seen = false;
+    let (mut support_seen, mut past) = (false, None::<Instant>);
     let mut swapped = false;
     while !swapped && child.try_wait().unwrap().is_none() {
         assert!(start.elapsed().as_secs() < 900, "verify ran 15 minutes");
-        let running = extract_running();
-        seen |= running;
-        if seen && !running {
-            let ours = fs::read_dir(&tmp)
-                .unwrap()
-                .flatten()
-                .map(|e| e.path().join("tool/tree/kicad/sentinel-01.kicad_pcb"))
-                .find(|p| p.is_file())
-                .expect("verify's generated board");
-            let mut bytes = fs::read(&ours).unwrap();
-            bytes.push(b'\n');
-            let next = ours.with_extension("swap");
-            fs::write(&next, bytes).unwrap();
-            fs::rename(&next, &ours).unwrap();
-            swapped = true;
+        let support = running(" check support ");
+        support_seen |= support;
+        // The support gate has ended, so its turn and `extract`'s, which comes
+        // next with nothing left to wait for, are past; the swap lands 0.5 s
+        // after, with `extract`'s process long gone.
+        if support_seen && !support && !running(" extract --board ") {
+            let since = *past.get_or_insert_with(Instant::now);
+            if since.elapsed().as_millis() >= 500 {
+                let ours = fs::read_dir(&tmp)
+                    .unwrap()
+                    .flatten()
+                    .map(|e| e.path().join("tool/tree/kicad/sentinel-01.kicad_pcb"))
+                    .find(|p| p.is_file())
+                    .expect("verify's generated board");
+                let mut bytes = fs::read(&ours).unwrap();
+                bytes.push(b'\n');
+                let next = ours.with_extension("swap");
+                fs::write(&next, bytes).unwrap();
+                fs::rename(&next, &ours).unwrap();
+                swapped = true;
+            }
         }
         std::thread::sleep(std::time::Duration::from_millis(2));
     }
