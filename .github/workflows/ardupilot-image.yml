@@ -41,6 +41,7 @@ on:
       - "Cargo.*"
       - "rust-toolchain.toml"
       - "ci/foreign-judge.sh"
+      - "ci/s03-wall.sh"
       - ".github/workflows/ardupilot-image.yml"
   push:
     branches: [main]
@@ -54,6 +55,7 @@ on:
       - "Cargo.*"
       - "rust-toolchain.toml"
       - "ci/foreign-judge.sh"
+      - "ci/s03-wall.sh"
       - ".github/workflows/ardupilot-image.yml"
 
 permissions:
@@ -352,6 +354,48 @@ jobs:
         run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --locked --manifest-path bridge/Cargo.toml"
       - name: the foreign judge passes ArduPilot and refuses each mutation by name
         run: $RUN --network none "$(cat container/IMAGE)" bash ci/foreign-judge.sh boards
+
+  # THROWAWAY (AET-WO-4412, ruling 2026-11-26T21:47Z (c)), reverted before READY: each Sentinel-03 foreign
+  # run alone, three times under `time`, on CI's runner, with the 120 s hang guard lifted in this job's
+  # checkout only, to measure the wall the scaled guard is derived from.
+  s03-wall:
+    needs: generated
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - run: s03-arm
+            input: armread12
+          - run: s03-dshot
+            input: dshot12
+          - run: s03-reboot
+            input: reboot12
+    env:
+      RUN: >-
+        docker run --rm -v ${{ github.workspace }}:/repo -w /repo
+        -e CARGO_HOME=/repo/target/cargo-home -e CARGO_TARGET_DIR=/repo/target
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: generated-sentinel-03
+          path: boards
+      - name: lift the hang guard in this checkout only
+        run: |
+          f=crates/aethelgard-cli/src/renode.rs
+          test "$(grep -c '    wall: std::time::Duration::from_secs(120),' "$f")" = 1
+          sed -i 's/    wall: std::time::Duration::from_secs(120),/    wall: std::time::Duration::from_secs(3000),/' "$f"
+          test "$(grep -c 'from_secs(3000)' "$f")" = 1
+      - name: pull the tools image by its pinned digest
+        run: docker pull "$(cat container/IMAGE)"
+      - name: build the CLI and the analog bridge, with the network
+        run: $RUN "$(cat container/IMAGE)" bash -c "cargo build --locked -p aethelgard-cli && cargo build --locked --manifest-path bridge/Cargo.toml"
+      - name: ${{ matrix.run }} three times, timed
+        run: $RUN --network none "$(cat container/IMAGE)" bash ci/s03-wall.sh "${{ matrix.run }}" "${{ matrix.input }}"
 
   # AET-WO-4408 (the Sentinel-01 review F7, INV-07): ST's pin table, the one
   # source of every AF number and pad `verify`'s gates use, held against
