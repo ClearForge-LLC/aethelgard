@@ -1,6 +1,6 @@
 MUTANT load-unbounded: killed (exit 101, 65 s)
 MUTANT load-kill-unnamed: killed (exit 101, 6 s)
-MUTANT version-unbounded: killed (exit 101, 63 s)
+MUTANT version-unbounded: killed (exit 101, 63 s; re-run after cargo fmt reflowed its anchor)
 MUTANT version-kill-unnamed: killed (exit 101, 7 s)
 MUTANT guard-30s: killed (exit 101, 3 s)
 MUTANT guard-memory-cap: killed (exit 101, 3 s)

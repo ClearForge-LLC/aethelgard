@@ -12,12 +12,11 @@ M = [
     ("load-kill-unnamed", CLI + "main.rs", "        (None, run::Ended::Bounded(_)) => return Err(renode::hung(\"its load\", bounds.wall)),\n", "",
      ["--test", "tools_tier1", "--", "a_load_waiting_at_its_prompt_is_refused_at_the_hang_guard", "--exact"]),
     ("version-unbounded", CLI + "main.rs",
-     '''    let reported = invocation(with_config(&["--version"]), "status-version").run_bounded(
-        run::Bounds {
+     '''    let reported =
+        invocation(with_config(&["--version"]), "status-version").run_bounded(run::Bounds {
             wall: bounds.wall,
             ..renode::LOAD_BOUNDS
-        },
-    )?;''', '''    let reported = invocation(with_config(&["--version"]), "status-version").run()?;''',
+        })?;''', '''    let reported = invocation(with_config(&["--version"]), "status-version").run()?;''',
      ["--test", "tools_tier1", "--", "a_renode_version_that_never_returns_is_refused_at_the_hang_guard", "--exact"]),
     ("version-kill-unnamed", CLI + "main.rs",
      '''    if matches!(reported.ended, run::Ended::Bounded(_)) {

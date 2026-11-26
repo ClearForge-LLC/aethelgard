@@ -2324,12 +2324,11 @@ fn simulate_with(
         a
     };
     // Under the call's hang guard, with no memory cap (`AET-WO-1919` (2)).
-    let reported = invocation(with_config(&["--version"]), "status-version").run_bounded(
-        run::Bounds {
+    let reported =
+        invocation(with_config(&["--version"]), "status-version").run_bounded(run::Bounds {
             wall: bounds.wall,
             ..renode::LOAD_BOUNDS
-        },
-    )?;
+        })?;
     if matches!(reported.ended, run::Ended::Bounded(_)) {
         return Err(renode::hung("its `--version`", bounds.wall));
     }
