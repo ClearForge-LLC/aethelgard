@@ -340,6 +340,33 @@ fn a_tool_that_will_not_say_its_version_is_unusable() {
     );
 }
 
+/// `AET-WO-1919` (2c), granted: `doctor`'s `renode --version` takes the
+/// hang guard `simulate`'s does, so a Renode that never answers is killed at
+/// 120 s and named, with what it blocks, never waited for. `doctor` takes no
+/// test guard, so this test waits the 120 s out; the stand-in gives up by
+/// itself at 200 s, so a probe with no guard fails the time bound instead of
+/// hanging the test.
+#[test]
+fn a_renode_that_never_says_its_version_is_killed_at_the_hang_guard() {
+    let cli = cli(Some(VERSION_BRIDGE), true);
+    let tb = toolbox(&[(
+        "renode",
+        Some("#!/bin/sh\n/usr/bin/timeout 200 /bin/cat > /dev/null\nexit 0\n"),
+    )]);
+    let tmp = private_tmp("doctor-renode-hangs");
+    let start = std::time::Instant::now();
+    let (code, v) = doctor(&cli, &tb, &tmp.0);
+    let took = start.elapsed();
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(missing(&v), [("ToolError".into(), "renode".into())], "{v}");
+    let message = v["missing"][0]["message"].as_str().unwrap();
+    assert!(
+        message.contains("from its `--version` within the 120 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(took.as_secs() >= 120 && took.as_secs() < 180, "{took:?}");
+}
+
 #[test]
 fn an_unsafe_scratch_blocks_every_tool_subcommand_and_nothing_is_probed() {
     let cli = cli(Some(VERSION_BRIDGE), true);

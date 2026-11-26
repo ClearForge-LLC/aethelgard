@@ -210,15 +210,7 @@ pub fn tree(
         .then(|| aethelgard_eda::schematic::emit(spec, topology, table))
         .transpose()
         .map_err(GenerateError::Emit)?;
-    // The devices are the topology's; the firmware reads every one's identity,
-    // and a scripted part's further steps only where the twin can answer
-    // them, as the platform declares (`AET-WO-2202`, `AET-WO-4241`).
-    let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
-    let board =
-        aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
-            .map_err(GenerateError::Board)?;
-    // The twin's platform, a pin device's too (`AET-WO-1211c`).
-    let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
+    let board = board_files(project, topology, table)?;
 
     let mut files = BTreeMap::new();
     if let Some(e) = emission {
@@ -233,8 +225,49 @@ pub fn tree(
     for (path, text) in board {
         files.insert(format!("{BOARD_DIR}/{path}"), text);
     }
-    files.insert(format!("{BOARD_DIR}/{project}.repl"), platform);
     Ok(files)
+}
+
+/// The `board/` subtree of [`tree`] alone: the board crate and the twin's
+/// platform, with no schematic and no routed board (`AET-WO-1919` (1) (G)).
+/// Neither file set reads the emission, so each file is byte for byte
+/// [`tree`]'s. `prove --spec` judges the crate's provenance by it and
+/// discarded the routed board it used to pay for, 27 times in a `verify`.
+/// So a specification whose board cannot be drawn or routed, but whose crate
+/// generates, is generable here, where [`tree`] refuses it (ruled at the
+/// work order's stop).
+pub fn board_tree(
+    spec: &Specification,
+    topology: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, GenerateError> {
+    generable(topology)?;
+    let project = &spec.project_name;
+    let mut files = BTreeMap::new();
+    for (path, text) in board_files(project, topology, table)? {
+        files.insert(format!("{BOARD_DIR}/{path}"), text);
+    }
+    Ok(files)
+}
+
+/// The board crate's files and the twin's platform, by their path under
+/// `board/`: one definition, which [`tree`] and [`board_tree`] share.
+fn board_files(
+    project: &str,
+    topology: &SolvedTopology,
+    table: &PinTable,
+) -> Result<BTreeMap<String, String>, GenerateError> {
+    // The devices are the topology's; the firmware reads every one's identity,
+    // and a scripted part's further steps only where the twin can answer
+    // them, as the platform declares (`AET-WO-2202`, `AET-WO-4241`).
+    let answers = |part: &str| aethelgard_twin::model::model(part).is_ok_and(|m| m.is_some());
+    let mut board =
+        aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
+            .map_err(GenerateError::Board)?;
+    // The twin's platform, a pin device's too (`AET-WO-1211c`).
+    let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
+    board.insert(format!("{project}.repl"), platform);
+    Ok(board)
 }
 
 #[cfg(test)]
@@ -248,6 +281,27 @@ mod tests {
         let spec: Specification = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap()
+    }
+
+    /// `AET-WO-1919` (1) (G): `board_tree` is `tree`'s `board/` subtree, file
+    /// for file and byte for byte, so `prove --spec` judges the crate
+    /// `generate` writes. One small specification here, since each `tree`
+    /// routes; Sentinel-03 and Sentinel-01's bench board are held by their
+    /// packages in CI (`--against-fab`).
+    #[test]
+    fn board_tree_is_tree_s_board() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../examples/sentinel-01-minimal.json");
+        let spec: Specification = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let board: BTreeMap<_, _> = tree(&spec, &topology, &table)
+            .unwrap()
+            .into_iter()
+            .filter(|(p, _)| p.starts_with(&format!("{BOARD_DIR}/")))
+            .collect();
+        assert!(board.len() > 3, "{:?}", board.keys());
+        assert_eq!(board_tree(&spec, &topology, &table).unwrap(), board);
     }
 
     /// `AET-WO-4240b` §1.7: both HSE fixtures solve to H1 and are generable;

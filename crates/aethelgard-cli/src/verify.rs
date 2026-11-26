@@ -534,34 +534,352 @@ impl Ran {
     }
 }
 
-/// Runs this binary's own subcommand `args` and reads its lines. A gate that
-/// refuses (any code but 0 or 1) stops `verify` with the gate's own refusal
-/// and exit code (`INV-06`).
-fn gate(name: &str, args: Vec<OsString>) -> Result<Ran, ExitCode> {
-    let exe = std::env::current_exe().map_err(|e| {
-        refuse(
+/// Why a gate's process did not run.
+enum Unrun {
+    /// This binary could not be found.
+    Exe(std::io::Error),
+    /// It could not be started or waited for.
+    Spawn(std::io::Error),
+}
+
+/// Runs this binary's own subcommand `args` to its end, its stdout and
+/// stderr captured whole: nothing is judged or printed here.
+fn run_gate(args: &[OsString]) -> Raw {
+    let exe = std::env::current_exe().map_err(Unrun::Exe)?;
+    // The gate dies with this process (`run::PARENT_PID_VAR`), and its tool
+    // with it, through the gate's own reaper.
+    Command::new(exe)
+        .args(args)
+        .env(run::PARENT_PID_VAR, std::process::id().to_string())
+        .stdin(Stdio::null())
+        .output()
+        .map_err(Unrun::Spawn)
+}
+
+/// The gates run ahead of their turn (`AET-WO-1919` (1) (X), ruled): two
+/// lanes, the prove gates in one and `extract`, `build`, `simulate` and the
+/// campaign in the other, each run to its end and kept whole, keyed by its
+/// argv. Nothing a lane runs is judged or printed until [`gate`] takes it,
+/// in today's order, so the report, every binding and the first refusal are
+/// today's whatever finishes first, and no two gates' output interleaves.
+/// A gate's process as it ended, or why it did not run.
+type Raw = Result<std::process::Output, Unrun>;
+
+struct Prefetch {
+    /// Each planned run's argv, and its end once the lane has it.
+    entries: std::sync::Mutex<Vec<(Vec<OsString>, Option<Raw>)>>,
+    done: std::sync::Condvar,
+}
+
+static PREFETCH: Prefetch = Prefetch {
+    entries: std::sync::Mutex::new(Vec::new()),
+    done: std::sync::Condvar::new(),
+};
+
+/// Set once `verify` stops its lanes ([`stop_lanes`]): a lane starts no
+/// further gate.
+static STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Every generated file a gate is handed, and the ELF once `build` wrote
+/// it, by its path in `verify`'s scratch, with the sha256 it must still have
+/// (the architect's 07:01Z finding). A gate that ran ahead read its files
+/// before its turn, so at its turn they are hashed again ([`recheck`]), and
+/// all of them once more after the last gate ([`recheck_all`]).
+static EXPECTED: std::sync::Mutex<BTreeMap<PathBuf, String>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+/// For each file in [`EXPECTED`], the last gate in today's order that was
+/// handed it: the gate [`recheck_all`] names for a file changed after every
+/// turn.
+static LAST_READER: std::sync::Mutex<BTreeMap<PathBuf, &'static str>> =
+    std::sync::Mutex::new(BTreeMap::new());
+
+/// Names `path` as holding `sha256` from now on.
+fn expect(path: PathBuf, sha256: &str) {
+    EXPECTED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .insert(path, sha256.to_owned());
+}
+
+/// The files of [`EXPECTED`] that `args` hands a gate: each named, or beneath
+/// a directory named.
+fn handed(args: &[OsString]) -> Vec<(PathBuf, String)> {
+    let expected = EXPECTED.lock().unwrap_or_else(|p| p.into_inner());
+    expected
+        .iter()
+        .filter(|(f, _)| args.iter().any(|a| f.starts_with(Path::new(a))))
+        .map(|(f, h)| (f.clone(), h.clone()))
+        .collect()
+}
+
+/// The first of `files` whose bytes on disk are not its sha256: the file,
+/// what it should be and what it is (`None` if it cannot be read).
+fn changed(files: &[(PathBuf, String)]) -> Option<(PathBuf, String, Option<String>)> {
+    files.iter().find_map(|(f, want)| {
+        let have = std::fs::read(f).ok().map(|b| tree::sha256(&b));
+        (have.as_deref() != Some(want.as_str())).then(|| (f.clone(), want.clone(), have))
+    })
+}
+
+/// At the turn of gate `name`, whose process ran ahead in a lane: the files
+/// it was handed still hold what it should have judged, as they would have
+/// had it read them now. One that changed is `BindingMismatch` naming the
+/// gate, as the gate's own binding refuses a file changed before it reads it.
+fn recheck(name: &str, args: &[OsString]) -> Result<(), ExitCode> {
+    match changed(&handed(args)) {
+        None => Ok(()),
+        Some((f, want, have)) => Err(mismatch(
+            name,
+            &f.display().to_string(),
+            &want,
+            have.as_deref(),
+        )),
+    }
+}
+
+/// After the last gate, before anything is written: every file a gate was
+/// handed still holds what the gates judged, whatever ran ahead. One that
+/// changed is `BindingMismatch` naming the last gate that judged it.
+fn recheck_all() -> Result<(), ExitCode> {
+    let files: Vec<(PathBuf, String)> = EXPECTED
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+        .iter()
+        .map(|(f, h)| (f.clone(), h.clone()))
+        .collect();
+    match changed(&files) {
+        None => Ok(()),
+        Some((f, want, have)) => {
+            let last = LAST_READER
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(&f)
+                .copied()
+                .unwrap_or("verify");
+            Err(mismatch(
+                last,
+                &f.display().to_string(),
+                &want,
+                have.as_deref(),
+            ))
+        }
+    }
+}
+
+/// Each lane's thread, joined by [`stop_lanes`].
+static LANES: std::sync::Mutex<Vec<std::thread::JoinHandle<()>>> =
+    std::sync::Mutex::new(Vec::new());
+
+impl Prefetch {
+    /// Names `args` as a lane's next run, before it starts, so [`gate`]
+    /// waits for it rather than running it a second time.
+    fn plan(&self, args: &[OsString]) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        e.push((args.to_vec(), None));
+    }
+
+    /// `args`'s result, then `next` planned in the same step, so [`gate`]
+    /// never finds a gap between a lane's two runs.
+    fn finish(&self, args: &[OsString], out: Raw, next: Option<&[OsString]>) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(slot) = e.iter_mut().find(|(a, r)| a == args && r.is_none()) {
+            slot.1 = Some(out);
+        }
+        if let Some(n) = next {
+            e.push((n.to_vec(), None));
+        }
+        drop(e);
+        self.done.notify_all();
+    }
+
+    /// The run of `args` a lane planned, waited for; `None` if no lane
+    /// planned it, and [`gate`] runs it now.
+    /// Withdraws a run `args` planned that no lane will make, so [`gate`]
+    /// runs it in its turn rather than waiting for it.
+    fn unplan(&self, args: &[OsString]) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(i) = e.iter().position(|(a, r)| a == args && r.is_none()) {
+            e.remove(i);
+        }
+        drop(e);
+        self.done.notify_all();
+    }
+
+    fn take(&self, args: &[OsString]) -> Option<Raw> {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        loop {
+            let i = e.iter().position(|(a, _)| a == args)?;
+            if e[i].1.is_some() {
+                return e.remove(i).1;
+            }
+            e = self.done.wait(e).unwrap_or_else(|p| p.into_inner());
+        }
+    }
+}
+
+/// Runs one lane: each gate in turn, `next` deciding from what a gate
+/// printed whether the lane runs another, and which.
+fn lane(
+    first: Vec<OsString>,
+    mut next: impl FnMut(&std::process::Output) -> Option<Vec<OsString>> + Send + 'static,
+) {
+    PREFETCH.plan(&first);
+    let planned = first.clone();
+    // A lane that cannot start runs nothing ahead: its gates run in their
+    // turn, as before the lanes (adversarial pass F3).
+    let started = std::thread::Builder::new().spawn(move || {
+        let mut args = first;
+        loop {
+            let out = run_gate(&args);
+            let then = match &out {
+                Ok(o) if matches!(o.status.code(), Some(0 | 1)) => next(o),
+                _ => None,
+            };
+            let then = then.filter(|_| !STOPPED.load(std::sync::atomic::Ordering::SeqCst));
+            PREFETCH.finish(&args, out, then.as_deref());
+            match then {
+                Some(a) => args = a,
+                None => return,
+            }
+        }
+    });
+    match started {
+        Ok(handle) => LANES.lock().unwrap_or_else(|p| p.into_inner()).push(handle),
+        Err(_) => PREFETCH.unplan(&planned),
+    }
+}
+
+/// Ends the lanes, on every path out of [`run_gates`] (the architect's
+/// 06:49Z finding): a lane starts no further gate, and every process a lane
+/// started is killed, with everything beneath it, and waited for, before
+/// `verify` goes on or exits. So nothing a lane ran outlives the verdict or
+/// writes after it, as when the gates ran one after another. On a run that
+/// used every gate a lane ran, nothing is left to kill.
+///
+/// The tools run in their reaper's own process group, beneath the gate, so
+/// one group would not reach them: this kills every descendant of `verify`
+/// but the scratch guardians ([`run::GUARD_ARG`]). `verify`'s own must
+/// outlive it to remove its directory. A killed gate's is waited for, never
+/// killed: it removes the gate's directory once the gate is gone, so nothing
+/// a lane wrote is left when `verify` goes on. `verify` is a child subreaper
+/// from [`start_lanes`] on, so whatever a killed gate leaves comes to
+/// `verify`, never to init. Bounded at 12 s, past the guardians' own 10 s.
+fn stop_lanes() {
+    STOPPED.store(true, std::sync::atomic::Ordering::SeqCst);
+    for _ in 0..1200 {
+        let (kill, wait) = descendants();
+        if kill.is_empty() && wait.is_empty() {
+            break;
+        }
+        for pid in &kill {
+            let _ = rustix::process::kill_process(*pid, rustix::process::Signal::KILL);
+        }
+        // Orphans that came to `verify` are reaped here; each lane reaps its gate.
+        for pid in kill.into_iter().chain(wait) {
+            let _ = rustix::process::waitpid(Some(pid), rustix::process::WaitOptions::NOHANG);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    let lanes = std::mem::take(&mut *LANES.lock().unwrap_or_else(|p| p.into_inner()));
+    for lane in lanes {
+        let _ = lane.join();
+    }
+}
+
+/// Every live process beneath this one, from a `/proc` snapshot of parents
+/// walked down from this pid: those to kill, and another CLI's scratch
+/// guardians, to wait for. This process's own guardian, and what is beneath
+/// it, is in neither.
+fn descendants() -> (Vec<rustix::process::Pid>, Vec<rustix::process::Pid>) {
+    let me = std::process::id() as i32;
+    let mut parent = std::collections::HashMap::new();
+    let mut guardians = std::collections::HashSet::new();
+    for e in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+        let Some(pid) = e.file_name().to_str().and_then(|n| n.parse::<i32>().ok()) else {
+            continue;
+        };
+        let Ok(stat) = std::fs::read_to_string(e.path().join("stat")) else {
+            continue;
+        };
+        // `pid (comm) state ppid …`; comm may hold spaces or parens.
+        let Some((state, ppid)) = stat.rsplit_once(')').and_then(|(_, rest)| {
+            let mut f = rest.split_whitespace();
+            Some((f.next()?, f.next()?.parse::<i32>().ok()?))
+        }) else {
+            continue;
+        };
+        // A zombie is waited for, not killed again.
+        if state == "Z" {
+            continue;
+        }
+        // A guardian: `<exe> --aethelgard-internal-guard --cli-pid <pid> <dir>`.
+        let cmdline = std::fs::read(e.path().join("cmdline")).unwrap_or_default();
+        let args: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+        if args.get(1) == Some(&run::GUARD_ARG.as_bytes()) {
+            let cli = args
+                .get(3)
+                .and_then(|a| std::str::from_utf8(a).ok())
+                .and_then(|a| a.parse::<i32>().ok());
+            if cli == Some(me) {
+                continue;
+            }
+            guardians.insert(pid);
+        }
+        parent.insert(pid, ppid);
+    }
+    let (mut kill, mut wait) = (Vec::new(), Vec::new());
+    let mut frontier = vec![me];
+    while let Some(p) = frontier.pop() {
+        for (&c, _) in parent.iter().filter(|(_, pp)| **pp == p) {
+            frontier.push(c);
+            let into = if guardians.contains(&c) {
+                &mut wait
+            } else {
+                &mut kill
+            };
+            into.extend(rustix::process::Pid::from_raw(c));
+        }
+    }
+    (kill, wait)
+}
+
+/// Runs this binary's own subcommand `args`, or takes the run a lane made of
+/// it, and reads its lines. Its stderr is written whole, here, in the gates'
+/// order. A gate that refuses (any code but 0 or 1) stops `verify` with the
+/// gate's own refusal and exit code (`INV-06`).
+fn gate(name: &'static str, args: Vec<OsString>) -> Result<Ran, ExitCode> {
+    let (out, ahead) = match PREFETCH.take(&args) {
+        Some(out) => (out, true),
+        None => (run_gate(&args), false),
+    };
+    {
+        let mut last = LAST_READER.lock().unwrap_or_else(|p| p.into_inner());
+        for (f, _) in handed(&args) {
+            last.insert(f, name);
+        }
+    }
+    if ahead {
+        recheck(name, &args)?;
+    }
+    let out = out.map_err(|e| match e {
+        Unrun::Exe(e) => refuse(
             "ToolError",
             Some("aethelgard"),
             format!("cannot find this binary to run gate `{name}`: {e}"),
             EXIT_TOOL_ERROR,
-        )
+        ),
+        Unrun::Spawn(e) => refuse(
+            "ToolError",
+            Some("aethelgard"),
+            format!("cannot run gate `{name}`: {e}"),
+            EXIT_TOOL_ERROR,
+        ),
     })?;
-    // The gate dies with this process (`run::PARENT_PID_VAR`), and its tool
-    // with it, through the gate's own reaper.
-    let out = Command::new(exe)
-        .args(&args)
-        .env(run::PARENT_PID_VAR, std::process::id().to_string())
-        .stdin(Stdio::null())
-        .stderr(Stdio::inherit())
-        .output()
-        .map_err(|e| {
-            refuse(
-                "ToolError",
-                Some("aethelgard"),
-                format!("cannot run gate `{name}`: {e}"),
-                EXIT_TOOL_ERROR,
-            )
-        })?;
+    {
+        use std::io::Write;
+        let _ = std::io::stderr().write_all(&out.stderr);
+    }
     let Some(code) = out.status.code() else {
         return Err(refuse(
             "ToolError",
@@ -1990,6 +2308,21 @@ pub fn verify(
             Ok(e) => e,
             Err(code) => return code,
         };
+        // The campaign reads both again when it runs, which may be ahead of
+        // its turn (`AET-WO-1919` (X)): each is hashed again with the
+        // generated files ([`recheck`], [`recheck_all`]). The base is not on
+        // the campaign's argv, so only the check after the last gate sees it,
+        // naming the campaign.
+        expect(path.clone(), &hex(scenario.sha256));
+        if let Ok(b) =
+            std::fs::canonicalize(path.parent().unwrap_or(Path::new(".")).join(&scenario.base))
+        {
+            expect(b.clone(), &spec_sha256);
+            LAST_READER
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(b, "campaign");
+        }
         expected.push(Expected {
             path: path.clone(),
             name: scenario.name.clone(),
@@ -2165,8 +2498,12 @@ pub fn verify(
     // so a board gate bound to it would fail closed (`BindingMismatch`); on
     // a board not drawn no board gate runs, and no fab flag gets this far.
     let board_file = |rel: &str| hashes.get(rel).map_or("", String::as_str);
+    for (rel, sha) in &hashes {
+        expect(root.join(rel), sha);
+    }
+    expect(spec_copy.clone(), &spec_sha256);
 
-    if let Err(code) = run_gates(
+    let gated = run_gates(
         &mut report,
         &Paths {
             sch: path(&sch),
@@ -2189,7 +2526,10 @@ pub fn verify(
             bridges: bridges(&topology),
         },
         &expected,
-    ) {
+    );
+    // Every path out of the gates, a refusal's included (the 06:49Z finding).
+    stop_lanes();
+    if let Err(code) = gated.and_then(|()| recheck_all()) {
         return code;
     }
     let tail = Tail {
@@ -2564,16 +2904,111 @@ fn args(items: &[&dyn AsRef<std::ffi::OsStr>]) -> Vec<OsString> {
     items.iter().map(|i| (**i).as_ref().to_owned()).collect()
 }
 
+fn extract_args(p: &Paths) -> Vec<OsString> {
+    args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec])
+}
+
+fn prove_args(p: &Paths, harness: &str) -> Vec<OsString> {
+    let h = OsString::from(harness);
+    args(&[
+        &"prove",
+        &"--crate",
+        &p.board,
+        &"--harness",
+        &h,
+        &"--spec",
+        &p.spec,
+    ])
+}
+
+fn build_args(p: &Paths) -> Vec<OsString> {
+    args(&[&"build", &"--crate", &p.board, &"--out", &p.elf])
+}
+
+fn simulate_args(p: &Paths, want: &Want<'_>) -> Vec<OsString> {
+    args(&[
+        &"simulate",
+        &"--platform",
+        &p.repl,
+        &"--firmware",
+        &p.elf,
+        &"--spec",
+        &p.spec,
+        &"--for",
+        &want.boot_time,
+    ])
+}
+
+fn campaign_args(p: &Paths, expected: &[Expected]) -> Vec<OsString> {
+    let mut a = vec![OsString::from("campaign"), OsString::from("--scenarios")];
+    a.extend(expected.iter().map(|e| e.path.clone().into_os_string()));
+    a.extend([
+        OsString::from("--firmware"),
+        p.elf.clone(),
+        OsString::from("--archive"),
+        p.archive.clone(),
+    ]);
+    a
+}
+
+/// The ELF a `build` gate's line names, when it passed: what `simulate` and
+/// the campaign need.
+fn built_elf(code: i32, last: &Value) -> Option<String> {
+    last["elf"]["sha256"]
+        .as_str()
+        .map(str::to_owned)
+        .filter(|_| code == 0)
+}
+
+/// Starts the two lanes ([`Prefetch`]): the prove gates in [`gate`]'s
+/// order, and beside them `extract` (on a drawn board), `build`, then
+/// `simulate` when `build` wrote an ELF, then the campaign when there are
+/// scenarios. A lane stops at a gate that refuses; whatever it did not run,
+/// [`gate`] runs in its turn.
+fn start_lanes(p: &Paths, want: &Want<'_>, expected: &[Expected]) {
+    // Whatever a gate leaves when [`stop_lanes`] kills it comes here.
+    let _ = rustix::process::set_child_subreaper(Some(rustix::process::getpid()));
+    let mut proves: std::collections::VecDeque<Vec<OsString>> =
+        want.harnesses.iter().map(|h| prove_args(p, h)).collect();
+    if let Some(first) = proves.pop_front() {
+        lane(first, move |_| proves.pop_front());
+    }
+    let (build, simulate) = (build_args(p), simulate_args(p, want));
+    let campaign = (!expected.is_empty()).then(|| campaign_args(p, expected));
+    let first = if want.drawn {
+        extract_args(p)
+    } else {
+        build.clone()
+    };
+    lane(first, move |o| {
+        let line = String::from_utf8_lossy(&o.stdout)
+            .lines()
+            .last()
+            .and_then(|l| serde_json::from_str::<Value>(l).ok())
+            .unwrap_or(Value::Null);
+        let code = o.status.code().unwrap_or(-1);
+        match line["check"].as_str() {
+            Some("extract") => Some(build.clone()),
+            Some("build") => built_elf(code, &line).map(|_| simulate.clone()),
+            Some("simulate") => campaign.clone(),
+            _ => None,
+        }
+    });
+}
+
 /// ERC, DRC with parity, `extract`, `prove` of every harness, `build`,
-/// `simulate --firmware` and the campaign, in that order, each bound to the
-/// generated hashes. A refusal or a binding mismatch stops the run. On a
-/// board not drawn, each of [`BOARD_GATES`] is `not_applicable` instead.
+/// `simulate --firmware` and the campaign, judged in that order, each bound
+/// to the generated hashes. A refusal or a binding mismatch stops the run. On
+/// a board not drawn, each of [`BOARD_GATES`] is `not_applicable` instead.
+/// The prove gates and the gates beside them run in two lanes
+/// ([`start_lanes`]); only their judging is in order.
 fn run_gates(
     report: &mut Report,
     p: &Paths,
     want: &Want<'_>,
     expected: &[Expected],
 ) -> Result<(), ExitCode> {
+    start_lanes(p, want, expected);
     if want.drawn {
         board_gates(report, p, want)?;
     } else {
@@ -2631,10 +3066,7 @@ fn board_gates(report: &mut Report, p: &Paths, want: &Want<'_>) -> Result<(), Ex
     });
     report.gates.push(gate_report("support", None, &support));
 
-    let extract = gate(
-        "extract",
-        args(&[&"extract", &"--board", &p.pcb, &"--spec", &p.spec]),
-    )?;
+    let extract = gate("extract", extract_args(p))?;
     bound("extract", &extract, want, "", "")?;
     // `extract` runs no external tool, so its verdict has no `sandbox` and no
     // uid boundary to report: null, never a value it did not measure.
@@ -2673,33 +3105,18 @@ fn proof_and_boot_gates(
         no_harness(&mut report.findings, &mut report.gates);
     }
     for harness in &want.harnesses {
-        let h = OsString::from(harness);
-        let ran = gate(
-            "prove",
-            args(&[
-                &"prove",
-                &"--crate",
-                &p.board,
-                &"--harness",
-                &h,
-                &"--spec",
-                &p.spec,
-            ]),
-        )?;
+        let ran = gate("prove", prove_args(p, harness))?;
         bound("prove", &ran, want, "", harness)?;
         report
             .gates
             .push(gate_report("prove", Some(harness.clone()), &ran));
     }
 
-    let built = gate(
-        "build",
-        args(&[&"build", &"--crate", &p.board, &"--out", &p.elf]),
-    )?;
+    let built = gate("build", build_args(p))?;
     bound("build", &built, want, "", "")?;
-    let elf = built.last()["elf"]["sha256"].as_str().map(str::to_owned);
+    let elf = built_elf(built.code, built.last());
     report.gates.push(gate_report("build", None, &built));
-    let Some(elf) = elf.filter(|_| built.code == 0) else {
+    let Some(elf) = elf else {
         report.gates.push(not_reached("simulate", NO_ELF));
         if !expected.is_empty() {
             report.gates.push(not_reached("campaign", NO_ELF));
@@ -2707,21 +3124,9 @@ fn proof_and_boot_gates(
         return Ok(());
     };
     report.elf_sha256 = Some(elf.clone());
+    expect(PathBuf::from(&p.elf), &elf);
 
-    let sim = gate(
-        "simulate",
-        args(&[
-            &"simulate",
-            &"--platform",
-            &p.repl,
-            &"--firmware",
-            &p.elf,
-            &"--spec",
-            &p.spec,
-            &"--for",
-            &want.boot_time,
-        ]),
-    )?;
+    let sim = gate("simulate", simulate_args(p, want))?;
     bound("simulate", &sim, want, &elf, "")?;
     report.gates.push(gate_report("simulate", None, &sim));
     report.gates.extend(pin_gates(&sim, &want.bridges));
@@ -2729,15 +3134,7 @@ fn proof_and_boot_gates(
     if expected.is_empty() {
         return Ok(());
     }
-    let mut a = vec![OsString::from("campaign"), OsString::from("--scenarios")];
-    a.extend(expected.iter().map(|e| e.path.clone().into_os_string()));
-    a.extend([
-        OsString::from("--firmware"),
-        p.elf.clone(),
-        OsString::from("--archive"),
-        p.archive.clone(),
-    ]);
-    let ran = gate("campaign", a)?;
+    let ran = gate("campaign", campaign_args(p, expected))?;
     let firmware = campaign::sha(&elf).map_err(|m| {
         refuse(
             "ToolError",
@@ -2889,6 +3286,68 @@ fn proof_and_boot_gates(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// A file of this test's own, written with `text`, and its sha256.
+    fn planted(name: &str, text: &str) -> (PathBuf, String) {
+        let dir = std::env::temp_dir().join(format!("aet-1919-{}-{name}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let f = dir.join("board.kicad_pcb");
+        std::fs::write(&f, text).unwrap();
+        (f, tree::sha256(text.as_bytes()))
+    }
+
+    /// `AET-WO-1919` (X), the 07:01Z finding: a gate that ran ahead is judged
+    /// at its turn on the files as they are then. A file it was handed that
+    /// changed after it read it is `BindingMismatch` at that turn, naming the
+    /// gate, as when the gate read the changed file in its turn; one left
+    /// alone is judged from the run ahead.
+    #[test]
+    fn a_gate_run_ahead_is_refused_at_its_turn_if_its_file_changed() {
+        use std::os::unix::process::ExitStatusExt;
+        let line = |f: &Path| -> std::process::Output {
+            std::process::Output {
+                status: std::process::ExitStatus::from_raw(0),
+                stdout: format!(
+                    "{{\"check\":\"extract\",\"board\":{:?}}}\n",
+                    f.display().to_string()
+                )
+                .into_bytes(),
+                stderr: Vec::new(),
+            }
+        };
+        for swap in [false, true] {
+            let (f, sha) = planted(&format!("turn-{swap}"), "(kicad_pcb)\n");
+            expect(f.clone(), &sha);
+            let args = vec![
+                OsString::from("extract"),
+                OsString::from("--board"),
+                f.clone().into_os_string(),
+            ];
+            PREFETCH.plan(&args);
+            PREFETCH.finish(&args, Ok(line(&f)), None);
+            if swap {
+                std::fs::write(&f, "(kicad_pcb)\n\n").unwrap();
+            }
+            assert_eq!(gate("extract", args).is_err(), swap, "swapped {swap}");
+            EXPECTED.lock().unwrap().remove(&f);
+            let _ = std::fs::remove_dir_all(f.parent().unwrap());
+        }
+    }
+
+    /// `AET-WO-1919` (X), the 07:01Z finding: after the last gate, every
+    /// file a gate was handed is hashed again, so a file changed after every
+    /// turn is refused too, naming the last gate that judged it.
+    #[test]
+    fn a_file_changed_after_every_turn_is_refused_at_the_end() {
+        let (f, sha) = planted("end", "(kicad_pcb)\n");
+        expect(f.clone(), &sha);
+        LAST_READER.lock().unwrap().insert(f.clone(), "extract");
+        assert!(changed(&[(f.clone(), sha.clone())]).is_none());
+        std::fs::write(&f, "(kicad_pcb)\n\n").unwrap();
+        assert!(recheck_all().is_err());
+        EXPECTED.lock().unwrap().remove(&f);
+        let _ = std::fs::remove_dir_all(f.parent().unwrap());
+    }
 
     /// `AET-WO-1607` D2, ruled: a run on a board not drawn never exits 0
     /// and is never `pass`. With every gate passed it is `not_verified`

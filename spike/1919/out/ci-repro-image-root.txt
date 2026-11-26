@@ -1,0 +1,14 @@
+uid=0
+== d507f8fb's tests
+thread 'a_verify_that_stops_early_leaves_no_lane_gate_and_no_late_file' (1640) panicked at crates/aethelgard-cli/tests/cli_backlog_tier1.rs:618:9:
+build's lane never started
+thread 'a_verify_killed_outright_leaves_no_lane_gate' (1638) panicked at crates/aethelgard-cli/tests/cli_backlog_tier1.rs:694:9:
+the lanes never started
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 12 filtered out; finished in 20.03s
+== this head's tests, twice
+ANSWER 1919 killed verify: lanes gone 1.112805902s after
+.ANSWER 1919 scanned 227.316µs after verify exited: []
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 3.40s
+ANSWER 1919 killed verify: lanes gone 1.111521279s after
+.ANSWER 1919 scanned 238.204µs after verify exited: []
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 12 filtered out; finished in 3.41s
