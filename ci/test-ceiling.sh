@@ -48,7 +48,7 @@ sleep 0.5
 # the CLI's internal reaper is no gate.
 cp /bin/bash "$t/aethelgard"; cp /bin/bash "$t/kani-compiler"
 "$t/kani-compiler" -c 'sleep 1; :' --planted
-"$t/aethelgard" -c 'sleep 1; :' prove --harness proofs::planted_gate
+"$t/aethelgard" -c 'sleep 1.5; :' prove --harness proofs::planted_gate
 "$t/aethelgard" -c 'sleep 1; :' --aethelgard-internal-reaper
 touch "$t/probe.stop"; wait "$probe"
 kill "$alive" 2>/dev/null; wait "$alive" 2>/dev/null
@@ -62,7 +62,9 @@ grep -q '^PROBE peak harness=proofs::planted_alive ' "$t/probe.log" && echo "PAS
 grep -q '^PROBE compile seconds=[0-9.]* start=[0-9.]* harness=proofs::planted_alive/compile$' "$t/probe.log" \
   && echo "PASS a kani-compiler is timed under the harness its kani-driver proves" \
   || { echo "FAIL no compile line under proofs::planted_alive"; cat "$t/probe.log"; fail=1; }
-grep -q '^PROBE gate seconds=1\.[0-9] start=[0-9.]* argv=-c sleep 1; : prove --harness proofs::planted_gate$' "$t/probe.log" \
+# A lifetime is counted in polls of at least 0.2 s each, so 1.5 s reads within a poll period P either side, 1.5 ± P; 1.0 to 2.5 holds for P up to 0.5 s (adversarial F4).
+gs=$(sed -n 's/^PROBE gate seconds=\([0-9.]*\) start=[0-9.]* argv=-c sleep 1\.5; : prove --harness proofs::planted_gate$/\1/p' "$t/probe.log")
+awk -v s="${gs:-0}" 'BEGIN { exit !(s >= 1.0 && s <= 2.5) }' \
   && echo "PASS a gate is timed with its argv" || { echo "FAIL no gate line for proofs::planted_gate"; cat "$t/probe.log"; fail=1; }
 grep -q 'aethelgard-internal' "$t/probe.log" && { echo "FAIL the internal reaper was timed as a gate"; cat "$t/probe.log"; fail=1; } \
   || echo "PASS the CLI's internal reaper is not a gate"

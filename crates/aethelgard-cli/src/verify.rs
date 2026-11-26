@@ -595,6 +595,17 @@ impl Prefetch {
 
     /// The run of `args` a lane planned, waited for; `None` if no lane
     /// planned it, and [`gate`] runs it now.
+    /// Withdraws a run `args` planned that no lane will make, so [`gate`]
+    /// runs it in its turn rather than waiting for it.
+    fn unplan(&self, args: &[OsString]) {
+        let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
+        if let Some(i) = e.iter().position(|(a, r)| a == args && r.is_none()) {
+            e.remove(i);
+        }
+        drop(e);
+        self.done.notify_all();
+    }
+
     fn take(&self, args: &[OsString]) -> Option<Raw> {
         let mut e = self.entries.lock().unwrap_or_else(|p| p.into_inner());
         loop {
@@ -614,7 +625,10 @@ fn lane(
     mut next: impl FnMut(&std::process::Output) -> Option<Vec<OsString>> + Send + 'static,
 ) {
     PREFETCH.plan(&first);
-    std::thread::spawn(move || {
+    let planned = first.clone();
+    // A lane that cannot start runs nothing ahead: its gates run in their
+    // turn, as before the lanes (adversarial pass F3).
+    let started = std::thread::Builder::new().spawn(move || {
         let mut args = first;
         loop {
             let out = run_gate(&args);
@@ -629,6 +643,9 @@ fn lane(
             }
         }
     });
+    if started.is_err() {
+        PREFETCH.unplan(&planned);
+    }
 }
 
 /// Runs this binary's own subcommand `args`, or takes the run a lane made of

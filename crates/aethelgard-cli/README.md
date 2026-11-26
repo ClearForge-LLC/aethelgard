@@ -568,7 +568,7 @@ Each gate binds only its own input (`RUL-19` (2)): `prove` judges the crate it i
 
 - `harness_provenance` is `generated` when `--spec` is given and the crate as copied is byte for byte the board crate `generate` writes for that specification: every file, none missing and none extra (a top-level `target/` is not part of a crate). Otherwise, and always without `--spec`, it is `supplied`. The whole crate is compared, not only `src/proofs.rs`, because an unchanged harness over rewired code is not the generated proof. `prove --spec` generates the board crate alone, without the schematic or the routed board, which it does not judge (`AET-WO-1919` (1)). So a specification whose crate generates but whose board cannot be drawn or routed (`Unroutable`, say) is refused by `generate` and `verify`, but `prove --spec` still judges its crate, `generated` when it matches.
 - `cover_count` is the number of cover properties Kani reported for the harness, `0` when it reported none.
-- A `--spec` that `solve` or `generate` refuses is refused as they refuse it, before any tool is looked for.
+- A `--spec` that `solve` refuses, or whose board crate `generate` cannot write, is refused as they refuse it, before any tool is looked for. A refusal of the schematic or the routed board alone (`Unroutable`, say) is not `prove`'s: it generates the crate alone (above).
 
 ### Building firmware (`build`)
 

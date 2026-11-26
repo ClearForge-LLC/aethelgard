@@ -1,0 +1,13 @@
+tag=built-s03 mem=16G net=none tree=/home/forge/.cache/aet-1919/built
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T05:18:28+00:00
+host_avail_kB=46853216
+loadavg=19.07 13.70 12.86
+Mem:              60          16           0           6          51          44
+cmd: taskset -c 0-3 bash spike/1919/tools/ctl.sh built-s03 bash spike/1919/tools/verify-s03.sh built-s03
+exit=1
+end=2026-11-26T05:46:43+00:00
+CTL1919 tag=built-s03 rc=1 wall_s=1694.51 memory.peak=9680617472
+PROBE combined peak_rss_kib=8528700 at=1431.2
+PROBE host peak_used_kib=28147616 at=1203.6
+verdict line: cmp-identical to s03-1 (sha256 5ba5f66beda556dd…); the built head is 72b51e0e

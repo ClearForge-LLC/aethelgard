@@ -21,7 +21,9 @@ start is the seconds from the probe's own start to the process's first sighting:
   PROBE gate seconds=<s> start=<s> argv=<first 300 chars>
 and at the stop, once (AET-WO-1919 (X), the two lanes' memory side by side):
   PROBE combined peak_rss_kib=<n> at=<s>   the highest sum, at one poll, of every watched process's
-                                           VmRSS (each kani-driver, cbmc, Renode and gate)
+                                           VmRSS (each kani-driver, cbmc, kani-compiler, Renode and
+                                           gate), and of each kicad-cli, cargo, rustc and the analog
+                                           bridge, counted but given no line
   PROBE host peak_used_kib=<n> at=<s>      the highest MemTotal - MemAvailable the probe saw
 It stops when the file STOP exists. ci/ceiling.sh judges the peaks against ci/kani-ceiling.
 Stdlib only; run with python3 -I.
@@ -95,6 +97,11 @@ def main():
                     continue
                 pid = int(name)
                 comm = (read(f"/proc/{pid}/comm") or b"").decode(errors="replace").strip()
+                if comm in ("kicad-cli", "cargo", "rustc", "aethelgard-brid"):
+                    st = status(pid)
+                    if st is not None:
+                        rss += int(st.get("VmRSS", "0 kB").split()[0] or 0)
+                    continue
                 if comm not in ("kani-driver", "cbmc", "renode", "aethelgard", "kani-compiler"):
                     continue
                 st = status(pid)
