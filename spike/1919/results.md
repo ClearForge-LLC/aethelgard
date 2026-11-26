@@ -21,7 +21,10 @@ Measured 2026-11-26, base `main` `649e81a8`, branch heads `f6ba23c0` (prediction
 
 - **`verify` is 96–97 % of the job.** The image pull and the build take about 2.3 min together. The checkout and the probe steps take under 0.1 min each.
 - **The slowest run measured is 74.3 min** (45743010585, a 9V74). The two earlier 9V74 runs took 60.0 and 60.7, so one CPU model varies by 24 % between runners.
-- **The probe does not explain the 74.3.** Measured on Furnace, the old probe and this one each use 0.8 s of CPU per minute; this one adds 0.08 s (`~/.cache/aet-1919/probecost`).
+- **The probe does not explain the 74.3.**
+  - **The shards run the same probe** over many more `aethelgard`, Renode and Kani processes. Their test step averaged 9.7 min in 45743010585, against 9.8–10.4 min in the earlier runs (14.9 in 45709090931, which hung).
+  - **The runners were slow before the probe started.** This run's `bench-package` (Sentinel-01, a 7763) took 11.8 min against 8.4–8.6 on the same CPU, and its build step, which runs before the probe starts, took 2.1 min against 1.6.
+  - **On Furnace,** the old probe and this one each used 0.8 s of CPU per minute; this one added 0.08 s. That test saw only 70 processes and no Kani or `aethelgard` process, so it is the weaker evidence.
 - The architect's two re-runs of `4254a2a0` will add two more rows here.
 
 ### 1.2 Inside `verify`, gate by gate (`tools/gates.py` on the probe's lines)
@@ -40,7 +43,7 @@ The probe times each `aethelgard` subcommand that `verify` runs as its own proce
 | – of which `kani-compiler` | 26 | 20 |
 | – **of which the CLI's own, outside kani-driver** | **1,809** (30.2 min) | 524 (8.7 min) |
 | build, `simulate --firmware`, attribute ×2 | 12 | 7 |
-| campaign (11 scenarios; Renode 15 boots, 119–168 s in CI runs) | 162 | 97 |
+| campaign (11 scenarios; Renode's 15 boots summed to 88–168 s across the seven CI runs) | 162 | 97 |
 | in-process, after the last gate (the package derived and compared) | 3 | 2 |
 
 **Every harness, CI 45743010585** (`out/ci-45743010585-gates.txt`; Furnace: `out/furnace-s03-1-gates.txt`):
@@ -92,7 +95,8 @@ Every peak equals `1918`'s split figures (largest 7.997 GiB, under the 12 GiB ce
 
   - Under (G), the prove verdict line is byte for byte the debug build's, apart from the `--crate` path each run was given. It is still `pass`, with provenance `generated`.
   - **A release build is not the lever.** It takes 8–9 % off, because the time is in `aethelgard-eda`, which `[profile.dev.package.aethelgard-eda]` already builds at opt-level 2.
-- **`extract` is the in-process copper work,** at eda's opt-level 2: 265 s in CI, and 428–505 s on a loaded Furnace. The CLI build does not change it.
+- **`extract` is the in-process copper work,** at eda's opt-level 2: 265 s in CI, and 428–505 s on Furnace. The CLI build does not change it.
+  - **Why Furnace is slower here is not explained.** CBMC ran faster on Furnace in the same verify, so this is not the box's load. The projections use CI's figure.
 
 ### 1.4 Furnace's `--against-fab` exits 1, from the sandbox alone
 
@@ -113,6 +117,15 @@ Projected from 45743010585's own parts. (G)'s per-gate CLI time in CI is taken a
 | (G) + (M) the prove gates in 2 matrix jobs, then one job composing | Each prove job proves a measured-balanced half, under the 12 GiB ceiling, and uploads its prove lines. `verify --proved DIR` binds each line (harness, `input_sha256`, provenance, versions) instead of running it | ≈ 31.5 (each prove job ≈ 20.5 = 2.3 setup + 1.2 generate + 17; the compose job ≈ 11) | none, if the composed lines are byte-identical. But `verify` no longer runs what it reports | **a change to what `verify` derives** (the work order's stop): it trusts a file for a proof. A local `verify --proved` could be handed a forged line, so the verdict would have to say its prove gates were imported, and then the verdict line and `MANIFEST.json` move |
 | (C) a cache of prove results keyed by input hashes | A prove line reused when its key matches | 45.0 on a hit (and (G) is still needed on a miss) | none on a hit | **not recommended.** The key must cover the crate, the harness, Kani, CBMC, the image and the CLI's judge. Keyed on the CLI binary, nearly every code PR misses. Keyed on less, a proof can be reused past a change to its judge (the adversarial pass's "a cached result whose key misses an input") |
 | (R) a release CLI | `cargo build --release` with the checks kept | ≈ 70 (−8 %) | none expected | not recommended: it is not where the time is |
+
+**The room is thin, so weigh it:**
+- one CPU model varied by 24 % between runners (§1.1);
+- `4411`'s `uart4` harness is still to come, and it adds to `prove`;
+- after (G), about 32 of `verify`'s 43 minutes are CBMC, which only (M) reaches.
+
+So (G) alone does not pass, and (G) + (X) has about 5–7 min in hand on the slowest run measured.
+
+**(X)'s independence, read in `proof_and_boot_gates`:** build, `simulate` and the campaign read only the ELF and the board, never a prove gate's result. Today a refusal at `extract` stops `verify` before any prove gate runs. Under (X), the first refusal in today's order (extract before prove) must still be the one printed, and the other lane is ended with `verify`.
 
 **Lean: (G) + (X).** It removes a repeated build (the work order's third example) and runs the gates that share no input beside each other. Every proof and every gate still runs, by name, in `verify` itself, and no byte should move. (M) stays in reserve: it is the only option that halves CBMC's 32 min, and it is a verdict-derivation change.
 
@@ -137,21 +150,23 @@ The bridge alone (`analog.rs`, ngspice) keeps `BRIDGE_BOUNDS`.
 
 Renode's own lifetime, first seen to gone (`ci/probe.py`, 0.2 s polls). In CI, the CLI's runs are told apart by their configuration in its scratch (`--config /var/lib/aethelgard/…`), and kinds by the command line the CLI builds (`tools/renode_ci.py`). A load's `-e` starts `include @` or `mach create`; a boot's starts `emulation SetSeed`.
 
-**CI, the CLI's loads** (real Renode only; two tier-1 shell stand-ins named `renode` set aside), six runs:
+**CI, the CLI's loads** (real Renode only; tier-1 shell stand-ins named `renode` set aside), seven runs:
 
 | CPU | Loads | Median s | Max s | Max in |
 |---|---|---|---|---|
-| AMD EPYC 7763 | 6 | 3.4 | 4.5 | 45733269794 shard 16 |
+| AMD EPYC 7763 | 10 | 3.0 | 4.5 | 45733269794 shard 16 |
 | AMD EPYC 9V45 | 13 | 1.6 | 3.6 | 45709090931 shard 0 |
-| AMD EPYC 9V74 | 9 | 2.6 | **5.1** | 45678279272 shard 17 |
+| AMD EPYC 9V74 | 11 | 2.6 | **5.1** | 45678279272 shard 17 |
 | Intel Xeon Platinum 8573C | 3 | 3.0 | 3.2 | 45664966472 shard 4 |
 | Intel Xeon 6973P-C | 3 | 1.8 | 4.0 | 45663730941 shard 17 |
-| Intel Xeon 6975P-C | 6 | 1.9 | 4.0 | 45733269794 shard 5 |
+| Intel Xeon 6975P-C | 5 | 3.2 | 4.0 | 45733269794 shard 5 |
 | Intel Xeon Platinum 8370C | 1 | 3.8 | 3.8 | 45664966472 shard 0 |
 | **hung (run 45709090931, the failed load at its prompt, `4400j` F14)** | 2 | — | **3,111 and 2,852** | shards 15 (9V45) and 7 (9V74) |
 
 - **The slowest load measured in CI is 5.1 s,** 23.5× under the 120 s guard. **No load comes within 5× of it** (24 s).
 - About seven CLI loads run in each full CI run.
+- **Each whole `simulate --platform` call in 45743010585** (the probe's gate lines, the CLI's own start to exit): 12 calls, at most 4.7 s (9V74).
+- **No load test sets a timeout of its own.** Each calls `Command::output()` and waits. So today what ends a hung load is the shard job's 60 minutes. The MCP server sets none either (`mcp.rs`: "`RUL-13` gives the call no timeout").
 - **The CLI's `--version` runs:** at the probe's 0.2 s floor in almost every case, with a maximum of 1.0 s (9V74), over 641 runs.
 - **Loads a test makes itself** (`models_tier2`, Renode with its own configuration under `/tmp/aet-4220-models-*`, no CLI): median 4.0–9.0 s by CPU, max 9.1 s (8370C) and 9.0 s (7763). The CLI does not run these, so no CLI guard reaches them. They are listed because the work order asks for every tier-2 test that loads.
 
@@ -180,7 +195,7 @@ Renode's own lifetime, first seen to gone (`ci/probe.py`, 0.2 s polls). In CI, t
 
 ### 2.3 For the ruling
 
-- **(2a) The load's bound is a wall guard only.** `run::Bounds` carries the wall bound and the 1.5 GiB resident cap together, and the reaper enforces both. The work order grants the hang guard and leaves the memory cap out (`4400j` F4). **Lean:** a load runs under `LOAD_BOUNDS = { wall: BOOT_BOUNDS.wall, rss_kib: u64::MAX }`. The reaper still samples, but a load is never killed for memory. The alternative is the boot's 1.5 GiB cap, which is a new bound on a load.
+- **(2a) The load's bound is a wall guard only.** A bounded load gains no verdict field: `memory` and `wall_bound_ms` are set only on a boot's verdict (`main.rs`, inside the `(ready, plan)` branch). So a load's verdict moves only under a test's `--wall-bound-ms`, if (2e) records it there. `run::Bounds` carries the wall bound and the 1.5 GiB resident cap together, and the reaper enforces both. The work order grants the hang guard and leaves the memory cap out (`4400j` F4). **Lean:** a load runs under `LOAD_BOUNDS = { wall: BOOT_BOUNDS.wall, rss_kib: u64::MAX }`. The reaper still samples, but a load is never killed for memory. The alternative is the boot's 1.5 GiB cap, which is a new bound on a load.
 - **(2b) `simulate`'s `renode --version`** is an invocation the CLI makes before every load and boot, and it is unbounded. It sits in `main.rs`'s `simulate` dispatch, inside the fence. **Lean:** the same guard, also a `ToolError` when it fires.
 - **(2c) `doctor`'s `renode --version`** (`doctor.rs`) is outside the fence. **Lean:** the same guard, by a grant to touch `doctor.rs`; failing that, a row.
 - **(2d) The kill's text** is the boot's, naming a load: "Renode did not return from its load within the 120 s wall-clock hang guard and was killed; a hang judges nothing about the platform, so no verdict is written (AET-WO-1919)", with exit 5 and kind `ToolError`. There are no findings and no verdict, as for the boot (`renode::bounded`).
