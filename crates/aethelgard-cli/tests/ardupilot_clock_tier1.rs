@@ -201,3 +201,107 @@ fn a_generated_tree_is_the_same_with_or_without_a_foreign_clock() {
         "the foreign platform builds the declared clock; the generated one the solved"
     );
 }
+
+/// `AET-WO-4412` D4 (ruled 2026-11-26T14:09Z): Sentinel-03's foreign
+/// platform takes its DShot outputs' timer (TIM1) and DMA1/DMA2 as
+/// Aethelgard's models by cancel-and-restate, and its generated platform
+/// takes nothing. In the foreign file, after each `X: @none`, no update on
+/// `X:` and no route `X@` remains (Tviburi's `RUL-09` (b) trap: either would
+/// bind to the cancelled entry); the header pins both models; the stock
+/// timer's frequency line is gone, its frequency in the model's declaration.
+#[test]
+fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
+    let dir = common::private_tmp("ap-retype");
+    let mut s03 = read(&common::example("sentinel-03.json"));
+    s03["mcu"]["foreign_clock"] = declared(16_000_000);
+    let spec = write(&dir.0, "s03.json", &s03);
+    let out = dir.0.join("gen");
+    let (code, r) = aethelgard(
+        &dir.0,
+        &[
+            "generate",
+            "--spec",
+            spec.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+        ],
+    );
+    assert_eq!(code, Some(0), "{r}");
+    let foreign = std::fs::read_to_string(out.join("board/sentinel-03.foreign.repl")).unwrap();
+    let generated = std::fs::read_to_string(out.join("board/sentinel-03.repl")).unwrap();
+    assert!(
+        !generated.contains("AethelgardSTM32") && !generated.contains("@none"),
+        "{generated}"
+    );
+    for model in ["AethelgardSTM32Timer.cs", "AethelgardSTM32DMA.cs"] {
+        assert!(
+            foreign
+                .lines()
+                .take_while(|l| l.starts_with("//"))
+                .any(|l| l.contains(&format!("`models/renode/{model}` sha256 `"))),
+            "{model}"
+        );
+    }
+    let lines: Vec<&str> = foreign.lines().collect();
+    let cancelled: Vec<(usize, &str)> = lines
+        .iter()
+        .enumerate()
+        .filter_map(|(i, l)| l.strip_suffix(": @none").map(|n| (i, n)))
+        .collect();
+    assert_eq!(
+        cancelled.iter().map(|c| c.1).collect::<Vec<_>>(),
+        ["timer1", "dma2", "dma1"]
+    );
+    for (at, name) in &cancelled {
+        for (i, l) in lines.iter().enumerate().skip(at + 1) {
+            assert!(
+                l.trim_end() != format!("{name}:"),
+                "line {i}: `{l}` updates cancelled `{name}`"
+            );
+            let routes_to = l
+                .split(|c: char| c == ' ' || c == '|')
+                .any(|t| t.starts_with(&format!("{name}@")));
+            assert!(!routes_to, "line {i}: `{l}` routes to cancelled `{name}`");
+        }
+        // Nor before: an update or a route anywhere binds to the cancelled
+        // entry.
+        for (i, l) in lines.iter().enumerate().take(*at) {
+            assert!(
+                l.trim_end() != format!("{name}:"),
+                "line {i}: `{l}` updates cancelled `{name}`"
+            );
+            let routes_to = l
+                .split(|c: char| c == ' ' || c == '|')
+                .any(|t| t.starts_with(&format!("{name}@")));
+            assert!(!routes_to, "line {i}: `{l}` routes to cancelled `{name}`");
+        }
+    }
+    assert!(foreign.contains("    } as \"timer1\"\n    UpdateDmaRequest -> dmamux1@15\n    initialLimit: 0xffff\n    frequency: 200000000\n"), "{foreign}");
+    assert!(foreign.contains("pacedRequests: \"15\""), "{foreign}");
+    assert!(foreign.contains(
+        "dmamux1:\n    [0-7] -> aethelgardDma1@[0-7]\n    [8-15] -> aethelgardDma2@[0-7]\n"
+    ));
+    assert!(
+        foreign.contains("aethelgardTimer1:\n    0 -> gpioPortA#07@01 | gpioPortA#08@01"),
+        "{foreign}"
+    );
+    // Every stock GPIO route into TIM1 (the stock file's, which the emitted
+    // file cannot show) is restated, once, onto the model: the observed pins
+    // by their observers, the rest by the block.
+    for (port, pin, stock) in aethelgard_twin::timer::GPIO_TIMER_INPUTS {
+        if !stock.split(" | ").any(|t| t.starts_with("timer1@")) {
+            continue;
+        }
+        let restated = aethelgard_twin::retype::route(stock, &[1]);
+        let mut port_of = ' ';
+        let mut seen = 0;
+        for l in &lines {
+            if let Some(p) = l.strip_prefix("gpioPort").and_then(|r| r.strip_suffix(':')) {
+                port_of = p.chars().next().unwrap_or(' ');
+            } else if port_of == port && l.starts_with(&format!("    {pin} -> {restated}")) {
+                seen += 1;
+            }
+        }
+        assert_eq!(seen, 1, "gpioPort{port} {pin} -> {restated}");
+    }
+}

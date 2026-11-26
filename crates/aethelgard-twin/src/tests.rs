@@ -729,8 +729,12 @@ fn a_model_of_our_own_loads_only_by_its_pinned_header_line() {
         line(icm_file, icm_sha)
     );
     assert_eq!(
-        own_models(&good).unwrap(),
-        [Model::Bmp581, Model::Icm42688p]
+        own_models(&good)
+            .unwrap()
+            .iter()
+            .map(|o| o.renode)
+            .collect::<Vec<_>>(),
+        [Model::Bmp581.renode(), Model::Icm42688p.renode()]
     );
     // A platform of Renode's models names none and needs none.
     assert_eq!(
@@ -824,7 +828,14 @@ fn the_emitted_header_names_each_own_model_s_pin() {
         ),
         "{text}"
     );
-    assert_eq!(platform::own_models(&text).unwrap(), [Model::Bmp581]);
+    assert_eq!(
+        platform::own_models(&text)
+            .unwrap()
+            .iter()
+            .map(|o| o.renode)
+            .collect::<Vec<_>>(),
+        [Model::Bmp581.renode()]
+    );
     let renode = platform::emit(&with_devices(&[("U2", "BME280", 0x76)])).unwrap();
     assert!(!renode.contains(platform::OWN_LINE), "{renode}");
     assert!(platform::own_models(&renode).unwrap().is_empty());

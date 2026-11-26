@@ -2889,12 +2889,13 @@ fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
     let mut out = Vec::new();
     for m in named {
         // `own_models` named only pinned models, each with a source.
-        let ((file, pin), Some(text)) = (m.own().expect("a pinned model"), m.source()) else {
+        let (file, pin, text) = (m.file, m.sha256, m.source);
+        if text.is_empty() {
             return Err(run::Stop::refused(
                 "ModelUnpinned",
-                format!("`{}` has no source in this build", m.renode()),
+                format!("`{}` has no source in this build", m.renode),
             ));
-        };
+        }
         let path = to.join(file);
         fs::write(&path, text).map_err(written)?;
         let back = fs::read(&path).map_err(written)?;

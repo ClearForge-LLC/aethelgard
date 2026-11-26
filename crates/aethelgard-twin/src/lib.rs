@@ -44,6 +44,7 @@ pub mod model;
 pub mod pins;
 pub mod platform;
 pub mod rest;
+pub mod retype;
 pub mod serial;
 pub mod timer;
 

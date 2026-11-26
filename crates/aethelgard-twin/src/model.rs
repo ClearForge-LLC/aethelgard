@@ -72,6 +72,61 @@ pub const OWN: [(Model, &str, &str); 2] = [
     ),
 ];
 
+/// Each peripheral model of our own (`AET-WO-4412` D4): its Renode type, its
+/// file in `aethelgard_renode_models::FILES` and that file's sha256, pinned as
+/// [`OWN`]'s devices are. A peripheral is no bus device, so it is no
+/// [`Model`]; the platform names it in its header the same way.
+pub const OWN_PERIPHERALS: [(&str, &str, &str); 2] = [
+    (
+        "DMA.AethelgardSTM32DMA",
+        "AethelgardSTM32DMA.cs",
+        "b2f0e261af6582c0c07f83f40d58de3b715a4875599e40a313302240a7e8626d",
+    ),
+    (
+        "Timers.AethelgardSTM32Timer",
+        "AethelgardSTM32Timer.cs",
+        "f6055ff6b42cf4528d78ca6203e1bdd875fee924b93382d462c9ce8687e4bb11",
+    ),
+];
+
+/// A pinned file of our own a platform loads: a device's ([`OWN`]) or a
+/// peripheral's ([`OWN_PERIPHERALS`]), with its Renode type and its text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OwnFile {
+    pub renode: &'static str,
+    pub file: &'static str,
+    pub sha256: &'static str,
+    pub source: &'static str,
+}
+
+/// Every pinned file of our own: [`OWN`]'s devices, then the peripherals.
+pub fn own_files() -> Vec<OwnFile> {
+    let text = |file: &str| {
+        aethelgard_renode_models::FILES
+            .iter()
+            .find(|f| f.0 == file)
+            .map_or("", |f| f.1)
+    };
+    OWN.iter()
+        .map(|&(m, file, sha256)| OwnFile {
+            renode: m.renode(),
+            file,
+            sha256,
+            source: text(file),
+        })
+        .chain(
+            OWN_PERIPHERALS
+                .iter()
+                .map(|&(renode, file, sha256)| OwnFile {
+                    renode,
+                    file,
+                    sha256,
+                    source: text(file),
+                }),
+        )
+        .collect()
+}
+
 /// Where a model of our own lives in the repository, as the platform's
 /// header names it.
 pub const OWN_DIR: &str = "models/renode";
@@ -907,10 +962,14 @@ mod tests {
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect();
-            let pinned = OWN.iter().find(|o| o.1 == file).map(|o| o.2);
+            let pinned = own_files()
+                .into_iter()
+                .find(|o| o.file == file)
+                .map(|o| o.sha256);
             assert_eq!(pinned, Some(sha.as_str()), "{file}");
         }
-        assert_eq!(OWN.len(), aethelgard_renode_models::FILES.len());
+        assert_eq!(own_files().len(), aethelgard_renode_models::FILES.len());
+        assert!(own_files().iter().all(|o| !o.source.is_empty()));
         for m in MODELS {
             assert_eq!(m.own().is_some(), m.source().is_some(), "{m:?}");
             assert_eq!(
