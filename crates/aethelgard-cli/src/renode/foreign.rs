@@ -359,6 +359,11 @@ pub struct ForeignBoot {
     /// Executed instructions, for a reader: no rule reads it.
     pub instructions: Option<u64>,
     pub pc: Option<String>,
+    /// The fields above that a re-simulation of this same run may report
+    /// otherwise (`AET-WO-4412` (ii), ruled 2026-11-26T15:27Z), each with why;
+    /// empty, and absent, on a platform without the timer model.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub not_rerun_stable: Vec<Unstable>,
     pub icsr: Option<String>,
     /// ICSR at the end reads before the last, in order (`AET-WO-4400j` D4 (i)).
     pub icsr_earlier: Vec<String>,
@@ -508,6 +513,30 @@ pub fn reset_script(image: &aethelgard_twin::boot::Image, vector_table: u32) -> 
         "sysbus SetHookBeforePeripheralWrite sysbus.rcc \"if offset == {RSR_OFFSET:#x} and value & {RSR_RMVF:#x}: {state} = 0\""
     ));
     format!("macro reset\n\"\"\"\n{}\n\"\"\"\n", lines.join("\n"))
+}
+
+/// A field a re-simulation may report otherwise, and why.
+#[derive(Serialize, Clone)]
+pub struct Unstable {
+    pub field: &'static str,
+    pub why: &'static str,
+}
+
+/// The foreign verdict's fields that are not re-run stable on a platform with
+/// the DShot timer and DMA models (`AET-WO-4412` (ii)): no committed golden,
+/// CI assertion, package or expectation compares them (a tier-1 test holds
+/// it). `pc_outside_firmware` still judges `boot.pc`; both outcomes measured
+/// lie in the firmware's flash.
+pub const NOT_RERUN_STABLE: [&str; 2] = ["boot.instructions", "boot.pc"];
+
+pub const NOT_RERUN_STABLE_WHY: &str = "Renode 1.17.0 re-simulation is not bit-stable: on Sentinel-03 dshot12, 5 of 19 runs with the same inputs ended 6 instructions apart (the CPU at __port_switch, not __port_exit_from_isr, from 11.280174680 s), with no model state, transfer word, USART byte or stamp differing; stock Renode moved 18 log stamps by 10 ns in 1 of 20 (AET-WO-4412 spike/4412/proto/NOTES.md §9). A replay of this run's trace is deterministic (INV-04); a fresh re-simulation is not";
+
+/// Whether the platform loads the DShot timer and DMA models.
+fn loads_dshot_models(models: &[std::path::PathBuf]) -> bool {
+    models.iter().any(|m| {
+        m.file_name()
+            .is_some_and(|f| f == "AethelgardSTM32Timer.cs" || f == "AethelgardSTM32DMA.cs")
+    })
 }
 
 /// The DMA model's line for a paced stream in circular mode (`AET-WO-4412`
@@ -1283,11 +1312,7 @@ pub fn commands(
     c.extend(reset.map(|r| format!("include @{}", r.display())));
     // The DMA model's one line per paced transfer (`AET-WO-4412` D4), its
     // only `Noisy` line, where the platform loads it.
-    if plan
-        .models
-        .iter()
-        .any(|m| m.file_name().is_some_and(|f| f == "AethelgardSTM32DMA.cs"))
-    {
+    if loads_dshot_models(plan.models) {
         c.extend([
             "logLevel -1 sysbus.dma1".to_owned(),
             "logLevel -1 sysbus.dma2".to_owned(),
@@ -1953,6 +1978,7 @@ pub fn report(
         mips: None,
         instructions: None,
         pc: None,
+        not_rerun_stable: Vec::new(),
         icsr: None,
         icsr_earlier: Vec::new(),
         rc_search: Vec::new(),
@@ -2138,6 +2164,15 @@ pub fn judge(
         }
     }
     report.pc = Some(format!("{pc:#010x}"));
+    if loads_dshot_models(plan.models) {
+        report.not_rerun_stable = NOT_RERUN_STABLE
+            .iter()
+            .map(|&field| Unstable {
+                field,
+                why: NOT_RERUN_STABLE_WHY,
+            })
+            .collect();
+    }
     report.icsr = Some(format!("{:#010x}", icsr[END_READS - 1]));
     report.icsr_earlier = icsr[..END_READS - 1]
         .iter()
@@ -4469,6 +4504,22 @@ mod tests {
             (w.params[0].before_reboot, w.params[0].after_reboot),
             (None, None)
         );
+    }
+
+    /// `AET-WO-4412` (ii): a platform that loads the DShot timer or DMA
+    /// model names the verdict's instruction count and PC not re-run stable;
+    /// one with only sensor models, or none, does not.
+    #[test]
+    fn the_dshot_models_name_the_end_reads_not_rerun_stable() {
+        let p = |f: &str| std::path::PathBuf::from(format!("/m/{f}"));
+        assert!(loads_dshot_models(&[
+            p("BMP581.cs"),
+            p("AethelgardSTM32Timer.cs")
+        ]));
+        assert!(loads_dshot_models(&[p("AethelgardSTM32DMA.cs")]));
+        assert!(!loads_dshot_models(&[p("BMP581.cs"), p("ICM42688P.cs")]));
+        assert!(!loads_dshot_models(&[]));
+        assert_eq!(NOT_RERUN_STABLE, ["boot.instructions", "boot.pc"]);
     }
 
     /// `AET-WO-4412` (3): a parameter the input only reads

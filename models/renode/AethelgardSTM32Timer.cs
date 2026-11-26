@@ -29,7 +29,6 @@
 //
 using System;
 using System.Collections.Generic;
-using System.Text;
 
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Core.Structure;
@@ -54,11 +53,8 @@ namespace Antmicro.Renode.Peripherals.Timers
         // schedule (default "hybrid", ruling D-c): "lazy" wakes only for what can be observed (below); "eager" wakes at every limit the counter or a
         // running channel reaches, as [stock]'s clock entries stop the CPU; "hybrid" is eager while a DMA request or an
         // interrupt is enabled (UDE, any CCxDE, UIE, any CCxIE) and lazy otherwise (ruling D-c, NOTES §7).
-        // rearmReturns, syncWrites: DIAGNOSTIC switches for the D-c isolation (NOTES §7). rearmReturns = false re-arms the
-        // wake without asking the CPU to leave its block; syncWrites = true takes a CPU access at the CPU's own instant
-        // (cpu.SyncTime) instead of the clock source's last report.
         public AethelgardSTM32Timer(IMachine machine, ulong frequency, uint initialLimit, bool preload = true, bool stockExits = true,
-            string schedule = "hybrid", bool rearmReturns = true, bool syncWrites = false)
+            string schedule = "hybrid")
         {
             if(initialLimit == 0)
             {
@@ -76,8 +72,6 @@ namespace Antmicro.Renode.Peripherals.Timers
                 throw new ConstructionException("schedule must be lazy, eager or hybrid");
             }
             this.schedule = schedule;
-            this.rearmReturns = rearmReturns;
-            this.syncWrites = syncWrites;
             this.stockExits = stockExits;
             this.initialLimit = initialLimit;
             counterBits = 0;
@@ -96,8 +90,8 @@ namespace Antmicro.Renode.Peripherals.Timers
             Connections = conns;
             ch = new Entry[Channels];
             chan = new Channel[Channels];
-            // One-shot event source in nanoseconds (a bare clock entry: re-arming it asks the CPU for a return only when
-            // rearmReturns says so, where a LimitTimer setter always does), re-armed to the earliest instant needed.
+            // One-shot event source in nanoseconds (a bare clock entry; re-arming it asks the CPU for a return, as a
+            // LimitTimer setter does), re-armed to the earliest instant needed.
             wakeHandler = OnWake;
             machine.ClockSource.ExchangeClockEntryWith(wakeHandler, e => e, NewWakeEntry);
             Reset();
@@ -120,42 +114,6 @@ namespace Antmicro.Renode.Peripherals.Timers
         public IReadOnlyDictionary<int, IGPIO> Connections { get; }
 
         public long Size => 0x400;
-
-        // Prototype evidence only, off by default: one Noisy line per output edge with its exact virtual instant (Renode's
-        // log stamps are coarser than a DShot bit). Monitor: sysbus.timer1 TraceEdges true.
-        public bool TraceEdges { get; set; }
-
-        // Prototype evidence only (round 4, INV-04): inside [TraceFrom, TraceTo] virtual ns, one Noisy line at each wake and
-        // each bus access with the CPU's PC and the NVIC's ICSR, ISPR0-4 and IABR0-4 (side-effect-free reads). 0/0 = off.
-        public ulong TraceFrom { get; set; }
-        public ulong TraceTo { get; set; }
-
-        private void TraceNvic(string tag)
-        {
-            var t = Now();
-            if(TraceTo == 0 || t < TraceFrom || t > TraceTo)
-            {
-                return;
-            }
-            var bus = machine.SystemBus;
-            var pc = bus.TryGetCurrentCPU(out var cpu) ? cpu.PC.RawValue : 0UL;
-            var text = new StringBuilder();
-            text.AppendFormat("nvic {0} t={1} pc=0x{2:X} icsr=0x{3:X8} ispr=", tag, t, pc, bus.ReadDoubleWord(0xE000ED04));
-            for(var k = 0; k < 5; k++)
-            {
-                text.AppendFormat(k == 0 ? "{0:X8}" : ",{0:X8}", bus.ReadDoubleWord(0xE000E200UL + 4UL * (ulong)k));
-            }
-            text.Append(" iabr=");
-            for(var k = 0; k < 5; k++)
-            {
-                text.AppendFormat(k == 0 ? "{0:X8}" : ",{0:X8}", bus.ReadDoubleWord(0xE000E300UL + 4UL * (ulong)k));
-            }
-            this.Log(LogLevel.Noisy, text.ToString());
-        }
-
-        // Evidence counters for the prototype's measurement (monitor: sysbus.timer1 Stats).
-        public string Stats => string.Format("wakes={0} updates={1} lazy_updates={2} compares={3} lazy_compares={4} bursts={5} violations={6} wakes_off_cpu_thread={7}",
-            wakes, updates, lazyUpdates, compares, lazyCompares, bursts, violations, wakesOffCpu);
 
         public void OnGPIO(int number, bool value)
         {
@@ -227,7 +185,7 @@ namespace Antmicro.Renode.Peripherals.Timers
             depth++;
             try
             {
-                if((offset == (long)Reg.CNT || (syncWrites && depth == 1)) && machine.SystemBus.TryGetCurrentCPU(out var cpu))
+                if(offset == (long)Reg.CNT && machine.SystemBus.TryGetCurrentCPU(out var cpu))
                 {
                     cpu.SyncTime(); // [stock] reads CNT at the CPU's own instant
                 }
@@ -249,12 +207,7 @@ namespace Antmicro.Renode.Peripherals.Timers
             depth++;
             try
             {
-                if(syncWrites && depth == 1 && machine.SystemBus.TryGetCurrentCPU(out var cpu))
-                {
-                    cpu.SyncTime(); // diagnostic (i): the CPU's own instant, not the clock source's last report
-                }
                 CatchUp(Now());
-                TraceNvic(string.Format("w{0:X2}", offset));
                 if(offset == (long)Reg.DMAR)
                 {
                     DmarAccess(true, value);
@@ -765,7 +718,7 @@ namespace Antmicro.Renode.Peripherals.Timers
             {
                 return;
             }
-            bursts++; // the words are logged by the DMA, once per transfer (ruling D-b)
+            // The words are logged by the DMA, once per transfer (ruling D-b).
             burstWords.Clear();
             burstStart = -1;
         }
@@ -934,11 +887,6 @@ namespace Antmicro.Renode.Peripherals.Timers
             {
                 return; // [RM p.1589] UDIS: no update event
             }
-            updates++;
-            if(late)
-            {
-                lazyUpdates++;
-            }
             if(main.OneShot)
             {
                 enableRequested = false;
@@ -979,11 +927,6 @@ namespace Antmicro.Renode.Peripherals.Timers
 
         private void OnCompare(int i)
         {
-            compares++;
-            if(late)
-            {
-                lazyCompares++;
-            }
             if(chan[i].Mode != 0)
             {
                 return;
@@ -1037,10 +980,6 @@ namespace Antmicro.Renode.Peripherals.Timers
                 Violation("CH" + (i + 1) + " edge");
             }
             outputs[i].Set(value);
-            if(TraceEdges)
-            {
-                this.Log(LogLevel.Noisy, "edge CH{0} {1} {2}", i + 1, value ? 1 : 0, lastT);
-            }
         }
 
         private void UpdateInterrupts()
@@ -1085,7 +1024,7 @@ namespace Antmicro.Renode.Peripherals.Timers
         // with CCR > 0, or CCxIE). Anything else an update changes (UIF, CNT, OPM's CEN, RCR's count, ARR's reload) is
         // read through the bus, and every bus access catches up first. So: if any of those holds, wake at the earliest
         // limit (counter or channel); else sleep until the firmware next writes. The first of those is exact; the
-        // second is checked: an observable change found during catch-up is counted and warned (Stats: violations).
+        // second is checked: an observable change found during catch-up is counted and warned (violations).
         private bool PreloadOn(int i)
         {
             return preload && chan[i].PreloadEnable && chan[i].Mode == 0;
@@ -1172,7 +1111,7 @@ namespace Antmicro.Renode.Peripherals.Timers
             var delta = target == ulong.MaxValue ? 0 : (target > now ? target - now : 1);
             machine.ClockSource.ExchangeClockEntryWith(wakeHandler,
                 e => target == ulong.MaxValue ? e.With(enabled: false) : e.With(period: delta, value: 0, enabled: true), NewWakeEntry);
-            if(rearmReturns && machine.SystemBus.TryGetCurrentCPU(out var cpu))
+            if(machine.SystemBus.TryGetCurrentCPU(out var cpu))
             {
                 (cpu as IControllableCPU)?.RequestReturn(); // as a LimitTimer setter does
             }
@@ -1188,14 +1127,8 @@ namespace Antmicro.Renode.Peripherals.Timers
             depth++;
             try
             {
-                wakes++;
-                if(!machine.SystemBus.TryGetCurrentCPU(out var _))
-                {
-                    wakesOffCpu++; // processed on a thread that is not the CPU's (the time source's, while the CPU is halted)
-                }
                 armedAt = ulong.MaxValue;
                 CatchUp(Now());
-                TraceNvic("wake");
             }
             finally
             {
@@ -1281,8 +1214,6 @@ namespace Antmicro.Renode.Peripherals.Timers
         private readonly ulong frequency;
         private readonly bool preload;
         private readonly string schedule;
-        private readonly bool rearmReturns;
-        private readonly bool syncWrites;
         private readonly bool stockExits;
         private readonly uint initialLimit;
         private readonly int counterBits;
@@ -1306,6 +1237,6 @@ namespace Antmicro.Renode.Peripherals.Timers
         private bool inBurst;
         private int depth;
         private bool warnedInput, warnedDir, warnedCms, warnedSms, warnedDierDma, warnedBdtr;
-        private ulong wakesOffCpu, wakes, updates, lazyUpdates, compares, lazyCompares, bursts, violations;
+        private ulong violations;
     }
 }

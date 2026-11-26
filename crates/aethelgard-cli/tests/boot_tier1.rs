@@ -4558,3 +4558,110 @@ fn a_circular_paced_stream_is_refused_by_name() {
     let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
     assert_eq!(code, Some(0), "{v}");
 }
+
+/// `AET-WO-4412` (ii), ruled 2026-11-26T15:27Z: nothing committed binds a
+/// field the foreign verdict names `not_rerun_stable` (`boot.instructions`,
+/// `boot.pc`). Every committed reader of a verdict's `pc` or `instructions`
+/// (CI scripts and workflows, examples, every crate's tests) is listed here
+/// with why it is not one; a new one fails until it is listed or removed.
+#[test]
+fn no_committed_file_binds_a_not_rerun_stable_field() {
+    // Each one reads a generated run's verdict, whose `instructions` is
+    // `{expected, observed}` (the plan's count, re-run stable: the generated
+    // platform has no timer or DMA model).
+    const GENERATED: [(&str, &str); 8] = [
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "b[\"instructions\"][\"observed\"], 1_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 1000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 10_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 1_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"]",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"instructions\"][\"expected\"], 1_000_000);",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"instructions\"][\"observed\"], 1_000_000);",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"pc\"], \"0x08000010\");",
+        ),
+    ];
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut dirs: Vec<std::path::PathBuf> = ["ci", ".github", "examples"]
+        .iter()
+        .map(|d| root.join(d))
+        .collect();
+    for c in std::fs::read_dir(root.join("crates")).unwrap() {
+        dirs.push(c.unwrap().path().join("tests"));
+    }
+    let binds = |l: &str| {
+        let quoted = ["pc", "instructions"]
+            .iter()
+            .any(|f| l.contains(&format!("[\"{f}\"]")) || l.contains(&format!("['{f}']")));
+        let dotted = ["pc", "instructions"].iter().any(|f| {
+            l.match_indices(&format!(".{f}")).any(|(i, m)| {
+                !l[i + m.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '(')
+            })
+        });
+        quoted || dotted
+    };
+    let mut found = Vec::new();
+    let mut stack = dirs;
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            let rel = p.strip_prefix(&root).unwrap().display().to_string();
+            // A comment binds nothing.
+            for line in text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.starts_with("//") && !l.starts_with('#') && binds(l))
+            {
+                // This test's own list.
+                if rel == "crates/aethelgard-cli/tests/boot_tier1.rs"
+                    && (line.starts_with("(\"crates/") || line.contains(".any(|f| l.contains"))
+                {
+                    continue;
+                }
+                found.push((rel.clone(), line.to_owned()));
+            }
+        }
+    }
+    found.sort();
+    let mut want: Vec<(String, String)> = GENERATED
+        .iter()
+        .map(|(f, l)| ((*f).to_owned(), (*l).to_owned()))
+        .collect();
+    want.sort();
+    assert_eq!(found, want);
+}
