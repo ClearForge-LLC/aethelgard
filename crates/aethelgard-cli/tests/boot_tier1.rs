@@ -1146,6 +1146,25 @@ fn a_boot_that_never_returns_is_refused_at_the_hang_guard() {
     assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
 }
 
+/// `AET-WO-4400j`, the 23:07Z note: a Renode waiting at its monitor for a
+/// line it never gets, as every Renode whose commands stopped at an error did
+/// on the held stdin before it carried `quit` (CI run 45709090931), is killed
+/// at the hang guard and refused as a `ToolError`. The stub reads its stdin
+/// to an end the held pipe never reaches.
+#[test]
+fn a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard() {
+    let (code, v, took) = guarded("", "/bin/cat > /dev/null", "2000");
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("within the 2 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(v.get("findings").is_none(), "{v}");
+    assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
+}
+
 /// The test's hang guard is on the verdict of a boot that ends, and absent
 /// without it, so no boot run under one passes for one run under the
 /// constant; `campaign` and `verify` take no such flag (`AET-WO-1918` (2)).
@@ -1223,6 +1242,23 @@ fn pre_pass_on(
         ],
     );
     (out.status.code(), report(&out))
+}
+
+/// [`PASSING_BRIDGE`], answering only if its stdin's first line is `quit` and
+/// a read after it is still waiting at 0.5 s (`timeout`'s 124): the bridge's
+/// own Renode inherits the bridge's stdin, so the bridge gets the held pipe
+/// Renode does (`AET-WO-4400j` D1, `run::HELD_STDIN`, `run::HELD_STDIN_LINE`).
+const BRIDGE_ON_A_HELD_STDIN: &str = r#"#!/bin/sh
+[ "$(/usr/bin/timeout 2 /usr/bin/head -n 1)" = quit ] || exit 88
+/usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89
+printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
+"#;
+
+#[test]
+fn the_bridges_stdin_is_held_open_as_renodes_is() {
+    let (code, v) = pre_pass(Some(BRIDGE_ON_A_HELD_STDIN), false);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
 }
 
 #[test]
@@ -2641,7 +2677,8 @@ fn an_spi_read_whose_eot_wait_expired_fails_as_a_timeout_naming_eot() {
 /// A `renode` stub for a foreign boot (`AET-WO-4400e`): it answers
 /// `--version`, accepts only the foreign command line (the ELF right after
 /// the platform, SPI1's access log for D4,
-/// a `RunFor` of `time`, and none of the generated runtime's contract: no
+/// a `RunFor` of `time` to the first end read, then a quantum before each
+/// later one (`AET-WO-4400j` D4), and none of the generated runtime's contract: no
 /// boot word written, no hook of ours, no capture), and prints `stdout`.
 /// A stub Renode for a foreign boot. With `flash`, the run must hash
 /// [`elf`]'s one flash segment (64 bytes at `0x08000000`) after the reads and
@@ -2672,7 +2709,8 @@ case "$7" in *AddWatchpointHook*|*"WriteDoubleWord 0x20000000"*|*CreateFileBacke
 case "$7" in *"LogPeripheralAccess sysbus.spi"*) exit 94;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.spi1 \"(offset == 0xC) and "*) ;; *) exit 96;; esac
 case "$7" in *"sysbus SetHookBeforePeripheralWrite sysbus.flashController \"((offset in (0xc, 0x10c)) and (value >> 7) & 1 or offset in (0x18, 0x118) and ((value >> 4) & 1 or (value >> 1) & 1)) and "*) ;; *) exit 92;; esac
-case "$7" in *"emulation RunFor \"{time}\""*) ;; *) exit 95;; esac
+case "$7" in *"emulation RunFor \"{time}\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 95;; esac
+case "$7" in *"echo \"AETHELGARD-BOOT-END\"; emulation RunFor \"0.0001000005\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 90;; esac
 case "$7" in *"cpu AddHook 0x8000030 \"r = lambda x: "*"ok = v in (3, 4, 5, 6, ); "*"setattr(self, 'IsHalted', True)\"; "*"emulation RunFor"*) ;; *) exit 91;; esac
 {hash}
 /bin/cat '{out}'
@@ -2728,12 +2766,23 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
     );
     s.push_str(CONSOLE_BRINGUP);
     s.push_str(run_log);
-    s.push_str("AETHELGARD-BOOT-BEGIN\n");
-    // Then the RCC registers the clock check reads (`AET-WO-4400g`).
-    // Then each serial line's `PUPDR` (`AET-WO-2311`).
+    // The reads, at each of the four end reads (`AET-WO-4400j` D4), alike.
+    for _ in 0..4 {
+        s.push_str(&foreign_reads(icsr, &GOOD_REGISTERS, rcc));
+    }
+    s.push_str(flash);
+    s.push_str(CPU_LISTING);
+    s
+}
+
+/// One end read's block: the markers around executed instructions, MIPS,
+/// PC, `icsr`, then `registers`, then the RCC registers the clock check reads
+/// (`AET-WO-4400g`), then each serial line's `PUPDR` (`AET-WO-2311`).
+fn foreign_reads(icsr: &str, registers: &[&str], rcc: &[&str; 6]) -> String {
+    let mut s = String::from("AETHELGARD-BOOT-BEGIN\n");
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
-        .chain(GOOD_REGISTERS.iter())
+        .chain(registers.iter())
         .chain(rcc.iter())
         .chain([CONSOLE_PULLS].iter())
     {
@@ -2741,8 +2790,6 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
         s.push('\n');
     }
     s.push_str("AETHELGARD-BOOT-END\n");
-    s.push_str(flash);
-    s.push_str(CPU_LISTING);
     s
 }
 
@@ -2772,7 +2819,7 @@ fn foreign(stdout: &str) -> (Option<i32>, Value) {
 }
 
 fn foreign_of(stdout: &str, firmware: &[u8]) -> (Option<i32>, Value) {
-    let tb = toolbox_foreign(stdout, "0.0100000005", true);
+    let tb = toolbox_foreign(stdout, "0.0097000005", true);
     let input = Dir::new("in");
     let fw = input.write("fw.elf", firmware);
     let out = foreign_with(&tb.0, &fw, "10ms");
@@ -3011,6 +3058,135 @@ fn the_slave_mode_error_is_exempt_only_after_spi_lld_stop_s_writes() {
     assert_eq!(v["boot"]["spi_errors_exempted"], 0, "{v}");
 }
 
+/// `AET-WO-4400j` D2 (ruled 2026-11-25T18:49Z), through the CLI: fifty D4
+/// cycles on spi1 (`CFG2` MASTER 1, then MASTER 0 with `SPE` 0 and the
+/// slave-mode error) are kept the first time and counted after: the verdict
+/// counts all fifty exempt and names the cycle with its count; the log keeps
+/// one error. A fifty-first cycle left a slave while its device speaks is
+/// never summarised: it fails, as it would in the whole log.
+#[test]
+fn repeated_exempt_cycles_are_summarised_and_counted_and_a_bad_one_is_not() {
+    let cycles = |n: usize, bad: bool| {
+        let mut s = good_foreign_log();
+        for k in 0..n {
+            let t = 41_000_000 + k * 10_000;
+            s.push_str(&format!(
+                "[00:00:00.{:09}] [WARNING] spi1: AETHELGARD-CFG2 20400000 0
+[00:00:00.{:09}] [WARNING] spi1: AETHELGARD-CFG2 0 0
+[00:00:00.{:09}] [ERROR] spi1: Attempted to set peripheral into SPI slave mode. Only master mode is supported
+",
+                t,
+                t + 1_000,
+                t + 2_000
+            ));
+        }
+        if bad {
+            s.push_str("[00:00:00.900000000] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+");
+        }
+        s.push_str(
+            "[00:00:00.950000000] [WARNING] spi1: AETHELGARD-CFG2 20400000 0
+",
+        );
+        s
+    };
+    let (code, v) = foreign(&foreign_transcript(&cycles(50, false), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 50, "{v}");
+    let cycle = v["boot"]["summarised"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["line"].as_str().unwrap().contains("slave mode"))
+        .cloned()
+        .unwrap();
+    assert_eq!(cycle["count"], 50, "{v}");
+    assert_eq!(cycle["first_ns"], 41_002_000, "{v}");
+    assert_eq!(cycle["last_ns"], 41_492_000, "{v}");
+    assert_eq!(v["boot"]["summary_capped"], false, "{v}");
+    let (code, v) = foreign(&foreign_transcript(&cycles(50, true), "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["renode_error_log"], "{v}");
+    assert_eq!(v["boot"]["spi_errors_exempted"], 49, "{v}");
+}
+
+/// `AET-WO-4400j` D2 through the CLI, per source on the reference board: two
+/// hundred repeats each of a multiplexer's line, a flash (U4) line after its
+/// identity, the BME280's (U2) data read and the ADC's warning are each kept
+/// once and counted, and every step is witnessed where the run without them
+/// witnesses it. A U2 warning among the repeats is never summarised: it
+/// fails by name.
+#[test]
+fn each_repeating_source_is_kept_once_and_counted_and_a_warning_is_not() {
+    let repeated = |warning: bool| {
+        let mut s = good_foreign_log();
+        for k in 0..200usize {
+            let t = 50_000_000 + k * 10_000;
+            s.push_str(&format!(
+                "[00:00:00.{:09}] [NOISY] spi1.spi1mux: GPIO #0 set to True
+[00:00:00.{:09}] [NOISY] spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand
+[00:00:00.{:09}] [NOISY] i2c1.u2: Write F7
+[00:00:00.{:09}] [NOISY] i2c1.u2: Read 0 0 90 80 0 D0
+[00:00:00.{:09}] [WARNING] adc3: Issued a start event before the last sequence finished
+",
+                t,
+                t + 1_000,
+                t + 2_000,
+                t + 3_000,
+                t + 4_000
+            ));
+            if warning && k == 150 {
+                s.push_str(&format!(
+                    "[00:00:00.{:09}] [WARNING] i2c1.u2: Read from an unknown register\n",
+                    t + 5_000
+                ));
+            }
+        }
+        s
+    };
+    let steps = |v: &Value| -> Vec<(String, String, Value)> {
+        v["boot"]["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|d| {
+                (
+                    d["reference"].to_string(),
+                    d["step"].to_string(),
+                    d["observed_ns"].clone(),
+                )
+            })
+            .collect()
+    };
+    let (code, plain) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{plain}");
+    let (code, v) = foreign(&foreign_transcript(&repeated(false), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(steps(&v), steps(&plain), "{v}");
+    let counted = |part: &str| {
+        v["boot"]["summarised"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["line"].as_str().unwrap().contains(part))
+            .map(|s| s["count"].clone())
+    };
+    for part in [
+        "spi1.spi1mux: GPIO #0 set to True",
+        "spi1.spi1mux.u4: Transmitting data 0x0, current state: HandleCommand",
+        "i2c1.u2: Read 0 0 90 80 0 D0",
+        "adc3: Issued a start event",
+    ] {
+        assert!(
+            counted(part).is_some_and(|c| c.as_u64().unwrap_or(0) >= 200),
+            "{part}: {v}"
+        );
+    }
+    let (code, v) = foreign(&foreign_transcript(&repeated(true), "0x00000800"));
+    assert_eq!(code, Some(1), "{v}");
+    assert_eq!(kinds(&v), ["i2c_step_error"], "{v}");
+}
+
 /// Ruled on PR #212 (comment 6965511448): the firmware's own loaded flash
 /// bytes, hashed in Renode after the run, must be the ELF's; an access to an
 /// unclocked peripheral is an `info` finding listing each address; Renode's
@@ -3164,7 +3340,7 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     // The D2 firmware loads nothing into flash, so nothing is hashed.
     let tf = toolbox_foreign(
         &foreign_transcript_flash(&good_foreign_log(), "0x00000800", ""),
-        "0.0100000005",
+        "0.0097000005",
         false,
     );
     // It passes the memory rule, and is refused next because nothing it
@@ -3190,7 +3366,7 @@ fn the_foreign_judge_is_declared_and_its_memory_is_the_header_s_regions() {
     );
     let tt = toolbox_foreign(
         &foreign_transcript(&good_foreign_log(), "0x00000800"),
-        "0.0100000005",
+        "0.0097000005",
         true,
     );
     let loaded = foreign_with(&tt.0, &with_table, "10ms");
@@ -3280,7 +3456,7 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
     );
     let tb = toolbox_foreign_then(
         &foreign_transcript(&log, "0x00000803"),
-        "0.0100000005",
+        "0.0097000005",
         true,
         common::HOLD_PAST_CAP,
     );
@@ -3292,6 +3468,122 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
     assert_eq!(kinds(&v), ["memory_cap_exceeded", "foreign_fault"], "{v}");
 }
 
+/// A foreign transcript whose four end reads (`AET-WO-4400j` D4) each have
+/// their own ICSR and image registers.
+fn foreign_transcript_reads(blocks: &[(&str, &[&str])]) -> String {
+    let mut s = String::from(
+        "(monitor) emulation SetSeed 2100;  echo \"AETHELGARD-BOOT-BEGIN\";  echo \"AETHELGARD-BOOT-END\"\n",
+    );
+    s.push_str(CONSOLE_BRINGUP);
+    s.push_str(&good_foreign_log());
+    for (icsr, registers) in blocks {
+        s.push_str(&foreign_reads(
+            icsr,
+            registers,
+            &common::foreign::RCC_AT_RESET,
+        ));
+    }
+    s.push_str(&flash_unchanged());
+    s.push_str(CPU_LISTING);
+    s
+}
+
+/// `AET-WO-4400j` D4 (i), ruled 2026-11-25T18:49Z: the end is read four
+/// times, one quantum apart, the last at the window's end, and a register,
+/// or the core in an exception, fails only if it fails at every read. A
+/// firmware stopping its SPI controller between transactions (SCK as GPIO)
+/// or in a handler for up to two quanta at the end passes; one that stays
+/// there fails; every read is in the verdict.
+#[test]
+fn a_foreign_end_read_fails_only_if_it_fails_at_all_four() {
+    let good: &[&str] = &GOOD_REGISTERS;
+    let mut moved = GOOD_REGISTERS;
+    moved[4] = "0x00000000";
+    let bad: &[&str] = &moved;
+    let modera = |v: &Value| {
+        v["boot"]["registers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|r| r["name"] == "GPIOA.MODER")
+            .cloned()
+            .unwrap()
+    };
+    let ok = "0x00000800";
+    let hard = "0x00000803";
+    for (blocks, mismatch) in [
+        ([bad, bad, bad, good], false),
+        ([good, bad, bad, bad], false),
+        ([bad, good, bad, bad], false),
+        ([bad, bad, bad, bad], true),
+    ] {
+        let reads: Vec<(&str, &[&str])> = blocks.iter().map(|r| (ok, *r)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(if mismatch { 1 } else { 0 }), "{v}");
+        assert_eq!(
+            kinds(&v).contains(&"register_mismatch".to_owned()),
+            mismatch,
+            "{v}"
+        );
+        let r = modera(&v);
+        let earlier: Vec<&str> = r["earlier"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        let want: Vec<&str> = blocks[..3]
+            .iter()
+            .map(|b| {
+                if std::ptr::eq(*b, bad) {
+                    "0x00000000"
+                } else {
+                    "0x0028a801"
+                }
+            })
+            .collect();
+        assert_eq!(earlier, want, "{v}");
+    }
+    for (icsrs, in_exception) in [
+        ([hard, hard, hard, ok], false),
+        ([ok, hard, hard, hard], false),
+        ([hard, hard, hard, hard], true),
+    ] {
+        let reads: Vec<(&str, &[&str])> = icsrs.iter().map(|i| (*i, good)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(if in_exception { 1 } else { 0 }), "{v}");
+        assert_eq!(
+            kinds(&v).contains(&"core_in_exception".to_owned()),
+            in_exception,
+            "{v}"
+        );
+        assert_eq!(v["boot"]["icsr"], icsrs[3].to_lowercase(), "{v}");
+        assert_eq!(
+            v["boot"]["icsr_earlier"].as_array().unwrap().len(),
+            3,
+            "{v}"
+        );
+    }
+}
+
+/// D4 (i): a run whose output holds three end reads, or five, is untrusted
+/// output (exit 5), never judged on what it holds.
+#[test]
+fn a_foreign_run_without_exactly_four_end_reads_is_untrusted() {
+    let good: &[&str] = &GOOD_REGISTERS;
+    for n in [3, 5] {
+        let reads: Vec<(&str, &[&str])> = (0..n).map(|_| ("0x00000800", good)).collect();
+        let (code, v) = foreign(&foreign_transcript_reads(&reads));
+        assert_eq!(code, Some(5), "{v}");
+        assert!(
+            v["error"]["message"].as_str().unwrap().contains(&format!(
+                "renode printed {n} begin and {n} end markers, not 4 of each"
+            )),
+            "{v}"
+        );
+    }
+}
+
 /// `AET-WO-2314` D2 (i): a vector table whose fault entry is 0, or outside
 /// every executable `PT_LOAD`, cannot be hooked, so the firmware is refused
 /// by name before a boot (the stub would exit 99 on any boot); the D2-only
@@ -3300,7 +3592,7 @@ fn a_foreign_boot_that_faults_then_reaches_a_bound_names_both() {
 /// the foreign judge admits).
 #[test]
 fn a_foreign_firmware_whose_fault_vector_cannot_be_hooked_is_refused_by_name() {
-    let tb = toolbox_foreign("", "0.0100000005", true);
+    let tb = toolbox_foreign("", "0.0097000005", true);
     let input = Dir::new("in");
     let mut far = foreign_code();
     far[0x14..0x18].copy_from_slice(&0x0900_0001u32.to_le_bytes());
@@ -3376,6 +3668,17 @@ fn input_run(
     board: Option<(PathBuf, PathBuf)>,
     extra: &[&OsStr],
 ) -> Output {
+    input_run_for(toolbox, input, board, extra, "10ms")
+}
+
+/// As [`input_run`], for `time` of `--foreign`.
+fn input_run_for(
+    toolbox: &Path,
+    input: &Path,
+    board: Option<(PathBuf, PathBuf)>,
+    extra: &[&OsStr],
+    time: &str,
+) -> Output {
     let dir = Dir::new("input-in");
     let (spec, platform) = board.unwrap_or_else(|| common::foreign::write(&dir.0));
     let fw = dir.write("fw.elf", &foreign_elf());
@@ -3388,7 +3691,7 @@ fn input_run(
         OsStr::new("--spec"),
         spec.as_os_str(),
         OsStr::new("--foreign"),
-        OsStr::new("10ms"),
+        OsStr::new(time),
         OsStr::new("--input"),
         input.as_os_str(),
     ];
@@ -3433,7 +3736,8 @@ fn toolbox_input_writing(capture: Option<&[u8]>, expected: Option<&str>) -> Dir 
 [ "$1" = --config ] || exit 97
 if [ "$3" = --version ]; then printf 'Renode v1.17.0\n  build: {RENODE_BUILD}\n'; exit 0; fi
 case "$7" in *"; include @"*"/input.resc; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 95;; esac
-case "$7" in *"emulation RunFor"*) exit 94;; esac
+case "$7" in *"emulation RunFor"*"; include @"*) exit 94;; esac
+case "$7" in *"echo \"AETHELGARD-BOOT-END\"; emulation RunFor \"0.0001000005\"; echo \"AETHELGARD-BOOT-BEGIN\""*) ;; *) exit 89;; esac
 script=$(printf '%s' "$7" | /bin/sed -n 's/.*; include @\([^;]*\); echo .*/\1/p')
 [ -r "$script" ] || exit 93
 cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$script")
@@ -3446,6 +3750,39 @@ cap=$(/bin/sed -n '1s/^sysbus.usart1 CreateFileBackend @\(.*\) true$/\1/p' "$scr
     );
     common::stub::write_executable(&tb.0.join("renode"), body.as_bytes());
     tb
+}
+
+/// `AET-WO-4400j` D3, ruled 2026-11-25T18:49Z: a run with a declared input
+/// may run 12 s, and its verdict names that window; 1 ms more is refused by
+/// the argument's own bound. A run with no input keeps 5 s: 12 s without
+/// `--input` is refused (64) by name, before any tool runs.
+#[test]
+fn an_input_run_may_run_twelve_seconds_and_a_plain_one_five() {
+    let tb = toolbox_input(&ardupilot_tx("early-fill"), None);
+    let dir = Dir::new("d3");
+    let input = input_file(&dir, "in.json", "CONSOLE", &[(1_000_000, HB_GCS, 0)]);
+    let out = input_run_for(&tb.0, &input, None, &[], "12000ms");
+    let v = report(&out);
+    assert!(v.get("error").is_none(), "{v}");
+    assert_eq!(v["boot"]["window"], "FOREIGN_INPUT_MAX_VIRTUAL_NS", "{v}");
+    assert_eq!(v["boot"]["virtual_time_ns"], 12_000_000_000u64, "{v}");
+    let past = input_run_for(&tb.0, &input, None, &[], "12001ms");
+    assert_eq!(past.status.code(), Some(64), "{past:?}");
+    let empty = Dir::new("empty");
+    let fw = dir.write("fw.elf", &foreign_elf());
+    for time in ["5001ms", "12000ms"] {
+        let plain = foreign_with(&empty.0, &fw, time);
+        let e = report(&plain);
+        assert_eq!(plain.status.code(), Some(64), "{e}");
+        assert_eq!(e["error"]["kind"], "UsageError", "{e}");
+        assert!(
+            e["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("ms of a run with no --input; 12000 ms, FOREIGN_INPUT_MAX_VIRTUAL_NS, is a declared input's"),
+            "{e}"
+        );
+    }
 }
 
 /// `AET-WO-4400i` D8: each refusal of a declared input is named, with exit
@@ -3595,8 +3932,9 @@ fn an_input_run_reads_the_arm_from_the_firmwares_own_heartbeat() {
     want.push_str("emulation RunFor \"0.0010000005\"\n");
     send(&mut want, ARM, 11);
     // The ARM is 44 bytes (a 32-byte payload): with its fill, 55 bytes, the
-    // last at 4 + 54 × 0.1 = 9.4 ms; 0.6 ms to the end.
-    want.push_str("emulation RunFor \"0.0006000005\"\n");
+    // last at 4 + 54 × 0.1 = 9.4 ms; 0.3 ms to the first of the four end
+    // reads at 9.7 ms (`AET-WO-4400j` D4).
+    want.push_str("emulation RunFor \"0.0003000005\"\n");
     let tb = toolbox_input(&tx, Some(&want));
     let dir = Dir::new("arm");
     // A heartbeat at 1 ms, then an ARM at 4 ms with 11 bytes of fill.

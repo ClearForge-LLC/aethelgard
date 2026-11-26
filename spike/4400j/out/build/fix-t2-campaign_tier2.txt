@@ -1,0 +1,19 @@
+test p2_gate_clause_2_the_47k_trace_shows_the_rise_the_fault_and_the_timeout_as_three_events ... ok
+test p2_gate_clause_3_a_one_byte_change_is_refused_even_with_the_manifest_resealed ... ok
+test a_battery_sag_s_deck_answer_is_judged_after_its_boot ... ok
+test a_flooding_firmware_reaches_a_verdict_and_its_message_is_the_same_twice ... ok
+test p2_gate_clause_2_the_campaign_passes_2k2_and_fails_47k_as_each_expects ... ok
+test p2_gate_clause_3_replay_twice_is_identical_and_equals_the_committed_hash ... ok
+test a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays has been running for over 60 seconds
+test a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it has been running for over 60 seconds
+test d1_s_pin_device_simulates_and_its_faults_run_and_replay has been running for over 60 seconds
+test p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario has been running for over 60 seconds
+test renodes_reset_recipe_is_pinned_step_by_step has been running for over 60 seconds
+test the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay has been running for over 60 seconds
+test p2_gate_clause_3_the_same_campaign_twice_gives_identical_hashes_per_scenario ... ok
+test a_droop_on_a_board_whose_first_read_is_on_spi_recovers_and_replays ... ok
+test a_reset_on_an_instant_renode_would_run_short_boots_where_the_judge_places_it ... ok
+test d1_s_pin_device_simulates_and_its_faults_run_and_replay ... ok
+test renodes_reset_recipe_is_pinned_step_by_step ... ok
+test the_two_reference_droops_behave_as_predicted_twice_byte_identical_and_replay ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 90.74s

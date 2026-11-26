@@ -1,0 +1,17 @@
+test a_patch_that_matches_zero_or_two_times_is_refused_naming_the_mutant ... ok
+test every_committed_proposal_is_pull_up_changes_named_for_its_scenario ... ok
+test tier2::every_committed_proposal_reruns_to_its_own_bytes_and_regates ... ok
+test every_unmutated_case_is_a_scenario_whose_own_expectation_is_the_manifests ... ok
+test the_manifest_seeds_twenty_failing_cases_eight_per_domain_and_the_three_traps ... ok
+test every_mutant_applies_exactly_once_to_the_generated_board_as_committed ... ok
+test tier2::attribute_twice_is_identical_and_a_one_byte_change_is_refused_as_replay_refuses_it has been running for over 60 seconds
+test tier2::every_case_fails_the_way_its_manifest_says has been running for over 60 seconds
+test tier2::p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows has been running for over 60 seconds
+test tier2::p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says has been running for over 60 seconds
+test tier2::the_trap_the_wrong_address_shares_i2c_timeout_with_47k_and_is_told_apart has been running for over 60 seconds
+test tier2::every_case_fails_the_way_its_manifest_says ... ok
+test tier2::the_trap_the_wrong_address_shares_i2c_timeout_with_47k_and_is_told_apart ... ok
+test tier2::p3_gate_clause_1_attribute_names_every_case_with_evidence_its_rule_allows ... ok
+test tier2::attribute_twice_is_identical_and_a_one_byte_change_is_refused_as_replay_refuses_it ... ok
+test tier2::p3_gate_clause_2_propose_answers_every_seeded_case_as_its_rule_says ... ok
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 412.47s

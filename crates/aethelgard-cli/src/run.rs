@@ -3,8 +3,9 @@
 //!
 //! The CLI never runs a tool directly. It starts a copy of itself as a
 //! *reaper*, in a new process group (so a signal to the CLI's group does not
-//! reach it), with an empty environment, stdin from `/dev/null` and its
-//! working directory inside the call's private temporary directory. The reaper
+//! reach it), with an empty environment, stdin from `/dev/null` (Renode's, a
+//! held pipe: [`HELD_STDIN`]) and its working directory inside the call's
+//! private temporary directory. The reaper
 //! starts a *trampoline*, a third copy, in a process group of its own; the
 //! trampoline confines itself with Landlock, installs the seccomp filter that
 //! refuses every socket Landlock cannot see (AET-WO-0300a) and the non-socket
@@ -67,6 +68,30 @@ pub const REAPER_ARG: &str = "--aethelgard-internal-reaper";
 
 /// The first argument that turns this binary into the trampoline.
 pub const CONFINE_ARG: &str = "--aethelgard-internal-confine";
+
+/// The tools whose stdin is a pipe the CLI holds open until the reaper has
+/// been waited for, not `/dev/null` (`AET-WO-4400j` D1, ruled
+/// 2026-11-25T18:49Z): Renode, and the analog bridge, whose Renode inherits
+/// its stdin. Started with `--console`, Renode 1.17.0's `ConsoleIOSource`
+/// reads a redirected stdin and queues every byte, `-1` at its end
+/// included, in an unbounded `BlockingCollection<int>` that nothing drains:
+/// at `/dev/null`'s end, about 6 million `-1`s and 48 MiB of live heap per
+/// wall second, 100.0 % of the heap's growth between two dumps of a
+/// Sentinel-03 run (`spike/4400j/RESULTS.md` §2.3). A held pipe is never at
+/// its end, so the reader blocks. Every other tool keeps `/dev/null`: one
+/// that reads its stdin would wait on a held pipe until the wall bound.
+pub const HELD_STDIN: [&str; 2] = ["renode", crate::analog::BRIDGE];
+
+/// All a held stdin ever carries, written before the tool starts. Renode's
+/// monitor reads it only at its prompt, which it reaches when a command of
+/// `-e` fails and the rest, the commands' own `quit` included, is skipped. At
+/// `/dev/null` the prompt read the end and Renode quit; on a pipe held empty
+/// it waited for ever (CI run 45709090931, a failed platform load). This
+/// quits it as the end did, adding the two lines `(machine-0) quit` and
+/// `Renode is quitting` to its output, which no judge reads. A run whose
+/// commands all succeed quits by its own `quit` and never reads it
+/// (`spike/4400j/sh/quit.sh`, measured 2026-11-25).
+pub const HELD_STDIN_LINE: &[u8] = b"quit\n";
 
 /// Captured stdout, stderr and reports are bounded; more is a `ToolError`.
 pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
@@ -411,6 +436,12 @@ pub struct Output {
     /// The lines a [`LogFilter`]'s `summarise` took, one per key, in the order
     /// first seen; empty without one (`AET-WO-4400e` D7 (a)).
     pub summaries: Vec<Summary>,
+    /// The occurrences a [`Summarise`] noted, one per key, in the order first
+    /// seen; empty without one (`AET-WO-4400j` D2).
+    pub noted: Vec<Summary>,
+    /// Whether that [`Summarise`] reached its cap of keys, past which it keeps
+    /// every line as written.
+    pub summary_capped: bool,
 }
 
 /// Identical log lines summarised (`AET-WO-4400e` D7 (a)): the first is kept
@@ -420,9 +451,39 @@ pub struct Output {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Summary {
     pub key: String,
+    /// Every occurrence; the first is kept as written, the rest dropped.
     pub count: u64,
     pub first: String,
     pub last: String,
+}
+
+/// What a [`Summarise`] says of the log lines it has read (`AET-WO-4400j` D2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Emit {
+    /// A whole log line, without its newline, kept as any line is: against
+    /// the budget, and in the order emitted.
+    Keep(String),
+    /// One occurrence of `key`, at Renode's timestamp text `stamp`: the
+    /// first, whose lines are kept as written, or a later one, whose lines are
+    /// dropped, uncounted against the budget.
+    Note { key: String, stamp: String },
+}
+
+/// A summary with state, reading in order every line the capture would keep
+/// without it, after [`LogFilter`]'s `discard` and `summarise`
+/// (`AET-WO-4400j` D2): a log line it may hold until a later one says what it
+/// was, and keep, note or drop. A line `summarise` dropped never reaches it.
+pub trait Summarise: Send {
+    /// One whole log line, without its newline; what is kept and noted, in
+    /// order, into `out`.
+    fn line(&mut self, line: &str, out: &mut Vec<Emit>);
+    /// A line that is not a log line (a marker, a read), which the capture
+    /// keeps as written after `out`: what is held is released into `out`.
+    fn other(&mut self, line: &str, out: &mut Vec<Emit>);
+    /// The end: what is held, released into `out`.
+    fn flush(&mut self, out: &mut Vec<Emit>);
+    /// Whether it reached its cap of keys.
+    fn capped(&self) -> bool;
 }
 
 /// A bounded reading of a tool's stdout for a tool whose log can flood it
@@ -503,21 +564,37 @@ pub struct Invocation<'a> {
 impl Invocation<'_> {
     /// Runs the tool through the reaper and waits for it.
     pub fn run(&self) -> Result<Output, Stop> {
-        self.start(None, None)
+        self.start(None, None, None)
     }
 
     /// As `run`, with the reaper killing the tool's tree past `bounds`, which
     /// it then reports as `Ended::Bounded`.
     pub fn run_bounded(&self, bounds: Bounds) -> Result<Output, Stop> {
-        self.start(Some(bounds), None)
+        self.start(Some(bounds), None, None)
     }
 
     /// As [`run_bounded`](Self::run_bounded), reading stdout through `filter`.
     pub fn run_bounded_filtered(&self, bounds: Bounds, filter: LogFilter) -> Result<Output, Stop> {
-        self.start(Some(bounds), Some(filter))
+        self.start(Some(bounds), Some(filter), None)
     }
 
-    fn start(&self, bounds: Option<Bounds>, filter: Option<LogFilter>) -> Result<Output, Stop> {
+    /// As [`run_bounded_filtered`](Self::run_bounded_filtered), with `summary`
+    /// reading the log after the filter (`AET-WO-4400j` D2).
+    pub fn run_bounded_summarised(
+        &self,
+        bounds: Bounds,
+        filter: LogFilter,
+        summary: Box<dyn Summarise>,
+    ) -> Result<Output, Stop> {
+        self.start(Some(bounds), Some(filter), Some(summary))
+    }
+
+    fn start(
+        &self,
+        bounds: Option<Bounds>,
+        filter: Option<LogFilter>,
+        summary: Option<Box<dyn Summarise>>,
+    ) -> Result<Output, Stop> {
         let me = env::current_exe().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot find this executable: {e}"))
         })?;
@@ -553,28 +630,40 @@ impl Invocation<'_> {
             cmd.arg("--rw").arg(p);
         }
         cmd.arg("--").arg(&self.tool.path).args(&self.args);
+        // The write end lives until this call returns, after the reaper is
+        // waited for; it is close-on-exec, so no child holds it. The line is
+        // far below a pipe's buffer, so the write never waits for a reader.
+        let (stdin, _held) = if HELD_STDIN.contains(&self.tool.name) {
+            let pipe = |e: io::Error| {
+                Stop::tool_error(self.tool.name, format!("cannot open its stdin pipe: {e}"))
+            };
+            let (read, mut write) = io::pipe().map_err(pipe)?;
+            write.write_all(HELD_STDIN_LINE).map_err(pipe)?;
+            (Stdio::from(read), Some(write))
+        } else {
+            (Stdio::null(), None)
+        };
         cmd.env_clear()
             .env("HOME", self.workdir)
             .env("TMPDIR", self.workdir)
             .envs(self.env.iter().map(|(k, v)| (k, v)))
             .current_dir(&self.cwd)
-            .stdin(Stdio::null())
+            .stdin(stdin)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .process_group(0);
         let mut child = cmd.spawn().map_err(|e| {
             Stop::tool_error(self.tool.name, format!("cannot start the reaper: {e}"))
         })?;
-        let stdout = capture(child.stdout.take().expect("piped stdout"), filter);
-        let stderr = capture(child.stderr.take().expect("piped stderr"), None);
+        let stdout = capture(child.stdout.take().expect("piped stdout"), filter, summary);
+        let stderr = capture(child.stderr.take().expect("piped stderr"), None, None);
         let reaper = child.wait();
         let stdout = stdout.join().expect("stdout reader");
         let stderr = stderr.join().expect("stderr reader");
         let reaper = reaper.map_err(|e| {
             Stop::tool_error(self.tool.name, format!("waiting for the reaper: {e}"))
         })?;
-        let (Some((stdout, dropped_log_lines, summaries)), Some((stderr, _, _))) = (stdout, stderr)
-        else {
+        let (Some(stdout), Some(stderr)) = (stdout, stderr) else {
             return Err(Stop::tool_error(
                 self.tool.name,
                 format!("output exceeded {MAX_CAPTURE} bytes"),
@@ -611,12 +700,14 @@ impl Invocation<'_> {
         }
         Ok(Output {
             ended,
-            stdout,
-            stderr,
+            stdout: stdout.kept,
+            stderr: stderr.kept,
             sandbox,
-            dropped_log_lines,
+            dropped_log_lines: stdout.dropped,
             peak_rss_kib: peak_of(&status),
-            summaries,
+            summaries: stdout.summaries,
+            noted: stdout.noted,
+            summary_capped: stdout.capped,
         })
     }
 }
@@ -628,9 +719,11 @@ impl Invocation<'_> {
 fn capture(
     mut pipe: impl Read + Send + 'static,
     filter: Option<LogFilter>,
+    summary: Option<Box<dyn Summarise>>,
 ) -> thread::JoinHandle<Option<Captured>> {
     thread::spawn(move || {
         let mut kept = Filtered::new(filter);
+        kept.summary = summary;
         let mut chunk = [0u8; 64 * 1024];
         loop {
             match pipe.read(&mut chunk) {
@@ -643,8 +736,15 @@ fn capture(
     })
 }
 
-/// A capture's kept bytes, the log lines it dropped, and its summaries.
-type Captured = (Vec<u8>, u64, Vec<Summary>);
+/// A capture's kept bytes, the log lines it dropped, its summaries, its
+/// [`Summarise`]'s notes, and whether that reached its cap.
+struct Captured {
+    kept: Vec<u8>,
+    dropped: u64,
+    summaries: Vec<Summary>,
+    noted: Vec<Summary>,
+    capped: bool,
+}
 
 /// The bytes a capture keeps: all of them without a filter; with one, every
 /// whole line until the budget, then [`LogFilter`]'s rule line by line.
@@ -659,6 +759,11 @@ struct Filtered {
     summaries: Vec<Summary>,
     /// Each summary's index by key.
     summarised: std::collections::HashMap<String, usize>,
+    /// A summary with state (`AET-WO-4400j` D2), its notes and each note's
+    /// index by key; its own cap bounds the keys.
+    summary: Option<Box<dyn Summarise>>,
+    noted: Vec<Summary>,
+    noted_at: std::collections::HashMap<String, usize>,
 }
 
 /// The most kinds a capture summarises (`AET-WO-4400e` adversarial pass,
@@ -678,6 +783,9 @@ impl Filtered {
             overflow: false,
             summaries: Vec::new(),
             summarised: std::collections::HashMap::new(),
+            summary: None,
+            noted: Vec::new(),
+            noted_at: std::collections::HashMap::new(),
         }
     }
 
@@ -721,6 +829,12 @@ impl Filtered {
     fn line(&mut self, filter: LogFilter) {
         let line = std::mem::take(&mut self.partial);
         if !line.starts_with(b"[") {
+            // What a summary holds is released before a marker or a read.
+            let mut out = Vec::new();
+            if let Some(s) = self.summary.as_mut() {
+                s.other(&String::from_utf8_lossy(&line), &mut out);
+            }
+            self.emitted(filter, out);
             return self.keep(&line);
         }
         let text = String::from_utf8_lossy(&line);
@@ -745,9 +859,58 @@ impl Filtered {
                 });
             }
         }
-        if self.buf.len() < filter.budget {
-            return self.keep(&line);
+        if let Some(s) = self.summary.as_mut() {
+            let mut out = Vec::new();
+            s.line(text.trim_end_matches(['\n', '\r']), &mut out);
+            return self.emitted(filter, out);
         }
+        self.admit(filter, &line);
+    }
+
+    /// What a [`Summarise`] emitted: each kept line admitted, in order, and
+    /// each note counted.
+    fn emitted(&mut self, filter: LogFilter, out: Vec<Emit>) {
+        for e in out {
+            match e {
+                Emit::Keep(mut l) => {
+                    l.push('\n');
+                    self.admit(filter, l.as_bytes());
+                }
+                Emit::Note { key, stamp } => match self.noted_at.get(&key) {
+                    Some(&i) => {
+                        let n = &mut self.noted[i];
+                        n.count += 1;
+                        n.last = stamp;
+                    }
+                    None => {
+                        self.noted_at.insert(key.clone(), self.noted.len());
+                        self.noted.push(Summary {
+                            key,
+                            count: 1,
+                            first: stamp.clone(),
+                            last: stamp,
+                        });
+                    }
+                },
+            }
+        }
+    }
+
+    /// Releases what a [`Summarise`] holds.
+    fn flush_summary(&mut self, filter: LogFilter) {
+        let mut out = Vec::new();
+        if let Some(s) = self.summary.as_mut() {
+            s.flush(&mut out);
+        }
+        self.emitted(filter, out);
+    }
+
+    /// One log line kept under the budget, past it by [`LogFilter`]'s rule.
+    fn admit(&mut self, filter: LogFilter, line: &[u8]) {
+        if self.buf.len() < filter.budget {
+            return self.keep(line);
+        }
+        let text = String::from_utf8_lossy(line);
         if let Some(i) = filter
             .keep
             .iter()
@@ -755,7 +918,7 @@ impl Filtered {
             .position(|(i, k)| !self.kept_once[i] && text.contains(k))
         {
             self.kept_once[i] = true;
-            return self.keep(&line);
+            return self.keep(line);
         }
         self.dropped += 1;
     }
@@ -765,7 +928,17 @@ impl Filtered {
         if let Some(filter) = self.filter.filter(|_| !self.partial.is_empty()) {
             self.line(filter);
         }
-        (!self.overflow).then_some((self.buf, self.dropped, self.summaries))
+        if let Some(filter) = self.filter {
+            self.flush_summary(filter);
+        }
+        let capped = self.summary.as_ref().is_some_and(|s| s.capped());
+        (!self.overflow).then_some(Captured {
+            kept: self.buf,
+            dropped: self.dropped,
+            summaries: self.summaries,
+            noted: self.noted,
+            capped,
+        })
     }
 }
 
@@ -1795,7 +1968,7 @@ mod tests {
         for c in chunks {
             f.push(c);
         }
-        f.finish().map(|(b, d, _)| (b, d))
+        f.finish().map(|c| (c.kept, c.dropped))
     }
 
     /// `AET-WO-4400e` D7 (a): lines with one summary key are kept once and
@@ -1814,7 +1987,8 @@ mod tests {
             b"[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n",
         );
         f.push(b"[00:00:00.000000003] [WARNING] a: Unhandled 2\n[00:00:00.000000004] [WARNING] a: Unhandled 3\n");
-        let (buf, dropped, summaries) = f.finish().unwrap();
+        let c = f.finish().unwrap();
+        let (buf, dropped, summaries) = (c.kept, c.dropped, c.summaries);
         assert_eq!(
             String::from_utf8(buf).unwrap(),
             "[00:00:00.000000001] [WARNING] a: Unhandled 1\n[00:00:00.000000002] [INFO] b: kept\n"
@@ -1847,7 +2021,8 @@ mod tests {
             f.push(line.as_bytes());
             f.push(line.as_bytes());
         }
-        let (buf, _, summaries) = f.finish().unwrap();
+        let c = f.finish().unwrap();
+        let (buf, summaries) = (c.kept, c.summaries);
         assert_eq!(summaries.len(), MAX_SUMMARIES);
         assert!(summaries.iter().all(|s| s.count == 2));
         let text = String::from_utf8(buf).unwrap();

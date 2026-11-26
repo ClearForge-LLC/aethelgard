@@ -1,0 +1,13 @@
+test a_model_that_does_not_compile_prints_the_load_error_and_exits_0 ... ok
+test the_fifo_timestamp_steps_as_the_datasheet_gives_it_at_1_khz ... ok
+test the_fifo_fills_at_the_odr_in_virtual_time_with_the_datasheets_packet ... ok
+test packets_1_and_2_and_each_selection_left_out_says_so ... ok
+test the_bmp581_measures_after_its_deep_start_up_and_reads_from_its_last_write ... ok
+test the_fifo_stops_when_full_and_latches_its_count_in_either_order ... ok
+test data_ready_is_the_models_own_act ... ok
+test ardupilot_s_probe_and_init_pass_against_our_models ... ok
+test our_models_answer_their_datasheets_reset_values ... ok
+test an_access_the_datasheets_forbid_warns ... ok
+test our_models_round_half_away_from_zero ... ok
+test a_big_endian_packet_with_an_invalid_gyro_slot_follows_the_datasheet ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.07s

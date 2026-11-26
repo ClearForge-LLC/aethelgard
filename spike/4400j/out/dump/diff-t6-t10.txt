@@ -1,0 +1,13 @@
+total 840,031,942 -> 1,519,217,739 B (+679,185,797); types 7560 -> 7448
+   +679,479,192 B          +81 objs  100.0% cum  78986a8e4320  System.Collections.Concurrent.ConcurrentQueueSegment<System.Int32>+Slot[]
+        +18,792 B          +81 objs  100.0% cum  78986a8e3fc8  System.Collections.Concurrent.ConcurrentQueueSegment<System.Int32>
+         +2,348 B           +5 objs  100.0% cum  7898658e1658  System.Byte[]
+         +1,376 B          +43 objs  100.0% cum  78986a8c1200  System.Reflection.Emit.GenericFieldInfo
+           +768 B          +32 objs  100.0% cum  789864e6b298  System.RuntimeTypeHandle
+           +728 B           +7 objs  100.0% cum  7898659124c8  System.Reflection.RuntimeMethodInfo
+           +640 B          +20 objs  100.0% cum  78986a1827f0  System.Reflection.Emit.GenericMethodInfo
+           +480 B          +20 objs  100.0% cum  7898658c8eb8  System.RuntimeMethodHandle
+           +456 B           +3 objs  100.0% cum  78986a16ed40  System.Reflection.Emit.DynamicILGenerator
+           +384 B           +3 objs  100.0% cum  789865b6c228  System.Reflection.Emit.DynamicMethod
+           +352 B          +11 objs  100.0% cum  78986a1c4388  IronPython.Runtime.FunctionCode+CodeList
+           +336 B           +6 objs  100.0% cum  78986d554d50  System.Runtime.CompilerServices.CallSite<System.Func<System.Runtime.CompilerServices.CallSite, System.Object, System.Int32, System.Object>>
