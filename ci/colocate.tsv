@@ -66,8 +66,9 @@ tests/via_ring_tier1.rs	367
 # AET-WO-1918 (3), ruled (i): verify_2k2_tier2's two tests read separate runs since AET-WO-4300k (T) (REFERENCE, PACKAGE), so it is no
 # longer a block; its tests carry rows in ci/test-weights.tsv.
 # AET-WO-1919: cli_backlog_tier1 PREDICTED at 32 + 30 s for its three new tests (the two lanes' tests wait out stand-ins that sleep,
-# 3.4 s and 21.6 s on Furnace; the unroutable-specification prove test 0.5 s), replaced at the next refit.
-tests/cli_backlog_tier1.rs	62
+# 3.4 s and 21.6 s on Furnace; the unroutable-specification prove test 0.5 s), replaced at the next refit. Then 72: plus 10 s for
+# the two lane-process tests (3.4 s and 1.6 s on Furnace, rounded up).
+tests/cli_backlog_tier1.rs	72
 # AET-WO-1918 (3), ruled (ii): against_fab_tier2 writes its one --fab-out package once per binary, so the binary is one block
 # (fab_tier1::against_fab_tier2_writes_its_one_package_once_per_binary holds it). An ESTIMATE until the throwaway run measures it: the
 # package's verify (about 460 s, the worst half of a test's in-shard 918.8 s, which held it and one verify) and two rounds of the two lanes'

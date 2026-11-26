@@ -667,3 +667,7 @@ tests/doctor_tier1.rs	a_renode_that_never_says_its_version_is_killed_at_the_hang
 tests/tools_tier1.rs	a_load_waiting_at_its_prompt_is_refused_at_the_hang_guard	3
 tests/tools_tier1.rs	a_renode_version_that_never_returns_is_refused_at_the_hang_guard	3
 unittests src/lib.rs	generate::tests::board_tree_is_tree_s_board	3
+# AET-WO-1919, after the 06:49Z and 07:01Z findings, PREDICTED: board_tier2's swap after extract's turn runs a whole Sentinel-01 verify
+# to its end check (173-186 s on Furnace in the image, times 1.54, Sentinel-03's verify: 4,312 s in CI 45743010585 against 2,805 s on
+# Furnace), rounded up to 300.
+tests/board_tier2.rs	verify_refuses_a_board_swapped_after_extract_ran_ahead	300
