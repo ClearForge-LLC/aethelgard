@@ -59,13 +59,13 @@ cargo install aethelgard-cli --version 0.3.0 --locked --root /tmp/aethelgard-0.3
 /tmp/aethelgard-0.3.0/bin/aethelgard --version
 ```
 
-The second command should print `aethelgard 0.3.0 (commit <sha>, packaged)`, where `<sha>` is the commit `git log -1 --format=%H` printed in step 0: the commit you published from, read from the package's `.cargo_vcs_info.json` (`AET-WO-1802`). `dirty` instead of `packaged` means the CLI was published from a dirty tree. Then, from a checkout of `main`:
+The second command should print `aethelgard 0.3.0 (commit unknown)`. A crates.io build is not told its commit, and needs no telling: the published version is the snapshot (`AET-WO-1802`).
 
 ```
 /tmp/aethelgard-0.3.0/bin/aethelgard validate < examples/sentinel-03.json; echo "exit $?"
 ```
 
-It should print one JSON line starting `{"ok":true,"project_name":"sentinel-03",`, then `exit 0`. *(The same `validate`, run on Furnace from a clean `cargo install --path crates/aethelgard-cli --locked` of the trial bump, gave exit 0, and `--version` printed `aethelgard 0.3.0 (commit <the trial's commit>, clean)`.)*
+It should print one JSON line starting `{"ok":true,"project_name":"sentinel-03",`, then `exit 0`. *(The same `validate`, run on Furnace from a clean `cargo install --path crates/aethelgard-cli --locked` of the trial bump, gave exit 0. Re-run at the bump commit.)*
 
 ## 3. Afterward
 
@@ -77,7 +77,7 @@ It should print one JSON line starting `{"ok":true,"project_name":"sentinel-03",
 0.2.0 was published on 2026-11-17, after `AET-WO-1801` (merged as `7452bf4b`), and read specification 13. 0.3.0 reads specification 31 (`crates/aethelgard-ir/src/lib.rs`, `SPECIFICATION_SCHEMA_VERSION`), so a specification written for today's engine cannot be read by 0.2.0. Each version from 14 to 31 came with one work order: `AET-WO-1312` (14), `AET-WO-1313` (15), `AET-WO-4400d` (16), `AET-WO-4400g` (17), `AET-WO-2304b` (18), `AET-WO-4240v` (19), `AET-WO-4240a` (20), `AET-WO-1210` (21), `AET-WO-1211a` (22), `AET-WO-4240b` (23), `AET-WO-1211e` (24), `AET-WO-1216b` (25), `AET-WO-1217` (26), `AET-WO-1218` (27), `AET-WO-4300i` (28), `AET-WO-4300j` (29), `AET-WO-4300k` (30) and `AET-WO-4411` (31). An older specification is refused with every change it lacks, listed in the message and in `error.entries` (`AET-WO-1215`).
 
 **The engine's identity**
-- `aethelgard --version` names the commit it was built from, and whether the tree was dirty: `aethelgard 0.3.0 (commit <sha>, clean)` from a checkout, `(commit <sha>, packaged)` from crates.io, or `commit unknown` when the build could not know. `doctor` reports `engine_commit` and `engine_tree`, and the MCP server's info carries the same identity. No committed or hashed byte names the commit, so a package never goes stale because a commit moved (`AET-WO-1802`). A run's archive header still names the version alone, since its bytes seed the state-sequence hash that the verdict binds (`AET-WO-2205` F4 stays open). The engine image names its commit in its `org.opencontainers.image.revision` label, and its digest names its bytes. Its build sees no `.git` and no package file, so inside it `aethelgard --version` truthfully says `commit unknown`.
+- `aethelgard --version` names the commit when the build states one, as `aethelgard 0.3.0 (commit <sha>, stated by the build)`, and otherwise `aethelgard 0.3.0 (commit unknown)`. `doctor` reports `engine_commit`, and the MCP server's info carries the same identity. The engine image states its commit, the one its `org.opencontainers.image.revision` label names, and CI checks that they agree. A crates.io install says `commit unknown`: the version is the snapshot. No committed or hashed byte names the commit, so a package never goes stale because a commit moved. A run's archive header still names the version alone, since its bytes seed the state-sequence hash that the verdict binds (`AET-WO-1802`; `AET-WO-2205` F4 stays open).
 
 **Specification and solving**
 - A driver IC is part of a specification: `pin_devices` (GPIO, ADC and bridge devices), `pwm.idle` and `pwm.resolution_ps`. The motor pull-down is a declared part, derived by AN4899 and switchable by a drawn link (`AET-WO-1211a`, `AET-WO-4300i`, `AET-WO-4300j`).

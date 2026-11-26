@@ -23,7 +23,7 @@ fn lists_the_five_tools_and_completes_two_calls() {
     // `AET-WO-1802` (2): the version and the commit.
     assert_eq!(
         init["result"]["serverInfo"]["version"],
-        aethelgard_cli::identity::IDENTITY,
+        aethelgard_cli::identity::IDENTITY.as_str(),
         "{init}"
     );
     assert!(

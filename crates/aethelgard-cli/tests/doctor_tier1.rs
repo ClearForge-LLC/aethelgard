@@ -178,9 +178,13 @@ fn everything_present_is_exit_0_with_each_version_and_the_sandbox() {
     assert_eq!(v["verdict"], "pass", "{v}");
     assert_eq!(v["check"], "doctor", "{v}");
     assert_eq!(v["engine_version"], env!("CARGO_PKG_VERSION"), "{v}");
-    // `AET-WO-1802` (2): the commit the build recorded, and its tree.
-    assert_eq!(v["engine_commit"], aethelgard_cli::identity::COMMIT, "{v}");
-    assert_eq!(v["engine_tree"], aethelgard_cli::identity::TREE, "{v}");
+    // `AET-WO-1802` (2): the commit the build stated, or `unknown`.
+    assert_eq!(
+        v["engine_commit"],
+        aethelgard_cli::identity::COMMIT.unwrap_or("unknown"),
+        "{v}"
+    );
+    assert!(v.get("engine_tree").is_none(), "{v}");
     assert_eq!(v["missing"], json!([]), "{v}");
     assert_eq!(
         v["scratch"],

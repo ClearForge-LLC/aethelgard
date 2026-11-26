@@ -227,27 +227,22 @@ fn version_prints_name_and_version() {
     );
 }
 
-/// `AET-WO-1802` (2): `--version` names the version and the commit the
-/// build recorded, in one of the three forms, and the library's identity is
-/// the same bytes.
+/// `AET-WO-1802` (2), ruled 22:29Z: `--version` names the version and the
+/// commit the build stated, or says it is unknown; the library's identity
+/// is the same bytes.
 #[test]
 fn version_names_the_commit_or_unknown() {
-    use aethelgard_cli::identity::{COMMIT, IDENTITY, TREE, VERSION};
+    use aethelgard_cli::identity::{COMMIT, IDENTITY, VERSION};
     let output = run(&["--version"], b"");
     assert_eq!(output.status.code(), Some(0));
     let line = String::from_utf8(output.stdout).unwrap();
-    assert_eq!(line, format!("aethelgard {IDENTITY}\n"));
-    let hex = |s: &str| {
-        (s.len() == 40 || s.len() == 64)
-            && s.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    };
-    match (COMMIT, TREE) {
-        ("unknown", "unknown") => assert_eq!(IDENTITY, format!("{VERSION} (commit unknown)")),
-        (sha, tree @ ("clean" | "dirty" | "packaged")) => {
-            assert!(hex(sha), "{sha}");
-            assert_eq!(IDENTITY, format!("{VERSION} (commit {sha}, {tree})"));
-        }
-        other => panic!("not a recorded identity: {other:?}"),
+    assert_eq!(line, format!("aethelgard {}\n", *IDENTITY));
+    match COMMIT {
+        None => assert_eq!(*IDENTITY, format!("{VERSION} (commit unknown)")),
+        Some(sha) => assert_eq!(
+            *IDENTITY,
+            format!("{VERSION} (commit {sha}, stated by the build)")
+        ),
     }
 }
 

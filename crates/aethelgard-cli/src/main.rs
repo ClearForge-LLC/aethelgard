@@ -68,7 +68,7 @@ const EXIT_INTERNAL: u8 = 70;
 
 #[derive(Parser)]
 // `--version` names the commit too (`AET-WO-1802` (2)).
-#[command(name = "aethelgard", version = aethelgard_cli::identity::IDENTITY, about, arg_required_else_help = false)]
+#[command(name = "aethelgard", version = aethelgard_cli::identity::IDENTITY.as_str(), about, arg_required_else_help = false)]
 struct Cli {
     #[command(subcommand)]
     command: Command,

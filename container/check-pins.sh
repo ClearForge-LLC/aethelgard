@@ -252,8 +252,13 @@ for i in "${!lines[@]}"; do
   if [[ "$line" =~ ^[[:space:]]*[Aa][Rr][Gg][[:space:]] ]]; then
     if [ "${line//[[:space:]]/}" = "ARGTOOLS_IMAGE" ] && [ "$from_seen" -eq 0 ]; then
       arg_seen=1
+    elif [[ "$line" =~ ^[[:space:]]*ARG[[:space:]]+AETHELGARD_COMMIT[[:space:]]*$ ]] && [ "$from_seen" -eq 1 ]; then
+      # AET-WO-1802 (ruled 2026-11-26T22:29Z): the commit the engine image's
+      # --version states, passed as its revision label is. Bare, after FROM:
+      # no default, and the CLI's build refuses any value but 40 hex digits.
+      :
     else
-      refuse "$i" "ARG other than a bare 'ARG TOOLS_IMAGE' before FROM: $line"
+      refuse "$i" "ARG other than a bare 'ARG TOOLS_IMAGE' before FROM, or a bare 'ARG AETHELGARD_COMMIT' after it: $line"
     fi
   fi
 

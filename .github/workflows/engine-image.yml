@@ -64,7 +64,9 @@ jobs:
         with:
           context: .
           file: container/engine.Dockerfile
-          build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+          build-args: |
+            TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+            AETHELGARD_COMMIT=${{ github.sha }}
           tags: ${{ env.IMAGE }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
           load: true
@@ -80,6 +82,17 @@ jobs:
             echo "credential-like text in a layer" >&2
             exit 1
           fi
+
+      # AET-WO-1802 (ruled 2026-11-26T22:29Z): --version states the commit the
+      # revision label names, as stated by the build.
+      - name: --version states the revision label's commit
+        run: |
+          rev=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$IMAGE")
+          v=$(docker run --rm --network none "$IMAGE" aethelgard --version)
+          ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          want="aethelgard $ver (commit $rev, stated by the build)"
+          [ "$v" = "$want" ] || { echo "--version '$v' is not '$want'" >&2; exit 1; }
+          echo "version=$v"
 
       - name: no source, build directory or .git left in the image
         run: |
@@ -149,7 +162,9 @@ jobs:
         with:
           context: .
           file: container/engine.Dockerfile
-          build-args: TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+          build-args: |
+            TOOLS_IMAGE=${{ steps.base.outputs.tools_image }}
+            AETHELGARD_COMMIT=${{ github.sha }}
           tags: ${{ env.TAG }}
           labels: org.opencontainers.image.revision=${{ github.sha }}
           load: true
@@ -162,6 +177,12 @@ jobs:
           rev=$(docker image inspect --format '{{index .Config.Labels "org.opencontainers.image.revision"}}' "$TAG")
           [ "$rev" = "$GITHUB_SHA" ] || { echo "revision label '$rev' is not $GITHUB_SHA" >&2; exit 1; }
           echo "revision=$rev"
+          # AET-WO-1802 (ruled 22:29Z): --version states the same commit, as stated by the build.
+          v=$(docker run --rm --network none "$TAG" aethelgard --version)
+          ver=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -1)
+          want="aethelgard $ver (commit $rev, stated by the build)"
+          [ "$v" = "$want" ] || { echo "--version '$v' is not '$want'" >&2; exit 1; }
+          echo "version=$v"
 
       # The image pushed is the image smoke-tested here, not a rebuild of it.
       - name: smoke the image about to be published

@@ -20,6 +20,12 @@ LABEL org.opencontainers.image.source="https://github.com/ClearForge-LLC/aethelg
 # two binaries: aethelgard and, beside it where the CLI looks for it, the
 # analog bridge (AET-WO-2200), which is its own crate outside the workspace
 # and links the base's libngspice.so.0.
+# The commit --version states (AET-WO-1802, ruled 2026-11-26T22:29Z): the
+# workflow passes the commit its revision label names. Not passed, the ARG is
+# not in the RUN's environment (measured with podman) and the build says
+# `commit unknown`; the CLI's build refuses any other value but 40 hex digits,
+# an empty one included.
+ARG AETHELGARD_COMMIT
 RUN --mount=type=bind,target=/src \
     cd /src \
  && export CARGO_HOME=/tmp/cargo-build CARGO_TARGET_DIR=/tmp/target-build \
