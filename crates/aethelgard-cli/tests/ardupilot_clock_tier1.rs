@@ -211,28 +211,17 @@ fn a_generated_tree_is_the_same_with_or_without_a_foreign_clock() {
 /// timer's frequency line is gone, its frequency in the model's declaration.
 #[test]
 fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
-    let dir = common::private_tmp("ap-retype");
     let mut s03 = read(&common::example("sentinel-03.json"));
     s03["mcu"]["foreign_clock"] = declared(16_000_000);
-    let spec = write(&dir.0, "s03.json", &s03);
-    let out = dir.0.join("gen");
-    let (code, r) = aethelgard(
-        &dir.0,
-        &[
-            "generate",
-            "--spec",
-            spec.to_str().unwrap(),
-            "--out",
-            out.to_str().unwrap(),
-        ],
-    );
-    assert_eq!(code, Some(0), "{r}");
+    let solved = |spec: &Value| {
+        let s: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&s.mcu.part).unwrap();
+        aethelgard_ir::solve(&s, &table, &"0".repeat(64)).unwrap()
+    };
     // The listing the run checks names the model on the foreign topology's
     // TIM1, and stock on the generated one's.
     let timer1 = |spec: &Value| {
-        let s: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
-        let table = aethelgard_svd_hal::pin_table(&s.mcu.part).unwrap();
-        let t = aethelgard_ir::solve(&s, &table, &"0".repeat(64)).unwrap();
+        let t = solved(spec);
         let none = std::collections::BTreeSet::new();
         aethelgard_twin::platform::instances(&t, &none, &none)
             .unwrap()
@@ -251,8 +240,13 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
         .remove("foreign_clock")
         .unwrap();
     assert_eq!(timer1(&undeclared), "STM32_Timer");
-    let foreign = std::fs::read_to_string(out.join("board/sentinel-03.foreign.repl")).unwrap();
-    let generated = std::fs::read_to_string(out.join("board/sentinel-03.repl")).unwrap();
+    // The two platforms as `generate` emits them (`generate.rs`): the foreign
+    // one from the topology, the generated one from `generated` of it. That
+    // `generate` writes both is held on sentinel-02-own above.
+    let t = solved(&s03);
+    let foreign = aethelgard_twin::platform::emit(&t).unwrap();
+    let generated =
+        aethelgard_twin::platform::emit(&aethelgard_cli::generate::generated(&t)).unwrap();
     assert!(
         !generated.contains("AethelgardSTM32") && !generated.contains("@none"),
         "{generated}"
@@ -276,20 +270,10 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
         cancelled.iter().map(|c| c.1).collect::<Vec<_>>(),
         ["timer1", "dma2", "dma1"]
     );
+    // An update or a route anywhere, before the cancel or after it, binds to
+    // the cancelled entry.
     for (at, name) in &cancelled {
-        for (i, l) in lines.iter().enumerate().skip(at + 1) {
-            assert!(
-                l.trim_end() != format!("{name}:"),
-                "line {i}: `{l}` updates cancelled `{name}`"
-            );
-            let routes_to = l
-                .split([' ', '|'])
-                .any(|t| t.starts_with(&format!("{name}@")));
-            assert!(!routes_to, "line {i}: `{l}` routes to cancelled `{name}`");
-        }
-        // Nor before: an update or a route anywhere binds to the cancelled
-        // entry.
-        for (i, l) in lines.iter().enumerate().take(*at) {
+        for (i, l) in lines.iter().enumerate().filter(|(i, _)| i != at) {
             assert!(
                 l.trim_end() != format!("{name}:"),
                 "line {i}: `{l}` updates cancelled `{name}`"
