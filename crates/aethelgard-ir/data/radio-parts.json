@@ -58,12 +58,12 @@
         "pad": "19",
         "columns": 2,
         "rows": 2,
-        "pitch_um": 1125,
+        "pitch_um": 1000,
         "drill_um": 300,
         "ring_um": 150,
         "sources": {
           "count": "an engine choice (AET-WO-4411 D4): 2 x 2, one at each crossing of the 3 x 3 land pattern's gaps; ESP32-C3-WROOM-02 datasheet v1.7 p. 37, Figure 11-1 draws 12, one in each gap between neighbouring lands, as KiCad's footprint did at 0.2 mm on a 0.55 mm pitch, which the engine's 0.3 mm drill cannot keep apart",
-          "pitch": "an engine choice (AET-WO-4411, ruled 2026-11-25T21:17Z (c)): 1.125 mm, 18 of the supply gate's 62.5 um cells, so all four vias sit on its grid once the pad's centre does; p. 37, Figure 11-1 draws the land pattern's gap crossings at a 1.1 mm pitch (0.7 mm pads, 0.4 mm gaps), and each via sits 12.5 um per axis outward of its crossing, inside the fabricator's +/-50.8 um hole position (OSH Park, the declared board.stackup.fab_tolerances.hole_position_um)",
+          "pitch": "an engine choice (AET-WO-4411, re-ruled 2026-11-26T11:51Z): 1.0 mm, 16 of the supply gate's 62.5 um cells, so with the pad's centre on its grid each via is on a gate node and on the 1 um grid a drill file writes (1.125 mm, ruled 21:17Z (c), put them a half micron off: half its pitch is an odd 9 cells); p. 37, Figure 11-1 draws the land pattern's gap crossings at a 1.1 mm pitch (0.7 mm pads, 0.4 mm gaps), and each 0.3 mm hole sits 50 um inward of its crossing, wholly in its gap, inside the fabricator's +/-50.8 um hole position (OSH Park)",
           "drill": "the engine's via drill, 0.3 mm (AET-WO-4411 D4, ruled: vias at the engine's drill); the datasheet states none",
           "ring": "the engine's via ring for a 0.3 mm drill in a 0.6 mm pad; the datasheet states none",
           "layers": "p. 37, Figure 11-1: vias for the thermal pad, which is ground (pin 19); to the ground fill on every copper layer, an engine choice: no layer is stated"

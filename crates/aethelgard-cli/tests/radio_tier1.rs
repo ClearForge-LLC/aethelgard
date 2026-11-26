@@ -412,3 +412,30 @@ fn a_modules_angle_that_is_no_number_is_refused_before_drc_radio_reads_it() {
         );
     }
 }
+
+/// Every via on the board lies on the 1 µm grid an Excellon drill file
+/// writes, U30 pad 19's thermal array among them (`AET-WO-4411`, the
+/// review's 10:40Z `bench-package-s03` finding: at the 1.125 mm pitch first
+/// ruled, 129.4375 mm was drilled at 129.438; 1.0 mm since 11:51Z).
+#[test]
+fn every_via_lies_on_the_drill_files_micron_grid() {
+    let tree = strict::board(board()).unwrap();
+    let vias: Vec<_> = tree
+        .root()
+        .lists()
+        .filter(|i| i.head() == Some("via"))
+        .collect();
+    assert!(vias.len() > 400, "{}", vias.len());
+    for v in vias {
+        let at = v.one("at").unwrap().unwrap();
+        for i in [1, 2] {
+            let nm = strict::number(&at, i).unwrap();
+            assert_eq!(
+                nm.rem_euclid(1000),
+                0,
+                "a via at {:?}",
+                (at.arg(1), at.arg(2))
+            );
+        }
+    }
+}

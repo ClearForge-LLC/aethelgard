@@ -35,7 +35,11 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
 - **(a) Placement.** U13 belongs to the module's group. It sits at the module's foot, inside the module's strip, turned so the pin its inductor serves faces the open board. The rule applies only to a regulator whose output is a module's supply, so no other board moves. `check drc --spec` passes all 31 loops.
 - **(b) The pour ladder** (ruled 2026-11-26T00:22Z), described in §3.
 - **(c) Pad 19.**
-  - The array's pitch is 1.125 mm, 18 of the supply gate's 62.5 µm cells. Each via sits 12.5 µm per axis from the land pattern's gap crossing, inside OSH Park's ±50.8 µm.
+  - **The array's pitch is 1.0 mm, re-ruled 2026-11-26T11:51Z:** 16 of the supply gate's 62.5 µm cells. Each 0.3 mm hole sits 50 µm inward of its land-pattern gap crossing, wholly inside the 0.4 mm gap (0.35-0.65 mm in 0.35-0.75 mm), and within OSH Park's ±50.8 µm.
+  - **1.125 mm was the architect's ruling (2026-11-25T21:17Z, (c)), and it was wrong** because half its pitch is an odd number of cells: 9 of 62.5 µm, so with the pad's centre on a gate node, each via sat half a micron off the 1 µm grid an Excellon drill file writes. `bench-package-s03` refused it: "tool T2 (0.3 mm) drills at (129.438, 36.438) mm where the board's next hole is at (129.4375, 36.4375)".
+    - Rounding the four vias fixed the drill file but blinded the supply gate, which reads a via only on its node: `supply_pin_unbounded` at U30.19.
+    - Half the pitch must be an even number of cells. Of the two nearest, 1.25 mm puts each hole 25 µm into an outer land.
+    - **`route::arrays` now refuses an array via off the 1 µm grid by name,** never rounding it. Planted: 1.125 mm refused, 1.0 mm on the grid; mutant C35 killed. `radio_tier1` holds every via on Sentinel-03 to the grid.
   - A module-scoped 10 µm snap puts the pad's centre on the grid, so all four vias are read.
   - The module rail's return gate is now judged with no refusal left: pad 19 measures 18.0 mOhm.
 - **(iii) Sequencing.** U11's `EN` follows U13's open-drain `PG` (a new `after` control, its pull-up R32 to `VDD_3V3_RF`), so U1's rail rises only after the module's.
@@ -107,7 +111,7 @@ A pre-certified 2.4 GHz radio module, an ESP32-C3-WROOM-02-N4 (U30), on Sentinel
 |---|---|
 | Outline | **85.00 x 99.75 mm** since (c1) (85.65 x 98.75 before U31); approved up to the declared 100 x 100 mm (2026-11-25T21:44Z) |
 | U1's drop, `VDD_3V3` (limit 110 mV, 750 mA) | 85.7 mV (82.6 before U31). Worst VDD pin 33, 49.0 mOhm; worst VSS pin 31, 65.3 mOhm |
-| The module rail's drop, `VDD_3V3_RF` (limit 144 mV, 505 mA) | 122.7 mV. Supply U30.1 216.2 mOhm; return U30.9 26.8, U30.19 18.1 mOhm |
+| The module rail's drop, `VDD_3V3_RF` (limit 144 mV, 505 mA) | 122.7 mV. Supply U30.1 216.2 mOhm; return U30.9 26.8, U30.19 18.1 mOhm (18.095 at the 1.0 mm pitch, 18.061 at 1.125) |
 | U10 / U11 / U13 copper, F.Cu / B.Cu / In1.Cu (need 1500 / 700 / 700 mm²) | 2082 / 2750 / 3382; 1310 / 2354 / 2763; 1326 / 1578 / 1649. All pass |
 | Capacitance ladder | rung 7, bounded via cost 320, bounded nets first, nearest EXT_SDA at 84,703 of 100,000 fF |
 | Pour ladder | **step 1** (squares at 1.0 x each buck's need) |
@@ -178,7 +182,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
 - **Why it is kept:** it is the pricing's design, so a block's own SW, FB, VCC and BOOT tracks are never pushed off F.Cu. It is named here.
 - **Not planted:** the ladder's treatment of a buck with no measured layer (adversarial F6). No board reaches that case.
 - **Earlier phases:** 40 mutants of the radio rules and placement, 39 killed. M23 (references distinct) survived, named in §9.
-- **(c1): 32 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, and `radio_tier1` for the emitter's and the loops'.
+- **(c1): 33 mutants of its own guards, one each, all killed** (the same harness, `crates/` only). Each was run against the suite the guard lives in: `radio_rail` for the IR's, `radio_tier1` for the emitter's and the loops', and `aethelgard-eda`'s unit tests for the router's.
   - **The level judge (C01-C05):** high, low, the receiver's maximum, the stated load, and the one-rail corner model.
   - **The crossing's shape (C06-C11):** no module on the port, twice on a port, no B-to-A channel, the rails, TMAX, and the levels' supply window.
   - **The off-domain gate (C12)** and the closed rows (C13).
@@ -191,6 +195,7 @@ This stage ran 28 mutants of its own guards, one each, `crates/` only, each agai
   - **`drc.radio` on the crossing's nets (C17):** killed in the image by `board_tier2`'s Sentinel-03 test (`RadioUartMiswired`, U30 pad 12 on `U31_B4`).
   - **C12 and C16 were re-run after the reduction** moved their code into `uart_b_nets` and `module_uart_nets`. Both are killed.
   - **C27 was re-aimed at R1's rule,** OE on VCCA, and is killed. Each kill's test passes un-mutated in the suite (§10).
+  - **C35, the array's off-µm refusal in `route::arrays`** (11:51Z): with the check made `if false`, `an_array_via_off_the_drill_files_micron_grid_is_refused` fails (killed, 5 s); un-mutated it passes. C34 (the angle) is withdrawn, §7, so the count is 33, not 34.
   - **C19** (`RadioRailUnsequenced`'s reason, which reads differently with a crossing) is wording, not a guard, so it was not planted.
 
 ## 7. Adversarial pass
@@ -227,6 +232,12 @@ The pass ran as a fresh read-only review of 3a35be0f..7cde17de, with the WO's §
   - **(6)** `translator_supply_not_counted` scanned SPI crossings only. A UART crossing no load names is now screened (planted).
   - **(7)** The radio row's UART levels were not checked in order. Now they are (`RadioTableMalformed`, planted).
   - **(9)** U31's load source said 250 nA for U1's RX. It is 350 nA, the row's.
+- **CI on bd0cf7bc (10:30Z, 10:40Z), two jobs the local gate had not run:**
+  - **`campaign_tier2`'s `a_battery_sag_s_deck_answer_is_judged_after_its_boot`** canned a `--chain` answer of two sinks (U10, U11). Since option 1 the battery rail has three, so the CLI rightly refused it.
+    - The canned answer now carries U13 (`at_ps: null`, floor 3,800,000 µV).
+    - Its "off" case had read 8,086,825 µV, 158 mV off the new static point. It is now 1 mV under it: 7,927,263.
+    - No other test cans a Sentinel-03 sink list.
+  - **`bench-package-s03`'s drill finding:** the pitch above.
 - **The independent review (08:59Z), fixed:**
   - **R1:** OE on VCCB passed. It is now `CrossingOeUnheld` (§1).
   - **R3, checked, not a defect.** `drc.radio`'s `strict::number(&at, 3).unwrap_or(0)` never sees an angle that is not a number. The strict reader refuses the board first (`MalformedBoard`, "where KiCad reads a number"), for a quoted `"90"` and a bare `ninety` alike.
@@ -318,19 +329,26 @@ Reduction pass (diff): about −30 lines net of the doc added · 5 duplicates re
 
 ## 10. Gates
 
-On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, and the 08:59Z/09:01Z review's fixes):
+On the final head (the (c1) commit 8057a3da, main 649e81a8 merged as bd42ea94, the close-out fixes and reduction, the 08:59Z/09:01Z review's fixes, and the CI findings ruled 10:30Z, 10:40Z and 11:51Z: the deck test, the 1.0 mm pitch and the grid guard):
 - `cargo fmt --all -- --check`: pass.
 - `cargo clippy --workspace --all-targets -- -D warnings`: pass.
-- **`cargo test --workspace`: 3262 passed, 1 failed.** That is 3261 plus `a_modules_angle_…` re-run alone after its revision. The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
-- **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` gives guard ok: 3501 test names, 3508 listed occurrences, 20 shards.
+- **`cargo test --workspace`: 3264 passed, 1 failed.** The failure is `bench_board_tier1`'s `the_committed_package_is_bound_to_its_specification_scenarios_and_emit`: Sentinel-01's bench package is bound to specification 30, and the write dispatch re-binds it.
+- **The CI guards, in the image:** `ci/test-shard.sh`, `ci/test-route.sh`, `ci/route.sh check ci/docs-tests.tsv` and `ci/test-ceiling.sh` pass, and `ci/shard.sh build` then `plan` (re-run after the grid guard's two tests) gives guard ok: 3503 test names, 3510 listed occurrences, 20 shards.
   - The plan had refused on 20235acb, because three `board_tier2` tests of this WO had no row.
   - Each is now a Furnace estimate, its alone time in the image times 2.8 (AET-WO-1310's factor): `a_track_in_the_antenna_keepout_…` 24.78 s → 69.384, `radio_planted_boards_…` 23.72 → 66.416, and `the_radio_fixture_…` 25.82 → 72.296. A refit replaces them.
-- **Tier 2,** in the pinned image under `capped-run` (16 GiB, swap 0):
-  - `board_tier2`: Sentinel-03 passes every gate inside its bound, and the radio fixture, its planted boards and the antenna keepout pass (790 s, after R1).
-  - `twin_tier2`: Sentinel-03's battery-sag campaign meets every expectation, replays and repeats, with the sag point at 7,928,264 µV (388 s, before R1, which only refuses a VCCB OE that Sentinel-03 does not declare).
-- **Mutants:** 32 of 32 (c1) mutants killed, §6.
-- **INV-08 and identities, with the binary built after the reduction:**
+- **`bench-package-s03` on Furnace,** in the pinned image under `capped-run` (16 GiB, swap 0): `verify --spec examples/sentinel-03.json --scenarios` (CI's `VERIFY_S03` list, 13 scenarios) `--fab-out`: **pass**, `ok` true, 0 findings.
+  - Its gates (erc, drc, support, extract, 27 `prove`, build, simulate, 9 `attribute`, campaign) all pass, and the package is written (KiCad 10.0.7; board sha256 `c33a4b14…`).
+  - Pad 19's four holes are in the drill file at X129.5/X130.5, Y−36.5/−37.5, whole microns.
+  - `uid_boundary` is false here (`user_namespace` unmet under rootless podman), as on every local run; CI's runner meets it.
+  - The package was written to the ignored `target/sentinel-03-package` and **is not committed**: the write dispatch writes the one that is.
+- **Tier 2, whole, in the same image after the verify:**
+  - `campaign_tier2`: 11 passed, 1 refused by the environment. The deck test passes with U13's sink.
+    - `d1_s_pin_device_simulates_and_its_faults_run_and_replay` is refused `BaseOutsideRoot`: its base is written under `CARGO_TARGET_TMPDIR`, here `/cache/target/tmp`, outside `/repo`. **CI is its only run** (green on bd0cf7bc). Nothing since touches it.
+  - `board_tier2`: 29 passed (1509 s).
+  - `twin_tier2`: 96 passed (774 s). Sentinel-03's battery-sag campaign meets every expectation, replays and repeats; its sag point is pinned at 7,928,264 µV.
+  - From 2026-11-26T13:53Z every cargo run here carries `CARGO_BUILD_JOBS=6` and `RUST_TEST_THREADS=6`: the plan below did, and the tier-2 run above, started at 11:54Z, did not.
+- **Mutants:** 33 of 33 (c1) mutants killed, C35 the grid guard's, §6.
+- **INV-08 and identities, with the final binary (after the 1.0 mm pitch and the grid guard):**
   - the 25 boards are byte-identical against 3a35be0f's outputs, and the 16 refusals keep their kinds;
-  - `sentinel-03-radio` is byte-identical against 081a463b;
-  - Sentinel-03's board is the same bytes as the board §2 measured.
-  - R1 adds a refusal only, so no emitted byte moves.
+  - `sentinel-03-radio` differs from 081a463b in pad 19's four vias alone: (129.4375, 36.1875) and its three mirrors become (129.5, 36.25) and its mirrors, ±0.5 mm about the pad's centre instead of ±0.5625, with the uuids that follow from position. 16 changed lines, nothing else;
+  - Sentinel-03's board is the same bytes as the 1.0 mm board §2 measured.

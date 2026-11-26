@@ -890,8 +890,11 @@ fn fits(pad: &Pad, c: (i64, i64), r: i64) -> bool {
 /// Refused by name: a declared pad that is not exactly one SMD pad of one
 /// part, a footprint that carries vias of its own under it (KiCad's
 /// `_ThermalVias` footprints do, as through-hole pads of the same number),
-/// a pad with no net, a rule layer that is not a fill of the pad's net, and
-/// a site whose via would leave the pad's copper.
+/// a pad with no net, a rule layer that is not a fill of the pad's net, a
+/// site whose via would leave the pad's copper, and a site off the 1 µm grid
+/// an Excellon drill file writes (`AET-WO-4411`, the review's 10:40Z
+/// finding: three decimals in mm, so a half-micron hole is drilled where it
+/// is not).
 pub fn arrays(board: &Board) -> Result<Vec<Array>, String> {
     let mut out: Vec<Array> = Vec::new();
     for t in &board.stack.thermal {
@@ -951,6 +954,11 @@ pub fn arrays(board: &Board) -> Result<Vec<Array>, String> {
             for i in 0..t.columns {
                 let (dx, dy) = rotate(part.rotation, (offset(i, t.columns), offset(j, t.rows)));
                 let c = (cx + dx, cy + dy);
+                if c.0.rem_euclid(1000) != 0 || c.1.rem_euclid(1000) != 0 {
+                    return Err(format!(
+                        "{what}: the array's via at {c:?} nm is off the 1 um grid an Excellon drill file writes (three decimals in mm), so its hole would be drilled where it is not; the pitch's half must be a whole number of um about a centre on that grid"
+                    ));
+                }
                 if !fits(pad, c, t.via_nm / 2) {
                     return Err(format!(
                         "{what}: the array's via at {c:?} leaves the pad's copper; the rule cannot be met on this footprint"
@@ -4968,6 +4976,48 @@ pub use read::*;
 
 #[cfg(test)]
 mod tests {
+    /// Pad 19's array (`AET-WO-4411`, the review's 10:40Z finding): a
+    /// 1.125 mm pitch about a centre on the grid puts each via a half micron
+    /// off the 1 µm grid the drill file writes (129.4375 mm drilled at
+    /// 129.438), refused by name; a 1.0 mm pitch keeps every via on it.
+    #[test]
+    fn an_array_via_off_the_drill_files_micron_grid_is_refused() {
+        let c = 10 * MM;
+        let part = Part {
+            reference: "U30".into(),
+            rotation: 0,
+            pads: vec![pad(
+                "19",
+                Some("GND"),
+                rect(c - 1_650_000, c - 1_650_000, c + 1_650_000, c + 1_650_000),
+            )],
+            courtyard: Vec::new(),
+            keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
+        };
+        let at = |pitch_nm: i64| {
+            let mut board = judged(Some(jlc()), vec![part.clone()]);
+            board.stack.thermal = vec![crate::stack::ThermalPad {
+                reference: "U30".into(),
+                pad: "19".into(),
+                columns: 2,
+                rows: 2,
+                pitch_nm,
+                drill_nm: 300_000,
+                via_nm: 600_000,
+                layers: Vec::new(),
+            }];
+            super::arrays(&board)
+        };
+        let e = at(1_125_000).unwrap_err();
+        assert!(e.contains("off the 1 um grid"), "{e}");
+        let a = at(1_000_000).unwrap();
+        assert!(
+            a[0].at.iter().all(|(x, y)| x % 1000 == 0 && y % 1000 == 0),
+            "{a:?}"
+        );
+    }
+
     use super::*;
     use crate::strict::{self, Tree};
 
