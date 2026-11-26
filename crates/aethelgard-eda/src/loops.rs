@@ -151,6 +151,12 @@ pub fn source_pads(board: &Board, solved: &SolvedTopology) -> Result<(), String>
     Ok(())
 }
 
+/// Whether a buck's row is the LMR33620's, from SNVSAW1E (`AET-WO-4411`):
+/// its layout rules and their citations are that datasheet's.
+pub(crate) fn from_snvsaw1e(row: &aethelgard_ir::power_parts::Row) -> bool {
+    matches!(&row.kind, aethelgard_ir::power_parts::Kind::Buck(b) if b.fsw_hz.at.document == "SNVSAW1E")
+}
+
 /// What the gate does not judge on a board with a power tree, each named once
 /// in the order the datasheets give them (`AET-WO-4300d2` §1.3, §1.4; FAB-NOTES
 /// carries them too, the `4300f` F2 rule). Empty for a specification with no
@@ -168,12 +174,24 @@ pub fn conditions(spec: &Specification) -> Vec<String> {
         "CLASSES: each declared class's width is not judged against the current it carries: no current-to-width source is held; a buck's SW net is laid at its output domain's class".to_owned(),
         "SILKSCREEN: each loop part's reference is on F.Fab, not the silkscreen".to_owned(),
     ];
+    // `AET-WO-4411`: the LMR33620's SNVSAW1E lists the same layout items
+    // (adversarial F12), cited where a regulator's row is from it
+    let snvsaw1e = aethelgard_ir::power_parts::table().is_ok_and(|t| {
+        p.regulators
+            .iter()
+            .any(|r| t.get(&r.part).is_some_and(from_snvsaw1e))
+    });
+    if snvsaw1e {
+        out.push(
+            "LAYOUT: SNVSAW1E p. 32, 10.1 lists the same items for the LMR33620 (items 1 to 9), each judged or not as SNVSAN3F's above".to_owned(),
+        );
+    }
     if spec.board.copper_layers == 2 {
         out.push(
             "LAYOUT: not met: SNVSAN3F p. 33, 10.1 item 5 asks for a ground plane on an inner layer; this board has two copper layers".to_owned(),
         );
     }
-    if !p.crossings.is_empty() {
+    if !p.crossings.is_empty() || !p.uart_crossings.is_empty() {
         out.push(
             "LINES: each line on a translator's B side is not bounded; the translator drives it"
                 .to_owned(),

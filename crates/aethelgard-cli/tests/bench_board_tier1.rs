@@ -168,6 +168,11 @@ const NOT_AN_ELF: [(&str, &str); 2] = [
     ),
     ("452d906c", "the W25Q64JV row of parts.json"),
 ];
+/// [`NOT_AN_ELF`] for Sentinel-03's sheet (`fab/sentinel-03/BENCH.md`).
+const S03_NOT_AN_ELF: [(&str, &str); 1] = [(
+    "1206F700",
+    "no digest: Bourns SF-1206F700-2, F1's part number, in B-1's source line (AET-WO-4411)",
+)];
 
 /// The sha256 of `ORDERED.sha256`'s as-ordered block: its header and the ten
 /// entries, every byte before the first ruling block. Its header says nothing
@@ -485,17 +490,17 @@ fn digests(text: &str) -> Vec<String> {
 
 /// Ruling D3 on PR #362: the sheet's digests are MANIFEST's ELF, exactly
 /// once, and the named digests that are not an ELF's.
-fn bench_names_only(text: &str, elf: &str) -> Result<(), String> {
+fn bench_names_only(text: &str, elf: &str, named: &[(&str, &str)]) -> Result<(), String> {
     let found = digests(text);
     let is = |t: &String, d: &str| t.ends_with(&format!(": {d}"));
     let elfs = found.iter().filter(|t| is(t, elf)).count();
     let other: Vec<_> = found
         .iter()
-        .filter(|t| !is(t, elf) && !NOT_AN_ELF.iter().any(|(d, _)| is(t, d)))
+        .filter(|t| !is(t, elf) && !named.iter().any(|(d, _)| is(t, d)))
         .collect();
     if elfs != 1 || !other.is_empty() {
         return Err(format!(
-            "BENCH.md must state MANIFEST.json's ELF {elf} exactly once ({elfs} found), and no other digest than those in NOT_AN_ELF: {other:?}"
+            "BENCH.md must state MANIFEST.json's ELF {elf} exactly once ({elfs} found), and no other digest than the sheet's named ones (NOT_AN_ELF, S03_NOT_AN_ELF): {other:?}"
         ));
     }
     Ok(())
@@ -522,14 +527,98 @@ fn sentinel_03_s_bench_sheet_names_its_package_elf() {
         elf
     );
     let text = fs::read_to_string(dir.join("BENCH.md")).unwrap();
-    bench_names_only(&text, elf).unwrap();
+    bench_names_only(&text, elf, &S03_NOT_AN_ELF).unwrap();
+    for (d, _) in S03_NOT_AN_ELF {
+        assert!(
+            text.contains(d),
+            "{d} is named but the sheet no longer cites it"
+        );
+    }
+}
+
+/// `AET-WO-4411`, ruled 2026-11-26T18:38Z: Sentinel-03's sheet says its rows
+/// are the conditions `examples/sentinel-03.json` acknowledges for the bench.
+/// A condition is acknowledged for the bench when its reason names the bench
+/// (the word `bench`, any case: "a bench row", "the bench reads"). A row names
+/// its conditions in backticks in its `### B-` heading.
+fn rows_are_the_bench_acknowledgements(sheet: &str, spec: &Value) -> Result<(), String> {
+    let rows: std::collections::BTreeSet<&str> = sheet
+        .lines()
+        .filter(|l| l.starts_with("### B-"))
+        .flat_map(|l| l.split('`').skip(1).step_by(2))
+        .collect();
+    let acknowledged: std::collections::BTreeSet<&str> = spec["acknowledge_conditions"]
+        .as_array()
+        .ok_or("the specification has no acknowledge_conditions")?
+        .iter()
+        .filter(|a| {
+            a["reason"]
+                .as_str()
+                .is_some_and(|r| r.to_ascii_lowercase().contains("bench"))
+        })
+        .filter_map(|a| a["id"].as_str())
+        .collect();
+    let missing: Vec<_> = acknowledged.difference(&rows).collect();
+    let extra: Vec<_> = rows.difference(&acknowledged).collect();
+    if !missing.is_empty() || !extra.is_empty() {
+        return Err(format!(
+            "BENCH.md's rows must be exactly the acknowledged bench rows: no row for {missing:?}; a row for no such acknowledgement {extra:?}"
+        ));
+    }
+    Ok(())
+}
+
+fn sentinel_03_sheet_and_spec() -> (String, Value) {
+    let sheet = fs::read_to_string(root().join("fab/sentinel-03/BENCH.md")).unwrap();
+    let spec = serde_json::from_slice(&fs::read(root().join("examples/sentinel-03.json")).unwrap())
+        .unwrap();
+    (sheet, spec)
+}
+
+#[test]
+fn sentinel_03_s_bench_rows_are_exactly_its_acknowledged_bench_rows() {
+    let (sheet, spec) = sentinel_03_sheet_and_spec();
+    rows_are_the_bench_acknowledgements(&sheet, &spec).unwrap();
+}
+
+/// The cases the check exists to fail: a row gone, a condition gone from a
+/// row's heading, a row for a condition the specification does not
+/// acknowledge, and an acknowledged bench condition with no row.
+#[test]
+fn a_bench_sheet_missing_or_adding_a_row_fails() {
+    let (sheet, spec) = sentinel_03_sheet_and_spec();
+    let b8 = sheet.lines().find(|l| l.starts_with("### B-8")).unwrap();
+    let mut unrowed = spec.clone();
+    unrowed["acknowledge_conditions"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id": "planted:U99", "reason": "a bench row"}));
+    for (case, text, s) in [
+        ("a row gone", sheet.replace(b8, "### Gone"), &spec),
+        (
+            "a condition gone from a heading",
+            sheet.replace(", `theta_ja_copper_mismatch:U13`", ""),
+            &spec,
+        ),
+        (
+            "a row for no acknowledgement",
+            format!("{sheet}\n### B-99 Planted (`planted:U99`)\n"),
+            &spec,
+        ),
+        ("an acknowledgement with no row", sheet.clone(), &unrowed),
+    ] {
+        assert!(
+            rows_are_the_bench_acknowledgements(&text, s).is_err(),
+            "{case}: passed"
+        );
+    }
 }
 
 /// `AET-WO-3308` (3): the bench sheet predicts the ELF the package carries.
 #[test]
 fn the_bench_sheet_names_the_package_elf() {
     let text = fs::read_to_string(root().join(BENCH)).unwrap();
-    bench_names_only(&text, &package_elf()).unwrap();
+    bench_names_only(&text, &package_elf(), &NOT_AN_ELF).unwrap();
 }
 
 /// The cases (3) exists to fail, and the words it must let pass, on the
@@ -581,7 +670,10 @@ fn a_bench_sheet_naming_another_elf_fails() {
             text.replace(&elf, &elf.to_uppercase()),
         ),
     ] {
-        assert!(bench_names_only(&sheet, &elf).is_err(), "{case} passed");
+        assert!(
+            bench_names_only(&sheet, &elf, &NOT_AN_ELF).is_err(),
+            "{case} passed"
+        );
     }
     for (case, words) in [
         (
@@ -592,7 +684,7 @@ fn a_bench_sheet_naming_another_elf_fails() {
         ("eight hex letters after a letter", "`Xcafebabe`"),
     ] {
         assert!(
-            bench_names_only(&format!("{text}{words}\n"), &elf).is_ok(),
+            bench_names_only(&format!("{text}{words}\n"), &elf, &NOT_AN_ELF).is_ok(),
             "{case} failed"
         );
     }

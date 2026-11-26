@@ -472,8 +472,20 @@ pub(crate) fn validate(spec: &Specification) -> Result<(), E> {
         }
     }
     // Each serial port's TX and RX end at a declared connector pin (the
-    // architect's ruling 1 on `AET-WO-4300b`; adversarial F9).
-    for p in &spec.serial_ports {
+    // architect's ruling 1 on `AET-WO-4300b`; adversarial F9), except a port
+    // a declared radio module rides: it ends at the module, and step 27
+    // refuses one that also leaves on a connector (`AET-WO-4411`,
+    // `RadioPortShared`).
+    let radio: Vec<&str> = spec
+        .declared_radio_modules()
+        .iter()
+        .map(|m| m.serial_port.as_str())
+        .collect();
+    for p in spec
+        .serial_ports
+        .iter()
+        .filter(|p| !radio.contains(&p.label.as_str()))
+    {
         for (line, net) in [("TX", &p.tx.net), ("RX", &p.rx.net)] {
             let at_pin = spec
                 .declared_connectors()

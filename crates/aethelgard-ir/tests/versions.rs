@@ -50,12 +50,12 @@ fn the_last_row_is_the_version_literal_and_none_is_skipped() {
 }
 
 #[test]
-fn a_version_20_file_lists_21_to_30_with_their_work_orders() {
+fn a_version_20_file_lists_21_to_31_with_their_work_orders() {
     let e = refused(20);
     assert_eq!(e.kind(), "UnsupportedSchemaVersion");
     assert_eq!(e.id(), None);
     let c = changes(&e);
-    assert_eq!(versions_of(c), [21, 22, 23, 24, 25, 26, 27, 28, 29, 30]);
+    assert_eq!(versions_of(c), [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
     assert_eq!(
         c.iter().map(|c| c.work_order).collect::<Vec<_>>(),
         [
@@ -68,11 +68,12 @@ fn a_version_20_file_lists_21_to_30_with_their_work_orders() {
             "AET-WO-1218",
             "AET-WO-4300i",
             "AET-WO-4300j",
-            "AET-WO-4300k"
+            "AET-WO-4300k",
+            "AET-WO-4411"
         ]
     );
     let m = e.to_string();
-    assert!(m.starts_with("schema_version is 20, not 30; "), "{m}");
+    assert!(m.starts_with("schema_version is 20, not 31; "), "{m}");
     for (v, wo) in [
         (21, "AET-WO-1210"),
         (22, "AET-WO-1211a"),
@@ -84,6 +85,7 @@ fn a_version_20_file_lists_21_to_30_with_their_work_orders() {
         (28, "AET-WO-4300i"),
         (29, "AET-WO-4300j"),
         (30, "AET-WO-4300k"),
+        (31, "AET-WO-4411"),
     ] {
         assert!(m.contains(&format!(" {v} ({wo})")), "{m}");
     }
@@ -120,9 +122,9 @@ fn a_version_20_file_lists_21_to_30_with_their_work_orders() {
 }
 
 #[test]
-fn a_version_1_file_lists_2_to_30() {
+fn a_version_1_file_lists_2_to_31() {
     let c = changes(&refused(1));
-    assert_eq!(versions_of(c), (2..=30).collect::<Vec<_>>());
+    assert_eq!(versions_of(c), (2..=31).collect::<Vec<_>>());
     assert_eq!(c, CHANGES);
 }
 
@@ -131,7 +133,7 @@ fn a_newer_file_and_version_0_name_the_current_version_only() {
     for v in [SPECIFICATION_SCHEMA_VERSION + 1, 0, u32::MAX] {
         let e = refused(v);
         assert!(changes(&e).is_empty(), "{v}");
-        assert_eq!(e.to_string(), format!("schema_version is {v}, not 30"));
+        assert_eq!(e.to_string(), format!("schema_version is {v}, not 31"));
     }
 }
 

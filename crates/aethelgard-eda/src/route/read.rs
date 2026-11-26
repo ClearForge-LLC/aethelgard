@@ -277,8 +277,12 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         return Err(format!("{named} has copper pads and no courtyard"));
     }
     let mut keepouts = Vec::new();
+    let mut inner_keepouts = Vec::new();
     for z in fp.all("zone") {
-        keepouts.push(keepout(&z, &named)?);
+        match keepout(&z, &named)? {
+            Zone::Outer(k) => keepouts.push(k),
+            Zone::Inner(k) => inner_keepouts.push(k),
+        }
     }
     let part = Part {
         reference,
@@ -286,16 +290,25 @@ pub fn part(fp: &strict::Node<'_>) -> Result<Part, String> {
         pads,
         courtyard,
         keepouts,
+        inner_keepouts,
     };
     // A footprint's keepout is its own part's (`AET-WO-1323` D3, `1310`
     // A7): wholly inside its courtyard outline or its pad field, edges
     // included. One moved off its part would have `check` judge copper by a
     // zone that is not where the part is.
-    for k in &part.keepouts {
-        if !field(&part).is_some_and(|f| f.contains(k.rect)) && !held(&part.courtyard, k.rect) {
+    let zones = part
+        .keepouts
+        .iter()
+        .map(|k| (k.layer.name(), k.rect))
+        .chain(
+            part.inner_keepouts
+                .iter()
+                .map(|k| (k.layer.as_str(), k.rect)),
+        );
+    for (layer, rect) in zones {
+        if !field(&part).is_some_and(|f| f.contains(rect)) && !held(&part.courtyard, rect) {
             return Err(format!(
-                "{named}'s keepout on {} lies outside its own courtyard and pad field",
-                k.layer.name()
+                "{named}'s keepout on {layer} lies outside its own courtyard and pad field"
             ));
         }
     }
@@ -332,7 +345,14 @@ fn enters((a, b): Edge, r: Rect) -> bool {
 /// `not_allowed`, no net. Anything else is refused by name, never dropped
 /// (`RUL-03`, amended for `AET-WO-4300d2` D2).
 /// `named` is the part's reference as a refusal writes it.
-fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Keepout, String> {
+/// A footprint keepout on an outer copper layer, or on an inner one
+/// (`AET-WO-4411`).
+enum Zone {
+    Outer(Keepout),
+    Inner(InnerKeepout),
+}
+
+fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Zone, String> {
     let what = format!("{named}'s zone");
     let k = one(z, "keepout")?.ok_or_else(|| format!("{what} is not a keepout"))?;
     for token in ["net", "net_name"] {
@@ -343,12 +363,16 @@ fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Keepout, String> {
     if one(z, "layers")?.is_some() {
         return Err(format!("{what} names more than one layer"));
     }
-    let layer = match one(z, "layer")?.and_then(|l| l.arg(1)) {
-        Some("F.Cu") => Layer::F,
-        Some("B.Cu") => Layer::B,
+    let named_layer = one(z, "layer")?.and_then(|l| l.arg(1));
+    let layer = match named_layer {
+        Some("F.Cu") => Some(Layer::F),
+        Some("B.Cu") => Some(Layer::B),
+        // An inner copper layer, `In<n>.Cu` (the board reader has already
+        // refused a layer its table lacks).
+        Some(l) if strict::copper_layer(l) => None,
         other => {
             return Err(format!(
-                "{what} is on {}, not F.Cu or B.Cu",
+                "{what} is on {}, not a copper layer",
                 strict::echo(&other)
             ));
         }
@@ -395,13 +419,21 @@ fn keepout(z: &strict::Node<'_>, named: &str) -> Result<Keepout, String> {
     {
         return Err(format!("{what} is not a rectangle at a right angle"));
     }
-    Ok(Keepout {
-        layer,
-        rect,
-        tracks,
-        vias,
-        pads,
-        fill,
+    Ok(match layer {
+        Some(layer) => Zone::Outer(Keepout {
+            layer,
+            rect,
+            tracks,
+            vias,
+            pads,
+            fill,
+        }),
+        None => Zone::Inner(InnerKeepout {
+            layer: named_layer.unwrap_or_default().to_owned(),
+            rect,
+            vias,
+            fill,
+        }),
     })
 }
 

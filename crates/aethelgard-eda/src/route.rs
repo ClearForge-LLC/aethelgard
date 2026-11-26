@@ -119,6 +119,27 @@ const WINDOWS: [usize; 2] = [16, 64];
 const CORRIDOR_DEPTH: i64 = 16;
 const CORRIDOR_COST: u32 = 2;
 
+/// The half side of the square about a buck's thermal pad where a passing
+/// track is priced on F.Cu (`AET-WO-4411` (b)): its area is `ratio_permille`
+/// of the copper the buck's screen needs, so the pour can reach it with the
+/// block's own pads cut out.
+fn pour_half_nm(need_mm2: i64, ratio_permille: i64) -> i64 {
+    let side_um = (need_mm2 * ratio_permille * 1_000).isqrt();
+    side_um * 1000 / 2
+}
+
+/// The pour ladder's steps after step 0, in the order tried: each the
+/// square's area about a buck's thermal pad, per mille of the copper its
+/// screen needs. Engine constants, as the capacitance ladder's rungs are.
+pub const POUR_STEPS: [i64; 4] = [1_000, 1_250, 1_500, 1_750];
+
+/// A track's cost per F.Cu node about a buck's thermal pad, against
+/// [`STEP_F`]'s 2 and [`STEP_B`]'s 6: through it is the dearest way across.
+const EXIT_COST: u32 = 40;
+/// A net is a buck's own when every pad of it lies this near the buck's
+/// courtyard: its loop parts' bounds reach 5 mm.
+const LOCAL_NM: i64 = 6_000_000;
+
 const STEP_F: u32 = 2;
 const STEP_B: u32 = 6;
 const BEND: u32 = 1;
@@ -133,12 +154,17 @@ const VIA_COST: u32 = 24;
 pub struct Rung {
     pub bounded_via_cost: u32,
     pub bounded_first: bool,
+    /// The pour ladder's step (`AET-WO-4411` (b), ruled 2026-11-26T00:22Z):
+    /// 0 prices nothing, today's routing; step k prices a passing track
+    /// about each buck's thermal pad at [`POUR_STEPS`]`[k - 1]`.
+    pub pour_step: usize,
 }
 
 impl Rung {
     pub const TODAY: Rung = Rung {
         bounded_via_cost: VIA_COST,
         bounded_first: false,
+        pour_step: 0,
     };
 }
 
@@ -152,6 +178,7 @@ pub const RUNGS: [Rung; 8] = {
         Rung {
             bounded_via_cost,
             bounded_first,
+            pour_step: 0,
         }
     }
     [
@@ -226,6 +253,20 @@ pub struct Part {
     /// Its keepout zones (`AET-WO-4300d2` D2 (a), `RUL-03`): areas where no
     /// copper of the kinds each forbids may be, routed around and judged.
     pub keepouts: Vec<Keepout>,
+    /// Its keepout zones on inner copper layers (`AET-WO-4411`: a radio
+    /// module's, one per copper layer as ruled D4), each a rectangle with
+    /// what it forbids there: vias, and fills. No track runs on an inner
+    /// layer here; those layers are planes.
+    pub inner_keepouts: Vec<InnerKeepout>,
+}
+
+/// A footprint's keepout on an inner copper layer, in board coordinates.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InnerKeepout {
+    pub layer: String,
+    pub rect: Rect,
+    pub vias: bool,
+    pub fill: bool,
 }
 
 /// A footprint's keepout zone, in board coordinates: a rectangle on one
@@ -746,6 +787,10 @@ struct Router<'a> {
     /// net's share of it, and whether that share is withdrawn.
     pending: Vec<u32>,
     corridors: Vec<Vec<(usize, u32)>>,
+    /// A buck's thermal exits' cost per F.Cu node, and the nets free of it
+    /// (`AET-WO-4411` (b)).
+    exit: Vec<u32>,
+    exit_free: Vec<bool>,
     /// The same for a via, whose copper blocks a corridor from further off.
     pending_via: Vec<u32>,
     via_corridors: Vec<Vec<(usize, u32)>>,
@@ -845,8 +890,11 @@ fn fits(pad: &Pad, c: (i64, i64), r: i64) -> bool {
 /// Refused by name: a declared pad that is not exactly one SMD pad of one
 /// part, a footprint that carries vias of its own under it (KiCad's
 /// `_ThermalVias` footprints do, as through-hole pads of the same number),
-/// a pad with no net, a rule layer that is not a fill of the pad's net, and
-/// a site whose via would leave the pad's copper.
+/// a pad with no net, a rule layer that is not a fill of the pad's net, a
+/// site whose via would leave the pad's copper, and a site off the 1 µm grid
+/// an Excellon drill file writes (`AET-WO-4411`, the review's 10:40Z
+/// finding: three decimals in mm, so a half-micron hole is drilled where it
+/// is not).
 pub fn arrays(board: &Board) -> Result<Vec<Array>, String> {
     let mut out: Vec<Array> = Vec::new();
     for t in &board.stack.thermal {
@@ -906,6 +954,11 @@ pub fn arrays(board: &Board) -> Result<Vec<Array>, String> {
             for i in 0..t.columns {
                 let (dx, dy) = rotate(part.rotation, (offset(i, t.columns), offset(j, t.rows)));
                 let c = (cx + dx, cy + dy);
+                if c.0.rem_euclid(1000) != 0 || c.1.rem_euclid(1000) != 0 {
+                    return Err(format!(
+                        "{what}: the array's via at {c:?} nm is off the 1 um grid an Excellon drill file writes (three decimals in mm), so its hole would be drilled where it is not; the pitch's half must be a whole number of um about a centre on that grid"
+                    ));
+                }
                 if !fits(pad, c, t.via_nm / 2) {
                     return Err(format!(
                         "{what}: the array's via at {c:?} leaves the pad's copper; the rule cannot be met on this footprint"
@@ -1068,7 +1121,13 @@ fn opens(o: u32, who: u32) -> bool {
 }
 
 impl<'a> Router<'a> {
-    fn new(board: &'a Board, grid: Grid, nets: Vec<String>, arrays: &[Array]) -> Router<'a> {
+    fn new(
+        board: &'a Board,
+        grid: Grid,
+        nets: Vec<String>,
+        arrays: &[Array],
+        pour_step: usize,
+    ) -> Router<'a> {
         let n = grid.len();
         let count = nets.len();
         // One set of maps per distinct rule: each is the board's arithmetic
@@ -1244,6 +1303,64 @@ impl<'a> Router<'a> {
                 }
             }
         }
+        // `AET-WO-4411` (b), ruled 2026-11-25T21:17Z: a buck's junction
+        // screen reads the F.Cu pour joined to its thermal pad, which tracks
+        // crossing near it cut off, so within [`pour_half_nm`] of the pad's
+        // centre a track costs [`EXIT_COST`] a node on F.Cu, at the rung's
+        // pour step (none at step 0, today's routing), unless its net is
+        // the block's own: every pad of it within [`LOCAL_NM`] of the buck's
+        // courtyard (its divider, CVCC, CBOOT, inductor).
+        let mut exit = vec![0u32; n];
+        let mut exit_free = vec![false; count];
+        if let Some(&g) = index.get(aethelgard_ir::GND) {
+            exit_free[g] = true;
+        }
+        // step 0 prices nothing: today's routing
+        if let Some(ratio) = pour_step
+            .checked_sub(1)
+            .and_then(|k| POUR_STEPS.get(k).copied())
+        {
+            for (reference, number, need_mm2) in &board.stack.exits {
+                let Some(part) = board.parts.iter().find(|p| &p.reference == reference) else {
+                    continue;
+                };
+                let (Some(e), Some(yard)) = (
+                    part.pads
+                        .iter()
+                        .find(|p| &p.number == number)
+                        .map(|p| p.rect),
+                    part.courtyard
+                        .iter()
+                        .map(|&(a, b)| span(a, b))
+                        .reduce(|a, b| a.union(b)),
+                ) else {
+                    continue;
+                };
+                let near = yard.grow(LOCAL_NM);
+                for (i, name) in nets.iter().enumerate() {
+                    let mut pads = board
+                        .parts
+                        .iter()
+                        .flat_map(|q| &q.pads)
+                        .filter(|p| p.net.as_deref() == Some(name.as_str()))
+                        .peekable();
+                    if pads.peek().is_some() && pads.all(|p| near.contains(p.rect)) {
+                        exit_free[i] = true;
+                    }
+                }
+                let c = e.centre();
+                let half = pour_half_nm(*need_mm2, ratio);
+                let pour = Rect {
+                    x0: c.0 - half,
+                    y0: c.1 - half,
+                    x1: c.0 + half,
+                    y1: c.1 + half,
+                };
+                for node in grid.nodes(pour) {
+                    exit[node] = EXIT_COST;
+                }
+            }
+        }
         let (escapes, exhausted) =
             lay_escapes(board, &grid, &nets, &kinds, &kind, &mut track, &mut via);
         let mut pending = vec![0; n];
@@ -1281,6 +1398,8 @@ impl<'a> Router<'a> {
             nets,
             vias: BTreeMap::new(),
             pending,
+            exit,
+            exit_free,
             corridors,
             pending_via,
             via_corridors,
@@ -1564,7 +1683,13 @@ impl<'a> Router<'a> {
                     };
                     let step = if l == Layer::F { STEP_F } else { STEP_B };
                     let bend = if d != 4 && d != dir { BEND } else { 0 };
-                    let corridor = if l == Layer::F { self.pending[m] } else { 0 };
+                    // on F.Cu only: priced on both outer layers, F.Cu is the
+                    // cheaper again and the pad's ends close (measured)
+                    let corridor = if l == Layer::F {
+                        self.pending[m] + if self.exit_free[net] { 0 } else { self.exit[m] }
+                    } else {
+                        0
+                    };
                     let seen = self.history[l.index()][m];
                     let tc = c + step + bend + corridor + seen + extra;
                     moves.push((id(l, m, dir), m, tc, from));
@@ -2564,7 +2689,7 @@ pub fn route_measured(board: &Board, rung: Rung, limit: u64) -> Result<(Routed, 
     let stitched: Vec<usize> = (0..nets.len()).filter(|&i| is_stitched(&nets[i])).collect();
     let arrays = arrays(board).map_err(|why| fail("", why))?;
     let index = |name: &str| nets.iter().position(|n| n == name);
-    let mut r = Router::new(board, grid, nets.clone(), &arrays);
+    let mut r = Router::new(board, grid, nets.clone(), &arrays, rung.pour_step);
     r.limit = limit;
     for (cost, net) in r.via_cost.iter_mut().zip(&nets) {
         if board.stack.bounded.iter().any(|b| b == net) {
@@ -4272,10 +4397,14 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
                 }
             }
             let name = k.layer.name();
-            // A thermal pour (`AET-WO-4300k` (a)) may share the layer: KiCad's
-            // refill keeps it out of the keepout, the DRC gate judges the
-            // filled board, and `pour` counts the keepout as no copper.
+            // A fill covers the board, so it meets a keepout that reaches
+            // inside the outline (`AET-WO-4411`: a radio module's lies off
+            // the board's edge). A thermal pour (`AET-WO-4300k` (a)) may share
+            // the layer: KiCad's refill keeps it out of the keepout, the DRC
+            // gate judges the filled board, and `pour` counts the keepout as
+            // no copper.
             if k.fill
+                && k.rect.overlaps(board.outline)
                 && routed
                     .zones
                     .iter()
@@ -4284,6 +4413,28 @@ fn keepouts(board: &Board, routed: &Routed, all: &[Item<'_>]) -> Result<(), Stri
                 return Err(format!(
                     "a fill on {name} would meet {}'s keepout",
                     part.reference
+                ));
+            }
+        }
+        for k in &part.inner_keepouts {
+            for item in all
+                .iter()
+                .filter(|i| matches!(i.kind, Copper::Via | Copper::Thermal))
+            {
+                if k.vias && item.shape.enters(k.rect) {
+                    return Err(format!(
+                        "{} is inside {}'s keepout on {}",
+                        item.what, part.reference, k.layer
+                    ));
+                }
+            }
+            if k.fill
+                && k.rect.overlaps(board.outline)
+                && routed.zones.iter().any(|(_, layer)| *layer == k.layer)
+            {
+                return Err(format!(
+                    "a fill on {} would meet {}'s keepout",
+                    k.layer, part.reference
                 ));
             }
         }
@@ -4825,6 +4976,48 @@ pub use read::*;
 
 #[cfg(test)]
 mod tests {
+    /// Pad 19's array (`AET-WO-4411`, the review's 10:40Z finding): a
+    /// 1.125 mm pitch about a centre on the grid puts each via a half micron
+    /// off the 1 µm grid the drill file writes (129.4375 mm drilled at
+    /// 129.438), refused by name; a 1.0 mm pitch keeps every via on it.
+    #[test]
+    fn an_array_via_off_the_drill_files_micron_grid_is_refused() {
+        let c = 10 * MM;
+        let part = Part {
+            reference: "U30".into(),
+            rotation: 0,
+            pads: vec![pad(
+                "19",
+                Some("GND"),
+                rect(c - 1_650_000, c - 1_650_000, c + 1_650_000, c + 1_650_000),
+            )],
+            courtyard: Vec::new(),
+            keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
+        };
+        let at = |pitch_nm: i64| {
+            let mut board = judged(Some(jlc()), vec![part.clone()]);
+            board.stack.thermal = vec![crate::stack::ThermalPad {
+                reference: "U30".into(),
+                pad: "19".into(),
+                columns: 2,
+                rows: 2,
+                pitch_nm,
+                drill_nm: 300_000,
+                via_nm: 600_000,
+                layers: Vec::new(),
+            }];
+            super::arrays(&board)
+        };
+        let e = at(1_125_000).unwrap_err();
+        assert!(e.contains("off the 1 um grid"), "{e}");
+        let a = at(1_000_000).unwrap();
+        assert!(
+            a[0].at.iter().all(|(x, y)| x % 1000 == 0 && y % 1000 == 0),
+            "{a:?}"
+        );
+    }
+
     use super::*;
     use crate::strict::{self, Tree};
 
@@ -4869,6 +5062,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         }
     }
 
@@ -4914,6 +5108,7 @@ mod tests {
             pads,
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         }
     }
 
@@ -4967,6 +5162,7 @@ mod tests {
             Grid::new(board.outline).unwrap(),
             vec!["/P".into()],
             &[],
+            0,
         );
         let node = |x: i64| r.grid.nodes(Rect::point(x, 50 * MM)).next().unwrap();
         assert_eq!(r.via[0][node(hole.x0 + 250_000)], BLOCKED);
@@ -5023,6 +5219,7 @@ mod tests {
                 pads: vec![pad("1", Some("/A"), rect(4 * MM, 4 * MM, 5 * MM, 5 * MM))],
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }],
             stack: crate::stack::reference(),
         };
@@ -5114,6 +5311,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         };
         Board {
             outline: rect(0, 0, 20 * MM, 10 * MM),
@@ -5173,6 +5371,7 @@ mod tests {
                 pads: false,
                 fill: false,
             }],
+            inner_keepouts: Vec::new(),
         });
         let e = route(&board).unwrap_err();
         assert_eq!(e.net, "/S", "{e:?}");
@@ -5254,6 +5453,7 @@ mod tests {
             )],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         });
         board.parts[1].pads.pop();
         let e = route(&board).unwrap_err();
@@ -5802,6 +6002,7 @@ mod tests {
             thermal: vec![],
             imus: vec![],
             pours: vec![],
+            exits: vec![],
             junction: None,
         }
     }
@@ -5985,6 +6186,7 @@ mod tests {
                 pads,
                 courtyard: (0..4).map(|k| (q[k], q[(k + 1) % 4])).collect(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }
         };
         let parts = [(62, 62), (187, 62), (62, 187), (187, 187)]
@@ -6083,6 +6285,7 @@ mod tests {
             ],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         });
         board
     }
@@ -6153,6 +6356,7 @@ mod tests {
                 pads,
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             }
         };
         let none: fn(usize) -> Option<&'static str> = |_| None;
@@ -6221,7 +6425,7 @@ mod tests {
 
     fn router<'a>(board: &'a Board, arrays: &[Array]) -> Router<'a> {
         let grid = Grid::new(board.outline).unwrap();
-        Router::new(board, grid, vec!["/S".into(), "/T".into()], arrays)
+        Router::new(board, grid, vec!["/S".into(), "/T".into()], arrays, 0)
     }
 
     fn node_at(r: &Router<'_>, x: i64, y: i64) -> usize {
@@ -6324,6 +6528,7 @@ mod tests {
             }],
             courtyard: Vec::new(),
             keepouts: Vec::new(),
+            inner_keepouts: Vec::new(),
         };
         let board = judged(Some(jlc()), vec![tht]);
         let r = router(&board, &[]);
@@ -6447,6 +6652,7 @@ mod tests {
                 )],
                 courtyard: Vec::new(),
                 keepouts: Vec::new(),
+                inner_keepouts: Vec::new(),
             })
             .collect();
         let board = Board {
@@ -6481,6 +6687,7 @@ mod tests {
                     )],
                     courtyard: Vec::new(),
                     keepouts: Vec::new(),
+                    inner_keepouts: Vec::new(),
                 }
             })
             .collect();

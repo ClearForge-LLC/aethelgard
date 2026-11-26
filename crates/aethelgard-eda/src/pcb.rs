@@ -397,7 +397,7 @@ pub fn geometry_at(fp: &Sx, reference: &str, theta: u16) -> Result<Geometry, Emi
 
 /// KiCad's escaping of a net name (`EscapeString`, `CTX_NETNAME`): `/` is
 /// `{slash}`, line breaks are dropped.
-pub(crate) fn escape(s: &str) -> String {
+pub fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -473,6 +473,7 @@ pub struct Placed {
     pub keep: Rect,
 }
 
+#[derive(Clone)]
 struct Item<'a> {
     part: &'a Part,
     fp: Sx,
@@ -580,8 +581,11 @@ fn place(
     seed: u64,
 ) -> Result<(Vec<Placed>, Edges), EmitError> {
     // Under a declared bound only, every choice that reference order makes
-    // below is the canonical rank's instead (`AET-WO-1313c`, (k)).
-    let rank = bounded.then(|| canonical_rank(items, seed));
+    // below is the canonical rank's instead (`AET-WO-1313c`, (k)); a radio
+    // module's group is ranked apart, so the rest rank as on the board
+    // without it (`AET-WO-4411`, ruled 2 (a)).
+    let radio = radio_group(items)?;
+    let rank = bounded.then(|| rank_apart(items, &radio, seed));
     let rank = rank.as_deref();
     let order = placing_order(items, rank);
     // An anchored part goes straight after its IC, in drawing order, before
@@ -621,7 +625,25 @@ fn place(
             "a part is anchored to an IC that is not drawn".into(),
         ));
     }
-    let order = grouped;
+    // `AET-WO-4411` D2: a radio module and its anchored parts go last, so
+    // no other part is placed around them, and they are held out of
+    // compaction and the connectors' edges: [`radio_corner`] sets them at
+    // the board's top-right corner afterwards.
+    let (mut order, mut last): (Vec<usize>, Vec<usize>) =
+        grouped.into_iter().partition(|i| !radio.contains(i));
+    // in the group's own order (a regulator the module owns before its
+    // block), each IC's anchored parts in their draw sequence as grouped
+    let key = |i: &usize| {
+        let o = items[*i].part.owner.as_ref();
+        let ic = o.map_or(items[*i].part.reference.as_str(), |o| o.ic.as_str());
+        let head = radio
+            .iter()
+            .position(|&j| items[j].part.reference == ic)
+            .unwrap_or(0);
+        (head, o.is_some(), o.is_some_and(|o| o.anchor.is_none()))
+    };
+    last.sort_by_key(key);
+    order.extend(last);
     let mut placed: Vec<Option<Placed>> = vec![None; items.len()];
     // What compaction needs of each placed part: the IC it went beside, and
     // the gap it kept from the parts placed before it.
@@ -702,12 +724,43 @@ fn place(
                     .map(|p| (p.keep, Rule::gap(rule[i], rule[j])))
             })
             .chain(approach.iter().map(|&r| (r, 0)))
+            // `AET-WO-4411` D2: no part of a radio module's group lands
+            // beside or above its antenna edge, so the group moves to the
+            // board's top-right corner ([`radio_corner`]) with nothing left
+            // beyond the edge.
+            .chain(
+                radio_band_at(
+                    items,
+                    &placed,
+                    if radio.contains(&i) { radio[0] } else { anchor },
+                    i,
+                )
+                .into_iter()
+                .flatten(),
+            )
             .collect();
         if let Some(a) = item.part.owner.as_ref().and_then(|o| o.anchor.as_ref()) {
             placed[i] = Some(place_anchored(item, &items[anchor], at, a, &taken)?);
             continue;
         }
-        let target = if bounded {
+        // A radio module is placed apart, a metre above the MCU, so its
+        // anchored parts find room by its pins before [`radio_corner`]
+        // moves the group (`AET-WO-4411` D2).
+        let target = if radio.first() == Some(&i) {
+            Some(RADIO_APART)
+        } else if let Some(row) = (radio.first() == Some(&anchor) && is_ic(item.part))
+            .then(|| radio_row(&items[anchor].part.footprint))
+            .flatten()
+        {
+            // `AET-WO-4411` (a): the module's regulator, level with its
+            // supply pin and at the foot of the module, so the room above
+            // it in the module's strip holds the parts its inductor's side
+            // leaves no room for
+            items[anchor]
+                .pads
+                .get(&row.supply.number)
+                .map(|((x, _), _)| (at.0 + x, at.1 + items[anchor].geometry.courtyard.y1))
+        } else if bounded {
             centroid_target(item, &items[anchor], at)
         } else {
             item.shared(&items[anchor])
@@ -730,6 +783,7 @@ fn place(
             keep: g.keep.shift(origin),
         });
     }
+    let held: Vec<(usize, Option<Placed>)> = radio.iter().map(|&i| (i, placed[i].take())).collect();
     if let Some(rank) = rank {
         compact(items, &mut placed, &anchor_of, &rule, &approach, rank)?;
     }
@@ -739,6 +793,9 @@ fn place(
         EdgePlan::Bottom { gap: IC_GAP_NM }
     };
     let edges = place_connectors(items, &mut placed, plan, rank)?;
+    for (i, p) in held {
+        placed[i] = p;
+    }
     let placed = placed
         .into_iter()
         .collect::<Option<Vec<_>>>()
@@ -929,6 +986,52 @@ const COLOUR_ROUNDS: usize = 3;
 /// `AET-WO-1317`): two items' colours are equal under every seed or under
 /// none (a 64-bit collision aside), so a seed reorders only what the colours
 /// order, and the reference decides the same ties it did.
+/// [`canonical_rank`] with `apart` (a radio module's group) ranked last, by
+/// reference, and the rest ranked as on the board without it: its pads are
+/// left out, and a net it leaves with one pad is unconnected, as that pin is
+/// with no module (`AET-WO-4411`, ruled 2 (a): the group added parts and
+/// nets, whose colours reordered the side connectors, so U11's pour lost
+/// copper to the nets that then crossed it).
+fn rank_apart(items: &[Item<'_>], apart: &[usize], seed: u64) -> Vec<usize> {
+    if apart.is_empty() {
+        return canonical_rank(items, seed);
+    }
+    let kept: Vec<usize> = (0..items.len()).filter(|i| !apart.contains(i)).collect();
+    let mut pads: BTreeMap<&str, (bool, usize)> = BTreeMap::new();
+    for (i, it) in items.iter().enumerate() {
+        for (_, net) in it.pads.values() {
+            let e = pads.entry(net.as_str()).or_default();
+            if apart.contains(&i) {
+                e.0 = true;
+            } else {
+                e.1 += 1;
+            }
+        }
+    }
+    let sub: Vec<Item<'_>> = kept
+        .iter()
+        .map(|&i| {
+            let mut it = items[i].clone();
+            for (number, (_, net)) in it.pads.iter_mut() {
+                if pads[net.as_str()] == (true, 1) {
+                    *net = format!("unconnected-({}-{number})", it.part.reference);
+                }
+            }
+            it
+        })
+        .collect();
+    let mut rank = vec![0; items.len()];
+    for (p, r) in canonical_rank(&sub, seed).into_iter().enumerate() {
+        rank[kept[p]] = r;
+    }
+    let mut last: Vec<usize> = apart.to_vec();
+    last.sort_by(|&a, &b| items[a].part.reference.cmp(&items[b].part.reference));
+    for (k, i) in last.into_iter().enumerate() {
+        rank[i] = kept.len() + k;
+    }
+    rank
+}
+
 fn canonical_rank(items: &[Item<'_>], seed: u64) -> Vec<usize> {
     let real = |n: &str| !n.starts_with("unconnected-");
     let mut nets: BTreeMap<&str, Vec<(usize, &str)>> = BTreeMap::new();
@@ -1859,7 +1962,7 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         let nets = pin_nets(part)?;
         let rotation = match &part.seat {
             Some(seat) => seat_rotation(&fp, seat, &part.reference)?,
-            None => 0,
+            None => module_regulator_turn(parts, part, &fp)?.unwrap_or(0),
         };
         let mut pads = BTreeMap::new();
         let mut numbers = BTreeSet::new();
@@ -1880,6 +1983,9 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
                 format!("pin {missing} has no pad in {}", part.footprint),
             ));
         }
+        if radio_row(&part.footprint).is_some() && rotation != 0 {
+            return Err(internal(&part.reference, "a turned radio module"));
+        }
         out.push(Item {
             geometry: geometry_at(&fp, &part.reference, rotation)?,
             rotation,
@@ -1889,6 +1995,52 @@ fn items(parts: &[Part]) -> Result<Vec<Item<'_>>, EmitError> {
         });
     }
     Ok(out)
+}
+
+/// `AET-WO-4411` (a): the turn of a radio module's regulator, an IC the
+/// module owns, that points the pin its largest anchored part (a buck's
+/// inductor, on its switch node) serves away from the module, toward the
+/// board's left ([`radio_corner`] sets the module at the right), so that
+/// part has the open board beside it and the input side, held by the IC's
+/// reserve, faces the module. `None` for every other part.
+fn module_regulator_turn(parts: &[Part], part: &Part, fp: &Sx) -> Result<Option<u16>, EmitError> {
+    let Some(o) = part.owner.as_ref().filter(|o| o.anchor.is_none()) else {
+        return Ok(None);
+    };
+    if !is_ic(part)
+        || !parts
+            .iter()
+            .any(|m| m.reference == o.ic && radio_row(&m.footprint).is_some())
+    {
+        return Ok(None);
+    }
+    let mut largest: Option<(i64, &str)> = None;
+    for x in parts.iter().filter(|x| anchored_to(x, &part.reference)) {
+        let c = geometry(&library::footprint(&x.footprint)?, &x.reference)?.courtyard;
+        let area = (c.x1 - c.x0) * (c.y1 - c.y0);
+        let pad = x
+            .owner
+            .as_ref()
+            .and_then(|o| o.anchor.as_ref())
+            .and_then(|a| a.pads.first());
+        if let Some((_, theirs)) = pad
+            && largest.is_none_or(|(a, _)| area > a)
+        {
+            largest = Some((area, theirs.as_str()));
+        }
+    }
+    let Some((_, number)) = largest else {
+        return Ok(None);
+    };
+    let at = fp
+        .children("pad")
+        .find(|p| p.arg(1) == Some(number))
+        .and_then(|p| p.child("at"))
+        .ok_or_else(|| internal(&part.reference, format!("no pad {number}")))?;
+    let at = xy(at, &part.reference)?;
+    Ok([0u16, 90, 180, 270]
+        .into_iter()
+        .min_by_key(|&r| route::rotate(r, at).0))
 }
 
 /// The turn that puts an IMU's cited axes where its seat declares them
@@ -2081,6 +2233,246 @@ fn layout_of(
     Err(best)
 }
 
+/// The radio parts row whose footprint `footprint` is (`AET-WO-4411`).
+fn radio_row(footprint: &str) -> Option<&'static aethelgard_ir::radio::RadioPart> {
+    aethelgard_ir::radio::table()
+        .ok()?
+        .modules
+        .iter()
+        .find(|m| m.footprint == footprint)
+}
+
+/// Where a radio module is placed before it moves to the corner: far from
+/// every other part (the spiral reaches a metre).
+const RADIO_APART: (i64, i64) = (0, -800_000_000);
+
+/// How far either side of a radio module the band beside its antenna edge
+/// reaches.
+const RADIO_BAND_NM: i64 = 20_000_000;
+
+/// A row's antenna edge (the antenna area's inner side), about the
+/// footprint's origin.
+fn antenna_edge(row: &aethelgard_ir::radio::RadioPart) -> i64 {
+    row.antenna.area_um.y1 * 1000
+}
+
+/// The bands beside a placed radio module, when part `i` is anchored to
+/// it: above its antenna edge, and right of its courtyard,
+/// which [`radio_corner`] sets [`MARGIN_NM`] from the board's right edge.
+fn radio_band_at(
+    items: &[Item<'_>],
+    placed: &[Option<Placed>],
+    anchor: usize,
+    i: usize,
+) -> Option<Vec<(Rect, i64)>> {
+    if i == anchor {
+        return None;
+    }
+    let row = radio_row(&items[anchor].part.footprint)?;
+    let m = placed[anchor].as_ref()?;
+    let c = items[anchor].geometry.courtyard;
+    // `AET-WO-4411` (a): the regulator block the module owns stays within
+    // the strip the module and its own parts take, below their lowest point
+    // nothing, so the block never deepens the strip the corner sets across
+    // the board; it spreads sideways instead.
+    let module = &items[anchor].part.reference;
+    let own = |j: usize| j == anchor || anchored_to(items[j].part, module);
+    let below = (!own(i))
+        .then(|| {
+            (0..items.len())
+                .filter(|&j| own(j))
+                .filter_map(|j| placed[j].as_ref().map(|p| p.keep.y1))
+                .max()
+        })
+        .flatten()
+        .map(|low| Rect {
+            x0: m.origin.0 + c.x0 - RADIO_APART.1.abs(),
+            y0: low,
+            x1: m.origin.0 + c.x1 + RADIO_BAND_NM,
+            y1: low + RADIO_APART.1.abs(),
+        });
+    let right = Rect {
+        x0: c.x1,
+        y0: c.y0 - RADIO_BAND_NM,
+        x1: c.x1 + RADIO_BAND_NM,
+        y1: c.y1 + RADIO_BAND_NM,
+    };
+    // Above the antenna edge, its margin beyond, either side, and the whole
+    // way to the left, where the module's regulator block can reach
+    // (`AET-WO-4411` (a)); the module's own passives stay within the band.
+    let above = Rect {
+        x0: c.x0 - RADIO_APART.1.abs(),
+        y0: c.y0 - RADIO_BAND_NM,
+        x1: c.x1 + RADIO_BAND_NM,
+        y1: antenna_edge(row) + MARGIN_NM,
+    };
+    let mut bands = vec![(above.shift(m.origin), 0), (right.shift(m.origin), 0)];
+    bands.extend(below.map(|r| (r, 0)));
+    Some(bands)
+}
+
+/// The radio module's index and every part anchored to it; empty for a
+/// board with none, refused for more than one (one top-right corner).
+fn radio_group(items: &[Item<'_>]) -> Result<Vec<usize>, EmitError> {
+    let modules: Vec<usize> = (0..items.len())
+        .filter(|&i| radio_row(&items[i].part.footprint).is_some())
+        .collect();
+    let m = match modules.as_slice() {
+        [] => return Ok(Vec::new()),
+        [m] => *m,
+        // belt-and-suspenders: `validate` refuses a second module first
+        // (`RadioModuleTwice`); a library caller that emits without it is
+        // refused here, since one top-right corner holds one.
+        [_, second, ..] => {
+            return Err(internal(
+                &items[*second].part.reference,
+                "a second radio module: one top-right corner holds one",
+            ));
+        }
+    };
+    let reference = &items[m].part.reference;
+    let owned_by = |ic: &str, i: usize| items[i].part.owner.as_ref().is_some_and(|o| o.ic == ic);
+    let mut out = vec![m];
+    out.extend((0..items.len()).filter(|&i| anchored_to(items[i].part, reference)));
+    // `AET-WO-4411` (a): the regulator the module owns (its supply's), then
+    // the parts that regulator owns, anchored ones first, so the block is
+    // placed beside the module and moves with it. A board whose module
+    // owns no IC gains nothing here.
+    for r in (0..items.len()).filter(|&i| owned_by(reference, i) && is_ic(items[i].part)) {
+        out.push(r);
+        let ic = items[r].part.reference.as_str();
+        let (anchored, loose): (Vec<usize>, Vec<usize>) = (0..items.len())
+            .filter(|&i| owned_by(ic, i))
+            .partition(|&i| anchored_to(items[i].part, ic));
+        out.extend(anchored);
+        out.extend(loose);
+    }
+    Ok(out)
+}
+
+/// Where a board's radio module stands once placed: its index and the
+/// antenna edge's y, which is the board's top edge.
+struct Antenna {
+    module: Option<(String, i64)>,
+}
+
+impl Antenna {
+    /// What of `p` must lie inside the outline: the module's courtyard below
+    /// its antenna edge (the antenna area overhangs the edge, ruled D2);
+    /// every other part's keep box.
+    fn on_board(&self, p: &Placed) -> Rect {
+        match &self.module {
+            Some((reference, edge)) if *reference == p.reference => Rect {
+                y0: *edge,
+                ..p.courtyard
+            },
+            _ => p.keep,
+        }
+    }
+}
+
+/// Sets a board's radio module, with the parts anchored to it, at the
+/// outline's top-right corner (`AET-WO-4411` D2, HDG-C3 Figure 19 position
+/// 3): moved together, so each passive keeps its place by its pin; the
+/// module's courtyard [`MARGIN_NM`] inside the right edge (the margin holds
+/// beside the module, only the antenna region overhangs); the group
+/// [`IC_GAP_NM`] above every other part; and the outline's top edge on the
+/// antenna edge, so the antenna area lies wholly outside the board.
+fn radio_corner(
+    items: &[Item<'_>],
+    placed: &mut [Placed],
+    group: &[usize],
+    outline: &mut Rect,
+) -> Result<Antenna, EmitError> {
+    let Some(&m) = group.first() else {
+        return Ok(Antenna { module: None });
+    };
+    let row = radio_row(&items[m].part.footprint)
+        .ok_or_else(|| internal(&items[m].part.reference, "no radio row"))?;
+    let others = placed
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !group.contains(i))
+        .map(|(_, p)| p.keep)
+        .reduce(Rect::union)
+        .ok_or_else(|| internal(&items[m].part.reference, "a radio module alone"))?;
+    let bottom = group
+        .iter()
+        .map(|&i| placed[i].keep.y1)
+        .max()
+        .unwrap_or(placed[m].keep.y1);
+    let (dx, dy) = (
+        outline.x1 - MARGIN_NM - placed[m].courtyard.x1,
+        others.y0 - IC_GAP_NM - bottom,
+    );
+    // `AET-WO-4411` (c), ruled 2026-11-25T21:17Z: the module's ground pad's
+    // centre on the supply gate's grid, so its thermal array, at a pitch of
+    // whole cells, is read; a module-scoped finer snap, toward the board.
+    let module = &items[m].part.reference;
+    let (px, py) = items[m]
+        .pads
+        .get(&row.thermal_vias.pad)
+        .map(|(at, _)| *at)
+        .ok_or_else(|| internal(module, "no ground pad on a net"))?;
+    let snap = |raw: i64, at: i64| {
+        radio_snap(raw, at).ok_or_else(|| {
+            internal(
+                module,
+                "no 10 um step puts its ground pad on the gate's grid",
+            )
+        })
+    };
+    let (dx, dy) = (
+        snap(dx, placed[m].origin.0 + px)?,
+        snap(dy, placed[m].origin.1 + py)?,
+    );
+    for &i in group {
+        let p = &mut placed[i];
+        p.origin = (p.origin.0 + dx, p.origin.1 + dy);
+        p.courtyard = p.courtyard.shift((dx, dy));
+        p.keep = p.keep.shift((dx, dy));
+    }
+    let edge = placed[m].origin.1 + antenna_edge(row);
+    for &i in &group[1..] {
+        if placed[i].keep.y0 < edge + MARGIN_NM {
+            return Err(internal(
+                &placed[i].reference,
+                format!(
+                    "within the margin of the radio module's antenna edge (keep {:?}, edge {edge}, module {:?})",
+                    placed[i].keep, placed[m].courtyard
+                ),
+            ));
+        }
+    }
+    let left = group[1..]
+        .iter()
+        .map(|&i| placed[i].keep.x0)
+        .chain([placed[m].courtyard.x0])
+        .min()
+        .unwrap_or(placed[m].courtyard.x0);
+    outline.x0 = outline.x0.min((left - MARGIN_NM).div_euclid(SNAP) * SNAP);
+    outline.y0 = edge;
+    Ok(Antenna {
+        module: Some((placed[m].reference.clone(), edge)),
+    })
+}
+
+/// A radio module's group moves in steps of this (`AET-WO-4411` (c),
+/// ruled 2026-11-25T21:17Z: a module-scoped finer snap than [`SNAP`]), so
+/// its ground pad's centre can land on the supply gate's grid.
+const RADIO_SNAP: i64 = 10_000;
+
+/// The largest shift at most `raw`, a whole number of [`RADIO_SNAP`]s, that
+/// puts `at` on the supply gate's grid ([`crate::supply::PITCH_NM`]); `None`
+/// when no step within one period does (`at` off the steps' lattice).
+fn radio_snap(raw: i64, at: i64) -> Option<i64> {
+    let grid = crate::supply::PITCH_NM;
+    let first = raw.div_euclid(RADIO_SNAP) * RADIO_SNAP;
+    (0..grid / 2_500)
+        .map(|k| first - k * RADIO_SNAP)
+        .find(|d| (at + d).rem_euclid(grid) == 0)
+}
+
 /// One placement of [`layout_of`], with the canonical rank seeded by `seed`.
 fn attempt(
     items: &[Item<'_>],
@@ -2108,13 +2500,21 @@ fn attempt(
             keep: g.keep.shift(*origin),
         };
     }
+    // `AET-WO-4411` D2: a radio module and the parts anchored to it are
+    // left out of the outline here and set at its top-right corner below.
+    let group = radio_group(items)?;
     let first = placed
-        .first()
+        .iter()
+        .enumerate()
+        .find(|(i, _)| !group.contains(i))
         .ok_or_else(|| EmitError::Internal("no parts".into()))?
+        .1
         .keep;
     let all = placed
         .iter()
-        .fold(first, |r, p| r.union(p.keep))
+        .enumerate()
+        .filter(|(i, _)| !group.contains(i))
+        .fold(first, |r, (_, p)| r.union(p.keep))
         .grow(MARGIN_NM);
     let mut outline = Rect {
         x0: all.x0.div_euclid(SNAP) * SNAP,
@@ -2144,12 +2544,16 @@ fn attempt(
     if let Some(e) = edges.right {
         outline.x1 = e;
     }
+    let antenna = radio_corner(items, &mut placed, &group, &mut outline)?;
     if let Some(b) = bound {
         // belt-and-suspenders: under either edge plan every keep-out box is
         // inside the outline by construction (the core within its margin, each
         // connector row inside its own edge), so no board trips this and its
         // mutant survives (FEEDBACK §5.7, M5); a later plan might not.
-        if let Some(p) = placed.iter().find(|p| !outline.contains(p.keep)) {
+        if let Some(p) = placed
+            .iter()
+            .find(|p| !outline.contains(antenna.on_board(p)))
+        {
             return Err(internal(&p.reference, "a keep-out box outside the outline"));
         }
         let (w, h) = (outline.x1 - outline.x0, outline.y1 - outline.y0);

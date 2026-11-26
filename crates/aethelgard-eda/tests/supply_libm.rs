@@ -47,6 +47,7 @@ fn part(reference: &str, pads: Vec<Pad>) -> Part {
         pads,
         courtyard: vec![],
         keepouts: vec![],
+        inner_keepouts: Vec::new(),
     }
 }
 
@@ -94,6 +95,7 @@ fn board4(parts: Vec<Part>) -> Board {
         thermal: vec![],
         imus: vec![],
         pours: vec![],
+        exits: vec![],
         junction: None,
     };
     Board {

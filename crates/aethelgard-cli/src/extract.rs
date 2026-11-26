@@ -155,6 +155,15 @@ fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
         "returns": g.returns.iter().map(pin).collect::<Vec<_>>(),
         "conditions": g.conditions,
     });
+    if let Some(m) = &g.shared {
+        v["shared"] = json!({
+            "reference": m.reference,
+            "milliamps": m.milliamps,
+            "supply_bound_microohms": m.supply_bound_microohms,
+            "return_bound_microohms": m.return_bound_microohms,
+            "charge": "on the copper it shares with the load's path: its current at the lesser of the load's largest bound and its own, each side; a side with no bound of its own (null) at the load's (maximum principle; AET-WO-4411, ruled 1 (a'))",
+        });
+    }
     if let Some(n) = &g.note {
         v["note"] = n.clone().into();
     }
@@ -502,12 +511,19 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
     }
     // `AET-WO-4300k` (a): each buck's thermal pad, the copper it joins
     // measured on the board as read, and its junction screened at the least
-    // joined layer's area.
+    // joined layer's area. A radio module's ground pad has its own thermal
+    // vias (`AET-WO-4411`) and no buck's junction to screen.
+    let bucks: Vec<&str> = spec
+        .power
+        .iter()
+        .flat_map(|p| p.regulators.iter().map(|r| r.reference.as_str()))
+        .collect();
     let pads: Vec<(String, String)> = read
         .board
         .stack
         .thermal
         .iter()
+        .filter(|t| bucks.contains(&t.reference.as_str()))
         .map(|t| (t.reference.clone(), t.pad.clone()))
         .collect();
     let mut thermal = Vec::new();

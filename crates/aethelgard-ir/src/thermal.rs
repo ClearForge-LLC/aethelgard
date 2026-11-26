@@ -41,7 +41,8 @@ pub struct ThermalVias {
 }
 
 /// The datasheet citation of each field.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ThermalSources {
     pub count: String,
     pub pitch: String,

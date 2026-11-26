@@ -877,7 +877,14 @@ pub(crate) fn rendered(spec: &Specification, domain: &str) -> Result<Rendering, 
         .iter()
         .map(|s| s.as_deref().and_then(|s| s.split(' ').next()))
         .collect();
-    let who = if !c.spi_devices.is_empty() {
+    let who = if !c.radio_modules.is_empty() && c.standards.is_empty() {
+        let m: Vec<String> = c.radio_modules.iter().cloned().collect();
+        format!(
+            "{} {}",
+            listed(&m),
+            if m.len() == 1 { "behaves" } else { "behave" }
+        )
+    } else if !c.spi_devices.is_empty() {
         let d: Vec<String> = c.spi_devices.iter().cloned().collect();
         format!(
             "{} {}",

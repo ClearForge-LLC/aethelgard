@@ -2170,3 +2170,232 @@ fn d1_s_pin_device_generates_builds_and_proves() {
         "{messages:?}"
     );
 }
+
+// ---------------------------------------------------------------- AET-WO-4411
+
+/// The radio fixture: Sentinel-03 with an ESP32-C3-WROOM-02 on a UART of its
+/// own.
+const RADIO_SPEC: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-03-radio.json";
+
+/// `aethelgard <args>` from the repository root: its exit code and its one
+/// line of JSON.
+fn radio_run(args: &[&str]) -> (i32, Value) {
+    let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+        .args(args)
+        .current_dir(root())
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8(out.stdout).unwrap();
+    (
+        out.status.code().unwrap(),
+        serde_json::from_str(stdout.lines().last().unwrap_or("{}")).unwrap(),
+    )
+}
+
+/// The fixture emitted into a fresh directory: (dir, board text).
+fn radio_emitted(label: &str) -> (PathBuf, String) {
+    let dir = std::env::temp_dir().join(format!("aet-4411-{label}-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let (code, v) = radio_run(&["emit", "--file", RADIO_SPEC, "--out", dir.to_str().unwrap()]);
+    assert_eq!(code, 0, "{v}");
+    let text = fs::read_to_string(dir.join("sentinel-03-radio.kicad_pcb")).unwrap();
+    (dir, text)
+}
+
+/// `check drc` on `text` written beside the emitted schematic, with the
+/// specification and schematic when `spec` is set.
+fn radio_drc(dir: &Path, name: &str, text: &str, spec: bool) -> (i32, Value) {
+    let board = dir.join(format!("{name}.kicad_pcb"));
+    fs::write(&board, text).unwrap();
+    let sch = dir.join("sentinel-03-radio.kicad_sch");
+    let mut args = vec!["check", "drc", "--board", board.to_str().unwrap()];
+    if spec {
+        args.extend(["--spec", RADIO_SPEC, "--schematic", sch.to_str().unwrap()]);
+    }
+    radio_run(&args)
+}
+
+/// The module's footprint block in `text`, as (start, end) byte offsets.
+fn radio_module(text: &str) -> (usize, usize) {
+    let i = text
+        .find("(footprint \"Aethelgard_RF:ESP32-C3-WROOM-02\"")
+        .unwrap();
+    let j = text[i + 1..]
+        .find("\n\t(footprint ")
+        .map_or(text.len(), |k| i + 1 + k);
+    (i, j)
+}
+
+/// The board's outline moved `dy` mm at its top edge, written as KiCad
+/// writes a number.
+fn radio_outline_up(text: &str, dy: f64) -> String {
+    let i = text.find("(gr_rect").unwrap();
+    let s = text[i..].find("(start ").unwrap() + i + "(start ".len();
+    let e = text[s..].find(')').unwrap() + s;
+    let mut xy = text[s..e].split(' ');
+    let (x, y): (f64, f64) = (
+        xy.next().unwrap().parse().unwrap(),
+        xy.next().unwrap().parse().unwrap(),
+    );
+    let moved = format!("{x} {}", ((y - dy) * 1e6).round() / 1e6);
+    format!("{}{moved}{}", &text[..s], &text[e..])
+}
+
+/// The board's outline moved `dx` mm at its right edge.
+fn radio_outline_right(text: &str, dx: f64) -> String {
+    let i = text.find("(gr_rect").unwrap();
+    let s = text[i..].find("(end ").unwrap() + i + "(end ".len();
+    let e = text[s..].find(')').unwrap() + s;
+    let mut xy = text[s..e].split(' ');
+    let (x, y): (f64, f64) = (
+        xy.next().unwrap().parse().unwrap(),
+        xy.next().unwrap().parse().unwrap(),
+    );
+    let moved = format!("{} {y}", ((x + dx) * 1e6).round() / 1e6);
+    format!("{}{moved}{}", &text[..s], &text[e..])
+}
+
+#[test]
+fn the_radio_fixture_passes_erc_and_drc_and_judges_its_module() {
+    let (dir, _) = radio_emitted("pass");
+    let (code, erc) = radio_run(&[
+        "check",
+        "erc",
+        "--schematic",
+        dir.join("sentinel-03-radio.kicad_sch").to_str().unwrap(),
+    ]);
+    assert_eq!((code, &erc["verdict"]), (0, &Value::from("pass")), "{erc}");
+    let board = fs::read_to_string(dir.join("sentinel-03-radio.kicad_pcb")).unwrap();
+    let (code, drc) = radio_drc(&dir, "pass", &board, true);
+    assert_eq!((code, &drc["verdict"]), (0, &Value::from("pass")), "{drc}");
+    let ran = drc["ran"].as_array().unwrap();
+    assert!(
+        ran.iter()
+            .any(|r| r["gate"] == "drc.radio" && r["judged"] == 1),
+        "{ran:?}"
+    );
+}
+
+/// Each planted board is refused by `check drc --spec`, by name, from the
+/// module's row (never its footprint's own zones): the module moved off the
+/// edge, the board grown past the antenna, its UART pads swapped, its
+/// footprint turned.
+#[test]
+fn radio_planted_boards_are_refused_by_name() {
+    let (dir, text) = radio_emitted("planted");
+    let (i, j) = radio_module(&text);
+    let fp = &text[i..j];
+    let at = fp.find("(at ").unwrap();
+    let close = fp[at..].find(')').unwrap() + at;
+    let xy: Vec<f64> = fp[at + 4..close]
+        .split(' ')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    let with_at = |s: String| {
+        format!(
+            "{}{}{}",
+            &text[..i],
+            fp[..at].to_owned() + &s + &fp[close + 1..],
+            &text[j..]
+        )
+    };
+    let cases = [
+        (
+            "inward",
+            with_at(format!("(at {} {})", xy[0], xy[1] + 10.0)),
+            "RadioAntennaOnBoard",
+        ),
+        // The top edge 3 mm up: half the 6 mm antenna area on the board,
+        // inside the declared bound (Sentinel-03 is 96.6 mm tall with the
+        // module, `AET-WO-4411`; 10 mm would trip `OutlineExceedsBound` first).
+        (
+            "outline-up",
+            radio_outline_up(&text, 3.0),
+            "RadioAntennaOnBoard",
+        ),
+        // Review M2: the board widened 1 mm right, so the feed side is past
+        // the row's 3 mm from the edge (inside the declared bound).
+        (
+            "mid-edge",
+            radio_outline_right(&text, 1.0),
+            "RadioNotAtCorner",
+        ),
+        (
+            "turned",
+            with_at(format!("(at {} {} 180)", xy[0], xy[1])),
+            "RadioFootprintWrong",
+        ),
+        (
+            "swapped",
+            {
+                let p11 = fp.find("(pad \"11\"").unwrap();
+                let p12 = fp.find("(pad \"12\"").unwrap();
+                let swapped = fp[..p11].to_owned()
+                    + &fp[p11..p12].replace("/WIFI_TX", "/WIFI_RX")
+                    + &fp[p12..].replacen("/WIFI_RX", "/WIFI_TX", 1);
+                format!("{}{swapped}{}", &text[..i], &text[j..])
+            },
+            "RadioUartMiswired",
+        ),
+    ];
+    for (name, board, kind) in cases {
+        let (code, v) = radio_drc(&dir, name, &board, true);
+        assert_eq!(code, 3, "{name}: {v}");
+        assert_eq!(v["error"]["kind"], kind, "{name}: {v}");
+        assert_eq!(v["error"]["id"], "U30", "{name}: {v}");
+    }
+}
+
+/// D4: with the board grown past the antenna and no `--spec` (so the radio
+/// judge does not stop first), KiCad finds a track in the module's keepout
+/// on each of the four copper layers: the footprint carries one zone per
+/// layer.
+#[test]
+fn a_track_in_the_antenna_keepout_is_found_on_every_copper_layer() {
+    let (dir, text) = radio_emitted("keepout");
+    let (i, j) = radio_module(&text);
+    let fp = &text[i..j];
+    let at = fp.find("(at ").unwrap();
+    let close = fp[at..].find(')').unwrap() + at;
+    let xy: Vec<f64> = fp[at + 4..close]
+        .split(' ')
+        .map(|v| v.parse().unwrap())
+        .collect();
+    // Across the antenna area, 3 mm inside it from the antenna edge; each
+    // coordinate at KiCad's six decimals (a float's shortest form can carry
+    // more, which the strict reader refuses)
+    let y = format!("{:.6}", xy[1] - 10.1);
+    let tracks: String = ["F.Cu", "In1.Cu", "In2.Cu", "B.Cu"]
+        .iter()
+        .enumerate()
+        .map(|(n, l)| {
+            format!(
+                "\t(segment (start {:.6} {y}) (end {:.6} {y}) (width 0.25) (layer \"{l}\") (net \"GND\") (uuid \"4411aaaa-0000-4000-8000-00000000000{n}\"))\n",
+                xy[0] - 5.0,
+                xy[0] + 5.0
+            )
+        })
+        .collect();
+    let grown = radio_outline_up(&text, 10.0);
+    let end = grown.rfind(')').unwrap();
+    let board = format!("{}{tracks}{}", &grown[..end], &grown[end..]);
+    let (code, v) = radio_drc(&dir, "keepout", &board, false);
+    assert_eq!(code, 1, "{v}");
+    let mut layers: Vec<String> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "items_not_allowed")
+        .flat_map(|f| f["where"].as_array().unwrap().iter())
+        .filter_map(|w| w["description"].as_str())
+        .filter_map(|d| {
+            d.split(" on ")
+                .nth(1)
+                .map(|l| l.split(',').next().unwrap().to_owned())
+        })
+        .collect();
+    layers.sort();
+    layers.dedup();
+    assert_eq!(layers, ["B.Cu", "F.Cu", "In1.Cu", "In2.Cu"], "{v}");
+}

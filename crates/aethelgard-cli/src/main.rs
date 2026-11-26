@@ -938,6 +938,8 @@ struct DrcJudged {
     seats: Option<usize>,
     /// The outline judged against `board.max_outline_um` ([`outline_judged`]).
     outline: Option<usize>,
+    /// Each radio module's antenna and link judged ([`radio_judged`]).
+    radio: Option<usize>,
 }
 
 /// `check drc`'s parts (`AET-WO-1609`, ruled D3): the coupled pairs, judged
@@ -985,38 +987,27 @@ fn drc_parts(spec: Option<&Specification>, judged: &DrcJudged) -> Vec<verdict::R
             "board.max_outline_um",
         ),
     ]
+    .into_iter()
+    // `AET-WO-4411`: a row only where a module is declared, so no verdict on
+    // a board without one moves (`INV-08`).
+    .chain(
+        (!spec.declared_radio_modules().is_empty())
+            .then(|| Ran::part("drc.radio", true, n(judged.radio), "radio_modules")),
+    )
+    .collect()
 }
 
-/// `AET-WO-1610` (3), D3 as ruled: a declared `board.max_outline_um` judged
-/// on the board `check drc` reads, not only at `validate` and `emit`. The
-/// outline is the board's one `Edge.Cuts` `gr_rect`, read from the strict
-/// tree alone (no wider reader, so `check drc` gains no refusal but this
-/// one's), and compared as the placer compares its own outline (`aethelgard_eda`
-/// `pcb.rs`, `OutlineUnreachable`): its width against the bound's width and
-/// its height against the bound's height. `Some(1)` when judged and held,
-/// `None` with no bound; a board wider or taller is refused
-/// `OutlineExceedsBound`, and one with no single such rectangle
-/// `BoardUnreadable`.
-fn outline_judged(
+/// An outline's `(start, end)` corners, in nm.
+type Corners = ((i64, i64), (i64, i64));
+
+/// The board's outline: its one `Edge.Cuts` `gr_rect`, as `(start, end)`
+/// in nm, read from the strict tree alone; anything else on `Edge.Cuts` is
+/// `unreadable`'s refusal ([`outline_judged`], [`radio_judged`]).
+fn edge_rect(
     tree: &aethelgard_eda::strict::Tree,
-    spec: &Specification,
-) -> Result<Option<usize>, run::Stop> {
+    unreadable: &dyn Fn(String) -> run::Stop,
+) -> Result<Corners, run::Stop> {
     use aethelgard_eda::strict;
-    let Some(bound) = spec.board.max_outline_um else {
-        return Ok(None);
-    };
-    let stop = |kind: &'static str, message: String| run::Stop {
-        code: EXIT_UNREADABLE,
-        kind,
-        id: None,
-        message,
-    };
-    let unreadable = |why: String| {
-        stop(
-            "BoardUnreadable",
-            format!("board.max_outline_um is declared, so the board's outline is judged: {why}"),
-        )
-    };
     // Every top-level graphic on `Edge.Cuts`, by `layer` or `layers` (the
     // strict reader takes either), of any shape: one `gr_rect` and nothing
     // else, or the extent is not that rectangle's (adversarial review 3).
@@ -1057,7 +1048,217 @@ fn outline_judged(
             ))),
         }
     };
-    let ((x0, y0), (x1, y1)) = (corner("start")?, corner("end")?);
+    Ok((corner("start")?, corner("end")?))
+}
+
+/// `AET-WO-4411`: each radio module on the board `check drc --spec` reads,
+/// judged from its radio parts row, never from its footprint's own zones
+/// (`INV-07`):
+/// - the footprint at the reference is the row's, unturned
+///   (`RadioFootprintWrong`);
+/// - its U0TXD pad carries the port's RX net and its U0RXD pad the port's
+///   TX net (`RadioUartMiswired`); KiCad's parity holds the pads' nets to
+///   the schematic's, which the emitter draws from the solved port;
+/// - the antenna area, with the row's clearance beside it and beyond it
+///   (HDG-C3 Figure 21), meets no part of the outline: the antenna
+///   overhangs the board's edge (`RadioAntennaOnBoard`, ruled D2).
+///
+/// `Some(n)` for `n` modules judged, `None` for none.
+fn radio_judged(
+    tree: &aethelgard_eda::strict::Tree,
+    spec: &Specification,
+) -> Result<Option<usize>, run::Stop> {
+    use aethelgard_eda::strict;
+    let modules = spec.declared_radio_modules();
+    if modules.is_empty() {
+        return Ok(None);
+    }
+    let stop = |kind: &'static str, id: &str, message: String| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind,
+        id: Some(id.to_owned()),
+        message,
+    };
+    let unreadable = |why: String| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind: "BoardUnreadable",
+        id: None,
+        message: format!("a radio module is declared, so the board's outline is judged: {why}"),
+    };
+    let ((ox0, oy0), (ox1, oy1)) = edge_rect(tree, &unreadable)?;
+    let (ox0, ox1, oy0, oy1) = (ox0.min(ox1), ox0.max(ox1), oy0.min(oy1), oy0.max(oy1));
+    let table = aethelgard_ir::radio::table().map_err(|e| unreadable(e.to_string()))?;
+    for m in modules {
+        let r = m.reference.as_str();
+        let row = table
+            .get(&m.part)
+            .ok_or_else(|| unreadable(format!("`{}` has no radio parts row", m.part)))?;
+        let port = spec
+            .serial_ports
+            .iter()
+            .find(|p| p.label == m.serial_port)
+            .ok_or_else(|| unreadable(format!("no serial port `{}`", m.serial_port)))?;
+        // The footprint whose Reference is the module's.
+        let mut found = Vec::new();
+        for fp in tree
+            .root()
+            .lists()
+            .filter(|i| i.head() == Some("footprint"))
+        {
+            let reference = fp
+                .field("Reference")
+                .map_err(|e| unreadable(e.to_string()))?;
+            if reference == Some(r) {
+                found.push(fp);
+            }
+        }
+        let [fp] = found.as_slice() else {
+            return Err(stop(
+                "RadioFootprintWrong",
+                r,
+                format!(
+                    "the board has {} footprints with reference `{r}`, not one",
+                    found.len()
+                ),
+            ));
+        };
+        let at = fp
+            .one("at")
+            .map_err(|e| unreadable(e.to_string()))?
+            .ok_or_else(|| unreadable(format!("`{r}` has no `at`")))?;
+        let turned = strict::number(&at, 3).unwrap_or(0);
+        if fp.arg(1) != Some(row.footprint.as_str()) || turned != 0 {
+            return Err(stop(
+                "RadioFootprintWrong",
+                r,
+                format!(
+                    "`{r}` is `{}` at {} degrees, and its row is `{}`, unturned",
+                    fp.arg(1).unwrap_or(""),
+                    turned / 1_000_000,
+                    row.footprint
+                ),
+            ));
+        }
+        let (Some(x), Some(y)) = (strict::number(&at, 1), strict::number(&at, 2)) else {
+            return Err(unreadable(format!("`{r}`'s `at` is not two numbers")));
+        };
+        // Its UART pads, by the nets KiCad's parity holds to the schematic.
+        // Each pad once, and its one net (the strict reader's `one` refuses
+        // a repeat).
+        let net_of = |pad: &str| -> Result<Option<String>, run::Stop> {
+            let pads: Vec<_> = fp.all("pad").filter(|p| p.arg(1) == Some(pad)).collect();
+            let [p] = pads.as_slice() else {
+                return Err(unreadable(format!("`{r}` has {} pads `{pad}`", pads.len())));
+            };
+            Ok(p.one("net")
+                .map_err(|e| unreadable(e.to_string()))?
+                .and_then(|n| n.arg(1).map(str::to_owned)))
+        };
+        // through a UART crossing, the crossing's B side (`AET-WO-4411` (c1))
+        let (txd, rxd) = aethelgard_ir::power::module_uart_nets(spec, port);
+        for (pad, want, line) in [
+            (&row.uart.tx_number, &txd, "U0TXD"),
+            (&row.uart.rx_number, &rxd, "U0RXD"),
+        ] {
+            let label = format!("/{}", aethelgard_eda::pcb::escape(want));
+            let got = net_of(pad)?;
+            if got.as_deref() != Some(label.as_str()) {
+                return Err(stop(
+                    "RadioUartMiswired",
+                    r,
+                    format!(
+                        "`{r}` pad {pad} ({line}) is on {}, and port `{}` needs it on `{want}` ({})",
+                        got.map_or("no net".to_owned(), |g| format!("`{g}`")),
+                        port.label,
+                        table.cite(&row.uart.at)
+                    ),
+                ));
+            }
+        }
+        // The antenna area and its clearance, in board nm.
+        let a = row.antenna.area_um;
+        let c = row.antenna.clearance_um;
+        let edge = y + a.y1 * 1000;
+        let (cx0, cx1, cy0, cy1) = (
+            x + (a.x0 - c) * 1000,
+            x + (a.x1 + c) * 1000,
+            y + (a.y0 - c) * 1000,
+            edge,
+        );
+        if cx0 < ox1 && ox0 < cx1 && cy0 < oy1 && oy0 < cy1 {
+            let mm = |nm: i64| format!("{:.3}", nm as f64 / 1e6);
+            return Err(stop(
+                "RadioAntennaOnBoard",
+                r,
+                format!(
+                    "`{r}`'s antenna area and its {} mm clearance ({} to {} x {} to {} mm) meet the outline ({} to {} x {} to {} mm): the antenna must overhang the board's edge, with no board beside or beyond it ({}; {})",
+                    c / 1000,
+                    mm(cx0),
+                    mm(cx1),
+                    mm(cy0),
+                    mm(cy1),
+                    mm(ox0),
+                    mm(ox1),
+                    mm(oy0),
+                    mm(oy1),
+                    table.cite(&row.antenna.clearance_at),
+                    table.cite(&row.antenna.placement_at)
+                ),
+            ));
+        }
+        // At the corner Espressif marks (HDG-C3 Figure 19 position 3, the
+        // feed point on the right, datasheet Figure 10-1): the antenna edge
+        // on the board's top edge (one snap, 0.05 mm, either way), and the
+        // body's feed side within the row's bound of the right edge.
+        let feed = ox1 - (x + a.x1 * 1000);
+        if (oy0 - edge).abs() > 50_000 || feed < 0 || feed > row.antenna.feed_edge_max_um * 1000 {
+            return Err(stop(
+                "RadioNotAtCorner",
+                r,
+                format!(
+                    "`{r}` is not at the top-right corner: its antenna edge is {} mm from the board's top edge, and its feed side {} mm from the right edge, at most {} ({}; {})",
+                    (oy0 - edge) as f64 / 1e6,
+                    feed as f64 / 1e6,
+                    row.antenna.feed_edge_max_um as f64 / 1e3,
+                    table.cite(&row.antenna.feed_at),
+                    table.cite(&row.antenna.placement_at)
+                ),
+            ));
+        }
+    }
+    Ok(Some(modules.len()))
+}
+
+/// `AET-WO-1610` (3), D3 as ruled: a declared `board.max_outline_um` judged
+/// on the board `check drc` reads, not only at `validate` and `emit`. The
+/// outline is the board's one `Edge.Cuts` `gr_rect`, read from the strict
+/// tree alone (no wider reader, so `check drc` gains no refusal but this
+/// one's), and compared as the placer compares its own outline (`aethelgard_eda`
+/// `pcb.rs`, `OutlineUnreachable`): its width against the bound's width and
+/// its height against the bound's height. `Some(1)` when judged and held,
+/// `None` with no bound; a board wider or taller is refused
+/// `OutlineExceedsBound`, and one with no single such rectangle
+/// `BoardUnreadable`.
+fn outline_judged(
+    tree: &aethelgard_eda::strict::Tree,
+    spec: &Specification,
+) -> Result<Option<usize>, run::Stop> {
+    let Some(bound) = spec.board.max_outline_um else {
+        return Ok(None);
+    };
+    let stop = |kind: &'static str, message: String| run::Stop {
+        code: EXIT_UNREADABLE,
+        kind,
+        id: None,
+        message,
+    };
+    let unreadable = |why: String| {
+        stop(
+            "BoardUnreadable",
+            format!("board.max_outline_um is declared, so the board's outline is judged: {why}"),
+        )
+    };
+    let ((x0, y0), (x1, y1)) = edge_rect(tree, &unreadable)?;
     let (w, h) = (x1.abs_diff(x0), y1.abs_diff(y0));
     let (bw, bh) = (
         u64::from(bound.width) * 1000,
@@ -1170,6 +1371,7 @@ fn check_kicad(
         judged.seats = Some(stack.imus.len());
         if let Some((spec, _)) = &read_spec_value {
             judged.outline = outline_judged(tree, spec)?;
+            judged.radio = radio_judged(tree, spec)?;
         }
         // Declared coupled pairs are judged on the board's copper, read and
         // joined by geometry first (`AET-WO-1308` §1.3): KiCad has no rule
@@ -3884,6 +4086,20 @@ fn emit_design(file: &Path, out: &Path) -> ExitCode {
                 if let Some((kind, message)) = &l.unjudged {
                     v["unjudged"] = serde_json::json!({"kind": kind, "message": message});
                 }
+                // `AET-WO-4411` (b): on a board with a buck, the pour
+                // ladder's step and each buck's joined copper there
+                if let Some((step, areas)) = &l.pour {
+                    v["pour_step"] = serde_json::json!(step);
+                    v["pour_square_permille"] = serde_json::json!(
+                        step.checked_sub(1).map(|k| aethelgard_eda::route::POUR_STEPS[k])
+                    );
+                    v["buck_copper"] = areas
+                        .iter()
+                        .map(|(b, l, a, n)| {
+                            serde_json::json!({"buck": b, "layer": l, "square_millimetres": a, "need": n})
+                        })
+                        .collect();
+                }
                 v
             }),
             notes: emission.notes.clone(),
@@ -4163,7 +4379,10 @@ mod tests {
             drc_parts(Some(&bounded), &judged(0, Some(1)))[2..],
             [
                 Ran::off("drc.orientation", "spi_devices[].orientation"),
-                Ran::judged("drc.outline", 1)
+                Ran::judged("drc.outline", 1),
+                // Its radio module (`AET-WO-4411` D6): a part only where one
+                // is declared.
+                Ran::judged("drc.radio", 0)
             ]
         );
     }

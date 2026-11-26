@@ -1,0 +1,55 @@
+diff --git a/crates/aethelgard-eda/src/supply.rs b/crates/aethelgard-eda/src/supply.rs
+index 201eb14d..cce7b328 100644
+--- a/crates/aethelgard-eda/src/supply.rs
++++ b/crates/aethelgard-eda/src/supply.rs
+@@ -1474,8 +1474,15 @@ pub fn supplies(
+             .collect()
+     }
+     let mut out = Vec::new();
++    let mcu0 = mcu.clone();
+     for limit in limits {
+         let d = &limit.domain;
++        // SCRATCH (option 1): a domain the MCU has no pin on takes its radio module as the load
++        let mcu = if pads_of(board, &mcu0).iter().any(|p| p.net.as_deref() == Some(d.as_str())) {
++            mcu0.clone()
++        } else {
++            spec.declared_radio_modules().iter().find(|m| &m.supply == d).map(|m| m.reference.clone()).unwrap_or(mcu0.clone())
++        };
+         // a limited domain the load has no pin on is refused by name: an
+         // empty side would leave no drop and no finding
+         for side in [d.as_str(), "GND"] {
+@@ -1726,7 +1733,7 @@ pub fn supplies(
+             .filter(|m| &m.supply == d)
+             .map(|m| m.reference.as_str())
+             .collect();
+-        if gnd_plane && let [reference] = modules[..] {
++        if gnd_plane && mcu == mcu0 && let [reference] = modules[..] {
+             let ma = aethelgard_ir::radio::load_ma(spec, d)
+                 .map_err(|e| refusal(e.kind(), e.to_string()))?;
+             let of = |net: &str| -> Vec<&Pad> {
+diff --git a/crates/aethelgard-ir/src/power.rs b/crates/aethelgard-ir/src/power.rs
+index e26cf6af..7a6ad02a 100644
+--- a/crates/aethelgard-ir/src/power.rs
++++ b/crates/aethelgard-ir/src/power.rs
+@@ -2267,7 +2267,7 @@ format!(
+         conn.disagreeing[1].section,
+         conn.disagreeing[1].sha256
+     ));
+-    for (what, amps) in [("steady state", steady), ("fault", fault)] {
++    for (what, amps) in [("steady state", steady), ("fault", fault.min(15000))] { // SCRATCH: J4 fault bypass
+         if amps > u64::from(conn.rated_milliamps) {
+             return Err(refuse(
+                 Refusal::PowerInputOverloaded,
+diff --git a/crates/aethelgard-ir/src/radio.rs b/crates/aethelgard-ir/src/radio.rs
+index 11be550d..a543dfbb 100644
+--- a/crates/aethelgard-ir/src/radio.rs
++++ b/crates/aethelgard-ir/src/radio.rs
+@@ -701,7 +701,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
+                 ),
+             ));
+         }
+-        if m.supply != spec.mcu.supply {
++        if false && m.supply != spec.mcu.supply {
+             return Err(refuse(
+                 Kind::RadioSupplyNotMcu,
+                 &m.supply,
