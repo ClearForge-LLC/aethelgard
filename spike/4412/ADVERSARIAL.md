@@ -36,9 +36,11 @@ Each row was measured on Sentinel-03's ArduPilot under the reset macro (`py/rese
 - **Which stream serves which request.** The firmware chooses it, and the DMA model reads that choice from DMAMUX1_CxCR.DMAREQ_ID as written; the platform does not wire it.
   - A stream paces only on a request in the platform's `pacedRequests`. That list is built from the topology's DShot timers alone.
   - Measured: ArduPilot routes request 15 (TIM1_UP) to DMA2 stream 1, and the transfer line carries both numbers.
-- **Not covered:**
-  - A firmware that paces a stream by a request it never enables (UDE clear) waits forever. The run then shows no transfer for that timer, and the motor protocol check reports PWM-rate updates as `foreign_motor_protocol_unmet`, a named info finding.
-  - The case is named here and not planted.
+- **A declared DShot output that sends no frame.** Example: a firmware that never sets UDE, or that routes no stream to the request.
+  - TIM1 still updates at the DShot bit rate, so `foreign_motor_protocol_unmet` would not fire.
+  - Before this pass, the verdict simply had no `boot.dshot` and said nothing. **New:** `foreign_dshot_silent` (info) names each timer of declared DShot outputs that no paced transfer fed.
+  - It is info, not error, because a short boot-only window can end before ArduPilot starts its outputs: in the armed run, the first transfer is at 5.33 s.
+  - Unit test and mutant, killed.
 
 ## An ELF in CI that isn't the bench's (WO §5) — **open until Sentinel-03's CI row lands (waits on #395)**
 

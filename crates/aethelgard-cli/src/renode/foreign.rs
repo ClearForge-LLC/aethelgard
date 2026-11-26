@@ -549,6 +549,47 @@ pub const LAZY_MARK: &str = "lazy: a skipped event at";
 pub const TIMER_LAZY_DIFFERED: &str = "foreign_timer_lazy_differed";
 /// A paced stream that would never end, refused by name.
 pub const DMA_STREAM_UNBOUNDED: &str = "foreign_dma_stream_unbounded";
+/// A timer of declared DShot outputs that moved no frame in the window.
+pub const DSHOT_SILENT: &str = "foreign_dshot_silent";
+
+/// One info finding per timer of declared DShot outputs that moved no paced
+/// transfer, on a platform with the models: its outputs sent no frame in the
+/// window (a short boot can end before the firmware starts them; a firmware
+/// that never sets UDE never sends one), said, not judged.
+fn dshot_silent(
+    motors: &[crate::renode::Motor],
+    seen: Vec<String>,
+    models: &[std::path::PathBuf],
+) -> Vec<Finding> {
+    if !loads_dshot_models(models) {
+        return Vec::new();
+    }
+    let mut timers: Vec<u32> = motors
+        .iter()
+        .filter(|m| m.observer.protocol.bit_rate().is_some())
+        .map(|m| m.observer.timer)
+        .collect();
+    timers.dedup();
+    timers
+        .into_iter()
+        .filter(|t| !seen.contains(&format!("TIM{t}")))
+        .map(|t| {
+            let labels: Vec<&str> = motors
+                .iter()
+                .filter(|m| m.observer.timer == t)
+                .map(|m| m.observer.label.as_str())
+                .collect();
+            Finding::info(
+                DSHOT_SILENT,
+                format!(
+                    "{} on TIM{t} are declared DShot, but no paced transfer fed TIM{t} in the window: no DShot frame was sent, so none was judged",
+                    labels.join(", ")
+                ),
+            )
+        })
+        .collect()
+}
+
 /// DShot transfers seen in a log that was not read whole.
 pub const DSHOT_UNWITNESSED: &str = "foreign_dshot_unwitnessed";
 /// A DShot frame whose checksum fails, or that is not 16 pulses.
@@ -2689,6 +2730,11 @@ pub fn judge(
     }
     let (dshot, malformed) = dshot_report(&lines, plan.image, &observed, whole);
     findings.extend(malformed);
+    let fed: Vec<String> = dshot
+        .iter()
+        .flat_map(|d| d.transfers.iter().map(|t| t.timer.clone()))
+        .collect();
+    findings.extend(dshot_silent(motors, fed, plan.models));
     report.dshot = dshot;
     // A fault exception, as its hook logs the entry that halted the core
     // (`AET-WO-2314`), before the handler's own loop could reach a bound.
@@ -4533,6 +4579,32 @@ mod tests {
             (w.params[0].before_reboot, w.params[0].after_reboot),
             (None, None)
         );
+    }
+
+    /// `AET-WO-4412` adversarial pass (a DMA request assumed): on a platform
+    /// with the models, a timer of declared DShot outputs that no paced
+    /// transfer fed is said, as info, once; a fed one, or a platform without
+    /// the models, says nothing.
+    #[test]
+    fn declared_dshot_outputs_that_sent_no_frame_are_said() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let motors = crate::renode::motors(&topology).unwrap();
+        let models = [std::path::PathBuf::from("/m/AethelgardSTM32Timer.cs")];
+        let f = dshot_silent(&motors, Vec::new(), &models);
+        assert_eq!(f.len(), 1);
+        assert_eq!(f[0].kind, DSHOT_SILENT);
+        assert!(
+            f[0].message.contains("on TIM1 are declared DShot"),
+            "{}",
+            f[0].message
+        );
+        assert!(dshot_silent(&motors, vec!["TIM1".to_owned()], &models).is_empty());
+        assert!(dshot_silent(&motors, Vec::new(), &[]).is_empty());
     }
 
     /// `AET-WO-4412` (ii): a platform that loads the DShot timer or DMA
