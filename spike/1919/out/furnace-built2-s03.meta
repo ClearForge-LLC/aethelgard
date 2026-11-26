@@ -1,0 +1,13 @@
+tag=built2-s03 mem=16G net=none tree=/home/forge/.cache/aet-1919/built2
+image=ghcr.io/clearforge-llc/aethelgard-tools@sha256:1e0ab105ec42bdba66b773464f0b6679d622e4afdafef30ec4931e4326f49c63
+start=2026-11-26T07:48:07+00:00
+host_avail_kB=44829108
+loadavg=10.42 9.89 9.65
+Mem:              60          18          13           9          38          42
+cmd: bash -c cargo build --locked --offline -p aethelgard-cli && cargo build --manifest-path bridge/Cargo.toml --locked --offline && taskset -c 0-3 bash spike/1919/tools/ctl.sh built2-s03 bash spike/1919/tools/verify-s03.sh built2-s03
+exit=1
+end=2026-11-26T08:17:51+00:00
+CTL1919 tag=built2-s03 rc=1 wall_s=1776.84 memory.peak=9605791744
+PROBE combined peak_rss_kib=8532204 at=1509.0
+PROBE host peak_used_kib=28901692 at=1057.0
+verdict line: cmp-identical to s03-1 (sha256 5ba5f66beda556dd…); head 3cb73690 (lanes stopped, re-checks)
