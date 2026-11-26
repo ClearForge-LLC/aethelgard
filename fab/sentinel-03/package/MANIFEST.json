@@ -1,7 +1,7 @@
 {
   "project": "sentinel-03",
-  "specification_sha256": "51725bd3c7537abfa8ded898f7e1362de0e5edd9a61bd8a14d9cd2b52d81b769",
-  "topology_sha256": "d7a2453258a201270f189f5178ba930ca635b569b6586d61699f2f2ec02289a8",
+  "specification_sha256": "2953003de29392b4573d5946591f0356e3250b0c2d42ebdc632045a9bc9e8a11",
+  "topology_sha256": "d9deabe28be25d4c5fcee998f5bf4e5683e13594dbcede6833edb4b8c7ddf936",
   "scenarios": [
     {
       "scenario": "baseline",
@@ -77,9 +77,9 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "59e144ee8dd683fa9d2635b980d2e02d5b11f9405724ea931f90c4a317904a64",
+  "verdict_sha256": "728bf3998408894662a01c0c6c67bb71fbafbe5addc82d6fb718c139c0bf7c66",
   "files": {
-    "FAB-NOTES.md": "67f3e859ab603e77d42b903cef93e17ae2358477ee46d87c7b302c8cf2da6c85",
+    "FAB-NOTES.md": "eb4c28da25cca24780877fb5ccac688d0d6bf26d20e26a16bebe22b8baf9261a",
     "sentinel-03-B_Cu.gbl": "f9feec2a4669d55732ee3775ee1b1287f1be3bba2f2d1ea564af5489111d72fa",
     "sentinel-03-B_Mask.gbs": "9744f1b27fda55377f15fbe7a884eedb4c80285661a594c26eb12adab7c34e1c",
     "sentinel-03-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",

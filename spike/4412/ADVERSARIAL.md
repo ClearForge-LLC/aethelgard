@@ -42,7 +42,7 @@ Each row was measured on Sentinel-03's ArduPilot under the reset macro (`py/rese
   - It is info, not error, because a short boot-only window can end before ArduPilot starts its outputs: in the armed run, the first transfer is at 5.33 s.
   - Unit test and mutant, killed.
 
-## An ELF in CI that isn't the bench's (WO §5) — **open until Sentinel-03's CI row lands (waits on #395)**
+## An ELF in CI that isn't the bench's (WO §5) — **closed** (after #395, on 43bed846)
 
 - **hwdef.** CI generates Sentinel-03's hwdef.dat with `generate hwdef` from the committed specification, and holds it to the committed fixture (the generated job's `cmp`).
 - **defaults.parm.** It is held to its fixture in the same step, or held absent where there is none.
@@ -54,9 +54,14 @@ Each row was measured on Sentinel-03's ArduPilot under the reset macro (`py/rese
   - The ELF built here, with defaults.parm, has sha256 1cfc5e02.
   - Its hwdef lines are identical to the earlier build's, comments aside.
   - MAVLink reads back MOT_PWM_TYPE = 6.
-- **To close:**
-  - CI's sentinel-03 ELF sha256 against the write dispatch's package ELF (the one the bench flashes).
-  - The bench-package-s03 target held (`1919`).
+- **Correction:** my earlier "to close" (CI's ELF against the package's) compared two firmwares.
+  - The bench package's ELF, `fab/sentinel-03/package/sentinel-03.elf` (66d9b7f6, `BENCH.md`), is the engine-generated firmware. The write dispatch on 43bed846 (run 45897665687) left it byte-identical: only `FAB-NOTES.md` and `MANIFEST.json` moved, by the specification sha256.
+  - CI's Sentinel-03 ELF is unmodified ArduPilot, which no committed file holds (`4408` D1 (a)).
+- **Closed by reproduction:**
+  - CI's ArduPilot ELF (ardupilot-image run 45897560047, artifact `generated-sentinel-03`) is **c9182b88**, and its `hwdef.h` is c20df41d.
+  - Both are **bit-identical to the local build** from the same committed files in the pinned image, which is the ELF every local measurement here used (the three runs, `check pinout`).
+  - So the hwdef, the `defaults.parm`, the clock and the build options CI judges are the committed ones, and they rebuild to the same bytes on another machine.
+- **The bench-package-s03 target:** in the write dispatch (run 45897665687), `bench-package-s03` passed in 34.1 min, start to end (21:22:39–21:56:43Z). That is under `1919`'s 45-minute target.
 
 ## A defaults file on a DShot board (found by CI, 76113fed): **ruled 2026-11-26T17:35Z, (a) made strict**
 

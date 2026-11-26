@@ -26,9 +26,10 @@ env:
 jobs:
   image:
     runs-on: ubuntu-latest
-    # AET-WO-4412 (ruled 2026-11-26T17:35Z), an interim: its unsharded `cargo test` step reached 57.8 min on
-    # 76113fed (29-48 min on 2026-11-23) and was cancelled at 60. Sharding it is a slice-H row of its own.
-    timeout-minutes: 90
+    # AET-WO-4412 (ruled 2026-11-26T17:35Z, then 23:00Z), an interim: its unsharded `cargo test` step reached 57.8 min
+    # on 76113fed (29-48 min on 2026-11-23), cancelled at 60; 63.8 min on a8474dda; 87.6+ min on 43bed846 after
+    # 4411's merge, cancelled at 90. Sharding it leads slice H, its own work order after #410.
+    timeout-minutes: 150
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
