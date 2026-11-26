@@ -460,3 +460,47 @@ One more mutant, the first read's instant as `<` or `<=` in the timeline's split
 - **5 s peak less 1 s peak:** −101,772 to **+118,740 KiB**, against the 160 MiB band (163,840 KiB): 45 MiB of margin at the worst pair.
 - **Bimodal:** one run in a pair is sometimes about 100 MB higher, whichever window it is, so a pair's growth swings both ways.
 - **`ci/foreign-judge.sh` on the branch:** +20,344 KiB (`out/build/foreign-judge-band.txt`). Main's `/dev/null` grew 238–578 MB on Furnace. CI's `/dev/null` arm was not measured (FEEDBACK F7).
+
+### 11.6 CI hung on `1ec33945`: a Renode at its prompt (the architect's 23:07Z note)
+
+**What hung.** In CI run 45709090931, shards 7 and 15 ran to their 60-minute limit. The cause was `with_tools::simulate_fails_a_platform_that_does_not_load` and `twin_tier2::a_device_named_for_a_renode_instance_or_keyword_breaks_the_load`.
+- Both are `simulate --platform` with a platform that fails to load.
+- The failed `LoadPlatformDescription` skips the rest of `-e`, its `quit` included, and leaves Renode at its monitor prompt.
+  - On `/dev/null`, the prompt read the end and Renode quit.
+  - On D1's pipe, held empty, it waited for ever.
+- **Reproduced on Furnace at `1ec33945`:** both were killed by my 300 s `timeout` (exit 124).
+- **The other three tests the note names were not hung.** Each passes alone at `1ec33945` in 3–6 s. They waited on `twin_tier2`'s `RENODE_TURN` lock (`twin_tier2.rs:73`), which the hung load test held.
+
+**Why no guard fired.** A load is outside every bound by `RUL-13`, as amended for `simulate --firmware` only ("The CLI sets no timeout of its own"; `main.rs`, "Only a boot is bounded … a load is not"). So no guard existed for these runs to outlive. A boot stuck at its prompt is killed at the 120 s guard as a `ToolError`, and is now tested: `a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard`. Bounding a load too would amend `RUL-13`, so it is the architect's call (FEEDBACK F15).
+
+**What Renode does on each stdin** (`sh/quit.sh`, `sh/quit2.sh`; outputs in `out/build/quit/`). The Renode in the pinned tools image ran a failed load and a passing `RunFor "2"`:
+
+| stdin | failed load | passing run |
+|---|---|---|
+| `/dev/null` | exit 0 at once | quits by its own `quit` |
+| held, empty (`1ec33945`) | **waits for ever** (killed by the script's own 120 s `timeout`, exit 124) | — |
+| held, `quit\n` first | exit 0 at once, the same error text. Two more lines: `(machine-0) quit`, `Renode is quitting` | `RunFor` runs to its end; its own `quit` ends it, and the queued `quit` is never read |
+| held, `^D` first | exit 0 at once. One more line: `(machine-0) ^D` | not run |
+
+- **The fix:** the held pipe carries `quit\n`, written before the tool starts (`run::HELD_STDIN_LINE`). `^D` also ends it, but `quit` is a documented monitor command, where `^D` relies on how the shell handles a control byte.
+- **What changes:**
+  - On an error path, the kept log gains those two lines; no judge reads them.
+  - A run whose commands all succeed never reads the line, so its output is as before.
+  - The EOF queue still cannot grow, because the pipe never ends.
+- **Disclosed:** `quit.sh`'s wall column was broken (`bc` is not in the image), and its passing case's `echo` lacked quotes, so it stopped at the `echo`, after `RunFor`. Both were fixed after the run. The passing case was rerun correctly as `quit2.sh`'s `good-held2`.
+
+**On the fix:**
+- Both load tests pass in 3–4 s; so do the three tests that waited behind them.
+- Mutant: with the line not written, `renodes_stdin_says_quit_once_and_never_ends` and `the_bridges_stdin_is_held_open_as_renodes_is` both fail (the stub's exit 88).
+- **The suite:** `cargo test --workspace`, 3,209 passed, 0 failed (fmt and clippy 0).
+- **Every Renode tier-2 binary** (`out/build/fix-verify.txt`, `fix-t2-*.txt`): 164 passed, 0 failed.
+
+  | binary | tests |
+  |---|---|
+  | `with_tools` | 33 |
+  | `twin_tier2` | 96 |
+  | `campaign_tier2` | 12 |
+  | `models_tier2` | 12 |
+  | `attribute_seeded` | 11 |
+
+  §11.1's local tier-2 subset had run no failed load, which is how the hang reached CI.

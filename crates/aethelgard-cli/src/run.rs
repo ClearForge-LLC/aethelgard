@@ -69,19 +69,29 @@ pub const REAPER_ARG: &str = "--aethelgard-internal-reaper";
 /// The first argument that turns this binary into the trampoline.
 pub const CONFINE_ARG: &str = "--aethelgard-internal-confine";
 
-/// The tools whose stdin is a pipe the CLI holds open, unwritten, until the
-/// reaper has been waited for, not `/dev/null` (`AET-WO-4400j` D1, ruled
+/// The tools whose stdin is a pipe the CLI holds open until the reaper has
+/// been waited for, not `/dev/null` (`AET-WO-4400j` D1, ruled
 /// 2026-11-25T18:49Z): Renode, and the analog bridge, whose Renode inherits
 /// its stdin. Started with `--console`, Renode 1.17.0's `ConsoleIOSource`
 /// reads a redirected stdin and queues every byte, `-1` at its end
 /// included, in an unbounded `BlockingCollection<int>` that nothing drains:
 /// at `/dev/null`'s end, about 6 million `-1`s and 48 MiB of live heap per
 /// wall second, 100.0 % of the heap's growth between two dumps of a
-/// Sentinel-03 run (`spike/4400j/RESULTS.md` §2.3). A pipe nobody writes is
-/// never at its end, so the reader blocks. Every other tool keeps
-/// `/dev/null`: one that reads its stdin would wait on a held pipe until the
-/// wall bound.
+/// Sentinel-03 run (`spike/4400j/RESULTS.md` §2.3). A held pipe is never at
+/// its end, so the reader blocks. Every other tool keeps `/dev/null`: one
+/// that reads its stdin would wait on a held pipe until the wall bound.
 pub const HELD_STDIN: [&str; 2] = ["renode", crate::analog::BRIDGE];
+
+/// All a held stdin ever carries, written before the tool starts. Renode's
+/// monitor reads it only at its prompt, which it reaches when a command of
+/// `-e` fails and the rest, the commands' own `quit` included, is skipped. At
+/// `/dev/null` the prompt read the end and Renode quit; on a pipe held empty
+/// it waited for ever (CI run 45709090931, a failed platform load). This
+/// quits it as the end did, adding the two lines `(machine-0) quit` and
+/// `Renode is quitting` to its output, which no judge reads. A run whose
+/// commands all succeed quits by its own `quit` and never reads it
+/// (`spike/4400j/sh/quit.sh`, measured 2026-11-25).
+pub const HELD_STDIN_LINE: &[u8] = b"quit\n";
 
 /// Captured stdout, stderr and reports are bounded; more is a `ToolError`.
 pub const MAX_CAPTURE: usize = 16 * 1024 * 1024;
@@ -621,11 +631,14 @@ impl Invocation<'_> {
         }
         cmd.arg("--").arg(&self.tool.path).args(&self.args);
         // The write end lives until this call returns, after the reaper is
-        // waited for; it is close-on-exec, so no child holds it.
+        // waited for; it is close-on-exec, so no child holds it. The line is
+        // far below a pipe's buffer, so the write never waits for a reader.
         let (stdin, _held) = if HELD_STDIN.contains(&self.tool.name) {
-            let (read, write) = io::pipe().map_err(|e| {
+            let pipe = |e: io::Error| {
                 Stop::tool_error(self.tool.name, format!("cannot open its stdin pipe: {e}"))
-            })?;
+            };
+            let (read, mut write) = io::pipe().map_err(pipe)?;
+            write.write_all(HELD_STDIN_LINE).map_err(pipe)?;
             (Stdio::from(read), Some(write))
         } else {
             (Stdio::null(), None)

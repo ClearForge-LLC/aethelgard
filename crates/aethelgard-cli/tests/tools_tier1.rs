@@ -1140,17 +1140,19 @@ fn prove_hash_changes_with_a_file_name() {
 
 // ---------------------------------------------------------------- 9. Renode
 
-/// `AET-WO-4400j` D1: Renode's stdin is a pipe the CLI holds open and never
-/// writes, so a read of it waits; at `/dev/null` it would end at once, and
-/// Renode's console queues every end it reads, without bound
-/// (`spike/4400j/RESULTS.md` §2.3). The stub reads its stdin for 0.5 s and
-/// exits 89 unless the read was still waiting (`timeout`'s 124).
+/// `AET-WO-4400j` D1: Renode's stdin is a pipe the CLI holds open, so a read
+/// of it waits; at `/dev/null` it would end at once, and Renode's console
+/// queues every end it reads, without bound (`spike/4400j/RESULTS.md` §2.3).
+/// It carries one `quit`, which ends a Renode whose commands stopped at an
+/// error, as the end did (`run::HELD_STDIN_LINE`; CI run 45709090931). The
+/// stub exits 88 unless its first line, read within 2 s, is `quit`, and 89
+/// unless a read after it is still waiting at 0.5 s (`timeout`'s 124).
 #[test]
-fn renodes_stdin_is_held_open_and_never_ends() {
+fn renodes_stdin_says_quit_once_and_never_ends() {
     let tb = Dir::new("tb");
     tb.write("renode.out", CPU_LISTING.as_bytes());
     let body = format!(
-        "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n/usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89\n/bin/cat '{}'\n",
+        "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {}; fi\n[ \"$(/usr/bin/timeout 2 /usr/bin/head -n 1)\" = quit ] || exit 88\n/usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89\n/bin/cat '{}'\n",
         Version::Good.shell(&format!(
             "Renode v1.17.0\n  build: {}",
             aethelgard_twin::platform::RENODE_BUILD

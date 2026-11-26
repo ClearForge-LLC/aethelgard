@@ -34,6 +34,8 @@
 | F11 | **An input with `"frames": []` is accepted** (adversarial pass): a 12 s run that sends nothing, the rest stimuli still set | the architect: a ruling, if an empty input should be refused |
 | F12 | **Process:** two measurement runs were voided by my own edits to a running script. Both were rerun and are disclosed in RESULTS §10. The first dump failed because `createdump` needs the DAC beside it. `dotnet-dump`'s `gcroot` exited 139 after printing its first, whole chain | none |
 | F13 | **Reduction proposals not taken:** three merges of `run.rs`'s capture plumbing (one tally helper for the two summaries, one call path into a summary, one key-cap helper), a few lines each in the capture path; and reading PC, the clock and the pulls only at the last end read, which would stop validating the earlier blocks' values. The filter's own `Unhandled write` summary and this one could become one mechanism, but that changes the verdict's shape (`warnings` and `summarised`) | the architect, at the phase gate |
+| F14 | **D1 changed how Renode ends on a failed command; my defect, found by CI** (run 45709090931, the architect's 23:07Z note). A failed command leaves Renode at its monitor prompt. On `/dev/null` it read the end and quit; on the pipe held empty it waited for ever. Two load tests hung their shards for 60 minutes, and three more waited behind them on `twin_tier2`'s `RENODE_TURN` lock. Reproduced on Furnace at `1ec33945`. **Fixed:** the pipe carries one `quit` (`run::HELD_STDIN_LINE`), which the monitor reads only at that prompt. An error path's log gains two lines (`(machine-0) quit`, `Renode is quitting`) that no judge reads. My local tier-2 subset ran no failed load, which is how this reached CI (RESULTS §11.6) | none: fixed and tested |
+| F15 | **No guard covers a platform load.** `RUL-13` bounds `simulate --firmware` only: "The CLI sets no timeout of its own", and `main.rs` says "Only a boot is bounded … a load is not". So a hung `simulate --platform` runs until the caller's timeout, here the job's 60 minutes. A boot stuck at its prompt is killed at the 120 s guard as a `ToolError`, now tested (`a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard`). Not built: bounding a load amends `RUL-13`, whose bounds the work order keeps | the architect: whether a load takes the hang guard too |
 
 ## Adversarial pass (§5), full
 
@@ -85,7 +87,15 @@ On head `02c9b50f`, in the pinned tools image `1e0ab105…` under `capped-run --
 
 After it, only the CLI README and a doc comment changed: fmt was rerun, the CLI built, and every test that reads a README passed.
 
-- **Tier 2,** `--features with-tools`: seven tests on Furnace, 7/7 pass. They are the foreign flash tests, our own firmware under `--foreign`, a generated reference boot and the two droops through the bridge. CI runs the rest.
+**After CI hung on `1ec33945` (F14), on the quit fix:**
+- fmt and clippy: 0.
+- `cargo test --workspace`: **3,209 passed, 0 failed**.
+- Every Renode tier-2 binary: 164/164 (`with_tools`, `twin_tier2`, `campaign_tier2`, `models_tier2`, `attribute_seeded`).
+- The five tests CI named pass in 3–5 s each. At `1ec33945` the two load tests hung and were killed by my 300 s `timeout`.
+- One mutant (the `quit` line not written) is killed by both stdin tests.
+- The new guard test has a weight row (3.69 s alone × 2.8).
+
+- **Tier 2** before F14, `--features with-tools`: seven tests on Furnace, 7/7 pass. They are the foreign flash tests, our own firmware under `--foreign`, a generated reference boot and the two droops through the bridge. CI runs the rest.
 - **`ci/foreign-judge.sh`** on the branch, with main's CI-built ELFs (`ardupilot-image` run 45663731874): exit 0. Its band case grew 20,344 KiB.
 
 - **Weights:** eight new rows in `ci/test-weights.tsv`, each test alone on Furnace times 2.8 (the AET-WO-1310 rule; `spike/4400j/out/build/weights.txt`).

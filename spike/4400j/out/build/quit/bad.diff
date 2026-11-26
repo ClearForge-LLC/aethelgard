@@ -1,0 +1,6 @@
+8c8,10
+< (machine-0) [[INFO] machine-0: Disposed.
+---
+> (machine-0) quit
+> Renode is quitting
+> [[INFO] machine-0: Disposed.

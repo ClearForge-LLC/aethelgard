@@ -72,7 +72,7 @@
 # AET-WO-1607 (P3, AET-WO-1914): cli_backlog_tier1's tests are Furnace estimates, not runs: the worst of three, each alone (`--exact`, one thread, libtest `finished in`, debug host build), times 2.8 (AET-WO-1310's factor). Most of the three large ones is emitting the same three boards in each test (FEEDBACK F-L). Replace them at the next refit.
 # AET-WO-1916 D2: cli_backlog_tier1 and verify_2k2_tier2 are colocated blocks now (ci/colocate.tsv); their test rows are removed.
 # AET-WO-1916 D6 (ruled 2026-11-23 06:35Z): the stale Furnace-estimate rows above re-weighed from CI's own timings, run 45126254602 (head 9c7c6cb8, its throwaway alone pass, reverted; spike/1916/alone.tsv): each test alone on two runners (REFIT RULE 1 and 2), the worse sample: board_tier2's d1_s_pin_device_generates_builds_and_proves 148.30 (127.08) and build_names_the_rustc_cargo_ran 0.37 (0.36; a lock-serialised binary, so it keeps a row), fab_tier1's a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name 2.71 (2.13), main.rs's verify::tests::the_exit_code_is_the_verdicts_whatever_the_fab_mode 1.40 (1.08), bounds.rs's the_writer_refuses_an_event_that_would_take_the_trace_past_256_mib 7.95 (7.93). with_tools' a_board_not_drawn_runs_its_gates_and_is_never_verified (CPU-heavy, REFIT RULE 5) at its worst in-shard seconds (P3) over runs 45112159401, 45114924858, 45117816997, 45118544871, 45122394199 and 45126254602: 244.010 (173.7-244.0; alone 198.14 and 215.83).
-# AET-WO-4400j: its eight new tests of 0.5 s or more, each alone in the pinned image on Furnace (libtest's `finished in`) times 2.8, the AET-WO-1310 rule, until the refit rule measures them.
+# AET-WO-4400j: its eight new tests of 0.5 s or more, each alone in the pinned image on Furnace (libtest's `finished in`) times 2.8, the AET-WO-1310 rule, until the refit rule measures them. And, after CI run 45709090931 hung (the 23:07Z note), a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard: 3.69 s alone (three runs, 3.65-3.69), 10.332.
 tests/adversarial_1300.rs	withstood_emission_ignores_env_locale_time_cwd_and_spec_layout	4.615
 tests/adversarial_1300.rs	withstood_every_admitted_identifier_character_round_trips_through_sch_and_bom	2.343
 tests/adversarial_1301.rs	attack_a_no_connect_pad_moved_onto_another_net_is_refused	2.051
@@ -388,7 +388,7 @@ tests/support_tier1.rs	the_reference_passes_the_support_gate	2.338
 tests/tools_tier1.rs	a_daemon_in_its_own_session_does_not_outlive_the_call	1.435
 tests/tools_tier1.rs	a_stub_written_while_other_threads_fork_always_execs	1.767
 tests/tools_tier1.rs	crate_over_the_file_cap_is_input_too_large	1.647
-tests/tools_tier1.rs	renodes_stdin_is_held_open_and_never_ends	1.57
+tests/tools_tier1.rs	renodes_stdin_says_quit_once_and_never_ends	1.57
 tests/twin_tier2.rs	a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word	13.490
 tests/twin_tier2.rs	a_boot_too_short_to_reach_the_fixed_point_fails	5.430
 tests/twin_tier2.rs	a_core_that_leaves_the_firmware_after_the_boot_word_fails	5.810
@@ -587,6 +587,7 @@ tests/board.rs	the_unmodelled_read_moves_no_modelled_step	2.926
 tests/board_names.rs	no_board_name_in_engine_code	0.516
 tests/boot_tier1.rs	a_boot_between_one_and_one_and_a_half_gib_is_not_reaped	4.415
 tests/boot_tier1.rs	a_boot_that_never_returns_is_refused_at_the_hang_guard	4.143
+tests/boot_tier1.rs	a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard	10.332
 tests/boot_tier1.rs	a_bridge_between_one_and_one_and_a_half_gib_is_reaped_at_its_memory_bound	2.938
 tests/boot_tier1.rs	a_capture_that_cannot_be_read_whole_is_named_and_not_archived	3.126
 tests/boot_tier1.rs	a_foreign_boot_judges_the_serial_options_and_reports_the_pulls	2.927

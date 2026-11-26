@@ -1146,6 +1146,25 @@ fn a_boot_that_never_returns_is_refused_at_the_hang_guard() {
     assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
 }
 
+/// `AET-WO-4400j`, the 23:07Z note: a Renode waiting at its monitor for a
+/// line it never gets, as every Renode whose commands stopped at an error did
+/// on the held stdin before it carried `quit` (CI run 45709090931), is killed
+/// at the hang guard and refused as a `ToolError`. The stub reads its stdin
+/// to an end the held pipe never reaches.
+#[test]
+fn a_renode_waiting_on_its_stdin_is_refused_at_the_hang_guard() {
+    let (code, v, took) = guarded("", "/bin/cat > /dev/null", "2000");
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    let message = v["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("within the 2 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(v.get("findings").is_none(), "{v}");
+    assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
+}
+
 /// The test's hang guard is on the verdict of a boot that ends, and absent
 /// without it, so no boot run under one passes for one run under the
 /// constant; `campaign` and `verify` take no such flag (`AET-WO-1918` (2)).
@@ -1225,11 +1244,12 @@ fn pre_pass_on(
     (out.status.code(), report(&out))
 }
 
-/// [`PASSING_BRIDGE`], answering only if its stdin is still waiting after
-/// 0.5 s (`timeout`'s 124): the bridge's own Renode inherits the bridge's
-/// stdin, so the bridge gets the held pipe Renode does (`AET-WO-4400j` D1,
-/// `run::HELD_STDIN`).
+/// [`PASSING_BRIDGE`], answering only if its stdin's first line is `quit` and
+/// a read after it is still waiting at 0.5 s (`timeout`'s 124): the bridge's
+/// own Renode inherits the bridge's stdin, so the bridge gets the held pipe
+/// Renode does (`AET-WO-4400j` D1, `run::HELD_STDIN`, `run::HELD_STDIN_LINE`).
 const BRIDGE_ON_A_HELD_STDIN: &str = r#"#!/bin/sh
+[ "$(/usr/bin/timeout 2 /usr/bin/head -n 1)" = quit ] || exit 88
 /usr/bin/timeout 0.5 /bin/cat > /dev/null; [ $? = 124 ] || exit 89
 printf '%s\n' '{"method":"interpolated","net":"I2C_SCL","ngspice":"44.2","rise_30_70_ns":186.4}' '{"method":"interpolated","net":"I2C_SDA","ngspice":"44.2","rise_30_70_ns":186.4}'
 "#;

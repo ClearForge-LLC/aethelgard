@@ -1,0 +1,165 @@
+test a_device_named_for_a_renode_instance_or_keyword_breaks_the_load ... ok
+test a_foreign_firmware_that_erases_outside_its_own_flash_is_no_finding ... ok
+test a_foreign_firmware_that_erases_its_own_sector_fails_though_its_hash_holds ... ok
+test a_foreign_firmware_that_stores_into_its_own_flash_fails_flash_overwritten ... ok
+test a_locked_access_late_in_a_flood_reaches_the_judge_whole ... ok
+test a_firmware_that_rewrites_its_loop_in_flash_is_not_parked ... ok
+test a_firmware_that_writes_the_controller_registers_by_hand_fails_unwitnessed ... ok
+test a_core_that_leaves_the_firmware_after_the_boot_word_fails ... ok
+test a_firmware_with_no_vector_table_at_the_boot_address_fails ... ok
+test a_read_no_model_answers_fails_as_a_timeout_at_txis ... ok
+test a_firmware_parked_in_its_fault_handler_fails_naming_vectactive ... ok
+test a_forged_record_without_a_transaction_fails_unwitnessed ... ok
+test a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word has been running for over 60 seconds
+test a_boot_too_short_to_reach_the_fixed_point_fails has been running for over 60 seconds
+test a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software has been running for over 60 seconds
+test a_firmware_that_skips_the_read_or_its_record_cannot_pass has been running for over 60 seconds
+test a_forged_spi_record_fails_unwitnessed has been running for over 60 seconds
+test a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed has been running for over 60 seconds
+test a_pattern_on_the_wrong_port_fails has been running for over 60 seconds
+test a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record has been running for over 60 seconds
+test a_pattern_on_the_wrong_port_fails ... ok
+test a_seeded_barometer_fault_is_named_by_its_step has been running for over 60 seconds
+test a_seeded_imu_fault_is_named_by_its_step has been running for over 60 seconds
+test a_seeded_barometer_fault_is_named_by_its_step ... ok
+test a_step_sent_to_another_devices_address_that_answers_is_the_softwares has been running for over 60 seconds
+test a_platform_without_the_bme280_leaves_a_txis_timeout_in_the_record ... ok
+test a_tdr_store_with_ue_clear_sends_no_pattern has been running for over 60 seconds
+test a_seeded_imu_fault_is_named_by_its_step ... ok
+test a_value_one_bit_off_fails_as_an_identity_mismatch has been running for over 60 seconds
+test a_step_sent_to_another_devices_address_that_answers_is_the_softwares ... ok
+test a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge has been running for over 60 seconds
+test adv2_1_a_gpio_reset_through_the_rcc_fails ... ok
+test a_forged_spi_record_fails_unwitnessed ... ok
+test a_firmware_that_skips_the_read_or_its_record_cannot_pass ... ok
+test adv2_2_an_open_drain_pulled_down_tx_fails ... ok
+test adv2_3_a_software_reset_at_start_fails ... ok
+test adv2_4_an_unaligned_store_into_afrh_fails ... ok
+test adv2_5_a_locked_tx_pin_fails ... ok
+test adv2_6_an_open_drain_tx_read_modify_written_fails ... ok
+test adv3_1_an_apb2_prescaler_after_the_bring_up_fails ... ok
+test a_forgery_through_every_register_or_a_wrong_address_fails_unwitnessed ... ok
+test a_boot_too_short_to_reach_the_fixed_point_fails ... ok
+test a_fault_on_a_bus_with_two_devices_is_not_masked_and_a_wrong_address_still_is_software ... ok
+test adv3_2_sbus_s_cr2_read_back_and_xored_fails ... ok
+test adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails has been running for over 60 seconds
+test adv3_4_a_tx_pin_unrouted_between_tdr_writes_fails ... ok
+test a_tdr_store_with_ue_clear_sends_no_pattern ... ok
+test adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails has been running for over 60 seconds
+test a_value_one_bit_off_fails_as_an_identity_mismatch ... ok
+test adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails has been running for over 60 seconds
+test a_witness_line_sent_through_every_firmware_channel_never_reaches_the_judge ... ok
+test adv_1_a_tx_pin_routed_only_after_the_pattern_fails has been running for over 60 seconds
+test adv3_5_an_rx_pin_unrouted_after_the_first_byte_fails ... ok
+test adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails has been running for over 60 seconds
+test adv4_2_an_echo_that_hardly_waits_after_the_first_byte_fails ... ok
+test adv_2_a_presc_write_in_the_bring_up_fails has been running for over 60 seconds
+test adv_1_a_tx_pin_routed_only_after_the_pattern_fails ... ok
+test adv_2b_a_presc_write_from_main_after_the_bring_up_fails has been running for over 60 seconds
+test adv_1b_a_tx_pin_unrouted_after_the_first_byte_fails ... ok
+test adv_3_sbus_s_m0_cleared_before_ue_fails has been running for over 60 seconds
+test adv_2_a_presc_write_in_the_bring_up_fails ... ok
+test bor_recovery::the_bmp581_extension_recovers_after_its_settle ... ok
+test adv_4_sbus_s_inversion_written_after_ue_fails has been running for over 60 seconds
+test bor_recovery::the_logger_recovers_with_its_first_devices_later_steps_witnessed ... ok
+test adv_2b_a_presc_write_from_main_after_the_bring_up_fails ... ok
+test adv_5_a_pattern_on_a_usart_no_port_names_is_forged has been running for over 60 seconds
+test adv_3_sbus_s_m0_cleared_before_ue_fails ... ok
+test bor_recovery::the_sentinel_02_shape_recovers_after_its_imus_settle ... ok
+test adv_4_sbus_s_inversion_written_after_ue_fails ... ok
+test adversarial_1_a_timer_at_another_rate_with_the_claim_kept_fails has been running for over 60 seconds
+test battery_sag::the_power_fixture_s_campaign_meets_every_expectation_replays_and_repeats ... ok
+test adv_5_a_pattern_on_a_usart_no_port_names_is_forged ... ok
+test adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail has been running for over 60 seconds
+test an_aborted_machine_returns_inside_the_bound_as_cpu_aborted has been running for over 60 seconds
+test a2_3_a_9600_console_s_wire_time_is_judged_from_its_boot_word ... ok
+test an_echo_the_firmware_never_received_is_forged has been running for over 60 seconds
+test adversarial_1_a_timer_at_another_rate_with_the_claim_kept_fails ... ok
+test an_interrupt_armed_after_the_boot_word_fails_naming_it has been running for over 60 seconds
+test an_open_rx_line_is_detected_by_name_and_attributed_e3 has been running for over 60 seconds
+test battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats has been running for over 60 seconds
+test each_hse_fixture_boots_to_pass_under_the_clock_rule has been running for over 60 seconds
+test every_bit_the_reference_writes_is_covered_by_a_ledger_row has been running for over 60 seconds
+test an_aborted_machine_returns_inside_the_bound_as_cpu_aborted ... ok
+test f2_a_late_dshot_anchor_fails_by_name has been running for over 60 seconds
+test adv3_1b_a_usart_kernel_clock_selection_after_the_bring_up_fails ... ok
+test h1a_a_pin_bit_banged_after_the_window_fails_by_name has been running for over 60 seconds
+test h1b_a_16_bit_restart_after_the_window_fails_by_name has been running for over 60 seconds
+test h1c_a_dma_restart_after_the_window_fails_by_name has been running for over 60 seconds
+test an_echo_the_firmware_never_received_is_forged ... ok
+test kani_proves_every_part_of_both_motor_fixtures has been running for over 60 seconds
+test kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check has been running for over 60 seconds
+test l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo has been running for over 60 seconds
+test l1_bytes_written_before_the_frame_never_count_as_its_echo has been running for over 60 seconds
+test m1_a_core_that_slept_and_wrote_its_boot_word_is_cpu_halted has been running for over 60 seconds
+test m1_a_core_that_slept_without_its_boot_word_is_cpu_halted has been running for over 60 seconds
+test m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped has been running for over 60 seconds
+test f2_a_late_dshot_anchor_fails_by_name ... ok
+test h1a_a_pin_bit_banged_after_the_window_fails_by_name ... ok
+test h1b_a_16_bit_restart_after_the_window_fails_by_name ... ok
+test renode_s_files_are_the_pinned_ones_and_declare_the_stock_table ... ok
+test h1c_a_dma_restart_after_the_window_fails_by_name ... ok
+test m2_a_dma_start_of_cen_fails_closed_by_name has been running for over 60 seconds
+test motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af has been running for over 60 seconds
+test on_a_bus_with_two_devices_each_read_is_witnessed has been running for over 60 seconds
+test p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes has been running for over 60 seconds
+test renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone has been running for over 60 seconds
+test the_console_s_rx_on_the_wrong_af_keeps_the_pattern_and_loses_the_echo has been running for over 60 seconds
+test the_console_sends_its_pattern_and_echoes_its_frame has been running for over 60 seconds
+test battery_sag::sentinel_03_s_campaign_meets_every_expectation_replays_and_repeats ... ok
+test the_dshot600_fixture_s_campaign_passes_inside_its_window has been running for over 60 seconds
+test l1_bytes_written_before_the_frame_never_count_as_its_echo ... ok
+test adversarial_1_store_made_and_ug_plus_bsrr_motor_edges_fail ... ok
+test m2_a_dma_start_of_cen_fails_closed_by_name ... ok
+test motor_output_dead_leaves_its_pin_silent_and_reads_its_wrong_af ... ok
+test an_interrupt_armed_after_the_boot_word_fails_naming_it ... ok
+test each_hse_fixture_boots_to_pass_under_the_clock_rule ... ok
+test the_console_s_rx_on_the_wrong_af_keeps_the_pattern_and_loses_the_echo ... ok
+test the_console_sends_its_pattern_and_echoes_its_frame ... ok
+test l1_a_pattern_sent_after_the_boot_word_never_counts_as_the_echo ... ok
+test the_pinned_image_s_renode_is_the_build_the_rettobase_witness_measured ... ok
+test the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot has been running for over 60 seconds
+test the_pinned_renode_reads_rettobase_0_in_a_handler_nested_over_an_external_interrupt ... ok
+test the_emitted_platform_loads_and_lists_every_solved_peripheral has been running for over 60 seconds
+test the_fixture_s_campaign_archives_each_configuration_and_replays has been running for over 60 seconds
+test the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused has been running for over 60 seconds
+test the_four_port_fixture_s_campaign_passes_and_replays has been running for over 60 seconds
+test the_four_port_fixture_witnesses_every_port_and_sbus_s_tags has been running for over 60 seconds
+test the_imu_and_barometer_fixture_runs_every_script_step_witnessed has been running for over 60 seconds
+test the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s has been running for over 60 seconds
+test the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back has been running for over 60 seconds
+test kani_proves_every_part_of_both_motor_fixtures ... ok
+test m1_a_core_that_slept_without_its_boot_word_is_cpu_halted ... ok
+test every_bit_the_reference_writes_is_covered_by_a_ledger_row ... ok
+test an_open_rx_line_is_detected_by_name_and_attributed_e3 ... ok
+test the_four_port_fixture_witnesses_every_port_and_sbus_s_tags ... ok
+test renode_s_configuration_differs_from_its_default_in_synchronous_logging_and_virtual_time_alone ... ok
+test the_imu_and_barometer_fixture_runs_every_script_step_witnessed ... ok
+test the_judge_s_own_reads_of_a_gated_peripheral_are_never_the_firmware_s ... ok
+test kani_proves_the_pwm_fixture_s_timer_start_and_its_clock_check ... ok
+test the_pwm_fixture_s_outputs_are_witnessed_off_the_grid_and_read_back ... ok
+test the_reference_firmware_boots_and_two_boots_agree has been running for over 60 seconds
+test the_dshot600_fixture_s_outputs_are_witnessed_in_their_window_of_a_100_ms_boot ... ok
+test the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer has been running for over 60 seconds
+test m1_a_core_that_slept_and_wrote_its_boot_word_is_cpu_halted ... ok
+test the_fixture_s_campaign_archives_each_configuration_and_replays ... ok
+test on_a_bus_with_two_devices_each_read_is_witnessed ... ok
+test the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed has been running for over 60 seconds
+test the_sentinel_02_shaped_board_is_witnessed_whole has been running for over 60 seconds
+test the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed ... ok
+test the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot has been running for over 60 seconds
+test the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions has been running for over 60 seconds
+test the_sentinel_02_shaped_board_is_witnessed_whole ... ok
+test without_the_cited_wait_each_data_read_answers_its_reset_value has been running for over 60 seconds
+test the_serial_dshot_9600_board_is_witnessed_in_its_100_ms_boot ... ok
+test without_the_cited_wait_each_data_read_answers_its_reset_value ... ok
+test m2_a_16_bit_or_byte_store_of_cen_anchors_and_is_stopped ... ok
+test the_reference_reads_u4_s_jedec_id_witnessed_behind_spi1_s_multiplexer ... ok
+test the_fixture_s_platform_lists_its_models_and_an_unpinned_one_is_refused ... ok
+test the_emitted_platform_loads_and_lists_every_solved_peripheral ... ok
+test the_four_port_fixture_s_campaign_passes_and_replays ... ok
+test the_dshot600_fixture_s_campaign_passes_inside_its_window ... ok
+test the_unmodelled_read_moves_each_modelled_status_write_by_at_most_32_instructions ... ok
+test the_reference_firmware_boots_and_two_boots_agree ... ok
+test p2_gate_clause_2_analog_half_47k_fails_and_2k2_passes ... ok
+test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 861.42s
