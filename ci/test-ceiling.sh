@@ -39,6 +39,12 @@ sleep 0.5
 alive=$!
 sleep 0.5
 "$t/cbmc" -c 'sleep 1; :' --planted
+# AET-WO-1919: a gate (an `aethelgard` subcommand) and a compile under the live driver are timed;
+# the CLI's internal reaper is no gate.
+cp /bin/bash "$t/aethelgard"; cp /bin/bash "$t/kani-compiler"
+"$t/kani-compiler" -c 'sleep 1; :' --planted
+"$t/aethelgard" -c 'sleep 1; :' prove --harness proofs::planted_gate
+"$t/aethelgard" -c 'sleep 1; :' --aethelgard-internal-reaper
 touch "$t/probe.stop"; wait "$probe"
 kill "$alive" 2>/dev/null; wait "$alive" 2>/dev/null
 grown=$(sed -n 's/^PROBE peak harness=proofs::planted_grows vmhwm_kib=\([0-9]*\) .*/\1/p' "$t/probe.log" | sort -n | tail -1)
@@ -48,6 +54,13 @@ grep -q '^PROBE peak harness=proofs::planted_alive/cbmc ' "$t/probe.log" && echo
   || { echo "FAIL no cbmc line under proofs::planted_alive"; cat "$t/probe.log"; fail=1; }
 grep -q '^PROBE peak harness=proofs::planted_alive ' "$t/probe.log" && echo "PASS a driver alive at the stop is written" \
   || { echo "FAIL the live driver was dropped at the stop"; cat "$t/probe.log"; fail=1; }
+grep -q '^PROBE compile seconds=[0-9.]* start=[0-9.]* harness=proofs::planted_alive/compile$' "$t/probe.log" \
+  && echo "PASS a kani-compiler is timed under the harness its kani-driver proves" \
+  || { echo "FAIL no compile line under proofs::planted_alive"; cat "$t/probe.log"; fail=1; }
+grep -q '^PROBE gate seconds=1\.[0-9] start=[0-9.]* argv=-c sleep 1; : prove --harness proofs::planted_gate$' "$t/probe.log" \
+  && echo "PASS a gate is timed with its argv" || { echo "FAIL no gate line for proofs::planted_gate"; cat "$t/probe.log"; fail=1; }
+grep -q 'aethelgard-internal' "$t/probe.log" && { echo "FAIL the internal reaper was timed as a gate"; cat "$t/probe.log"; fail=1; } \
+  || echo "PASS the CLI's internal reaper is not a gate"
 
 # The pins: each job that proves harnesses starts the probe before its test or verify, and
 # judges the ceiling after it on always(); a bench job requires a measured peak.

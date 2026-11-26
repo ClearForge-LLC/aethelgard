@@ -3,7 +3,7 @@
 # (tools-shard, bench-package, bench-package-s03; ci/test-ceiling.sh pins the three).
 #   bash ci/probe-step.sh start                  the runner's CPU, disk and memory, then ci/probe.py from the host: each
 #                                                Kani harness's kani-driver and cbmc peak, and each Renode boot's wall time
-#   bash ci/probe-step.sh judge [--require-peak] stop the probe, print the boots, and judge every peak against
+#   bash ci/probe-step.sh judge [--require-peak] stop the probe, print every Renode run, gate, compile and harness with its time, and judge every peak against
 #                                                ci/kani-ceiling (ci/ceiling.sh); a bench job requires a peak
 set -u
 cd "$(dirname "$0")/.." || exit 1
@@ -16,7 +16,11 @@ case ${1:-} in
   judge)
     touch "$stop"; sleep 1
     df -h /; free -g
-    grep '^PROBE boot' "$log" || true
+    # Every line but the peaks, which ceiling.sh prints: each Renode run, each gate and each
+    # compile, with its wall time (AET-WO-1919).
+    grep -E '^PROBE (boot|gate|compile) ' "$log" || true
+    # Each harness's wall time and peak, by name (AET-WO-1919).
+    grep '^PROBE peak ' "$log" || true
     cat "$err" 2>/dev/null || true
     bash ci/ceiling.sh "$log" ci/kani-ceiling ${2:+"$2"}
     ;;
