@@ -861,10 +861,12 @@ fn inputs_are_refused_before_renode_is_looked_for() {
 
 /// `AET-WO-4400g` §1.1–§1.2 (ruled on PR #229): each clock serves one run
 /// kind. `--foreign` on a specification with no `mcu.foreign_clock` is
-/// `ForeignClockUndeclared`, never a boot at the solved clock; a generated
-/// run on one that declares it is `ForeignClockOnGeneratedRun`. Both are
-/// refused before any input is read or a tool looked for (exit 3, no
-/// `renode` on `PATH`), so even a firmware that is not there gets the name.
+/// `ForeignClockUndeclared`, never a boot at the solved clock, refused before
+/// any input is read or a tool looked for (exit 3, no `renode` on `PATH`), so
+/// even a firmware that is not there gets the name. A generated run on one
+/// that declares it drops the declaration (`AET-WO-4412` D1 (a)): it takes
+/// the generated platform, at the solved clock, and refuses the foreign one
+/// as a platform not emitted for its topology.
 #[test]
 fn a_clock_never_crosses_its_run_kind() {
     let empty = Dir::new("empty");
@@ -900,29 +902,31 @@ fn a_clock_never_crosses_its_run_kind() {
         "{v}"
     );
     let v = args(&declaring, &declared_platform, "--for", "10ms");
-    assert_eq!(v["error"]["kind"], "ForeignClockOnGeneratedRun", "{v}");
+    assert_eq!(v["error"]["kind"], "PlatformNotEmitted", "{v}");
+    let generated = input.0.join("generated-platform.repl");
+    let v = args(&declaring, &generated, "--for", "10ms");
+    assert_ne!(v["error"]["kind"], "PlatformNotEmitted", "{v}");
+    assert!(
+        !v["error"]["kind"]
+            .as_str()
+            .unwrap()
+            .starts_with("ForeignClock"),
+        "{v}"
+    );
 }
 
 /// `AET-WO-4400g` §1.2, the check wired into the judge: the reference
-/// declared at 64 MHz, and the RCC registers reading back as ArduPilot left
-/// them (200 MHz timers, measured), fails by name on both buses, with both
-/// figures; at reset they hold (adversarial pass: dropping the check from
-/// the judge survived every tier-1 test).
+/// declared at ArduPilot's 200 MHz timers (`AET-WO-4412` D1 (a)), and the
+/// RCC registers reading back at reset (64 MHz), fails by name on both
+/// buses, with both figures; as ArduPilot leaves them they hold (adversarial
+/// pass: dropping the check from the judge survived every tier-1 test).
 #[test]
 fn a_foreign_clock_the_rcc_registers_contradict_fails_by_name() {
-    let ardupilot = [
-        "0x3F003025",
-        "0x0000801B",
-        "0x00000048",
-        "0x00000440",
-        "0x00408040",
-        "0x01090231",
-    ];
     let (code, v) = foreign(&foreign_transcript_rcc(
         &good_foreign_log(),
         "0x00000800",
         &flash_unchanged(),
-        &ardupilot,
+        &common::foreign::RCC_AT_RESET,
     ));
     assert_eq!(code, Some(1), "{v}");
     let kinds: Vec<&str> = v["findings"]
@@ -944,9 +948,9 @@ fn a_foreign_clock_the_rcc_registers_contradict_fails_by_name() {
             )
         })
         .collect();
-    assert_eq!(checked, [(64_000_000, 200_000_000); 2], "{v}");
+    assert_eq!(checked, [(200_000_000, 64_000_000); 2], "{v}");
     assert_eq!(
-        v["boot"]["clock"]["registers"][5]["value"], "0x01090231",
+        v["boot"]["clock"]["registers"][5]["value"], "0x01010280",
         "{v}"
     );
     let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
@@ -2745,7 +2749,7 @@ fn foreign_transcript(run_log: &str, icsr: &str) -> String {
 
 /// A foreign transcript with `flash`, the flash hash lines, as given.
 fn foreign_transcript_flash(run_log: &str, icsr: &str, flash: &str) -> String {
-    foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_AT_RESET)
+    foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_ARDUPILOT_HSI)
 }
 
 /// The reference board's CONSOLE (USART1) as unmodified ArduPilot brings it
@@ -3480,7 +3484,7 @@ fn foreign_transcript_reads(blocks: &[(&str, &[&str])]) -> String {
         s.push_str(&foreign_reads(
             icsr,
             registers,
-            &common::foreign::RCC_AT_RESET,
+            &common::foreign::RCC_ARDUPILOT_HSI,
         ));
     }
     s.push_str(&flash_unchanged());

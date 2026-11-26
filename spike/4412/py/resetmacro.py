@@ -7,7 +7,9 @@ silicon system reset keeps or loses (RM0433 Rev 9 §8.4.2, §8.4.4; backup domai
   - RCC_RSR (0x580244D0): SFTRSTF on silicon after SYSRESETREQ;
   - SRAM: a word of AXI SRAM (0x24000000) and DTCM (0x20000000): kept on silicon (content not reset).
 Each probe is a monitor `sysbus ReadDoubleWord`, printed after an `echo AET-RESET-<when>` marker.
-MODE=boot (default): the boot lines; MODE=probe: the probes only (does Renode's reset alone reload anything?).
+MODE=boot (default): the boot lines; MODE=probe: the probes only (does Renode's reset alone reload anything?);
+MODE=vtor: the boot lines without `sysbus LoadELF` (flash survives Renode's reset), then RSR=<hex> written to RCC_RSR
+(RM0433 Rev 9 Table 56 row 4, p. 333: SFTRSTF, PINRSTF, CPURSTF set by a system reset from the CPU), read back.
 Usage: resetmacro.py E_ORIG OUT.resc"""
 import os, sys
 src, out = sys.argv[1:3]
@@ -19,7 +21,11 @@ PROBE = [0x081C0000, 0x081C0004, 0x081E0000, 0x58004050, 0x58004054, 0x58004058,
          0x08000000, 0x08000004]
 def probe(when):
     return ['echo "AET-RESET-%s"' % when] + ["sysbus ReadDoubleWord 0x%08X" % x for x in PROBE]
-body = probe("AT-MACRO") + (boot if os.environ.get("MODE", "boot") == "boot" else []) + probe("AFTER-BOOT-LINES")
+mode = os.environ.get("MODE", "boot")
+lines = {"boot": boot, "probe": [], "vtor": [c for c in boot if not c.startswith("sysbus LoadELF")]}[mode]
+if mode == "vtor" and os.environ.get("RSR"):
+    lines = lines + ["sysbus WriteDoubleWord 0x580244D0 %s" % os.environ["RSR"]]
+body = probe("AT-MACRO") + lines + probe("AFTER-BOOT-LINES")
 with open(out, "w") as f:
     f.write('macro reset\n"""\n' + "\n".join(body) + '\n"""\n')
 print(out, len(boot), "boot lines")

@@ -23,12 +23,13 @@ noimu=$boards/sentinel-02-noimu/arducopter.elf
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 "$bin" generate --spec "$spec" --out "$work/gen" > "$work/generate.json"
-platform=$work/gen/board/sentinel-02-own.repl
+# AET-WO-4412 D1 (a): a declared foreign clock adds the foreign platform beside the generated one.
+platform=$work/gen/board/sentinel-02-own.foreign.repl
 
-# AET-WO-4400g: the board with its declaration removed, which a generated
-# run and an undeclared foreign run take; and with its timers declared at the
-# stock file's 250 MHz, which ArduPilot's RCC registers contradict. Each with
-# its own emitted platform, since the declaration builds the platform.
+# AET-WO-4400g: the board with its declaration removed, which an undeclared
+# foreign run takes, with its own emitted platform; and with its timers
+# declared at the stock file's 250 MHz, which since AET-WO-4412 D1 (a) is not
+# ArduPilot's tree and is refused at validate, so it emits nothing.
 derive() {
   python3 -I - "$spec" "$work/spec-$1.json" "$1" <<'PY'
 import json, sys
@@ -41,7 +42,9 @@ else:
         d["mcu"]["foreign_clock"][bus]["value"] = 250000000
 json.dump(d, open(dst, "w"), indent=2)
 PY
-  "$bin" generate --spec "$work/spec-$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
+  if [ "$1" = undeclared ]; then
+    "$bin" generate --spec "$work/spec-$1.json" --out "$work/gen-$1" > "$work/generate-$1.json"
+  fi
 }
 derive undeclared
 derive contradicted
@@ -126,27 +129,25 @@ and not witnessed.get(("U5", "data (reads[0])"))
 run_spec=$work/spec-undeclared.json run undeclared 3 'v["error"]["kind"] == "FirmwareOutsideMemory"' \
   --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --for 100ms
 
-# AET-WO-4400g: --foreign with no declared clock, and a generated run on a
-# specification that declares one, are each refused by name before a boot.
+# AET-WO-4400g: --foreign with no declared clock is refused by name before a
+# boot. AET-WO-4412 D1 (a): a generated run on a specification that declares
+# one drops it, takes the generated platform and meets the undeclared run's
+# refusal; the foreign platform is not the one it emits.
 run_spec=$work/spec-undeclared.json run clock-undeclared 3 'v["error"]["kind"] == "ForeignClockUndeclared"' \
   --platform "$work/gen-undeclared/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
-run clock-on-generated-run 3 'v["error"]["kind"] == "ForeignClockOnGeneratedRun"' \
+run clock-on-generated-run 3 'v["error"]["kind"] == "FirmwareOutsideMemory"' \
+  --platform "$work/gen/board/sentinel-02-own.repl" --firmware "$elf" --for 100ms
+run clock-on-generated-run-foreign-platform 3 'v["error"]["kind"] == "PlatformNotEmitted"' \
   --platform "$platform" --firmware "$elf" --for 100ms
 
-# Timers declared at 250 MHz: the twin runs them there, and ArduPilot's RCC
-# registers, read back, decode to 200 MHz on both buses, so the run fails by
-# name with both figures, and with nothing else: any register_mismatch fails
-# the case. AET-WO-4202 had added two (GPIOB.MODER and GPIOB.AFRH, its 5 s cut
-# landing before PB13 was configured, without U2's BMP280 probe). AET-WO-4410
-# (Q14, ruled 2026-11-24): with the SWD lines in sentinel-02's generated
-# hwdef, the run gives the two contradictions alone, as main 96517013 with U2
-# measured; every other case unchanged (measured in the tools image on the
-# branch's ELF; AET-WO-4410.FEEDBACK.md §7).
-run_spec=$work/spec-contradicted.json run clock-contradicted 1 '
-kinds == ["foreign_clock_contradicted", "foreign_clock_contradicted"]
-and [(c["declared_hz"], c["decoded_hz"]) for c in boot["clock"]["checked"]]
-    == [(250000000, 200000000), (250000000, 200000000)]
-' --platform "$work/gen-contradicted/board/sentinel-02-own.repl" --firmware "$elf" --foreign "$window"
+# Timers declared at 250 MHz: not ArduPilot's tree for no crystal (200 MHz,
+# aethelgard-ir data/ardupilot-h7-clock.tsv), so refused at validate by name
+# before a boot (AET-WO-4412 D1 (a)). The judge's read-back check, which this
+# case reached before (AET-WO-4400g §1.2), is held by boot_tier1's
+# a_foreign_clock_the_rcc_registers_contradict_fails_by_name.
+run_spec=$work/spec-contradicted.json run clock-not-ardupilots 3 '
+v["error"]["kind"] == "ForeignClockNotArduPilots"
+' --platform "$platform" --firmware "$elf" --foreign "$window"
 
 # SPI2's receive DMA line dropped from the platform, and U5's model removed:
 # neither is the platform the specification emits.
@@ -237,8 +238,8 @@ mutate four-swap 1_OPTIONS 0 8      # SWAP on GPS (USART2), OPTION_SWAP (UARTDri
 mutate four-rc-txinv 2_OPTIONS 0 2  # TXINV on CRSF (USART3), RC input (OPTION_TXINV)
 mutate four-inverted 1_OPTIONS 0 3  # RXINV|TXINV on GPS: what an inverted GPS port compiles
 
-four_platform=$(ls "$work"/gen-four-plain/board/*.repl)
-inv_platform=$(ls "$work"/gen-four-inverted/board/*.repl)
+four_platform=$(ls "$work"/gen-four-plain/board/*.foreign.repl)
+inv_platform=$(ls "$work"/gen-four-inverted/board/*.foreign.repl)
 
 # Unmodified ArduPilot passes: every declared port's last CR2 word with UE
 # clear judged, the RC port's RXINV unjudged, and the eight serial lines'

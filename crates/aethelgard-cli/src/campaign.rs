@@ -657,6 +657,8 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
     })?;
     let specification_sha256 = digest(&overridden);
     let (topology, _) = crate::solve_spec(&spec, &hex(specification_sha256))?;
+    // A campaign runs the generated firmware (`AET-WO-4412` D1 (a)).
+    let topology = aethelgard_cli::generate::generated(&topology);
     if let Some(r) = absent(&scenario.overrides)
         .into_iter()
         .find(|r| !topology.spi_devices.contains_key(r))

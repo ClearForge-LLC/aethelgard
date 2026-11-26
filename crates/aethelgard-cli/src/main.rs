@@ -1791,23 +1791,23 @@ fn ready(
 ) -> Result<(input::Input, Ready), run::Stop> {
     // Each clock serves one run kind and never crosses (`AET-WO-4400g`,
     // ruled on PR #229): the solved clock is the generated firmware's, a
-    // declared one a foreign firmware's. Refused first, before any input is
-    // read, as `INV-06` refuses a missing fact.
-    match (boot.foreign, &boot.topology.foreign_clock) {
-        (true, None) => {
-            return Err(run::Stop::refused(
-                "ForeignClockUndeclared",
-                "--foreign needs the firmware's clock declared in the specification (`mcu.foreign_clock`, AET-WO-4400g); without it the twin would build the timers and USARTs at the solved clock, which is the generated firmware's, not this firmware's (INV-06)".to_owned(),
-            ));
-        }
-        (false, Some(_)) => {
-            return Err(run::Stop::refused(
-                "ForeignClockOnGeneratedRun",
-                "the specification declares `mcu.foreign_clock`, a foreign firmware's clock; the generated firmware runs at the solved clock, so only `--foreign` takes this specification (AET-WO-4400g)".to_owned(),
-            ));
-        }
-        _ => {}
+    // declared one a foreign firmware's. A foreign run without one is
+    // refused first, before any input is read, as `INV-06` refuses a missing
+    // fact; a generated run drops a declared one (`AET-WO-4412` D1 (a)).
+    if boot.foreign && boot.topology.foreign_clock.is_none() {
+        return Err(run::Stop::refused(
+            "ForeignClockUndeclared",
+            "--foreign needs the firmware's clock declared in the specification (`mcu.foreign_clock`, AET-WO-4400g); without it the twin would build the timers and USARTs at the solved clock, which is the generated firmware's, not this firmware's (INV-06)".to_owned(),
+        ));
     }
+    let boot = if boot.foreign {
+        boot
+    } else {
+        Boot {
+            topology: aethelgard_cli::generate::generated(&boot.topology),
+            ..boot
+        }
+    };
     if let Err(err) = aethelgard_cli::generate::simulable(&boot.topology) {
         return Err(run::Stop {
             code: EXIT_INVALID_SPEC,
