@@ -305,6 +305,10 @@ impl Frame {
                 id: self.text_at(6, 16),
                 value: self.f32_at(0),
             },
+            // `param_index` i16, target system and component, then the id.
+            "PARAM_REQUEST_READ" => Decoded::ParamRead {
+                id: self.text_at(4, 16),
+            },
             "PARAM_VALUE" => Decoded::ParamValue {
                 id: self.text_at(8, 16),
                 value: self.f32_at(0),
@@ -339,6 +343,10 @@ pub enum Decoded {
     ParamSet {
         id: String,
         value: f32,
+    },
+    /// `PARAM_REQUEST_READ` by name (`AET-WO-4412` (3)).
+    ParamRead {
+        id: String,
     },
     ParamValue {
         id: String,

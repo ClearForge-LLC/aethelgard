@@ -19,5 +19,5 @@ who=(--userns=keep-id --user "$(id -u):$(id -g)"); [ "${ROOT:-0}" = 1 ] && who=(
 pin=""; [ -n "${CPUS:-}" ] && pin="taskset -c $CPUS"
 exec nice -n 10 ~/bin/capped-run --mem "${MEM:-8G}" --tasks 8192 -- --rm "${who[@]}" $( [ "${NET:-0}" = 1 ] || echo --network none ) \
   -v "$REPO:/repo" -v "$CACHE:/cache" -v "$SPIKE:/spike:ro" --tmpfs "/run/user/$(id -u):rw,mode=0700,U" \
-  -e CARGO_HOME=/cache/cargo-home -e CARGO_TARGET_DIR=/repo/target -e HOME=/cache/home -w /repo \
+  -e CARGO_HOME=/cache/cargo-home -e CARGO_TARGET_DIR=/repo/target -e HOME=/cache/home -e CARGO_BUILD_JOBS=6 -e RUST_TEST_THREADS=6 -w /repo \
   "$IMAGE" $pin bash -c "export PATH=/usr/local/cargo/bin:\$PATH; mkdir -p /cache/home; $2"

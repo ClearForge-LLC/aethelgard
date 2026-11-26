@@ -281,6 +281,19 @@ pub fn instances(
     absent: &BTreeSet<String>,
 ) -> Result<Vec<Instance>, TwinError> {
     let mut out = stock_instances(topology)?;
+    // `AET-WO-4412` D4: a foreign platform's DShot timers are the timer
+    // model under the stock name; none on a generated platform.
+    let retyped = crate::retype::retyped(topology);
+    for i in &mut out {
+        if let Some(n) = i
+            .peripheral
+            .strip_prefix("TIM")
+            .and_then(|n| n.parse::<u32>().ok())
+            && retyped.contains(&n)
+        {
+            i.model = short(crate::retype::TIMER_MODEL).to_owned();
+        }
+    }
     let (modelled, _) = split_devices(topology, &present(topology, faulted)?)?;
     out.extend(modelled.into_iter().map(|d| Instance {
         peripheral: d.reference,

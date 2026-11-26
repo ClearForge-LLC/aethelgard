@@ -1,0 +1,2 @@
+1cfc5e025677e143dc5356ab74c62fa9e61c2f061198a51bdc78cc16e14c1493  ~/.cache/aet-4412/boards/s03dp/out/sentinel-03/arducopter.elf
+1f1f6a3c57d6dc2f23fea6ff33d1bedcd96a5762cd8668fc559a3838391e3563  ~/.cache/aet-4412/inputs/armread12.json

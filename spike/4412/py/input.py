@@ -8,6 +8,8 @@ Each frame filled with zero bytes to a whole multiple of 64 (ArduPilot's RX boun
   reject   arm5 plus a PARAM_SET of a parameter ArduPilot does not have (ruling D9: PARAM_ERROR)
   dshot12  arm12 with MOT_PWM_TYPE 6 (DShot600) sent before FRAME_CLASS each time (4400h: read at motor init, which a
            FRAME_CLASS change re-runs)
+  armread12 arm12, plus PARAM_REQUEST_READ MOT_PWM_TYPE every 1 s from 6.75 s (with defaults.parm in, the armed run
+           with DShot from boot; its PARAM_VALUE says whether the build embedded the default)
   reboot12 arm12's parameters to 6.3 s, then MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN (246, param1 1) at 6.5 s, then
            PARAM_REQUEST_READ of FRAME_CLASS and COMPASS_USE every 250 ms from 7.0 s, and heartbeats, to 12 s; no arm"""
 import json, sys
@@ -42,15 +44,18 @@ if name == "reboot12":
     for t in range(ms(7000), ms(12000), ms(250)):
         for i, p in enumerate([b"FRAME_CLASS", b"COMPASS_USE"]):
             steps.append((t + i * ms(10), m.param_request_read_encode(1, 1, p, -1)))
-    for t in range(ms(6500), ms(12000), ms(1000)):
+    for t in range(ms(6750), ms(12000), ms(1000)):
         steps.append((t + ms(200), m.heartbeat_encode(mav.MAV_TYPE_GCS, mav.MAV_AUTOPILOT_INVALID, 0, 0, 0)))
     steps.sort(key=lambda x: x[0])
-elif name in ("arm12", "dshot12"):
+elif name in ("arm12", "dshot12", "armread12"):
     # The parameters again after `ArduPilot Ready` (5.2 s): sent only before it (arm12-s03-early-params), they
     # are not in force at the arm ("Motors: Check frame class and type"), as in the spike's early plan.
     steps = plan(ms(12000), ms(3150), ms(250), ms(6300))
 else:
     steps = plan(ms(5000), ms(3150), ms(250), ms(3000))
+if name == "armread12":
+    steps += [(t, m.param_request_read_encode(1, 1, b"MOT_PWM_TYPE", -1)) for t in range(ms(6750), ms(12000), ms(1000))]
+    steps.sort(key=lambda x: x[0])
 frames = [frame(t, msg) for t, msg in steps]
 if name == "force":
     frames.append(frame(ms(4900), m.command_long_encode(1, 1, 400, 0, 1, 21196, 0, 0, 0, 0, 0)))

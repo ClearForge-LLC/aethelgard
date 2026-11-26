@@ -227,6 +227,25 @@ fn a_dshot_timers_models_are_cancel_and_restate_on_the_foreign_platform_only() {
         ],
     );
     assert_eq!(code, Some(0), "{r}");
+    // The listing the run checks names the model on the foreign topology's
+    // TIM1, and stock on the generated one's.
+    let timer1 = |spec: &Value| {
+        let s: aethelgard_ir::Specification = serde_json::from_value(spec.clone()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&s.mcu.part).unwrap();
+        let t = aethelgard_ir::solve(&s, &table, &"0".repeat(64)).unwrap();
+        let none = std::collections::BTreeSet::new();
+        aethelgard_twin::platform::instances(&t, &none, &none)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.name == "timer1")
+            .unwrap()
+            .model
+    };
+    assert_eq!(timer1(&s03), "AethelgardSTM32Timer");
+    assert_eq!(
+        timer1(&read(&common::example("sentinel-03.json"))),
+        "STM32_Timer"
+    );
     let foreign = std::fs::read_to_string(out.join("board/sentinel-03.foreign.repl")).unwrap();
     let generated = std::fs::read_to_string(out.join("board/sentinel-03.repl")).unwrap();
     assert!(

@@ -522,6 +522,9 @@ pub const DSHOT_FRAME_MALFORMED: &str = "foreign_dshot_frame_malformed";
 /// stated in every verdict that has them.
 pub const DSHOT_READ_AT: &str = "each paced transfer's words, from the DMA model's line as it ended (models/renode/AethelgardSTM32DMA.cs): the compare values the timer's update requests burst into CCRx through DMAR. The timer is never stopped by the judge: it runs on to the window's end, where its PSC and ARR are read";
 
+/// How many malformed frames a position lists.
+pub const MALFORMED_LISTED: usize = 8;
+
 /// The DShot frames of a foreign run, per burst position.
 #[derive(Serialize, Clone)]
 pub struct DshotReport {
@@ -547,7 +550,13 @@ pub struct DshotStream {
 pub struct DshotPosition {
     pub position: usize,
     pub frames: u64,
+    /// Transfers whose words at this position are all 0: no pulse, the line
+    /// held low, so no frame left (the firmware's own buffer; not malformed).
+    pub empty: u64,
     pub malformed: u64,
+    /// The first [`MALFORMED_LISTED`] malformed frames: where each transfer
+    /// ended, and what was wrong.
+    pub malformed_at: Vec<String>,
     pub last_throttle: Option<u16>,
     pub telemetry_requests: u64,
 }
@@ -607,7 +616,9 @@ fn dshot_report(
                         .map(|position| DshotPosition {
                             position,
                             frames: 0,
+                            empty: 0,
                             malformed: 0,
+                            malformed_at: Vec::new(),
                             last_throttle: None,
                             telemetry_requests: 0,
                         })
@@ -634,8 +645,12 @@ fn dshot_report(
                     p.last_throttle = Some(throttle);
                     p.telemetry_requests += u64::from(telemetry);
                 }
+                Frame::Pulses { count: 0 } => p.empty += 1,
                 bad => {
                     p.malformed += 1;
+                    if p.malformed_at.len() < MALFORMED_LISTED {
+                        p.malformed_at.push(format!("{} ns: {bad:?}", t.end_ns));
+                    }
                     if p.malformed == 1 {
                         findings.push(Finding::plain(
                             DSHOT_FRAME_MALFORMED,
@@ -1511,7 +1526,7 @@ pub(crate) fn motor_protocol_unmet(
         out.push(Finding::info(
             MOTOR_PROTOCOL_UNMET,
             format!(
-                "ArduPilot runs PWM on a board declared DShot: {} on TIM{} are declared {} ({bit_rate} bit/s), but at the run's end TIM{} updates at {rate} Hz (PSC {psc:#x}, ARR {arr:#x} at {} Hz), not at a DShot bit rate. MOT_PWM_TYPE is an ArduPilot parameter, PWM by default, which the generated hwdef does not set (AET-WO-4412 D3)",
+                "ArduPilot runs PWM on a board declared DShot: {} on TIM{} are declared {} ({bit_rate} bit/s), but at the run's end TIM{} updates at {rate} Hz (PSC {psc:#x}, ARR {arr:#x} at {} Hz), not at a DShot bit rate. MOT_PWM_TYPE is an ArduPilot parameter, PWM by default: `generate hwdef` writes it into the board's defaults.parm (AET-WO-4412 (3)), so this ELF was built without that file, or did not embed it",
                 labels.join(", "),
                 o.timer,
                 o.protocol.name(),
@@ -3494,7 +3509,18 @@ pub struct WitnessReport {
     pub acks: Vec<AckReport>,
     /// Each parameter the input set, with the firmware's last answer.
     pub params: Vec<ParamReport>,
+    /// Each parameter the input only read (`PARAM_REQUEST_READ`), with the
+    /// firmware's last `PARAM_VALUE` for it, `null` where it sent none
+    /// (`AET-WO-4412` (3): `MOT_PWM_TYPE` from the board's defaults.parm).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub reads: Vec<ReadReport>,
     pub texts: Vec<TextReport>,
+}
+
+#[derive(Serialize)]
+pub struct ReadReport {
+    pub id: String,
+    pub value: Option<f32>,
 }
 
 #[derive(Serialize)]
@@ -3591,6 +3617,22 @@ pub fn witness_report(
             }),
         }
     }
+    let mut reads: Vec<ReadReport> = Vec::new();
+    for f in frames {
+        if let mavlink::Decoded::ParamRead { id } = f.decode()
+            && !reads.iter().any(|r| r.id == id)
+        {
+            reads.push(ReadReport {
+                value: w
+                    .values
+                    .iter()
+                    .rev()
+                    .find(|(i, _)| *i == id)
+                    .map(|(_, v)| *v),
+                id,
+            });
+        }
+    }
     let mut params: Vec<ParamReport> = Vec::new();
     for f in frames {
         if let mavlink::Decoded::ParamSet { id, value } = f.decode() {
@@ -3684,6 +3726,7 @@ pub fn witness_report(
                 }),
             acks,
             params,
+            reads,
             texts,
         },
         findings,
@@ -4428,6 +4471,30 @@ mod tests {
         );
     }
 
+    /// `AET-WO-4412` (3): a parameter the input only reads
+    /// (`PARAM_REQUEST_READ`, index -1, by name) is reported with the
+    /// firmware's last `PARAM_VALUE` for it, `null` where it sent none; it is
+    /// not among the parameters set.
+    #[test]
+    fn a_parameter_the_input_only_reads_is_reported_with_its_value() {
+        let table = mavlink::messages().unwrap();
+        let mut read = (-1i16).to_le_bytes().to_vec();
+        read.extend_from_slice(&[1, 1]);
+        read.extend_from_slice(&param_id("MOT_PWM_TYPE"));
+        let input = [mavlink::parse_exact(&mav(20, &read), &table).unwrap()];
+        let mut tx = param_value("MOT_PWM_TYPE", 0.0);
+        tx.extend(param_value("MOT_PWM_TYPE", 6.0));
+        let (w, f) = witness_report(&tx, &input).unwrap();
+        assert!(f.is_empty() && w.params.is_empty());
+        assert_eq!(w.reads.len(), 1);
+        assert_eq!(
+            (w.reads[0].id.as_str(), w.reads[0].value),
+            ("MOT_PWM_TYPE", Some(6.0))
+        );
+        let (w, _) = witness_report(&param_value("FRAME_CLASS", 1.0), &input).unwrap();
+        assert_eq!(w.reads[0].value, None);
+    }
+
     /// `AET-WO-4412` (4), ruled D5: the reset macro reloads nothing, writes
     /// the cold RCC and the vector table, and installs the `RCC_RSR` hooks:
     /// Table 56 row 4's flags, cleared by `RMVF`.
@@ -4505,7 +4572,13 @@ mod tests {
         let other =
             "[00:00:06.180697230] [NOISY] dma1: stream 0 req 41 NDTR 4 EN 1 end 2 reqs 4: 1 2 3 4"
                 .to_owned();
-        let lines = [good.as_str(), flipped.as_str(), other.as_str()];
+        let empty = line(&"0 ".repeat(76), 6_180_397_224);
+        let lines = [
+            empty.as_str(),
+            good.as_str(),
+            flipped.as_str(),
+            other.as_str(),
+        ];
         let (report, findings) = dshot_report(&lines, &image, &observed);
         let r = report.unwrap();
         assert_eq!(r.read, DSHOT_READ_AT);
@@ -4513,10 +4586,13 @@ mod tests {
         let s = &r.transfers[0];
         assert_eq!(
             (s.timer.as_str(), s.stream, s.request, s.count),
-            ("TIM1", 1, 15, 2)
+            ("TIM1", 1, 15, 3)
         );
         assert_eq!(s.positions.len(), 4);
-        assert_eq!((s.positions[0].frames, s.positions[0].malformed), (2, 1));
+        assert_eq!((s.positions[0].frames, s.positions[0].malformed), (3, 1));
+        assert_eq!(s.positions[0].empty, 1);
+        assert_eq!(s.positions[0].malformed_at.len(), 1);
+        assert!(s.positions[0].malformed_at[0].starts_with("6180997224 ns: BadChecksum"));
         assert_eq!(s.positions[1].last_throttle, Some(0));
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].kind, DSHOT_FRAME_MALFORMED);
