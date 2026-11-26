@@ -1165,6 +1165,98 @@ fn renodes_stdin_says_quit_once_and_never_ends() {
     assert_eq!(report["tool"]["exit_code"], 0, "{report}");
 }
 
+/// `AET-WO-1919` (2): a stand-in Renode that answers `--version` (or, with
+/// `version_hangs`, waits there) and then, for the load, reads its stdin to
+/// an end the held pipe never gives, as a Renode left at its prompt does (CI
+/// run 45709090931). It gives up by itself after 60 s, so a CLI with no guard
+/// fails the test's time bound instead of hanging it.
+fn renode_at_its_prompt(tb: &Dir, version_hangs: bool) {
+    tb.write("renode.out", CPU_LISTING.as_bytes());
+    let wait = "/usr/bin/timeout 60 /bin/cat > /dev/null";
+    let version = if version_hangs {
+        wait.to_owned()
+    } else {
+        Version::Good.shell(&format!(
+            "Renode v1.17.0\n  build: {}",
+            aethelgard_twin::platform::RENODE_BUILD
+        ))
+    };
+    let body = format!(
+        "[ \"$1\" = --config ] || exit 97\nif [ \"$3\" = --version ]; then {version}; exit 0; fi\n{wait}\n/bin/cat '{}'\n",
+        tb.join("renode.out").display()
+    );
+    tb.script("renode", &body);
+}
+
+/// `simulate --platform` with the test's hang guard: its exit code, its
+/// line and how long it took.
+fn guarded_load(tb: &Dir, wall_ms: &str) -> (Output, std::time::Duration) {
+    let p = input("p.repl", b"cpu: CPU.CortexM @ sysbus\n");
+    let start = std::time::Instant::now();
+    let out = run(
+        &[
+            o("simulate"),
+            o("--platform"),
+            p.path.as_os_str(),
+            o("--wall-bound-ms"),
+            o(wall_ms),
+        ],
+        &tb.0,
+        &[],
+    );
+    (out, start.elapsed())
+}
+
+/// `AET-WO-1919` (2): a load whose Renode never returns is killed at the
+/// hang guard and refused as a `ToolError` naming the load, never a finding
+/// and never a verdict; the guard, not the caller or the stand-in, ends it.
+#[test]
+fn a_load_waiting_at_its_prompt_is_refused_at_the_hang_guard() {
+    let tb = Dir::new("tb");
+    renode_at_its_prompt(&tb, false);
+    let (out, took) = guarded_load(&tb, "2000");
+    let report = refused(&out, 5, "ToolError");
+    let message = report["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("from its load within the 2 s wall-clock hang guard"),
+        "{report}"
+    );
+    assert!(report.get("findings").is_none(), "{report}");
+    assert!(report.get("verdict").is_none(), "{report}");
+    assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
+}
+
+/// `AET-WO-1919` (2): `simulate`'s `renode --version`, before every load and
+/// boot, is under the same guard.
+#[test]
+fn a_renode_version_that_never_returns_is_refused_at_the_hang_guard() {
+    let tb = Dir::new("tb");
+    renode_at_its_prompt(&tb, true);
+    let (out, took) = guarded_load(&tb, "2000");
+    let report = refused(&out, 5, "ToolError");
+    let message = report["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("from its `--version` within the 2 s wall-clock hang guard"),
+        "{report}"
+    );
+    assert!(took.as_secs() >= 2 && took.as_secs() < 30, "{took:?}");
+}
+
+/// `AET-WO-1919` (2): a load that ends under the test's guard says so on its
+/// verdict, as a boot's does, so no load run under one passes for one run
+/// under the constant; without the flag the field is absent.
+#[test]
+fn a_load_s_test_guard_is_on_its_verdict() {
+    let tb = Dir::new("tb");
+    renode_ok(&tb);
+    let (out, _) = guarded_load(&tb, "60000");
+    let report = judged(&out, "pass", "simulate");
+    assert_eq!(report["wall_bound_ms"], 60000, "{report}");
+    let p = input("p.repl", b"cpu: CPU.CortexM @ sysbus\n");
+    let report = judged(&simulate(&tb, p.path.as_os_str()), "pass", "simulate");
+    assert!(report.get("wall_bound_ms").is_none(), "{report}");
+}
+
 /// D1's other half: every tool but Renode and the bridge keeps `/dev/null`,
 /// whose end a read reaches at once. A held pipe would leave a tool that
 /// reads its stdin waiting until the wall bound; this stub exits 88 if its

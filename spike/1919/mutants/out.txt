@@ -1,0 +1,11 @@
+MUTANT load-unbounded: killed (exit 101, 65 s)
+MUTANT load-kill-unnamed: killed (exit 101, 6 s)
+MUTANT version-unbounded: killed (exit 101, 63 s)
+MUTANT version-kill-unnamed: killed (exit 101, 7 s)
+MUTANT guard-30s: killed (exit 101, 3 s)
+MUTANT guard-memory-cap: killed (exit 101, 3 s)
+MUTANT load-guard-unrecorded: killed (exit 101, 4 s)
+MUTANT flag-firmware-only: killed (exit 101, 3 s)
+MUTANT empty-reader: killed (exit 101, 4 s)
+MUTANT empty-replay: killed (exit 101, 3 s)
+mutants: 10 killed, 0 survived
