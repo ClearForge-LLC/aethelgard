@@ -1,0 +1,20 @@
+[23:32:27.6102] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) mach create;  machine LoadPlatformDescription @/opt/renode/platforms/cpus/stm32h743.repl;  emulation RunFor "2";  echo "DONE-RUNFOR";  quit
+[23:32:27.6786] [INFO] System bus created.
+[23:32:28.6272] [INFO] Pseudorandom Number Generator was created with seed: 1993935712
+[23:32:28.8499] [INFO] cpu: Setting initial values: PC = 0x0, SP = 0x0.
+[23:32:28.8582] [INFO] machine-0: Machine started.
+[23:32:28.8786] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFFC, value 0x40000000.
+[23:32:28.8788] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF8, value 0x0.
+[23:32:28.8788] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF4, value 0x0.
+[23:32:28.8788] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFF0, value 0x0.
+[23:32:28.8789] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFEC, value 0x0.
+[23:32:28.8789] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE8, value 0x0.
+[23:32:28.8789] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE4, value 0x0.
+[23:32:28.8789] [WARNING] sysbus: [cpu: 0x0] WriteDoubleWord to non existing peripheral at 0xFFFFFFE0, value 0x0.
+[23:32:30.8605] [INFO] machine-0: Machine paused.
+DONE-RUNFOR
+Renode is quitting
+[23:32:30.9395] [INFO] machine-0: Disposed.

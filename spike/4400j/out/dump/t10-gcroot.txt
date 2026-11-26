@@ -1,0 +1,171 @@
+Loading core dump: /cache/dumps/dump-t10.dmp ...
+Set load path for DAC/DBI to '/cache/dl/rt/shared/Microsoft.NETCore.App/8.0.12'
+Caching GC roots, this may take a while.
+Subsequent runs of this command will be faster.
+
+HandleTable:
+    00007898e2051200 (strong handle)
+          -> 7890e3240d90     System.Object[] 
+          -> 7890e3351508     System.Threading.ThreadLocal<Antmicro.Renode.Peripherals.Bus.SystemBus+PeripheralCollection+Block>+LinkedSlotVolatile[] 
+          -> 7890e3351920     System.Threading.ThreadLocal<Antmicro.Renode.Peripherals.Bus.SystemBus+PeripheralCollection+Block>+LinkedSlot 
+          -> 7890de354b28     Antmicro.Renode.Peripherals.Bus.PeripheralAccessMethods 
+          -> 7890e2d908e8     Antmicro.Renode.Peripherals.Memory.MappedMemory 
+          -> 7890de70eb08     Antmicro.Renode.Core.Machine 
+          -> 7890de7107a8     Antmicro.Renode.Utilities.Collections.MultiTree<Antmicro.Renode.Peripherals.IPeripheral, Antmicro.Renode.Core.Structure.IRegistrationPoint> 
+          -> 7890de710878     System.Collections.Generic.Dictionary<Antmicro.Renode.Peripherals.IPeripheral, Antmicro.Renode.Utilities.Collections.MultiTreeNode<Antmicro.Renode.Peripherals.IPeripheral, Antmicro.Renode.Core.Structure.IRegistrationPoint>> 
+          -> 7890de22f060     System.Collections.Generic.Dictionary<Antmicro.Renode.Peripherals.IPeripheral, Antmicro.Renode.Utilities.Collections.MultiTreeNode<Antmicro.Renode.Peripherals.IPeripheral, Antmicro.Renode.Core.Structure.IRegistrationPoint>>+Entry[] 
+          -> 7890de127358     Antmicro.Renode.Peripherals.Python.PythonPeripheral 
+          -> 7890de127390     Antmicro.Renode.Peripherals.Python.PeripheralPythonEngine 
+          -> 7890de129e88     Microsoft.Scripting.Hosting.CompiledCode 
+          -> 7890de129e48     IronPython.Compiler.RuntimeScriptCode 
+          -> 7890de128090     Microsoft.Scripting.SourceUnit 
+          -> 7890dd7bfaf0     IronPython.Runtime.PythonContext 
+          -> 7890dd87b188     IronPython.Runtime.Binding.PythonInvokeBinder 
+          -> 7890dd8b2dd8     System.Collections.Generic.Dictionary<System.Type, System.Object> 
+          -> 7890dd8b2ea0     System.Collections.Generic.Dictionary<System.Type, System.Object>+Entry[] 
+          -> 7890dd8b2e28     System.Runtime.CompilerServices.RuleCache<System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>> 
+          -> 7890e3878a00     System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>[] 
+          -> 7890dd8b5cd8     System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object> 
+          -> 7890dd8b5c78     IronPython.Runtime.Types.PythonType+FastTypeSite 
+          -> 7890dd8b5ca0     System.Runtime.CompilerServices.CallSite<System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>> 
+          -> 7890dd8b5ba8     IronPython.Runtime.Types.LateBoundInitBinder 
+          -> 7890dd8b57b8     IronPython.Runtime.Types.PythonType 
+          -> 7890dd8b5990     System.Collections.Generic.Dictionary<System.String, IronPython.Runtime.Types.PythonTypeSlot> 
+          -> 7890dd8b5a38     System.Collections.Generic.Dictionary<System.String, IronPython.Runtime.Types.PythonTypeSlot>+Entry[] 
+          -> 7890dd8b5288     IronPython.Runtime.PythonFunction 
+          -> 7890dd7e2708     IronPython.Runtime.CodeContext 
+          -> 7890dd7e26c8     IronPython.Runtime.ModuleContext 
+          -> 7890dd7e2670     IronPython.Runtime.PythonModule 
+          -> 7890dd7dbd38     Microsoft.Scripting.Runtime.Scope 
+          -> 7890dd7dbd78     Microsoft.Scripting.ScopeStorage 
+          -> 7890dd7dbd90     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase> 
+          -> 7890dd8961e0     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase>+Entry[] 
+          -> 7890dd8b71a0     Microsoft.Scripting.ScopeVariableIgnoreCase 
+          -> 7890dd8b71d0     Microsoft.Scripting.ScopeVariable 
+          -> 7890dd7b6b50     Antmicro.Renode.UserInterface.Monitor 
+          -> 7890dd8ce4d8     System.Action 
+          -> 7890dd8ce4b0     System.Object[] 
+          -> 7890dd8ce470     System.Action 
+          -> 7890dd8b9a08     AntShell.Shell 
+          -> 7890dd8b9c08     AntShell.Terminal.NavigableTerminalEmulator 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+
+    00007898e2051288 (strong handle)
+          -> 7890de1246a8     System.Object[] 
+          -> 7890de1246f8     System.Collections.Generic.List<IronPython.Runtime.Operations.FunctionStack> 
+          -> 7890de124718     IronPython.Runtime.Operations.FunctionStack[] 
+          -> 7890dd7e2708     IronPython.Runtime.CodeContext 
+          -> 7890dd7e26c8     IronPython.Runtime.ModuleContext 
+          -> 7890dd7e2670     IronPython.Runtime.PythonModule 
+          -> 7890dd7dbd38     Microsoft.Scripting.Runtime.Scope 
+          -> 7890dd7dbd78     Microsoft.Scripting.ScopeStorage 
+          -> 7890dd7dbd90     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase> 
+          -> 7890dd8961e0     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase>+Entry[] 
+          -> 7890dd8b71a0     Microsoft.Scripting.ScopeVariableIgnoreCase 
+          -> 7890dd8b71d0     Microsoft.Scripting.ScopeVariable 
+          -> 7890dd7b6b50     Antmicro.Renode.UserInterface.Monitor 
+          -> 7890dd8ce4d8     System.Action 
+          -> 7890dd8ce4b0     System.Object[] 
+          -> 7890dd8ce470     System.Action 
+          -> 7890dd8b9a08     AntShell.Shell 
+          -> 7890dd8b9c08     AntShell.Terminal.NavigableTerminalEmulator 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+
+    00007898e2051340 (strong handle)
+          -> 7890d4045780     System.Object[] 
+          -> 7890dd8b3c70     System.Runtime.CompilerServices.CallSite<System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>> 
+          -> 7890dd87b188     IronPython.Runtime.Binding.PythonInvokeBinder 
+          -> 7890dd8b2dd8     System.Collections.Generic.Dictionary<System.Type, System.Object> 
+          -> 7890dd8b2ea0     System.Collections.Generic.Dictionary<System.Type, System.Object>+Entry[] 
+          -> 7890dd8b2e28     System.Runtime.CompilerServices.RuleCache<System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>> 
+          -> 7890e3878a00     System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>[] 
+          -> 7890dd8b5cd8     System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object> 
+          -> 7890dd8b5c78     IronPython.Runtime.Types.PythonType+FastTypeSite 
+          -> 7890dd8b5ca0     System.Runtime.CompilerServices.CallSite<System.Func<System.Runtime.CompilerServices.CallSite, IronPython.Runtime.CodeContext, System.Object, System.Object>> 
+          -> 7890dd8b5ba8     IronPython.Runtime.Types.LateBoundInitBinder 
+          -> 7890dd8b57b8     IronPython.Runtime.Types.PythonType 
+          -> 7890dd8b5990     System.Collections.Generic.Dictionary<System.String, IronPython.Runtime.Types.PythonTypeSlot> 
+          -> 7890dd8b5a38     System.Collections.Generic.Dictionary<System.String, IronPython.Runtime.Types.PythonTypeSlot>+Entry[] 
+          -> 7890dd8b5288     IronPython.Runtime.PythonFunction 
+          -> 7890dd7e2708     IronPython.Runtime.CodeContext 
+          -> 7890dd7e26c8     IronPython.Runtime.ModuleContext 
+          -> 7890dd7e2670     IronPython.Runtime.PythonModule 
+          -> 7890dd7dbd38     Microsoft.Scripting.Runtime.Scope 
+          -> 7890dd7dbd78     Microsoft.Scripting.ScopeStorage 
+          -> 7890dd7dbd90     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase> 
+          -> 7890dd8961e0     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase>+Entry[] 
+          -> 7890dd8b71a0     Microsoft.Scripting.ScopeVariableIgnoreCase 
+          -> 7890dd8b71d0     Microsoft.Scripting.ScopeVariable 
+          -> 7890dd7b6b50     Antmicro.Renode.UserInterface.Monitor 
+          -> 7890dd8ce4d8     System.Action 
+          -> 7890dd8ce4b0     System.Object[] 
+          -> 7890dd8ce470     System.Action 
+          -> 7890dd8b9a08     AntShell.Shell 
+          -> 7890dd8b9c08     AntShell.Terminal.NavigableTerminalEmulator 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+
+    00007898e2051358 (strong handle)
+          -> 7890d4025968     System.Object[] 
+          -> 7890dd7e7ee0     Microsoft.Scripting.Utils.ThreadLocal<Microsoft.Scripting.Interpreter.InterpretedFrame> (static variable: Microsoft.Scripting.Interpreter.TypeEqualsInstruction.Instance)
+          -> 7890e3861f70     Microsoft.Scripting.Utils.ThreadLocal<Microsoft.Scripting.Interpreter.InterpretedFrame>+StorageInfo[] 
+          -> 7890de124790     Microsoft.Scripting.Utils.ThreadLocal<Microsoft.Scripting.Interpreter.InterpretedFrame>+StorageInfo 
+          -> 7890e3409d98     Microsoft.Scripting.Interpreter.InterpretedFrame 
+          -> 7890e3409df0     System.Object[] 
+          -> 7890e38e2540     IronPython.Runtime.CodeContext 
+          -> 7890dd7e26c8     IronPython.Runtime.ModuleContext 
+          -> 7890dd7e2670     IronPython.Runtime.PythonModule 
+          -> 7890dd7dbd38     Microsoft.Scripting.Runtime.Scope 
+          -> 7890dd7dbd78     Microsoft.Scripting.ScopeStorage 
+          -> 7890dd7dbd90     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase> 
+          -> 7890dd8961e0     System.Collections.Generic.Dictionary<System.String, Microsoft.Scripting.ScopeVariableIgnoreCase>+Entry[] 
+          -> 7890dd8b71a0     Microsoft.Scripting.ScopeVariableIgnoreCase 
+          -> 7890dd8b71d0     Microsoft.Scripting.ScopeVariable 
+          -> 7890dd7b6b50     Antmicro.Renode.UserInterface.Monitor 
+          -> 7890dd8ce4d8     System.Action 
+          -> 7890dd8ce4b0     System.Object[] 
+          -> 7890dd8ce470     System.Action 
+          -> 7890dd8b9a08     AntShell.Shell 
+          -> 7890dd8b9c08     AntShell.Terminal.NavigableTerminalEmulator 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+
+    00007898e20513a0 (strong handle)
+          -> 7890d4005ff8     System.Object[] 
+          -> 7890d8c1a818     Antmicro.Renode.Core.PreservableManager (static variable: Antmicro.Renode.Time.ITimeDomain.<ExternalWorld>k__BackingField)
+          -> 7890d8c1a830     System.Collections.Generic.Dictionary<Antmicro.Renode.Core.IPreservable, System.Nullable<System.Int32>> 
+          -> 7890dd7b6000     System.Collections.Generic.Dictionary<Antmicro.Renode.Core.IPreservable, System.Nullable<System.Int32>>+Entry[] 
+          -> 7890dd7b6b50     Antmicro.Renode.UserInterface.Monitor 
+          -> 7890dd8ce4d8     System.Action 
+          -> 7890dd8ce4b0     System.Object[] 
+          -> 7890dd8ce470     System.Action 
+          -> 7890dd8b9a08     AntShell.Shell 
+          -> 7890dd8b9c08     AntShell.Terminal.NavigableTerminalEmulator 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+
+    00007898e20513e8 (strong handle)
+          -> 7890d4000028     System.Object[] 
+          -> 7890d8c09768     System.Collections.Generic.Dictionary<System.Int32, System.Collections.Generic.HashSet<System.Runtime.InteropServices.PosixSignalRegistration+Token>> (static variable: System.Runtime.InteropServices.OSPlatform.<Windows>k__BackingField)
+          -> 7890dd8b90f8     System.Collections.Generic.Dictionary<System.Int32, System.Collections.Generic.HashSet<System.Runtime.InteropServices.PosixSignalRegistration+Token>>+Entry[] 
+          -> 7890dd8b90b8     System.Collections.Generic.HashSet<System.Runtime.InteropServices.PosixSignalRegistration+Token> 
+          -> 7890dd8b9218     System.Collections.Generic.HashSet<System.Runtime.InteropServices.PosixSignalRegistration+Token>+Entry[] 
+          -> 7890dd8b9080     System.Runtime.InteropServices.PosixSignalRegistration+Token 
+          -> 7890dd8b9040     System.Action<System.Runtime.InteropServices.PosixSignalContext> 
+          -> 7890dd8b8fb0     Antmicro.Renode.UI.ConsoleIOSource 
+          -> 7890dd8b98a8     System.Action<System.Int32> 
+          -> 7890dd8b9568     System.Collections.Concurrent.BlockingCollection<System.Int32> 
+          -> 7890dd8b95b0     System.Collections.Concurrent.ConcurrentQueue<System.Int32> 
+

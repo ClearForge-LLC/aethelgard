@@ -1,0 +1,1 @@
+sysbus ReadDoubleWord 0xe000ed04; sysbus ReadDoubleWord 0x58020400; sysbus ReadDoubleWord 0x580244e8

@@ -1,0 +1,19 @@
+801 steps from 4000 to 12000 ms; 63 reads each; incomplete steps: []
+USART2.CR2: fails at 222 of 801 steps (27.7 %), values ['0x00002000']
+   intervals (ms, inclusive): [(4000, 4200), (8220, 10220)]  (2 intervals; starts' spacings [4220])
+RCC.APB1LENR: fails at 61 of 801 steps (7.6 %), values ['0x00660008']
+   intervals (ms, inclusive): [(4000, 4590), (5140, 5140)]  (2 intervals; starts' spacings [1140])
+GPIOB.MODER: fails at 4 of 801 steps (0.5 %), values ['0xA5A0A000']
+   intervals (ms, inclusive): [(5140, 5150), (5190, 5190), (10120, 10120)]  (3 intervals; starts' spacings [50, 4930])
+GPIOB.AFRH: fails at 4 of 801 steps (0.5 %), values ['0x55004400']
+   intervals (ms, inclusive): [(5140, 5150), (5190, 5190), (10120, 10120)]  (3 intervals; starts' spacings [50, 4930])
+GPIOA.MODER: fails at 10 of 801 steps (1.2 %), values ['0x002AA4A1']
+   intervals (ms, inclusive): [(5300, 5300), (5500, 5500), (6390, 6390), (6890, 6890), (7090, 7090), (9790, 9790), (9990, 9990), (10290, 10290), (11090, 11090), (11790, 11790)]  (10 intervals; starts' spacings [200, 300, 500, 700, 800, 890])
+GPIOA.AFRL: fails at 10 of 801 steps (1.2 %), values ['0x55007700']
+   intervals (ms, inclusive): [(5300, 5300), (5500, 5500), (6390, 6390), (6890, 6890), (7090, 7090), (9790, 9790), (9990, 9990), (10290, 10290), (11090, 11090), (11790, 11790)]  (10 intervals; starts' spacings [200, 300, 500, 700, 800, 890])
+RCC.APB2ENR: fails at 3 of 801 steps (0.4 %), values ['0x00000011']
+   intervals (ms, inclusive): [(5500, 5500), (9990, 9990), (11090, 11090)]  (3 intervals; starts' spacings [1100, 4490])
+at 5000 ms: clean
+at 8000 ms: clean
+at 10000 ms: fails: USART2.CR2
+at 12000 ms: clean

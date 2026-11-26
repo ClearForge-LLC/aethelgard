@@ -4588,6 +4588,8 @@ mod tests {
             dropped_log_lines: dropped,
             peak_rss_kib: None,
             summaries: Vec::new(),
+            noted: Vec::new(),
+            summary_capped: false,
         }
     }
 
@@ -6257,7 +6259,8 @@ mod tests {
         }
         for pupdr in ["0x5802000c", "0x5802040c"] {
             let read = format!("sysbus ReadDoubleWord {pupdr}");
-            assert_eq!(c.matches(&read).count(), 1, "{pupdr}");
+            // Once at each end read (`AET-WO-4400j` D4).
+            assert_eq!(c.matches(&read).count(), foreign::END_READS, "{pupdr}");
             assert!(c.find(&read).unwrap() > begin, "{pupdr}");
         }
         let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();
@@ -7367,7 +7370,7 @@ mod tests {
         assert_eq!(runs(1_018_380), 1_018_380, "{}", run_for(1_018_380));
         // Every nanosecond of the first 2 ms, then a stride to the longest
         // `RunFor` any boot renders (the foreign window's bound).
-        let longest = foreign::FOREIGN_MAX_VIRTUAL_NS;
+        let longest = foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS;
         assert!(longest >= aethelgard_twin::boot::MAX_VIRTUAL_NS);
         for ns in (0..=2_000_000u64)
             .chain((2_000_000..=longest).step_by(9_973))

@@ -93,6 +93,22 @@ and any(c.startswith("usart_clock_declared_unchecked:") for c in boot["clock"]["
 and v["tool"].get("build")
 ' --platform "$platform" --firmware "$elf" --foreign "$window"
 
+# AET-WO-4400j D1 (ruled 2026-11-25T18:49Z): Renode's stdin is a pipe the CLI
+# holds open, so its console reader waits, and queues no end of `/dev/null`
+# (about 48 MiB of live heap per wall second before: spike/4400j/RESULTS.md
+# §2.3). The same run at 1 s and at `positive`'s 5 s stays within 160 MiB.
+# Measured on Furnace, 4 cores, this ELF: held, 17–113 MB from 1 s to 5 s;
+# main's /dev/null, 238–578 MB.
+run one-second 1 'v["memory"]["peak_rss_kib"] > 0' \
+  --platform "$platform" --firmware "$elf" --foreign 1000ms
+python3 -I - "$work/one-second.json" "$work/positive.json" <<'PY'
+import json, sys
+one, five = (json.load(open(p))["memory"]["peak_rss_kib"] for p in sys.argv[1:3])
+print(f"ANSWER 4400j: held stdin, peak at 1 s {one} KiB, at 5 s {five} KiB, grew {five - one} KiB")
+if five - one >= 160 * 1024:
+    sys.exit(f"Renode's peak grew {five - one} KiB from 1 s to 5 s, past the 160 MiB band")
+PY
+
 # The window too short for a declared witness: U5's identity (4.343 s at the
 # declared clock) and its first FIFO read (4.394 s) are past it.
 run window-before-u5 1 '

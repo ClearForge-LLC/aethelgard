@@ -1,0 +1,8 @@
+name	board	input	window	verdict	kinds	wall_s	peak_rss_kib	permille_of_cap	log_kept_bytes	armed	heartbeats	load_min	load_max
+Q-s03-11999900us-in	s03	True	11999900us	fail	['core_in_exception', 'device_unmodelled', 'locked_peripheral_access', 'serial_pull']	44.12	568932	362	56072034	True	16	7.01	7.44
+Q-s03-11999900us	s03	False	11999900us	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	35.01	555164	353	17374097	None	None	6.95	7.35
+Q-s03-12000100us-in	s03	True	12000100us	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	43.96	569060	362	56072420	True	16	7.23	7.72
+Q-s03-12000100us	s03	False	12000100us	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	35.27	570060	362	17374097	None	None	7.04	7.48
+R0-s02-5000-1	s02	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	12.93	1010996	643	1547169	None	None	6.71	7.25
+R0-s02-5000-2	s02	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	12.51	1000668	636	1547169	None	None	7.25	7.44
+R1-s02-5000-1	s02	False	5000ms	pass	['device_unmodelled', 'locked_peripheral_access', 'serial_pull']	11.2	659408	419	1547169	None	None	6.99	7.09

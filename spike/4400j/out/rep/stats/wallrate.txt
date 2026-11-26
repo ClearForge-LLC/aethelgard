@@ -1,0 +1,7 @@
+wall   0.0-  5.0 s:    89.8 MiB per wall second
+wall   5.0- 10.1 s:    42.7 MiB per wall second
+wall  10.1- 15.2 s:    45.5 MiB per wall second
+wall  15.2- 20.2 s:    47.9 MiB per wall second
+wall  20.2- 25.3 s:    47.1 MiB per wall second
+wall  25.3- 30.3 s:    48.3 MiB per wall second
+whole run: 52.8 MiB/s over 34.3 s

@@ -575,6 +575,20 @@ fn main() -> ExitCode {
             archive,
             wall_bound_ms,
         } => match (firmware, spec, for_time.or(foreign)) {
+            // `AET-WO-4400j` D3: past 5 s only with a declared input.
+            (_, _, Some(ns))
+                if foreign.is_some()
+                    && input.is_none()
+                    && ns > renode::foreign::FOREIGN_MAX_VIRTUAL_NS =>
+            {
+                let message = format!(
+                    "--foreign {} ms is more than the ruled {} ms of a run with no --input; {} ms, FOREIGN_INPUT_MAX_VIRTUAL_NS, is a declared input's",
+                    ns as f64 / 1e6,
+                    renode::foreign::FOREIGN_MAX_VIRTUAL_NS / 1_000_000,
+                    renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS / 1_000_000
+                );
+                return emit(&Refusal::new("UsageError", None, message), EXIT_USAGE);
+            }
             (Some(firmware), Some(spec), Some(virtual_ns)) => {
                 let topology = match solved(&spec) {
                     Ok((_, topology, _)) => topology,
@@ -657,9 +671,11 @@ fn virtual_time(s: &str) -> Result<u64, String> {
 }
 
 /// `--foreign`: as `--for`, up to the foreign window
-/// ([`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`], `AET-WO-4400e`).
+/// ([`renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS`], `AET-WO-4400j` D3);
+/// a run with no `--input` is held to [`renode::foreign::FOREIGN_MAX_VIRTUAL_NS`]
+/// once the arguments are read.
 fn foreign_time(s: &str) -> Result<u64, String> {
-    time_up_to(s, renode::foreign::FOREIGN_MAX_VIRTUAL_NS)
+    time_up_to(s, renode::foreign::FOREIGN_INPUT_MAX_VIRTUAL_NS)
 }
 
 fn time_up_to(s: &str, max: u64) -> Result<u64, String> {
@@ -2439,7 +2455,13 @@ fn simulate_with(
                     format!("cannot write the input's timeline: {e}"),
                 )
             })?;
-            Some((script, capture))
+            // Its events after the first end read run between the end reads
+            // (`AET-WO-4400j` D4), in `commands`.
+            Some((
+                script,
+                capture,
+                renode::foreign::timeline_tail(d, r.virtual_ns),
+            ))
         }
         _ => None,
     };
@@ -2619,7 +2641,9 @@ fn simulate_with(
                 .and_then(|r| r.panic)
                 .expect("ready holds a foreign firmware's panic"),
             &ready.as_ref().expect("foreign is ready's").faults,
-            timeline.as_ref().map(|(script, _)| script.as_path()),
+            timeline
+                .as_ref()
+                .map(|(script, _, tail)| (script.as_path(), tail.as_slice())),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2629,20 +2653,12 @@ fn simulate_with(
     // Only a boot is bounded (`RUL-13` as amended, PR #56 B1); a load is not.
     // A boot's log is read through the filter, so a flood reaches a verdict;
     // a droop's boot is the bridge's, which owns Renode as its child.
-    let out = match (&plan, &droop) {
-        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
-        (Some(_), None) if foreign.is_some() => {
-            run.run_bounded_filtered(bounds, renode::foreign::FOREIGN_LOG_FILTER)?
-        }
-        (Some(plan), None) => run.run_bounded_filtered(bounds, plan.log_filter())?,
-        (None, _) => run.run()?,
-    };
-    // The foreign judge's report (`AET-WO-4400e`): its firmware, its
-    // specification, its memory regions and every device's part.
-    let foreign_inputs = ready.as_ref().and_then(|r| {
-        r.foreign.as_ref().map(|regions| {
-            let parts: std::collections::BTreeMap<String, String> = r
-                .topology
+    // Every declared device's part, by reference: the foreign judge's, and
+    // its log summary's (`AET-WO-4400j` D2).
+    let parts: std::collections::BTreeMap<String, String> = ready
+        .as_ref()
+        .map(|r| {
+            r.topology
                 .i2c_devices
                 .iter()
                 .map(|(k, d)| (k.clone(), d.part.clone()))
@@ -2652,7 +2668,28 @@ fn simulate_with(
                         .iter()
                         .map(|(k, d)| (k.clone(), d.part.clone())),
                 )
-                .collect();
+                .collect()
+        })
+        .unwrap_or_default();
+    let out = match (&plan, &droop) {
+        (Some(plan), Some(_)) => analog::boot(&run, &tool.path, plan.log_filter(), bounds)?,
+        (Some(plan), None) if foreign.is_some() => {
+            // The flood summarised as the judge reads it (`AET-WO-4400j` D2).
+            let summary = renode::foreign::ForeignSummary::of(plan, &parts, &rest_witnesses)?;
+            run.run_bounded_summarised(
+                bounds,
+                renode::foreign::FOREIGN_LOG_FILTER,
+                Box::new(summary),
+            )?
+        }
+        (Some(plan), None) => run.run_bounded_filtered(bounds, plan.log_filter())?,
+        (None, _) => run.run()?,
+    };
+    // The foreign judge's report (`AET-WO-4400e`): its firmware, its
+    // specification, its memory regions and every device's part.
+    let foreign_inputs = ready.as_ref().and_then(|r| {
+        r.foreign.as_ref().map(|regions| {
+            let parts = parts.clone();
             (
                 verdict::FirmwareReport {
                     path: r.firmware.original.display().to_string(),
@@ -2675,7 +2712,13 @@ fn simulate_with(
         (Some(plan), run::Ended::Bounded(bound)) => {
             if let Some((firmware, spec, regions, _, clock, panic)) = foreign_inputs.clone() {
                 foreign_report = Some(renode::foreign::report(
-                    plan, firmware, spec, regions, clock, panic,
+                    plan,
+                    firmware,
+                    spec,
+                    regions,
+                    clock,
+                    panic,
+                    declared.is_some(),
                 ));
             }
             // A plain wall kill is the host's: refused, never a verdict
@@ -2699,7 +2742,15 @@ fn simulate_with(
                 code,
                 &out,
                 plan,
-                renode::foreign::report(plan, firmware, spec, regions, clock, panic),
+                renode::foreign::report(
+                    plan,
+                    firmware,
+                    spec,
+                    regions,
+                    clock,
+                    panic,
+                    declared.is_some(),
+                ),
                 &parts,
                 &r.flash,
                 r.topology.clock.hse_hz,
@@ -2729,7 +2780,7 @@ fn simulate_with(
         report.not_at_rest =
             aethelgard_twin::rest::not_at_rest(&r.topology, &r.image.identity.checks);
     }
-    if let (Some(report), Some((d, archive)), Some((_, capture)), Some(r)) =
+    if let (Some(report), Some((d, archive)), Some((_, capture, _)), Some(r)) =
         (foreign_report.as_mut(), &declared, &timeline, &ready)
     {
         // Read beneath its directory, never through a link the tool made,

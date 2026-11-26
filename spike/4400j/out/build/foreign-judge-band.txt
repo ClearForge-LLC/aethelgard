@@ -1,0 +1,1 @@
+ANSWER 4400j: held stdin, peak at 1 s 557696 KiB, at 5 s 578040 KiB, grew 20344 KiB

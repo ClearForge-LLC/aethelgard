@@ -1,0 +1,1 @@
+in a handler at 3 of 801 steps; vectors [66, 75]; at [(6490, 75), (9320, 66), (10410, 66)]

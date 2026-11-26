@@ -1,0 +1,13 @@
+diff --git a/crates/aethelgard-cli/src/renode/foreign.rs b/crates/aethelgard-cli/src/renode/foreign.rs
+index 4ceef63f..7c0a2ea3 100644
+--- a/crates/aethelgard-cli/src/renode/foreign.rs
++++ b/crates/aethelgard-cli/src/renode/foreign.rs
+@@ -40,7 +40,7 @@ pub const FOREIGN_WINDOW: &str = "FOREIGN_MAX_VIRTUAL_NS";
+ /// 365-371 permille of the cap at 12 s with the input, against 1,756-1,861
+ /// before) and D2 (the flood summarised); `spike/4400j/RESULTS.md` §5. A run
+ /// with no input keeps [`FOREIGN_MAX_VIRTUAL_NS`], so no such verdict moves.
+-pub const FOREIGN_INPUT_MAX_VIRTUAL_NS: u64 = 12_000_000_000;
++pub const FOREIGN_INPUT_MAX_VIRTUAL_NS: u64 = 12_000_100_000; // AET-WO-4400j spike only: the ruled 12 s plus one quantum, for the acceptance's +1 quantum run
+ pub const FOREIGN_INPUT_WINDOW: &str = "FOREIGN_INPUT_MAX_VIRTUAL_NS";
+ 
+ /// The rule table, in the order of the verdict: each of today's rules, what

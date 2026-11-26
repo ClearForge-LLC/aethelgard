@@ -1,0 +1,13 @@
+801 steps from 4000 to 12000 ms; 63 reads each; incomplete steps: []
+USART2.CR2: fails at 222 of 801 steps (27.7 %), values ['0x00002000']
+   intervals (ms, inclusive): [(4000, 4200), (8220, 10220)]  (2 intervals; starts' spacings [4220])
+RCC.APB1LENR: fails at 62 of 801 steps (7.7 %), values ['0x00660008']
+   intervals (ms, inclusive): [(4000, 4580), (4650, 4650), (10080, 10080), (10510, 10510)]  (4 intervals; starts' spacings [430, 650, 5430])
+GPIOB.MODER: fails at 6 of 801 steps (0.7 %), values ['0xA5A0A000']
+   intervals (ms, inclusive): [(4650, 4650), (6110, 6110), (9090, 9090), (10080, 10080), (10510, 10510), (11270, 11270)]  (6 intervals; starts' spacings [430, 760, 990, 1460, 2980])
+GPIOB.AFRH: fails at 6 of 801 steps (0.7 %), values ['0x55004400']
+   intervals (ms, inclusive): [(4650, 4650), (6110, 6110), (9090, 9090), (10080, 10080), (10510, 10510), (11270, 11270)]  (6 intervals; starts' spacings [430, 760, 990, 1460, 2980])
+at 5000 ms: clean
+at 8000 ms: clean
+at 10000 ms: fails: USART2.CR2
+at 12000 ms: clean

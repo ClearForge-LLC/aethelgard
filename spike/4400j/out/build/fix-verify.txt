@@ -1,0 +1,9 @@
+# The quit fix (RESULTS 11.6). Tier-2 lines: the first run (00:05-00:30Z), whose suite was ended by a SIGTERM from outside its container (exit 143); the script went on. Suite line: the rerun, detached (00:30-01:2xZ), stopped by me after its suite.
+with_tools exit=0 wall=162s test result: ok. 33 passed; 0 failed; 0 ignored; 0 measured;
+twin_tier2 exit=0 wall=861s test result: ok. 96 passed; 0 failed; 0 ignored; 0 measured;
+campaign_tier2 exit=0 wall=91s test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured;
+models_tier2 exit=0 wall=6s test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured;
+attribute_seeded exit=0 wall=413s test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured;
+fix-verify-done
+suite 0
+suite passed 3209 failed 0

@@ -1,0 +1,8 @@
+[23:21:06.8966] [INFO] Loaded monitor commands from: /opt/renode/scripts/monitor.py
+Renode, version 1.17.0 (1.17.0+20260907gitf1dd1b4af.aet1605)
+
+(monitor) mach create;  machine LoadPlatformDescription @/repo/crates/aethelgard-cli/tests/fixtures/renode-missing-include.repl;  peripherals;  quit
+[23:21:06.9250] [INFO] System bus created.
+There was an error executing command 'machine LoadPlatformDescription @/repo/crates/aethelgard-cli/tests/fixtures/renode-missing-include.repl': 
+Could not find file '/repo/crates/aethelgard-cli/tests/fixtures/renode-missing-include.repl'.
+(machine-0) [23:21:07.0757] [INFO] machine-0: Disposed.

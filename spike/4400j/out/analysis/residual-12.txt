@@ -1,0 +1,5 @@
+      none: kept 17,353,920 B (207 % of 8 MiB); keys 0; per s {0: 183447, 1: 104474, 2: 165547, 3: 104486, 4: 915063, 5: 2266781, 6: 2264865, 7: 2265556, 8: 2266516, 9: 2265488, 10: 2264952, 11: 2264944, 12: 1107}
+   from 6 s: past the 1,024-key cap: spi2.spi2mux.u5 1,625,850 B, not listed: NOISY i2c1.u7 50,280 B, not listed: INFO usart2 23,353 B, not listed: INFO usart3 353 B, not listed: INFO usart1 353 B, not listed: INFO machine-0 49 B
+     exact: kept 2,214,440 B (26 % of 8 MiB); keys 1024; per s {0: 31980, 1: 12474, 2: 14425, 3: 12486, 4: 124655, 5: 297488, 6: 297197, 7: 297888, 8: 297886, 9: 297820, 10: 211064, 11: 297276, 12: 1107}
+   from 6 s: not listed: NOISY i2c1.u7 50,280 B, not listed: INFO usart2 23,353 B, not listed: INFO usart3 353 B, not listed: INFO usart1 353 B, not listed: INFO machine-0 49 B
+exact+fifo: kept 203,234 B (2 % of 8 MiB); keys 118; per s {0: 31980, 1: 12474, 2: 14425, 3: 12486, 4: 24845, 5: 11942, 6: 11943, 7: 12474, 8: 12486, 9: 12486, 10: 11950, 11: 11942, 12: 1107}
