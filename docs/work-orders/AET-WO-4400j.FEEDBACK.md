@@ -100,3 +100,13 @@ After it, only the CLI README and a doc comment changed: fmt was rerun, the CLI 
 
 - **Weights:** eight new rows in `ci/test-weights.tsv`, each test alone on Furnace times 2.8 (the AET-WO-1310 rule; `spike/4400j/out/build/weights.txt`).
 - **Reduction pass (diff):** −61 net · 6 duplicates removed · 1 dead path removed · 0 protected kept · 1 finding below (F13).
+
+## CI on the final head (the builder's lines, carried by the architect at merge)
+
+The builder wrote these on the bus at 2026-11-26T01:55Z, after CI and with no push, so the squash would not miss them:
+- **F14, closing line:** "On b5bac764 (the quit line), CI run 45733269794 passed all 26 jobs, shards 7 and 15 included. Both bench-package jobs' --against-fab passed, so sentinel-03's and sentinel-01-bench's committed packages and verdicts are unchanged. ardupilot-image run 45733269728 passed."
+- **F7, CI's figures:** "The band case on CI: −90,564 KiB on 1ec33945 (run 45709090906) and +15,652 KiB on b5bac764 (run 45733269728), against the 160 MiB band. The held arm discriminates nothing on CI; its /dev/null arm was not run."
+- **Gates, appended:** "CI on b5bac764: ci 45733269794, ardupilot-image 45733269728 and engine-image 45733269703, all success."
+- **F15:** ruled the architect's. `AET-WO-1919` (2) puts a load under the hang guard, and its merge amends `RUL-13`.
+- **F11:** taken by `AET-WO-1919` (3).
+- **"Last occurrence"** (§To name): accepted at merge. The count, with its first and last time, is what the judge reads.
