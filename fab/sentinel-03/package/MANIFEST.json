@@ -1,7 +1,7 @@
 {
   "project": "sentinel-03",
-  "specification_sha256": "f6d409a3e41963434eb0b1c24246c6615181b3c2c87b46e54dfbc3f5f7a7abd4",
-  "topology_sha256": "0929f7abf853a75f689d00636c1bbf02643d93e811978bf6aad25e9187d1361a",
+  "specification_sha256": "51725bd3c7537abfa8ded898f7e1362de0e5edd9a61bd8a14d9cd2b52d81b769",
+  "topology_sha256": "d7a2453258a201270f189f5178ba930ca635b569b6586d61699f2f2ec02289a8",
   "scenarios": [
     {
       "scenario": "baseline",
@@ -36,12 +36,20 @@
       "sha256": "2c2473e3966ac470f3ac1dec0b0a466fe4b1e042b3d97d036fd14367d604e66d"
     },
     {
+      "scenario": "serial-rx-open-wifi",
+      "sha256": "fdc33c0a77e510d8b01d60b88cf8ea2bdce4c9cf8d022ae67b6382118a0cd2ba"
+    },
+    {
       "scenario": "spi-absent-u4",
       "sha256": "7bd57c8c283f09716666e263b738da4d71d5fb2d05619a4a04c86c6ed639b3c5"
     },
     {
       "scenario": "spi-absent-u5",
       "sha256": "3e058b06802a2cb7b4c91ea74dfd61ea6856b36d8e581e67dc6b52ce97b374bb"
+    },
+    {
+      "scenario": "vdd3v3rf-out-of-band",
+      "sha256": "f3d4b78289167a2f20827396a8686e20b868a92ecb99c501beb537964032e3fe"
     },
     {
       "scenario": "vdd5v-out-of-band",
@@ -69,25 +77,25 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "f09e6ec5ad4905b42e1c4d931acf4d1f5220b09b198ef0f0a8113506d59e2506",
+  "verdict_sha256": "59e144ee8dd683fa9d2635b980d2e02d5b11f9405724ea931f90c4a317904a64",
   "files": {
-    "FAB-NOTES.md": "b6d83074b8c591a97f4bfd20cfd5864f8806da42311db99dbc2f8ad271587fc4",
-    "sentinel-03-B_Cu.gbl": "c2a9e38e3e811ec731f7e7b44da20fd6e511351a4bd2ee96353317ab5fb61020",
-    "sentinel-03-B_Mask.gbs": "f77c81b76cb39c8ffd1ba45d40744fab9b19c46c3796827023492410af31d290",
+    "FAB-NOTES.md": "67f3e859ab603e77d42b903cef93e17ae2358477ee46d87c7b302c8cf2da6c85",
+    "sentinel-03-B_Cu.gbl": "f9feec2a4669d55732ee3775ee1b1287f1be3bba2f2d1ea564af5489111d72fa",
+    "sentinel-03-B_Mask.gbs": "9744f1b27fda55377f15fbe7a884eedb4c80285661a594c26eb12adab7c34e1c",
     "sentinel-03-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",
     "sentinel-03-B_Silkscreen.gbo": "c33d6c7655263578ed865ab787c5ff4d141f3a821500e9293b7492099005c09e",
-    "sentinel-03-Edge_Cuts.gm1": "0371aa008205427b03d0de8ecff0e045ae6a0d58ce9f8d5853913d91fb8dc68a",
-    "sentinel-03-F_Cu.gtl": "6ff696ada5694546251629ba4f7f14799919cda34cd53814ba2d80b22074c668",
-    "sentinel-03-F_Mask.gts": "292669fc246da481a4123bbe170c81652a8ad85afd35ef201330fef58ceab251",
-    "sentinel-03-F_Paste.gtp": "f23396cfed90d3bd65f916865ae2fed1eda8f5ad012e1960bfcaacae07a93505",
-    "sentinel-03-F_Silkscreen.gto": "54e310822e696ebca726b7ae1c5f48899721682ea9ffa5e85dbf70b9128eed7e",
-    "sentinel-03-In1_Cu.g1": "375ee00b620cfb4fb9ca5e3ab5cdde9d419459a75fc7197f5ab5c10f545d7b49",
-    "sentinel-03-In2_Cu.g2": "23698de0392c0b0f32631f16837abf71eeb0230997480ee3942976aa9a0b9628",
-    "sentinel-03-jlcpcb-bom.csv": "8bae8bc93bddd204ad3c3617c6c11da9ee99415bceb5d7c5fc06953d9d56219f",
-    "sentinel-03-jlcpcb-cpl.csv": "69a89a05c4d76f7cab3988034361e8d3af5f381520e5055fa22049e8b180b677",
-    "sentinel-03-pos.csv": "31fdd2da328fbbcfe4ce2d57a30516b688e9cea3ae1fc4bd2c643d286e5e3417",
-    "sentinel-03.bom.csv": "359d9146ebe6a7e3849164ece5b343683915d8d99910f72d8d0b202afdd0c113",
-    "sentinel-03.drl": "5c0e023ece1bd86b31ed8427719e8669e65bf9c806a70fcc71d0f65e619c81b2",
-    "sentinel-03.elf": "6e4a81f299a84c37af4491d8d85d2befddeaab54cbd6787109c4f570fc0ca908"
+    "sentinel-03-Edge_Cuts.gm1": "ea236ee23d24cd6a11bedfbe49092a9e5efe3fde3826367bba2254578c947b49",
+    "sentinel-03-F_Cu.gtl": "3bb67cdb131d34a77b76de508cbcdb884acc4f9910cc099ac7adfa4b1d4f22f3",
+    "sentinel-03-F_Mask.gts": "44b3067ca79fa175c0e5447760073a90581cbe59ff2b7b6f33196627be1eb277",
+    "sentinel-03-F_Paste.gtp": "38a7ddd29427f59bb9f427cda676aa53ea8a70b24e84d0db1b875cfe708a5822",
+    "sentinel-03-F_Silkscreen.gto": "0cf3bb54cd864389a479ffea18fc058a430f2ef053071c264b55f2525a8202ed",
+    "sentinel-03-In1_Cu.g1": "b6a269828a7f45c66654d3f0b310515ecac51aacca44284d94132e32c9aa8fac",
+    "sentinel-03-In2_Cu.g2": "5631879f3fb3f0c42c8a03985db1a5ad673e69943eaed2ad15fd7836ae2ce56f",
+    "sentinel-03-jlcpcb-bom.csv": "8a31f030ac4a1638bdbdd1109eef9af994d52ebe5e18a9cc6227779befb4d18a",
+    "sentinel-03-jlcpcb-cpl.csv": "84a15746362e572e7aaa6c38ecadce567188e90c70a1dc450230bbaf498e4f44",
+    "sentinel-03-pos.csv": "79f03f325640940b8ecc1a5b53394adb6711460e23e8bdd70a2607eb756feef4",
+    "sentinel-03.bom.csv": "ecc51849104a8096a21b2a06c7f36e257c371d77a8ce18c0708f693361d9c3e1",
+    "sentinel-03.drl": "0877b791f0b9e6b1579e94a4f6e3f27cf15d9b10913b53804ff62c3def3ef58a",
+    "sentinel-03.elf": "66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c"
   }
 }
