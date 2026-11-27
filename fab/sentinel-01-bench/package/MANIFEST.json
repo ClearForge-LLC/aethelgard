@@ -9,7 +9,7 @@
     },
     {
       "scenario": "droop-bor3",
-      "sha256": "c310ade102f7ba60f97bb6a2f132b544da49a582bce630d3fbe1eb4912a7d482"
+      "sha256": "299e7cb4d0fc309c7a0d0588e7b3bfa60a24f010bdb72fddacf287dd85778042"
     },
     {
       "scenario": "spi-absent-u4",
@@ -22,6 +22,10 @@
     {
       "scenario": "serial-rx-open-console",
       "sha256": "9687a7669ea45becd4b8e3be53c676049ede68a3032dbda82a1d0e879fc2b50a"
+    },
+    {
+      "scenario": "held-low-sda",
+      "sha256": "18e0eb89b0a6f513e86207064186c56cd3ccd5d8745a1b37eb1e63e8db934e2e"
     }
   ],
   "preconditions": [
@@ -45,9 +49,9 @@
       "state": "met"
     }
   ],
-  "verdict_sha256": "773c65c338e4f13384dd6f80c26d594e326d24cda0103749a276b6b4ae56a268",
+  "verdict_sha256": "f55034aa59aca80e52ceeb4328e8ac0c77f07fc006e3b6bf7d7ada8fda86a160",
   "files": {
-    "FAB-NOTES.md": "1c499a145656ce38060520a595d7d170d871ab6e7dde77ee13a63a9ea12563b3",
+    "FAB-NOTES.md": "e44b288015834fea6f2fec291fc2e1f06b23df923bfaa699667a6d26b716a29c",
     "sentinel-01-bench-B_Cu.gbl": "f62ed503c45239b2a87272f319bd0f3c5868b3a2665862211ba0c07eb732c81d",
     "sentinel-01-bench-B_Mask.gbs": "8506d631dae979f7d6457a62d8824d82ad058d25b3fa680aa8bedb4c7db39bc4",
     "sentinel-01-bench-B_Paste.gbp": "0d3db1fa132062fd09981dccb423680a458f024a145d0923b3c34fa271525be0",

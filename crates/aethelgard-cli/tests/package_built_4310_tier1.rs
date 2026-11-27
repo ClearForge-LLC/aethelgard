@@ -154,7 +154,7 @@ fn a_board_that_runs_no_ladder_states_not_run_and_a_record_on_it_is_refused() {
 
 #[test]
 fn a_package_whose_notes_state_neither_built_line_is_refused_by_against_fab() {
-    // A copy of a package written before (4): its FAB-NOTES names neither.
+    // The committed package with its FAB-NOTES as before (4): neither line.
     let d = scratch("pkg");
     let pkg = d.join("package");
     std::fs::create_dir_all(&pkg).unwrap();
@@ -163,6 +163,16 @@ fn a_package_whose_notes_state_neither_built_line_is_refused_by_against_fab() {
         let p = e.unwrap().path();
         std::fs::copy(&p, pkg.join(p.file_name().unwrap())).unwrap();
     }
+    let notes = pkg.join("FAB-NOTES.md");
+    let text = std::fs::read_to_string(&notes).unwrap();
+    let before: String = text
+        .split_inclusive('\n')
+        .filter(|l| {
+            !l.starts_with("- Outline as built:") && !l.starts_with("- Capacitance ladder:")
+        })
+        .collect();
+    assert_eq!(text.lines().count(), before.lines().count() + 2, "{text}");
+    std::fs::write(&notes, before).unwrap();
     let spec = root().join("examples/sentinel-01.json");
     let scenario = root().join("scenarios/sentinel-01-bench/pullup-2k2.json");
     let (code, v) = run(&[

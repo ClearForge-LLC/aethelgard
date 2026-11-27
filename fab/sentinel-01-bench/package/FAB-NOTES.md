@@ -19,6 +19,8 @@ names passed on the design generated from the specification, and these
 files were made from that design. The gates judged the design, not these
 files. It claims nothing beyond that verdict. Emitting this package made
 no board, and nothing in it was tested on hardware.
+- Outline as built: 46.35 x 54.85 mm, the board's `Edge.Cuts` rectangle as `extract` read it
+- Capacitance ladder: not run: the specification declares no `board.stackup.fab_tolerances`
 
 The Gerbers are KiCad 10.0.7's output (`kicad-cli pcb export gerbers
 --check-zones`), exported from a copy of the generated board with the

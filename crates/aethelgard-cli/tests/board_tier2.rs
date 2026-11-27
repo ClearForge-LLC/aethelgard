@@ -1938,7 +1938,8 @@ fn least_slack_pf(x: &Value) -> f64 {
 /// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
 /// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
 /// DRC by the specification's rules with and without schematic parity,
-/// `check support` and `extract`, each with no finding.
+/// `check support` and `extract`, each with no finding; since `AET-WO-4310`
+/// (3) `extract` fails by its two supply drop limits alone.
 #[test]
 fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
@@ -1947,9 +1948,19 @@ fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
     fs::create_dir_all(&base).unwrap();
     let spec_path = root().join("examples/sentinel-03.json");
     let (outline, code, x) = bounded_gates(&spec_path, &base).unwrap();
-    assert_eq!(code, Some(0), "extract: {x}");
-    assert_eq!(x["verdict"], "pass", "extract: {x}");
-    assert_eq!(x["findings"], Value::Array(vec![]), "extract: {x}");
+    // `AET-WO-4310` (3), ruled D5 and 08:55Z: with the other domains'
+    // currents in the ground copper charged, `extract` fails Sentinel-03's
+    // two supply drop limits (a board question for Scotty), and nothing
+    // else; every gate before it passes as before.
+    assert_eq!(code, Some(1), "extract: {x}");
+    assert_eq!(x["verdict"], "fail", "extract: {x}");
+    let kinds: Vec<&str> = x["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["supply_drop_over_limit"; 2], "extract: {x}");
     eprintln!(
         "ANSWER 1313c-fixture outline {:.2} x {:.2} mm, least extract slack {:.1} pF",
         outline.0,
