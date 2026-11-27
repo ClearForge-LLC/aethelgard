@@ -2608,6 +2608,9 @@ fn protection(
     // never taken as 0 silently.
     let series = ctx.power.battery.series_milliohms.clone();
     let r_pack = series.as_ref().map_or(0, |s| i128::from(s.value) * 1000);
+    let pack_text = series.as_ref().map_or_else(String::new, |s| {
+        format!(" and the pack's series {r_pack} µΩ ({})", s.source)
+    });
     if series.is_none() {
         ctx.screen(
             "headroom_pack_series_undeclared",
@@ -2852,7 +2855,7 @@ fn protection(
             rds.max_milliohms.value,
             rds.vgs_millivolts,
             x.fuse.part,
-            series.as_ref().map_or_else(String::new, |s| format!(" and the pack's series {r_pack} µΩ ({})", s.source))
+            pack_text
         ),
     );
     ctx.note(format!(
@@ -2862,7 +2865,7 @@ fn protection(
         x.fet.part,
         rds.vgs_millivolts,
         x.fuse.part,
-        series.as_ref().map_or_else(String::new, |s| format!(" and the pack's series {r_pack} µΩ ({})", s.source))
+        pack_text
     ));
     Ok(u64::try_from(drop).unwrap_or(u64::MAX))
 }

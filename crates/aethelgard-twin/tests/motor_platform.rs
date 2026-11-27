@@ -224,7 +224,10 @@ fn an_output_held_open_leaves_its_observer_off_the_pin_and_the_rest_as_before() 
     let t = topology("motors-pwm");
     let none = BTreeSet::new();
     let stock = platform::emit(&t).unwrap();
-    assert_eq!(platform::emit_opened(&t, &none, &none, &none).unwrap(), stock);
+    assert_eq!(
+        platform::emit_opened(&t, &none, &none, &none).unwrap(),
+        stock
+    );
     let observers = timer::observers(&t).unwrap();
     let first = &observers[0];
     let open: BTreeSet<String> = [first.label.clone()].into();

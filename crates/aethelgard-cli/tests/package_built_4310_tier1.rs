@@ -39,7 +39,13 @@ fn run(args: &[&str]) -> (i32, Value) {
 fn emitted(spec: &str, dir: &Path) -> (PathBuf, String) {
     let out = dir.join("out");
     let s = root().join(spec);
-    let (code, v) = run(&["emit", "--file", s.to_str().unwrap(), "--out", out.to_str().unwrap()]);
+    let (code, v) = run(&[
+        "emit",
+        "--file",
+        s.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]);
     assert_eq!(code, 0, "{v}");
     let board = std::fs::read_dir(&out)
         .unwrap()
@@ -78,7 +84,10 @@ fn a_laddered_board_records_its_rung_and_extract_reads_it_with_the_outline() {
     let l = &v["capacitance_ladder"];
     assert!(l["rung"].as_u64().is_some(), "{v}");
     // No buck: the step is `none`.
-    assert!(l["pour_step"].is_null() && l["pour_square_permille"].is_null(), "{l}");
+    assert!(
+        l["pour_step"].is_null() && l["pour_square_permille"].is_null(),
+        "{l}"
+    );
     assert_eq!(v["outline_mm"], "44.10 x 48.50");
 
     // The record removed: refused by name.
@@ -104,7 +113,10 @@ fn a_laddered_board_records_its_rung_and_extract_reads_it_with_the_outline() {
     // child: the block holds the record and nothing else.
     let rec_end = text[start..].find("\")\n").unwrap() + start + 1;
     for (label, planted) in [
-        ("extra", format!("{} \"x\"{}", &text[..rec_end], &text[rec_end..])),
+        (
+            "extra",
+            format!("{} \"x\"{}", &text[..rec_end], &text[rec_end..]),
+        ),
         (
             "second",
             text.replacen("\t(title_block\n", "\t(title_block\n\t\t(title \"t\")\n", 1),

@@ -1506,6 +1506,13 @@ pub fn supplies(
             .flat_map(|p| p.pads.iter())
             .collect()
     }
+    // `reference`'s pads on `net`.
+    fn pads_on<'a>(board: &'a Board, reference: &str, net: &str) -> Vec<&'a Pad> {
+        pads_of(board, reference)
+            .into_iter()
+            .filter(|p| p.net.as_deref() == Some(net))
+            .collect()
+    }
     let mut out = Vec::new();
     let the_mcu = mcu;
     for limit in limits {
@@ -1775,24 +1782,7 @@ pub fn supplies(
         {
             let ma = aethelgard_ir::radio::load_ma(spec, d)
                 .map_err(|e| refusal(e.kind(), e.to_string()))?;
-            let of = |net: &str| -> Vec<&Pad> {
-                pads_of(board, reference)
-                    .into_iter()
-                    .filter(|p| p.net.as_deref() == Some(net))
-                    .collect()
-            };
-            let (vdd_m, gnd_m) = (of(d), of(gnd));
-            let largest = |v: &[PinResult]| -> Option<u64> {
-                v.iter()
-                    .map(|r| match r {
-                        PinResult::Bounded {
-                            r_bound_microohms, ..
-                        } => Some(*r_bound_microohms),
-                        PinResult::Refused { .. } => None,
-                    })
-                    .collect::<Option<Vec<u64>>>()
-                    .and_then(|v| v.into_iter().max())
-            };
+            let (vdd_m, gnd_m) = (pads_on(board, reference, d), pads_on(board, reference, gnd));
             if !vdd_m.is_empty() && !gnd_m.is_empty() {
                 let (a, n1) = run(d, source_pad, &vdd_m)?;
                 let (b, n2) = run(gnd, ret_pad, &gnd_m)?;
@@ -1801,26 +1791,17 @@ pub fn supplies(
                 shared = Some(Shared {
                     reference: reference.to_owned(),
                     milliamps: ma,
-                    supply_bound_microohms: largest(&a),
-                    return_bound_microohms: largest(&b),
+                    supply_bound_microohms: largest_bound(&a),
+                    return_bound_microohms: largest_bound(&b),
                 });
             }
         }
-        let own = match &shared {
-            Some(m) => drop_bound_shared(&pins, &returns, load, m),
-            None => drop_bound(&pins, &returns, load),
-        };
+        let own = drop_bound(&pins, &returns, load, shared.as_ref());
         // `AET-WO-4310` (3), ruled D5: every other current on this load's
         // ground copper, charged by the maximum principle ([`Other`]).
         let r11 = largest_bound(&returns);
         let mut others = Vec::new();
         if gnd_plane {
-            let ground = |reference: &str| -> Vec<&Pad> {
-                pads_of(board, reference)
-                    .into_iter()
-                    .filter(|q| q.net.as_deref() == Some(gnd))
-                    .collect()
-            };
             // Each other regulated domain's load, at its consumers' pads.
             for r in power.regulators.iter().filter(|r| &r.output != d) {
                 let k = &r.output;
@@ -1841,16 +1822,23 @@ pub fn supplies(
                     if !on {
                         continue;
                     }
-                    let g = ground(&part.reference);
+                    let g = pads_on(board, &part.reference, gnd);
                     if !g.is_empty() {
                         names.push(part.reference.clone());
                         entry.extend(g);
                     }
                 }
                 let what = if names.is_empty() {
-                    format!("`{k}`'s load ({}), which enters the ground copper off the board", r.reference)
+                    format!(
+                        "`{k}`'s load ({}), which enters the ground copper off the board",
+                        r.reference
+                    )
                 } else {
-                    format!("`{k}`'s load ({}), entering at {}'s ground pads", r.reference, names.join(", "))
+                    format!(
+                        "`{k}`'s load ({}), entering at {}'s ground pads",
+                        r.reference,
+                        names.join(", ")
+                    )
                 };
                 others.push(charge(what, ma, &entry, ret_pad, r11, &|ps| {
                     entry_bounds(board, &read.routed, gnd, ret_pad, ps, &model)
@@ -1861,12 +1849,18 @@ pub fn supplies(
             if let Some(side) = aethelgard_ir::power::battery_side(spec)
                 .map_err(|e| refusal(e.kind(), e.to_string()))?
             {
-                let v_mv = (side.v_open_microvolts / 1000).saturating_sub(checked.input_drop_millivolts).max(1);
+                let v_mv = (side.v_open_microvolts / 1000)
+                    .saturating_sub(checked.input_drop_millivolts)
+                    .max(1);
                 for sink in &side.sinks {
                     if sink.reference == reg.reference {
                         continue;
                     }
-                    let Some(q) = power.regulators.iter().find(|q| q.reference == sink.reference) else {
+                    let Some(q) = power
+                        .regulators
+                        .iter()
+                        .find(|q| q.reference == sink.reference)
+                    else {
                         continue;
                     };
                     let Some(row) = pp.get(&q.part) else { continue };
@@ -1874,8 +1868,11 @@ pub fn supplies(
                         aethelgard_ir::power_parts::Kind::Buck(_) => "PGND",
                         _ => "GND",
                     };
-                    let Some(gpin) = row.pins.get(gname) else { continue };
-                    let entry: Vec<&Pad> = pad(board, gnd, &q.reference, gpin).into_iter().collect();
+                    let Some(gpin) = row.pins.get(gname) else {
+                        continue;
+                    };
+                    let entry: Vec<&Pad> =
+                        pad(board, gnd, &q.reference, gpin).into_iter().collect();
                     // mW × 1000 / mV = mA, rounded up.
                     let ma = (sink.input_milliwatts * 1000).div_ceil(v_mv);
                     let what = format!(
@@ -1918,54 +1915,30 @@ pub fn supplies(
 
 /// (the largest supply bound + the largest return bound) × the load, µV,
 /// rounded up (µΩ × mA = nV); `None` when any pin is refused or a side has
-/// no pin.
-pub fn drop_bound(pins: &[PinResult], returns: &[PinResult], load_milliamps: u64) -> Option<u64> {
-    let worst = |v: &[PinResult]| -> Option<u64> {
-        v.iter()
-            .map(|r| match r {
-                PinResult::Bounded {
-                    r_bound_microohms, ..
-                } => Some(*r_bound_microohms),
-                PinResult::Refused { .. } => None,
-            })
-            .collect::<Option<Vec<u64>>>()
-            .and_then(|v| v.into_iter().max())
-    };
-    let (a, b) = (worst(pins)?, worst(returns)?);
-    let nv = (u128::from(a) + u128::from(b)) * u128::from(load_milliamps);
-    u64::try_from(nv.div_ceil(1000)).ok()
-}
-
-/// [`drop_bound`] with `m`'s current charged by [`Shared`]: the rest of the
-/// load at the largest bounds, `m`'s at the lesser of each side's largest
-/// bound and its own, µV, rounded up.
-pub fn drop_bound_shared(
+/// no pin. With `shared`, its current is charged by [`Shared`]: the rest of
+/// the load at the largest bounds, its own at the lesser of each side's
+/// largest bound and its own.
+pub fn drop_bound(
     pins: &[PinResult],
     returns: &[PinResult],
     load_milliamps: u64,
-    m: &Shared,
+    shared: Option<&Shared>,
 ) -> Option<u64> {
-    let rest = load_milliamps.checked_sub(m.milliamps)?;
-    let worst = |v: &[PinResult]| -> Option<u64> {
-        v.iter()
-            .map(|r| match r {
-                PinResult::Bounded {
-                    r_bound_microohms, ..
-                } => Some(*r_bound_microohms),
-                PinResult::Refused { .. } => None,
-            })
-            .collect::<Option<Vec<u64>>>()
-            .and_then(|v| v.into_iter().max())
+    let (a, b) = (largest_bound(pins)?, largest_bound(returns)?);
+    let (rest, own) = match shared {
+        None => (load_milliamps, 0),
+        Some(m) => (
+            load_milliamps.checked_sub(m.milliamps)?,
+            u128::from(
+                a.min(m.supply_bound_microohms.unwrap_or(a))
+                    + b.min(m.return_bound_microohms.unwrap_or(b)),
+            ) * u128::from(m.milliamps),
+        ),
     };
-    let (a, b) = (worst(pins)?, worst(returns)?);
-    let own =
-        a.min(m.supply_bound_microohms.unwrap_or(a)) + b.min(m.return_bound_microohms.unwrap_or(b));
-    let nv = (u128::from(a) + u128::from(b)) * u128::from(rest)
-        + u128::from(own) * u128::from(m.milliamps);
+    let nv = (u128::from(a) + u128::from(b)) * u128::from(rest) + own;
     u64::try_from(nv.div_ceil(1000)).ok()
 }
 
-/// The note a drop within 1.5× of its limit carries (ruling S4).
 /// The largest bounded pin, µΩ; `None` when any pin is refused or none is.
 fn largest_bound(v: &[PinResult]) -> Option<u64> {
     v.iter()
@@ -1997,19 +1970,24 @@ fn entry_bounds(
             .map(|p| {
                 let nc = &nc;
                 s.spawn(move || match bound(nc, model, ret, p, 400) {
-                    Ok(b) => Ok(match bounded_pin(p, &b) {
+                    Ok(b) => match bounded_pin(p, &b) {
                         PinResult::Bounded {
                             r_bound_microohms, ..
-                        } => r_bound_microohms,
-                        PinResult::Refused { .. } => u64::MAX,
-                    }),
+                        } => Ok(r_bound_microohms),
+                        PinResult::Refused { message, .. } => {
+                            Err(format!("{}: {message}", p.number))
+                        }
+                    },
                     Err(e) => Err(format!("{}: {}", p.number, to_refused(e).message)),
                 })
             })
             .collect();
         handles
             .into_iter()
-            .map(|h| h.join().unwrap_or_else(|_| Err("a bound panicked".to_owned())))
+            .map(|h| {
+                h.join()
+                    .unwrap_or_else(|_| Err("a bound panicked".to_owned()))
+            })
             .collect()
     });
     Ok(out)
@@ -2053,8 +2031,7 @@ fn charge(
         }
         for r in solve(chunk)? {
             match r {
-                Ok(v) if v != u64::MAX => worst = Some(worst.map_or(v, |w| w.max(v))),
-                Ok(_) => unread.push("a pad refused".to_owned()),
+                Ok(v) => worst = Some(worst.map_or(v, |w| w.max(v))),
                 Err(e) => unread.push(e),
             }
         }
@@ -2074,6 +2051,7 @@ fn charge(
     })
 }
 
+/// The note a drop within 1.5× of its limit carries (ruling S4).
 pub fn pitch_note(drop_microvolts: Option<u64>, limit_millivolts: u32) -> Option<String> {
     let limit_uv = u64::from(limit_millivolts) * 1000;
     drop_microvolts.filter(|&v| u128::from(v) * 3 > u128::from(limit_uv) * 2).map(|_| {
@@ -2179,21 +2157,34 @@ mod tests {
         let near = pad("1", "GND", 10, 0, 11, 1);
         let far = pad("2", "GND", 9000, 0, 9001, 1);
         // Entry bounds 30 and 40 mOhm, the load's 65: the lesser, 40, at 2 A.
-        let o = charged(&[&near, &far], Some(65_000), &|n| Ok(if n == "2" { 40_000 } else { 30_000 }), &calls);
+        let o = charged(
+            &[&near, &far],
+            Some(65_000),
+            &|n| Ok(if n == "2" { 40_000 } else { 30_000 }),
+            &calls,
+        );
         assert_eq!(o.entry_bound_microohms, Some(40_000));
         assert_eq!(o.charge_microvolts, Some(80_000));
         // An entry bound past the load's: charged at the load's.
         let o = charged(&[&near], Some(25_000), &|_| Ok(30_000), &calls);
         assert_eq!(o.charge_microvolts, Some(50_000));
         // The load's own return unbounded: no charge, so no drop bound.
-        assert_eq!(charged(&[&near], None, &|_| Ok(1), &calls).charge_microvolts, None);
+        assert_eq!(
+            charged(&[&near], None, &|_| Ok(1), &calls).charge_microvolts,
+            None
+        );
     }
 
     #[test]
     fn a_pad_the_gate_cannot_read_or_no_pad_is_charged_at_the_loads_bound_and_named() {
         let calls = std::cell::Cell::new(0);
         let p = pad("7", "GND", 10, 0, 11, 1);
-        let o = charged(&[&p], Some(65_000), &|_| Err("7: TerminalDrilled".into()), &calls);
+        let o = charged(
+            &[&p],
+            Some(65_000),
+            &|_| Err("7: TerminalDrilled".into()),
+            &calls,
+        );
         assert_eq!(o.entry_bound_microohms, None);
         assert_eq!(o.charge_microvolts, Some(130_000));
         assert_eq!(o.unread, ["7: TerminalDrilled"]);
@@ -2206,7 +2197,13 @@ mod tests {
         let o = charged(
             &[&p, &q],
             Some(65_000),
-            &|n| if n == "7" { Err("7: TerminalDrilled".into()) } else { Ok(10_000) },
+            &|n| {
+                if n == "7" {
+                    Err("7: TerminalDrilled".into())
+                } else {
+                    Ok(10_000)
+                }
+            },
             &calls,
         );
         assert_eq!(o.entry_bound_microohms, None);
@@ -2218,11 +2215,25 @@ mod tests {
         // Seven pads: the farthest, alone in no chunk of its own, reaches
         // the load's bound, so the second chunk is never solved.
         let pads: Vec<Pad> = (0..7)
-            .map(|i| pad(&i.to_string(), "GND", 100 * (i + 1), 0, 100 * (i + 1) + 1, 1))
+            .map(|i| {
+                pad(
+                    &i.to_string(),
+                    "GND",
+                    100 * (i + 1),
+                    0,
+                    100 * (i + 1) + 1,
+                    1,
+                )
+            })
             .collect();
         let refs: Vec<&Pad> = pads.iter().collect();
         let calls = std::cell::Cell::new(0);
-        let o = charged(&refs, Some(50_000), &|n| Ok(if n == "6" { 60_000 } else { 10_000 }), &calls);
+        let o = charged(
+            &refs,
+            Some(50_000),
+            &|n| Ok(if n == "6" { 60_000 } else { 10_000 }),
+            &calls,
+        );
         assert_eq!(calls.get(), 1, "one chunk of {ENTRY_THREADS}");
         assert_eq!(o.charge_microvolts, Some(100_000));
         // Nothing reaches it: every chunk is solved.
@@ -3078,14 +3089,14 @@ mod tests {
         let pins = [b("1", 30_000), b("2", 52_055)];
         let rets = [b("3", 47_181), b("4", 33_000)];
         // (52 055 + 47 181) µΩ × 659 mA = 65 396 524 nV: 65 397 µV
-        assert_eq!(drop_bound(&pins, &rets, 659), Some(65_397));
+        assert_eq!(drop_bound(&pins, &rets, 659, None), Some(65_397));
         let refused = [PinResult::Refused {
             pin: "5".into(),
             kind: "GroundReturnUnread",
             message: String::new(),
         }];
-        assert_eq!(drop_bound(&pins, &refused, 659), None);
-        assert_eq!(drop_bound(&pins, &[], 659), None);
+        assert_eq!(drop_bound(&pins, &refused, 659, None), None);
+        assert_eq!(drop_bound(&pins, &[], 659, None), None);
         // `AET-WO-4411` (ruled 1 (a')): a module's 500 mA of the 659 at the
         // lesser bound each side; a side with no bound of its own at the
         // load's: (52055 + 47181) x 159 + (40000 + 47181) x 500 nV,
@@ -3097,19 +3108,16 @@ mod tests {
             return_bound_microohms: ret,
         };
         assert_eq!(
-            drop_bound_shared(&pins, &rets, 659, &m(Some(40_000), None)),
+            drop_bound(&pins, &rets, 659, Some(&m(Some(40_000), None))),
             Some(59_370)
         );
         // an own bound above the load's charges the load's, never more
         assert_eq!(
-            drop_bound_shared(&pins, &rets, 659, &m(Some(90_000), Some(90_000))),
-            drop_bound(&pins, &rets, 659)
+            drop_bound(&pins, &rets, 659, Some(&m(Some(90_000), Some(90_000)))),
+            drop_bound(&pins, &rets, 659, None)
         );
-        assert_eq!(drop_bound_shared(&pins, &rets, 499, &m(None, None)), None);
-        assert_eq!(
-            drop_bound_shared(&pins, &refused, 659, &m(None, None)),
-            None
-        );
+        assert_eq!(drop_bound(&pins, &rets, 499, Some(&m(None, None))), None);
+        assert_eq!(drop_bound(&pins, &refused, 659, Some(&m(None, None))), None);
         // the note at more than two thirds of the limit, not at it
         assert!(pitch_note(Some(110_001), 165).is_some());
         assert!(pitch_note(Some(110_000), 165).is_none());

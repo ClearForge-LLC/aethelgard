@@ -2175,7 +2175,12 @@ fn a_motor_output_held_open_parses_at_version_7_alone_and_is_refused_otherwise()
         assert_eq!(e.kind, "SchemaViolation", "{mixed}");
     }
     for bad in [json!(""), json!(5), json!("a b")] {
-        let e = parse(&scenario_json(7, json!([{ "motor_output_open": bad }]), None)).unwrap_err();
+        let e = parse(&scenario_json(
+            7,
+            json!([{ "motor_output_open": bad }]),
+            None,
+        ))
+        .unwrap_err();
         assert_eq!(e.kind, "SchemaViolation", "{bad}");
     }
 }

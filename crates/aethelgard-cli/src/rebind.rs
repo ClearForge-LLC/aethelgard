@@ -310,8 +310,16 @@ mod tests {
             std::fs::write(d.join(NOTES), format!("x\n{other}y\n")).unwrap();
             let e = states_built(&d).unwrap_err();
             assert_eq!(e.kind, "PackageBuiltUnstated");
-            assert!(e.message.contains(&format!("`{}`", k.trim_end())), "{}", e.message);
-            assert!(!e.message.contains(&format!("`{}`", other.trim_end())), "{}", e.message);
+            assert!(
+                e.message.contains(&format!("`{}`", k.trim_end())),
+                "{}",
+                e.message
+            );
+            assert!(
+                !e.message.contains(&format!("`{}`", other.trim_end())),
+                "{}",
+                e.message
+            );
         }
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -362,7 +370,10 @@ mod tests {
         ));
         // A known scenario's entry changed is not admitted: the line moves.
         let moved = held.replace("\"scenario\": \"s\"", "\"scenario\": \"t\"");
-        assert!(!manifest_bound_alike(&held, &admitted(MANIFEST, &held, &moved)));
+        assert!(!manifest_bound_alike(
+            &held,
+            &admitted(MANIFEST, &held, &moved)
+        ));
     }
 
     const H: &str = "{\n  \"project\": \"b\",\n  \"specification_sha256\": \"AAAA\",\n  \"scenarios\": [\n    {\n      \"scenario\": \"s\",\n      \"sha256\": \"SSSS\"\n    }\n  ],\n  \"preconditions\": [\n    {\n      \"precondition\": \"every_gate_passed\",\n      \"state\": \"met\"\n    }\n  ],\n  \"verdict_sha256\": \"VVVV\",\n  \"files\": {\n    \"FAB-NOTES.md\": \"NNNN\",\n    \"b-F_Cu.gtl\": \"GGGG\"\n  }\n}\n";

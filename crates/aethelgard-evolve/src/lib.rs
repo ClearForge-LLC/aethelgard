@@ -1545,9 +1545,9 @@ impl<'a> Run<'a> {
         // timing check is decided first as `Scope::MotorStatic`, rule I4, so
         // this scope never sees one. Stated here so E4 never rests on a rule
         // ordering elsewhere.
-        let check = self.records.iter().position(|r| {
-            matches!(r, Record::MotorTimingCheck { label: l, holds: true, .. } if l == label)
-        })?;
+        let check = self.records.iter().position(
+            |r| matches!(r, Record::MotorTimingCheck { label: l, holds: true, .. } if l == label),
+        )?;
         let witness = self.records.iter().position(|r| {
             matches!(r, Record::MotorWitness { label: l, rises: 0, falls: 0, .. } if l == label)
         })?;

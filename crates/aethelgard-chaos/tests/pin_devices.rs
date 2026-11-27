@@ -167,7 +167,8 @@ fn the_keys_of_each_override_are_closed() {
 fn the_catch_all_names_the_new_overrides() {
     let e = parse(&file(5, json!([{}]))).unwrap_err();
     assert!(
-        e.message.contains("{pin_held}, {analog_value} or {motor_output_open}"),
+        e.message
+            .contains("{pin_held}, {analog_value} or {motor_output_open}"),
         "{}",
         e.message
     );

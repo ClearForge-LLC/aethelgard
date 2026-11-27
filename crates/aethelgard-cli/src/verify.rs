@@ -1958,12 +1958,7 @@ fn coverage(
         // `AET-WO-4310` (5), ruled D7 (ii): a bus whose devices are all
         // unmodelled is never covered by a fault nothing in the twin
         // witnesses; one with no device stays `no_device` (ruled (c)).
-        let modelled = |part: &str| {
-            aethelgard_twin::model::kind(part)
-                .ok()
-                .flatten()
-                .is_some()
-        };
+        let modelled = |part: &str| aethelgard_twin::model::kind(part).ok().flatten().is_some();
         let witnessed = match &target {
             Target::I2c(id) => spec
                 .declared_i2c_devices()
@@ -3725,11 +3720,7 @@ mod tests {
             Seeded::Tolerable(vec![Target::Rail("VDD_3V3".into())], vec![])
         );
         let s = |d: aethelgard_chaos::campaign::Scenario| {
-            let mut v = seeded(
-                &spec,
-                &t,
-                &[HELD_SDA, ABSENT_U4, OPEN_CONSOLE, BASELINE],
-            );
+            let mut v = seeded(&spec, &t, &[HELD_SDA, ABSENT_U4, OPEN_CONSOLE, BASELINE]);
             v.push(classify(&spec, &t, &d));
             coverage(&spec, &t, &v, None).unmet
         };
@@ -3980,7 +3971,12 @@ mod tests {
                 &["scenarios/sentinel-01/droop-tolerated.json", TOLERATED_I2C],
                 None
             ),
-            ["I2C bus `SENSORS`", "SPI bus `FLASH`", CONSOLE, "rail `VDD_3V3`"]
+            [
+                "I2C bus `SENSORS`",
+                "SPI bus `FLASH`",
+                CONSOLE,
+                "rail `VDD_3V3`"
+            ]
         );
     }
 
@@ -4375,9 +4371,18 @@ mod tests {
     fn each_motor_output_is_a_target_met_by_a_detected_open_output() {
         let dir = "scenarios/sentinel-03";
         let committed: Vec<String> = [
-            "baseline", "battery-sag-tolerated", "droop-bor3", "droop-tolerated", "held-low-sda",
-            "serial-rx-open-console", "serial-rx-open-crsf", "serial-rx-open-mavlink",
-            "serial-rx-open-wifi", "spi-absent-u4", "spi-absent-u5", "vdd3v3rf-out-of-band",
+            "baseline",
+            "battery-sag-tolerated",
+            "droop-bor3",
+            "droop-tolerated",
+            "held-low-sda",
+            "serial-rx-open-console",
+            "serial-rx-open-crsf",
+            "serial-rx-open-mavlink",
+            "serial-rx-open-wifi",
+            "spi-absent-u4",
+            "spi-absent-u5",
+            "vdd3v3rf-out-of-band",
             "vdd5v-out-of-band",
         ]
         .iter()
@@ -4387,10 +4392,21 @@ mod tests {
         let c = unmet_of("examples/sentinel-03.json", &refs);
         assert_eq!(
             c.unmet,
-            ["motor output `MOTOR1`", "motor output `MOTOR2`", "motor output `MOTOR3`", "motor output `MOTOR4`"]
+            [
+                "motor output `MOTOR1`",
+                "motor output `MOTOR2`",
+                "motor output `MOTOR3`",
+                "motor output `MOTOR4`"
+            ]
         );
-        let opens: Vec<String> = (1..=4).map(|i| format!("{dir}/motor-open-motor{i}.json")).collect();
-        let all: Vec<&str> = refs.iter().copied().chain(opens.iter().map(String::as_str)).collect();
+        let opens: Vec<String> = (1..=4)
+            .map(|i| format!("{dir}/motor-open-motor{i}.json"))
+            .collect();
+        let all: Vec<&str> = refs
+            .iter()
+            .copied()
+            .chain(opens.iter().map(String::as_str))
+            .collect();
         let c = unmet_of("examples/sentinel-03.json", &all);
         assert!(c.unmet.is_empty(), "{:?}", c.unmet);
         // Its seeded class: detected, by its observer's silence, rule E4.
@@ -4414,7 +4430,10 @@ mod tests {
     fn a_pass_scenario_holding_an_output_open_covers_nothing() {
         let (spec, t) = solved("examples/sentinel-03.json");
         let s = json_scenario(true, &[], json!([{ "motor_output_open": "MOTOR1" }]));
-        assert_eq!(classify(&spec, &t, &s), Seeded::Tolerable(Vec::new(), Vec::new()));
+        assert_eq!(
+            classify(&spec, &t, &s),
+            Seeded::Tolerable(Vec::new(), Vec::new())
+        );
     }
 
     fn scenario_file(path: &str) -> aethelgard_chaos::campaign::Scenario {

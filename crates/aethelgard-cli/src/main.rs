@@ -3063,8 +3063,9 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
         &scratch.root.join("status-bridge"),
     )?;
     let faulted = pass.faulted();
-    let text = aethelgard_twin::platform::emit_opened(&r.topology, &faulted, &r.absent, &r.motors_open)
-        .map_err(twin_stop)?;
+    let text =
+        aethelgard_twin::platform::emit_opened(&r.topology, &faulted, &r.absent, &r.motors_open)
+            .map_err(twin_stop)?;
     let instances = aethelgard_twin::platform::instances(&r.topology, &faulted, &r.absent)
         .map_err(twin_stop)?
         .into_iter()
@@ -3148,8 +3149,13 @@ fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
 /// the verdict's `faults`, read again just before Renode starts.
 fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
     let topology = &r.topology;
-    let want = aethelgard_twin::platform::emit_opened(topology, &pass.faulted(), &r.absent, &r.motors_open)
-        .map_err(twin_stop)?;
+    let want = aethelgard_twin::platform::emit_opened(
+        topology,
+        &pass.faulted(),
+        &r.absent,
+        &r.motors_open,
+    )
+    .map_err(twin_stop)?;
     let have = fs::read(booted)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;
     if have != want.as_bytes() {

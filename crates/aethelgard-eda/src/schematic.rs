@@ -419,14 +419,22 @@ pub fn parse_ladder_record(text: &str) -> Result<(usize, Option<usize>), String>
         return Err(bad());
     };
     let num = |w: &str| {
-        (!w.is_empty() && w.bytes().all(|b| b.is_ascii_digit()) && (w == "0" || !w.starts_with('0')))
-            .then(|| w.parse::<usize>().ok())
-            .flatten()
+        (!w.is_empty()
+            && w.bytes().all(|b| b.is_ascii_digit())
+            && (w == "0" || !w.starts_with('0')))
+        .then(|| w.parse::<usize>().ok())
+        .flatten()
     };
-    let rung = num(r).filter(|r| *r < crate::route::RUNGS.len()).ok_or_else(bad)?;
+    let rung = num(r)
+        .filter(|r| *r < crate::route::RUNGS.len())
+        .ok_or_else(bad)?;
     let step = match s {
         "none" => None,
-        n => Some(num(n).filter(|n| *n < crate::route::POUR_STEPS.len()).ok_or_else(bad)?),
+        n => Some(
+            num(n)
+                .filter(|n| *n < crate::route::POUR_STEPS.len())
+                .ok_or_else(bad)?,
+        ),
     };
     Ok((rung, step))
 }
@@ -437,7 +445,9 @@ pub fn parse_ladder_record(text: &str) -> Result<(usize, Option<usize>), String>
 fn with_ladder_record(board: &str, l: &Ladder) -> Result<String, EmitError> {
     let anchor = "\t(paper \"A4\")\n";
     let i = board.find(anchor).ok_or_else(|| {
-        EmitError::Internal("the board has no `(paper \"A4\")` line to record its ladder after".to_owned())
+        EmitError::Internal(
+            "the board has no `(paper \"A4\")` line to record its ladder after".to_owned(),
+        )
     })?;
     let at = i + anchor.len();
     Ok(format!(
