@@ -1860,12 +1860,14 @@ fn classify(
         // its quantity only past the declared tolerance. A tolerable I2C
         // target comes only from a raised pull-up or line capacitance, and
         // neither declares a tolerance, so it covers nothing: such a bus
-        // needs a detected fault.
+        // needs a detected fault. An ADC input's `analog_value` likewise:
+        // no input declares a tolerance band, so a set value covers it only
+        // as a detected outcome (adversarial F7, ruled 14:57Z).
         return Seeded::Tolerable(
             changed
                 .into_iter()
                 .filter_map(|(t, _)| t)
-                .filter(|t| !matches!(t, Target::I2c(_)))
+                .filter(|t| !matches!(t, Target::I2c(_) | Target::Analog(_)))
                 .collect(),
             lacks,
         );
@@ -4691,10 +4693,9 @@ mod tests {
                 ),
             )
         };
-        assert_eq!(
-            set(2850),
-            Seeded::Tolerable(vec![Target::Analog("DRV_IPROPI".into())], Vec::new())
-        );
+        // A survived value covers nothing: no ADC input declares a band
+        // (`AET-WO-4310` adversarial F7, ruled 14:57Z).
+        assert_eq!(set(2850), Seeded::Tolerable(Vec::new(), Vec::new()));
         assert_eq!(set(0), Seeded::Baseline);
     }
 
@@ -4748,16 +4749,20 @@ mod tests {
                 json!([{"analog_value": {"net": "DRV_IPROPI", "millivolts": 2850}}]),
             ),
         );
+        // `AET-WO-4310` adversarial F7, ruled 14:57Z (replacing `1211c`'s
+        // (a)): a survived ADC value moves its input past no declared band,
+        // so it covers nothing, beside a baseline or not: the input stays
+        // unmet until a detected fault covers it.
         let rest = [
             "motor output `DRV_EN`",
             "motor output `DRV_PH`",
             "motor output `SERVO1`",
             "serial port `CMD`",
+            "ADC input `DRV_IPROPI`",
             "rail `VDD_3V3`",
         ];
         let c = coverage(&spec, &t, &[base(), held.clone(), set.clone()], None);
         assert_eq!(c.unmet, rest);
-        // A survived value covers its input with no baseline too (ruled (a)).
         let c = coverage(&spec, &t, &[held, set], None);
         assert_eq!(c.unmet, rest);
     }
