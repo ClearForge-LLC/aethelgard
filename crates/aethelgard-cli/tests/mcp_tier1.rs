@@ -20,6 +20,12 @@ fn lists_the_five_tools_and_completes_two_calls() {
     let mut c = Client::spawn(|_| {});
     let init = c.initialize();
     assert_eq!(init["result"]["serverInfo"]["name"], "aethelgard");
+    // `AET-WO-1802` (2): the version and the commit.
+    assert_eq!(
+        init["result"]["serverInfo"]["version"],
+        aethelgard_cli::identity::IDENTITY.as_str(),
+        "{init}"
+    );
     assert!(
         init["result"]["capabilities"]["tools"].is_object(),
         "{init}"

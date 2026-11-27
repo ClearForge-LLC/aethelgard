@@ -19,7 +19,7 @@ members = [
 exclude = ["boards", "bridge"]
 
 [workspace.package]
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/ClearForge-LLC/aethelgard"
@@ -28,16 +28,16 @@ repository = "https://github.com/ClearForge-LLC/aethelgard"
 unsafe_code = "forbid"
 
 [workspace.dependencies]
-aethelgard-ir = { path = "crates/aethelgard-ir", version = "0.2.0" }
-aethelgard-chaos = { path = "crates/aethelgard-chaos", version = "0.2.0" }
-aethelgard-evolve = { path = "crates/aethelgard-evolve", version = "0.2.0" }
-aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal", version = "0.2.0" }
-aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.2.0" }
-aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.2.0" }
-aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.2.0" }
-aethelgard-pincheck = { path = "crates/aethelgard-pincheck", version = "0.2.0" }
-aethelgard-hwdef = { path = "crates/aethelgard-hwdef", version = "0.2.0" }
-aethelgard-renode-models = { path = "models/renode", version = "0.2.0" }
+aethelgard-ir = { path = "crates/aethelgard-ir", version = "0.3.0" }
+aethelgard-chaos = { path = "crates/aethelgard-chaos", version = "0.3.0" }
+aethelgard-evolve = { path = "crates/aethelgard-evolve", version = "0.3.0" }
+aethelgard-svd-hal = { path = "crates/aethelgard-svd-hal", version = "0.3.0" }
+aethelgard-twin = { path = "crates/aethelgard-twin", version = "0.3.0" }
+aethelgard-eda = { path = "crates/aethelgard-eda", version = "0.3.0" }
+aethelgard-kicad-lib = { path = "crates/aethelgard-kicad-lib", version = "0.3.0" }
+aethelgard-pincheck = { path = "crates/aethelgard-pincheck", version = "0.3.0" }
+aethelgard-hwdef = { path = "crates/aethelgard-hwdef", version = "0.3.0" }
+aethelgard-renode-models = { path = "models/renode", version = "0.3.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
 # AET-WO-4412 (ruled 2026-11-26T17:35Z): pincheck inflates a ROMFS defaults.parm (raw deflate). MIT OR Zlib OR Apache-2.0, forbid(unsafe_code).

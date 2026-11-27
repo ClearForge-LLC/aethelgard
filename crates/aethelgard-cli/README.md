@@ -21,7 +21,7 @@ The repository `README.md`'s `## Quickstart` runs `emit`, `check erc`, `check dr
 
 A stdout closed by the caller (`>&-`) is not an exit-`70` case: the Rust runtime reopens a closed standard descriptor on `/dev/null` before `main` runs, so it behaves exactly like `>/dev/null`, and the exit code still reports the verdict.
 
-`--help` and `--version` exit `0` and are the only output that is not JSON. `message` is for humans and its wording is not part of the contract; `ok`, `kind`, `id`, the optional `error` keys named below (`claimants`, `path`, and `entries` on `verify`'s `UnwitnessedFieldNotAcknowledged`) and the verdict fields are.
+`--help` and `--version` exit `0` and are the only output that is not JSON. `--version` prints `aethelgard <version> (commit <sha>, stated by the build)` when the build set `AETHELGARD_COMMIT`, as the engine image does, and `aethelgard <version> (commit unknown)` otherwise (`AET-WO-1802`). `message` is for humans and its wording is not part of the contract; `ok`, `kind`, `id`, the optional `error` keys named below (`claimants`, `path`, and `entries` on `verify`'s `UnwitnessedFieldNotAcknowledged`) and the verdict fields are.
 
 ## `init`
 
@@ -664,7 +664,7 @@ A run directory a foreign input run archived (`simulate --foreign --input --arch
 ```json
 {"ok":true,"check":"replay","run_id":"011cc38d…","scenario":"pullup-47k","verdict":"fail","expect":"fail","matched":true,
  "findings":[…],"expect_findings":[…],"artifacts":{"base":"…","firmware":"…","scenario":"…","specification":"…","topology":"…"},
- "tools":{"aethelgard":"0.2.0","aethelgard-bridge":"91e72fcc…","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af.aet1605"},
+ "tools":{"aethelgard":"0.3.0","aethelgard-bridge":"91e72fcc…","ngspice":"44.2","renode":"1.17.0+20260907gitf1dd1b4af.aet1605"},
  "event_count":16,"trace_bytes":1335,"state_sequence_hash":"0483991c…"}
 ```
 
@@ -931,7 +931,7 @@ An upper bound on each I2C line's capacitance, and each SPI bus's SCK and MOSI (
    Each copper term is the energy of one trial potential: 1 on the piece, falling linearly to 0 at the 0.2 mm clearance, where every other net's copper must be. With the permittivity at its maximum, that energy is an upper bound on the piece's capacitance (Chew, arXiv:2107.09672v2, §7.1.2). The constants, their derivation and their sources are in `aethelgard_eda::extract`.
 
 ```json
-{"ok":true,"verdict":"pass","check":"extract","engine_version":"0.2.0",
+{"ok":true,"verdict":"pass","check":"extract","engine_version":"0.3.0",
  "input":{"path":"<as given>","sha256":"<64 hex>"},"specification_sha256":"<64 hex>",
  "capacitance":"upper bound estimated from routed geometry","conditions":["scope: …","…"],
  "lines":[{"net":"I2C_SDA","board_net":"/I2C_SDA","bus":"SENSORS","verdict":"pass",
@@ -999,7 +999,7 @@ One verdict that binds a specification to every artifact it produced (`INV-01`, 
 A gate that refuses stops `verify` with the gate's own `kind`, `id` and exit code, its `message` prefixed with the gate's name (`INV-06`). Otherwise it prints one line, exit `0` when every gate passed and `1` when any failed:
 
 ```json
-{"ok":true,"verdict":"pass","check":"verify","engine_version":"0.2.0","project_name":"sentinel-01",
+{"ok":true,"verdict":"pass","check":"verify","engine_version":"0.3.0","project_name":"sentinel-01",
  "specification_sha256":"<64 hex>","topology_sha256":"<64 hex>","files":{"board/Cargo.lock":"<64 hex>",…},
  "against":"identical","elf_sha256":"<64 hex>","rise_times":"computed from declared values",
  "gates":[{"gate":"erc","verdict":"pass","exit_code":0,"tool_version":"10.0.7","uid_boundary":true,"input_sha256":"<64 hex>","findings":[]},…,
@@ -1105,9 +1105,10 @@ aethelgard doctor
 Says whether this host can run every subcommand, and what blocks each one it cannot (`AET-WO-1604` §1.1), so an exit `4` is explained without reading `run.rs`. It takes no argument and prints one line:
 
 ```json
-{"ok":false,"verdict":"fail","check":"doctor","engine_version":"0.2.0","scratch":"/home/u/.cache/aethelgard","sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"tool_uid"},"tools":[{"tool":"kicad-cli","path":"/usr/bin/kicad-cli","version":"10.0.7","sandbox":{…}},{"tool":"renode"},…],"missing":[{"kind":"ToolMissing","id":"renode","message":"`renode` is not on PATH","blocks":["simulate","campaign","verify"]}]}
+{"ok":false,"verdict":"fail","check":"doctor","engine_version":"0.3.0","engine_commit":"unknown","scratch":"/home/u/.cache/aethelgard","sandbox":{"landlock_abi":8,"tcp_confined":true,"scoped":true,"sockets_denied":true,"uid_boundary":false,"uid_boundary_unmet":"tool_uid"},"tools":[{"tool":"kicad-cli","path":"/usr/bin/kicad-cli","version":"10.0.7","sandbox":{…}},{"tool":"renode"},…],"missing":[{"kind":"ToolMissing","id":"renode","message":"`renode` is not on PATH","blocks":["simulate","campaign","verify"]}]}
 ```
 
+- **`engine_commit`**: the commit the build stated (`AETHELGARD_COMMIT`, 40 hex digits), or `unknown`. The builder's claim, never proven from bytes (`AET-WO-1802`). `engine_version` is the package version alone. No verdict or committed byte names the commit.
 - **`scratch`**: the directory every call's scratch is made in, when it passes the rule under [Where scratch lives](#where-scratch-lives); `null` otherwise. With no scratch nothing can run, so no probe runs: the sandbox is `null`, and each tool is only looked for.
 - **`sandbox`**: what the sandbox achieved when it confined a real process, this executable asked `--version` through the same reaper and trampoline every tool runs under, with the fields of a verdict's `sandbox`. Landlock and the seccomp filter are known only by installing them; a layer that cannot be is `null` here and a `SandboxUnavailable` in `missing`, never assumed.
 - **`tools`**: `kicad-cli`, `renode`, `aethelgard-bridge`, `cargo` and `cargo-kani`, each with the `path` it was found at, the `version` its probe printed and the `sandbox` the probe ran in, each absent when it does not apply. Each is found, given its variables and read grants, and asked its version by the functions the subcommand that runs it calls: `kicad-cli version`; `renode --config <file> --version` with Renode's variables and grants; `cargo --version` with `build`'s; `cargo kani --version` with `prove`'s. No tool runs beyond that probe. The bridge is asked `aethelgard-bridge --version`, which starts libngspice and runs no circuit: it must print, alone, the identity this CLI was built against naming the library's banner, and exit `0`; `ngspice_loaded` is then `true` and `ngspice` the release the banner named (`44.2` in the tools image, `AET-WO-1606`). A bridge whose `--version` names no ngspice, exits otherwise or says more is `ToolUnusable` in `missing`.
