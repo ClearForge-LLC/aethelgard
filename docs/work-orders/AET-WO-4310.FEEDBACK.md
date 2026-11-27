@@ -45,7 +45,7 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
   - `verify.rs`'s (5) tests (4), `rebind.rs`'s tests (3);
   - `crates/aethelgard-evolve/tests/motor.rs`'s E4 tests (2), `crates/aethelgard-twin/tests/motor_platform.rs`'s open-observer test, `crates/aethelgard-chaos/tests/droop.rs`'s source and override tests (4).
 - **Mutants, one per guard, all killed but one equivalent:**
-  - (2) 20/20, (3b) 4/4, (3a) 8/8, (3c) 5/5 (re-run after the reduction), (4) 10/10, (5) 12/12, adversarial 3/3 (PA-F1, PA-F9, PA-F10).
+  - (2) 20/20, (3b) 4/4, (3a) 8/8, (3c) 5/5 (re-run after the reduction), (4) 10/10, (5) 12/12, adversarial 4/4 (PA-F1, PA-F7, PA-F9, PA-F10).
   - P5-M12 is equivalent: a failing timing check is decided first as I4. It is labelled `belt-and-suspenders:` at the site.
   - Kit and results: `spike/4310/mutants/`.
 - **Committed boards** (`spike/4310/out/inv08-head.txt`):
@@ -57,10 +57,16 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
   - `motor-open-motor1`–`4` each fail by `motor_output_unwitnessed` alone, replay (`INV-04`), and attribute `electrical` E4 with subject `output:MOTORn`.
   - Sentinel-01-bench's `held-low-sda` fails as expected and attributes E1.
   - Evidence: `spike/4310/out/s03-droop-campaign.txt`, `motor-open-campaign.txt`.
-- **The packages** (the architect's write dispatch re-derives them):
-  - Sentinel-01-bench moves by its scenario list (`held-low-sda` added, the droop's new hash), FAB-NOTES' two lines and its verdict.
-  - Sentinel-03 cannot be written until Scotty rules (§8).
-  - Until the dispatch, `bench_board_tier1`'s committed-package check and both `--against-fab` jobs fail by design: the package on disk predates these rules.
+- **The packages:** from the architect's write dispatch, run 46020469752 on `a3fe1f8d`.
+  - **Sentinel-01-bench** is committed unchanged from the run's artifact.
+    - FAB-NOTES gains its two built lines (`- Outline as built: 46.35 x 54.85 mm …`, `- Capacitance ladder: not run …`).
+    - MANIFEST.json gains the droop's new hash (`299e7cb4…`, this branch's file), `held-low-sda` (`18e0eb89…`) and the new verdict.
+    - Every other file is byte-identical. The ten files `ORDERED.sha256` binds pass `sha256sum -c` against the artifact, 10 OK.
+  - **Sentinel-03's write was refused, as ruled** (`bench-package-s03` failed: the board the engine now refuses). Nothing is committed for it.
+  - **The dispatch's other failures,** each fixed on this branch:
+    - `bench_board_tier1`'s committed-package check (shard 5, and `gates`): the package on disk predated these rules; it passes 10/10 with the committed package.
+    - `board_tier2`'s `the_sentinel_03_fixture_passes_every_gate_inside_its_bound` (shard 7): Sentinel-03's `extract` failed by its two drop limits, as ruled. The test now pins that outcome and nothing else, and passes in the tools image (1,158 s).
+  - Every other tier-2 shard passed.
 
 ## 4. Rulings applied
 
@@ -76,7 +82,7 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
   - no field's meaning changed;
   - it refuses no committed board;
   - it reaches only boards with a UART crossing, today Sentinel-03 alone, which was already wrong at that floor under 31.
-- **One deviation, named:** the lower band's VT+ is 679 ‰, not the 678 the ruling wrote. 1.56 V / 2.3 V = 678.26 ‰, rounded toward refusal, as the stated rows' 296 ‰ is rounded down.
+- **One deviation, named:** the lower band's VT+ is 679 ‰, not the 678 the ruling wrote. 1.56 V / 2.3 V = 678.26 ‰, rounded toward refusal, as the stated rows' 296 ‰ is rounded down. Accepted 14:57Z.
 
 ## 5. Adversarial pass (full; `spike/4310/ADVERSARIAL.md`)
 
@@ -84,7 +90,7 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
   - F1: a pin device's supply pin was named as holding no minimum; its row holds a range.
   - F9: the writer accepted a missing `built`. A passing run's package is now refused without both lines (`PackageBuiltUnstated`, in `package`, after the verdict, so a failing run stays the verdict's under `2308` LP2).
   - F10 (b): rebind stripped the built lines from both sides forever.
-- **For the architect:** F7. An ADC input is covered by any `analog_value` that differs from its idle, even 1 mV, under `1211c`'s ruled (a). That is the shape D7 (i) forbids for I2C. It is latent: no committed scenario uses `analog_value`.
+- **F7, ruled 14:57Z and built (`2cf9cc41`):** an ADC input was covered by any `analog_value` that differed from its idle, even 1 mV, under `1211c`'s ruled (a). That is the shape D7 (i) forbids for I2C. An `analog_value` now covers its input only past a declared band. No input declares one, so only a detected fault covers it. Planted in the D1 coverage test; mutant PA-F7 killed. It was latent: no committed scenario uses `analog_value`, and no fab-path test runs a board with an ADC input.
 - **Named, not fixed:**
   - **F3, `spi_timing`:** it takes the lowest non-UART row, not the row the crossing reads, and compares at the reset's source, not less the drop. It is latent: TXU0304 has one such row.
   - **F4, (3c):**
@@ -127,7 +133,7 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
 
 ## 8. Status
 
-READY, unmerged. The merge waits on Scotty's two Sentinel-03 answers (08:55Z), because `bench-package-s03` cannot pass on a board the engine now correctly refuses. `main` `d4c68028` (1802) is merged; the architect dispatches the package write on this head.
+READY, unmerged. The merge waits on Scotty's two Sentinel-03 answers (08:55Z), because `bench-package-s03` cannot pass on a board the engine now correctly refuses. `main` `d4c68028` (1802) is merged. Sentinel-01-bench's package is committed from write dispatch 46020469752, and F7 is built as ruled at 14:57Z.
 
 **`cargo test --workspace` (tier 1):**
 - On `f4110ddc`, `main` merged: 3,352 passed, 12 failed.
