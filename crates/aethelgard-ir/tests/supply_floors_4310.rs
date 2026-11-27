@@ -145,14 +145,28 @@ fn a_floor_on_the_mcus_rail_is_listed_and_a_clean_twin_passes() {
 
 #[test]
 fn a_part_with_no_held_minimum_is_named_never_passed() {
-    // A pin device: the pin-parts rows hold no supply minimum.
+    // A pin device's supply pin is judged by its row's range (adversarial
+    // F1): DRV8876's VM from 4.5 V (SLVSDS7B p. 4), on VMOTOR, which no
+    // monitor holds: named for the rail, with its minimum cited.
     let v = example("crates/aethelgard-ir/tests/fixtures/d1-drv8876.json");
-    let named = supervisor::named(&spec(&v)).unwrap();
-    let u2: Vec<_> = named.iter().filter(|n| n.device == "U2").collect();
-    assert!(!u2.is_empty(), "{named:?}");
+    let vm = supervisor::powered(&spec(&v))
+        .unwrap()
+        .into_iter()
+        .find(|p| p.device == "U2.VM")
+        .expect("U2's VM");
+    let (min, cite) = vm.min.expect("its row's range");
+    assert_eq!(min, 4500);
+    assert!(cite.contains("SLVSDS7B") && cite.contains("p. 4"), "{cite}");
+    assert_eq!(verdict_of(&v, "U2.VM"), 'N');
+    // A pin whose row holds no range is named for that, never passed.
+    let mut planted = v.clone();
+    planted["pin_devices"][0]["part"] = json!("NO-SUCH-PIN-PART");
+    let named = supervisor::named(&spec(&planted)).unwrap();
     assert!(
-        u2.iter()
-            .all(|n| n.why.contains("no supply minimum is held"))
+        named
+            .iter()
+            .any(|n| n.device == "U2.VM" && n.why.contains("no supply minimum is held")),
+        "{named:?}"
     );
     // A bus device whose part has no row is named, never skipped.
     let mut s1 = example("examples/sentinel-01.json");

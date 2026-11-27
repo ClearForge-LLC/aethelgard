@@ -233,8 +233,8 @@ pub struct Powered {
 /// Table 111 note 1, ruled D2); each I2C and SPI device at its bus's speed;
 /// each radio module; the declared supervisor; each translator side; each
 /// regulator (one fed from a rail, by its input minimum; one fed from the
-/// battery, judged elsewhere); each pin device's supply pins, whose rows
-/// hold no minimum.
+/// battery, judged elsewhere); each pin device's supply pin, by its row's
+/// range.
 pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> {
     let pp = crate::power_parts::table()?;
     let parts = crate::parts::table()?;
@@ -351,14 +351,25 @@ pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> 
             });
         }
     }
+    // Each pin device's supply pin, by its row's range (`AET-WO-4310`
+    // adversarial F1): a pin whose row holds none is named.
     for d in spec.declared_pin_devices() {
-        let rails: std::collections::BTreeSet<&String> = d.supplies.values().collect();
-        for rail in rails {
+        let row = parts.pin_part(&d.part);
+        for (pin, rail) in &d.supplies {
+            let min = row
+                .and_then(|r| r.pins.get(pin).map(|p| (r, p)))
+                .and_then(|(r, p)| match &p.kind {
+                    crate::pin_parts::PinKind::Supply { range_mv } => Some((
+                        range_mv.0,
+                        format!("{} {}, {}", r.document, r.revision, p.page),
+                    )),
+                    _ => None,
+                });
             out.push(Powered {
-                device: d.reference.clone(),
+                device: format!("{}.{pin}", d.reference),
                 part: d.part.clone(),
                 rail: rail.clone(),
-                min: None,
+                min,
                 elsewhere: None,
             });
         }

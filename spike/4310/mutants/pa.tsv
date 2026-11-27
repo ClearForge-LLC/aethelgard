@@ -1,0 +1,2 @@
+PA-F1	crates/aethelgard-ir/src/supervisor.rs	                        Some((range_mv.0, format!("{} {}, {}", r.document, r.revision, p.page)))	                        None	aethelgard-ir	supply_floors_4310
+PA-F10	crates/aethelgard-cli/src/rebind.rs	                    .any(|k| l.starts_with(k) && !held.lines().any(|h| h.starts_with(k)))	                    .any(|k| l.starts_with(k))	aethelgard-cli	bin:rebind

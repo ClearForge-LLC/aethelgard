@@ -134,9 +134,15 @@ const ADMITTED_NOTES: [&str; 2] = [crate::fab::OUTLINE_KEY, crate::fab::LADDER_K
 /// (the scenarios D7 adds). Every other line stays, and must be equal.
 fn admitted(name: &str, held: &str, text: &str) -> String {
     match name {
+        // A key the committed notes already state is compared as every other
+        // line is (adversarial F10 (b)): only a key they lack is admitted.
         NOTES => text
             .split_inclusive('\n')
-            .filter(|l| !ADMITTED_NOTES.iter().any(|k| l.starts_with(k)))
+            .filter(|l| {
+                !ADMITTED_NOTES
+                    .iter()
+                    .any(|k| l.starts_with(k) && !held.lines().any(|h| h.starts_with(k)))
+            })
             .collect(),
         MANIFEST => without_new_scenarios(held, text),
         _ => text.to_owned(),
@@ -339,6 +345,13 @@ mod tests {
         assert!(notes_bound_alike(
             &admitted(NOTES, &held, &held),
             &admitted(NOTES, &held, &with)
+        ));
+        // Once the committed notes state a key, its line is compared: a
+        // changed outline is moved.
+        let changed = with.replace("85.00 x 99.75", "85.00 x 99.80");
+        assert!(!notes_bound_alike(
+            &admitted(NOTES, &with, &with),
+            &admitted(NOTES, &with, &changed)
         ));
         // Any other added line is still moved.
         with.push_str("- Built by hand: no\n");

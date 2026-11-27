@@ -2676,6 +2676,26 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             .cloned()
             .collect();
         let conditions = std::mem::take(&mut report.conditions);
+        // `AET-WO-4310` (4), adversarial F9: a package always states what its
+        // board was built at, both lines, or none is made.
+        let built = fab::built_lines(
+            &report
+                .gates
+                .iter()
+                .find(|g| g.gate == "extract")
+                .map_or(Value::Null, |g| g.built.clone()),
+        );
+        if built.len() != 2 {
+            return Err(refuse(
+                "PackageBuiltUnstated",
+                None,
+                format!(
+                    "no package: the `extract` gate stated {} of the two lines a package names what its board was built at (its outline and its capacitance ladder)",
+                    built.len()
+                ),
+                EXIT_INTERNAL,
+            ));
+        }
         let bound = fab::Bound {
             project: t.project,
             spec: t.spec,
@@ -2689,13 +2709,7 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             lifecycle: &lifecycle,
             support: &support_lines(report.support.as_ref()),
             campaign: &campaign_conditions(report.campaign.as_deref().unwrap_or_default()),
-            built: &fab::built_lines(
-                &report
-                    .gates
-                    .iter()
-                    .find(|g| g.gate == "extract")
-                    .map_or(Value::Null, |g| g.built.clone()),
-            ),
+            built: &built,
         };
         let scenarios: Vec<fab::Scenario> = t
             .expected

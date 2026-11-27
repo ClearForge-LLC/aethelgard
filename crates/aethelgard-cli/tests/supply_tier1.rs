@@ -340,8 +340,21 @@ fn a_limit_on_a_domain_the_load_does_not_use_is_refused() {
 #[test]
 fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     let (code, v) = extract(s024l_board(), &write("s024l-pass", &gated(s024l(), 165)));
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["verdict"], "pass", "{v}");
+    // `AET-WO-4310` (3), ruled D5: the other domains' currents in the ground
+    // copper are charged too, and they take the fixture past its 165 mV
+    // (its 5 V load enters off the board, so it is charged at the MCU's own
+    // largest return bound): the gate fails, by `supply_drop_over_limit`.
+    // Its own drop, every pin bounded, is still within the limit.
+    assert_ne!(code, 0, "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["kind"] == "supply_drop_over_limit"),
+        "{v}"
+    );
     // The limit declared, the part is judged by its domains (`AET-WO-1609`).
     assert_eq!(
         part(&v, "extract.supply"),
@@ -370,9 +383,15 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .unwrap()
     };
     let drop = s["drop_bound_microvolts"].as_u64().unwrap();
-    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 714).div_ceil(1000));
-    assert!(drop <= 165_000, "{drop}");
-    assert!(s.get("note").is_none(), "{s}");
+    let charged: u64 = s["others"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["charge_microvolts"].as_u64().unwrap())
+        .sum();
+    let own = ((worst(&vdd) + worst(&vss)) * 714).div_ceil(1000);
+    assert_eq!(drop, own + charged);
+    assert!(own <= 165_000 && drop > 165_000, "{own} + {charged}");
     let conditions: Vec<&str> = s["conditions"]
         .as_array()
         .unwrap()
@@ -408,10 +427,12 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
 /// declares no drop limit; this one adds it.
 #[test]
 fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
-    let (code, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), S03_LIMIT_MV)));
-    assert_eq!(code, 0, "{r}");
+    let (_, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), S03_LIMIT_MV)));
     let s = &r["supplies"][0];
-    assert_eq!(s["verdict"], "pass", "{s}");
+    // `AET-WO-4310` (3), ruled D5 and 08:55Z: with the other domains'
+    // currents in the ground copper charged, Sentinel-03 fails its limit (a
+    // board question for Scotty); every pin is still bounded.
+    assert_eq!(s["verdict"], "fail", "{s}");
     let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
     assert_eq!((vdd.len(), vss.len()), (16, 10), "{s}");
     for p in vdd.iter().chain(&vss) {
