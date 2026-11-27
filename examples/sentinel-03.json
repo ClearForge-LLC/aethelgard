@@ -3034,6 +3034,10 @@
       "reason": "WROOM-02 Table 6-3 states U30's VOH and VOL at a high-impedance load; U31's B4 draws at most 2 uA (SCES935A p. 8), and U30's 0.8 x VDD clears U31's threshold by 388 mV"
     },
     {
+      "id": "radio_supply_peak_unbounded:U30",
+      "reason": "U30's 3.6 V is also its absolute maximum (WROOM-02 v1.7 p. 21, Table 6-1): 10.9 mV left at the solved top, a static solve (ruled 21:31Z G1); a bench row reads the peak at U30's pads"
+    },
+    {
       "id": "rated_only:U31.bypass_a",
       "reason": "SCES935A's row states no effective minimum for U31's 0.1 uF VCCA bypass; GCM188R71H104KA57 at 50 V rating sees VDD_3V3, 3.4 V"
     },

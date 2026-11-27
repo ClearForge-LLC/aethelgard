@@ -1,8 +1,4 @@
-# AET-WO-4413 (2): one mutant per guard. id, file, old, new, package, test
-R-M1	crates/aethelgard-ir/src/supervisor.rs	Some((min, _)) if held_by.is_some() =>	Some((min, _)) if held_by.is_some() && false =>	aethelgard-ir	supply_floors_4310
-R-M2	crates/aethelgard-ir/src/supervisor.rs	            out.push((m.reference.clone(), mon));		aethelgard-ir	supply_floors_4310
-R-M3	crates/aethelgard-ir/src/supervisor.rs	if *rail == mon.rail {	if false {	aethelgard-ir	supply_floors_4310
-R-M4	crates/aethelgard-ir/src/supervisor.rs	if min > at {	if false {	aethelgard-ir	rail_monitor_4413
+# AET-WO-4413 (2): one mutant per guard (R-M1..R-M4, the credit, retired by the 21:31Z A1 (i) revert). id, file, old, new, package, test
 R-M5	crates/aethelgard-ir/src/supervisor.rs	if let Some(c) = r.controls.iter().find(|c| c.monitor.is_some())	if let Some(c) = r.controls.iter().find(|c| c.monitor.is_some() && false)	aethelgard-ir	rail_monitor_4413
 R-M6	crates/aethelgard-ir/src/supervisor.rs	if !rails.contains(&&m.rail) {	if false {	aethelgard-ir	rail_monitor_4413
 R-M7	crates/aethelgard-ir/src/supervisor.rs	let Some(m) = p.rail_monitors.iter().find(|m| &m.reference == mon) else {\n            return Err(invalid(	let Some(m) = p.rail_monitors.iter().find(|m| &m.reference == mon) else {\n            continue;\n            #[allow(unreachable_code)]\n            return Err(invalid(	aethelgard-ir	rail_monitor_4413
@@ -18,3 +14,6 @@ R-M16	crates/aethelgard-ir/src/power.rs	x.pin == "OE" && (x.strap == Some(pp::St
 R-M17	crates/aethelgard-ir/src/power.rs	.any(|mon| &mon.reference == r && mon.rail == c.b_domain)	.any(|mon| &mon.reference == r)	aethelgard-ir	rail_monitor_4413
 R-M18	crates/aethelgard-ir/src/radio.rs	(None, Some(mon)) if m.enable.resistor.is_none() && m.enable.capacitor.is_none() => {	(None, Some(mon)) => {	aethelgard-ir	rail_monitor_4413
 R-M19	crates/aethelgard-ir/src/power.rs	if m.enable.monitor.is_none() {	if true {	aethelgard-cli	readiness_tier1
+R-M20	crates/aethelgard-ir/src/supervisor.rs	Some((min, _)) if held_by.is_some_and(|m| m.reference == p.device) =>	Some((min, _)) if held_by.is_some_and(|m| m.reference == p.device) && false =>	aethelgard-ir	rail_monitor_4413
+R-M21	crates/aethelgard-ir/src/supervisor.rs	Some(_) if let Some(m) = held_by =>	Some(_) if let Some(m) = held_by.filter(|_| false) =>	aethelgard-ir	rail_monitor_4413
+R-M22	crates/aethelgard-ir/src/power.rs	"radio_supply_peak_unbounded",	"radio_supply_peak_unbounded_mutant",	aethelgard-cli	readiness_tier1

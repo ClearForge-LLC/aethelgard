@@ -51,25 +51,25 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// port's RX open, `AET-WO-4411`), `battery` (a tolerated sag),
 /// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
 /// Since `AET-WO-4300k` D10 its ledger is acknowledged (it was 280 rows,
-/// measured on `ee835bde`), and the readiness gate is met (since
-/// `AET-WO-4413` (2) by U32 on `VDD_3V3_RF`), so no refusal before a gate
-/// stops it: with the environment cleared, the first thing it cannot do is
-/// make its scratch (`ScratchUnsafe`), and nothing is written. As root (CI's
-/// container) scratch needs no `HOME`, so the run goes one step further, to
-/// the first gate's tool (`ToolMissing`, the `PATH` is empty); both come
-/// after every package precondition.
+/// measured on `ee835bde`). The readiness gate refuses it by name: U30 and
+/// U31's B side, which U32 drives but does not sense at (`AET-WO-4413`, ruled
+/// 21:31Z A1 (i)).
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it() {
     let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
-    // `AET-WO-4413` (2): U32 holds `VDD_3V3_RF`'s parts, so the readiness
-    // gate is met again and no refusal before a gate stops the run.
-    assert_eq!(code, Some(4), "{v}");
-    let want = if rustix::process::geteuid().is_root() {
-        "ToolMissing"
-    } else {
-        "ScratchUnsafe"
-    };
-    assert_eq!(v["error"]["kind"], want, "{v}");
+    // `AET-WO-4413`, ruled 21:31Z A1 (i): U32 drives U30 and U31's B side
+    // but does not sense at their pins, so the readiness gate refuses the
+    // board by name, after its scenarios cover every row. Nothing is written.
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "FabricationNotReady", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("2 powered part(s)")
+            && m.contains("U30 (")
+            && m.contains("U31.B (")
+            && m.contains("monitored by U32"),
+        "{m}"
+    );
 }
 
 /// §2: the power fixture's campaign is for the campaign only. Its

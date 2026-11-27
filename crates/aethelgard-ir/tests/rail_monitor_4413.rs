@@ -19,15 +19,30 @@ fn monitor(v: &mut Value) -> &mut Value {
 }
 
 #[test]
-fn sentinel_03_validates_and_u32_holds_its_radio_rail() {
+fn sentinel_03_validates_and_u32_holds_only_itself() {
     let v = sentinel_03();
     let s = spec(&v);
     s.validate().unwrap();
     let j = supervisor::judged(&s).unwrap();
-    for d in ["U30", "U31.B", "U32"] {
+    // `AET-WO-4413`, ruled 2026-11-27T21:31Z A1 (i): U32 drives U30's EN
+    // and U31's OE but does not sense at their pins, so neither is held; it
+    // senses at its own.
+    for d in ["U30", "U31.B"] {
         let (_, got) = j.iter().find(|(p, _)| p.device == d).unwrap();
-        assert_eq!(got, &Judgement::Pass, "{d}");
+        let Judgement::Named(n) = got else {
+            panic!("{d}: {got:?}")
+        };
+        let part = d.split('.').next().unwrap();
+        assert!(
+            n.why.contains(&format!(
+                "monitored by U32, but U32 does not sense at {part}'s pin; the drop between is not bounded"
+            )),
+            "{d}: {}",
+            n.why
+        );
     }
+    let (_, own) = j.iter().find(|(p, _)| p.device == "U32").unwrap();
+    assert_eq!(own, &Judgement::Pass);
     // The screen it rests on, by its id (acknowledged in the specification).
     let c = supervisor::check(&s, aethelgard_ir::power::check(&s).unwrap().as_ref()).unwrap();
     assert!(
@@ -39,36 +54,27 @@ fn sentinel_03_validates_and_u32_holds_its_radio_rail() {
     );
 }
 
-/// A threshold under the module's 3.0 V: a floor, by name, not a pass.
+/// A part on the rail the monitor does not drive is named as held by no
+/// monitor; one it drives, as not sensed at its pin.
 #[test]
-fn a_monitor_falling_under_a_part_s_minimum_is_a_floor() {
-    let v = sentinel_03();
-    let mut t = table_json();
-    row(&mut t, "TPS3839G33DBZR")["kind"]["supervisor"]["falling_millivolts"]["min"] = json!(2990);
-    let planted = parse_power_parts(&t.to_string()).unwrap();
-    let j = supervisor::judged_against(&spec(&v), &planted).unwrap();
-    let (_, got) = j.iter().find(|(p, _)| p.device == "U30").unwrap();
-    let Judgement::Floor(f) = got else {
-        panic!("{got:?}")
-    };
-    assert_eq!((f.vcc_min_millivolts, f.reset_min_millivolts), (3000, 2990));
-    assert!(f.reset.contains("U32's VIT− minimum"), "{}", f.reset);
-    // U31.B's 1080 mV is still under it.
-    let (_, b) = j.iter().find(|(p, _)| p.device == "U31.B").unwrap();
-    assert_eq!(b, &Judgement::Pass);
-}
-
-/// A part on the rail the monitor does not drive stays named: a module
-/// whose enable keeps its RC is not held by a monitor beside it.
-#[test]
-fn a_monitor_credits_only_what_it_drives() {
+fn a_monitor_s_part_and_an_unmonitored_part_are_named_apart() {
     let mut v = sentinel_03();
     v["power"]["uart_crossings"][0]["controls"] =
         json!([{"pin": "OE", "strap": "vcca", "wire": null}]);
     let named = supervisor::named(&spec(&v)).unwrap();
     assert_eq!(
         named.iter().map(|n| n.device.as_str()).collect::<Vec<_>>(),
-        ["U31.B"]
+        ["U30", "U31.B"]
+    );
+    assert!(
+        named[0].why.contains("monitored by U32"),
+        "{}",
+        named[0].why
+    );
+    assert!(
+        named[1].why.contains("held by no monitor"),
+        "{}",
+        named[1].why
     );
 }
 

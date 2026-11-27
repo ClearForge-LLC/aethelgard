@@ -459,20 +459,17 @@ pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> 
 /// (2)), and otherwise named, since nothing holds it while the MCU runs;
 /// with no held minimum, named.
 pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
-    judged_against(spec, crate::power_parts::table()?)
-}
-
-/// [`judged`] against `pp` for the resets' thresholds (see
-/// [`reset_floor_against`]): a test plants a monitor's row there.
-pub fn judged_against(
-    spec: &Specification,
-    pp: &crate::power_parts::PowerPartsTable,
-) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
+    let pp = crate::power_parts::table()?;
     let (reset_min, reset) = reset_floor_against(spec, pp)?;
     let held = held(spec);
-    // The monitor holding `device` on `rail`, with its VIT− minimum.
-    let monitor = |device: &str, rail: &str| -> Option<(u32, String)> {
-        let (_, m) = held.iter().find(|(d, m)| d == device && m.rail == rail)?;
+    // The monitor driving `device` on `rail`.
+    let monitor = |device: &str, rail: &str| -> Option<&RailMonitor> {
+        held.iter()
+            .find(|(d, m)| d == device && m.rail == rail)
+            .map(|(_, m)| *m)
+    };
+    // A monitor's own threshold, which it senses at its own pins.
+    let own = |m: &RailMonitor| -> Option<(u32, String)> {
         match &pp.get(&m.part)?.kind {
             Kind::Supervisor(v) => Some((
                 u32::try_from(v.falling_millivolts.range.min).unwrap_or(0),
@@ -517,10 +514,20 @@ pub fn judged_against(
                     None => Judgement::Named(named(
                         "no supply minimum is held for it, so it is never passed".to_owned(),
                     )),
-                    Some((min, _)) if held_by.is_some() => {
-                        let (at, by) = held_by.unwrap_or_default();
+                    // The monitor itself senses at its own pins.
+                    Some((min, _)) if held_by.is_some_and(|m| m.reference == p.device) => {
+                        let (at, by) = held_by.and_then(own).unwrap_or_default();
                         floor(*min, at, &by)
                     }
+                    // `AET-WO-4413`, ruled 2026-11-27T21:31Z A1 (i): a part a
+                    // monitor drives is not held by it until the monitor senses
+                    // at the part's pins (bound at the part, the engine work
+                    // order's); between them the drop is not bounded.
+                    Some(_) if let Some(m) = held_by => Judgement::Named(named(format!(
+                        "monitored by {0}, but {0} does not sense at {1}'s pin; the drop between is not bounded (AET-WO-4413 A1)",
+                        m.reference,
+                        p.device.split('.').next().unwrap_or(&p.device)
+                    ))),
                     Some((min, cite)) if p.rail != spec.mcu.supply => Judgement::Named(named(format!(
                         "its supply minimum of {min} mV ({cite}) is held by no monitor: nothing holds `{}`'s consumers in reset or off, so it may run out of its range while the MCU runs",
                         p.rail

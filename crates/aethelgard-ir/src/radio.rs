@@ -1043,10 +1043,11 @@ pub fn not_judged(spec: &Specification) -> Vec<String> {
             } else if let (Some(row), Some(mon)) = (row, &m.enable.monitor)
                 && m.supply != spec.mcu.supply
             {
-                // `AET-WO-4413` (2): held by its rail monitor's reset.
+                // `AET-WO-4413`, ruled 21:31Z A1 (i): driven by its rail
+                // monitor's reset, which does not sense at its pin.
                 line.push_str(&format!(
-                    "; its EN is held by {mon}'s reset, the rail monitor on `{}`, judged against its VDD minimum of {} mV ({}, {}) by the floor rule",
-                    m.supply, row.supply.min_mv, row.supply.at.document, row.supply.at.section
+                    "; its EN is driven by {mon}'s reset, the rail monitor on `{}`, which does not sense at {}'s pin, so its VDD minimum of {} mV ({}, {}) is not held: the drop between is not bounded, named (AET-WO-4413 A1)",
+                    m.supply, m.reference, row.supply.min_mv, row.supply.at.document, row.supply.at.section
                 ));
             } else if let (Some(row), Some((reset_mv, why))) = (row, &reset)
                 && row.supply.min_mv > *reset_mv

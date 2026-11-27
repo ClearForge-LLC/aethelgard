@@ -162,7 +162,8 @@ fn the_modules_pads_are_on_their_nets() {
         ("4", "GND"),
         ("5", "/WIFI_RX"),
         ("7", "GND"),
-        ("8", "VDD_3V3"),
+        // OE on U32's reset since `AET-WO-4413` (ruled D3; SCES935A 9.1)
+        ("8", "/U32_RESET"),
         ("10", "/U31_B4"),
         ("13", "/U31_B1Y"),
         ("14", "VDD_3V3_RF"),
@@ -238,13 +239,15 @@ fn the_modules_port_moves_no_pin() {
     let n = ports.len();
     ports.retain(|p| p["label"] != label.as_str());
     assert_eq!(ports.len(), n - 1, "no port `{label}`");
-    // U31 carries the port to the module (`AET-WO-4411` (c1)): it goes too
+    // U31 carries the port to the module (`AET-WO-4411` (c1)): it goes too,
+    // and U32, which drives the two (`AET-WO-4413`)
     let power = spec["power"].as_object_mut().unwrap();
     assert!(power.remove("uart_crossings").is_some());
+    assert!(power.remove("rail_monitors").is_some());
     power["loads"]
         .as_array_mut()
         .unwrap()
-        .retain(|l| l["reference"] != "U31");
+        .retain(|l| l["reference"] != "U31" && l["reference"] != "U32");
     let dir = std::env::temp_dir().join(format!("aet-4411-base-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let base_spec = dir.join("sentinel-03-without-module.json");

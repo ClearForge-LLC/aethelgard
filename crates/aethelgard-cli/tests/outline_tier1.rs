@@ -366,11 +366,13 @@ fn assert_loops(spec: &Specification, solved: &SolvedTopology, table: &PinTable,
 /// face out, and bounded anchors placed before unbounded ones (its
 /// FEEDBACK); re-pinned by `AET-WO-4411` from a measured run: the radio
 /// module and its own regulator's block in its group, then U31, its UART
-/// crossing, and C93/C94 drawn ((c1), its FEEDBACK).
+/// crossing, and C93/C94 drawn ((c1), its FEEDBACK); re-pinned by
+/// `AET-WO-4413` from a measured run: U32 and C95 drawn, R90 and C90 gone
+/// (its FEEDBACK).
 /// Re-pin it only with the change that moves it, named in that change's
 /// FEEDBACK.
 const FIXTURE_PLACEMENT_SHA256: &str =
-    "92b63a2f7e89e7cf3a936abcfc99f57b0d815ee7f4a585ec9716c11726e96e0f";
+    "49c33dc21867e4df869184e0a0c4fe4e976891520bd508156babfc9b366c0d9d";
 
 /// `AET-WO-1313c` §2: the fixture places at its measured outline, with
 /// every placer gap and every loop rule kept after compaction: 85.25 x
@@ -384,14 +386,15 @@ const FIXTURE_PLACEMENT_SHA256: &str =
 /// 85.65 x 98.75 mm since `AET-WO-4411` (the radio module at the top-right
 /// corner with its own regulator, U13, in its group; approved up to 100 x
 /// 100 mm 2026-11-25T21:44Z, measured), 85.00 x 99.75 mm since its (c1)
-/// (U31 and its bypasses drawn, measured).
+/// (U31 and its bypasses drawn, measured), 85.90 x 99.75 mm since
+/// `AET-WO-4413` (U32 and C95 drawn, R90 and C90 gone, measured).
 #[test]
 fn the_fixture_places_at_the_spikes_outline_with_every_gap_kept() {
     use sha2::{Digest, Sha256};
     let (spec, solved, table, e) =
         emitted("the fixture places at the spike's outline with every gap kept");
     let o = outline_nm(&e.board);
-    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_000_000, 99_750_000));
+    assert_eq!((o.x1 - o.x0, o.y1 - o.y0), (85_900_000, 99_750_000));
     let digest: String = Sha256::digest(name_free(&e.board).join("\n").as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -486,14 +489,16 @@ fn placement_writes_no_copper_and_refuses_as_emit_does() {
 /// still refused, its least-over now 103.350 x 105.500 mm. Its (c1) (U31
 /// and its bypasses drawn): 1 re-measured; 2 is refused, its least-over
 /// 89.900 x 100.350 mm; 6 and 8 still refused, at 100.600 x 103.100 and
-/// 104.850 x 105.500 mm.
+/// 104.850 x 105.500 mm. `AET-WO-4413` (U32 and C95 drawn, R90 and C90
+/// gone): 1 re-measured; 2, 6 and 8 still refused, at 89.900 x 100.750,
+/// 100.300 x 102.500 and 105.750 x 105.500 mm.
 #[test]
 fn each_size_sample_places_with_its_gaps_or_is_refused_by_name() {
     for (len, placed, least) in [
-        (1, Some((88_350_000, 99_750_000)), ""),
-        (2, None, "89.900 x 100.350 mm, over by 0.000 x 0.350 mm"),
-        (6, None, "100.600 x 103.100 mm, over by 0.600 x 3.100 mm"),
-        (8, None, "104.850 x 105.500 mm, over by 4.850 x 5.500 mm"),
+        (1, Some((88_950_000, 99_750_000)), ""),
+        (2, None, "89.900 x 100.750 mm, over by 0.000 x 0.750 mm"),
+        (6, None, "100.300 x 102.500 mm, over by 0.300 x 2.500 mm"),
+        (8, None, "105.750 x 105.500 mm, over by 5.750 x 5.500 mm"),
     ] {
         let v = rename::sized(&fixture(), len);
         let (spec, solved, table) = solved(&v);
@@ -703,11 +708,13 @@ fn removing_one_declared_part_never_stops_a_bounded_board_fitting() {
     // `AET-WO-4411` (c1), ruled 2026-11-26T06:25Z Q-R (a): the placer is not
     // monotone at the outline bound. Removing either test point stops size 1
     // fitting 100 x 100 on all nine seeds (least-over 88.450 x 100.100 mm
-    // without Q_TP14, 88.950 x 100.250 without Q_TP28). Exactly these two are
-    // known, so a third still fails; a placer work order takes the row.
+    // without Q_TP14, 88.950 x 100.250 without Q_TP28). Since `AET-WO-4413`
+    // (U32 drawn, R90 and C90 gone) the two are Q_TP20 and Q_TP26 (measured).
+    // Exactly these two are known, so a third still fails; a placer work
+    // order takes the row.
     assert_eq!(
         refused,
-        ["size 1 less \"Q_TP14\"", "size 1 less \"Q_TP28\""],
+        ["size 1 less \"Q_TP20\"", "size 1 less \"Q_TP26\""],
         "stopped fitting"
     );
     // 33 removals from each variant (34 with U2), 5 each refused by
@@ -747,7 +754,8 @@ fn a_reseeded_placement_is_deterministic_and_name_free() {
 /// I2C_SCL at 72,476 of 100,000 fF on rung 3 (measured); since `AET-WO-4411`
 /// (the module's own regulator; the pour ladder at step 1) it was IMU_MOSI at
 /// 23,345 of 30,000 fF on rung 7, and since its (c1) (U31 drawn) EXT_SCL at
-/// 74,872 of 100,000 fF on rung 3 (measured). The committed
+/// 74,872 of 100,000 fF on rung 3, and since `AET-WO-4413` (U32 drawn, R90
+/// and C90 gone) EXT_SCL at 79,270 of 100,000 fF on rung 2 (measured). The committed
 /// board keeps U5 `x: right` (D9), whose IMU_SCK is 21,478 fF (`extract`).
 #[test]
 fn the_forward_turn_on_the_pc0_sense_now_emits_under_every_bound() {
@@ -758,10 +766,10 @@ fn the_forward_turn_on_the_pc0_sense_now_emits_under_every_bound() {
     );
     let e = schematic::emit(&spec, &solved, &table).unwrap();
     let ladder = e.ladder.unwrap();
-    assert_eq!(ladder.rung, 3);
+    assert_eq!(ladder.rung, 2);
     assert_eq!(
         ladder.smallest,
-        Some(("EXT_SCL".to_owned(), 74_872, 100_000))
+        Some(("EXT_SCL".to_owned(), 79_270, 100_000))
     );
     assert_eq!(ladder.pour.as_ref().map(|p| p.0), Some(1));
     assert!(ladder.unrouted.is_empty() && ladder.unjudged.is_none());

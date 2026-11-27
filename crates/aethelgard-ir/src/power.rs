@@ -1696,6 +1696,25 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                     t.cite(&row.supply.at),
                 ));
             }
+            // `AET-WO-4413`, ruled 2026-11-27T21:31Z G1: the rail's solved top
+            // against the module's maximum is a static solve, with no ripple
+            // or load-step term; the peak at its pads is a bench row.
+            let max = u64::from(row.supply.max_mv) * 1000;
+            ctx.screen(
+                "radio_supply_peak_unbounded",
+                &m.reference,
+                format!(
+                    "{}: `{}`'s solved top is {} uV at {}, {} uV under the module's {} mV maximum ({}); the solve is static, with no ripple or load-step term, so the peak at {}'s pads is not bounded",
+                    m.reference,
+                    m.supply,
+                    lead.vout_uv.1,
+                    lead.reg.reference,
+                    max.saturating_sub(lead.vout_uv.1),
+                    row.supply.max_mv,
+                    t.cite(&row.supply.at),
+                    m.reference
+                ),
+            );
             // a UART crossing's Ioff holds the lines apart while either rail
             // is down (ruled 2026-11-26T04:03Z: it closes these two rows)
             if crossing.is_none() {

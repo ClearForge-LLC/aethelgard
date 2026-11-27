@@ -1032,9 +1032,10 @@ fn ci_asserts_sentinel_03_s_refusal_in_its_own_job_on_its_one_path() {
             .filter(|l| !l.trim_start().starts_with('#') && l.contains(needle))
             .count()
     };
-    // `AET-WO-4413` D6: the package is withdrawn, so the job runs one
-    // `--fab-out` on every run and asserts its refusal by extract's two drop
-    // limits, readiness met; nothing compares or keeps a package.
+    // `AET-WO-4413` D6 and 21:31Z A1 (i): the package is withdrawn, so the
+    // job runs a plain verify, refused by `extract`'s two drop limits, and
+    // one `--fab-out`, refused by readiness; nothing compares or keeps a
+    // package.
     let line = "$VERIFY_S03 --fab-out target/sentinel-03-package";
     assert_eq!(uses(line), 1, "{line}");
     assert!(job.contains(line), "{line} is in bench-package-s03");
@@ -1043,6 +1044,8 @@ fn ci_asserts_sentinel_03_s_refusal_in_its_own_job_on_its_one_path() {
         "\"`VDD_3V3`: VDD + VSS drop bound ",
         "\"`VDD_3V3_RF`: VDD + VSS drop bound ",
         "supply_drop_over_limit",
+        "FabricationNotReady",
+        "does not sense at {part}'s pin",
         "a package was written",
     ] {
         assert!(job.contains(needle), "{needle} is not asserted: {job}");

@@ -107,3 +107,9 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 - **Instrument:** a programmable supply on VDD_3V3_RF, with U13's output isolated or back-fed per its datasheet, ramped at ≤ 10 mV/s; a scope on `/U32_RESET` and VDD_3V3_RF.
 - **Pass line:** falling 3,003–3,126 mV; rising ≤ 3,157 mV; delay 120–350 ms.
 - **A disagreement adds:** the measured release. A release above 3,158 mV (VDD_3V3_RF's floor at U32's pin: the solved 3,303 mV less its 145 mV drop limit) is a finding against the board, not a retry.
+
+### B-11 U30's supply peak (`radio_supply_peak_unbounded:U30`)
+- **Prediction (rule, static only; `AET-WO-4413`, ruled 2026-11-27T21:31Z G1):** `VDD_3V3_RF` solves to at most 3,589.075 mV at U13 (100k/41.2k), 10.9 mV under U30's 3.6 V. That 3.6 V is VDD33's recommended maximum and also its absolute maximum (WROOM-02 v1.7 p. 21, Tables 6-2 and 6-1). The solve has no ripple or load-step term, so the peak is not predicted.
+- **Instrument:** a scope at U30's pads 1 (3V3) and 2 (GND), ground spring on the probe, 20 MHz bandwidth limit off; the pack at its 17.4 V maximum, U30 transmitting (its TX current steps), and U13 at its no-load and 505 mA ends.
+- **Pass line:** the peak at U30's pads ≤ 3,600 mV at every condition.
+- **A disagreement adds:** the measured peak and ripple, which the board follow-up's window rests on (a tighter reference or a lower nominal, ruled G1). A peak above 3,600 mV is a finding against the board, not a retry.

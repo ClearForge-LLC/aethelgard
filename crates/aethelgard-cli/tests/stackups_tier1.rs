@@ -97,8 +97,8 @@ fn a_version_one_specification_is_refused_by_name() {
 fn an_older_specification_lists_every_change_it_lacks() {
     let dir = scratch("entries");
     for (version, rows) in [
-        (20, vec![21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]),
-        (1, (2..=31).collect()),
+        (20, vec![21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]),
+        (1, (2..=32).collect()),
         (aethelgard_ir::SPECIFICATION_SCHEMA_VERSION + 1, vec![]),
         (0, vec![]),
     ] {
