@@ -1960,7 +1960,7 @@ fn entry_bounds(
     ret: &Pad,
     pads: &[&Pad],
     model: &Model,
-) -> Result<Vec<Result<u64, String>>, crate::extract::Refused> {
+) -> EntryBounds {
     let mut terminals = vec![ret];
     terminals.extend(pads.iter().copied());
     let nc = copper(board, routed, net, &terminals, model).map_err(to_refused)?;
@@ -1993,6 +1993,9 @@ fn entry_bounds(
     Ok(out)
 }
 
+/// Each entry pad's bound, µΩ, or why the gate cannot read it.
+type EntryBounds = Result<Vec<Result<u64, String>>, crate::extract::Refused>;
+
 /// The threads [`charge`] solves at once.
 const ENTRY_THREADS: usize = 6;
 
@@ -2006,7 +2009,7 @@ fn charge(
     entry: &[&Pad],
     ret: &Pad,
     r11: Option<u64>,
-    solve: &dyn Fn(&[&Pad]) -> Result<Vec<Result<u64, String>>, crate::extract::Refused>,
+    solve: &dyn Fn(&[&Pad]) -> EntryBounds,
 ) -> Result<Other, crate::extract::Refused> {
     let centre = |p: &Pad| {
         (

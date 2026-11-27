@@ -1960,13 +1960,13 @@ fn coverage(
         // witnesses; one with no device stays `no_device` (ruled (c)).
         let modelled = |part: &str| aethelgard_twin::model::kind(part).ok().flatten().is_some();
         let witnessed = match &target {
-            Target::I2c(id) => spec
-                .declared_i2c_devices()
-                .iter()
+            Target::I2c(id) => topology
+                .i2c_devices
+                .values()
                 .any(|d| &d.bus == id && modelled(&d.part)),
-            Target::Spi(id) => spec
-                .declared_spi_devices()
-                .iter()
+            Target::Spi(id) => topology
+                .spi_devices
+                .values()
                 .any(|d| &d.bus == id && modelled(&d.part)),
             _ => true,
         };
@@ -2676,8 +2676,8 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             .cloned()
             .collect();
         let conditions = std::mem::take(&mut report.conditions);
-        // `AET-WO-4310` (4), adversarial F9: a package always states what its
-        // board was built at, both lines, or none is made.
+        // A passing run's package states both lines, or none is made
+        // ([`package`], `AET-WO-4310` adversarial F9).
         let built = fab::built_lines(
             &report
                 .gates
@@ -2685,17 +2685,6 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
                 .find(|g| g.gate == "extract")
                 .map_or(Value::Null, |g| g.built.clone()),
         );
-        if built.len() != 2 {
-            return Err(refuse(
-                "PackageBuiltUnstated",
-                None,
-                format!(
-                    "no package: the `extract` gate stated {} of the two lines a package names what its board was built at (its outline and its capacitance ladder)",
-                    built.len()
-                ),
-                EXIT_INTERNAL,
-            ));
-        }
         let bound = fab::Bound {
             project: t.project,
             spec: t.spec,
@@ -2833,6 +2822,19 @@ fn package(
     if !report.ok {
         not_packaged(report, mode);
         return Ok(());
+    }
+    // `AET-WO-4310` (4), adversarial F9: a package always states what its
+    // board was built at, both lines, or none is made.
+    if bound.built.len() != 2 {
+        return Err(refuse(
+            "PackageBuiltUnstated",
+            None,
+            format!(
+                "no package: the `extract` gate stated {} of the two lines a package names what its board was built at (its outline and its capacitance ladder)",
+                bound.built.len()
+            ),
+            EXIT_INTERNAL,
+        ));
     }
     let exported = fab::derive(bound).map_err(crate::stopped)?;
     // The verdict as a call without the fab flags prints it.
@@ -5024,6 +5026,25 @@ mod tests {
         assert_eq!(std::fs::read_dir(&against).unwrap().count(), 0);
         let mut report = fresh(gate("pass"));
         assert_eq!(conclude(&mut report, None, &tail).ok(), Some(0));
+        // `AET-WO-4310` adversarial F9: a passing run whose extract states
+        // neither built line writes no package; it is refused before one.
+        let mut gates = gate("pass");
+        for g in &mut gates {
+            g.built = Value::Null;
+        }
+        let mut report = fresh(gates);
+        let refused = conclude(&mut report, Some(&FabMode::Write(out.clone())), &tail)
+            .expect_err("refused before any package");
+        // `PackageBuiltUnstated`'s code, not the export's (`fab::derive`
+        // stops otherwise on this scratch board, with its own).
+        assert_eq!(
+            format!("{refused:?}"),
+            format!("{:?}", ExitCode::from(EXIT_INTERNAL))
+        );
+        assert!(
+            !out.exists(),
+            "a package without its built lines is never written"
+        );
         std::fs::remove_dir_all(&scratch).unwrap();
     }
 
@@ -5120,7 +5141,8 @@ mod tests {
                 "extract",
                 json!({"verdict": "pass", "judged": 8, "ran": [
                 {"gate": "extract.lines", "judged": 8},
-                {"gate": "extract.supply", "off": "power.drop_limits"}]}),
+                {"gate": "extract.supply", "off": "power.drop_limits"}],
+                "capacitance_ladder": "not_run", "outline_mm": "44.10 x 48.50"}),
             ),
             prove,
             line_gate("build", json!({"verdict": "pass"})),

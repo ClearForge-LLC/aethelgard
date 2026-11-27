@@ -686,3 +686,8 @@ tests/boot_tier1.rs	a_long_window_foreign_run_under_its_scaled_guard_passes	130
 tests/boot_tier1.rs	a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard	188
 # AET-WO-4412 review (23:39Z (1)): pincheck's decompression-bomb plant deflates 256 MiB of zeros, a Furnace estimate (alone on the host, times 2.8, AET-WO-1310's factor); replace it at the next refit.
 tests/defaults.rs	a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated	6.076
+# AET-WO-4310 (4): package_built_4310_tier1's tests of 0.5 s or more, each run alone on Furnace (5.2, 1.0, 1.7 s), times 2.8 (AET-WO-1310's factor) as an ESTIMATE of CI
+# and rounded up, to be refit from this PR's first CI run (REFIT RULE 5).
+tests/package_built_4310_tier1.rs	a_laddered_board_records_its_rung_and_extract_reads_it_with_the_outline	14.6
+tests/package_built_4310_tier1.rs	a_board_that_runs_no_ladder_states_not_run_and_a_record_on_it_is_refused	2.8
+tests/package_built_4310_tier1.rs	a_package_whose_notes_state_neither_built_line_is_refused_by_against_fab	4.8

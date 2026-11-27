@@ -176,7 +176,7 @@ fn without_new_scenarios(held: &str, manifest: &str) -> String {
     };
     // Each entry is exactly four lines, as `to_vec_pretty` writes it.
     let body = &lines[start + 1..end];
-    if body.len() % 4 != 0 {
+    if !body.len().is_multiple_of(4) {
         return manifest.to_owned();
     }
     let kept: Vec<&[&str]> = body
