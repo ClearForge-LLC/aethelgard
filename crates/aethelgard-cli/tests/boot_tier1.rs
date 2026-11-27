@@ -861,10 +861,12 @@ fn inputs_are_refused_before_renode_is_looked_for() {
 
 /// `AET-WO-4400g` §1.1–§1.2 (ruled on PR #229): each clock serves one run
 /// kind. `--foreign` on a specification with no `mcu.foreign_clock` is
-/// `ForeignClockUndeclared`, never a boot at the solved clock; a generated
-/// run on one that declares it is `ForeignClockOnGeneratedRun`. Both are
-/// refused before any input is read or a tool looked for (exit 3, no
-/// `renode` on `PATH`), so even a firmware that is not there gets the name.
+/// `ForeignClockUndeclared`, never a boot at the solved clock, refused before
+/// any input is read or a tool looked for (exit 3, no `renode` on `PATH`), so
+/// even a firmware that is not there gets the name. A generated run on one
+/// that declares it drops the declaration (`AET-WO-4412` D1 (a)): it takes
+/// the generated platform, at the solved clock, and refuses the foreign one
+/// as a platform not emitted for its topology.
 #[test]
 fn a_clock_never_crosses_its_run_kind() {
     let empty = Dir::new("empty");
@@ -900,29 +902,31 @@ fn a_clock_never_crosses_its_run_kind() {
         "{v}"
     );
     let v = args(&declaring, &declared_platform, "--for", "10ms");
-    assert_eq!(v["error"]["kind"], "ForeignClockOnGeneratedRun", "{v}");
+    assert_eq!(v["error"]["kind"], "PlatformNotEmitted", "{v}");
+    let generated = input.0.join("generated-platform.repl");
+    let v = args(&declaring, &generated, "--for", "10ms");
+    assert_ne!(v["error"]["kind"], "PlatformNotEmitted", "{v}");
+    assert!(
+        !v["error"]["kind"]
+            .as_str()
+            .unwrap()
+            .starts_with("ForeignClock"),
+        "{v}"
+    );
 }
 
 /// `AET-WO-4400g` §1.2, the check wired into the judge: the reference
-/// declared at 64 MHz, and the RCC registers reading back as ArduPilot left
-/// them (200 MHz timers, measured), fails by name on both buses, with both
-/// figures; at reset they hold (adversarial pass: dropping the check from
-/// the judge survived every tier-1 test).
+/// declared at ArduPilot's 200 MHz timers (`AET-WO-4412` D1 (a)), and the
+/// RCC registers reading back at reset (64 MHz), fails by name on both
+/// buses, with both figures; as ArduPilot leaves them they hold (adversarial
+/// pass: dropping the check from the judge survived every tier-1 test).
 #[test]
 fn a_foreign_clock_the_rcc_registers_contradict_fails_by_name() {
-    let ardupilot = [
-        "0x3F003025",
-        "0x0000801B",
-        "0x00000048",
-        "0x00000440",
-        "0x00408040",
-        "0x01090231",
-    ];
     let (code, v) = foreign(&foreign_transcript_rcc(
         &good_foreign_log(),
         "0x00000800",
         &flash_unchanged(),
-        &ardupilot,
+        &common::foreign::RCC_AT_RESET,
     ));
     assert_eq!(code, Some(1), "{v}");
     let kinds: Vec<&str> = v["findings"]
@@ -944,9 +948,9 @@ fn a_foreign_clock_the_rcc_registers_contradict_fails_by_name() {
             )
         })
         .collect();
-    assert_eq!(checked, [(64_000_000, 200_000_000); 2], "{v}");
+    assert_eq!(checked, [(200_000_000, 64_000_000); 2], "{v}");
     assert_eq!(
-        v["boot"]["clock"]["registers"][5]["value"], "0x01090231",
+        v["boot"]["clock"]["registers"][5]["value"], "0x01010280",
         "{v}"
     );
     let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
@@ -2745,7 +2749,7 @@ fn foreign_transcript(run_log: &str, icsr: &str) -> String {
 
 /// A foreign transcript with `flash`, the flash hash lines, as given.
 fn foreign_transcript_flash(run_log: &str, icsr: &str, flash: &str) -> String {
-    foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_AT_RESET)
+    foreign_transcript_rcc(run_log, icsr, flash, &common::foreign::RCC_ARDUPILOT_HSI)
 }
 
 /// The reference board's CONSOLE (USART1) as unmodified ArduPilot brings it
@@ -2779,11 +2783,20 @@ fn foreign_transcript_rcc(run_log: &str, icsr: &str, flash: &str, rcc: &[&str; 6
 /// PC, `icsr`, then `registers`, then the RCC registers the clock check reads
 /// (`AET-WO-4400g`), then each serial line's `PUPDR` (`AET-WO-2311`).
 fn foreign_reads(icsr: &str, registers: &[&str], rcc: &[&str; 6]) -> String {
+    // `RCC_D3CFGR` after the six (`AET-WO-4412` D2): at reset with the reset
+    // words, else as ArduPilot leaves it, `D3PPRE` /2 (`stm32h7_mcuconf.h`
+    // L294).
+    let d3cfgr = if *rcc == common::foreign::RCC_AT_RESET {
+        "0x00000000"
+    } else {
+        "0x00000040"
+    };
     let mut s = String::from("AETHELGARD-BOOT-BEGIN\n");
     for r in ["0x0000000000123456", "0x00000064", "0x8000010", icsr]
         .iter()
         .chain(registers.iter())
         .chain(rcc.iter())
+        .chain([d3cfgr].iter())
         .chain([CONSOLE_PULLS].iter())
     {
         s.push_str(r);
@@ -3480,7 +3493,7 @@ fn foreign_transcript_reads(blocks: &[(&str, &[&str])]) -> String {
         s.push_str(&foreign_reads(
             icsr,
             registers,
-            &common::foreign::RCC_AT_RESET,
+            &common::foreign::RCC_ARDUPILOT_HSI,
         ));
     }
     s.push_str(&flash_unchanged());
@@ -4406,3 +4419,355 @@ fn a_capture_that_cannot_be_read_whole_is_named_and_not_archived() {
         assert_eq!(fs::read_dir(&archive).unwrap().count(), 0, "{v}");
     }
 }
+
+/// `AET-WO-4412` (4), ruled D5: a firmware that resets the core by
+/// `SYSRESETREQ` is judged across the reboot. The reset is named, info,
+/// with what the twin's reset keeps and loses, and its instant is in
+/// `boot.resets_ns`; the flash model's idle warning within a quantum of the
+/// reset, where Renode's reset of every peripheral ends its transaction
+/// (measured on Sentinel-03), is not a step error; the same warning a
+/// second later, with no reset or finish line before it, still is.
+#[test]
+fn a_foreign_reboot_is_named_and_its_reset_artefact_is_not_a_step_error() {
+    const RESET: &str = "[00:00:00.006708893] [INFO] nvic: Resetting platform with SYSRESETREQ\n";
+    const IDLE_AT_RESET: &str = "[00:00:00.006708900] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation\n";
+    const IDLE_LATER: &str = "[00:00:00.008000000] [WARNING] spi1.spi1mux.u4: Transmission finished in the unexpected state: RecognizeOperation\n";
+    let log = format!("{}{RESET}{IDLE_AT_RESET}", good_foreign_log());
+    let (code, v) = foreign(&foreign_transcript(&log, "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert!(kinds.contains(&"foreign_reboot"), "{v}");
+    assert!(!kinds.contains(&"spi_step_error"), "{v}");
+    assert_eq!(
+        v["boot"]["resets_ns"],
+        serde_json::json!([6_708_893]),
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{log}{IDLE_LATER}"),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|f| f["kind"] == "spi_step_error"),
+        "{v}"
+    );
+    // With no reset, no record of one.
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+    assert!(v["boot"].get("resets_ns").is_none(), "{v}");
+}
+
+/// `AET-WO-4412` D1 (b) (ruled 2026-11-26T11:26Z): `validate` holds a
+/// declared foreign clock to its own consistency only, so a firmware of the
+/// user's own may declare its own (here the reset clock's 64 MHz at VOS
+/// Scale 2); `simulate --foreign` holds it to ArduPilot's tree only when the
+/// ELF names `AP_HAL::panic`. Both refusals come before any tool is looked
+/// for (exit 3, no `renode` on `PATH`): an ArduPilot ELF on that clock is
+/// `ForeignClockNotArduPilots`, naming the field and both figures; an ELF that
+/// names no panic is `ForeignPanicSymbolMissing` first, as before.
+#[test]
+fn an_ardupilot_firmware_on_a_clock_not_its_trees_is_refused_at_the_run() {
+    let empty = Dir::new("empty");
+    let input = Dir::new("own-clock");
+    let (spec, platform) = common::foreign::write_with(&input.0, |v| {
+        let c = &mut v["mcu"]["foreign_clock"];
+        for bus in ["apb1_timers_hz", "apb2_timers_hz"] {
+            c[bus]["value"] = 64_000_000.into();
+        }
+        for (_, u) in c["usarts"].as_object_mut().unwrap() {
+            u["value"] = 64_000_000.into();
+        }
+        c["vos"]["value"] = "scale2".into();
+    });
+    let out = run(
+        &empty.0,
+        &[
+            OsStr::new("validate"),
+            OsStr::new("--file"),
+            spec.as_os_str(),
+        ],
+    );
+    assert_eq!(out.status.code(), Some(0), "{}", report(&out));
+    let boot = |elf: &[u8]| {
+        let fw = input.write("fw.elf", elf);
+        let out = run(
+            &empty.0,
+            &[
+                OsStr::new("simulate"),
+                OsStr::new("--platform"),
+                platform.as_os_str(),
+                OsStr::new("--firmware"),
+                fw.as_os_str(),
+                OsStr::new("--spec"),
+                spec.as_os_str(),
+                OsStr::new("--foreign"),
+                OsStr::new("10ms"),
+            ],
+        );
+        (out.status.code(), report(&out))
+    };
+    let (code, v) = boot(&foreign_elf());
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ForeignClockNotArduPilots", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("apb1_timers_hz declares 64000000 Hz") && m.contains("runs it at 200000000 Hz"),
+        "{m}"
+    );
+    let (code, v) = boot(&elf_at(0x0800_0000, &foreign_code(), 40));
+    assert_eq!(code, Some(3), "{v}");
+    assert_eq!(v["error"]["kind"], "ForeignPanicSymbolMissing", "{v}");
+}
+
+/// `AET-WO-4412` (a), ruled 2026-11-26T14:09Z: the DMA model's line for a
+/// circular stream paced by a timer request, which it refuses and does not
+/// start, fails the run as `foreign_dma_stream_unbounded`, by name; a run
+/// without it does not.
+#[test]
+fn a_circular_paced_stream_is_refused_by_name() {
+    const UNBOUNDED: &str = "[00:00:00.006000000] [WARNING] dma2: AETHELGARD-DMA-UNBOUNDED stream 1 req 15: a circular stream paced by a timer request\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{UNBOUNDED}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let unbounded: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_dma_stream_unbounded")
+        .collect();
+    assert_eq!(unbounded.len(), 1, "{v}");
+    assert!(
+        unbounded[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("stream 1 req 15"),
+        "{v}"
+    );
+    let (code, v) = foreign(&foreign_transcript(&good_foreign_log(), "0x00000800"));
+    assert_eq!(code, Some(0), "{v}");
+}
+
+/// `AET-WO-4412` review, 2026-11-26T23:39Z (5): the DMA model's line for a
+/// stream paced by a timer request but aimed at a register other than the
+/// timer's DMAR (whose per-write acknowledgement it does not model), which
+/// it refuses and does not start, fails the run as
+/// `foreign_dma_stream_unmodelled`, by name.
+#[test]
+fn a_paced_stream_not_aimed_at_dmar_is_refused_by_name() {
+    const UNMODELLED: &str = "[00:00:00.006000000] [WARNING] dma2: AETHELGARD-DMA-UNMODELLED stream 1 req 15: a stream paced by a timer request aimed at 0x40010034, not at a timer's DMAR\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{UNMODELLED}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let refused: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_dma_stream_unmodelled")
+        .collect();
+    assert_eq!(refused.len(), 1, "{v}");
+    assert!(
+        refused[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("aimed at 0x40010034"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4412` D4 (a), "lazy, never different": the timer model's line for
+/// a skipped event that had an effect fails the run as
+/// `foreign_timer_lazy_differed`, by name (adversarial pass: a firmware that
+/// passes because the twin held its timer back).
+#[test]
+fn a_lazy_timer_that_differed_fails_the_run_by_name() {
+    const LAZY: &str = "[00:00:00.006000000] [WARNING] timer1: lazy: a skipped event at 5999000 ns had an effect (CH1 edge), applied at 6000000 ns\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{LAZY}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let lazy: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_timer_lazy_differed")
+        .collect();
+    assert_eq!(lazy.len(), 1, "{v}");
+    assert!(
+        lazy[0]["message"].as_str().unwrap().contains("(CH1 edge)"),
+        "{v}"
+    );
+}
+
+/// `AET-WO-4412` (ii), ruled 2026-11-26T15:27Z: nothing committed binds a
+/// field the foreign verdict names `not_rerun_stable` (`boot.instructions`,
+/// `boot.pc`). Every committed reader of a verdict's `pc` or `instructions`
+/// (CI scripts and workflows, examples, every crate's tests) is listed here
+/// with why it is not one; a new one fails until it is listed or removed.
+#[test]
+fn no_committed_file_binds_a_not_rerun_stable_field() {
+    // Each one reads a generated run's verdict, whose `instructions` is
+    // `{expected, observed}` (the plan's count, re-run stable: the generated
+    // platform has no timer or DMA model).
+    const GENERATED: [(&str, &str); 8] = [
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "b[\"instructions\"][\"observed\"], 1_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 1000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 10_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"][\"observed\"], 1_000_000,",
+        ),
+        (
+            "crates/aethelgard-cli/tests/twin_tier2.rs",
+            "v[\"boot\"][\"instructions\"]",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"instructions\"][\"expected\"], 1_000_000);",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"instructions\"][\"observed\"], 1_000_000);",
+        ),
+        (
+            "crates/aethelgard-cli/tests/boot_tier1.rs",
+            "assert_eq!(b[\"pc\"], \"0x08000010\");",
+        ),
+    ];
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    let mut dirs: Vec<std::path::PathBuf> = ["ci", ".github", "examples"]
+        .iter()
+        .map(|d| root.join(d))
+        .collect();
+    for c in std::fs::read_dir(root.join("crates")).unwrap() {
+        dirs.push(c.unwrap().path().join("tests"));
+    }
+    let binds = |l: &str| {
+        let quoted = ["pc", "instructions"]
+            .iter()
+            .any(|f| l.contains(&format!("[\"{f}\"]")) || l.contains(&format!("['{f}']")));
+        let dotted = ["pc", "instructions"].iter().any(|f| {
+            l.match_indices(&format!(".{f}")).any(|(i, m)| {
+                !l[i + m.len()..]
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_' || c == '(')
+            })
+        });
+        quoted || dotted
+    };
+    let mut found = Vec::new();
+    let mut stack = dirs;
+    while let Some(d) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries {
+            let p = e.unwrap().path();
+            if p.is_dir() {
+                stack.push(p);
+                continue;
+            }
+            let Ok(text) = std::fs::read_to_string(&p) else {
+                continue;
+            };
+            let rel = p.strip_prefix(&root).unwrap().display().to_string();
+            // A comment binds nothing.
+            for line in text
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.starts_with("//") && !l.starts_with('#') && binds(l))
+            {
+                // This test's own list.
+                if rel == "crates/aethelgard-cli/tests/boot_tier1.rs"
+                    && (line.starts_with("(\"crates/") || line.contains(".any(|f| l.contains"))
+                {
+                    continue;
+                }
+                found.push((rel.clone(), line.to_owned()));
+            }
+        }
+    }
+    found.sort();
+    let mut want: Vec<(String, String)> = GENERATED
+        .iter()
+        .map(|(f, l)| ((*f).to_owned(), (*l).to_owned()))
+        .collect();
+    want.sort();
+    assert_eq!(found, want);
+}
+
+/// A foreign boot of the reference board in a 3 s window on a stub that
+/// answers and then runs `then` (`AET-WO-4412`, ruled 2026-11-26T21:47Z (a)):
+/// its guard is `renode::foreign_boot_wall`'s 182.3 s, not 120 s.
+fn foreign_3s_then(then: &str) -> (Option<i32>, Value, std::time::Duration) {
+    let tb = toolbox_foreign_then(
+        &foreign_transcript(&good_foreign_log(), "0x00000800"),
+        "2.9997000005",
+        true,
+        then,
+    );
+    let input = Dir::new("in");
+    let fw = input.write("fw.elf", &foreign_elf());
+    let start = std::time::Instant::now();
+    let out = foreign_with(&tb.0, &fw, "3000ms");
+    (out.status.code(), report(&out), start.elapsed())
+}
+
+/// `AET-WO-4412`, ruled 2026-11-26T21:47Z (a): a foreign run whose Renode
+/// takes longer than the boot's 120 s, inside its window's scaled guard,
+/// reaches its verdict; under a flat 120 s it would be a `ToolError`.
+#[test]
+fn a_long_window_foreign_run_under_its_scaled_guard_passes() {
+    let (code, v, took) = foreign_3s_then(SLOW_RENODE);
+    assert_eq!(code, Some(0), "{v}");
+    assert_eq!(v["verdict"], "pass", "{v}");
+    assert!(v.get("wall_bound_ms").is_none(), "{v}");
+    assert!(took.as_secs() > 120, "{took:?}");
+}
+
+/// The same run on a Renode that never returns is still killed, as a
+/// `ToolError`, at its scaled guard, 182.3 s, and not before.
+#[test]
+fn a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard() {
+    let (code, v, took) = foreign_3s_then("/bin/sleep 600");
+    assert_eq!(code, Some(5), "{v}");
+    assert_eq!(v["error"]["kind"], "ToolError", "{v}");
+    assert!(
+        v["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("within the 182.325 s wall-clock hang guard"),
+        "{v}"
+    );
+    assert!(
+        took.as_millis() >= 182_325 && took.as_secs() < 240,
+        "{took:?}"
+    );
+}
+
+/// A Renode slower than the boot's guard: 125 s, past 120 s.
+const SLOW_RENODE: &str = "/bin/sleep 125";

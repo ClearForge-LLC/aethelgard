@@ -1,0 +1,36 @@
+# AET-WO-4412 triage: 4300i R2-R8 and the RC baud row (tree: branch from main eea3198e, head 47a48fc9)
+
+Read-only. Nothing built or run; every claim is from reading code and documents unless marked [computed].
+
+| row | text (short) | state on this tree | lean | reason |
+|---|---|---|---|---|
+| R2 | generator does not see declared reservations | OPEN. `SolvedTopology` (ir/src/lib.rs:642) has no reserved field; svd-hal board.rs:1930-1938 checks only the constant `RESERVED_PINS` (PA13/14, PC14/15; ir solve.rs:21). The solver honours `mcu.reserved_pins` (solve.rs:43-45, 436, 1704-1736; 4300i #338 ab9d4663). | after P4 | Serves no exit clause: a pin on PC9 can only come from a hand-edited topology, since `solve` never emits it. A fix is a solved-topology bump (moves every committed package, INV-08) and is outside 4412's fence (no IR/solver bump listed). |
+| R3 | runtime pulls the engine cannot see (bidir DShot PULLUP; BLHeli passthrough PULLUP) | Passthrough half CLOSED by 4300j (#358, 465bd860): 442 kohm pull-down plus `pull.fitment`, firmware pull follows it (roadmap.md:1282 "done"; hwdef lib.rs:585-594). Bidir half: hwdef writes no BIDIR (hwdef lib.rs:643-645 "nothing declares bidirectional DShot (D7)"). | after P4 (bidir half); passthrough closed | Slice B's DShot work (MOT_PWM_TYPE, timer DMA) does not need a runtime pull judgement. Whether a parameter can reach bidir DShot with no BIDIR in hwdef is 4300i's own reading of ArduPilot (FEEDBACK:140, RCOutput_bdshot.cpp:117-128). I did not verify it against the pinned source. |
+| R4 | step 8 does not check the motor net's other ends (MCU pad, connector pin) | OPEN. eda support.rs step 8 is `motor_pulls` (support.rs:789-790, 1051-1290): pull, link, extra resistor only. No MCU-pad or connector-pin check on the motor net. | after P4 | The netlist is generated from the solved topology and the spec, so an unconnected motor net is not a plausible output. The gap is a hand-edited netlist. Not an exit-clause need, and the fence excludes eda. Natural home: slice D/E or the next eda WO. |
+| R5 | stand-in motor boards draw nothing (7 nets on hse-external-8, d1-drv8876); 5 on d2-drv8833 refused | NOT RE-VERIFIED in detail. hse-external-8 fixture has 4 motor_outputs, all `fitment: fitted`. I did not count drawn nets. Related gap persists: step 8 counts resistors only (4300j F4/R5, FEEDBACK:138, 196, 210). | after P4 | Affects non-flight fixtures only. Sentinel-03 is drawn and judged. No clause needs it. |
+| R6 | FT and reservation tests use synthetic pin tables | Still true by inspection: ir/tests/solve.rs:1 and offboard.rs:19 use synthetic tables. Real-table coverage is in cli/tests/solve_cli.rs (ConnectorPinNotFt, ReservedPin) and spike out files. | after P4 | A test-quality row. No clause. No later WO took it (grep of roadmap and FEEDBACKs found none). |
+| R7 | mistyped connector pin refused at validate as McuPinStructureUnheld, earlier than UnknownPin | Behaviour as described and tested: ir/tests/offboard.rs:713, serial.rs:1021-1029, pin_devices.rs:1039. Still refused by name. | closed (won't-fix) | An observation, not a defect: refusal is by name and earlier. Nothing to build. |
+| R8 | new CLI tests with no weight row get default weight unless CI measures >=10 s | Enforced as designed: ci/shard.sh:31-32, 45 (DEFAULT_WEIGHT 0.05), 309-311 (P3_SECONDS=10); 4300i's own row at ci/test-weights.tsv:556. | closed (won't-fix: it is the rule) | This is 1914 P3 working. 4412 acceptance already requires `ci/shard.sh plan` with measured weights. A WO obeys it; it does not take it. |
+| RC baud | tolerance judged at declared 420000 while ArduPilot runs 416666 | The hwdef names both: hwdef lib.rs:370-377 (`rc_runs`); cli/tests/hwdef_tier1.rs:232, 261 (4400b #189 F3). The tolerance gate is `check_silicon` (ir/src/serial.rs:~410-458). `peer_deviation_ppm` is the cited spread of the two CRSF bauds, 3,334/416,666 = 8,002 ppm (serial.rs:479-493). Sentinel-03 declares 420000, peer 8,002 `cited` (examples/sentinel-03.json). An earlier measure is in 4240a FEEDBACK:52 (P10): "CRSF 416666 on +/-102 ppm: margin 22,600 (receiver 2,698, peer 8,002, Table 407 33,300)". | closed (done by 4400b; arithmetic below shows 416666 inside) | See the numbers below. Optional, only if the architect wants it pinned: a small test of ArduPilot's own divisor. |
+
+## RC baud numbers [computed]
+
+Kernel clock 100 MHz (task statement). HSE budget +/-102 ppm (4240a P8, ABM8AIG-16, pull 30). ChibiOS' exact USARTDIV rounding at 416666 is NOT verified here; I took the nearest whole divisor, as `solve_brr` does.
+- Declared 420000: USARTDIV 238 (0xEE, BRR[3:0] != 0, so Table 407, M=8 bit, 33,300 ppm). Actual 420168 baud, error +400 ppm. Worst case = ceil(400+102) + 8,002 peer, about 8,500 ppm. Margin about 24,800.
+- ArduPilot's 416666: USARTDIV 240 (0xF0, BRR[3:0] = 0, so Table 406, 37,500 ppm). Actual 416666.67 baud, error +1.6 ppm. Against a 420000 peer (ELRS or Betaflight) the offset is 8,000 ppm. Against a 416666 peer (TBS) it is 1.6 ppm. Worst case = 1.6 + 102 + 8,000, about 8,100 ppm. Margin about 29,400 against 37,500.
+- Result: inside the tolerance with a wide margin. The declared 8,002 peer figure is exactly the 416666-versus-420000 spread, so the judged worst case already covers ArduPilot's baud against a 420000 peer. The judged case (about 8,500) is the larger of the two.
+- Not gated: no check evaluates BRR 240 itself. The equivalence is by this arithmetic and the cited-spread rule, not by a test. If wanted, a one-test addition could assert that for an `rc_crsf` port the divisor at CRSF_MIN_BAUD on the solved kernel holds. That is small, but it is scope the WO does not name.
+
+## Per-row notes (citations)
+
+- R2: board.rs:1930-1938 is the only reservation check in the generator; hwdef (crates/aethelgard-hwdef/src/lib.rs) and pincheck have no reservation logic (grep). Solver side: solve.rs:43 `all_reserved`, 51 `reserved_refusal`. `versions.rs:280` records `mcu.reserved_pins` as a required key in specification 28. Solved version has since moved (4300j: solved 18).
+- R3: the 4300i FEEDBACK §7 R3 text at line 226-228; D2 and D7 are at 167 and ~140. `HAL_SERIAL_ESC_COMM_ENABLED` is deliberately not written (hwdef lib.rs:594), per 4300j.
+- R4/R5: 4300j D-b (FEEDBACK:193-196) kept step 8 to the resistor count and named it a known gap. 4300j has its own rows R2-R8 (FEEDBACK:207-213), a different list; do not conflate. Its R5 (resistors only), R6 (driver-IC lines judged by the ESC bound) and R8 (link BOM "0") are separate rows and not part of this triage.
+- R6: no later WO reference found. The roadmap row for R2-R8 is at docs/roadmap.md:1283 ("P4 slice B, to triage there").
+- Other 4412 rows seen in passing: `MOT_PWM_TYPE` is a parameter, not a hwdef.dat define (4400b FEEDBACK:129, 259; hwdef lib.rs:638-640 `not_emitted`), carried by a `defaults.parm` beside hwdef.dat. The WO text "the hwdef emits MOT_PWM_TYPE" therefore means a second emitted file. That is a design point for part (2), not a triage row.
+
+## Uncertain
+
+- R5's count of drawn nets on the two boards was not re-measured.
+- R3's bidir claim rests on 4300i's reading of ArduPilot, not on the pinned source here.
+- ChibiOS' real USARTDIV for 416666 at the kernel clock ArduPilot sets for USART2 was not checked (100 MHz taken from the task).

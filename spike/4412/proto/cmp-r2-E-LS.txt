@@ -1,0 +1,49 @@
+A = rep/dshot-r2-E-q/console.txt.gz
+B = rep/dshot-r2-LS-q/console.txt.gz
+dma1    A=529573 B=529497 same_without_stamps=False same_with_stamps=False
+    first difference at #137101: A=(6192368140, b'0x8105668', b'WUInt32', b'0xA4', b'0x11') B=(6192371200, b'0x8105668', b'WUInt32', b'0xA4', b'0x21')
+    differing positions (of the common length 529497): 375172
+    stamps differ at 1079 of the 137101 agreeing items; B-A ns: min -15710 max 104130; first at #64038 (A 5280148080)
+dma2    A=645825 B=645753 same_without_stamps=False same_with_stamps=False
+    first difference at #130519: A=(6188134600, b'0x8104A98', b'RUInt32', b'0x40', b'0x400') B=(6188137550, b'0x80FA84C', b'WUInt32', b'0x30', b'0x4001004C')
+    differing positions (of the common length 645753): 349076
+    stamps differ at 940 of the 130519 agreeing items; B-A ns: min -26530 max 104260; first at #51707 (A 5280148080)
+timer1  A=539573 B=539573 same_without_stamps=False same_with_stamps=False
+    first difference at #1656: A=(6180672220, b'0x81072B4', b'WUInt32', b'0x4C', b'0x3') B=(6180672220, b'0x80F9D02', b'WUInt32', b'0x4C', b'0x3')
+    differing positions (of the common length 539573): 257372
+    stamps differ at 34 of the 1656 agreeing items; B-A ns: min -25380 max 58080; first at #1 (A 100400000)
+usart1  A=8306 B=8306 same_without_stamps=False same_with_stamps=False
+    first difference at #8059: A=(10003559980, b'0x80FDB82', b'WByte', b'0x28', b'0x31') B=(10003543720, b'0x80FDB82', b'WByte', b'0x28', b'0x9')
+    differing positions (of the common length 8306): 4
+    stamps differ at 1928 of the 8059 agreeing items; B-A ns: min -2471650 max 39630; first at #6131 (A 6186279670)
+usart2  A=430 B=430 same_without_stamps=True same_with_stamps=False
+    stamps differ at 219 of the 430 agreeing items; B-A ns: min -37320 max 1554830; first at #211 (A 6214470330)
+usart3  A=399 B=399 same_without_stamps=False same_with_stamps=False
+    first difference at #350: A=(10003571750, b'0x80FDB82', b'WByte', b'0x28', b'0x21') B=(10003556100, b'0x80FDB82', b'WByte', b'0x28', b'0x11')
+    differing positions (of the common length 399): 4
+    stamps differ at 102 of the 350 agreeing items; B-A ns: min -2471140 max 20590; first at #248 (A 6753576710)
+xfer    A=6986 B=6986 same_without_stamps=False same_with_stamps=False
+    first difference at #0: A=(6180697230, b'dma2', b'stream 1 req 15 NDTR 76 EN 6180670750 end 6180697224 reqs 19: 0 0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0 0') B=(6180697230, b'dma2', b'stream 1 req 15 NDTR 76 EN 6180671350 end 6180697224 reqs 19: 0 0 0 0 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 3 0 0 0 0 0 0 0 0')
+    differing positions (of the common length 6986): 6978
+end-of-window read blocks: A=4 B=4
+  last block: 63 lines vs 63; differing lines: 1
+    (0, b'0x0000000018305D8C', b'0x000000001830164F')
+  block 0 differs in 1 lines
+  block 1 differs in 1 lines
+  block 2 differs in 1 lines
+  block 3 differs in 1 lines
+warnings/errors, A count, B count (only where they differ):
+     68506   68498  WARNING dma2: Unhandled write to offset #. Unhandled bits: [#, #-#] when writing value #. Tags: CFEIF# (
+     62118   62110  WARNING dma1: Unhandled write to offset #. Unhandled bits: [#, #-#] when writing value #. Tags: CFEIF# (
+     56892   56884  WARNING spi2: Unhandled write to offset #. Unhandled bits: [#-#, #-#, #-#] when writing value #. Tags: R
+     56891   56883  WARNING spi2: AETHELGARD-CFG# # #
+     31455   31451  WARNING dma1: Unhandled write to offset #. Unhandled bits: [#-#, #] when writing value #. Tags: DMEIE (#
+     31092   31088  WARNING dma2: Unhandled write to offset #. Unhandled bits: [#-#, #] when writing value #. Tags: DMEIE (#
+     30433   30429  WARNING dma1: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: FS (#).
+     30428   30424  WARNING dma2: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: FS (#).
+     30425   30421  WARNING rcc: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: SPI#LPEN (#).
+     28446   28442  WARNING spi2: Unhandled write to offset #. Unhandled bits: [#, #] when writing value #. Tags: MBR (#).
+     28446   28442  WARNING spi2: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: MASRX (#).
+     28446   28442  WARNING spi2: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: SSOE (#).
+     28446   28442  WARNING spi2: Unhandled write to offset #. Unhandled bits: [#] when writing value #. Tags: OVRIE (#).
+     28445   28441  ERROR spi2: Attempted to set peripheral into SPI slave mode. Only master mode is supported

@@ -1,0 +1,139 @@
+timer	request_number	signal	table	printed_page	pdf_page	quote
+TIM1	11	TIM1_CH1	Table 124	697	697	"11 TIM1_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	11	TIM1_CH1	Table 125 (duplicate of 124)	698	698	"11 TIM1_CH1"
+TIM1	11	TIM1_CH1	Table 103 (block interconnect)	603	603	"tim1_ch1_dma dmamux1_req_in11"
+TIM1	12	TIM1_CH2	Table 124	697	697	"12 TIM1_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	12	TIM1_CH2	Table 125 (duplicate of 124)	698	698	"12 TIM1_CH2"
+TIM1	12	TIM1_CH2	Table 103 (block interconnect)	603	603	"tim1_ch2_dma dmamux1_req_in12"
+TIM1	13	TIM1_CH3	Table 124	697	697	"13 TIM1_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	13	TIM1_CH3	Table 125 (duplicate of 124)	698	698	"13 TIM1_CH3"
+TIM1	13	TIM1_CH3	Table 103 (block interconnect)	603	603	"tim1_ch3_dma dmamux1_req_in13"
+TIM1	14	TIM1_CH4	Table 124	697	697	"14 TIM1_CH4" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	14	TIM1_CH4	Table 125 (duplicate of 124)	698	698	"14 TIM1_CH4"
+TIM1	14	TIM1_CH4	Table 103 (block interconnect)	603	603	"tim1_ch4_dma dmamux1_req_in14"
+TIM1	15	TIM1_UP	Table 124	697	697	"15 TIM1_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	15	TIM1_UP	Table 125 (duplicate of 124)	698	698	"15 TIM1_UP"
+TIM1	15	TIM1_UP	Table 103 (block interconnect)	603	603	"tim1_up_dma dmamux1_req_in15"
+TIM1	16	TIM1_TRIG	Table 124	697	697	"16 TIM1_TRIG" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	16	TIM1_TRIG	Table 125 (duplicate of 124)	698	698	"16 TIM1_TRIG"
+TIM1	16	TIM1_TRIG	Table 103 (block interconnect)	603	603	"tim1_trig_dma dmamux1_req_in16"
+TIM1	17	TIM1_COM	Table 124	697	697	"17 TIM1_COM" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM1	17	TIM1_COM	Table 125 (duplicate of 124)	698	698	"17 TIM1_COM"
+TIM1	17	TIM1_COM	Table 103 (block interconnect)	603	603	"tim1_com_dma dmamux1_req_in17"
+TIM2	18	TIM2_CH1	Table 124	697	697	"18 TIM2_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM2	18	TIM2_CH1	Table 125 (duplicate of 124)	698	698	"18 TIM2_CH1"
+TIM2	18	TIM2_CH1	Table 103 (block interconnect)	603	603	"tim2_ch1_dma dmamux1_req_in18"
+TIM2	19	TIM2_CH2	Table 124	697	697	"19 TIM2_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM2	19	TIM2_CH2	Table 125 (duplicate of 124)	698	698	"19 TIM2_CH2"
+TIM2	19	TIM2_CH2	Table 103 (block interconnect)	603	603	"tim2_ch2_dma dmamux1_req_in19"
+TIM2	20	TIM2_CH3	Table 124	697	697	"20 TIM2_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM2	20	TIM2_CH3	Table 125 (duplicate of 124)	698	698	"20 TIM2_CH3"
+TIM2	20	TIM2_CH3	Table 103 (block interconnect)	603	603	"tim2_ch3_dma dmamux1_req_in20"
+TIM2	21	TIM2_CH4	Table 124	697	697	"21 TIM2_CH4" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM2	21	TIM2_CH4	Table 125 (duplicate of 124)	698	698	"21 TIM2_CH4"
+TIM2	21	TIM2_CH4	Table 103 (block interconnect)	603	603	"tim2_ch4_dma dmamux1_req_in21"
+TIM2	22	TIM2_UP	Table 124	697	697	"22 TIM2_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM2	22	TIM2_UP	Table 125 (duplicate of 124)	698	698	"22 TIM2_UP"
+TIM2	22	TIM2_UP	Table 103 (block interconnect)	603	603	"tim2_up_dma dmamux1_req_in22"
+TIM3	23	TIM3_CH1	Table 124	697	697	"23 TIM3_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	23	TIM3_CH1	Table 125 (duplicate of 124)	698	698	"23 TIM3_CH1"
+TIM3	23	TIM3_CH1	Table 103 (block interconnect)	603	603	"tim3_ch1_dma dmamux1_req_in23"
+TIM3	24	TIM3_CH2	Table 124	697	697	"24 TIM3_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	24	TIM3_CH2	Table 125 (duplicate of 124)	698	698	"24 TIM3_CH2"
+TIM3	24	TIM3_CH2	Table 103 (block interconnect)	603	603	"tim3_ch2_dma dmamux1_req_in24"
+TIM3	25	TIM3_CH3	Table 124	697	697	"25 TIM3_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	25	TIM3_CH3	Table 125 (duplicate of 124)	698	698	"25 TIM3_CH3"
+TIM3	25	TIM3_CH3	Table 103 (block interconnect)	603	603	"tim3_ch3_dma dmamux1_req_in25"
+TIM3	26	TIM3_CH4	Table 124	697	697	"26 TIM3_CH4" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	26	TIM3_CH4	Table 125 (duplicate of 124)	699	699	"26 TIM3_CH4"
+TIM3	26	TIM3_CH4	Table 103 (block interconnect)	603	603	"tim3_ch4_dma dmamux1_req_in26"
+TIM3	27	TIM3_UP	Table 124	697	697	"27 TIM3_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	27	TIM3_UP	Table 125 (duplicate of 124)	699	699	"27 TIM3_UP"
+TIM3	27	TIM3_UP	Table 103 (block interconnect)	603	603	"tim3_up_dma dmamux1_req_in27"
+TIM3	28	TIM3_TRIG	Table 124	697	697	"28 TIM3_TRIG" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM3	28	TIM3_TRIG	Table 125 (duplicate of 124)	699	699	"28 TIM3_TRIG"
+TIM3	28	TIM3_TRIG	Table 103 (block interconnect)	603	603	"tim3_trig_dma dmamux1_req_in28"
+TIM4	29	TIM4_CH1	Table 124	697	697	"29 TIM4_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM4	29	TIM4_CH1	Table 125 (duplicate of 124)	699	699	"29 TIM4_CH1"
+TIM4	29	TIM4_CH1	Table 103 (block interconnect)	603	603	"tim4_ch1_dma dmamux1_req_in29"
+TIM4	30	TIM4_CH2	Table 124	697	697	"30 TIM4_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM4	30	TIM4_CH2	Table 125 (duplicate of 124)	699	699	"30 TIM4_CH2"
+TIM4	30	TIM4_CH2	Table 103 (block interconnect)	603	603	"tim4_ch2_dma dmamux1_req_in30"
+TIM4	31	TIM4_CH3	Table 124	697	697	"31 TIM4_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM4	31	TIM4_CH3	Table 125 (duplicate of 124)	699	699	"31 TIM4_CH3"
+TIM4	31	TIM4_CH3	Table 103 (block interconnect)	603	603	"tim4_ch3_dma dmamux1_req_in31"
+TIM4	32	TIM4_UP	Table 124	697	697	"32 TIM4_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM4	32	TIM4_UP	Table 125 (duplicate of 124)	699	699	"32 TIM4_UP"
+TIM4	32	TIM4_UP	Table 103 (block interconnect)	603	603	"tim4_up_dma dmamux1_req_in32"
+TIM5	55	TIM5_CH1	Table 124	697	697	"55 TIM5_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	55	TIM5_CH1	Table 125 (duplicate of 124)	698	698	"55 TIM5_CH1"
+TIM5	55	TIM5_CH1	Table 103 (block interconnect)	604	604	"tim5_ch1_dma dmamux1_req_in55"
+TIM5	56	TIM5_CH2	Table 124	697	697	"56 TIM5_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	56	TIM5_CH2	Table 125 (duplicate of 124)	698	698	"56 TIM5_CH2"
+TIM5	56	TIM5_CH2	Table 103 (block interconnect)	604	604	"tim5_ch2_dma dmamux1_req_in56"
+TIM5	57	TIM5_CH3	Table 124	697	697	"57 TIM5_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	57	TIM5_CH3	Table 125 (duplicate of 124)	698	698	"57 TIM5_CH3"
+TIM5	57	TIM5_CH3	Table 103 (block interconnect)	604	604	"tim5_ch3_dma dmamux1_req_in57"
+TIM5	58	TIM5_CH4	Table 124	697	697	"58 TIM5_CH4" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	58	TIM5_CH4	Table 125 (duplicate of 124)	698	698	"58 TIM5_CH4"
+TIM5	58	TIM5_CH4	Table 103 (block interconnect)	604	604	"tim5_ch4_dma dmamux1_req_in58"
+TIM5	59	TIM5_UP	Table 124	697	697	"59 TIM5_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	59	TIM5_UP	Table 125 (duplicate of 124)	698	698	"59 TIM5_UP"
+TIM5	59	TIM5_UP	Table 103 (block interconnect)	604	604	"tim5_up_dma dmamux1_req_in59"
+TIM5	60	TIM5_TRIG	Table 124	697	697	"60 TIM5_TRIG" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM5	60	TIM5_TRIG	Table 125 (duplicate of 124)	698	698	"60 TIM5_TRIG"
+TIM5	60	TIM5_TRIG	Table 103 (block interconnect)	604	604	"tim5_trig_dma dmamux1_req_in60"
+TIM6	69	TIM6_UP	Table 124	697	697	"69 TIM6_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM6	69	TIM6_UP	Table 125 (duplicate of 124)	699	699	"69 TIM6_UP"
+TIM6	69	TIM6_UP	Table 103 (block interconnect)	605	605	"tim6_up_dma dmamux1_req_in69"
+TIM7	70	TIM7_UP	Table 124	697	697	"70 TIM7_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM7	70	TIM7_UP	Table 125 (duplicate of 124)	699	699	"70 TIM7_UP"
+TIM7	70	TIM7_UP	Table 103 (block interconnect)	605	605	"tim7_up_dma dmamux1_req_in70"
+TIM8	47	TIM8_CH1	Table 124	697	697	"47 TIM8_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	47	TIM8_CH1	Table 125 (duplicate of 124)	698	698	"47 TIM8_CH1"
+TIM8	47	TIM8_CH1	Table 103 (block interconnect)	604	604	"tim8_ch1_dma dmamux1_req_in47"
+TIM8	48	TIM8_CH2	Table 124	697	697	"48 TIM8_CH2" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	48	TIM8_CH2	Table 125 (duplicate of 124)	698	698	"48 TIM8_CH2"
+TIM8	48	TIM8_CH2	Table 103 (block interconnect)	604	604	"tim8_ch2_dma dmamux1_req_in48"
+TIM8	49	TIM8_CH3	Table 124	697	697	"49 TIM8_CH3" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	49	TIM8_CH3	Table 125 (duplicate of 124)	698	698	"49 TIM8_CH3"
+TIM8	49	TIM8_CH3	Table 103 (block interconnect)	604	604	"tim8_ch3_dma dmamux1_req_in49"
+TIM8	50	TIM8_CH4	Table 124	697	697	"50 TIM8_CH4" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	50	TIM8_CH4	Table 125 (duplicate of 124)	698	698	"50 TIM8_CH4"
+TIM8	50	TIM8_CH4	Table 103 (block interconnect)	604	604	"tim8_ch4_dma dmamux1_req_in50"
+TIM8	51	TIM8_UP	Table 124	697	697	"51 TIM8_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	51	TIM8_UP	Table 125 (duplicate of 124)	698	698	"51 TIM8_UP"
+TIM8	51	TIM8_UP	Table 103 (block interconnect)	604	604	"tim8_up_dma dmamux1_req_in51"
+TIM8	52	TIM8_TRIG	Table 124	697	697	"52 TIM8_TRIG" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	52	TIM8_TRIG	Table 125 (duplicate of 124)	698	698	"52 TIM8_TRIG"
+TIM8	52	TIM8_TRIG	Table 103 (block interconnect)	604	604	"tim8_trig_dma dmamux1_req_in52"
+TIM8	53	TIM8_COM	Table 124	697	697	"53 TIM8_COM" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM8	53	TIM8_COM	Table 125 (duplicate of 124)	698	698	"53 TIM8_COM"
+TIM8	53	TIM8_COM	Table 103 (block interconnect)	604	604	"tim8_com_dma dmamux1_req_in53"
+TIM12	none	none	Table 124/125/103 (no TIM12 row)	697-699,603-606	697-699,603-606	no TIM12_* DMA request appears in any DMAMUX1 row; TIM12 only as TIM12_TRGO (DMAMUX1 trigger/sync input 7, Tables 126/127 p699; Table 103 gen7 p606, trg7 p607)
+TIM13	none	none	Table 124/125/103 (no TIM13 row)	697-699,603-606	697-699,603-606	no TIM13_* DMA request appears in any DMAMUX1 row; TIM12 only as TIM12_TRGO (DMAMUX1 trigger/sync input 7, Tables 126/127 p699; Table 103 gen7 p606, trg7 p607)
+TIM14	none	none	Table 124/125/103 (no TIM14 row)	697-699,603-606	697-699,603-606	no TIM14_* DMA request appears in any DMAMUX1 row; TIM12 only as TIM12_TRGO (DMAMUX1 trigger/sync input 7, Tables 126/127 p699; Table 103 gen7 p606, trg7 p607)
+TIM15	105	TIM15_CH1	Table 124	697	697	"105 TIM15_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM15	105	TIM15_CH1	Table 125 (duplicate of 124)	698	698	"105 TIM15_CH1"
+TIM15	105	TIM15_CH1	Table 103 (block interconnect)	606	606	"tim15_ch1_dma dmamux1_req_in105"
+TIM15	106	TIM15_UP	Table 124	697	697	"106 TIM15_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM15	106	TIM15_UP	Table 125 (duplicate of 124)	698	698	"106 TIM15_UP"
+TIM15	106	TIM15_UP	Table 103 (block interconnect)	606	606	"tim15_up_dma dmamux1_req_in106"
+TIM15	107	TIM15_TRIG	Table 124	697	697	"107 TIM15_TRIG" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM15	107	TIM15_TRIG	Table 125 (duplicate of 124)	698	698	"107 TIM15_TRIG"
+TIM15	107	TIM15_TRIG	Table 103 (block interconnect)	606	606	"tim15_trig_dma dmamux1_req_in107"
+TIM15	108	TIM15_COM	Table 124	697	697	"108 TIM15_COM" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM15	108	TIM15_COM	Table 125 (duplicate of 124)	698	698	"108 TIM15_COM"
+TIM15	108	TIM15_COM	Table 103 (block interconnect)	606	606	"tim15_com_dma dmamux1_req_in108"
+TIM16	109	TIM16_CH1	Table 124	697	697	"109 TIM16_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM16	109	TIM16_CH1	Table 125 (duplicate of 124)	698	698	"109 TIM16_CH1"
+TIM16	109	TIM16_CH1	Table 103 (block interconnect)	606	606	"tim16_ch1_dma dmamux1_req_in109"
+TIM16	110	TIM16_UP	Table 124	697	697	"110 TIM16_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM16	110	TIM16_UP	Table 125 (duplicate of 124)	698	698	"110 TIM16_UP"
+TIM16	110	TIM16_UP	Table 103 (block interconnect)	606	606	"tim16_up_dma dmamux1_req_in110"
+TIM17	111	TIM17_CH1	Table 124	697	697	"111 TIM17_CH1" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM17	111	TIM17_CH1	Table 125 (duplicate of 124)	698	698	"111 TIM17_CH1"
+TIM17	111	TIM17_CH1	Table 103 (block interconnect)	606	606	"tim17_ch1_mda dmamux1_req_in111"
+TIM17	112	TIM17_UP	Table 124	697	697	"112 TIM17_UP" (Table 124: DMAMUX1: assignment of multiplexer inputs to resources)
+TIM17	112	TIM17_UP	Table 125 (duplicate of 124)	699	699	"112 TIM17_UP"
+TIM17	112	TIM17_UP	Table 103 (block interconnect)	606	606	"tim17_up_dma dmamux1_req_in112"

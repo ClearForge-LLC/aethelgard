@@ -10,6 +10,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod ardupilot_clock;
 pub mod bench;
 pub mod board;
 pub mod classes;
@@ -2140,6 +2141,20 @@ pub enum IrValidationError {
     #[error("mcu.foreign_clock.{field} is 0 Hz")]
     ForeignClockZero { field: String },
     #[error(
+        "mcu.foreign_clock.{field} declares {declared}, but ArduPilot's tree for a {oscillator_hz} Hz oscillator (0: the HSI) runs it at {expected} (its stm32h7_mcuconf.h {lines}, held in aethelgard-ir's data/ardupilot-h7-clock.tsv; AET-WO-4412)"
+    )]
+    ForeignClockNotArduPilots {
+        field: String,
+        declared: String,
+        expected: String,
+        oscillator_hz: u64,
+        lines: String,
+    },
+    #[error(
+        "mcu.foreign_clock is declared on a {oscillator} oscillator, for which ArduPilot's stm32h7_mcuconf.h has no tree (\"Unsupported HSE clock\", L164-165); it holds {held:?} Hz (0: the HSI; AET-WO-4412)"
+    )]
+    ForeignClockOscillatorUnsupported { oscillator: String, held: Vec<u64> },
+    #[error(
         "mcu.foreign_clock.usarts must name each USART the platform carries, {expected:?}, once: missing {missing:?}, unknown {unknown:?}"
     )]
     ForeignClockUsarts {
@@ -2662,6 +2677,8 @@ impl IrValidationError {
             Self::VosLimitExceeded { .. } => "VosLimitExceeded",
             Self::FlashWaitStatesBelowTable { .. } => "FlashWaitStatesBelowTable",
             Self::ForeignClockZero { .. } => "ForeignClockZero",
+            Self::ForeignClockNotArduPilots { .. } => "ForeignClockNotArduPilots",
+            Self::ForeignClockOscillatorUnsupported { .. } => "ForeignClockOscillatorUnsupported",
             Self::ForeignClockUsarts { .. } => "ForeignClockUsarts",
             Self::ForeignClockMuxSplit { .. } => "ForeignClockMuxSplit",
             Self::UnknownConnectorPart { .. } => "UnknownConnectorPart",
@@ -2867,6 +2884,8 @@ impl IrValidationError {
             Self::Hse(_) | Self::UnsupportedClock | Self::FlashWaitStatesBelowTable { .. } => None,
             Self::VosLimitExceeded { clock, .. } => Some(clock),
             Self::ForeignClockZero { .. }
+            | Self::ForeignClockNotArduPilots { .. }
+            | Self::ForeignClockOscillatorUnsupported { .. }
             | Self::ForeignClockUsarts { .. }
             | Self::ForeignClockMuxSplit { .. } => None,
             Self::PartsTable { part, .. } | Self::PowerPartsTable { part, .. } => part.as_deref(),

@@ -85,13 +85,26 @@ pub struct Elf {
 }
 
 /// One `AP_ROMFS::embedded_file` (`AP_ROMFS.h:30-36`), its contents pointer
-/// at [`ADDR`].
+/// at [`ADDR`], or at `contents` after the names when it holds any.
 #[derive(Clone, Debug)]
 pub struct RomfsFile {
     pub name: &'static str,
     pub compressed: u32,
     pub decompressed: u32,
     pub crc: u32,
+    pub contents: Vec<u8>,
+}
+
+/// `text` as one stored raw-deflate block (RFC 1951 §3.2.4: `BFINAL` 1,
+/// `BTYPE` 00, `LEN`, `NLEN`, the bytes), which ArduPilot's inflater reads
+/// as any other block; at most 65,535 bytes.
+pub fn stored_deflate(text: &[u8]) -> Vec<u8> {
+    let len = u16::try_from(text.len()).unwrap();
+    let mut out = vec![1];
+    out.extend_from_slice(&len.to_le_bytes());
+    out.extend_from_slice(&(!len).to_le_bytes());
+    out.extend_from_slice(text);
+    out
 }
 
 /// The one file every measured board's ROMFS holds (`spike/4406` §2.1),
@@ -101,6 +114,7 @@ pub const ROMFS_HWDEF: RomfsFile = RomfsFile {
     compressed: 515,
     decompressed: 1491,
     crc: 0x31b6_cfbe,
+    contents: Vec::new(),
 };
 
 /// `advromfs`'s `defaults.parm` (`4405` A1, route 1), as its ROMFS lists it.
@@ -109,6 +123,7 @@ pub const ROMFS_DEFAULTS: RomfsFile = RomfsFile {
     compressed: 40,
     decompressed: 57,
     crc: 0x75a0_8073,
+    contents: Vec::new(),
 };
 
 /// `advlua`'s script (`AET-WO-4406` adversarial A1), as its ROMFS lists it.
@@ -117,6 +132,7 @@ pub const ROMFS_ADVLUA: RomfsFile = RomfsFile {
     compressed: 166,
     decompressed: 230,
     crc: 0x9b4b_0abf,
+    contents: Vec::new(),
 };
 
 /// `AP_Scripting::var_info` as `fc-base` compiles it (`spike/4406`), its
@@ -444,22 +460,30 @@ impl Elf {
         let romfs_at = ADDR + data.len() as u32;
         if let Some(files) = &self.romfs {
             let names_at = romfs_at + 20 * files.len() as u32;
-            let (mut entries, mut names) = (Vec::new(), Vec::new());
+            let names_len: u32 = files.iter().map(|f| f.name.len() as u32 + 1).sum();
+            let (mut entries, mut names, mut contents) = (Vec::new(), Vec::new(), Vec::new());
             for f in files {
+                let at = if f.contents.is_empty() {
+                    ADDR
+                } else {
+                    names_at + names_len + contents.len() as u32
+                };
                 for v in [
                     names_at + names.len() as u32,
                     f.compressed,
                     f.decompressed,
                     f.crc,
-                    ADDR,
+                    at,
                 ] {
                     put32(&mut entries, v);
                 }
                 names.extend_from_slice(f.name.as_bytes());
                 names.push(0);
+                contents.extend_from_slice(&f.contents);
             }
             data.extend(entries);
             data.extend(names);
+            data.extend(contents);
         }
         let scripting_at = ADDR + data.len() as u32;
         if let Some(rows) = &self.scripting {

@@ -305,6 +305,10 @@ impl Frame {
                 id: self.text_at(6, 16),
                 value: self.f32_at(0),
             },
+            // `param_index` i16, target system and component, then the id.
+            "PARAM_REQUEST_READ" => Decoded::ParamRead {
+                id: self.text_at(4, 16),
+            },
             "PARAM_VALUE" => Decoded::ParamValue {
                 id: self.text_at(8, 16),
                 value: self.f32_at(0),
@@ -339,6 +343,10 @@ pub enum Decoded {
     ParamSet {
         id: String,
         value: f32,
+    },
+    /// `PARAM_REQUEST_READ` by name (`AET-WO-4412` (3)).
+    ParamRead {
+        id: String,
     },
     ParamValue {
         id: String,
@@ -543,6 +551,11 @@ pub fn schedule(frames: &[InputFrame], spacing_ns: u64) -> Vec<(u64, u8)> {
         .collect()
 }
 
+/// `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` (`common.xml`, id 246): param1 1
+/// reboots the autopilot, which ArduPilot acknowledges and then resets by
+/// `SYSRESETREQ` (measured, `spike/4412` `reboot12`).
+pub const REBOOT_COMMAND: u16 = 246;
+
 /// What the firmware's own transmitted bytes witness (`INV-07`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Witness {
@@ -555,6 +568,14 @@ pub struct Witness {
     pub acks: Vec<(u16, u8)>,
     /// Each `PARAM_VALUE`, in order: (id, value).
     pub values: Vec<(String, f32)>,
+    /// Each `PARAM_VALUE`'s offset in the stream, in the order of
+    /// [`Self::values`] (`AET-WO-4412` (4)).
+    pub value_offsets: Vec<usize>,
+    /// The offset of each `COMMAND_ACK` accepting a reboot
+    /// ([`REBOOT_COMMAND`], result 0), in order: the firmware's own word that
+    /// it is about to reset, so what it transmits after it is the next boot's
+    /// (`AET-WO-4412` (4)).
+    pub reboots: Vec<usize>,
     /// Each `PARAM_ERROR`, in order: (id, error).
     pub errors: Vec<(String, u8)>,
     /// Each `STATUSTEXT`, in order.
@@ -579,8 +600,16 @@ pub fn witness(captured: &[u8], input: &[Frame], table: &[Message]) -> Witness {
                     w.armed = Some((at, frame.sysid, frame.compid, base_mode));
                 }
             }
-            Decoded::CommandAck { command, result } => w.acks.push((command, result)),
-            Decoded::ParamValue { id, value } => w.values.push((id, value)),
+            Decoded::CommandAck { command, result } => {
+                if command == REBOOT_COMMAND && result == 0 {
+                    w.reboots.push(at);
+                }
+                w.acks.push((command, result));
+            }
+            Decoded::ParamValue { id, value } => {
+                w.values.push((id, value));
+                w.value_offsets.push(at);
+            }
             Decoded::ParamError { id, error } => w.errors.push((id, error)),
             Decoded::Text { text } => w.texts.push(text),
             _ => {}

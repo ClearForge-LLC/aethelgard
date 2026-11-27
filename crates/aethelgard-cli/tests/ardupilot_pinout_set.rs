@@ -51,12 +51,14 @@ fn boards(dir: &Path, names: &[&str]) -> String {
 }
 
 const HAND: [&str; 4] = ["step-g", "seed-pin", "seed-af", "seed-pkg"];
-const GENERATED: [&str; 5] = [
+const GENERATED: [&str; 6] = [
     "sentinel-01",
     "sentinel-02",
     "serial-dshot-9600",
     "four-port",
     "sentinel-01-full",
+    // AET-WO-4412: Sentinel-03 with its defaults.parm.
+    "sentinel-03",
 ];
 
 #[test]
@@ -80,7 +82,7 @@ fn the_judge_reads_the_workflows_matrices() {
     let all: Vec<&str> = HAND.iter().chain(GENERATED.iter()).copied().collect();
     let (code, out, err) = judge(&["boards", wf, &boards(&d, &all)]);
     assert_eq!(code, 0, "{err}");
-    assert!(out.starts_with("judged set: 9 boards"), "{out}");
+    assert!(out.starts_with("judged set: 10 boards"), "{out}");
     fs::remove_dir_all(&d).unwrap();
 }
 

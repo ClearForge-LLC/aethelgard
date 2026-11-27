@@ -188,9 +188,10 @@ fn whose(m: Model) -> String {
 ///
 /// Only the header's leading comment lines are read as the header. A
 /// platform this emitter wrote passes; the CLI also reads a caller's.
-pub fn own_models(text: &str) -> Result<Vec<Model>, TwinError> {
+pub fn own_models(text: &str) -> Result<Vec<model::OwnFile>, TwinError> {
     let unpinned = |why: String| Err(TwinError::ModelUnpinned { why });
-    let mut named: Vec<Model> = Vec::new();
+    let own = model::own_files();
+    let mut named: Vec<model::OwnFile> = Vec::new();
     for line in text.lines().take_while(|l| l.starts_with("//")) {
         let Some(rest) = line
             .strip_prefix("// - ")
@@ -207,37 +208,37 @@ pub fn own_models(text: &str) -> Result<Vec<Model>, TwinError> {
                 "the header line `{line}` is not `{OWN_LINE}`<path>` sha256 `<hex>`.`"
             ));
         };
-        let Some(&(m, _, pin)) = model::OWN
+        let Some(&o) = own
             .iter()
-            .find(|o| path == format!("{}/{}", model::OWN_DIR, o.1))
+            .find(|o| path == format!("{}/{}", model::OWN_DIR, o.file))
         else {
             return unpinned(format!(
                 "the header names `{path}`, which is no model of our own the twin pins"
             ));
         };
-        if sha != pin {
+        if sha != o.sha256 {
             return unpinned(format!(
-                "the header pins `{path}` at sha256 `{sha}`, but the twin pins it at `{pin}`"
+                "the header pins `{path}` at sha256 `{sha}`, but the twin pins it at `{}`",
+                o.sha256
             ));
         }
-        if named.contains(&m) {
+        if named.contains(&o) {
             return unpinned(format!("the header names `{path}` twice"));
         }
-        named.push(m);
+        named.push(o);
     }
     for line in text.lines() {
         let class = line
             .split_once(':')
             .and_then(|(_, r)| r.split_whitespace().next())
             .map(|t| t.rsplit('.').next().unwrap_or(t));
-        let own = model::OWN
+        let declared = own
             .iter()
-            .map(|o| o.0)
-            .find(|m| class.is_some_and(|c| m.renode().rsplit('.').next() == Some(c)));
-        if let Some(m) = own.filter(|m| !named.contains(m)) {
+            .find(|o| class.is_some_and(|c| o.renode.rsplit('.').next() == Some(c)));
+        if let Some(o) = declared.filter(|o| !named.contains(o)) {
             return unpinned(format!(
                 "a device is declared as `{}`, but the header names no pinned copy of it",
-                m.renode()
+                o.renode
             ));
         }
     }
@@ -280,6 +281,19 @@ pub fn instances(
     absent: &BTreeSet<String>,
 ) -> Result<Vec<Instance>, TwinError> {
     let mut out = stock_instances(topology)?;
+    // `AET-WO-4412` D4: a foreign platform's DShot timers are the timer
+    // model under the stock name; none on a generated platform.
+    let retyped = crate::retype::retyped(topology);
+    for i in &mut out {
+        if let Some(n) = i
+            .peripheral
+            .strip_prefix("TIM")
+            .and_then(|n| n.parse::<u32>().ok())
+            && retyped.contains(&n)
+        {
+            i.model = short(crate::retype::TIMER_MODEL).to_owned();
+        }
+    }
     let (modelled, _) = split_devices(topology, &present(topology, faulted)?)?;
     out.extend(modelled.into_iter().map(|d| Instance {
         peripheral: d.reference,
@@ -759,6 +773,16 @@ pub fn emit_faulted(
                 .filter_map(|d| d.model),
         );
     own.extend(declared.filter_map(Model::own));
+    // The DShot outputs' timer and DMA models (`AET-WO-4412` D4), on a
+    // foreign platform only.
+    let retyped = crate::retype::retyped(topology);
+    if !retyped.is_empty() {
+        own.extend(
+            model::OWN_PERIPHERALS
+                .iter()
+                .map(|&(_, file, sha)| (file, sha)),
+        );
+    }
     for (file, sha) in own {
         let _ = writeln!(
             out,
@@ -836,9 +860,10 @@ pub fn emit_faulted(
         );
     }
     emit_spi(&mut out, &spi)?;
-    emit_observers(&mut out, topology)?;
+    let observed = emit_observers(&mut out, topology, &retyped)?;
     out.push_str(&crate::boot::brown_out(topology)?.presentation());
-    emit_clock(&mut out, topology)?;
+    emit_clock(&mut out, topology, &retyped)?;
+    crate::retype::emit(&mut out, topology, &retyped, &observed)?;
     if topology.foreign_clock.is_none() {
         out.push_str(&pwr_override()?);
     }
@@ -1011,7 +1036,11 @@ pub fn unclocked(topology: &SolvedTopology) -> Vec<&'static str> {
 /// On a foreign board, each declared serial port's USART also carries its
 /// receive DMA request ([`usart_rx_request`], `AET-WO-4400i` D2: foreign
 /// boards only, so no generated board's platform moves).
-fn emit_clock(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinError> {
+fn emit_clock(
+    out: &mut String,
+    topology: &SolvedTopology,
+    retyped: &[u32],
+) -> Result<(), TwinError> {
     let whose = if topology.foreign_clock.is_some() {
         format!(
             "the specification's mcu.foreign_clock; {} keep the stock file's",
@@ -1030,6 +1059,11 @@ fn emit_clock(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinErr
         "\n// The clock (AET-WO-4400g): each timer, USART and the DWT at {whose}.\n"
     );
     for (name, hz) in clocked(topology) {
+        // A retyped timer's frequency is in its model's declaration: an
+        // untyped update here would bind to the cancelled entry (`AET-WO-4412`).
+        if retyped.iter().any(|n| name == format!("timer{n}")) {
+            continue;
+        }
         let _ = write!(out, "{name}:\n    frequency: {hz}\n");
         if topology.foreign_clock.is_none() {
             continue;
@@ -1075,7 +1109,11 @@ fn emit_hse(out: &mut String, topology: &SolvedTopology) {
 /// spike named, logging each change at `Noisy`. The pin's stock input route
 /// is restated with the observer added, one block per port, so the stock
 /// wiring is kept whole (a later route of a pin replaces an earlier one).
-fn emit_observers(out: &mut String, topology: &SolvedTopology) -> Result<(), TwinError> {
+fn emit_observers(
+    out: &mut String,
+    topology: &SolvedTopology,
+    retyped: &[u32],
+) -> Result<BTreeSet<(char, u32)>, TwinError> {
     let observers = timer::observers(topology)?;
     let mut ports: std::collections::BTreeMap<char, Vec<&timer::Observer>> =
         std::collections::BTreeMap::new();
@@ -1102,10 +1140,12 @@ fn emit_observers(out: &mut String, topology: &SolvedTopology) -> Result<(), Twi
             // `observers` refused a pin with no stock route, and every pin
             // of `TIMER_ROUTES` has an input route (`tests/timer_routes.rs`).
             let route = timer::stock_input(o.port, o.index).expect("a routed pin");
+            // A retyped timer's target on its model's variable (`AET-WO-4412` D4).
+            let route = crate::retype::route(route, retyped);
             let _ = writeln!(out, "    {} -> {route} | {}@0", o.index, o.name);
         }
     }
-    Ok(())
+    Ok(observers.iter().map(|o| (o.port, o.index)).collect())
 }
 
 /// The solved peripherals and the ports of every solved pin, in name order.

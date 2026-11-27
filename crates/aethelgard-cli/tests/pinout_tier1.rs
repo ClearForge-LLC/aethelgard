@@ -215,3 +215,84 @@ fn a_topology_refusal_is_reported_beside_an_unreadable_elf() {
         }
     }
 }
+
+/// `AET-WO-4412` (ruled 2026-11-26T17:35Z): `check pinout` admits the one
+/// ROMFS `defaults.parm` that `generate hwdef` writes for the topology, byte
+/// for byte, and refuses any other by `ParamDefaultsOverride`. On
+/// `serial-dshot-9600`, a DShot board CI builds: its own file is not refused
+/// (the run goes on to judge the synthetic ELF's pins), and the same file
+/// with `MOT_PWM_TYPE` changed is.
+#[test]
+fn check_pinout_admits_only_the_defaults_parm_generate_hwdef_writes() {
+    let d = dir("defaults");
+    let aethelgard = |args: &[&std::ffi::OsStr]| {
+        let out = Command::new(env!("CARGO_BIN_EXE_aethelgard"))
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stdout)
+        );
+        out.stdout
+    };
+    let spec = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/serial-dshot-9600.json");
+    let topology = d.join("topology.json");
+    fs::write(
+        &topology,
+        aethelgard(&["solve".as_ref(), "--file".as_ref(), spec.as_os_str()]),
+    )
+    .unwrap();
+    let hwdef = d.join("board.hwdef.dat");
+    aethelgard(&[
+        "generate".as_ref(),
+        "hwdef".as_ref(),
+        "--topology".as_ref(),
+        topology.as_os_str(),
+        "--out".as_ref(),
+        hwdef.as_os_str(),
+    ]);
+    let own = fs::read_to_string(d.join("board.defaults.parm")).unwrap();
+    assert!(own.contains("\nMOT_PWM_TYPE 6\n"), "{own}");
+    let embedding = |text: &str| Elf {
+        functions: vec![
+            common::RELOAD_DEFAULTS_FILE.to_owned(),
+            String::from_utf8(aethelgard_pincheck::elf::LOAD_DEFAULTS_FILE.to_vec()).unwrap(),
+        ],
+        romfs: Some(vec![
+            common::RomfsFile {
+                compressed: text.len() as u32 + 5,
+                decompressed: text.len() as u32,
+                contents: common::stored_deflate(text.as_bytes()),
+                ..common::ROMFS_DEFAULTS
+            },
+            common::ROMFS_HWDEF,
+        ]),
+        ..Elf::default()
+    };
+    let topology = topology.to_str().unwrap();
+    // Admitted, the run reaches the pin judgement: a pinout verdict (exit 1,
+    // the synthetic ELF's pins are not this board's), never the refusal (3)
+    // (`AET-WO-4412` review, 23:39Z (6)).
+    let (code, line) = run(&d, &embedding(&own), None, topology, ALLOW);
+    assert_eq!(code, 1, "{line}");
+    assert!(
+        line.starts_with(r#"{"check":"pinout""#) && line.contains(r#""configured":["#),
+        "{line}"
+    );
+    assert!(!line.contains("ParamDefaultsOverride"), "{line}");
+    let (code, line) = run(
+        &d,
+        &embedding(&own.replace("MOT_PWM_TYPE 6", "MOT_PWM_TYPE 5")),
+        None,
+        topology,
+        ALLOW,
+    );
+    assert_eq!(code, 3, "{line}");
+    assert!(
+        line.contains(r#""kind":"ParamDefaultsOverride""#)
+            && line.contains("`MOT_PWM_TYPE 5`, the topology's `MOT_PWM_TYPE 6`"),
+        "{line}"
+    );
+}

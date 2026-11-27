@@ -4,10 +4,10 @@
 # Constants: APJ_BOARD_ID 24400 (no row of board_types.txt holds it); no bootloader (AP_BOOTLOADER_FLASHING_ENABLED 0, FLASH_RESERVE_START_KB 0); HAL_STORAGE_SIZE 16384 in the last two flash sectors; the system timer TIM5, else TIM2; the SWD port PA13/PA14 kept on.
 # Never emitted: DEFAULTGPIO (4400a D-1).
 # Not emitted: U3 (TMP117): no ArduPilot line; the parts table holds no ardupilot column for it.
-# Not emitted: MOTOR1: its protocol (dshot600) and PWM range are ArduPilot parameters (MOT_PWM_TYPE, MOT_PWM_MIN/MAX), not hwdef.dat lines; they wait for the defaults.parm work order (D10).
-# Not emitted: MOTOR2: its protocol (dshot600) and PWM range are ArduPilot parameters (MOT_PWM_TYPE, MOT_PWM_MIN/MAX), not hwdef.dat lines; they wait for the defaults.parm work order (D10).
-# Not emitted: MOTOR3: its protocol (dshot600) and PWM range are ArduPilot parameters (MOT_PWM_TYPE, MOT_PWM_MIN/MAX), not hwdef.dat lines; they wait for the defaults.parm work order (D10).
-# Not emitted: MOTOR4: its protocol (dshot600) and PWM range are ArduPilot parameters (MOT_PWM_TYPE, MOT_PWM_MIN/MAX), not hwdef.dat lines; they wait for the defaults.parm work order (D10).
+# Not emitted: MOTOR1: its PWM range is an ArduPilot parameter (MOT_PWM_MIN/MAX), not a hwdef.dat line; its protocol (dshot600) is defaults.parm's MOT_PWM_TYPE 6, beside this file.
+# Not emitted: MOTOR2: its PWM range is an ArduPilot parameter (MOT_PWM_MIN/MAX), not a hwdef.dat line; its protocol (dshot600) is defaults.parm's MOT_PWM_TYPE 6, beside this file.
+# Not emitted: MOTOR3: its PWM range is an ArduPilot parameter (MOT_PWM_MIN/MAX), not a hwdef.dat line; its protocol (dshot600) is defaults.parm's MOT_PWM_TYPE 6, beside this file.
+# Not emitted: MOTOR4: its PWM range is an ArduPilot parameter (MOT_PWM_MIN/MAX), not a hwdef.dat line; its protocol (dshot600) is defaults.parm's MOT_PWM_TYPE 6, beside this file.
 # Not emitted: BIDIR: nothing declares bidirectional DShot (D7).
 
 MCU STM32H7xx STM32H753xx                                  # [T] mcu STM32H753ZITx; [P] its power-parts row's ardupilot names

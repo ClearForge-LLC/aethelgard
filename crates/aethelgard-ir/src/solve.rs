@@ -190,6 +190,14 @@ pub enum SolveError {
         reasons: Vec<String>,
     },
     #[error(
+        "motor output `{output}` is declared {protocol}, whose bits move by its timer's update DMA request, but every timer channel that could serve it is on {timers:?}, which raise no DMA request (RM0433 Rev 9 Table 124, p. 697; AET-WO-4412)"
+    )]
+    NoDshotDmaRequest {
+        output: String,
+        protocol: String,
+        timers: Vec<String>,
+    },
+    #[error(
         "motor outputs `{first}` and `{second}` can only be on timer `{timer}`, and their timing differs: the outputs of one timer share its rate"
     )]
     TimerRateConflict {
@@ -297,6 +305,7 @@ impl SolveError {
             Self::BridgeSplitAcrossTimers { .. } => "BridgeSplitAcrossTimers",
             Self::UnheldDuringReset { .. } => "UnheldDuringReset",
             Self::NoTimerChannel { .. } => "NoTimerChannel",
+            Self::NoDshotDmaRequest { .. } => "NoDshotDmaRequest",
             Self::TimerRateConflict { .. } => "TimerRateConflict",
             Self::TimerResolutionConflict { .. } => "TimerResolutionConflict",
             Self::MotorsInfeasible { .. } => "MotorsInfeasible",
@@ -338,7 +347,9 @@ impl SolveError {
             | Self::PinSpeed { net, .. } => Some(net),
             Self::BridgeSplitAcrossTimers { bridge, .. } => Some(bridge),
             Self::UnheldDuringReset { net, .. } => Some(net),
-            Self::NoTimerChannel { output, .. } => Some(output),
+            Self::NoTimerChannel { output, .. } | Self::NoDshotDmaRequest { output, .. } => {
+                Some(output)
+            }
             Self::TimerRateConflict { timer, .. } | Self::TimerResolutionConflict { timer, .. } => {
                 Some(timer)
             }
@@ -381,7 +392,9 @@ impl SolveError {
             }
             Self::UnheldDuringReset { net, .. } => vec![net.clone()],
             Self::Infeasible { buses } => buses.clone(),
-            Self::NoTimerChannel { output, .. } => vec![output.clone()],
+            Self::NoTimerChannel { output, .. } | Self::NoDshotDmaRequest { output, .. } => {
+                vec![output.clone()]
+            }
             Self::TimerRateConflict { first, second, .. }
             | Self::TimerResolutionConflict { first, second, .. } => {
                 vec![first.clone(), second.clone()]
@@ -1628,6 +1641,13 @@ struct Motor<'s, 't> {
     key: crate::motor::TimerKey,
 }
 
+/// Whether a motor of `protocol` can run on `timer`: a DShot protocol needs
+/// the timer's update DMA request ([`crate::motor::up_request`],
+/// `AET-WO-4412`); PWM needs none.
+fn dma_served(protocol: MotorProtocol, timer: u32) -> bool {
+    protocol.bit_rate().is_none() || crate::motor::up_request(timer).is_some()
+}
+
 /// A timer channel on a pin: `(timer, channel, pin, af)`.
 type Channel<'t> = (u32, u32, &'t str, u8);
 
@@ -2105,6 +2125,28 @@ impl<'s, 't> Model<'s, 't> {
         let mut timers: Vec<BTreeSet<u32>> = Vec::new();
         for (m, motor) in self.motors.iter().enumerate() {
             let options: Vec<Channel<'t>> = alone.channels_for(m).collect();
+            // DShot on a timer with no update DMA request (`AET-WO-4412`):
+            // named before the generic reasons, when such channels are all
+            // that is left for it.
+            if options.is_empty() && motor.protocol.bit_rate().is_some() {
+                let undmaed: BTreeSet<u32> = self
+                    .channels
+                    .iter()
+                    .filter(|c| {
+                        !dma_served(motor.protocol, c.0)
+                            && motor.hand.is_none_or(|h| h == c.2)
+                            && self.at.offers(motor.label, c.2)
+                    })
+                    .map(|c| c.0)
+                    .collect();
+                if !undmaed.is_empty() {
+                    return Err(SolveError::NoDshotDmaRequest {
+                        output: motor.label.to_owned(),
+                        protocol: motor.protocol.name().to_owned(),
+                        timers: undmaed.iter().map(|t| format!("TIM{t}")).collect(),
+                    });
+                }
+            }
             if options.is_empty() {
                 let note = self.at.note(motor.label, self.channels.iter().map(|c| c.2));
                 let reason = match motor.hand {
@@ -2569,6 +2611,7 @@ impl<'m, 's, 't> Search<'m, 's, 't> {
             .copied()
             .filter(move |&(n, k, pin, _)| {
                 motor.hand.is_none_or(|h| h == pin)
+                    && dma_served(motor.protocol, n)
                     && self.model.at.offers(motor.label, pin)
                     && self.free(pin, &motor.path)
                     && !self.channels_used.contains(&(n, k))

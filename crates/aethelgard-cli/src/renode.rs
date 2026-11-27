@@ -236,6 +236,35 @@ pub const BOOT_BOUNDS: Bounds = Bounds {
     rss_kib: 1_572_864,
 };
 
+/// `AET-WO-1918` (2)'s factor: a hang guard is about 5x the worst wall
+/// measured for its class of boot.
+pub const HANG_GUARD_FACTOR: u64 = 5;
+
+/// The worst CI wall per virtual second of a foreign run (`AET-WO-4412`,
+/// ruled 2026-11-26T21:47Z (c)), in ms: Sentinel-03's armed run with DShot600
+/// from boot, 145.85 s of `simulate` (an upper bound on its Renode's) over its
+/// 12 s window on CI's slowest runner measured (AMD EPYC 7763, nproc 4),
+/// ardupilot-image run 45901122965, the throwaway `s03-wall` job, three runs
+/// of each input (arm 144.23-145.85 s, reboot 78.35-78.91 s on a Xeon 6973P-C,
+/// DShot 65.26-70.65 s on an EPYC 9V45); 145.85 / 12, rounded up.
+pub const FOREIGN_WALL_MS_PER_VIRTUAL_S: u64 = 12_155;
+
+/// A foreign run's hang guard (`AET-WO-4412`, ruled 2026-11-26T21:47Z (a)):
+/// [`BOOT_BOUNDS`]' rule applied to its own class of boot, a DShot foreign
+/// run's wall growing with its window, so `max(BOOT_BOUNDS.wall,
+/// HANG_GUARD_FACTOR x FOREIGN_WALL_MS_PER_VIRTUAL_S x the declared window)`:
+/// 729.3 s for a 12 s window. As [`BOOT_BOUNDS`]' is, it is a hang guard
+/// only: the judged bound is the window, and a kill is a `ToolError`.
+pub fn foreign_boot_wall(window_ns: u64) -> std::time::Duration {
+    let scaled_ms = u128::from(HANG_GUARD_FACTOR)
+        * u128::from(FOREIGN_WALL_MS_PER_VIRTUAL_S)
+        * u128::from(window_ns)
+        / 1_000_000_000;
+    BOOT_BOUNDS.wall.max(std::time::Duration::from_millis(
+        u64::try_from(scaled_ms).unwrap_or(u64::MAX),
+    ))
+}
+
 /// The bound on every other Renode the CLI starts (`AET-WO-1919` (2)): a
 /// platform load (`simulate --platform` alone, and the MCP `simulate` tool,
 /// which runs it) and `renode --version`. The wall bound is the boot's 120 s
@@ -1265,7 +1294,9 @@ fn windows(log: &[&str], mux: &str, address: u8) -> Vec<(usize, usize)> {
 
 /// The device's own lines in `log`, with their positions: its witness-shaped
 /// lines ([`device_line`]), but for its model's edge artefact directly after
-/// the multiplexer's finish line for it, which is skipped (`AET-WO-4210` D4).
+/// the multiplexer's finish line for it, which is skipped (`AET-WO-4210` D4),
+/// and the same artefact within a quantum of a `SYSRESETREQ` reset, where
+/// Renode's peripheral reset ends the transaction (`AET-WO-4412` (4)).
 /// The judge's attribution and the droop's probe read a device through this
 /// one filter.
 fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(usize, &'l str)> {
@@ -1277,12 +1308,24 @@ fn own_lines<'l>(c: &aethelgard_twin::boot::StepCheck, log: &[&'l str]) -> Vec<(
         aethelgard_twin::boot::Wire::I2c { .. } => None,
     };
     let mut lines = Vec::new();
+    // The last `SYSRESETREQ` reset's instant (`AET-WO-4412` (4)): Renode's
+    // reset of every peripheral ends the device's transaction with no finish
+    // line, at the next quantum.
+    let mut reset_ns: Option<u64> = None;
     for (i, line) in log.iter().enumerate() {
+        if log_text(line) == foreign::RESET_MARK {
+            reset_ns = log_stamped(line).map(|(ns, _)| ns);
+            continue;
+        }
         let Some(body) = device_line(c, line) else {
             continue;
         };
         let after_finish = i > 0 && finish.is_some() && log_body(log[i - 1]) == finish.as_deref();
-        if after_finish && c.idle_warning.as_deref() == Some(body) {
+        let at_reset = reset_ns.is_some_and(|r| {
+            log_stamped(line)
+                .is_some_and(|(ns, _)| ns >= r && ns - r <= aethelgard_twin::boot::QUANTUM_NS)
+        });
+        if (after_finish || at_reset) && c.idle_warning.as_deref() == Some(body) {
             continue;
         }
         lines.push((i, body));
@@ -4532,6 +4575,25 @@ mod tests {
     /// `AET-WO-1919` (2): a load and `--version` take the boot's 120 s hang
     /// guard, and no memory cap (the work order grants the guard alone).
     #[test]
+    fn a_foreign_run_s_hang_guard_scales_with_its_window_above_the_boot_s() {
+        // 5 x 12.155 s per virtual second x the window, never under 120 s.
+        assert_eq!(foreign_boot_wall(10_000_000), BOOT_BOUNDS.wall);
+        assert_eq!(foreign_boot_wall(1_974_000_000), BOOT_BOUNDS.wall);
+        assert_eq!(
+            foreign_boot_wall(3_000_000_000),
+            std::time::Duration::from_millis(182_325)
+        );
+        assert_eq!(
+            foreign_boot_wall(5_000_000_000),
+            std::time::Duration::from_millis(303_875)
+        );
+        assert_eq!(
+            foreign_boot_wall(12_000_000_000),
+            std::time::Duration::from_millis(729_300)
+        );
+    }
+
+    #[test]
     fn a_load_takes_the_boot_s_hang_guard_and_no_memory_cap() {
         assert_eq!(LOAD_BOUNDS.wall, std::time::Duration::from_secs(120));
         assert_eq!(LOAD_BOUNDS.wall, BOOT_BOUNDS.wall);
@@ -4691,6 +4753,85 @@ mod tests {
         }
     }
 
+    /// `AET-WO-4412` (4): a foreign run includes its reset macro, before the
+    /// run, so a `SYSRESETREQ` the firmware writes reboots it; without one
+    /// nothing is included.
+    #[test]
+    fn a_foreign_run_includes_its_reset_macro_before_the_run() {
+        let image = image();
+        let reset = std::path::Path::new("/w/reset.resc");
+        let c = foreign::commands(
+            &plan(&image, &[]),
+            &[],
+            &[],
+            PANIC_AT,
+            &[],
+            None,
+            Some(reset),
+        )
+        .unwrap();
+        let at = c
+            .find("include @/w/reset.resc")
+            .expect("the macro included");
+        assert!(at < c.find("emulation RunFor").unwrap(), "{c}");
+        let none =
+            foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None, None).unwrap();
+        assert!(!none.contains("reset.resc"), "{none}");
+    }
+
+    /// `AET-WO-4412` D3: a motor declared DShot whose timer ends at a PWM
+    /// rate is named, once per timer, as info; at the declared bit rate it is
+    /// not. The board is `motors-dshot600` (four outputs on TIM1), its end
+    /// reads every image register at its expected value but TIM1's `PSC` and
+    /// `ARR`, which take ArduPilot's PWM words (400 Hz at 200 MHz: `PSC` 0xC7,
+    /// `ARR` 0x9C3, measured on Sentinel-03, `spike/4412` `arm-s`) or its
+    /// DShot600 words (`PSC` 0x29, `ARR` 7: 595 kHz).
+    #[test]
+    fn a_dshot_motor_whose_timer_runs_pwm_at_the_end_is_named() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let mut motors = motors(&topology).unwrap();
+        for m in &mut motors {
+            m.observer.kernel_hz = 200_000_000;
+        }
+        let ends = |psc: u32, arr: u32| -> Vec<[u32; foreign::END_READS]> {
+            image
+                .registers
+                .iter()
+                .map(|r| match r.name.as_str() {
+                    "TIM1.PSC" => [psc; foreign::END_READS],
+                    "TIM1.ARR" => [arr; foreign::END_READS],
+                    _ => [r.value; foreign::END_READS],
+                })
+                .collect()
+        };
+        let f = foreign::motor_protocol_unmet(&image, &motors, &ends(0xC7, 0x9C3));
+        assert_eq!(
+            f.len(),
+            1,
+            "{:?}",
+            f.iter().map(|f| &f.message).collect::<Vec<_>>()
+        );
+        assert_eq!(f[0].kind, foreign::MOTOR_PROTOCOL_UNMET);
+        assert_eq!(f[0].severity, "info");
+        assert!(
+            f[0].message
+                .contains("ArduPilot runs PWM on a board declared DShot")
+                && f[0]
+                    .message
+                    .contains("MOTOR1, MOTOR2, MOTOR3, MOTOR4 on TIM1")
+                && f[0].message.contains("updates at 400 Hz"),
+            "{}",
+            f[0].message
+        );
+        assert!(foreign::motor_protocol_unmet(&image, &motors, &ends(0x29, 7)).is_empty());
+    }
+
     /// A board with no pin device (`AET-WO-1211c`).
     static NO_PINS: aethelgard_twin::pins::Pins = aethelgard_twin::pins::Pins {
         outputs: Vec::new(),
@@ -4709,7 +4850,7 @@ mod tests {
         let p = plan(&image, &[]);
         for c in [
             p.commands(),
-            foreign::commands(&p, &[], &[], PANIC_AT, &[], None).unwrap(),
+            foreign::commands(&p, &[], &[], PANIC_AT, &[], None, None).unwrap(),
         ] {
             assert!(!c.to_ascii_lowercase().contains("dwt"), "{c}");
             for word in c.split(|ch: char| !ch.is_ascii_alphanumeric()) {
@@ -6249,7 +6390,8 @@ mod tests {
             ..serial_plan(&image, &[], &serial)
         };
         assert_eq!(both.logged_sources(), ["usart1", "gpioPortA", "rcc", "pwr"]);
-        let foreign = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();
+        let foreign =
+            foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None, None).unwrap();
         assert!(!foreign.contains("sysbus.pwr"), "{foreign}");
         assert!(!foreign.contains("sysbus.rcc"), "{foreign}");
     }
@@ -6264,7 +6406,7 @@ mod tests {
     fn a_foreign_boot_hooks_the_panic_before_the_run() {
         let image = image();
         let p = plan(&image, &[]);
-        let c = foreign::commands(&p, &[], &[], PANIC_AT, &[], None).unwrap();
+        let c = foreign::commands(&p, &[], &[], PANIC_AT, &[], None, None).unwrap();
         let hook = "cpu AddHook 0x80c033c ";
         assert_eq!(c.matches("cpu AddHook").count(), 1, "{c}");
         let at = c.find(hook).unwrap();
@@ -6286,7 +6428,8 @@ mod tests {
         let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
         let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
         let serial = aethelgard_twin::serial::options(&topology).unwrap();
-        let c = foreign::commands(&plan(&image, &[]), &[], &serial, PANIC_AT, &[], None).unwrap();
+        let c =
+            foreign::commands(&plan(&image, &[]), &[], &serial, PANIC_AT, &[], None, None).unwrap();
         let (run, begin) = (c.find("emulation RunFor").unwrap(), c.find(BEGIN).unwrap());
         for u in ["usart1", "usart2", "usart3", "uart4"] {
             let log = format!("sysbus LogPeripheralAccess sysbus.{u} true");
@@ -6299,7 +6442,8 @@ mod tests {
             assert_eq!(c.matches(&read).count(), foreign::END_READS, "{pupdr}");
             assert!(c.find(&read).unwrap() > begin, "{pupdr}");
         }
-        let none = foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None).unwrap();
+        let none =
+            foreign::commands(&plan(&image, &[]), &[], &[], PANIC_AT, &[], None, None).unwrap();
         assert!(!none.contains("LogPeripheralAccess sysbus.usart"), "{none}");
     }
 

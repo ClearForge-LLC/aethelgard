@@ -40,6 +40,8 @@ aethelgard-hwdef = { path = "crates/aethelgard-hwdef", version = "0.2.0" }
 aethelgard-renode-models = { path = "models/renode", version = "0.2.0" }
 clap = { version = "4", features = ["derive"] }
 landlock = "0.4.7"
+# AET-WO-4412 (ruled 2026-11-26T17:35Z): pincheck inflates a ROMFS defaults.parm (raw deflate). MIT OR Zlib OR Apache-2.0, forbid(unsafe_code).
+miniz_oxide = { version = "0.8.9", default-features = false, features = ["with-alloc"] }
 rmcp = { version = "=3.7.0", default-features = false, features = ["server", "transport-io"] }
 roxmltree = "0.21"
 rustix = { version = "1.1.5", features = ["fs", "process", "thread"] }

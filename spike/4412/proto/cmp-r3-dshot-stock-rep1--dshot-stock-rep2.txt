@@ -1,0 +1,11 @@
+A = rep/dshot-stock-rep1/console.txt.gz
+B = rep/dshot-stock-rep2/console.txt.gz
+dma1    A=529438 B=529438 same_without_stamps=True same_with_stamps=True
+dma2    A=645717 B=645717 same_without_stamps=True same_with_stamps=True
+timer1  A=539573 B=539573 same_without_stamps=True same_with_stamps=True
+usart1  A=8306 B=8306 same_without_stamps=True same_with_stamps=True
+usart2  A=430 B=430 same_without_stamps=True same_with_stamps=True
+usart3  A=399 B=399 same_without_stamps=True same_with_stamps=True
+end-of-window read blocks: A=4 B=4
+  last block: 63 lines vs 63; differing lines: 0
+warnings/errors, A count, B count (only where they differ):

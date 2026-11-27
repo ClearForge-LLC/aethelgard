@@ -1,0 +1,1 @@
+{"name": "dshot-1", "board": "foreign", "window": "12000ms", "input": true, "rc": 5, "wall_s": 120.72, "load_min": 8.05, "load_max": 9.41, "verdict": null, "kinds": [], "error": "ToolError", "peak_rss_kib": null, "log_kept_bytes": null, "log_lines_dropped": null}

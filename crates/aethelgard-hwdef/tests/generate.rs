@@ -11,7 +11,7 @@ use aethelgard_hwdef::{Refusal, generate};
 use aethelgard_ir::SolvedTopology;
 use serde_json::{Value, json};
 
-const BOARDS: [(&str, &str, &str); 6] = [
+const BOARDS: [(&str, &str, &str); 7] = [
     (
         "sentinel-01",
         include_str!("fixtures/sentinel-01.topology.json"),
@@ -44,6 +44,13 @@ const BOARDS: [(&str, &str, &str); 6] = [
         include_str!("fixtures/sentinel-01-full.topology.json"),
         include_str!("fixtures/sentinel-01-full.hwdef.dat"),
     ),
+    // AET-WO-4412 (ruled 2026-11-26T10:43Z D1 (a)): Sentinel-03, its DShot outputs and
+    // its foreign clock, built and judged in CI.
+    (
+        "sentinel-03",
+        include_str!("fixtures/sentinel-03.topology.json"),
+        include_str!("fixtures/sentinel-03.hwdef.dat"),
+    ),
 ];
 
 fn topology(json: &str) -> SolvedTopology {
@@ -69,6 +76,46 @@ fn each_board_generates_its_committed_file() {
         assert_eq!(got, want, "{name}");
         assert_eq!(generate(&t).unwrap().text, got, "{name}");
     }
+}
+
+/// `AET-WO-4412` (3): a DShot board's `defaults.parm` is its committed one,
+/// `MOT_PWM_TYPE` 6 for DShot600 (`AP_Motors_Class.h` L360–371); a board of
+/// PWM outputs or none has none.
+#[test]
+fn a_dshot_board_carries_its_mot_pwm_type_in_defaults_parm() {
+    let defaults = [
+        (
+            "serial-dshot-9600",
+            include_str!("fixtures/serial-dshot-9600.defaults.parm"),
+        ),
+        (
+            "serial-dshot-9600-open",
+            include_str!("fixtures/serial-dshot-9600-open.defaults.parm"),
+        ),
+        (
+            "sentinel-03",
+            include_str!("fixtures/sentinel-03.defaults.parm"),
+        ),
+    ];
+    for (name, t, _) in BOARDS {
+        let got = generate(&topology(t)).unwrap().defaults;
+        match defaults.iter().find(|d| d.0 == name) {
+            Some((_, want)) => {
+                assert_eq!(got.as_deref(), Some(*want), "{name}");
+                assert!(want.ends_with("\nMOT_PWM_TYPE 6\n"), "{name}");
+            }
+            None => assert_eq!(got, None, "{name}"),
+        }
+    }
+    assert_eq!(
+        aethelgard_hwdef::mot_pwm_type(aethelgard_ir::motor::MotorProtocol::Dshot300),
+        Some(5)
+    );
+    assert_eq!(
+        aethelgard_hwdef::mot_pwm_type(aethelgard_ir::motor::MotorProtocol::Pwm),
+        None
+    );
+    // A board that mixes protocols: `dshot_dma_tier1` (the solver places it).
 }
 
 /// Every keyword the generator emits is one ArduPilot's parser reads at the

@@ -303,3 +303,27 @@ fn the_renode_build_is_the_images_pin() {
         .collect();
     assert_eq!(pinned, [RENODE_BUILD]);
 }
+
+/// `AET-WO-4412` D4: what `retype` restates of each stock timer and DMA
+/// (its limit and interrupt lines; the DMA's address, alias and interrupts)
+/// is the vendored stock file's, word for word, so the models take the
+/// stock entry's place exactly.
+#[test]
+fn the_retyped_declarations_are_the_stock_files_word_for_word() {
+    let text = stock();
+    for (n, limit, irqs) in aethelgard_twin::retype::STOCK_DECLARATIONS {
+        let base = STOCK_TIMERS.iter().find(|t| t.0 == n).unwrap().1;
+        let decl = format!(
+            "timer{n}: Timers.STM32_Timer @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.TIM{n}\n    }}\n    initialLimit: {limit}\n    frequency: 250000000\n    {irqs}\n"
+        );
+        assert!(text.contains(&decl), "TIM{n}:\n{decl}");
+        assert!(aethelgard_ir::motor::up_request(n).is_some(), "TIM{n}");
+    }
+    for (name, base, alias, irqs, _) in aethelgard_twin::retype::STOCK_DMAS {
+        let decl = format!(
+            "{name}: DMA.STM32DMA @ {{\n        sysbus 0x{base:08X};\n        rcc RegistrationPeripheralAlias.{alias}\n    }}\n    {irqs}\n"
+        );
+        assert!(text.contains(&decl), "{name}:\n{decl}");
+    }
+    assert!(text.contains("dmamux1: Miscellaneous.STM32_DMAMUX @ sysbus 0x40020800\n    numberOfInputRequestChannels: 115\n    numberOfOutputRequestChannels: 16\n    numberOfRequestGeneratorChannels: 8\n    [0-7] -> dma1@[0-7]\n    [8-15] -> dma2@[0-7]\n"));
+}

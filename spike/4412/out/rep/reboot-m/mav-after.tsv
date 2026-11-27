@@ -1,0 +1,62 @@
+index	type	fields
+1	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+2	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+3	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+4	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+5	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+6	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+7	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+8	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+9	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+10	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+11	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+12	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+13	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+14	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+15	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+16	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+17	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+18	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+19	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+20	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+21	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+22	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+23	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+24	PARAM_VALUE	{"param_count": 916, "param_id": "ESC_CALIBRATION", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+26	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Calibrating barometer"}
+27	PARAM_VALUE	{"param_count": 916, "param_id": "BARO_ALT_OFFSET", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+28	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+29	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+30	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+31	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+32	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+33	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+34	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+35	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+36	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+37	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+38	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+39	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+40	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+41	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+42	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+43	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+44	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Barometer 1 calibration complete"}
+45	PARAM_VALUE	{"param_count": 916, "param_id": "BARO1_GND_PRESS", "param_index": 65535, "param_type": 9, "param_value": 101325.0078125}
+47	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+49	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+50	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+51	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+53	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+54	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+55	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+57	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "ArduPilot Ready"}
+58	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "AHRS: DCM active"}
+59	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "RCOut: PWM:1-4"}
+60	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+61	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+62	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+63	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYR_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+64	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYR1_CALTEMP", "param_index": 65535, "param_type": 9, "param_value": 28.864734649658203}
+65	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+66	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
