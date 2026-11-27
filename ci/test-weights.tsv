@@ -675,3 +675,14 @@ unittests src/lib.rs	generate::tests::board_tree_is_tree_s_board	3
 # to its end check (173-186 s on Furnace in the image, times 1.54, Sentinel-03's verify: 4,312 s in CI 45743010585 against 2,805 s on
 # Furnace), rounded up to 300.
 tests/board_tier2.rs	verify_refuses_a_board_swapped_after_extract_ran_ahead	300
+# AET-WO-4412: boot_tier1's two new tests of 0.5 s or more are Furnace estimates, not runs (each alone on the host, times 2.8, AET-WO-1310's factor):
+# the circular paced stream 1.50 s, the lazy timer that differed 0.78 s; replace them at the next refit.
+tests/boot_tier1.rs	a_circular_paced_stream_is_refused_by_name	4.2
+tests/boot_tier1.rs	a_lazy_timer_that_differed_fails_the_run_by_name	2.184
+# AET-WO-4412 (ruled 2026-11-26T21:47Z (a)): the scaled foreign hang guard's two plants wait on a stub's sleep, so each weighs its
+# wall, not its CPU: 125 s past 120 for the slow Renode, and the 182.325 s guard for the one that never returns (both 184.24 s
+# together on Furnace, run in parallel), each plus 5 s; predicted, to be replaced at the next refit.
+tests/boot_tier1.rs	a_long_window_foreign_run_under_its_scaled_guard_passes	130
+tests/boot_tier1.rs	a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard	188
+# AET-WO-4412 review (23:39Z (1)): pincheck's decompression-bomb plant deflates 256 MiB of zeros, a Furnace estimate (alone on the host, times 2.8, AET-WO-1310's factor); replace it at the next refit.
+tests/defaults.rs	a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated	6.076

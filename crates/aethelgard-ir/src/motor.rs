@@ -628,7 +628,19 @@ impl RccRegisters {
     }
 }
 
-/// Why six RCC registers do not decode to a clock.
+/// `RCC_D3CFGR` (RM0433 Rev 9 §8.7.10, p. 397: offset 0x020), whose
+/// `D3PPRE` [`SolvedClock::from_rcc`] leaves at 1, read on its own by the
+/// foreign judge to judge `fPCLK4` (`AET-WO-4412` D2, ruled 11:51Z).
+pub const RCC_D3CFGR: (&str, u32) = ("RCC_D3CFGR", 0x020);
+
+/// `D3PPRE[2:0]` (`RCC_D3CFGR` bits 6:4, RM0433 Rev 9 §8.7.10, p. 397) as
+/// its divider: `0xx` 1, `100` 2, `101` 4, `110` 8, `111` 16.
+pub fn d3ppre(d3cfgr: u32) -> u32 {
+    let v = (d3cfgr >> 4) & 0b111;
+    if v & 0b100 == 0 { 1 } else { 2 << (v & 0b11) }
+}
+
+/// Why six RCC registers do not decode to a clock./// Why six RCC registers do not decode to a clock.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RccDecodeError {
     #[error(
@@ -731,6 +743,33 @@ pub enum Apb {
 /// (RM0433 Rev 9 §2.3.2 Table 8): TIM6 and TIM7 are basic timers with no
 /// channel.
 pub const TIMERS: [u32; 12] = [1, 2, 3, 4, 5, 8, 12, 13, 14, 15, 16, 17];
+
+/// Each timer's update DMA request, as DMAMUX1's input (RM0433 Rev 9 Table
+/// 124, "DMAMUX1: assignment of multiplexer inputs to resources", p. 697;
+/// `AET-WO-4412` D4, ruled 2026-11-26). DShot moves its bits by the update
+/// request, a `DCR`/`DMAR` burst into `CCRx` per bit (ArduPilot sets DMAMUX1
+/// to request 15 on TIM1, measured, `spike/4412`). TIM12, TIM13 and TIM14
+/// raise no DMA request at all (Table 124; their chapters' feature lists,
+/// pp. 1709–1710, name interrupts only), and TIM6 and TIM7 have no channel.
+pub const UP_REQUESTS: [(u32, u32); 9] = [
+    (1, 15),
+    (2, 22),
+    (3, 27),
+    (4, 32),
+    (5, 59),
+    (8, 51),
+    (15, 106),
+    (16, 110),
+    (17, 112),
+];
+
+/// `timer`'s update DMA request on DMAMUX1, or `None` where it has none.
+pub fn up_request(timer: u32) -> Option<u32> {
+    UP_REQUESTS
+        .iter()
+        .find(|(t, _)| *t == timer)
+        .map(|(_, r)| *r)
+}
 
 /// The bus a timer sits on (RM0433 Rev 9 §2.3.2 Table 8): TIM1, TIM8 and
 /// TIM15–TIM17 on APB2, the rest on APB1.

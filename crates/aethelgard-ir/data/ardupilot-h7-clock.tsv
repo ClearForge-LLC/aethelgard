@@ -1,0 +1,19 @@
+# ArduPilot's STM32H7 clock tree, by OSCILLATOR_HZ (AET-WO-4412 D1 (a)): the kernel clocks unmodified ArduPilot runs
+# its timers and USARTs at, which a specification's `mcu.foreign_clock` must equal on an ArduPilot board.
+# Source: the pinned ArduPilot image (container/ARDUPILOT-IMAGE, ghcr.io/clearforge-llc/aethelgard-ardupilot@sha256:
+# e1809b909b02c7fd01b593a65f32d191169a5027ef61ceeae8e74cc08117c2b6, Copter-4.7.2), file
+# /opt/ardupilot/libraries/AP_HAL_ChibiOS/hwdef/common/stm32h7_mcuconf.h, sha256
+# 67f48e5f34466b6da633a54b3321dac44f7c7d4d6cf6065fad84a7059201a426. Every row's lines are that file's; any other
+# oscillator is "#error Unsupported HSE clock" (L164-165). HAL_CUSTOM_MCU_CLOCKRATE unset (the generated hwdef
+# emits no MCU_CLOCKRATE_MHZ), so PLL1 N and Q are L194-195 / L221-222.
+# Fixed for every row: HSI at 64 MHz (STM32_HSIDIV_DIV1, L104); STM32_SW PLL1_P (L288); D1CPRE /1 (L289), D1HPRE /2
+# (L290), D2PPRE1 and D2PPRE2 /2 (L292-293), TIMPRE TRUE (L312), so each APB timer clock equals HCLK (RM0433 Rev 9
+# Table 57, pp. 351-352: D2PPRE 100 with TIMPRE 1); USART16SEL and USART234578SEL PLL2_Q (L343-344); VOS Scale 1 (L109).
+# Columns, tab-separated: oscillator_hz (0: no crystal, the HSI), pll1_divm, pll1_divn, pll1_divp, pll2_divm, pll2_divn,
+# pll2_divq, lines.
+0	4	50	2	8	45	5	L113-122 L168-182
+8000000	1	100	2	1	75	6	L124-130 L184-207
+16000000	2	100	2	2	75	6	L132-138 L184-207
+24000000	3	100	2	2	50	6	L140-146 L209-234
+25000000	2	64	2	5	120	6	L148-154 L236-252
+32000000	4	100	2	4	75	6	L156-162 L184-207

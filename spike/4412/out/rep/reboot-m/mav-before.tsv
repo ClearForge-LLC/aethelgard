@@ -1,0 +1,146 @@
+index	type	fields
+1	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase started"}
+3	PARAM_VALUE	{"param_count": 916, "param_id": "MOT_PWM_MIN", "param_index": 65535, "param_type": 4, "param_value": 1000.0}
+4	PARAM_VALUE	{"param_count": 916, "param_id": "MOT_PWM_MAX", "param_index": 65535, "param_type": 4, "param_value": 2000.0}
+5	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+6	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+7	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+8	PARAM_VALUE	{"param_count": 916, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+9	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+10	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+11	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+12	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+13	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: System not initialised"}
+14	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+15	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+16	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+17	PARAM_VALUE	{"param_count": 916, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+18	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+19	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+20	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+21	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+22	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+23	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+24	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+25	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+26	PARAM_VALUE	{"param_count": 916, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+27	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+28	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+29	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+31	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+32	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: System not initialised"}
+33	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+34	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+35	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+36	PARAM_VALUE	{"param_count": 916, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+37	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+38	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+39	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+40	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+41	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+42	PARAM_VALUE	{"param_count": 916, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+43	PARAM_VALUE	{"param_count": 916, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+44	PARAM_VALUE	{"param_count": 916, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+45	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+46	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+47	PARAM_VALUE	{"param_count": 916, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+48	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+49	PARAM_VALUE	{"param_count": 916, "param_id": "ESC_CALIBRATION", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+51	PARAM_VALUE	{"param_count": 924, "param_id": "CAM1_TYPE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+52	PARAM_VALUE	{"param_count": 924, "param_id": "CAM2_TYPE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+53	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Calibrating barometer"}
+54	PARAM_VALUE	{"param_count": 924, "param_id": "BARO_ALT_OFFSET", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+55	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+56	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: System not initialised"}
+57	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+58	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+59	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+60	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+61	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+62	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+63	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+64	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+65	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+66	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+67	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+68	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+69	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+70	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+71	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+72	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+73	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+74	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: System not initialised"}
+75	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+76	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+77	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+78	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+79	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+80	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+81	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+82	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+83	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Barometer 1 calibration complete"}
+84	PARAM_VALUE	{"param_count": 924, "param_id": "BARO1_GND_PRESS", "param_index": 65535, "param_type": 9, "param_value": 101325.0}
+86	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+87	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+88	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+89	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+90	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+91	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+92	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+93	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+94	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACC_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+95	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_X", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+96	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Y", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+97	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Z", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+99	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Initialising ArduPilot"}
+100	HEARTBEAT	{"autopilot": 3, "base_mode": 89, "custom_mode": 0, "mavlink_version": 3, "system_status": 1, "type": 2}
+101	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: System not initialised"}
+102	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+104	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "ArduPilot Ready"}
+105	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "AHRS: DCM active"}
+106	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "Chip erase complete"}
+107	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 6, "text": "RCOut: PWM:1-4"}
+108	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+109	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+110	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYROFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+111	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYR_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+112	PARAM_VALUE	{"param_count": 924, "param_id": "INS_GYR1_CALTEMP", "param_index": 65535, "param_type": 9, "param_value": 28.864734649658203}
+113	PARAM_VALUE	{"param_count": 924, "param_id": "ARMING_SKIPCHK", "param_index": 65535, "param_type": 6, "param_value": 0.0}
+114	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+115	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+116	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+117	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+118	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+119	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+120	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+121	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACC_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+122	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_X", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+123	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Y", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+124	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Z", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+125	HEARTBEAT	{"autopilot": 3, "base_mode": 81, "custom_mode": 0, "mavlink_version": 3, "system_status": 3, "type": 2}
+126	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+127	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+128	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+129	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+130	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+131	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+132	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+133	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACC_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+134	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_X", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+135	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Y", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+136	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Z", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+137	COMMAND_ACK	{"command": 401, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+138	STATUSTEXT	{"chunk_seq": 0, "id": 0, "severity": 2, "text": "PreArm: Motors: Check frame class and type"}
+139	PARAM_VALUE	{"param_count": 924, "param_id": "EK3_SRC1_POSXY", "param_index": 65535, "param_type": 2, "param_value": 3.0}
+140	PARAM_VALUE	{"param_count": 924, "param_id": "COMPASS_USE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+141	PARAM_VALUE	{"param_count": 924, "param_id": "FRAME_CLASS", "param_index": 65535, "param_type": 2, "param_value": 1.0}
+142	PARAM_VALUE	{"param_count": 924, "param_id": "FS_THR_ENABLE", "param_index": 65535, "param_type": 2, "param_value": 0.0}
+143	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_X", "param_index": 65535, "param_type": 9, "param_value": 0.0010000000474974513}
+144	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Y", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+145	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCOFFS_Z", "param_index": 65535, "param_type": 9, "param_value": 0.0}
+146	COMMAND_ACK	{"command": 241, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}
+147	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACC_ID", "param_index": 65535, "param_type": 6, "param_value": 3408146.0}
+148	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_X", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+149	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Y", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+150	PARAM_VALUE	{"param_count": 924, "param_id": "INS_ACCSCAL_Z", "param_index": 65535, "param_type": 9, "param_value": 1.0}
+151	COMMAND_ACK	{"command": 246, "progress": 0, "result": 0, "result_param2": 0, "target_component": 190, "target_system": 255}

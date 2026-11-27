@@ -613,8 +613,10 @@ fn main() -> ExitCode {
                         foreign: foreign.is_some(),
                         pins,
                         bounds: run::Bounds {
-                            wall: wall_bound_ms
-                                .map_or(renode::BOOT_BOUNDS.wall, Duration::from_millis),
+                            wall: wall_bound_ms.map_or(
+                                default_wall(foreign.is_some(), virtual_ns),
+                                Duration::from_millis,
+                            ),
                             ..renode::BOOT_BOUNDS
                         },
                     }),
@@ -1993,23 +1995,23 @@ fn ready(
 ) -> Result<(input::Input, Ready), run::Stop> {
     // Each clock serves one run kind and never crosses (`AET-WO-4400g`,
     // ruled on PR #229): the solved clock is the generated firmware's, a
-    // declared one a foreign firmware's. Refused first, before any input is
-    // read, as `INV-06` refuses a missing fact.
-    match (boot.foreign, &boot.topology.foreign_clock) {
-        (true, None) => {
-            return Err(run::Stop::refused(
-                "ForeignClockUndeclared",
-                "--foreign needs the firmware's clock declared in the specification (`mcu.foreign_clock`, AET-WO-4400g); without it the twin would build the timers and USARTs at the solved clock, which is the generated firmware's, not this firmware's (INV-06)".to_owned(),
-            ));
-        }
-        (false, Some(_)) => {
-            return Err(run::Stop::refused(
-                "ForeignClockOnGeneratedRun",
-                "the specification declares `mcu.foreign_clock`, a foreign firmware's clock; the generated firmware runs at the solved clock, so only `--foreign` takes this specification (AET-WO-4400g)".to_owned(),
-            ));
-        }
-        _ => {}
+    // declared one a foreign firmware's. A foreign run without one is
+    // refused first, before any input is read, as `INV-06` refuses a missing
+    // fact; a generated run drops a declared one (`AET-WO-4412` D1 (a)).
+    if boot.foreign && boot.topology.foreign_clock.is_none() {
+        return Err(run::Stop::refused(
+            "ForeignClockUndeclared",
+            "--foreign needs the firmware's clock declared in the specification (`mcu.foreign_clock`, AET-WO-4400g); without it the twin would build the timers and USARTs at the solved clock, which is the generated firmware's, not this firmware's (INV-06)".to_owned(),
+        ));
     }
+    let boot = if boot.foreign {
+        boot
+    } else {
+        Boot {
+            topology: aethelgard_cli::generate::generated(&boot.topology),
+            ..boot
+        }
+    };
     if let Err(err) = aethelgard_cli::generate::simulable(&boot.topology) {
         return Err(run::Stop {
             code: EXIT_INVALID_SPEC,
@@ -2077,6 +2079,16 @@ fn ready(
         ),
         None => None,
     };
+    // A firmware that names ArduPilot's panic is ArduPilot, which runs its own
+    // clock tree for the oscillator: the declared clock is held to it, by name
+    // (`AET-WO-4412` D1 (b), ruled 2026-11-26T11:26Z).
+    if let (Some(_), Some(c)) = (&panic, &boot.topology.foreign_clock) {
+        aethelgard_ir::ardupilot_clock::hold(
+            c,
+            boot.topology.clock.hse.as_ref().map(|h| &h.declared),
+        )
+        .map_err(|e| run::Stop::refused(e.kind(), e.to_string()))?;
+    }
     let vector_table =
         u32::try_from(memory.flash.start).expect("FLASH_BANK1_BASE is a 32-bit value");
     // The fault handlers the foreign judge hooks (`AET-WO-2314`), from the
@@ -2412,12 +2424,26 @@ fn simulate(platform: &Path, boot: Option<Boot>) -> Result<verdict::Verdict, run
 /// `simulate`, with a foreign run's declared input and its archive
 /// directory (`AET-WO-4400i`). A load's Renode, with no boot, is bounded by
 /// `load_wall` (`AET-WO-1919` (2)).
+/// A boot's hang guard when no test sets one: [`renode::BOOT_BOUNDS`]'s, or a
+/// foreign run's scaled to its window ([`renode::foreign_boot_wall`],
+/// `AET-WO-4412`, ruled 2026-11-26T21:47Z (a)).
+fn default_wall(foreign: bool, virtual_ns: u64) -> Duration {
+    if foreign {
+        renode::foreign_boot_wall(virtual_ns)
+    } else {
+        renode::BOOT_BOUNDS.wall
+    }
+}
+
 fn simulate_with(
     platform: &Path,
     boot: Option<Boot>,
     declared: Option<(PathBuf, Option<PathBuf>)>,
     load_wall: Duration,
 ) -> Result<verdict::Verdict, run::Stop> {
+    let default = boot.as_ref().map_or(renode::LOAD_BOUNDS.wall, |b| {
+        default_wall(b.foreign, b.virtual_ns)
+    });
     let bounds = boot.as_ref().map_or(
         run::Bounds {
             wall: load_wall,
@@ -2451,6 +2477,22 @@ fn simulate_with(
                 r.virtual_ns,
             )?;
             Some((d, archive))
+        }
+        _ => None,
+    };
+    // A foreign run's reset macro (`AET-WO-4412` (4)), a script in the
+    // scratch, made before any tool runs, as the timeline below is.
+    let reset_script = match &ready {
+        Some((_, r)) if r.foreign.is_some() => {
+            let script = scratch.tool.join("reset.resc");
+            fs::write(
+                &script,
+                renode::foreign::reset_script(&r.image, r.vector_table),
+            )
+            .map_err(|e| {
+                run::Stop::tool_error("aethelgard", format!("cannot write the reset macro: {e}"))
+            })?;
+            Some(script)
         }
         _ => None,
     };
@@ -2668,6 +2710,7 @@ fn simulate_with(
             timeline
                 .as_ref()
                 .map(|(script, _, tail)| (script.as_path(), tail.as_slice())),
+            reset_script.as_deref(),
         )?,
         (Some(plan), None) => plan.commands(),
         (None, _) => renode::commands(&input.copy, &models),
@@ -2778,10 +2821,11 @@ fn simulate_with(
                 ),
                 &parts,
                 &r.flash,
-                r.topology.clock.hse_hz,
+                &r.topology.clock,
                 &foreign_serial,
                 &r.faults,
                 &rest_witnesses,
+                &renode::motors(&r.topology).map_err(twin_stop)?,
             )?;
             foreign_report = Some(report);
             (code, (findings, machine, None))
@@ -2947,7 +2991,7 @@ fn simulate_with(
     // A test's hang guard is on the verdict, a boot's or a load's
     // (`AET-WO-1919` (2)), so no run with one passes for a run without
     // (`simulate --wall-bound-ms`).
-    v.wall_bound_ms = (bounds.wall != renode::BOOT_BOUNDS.wall)
+    v.wall_bound_ms = (bounds.wall != default)
         .then(|| u64::try_from(bounds.wall.as_millis()).unwrap_or(u64::MAX));
     if let Some(r) = &ready {
         // `validate` read the topology's parts already, so the table is there.
@@ -3063,12 +3107,13 @@ fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
     let mut out = Vec::new();
     for m in named {
         // `own_models` named only pinned models, each with a source.
-        let ((file, pin), Some(text)) = (m.own().expect("a pinned model"), m.source()) else {
+        let (file, pin, text) = (m.file, m.sha256, m.source);
+        if text.is_empty() {
             return Err(run::Stop::refused(
                 "ModelUnpinned",
-                format!("`{}` has no source in this build", m.renode()),
+                format!("`{}` has no source in this build", m.renode),
             ));
-        };
+        }
         let path = to.join(file);
         fs::write(&path, text).map_err(written)?;
         let back = fs::read(&path).map_err(written)?;

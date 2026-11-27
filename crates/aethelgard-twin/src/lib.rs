@@ -38,12 +38,14 @@
 
 pub mod analog;
 pub mod boot;
+pub mod dshot;
 pub mod hse;
 pub mod mavlink;
 pub mod model;
 pub mod pins;
 pub mod platform;
 pub mod rest;
+pub mod retype;
 pub mod serial;
 pub mod timer;
 

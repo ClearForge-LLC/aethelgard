@@ -39,6 +39,11 @@ const SKIPCHK_0_5: &str = "fd17000000ffbe1700000000003f010141524d494e475f534b495
 const EARLY_FILL_TX: &[u8] = include_bytes!("../../tests/data/4400i/early-fill-tx.bin");
 /// The reject run's: `PARAM_ERROR` for `AET_NOT_A_PARAM`.
 const REJECT_TX: &[u8] = include_bytes!("../../tests/data/4400i/reject-tx.bin");
+/// Sentinel-03's reboot run (`AET-WO-4412` (4), `spike/4412` `reboot-h`): the
+/// parameters set, `MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN` at 6.5 s, the reset at
+/// 6.7089 s by the twin's macro, and the second boot's reads, 5,281 bytes
+/// before the reset and 2,357 after.
+const REBOOT_TX: &[u8] = include_bytes!("../../tests/data/4412/reboot-tx.bin");
 
 fn hex(s: &str) -> Vec<u8> {
     (0..s.len())
@@ -419,4 +424,32 @@ fn arming_require_one_half_is_stored_as_zero_and_refused() {
     assert_eq!(stored(0.995), Some(1));
     assert_eq!(stored(-0.995), Some(-1));
     assert_eq!(stored(f32::NAN), None);
+}
+
+/// `AET-WO-4412` (4): the firmware's own acknowledgement of the reboot
+/// (`COMMAND_ACK` 246, result 0) marks where the next boot's transmission
+/// begins, and each `PARAM_VALUE` carries its offset, so a parameter is read
+/// before and after the reboot from the stream alone. On Sentinel-03's
+/// reboot run the one accepted reboot is acknowledged before the 5,281
+/// bytes the first boot sent end, and `FRAME_CLASS` reads 1 on both sides.
+#[test]
+fn a_reboot_is_read_from_the_firmwares_own_acknowledgement() {
+    let w = witness(REBOOT_TX, &[], &table());
+    assert_eq!(w.reboots.len(), 1, "{:?}", w.acks);
+    let at = w.reboots[0];
+    assert!(at < 5_281, "{at}");
+    assert_eq!(w.values.len(), w.value_offsets.len());
+    let frame_class = |after: bool| {
+        w.values
+            .iter()
+            .zip(&w.value_offsets)
+            .filter(|((id, _), o)| id == "FRAME_CLASS" && (**o > at) == after)
+            .map(|((_, v), _)| *v)
+            .collect::<Vec<_>>()
+    };
+    assert!(!frame_class(false).is_empty() && frame_class(false).iter().all(|v| *v == 1.0));
+    assert!(!frame_class(true).is_empty() && frame_class(true).iter().all(|v| *v == 1.0));
+    assert!(w.texts.iter().filter(|t| *t == "ArduPilot Ready").count() == 2);
+    // The early-fill run never reboots.
+    assert!(witness(EARLY_FILL_TX, &[], &table()).reboots.is_empty());
 }

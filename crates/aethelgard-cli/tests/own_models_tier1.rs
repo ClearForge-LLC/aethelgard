@@ -60,10 +60,14 @@ fn the_platform_pins_both_models_and_the_proofs_bound_the_data_read() {
     let (solved, files) = board(OWN);
     let text = aethelgard_twin::platform::emit(&solved).unwrap();
     assert_eq!(
-        aethelgard_twin::platform::own_models(&text).unwrap(),
+        aethelgard_twin::platform::own_models(&text)
+            .unwrap()
+            .iter()
+            .map(|o| o.renode)
+            .collect::<Vec<_>>(),
         [
-            aethelgard_twin::model::Model::Bmp581,
-            aethelgard_twin::model::Model::Icm42688p
+            aethelgard_twin::model::Model::Bmp581.renode(),
+            aethelgard_twin::model::Model::Icm42688p.renode()
         ]
     );
     assert!(text.contains("u7: Sensors.BMP581 @ i2c1 0x46"), "{text}");

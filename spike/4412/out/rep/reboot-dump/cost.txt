@@ -1,0 +1,1 @@
+wall_s=27.76 peak_vmrss_kib=513992 load=7.98 8.89 9.36

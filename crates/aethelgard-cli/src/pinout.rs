@@ -115,7 +115,14 @@ pub fn check(
     let elf_bytes = read(elf)?;
     let header_bytes = hwdef_h.map(read).transpose()?;
     let allow_bytes = allow.map(read).transpose()?;
-    let config = aethelgard_pincheck::elf::read(&elf_bytes).map_err(refused)?;
+    // AET-WO-4412 (ruled 2026-11-26T17:35Z): the one defaults.parm admitted is
+    // the one `generate hwdef` writes for this topology, byte for byte. A
+    // topology it refuses, or one it writes no defaults for, admits none.
+    let defaults = aethelgard_hwdef::generate(&topology)
+        .ok()
+        .and_then(|h| h.defaults);
+    let config = aethelgard_pincheck::elf::read_admitting(&elf_bytes, defaults.as_deref())
+        .map_err(refused)?;
     let header = match &header_bytes {
         Some(bytes) => {
             let text = std::str::from_utf8(bytes).map_err(|_| Stop {

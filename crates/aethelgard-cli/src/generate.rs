@@ -264,10 +264,34 @@ fn board_files(
     let mut board =
         aethelgard_svd_hal::board::generate_with(&crate_name(project), topology, table, &answers)
             .map_err(GenerateError::Board)?;
-    // The twin's platform, a pin device's too (`AET-WO-1211c`).
-    let platform = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
+    // The twin's platform, a pin device's too (`AET-WO-1211c`): the generated
+    // firmware's, at the solved clock (`AET-WO-4412` D1 (a)). A declared
+    // `mcu.foreign_clock` adds the foreign firmware's beside it, which
+    // `simulate --foreign` takes.
+    let platform =
+        aethelgard_twin::platform::emit(&generated(topology)).map_err(GenerateError::Twin)?;
     board.insert(format!("{project}.repl"), platform);
+    if topology.foreign_clock.is_some() {
+        let foreign = aethelgard_twin::platform::emit(topology).map_err(GenerateError::Twin)?;
+        board.insert(format!("{project}{FOREIGN_PLATFORM_SUFFIX}"), foreign);
+    }
     Ok(board)
+}
+
+/// The foreign platform's file name after the project's (`AET-WO-4412` D1
+/// (a)): `<project>.foreign.repl`, beside the generated `<project>.repl`.
+pub const FOREIGN_PLATFORM_SUFFIX: &str = ".foreign.repl";
+
+/// The topology a generated run uses (`AET-WO-4412` D1 (a), ruled
+/// 2026-11-26): the generated firmware runs at the solved clock, so a
+/// declared `mcu.foreign_clock`, a foreign firmware's clock, is dropped. The
+/// one place every generated path takes its topology from: `generate`'s
+/// platform, `simulate` without `--foreign`, and `campaign` (so `verify`).
+pub fn generated(topology: &SolvedTopology) -> SolvedTopology {
+    SolvedTopology {
+        foreign_clock: None,
+        ..topology.clone()
+    }
 }
 
 #[cfg(test)]

@@ -1,17 +1,33 @@
 //! The reference board as a foreign firmware's (`AET-WO-4400g` §1.2): its
 //! specification with `mcu.foreign_clock` declared, and the platform emitted
-//! for it, which `simulate --foreign` requires. The clock is the reset
-//! clock's figures, 64 MHz timers and USARTs, which the RCC registers at
-//! reset decode to ([`RCC_AT_RESET`]), so the timer check holds.
+//! for it, which `simulate --foreign` requires. Every foreign firmware here
+//! names ArduPilot's panic, so the clock is ArduPilot's tree with no crystal
+//! (`AET-WO-4412` D1 (b): `aethelgard_ir::ardupilot_clock`'s HSI row, 200 MHz
+//! timers and 72 MHz USARTs at VOS Scale 1, which `--foreign` holds an
+//! ArduPilot ELF's declaration to), and the RCC
+//! registers a stub prints are those ArduPilot leaves on that tree
+//! ([`RCC_ARDUPILOT_HSI`]), so the timer check holds.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
-/// The six RCC registers the foreign judge reads back, at their reset values
-/// (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9, §8.7.11, §8.7.13) as Renode 1.17.0
-/// reads them (`RCC_CR`'s `HSIRDY` mirrors `HSION` and `HSIDIVF` reads 1), in
-/// the order of `aethelgard_ir::motor::RccRegisters::OFFSETS`, as a stub
-/// prints them.
+/// The six RCC registers the foreign judge reads back, as unmodified
+/// ArduPilot leaves them on the HSI (measured on `sentinel-02-own`,
+/// `AET-WO-4400g`): PLL1 from the HSI at 400 MHz, HCLK /2, so the APB timers
+/// at 200 MHz. In the order of `aethelgard_ir::motor::RccRegisters::OFFSETS`,
+/// as a stub prints them.
+pub const RCC_ARDUPILOT_HSI: [&str; 6] = [
+    "0x3F003025",
+    "0x0000801B",
+    "0x00000048",
+    "0x00000440",
+    "0x00408040",
+    "0x01090231",
+];
+
+/// The same six at their reset values (RM0433 Rev 9 §8.7.2, §8.7.7–§8.7.9,
+/// §8.7.11, §8.7.13) as Renode 1.17.0 reads them (`RCC_CR`'s `HSIRDY`
+/// mirrors `HSION` and `HSIDIVF` reads 1): 64 MHz everywhere.
 pub const RCC_AT_RESET: [&str; 6] = [
     "0x00000025",
     "0x00000000",
@@ -21,34 +37,39 @@ pub const RCC_AT_RESET: [&str; 6] = [
     "0x01010280",
 ];
 
-/// `examples/sentinel-01-minimal.json` with every foreign clock at 64 MHz.
+/// `examples/sentinel-01-minimal.json` with ArduPilot's HSI tree declared.
 pub fn spec_json() -> serde_json::Value {
     let path =
         Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/sentinel-01-minimal.json");
     let mut v: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
-    let hz = |source: &str| serde_json::json!({"value": 64_000_000, "source": source});
+    let tree = aethelgard_ir::ardupilot_clock::tree(0).unwrap();
+    let hz = |hz: u64| serde_json::json!({"value": hz, "source": "Copter-4.7.2 stm32h7_mcuconf.h, no crystal (aethelgard-ir data/ardupilot-h7-clock.tsv)"});
     let usarts: serde_json::Map<String, serde_json::Value> = aethelgard_ir::serial::PERIPHERALS
         .iter()
-        .map(|p| {
-            (
-                (*p).to_owned(),
-                hz("the reset clock's rcc_pclk (RM0433 Rev 9 8.7.21)"),
-            )
-        })
+        .map(|p| ((*p).to_owned(), hz(tree.usarts_hz)))
         .collect();
     v["mcu"]["foreign_clock"] = serde_json::json!({
-        "apb1_timers_hz": hz("the reset clock (RM0433 Rev 9 Table 57)"),
-        "apb2_timers_hz": hz("the reset clock (RM0433 Rev 9 Table 57)"),
+        "apb1_timers_hz": hz(tree.timers_hz),
+        "apb2_timers_hz": hz(tree.timers_hz),
         "usarts": usarts,
-        "vos": {"value": "scale2", "source": "the generated firmware's VOS Scale 2 (AET-WO-4240v)"},
+        "vos": {"value": "scale1", "source": "Copter-4.7.2 stm32h7_mcuconf.h STM32_VOS_SCALE1 (L109)"},
     });
     v
 }
 
 /// Writes [`spec_json`] and its emitted platform into `dir`, and returns
-/// their paths: (specification, platform).
+/// their paths: (specification, platform). The generated run's platform,
+/// the clock dropped (`AET-WO-4412` D1 (a)), is written beside them as
+/// `generated-platform.repl`.
 pub fn write(dir: &Path) -> (PathBuf, PathBuf) {
-    let bytes = serde_json::to_vec_pretty(&spec_json()).unwrap();
+    write_with(dir, |_| {})
+}
+
+/// [`write`], with `edit` applied to [`spec_json`] first.
+pub fn write_with(dir: &Path, edit: impl FnOnce(&mut serde_json::Value)) -> (PathBuf, PathBuf) {
+    let mut v = spec_json();
+    edit(&mut v);
+    let bytes = serde_json::to_vec_pretty(&v).unwrap();
     let spec_path = dir.join("foreign-spec.json");
     fs::write(&spec_path, &bytes).unwrap();
     let spec: aethelgard_ir::Specification = serde_json::from_slice(&bytes).unwrap();
@@ -62,6 +83,11 @@ pub fn write(dir: &Path) -> (PathBuf, PathBuf) {
     fs::write(
         &platform,
         aethelgard_twin::platform::emit(&topology).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        dir.join("generated-platform.repl"),
+        aethelgard_twin::platform::emit(&aethelgard_cli::generate::generated(&topology)).unwrap(),
     )
     .unwrap();
     (spec_path, platform)

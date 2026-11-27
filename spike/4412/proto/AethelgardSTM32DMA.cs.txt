@@ -1,0 +1,505 @@
+//
+// AethelgardSTM32DMA: the STM32H7 DMA1/DMA2 controller (8 streams each) for Renode 1.17.0, with streams paced by a
+// timer's request. AET-WO-4412 (D4 a), PROTOTYPE. MIT OR Apache-2.0. Written for Aethelgard; no Antmicro source copied.
+//
+// Two behaviours, chosen per stream when the firmware sets EN:
+//  - PACED: a memory-to-peripheral stream whose DMAMUX1 channel selects one of `pacedRequests` (the update requests of
+//    the timers this platform builds from AethelgardSTM32Timer; RM0433 Table 124, p.697). It moves one item at a time
+//    while the request is asserted [RM p.641: the peripheral holds its request until the DMA acknowledges it; RM p.695:
+//    "The DMA request is pending until served"], so a timer's DMAR burst ends when the timer drops the request.
+//    NDTR counts down per item [RM p.641, p.665]; at 0 the stream sets TCIF and clears EN [RM p.654, p.665: "the DMA is
+//    stopped (EN bit in DMA_SxCR register is cleared by Hardware)"]. Disabled by software before 0, it sets TCIF
+//    [RM p.654, 15.3.16]. A request asserted while the stream is disabled stays pending and is served at EN.
+//  - STOCK: every other stream behaves as Renode 1.17.0's DMA.STM32DMA does (behavioural reference only; no text
+//    copied): memory-to-peripheral and memory-to-memory move the whole NDTR at EN without a request, peripheral-to-
+//    memory moves one item (or the FIFO threshold in FIFO mode) per rising request; TCIF at NDTR 0; EN stays set.
+//    ArduPilot's SPI and USART transmit streams have no request wired in the twin and rely on this.
+//
+// Registers as [stock] defines them: LISR/HISR TCIF read (FEIF, DMEIF, TEIF, HTIF read 0), LIFCR/HIFCR CTCIF,
+// SxCR EN/TCIE/DIR/PINC/MINC/PSIZE/MSIZE (the rest stored as tags), SxNDTR, SxPAR, SxM0AR, SxFCR FTH/DMDIS.
+// Not modelled (both behaviours): HTIF, TEIF, FEIF, DMEIF, circular and double-buffer modes, PINCOS, bursts, priority.
+//
+// Log contract (ruling D-b): one Noisy line per paced transfer that ends, nothing per item or burst:
+//   "stream S req R NDTR N EN t0 end t1 reqs Q: w0 w1 ..." -- the stream, its DMAMUX request, NDTR at EN, the EN and end
+//   instants in virtual ns (Renode's own log stamps are coarser than one DShot bit), the requests served, then every item
+//   moved, in hex as read from memory; " (disabled, NDTR k)" before the colon when software ended it early.
+//
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+using Antmicro.Renode.Core;
+using Antmicro.Renode.Core.Structure.Registers;
+using Antmicro.Renode.Logging;
+using Antmicro.Renode.Peripherals.Bus;
+
+namespace Antmicro.Renode.Peripherals.DMA
+{
+    public sealed class AethelgardSTM32DMA : IDoubleWordPeripheral, IKnownSize, IGPIOReceiver, INumberedGPIOOutput
+    {
+        public AethelgardSTM32DMA(IMachine machine, IDoubleWordPeripheral dmamux = null, int firstMuxChannel = 0, string pacedRequests = "")
+        {
+            this.machine = machine;
+            this.dmamux = dmamux;
+            this.firstMuxChannel = firstMuxChannel;
+            paced = new HashSet<int>();
+            foreach(var s in (pacedRequests ?? "").Split(new[] { ' ', ',' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                paced.Add(int.Parse(s));
+            }
+            if(paced.Count > 0 && dmamux == null)
+            {
+                throw new Exceptions.ConstructionException("pacedRequests needs the dmamux that routes them");
+            }
+            sysbus = machine.GetSystemBus(this);
+            engine = new DmaEngine(sysbus);
+            tcif = new IFlagRegisterField[Streams];
+            streams = Enumerable.Range(0, Streams).Select(i => new Stream(this, i)).ToArray();
+            Connections = Enumerable.Range(0, Streams).ToDictionary(i => i, i => (IGPIO)streams[i].IRQ);
+            var map = new Dictionary<long, DoubleWordRegister>();
+            DefineFlagRegisters(map);
+            foreach(var s in streams)
+            {
+                s.Define(map);
+            }
+            registers = new DoubleWordRegisterCollection(this, map);
+            Reset();
+        }
+
+        public IReadOnlyDictionary<int, IGPIO> Connections { get; }
+
+        public long Size => 0x400;
+
+        public void Reset()
+        {
+            registers.Reset();
+            foreach(var s in streams)
+            {
+                s.Reset();
+            }
+        }
+
+        public uint ReadDoubleWord(long offset)
+        {
+            return registers.Read(offset);
+        }
+
+        public void WriteDoubleWord(long offset, uint value)
+        {
+            registers.Write(offset, value);
+        }
+
+        public void OnGPIO(int number, bool value)
+        {
+            if(number < 0 || number >= Streams)
+            {
+                this.Log(LogLevel.Warning, "request on stream {0}; there are {1}", number, Streams);
+                return;
+            }
+            streams[number].OnRequest(value);
+        }
+
+        private void DefineFlagRegisters(Dictionary<long, DoubleWordRegister> map)
+        {
+            // Each register holds four streams' flags at bit offsets 0, 6, 16, 22 [RM p.659-660].
+            var at = new[] { 0, 6, 16, 22 };
+            for(var half = 0; half < 2; half++)
+            {
+                var isr = new DoubleWordRegister(this).WithReservedBits(12, 4).WithReservedBits(28, 4);
+                var ifcr = new DoubleWordRegister(this).WithReservedBits(12, 4).WithReservedBits(28, 4);
+                for(var k = 0; k < 4; k++)
+                {
+                    var id = half * 4 + k;
+                    var o = at[k];
+                    isr.WithTaggedFlag($"FEIF{id}", o)
+                        .WithReservedBits(o + 1, 1)
+                        .WithTaggedFlag($"DMEIF{id}", o + 2)
+                        .WithTaggedFlag($"TEIF{id}", o + 3)
+                        .WithTaggedFlag($"HTIF{id}", o + 4)
+                        .WithFlag(o + 5, out tcif[id], FieldMode.Read, name: $"TCIF{id}");
+                    ifcr.WithTaggedFlag($"CFEIF{id}", o)
+                        .WithReservedBits(o + 1, 1)
+                        .WithTaggedFlag($"CDMEIF{id}", o + 2)
+                        .WithTaggedFlag($"CTEIF{id}", o + 3)
+                        .WithTaggedFlag($"CHTIF{id}", o + 4)
+                        .WithFlag(o + 5, FieldMode.Set, name: $"CTCIF{id}", writeCallback: (_, v) =>
+                        {
+                            if(v)
+                            {
+                                tcif[id].Value = false;
+                                UpdateInterrupts();
+                            }
+                        });
+                }
+                map[0x0 + 4 * half] = isr;
+                map[0x8 + 4 * half] = ifcr;
+            }
+        }
+
+        private void UpdateInterrupts()
+        {
+            for(var i = 0; i < Streams; i++)
+            {
+                streams[i].IRQ.Set(streams[i].TransferCompleteIrqEnable && tcif[i].Value);
+            }
+        }
+
+        private int MuxRequest(int stream)
+        {
+            if(dmamux == null)
+            {
+                return -1;
+            }
+            return (int)(dmamux.ReadDoubleWord(4 * (firstMuxChannel + stream)) & 0x7F); // DMAMUX1_CxCR.DMAREQ_ID [RM p.709]; DMA2 stream k is DMAMUX1 channel 8 + k [RM p.696]
+        }
+
+        private bool IsPacedRequest(int stream)
+        {
+            return paced.Count > 0 && paced.Contains(MuxRequest(stream));
+        }
+
+        private ulong NowNs => machine.ClockSource.CurrentValue.Ticks;
+
+        private readonly IMachine machine;
+        private readonly IDoubleWordPeripheral dmamux;
+        private readonly int firstMuxChannel;
+        private readonly HashSet<int> paced;
+        private readonly DmaEngine engine;
+        private readonly IBusController sysbus;
+        private readonly IFlagRegisterField[] tcif;
+        private readonly Stream[] streams;
+        private readonly DoubleWordRegisterCollection registers;
+
+        private const int Streams = 8;
+        private const long StreamBase = 0x10;
+        private const long StreamStep = 0x18;
+
+        private sealed class Stream
+        {
+            public Stream(AethelgardSTM32DMA parent, int id)
+            {
+                this.parent = parent;
+                this.id = id;
+            }
+
+            public GPIO IRQ { get; } = new GPIO();
+
+            public bool TransferCompleteIrqEnable => tcie.Value;
+
+            public void Reset()
+            {
+                dataOffset = 0;
+                pacedActive = false;
+                level = false;
+                served = 0;
+                moved = 0;
+                IRQ.Unset();
+            }
+
+            public void Define(Dictionary<long, DoubleWordRegister> map)
+            {
+                var b = StreamBase + id * StreamStep;
+                map[b + 0x0] = new DoubleWordRegister(parent)
+                    .WithFlag(0, out en, name: "EN", writeCallback: (_, v) => OnEnableWrite(v))
+                    .WithTaggedFlag("DMEIE", 1)
+                    .WithTaggedFlag("TEIE", 2)
+                    .WithTaggedFlag("HTIE", 3)
+                    .WithFlag(4, out tcie, name: "TCIE")
+                    .WithTaggedFlag("PFCTRL", 5)
+                    .WithEnumField(6, 2, out dir, name: "DIR")
+                    .WithTaggedFlag("CIRC", 8)
+                    .WithFlag(9, out pinc, name: "PINC")
+                    .WithFlag(10, out minc, name: "MINC")
+                    .WithEnumField(11, 2, out psize, name: "PSIZE")
+                    .WithEnumField(13, 2, out msize, name: "MSIZE")
+                    .WithTaggedFlag("PINCOS", 15)
+                    .WithTag("PL", 16, 2)
+                    .WithTaggedFlag("DBM", 18)
+                    .WithTaggedFlag("CT", 19)
+                    .WithTaggedFlag("TRBUFF", 20)
+                    .WithTag("PBURST", 21, 2)
+                    .WithTag("MBURST", 23, 2)
+                    .WithReservedBits(25, 7);
+                map[b + 0x4] = new DoubleWordRegister(parent)
+                    .WithValueField(0, 16, out ndt, name: "NDT")
+                    .WithReservedBits(16, 16);
+                map[b + 0x8] = new DoubleWordRegister(parent)
+                    .WithValueField(0, 32, out par, name: "PAR");
+                map[b + 0xC] = new DoubleWordRegister(parent)
+                    .WithValueField(0, 32, out m0a, name: "M0A");
+                map[b + 0x10] = new DoubleWordRegister(parent)
+                    .WithTag("M1A", 0, 32);
+                map[b + 0x14] = new DoubleWordRegister(parent)
+                    .WithEnumField(0, 2, out fth, name: "FTH")
+                    .WithFlag(2, out dmdis, name: "DMDIS")
+                    .WithTag("FS", 3, 3)
+                    .WithReservedBits(6, 1)
+                    .WithTaggedFlag("FEIE", 7)
+                    .WithReservedBits(8, 24);
+            }
+
+            public void OnRequest(bool value)
+            {
+                level = value;
+                if(pacedActive)
+                {
+                    if(value)
+                    {
+                        Serve();
+                    }
+                    return;
+                }
+                if(!value)
+                {
+                    return;
+                }
+                if(!en.Value)
+                {
+                    if(parent.IsPacedRequest(id))
+                    {
+                        return; // a paced request asserted before EN stays pending [RM p.695]
+                    }
+                    parent.Log(LogLevel.Warning, "Attempting to perform a transfer on disabled DMA stream {0}. Ignoring request", id);
+                    return;
+                }
+                // [stock]: only peripheral-to-memory streams are moved by a request.
+                if(dir.Value == Direction.PeripheralToMemory)
+                {
+                    PerformWhole();
+                }
+            }
+
+            private void OnEnableWrite(bool value)
+            {
+                if(!value)
+                {
+                    if(pacedActive)
+                    {
+                        pacedActive = false;
+                        if(ndt.Value != 0)
+                        {
+                            // Disabled before the end [RM p.654, 15.3.16]: TCIF is set, NDTR keeps what is left.
+                            parent.tcif[id].Value = true;
+                            End("disabled");
+                        }
+                    }
+                    return;
+                }
+                if(pacedActive)
+                {
+                    return; // already running; EN written 1 again
+                }
+                if(dir.Value == Direction.MemoryToPeripheral && parent.IsPacedRequest(id))
+                {
+                    pacedActive = true;
+                    served = 0;
+                    moved = 0;
+                    enabledAt = parent.NowNs;
+                    startNdt = ndt.Value;
+                    request = parent.MuxRequest(id);
+                    words.Clear();
+                    if(ndt.Value == 0)
+                    {
+                        parent.Log(LogLevel.Warning, "stream {0}: enabled with NDTR 0", id);
+                    }
+                    if(level)
+                    {
+                        Serve();
+                    }
+                    return;
+                }
+                // [stock]: memory-to-peripheral and memory-to-memory move everything at EN.
+                if(dir.Value != Direction.PeripheralToMemory)
+                {
+                    PerformWhole();
+                }
+            }
+
+            private void Serve()
+            {
+                if(serving)
+                {
+                    return; // the outer loop keeps moving while the request is asserted
+                }
+                serving = true;
+                try
+                {
+                    served++;
+                    while(pacedActive && level && ndt.Value > 0)
+                    {
+                        MoveOne();
+                    }
+                    if(pacedActive && ndt.Value == 0)
+                    {
+                        pacedActive = false;
+                        en.Value = false; // cleared by hardware at the end [RM p.654]
+                        parent.tcif[id].Value = true;
+                        dataOffset = 0;
+                        End(null);
+                    }
+                }
+                finally
+                {
+                    serving = false;
+                }
+            }
+
+            private void MoveOne()
+            {
+                var size = SizeOf(psize.Value);
+                var src = m0a.Value + (minc.Value ? dataOffset : 0);
+                var dst = par.Value + (pinc.Value ? dataOffset : 0);
+                ndt.Value -= 1;
+                dataOffset += (ulong)size;
+                moved++;
+                ulong item;
+                switch(msize.Value)
+                {
+                case DataSize.Byte:
+                    item = parent.sysbus.ReadByte(src);
+                    break;
+                case DataSize.HalfWord:
+                    item = parent.sysbus.ReadWord(src);
+                    break;
+                default:
+                    item = parent.sysbus.ReadDoubleWord(src);
+                    break;
+                }
+                words.Append(' ').Append(item.ToString("X"));
+                parent.engine.IssueCopy(new Request(src, dst, size, TypeOf(msize.Value), TypeOf(psize.Value), minc.Value, pinc.Value));
+            }
+
+            private void End(string why)
+            {
+                parent.Log(LogLevel.Noisy, "stream {0} req {1} NDTR {2} EN {3} end {4} reqs {5}{6}:{7}", id, request, startNdt, enabledAt, parent.NowNs, served,
+                    why == null ? "" : string.Format(" ({0}, NDTR {1})", why, ndt.Value), words.ToString());
+                words.Clear();
+                parent.UpdateInterrupts();
+            }
+
+            // ---- [stock] behaviour --------------------------------------------------------------------------------
+
+            private void PerformWhole()
+            {
+                if(ndt.Value == 0)
+                {
+                    parent.Log(LogLevel.Warning, "Attempting to create DMA request with no data to send. Ignoring operation.");
+                    parent.Log(LogLevel.Warning, "Error in DMA configuration detected. Ignoring transfer request.");
+                    return;
+                }
+                if(dir.Value == Direction.Reserved)
+                {
+                    parent.Log(LogLevel.Warning, "Attempting to create DMA request with direction set as Reserved. Ignoring operation.");
+                    parent.Log(LogLevel.Warning, "Error in DMA configuration detected. Ignoring transfer request.");
+                    return;
+                }
+                ulong src, dst;
+                TransferType srcType, dstType;
+                bool srcInc, dstInc;
+                var memOff = minc.Value ? dataOffset : 0;
+                var perOff = pinc.Value ? dataOffset : 0;
+                if(dir.Value == Direction.MemoryToPeripheral)
+                {
+                    src = m0a.Value + memOff;
+                    srcType = TypeOf(msize.Value);
+                    srcInc = minc.Value;
+                    dst = par.Value + perOff;
+                    dstType = TypeOf(psize.Value);
+                    dstInc = pinc.Value;
+                }
+                else
+                {
+                    src = par.Value + perOff;
+                    srcType = TypeOf(psize.Value);
+                    srcInc = pinc.Value;
+                    dst = m0a.Value + memOff;
+                    dstType = TypeOf(msize.Value);
+                    dstInc = minc.Value;
+                }
+                int size;
+                switch(dir.Value)
+                {
+                case Direction.MemoryToMemory:
+                    size = (int)ndt.Value * SizeOf(msize.Value);
+                    break;
+                case Direction.MemoryToPeripheral:
+                    size = (int)ndt.Value * SizeOf(psize.Value);
+                    break;
+                default:
+                    size = dmdis.Value ? ((int)fth.Value + 1) * FifoBytes / 4 : SizeOf(psize.Value);
+                    break;
+                }
+                var unit = dir.Value == Direction.PeripheralToMemory ? SizeOf(psize.Value) : SizeOf(msize.Value);
+                ndt.Value -= (ulong)(size / unit);
+                dataOffset += (ulong)size;
+                parent.engine.IssueCopy(new Request(src, dst, size, srcType, dstType, srcInc, dstInc));
+                if(ndt.Value == 0)
+                {
+                    parent.tcif[id].Value = true;
+                    dataOffset = 0;
+                    parent.UpdateInterrupts();
+                }
+            }
+
+            private TransferType TypeOf(DataSize s)
+            {
+                switch(s)
+                {
+                case DataSize.Byte:
+                    return TransferType.Byte;
+                case DataSize.HalfWord:
+                    return TransferType.Word;
+                case DataSize.Word:
+                    return TransferType.DoubleWord;
+                default:
+                    parent.Log(LogLevel.Warning, "Trying to cast Reserved (0x{0:X}) DataSize to TransferType. Defaulting to Byte.", (int)s);
+                    return TransferType.Byte;
+                }
+            }
+
+            private static int SizeOf(DataSize s)
+            {
+                return 1 << (int)s;
+            }
+
+            private IFlagRegisterField en, tcie, pinc, minc, dmdis;
+            private IEnumRegisterField<Direction> dir;
+            private IEnumRegisterField<DataSize> psize, msize;
+            private IEnumRegisterField<FifoThreshold> fth;
+            private IValueRegisterField ndt, par, m0a;
+            private ulong dataOffset;
+            private bool pacedActive, level, serving;
+            private ulong served, moved, enabledAt, startNdt;
+            private int request;
+            private readonly System.Text.StringBuilder words = new System.Text.StringBuilder();
+            private readonly AethelgardSTM32DMA parent;
+            private readonly int id;
+
+            private const int FifoBytes = 16;
+
+            private enum Direction
+            {
+                PeripheralToMemory = 0,
+                MemoryToPeripheral = 1,
+                MemoryToMemory = 2,
+                Reserved = 3,
+            }
+
+            private enum DataSize
+            {
+                Byte = 0,
+                HalfWord = 1,
+                Word = 2,
+                Reserved = 3,
+            }
+
+            private enum FifoThreshold
+            {
+                OneFourth = 0,
+                Half = 1,
+                ThreeFourths = 2,
+                Full = 3,
+            }
+        }
+    }
+}

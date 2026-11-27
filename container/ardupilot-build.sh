@@ -63,6 +63,11 @@ case ${1:-} in
       dir=libraries/AP_HAL_ChibiOS/hwdef/$name
       mkdir -p "$dir"
       cp "/boards/$name.hwdef.dat" "$dir/hwdef.dat"
+      # AET-WO-4412 (3): the board's defaults.parm, where `generate hwdef` wrote one (a DShot board's
+      # MOT_PWM_TYPE), beside hwdef.dat, where ArduPilot embeds it (chibios_hwdef.py L2727-2745, L3083).
+      if [ -f "/boards/$name.defaults.parm" ]; then
+        cp "/boards/$name.defaults.parm" "$dir/defaults.parm"
+      fi
       rm -rf "build/$name"
       t=$(($(date +%s%N) / 1000000))
       env -u GITHUB_ACTIONS ./waf configure --board "$name"

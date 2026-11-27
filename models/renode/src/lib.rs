@@ -9,7 +9,15 @@
 #![forbid(unsafe_code)]
 
 /// Every model: its file name under `models/renode/` and its text.
-pub const FILES: [(&str, &str); 2] = [
+pub const FILES: [(&str, &str); 4] = [
+    (
+        "AethelgardSTM32DMA.cs",
+        include_str!("../AethelgardSTM32DMA.cs"),
+    ),
+    (
+        "AethelgardSTM32Timer.cs",
+        include_str!("../AethelgardSTM32Timer.cs"),
+    ),
     ("BMP581.cs", include_str!("../BMP581.cs")),
     ("ICM42688P.cs", include_str!("../ICM42688P.cs")),
 ];

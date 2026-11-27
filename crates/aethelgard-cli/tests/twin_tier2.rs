@@ -4138,10 +4138,14 @@ fn the_sentinel_02_fixture_with_parts_of_our_own_runs_every_step_witnessed() {
     let (dir, platform, spec_path) = own_board("fixture");
     let text = fs::read_to_string(&platform).unwrap();
     assert_eq!(
-        aethelgard_twin::platform::own_models(&text).unwrap(),
+        aethelgard_twin::platform::own_models(&text)
+            .unwrap()
+            .iter()
+            .map(|o| o.renode)
+            .collect::<Vec<_>>(),
         [
-            aethelgard_twin::model::Model::Bmp581,
-            aethelgard_twin::model::Model::Icm42688p
+            aethelgard_twin::model::Model::Bmp581.renode(),
+            aethelgard_twin::model::Model::Icm42688p.renode()
         ]
     );
     let elf = mutant_of(&dir, "own", |_| {});
@@ -4824,8 +4828,11 @@ fn foreign_boot(label: &str, segments: &[(u32, Vec<u8>, u32)]) -> (Option<i32>, 
         common::foreign::with_panic(foreign_elf(segments), 0x0800_0100),
     )
     .unwrap();
-    // The reference board with a foreign clock declared at the reset
-    // clock's figures, and its platform (`AET-WO-4400g`).
+    // The reference board with a foreign clock declared, and its platform
+    // (`AET-WO-4400g`): ArduPilot's tree with no crystal since `AET-WO-4412`
+    // D1 (b), because this stub names ArduPilot's panic. It leaves the RCC at
+    // reset (64 MHz), so each verdict also carries `foreign_clock_contradicted`,
+    // which these flash controls do not read.
     let (spec, platform) = common::foreign::write(&dir);
     let (code, v) = aethelgard(&[
         "simulate",

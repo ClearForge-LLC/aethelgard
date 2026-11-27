@@ -1,0 +1,1 @@
+{"ok":false,"error":{"kind":"ToolError","id":"renode","message":"Renode did not return from its run within the 120 s wall-clock hang guard and was killed; a hang judges nothing about the firmware, so no verdict is written (AET-WO-1918)"}}

@@ -492,6 +492,9 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
 #[test]
 fn renode_models_has_only_its_known_files_keys_and_no_dependencies() {
     let mut expected = vec![
+        // AET-WO-4412 D4: the DShot timer and the DMA that paces it.
+        "AethelgardSTM32DMA.cs",
+        "AethelgardSTM32Timer.cs",
         "BMP581.cs",
         "Cargo.toml",
         "ICM42688P.cs",
@@ -553,10 +556,12 @@ const TWIN_DATA: [&str; 4] = [
 ];
 
 /// ArduPilot Copter 4.7.2's own USART1 transmissions, which the twin's
-/// `mavlink` tests read (`AET-WO-4400i`, from `spike/4400i`'s runs).
-const TWIN_FIXTURES: [&str; 2] = [
+/// `mavlink` tests read (`AET-WO-4400i`, from `spike/4400i`'s runs; the
+/// reboot run's since `AET-WO-4412` (4), from `spike/4412`'s `reboot-h`).
+const TWIN_FIXTURES: [&str; 3] = [
     "tests/data/4400i/early-fill-tx.bin",
     "tests/data/4400i/reject-tx.bin",
+    "tests/data/4412/reboot-tx.bin",
 ];
 
 /// `aethelgard-twin` lowers a solved topology to a Renode platform and holds
