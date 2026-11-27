@@ -1,0 +1,20 @@
+# AET-WO-4413 (2): one mutant per guard. id, file, old, new, package, test
+R-M1	crates/aethelgard-ir/src/supervisor.rs	Some((min, _)) if held_by.is_some() =>	Some((min, _)) if held_by.is_some() && false =>	aethelgard-ir	supply_floors_4310
+R-M2	crates/aethelgard-ir/src/supervisor.rs	            out.push((m.reference.clone(), mon));		aethelgard-ir	supply_floors_4310
+R-M3	crates/aethelgard-ir/src/supervisor.rs	if *rail == mon.rail {	if false {	aethelgard-ir	supply_floors_4310
+R-M4	crates/aethelgard-ir/src/supervisor.rs	if min > at {	if false {	aethelgard-ir	rail_monitor_4413
+R-M5	crates/aethelgard-ir/src/supervisor.rs	if let Some(c) = r.controls.iter().find(|c| c.monitor.is_some())	if let Some(c) = r.controls.iter().find(|c| c.monitor.is_some() && false)	aethelgard-ir	rail_monitor_4413
+R-M6	crates/aethelgard-ir/src/supervisor.rs	if !rails.contains(&&m.rail) {	if false {	aethelgard-ir	rail_monitor_4413
+R-M7	crates/aethelgard-ir/src/supervisor.rs	let Some(m) = p.rail_monitors.iter().find(|m| &m.reference == mon) else {\n            return Err(invalid(	let Some(m) = p.rail_monitors.iter().find(|m| &m.reference == mon) else {\n            continue;\n            #[allow(unreachable_code)]\n            return Err(invalid(	aethelgard-ir	rail_monitor_4413
+R-M8	crates/aethelgard-ir/src/supervisor.rs	if v.output != crate::power_parts::SupervisorOutput::PushPull {	if false {	aethelgard-ir	rail_monitor_4413
+R-M9	crates/aethelgard-ir/src/supervisor.rs	if table.get(&m.bypass.part).map(|r| r.kind.name()) != Some("capacitor") {	if false {	aethelgard-ir	rail_monitor_4413
+R-M10	crates/aethelgard-ir/src/supervisor.rs	if m.rail == spec.mcu.supply {	if false {	aethelgard-ir	rail_monitor_4413
+R-M11	crates/aethelgard-ir/src/supervisor.rs	if !named.iter().any(|(_, mon, _)| *mon == m.reference) {	if false {	aethelgard-ir	rail_monitor_4413
+R-M12	crates/aethelgard-ir/src/supervisor.rs	if u64::try_from(rising).unwrap_or(u64::MAX) >= rail_min {	if u64::try_from(rising).unwrap_or(u64::MAX) > rail_min {	aethelgard-ir	rail_monitor_4413
+R-M13	crates/aethelgard-ir/src/supervisor.rs	if u64::from(crate::maximum_millivolts(domain)) > vdd_hi || rail_min < vdd_lo {\n            return Err(refuse(\n                Refusal::SupervisorOutOfRange,\n                &m.reference,	if false {\n            return Err(refuse(\n                Refusal::SupervisorOutOfRange,\n                &m.reference,	aethelgard-ir	rail_monitor_4413
+R-M14	crates/aethelgard-ir/src/supervisor.rs	if u64::try_from(v.delay_min_microseconds.value).unwrap_or(0) < need {	if false {	aethelgard-ir	rail_monitor_4413
+R-M15	crates/aethelgard-ir/src/supervisor.rs	let crate::power_parts::SupervisorOutput::OpenDrain { pull_up_ohms } = &v.output else {	let crate::power_parts::SupervisorOutput::OpenDrain { pull_up_ohms } = &v.output else {\n        return Ok(Vec::new());\n        #[allow(unreachable_code)]	aethelgard-ir	rail_monitor_4413
+R-M16	crates/aethelgard-ir/src/power.rs	x.pin == "OE" && (x.strap == Some(pp::Strap::Vcca) || monitored(x))	x.pin == "OE" && x.strap == Some(pp::Strap::Vcca)	aethelgard-ir	rail_monitor_4413
+R-M17	crates/aethelgard-ir/src/power.rs	.any(|mon| &mon.reference == r && mon.rail == c.b_domain)	.any(|mon| &mon.reference == r)	aethelgard-ir	rail_monitor_4413
+R-M18	crates/aethelgard-ir/src/radio.rs	(None, Some(mon)) if m.enable.resistor.is_none() && m.enable.capacitor.is_none() => {	(None, Some(mon)) => {	aethelgard-ir	rail_monitor_4413
+R-M19	crates/aethelgard-ir/src/power.rs	if m.enable.monitor.is_none() {	if true {	aethelgard-cli	readiness_tier1

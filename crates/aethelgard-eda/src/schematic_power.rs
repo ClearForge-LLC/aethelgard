@@ -397,6 +397,11 @@ pub(crate) fn draw(
     if fed.is_none() {
         hot_plug(b, p, table, None)?;
     }
+    // Before the crossings, so a translator's `OE` and a module's enable
+    // find the reset net claimed (`AET-WO-4413` (2)).
+    for m in &p.rail_monitors {
+        rail_monitor(b, m)?;
+    }
     for c in &p.crossings {
         crossing(b, c, spi, behind, ended)?;
     }
@@ -524,6 +529,38 @@ pub(super) fn supervisor(
     let g = b.ground();
     capacitor(b, &s.bypass.reference, &s.bypass.part, vdd, g)
 }
+
+/// `AET-WO-4413` (2), ruled D2: a rail monitor, its push-pull `RESET` on
+/// its own net (every pin that names it joins it there), on its rail
+/// (`VDD`) and `GND`; its bypass from `VDD` to `GND`, beside its `VDD` pin.
+fn rail_monitor(
+    b: &mut Builder<'_>,
+    m: &aethelgard_ir::supervisor::RailMonitor,
+) -> Result<(), EmitError> {
+    let r = row(&m.reference, &m.part)?;
+    let net = b.own_net(aethelgard_ir::supervisor::reset_net(&m.reference))?;
+    let vdd_pin = pin(&m.reference, r, "VDD")?;
+    let conns = BTreeMap::from([
+        (pin(&m.reference, r, "GND")?, b.ground()),
+        (pin(&m.reference, r, "RESET")?, Conn::Net(net)),
+        (vdd_pin.clone(), b.rail(&m.rail)),
+    ]);
+    ic(b, &m.reference, r, conns)?;
+    let vdd = b.rail(&m.rail);
+    let g = b.ground();
+    capacitor(b, &m.bypass.reference, &m.bypass.part, vdd, g)?;
+    anchor(
+        b,
+        &m.reference,
+        &[("1", &vdd_pin)],
+        NEAR_NM,
+        MONITOR_BYPASS_RULE,
+    );
+    Ok(())
+}
+
+/// The rail monitor's bypass beside its supply pin.
+const MONITOR_BYPASS_RULE: &str = "SBVS193D p. 7, 7.5 Electrical Characteristics: C1 = 0.1 uF, the bypass the device is characterized with (2.0 mm, as a translator's bypass: an engine choice, no distance is stated)";
 
 /// A declared hot-plug part's row in `table`, when it is a bulk capacitor on
 /// the board's side of the connector: the only kind the emitter draws.
@@ -686,6 +723,17 @@ fn controls(
             ));
         };
         let conn = match (&c.strap, &c.wire) {
+            // `AET-WO-4413` (2): driven by a rail monitor's reset, on the net
+            // its drawer claimed.
+            (None, None) if let Some(m) = &c.monitor => {
+                if !rule.wirable {
+                    return Err(refuse(
+                        reference,
+                        format!("{pin} is driven by `{m}`'s reset, and its row allows no wire"),
+                    ));
+                }
+                Conn::Net(aethelgard_ir::supervisor::reset_net(m))
+            }
             (None, None) if let Some(a) = &c.after => {
                 // the open-drain PG's pull-up, to the leader's output
                 let lead = regulators

@@ -1014,12 +1014,12 @@ fn ci_job(ci: &str, job: &str) -> String {
     rest[..end].to_owned()
 }
 
-/// `AET-WO-4300k` (8), ruled 16:50Z (a): Sentinel-03's package job runs its
-/// verify on one specification, `--against-fab` on the committed package and
-/// `--fab-out` into its own artifact's path, each once, and no other job
-/// names Sentinel-03's package.
+/// `AET-WO-4300k` (8), ruled 16:50Z (a): Sentinel-03's job runs its verify
+/// on one specification in a job of its own. Since `AET-WO-4413` D6 its
+/// package is withdrawn: one `--fab-out`, the refusal asserted by name and
+/// figure, and nothing names a committed Sentinel-03 package.
 #[test]
-fn ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path() {
+fn ci_asserts_sentinel_03_s_refusal_in_its_own_job_on_its_one_path() {
     let ci = fs::read_to_string(root().join(".github/workflows/ci.yml")).unwrap();
     let job = ci_job(&ci, "bench-package-s03");
     assert!(job.contains("timeout-minutes: 90"), "{job}");
@@ -1032,14 +1032,24 @@ fn ci_derives_sentinel_03_s_package_in_its_own_job_on_its_one_path() {
             .filter(|l| !l.trim_start().starts_with('#') && l.contains(needle))
             .count()
     };
-    for line in [
-        "$VERIFY_S03 --against-fab fab/sentinel-03/package",
-        "$VERIFY_S03 --fab-out target/sentinel-03-package",
+    // `AET-WO-4413` D6: the package is withdrawn, so the job runs one
+    // `--fab-out` on every run and asserts its refusal by extract's two drop
+    // limits, readiness met; nothing compares or keeps a package.
+    let line = "$VERIFY_S03 --fab-out target/sentinel-03-package";
+    assert_eq!(uses(line), 1, "{line}");
+    assert!(job.contains(line), "{line} is in bench-package-s03");
+    for needle in [
+        "\"error\" not in v",
+        "\"`VDD_3V3`: VDD + VSS drop bound ",
+        "\"`VDD_3V3_RF`: VDD + VSS drop bound ",
+        "supply_drop_over_limit",
+        "a package was written",
     ] {
-        assert_eq!(uses(line), 1, "{line}");
-        assert!(job.contains(line), "{line} is in bench-package-s03");
+        assert!(job.contains(needle), "{needle} is not asserted: {job}");
     }
-    assert_eq!(uses("fab/sentinel-03/package"), 1);
+    assert_eq!(uses("fab/sentinel-03/package"), 0);
+    assert!(!job.contains("--against-fab"), "{job}");
+    assert!(!job.contains("upload-artifact"), "{job}");
     assert_eq!(uses("examples/sentinel-03.json"), 1);
 }
 

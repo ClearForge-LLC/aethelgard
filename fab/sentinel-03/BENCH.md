@@ -1,5 +1,7 @@
 # Sentinel-03: the bench plan
 
+> **The package is withdrawn** (`AET-WO-4413`, ruled 2026-11-27T19:18Z D6): `extract` refuses this board by both supply drop limits, VDD_3V3's and VDD_3V3_RF's, until the ground split's follow-up work order, and `package/` is removed until then. Its last committed package is at `ec440f71`; the ELF below is that package's. Every row waits on the package the follow-up writes.
+
 The rows to run when the boards arrive (AET-WO-4300k (8)). Each row names:
 - the prediction it tests and what that prediction rests on;
 - the instrument;
@@ -8,7 +10,7 @@ The rows to run when the boards arrive (AET-WO-4300k (8)). Each row names:
 
 A failed row is a finding, never a retry.
 
-The board is `examples/sentinel-03.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-03.elf`, sha256 `66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, as `AET-WO-3308` did for Sentinel-01). Every row runs that ELF.
+The board is `examples/sentinel-03.json`, and its package was `package/` beside this file (withdrawn, above). Its ELF was `package/sentinel-03.elf`, sha256 `66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c`, the hash its `MANIFEST.json` recorded at `ec440f71` (a tier-1 test holds the sheet to it until a package returns). Every row runs the ELF of the package the follow-up writes.
 
 **What each prediction rests on** (`RUL-20`'s terms, as Sentinel-01's sheet labels them):
 - **rule:** an independent rule in `aethelgard-ir`, or a datasheet limit cited at source.
@@ -92,7 +94,16 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
   - a programmable supply, ramped at ≤ 10 mV/s up to the input's rail and back to 0 V, through 1 kΩ into the input;
   - a scope on the input and on the channel's output; a DMM on the input's rail.
   - **A1** (pad 2, `/WIFI_TX`, VCCA = VDD_3V3): U1 held in reset through J2's NRST; output B1Y (pad 13).
-  - **B4** (pad 10, `/U31_B4`, VCCB = VDD_3V3_RF): U30 held in reset (C90 shorted); output A4Y (pad 5).
+  - **B4** (VCCB = VDD_3V3_RF): on the breakout below, VCCB at the board's measured VDD_3V3_RF, the same ramp into B4 (pad 10), output A4Y (pad 5). On the board, U30's TXD drives B4, and since `AET-WO-4413` U30's EN is U32's push-pull reset, which no row overrides: shorting it would pass RESET's ±10 mA absolute maximum (SBVS193D p. 6, 7.1).
   - **At VCCI 2.87 V:** a TXU0304PW from the same reel on a breakout, VCCA from the programmable supply at 2.87 V (DMM-read) and VCCB at 3.3 V, the same ramp into A1, output B1Y. The board's VDD_3V3 is not lowered: U11 regulates it, and the MCU would reset.
 - **Pass line:** at each input, rising switch ≤ 640 ‰ × that rail's measured voltage, and falling switch ≥ 296 ‰ × it. At VCCI 2.87 V, rising switch ≤ 679 ‰ × the measured VCCA and falling switch ≥ 243 ‰ × it.
 - **A disagreement adds:** the measured VT+ and VT− at 3.3 V, which replace the inference in the parts row; at 2.87 V, the measured pair, which replaces the assumption in the parts row's `lower_band`. A rising switch above the line is a finding against the UART levels (FEEDBACK §1, (c1)).
+
+### B-10 The radio rail's monitor (`supervisor_hysteresis_typical:U32`)
+- **Prediction (rule and typical; `AET-WO-4413`, ruled D1):**
+  - U32 (TPS3839G33) holds `/U32_RESET`, U30's EN and U31's OE, low below a falling threshold between 3,003 and 3,126 mV (SBVS193D p. 7, 7.5, VIT−, −40 to 85 °C).
+  - It releases rising at most 3,157 mV: VIT− maximum plus the 31 mV typical hysteresis, `4300k` D6's precedent.
+  - The release comes 120–350 ms after VDD_3V3_RF rises past VIT− + VHYS (p. 8, 7.6).
+- **Instrument:** a programmable supply on VDD_3V3_RF, with U13's output isolated or back-fed per its datasheet, ramped at ≤ 10 mV/s; a scope on `/U32_RESET` and VDD_3V3_RF.
+- **Pass line:** falling 3,003–3,126 mV; rising ≤ 3,157 mV; delay 120–350 ms.
+- **A disagreement adds:** the measured release. A release above 3,158 mV (VDD_3V3_RF's floor at U32's pin: the solved 3,303 mV less its 145 mV drop limit) is a finding against the board, not a retry.

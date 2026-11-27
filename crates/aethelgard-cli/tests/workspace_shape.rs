@@ -387,7 +387,7 @@ fn eda_has_only_its_known_files_keys_and_dependencies() {
 /// and ours), and `src/lib.rs` is its only Rust.
 #[test]
 fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
-    const DATA: [&str; 70] = [
+    const DATA: [&str; 71] = [
         "data/aethelgard/README.md",
         "data/aethelgard/footprints/Aethelgard_RF.pretty/ESP32-C3-WROOM-02.kicad_mod",
         "data/aethelgard/footprints/Aethelgard_Sensor.pretty/Bosch_LGA-10_2x2mm_P0.5mm.kicad_mod",
@@ -463,6 +463,7 @@ fn kicad_lib_has_only_its_known_files_keys_and_no_dependencies() {
         "data/kicad-10.0.7/footprints/Package_TO_SOT_SMD.pretty/SOT-23-3.kicad_mod",
         "data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/DMP6023LSS.kicad_sym",
         "data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
+        "data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TPS3839.kicad_sym",
         // `AET-WO-4411`: the radio module's own regulator.
         "data/kicad-10.0.7/symbols/Regulator_Switching.kicad_symdir/LMR33620ADDA.kicad_sym",
     ];

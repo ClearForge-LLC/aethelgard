@@ -95,6 +95,9 @@ pub const BATTERY_FUSED_NET: &str = "VBAT_FUSED";
 pub fn references(p: &Power) -> Vec<&String> {
     let mut out = vec![&p.input.reference];
     out.extend(p.input.hot_plug.iter().map(|h| &h.reference));
+    for m in &p.rail_monitors {
+        out.extend([&m.reference, &m.bypass.reference]);
+    }
     if let Some(x) = &p.input.protection {
         out.extend([
             &x.fuse.reference,
@@ -154,6 +157,12 @@ pub struct Power {
     /// (`DropLimitUndeclared`). Any other domain is named as a condition
     /// (`drop_not_judged`, ruled D13).
     pub drop_limits: Vec<DropLimit>,
+    /// Each push-pull supervisor on a rail other than the MCU's, holding the
+    /// parts that name it in reset or off while its rail is low
+    /// (`AET-WO-4413` (2), ruled D2). Absent or empty declares none and is
+    /// not written back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rail_monitors: Vec<crate::supervisor::RailMonitor>,
 }
 
 /// One domain's drop limit: VDD plus VSS, mV, at most, with its source.
@@ -342,6 +351,15 @@ pub struct Control {
         skip_serializing_if = "Option::is_none"
     )]
     pub after: Option<After>,
+    /// `AET-WO-4413` (2), ruled D2: this pin is driven by the named rail
+    /// monitor's push-pull reset (`power.rail_monitors`), on the monitor's
+    /// own net, so the part is off while the monitor's rail is low.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub monitor: Option<String>,
 }
 
 /// An enable held by another regulator's power-good (`AET-WO-4411` (iii)).
@@ -628,6 +646,10 @@ pub enum Refusal {
     /// A reset supervisor, its supply or its pull-up outside its row
     /// (`AET-WO-4300k` (9)).
     SupervisorOutOfRange,
+    /// A rail monitor that holds nothing, is named by a part on another
+    /// rail, names no declared monitor, or is too fast for the part it holds
+    /// (`AET-WO-4413` (2)).
+    RailMonitorInvalid,
 }
 
 impl Refusal {
@@ -681,6 +703,7 @@ impl Refusal {
             Self::PeakCurrentOverLimit => "PeakCurrentOverLimit",
             Self::SupervisorBelowDeviceFloor => "SupervisorBelowDeviceFloor",
             Self::SupervisorAboveRail => "SupervisorAboveRail",
+            Self::RailMonitorInvalid => "RailMonitorInvalid",
             Self::SupervisorOutOfRange => "SupervisorOutOfRange",
         }
     }
@@ -1021,12 +1044,21 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
     let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
         for (i, c) in list.iter().enumerate() {
             id(&c.pin, format!("{path}[{i}].pin"))?;
-            let set = [c.strap.is_some(), c.wire.is_some(), c.after.is_some()];
+            let set = [
+                c.strap.is_some(),
+                c.wire.is_some(),
+                c.after.is_some(),
+                c.monitor.is_some(),
+            ];
             if set.iter().filter(|x| **x).count() != 1 {
                 return Err(invalid(
                     &format!("{path}[{i}]"),
-                    "a control pin takes exactly one of `strap`, `wire` and `after`".to_owned(),
+                    "a control pin takes exactly one of `strap`, `wire`, `after` and `monitor`"
+                        .to_owned(),
                 ));
+            }
+            if let Some(m) = &c.monitor {
+                id(m, format!("{path}[{i}].monitor"))?;
             }
             if let Some(w) = &c.wire {
                 id(&w.net, format!("{path}[{i}].wire.net"))?;
@@ -1202,6 +1234,14 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     .to_owned(),
             ));
         }
+    }
+    for (i, m) in power.rail_monitors.iter().enumerate() {
+        let path = format!("power.rail_monitors[{i}]");
+        id(&m.reference, format!("{path}.reference"))?;
+        id(&m.part, format!("{path}.part"))?;
+        known(&m.rail)?;
+        id(&m.bypass.reference, format!("{path}.bypass.reference"))?;
+        id(&m.bypass.part, format!("{path}.bypass.part"))?;
     }
     for (i, c) in power.uart_crossings.iter().enumerate() {
         let path = format!("power.uart_crossings[{i}]");
@@ -1694,7 +1734,10 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                 ),
             );
             }
-            ctx.screen(
+            // `AET-WO-4413` (2): a module whose enable a rail monitor drives
+            // is held, judged by `supervisor::judged`; only an RC is named.
+            if m.enable.monitor.is_none() {
+                ctx.screen(
                 "radio_rail_monitor",
                 &m.reference,
                 format!(
@@ -1707,6 +1750,7 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                     })
                 ),
             );
+            }
         }
         radio_lines(ctx, derived, m, row, t, crossing)?;
     }
@@ -1760,18 +1804,31 @@ fn uart_crossings_shape(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
         }
         // SCES935A 9.1 (ruled 04:51Z, 08:59Z R1): OE on VCCA, the rail (iii)
         // raises last, holds the outputs high-impedance through power-up; a
-        // wire's driver and level through partial power-down are not judged
+        // wire's driver and level through partial power-down are not judged.
+        // `AET-WO-4413` (2), ruled D3: or OE driven by a rail monitor on VCCB,
+        // the module's rail (SCES935A p. 19, 9.1: OE "can be referenced to
+        // either VCCA or VCCB", and held low keeps the outputs high-impedance
+        // through power-up and power-down); `supervisor::check` judges the
+        // monitor and its rail.
+        let monitored = |x: &Control| {
+            x.monitor.as_ref().is_some_and(|r| {
+                ctx.power
+                    .rail_monitors
+                    .iter()
+                    .any(|mon| &mon.reference == r && mon.rail == c.b_domain)
+            })
+        };
         if !c
             .controls
             .iter()
-            .any(|x| x.pin == "OE" && x.strap == Some(pp::Strap::Vcca))
+            .any(|x| x.pin == "OE" && (x.strap == Some(pp::Strap::Vcca) || monitored(x)))
         {
             return Err(refuse(
                 Refusal::CrossingOeUnheld,
                 &c.reference,
                 format!(
-                    "{}'s OE is not strapped to VCCA (`{}`), the rail that rises last: SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
-                    c.reference, c.a_domain
+                    "{}'s OE is neither strapped to VCCA (`{}`), the rail that rises last, nor driven by a rail monitor on VCCB (`{}`): SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
+                    c.reference, c.a_domain, c.b_domain
                 ),
                 t.controls
                     .iter()
@@ -4768,6 +4825,15 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         rule.pin, w.net, w.role
                     ),
                 )),
+                // A rail monitor's reset is a wire its row must allow; the
+                // monitor and its rail are judged by `supervisor::check`.
+                _ if c.monitor.is_some() && !rule.wirable => {
+                    return Err(unwired(format!(
+                        "{} is driven by `{}`'s reset, and its row allows no wire",
+                        rule.pin,
+                        c.monitor.as_deref().unwrap_or_default()
+                    )));
+                }
                 _ => {}
             }
         }

@@ -120,7 +120,7 @@ fn an_older_specification_lists_every_change_it_lacks() {
                 assert_eq!(
                     *e,
                     json!({"kind": "UnsupportedSchemaVersion", "id": null,
-                           "message": format!("schema_version is {version}, not 31")}),
+                           "message": format!("schema_version is {version}, not 32")}),
                     "{args:?}"
                 );
                 continue;
@@ -166,7 +166,7 @@ fn an_older_specification_lists_every_change_it_lacks() {
                 e["message"]
                     .as_str()
                     .unwrap()
-                    .starts_with(&format!("schema_version is {version}, not 31; ")),
+                    .starts_with(&format!("schema_version is {version}, not 32; ")),
                 "{e}"
             );
         }

@@ -12,7 +12,46 @@ use serde_json::{Value, json};
 #[path = "common/power_table.rs"]
 mod power_table;
 
+/// Sentinel-03 as `AET-WO-4411` drew its radio rail, which these plants are
+/// edged against: U13 at 105k/46.4k (3,144,727 to 3,417,204 uV) in a
+/// 3,300 mV +/- 5 % domain, a 144 mV drop limit, U30's EN on its RC and U31's
+/// OE strapped to VCCA. `AET-WO-4413` raised the rail and put U32 on it
+/// ([`committed`]); the rules these tests hold did not change.
 fn base() -> Value {
+    let mut v = power_table::sentinel_03();
+    for r in v["power"]["regulators"].as_array_mut().unwrap() {
+        if r["reference"] == "U13" {
+            r["feedback"]["top"]["ohms"] = json!(105_000);
+            r["feedback"]["bottom"]["ohms"] = json!(46_400);
+        }
+    }
+    for d in v["voltage_domains"].as_array_mut().unwrap() {
+        if d["id"] == "VDD_3V3_RF" {
+            d["nominal_millivolts"] = json!(3300);
+            d["tolerance_permille"] = json!(50);
+        }
+    }
+    for l in v["power"]["drop_limits"].as_array_mut().unwrap() {
+        if l["domain"] == "VDD_3V3_RF" {
+            l["max_millivolts"] = json!(144);
+        }
+    }
+    v["power"].as_object_mut().unwrap().remove("rail_monitors");
+    v["radio_modules"][0]["enable"] = json!({
+        "resistor": {"reference": "R90", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3_RF"},
+        "capacitor": {"reference": "C90", "part": "GRM188R71C105KA12"}});
+    v["power"]["uart_crossings"][0]["controls"] =
+        json!([{"pin": "OE", "strap": "vcca", "wire": null}]);
+    for l in v["power"]["loads"].as_array_mut().unwrap() {
+        if l["reference"] == "U32" {
+            l["reference"] = json!("R90");
+        }
+    }
+    v
+}
+
+/// Sentinel-03 as committed.
+fn committed() -> Value {
     power_table::sentinel_03()
 }
 
@@ -48,6 +87,7 @@ fn refused(v: &Value, want: &str) -> String {
 #[test]
 fn the_base_holds_every_rule() {
     assert_eq!(kind(&base()), Ok(()));
+    assert_eq!(kind(&committed()), Ok(()));
 }
 
 /// (iii): without U11's `EN` after U13's `PG`, the MCU's UART can drive the
@@ -126,11 +166,11 @@ fn a_translator_oe_left_floating_is_refused() {
     let mut v = base();
     u31(&mut v)["controls"][0]["strap"] = json!("vccb");
     let e = refused(&v, "CrossingOeUnheld");
-    assert!(e.contains("U31's OE is not strapped to VCCA"), "{e}");
+    assert!(e.contains("U31's OE is neither strapped to VCCA"), "{e}");
     let mut v = base();
     u31(&mut v)["controls"][0] =
         json!({"pin": "OE", "strap": null, "wire": {"net": "WIFI_TX", "role": "drive"}});
-    assert!(refused(&v, "CrossingOeUnheld").contains("not strapped to VCCA"));
+    assert!(refused(&v, "CrossingOeUnheld").contains("neither strapped to VCCA"));
 }
 
 /// A crossing's control takes a strap or a wire: `after` is a regulator's
@@ -395,7 +435,8 @@ fn an_after_that_cannot_start_its_regulator_is_refused() {
     let mut v = base();
     control(&mut v, "U11", "EN")["strap"] = json!("input");
     assert!(
-        refused(&v, "PowerValueInvalid").contains("exactly one of `strap`, `wire` and `after`")
+        refused(&v, "PowerValueInvalid")
+            .contains("exactly one of `strap`, `wire`, `after` and `monitor`")
     );
     // U13's PG declared in its own controls as well.
     let mut v = base();

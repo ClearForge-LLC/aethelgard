@@ -44,7 +44,7 @@ pub struct RadioModule {
     /// since the module's levels are stated against it and no 5 V tolerance
     /// is stated.
     pub supply: String,
-    /// The enable pin's RC delay.
+    /// The enable pin: its RC delay, or the rail monitor that drives it.
     pub enable: Enable,
     /// Each strap pin of the row to its strap; every row strap is declared.
     #[serde(deserialize_with = "crate::unique_keys")]
@@ -54,13 +54,27 @@ pub struct RadioModule {
     pub decoupling: Vec<Capacitor>,
 }
 
-/// The enable pin's RC delay: a pull-up to the module's supply and a
-/// capacitor to ground (the row cites the values the maker advises).
+/// The enable pin: its RC delay, a pull-up to the module's supply and a
+/// capacitor to ground (the row cites the values the maker advises); or,
+/// since `AET-WO-4413` (2), driven by a rail monitor's push-pull reset
+/// (`power.rail_monitors`), whose delay replaces the RC. Exactly one of the
+/// two is declared.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Enable {
-    pub resistor: PullResistor,
-    pub capacitor: Capacitor,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resistor: Option<PullResistor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capacitor: Option<Capacitor>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub monitor: Option<String>,
+}
+
+impl Enable {
+    /// The RC, when declared.
+    pub fn rc(&self) -> Option<(&PullResistor, &Capacitor)> {
+        self.resistor.as_ref().zip(self.capacitor.as_ref())
+    }
 }
 
 /// A capacitor by reference and power-parts row.
@@ -488,8 +502,10 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
     let mut out = Vec::new();
     for m in spec.declared_radio_modules() {
         out.push(m.reference.as_str());
-        out.push(m.enable.resistor.reference.as_str());
-        out.push(m.enable.capacitor.reference.as_str());
+        if let Some((r, c)) = m.enable.rc() {
+            out.push(r.reference.as_str());
+            out.push(c.reference.as_str());
+        }
         for s in m.straps.values() {
             if let RadioStrap::Resistor(r) = s {
                 out.push(r.reference.as_str());
@@ -505,7 +521,10 @@ pub(crate) fn references(spec: &Specification) -> Vec<&str> {
 pub fn own_nets(spec: &Specification) -> Vec<String> {
     let mut out = Vec::new();
     for m in spec.declared_radio_modules() {
-        out.push(enable_net(&m.reference));
+        // A monitored enable sits on its monitor's net (`supervisor::reset_net`).
+        if m.enable.monitor.is_none() {
+            out.push(enable_net(&m.reference));
+        }
         for (pin, s) in &m.straps {
             if matches!(s, RadioStrap::Resistor(_)) {
                 out.push(strap_net(&m.reference, pin));
@@ -550,8 +569,23 @@ pub(crate) fn identifiers(spec: &Specification) -> Result<(), IrValidationError>
         plain(&m.part, || format!("{at}.part"))?;
         plain(&m.serial_port, || format!("{at}.serial_port"))?;
         plain(&m.supply, || format!("{at}.supply"))?;
-        resistor(&m.enable.resistor, &format!("{at}.enable.resistor"))?;
-        capacitor(&m.enable.capacitor, &format!("{at}.enable.capacitor"))?;
+        match (&m.enable.rc(), &m.enable.monitor) {
+            (Some((r, c)), None) => {
+                resistor(r, &format!("{at}.enable.resistor"))?;
+                capacitor(c, &format!("{at}.enable.capacitor"))?;
+            }
+            (None, Some(mon)) if m.enable.resistor.is_none() && m.enable.capacitor.is_none() => {
+                plain(mon, || format!("{at}.enable.monitor"))?;
+            }
+            _ => {
+                return Err(refuse(
+                    Kind::RadioEnableNotPulled,
+                    &m.reference,
+                    format!("{at}.enable"),
+                    "an enable takes its RC (`resistor` and `capacitor`) or a `monitor`, exactly one",
+                ));
+            }
+        }
         for (pin, s) in &m.straps {
             plain(pin, || format!("{at}.straps"))?;
             if let RadioStrap::Resistor(r) = s {
@@ -752,15 +786,18 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ),
             ));
         }
-        // The enable.
-        if m.enable.resistor.to != m.supply {
+        // The enable: a monitor's is judged with the monitor
+        // (`supervisor::check`).
+        if let Some((er, _)) = m.enable.rc()
+            && er.to != m.supply
+        {
             return Err(refuse(
                 Kind::RadioEnableNotPulled,
                 r,
                 format!("{at}.enable.resistor.to"),
                 format!(
                     "the enable pull goes to `{}`, not the module's supply `{}` ({})",
-                    m.enable.resistor.to,
+                    er.to,
                     m.supply,
                     t.cite(&row.enable.at)
                 ),
@@ -844,13 +881,16 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 "no capacitor from the supply to ground is declared",
             ));
         }
-        let pulls: Vec<(&PullResistor, String)> =
-            std::iter::once((&m.enable.resistor, format!("{at}.enable.resistor")))
-                .chain(m.straps.iter().filter_map(|(pin, s)| match s {
-                    RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
-                    RadioStrap::Open => None,
-                }))
-                .collect();
+        let pulls: Vec<(&PullResistor, String)> = m
+            .enable
+            .rc()
+            .map(|(r, _)| (r, format!("{at}.enable.resistor")))
+            .into_iter()
+            .chain(m.straps.iter().filter_map(|(pin, s)| match s {
+                RadioStrap::Resistor(p) => Some((p, format!("{at}.straps.{pin}.resistor"))),
+                RadioStrap::Open => None,
+            }))
+            .collect();
         for (p, path) in &pulls {
             if !matches!(
                 passives.get(&p.part).map(|row| &row.kind),
@@ -864,7 +904,11 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                 ));
             }
         }
-        let capacitors = std::iter::once((&m.enable.capacitor, format!("{at}.enable.capacitor")))
+        let capacitors = m
+            .enable
+            .rc()
+            .map(|(_, c)| (c, format!("{at}.enable.capacitor")))
+            .into_iter()
             .chain(
                 m.decoupling
                     .iter()
@@ -910,7 +954,11 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
         // The enable's RC keeps EN below VIH_nRST for tSTBL from the supply's
         // rise: R x C x ln(1 / (1 - 0.75)) >= tSTBL, on the capacitance the
         // specification's declared DC-bias derating retains (p. 15, p. 21).
-        if let Some(c) = cap(&m.enable.capacitor.part) {
+        if let Some((er, c)) = m
+            .enable
+            .rc()
+            .and_then(|(r, c)| cap(&c.part).map(|c| (r, c)))
+        {
             let retained = spec
                 .power
                 .as_ref()
@@ -924,8 +972,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
             let pf = u128::try_from(c.rated_picofarads.value).unwrap_or(0);
             // tau (ohm pF) * ln 4 (1.386, rounded down) >= tSTBL (us * 1e6 ohm pF).
             let need = u128::from(row.enable.stable_us) * 1_000_000 * 1000;
-            let have = retained
-                .map(|r| u128::from(m.enable.resistor.ohms) * pf * u128::from(r) / 1000 * 1386);
+            let have = retained.map(|r| u128::from(er.ohms) * pf * u128::from(r) / 1000 * 1386);
             if have.is_none_or(|h| h < need) {
                 return Err(refuse(
                     Kind::RadioEnableTooFast,
@@ -934,7 +981,7 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
                     match have {
                         None => format!(
                             "`{}` has no declared DC-bias derating for its dielectric, so its capacitance, and the enable's delay, is unbounded",
-                            m.enable.capacitor.part
+                            m.enable.capacitor.as_ref().map_or("", |c| c.part.as_str())
                         ),
                         Some(h) => format!(
                             "the enable's RC reaches the reset release voltage in {} ns, under the {} us the supply must be stable first ({})",
@@ -987,10 +1034,19 @@ pub fn not_judged(spec: &Specification) -> Vec<String> {
             // is judged against that rail's monitor, and no monitor holds it.
             if let Some(row) = row
                 && m.supply != spec.mcu.supply
+                && m.enable.monitor.is_none()
             {
                 line.push_str(&format!(
                     "; its VDD minimum of {} mV ({}, {}) is held by no monitor: nothing holds `{}`'s consumers in reset or off, so it may run out of its range while the MCU runs, named (AET-WO-4310 (2))",
                     row.supply.min_mv, row.supply.at.document, row.supply.at.section, m.supply
+                ));
+            } else if let (Some(row), Some(mon)) = (row, &m.enable.monitor)
+                && m.supply != spec.mcu.supply
+            {
+                // `AET-WO-4413` (2): held by its rail monitor's reset.
+                line.push_str(&format!(
+                    "; its EN is held by {mon}'s reset, the rail monitor on `{}`, judged against its VDD minimum of {} mV ({}, {}) by the floor rule",
+                    m.supply, row.supply.min_mv, row.supply.at.document, row.supply.at.section
                 ));
             } else if let (Some(row), Some((reset_mv, why))) = (row, &reset)
                 && row.supply.min_mv > *reset_mv

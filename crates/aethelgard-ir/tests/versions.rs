@@ -50,12 +50,15 @@ fn the_last_row_is_the_version_literal_and_none_is_skipped() {
 }
 
 #[test]
-fn a_version_20_file_lists_21_to_31_with_their_work_orders() {
+fn a_version_20_file_lists_21_to_32_with_their_work_orders() {
     let e = refused(20);
     assert_eq!(e.kind(), "UnsupportedSchemaVersion");
     assert_eq!(e.id(), None);
     let c = changes(&e);
-    assert_eq!(versions_of(c), [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]);
+    assert_eq!(
+        versions_of(c),
+        [21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32]
+    );
     assert_eq!(
         c.iter().map(|c| c.work_order).collect::<Vec<_>>(),
         [
@@ -69,11 +72,12 @@ fn a_version_20_file_lists_21_to_31_with_their_work_orders() {
             "AET-WO-4300i",
             "AET-WO-4300j",
             "AET-WO-4300k",
-            "AET-WO-4411"
+            "AET-WO-4411",
+            "AET-WO-4413"
         ]
     );
     let m = e.to_string();
-    assert!(m.starts_with("schema_version is 20, not 31; "), "{m}");
+    assert!(m.starts_with("schema_version is 20, not 32; "), "{m}");
     for (v, wo) in [
         (21, "AET-WO-1210"),
         (22, "AET-WO-1211a"),
@@ -122,9 +126,9 @@ fn a_version_20_file_lists_21_to_31_with_their_work_orders() {
 }
 
 #[test]
-fn a_version_1_file_lists_2_to_31() {
+fn a_version_1_file_lists_2_to_32() {
     let c = changes(&refused(1));
-    assert_eq!(versions_of(c), (2..=31).collect::<Vec<_>>());
+    assert_eq!(versions_of(c), (2..=32).collect::<Vec<_>>());
     assert_eq!(c, CHANGES);
 }
 
@@ -133,7 +137,7 @@ fn a_newer_file_and_version_0_name_the_current_version_only() {
     for v in [SPECIFICATION_SCHEMA_VERSION + 1, 0, u32::MAX] {
         let e = refused(v);
         assert!(changes(&e).is_empty(), "{v}");
-        assert_eq!(e.to_string(), format!("schema_version is {v}, not 31"));
+        assert_eq!(e.to_string(), format!("schema_version is {v}, not 32"));
     }
 }
 
@@ -324,11 +328,24 @@ fn every_optional_path_is_a_key_the_current_schema_admits_absent() {
                     "{f} {p}: `{path}`"
                 );
                 // ... and the key is the schema's: a wrong value is not an unknown field.
-                let err = parse_with(v, p, |o| {
+                // A string key (`AET-WO-4413`'s `monitor`) parses with the probe,
+                // which itself shows the key is known (every object denies an
+                // unknown one); `validate` then refuses the probe by name.
+                match parse_with(v, p, |o| {
                     o.insert(key.clone(), json!(PROBE));
-                })
-                .unwrap_or_else(|| panic!("{f}: `{path}` takes any string"));
-                assert!(!err.contains("unknown field"), "{f} {p}: {err}");
+                }) {
+                    Some(err) => assert!(!err.contains("unknown field"), "{f} {p}: {err}"),
+                    None => {
+                        let mut w: Value = Value::clone(v);
+                        w.pointer_mut(p)
+                            .unwrap()
+                            .as_object_mut()
+                            .unwrap()
+                            .insert(key.clone(), json!(PROBE));
+                        let s: Specification = serde_json::from_value(w).unwrap();
+                        assert!(s.validate().is_err(), "{f}: `{path}` takes any string");
+                    }
+                }
             }
         }
     }
