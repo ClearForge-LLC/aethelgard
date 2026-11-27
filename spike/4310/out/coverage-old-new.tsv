@@ -20,3 +20,5 @@ spi-only	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`"]}
 spi-only	new	{"no_device":[],"unmet":["I2C bus `SENSORS` (only unmodelled devices: no fault on it is witnessed)","SPI bus `FLASH`"]}
 s01-ready	old	{"no_device":[],"unmet":[]}
 s01-ready	new	{"no_device":[],"unmet":["I2C bus `SENSORS`"]}
+s03	series+new	{"no_device":["I2C bus `EXT` (no device: nothing to fault)"],"unmet":["motor output `MOTOR1` (no fault kind reaches it)","motor output `MOTOR2` (no fault kind reaches it)","motor output `MOTOR3` (no fault kind reaches it)","motor output `MOTOR4` (no fault kind reaches it)"]}
+s02-power	series+new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","SPI bus `IMU`","rail `VDD_3V3`","rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]}
