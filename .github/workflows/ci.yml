@@ -576,7 +576,7 @@ jobs:
         target/debug/aethelgard verify --spec examples/sentinel-01.json
         --scenarios scenarios/sentinel-01-bench/pullup-3k3.json scenarios/sentinel-01-bench/droop-bor3.json
         scenarios/sentinel-01-bench/spi-absent-u4.json scenarios/sentinel-01-bench/pullup-2k2.json
-        scenarios/sentinel-01-bench/serial-rx-open-console.json
+        scenarios/sentinel-01-bench/serial-rx-open-console.json scenarios/sentinel-01-bench/held-low-sda.json
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -634,7 +634,10 @@ jobs:
         target/debug/aethelgard verify --spec examples/sentinel-03.json
         --scenarios scenarios/sentinel-03/baseline.json scenarios/sentinel-03/battery-sag-tolerated.json
         scenarios/sentinel-03/droop-bor3.json scenarios/sentinel-03/droop-tolerated.json
-        scenarios/sentinel-03/held-low-sda.json scenarios/sentinel-03/serial-rx-open-console.json
+        scenarios/sentinel-03/held-low-sda.json
+        scenarios/sentinel-03/motor-open-motor1.json scenarios/sentinel-03/motor-open-motor2.json
+        scenarios/sentinel-03/motor-open-motor3.json scenarios/sentinel-03/motor-open-motor4.json
+        scenarios/sentinel-03/serial-rx-open-console.json
         scenarios/sentinel-03/serial-rx-open-crsf.json scenarios/sentinel-03/serial-rx-open-mavlink.json
         scenarios/sentinel-03/serial-rx-open-wifi.json
         scenarios/sentinel-03/spi-absent-u4.json scenarios/sentinel-03/spi-absent-u5.json

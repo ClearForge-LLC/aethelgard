@@ -1493,6 +1493,9 @@ enum Target {
     /// A pin device's ADC input, by net (`AET-WO-1211c`): reached by an
     /// `analog_value` other than its idle's, which the run must survive.
     Analog(String),
+    /// A motor output, by label (`AET-WO-4310` (5), ruled D7 (iii)):
+    /// reached by `motor_output_open`, detected by its observer's silence.
+    Motor(String),
 }
 
 impl Target {
@@ -1504,6 +1507,7 @@ impl Target {
             Self::Rail(r) => format!("rail `{r}`"),
             Self::Battery => "rail `battery`".to_owned(),
             Self::Analog(n) => format!("ADC input `{n}`"),
+            Self::Motor(l) => format!("motor output `{l}`"),
         }
     }
 }
@@ -1527,6 +1531,9 @@ struct Mechanism {
 /// scenario's own `expect_findings`.
 const RISE: &[&str] = &["analog_rise_exceeds_ceiling", "i2c_timeout"];
 const HELD: &[&str] = &["i2c_line_held_low", "i2c_timeout"];
+/// An open motor output's mechanism (`AET-WO-4310` (5)): its observer sees
+/// no edge.
+const MOTOR_OPEN: &[&str] = &[aethelgard_chaos::campaign::MOTOR_UNWITNESSED_FINDING];
 /// An absent device fails every read the firmware makes of it: its identity,
 /// and its data where the bring-up reads data (an IMU's, `AET-WO-4220c`);
 /// `attribute` decides each by the same E2 evidence (`AET-WO-2304b` F-IMU,
@@ -1625,6 +1632,18 @@ fn stress(
                         format!("controller:{}", d.peripheral),
                     ]
                     .into(),
+                    required: Default::default(),
+                }),
+            ))
+        }
+        Override::MotorOutputOpen { label } => {
+            let m = spec.motor_outputs.iter().find(|m| &m.label == label)?;
+            Some((
+                Some(Target::Motor(m.label.clone())),
+                Some(Mechanism {
+                    kinds: MOTOR_OPEN,
+                    rule: "E4",
+                    subjects: [format!("output:{label}")].into(),
                     required: Default::default(),
                 }),
             ))
@@ -1819,6 +1838,7 @@ fn classify(
                     | Override::SerialRxOpen { .. }
                     | Override::RailOutOfBand { .. }
                     | Override::PinHeld { .. }
+                    | Override::MotorOutputOpen { .. }
             )
         });
         // A droop that crossed no BOR threshold covers nothing, as an eased
@@ -1836,7 +1856,19 @@ fn classify(
         if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
             return Seeded::Tolerable(Vec::new(), lacks);
         }
-        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect(), lacks);
+        // `AET-WO-4310` (5), ruled D7 (i), 3303 F3: a tolerated fault covers
+        // its quantity only past the declared tolerance. A tolerable I2C
+        // target comes only from a raised pull-up or line capacitance, and
+        // neither declares a tolerance, so it covers nothing: such a bus
+        // needs a detected fault.
+        return Seeded::Tolerable(
+            changed
+                .into_iter()
+                .filter_map(|(t, _)| t)
+                .filter(|t| !matches!(t, Target::I2c(_)))
+                .collect(),
+            lacks,
+        );
     }
     // One target, one mechanism, every changed override stressing it, and the
     // declared findings within that mechanism's kinds.
@@ -1923,9 +1955,42 @@ fn coverage(
             (used, Target::Spi(b.id.clone()))
         }))
     {
+        // `AET-WO-4310` (5), ruled D7 (ii): a bus whose devices are all
+        // unmodelled is never covered by a fault nothing in the twin
+        // witnesses; one with no device stays `no_device` (ruled (c)).
+        let modelled = |part: &str| {
+            aethelgard_twin::model::kind(part)
+                .ok()
+                .flatten()
+                .is_some()
+        };
+        let witnessed = match &target {
+            Target::I2c(id) => spec
+                .declared_i2c_devices()
+                .iter()
+                .any(|d| &d.bus == id && modelled(&d.part)),
+            Target::Spi(id) => spec
+                .declared_spi_devices()
+                .iter()
+                .any(|d| &d.bus == id && modelled(&d.part)),
+            _ => true,
+        };
         if !used {
             c.no_device.push(format!("{} ({nothing})", target.name()));
+        } else if !witnessed {
+            c.unmet.push(format!(
+                "{} (only unmodelled devices: no fault on it is witnessed in the twin)",
+                target.name()
+            ));
         } else if !covered.contains(&target) {
+            c.unmet.push(target.name());
+        }
+    }
+    // `AET-WO-4310` (5), ruled D7 (iii): each motor output, covered by a
+    // detected `motor_output_open` beside a baseline.
+    for m in &spec.motor_outputs {
+        let target = Target::Motor(m.label.clone());
+        if !covered.contains(&target) {
             c.unmet.push(target.name());
         }
     }
@@ -3587,7 +3652,7 @@ mod tests {
         overrides: Value,
     ) -> aethelgard_chaos::campaign::Scenario {
         aethelgard_chaos::campaign::Scenario::parse(
-            // 6: a droop is planted from the boot word (`AET-WO-2310`).
+            // 7: a droop's figures are sourced (`AET-WO-4310` (3); planted from the boot word since `AET-WO-2310`).
             json!({"schema_version": 7, "name": "x", "base": "b.json",
                 "expect": if expect_pass { "pass" } else { "fail" },
                 "expect_findings": findings, "overrides": overrides})
@@ -3663,7 +3728,7 @@ mod tests {
             let mut v = seeded(
                 &spec,
                 &t,
-                &[TOLERATED_I2C, ABSENT_U4, OPEN_CONSOLE, BASELINE],
+                &[HELD_SDA, ABSENT_U4, OPEN_CONSOLE, BASELINE],
             );
             v.push(classify(&spec, &t, &d));
             coverage(&spec, &t, &v, None).unmet
@@ -3853,6 +3918,10 @@ mod tests {
     const FOUR_LAYER: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
     const BASELINE: &str = "scenarios/sentinel-01/pullup-2k2.json";
     const TOLERATED_I2C: &str = "scenarios/sentinel-01/seeded/pullup-3k3.json";
+    /// `AET-WO-4310` (5), ruled D7 (i): SENSORS's pull-up declares no
+    /// tolerance, so its raise covers nothing; a detected held line beside a
+    /// baseline covers the bus.
+    const HELD_SDA: &str = "scenarios/sentinel-01/seeded/held-low-sda.json";
     const RAIL: &str = "scenarios/sentinel-01/droop-bor3.json";
     const ABSENT_U4: &str = "scenarios/sentinel-01/seeded/spi-absent-u4.json";
     const OPEN_CONSOLE: &str = "scenarios/sentinel-01/seeded/serial-rx-open-console.json";
@@ -3876,16 +3945,19 @@ mod tests {
             coverage(&spec, &t, &seeded(&spec, &t, files), outcome).unmet
         };
         assert_eq!(unmet(&[BASELINE], None), all);
+        // A tolerable fault covers its target (the droop, the MCU's rail);
+        // a raised pull-up with no declared tolerance covers nothing
+        // (`AET-WO-4310` (5), ruled D7 (i)).
         assert_eq!(
             unmet(&[TOLERATED_I2C, RAIL], None),
-            ["SPI bus `FLASH`", CONSOLE]
+            ["I2C bus `SENSORS`", "SPI bus `FLASH`", CONSOLE]
         );
         // A detected fault without a baseline covers nothing.
         assert_eq!(
-            unmet(&[TOLERATED_I2C, RAIL, ABSENT_U4, OPEN_CONSOLE], None),
-            ["SPI bus `FLASH`", CONSOLE]
+            unmet(&[HELD_SDA, RAIL, ABSENT_U4, OPEN_CONSOLE], None),
+            ["I2C bus `SENSORS`", "SPI bus `FLASH`", CONSOLE]
         );
-        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, OPEN_CONSOLE, BASELINE];
+        let set = [HELD_SDA, RAIL, ABSENT_U4, OPEN_CONSOLE, BASELINE];
         assert!(unmet(&set, None).is_empty());
         assert!(unmet(&set, Some(&[true; 5])).is_empty());
         // After the gates, a detection that failed covers nothing, nor does
@@ -3900,7 +3972,7 @@ mod tests {
         );
         assert_eq!(
             unmet(&set, Some(&[true, true, true, true, false])),
-            ["SPI bus `FLASH`", CONSOLE]
+            ["I2C bus `SENSORS`", "SPI bus `FLASH`", CONSOLE]
         );
         // A droop inside the tolerance band covers nothing (§4 F3).
         assert_eq!(
@@ -3908,7 +3980,7 @@ mod tests {
                 &["scenarios/sentinel-01/droop-tolerated.json", TOLERATED_I2C],
                 None
             ),
-            ["SPI bus `FLASH`", CONSOLE, "rail `VDD_3V3`"]
+            ["I2C bus `SENSORS`", "SPI bus `FLASH`", CONSOLE, "rail `VDD_3V3`"]
         );
     }
 
@@ -3939,9 +4011,14 @@ mod tests {
             .collect();
         let c = coverage(&spec, &t, &s, None);
         // `AET-WO-2304b` §1.10: a non-MCU rail no fault reaches says why.
+        // SENSORS's only cover here is a raised pull-up, which declares no
+        // tolerance (`AET-WO-4310` (5), ruled D7 (i)).
         assert_eq!(
             c.unmet,
-            ["rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]
+            [
+                "I2C bus `SENSORS`",
+                "rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"
+            ]
         );
         assert_eq!(c.no_device, ["SPI bus `EXT` (no device: nothing to fault)"]);
     }
@@ -3953,7 +4030,7 @@ mod tests {
     #[test]
     fn a_serial_port_is_covered_only_by_its_own_detected_open_rx_line() {
         let (spec, t) = solved(S1);
-        let set = [TOLERATED_I2C, RAIL, ABSENT_U4, BASELINE];
+        let set = [HELD_SDA, RAIL, ABSENT_U4, BASELINE];
         let c = coverage(&spec, &t, &seeded(&spec, &t, &set), None);
         assert_eq!(c.unmet, [CONSOLE]);
         assert!(c.no_device.is_empty());
@@ -4248,6 +4325,98 @@ mod tests {
         (spec, topology)
     }
 
+    // ---- `AET-WO-4310` (5), ruled D7 ----
+
+    fn unmet_of(spec_path: &str, files: &[&str]) -> Coverage {
+        let (spec, t) = solved(spec_path);
+        coverage(&spec, &t, &seeded(&spec, &t, files), None)
+    }
+
+    #[test]
+    fn a_pull_up_with_no_declared_tolerance_needs_a_detected_fault() {
+        // (i): Sentinel-01-bench's set as committed covers SENSORS only by
+        // `pullup-3k3`, a raise of a pull-up that declares no tolerance.
+        let before = [
+            "scenarios/sentinel-01-bench/pullup-3k3.json",
+            "scenarios/sentinel-01-bench/droop-bor3.json",
+            "scenarios/sentinel-01-bench/spi-absent-u4.json",
+            "scenarios/sentinel-01-bench/pullup-2k2.json",
+            "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+        ];
+        let c = unmet_of("examples/sentinel-01.json", &before);
+        assert_eq!(c.unmet, ["I2C bus `SENSORS`"]);
+        let with: Vec<&str> = before
+            .iter()
+            .copied()
+            .chain(["scenarios/sentinel-01-bench/held-low-sda.json"])
+            .collect();
+        let c = unmet_of("examples/sentinel-01.json", &with);
+        assert!(c.unmet.is_empty(), "{:?}", c.unmet);
+        // (ii): a bus with no device stays `no_device` (ruled (c)).
+        assert_eq!(c.no_device, ["I2C bus `EXT` (no device: nothing to fault)"]);
+    }
+
+    #[test]
+    fn a_bus_of_unmodelled_devices_alone_is_named_uncovered() {
+        // (ii): spi-only's SENSORS holds a TMP117 alone, which no model
+        // witnesses.
+        let c = unmet_of("crates/aethelgard-cli/tests/fixtures/spi-only.json", &[]);
+        assert!(
+            c.unmet.contains(
+                &"I2C bus `SENSORS` (only unmodelled devices: no fault on it is witnessed in the twin)"
+                    .to_owned()
+            ),
+            "{:?}",
+            c.unmet
+        );
+    }
+
+    #[test]
+    fn each_motor_output_is_a_target_met_by_a_detected_open_output() {
+        let dir = "scenarios/sentinel-03";
+        let committed: Vec<String> = [
+            "baseline", "battery-sag-tolerated", "droop-bor3", "droop-tolerated", "held-low-sda",
+            "serial-rx-open-console", "serial-rx-open-crsf", "serial-rx-open-mavlink",
+            "serial-rx-open-wifi", "spi-absent-u4", "spi-absent-u5", "vdd3v3rf-out-of-band",
+            "vdd5v-out-of-band",
+        ]
+        .iter()
+        .map(|n| format!("{dir}/{n}.json"))
+        .collect();
+        let refs: Vec<&str> = committed.iter().map(String::as_str).collect();
+        let c = unmet_of("examples/sentinel-03.json", &refs);
+        assert_eq!(
+            c.unmet,
+            ["motor output `MOTOR1`", "motor output `MOTOR2`", "motor output `MOTOR3`", "motor output `MOTOR4`"]
+        );
+        let opens: Vec<String> = (1..=4).map(|i| format!("{dir}/motor-open-motor{i}.json")).collect();
+        let all: Vec<&str> = refs.iter().copied().chain(opens.iter().map(String::as_str)).collect();
+        let c = unmet_of("examples/sentinel-03.json", &all);
+        assert!(c.unmet.is_empty(), "{:?}", c.unmet);
+        // Its seeded class: detected, by its observer's silence, rule E4.
+        let (spec, t) = solved("examples/sentinel-03.json");
+        match classify(&spec, &t, &scenario_file(&opens[0])) {
+            Seeded::Detect(Target::Motor(l), m) => {
+                assert_eq!(l, "MOTOR1");
+                assert_eq!((m.kinds, m.rule), (MOTOR_OPEN, "E4"));
+                assert_eq!(m.subjects, ["output:MOTOR1".to_owned()].into());
+            }
+            other => panic!("{other:?}"),
+        }
+        // Without a baseline, a detected fault covers nothing (ruled (a)).
+        let c = unmet_of("examples/sentinel-03.json", &[opens[0].as_str()]);
+        assert!(c.unmet.contains(&"motor output `MOTOR1`".to_owned()));
+    }
+
+    /// An open output is never a fault to survive: a `pass` scenario that
+    /// holds one open covers nothing (ruled (a), as an open RX line).
+    #[test]
+    fn a_pass_scenario_holding_an_output_open_covers_nothing() {
+        let (spec, t) = solved("examples/sentinel-03.json");
+        let s = json_scenario(true, &[], json!([{ "motor_output_open": "MOTOR1" }]));
+        assert_eq!(classify(&spec, &t, &s), Seeded::Tolerable(Vec::new(), Vec::new()));
+    }
+
     fn scenario_file(path: &str) -> aethelgard_chaos::campaign::Scenario {
         aethelgard_chaos::campaign::Scenario::parse(
             &std::fs::read(
@@ -4502,9 +4671,14 @@ mod tests {
         let (spec, t) = solved(D1);
         let base = || classify(&spec, &t, &v5(true, &[], json!([])));
         let c = coverage(&spec, &t, &[base()], None);
+        // Each motor output is a target too (`AET-WO-4310` (5), ruled D7
+        // (iii)), in the specification's order, before the serial ports.
         assert_eq!(
             c.unmet,
             [
+                "motor output `DRV_EN`",
+                "motor output `DRV_PH`",
+                "motor output `SERVO1`",
                 "serial port `CMD`",
                 "ADC input `DRV_IPROPI`",
                 "rail `VDD_3V3`"
@@ -4539,11 +4713,18 @@ mod tests {
                 json!([{"analog_value": {"net": "DRV_IPROPI", "millivolts": 2850}}]),
             ),
         );
+        let rest = [
+            "motor output `DRV_EN`",
+            "motor output `DRV_PH`",
+            "motor output `SERVO1`",
+            "serial port `CMD`",
+            "rail `VDD_3V3`",
+        ];
         let c = coverage(&spec, &t, &[base(), held.clone(), set.clone()], None);
-        assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
+        assert_eq!(c.unmet, rest);
         // A survived value covers its input with no baseline too (ruled (a)).
         let c = coverage(&spec, &t, &[held, set], None);
-        assert_eq!(c.unmet, ["serial port `CMD`", "rail `VDD_3V3`"]);
+        assert_eq!(c.unmet, rest);
     }
 
     /// The motor rail's predicate catches a pin device's supply alone: none

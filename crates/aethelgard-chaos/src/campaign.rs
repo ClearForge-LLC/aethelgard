@@ -905,6 +905,8 @@ struct RawOverride {
     pin_held: Option<serde_json::Value>,
     #[serde(default, deserialize_with = "present")]
     analog_value: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "present")]
+    motor_output_open: Option<serde_json::Value>,
 }
 
 /// `{"net": ..., "level": "low" | "high"}`, nothing else
@@ -1067,6 +1069,7 @@ fn override_from(raw: RawOverride, version: u32) -> Result<Override, ScenarioErr
         rail_out_of_band,
         pin_held,
         analog_value,
+        motor_output_open,
     } = raw;
     // The pin device's overrides (`AET-WO-1211c`) are read first, and each
     // is refused beside any other key: none of the branches below knows
@@ -1081,6 +1084,17 @@ fn override_from(raw: RawOverride, version: u32) -> Result<Override, ScenarioErr
         || serial_rx_open.is_some()
         || battery_sag.is_some()
         || rail_out_of_band.is_some();
+    // `AET-WO-4310` (5): a motor output held open, alone.
+    if let Some(m) = motor_output_open {
+        if old_keys || pin_held.is_some() || analog_value.is_some() {
+            return Err(schema(
+                "a motor_output_open override is exactly {motor_output_open: label}".to_owned(),
+            ));
+        }
+        return Ok(Override::MotorOutputOpen {
+            label: text(m, "motor_output_open")?,
+        });
+    }
     if let Some(p) = pin_held {
         if old_keys || analog_value.is_some() {
             return Err(schema(
@@ -1199,7 +1213,7 @@ fn override_from(raw: RawOverride, version: u32) -> Result<Override, ScenarioErr
             },
         }),
         _ => Err(schema(
-            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent}, {serial_rx_open}, {battery_sag}, {rail_out_of_band}, {pin_held} or {analog_value}"
+            "an override is exactly {bus, pull_up_ohms}, {net, max_capacitance_femtofarads}, {bus, line_held_low}, {droop}, {spi_device_absent}, {serial_rx_open}, {battery_sag}, {rail_out_of_band}, {pin_held}, {analog_value} or {motor_output_open}"
                 .to_owned(),
         )),
     }
@@ -1581,6 +1595,7 @@ fn target(o: &Override) -> (u8, &str) {
         Override::RailOutOfBand { domain } => (8, domain),
         Override::PinHeld { net, .. } => (9, net),
         Override::AnalogValue { net, .. } => (10, net),
+        Override::MotorOutputOpen { label } => (11, label),
     }
 }
 
@@ -1696,6 +1711,15 @@ impl Scenario {
             return Err(schema(
                 "a battery sag and a rail out of band need schema_version 4".to_owned(),
             ));
+        }
+        if overrides
+            .iter()
+            .any(|o| matches!(o, Override::MotorOutputOpen { .. }))
+            && raw.schema_version < DROOP_SOURCED_VERSION
+        {
+            return Err(schema(format!(
+                "a motor_output_open override needs schema_version {DROOP_SOURCED_VERSION} (AET-WO-4310 (5))"
+            )));
         }
         let v5_only = overrides
             .iter()

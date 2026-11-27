@@ -307,6 +307,10 @@ pub enum Override {
     /// from 0 to [`ANALOG_MAX_MILLIVOLTS`] (`AET-WO-1211c`). Scenario
     /// version 5.
     AnalogValue { net: String, millivolts: u32 },
+    /// `[10, label]`: a motor output's line open between its pin and the
+    /// ESC, so the output's observer, which stands where the ESC would,
+    /// sees no edge (`AET-WO-4310` (5), ruled D7 (iii)). Scenario version 7.
+    MotorOutputOpen { label: String },
 }
 
 /// A declared battery sag (`AET-WO-2304b` §1.6): the whole path R under the
@@ -1269,6 +1273,7 @@ fn override_value(o: &Override) -> Value {
             }),
         ],
         Override::AnalogValue { net, millivolts } => vec![u(9), t(net), u((*millivolts).into())],
+        Override::MotorOutputOpen { label } => vec![u(10), t(label)],
     })
 }
 
@@ -1342,6 +1347,7 @@ fn override_from(v: &Value) -> Option<Override> {
             net: f.text()?,
             millivolts: f.u32()?,
         },
+        10 => Override::MotorOutputOpen { label: f.text()? },
         _ => return None,
     };
     f.end()?;
@@ -2620,6 +2626,7 @@ impl Record {
                     Override::RailOutOfBand { domain } => name_ok(domain),
                     Override::PinHeld { net, .. } => name_ok(net),
                     Override::AnalogValue { net, .. } => name_ok(net),
+                    Override::MotorOutputOpen { label } => name_ok(label),
                 });
                 if !ids_ok {
                     return Err("an override's id is not 1 to 64 printable ASCII bytes");

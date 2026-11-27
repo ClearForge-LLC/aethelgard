@@ -27,12 +27,14 @@ const SPEC: &str = "examples/sentinel-01.json";
 const PACKAGE: &str = "fab/sentinel-01-bench/package";
 /// The scenarios the package was verified with, in the order `MANIFEST.json`
 /// records and `ci.yml`'s `bench-package` job passes them.
-const SCENARIOS: [&str; 5] = [
+const SCENARIOS: [&str; 6] = [
     "scenarios/sentinel-01-bench/pullup-3k3.json",
     "scenarios/sentinel-01-bench/droop-bor3.json",
     "scenarios/sentinel-01-bench/spi-absent-u4.json",
     "scenarios/sentinel-01-bench/pullup-2k2.json",
     "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+    // `AET-WO-4310` (5), ruled D7 (i): SENSORS covered by a detected fault.
+    "scenarios/sentinel-01-bench/held-low-sda.json",
 ];
 
 fn root() -> PathBuf {

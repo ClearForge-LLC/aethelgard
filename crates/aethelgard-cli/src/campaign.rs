@@ -137,6 +137,17 @@ pub(crate) fn absent(overrides: &[Override]) -> std::collections::BTreeSet<Strin
 
 /// The serial ports a scenario holds open on their RX line (`AET-WO-2302`
 /// D5), by label, each checked against the solved topology by [`effective`].
+/// The motor outputs `overrides` hold open (`AET-WO-4310` (5)), by label.
+pub(crate) fn motors_open(overrides: &[Override]) -> std::collections::BTreeSet<String> {
+    overrides
+        .iter()
+        .filter_map(|o| match o {
+            Override::MotorOutputOpen { label } => Some(label.clone()),
+            _ => None,
+        })
+        .collect()
+}
+
 pub(crate) fn open(overrides: &[Override]) -> std::collections::BTreeSet<String> {
     overrides
         .iter()
@@ -212,6 +223,16 @@ pub(crate) fn apply_overrides(
             // that port (`open`, `AET-WO-2302` D5). [`effective`] refuses one
             // the solved topology has no serial port for.
             Override::SerialRxOpen { .. } => {}
+            // `AET-WO-4310` (5): an output the specification declares.
+            Override::MotorOutputOpen { label } => {
+                if !spec.motor_outputs.iter().any(|m| &m.label == label) {
+                    return Err(ScenarioError::new(
+                        "UnknownMotorOutput",
+                        Some(label),
+                        format!("the specification declares no motor output `{label}`"),
+                    ));
+                }
+            }
             // Nor does a battery sag: the chain is resolved against the tree
             // (`resolve_battery_sag`), nor a rail out of band: its consumers'
             // absences are the overrides listed beside it (`rendered`).
@@ -1333,6 +1354,7 @@ fn run_one(
                 scenario: name.clone(),
                 held: p.held.clone(),
                 absent: absent(&p.scenario.overrides),
+                motors_open: motors_open(&p.scenario.overrides),
                 open: open(&p.scenario.overrides),
                 rail,
                 foreign: false,

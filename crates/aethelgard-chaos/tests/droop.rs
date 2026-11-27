@@ -2151,3 +2151,31 @@ fn a_declared_rail_at_bor_level_4_is_refused_by_its_record() {
         Err("a declared rail's BOR level is not 0 to 3")
     );
 }
+
+// ---- `AET-WO-4310` (5): a motor output held open ----
+
+#[test]
+fn a_motor_output_held_open_parses_at_version_7_alone_and_is_refused_otherwise() {
+    let one = json!([{ "motor_output_open": "MOTOR1" }]);
+    let s = parse(&scenario_json(7, one.clone(), None)).unwrap();
+    assert_eq!(
+        s.overrides,
+        vec![Override::MotorOutputOpen {
+            label: "MOTOR1".into()
+        }]
+    );
+    let e = parse(&scenario_json(6, one, None)).unwrap_err();
+    assert_eq!(e.kind, "SchemaViolation");
+    assert!(e.message.contains("needs schema_version 7"), "{e:?}");
+    for mixed in [
+        json!([{ "motor_output_open": "MOTOR1", "bus": "SENSORS" }]),
+        json!([{ "motor_output_open": "MOTOR1", "pin_held": {"net": "N", "level": "low"} }]),
+    ] {
+        let e = parse(&scenario_json(7, mixed.clone(), None)).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{mixed}");
+    }
+    for bad in [json!(""), json!(5), json!("a b")] {
+        let e = parse(&scenario_json(7, json!([{ "motor_output_open": bad }]), None)).unwrap_err();
+        assert_eq!(e.kind, "SchemaViolation", "{bad}");
+    }
+}

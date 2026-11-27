@@ -609,6 +609,7 @@ fn main() -> ExitCode {
                         held: Vec::new(),
                         absent: Default::default(),
                         open: Default::default(),
+                        motors_open: Default::default(),
                         rail: None,
                         foreign: foreign.is_some(),
                         pins,
@@ -1884,6 +1885,9 @@ struct Boot {
     /// The serial ports the scenario holds open on their RX line
     /// (`AET-WO-2302` D5), by label.
     open: std::collections::BTreeSet<String>,
+    /// The motor outputs the scenario holds open (`AET-WO-4310` (5)), by
+    /// label: each one's observer is left unconnected.
+    motors_open: std::collections::BTreeSet<String>,
     /// A campaign scenario's declared droop (`AET-WO-2301`); `None` otherwise.
     rail: Option<analog::Rail>,
     /// `simulate --foreign` (`AET-WO-4400e` D3): judged by the foreign judge.
@@ -1927,6 +1931,8 @@ struct Ready {
     /// The SPI devices a campaign scenario leaves absent behind their chip
     /// selects (`AET-WO-4200` D4).
     absent: std::collections::BTreeSet<String>,
+    /// The motor outputs the scenario holds open (`AET-WO-4310` (5)).
+    motors_open: std::collections::BTreeSet<String>,
     rail: Option<analog::Rail>,
     /// The foreign firmware's memory regions, when judged as one
     /// (`AET-WO-4400e`); `None` for a generated firmware.
@@ -2156,6 +2162,7 @@ fn ready(
             scenario: boot.scenario,
             held: boot.held,
             absent: boot.absent,
+            motors_open: boot.motors_open,
             rail: boot.rail,
             foreign,
             flash,
@@ -3056,7 +3063,7 @@ fn analog_pass(r: &Ready, scratch: &Scratch) -> Result<(analog::Pass, Booted), r
         &scratch.root.join("status-bridge"),
     )?;
     let faulted = pass.faulted();
-    let text = aethelgard_twin::platform::emit_faulted(&r.topology, &faulted, &r.absent)
+    let text = aethelgard_twin::platform::emit_opened(&r.topology, &faulted, &r.absent, &r.motors_open)
         .map_err(twin_stop)?;
     let instances = aethelgard_twin::platform::instances(&r.topology, &faulted, &r.absent)
         .map_err(twin_stop)?
@@ -3141,7 +3148,7 @@ fn own_models(platform: &Path, dir: &Path) -> Result<Vec<PathBuf>, run::Stop> {
 /// the verdict's `faults`, read again just before Renode starts.
 fn booted_is_emitted(booted: &Path, r: &Ready, pass: &analog::Pass) -> Result<(), run::Stop> {
     let topology = &r.topology;
-    let want = aethelgard_twin::platform::emit_faulted(topology, &pass.faulted(), &r.absent)
+    let want = aethelgard_twin::platform::emit_opened(topology, &pass.faulted(), &r.absent, &r.motors_open)
         .map_err(twin_stop)?;
     let have = fs::read(booted)
         .map_err(|e| run::Stop::unreadable(format!("cannot read the booted platform: {e}")))?;

@@ -1,0 +1,14 @@
+{
+  "schema_version": 7,
+  "name": "motor-open-motor4",
+  "base": "../../examples/sentinel-03.json",
+  "expect": "fail",
+  "expect_findings": [
+    "motor_output_unwitnessed"
+  ],
+  "overrides": [
+    {
+      "motor_output_open": "MOTOR4"
+    }
+  ]
+}

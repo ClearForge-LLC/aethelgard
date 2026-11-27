@@ -71,6 +71,12 @@ pub enum Rule {
     /// injection is not read: its mux is the end's (kind 11, owned fields
     /// right) and the writes' (kind 28's tags: once solved, never changed).
     E3,
+    /// The symptom's motor output is one the scenario holds open (kind 0's
+    /// `motor_output_open`, `AET-WO-4310` (5), ruled D7 (iii)): its timing
+    /// check (kind 25) holds and its witness (kind 26) saw no edge at all,
+    /// as the open line renders it (its observer left unconnected), and no
+    /// field it owns is wrong (no software cause, so nothing is masked).
+    E4,
     /// The symptom's bus is computed healthy (its rises, computed from the
     /// declared values, are within their ceilings), and the firmware's own state on
     /// that bus differs from the solved topology.
@@ -195,10 +201,11 @@ pub enum Rule {
 
 impl Rule {
     /// Every rule, in order.
-    pub const ALL: [Rule; 25] = [
+    pub const ALL: [Rule; 26] = [
         Self::E1,
         Self::E2,
         Self::E3,
+        Self::E4,
         Self::S1,
         Self::S2,
         Self::S3,
@@ -234,6 +241,7 @@ impl Rule {
             Self::E1 => "E1",
             Self::E2 => "E2",
             Self::E3 => "E3",
+            Self::E4 => "E4",
             Self::S1 => "S1",
             Self::S2 => "S2",
             Self::S3 => "S3",
@@ -263,7 +271,7 @@ impl Rule {
     /// finding to neither half.
     pub fn domain(self) -> Domain {
         match self {
-            Self::E1 | Self::E2 | Self::E3 => Domain::Electrical,
+            Self::E1 | Self::E2 | Self::E3 | Self::E4 => Domain::Electrical,
             Self::S1
             | Self::S2
             | Self::S3
@@ -302,6 +310,7 @@ impl Rule {
             Self::E1 => &[7, 8, 9],
             Self::E2 => &[22],
             Self::E3 => &[28, 29],
+            Self::E4 => &[25, 26],
             Self::S1 => &[7, 11, 13],
             Self::S2 => &[7, 10, 11],
             Self::S3 => &[21, 22],
@@ -1521,6 +1530,30 @@ impl<'a> Run<'a> {
         })
     }
 
+    /// `E4`'s evidence for motor output `m` (`AET-WO-4310` (5)): its timing
+    /// check and its witness, when the scenario holds the output open, the
+    /// boot word is set, the check holds, and the witness saw no edge at all.
+    /// `None` otherwise. The caller requires no software evidence on it.
+    fn motor_open(&self, m: usize) -> Option<Vec<usize>> {
+        let label = self.motors[m].label;
+        let open = matches!(self.records.first(), Some(Record::Scenario { overrides, .. })
+            if overrides.iter().any(|o| matches!(o, Override::MotorOutputOpen { label: l } if l == label)));
+        if !(open && self.booted) {
+            return None;
+        }
+        // belt-and-suspenders: `holds: true` (P5-M12 survives) - a failing
+        // timing check is decided first as `Scope::MotorStatic`, rule I4, so
+        // this scope never sees one. Stated here so E4 never rests on a rule
+        // ordering elsewhere.
+        let check = self.records.iter().position(|r| {
+            matches!(r, Record::MotorTimingCheck { label: l, holds: true, .. } if l == label)
+        })?;
+        let witness = self.records.iter().position(|r| {
+            matches!(r, Record::MotorWitness { label: l, rises: 0, falls: 0, .. } if l == label)
+        })?;
+        Some(vec![check, witness])
+    }
+
     /// The position among the kind 24s of the output labelled `label`.
     fn motor_named(&self, label: &str) -> Option<usize> {
         self.motors.iter().position(|m| m.label == label)
@@ -1998,7 +2031,9 @@ impl<'a> Run<'a> {
             Scope::MotorStatic(m) => (Rule::I4, self.motor_failing(m), vec![]),
             Scope::Motor(m) => {
                 let software = self.motor_software(m);
-                if let Some(evidence) = self.cut_by_run(m).filter(|_| software.is_empty()) {
+                if let Some(evidence) = self.motor_open(m).filter(|_| software.is_empty()) {
+                    (Rule::E4, evidence, vec![])
+                } else if let Some(evidence) = self.cut_by_run(m).filter(|_| software.is_empty()) {
                     (Rule::H1, evidence, vec![])
                 } else if software.is_empty() {
                     (Rule::I4, self.motor_failing(m), vec![])
