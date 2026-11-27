@@ -469,6 +469,10 @@ struct Run {
     /// (`AET-WO-2306`).
     #[serde(skip_serializing_if = "Value::is_null")]
     observation_witness: Value,
+    /// Each droop's source resistance and load, `held` or `stimulus`, as its
+    /// campaign line names them (`AET-WO-4310` (3)).
+    #[serde(skip_serializing_if = "Value::is_null")]
+    droop_sources: Value,
 }
 
 #[derive(Serialize)]
@@ -3181,6 +3185,7 @@ fn proof_and_boot_gates(
             state_sequence_hash: text("state_sequence_hash"),
             battery_sag: line["battery_sag"].clone(),
             observation_witness: line["observation_witness"].clone(),
+            droop_sources: line["droop_sources"].clone(),
             conditions: line["conditions"]
                 .as_array()
                 .into_iter()
@@ -3559,7 +3564,7 @@ mod tests {
     ) -> aethelgard_chaos::campaign::Scenario {
         aethelgard_chaos::campaign::Scenario::parse(
             // 6: a droop is planted from the boot word (`AET-WO-2310`).
-            json!({"schema_version": 6, "name": "x", "base": "b.json",
+            json!({"schema_version": 7, "name": "x", "base": "b.json",
                 "expect": if expect_pass { "pass" } else { "fail" },
                 "expect_findings": findings, "overrides": overrides})
             .to_string()
@@ -3584,7 +3589,7 @@ mod tests {
                 &[],
                 json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
                     "from_boot_word_ns": PLANTED, "fall_ns": 20000, "hold_ns": 200000,
-                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100}}]),
+                    "rise_ns": 20000, "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}}]),
             )
         };
         assert_eq!(
@@ -3612,7 +3617,7 @@ mod tests {
                 &[],
                 json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": floor,
                     "from_boot_word_ns": PLANTED, "fall_ns": 20000, "hold_ns": 200000,
-                    "rise_ns": 20000, "source_milliohms": 500, "load_milliamps": 100}}]),
+                    "rise_ns": 20000, "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}}]),
             )
         };
         let why = "`x` crosses none: at BOR level 3 a droop must cross VBOR3's falling level, 2610 mV; its loaded floor is 2850 mV";
@@ -3706,6 +3711,7 @@ mod tests {
             battery_sag: Value::Null,
             conditions: Vec::new(),
             observation_witness: Value::Null,
+            droop_sources: Value::Null,
         }
     }
 
@@ -3895,7 +3901,7 @@ mod tests {
             json!([{"bus": "SENSORS", "pull_up_ohms": 3300},
                 {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": PLANTED,
                     "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                    "source_milliohms": 500, "load_milliamps": 100}}]),
+                    "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}}]),
         );
         let absent = json_scenario(
             false,
@@ -4037,8 +4043,8 @@ mod tests {
             false,
             &["brownout_unrecovered"],
             json!([{"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": PLANTED,
-                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000, "source_milliohms": 500,
-                "load_milliamps": 100}}]),
+                "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000, "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}},
+                "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}}]),
         );
         assert_eq!(c(&droop), Seeded::Other);
         let sda = &spec.i2c_buses[0].sda.net;
@@ -4803,6 +4809,7 @@ mod tests {
             state_sequence_hash: String::new(),
             battery_sag: Value::Null,
             observation_witness: Value::Null,
+            droop_sources: Value::Null,
             conditions: Vec::new(),
         };
         for (n, tools) in [

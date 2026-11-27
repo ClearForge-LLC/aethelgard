@@ -953,7 +953,7 @@ fn every_admitted_identifier_character_survives_every_output() {
     // 3,627,610 ns, measured (`spike/2310/results.md`), so it lands at 1 ms.
     let droop = serde_json::json!({"droop": {"domain": domain, "floor_millivolts": 2400,
         "from_boot_word_ns": -2_627_610, "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     let seeded = [
         (
             "scenario.json",
@@ -995,7 +995,7 @@ fn every_admitted_identifier_character_survives_every_output() {
     for (file, name, expect, findings, overrides) in &seeded {
         let scenario = serde_json::json!({
             // 6: the droop is planted from the boot word (`AET-WO-2310`).
-            "schema_version": 6,
+            "schema_version": 7,
             "name": name,
             // Only a relative `base` inside the current directory is accepted
             // (`BaseOutsideRoot`): here, next to the scenario.
@@ -2025,7 +2025,7 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
     .unwrap();
     // `AET-WO-4600`'s `scenarios/driver/droop-bor3.json`, its `base` beside it.
     let droop = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "name": "droop-bor3",
         "base": "spec.json",
         "expect": "pass",
@@ -2036,7 +2036,7 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         "overrides": [{"droop": {
             "domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": 982_850,
             "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         }}],
     });
     fs::write(base.join("droop.json"), serde_json::to_vec(&droop).unwrap()).unwrap();

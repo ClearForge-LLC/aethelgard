@@ -5,9 +5,9 @@
 //! names the reason it expects.
 
 use aethelgard_chaos::campaign::{
-    BELOW_TOLERANCE_FINDING, PLANTED_CHANGES, PLANTED_NEEDS_VERSION, RESET_FINDING, Scenario,
-    UNRECOVERED_FINDING, check_droop, check_droop_shape, check_run, droop_end_ns, rail_levels,
-    tau_ns,
+    BELOW_TOLERANCE_FINDING, DROOP_SOURCE_UNDECLARED, PLANTED_CHANGES, PLANTED_NEEDS_VERSION,
+    RESET_FINDING, Scenario, SourceKind, UNRECOVERED_FINDING, check_droop, check_droop_shape,
+    check_run, droop_end_ns, rail_levels, tau_ns,
 };
 use aethelgard_chaos::cbor::Value;
 use aethelgard_chaos::power::{self, Crossing};
@@ -63,9 +63,21 @@ fn droop_json() -> J {
         "fall_ns": 20_000,
         "hold_ns": 200_000,
         "rise_ns": 20_000,
-        "source_milliohms": 500,
-        "load_milliamps": 100,
+        "source_milliohms": {"value": 500, "source": {"stimulus": "the reference sag"}},
+        "load_milliamps": {"value": 100, "source": {"stimulus": "the reference sag"}},
     })
+}
+
+/// The two figures a droop states as `{value, source}` (`AET-WO-4310` (3)).
+const SOURCED: [&str; 2] = ["source_milliohms", "load_milliamps"];
+
+/// Sets `key`'s number: a sourced figure's `value`, else the key itself.
+fn set(d: &mut J, key: &str, v: J) {
+    if SOURCED.contains(&key) {
+        d[key]["value"] = v;
+    } else {
+        d[key] = v;
+    }
 }
 
 fn scenario_json(version: u32, overrides: J, counts: Option<J>) -> J {
@@ -87,9 +99,10 @@ fn parse(v: &J) -> Result<Scenario, aethelgard_chaos::campaign::ScenarioError> {
     Scenario::parse(&serde_json::to_vec(v).unwrap())
 }
 
-/// A droop is read only at scenario 6 (`AET-WO-2310`).
+/// A droop is read only at scenario 7 (`AET-WO-4310` (3); 6 since
+/// `AET-WO-2310`).
 fn with_droop(d: J) -> J {
-    scenario_json(6, json!([{ "droop": d }]), None)
+    scenario_json(7, json!([{ "droop": d }]), None)
 }
 
 fn droop_refusal(d: J) -> &'static str {
@@ -99,11 +112,20 @@ fn droop_refusal(d: J) -> &'static str {
 // ---- 1. parsing ----
 
 /// `AET-WO-2301` §1: a valid droop scenario parses to the override; since
-/// `AET-WO-2310` a droop is read at version 6 only.
+/// `AET-WO-4310` (3) a droop is read at version 7 only, its two figures
+/// sourced beside it.
 #[test]
-fn a_valid_v6_droop_scenario_parses_with_every_field() {
+fn a_valid_v7_droop_scenario_parses_with_every_field() {
     let s = parse(&with_droop(droop_json())).unwrap();
     assert_eq!(s.overrides, vec![Override::Droop(reference())]);
+    assert_eq!(s.droop_sources.len(), 1);
+    let d = &s.droop_sources[0];
+    assert_eq!(
+        (d.source_milliohms.value, d.load_milliamps.value),
+        (500, 100)
+    );
+    assert_eq!(d.source_milliohms.kind, SourceKind::Stimulus);
+    assert_eq!(d.load_milliamps.text, "the reference sag");
     assert_eq!(s.droop(), Some(&reference()));
     assert!(s.expect_counts.is_empty());
     assert_eq!(s.counts_record(), None);
@@ -236,7 +258,7 @@ fn two_droop_overrides_are_refused_whatever_their_domains() {
     let mut other = droop_json();
     other["domain"] = json!("VDD_1V8");
     let v = scenario_json(
-        6,
+        7,
         json!([{ "droop": droop_json() }, { "droop": other }]),
         None,
     );
@@ -275,7 +297,7 @@ fn a_droop_integer_that_is_a_float_or_negative_or_text_is_refused() {
             json!(null),
         ] {
             let mut d = droop_json();
-            d[key] = bad.clone();
+            set(&mut d, key, bad.clone());
             assert_eq!(droop_refusal(d), "SchemaViolation", "{key} = {bad}");
         }
     }
@@ -297,7 +319,7 @@ fn each_droop_bound_is_inclusive_and_one_outside_is_refused() {
     for (key, lo, hi) in bounds {
         for ok in [lo, hi] {
             let mut d = droop_json();
-            d[key] = json!(ok);
+            set(&mut d, key, json!(ok));
             assert!(parse(&with_droop(d)).is_ok(), "{key} = {ok} is inside");
         }
         let mut outside = vec![hi + 1];
@@ -306,7 +328,7 @@ fn each_droop_bound_is_inclusive_and_one_outside_is_refused() {
         }
         for bad in outside {
             let mut d = droop_json();
-            d[key] = json!(bad);
+            set(&mut d, key, json!(bad));
             assert_eq!(droop_refusal(d), "SchemaViolation", "{key} = {bad}");
         }
     }
@@ -324,7 +346,7 @@ fn a_droop_mixed_with_another_override_key_is_refused() {
         for (k, v) in extra.as_object().unwrap() {
             o[k] = v.clone();
         }
-        let v = scenario_json(6, json!([o]), None);
+        let v = scenario_json(7, json!([o]), None);
         assert_eq!(parse(&v).unwrap_err().kind, "SchemaViolation", "{extra}");
     }
 }
@@ -342,9 +364,87 @@ fn a_droop_domain_must_be_1_to_64_printable_ascii_bytes() {
 }
 
 #[test]
-fn schema_version_seven_is_unsupported_for_a_droop_too() {
-    let v = scenario_json(7, json!([{ "droop": droop_json() }]), None);
+fn schema_version_eight_is_unsupported_for_a_droop_too() {
+    let v = scenario_json(8, json!([{ "droop": droop_json() }]), None);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
+}
+
+// ---- 1b. each figure sourced (`AET-WO-4310` (3), ruled 2026-11-27T07:49Z) ----
+
+fn source_refusal(d: J, version: u32) -> aethelgard_chaos::campaign::ScenarioError {
+    parse(&scenario_json(version, json!([{ "droop": d }]), None)).expect_err("refused")
+}
+
+#[test]
+fn a_droop_at_version_6_states_unsourced_numbers_and_is_refused_by_name() {
+    let mut d = droop_json();
+    for k in SOURCED {
+        let n = d[k]["value"].clone();
+        d[k] = n;
+    }
+    let e = source_refusal(d, 6);
+    assert_eq!(e.kind, DROOP_SOURCE_UNDECLARED);
+    assert!(
+        e.message
+            .contains("unsourced number at scenario schema_version 6"),
+        "{e:?}"
+    );
+}
+
+#[test]
+fn an_unsourced_source_resistance_or_load_is_refused_by_name() {
+    for k in SOURCED {
+        let mut d = droop_json();
+        let n = d[k]["value"].clone();
+        d[k] = n;
+        let e = source_refusal(d, 7);
+        assert_eq!(e.kind, DROOP_SOURCE_UNDECLARED, "{k}");
+        assert!(
+            e.message
+                .contains(&format!("droop `{k}` is an unsourced number")),
+            "{e:?}"
+        );
+    }
+}
+
+#[test]
+fn a_source_of_no_kind_another_kind_no_text_or_two_kinds_is_refused() {
+    for (k, bad) in [
+        ("source_milliohms", json!({"value": 500})),
+        (
+            "source_milliohms",
+            json!({"value": 500, "source": {"datasheet": "p. 1"}}),
+        ),
+        (
+            "load_milliamps",
+            json!({"value": 100, "source": {"held": ""}}),
+        ),
+        (
+            "load_milliamps",
+            json!({"value": 100, "source": {"held": 7}}),
+        ),
+        (
+            "load_milliamps",
+            json!({"value": 100, "source": {"held": "a", "stimulus": "b"}}),
+        ),
+        (
+            "source_milliohms",
+            json!({"value": 500, "source": {"held": "a"}, "note": "x"}),
+        ),
+    ] {
+        let mut d = droop_json();
+        d[k] = bad.clone();
+        assert_eq!(
+            source_refusal(d, 7).kind,
+            DROOP_SOURCE_UNDECLARED,
+            "{k}: {bad}"
+        );
+    }
+    // Held, cited, is the other kind.
+    let mut d = droop_json();
+    d["load_milliamps"]["source"] = json!({"held": "the solved load"});
+    let s = parse(&with_droop(d)).unwrap();
+    assert_eq!(s.droop_sources[0].load_milliamps.kind, SourceKind::Held);
 }
 
 // ---- 2. check_droop (ruled D3) ----

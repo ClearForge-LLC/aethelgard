@@ -136,13 +136,13 @@ fn a_duplicate_key_inside_an_override_is_refused() {
 }
 
 #[test]
-fn schema_version_seven_is_unsupported() {
+fn schema_version_eight_is_unsupported() {
     let mut v: Value = serde_json::from_slice(&pass_doc(json!([]))).unwrap();
-    v["schema_version"] = json!(7);
+    v["schema_version"] = json!(8);
     assert_eq!(parse(&v).unwrap_err().kind, "UnsupportedSchemaVersion");
-    // Versions 5 and 6 (`AET-WO-2310`) read a version-1 file's content as
-    // it always did.
-    for version in [5, 6] {
+    // Versions 5, 6 (`AET-WO-2310`) and 7 (`AET-WO-4310` (3)) read a
+    // version-1 file's content as it always did.
+    for version in [5, 6, 7] {
         v["schema_version"] = json!(version);
         assert!(parse(&v).is_ok(), "{version}");
     }

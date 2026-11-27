@@ -2697,7 +2697,7 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
         json!({
             "domain": domain, "floor_millivolts": floor, "from_boot_word_ns": 974_250,
             "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         })
     };
     let mut stated = droop("VDD_3V3", 2400);
@@ -2707,9 +2707,9 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
     old.as_object_mut().unwrap().remove("from_boot_word_ns");
     old["bor_level"] = 3.into();
     for (version, d, kind) in [
-        (6, droop("VDD_OTHER", 2400), "DroopNotMcuSupply"),
-        (6, droop("VDD_3V3", 2660), "DroopRefused"),
-        (6, stated, "SchemaViolation"),
+        (7, droop("VDD_OTHER", 2400), "DroopNotMcuSupply"),
+        (7, droop("VDD_3V3", 2660), "DroopRefused"),
+        (7, stated, "SchemaViolation"),
         (2, old, "PlantedEventNeedsVersion6"),
     ] {
         let work = Work::new();
@@ -2875,7 +2875,7 @@ fn sag_campaign(spec: &Value, overrides: Value, bridge: Option<&'static str>) ->
     let work = Work::new();
     work.dir.write("tree.json", spec.to_string().as_bytes());
     let doc = json!({
-        "schema_version": 6, "name": "sag", "base": "tree.json", "expect": "pass",
+        "schema_version": 7, "name": "sag", "base": "tree.json", "expect": "pass",
         "expect_findings": [], "overrides": overrides,
     });
     work.dir.write("sag.json", doc.to_string().as_bytes());
@@ -2949,7 +2949,7 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
     }
     let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
         "from_boot_word_ns": -42_929_480, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
     for admitted in [2, 500, 823] {
         let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
@@ -3112,13 +3112,13 @@ fn a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it() {
             "domain": "VDD_3V3", "floor_millivolts": 2400,
             "from_boot_word_ns": at - STUB_BOOT_WORD_NS,
             "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         }})
     };
     let work = Work::new();
     let scenario = |file: &str, at: i64| {
         let doc = json!({
-            "schema_version": 6,
+            "schema_version": 7,
             "name": "late",
             "base": "spec.json",
             "expect": "pass",

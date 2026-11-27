@@ -1,0 +1,2 @@
+P3a-M7	crates/aethelgard-cli/src/campaign.rs	        (u64::from(d.load_milliamps) < solved).then(	        (u64::from(d.load_milliamps) <= solved).then(	aethelgard-cli	bin:droop_load
+P3a-M8	crates/aethelgard-cli/src/campaign.rs	    s.droop_sources\n        .iter()	    s.droop_sources\n        .iter().take(0)	aethelgard-cli	bin:droop_load

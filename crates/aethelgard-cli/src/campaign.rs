@@ -633,6 +633,26 @@ pub(crate) struct Effective {
     pub pins: aethelgard_twin::pins::Pins,
 }
 
+/// A droop whose load is under the topology's solved load on its rail, where
+/// one exists (`AET-WO-4310` (3), ruled 2026-11-27T07:49Z): its domain, the
+/// declared and the solved load, mA. The loaded floor is then never judged
+/// lighter than the board runs.
+pub(crate) fn droop_load_short(
+    scenario: &Scenario,
+    topology: &aethelgard_ir::SolvedTopology,
+) -> Option<(String, u32, u64)> {
+    scenario.overrides.iter().find_map(|o| {
+        let Override::Droop(d) = o else { return None };
+        let solved = topology
+            .power
+            .as_ref()?
+            .domains
+            .get(&d.domain)?
+            .load_milliamps;
+        (u64::from(d.load_milliamps) < solved).then(|| (d.domain.clone(), d.load_milliamps, solved))
+    })
+}
+
 /// Apply `scenario`'s overrides to its base's bytes, then serialize, hash
 /// and solve, as `campaign` does before a run; a refusal is printed and its
 /// code returned.
@@ -668,6 +688,17 @@ pub(crate) fn effective(scenario: &Scenario, base: &[u8]) -> Result<Effective, E
             Some(&r),
             format!(
                 "scenario `{}`: the specification declares no SPI device `{r}`",
+                scenario.name
+            ),
+            EXIT_INVALID_SPEC,
+        ));
+    }
+    if let Some((domain, declared, solved)) = droop_load_short(scenario, &topology) {
+        return Err(refuse(
+            "DroopLoadUnderTopology",
+            Some(&domain),
+            format!(
+                "scenario `{}`: its droop on `{domain}` declares a load of {declared} mA, under the topology's solved load of {solved} mA there, so its loaded floor would be judged lighter than the board runs (AET-WO-4310 (3))",
                 scenario.name
             ),
             EXIT_INVALID_SPEC,
@@ -1111,6 +1142,25 @@ struct ScenarioLine {
     /// the boot reads no device; absent when the droop released nothing.
     #[serde(skip_serializing_if = "Option::is_none")]
     observation_witness: Option<crate::verdict::Scope>,
+    /// Each droop's source resistance and load with what each rests on,
+    /// `held` or `stimulus` (`AET-WO-4310` (3), ruled 2026-11-27T07:49Z);
+    /// absent when the scenario plants no droop.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    droop_sources: Vec<serde_json::Value>,
+}
+
+/// A droop's sourced figures as its campaign line names them.
+fn droop_sources(s: &Scenario) -> Vec<serde_json::Value> {
+    let one = |x: &rules::Sourced| serde_json::json!({"value": x.value, x.kind.name(): x.text});
+    s.droop_sources
+        .iter()
+        .map(|d| {
+            serde_json::json!({
+                "source_milliohms": one(&d.source_milliohms),
+                "load_milliamps": one(&d.load_milliamps),
+            })
+        })
+        .collect()
 }
 
 /// Why a droop's observations judged no device (`AET-WO-2306`).
@@ -1479,6 +1529,7 @@ fn run_one(
             uid_boundary,
             uid_boundary_unmet,
             battery_sag,
+            droop_sources: droop_sources(&p.scenario),
             conditions: p.conditions,
             observation_witness,
         },
@@ -2701,7 +2752,7 @@ pub fn attribute(dir: &Path) -> ExitCode {
 mod tests {
     use super::{
         HeldLow, NO_WITNESSED_DEVICE, Record, Scenario, Specification, apply, archived_lines,
-        observation_witness, picoseconds, solved_buses, subject,
+        droop_load_short, droop_sources, observation_witness, picoseconds, solved_buses, subject,
     };
 
     /// `AET-WO-2306` §1.4: a droop's observations count the releases judged
@@ -2936,6 +2987,46 @@ mod tests {
             "/../../examples/sentinel-01-minimal.json"
         );
         serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap()
+    }
+
+    /// `AET-WO-4310` (3): a droop's load is at least the topology's solved
+    /// load on its rail, where one exists; and its campaign line names each
+    /// figure's kind.
+    #[test]
+    fn a_droop_load_under_the_topologys_is_short_and_its_sources_are_named() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../..");
+        let file = |p: &str| std::fs::read(format!("{root}/{p}")).unwrap();
+        let s03: Specification =
+            serde_json::from_slice(&file("examples/sentinel-03.json")).unwrap();
+        let (topology, _) = crate::solve_spec(&s03, &"0".repeat(64))
+            .map_err(|_| ())
+            .unwrap();
+        let committed = Scenario::parse(&file("scenarios/sentinel-03/droop-bor3.json")).unwrap();
+        assert_eq!(droop_load_short(&committed, &topology), None);
+        let mut v: Value =
+            serde_json::from_slice(&file("scenarios/sentinel-03/droop-bor3.json")).unwrap();
+        v["overrides"][0]["droop"]["load_milliamps"]["value"] = json!(749);
+        let light = Scenario::parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert_eq!(
+            droop_load_short(&light, &topology),
+            Some(("VDD_3V3".to_owned(), 749, 750))
+        );
+        // A board with no power tree has no solved load to bound it.
+        let s01: Specification =
+            serde_json::from_slice(&file("examples/sentinel-01-minimal.json")).unwrap();
+        let (t01, _) = crate::solve_spec(&s01, &"0".repeat(64))
+            .map_err(|_| ())
+            .unwrap();
+        let bench = Scenario::parse(&file("scenarios/sentinel-01/droop-bor3.json")).unwrap();
+        assert_eq!(droop_load_short(&bench, &t01), None);
+        // The line names the stimulus and the held figure.
+        let named = droop_sources(&committed);
+        assert_eq!(named.len(), 1);
+        assert_eq!(named[0]["source_milliohms"]["value"], 67);
+        assert!(named[0]["source_milliohms"]["stimulus"].is_string());
+        assert_eq!(named[0]["load_milliamps"]["value"], 750);
+        assert!(named[0]["load_milliamps"]["held"].is_string());
+        assert!(droop_sources(&scenario_with(json!([]))).is_empty());
     }
 
     fn scenario_with(overrides: Value) -> Scenario {

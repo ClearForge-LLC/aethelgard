@@ -313,7 +313,7 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
     // coverage before any boot, so the instant is never placed.
     let droop = serde_json::json!({"droop": {"domain": "VDD_1V8", "floor_millivolts": 1650,
         "from_boot_word_ns": 0, "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     for (name, version, expect, findings, overrides) in [
         (
             "baseline",
@@ -338,7 +338,7 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
         ),
         (
             "droop",
-            6,
+            7,
             "pass",
             serde_json::json!([]),
             serde_json::json!([droop]),
@@ -519,7 +519,7 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
     let write =
         |name: &str, expect: &str, findings: serde_json::Value, overrides: serde_json::Value| {
             let scenario = serde_json::json!({
-                "schema_version": 6, "name": name, "base": "connectors.json",
+                "schema_version": 7, "name": name, "base": "connectors.json",
                 "expect": expect, "expect_findings": findings, "overrides": overrides,
             });
             let path = dir.join(format!("{name}.json"));
@@ -536,7 +536,7 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
             // Never placed: tier 1's verify stops at coverage (`AET-WO-2310`).
             {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": 0,
                 "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-                "source_milliohms": 500, "load_milliamps": 100}}]),
+                "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}}]),
         ),
         write(
             "absent",

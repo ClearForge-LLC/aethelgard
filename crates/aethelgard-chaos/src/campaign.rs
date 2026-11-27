@@ -33,9 +33,51 @@ use crate::replay::State;
 /// `rail_out_of_band`; 5, since `AET-WO-1211c`, which also admits a pin
 /// device's overrides, `pin_held` and `analog_value`; and 6, since
 /// `AET-WO-2310` ([`PLANTED_CHANGES`]), the only version that reads a droop
-/// or a battery sag ([`PLANTED_NEEDS_VERSION`]). A file may use only what its
-/// version admits.
-pub const SCENARIO_VERSIONS: [u32; 6] = [1, 2, 3, 4, 5, 6];
+/// or a battery sag ([`PLANTED_NEEDS_VERSION`]); and 7, since `AET-WO-4310`
+/// (3), the only version that reads a droop, its source resistance and its
+/// load each `{value, source}` ([`DROOP_SOURCE_UNDECLARED`]). A file may use
+/// only what its version admits.
+pub const SCENARIO_VERSIONS: [u32; 7] = [1, 2, 3, 4, 5, 6, 7];
+/// The scenario version a droop needs (`AET-WO-4310` (3), ruled
+/// 2026-11-27T07:49Z): its `source_milliohms` and `load_milliamps` sourced.
+pub const DROOP_SOURCED_VERSION: u32 = 7;
+/// A droop whose source resistance or load is an unsourced number.
+pub const DROOP_SOURCE_UNDECLARED: &str = "DroopSourceUndeclared";
+
+/// What a droop's figure rests on, named in the verdict (ruled 07:49Z).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    /// A datasheet page, the pack's `series_milliohms`, or a measurement,
+    /// cited.
+    Held,
+    /// The fault's own definition, stated as not a property of the board.
+    Stimulus,
+}
+
+impl SourceKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::Held => "held",
+            Self::Stimulus => "stimulus",
+        }
+    }
+}
+
+/// One figure and what it rests on.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Sourced {
+    pub value: u32,
+    pub kind: SourceKind,
+    pub text: String,
+}
+
+/// A droop's two sourced figures, in the scenario (the trace records the
+/// numbers alone, in its [`Droop`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DroopSources {
+    pub source_milliohms: Sourced,
+    pub load_milliamps: Sourced,
+}
 /// The scenario version a planted event (a droop, a battery sag) needs.
 pub const PLANTED_VERSION: u32 = 6;
 /// A droop or a battery sag in a scenario older than [`PLANTED_VERSION`].
@@ -989,6 +1031,9 @@ pub struct Scenario {
     pub expect_counts: Vec<(String, u64)>,
     /// The file's sha256.
     pub sha256: [u8; 32],
+    /// Each droop's sourced figures, in the order of its droop overrides
+    /// (`AET-WO-4310` (3)).
+    pub droop_sources: Vec<DroopSources>,
 }
 
 fn schema(message: String) -> ScenarioError {
@@ -1129,7 +1174,7 @@ fn override_from(raw: RawOverride, version: u32) -> Result<Override, ScenarioErr
                 "a droop override is exactly {droop: {...}}".to_owned(),
             ));
         }
-        return droop_from(d).map(Override::Droop);
+        return droop_from(d, version).map(|(d, _)| Override::Droop(d));
     }
     match (bus, net, pull_up_ohms, max_capacitance_femtofarads, line_held_low) {
         (Some(bus), None, Some(ohms), None, None) => Ok(Override::PullUpOhms {
@@ -1188,7 +1233,79 @@ fn offset_from(what: &str, v: i64) -> Result<i64, ScenarioError> {
     Ok(v)
 }
 
-fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
+/// A droop's figure `key` (`AET-WO-4310` (3), ruled 2026-11-27T07:49Z):
+/// at [`DROOP_SOURCED_VERSION`], `{value, source}` with the source exactly
+/// one of `{"held": text}` or `{"stimulus": text}`; a bare number, at any
+/// version, is refused by name. Replaces the entry with its value.
+fn sourced(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    key: &str,
+    version: u32,
+) -> Result<Option<Sourced>, ScenarioError> {
+    use serde_json::Value as J;
+    let undeclared = |why: String| {
+        ScenarioError::new(
+            DROOP_SOURCE_UNDECLARED,
+            None,
+            format!(
+                "droop `{key}` {why}: from scenario schema_version {DROOP_SOURCED_VERSION} it is {{\"value\": n, \"source\": {{\"held\": text}} or {{\"stimulus\": text}}}}, held for a datasheet page, the pack's series_milliohms or a measurement, cited, and stimulus for the fault's own definition, not a property of the board (AET-WO-4310 (3))"
+            ),
+        )
+    };
+    let Some(entry) = obj.get(key).cloned() else {
+        return Ok(None);
+    };
+    if version < DROOP_SOURCED_VERSION {
+        return Err(undeclared(format!(
+            "is an unsourced number at scenario schema_version {version}"
+        )));
+    }
+    let J::Object(mut m) = entry else {
+        return Err(undeclared("is an unsourced number".to_owned()));
+    };
+    let (Some(value), Some(J::Object(src))) = (m.remove("value"), m.remove("source")) else {
+        return Err(undeclared("states no `value` or no `source`".to_owned()));
+    };
+    if !m.is_empty() || src.len() != 1 {
+        return Err(undeclared(
+            "holds a key other than `value` and `source`, or a source that is not exactly one kind"
+                .to_owned(),
+        ));
+    }
+    let (kind, text) = src.into_iter().next().expect("one entry");
+    let kind = match kind.as_str() {
+        "held" => SourceKind::Held,
+        "stimulus" => SourceKind::Stimulus,
+        other => return Err(undeclared(format!("names source kind `{other}`"))),
+    };
+    let J::String(text) = text else {
+        return Err(undeclared("states its source as no text".to_owned()));
+    };
+    if text.is_empty() || text.len() > 400 || !text.bytes().all(|b| (0x20..=0x7E).contains(&b)) {
+        return Err(undeclared(
+            "states its source as other than 1 to 400 bytes of printable ASCII".to_owned(),
+        ));
+    }
+    obj.insert(key.to_owned(), value.clone());
+    Ok(Some(Sourced {
+        value: value
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(u32::MAX),
+        kind,
+        text,
+    }))
+}
+
+fn droop_from(v: serde_json::Value, version: u32) -> Result<(Droop, DroopSources), ScenarioError> {
+    let mut v = v;
+    let (r, l) = match v.as_object_mut() {
+        Some(obj) => (
+            sourced(obj, "source_milliohms", version)?,
+            sourced(obj, "load_milliamps", version)?,
+        ),
+        None => (None, None),
+    };
     let raw: RawDroop = serde_json::from_value(v).map_err(|e| schema(format!("droop: {e}")))?;
     if !name_ok(&raw.domain) {
         return Err(schema(format!(
@@ -1212,7 +1329,7 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
         }
     }
     let narrow = |v: u64| u32::try_from(v).expect("bounded above");
-    Ok(Droop {
+    let droop = Droop {
         from_boot_word_ns: offset_from("droop", raw.from_boot_word_ns)?,
         domain: raw.domain,
         floor_millivolts: narrow(raw.floor_millivolts),
@@ -1221,7 +1338,18 @@ fn droop_from(v: serde_json::Value) -> Result<Droop, ScenarioError> {
         rise_ns: raw.rise_ns,
         source_milliohms: narrow(raw.source_milliohms),
         load_milliamps: narrow(raw.load_milliamps),
-    })
+    };
+    // Both keys are required by `RawDroop`, so each was sourced above.
+    let (Some(source_milliohms), Some(load_milliamps)) = (r, l) else {
+        unreachable!("RawDroop requires both keys");
+    };
+    Ok((
+        droop,
+        DroopSources {
+            source_milliohms,
+            load_milliamps,
+        },
+    ))
 }
 
 fn battery_sag_from(v: serde_json::Value) -> Result<BatterySag, ScenarioError> {
@@ -1522,10 +1650,20 @@ impl Scenario {
                     .to_owned(),
             ));
         }
+        let mut droop_sources = Vec::new();
         let overrides = raw
             .overrides
             .into_iter()
-            .map(|o| override_from(o, raw.schema_version))
+            .map(|o| {
+                // `AET-WO-4310` (3): a droop's sourced figures, beside it.
+                if let Some(d) = o.droop.clone()
+                    && raw.schema_version >= PLANTED_VERSION
+                    && let Ok((_, sources)) = droop_from(d, raw.schema_version)
+                {
+                    droop_sources.push(sources);
+                }
+                override_from(o, raw.schema_version)
+            })
             .collect::<Result<Vec<_>, _>>()?;
         let mut expect_counts = raw.expect_counts.unwrap_or_default();
         let v2_only = overrides
@@ -1614,6 +1752,7 @@ impl Scenario {
             overrides,
             expect_counts,
             sha256: Sha256::digest(bytes).into(),
+            droop_sources,
         })
     }
 

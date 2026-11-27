@@ -1,0 +1,6 @@
+P3a-M1	crates/aethelgard-chaos/src/campaign.rs	    if version < DROOP_SOURCED_VERSION {	    if false && version < DROOP_SOURCED_VERSION {	aethelgard-chaos	droop
+P3a-M2	crates/aethelgard-chaos/src/campaign.rs	        "held" => SourceKind::Held,	        "held" | "datasheet" => SourceKind::Held,	aethelgard-chaos	droop
+P3a-M3	crates/aethelgard-chaos/src/campaign.rs	    if text.is_empty() || text.len() > 400	    if text.len() > 400	aethelgard-chaos	droop
+P3a-M4	crates/aethelgard-chaos/src/campaign.rs	    if !m.is_empty() || src.len() != 1 {	    if false {	aethelgard-chaos	droop
+P3a-M5	crates/aethelgard-chaos/src/campaign.rs	                    droop_sources.push(sources);	                    let _ = sources;	aethelgard-chaos	droop
+P3a-M6	crates/aethelgard-chaos/src/campaign.rs	    let J::String(text) = text else {	    let J::String(text) = (if text.is_number() { J::String(text.to_string()) } else { text }) else {	aethelgard-chaos	droop
