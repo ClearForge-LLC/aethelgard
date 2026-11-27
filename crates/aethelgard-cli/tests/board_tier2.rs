@@ -991,6 +991,15 @@ fn every_admitted_identifier_character_survives_every_output() {
             serde_json::json!(["serial_echo_missing"]),
             serde_json::json!([{ "serial_rx_open": "CONSOLE" }]),
         ),
+        // The sensor bus's held-low SDA, detected: a raised pull-up covers
+        // no bus (`AET-WO-4310` (5), ruled D7 (i)).
+        (
+            "held.json",
+            "held",
+            "fail",
+            serde_json::json!(["i2c_line_held_low", "i2c_timeout"]),
+            serde_json::json!([{ "bus": sensors, "line_held_low": "sda" }]),
+        ),
     ];
     for (file, name, expect, findings, overrides) in &seeded {
         let scenario = serde_json::json!({
@@ -1022,6 +1031,7 @@ fn every_admitted_identifier_character_survives_every_output() {
             "absent.json",
             "baseline.json",
             "open.json",
+            "held.json",
             "--fab-out",
             pkg.to_str().unwrap(),
         ])

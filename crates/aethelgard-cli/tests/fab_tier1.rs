@@ -15,12 +15,15 @@ const SPEC: &str = "examples/sentinel-01-minimal.json";
 /// `SENSORS` and on `VDD_3V3`, `FLASH`'s absent device detected by its
 /// mechanism, the no-fault baseline, and `CONSOLE`'s open RX line detected
 /// by its mechanism (`AET-WO-2302` D5).
-const SCENARIOS: [&str; 5] = [
+/// `AET-WO-4310` (5), ruled D7 (i): `SENSORS` covered by its held-low SDA,
+/// since a raised pull-up covers no bus.
+const SCENARIOS: [&str; 6] = [
     "scenarios/sentinel-01/seeded/pullup-3k3.json",
     "scenarios/sentinel-01/droop-bor3.json",
     "scenarios/sentinel-01/seeded/spi-absent-u4.json",
     "scenarios/sentinel-01/pullup-2k2.json",
     "scenarios/sentinel-01/seeded/serial-rx-open-console.json",
+    "scenarios/sentinel-01/seeded/held-low-sda.json",
 ];
 
 /// `AET-WO-4300k` (T), ruled 11:25Z: a `--fab-out` test whose point lies
@@ -99,6 +102,7 @@ fn an_unusable_fab_out_is_refused_before_any_gate_and_left_untouched() {
             SCENARIOS[2],
             SCENARIOS[3],
             SCENARIOS[4],
+            SCENARIOS[5],
             "--fab-out",
             s(dir),
         ]);
@@ -140,6 +144,7 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--against-fab",
         s(&absent),
     ]);
@@ -155,6 +160,7 @@ fn a_run_that_cannot_pass_creates_nothing_and_the_flags_exclude_each_other() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--fab-out",
         s(&absent),
         "--against-fab",
@@ -184,6 +190,7 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             SCENARIOS[2],
             SCENARIOS[3],
             SCENARIOS[4],
+            SCENARIOS[5],
             "--fab-out",
             s(&dir),
         ]);
@@ -203,6 +210,7 @@ fn a_fab_out_another_uid_could_write_is_refused() {
             SCENARIOS[2],
             SCENARIOS[3],
             SCENARIOS[4],
+            SCENARIOS[5],
             "--fab-out",
             s(&dir),
         ]);
@@ -244,6 +252,7 @@ fn a_tree_that_differs_writes_no_package_and_says_so() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--against",
         s(&tree),
         "--against-fab",
@@ -322,12 +331,14 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
             serde_json::json!([]),
             serde_json::json!([]),
         ),
+        // `AET-WO-4310` (5), ruled D7 (i): SENSORS covered by a detected
+        // fault, a raised pull-up covering no bus.
         (
-            "pullup",
+            "held",
             1,
-            "pass",
-            serde_json::json!([]),
-            serde_json::json!([{"bus": "SENSORS", "pull_up_ohms": 3300}]),
+            "fail",
+            serde_json::json!(["i2c_line_held_low", "i2c_timeout"]),
+            serde_json::json!([{"bus": "SENSORS", "line_held_low": "sda"}]),
         ),
         (
             "absent",
@@ -360,7 +371,7 @@ fn a_drawn_twin_stand_in_is_refused_by_each_fab_flag_by_name() {
                 "spec.json",
                 "--scenarios",
                 "baseline.json",
-                "pullup.json",
+                "held.json",
                 "absent.json",
                 "droop.json",
             ])
@@ -420,6 +431,7 @@ fn an_unacknowledged_eol_part_is_refused_on_the_fab_path_by_name() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--fab-out",
         s(&out),
     ]);
@@ -451,11 +463,16 @@ fn a_campaign_that_misses_a_bus_or_rail_is_refused_by_name() {
         "serial port `CONSOLE`",
         "rail `VDD_3V3`",
     ];
-    let cases: [(&[&str], &[&str]); 7] = [
+    // `AET-WO-4310` (5), ruled D7 (i): a raised pull-up (`SCENARIOS[0]`) is
+    // tolerated with no tolerance declared, so it covers no bus; `SENSORS`
+    // is covered only by its held-low SDA (`SCENARIOS[5]`) beside the
+    // baseline.
+    let cases: [(&[&str], &[&str]); 8] = [
         (&[SCENARIOS[3]], all),
         (&[SCENARIOS[2]], all),
+        (&[SCENARIOS[0], SCENARIOS[3]], all),
         (
-            &[SCENARIOS[0], SCENARIOS[3]],
+            &[SCENARIOS[5], SCENARIOS[3]],
             &["SPI bus `FLASH`", "serial port `CONSOLE`", "rail `VDD_3V3`"],
         ),
         (
@@ -468,17 +485,31 @@ fn a_campaign_that_misses_a_bus_or_rail_is_refused_by_name() {
         ),
         (
             &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2]],
-            &["SPI bus `FLASH`", "serial port `CONSOLE`"],
+            &[
+                "I2C bus `SENSORS`",
+                "SPI bus `FLASH`",
+                "serial port `CONSOLE`",
+            ],
         ),
         // `AET-WO-2302` D5: the console is covered only by its own open RX
         // line detected beside the baseline.
         (
-            &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2], SCENARIOS[3]],
+            &[
+                SCENARIOS[0],
+                SCENARIOS[1],
+                SCENARIOS[2],
+                SCENARIOS[3],
+                SCENARIOS[5],
+            ],
             &["serial port `CONSOLE`"],
         ),
         (
             &[SCENARIOS[0], SCENARIOS[1], SCENARIOS[2], SCENARIOS[4]],
-            &["SPI bus `FLASH`", "serial port `CONSOLE`"],
+            &[
+                "I2C bus `SENSORS`",
+                "SPI bus `FLASH`",
+                "serial port `CONSOLE`",
+            ],
         ),
     ];
     for flag in ["--fab-out", "--against-fab"] {
@@ -514,8 +545,9 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
         dir.join("connectors.json"),
     )
     .unwrap();
-    // Everything a fault can reach is covered: a tolerated pull-up and droop,
-    // U4 absent (detected), and the baseline.
+    // Everything a fault can reach is covered: a tolerated droop, SENSORS'
+    // held-low SDA and U4 absent (detected, `AET-WO-4310` (5) D7 (i)), and
+    // the baseline.
     let write =
         |name: &str, expect: &str, findings: serde_json::Value, overrides: serde_json::Value| {
             let scenario = serde_json::json!({
@@ -532,7 +564,6 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
             "pass",
             serde_json::json!([]),
             serde_json::json!([
-            {"bus": "SENSORS", "pull_up_ohms": 3300},
             // Never placed: tier 1's verify stops at coverage (`AET-WO-2310`).
             {"droop": {"domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": 0,
                 "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
@@ -543,6 +574,12 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
             "fail",
             serde_json::json!(["spi_identity_mismatch", "spi_transaction_unwitnessed"]),
             serde_json::json!([{"spi_device_absent": "U4"}]),
+        ),
+        write(
+            "held",
+            "fail",
+            serde_json::json!(["i2c_line_held_low", "i2c_timeout"]),
+            serde_json::json!([{"bus": "SENSORS", "line_held_low": "sda"}]),
         ),
         write(
             "baseline",
@@ -560,6 +597,7 @@ fn a_rail_or_bus_no_fault_kind_reaches_is_named() {
         s(&files[0]),
         s(&files[1]),
         s(&files[2]),
+        s(&files[3]),
         "--fab-out",
         s(&out),
     ]);
@@ -795,6 +833,7 @@ fn the_acknowledged_reference_passes_the_check_before_any_gate() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--against",
         s(&empty),
         "--against-fab",
@@ -827,6 +866,7 @@ fn fab_out_on_a_specification_not_ready_is_refused_by_the_key() {
         SCENARIOS[2],
         SCENARIOS[3],
         SCENARIOS[4],
+        SCENARIOS[5],
         "--against",
         s(&empty),
         "--fab-out",
@@ -851,11 +891,11 @@ fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
     let dir = scratch("rebind");
     let out = dir.join("pkg");
     let committed = "fab/sentinel-01-bench/package";
-    let args = |spec: &'static str, scenarios: [&'static str; 5], rest: Vec<String>| {
+    let args = |spec: &'static str, scenarios: &[&'static str], rest: Vec<String>| {
         let mut a: Vec<String> = ["verify", "--spec", spec, "--scenarios"]
             .map(str::to_owned)
             .to_vec();
-        a.extend(scenarios.map(str::to_owned));
+        a.extend(scenarios.iter().map(|s| (*s).to_owned()));
         a.extend(rest);
         a
     };
@@ -865,13 +905,13 @@ fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
     };
     let (code, v) = call(args(
         SPEC,
-        SCENARIOS,
+        &SCENARIOS,
         vec!["--rebind".into(), committed.into()],
     ));
     assert_eq!(code, Some(64), "{v}");
     let (code, v) = call(args(
         SPEC,
-        SCENARIOS,
+        &SCENARIOS,
         vec![
             "--fab-out".into(),
             s(&out).into(),
@@ -883,7 +923,7 @@ fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
     assert_eq!(v["error"]["kind"], "RebindNoPackage", "{v}");
     let (code, v) = call(args(
         SPEC,
-        SCENARIOS,
+        &SCENARIOS,
         vec![
             "--fab-out".into(),
             s(&out).into(),
@@ -903,7 +943,7 @@ fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
     assert!(!out.exists());
     let (code, v) = call(args(
         "examples/sentinel-01.json",
-        BENCH_SCENARIOS,
+        &BENCH_SCENARIOS,
         vec![
             "--fab-out".into(),
             s(&out).into(),
@@ -918,12 +958,13 @@ fn a_rebind_needs_fab_out_a_committed_package_and_its_board() {
 }
 
 /// The bench's scenarios, in the order its MANIFEST records them (`ci.yml`).
-const BENCH_SCENARIOS: [&str; 5] = [
+const BENCH_SCENARIOS: [&str; 6] = [
     "scenarios/sentinel-01-bench/pullup-3k3.json",
     "scenarios/sentinel-01-bench/droop-bor3.json",
     "scenarios/sentinel-01-bench/spi-absent-u4.json",
     "scenarios/sentinel-01-bench/pullup-2k2.json",
     "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+    "scenarios/sentinel-01-bench/held-low-sda.json",
 ];
 
 /// `AET-WO-4300k` (R): the tool cannot tell a committed package from any

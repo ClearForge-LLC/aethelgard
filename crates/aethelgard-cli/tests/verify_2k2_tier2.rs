@@ -481,8 +481,8 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
     // `AET-WO-1609` §2: the ready fixture's ran-or-not table, every
     // gate and part by name. It declares no drop limit, no crystal, no pair,
     // no power tree and no pin device, so each of those parts is off by its
-    // key; its five scenarios ran, and its two detected faults were
-    // attributed.
+    // key; its six scenarios ran (`AET-WO-4310` (5) added SENSORS' held-low
+    // SDA), and its three detected faults were attributed.
     for (gate, state) in [
         ("extract.supply", "off: power.drop_limits"),
         ("extract.oscillator", "off: mcu.hse.crystal"),
@@ -495,7 +495,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         ("gpio", "off: pin_devices[].signals"),
         ("adc", "off: pin_devices[].analog"),
         ("bridge", "off: pin_devices[].bridges"),
-        ("campaign", "judged 5"),
+        ("campaign", "judged 6"),
         ("build", "judged 1"),
         ("simulate", "judged 1"),
     ] {
@@ -505,7 +505,7 @@ fn verify_fab_out_writes_the_package_its_verdict_names_at_any_path() {
         rows.iter()
             .filter(|(n, s)| n.starts_with("attribute#") && s == "judged 1")
             .count(),
-        2,
+        3,
         "{rows:?}"
     );
     assert!(

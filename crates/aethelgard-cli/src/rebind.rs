@@ -213,7 +213,11 @@ fn without_new_scenarios(held: &str, manifest: &str) -> String {
 /// states what its board was built at, or `verify --against-fab` refuses
 /// it by name, naming each line it lacks.
 pub fn states_built(dir: &Path) -> Result<(), Stop> {
-    let notes = text_of(dir, NOTES)?;
+    // A directory with no readable FAB-NOTES is left to the comparison,
+    // which names the file it lacks, as before (`AET-WO-3300`).
+    let Ok(notes) = text_of(dir, NOTES) else {
+        return Ok(());
+    };
     let text = String::from_utf8_lossy(&notes);
     let lacking: Vec<&str> = ADMITTED_NOTES
         .iter()
