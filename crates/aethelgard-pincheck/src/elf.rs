@@ -980,7 +980,7 @@ pub fn defaults_signatures(bytes: &[u8], defaults: Option<&str>) -> Result<Vec<S
                             )
                         };
                         if stated == expected.len() {
-                            let text = romfs_inflated(bytes, e)?;
+                            let text = romfs_inflated(bytes, e, expected.len())?;
                             match first_difference(&text, expected.as_bytes()) {
                                 None => admitted = true,
                                 Some((n, got, want)) => found.push(differs(
@@ -991,10 +991,13 @@ pub fn defaults_signatures(bytes: &[u8], defaults: Option<&str>) -> Result<Vec<S
                             }
                         } else {
                             // A size within VERSION_SLACK of the topology's is
-                            // inflated, so the allocation stays bounded by the
-                            // topology's file, only to name the versions.
+                            // inflated only to name the versions, and never past
+                            // the topology's length plus VERSION_SLACK, whatever
+                            // it states (the 07:49Z ruling).
                             let named = (stated.abs_diff(expected.len()) <= VERSION_SLACK)
-                                .then(|| romfs_inflated(bytes, e).ok())
+                                .then(|| {
+                                    romfs_inflated(bytes, e, expected.len() + VERSION_SLACK).ok()
+                                })
                                 .flatten()
                                 .and_then(|text| engine_named(&text, expected));
                             found.push(differs(named.unwrap_or_else(|| {
@@ -1052,13 +1055,14 @@ pub fn defaults_signatures(bytes: &[u8], defaults: Option<&str>) -> Result<Vec<S
 /// anything else, a build with `HAL_ROMFS_UNCOMPRESSED` included, is refused
 /// by name. Its `crc` is not read: a wrong one makes ArduPilot drop the file
 /// (`AP_ROMFS.cpp:96`), never apply it.
-fn romfs_inflated(bytes: &[u8], entry: &[u8]) -> Result<Vec<u8>, Refusal> {
+/// Nothing past `limit` bytes is ever inflated, whatever the entry states.
+fn romfs_inflated(bytes: &[u8], entry: &[u8], limit: usize) -> Result<Vec<u8>, Refusal> {
     let (compressed, decompressed, at) = (u32_at(entry, 4), u32_at(entry, 8), u32_at(entry, 16));
     let off = usize::try_from(loaded_offset(bytes, at, compressed)?).unwrap_or(usize::MAX);
     let raw = bytes
         .get(off..off + compressed as usize)
         .unwrap_or_default();
-    match miniz_oxide::inflate::decompress_to_vec_with_limit(raw, decompressed as usize) {
+    match miniz_oxide::inflate::decompress_to_vec_with_limit(raw, limit) {
         Ok(text) if text.len() == decompressed as usize => Ok(text),
         _ => refuse(
             "MalformedRomfs",

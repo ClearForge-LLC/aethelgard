@@ -470,21 +470,17 @@ fn peak_kib() -> u64 {
         .unwrap()
 }
 
-/// `AET-WO-4412` review, 2026-11-26T23:39Z (1): a decompression bomb, 256 MiB
-/// of zeros deflated to well under 1 MiB and stating 256 MiB, is refused by
-/// its stated size before it is inflated, so it allocates nothing near its
-/// size (INV-06: a refusal by name, never an out-of-memory death).
-#[test]
-fn a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated() {
+/// `size` bytes of zeros, raw-deflated in 1 MiB steps, so that a bomb is
+/// built without holding its inflated size.
+fn zeros_deflated(size: usize) -> Vec<u8> {
     use miniz_oxide::deflate::core::{
         CompressorOxide, TDEFLFlush, TDEFLStatus, compress, create_comp_flags_from_zip_params,
     };
-    const STATED: usize = 256 << 20;
     let zeros = vec![0u8; 1 << 20];
     let mut c = CompressorOxide::new(create_comp_flags_from_zip_params(9, -15, 0));
     let (mut bomb, mut chunk) = (Vec::new(), vec![0u8; 1 << 16]);
-    for i in 0..STATED / zeros.len() {
-        let flush = if i + 1 == STATED / zeros.len() {
+    for i in 0..size / zeros.len() {
+        let flush = if i + 1 == size / zeros.len() {
             TDEFLFlush::Finish
         } else {
             TDEFLFlush::None
@@ -499,6 +495,17 @@ fn a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated() {
             }
         }
     }
+    bomb
+}
+
+/// `AET-WO-4412` review, 2026-11-26T23:39Z (1): a decompression bomb, 256 MiB
+/// of zeros deflated to well under 1 MiB and stating 256 MiB, is refused by
+/// its stated size before it is inflated, so it allocates nothing near its
+/// size (INV-06: a refusal by name, never an out-of-memory death).
+#[test]
+fn a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated() {
+    const STATED: usize = 256 << 20;
+    let bomb = zeros_deflated(STATED);
     assert!(bomb.len() < 1 << 20, "{}", bomb.len());
     let elf = embedding(defaults_file(bomb, STATED)).bytes();
     let before = peak_kib();
@@ -509,6 +516,31 @@ fn a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated() {
         refusal
             .to_string()
             .contains(&format!("it states {STATED} bytes, the topology's is")),
+        "{refusal}"
+    );
+    assert!(grew < 64 << 10, "the bomb grew the peak by {grew} KiB");
+}
+
+/// `AET-WO-1802` (ruled 2026-11-27T07:49Z): a file stating a size within the
+/// version window (the topology's plus 4 bytes) is inflated to name the
+/// versions, but never past the topology's length plus the window. A bomb
+/// that states such a size and inflates to 256 MiB is refused by its size,
+/// and grows the peak by nothing near its size.
+#[test]
+fn a_bomb_stating_a_size_in_the_version_window_inflates_no_further_than_the_window() {
+    let stated = S03_DEFAULTS.len() + 4;
+    let bomb = zeros_deflated(256 << 20);
+    assert!(bomb.len() < 1 << 20, "{}", bomb.len());
+    let elf = embedding(defaults_file(bomb, stated)).bytes();
+    let before = peak_kib();
+    let refusal = elf::read_admitting(&elf, Some(S03_DEFAULTS)).unwrap_err();
+    let grew = peak_kib() - before;
+    assert_eq!(refusal.kind(), "ParamDefaultsOverride");
+    assert!(
+        refusal.to_string().contains(&format!(
+            "it states {stated} bytes, the topology's is {}",
+            S03_DEFAULTS.len()
+        )),
         "{refusal}"
     );
     assert!(grew < 64 << 10, "the bomb grew the peak by {grew} KiB");
