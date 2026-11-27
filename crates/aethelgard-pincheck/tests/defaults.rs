@@ -385,11 +385,23 @@ fn a_defaults_parm_other_than_the_topologys_is_refused_by_its_first_differing_li
         found[0],
         FILE.to_owned() + ": a defaults file is read at boot (AP_Param.cpp:1599-1616, :2406)"
     );
+    // An extra line makes it longer than the topology's: refused by its
+    // stated size, before it is inflated.
     assert!(
         found[1].starts_with(ROMFS)
             && found[1].ends_with(
-                "it is not the one generate hwdef writes for this topology: its line 5 is `SERIAL1_PROTOCOL 2`, the topology's ``"
+                "it is not the one generate hwdef writes for this topology: it states 616 bytes, the topology's is 597"
             ),
+        "{found:?}"
+    );
+    // A line changed within the topology's size is named, as the first that
+    // differs.
+    let same = embedding(deflated(
+        &S03_DEFAULTS.replace("MOT_PWM_TYPE 6\n", "SERVO_RATE 999\n"),
+    ));
+    let found = admitting(&same, S03_DEFAULTS).unwrap();
+    assert!(
+        found[1].ends_with("its line 4 is `SERVO_RATE 999`, the topology's `MOT_PWM_TYPE 6`"),
         "{found:?}"
     );
     let pwm = embedding(deflated(
@@ -408,10 +420,82 @@ fn a_defaults_parm_other_than_the_topologys_is_refused_by_its_first_differing_li
             "ParamDefaultsOverride"
         );
     }
-    let short = embedding(defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len() - 1));
-    assert_eq!(admitting(&short, S03_DEFAULTS), Err("MalformedRomfs"));
-    let long = embedding(defaults_file(S03_DEFLATE.to_vec(), S03_DEFAULTS.len() + 1));
-    assert_eq!(admitting(&long, S03_DEFAULTS), Err("MalformedRomfs"));
-    let garbage = embedding(defaults_file(vec![0xff; 40], 57));
-    assert_eq!(admitting(&garbage, S03_DEFAULTS), Err("MalformedRomfs"));
+    // A stated size other than the topology's file's is not that file, and is
+    // refused by its size before anything is inflated.
+    for stated in [S03_DEFAULTS.len() - 1, S03_DEFAULTS.len() + 1, 57] {
+        let elf = embedding(defaults_file(vec![0xff; 40], stated));
+        let found = admitting(&elf, S03_DEFAULTS).unwrap();
+        assert!(
+            found[1].ends_with(&format!(
+                "it states {stated} bytes, the topology's is {}",
+                S03_DEFAULTS.len()
+            )),
+            "{found:?}"
+        );
+    }
+    // At the topology's size, contents that do not inflate to exactly it are
+    // refused by name: bytes that are not deflate, a shorter file, a longer one.
+    let n = S03_DEFAULTS.len();
+    for contents in [
+        vec![0xff; 40],
+        miniz_oxide::deflate::compress_to_vec(&S03_DEFAULTS.as_bytes()[..n - 1], 6),
+        miniz_oxide::deflate::compress_to_vec(format!("{S03_DEFAULTS}x").as_bytes(), 6),
+    ] {
+        let elf = embedding(defaults_file(contents, n));
+        assert_eq!(admitting(&elf, S03_DEFAULTS), Err("MalformedRomfs"));
+    }
+}
+
+/// The peak resident memory of this process (`VmHWM`), in KiB.
+fn peak_kib() -> u64 {
+    std::fs::read_to_string("/proc/self/status")
+        .unwrap()
+        .lines()
+        .find_map(|l| l.strip_prefix("VmHWM:"))
+        .and_then(|v| v.trim().trim_end_matches(" kB").trim().parse().ok())
+        .unwrap()
+}
+
+/// `AET-WO-4412` review, 2026-11-26T23:39Z (1): a decompression bomb, 256 MiB
+/// of zeros deflated to well under 1 MiB and stating 256 MiB, is refused by
+/// its stated size before it is inflated, so it allocates nothing near its
+/// size (INV-06: a refusal by name, never an out-of-memory death).
+#[test]
+fn a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated() {
+    use miniz_oxide::deflate::core::{
+        CompressorOxide, TDEFLFlush, TDEFLStatus, compress, create_comp_flags_from_zip_params,
+    };
+    const STATED: usize = 256 << 20;
+    let zeros = vec![0u8; 1 << 20];
+    let mut c = CompressorOxide::new(create_comp_flags_from_zip_params(9, -15, 0));
+    let (mut bomb, mut chunk) = (Vec::new(), vec![0u8; 1 << 16]);
+    for i in 0..STATED / zeros.len() {
+        let flush = if i + 1 == STATED / zeros.len() {
+            TDEFLFlush::Finish
+        } else {
+            TDEFLFlush::None
+        };
+        let mut input: &[u8] = &zeros;
+        loop {
+            let (status, read, wrote) = compress(&mut c, input, &mut chunk, flush);
+            bomb.extend_from_slice(&chunk[..wrote]);
+            input = &input[read..];
+            if status == TDEFLStatus::Done || (input.is_empty() && wrote < chunk.len()) {
+                break;
+            }
+        }
+    }
+    assert!(bomb.len() < 1 << 20, "{}", bomb.len());
+    let elf = embedding(defaults_file(bomb, STATED)).bytes();
+    let before = peak_kib();
+    let refusal = elf::read_admitting(&elf, Some(S03_DEFAULTS)).unwrap_err();
+    let grew = peak_kib() - before;
+    assert_eq!(refusal.kind(), "ParamDefaultsOverride");
+    assert!(
+        refusal
+            .to_string()
+            .contains(&format!("it states {STATED} bytes, the topology's is")),
+        "{refusal}"
+    );
+    assert!(grew < 64 << 10, "the bomb grew the peak by {grew} KiB");
 }

@@ -272,7 +272,15 @@ fn check_pinout_admits_only_the_defaults_parm_generate_hwdef_writes() {
         ..Elf::default()
     };
     let topology = topology.to_str().unwrap();
-    let (_, line) = run(&d, &embedding(&own), None, topology, ALLOW);
+    // Admitted, the run reaches the pin judgement: a pinout verdict (exit 1,
+    // the synthetic ELF's pins are not this board's), never the refusal (3)
+    // (`AET-WO-4412` review, 23:39Z (6)).
+    let (code, line) = run(&d, &embedding(&own), None, topology, ALLOW);
+    assert_eq!(code, 1, "{line}");
+    assert!(
+        line.starts_with(r#"{"check":"pinout""#) && line.contains(r#""configured":["#),
+        "{line}"
+    );
     assert!(!line.contains("ParamDefaultsOverride"), "{line}");
     let (code, line) = run(
         &d,

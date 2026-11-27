@@ -542,6 +542,12 @@ fn loads_dshot_models(models: &[std::path::PathBuf]) -> bool {
 /// The DMA model's line for a paced stream in circular mode (`AET-WO-4412`
 /// (a)).
 pub const UNBOUNDED_MARK: &str = "AETHELGARD-DMA-UNBOUNDED";
+/// The DMA model's line for a paced stream aimed at a register other than a
+/// timer's DMAR (`AET-WO-4412` review, 2026-11-26T23:39Z (5)).
+pub const UNMODELLED_MARK: &str = "AETHELGARD-DMA-UNMODELLED";
+/// A paced stream the DMA model does not move as silicon would, refused by
+/// name.
+pub const DMA_STREAM_UNMODELLED: &str = "foreign_dma_stream_unmodelled";
 /// The timer model's line for a skipped event that had an effect (ruling D4
 /// (a), "lazy, never different").
 pub const LAZY_MARK: &str = "lazy: a skipped event at";
@@ -564,12 +570,11 @@ fn dshot_silent(
     if !loads_dshot_models(models) {
         return Vec::new();
     }
-    let mut timers: Vec<u32> = motors
+    let timers: std::collections::BTreeSet<u32> = motors
         .iter()
         .filter(|m| m.observer.protocol.bit_rate().is_some())
         .map(|m| m.observer.timer)
         .collect();
-    timers.dedup();
     timers
         .into_iter()
         .filter(|t| !seen.contains(&format!("TIM{t}")))
@@ -590,6 +595,8 @@ fn dshot_silent(
         .collect()
 }
 
+/// DShot transfers of a timer whose period was not read at the run's end.
+pub const DSHOT_PERIOD_UNREAD: &str = "foreign_dshot_period_unread";
 /// DShot transfers seen in a log that was not read whole.
 pub const DSHOT_UNWITNESSED: &str = "foreign_dshot_unwitnessed";
 /// A DShot frame whose checksum fails, or that is not 16 pulses.
@@ -650,6 +657,7 @@ fn dshot_report(
     use aethelgard_twin::dshot::{Frame, frames, transfer};
     let mut streams: Vec<DshotStream> = Vec::new();
     let mut findings = Vec::new();
+    let mut unread = std::collections::BTreeSet::new();
     for line in lines {
         let text = log_text(line);
         let Some(body) = text
@@ -708,6 +716,17 @@ fn dshot_report(
         s.count += 1;
         s.last_ns = t.end_ns;
         let Some(arr) = arr else {
+            // Its frames cannot be judged at an unread period: said, once per
+            // timer, never skipped silently (`AET-WO-4412` review, 23:39Z (7)).
+            if unread.insert(timer) {
+                findings.push(Finding::plain(
+                    DSHOT_PERIOD_UNREAD,
+                    format!(
+                        "TIM{timer}'s DShot transfers (DMA stream {}, request {}) were seen, but TIM{timer}.ARR was not read at the run's end, so their frames are not judged",
+                        t.stream, t.request
+                    ),
+                ));
+            }
             continue;
         };
         for (k, f) in frames(&t, width, arr + 1).into_iter().enumerate() {
@@ -1080,6 +1099,7 @@ pub const FOREIGN_LOG_FILTER: LogFilter = LogFilter {
         FAULT_MARK,
         RESET_MARK,
         UNBOUNDED_MARK,
+        UNMODELLED_MARK,
         LAZY_MARK,
     ],
     discard: unread_access_line,
@@ -1564,11 +1584,15 @@ fn reads(
 /// protocol's bit rate (`AET-WO-4412` D3, ruled 2026-11-26): the expectation
 /// is the specification's (`motor_outputs[].protocol`, its bit rate), the
 /// observation the end read's `PSC` and `ARR` at the frequency the platform
-/// builds the timer at. Below half the bit rate the timer is not counting
-/// DShot bits: unmodified ArduPilot runs PWM until a `MOT_PWM_TYPE` is set
+/// builds the timer at. Below half the slowest DShot bit rate (DShot300's)
+/// the timer is not counting DShot bits: unmodified ArduPilot runs PWM until a
+/// `MOT_PWM_TYPE` is set
 /// (its default is PWM, and the generated hwdef sets none). Info, never a
 /// failure, one per timer; `None` where the image does not read the timer.
 pub const MOTOR_PROTOCOL_UNMET: &str = "foreign_motor_protocol_unmet";
+/// A timer counting DShot bits at a rate other than its outputs' declared
+/// one, refused by name (`AET-WO-4412` review, 23:39Z (3)).
+pub const DSHOT_RATE_UNMET: &str = "foreign_dshot_rate_unmet";
 
 pub(crate) fn motor_protocol_unmet(
     image: &aethelgard_twin::boot::Image,
@@ -1598,7 +1622,36 @@ pub(crate) fn motor_protocol_unmet(
         };
         let cycles = (u64::from(psc) + 1) * (u64::from(arr) + 1);
         let rate = o.kernel_hz / cycles.max(1);
-        if rate * 2 >= u64::from(bit_rate) {
+        // Counting DShot bits at all: at least half the slowest DShot bit
+        // rate the specification can declare (DShot300's), so a timer set for
+        // another DShot rate is judged against the declared one, never read
+        // as PWM (`AET-WO-4412` review, 23:39Z (3)).
+        let slowest = aethelgard_ir::motor::MotorProtocol::Dshot300
+            .bit_rate()
+            .map_or(0, u64::from);
+        if rate * 2 >= slowest {
+            // Counting DShot bits: at the declared rate within one prescaler
+            // step. ArduPilot sets PSC to the nearest, or the next faster,
+            // whole divider of the timer clock for its bit rate times the
+            // bit's width, ARR + 1 ticks (AP_HAL/RCOutput.cpp:80-97, sha256
+            // c5e2ae66; AP_HAL_ChibiOS/RCOutput.cpp:1027-1029), so a bit's
+            // period, (PSC + 1)(ARR + 1) cycles, is within ARR + 1 cycles of
+            // the declared bit's, kernel_hz / bit_rate (`AET-WO-4412` review,
+            // 23:39Z (3)). The frames decode at any period, an all-zero one
+            // with a good checksum, so this is what holds the rate.
+            let declared = o.kernel_hz as f64 / f64::from(bit_rate);
+            if (cycles as f64 - declared).abs() >= f64::from(arr) + 1.0 {
+                out.push(Finding::plain(
+                    DSHOT_RATE_UNMET,
+                    format!(
+                        "TIM{}'s outputs are declared {} ({bit_rate} bit/s), but at the run's end a bit is {cycles} timer-clock cycles (PSC {psc:#x}, ARR {arr:#x} at {} Hz), {rate} bit/s: not within one prescaler step ({} cycles) of the declared bit's {declared:.2} cycles",
+                        o.timer,
+                        o.protocol.name(),
+                        o.kernel_hz,
+                        u64::from(arr) + 1
+                    ),
+                ));
+            }
             continue;
         }
         let labels: Vec<&str> = motors
@@ -2712,6 +2765,22 @@ pub fn judge(
             DMA_STREAM_UNBOUNDED,
             format!(
                 "{}: the DMA model refused it, not started (CIRC, RM0433 Rev 9 p. 664; §15.3.10, p. 647: NDTR is reloaded and the requests go on being served)",
+                log_text(line)
+            ),
+        ));
+    }
+    // A paced stream aimed at a register other than a timer's DMAR, refused
+    // by the DMA model: the timer's per-write acknowledgement is not modelled,
+    // so the twin would move it on one request where silicon moves one item
+    // per request (`AET-WO-4412` review, 23:39Z (5)).
+    for line in lines
+        .iter()
+        .filter(|l| log_text(l).contains(UNMODELLED_MARK))
+    {
+        findings.push(Finding::plain(
+            DMA_STREAM_UNMODELLED,
+            format!(
+                "{}: the DMA model refused it, not started (the DMA destination \"must point to the virtual register TIMx_DMAR\", RM0433 Rev 9 p. 1586; a write to another timer register is acknowledged per item, which the model does not model)",
                 log_text(line)
             ),
         ));
@@ -4764,6 +4833,121 @@ mod tests {
         );
     }
 
+    /// `AET-WO-4412` review, 2026-11-26T23:39Z (2) and (7): a transfer cut off
+    /// by its stream's disable is a malformed frame at every position, never
+    /// skipped; a timer whose `ARR` the run did not read names its transfers
+    /// unjudged, once.
+    #[test]
+    fn a_cut_off_transfer_is_malformed_and_an_unread_period_is_named() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let read = |arr: u32| -> Vec<[u32; END_READS]> {
+            image
+                .registers
+                .iter()
+                .map(|r| [if r.name == "TIM1.ARR" { arr } else { r.value }; END_READS])
+                .collect()
+        };
+        let words = format!("{}{}", "0 ".repeat(4), "3 ".repeat(36));
+        let cut = format!(
+            "[00:00:06.180697230] [NOISY] dma2: stream 1 req 15 NDTR 76 EN 6180670750 end 6180680750 reqs 10 (disabled, NDTR 36): {}",
+            words.trim_end()
+        );
+        let (report, findings) = dshot_report(&[cut.as_str()], &image, &read(7), true);
+        let s = &report.unwrap().transfers[0];
+        assert_eq!(s.count, 1);
+        assert!(
+            s.positions
+                .iter()
+                .all(|p| (p.frames, p.malformed) == (1, 1))
+        );
+        assert!(
+            s.positions[0].malformed_at[0].ends_with("Cut { ndtr_left: 36 }"),
+            "{:?}",
+            s.positions[0].malformed_at
+        );
+        assert_eq!(
+            findings.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
+            [DSHOT_FRAME_MALFORMED; 4]
+        );
+        // No TIM1.ARR in the end reads: named, once, for two transfers.
+        let image_without = aethelgard_twin::boot::Image {
+            registers: image
+                .registers
+                .iter()
+                .filter(|r| r.name != "TIM1.ARR")
+                .cloned()
+                .collect(),
+            ..image.clone()
+        };
+        let observed: Vec<[u32; END_READS]> = image_without
+            .registers
+            .iter()
+            .map(|r| [r.value; END_READS])
+            .collect();
+        let whole = cut.replace(" (disabled, NDTR 36)", "");
+        let (_, f) = dshot_report(
+            &[whole.as_str(), whole.as_str()],
+            &image_without,
+            &observed,
+            true,
+        );
+        assert_eq!(
+            f.iter().map(|f| f.kind.as_str()).collect::<Vec<_>>(),
+            [DSHOT_PERIOD_UNREAD]
+        );
+        assert!(
+            f[0].message.contains("TIM1.ARR was not read"),
+            "{}",
+            f[0].message
+        );
+    }
+
+    /// `AET-WO-4412` review, 2026-11-26T23:39Z (3): a DShot600 board's timer
+    /// is judged at its declared bit rate within one prescaler step. Set as
+    /// ArduPilot sets DShot600 it says nothing; set for DShot300 it is
+    /// refused by name; set for PWM it is said as info, as before.
+    #[test]
+    fn a_dshot_timer_at_another_bit_rate_is_refused_by_name() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/motors-dshot600.json");
+        let spec: aethelgard_ir::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let table = aethelgard_svd_hal::pin_table(&spec.mcu.part).unwrap();
+        let topology = aethelgard_ir::solve(&spec, &table, &"0".repeat(64)).unwrap();
+        let image = aethelgard_twin::boot::expected(&topology).unwrap();
+        let motors = crate::renode::motors(&topology).unwrap();
+        let kernel = motors[0].observer.kernel_hz;
+        // AP_HAL/RCOutput.cpp:80-97: PSC = round(clock / (bit rate x 8)) - 1, ARR 7.
+        let psc = |bit_rate: u64| (kernel as f64 / (bit_rate * 8) as f64).round() as u32 - 1;
+        let kinds = |psc: u32, arr: u32| -> Vec<String> {
+            let observed: Vec<[u32; END_READS]> = image
+                .registers
+                .iter()
+                .map(|r| {
+                    let v = match r.name.as_str() {
+                        "TIM1.PSC" => psc,
+                        "TIM1.ARR" => arr,
+                        _ => r.value,
+                    };
+                    [v; END_READS]
+                })
+                .collect();
+            motor_protocol_unmet(&image, &motors, &observed)
+                .into_iter()
+                .map(|f| f.kind)
+                .collect()
+        };
+        assert!(kinds(psc(600_000), 7).is_empty());
+        assert_eq!(kinds(psc(300_000), 7), [DSHOT_RATE_UNMET]);
+        assert_eq!(kinds(psc(1_000), 0x4E1F), [MOTOR_PROTOCOL_UNMET]);
+    }
+
     /// `AET-WO-4412` D2: on Sentinel-03's crystal tree (its RCC registers as
     /// ArduPilot leaves them, measured, `PLLSRC` `10`), the check passes the
     /// declared crystal's deviation to the clock rule, which judges every
@@ -5256,6 +5440,7 @@ mod tests {
         // AET-WO-4412: the DMA model's refusal and the timer model's
         // difference, each a failing line.
         assert!(FOREIGN_LOG_FILTER.keep.contains(&UNBOUNDED_MARK));
+        assert!(FOREIGN_LOG_FILTER.keep.contains(&UNMODELLED_MARK));
         assert!(FOREIGN_LOG_FILTER.keep.contains(&LAZY_MARK));
         for k in LOG_FILTER.keep {
             assert!(FOREIGN_LOG_FILTER.keep.contains(k), "{k}");

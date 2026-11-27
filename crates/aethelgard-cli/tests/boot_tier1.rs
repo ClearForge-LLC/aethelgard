@@ -4559,6 +4559,35 @@ fn a_circular_paced_stream_is_refused_by_name() {
     assert_eq!(code, Some(0), "{v}");
 }
 
+/// `AET-WO-4412` review, 2026-11-26T23:39Z (5): the DMA model's line for a
+/// stream paced by a timer request but aimed at a register other than the
+/// timer's DMAR (whose per-write acknowledgement it does not model), which
+/// it refuses and does not start, fails the run as
+/// `foreign_dma_stream_unmodelled`, by name.
+#[test]
+fn a_paced_stream_not_aimed_at_dmar_is_refused_by_name() {
+    const UNMODELLED: &str = "[00:00:00.006000000] [WARNING] dma2: AETHELGARD-DMA-UNMODELLED stream 1 req 15: a stream paced by a timer request aimed at 0x40010034, not at a timer's DMAR\n";
+    let (code, v) = foreign(&foreign_transcript(
+        &format!("{}{UNMODELLED}", good_foreign_log()),
+        "0x00000800",
+    ));
+    assert_eq!(code, Some(1), "{v}");
+    let refused: Vec<&Value> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|f| f["kind"] == "foreign_dma_stream_unmodelled")
+        .collect();
+    assert_eq!(refused.len(), 1, "{v}");
+    assert!(
+        refused[0]["message"]
+            .as_str()
+            .unwrap()
+            .contains("aimed at 0x40010034"),
+        "{v}"
+    );
+}
+
 /// `AET-WO-4412` D4 (a), "lazy, never different": the timer model's line for
 /// a skipped event that had an effect fails the run as
 /// `foreign_timer_lazy_differed`, by name (adversarial pass: a firmware that

@@ -21,12 +21,20 @@ pub struct Transfer {
     pub end_ns: u64,
     pub requests: u32,
     pub words: Vec<u32>,
+    /// `Some(k)` when the stream was disabled before its end, `k` items left
+    /// in NDTR (RM0433 Rev 9 §15.3.16, p. 654): its frames were cut off.
+    pub disabled_ndtr: Option<u32>,
 }
 
 /// The line's body after the DMA's source (`dma2: `), or `None` for any other
-/// line: `stream S req R NDTR N EN a end b reqs k: w w …`.
+/// line: `stream S req R NDTR N EN a end b reqs k: w w …`, with ` (disabled,
+/// NDTR k)` before the colon for a stream disabled before its end.
 pub fn transfer(body: &str) -> Option<Transfer> {
     let (head, words) = body.split_once(':')?;
+    let (head, disabled_ndtr) = match head.split_once(" (disabled, NDTR ") {
+        Some((h, left)) => (h, Some(left.strip_suffix(')')?.parse().ok()?)),
+        None => (head, None),
+    };
     let f: Vec<&str> = head.split_whitespace().collect();
     if f.len() != 12
         || f[0] != "stream"
@@ -48,6 +56,7 @@ pub fn transfer(body: &str) -> Option<Transfer> {
             .split_whitespace()
             .map(|w| u32::from_str_radix(w, 16).ok())
             .collect::<Option<Vec<_>>>()?,
+        disabled_ndtr,
     })
 }
 
@@ -60,6 +69,9 @@ pub enum Frame {
     BadChecksum { bits: u16 },
     /// Not sixteen pulses.
     Pulses { count: usize },
+    /// The stream was disabled before its end, `ndtr_left` items unsent: a
+    /// frame cut off, whatever its words decode to.
+    Cut { ndtr_left: u32 },
 }
 
 /// The checksum over a frame's first 12 bits.
@@ -70,6 +82,9 @@ pub fn checksum(v: u16) -> u16 {
 /// Each burst position's frame in `t`, `width` words per burst (`DBL + 1`),
 /// the timer's period `period` ticks (`ARR + 1`).
 pub fn frames(t: &Transfer, width: usize, period: u32) -> Vec<Frame> {
+    if let Some(ndtr_left) = t.disabled_ndtr {
+        return vec![Frame::Cut { ndtr_left }; width.max(1)];
+    }
     (0..width)
         .map(|k| {
             let pulses: Vec<u32> = t
@@ -149,6 +164,25 @@ mod tests {
         assert_eq!(transfer("stream 1 req 15: 3"), None);
     }
 
+    /// A stream disabled before its end (the model's ` (disabled, NDTR k)`)
+    /// parses, and every position's frame is cut off, whatever its words.
+    #[test]
+    fn a_disabled_transfer_parses_and_is_cut_off() {
+        let t = transfer(
+            "stream 1 req 15 NDTR 76 EN 1 end 2 reqs 10 (disabled, NDTR 36): 0 0 0 0 3 3 3 3",
+        )
+        .unwrap();
+        assert_eq!(
+            (t.requests, t.disabled_ndtr, t.words.len()),
+            (10, Some(36), 8)
+        );
+        assert_eq!(frames(&t, 4, 8), vec![Frame::Cut { ndtr_left: 36 }; 4]);
+        assert_eq!(
+            transfer("stream 1 req 15 NDTR 76 EN 1 end 2 reqs 10 (disabled, NDTR x): 3"),
+            None
+        );
+    }
+
     #[test]
     fn throttle_telemetry_and_a_bad_checksum_or_pulse_count_are_told_apart() {
         let good = [
@@ -164,6 +198,7 @@ mod tests {
             end_ns: 1,
             requests: 19,
             words: interleave(&good),
+            disabled_ndtr: None,
         };
         assert_eq!(
             frames(&t, 4, 8),

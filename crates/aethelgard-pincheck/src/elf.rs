@@ -968,6 +968,15 @@ pub fn defaults_signatures(bytes: &[u8], defaults: Option<&str>) -> Result<Vec<S
                 );
                 match defaults {
                     None => found.push(listed),
+                    // The stated size is held to the topology's file first,
+                    // so nothing is inflated past it: a file stating more is
+                    // not the topology's, and a bomb is refused before any
+                    // allocation (`AET-WO-4412` review, 23:39Z (1); INV-06).
+                    Some(expected) if u32_at(e, 8) as usize != expected.len() => found.push(format!(
+                        "{listed}, and it is not the one generate hwdef writes for this topology: it states {} bytes, the topology's is {}",
+                        u32_at(e, 8),
+                        expected.len()
+                    )),
                     Some(expected) => {
                         let text = romfs_inflated(bytes, e)?;
                         match first_difference(&text, expected.as_bytes()) {

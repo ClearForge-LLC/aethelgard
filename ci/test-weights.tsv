@@ -684,3 +684,5 @@ tests/boot_tier1.rs	a_lazy_timer_that_differed_fails_the_run_by_name	2.184
 # together on Furnace, run in parallel), each plus 5 s; predicted, to be replaced at the next refit.
 tests/boot_tier1.rs	a_long_window_foreign_run_under_its_scaled_guard_passes	130
 tests/boot_tier1.rs	a_foreign_run_that_never_returns_is_killed_at_its_scaled_guard	188
+# AET-WO-4412 review (23:39Z (1)): pincheck's decompression-bomb plant deflates 256 MiB of zeros, a Furnace estimate (alone on the host, times 2.8, AET-WO-1310's factor); replace it at the next refit.
+tests/defaults.rs	a_defaults_parm_bomb_is_refused_by_its_size_before_it_is_inflated	6.076

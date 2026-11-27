@@ -24,7 +24,7 @@ The table, the DMA-request reading and the triage are in `spike/4412/RESULTS.md`
 - **(3) The motors (D4 (a)).**
   - **Our own models,** each pinned by sha256 and declared only on a foreign platform, only for DShot outputs' timers, by cancel-and-restate:
     - `models/renode/AethelgardSTM32Timer.cs` (frozen at 1e6242ef). It is eager while UDE, CCxDE, UIE or CCxIE is set, and lazy otherwise.
-    - `AethelgardSTM32DMA.cs` (frozen at 4aed9519). It paces a stream by its DMAMUX request and bursts into CCRx through DCR and DMAR.
+    - `AethelgardSTM32DMA.cs` (frozen at 4aed9519, then a530046c after the review below). It paces a stream by its DMAMUX request and bursts into CCRx through DCR and DMAR.
   - **The judge reads each frame** from the DMA model's line for each paced transfer (`aethelgard-twin` `dshot.rs`): throttle, telemetry bit and checksum. The verdict says where TIM1 was read. There is no end-of-window stop.
   - **The solver** offers a DShot timer only with an update request (`NoDshotDmaRequest`).
   - **A circular paced stream** is refused, as `foreign_dma_stream_unbounded`.
@@ -64,6 +64,7 @@ The table, the DMA-request reading and the triage are in `spike/4412/RESULTS.md`
   - `renode::foreign_boot_wall` = `max(120 s, 5 × 12.155 s × the window)`, 729.3 s for 12 s, by `1918` (2)'s own rule.
   - Its plants: a 125 s Renode passes in a 3 s window, and one that never returns is a `ToolError` at 182.325 s.
   - The flat-120 s mutant is killed.
+  - **In the foreign job under it** (1e951a5d, ardupilot-image run 45911215499), all three on an AMD EPYC 7763: arm 140.96 s, DShot 112.98 s, reboot 104.03 s, each a pass. The worst is still arm's, and still under the 145.85 s the guard is derived from.
   - **Its cost (named, 22:29Z):** a foreign run that truly hangs now holds a CI runner until its guard, up to about 12 minutes (729.3 s) for a 12 s window, against 2 minutes before.
 - **The armed input run** on Sentinel-03 arms inside the cap and the window, with DShot engaged and judged. Locally on the merged ELF c9182b88: pass, armed, TIM1 at request 15 with 0 malformed, `MOT_PWM_TYPE` 6 read back, 778 MB (495 ‰ of the cap).
 - **Planted firmware and boards:**
@@ -133,6 +134,31 @@ The table, the DMA-request reading and the triage are in `spike/4412/RESULTS.md`
 9. **For 1802 (passed on at 20:16Z):** the `defaults.parm` header carries `CARGO_PKG_VERSION`. The 0.3.0 bump moves every DShot `defaults.parm` fixture, and the strict compare refuses an ELF built before it.
 10. **Slice F:** `simulate --foreign` requires `AP_HAL::panic`, and the clock rule assumes ArduPilot. A kernel of one's own needs a declared firmware ecosystem.
 11. **Bidirectional DShot:** the hwdef emits no `BIDIR`, because nothing declares it (R3's open half).
+
+## 6a. The architect's review (2026-11-26T23:39Z, on 1e951a5d): seven fixes and a nit, one push
+
+Each fix has a plant, and each check has a mutant that is killed (`~/.cache/aet-4412/mutants-review.txt`, V1–V7).
+
+1. **A decompression bomb** (`pincheck` `elf.rs`). The stated size is held to the topology's file **before anything is inflated**, and a mismatch is a `ParamDefaultsOverride` naming both sizes.
+   - **Plant:** 256 MiB of zeros, deflated to under 1 MiB and stating 256 MiB, is refused by its size, with the process's peak memory grown by under 64 MiB.
+   - **The rest held:** contents that don't inflate to exactly the size are still `MalformedRomfs`, and a same-size change still names its line.
+2. **Cut-off transfers** (`twin` `dshot.rs`). The DMA model's ` (disabled, NDTR k)` line is parsed, and every position's frame is `Cut`, counted malformed and named. It is never skipped.
+3. **The DShot rate** (`foreign.rs` `motor_protocol_unmet`).
+   - A timer counting DShot bits (at least half DShot300's rate) is held to its outputs' declared rate **within one prescaler step**: a bit's `(PSC+1)(ARR+1)` cycles within ARR + 1 of `kernel_hz / bit_rate`. ArduPilot sets PSC to the nearest (or the next faster) whole divider of the timer clock (`AP_HAL/RCOutput.cpp:80-97`).
+   - **Plant:** DShot300 on a DShot600 board is refused, as `foreign_dshot_rate_unmet`; as ArduPilot sets DShot600, it says nothing; PWM stays the info finding.
+   - **Why the rate check matters:** an all-zero frame passes the checksum, so frames decoded at the wrong period could pass on their own. The rate check is what stops that.
+   - Sentinel-03's TIM1, at 336 cycles against 333.33, is inside the step.
+4. **A re-enabled paced stream** (`AethelgardSTM32DMA.cs`). EN now starts the stream at M0AR and PAR; RM0433 Rev 9 §15.3.16, p. 654, says resuming means rewriting them. **Nothing committed moves.** The model's bytes reach only `model.rs`'s pin and the foreign platform's header, which is emitted at run time; no generated platform or package loads the model. Sentinel-03's three runs on ELF c9182b88 were rerun with the new model, and the judged figures are identical to the runs before it: the verdict, the finding kinds, `boot.dshot`'s counts (8,003, 6,785, 1,888), first and last stamps and per-position tallies, the read-back and the reset. ArduPilot never disables a paced stream before its end.
+5. **A paced stream aimed at a register other than DMAR** (`AethelgardSTM32DMA.cs`). It is refused and not started (`AETHELGARD-DMA-UNMODELLED`), and the judge fails it as `foreign_dma_stream_unmodelled`.
+   - **Why:** the DMA destination "must point to the virtual register TIMx_DMAR" (p. 1586), offset 0x4C of the timer's 1 KiB block (pp. 1616, 1700, 1841). The per-write acknowledgement a CCRx target would need is not modelled. That is the smaller honest fix.
+   - ArduPilot's DShot always aims at DMAR.
+6. **The CLI defaults test** now asserts exit 1 and a pinout verdict with its `configured` pins, i.e. that the pin judgement was reached.
+7. **A missing `TIMx.ARR`:** a timer whose transfers were seen but whose period wasn't read is named, once, as `foreign_dshot_period_unread`.
+- **Nit:** `dshot_silent`'s timers are a `BTreeSet`.
+- **Named, not fixed (review nits):**
+  - The DMA model logs each item at MSIZE, but copies it at PSIZE. ArduPilot's DShot streams use the same size for both.
+  - `generate hwdef` writes `defaults.parm` after `hwdef.dat`, non-atomically. A failure between the two writes leaves a hwdef without its defaults, which `check pinout` then refuses, as a mismatch.
+  - The timer model's `burstStart` is not cleared by `Reset()`, which clears `burstWords` (L172). Nothing reads it except to set it, so nothing reads a stale value.
 
 ## 7. Reduction pass, mutants and gates
 

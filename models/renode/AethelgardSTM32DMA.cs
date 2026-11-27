@@ -18,7 +18,8 @@
 // Registers as [stock] defines them: LISR/HISR TCIF read (FEIF, DMEIF, TEIF, HTIF read 0), LIFCR/HIFCR CTCIF,
 // SxCR EN/TCIE/DIR/PINC/MINC/PSIZE/MSIZE (the rest stored as tags), SxNDTR, SxPAR, SxM0AR, SxFCR FTH/DMDIS.
 // Not modelled (both behaviours): HTIF, TEIF, FEIF, DMEIF, circular and double-buffer modes, PINCOS, bursts, priority.
-// A paced stream in circular mode is refused, AETHELGARD-DMA-UNBOUNDED (AET-WO-4412 (a)).
+// A paced stream in circular mode is refused, AETHELGARD-DMA-UNBOUNDED (AET-WO-4412 (a)); one aimed at a register other than
+// a timer's DMAR is refused, AETHELGARD-DMA-UNMODELLED (its per-write acknowledgement is not modelled; review 23:39Z (5)).
 //
 // Log contract (ruling D-b): one Noisy line per paced transfer that ends, nothing per item or burst:
 //   "stream S req R NDTR N EN t0 end t1 reqs Q: w0 w1 ..." -- the stream, its DMAMUX request, NDTR at EN, the EN and end
@@ -298,6 +299,8 @@ namespace Antmicro.Renode.Peripherals.DMA
                     pacedActive = true;
                     served = 0;
                     moved = 0;
+                    // EN starts the stream at M0AR and PAR: resuming a stopped one means rewriting them [RM p.654, 15.3.16].
+                    dataOffset = 0;
                     enabledAt = parent.NowNs;
                     startNdt = ndt.Value;
                     request = parent.MuxRequest(id);
@@ -488,11 +491,21 @@ namespace Antmicro.Renode.Peripherals.DMA
                     parent.Log(LogLevel.Warning, "AETHELGARD-DMA-UNBOUNDED stream {0} req {1}: a circular stream paced by a timer request", id, request);
                     return;
                 }
+                // A timer's DMA destination "must point to the virtual register TIMx_DMAR" [RM p.1586], offset 0x4C of its
+                // 1 KiB block [RM pp.1616, 1700, 1841]; a stream paced at any other register would need the timer's per-write
+                // acknowledgement, which is not modelled, so it is refused and not started (AET-WO-4412 review, 23:39Z (5)).
+                if((par.Value & 0x3FF) != DmarOffset)
+                {
+                    pacedActive = false;
+                    parent.Log(LogLevel.Warning, "AETHELGARD-DMA-UNMODELLED stream {0} req {1}: a stream paced by a timer request aimed at 0x{2:X}, not at a timer's DMAR", id, request, par.Value);
+                    return;
+                }
                 if(level)
                 {
                     Serve();
                 }
             }
+            private const ulong DmarOffset = 0x4C;
             private ulong served, moved, enabledAt, startNdt;
             private int request;
             private readonly System.Text.StringBuilder words = new System.Text.StringBuilder();
