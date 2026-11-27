@@ -1,5 +1,5 @@
-# INV-08 at this branch's head (2026-11-27), against main adbd5c66's build: every committed specification JSON in
-# examples/, crates/aethelgard-cli/tests/fixtures/ and crates/aethelgard-ir/tests/fixtures/ (43 files), emitted and solved by both.
+# INV-08 at this branch's head f4110ddc (2026-11-27), against main d4c68028's build (AET-WO-1802 merged; the same result held against adbd5c66): every
+# committed specification JSON in examples/, crates/aethelgard-cli/tests/fixtures/ and crates/aethelgard-ir/tests/fixtures/ (43 files), emitted and solved by both.
 emit: 27 draw, 16 refused, as on main; every refusal keeps its kind.
 emit: every schematic and BOM byte-identical; every board byte-identical except the four laddered boards, each by its three-line
       title-block record (AET-WO-4310 (4), ruled D6):
