@@ -1627,9 +1627,11 @@ fn a_battery_sag_s_deck_answer_is_judged_after_its_boot() {
         assert_eq!(runs, 0, "{label}: a run was archived");
         out
     };
+    // Each sink's floor as the bridge answers it: U13 regulates from its 7 V
+    // row since `AET-WO-4413` raised its output (3.8 V before).
     let chain = |min: &str, at: &str| {
         format!(
-            r#"{{"accepted_points":1,"chain":"solved","final_microvolts":{min},"initial_microvolts":8998361,"minimum_at_ns":100000000,"minimum_microvolts":{min},"ngspice":"44.2","sinks":[{{"at_ps":{at},"floor_microvolts":7000000,"name":"U10"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U11"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U13"}}],"step_ns":10000}}"#
+            r#"{{"accepted_points":1,"chain":"solved","final_microvolts":{min},"initial_microvolts":8998361,"minimum_at_ns":100000000,"minimum_microvolts":{min},"ngspice":"44.2","sinks":[{{"at_ps":{at},"floor_microvolts":7000000,"name":"U10"}},{{"at_ps":null,"floor_microvolts":3800000,"name":"U11"}},{{"at_ps":null,"floor_microvolts":7000000,"name":"U13"}}],"step_ns":10000}}"#
         )
     };
     let refusal = |out: &std::process::Output| -> Value {
