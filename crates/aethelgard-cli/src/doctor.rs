@@ -47,6 +47,9 @@ struct Report {
     verdict: &'static str,
     check: &'static str,
     engine_version: &'static str,
+    /// The commit the build stated, or `unknown`: the builder's claim,
+    /// never proven from bytes (`AET-WO-1802`, ruled 22:29Z).
+    engine_commit: &'static str,
     /// The scratch base, when it passes the rule.
     scratch: Option<String>,
     /// What the sandbox achieved for this executable's own probe; absent
@@ -149,7 +152,8 @@ pub fn doctor() -> ExitCode {
         ok,
         verdict: if ok { "pass" } else { "fail" },
         check: "doctor",
-        engine_version: env!("CARGO_PKG_VERSION"),
+        engine_version: aethelgard_cli::identity::VERSION,
+        engine_commit: aethelgard_cli::identity::COMMIT.unwrap_or("unknown"),
         scratch,
         sandbox,
         tools,

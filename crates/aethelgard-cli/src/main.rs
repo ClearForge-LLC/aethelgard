@@ -67,7 +67,8 @@ const EXIT_USAGE: u8 = 64;
 const EXIT_INTERNAL: u8 = 70;
 
 #[derive(Parser)]
-#[command(name = "aethelgard", version, about, arg_required_else_help = false)]
+// `--version` names the commit too (`AET-WO-1802` (2)).
+#[command(name = "aethelgard", version = aethelgard_cli::identity::IDENTITY.as_str(), about, arg_required_else_help = false)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -2896,9 +2897,12 @@ fn simulate_with(
                     &input.sha256,
                     // As a campaign's header names them (`AET-WO-2205` §1.1).
                     vec![
+                        // The version alone: the header seeds the state-sequence hash,
+                        // which the verdict, and so a committed MANIFEST.json, binds
+                        // (`AET-WO-1802` §7 stop 2).
                         (
                             aethelgard_chaos::campaign::ENGINE.to_owned(),
-                            env!("CARGO_PKG_VERSION").to_owned(),
+                            aethelgard_cli::identity::VERSION.to_owned(),
                         ),
                         (
                             aethelgard_chaos::campaign::RENODE.to_owned(),
@@ -3007,7 +3011,11 @@ fn simulate_with(
     // What judged the boot, as each tool reported it (`AET-WO-2205` §1.1).
     if let Some(build) = build.filter(|_| ready.is_some()) {
         use aethelgard_chaos::campaign::{ENGINE, RENODE};
-        v.tools.push((ENGINE, env!("CARGO_PKG_VERSION").to_owned()));
+        // The version alone, never the commit: the archive header seeds the
+        // state-sequence hash (`chaos/src/replay.rs`), which the verdict, and
+        // so a committed MANIFEST.json, binds (`AET-WO-1802` §7 stop 2).
+        v.tools
+            .push((ENGINE, aethelgard_cli::identity::VERSION.to_owned()));
         v.tools.push((RENODE, build));
     }
     if let Some((records, faults)) = analog {

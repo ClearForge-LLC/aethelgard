@@ -219,7 +219,31 @@ fn usage_error_exits_64_with_json() {
 fn version_prints_name_and_version() {
     let output = run(&["--version"], b"");
     assert_eq!(output.status.code(), Some(0));
-    assert_eq!(output.stdout, b"aethelgard 0.2.0\n");
+    // The release's version, written out, so a bump is a deliberate edit.
+    assert!(
+        output.stdout.starts_with(b"aethelgard 0.3.0 (commit "),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+/// `AET-WO-1802` (2), ruled 22:29Z: `--version` names the version and the
+/// commit the build stated, or says it is unknown; the library's identity
+/// is the same bytes.
+#[test]
+fn version_names_the_commit_or_unknown() {
+    use aethelgard_cli::identity::{COMMIT, IDENTITY, VERSION};
+    let output = run(&["--version"], b"");
+    assert_eq!(output.status.code(), Some(0));
+    let line = String::from_utf8(output.stdout).unwrap();
+    assert_eq!(line, format!("aethelgard {}\n", *IDENTITY));
+    match COMMIT {
+        None => assert_eq!(*IDENTITY, format!("{VERSION} (commit unknown)")),
+        Some(sha) => assert_eq!(
+            *IDENTITY,
+            format!("{VERSION} (commit {sha}, stated by the build)")
+        ),
+    }
 }
 
 /// `AET-WO-4230` R1: `validate` refuses an acknowledgement naming what the

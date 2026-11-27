@@ -574,7 +574,9 @@ fn the_header_names_the_renode_build_the_stub_printed_and_replay_reports_it() {
     let header = aethelgard_chaos::replay_dir(&run).unwrap().header;
     let identity: Value = serde_json::from_str(&common::bridge_identity()).unwrap();
     let want = [
-        ("aethelgard", env!("CARGO_PKG_VERSION")),
+        // The version alone: the header seeds the state-sequence hash, which
+        // a committed MANIFEST.json binds (`AET-WO-1802` §7 stop 2).
+        ("aethelgard", aethelgard_cli::identity::VERSION),
         (
             "aethelgard-bridge",
             identity["source_sha256"].as_str().unwrap(),
