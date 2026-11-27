@@ -1,0 +1,4 @@
+P3b-M1	crates/aethelgard-ir/src/power.rs	    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max + r_pack;	    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max;	aethelgard-ir	supply_bounds_4310
+P3b-M2	crates/aethelgard-ir/src/power.rs	    if series.is_none() {	    if false && series.is_none() {	aethelgard-ir	supply_bounds_4310
+P3b-M3	crates/aethelgard-ir/src/power.rs	        let fuse_drop = i64::try_from(volts(i, r_pack + r_max)).unwrap_or(i64::MAX);	        let fuse_drop = i64::try_from(volts(i, r_max)).unwrap_or(i64::MAX);	aethelgard-ir	supply_bounds_4310
+P3b-M4	crates/aethelgard-ir/src/power.rs	        volts(i0, i128::from(r.max_milliohms.value) * 1000 + r_max + r_pack)	        volts(i0, i128::from(r.max_milliohms.value) * 1000 + r_max)	aethelgard-ir	supply_bounds_4310

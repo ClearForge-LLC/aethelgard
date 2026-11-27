@@ -199,11 +199,12 @@ fn the_zener_must_hold_the_gate_within_the_fets_rating() {
 fn the_gate_drive_must_reach_a_stated_rds_on() {
     let v = base();
     // The drive is the lesser of the pack's minimum (3 x 3000 = 9000 mV) less
-    // the fuse's drop at the input current (1906 mA x 9375 uOhm, 18 mV),
-    // 8982 mV, and the zener's VZ minimum (11400 mV).
+    // the pack's and the fuse's drop at the input current (1906 mA x (1000 +
+    // 9375) uOhm, 20 mV rounded up; the pack's series since `AET-WO-4310`
+    // (3)), 8980 mV, and the zener's VZ minimum (11400 mV).
     let mut t = table_json();
     row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"] = json!([
-        {"vgs_millivolts": 8982, "max_milliohms": {"value": 33, "at": row(&mut table_json(), "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"][0]["max_milliohms"]["at"].clone()}}
+        {"vgs_millivolts": 8980, "max_milliohms": {"value": 33, "at": row(&mut table_json(), "DMP6023LSS-13")["kind"]["pfet"]["rds_on_max"][0]["max_milliohms"]["at"].clone()}}
     ]);
     against(&v, &t).expect("a stated RDS(on) at the drive passes");
     t["parts"]
@@ -211,9 +212,9 @@ fn the_gate_drive_must_reach_a_stated_rds_on() {
         .unwrap()
         .iter_mut()
         .find(|r| r["part"] == "DMP6023LSS-13")
-        .unwrap()["kind"]["pfet"]["rds_on_max"][0]["vgs_millivolts"] = json!(8983);
+        .unwrap()["kind"]["pfet"]["rds_on_max"][0]["vgs_millivolts"] = json!(8981);
     let err = protection_refused(&v, &t, "Q1", "drive");
-    assert!(err.to_string().contains("8982 mV"), "{err}");
+    assert!(err.to_string().contains("8980 mV"), "{err}");
 
     // Or the zener's VZ minimum is the lower drive: under 4500 mV, no row.
     let mut t = table_json();
@@ -928,7 +929,7 @@ fn the_protections_and_junctions_assumptions_are_named_where_they_hold() {
     );
     let c = checked(&base());
     assert!(
-        c.screened["input_path_resistance_at_25c:Q1"].contains("81 mV at 1906 mA"),
+        c.screened["input_path_resistance_at_25c:Q1"].contains("83 mV at 1906 mA"),
         "{}",
         c.screened["input_path_resistance_at_25c:Q1"]
     );

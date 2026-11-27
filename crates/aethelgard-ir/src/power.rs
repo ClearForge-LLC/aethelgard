@@ -2597,14 +2597,31 @@ fn protection(
     let tol = i128::from(fuse.resistance_tolerance_permille.value);
     let r_min = typ * (1000 - tol) / 1000;
     let r_max = div_ceil(typ * (1000 + tol), 1000);
+    // The pack's own series resistance, ahead of the board (`2304b` K6,
+    // `AET-WO-4310` (3)): the pack, its leads and the connector, as the
+    // specification declares it with its source. Undeclared, it is named,
+    // never taken as 0 silently.
+    let series = ctx.power.battery.series_milliohms.clone();
+    let r_pack = series.as_ref().map_or(0, |s| i128::from(s.value) * 1000);
+    if series.is_none() {
+        ctx.screen(
+            "headroom_pack_series_undeclared",
+            &input.reference,
+            format!(
+                "{}: `power.battery.series_milliohms` is undeclared, so each battery-fed regulator's headroom counts no drop in the pack, its leads or the connector (AET-WO-4310 (3))",
+                input.reference
+            ),
+        );
+    }
     // mA × µΩ / 10⁶ = mV, rounded up.
     let volts = |i: i128, microohms: i128| div_ceil(i * microohms, 1_000_000);
-    // The gate drive at `i`: the pack's minimum less the fuse's drop (the gate
+    // The gate drive at `i`: the pack's minimum less the pack's and the fuse's
+    // drop (the gate
     // returns to ground, its source sits after the fuse), or the zener's VZ
     // minimum if lower; and the stated RDS(on) at the highest |VGS| at or under
     // it, µΩ (the power review's F6 (a)).
     let rds_at = |i: i128| {
-        let fuse_drop = i64::try_from(volts(i, r_max)).unwrap_or(i64::MAX);
+        let fuse_drop = i64::try_from(volts(i, r_pack + r_max)).unwrap_or(i64::MAX);
         let drive = bmin
             .saturating_sub(fuse_drop)
             .min(zener.vz_millivolts.range.min);
@@ -2621,7 +2638,10 @@ fn protection(
     let i0 = current(bmin);
     let (_, row0) = rds_at(i0);
     let d0 = row0.map_or(0, |r| {
-        volts(i0, i128::from(r.max_milliohms.value) * 1000 + r_max)
+        volts(
+            i0,
+            i128::from(r.max_milliohms.value) * 1000 + r_max + r_pack,
+        )
     });
     let i_wide = current(bmin.saturating_sub(i64::try_from(d0).unwrap_or(i64::MAX)));
     let (drive, row) = rds_at(i_wide);
@@ -2635,7 +2655,7 @@ fn protection(
             ctx.cite(&fet.rds_on_max[0].max_milliohms.at),
         ));
     };
-    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max;
+    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max + r_pack;
     let drop = volts(i_wide, path);
     let i_in = i64::try_from(i_wide).unwrap_or(i64::MAX);
     ctx.note(format!(
@@ -2821,21 +2841,23 @@ fn protection(
         "input_path_resistance_at_25c",
         &x.fet.reference,
         format!(
-            "{}: the input path's drop is {drop} mV at {i_in} mA through {}'s RDS(on) {} mΩ (|VGS| {} mV) and {}'s {r_max} µΩ, each stated at 25 °C; on a {board_max} °C board both rise, the FET's by its datasheet's RDS(on)-against-temperature figure",
+            "{}: the input path's drop is {drop} mV at {i_in} mA through {}'s RDS(on) {} mΩ (|VGS| {} mV) and {}'s {r_max} µΩ{}, each stated at 25 °C; on a {board_max} °C board both rise, the FET's by its datasheet's RDS(on)-against-temperature figure",
             x.fet.reference,
             x.fet.part,
             rds.max_milliohms.value,
             rds.vgs_millivolts,
-            x.fuse.part
+            x.fuse.part,
+            series.as_ref().map_or_else(String::new, |s| format!(" and the pack's series {r_pack} µΩ ({})", s.source))
         ),
     );
     ctx.note(format!(
-        "{}: {} mΩ ({} at |VGS| {} mV) and {} {r_max} µΩ at most drop {drop} mV at {i_in} mA, counted in every battery-fed regulator's headroom",
+        "{}: {} mΩ ({} at |VGS| {} mV) and {} {r_max} µΩ{} at most drop {drop} mV at {i_in} mA, counted in every battery-fed regulator's headroom",
         input.reference,
         rds.max_milliohms.value,
         x.fet.part,
         rds.vgs_millivolts,
-        x.fuse.part
+        x.fuse.part,
+        series.as_ref().map_or_else(String::new, |s| format!(" and the pack's series {r_pack} µΩ ({})", s.source))
     ));
     Ok(u64::try_from(drop).unwrap_or(u64::MAX))
 }

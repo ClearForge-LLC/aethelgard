@@ -1645,11 +1645,12 @@ fn stress(
         }
         // A battery sag the checks admit stresses the battery when its
         // static operating point lies below the battery's declared minimum
-        // (`AET-WO-2304b` §1.10, L704's principle). IR counts no path drop
-        // (K6), so every admitted sag lies below it, even 1 mΩ above the
-        // healthy R: what keeps a non-fault from covering is the clause "its R
-        // exceeds the healthy R" (§1.6), as K6 ruled. A sag the checks refuse
-        // stresses nothing.
+        // (`AET-WO-2304b` §1.10, L704's principle). The sag's chain counts
+        // its own path; IR's headroom now counts the pack's declared series
+        // too (`AET-WO-4310` (3), K6), and neither moves this comparison, so
+        // every admitted sag still lies below it: what keeps a non-fault from
+        // covering is the clause "its R exceeds the healthy R" (§1.6). A sag
+        // the checks refuse stresses nothing.
         Override::BatterySag(sag) => {
             let s = crate::campaign::resolve_battery_sag(sag, spec).ok()?;
             Some(if s.static_microvolts < s.chain.v_open_microvolts {
