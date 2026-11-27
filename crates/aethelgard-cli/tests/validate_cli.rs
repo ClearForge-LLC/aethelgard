@@ -221,7 +221,7 @@ fn version_prints_name_and_version() {
     assert_eq!(output.status.code(), Some(0));
     // The release's version, written out, so a bump is a deliberate edit.
     assert!(
-        output.stdout.starts_with(b"aethelgard 0.2.0 (commit "),
+        output.stdout.starts_with(b"aethelgard 0.3.0 (commit "),
         "{}",
         String::from_utf8_lossy(&output.stdout)
     );
