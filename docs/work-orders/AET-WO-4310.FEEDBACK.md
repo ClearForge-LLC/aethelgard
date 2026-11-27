@@ -122,7 +122,7 @@ Builder: the 4310 builder (a fresh strong-tier session), 2026-11-27. Base `adbd5
   - `cargo clippy --workspace --all-targets -D warnings` passes, with and without `--features aethelgard-cli/with-tools`. It found three things in this branch's code, all fixed: a type alias, `is_multiple_of`, and (5)(ii) reading the specification's device lists where `RUL-16` requires the solved topology.
   - `cargo test --workspace`: see §8.
   - `ci/route.sh check` and `ci/test-route.sh` pass.
-  - `ci/shard.sh plan` was run in the pinned image on `6c9a2529`: guard ok, 3,598 test names in 20 shards. `supply_tier1` is alone in shard 2 at 1,350 s, under shard 1's 1,715 s, so the longest shard does not grow.
+  - `ci/shard.sh plan` was run in the pinned image on `6c9a2529`: guard ok, 3,598 test names in 20 shards. `supply_tier1` is alone in shard 2 at 1,350 s, under shard 1's 1,715 s, so the longest shard does not grow. Re-run on the push head (`main` merged): guard ok, 3,603 names, the same shard times.
 - **CI weights:** `supply_tier1`'s colocated block is raised 703 → 1350, by the 1.92× measured on Sentinel-03's extract. `package_built_4310_tier1`'s three tests run 5.2, 1.0 and 1.7 s alone on Furnace; their rows use 2.8× those (AET-WO-1310's factor). Each is a stated estimate, to be refit from this PR's first CI run (REFIT RULE 3 and 5).
 
 ## 8. Status
