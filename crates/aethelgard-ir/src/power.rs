@@ -1901,6 +1901,9 @@ fn radio_lines(
     let mcu_cite = ctx.cite(&o.high_below_supply_millivolts.at);
     let module_cite = t.cite(&u.vih_min_permille.at);
     let mut lines: Vec<(String, Driver<'_>, Receiver<'_>, String)> = Vec::new();
+    // The MCU side's lines at the reset's release floor (`AET-WO-4310` (2)).
+    let mut release: Vec<(String, Driver<'_>, Receiver<'_>, String, bool)> = Vec::new();
+    let mut release_floor: Option<(u32, String, Option<String>)> = None;
     let mut subject = m.reference.as_str();
     match crossing {
         None => {
@@ -1944,6 +1947,55 @@ fn radio_lines(
                     ));
                 }
             }
+            // `AET-WO-4310` (2), ruled 2 (a): the MCU's side is judged again at
+            // the reset's release floor, where the MCU still runs: its rail's
+            // source as low as the reset's falling minimum, less the rail's
+            // drop to each pin. Its thresholds are the stated band's where
+            // they hold, else the lower band's (the worse of the two rows
+            // either side, an assumption named), else refused by name.
+            let (reset_mv, reset_why) = crate::supervisor::reset_floor_against(spec, ctx.table)?;
+            let release_uv = i64::from(reset_mv) * 1000;
+            let release_lo = release_uv - ms.drop_uv;
+            let (release_high, release_low, assumed) = if release_lo
+                >= l.supply_millivolts.range.min * 1000
+            {
+                (
+                    l.input_high_min_permille.value,
+                    l.input_low_max_permille.value,
+                    None,
+                )
+            } else if let Some(b) = l
+                .lower_band
+                .as_ref()
+                .filter(|b| release_lo >= b.supply_millivolts.range.min * 1000)
+            {
+                (
+                    b.input_high_min_permille.value,
+                    b.input_low_max_permille.value,
+                    Some(b),
+                )
+            } else {
+                let lowest = l
+                    .lower_band
+                    .as_ref()
+                    .map_or(l.supply_millivolts.range.min, |b| {
+                        b.supply_millivolts.range.min
+                    });
+                return Err(refuse(
+                    Refusal::LineLevelUnmet,
+                    &c.reference,
+                    format!(
+                        "at the reset's release floor, {release_uv} uV ({reset_why}), `{}` reaches {release_lo} uV at {}'s pins, under the lowest supply its input thresholds are stated at, {lowest} mV: nothing is stated below it (AET-WO-4310 (2))",
+                        ms.domain, c.reference
+                    ),
+                    ctx.cite(&l.supply_millivolts.at),
+                ));
+            };
+            let ms_release = crate::levels::Supply {
+                domain: ms.domain,
+                band_uv: (release_uv, ms.band_uv.1),
+                drop_uv: ms.drop_uv,
+            };
             let drv = |pin: &str, supply| Driver {
                 who: format!("{}'s {pin}", c.reference),
                 supply,
@@ -1959,6 +2011,32 @@ fn radio_lines(
                 high_max: Some(lin(0, l.input_max_millivolts.value)),
                 current_na: l.input_current_max_nanoamps.value,
             };
+            let release_rcv = Receiver {
+                high_min: lin(release_high, 0),
+                low_max: lin(release_low, 0),
+                ..rcv(&tx.input, ms_release)
+            };
+            release.push((
+                port.tx.net.clone(),
+                Driver {
+                    supply: ms_release,
+                    ..mcu_drv.clone()
+                },
+                release_rcv,
+                txu_cite.clone(),
+                true,
+            ));
+            release.push((
+                port.rx.net.clone(),
+                drv(&rx.output, ms_release),
+                Receiver {
+                    supply: ms_release,
+                    ..mcu_rcv.clone()
+                },
+                mcu_cite.clone(),
+                false,
+            ));
+            release_floor = Some((reset_mv, reset_why, assumed.map(|b| b.assumption.clone())));
             let (b_tx, b_rx) = b_nets(&c.reference, tx, rx);
             ctx.note(format!(
                 "{}: every input it does not carry is tied to `GND` ({})",
@@ -1990,9 +2068,16 @@ fn radio_lines(
                 "translator_threshold_inferred",
                 &c.reference,
                 format!(
-                    "{}: VT+ and VT- are inferred, not stated: {}; ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up",
+                    "{}: VT+ and VT- are inferred, not stated: {}; ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up{}",
                     c.reference,
-                    ctx.cite(&l.input_high_min_permille.at)
+                    ctx.cite(&l.input_high_min_permille.at),
+                    assumed.map_or_else(String::new, |b| format!(
+                        "; at the reset's release floor of {reset_mv} mV its A side's inputs are judged with VT+ {} and VT- {} per mille ({}), an assumption, not a datasheet figure: {}",
+                        b.input_high_min_permille.value,
+                        b.input_low_max_permille.value,
+                        ctx.cite(&b.input_high_min_permille.at),
+                        b.assumption
+                    ))
                 ),
             );
             ctx.screen(
@@ -2057,6 +2142,32 @@ fn radio_lines(
                     r.current_na
                 ),
             );
+        }
+    }
+    if let Some((reset_mv, why, assumed)) = &release_floor {
+        for (net, d, r, cite, banded) in &release {
+            let margins = judge(net, d, r).map_err(|e| {
+                refuse(
+                    Refusal::LineLevelUnmet,
+                    subject,
+                    format!(
+                        "at the reset's release floor of {reset_mv} mV ({why}): {}",
+                        e.0
+                    ),
+                    cite.clone(),
+                )
+            })?;
+            ctx.note(format!(
+                "{subject}: `{net}`, {} to {}, at the reset's release floor of {reset_mv} mV, holds high by {} uV and low by {} uV{} (AET-WO-4310 (2))",
+                d.who,
+                r.who,
+                margins.high_uv,
+                margins.low_uv,
+                assumed
+                    .as_ref()
+                    .filter(|_| *banded)
+                    .map_or_else(String::new, |a| format!("; the receiver's thresholds are {a}"))
+            ));
         }
     }
     Ok(())

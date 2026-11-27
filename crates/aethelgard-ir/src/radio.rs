@@ -971,9 +971,9 @@ pub fn validate(spec: &Specification) -> Result<(), IrValidationError> {
 /// The verdict's line for each module (ruled: the firmware named as not
 /// judged, the radio as not simulated), in document order.
 pub fn not_judged(spec: &Specification) -> Vec<String> {
-    // Q-SUP, ruled (a) 2026-11-25T00:00Z: the supervisor floor rule covers I2C
-    // and SPI devices; a module whose VDD minimum is above the reset's falling
-    // minimum is named here, not judged.
+    // Q-SUP (`4411`, ruled (a)), superseded by `AET-WO-4310` (2): the floor
+    // rule judges every powered part (`supervisor::judged`); this line names
+    // the module's case beside it.
     let reset = crate::supervisor::reset_floor(spec).ok();
     spec.declared_radio_modules()
         .iter()
@@ -983,7 +983,16 @@ pub fn not_judged(spec: &Specification) -> Vec<String> {
                 m.reference, m.part, m.serial_port
             );
             let row = table().ok().and_then(|t| t.get(&m.part));
-            if let (Some(row), Some((reset_mv, why))) = (row, &reset)
+            // `AET-WO-4310` (2), ruled D1 (B): a module on a rail of its own
+            // is judged against that rail's monitor, and no monitor holds it.
+            if let Some(row) = row
+                && m.supply != spec.mcu.supply
+            {
+                line.push_str(&format!(
+                    "; its VDD minimum of {} mV ({}, {}) is held by no monitor: nothing holds `{}`'s consumers in reset or off, so it may run out of its range while the MCU runs, named (AET-WO-4310 (2))",
+                    row.supply.min_mv, row.supply.at.document, row.supply.at.section, m.supply
+                ));
+            } else if let (Some(row), Some((reset_mv, why))) = (row, &reset)
                 && row.supply.min_mv > *reset_mv
             {
                 line.push_str(&format!(

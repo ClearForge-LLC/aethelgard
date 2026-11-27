@@ -2,17 +2,20 @@
 //! rail it supervises (`AET-WO-4300k` (9), ruled 2026-11-23: build both; a
 //! board takes Path A or Path B).
 //!
-//! - **The rule.** Every I2C or SPI device on the MCU's supply holds its
-//!   guarantees down to its VCC minimum at its bus's speed
-//!   ([`crate::parts::Part::supply_min_at`]). The MCU may run down to the
-//!   reset's falling minimum: the selected BOR level's (DS12117 Table 16 =
-//!   Table 115), or a declared supervisor's VIT− minimum. A device whose
-//!   minimum is above it may run out of its range before the reset holds.
-//!   [`floors_above_reset`] lists each; `verify --fab-out` refuses a package
-//!   with one, and every other verdict names it (ruled D12).
+//! - **The rule** (`AET-WO-4310` (2), ruled D1 (B)): every powered part is
+//!   judged against its own rail's monitor ([`powered`], [`judged`]). The MCU
+//!   may run down to the reset's falling minimum: the selected BOR level's
+//!   (DS12117 Table 16 = Table 115), or a declared supervisor's VIT− minimum.
+//!   A part on the MCU's rail whose minimum is above it may run out of its
+//!   range before the reset holds ([`floors_above_reset`]); a part on any
+//!   other rail is named, since no monitor holds that rail's consumers, and
+//!   so is a part with no held minimum ([`named`]). `verify --fab-out`
+//!   refuses a package with either (ruled D12; ruled 3, 2026-11-27T07:42Z);
+//!   the radio line names a module's case.
 //! - **Path A** is a wide-range part, under BOR3's 2.54 V.
 //! - **Path B** is a declared supervisor on `NRST`, judged by [`check`]: its
-//!   falling minimum at or above every such device's VCC minimum, and its
+//!   falling minimum at or above every I2C or SPI device's VCC minimum on
+//!   its rail (bus devices only, as before `4310`; decision-needed), and its
 //!   rising maximum (VIT− maximum plus its hysteresis, typical only, ruled D6)
 //!   under the rail's minimum at its pin (the solved minimum less the rail's
 //!   drop limit), so it never resets a healthy board.
@@ -178,23 +181,252 @@ fn devices(spec: &Specification) -> Result<Vec<(String, String, Option<u32>)>, I
     Ok(out)
 }
 
-/// Every device on the MCU's supply whose VCC minimum is above the reset's
-/// falling minimum (the rule; ruled D12: refused by `verify --fab-out`,
-/// named elsewhere). A device with no minimum at its bus's speed is listed
-/// at `u32::MAX`.
-pub fn floors_above_reset(spec: &Specification) -> Result<Vec<Floor>, IrValidationError> {
+/// What the floor rule says of one powered part (`AET-WO-4310` (2), ruled
+/// D1 (B)): each part is judged against its own rail's monitor, the reset
+/// that holds that rail's consumers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Judgement {
+    /// Its minimum is at or below the monitor's falling minimum.
+    Pass,
+    /// Its minimum is above it: [`Floor`].
+    Floor(Floor),
+    /// Not passed: no monitor holds its rail, or no minimum is held for it.
+    Named(Named),
+    /// Judged by another rule, named: a battery-fed regulator's input, by
+    /// the headroom and the battery chain.
+    Elsewhere(String),
+}
+
+/// One part named, never passed (`AET-WO-4310` (2)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Named {
+    pub device: String,
+    pub part: String,
+    pub rail: String,
+    /// Why nothing passes it.
+    pub why: String,
+}
+
+impl Named {
+    pub fn text(&self) -> String {
+        format!(
+            "{} ({}) on `{}`: {} (AET-WO-4310 (2))",
+            self.device, self.part, self.rail, self.why
+        )
+    }
+}
+
+/// One powered part, its rail, and its held supply minimum with its
+/// citation (`None`: no row holds one).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Powered {
+    pub device: String,
+    pub part: String,
+    pub rail: String,
+    pub min: Option<(u32, String)>,
+    /// `Some(why)`: judged by another rule ([`Judgement::Elsewhere`]).
+    pub elsewhere: Option<String>,
+}
+
+/// Every powered part a specification declares, in a fixed order: the MCU
+/// (its minimum once its reset is released, VBOR0's falling minimum, DS12117
+/// Table 111 note 1, ruled D2); each I2C and SPI device at its bus's speed;
+/// each radio module; the declared supervisor; each translator side; each
+/// regulator (one fed from a rail, by its input minimum; one fed from the
+/// battery, judged elsewhere); each pin device's supply pins, whose rows
+/// hold no minimum.
+pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> {
+    let pp = crate::power_parts::table()?;
+    let parts = crate::parts::table()?;
+    let radio = crate::radio::table()?;
+    let mut out = Vec::new();
+    let mcu = pp.get(&spec.mcu.part).and_then(|r| match &r.kind {
+        Kind::Mcu(m) => m.bor_falling_min_millivolts.first().map(|l| {
+            (
+                u32::try_from(l.value).unwrap_or(0),
+                format!("{}; {}", pp.cite(&m.released_vdd_at), pp.cite(&l.at)),
+            )
+        }),
+        _ => None,
+    });
+    out.push(Powered {
+        device: "MCU".to_owned(),
+        part: spec.mcu.part.clone(),
+        rail: spec.mcu.supply.clone(),
+        min: mcu,
+        elsewhere: None,
+    });
+    let bus = |reference: &str, part: &str, rail: &str, hz: Option<u32>| {
+        let min = parts.get(part).and_then(|p| {
+            p.supply_min_at(u64::from(hz.unwrap_or(u32::MAX)))
+                .map(|v| (v, format!("{part}'s supply at its bus's speed, parts.json")))
+        });
+        Powered {
+            device: reference.to_owned(),
+            part: part.to_owned(),
+            rail: rail.to_owned(),
+            min,
+            elsewhere: None,
+        }
+    };
+    for d in spec.declared_i2c_devices() {
+        let hz = spec
+            .i2c_buses
+            .iter()
+            .find(|b| b.id == d.bus)
+            .map(|b| b.speed_hz);
+        out.push(bus(&d.reference, &d.part, &d.supply, hz));
+    }
+    for d in spec.declared_spi_devices() {
+        let hz = spec
+            .spi_buses
+            .iter()
+            .find(|b| b.id == d.bus)
+            .map(|b| b.speed_hz);
+        out.push(bus(&d.reference, &d.part, &d.supply, hz));
+    }
+    for m in spec.declared_radio_modules() {
+        out.push(Powered {
+            device: m.reference.clone(),
+            part: m.part.clone(),
+            rail: m.supply.clone(),
+            min: radio.get(&m.part).map(|r| {
+                (
+                    r.supply.min_mv,
+                    format!("{}, {}", r.supply.at.document, r.supply.at.section),
+                )
+            }),
+            elsewhere: None,
+        });
+    }
+    if let Some(s) = &spec.mcu.reset_supervisor {
+        out.push(Powered {
+            device: s.reference.clone(),
+            part: s.part.clone(),
+            rail: spec.mcu.supply.clone(),
+            min: pp.get(&s.part).and_then(|r| match &r.kind {
+                Kind::Supervisor(v) => Some((
+                    u32::try_from(v.vdd_millivolts.range.min).unwrap_or(0),
+                    pp.cite(&v.vdd_millivolts.at),
+                )),
+                _ => None,
+            }),
+            elsewhere: None,
+        });
+    }
+    if let Some(p) = &spec.power {
+        for t in p.translators() {
+            let row = pp.get(t.part).and_then(|r| match &r.kind {
+                Kind::Translator(x) => Some(x),
+                _ => None,
+            });
+            for (side, rail, range) in [
+                ("A", t.a_domain, row.map(|x| &x.vcca_operating_millivolts)),
+                ("B", t.b_domain, row.map(|x| &x.vccb_operating_millivolts)),
+            ] {
+                out.push(Powered {
+                    device: format!("{}.{side}", t.reference),
+                    part: t.part.clone(),
+                    rail: rail.clone(),
+                    min: range.map(|r| (u32::try_from(r.range.min).unwrap_or(0), pp.cite(&r.at))),
+                    elsewhere: None,
+                });
+            }
+        }
+        for r in &p.regulators {
+            let vin = pp.get(&r.part).and_then(|row| match &row.kind {
+                Kind::Buck(b) => Some(&b.vin_millivolts),
+                Kind::Ldo(l) => Some(&l.vin_millivolts),
+                _ => None,
+            });
+            let battery = r.input == power::BATTERY;
+            out.push(Powered {
+                device: r.reference.clone(),
+                part: r.part.clone(),
+                rail: r.input.clone(),
+                min: vin.map(|v| (u32::try_from(v.range.min).unwrap_or(0), pp.cite(&v.at))),
+                elsewhere: battery.then(|| {
+                    "its input is the battery, judged by the headroom and the battery chain (power::headroom), not by a reset".to_owned()
+                }),
+            });
+        }
+    }
+    for d in spec.declared_pin_devices() {
+        let rails: std::collections::BTreeSet<&String> = d.supplies.values().collect();
+        for rail in rails {
+            out.push(Powered {
+                device: d.reference.clone(),
+                part: d.part.clone(),
+                rail: rail.clone(),
+                min: None,
+                elsewhere: None,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Each powered part, judged (ruled D1 (B)): on the MCU's supply, against
+/// the reset's falling minimum ([`reset_floor`]); on any other rail, named,
+/// since no monitor holds that rail's consumers while the MCU runs; with no
+/// held minimum, named.
+pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
     let (reset_min, reset) = reset_floor(spec)?;
-    Ok(devices(spec)?
+    Ok(powered(spec)?
         .into_iter()
-        .filter_map(|(device, part, min)| {
-            let vcc = min.unwrap_or(u32::MAX);
-            (vcc > reset_min).then(|| Floor {
-                device,
-                part,
-                vcc_min_millivolts: vcc,
-                reset_min_millivolts: reset_min,
-                reset: reset.clone(),
-            })
+        .map(|p| {
+            let named = |why: String| Named {
+                device: p.device.clone(),
+                part: p.part.clone(),
+                rail: p.rail.clone(),
+                why,
+            };
+            let j = if let Some(why) = &p.elsewhere {
+                Judgement::Elsewhere(why.clone())
+            } else {
+                match &p.min {
+                    None => Judgement::Named(named(
+                        "no supply minimum is held for it, so it is never passed".to_owned(),
+                    )),
+                    Some((min, cite)) if p.rail != spec.mcu.supply => Judgement::Named(named(format!(
+                        "its supply minimum of {min} mV ({cite}) is held by no monitor: nothing holds `{}`'s consumers in reset or off, so it may run out of its range while the MCU runs",
+                        p.rail
+                    ))),
+                    Some((min, _)) if *min > reset_min => Judgement::Floor(Floor {
+                        device: p.device.clone(),
+                        part: p.part.clone(),
+                        vcc_min_millivolts: *min,
+                        reset_min_millivolts: reset_min,
+                        reset: reset.clone(),
+                    }),
+                    Some(_) => Judgement::Pass,
+                }
+            };
+            (p, j)
+        })
+        .collect())
+}
+
+/// Every powered part on the MCU's supply whose minimum is above the reset's
+/// falling minimum (the rule; ruled D12: refused by `verify --fab-out`).
+pub fn floors_above_reset(spec: &Specification) -> Result<Vec<Floor>, IrValidationError> {
+    Ok(judged(spec)?
+        .into_iter()
+        .filter_map(|(_, j)| match j {
+            Judgement::Floor(f) => Some(f),
+            _ => None,
+        })
+        .collect())
+}
+
+/// Every powered part named, never passed (`AET-WO-4310` (2)): readiness
+/// refuses a package with one, as with a floor (ruled 3, 2026-11-27T07:42Z).
+pub fn named(spec: &Specification) -> Result<Vec<Named>, IrValidationError> {
+    Ok(judged(spec)?
+        .into_iter()
+        .filter_map(|(_, j)| match j {
+            Judgement::Named(n) => Some(n),
+            _ => None,
         })
         .collect())
 }

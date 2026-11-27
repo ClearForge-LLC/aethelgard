@@ -210,7 +210,26 @@ fn with_txu(edit: impl Fn(&mut Value)) -> Result<aethelgard_ir::power::Checked, 
     let mut t: Value = serde_json::from_str(include_str!("../data/power-parts.json")).unwrap();
     for row in t["parts"].as_array_mut().unwrap() {
         if row["part"] == "TXU0304PW" {
-            edit(&mut row["kind"]["translator"]);
+            let tr = &mut row["kind"]["translator"];
+            edit(tr);
+            // `AET-WO-4310` (2): the lower band stays no better than the
+            // stated rows an edit moves, and meets them, so the table parses.
+            let l = &mut tr["levels"];
+            if !l["lower_band"].is_null() {
+                let (hi, lo) = (
+                    l["input_high_min_permille"]["value"].as_i64().unwrap(),
+                    l["input_low_max_permille"]["value"].as_i64().unwrap(),
+                );
+                let b = &mut l["lower_band"];
+                let bh = b["input_high_min_permille"]["value"].as_i64().unwrap();
+                let bl = b["input_low_max_permille"]["value"].as_i64().unwrap();
+                b["input_high_min_permille"]["value"] = json!(bh.max(hi));
+                b["input_low_max_permille"]["value"] = json!(bl.min(lo));
+            }
+            if !tr["levels"]["lower_band"].is_null() {
+                let min = tr["levels"]["supply_millivolts"]["min"].clone();
+                tr["levels"]["lower_band"]["supply_millivolts"]["max"] = min;
+            }
         }
     }
     let table = parse_power_parts(&t.to_string()).unwrap();

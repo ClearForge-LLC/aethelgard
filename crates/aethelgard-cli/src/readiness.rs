@@ -139,13 +139,6 @@ pub fn check(
             ),
         );
     }
-    let floors = aethelgard_ir::supervisor::floors_above_reset(spec).map_err(|e| Gap {
-        id: e.kind().to_owned(),
-        message: e.to_string(),
-    })?;
-    if let Some(f) = floors.first() {
-        return gap(&f.device, format!("no package: {}", f.text()));
-    }
     let acknowledged: std::collections::BTreeSet<&str> = spec
         .acknowledge_conditions
         .iter()
@@ -166,6 +159,36 @@ pub fn check(
                     .map(|s| s.as_str())
                     .collect::<Vec<_>>()
                     .join(", ")
+            ),
+        );
+    }
+    // Last, after the specification's own gaps: every powered part judged
+    // against its own rail's monitor
+    // (`AET-WO-4310` (2), ruled D1 (B)): a floor (D12) and a part named,
+    // never passed (ruled 3, 2026-11-27T07:42Z), each refuses, all listed.
+    let judged = aethelgard_ir::supervisor::judged(spec).map_err(|e| Gap {
+        id: e.kind().to_owned(),
+        message: e.to_string(),
+    })?;
+    let unmet: Vec<(String, String)> = judged
+        .into_iter()
+        .filter_map(|(_, j)| match j {
+            aethelgard_ir::supervisor::Judgement::Floor(f) => Some((f.device.clone(), f.text())),
+            aethelgard_ir::supervisor::Judgement::Named(n) => Some((n.device.clone(), n.text())),
+            _ => None,
+        })
+        .collect();
+    if let Some((first, _)) = unmet.first() {
+        return gap(
+            first,
+            format!(
+                "no package: {} powered part(s) whose supply nothing guarantees: {}",
+                unmet.len(),
+                unmet
+                    .iter()
+                    .map(|(_, t)| t.as_str())
+                    .collect::<Vec<_>>()
+                    .join("; ")
             ),
         );
     }

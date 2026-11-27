@@ -77,10 +77,28 @@ fn stackup(v: &mut Value) -> &mut serde_json::Map<String, Value> {
 /// 04:51Z): U30's power-down order and Ioff buffer closed; U31's two
 /// bypasses, its supply drop, partial power-down, inferred thresholds and
 /// TMAX, the firmware's pulls, and U30's high-impedance load named.
+/// `AET-WO-4310` (2), ruled 2026-11-27T07:42Z (3): every other gap of the
+/// base is closed, and it is refused for its design alone: U30 and U31's B
+/// side are on `VDD_3V3_RF`, which no monitor holds (U13's PG gates U11, not
+/// U30's EN), so neither is passed.
 #[test]
-fn the_base_passes_the_gate_with_102_conditions_from_every_source_and_none_stale() {
+fn the_base_is_refused_only_for_the_two_parts_no_monitor_holds_with_102_conditions_none_stale() {
     let (spec, t, c) = base();
-    assert_eq!(readiness::check(spec, t, c), Ok(()));
+    let g = readiness::check(spec, t, c).expect_err("U30 and U31.B are named");
+    assert_eq!(g.id, "U30");
+    assert!(
+        g.message
+            .contains("no package: 2 powered part(s) whose supply nothing guarantees"),
+        "{}",
+        g.message
+    );
+    for named in [
+        "U30 (ESP32-C3-WROOM-02-N4) on `VDD_3V3_RF`",
+        "U31.B (TXU0304PW) on `VDD_3V3_RF`",
+    ] {
+        assert!(g.message.contains(named), "{named}: {}", g.message);
+    }
+    assert!(!g.message.contains("U31.A"), "{}", g.message);
     assert_eq!(c.len(), 102);
     for id in [
         "buck_junction_screened:U10",
