@@ -51,22 +51,22 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// port's RX open, `AET-WO-4411`), `battery` (a tolerated sag),
 /// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
 /// Since `AET-WO-4300k` D10 its ledger is acknowledged (it was 280 rows,
-/// measured on `ee835bde`), and the readiness gate is met, so no refusal
-/// before a gate stops it: with the environment cleared, the first thing
-/// it cannot do is make its scratch (`ScratchUnsafe`), and nothing is written.
-/// As root (CI's container) scratch needs no `HOME`, so the run goes one step
-/// further, to the first gate's tool (`ToolMissing`, the `PATH` is empty);
-/// both come after every package precondition.
+/// measured on `ee835bde`). Since `AET-WO-4310` (2) the readiness gate
+/// refuses it, by the two parts on a rail no monitor holds.
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it() {
     let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
-    assert_eq!(code, Some(4), "{v}");
-    let want = if rustix::process::geteuid().is_root() {
-        "ToolMissing"
-    } else {
-        "ScratchUnsafe"
-    };
-    assert_eq!(v["error"]["kind"], want, "{v}");
+    // `AET-WO-4310` (2), ruled D1 (B) and 08:55Z: the readiness gate now
+    // refuses Sentinel-03 by name, after its scenarios cover every row:
+    // U30 and U31.B on `VDD_3V3_RF`, which no monitor holds, until Scotty
+    // rules on the board. Nothing is written.
+    assert_eq!(code, Some(2), "{v}");
+    assert_eq!(v["error"]["kind"], "FabricationNotReady", "{v}");
+    let m = v["error"]["message"].as_str().unwrap();
+    assert!(
+        m.contains("2 powered part(s)") && m.contains("U30 (") && m.contains("U31.B ("),
+        "{m}"
+    );
 }
 
 /// §2: the power fixture's campaign is for the campaign only. Its

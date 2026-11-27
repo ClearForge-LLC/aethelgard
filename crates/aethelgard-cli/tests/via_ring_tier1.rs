@@ -146,10 +146,20 @@ fn sentinel_03_on_rule_sized_vias_passes_every_bound_judged_by_extract_alone() {
     assert_eq!(margin["net"], "EXT_SDA", "{ladder}");
     assert_eq!(margin["c_bound_femtofarads"], 84_703, "{ladder}");
     assert_eq!(ladder["pour_step"], 1, "{ladder}");
-    // `extract`, on its own
+    // `extract`, on its own. Since `AET-WO-4310` (3), ruled D5 and 08:55Z,
+    // it fails both supply drop limits, the other domains' currents in the
+    // ground copper charged (a board question for Scotty), and by nothing
+    // else: every line still passes.
     let (code, v) = run(&["extract", "--board", board.to_str().unwrap(), "--spec", S03]);
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["verdict"], "pass", "{v}");
+    assert_ne!(code, 0, "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    let kinds: Vec<&str> = v["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["supply_drop_over_limit"; 2], "{v}");
     let lines = v["lines"].as_array().unwrap();
     assert_eq!(lines.len(), 8, "{v}");
     for l in lines {
