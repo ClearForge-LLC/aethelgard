@@ -366,20 +366,23 @@ mod tests {
         );
         assert!(notes_bound_alike(
             &admitted(NOTES, &held, &held),
-            &admitted(NOTES, &held, &with)
+            &admitted(NOTES, &held, &with),
+            VERSION
         ));
         // Once the committed notes state a key, its line is compared: a
         // changed outline is moved.
         let changed = with.replace("85.00 x 99.75", "85.00 x 99.80");
         assert!(!notes_bound_alike(
             &admitted(NOTES, &with, &with),
-            &admitted(NOTES, &with, &changed)
+            &admitted(NOTES, &with, &changed),
+            VERSION
         ));
         // Any other added line is still moved.
         with.push_str("- Built by hand: no\n");
         assert!(!notes_bound_alike(
             &admitted(NOTES, &held, &held),
-            &admitted(NOTES, &held, &with)
+            &admitted(NOTES, &held, &with),
+            VERSION
         ));
     }
 
