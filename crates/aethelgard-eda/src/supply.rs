@@ -1346,6 +1346,10 @@ pub struct Gate {
     /// A radio module's current, charged only on the copper it shares with
     /// the load's path (`AET-WO-4411`, ruled 1 (a')); `None` without one.
     pub shared: Option<Shared>,
+    /// Every other current on the ground copper the load returns through,
+    /// each charged by [`Other`] (`AET-WO-4310` (3), ruled D5); its charges
+    /// are in [`Gate::drop_bound_microvolts`].
+    pub others: Vec<Other>,
     /// Set when the bound comes within 1.5× of the limit: the pitch set the
     /// margin (ruling S4).
     pub note: Option<String>,
@@ -1374,6 +1378,35 @@ pub struct Shared {
     pub milliamps: u64,
     pub supply_bound_microohms: Option<u64>,
     pub return_bound_microohms: Option<u64>,
+}
+
+/// Another current in the ground copper the gate's load returns through
+/// (`AET-WO-4310` (3), ruled D5): another regulated domain's load, entering
+/// at its consumers' ground pads, or a battery-fed regulator's input
+/// current, entering at its own ground pin, on its way to the battery.
+///
+/// The maximum principle, with the gate's return pin `b` as reference: a
+/// current `I` entering at `c` raises a load pin `a` by at most
+/// `I × min(R(a,b), R(c,b))`, and where it leaves (its regulator, the
+/// battery) it can only lower `a`. So it raises the load's return by at most
+/// `I × min(the load's largest return bound, the largest bound from its
+/// entry pads to b)`, each bounded from above (Thomson), as [`Shared`] does
+/// for a module. A pad the gate cannot read leaves the entry bound unknown:
+/// it is then charged at the load's own largest return bound, which the
+/// principle still bounds, and named.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Other {
+    /// What the current is, and where it enters.
+    pub what: String,
+    pub milliamps: u64,
+    /// The largest bound from its entry pads to the return pin that was
+    /// needed, µΩ: past the load's own largest, no more are solved. `None`:
+    /// a pad the gate cannot read, named in `unread`.
+    pub entry_bound_microohms: Option<u64>,
+    pub unread: Vec<String>,
+    /// `milliamps × min(the load's largest return bound, entry bound)`, µV,
+    /// rounded up; `None` when the load's own return is unbounded.
+    pub charge_microvolts: Option<u64>,
 }
 
 fn refusal(kind: &'static str, message: String) -> crate::extract::Refused {
@@ -1773,10 +1806,94 @@ pub fn supplies(
                 });
             }
         }
-        let drop = match &shared {
+        let own = match &shared {
             Some(m) => drop_bound_shared(&pins, &returns, load, m),
             None => drop_bound(&pins, &returns, load),
         };
+        // `AET-WO-4310` (3), ruled D5: every other current on this load's
+        // ground copper, charged by the maximum principle ([`Other`]).
+        let r11 = largest_bound(&returns);
+        let mut others = Vec::new();
+        if gnd_plane {
+            let ground = |reference: &str| -> Vec<&Pad> {
+                pads_of(board, reference)
+                    .into_iter()
+                    .filter(|q| q.net.as_deref() == Some(gnd))
+                    .collect()
+            };
+            // Each other regulated domain's load, at its consumers' pads.
+            for r in power.regulators.iter().filter(|r| &r.output != d) {
+                let k = &r.output;
+                let ma = checked.domains.get(k).map_or(0, |c| c.load_milliamps);
+                let rail_k = crate::schematic::Conn::Rail(k.clone());
+                let mut names = Vec::new();
+                let mut entry: Vec<&Pad> = Vec::new();
+                for part in &parts {
+                    let on = part.conns.values().any(|c| *c == rail_k)
+                        && !part.lib_id.starts_with("Device:C")
+                        && part.lib_id != "Device:L"
+                        && part.lib_id != crate::schematic::TEST_POINT
+                        && part.reference != r.reference
+                        && !power
+                            .regulators
+                            .iter()
+                            .any(|q| &q.input == k && q.reference == part.reference);
+                    if !on {
+                        continue;
+                    }
+                    let g = ground(&part.reference);
+                    if !g.is_empty() {
+                        names.push(part.reference.clone());
+                        entry.extend(g);
+                    }
+                }
+                let what = if names.is_empty() {
+                    format!("`{k}`'s load ({}), which enters the ground copper off the board", r.reference)
+                } else {
+                    format!("`{k}`'s load ({}), entering at {}'s ground pads", r.reference, names.join(", "))
+                };
+                others.push(charge(what, ma, &entry, ret_pad, r11, &|ps| {
+                    entry_bounds(board, &read.routed, gnd, ret_pad, ps, &model)
+                })?);
+            }
+            // Each other battery-fed regulator's input current, at its own
+            // ground pin, on its way to the battery.
+            if let Some(side) = aethelgard_ir::power::battery_side(spec)
+                .map_err(|e| refusal(e.kind(), e.to_string()))?
+            {
+                let v_mv = (side.v_open_microvolts / 1000).saturating_sub(checked.input_drop_millivolts).max(1);
+                for sink in &side.sinks {
+                    if sink.reference == reg.reference {
+                        continue;
+                    }
+                    let Some(q) = power.regulators.iter().find(|q| q.reference == sink.reference) else {
+                        continue;
+                    };
+                    let Some(row) = pp.get(&q.part) else { continue };
+                    let gname = match &row.kind {
+                        aethelgard_ir::power_parts::Kind::Buck(_) => "PGND",
+                        _ => "GND",
+                    };
+                    let Some(gpin) = row.pins.get(gname) else { continue };
+                    let entry: Vec<&Pad> = pad(board, gnd, &q.reference, gpin).into_iter().collect();
+                    // mW × 1000 / mV = mA, rounded up.
+                    let ma = (sink.input_milliwatts * 1000).div_ceil(v_mv);
+                    let what = format!(
+                        "{}'s input current at the pack's minimum less the input path's drop ({v_mv} mV), entering at its {gname} pin",
+                        q.reference
+                    );
+                    others.push(charge(what, ma, &entry, ret_pad, r11, &|ps| {
+                        entry_bounds(board, &read.routed, gnd, ret_pad, ps, &model)
+                    })?);
+                }
+            }
+        }
+        // The own bound plus every charge; `None` when any is.
+        let drop = own.and_then(|own| {
+            others
+                .iter()
+                .try_fold(own, |acc, o| Some(acc + o.charge_microvolts?))
+        });
         let note = pitch_note(drop, limit.max_millivolts);
         out.push(Gate {
             domain: d.clone(),
@@ -1790,6 +1907,7 @@ pub fn supplies(
             returns,
             drop_bound_microvolts: drop,
             shared,
+            others,
             note,
             conditions: conditions.clone(),
             notes,
@@ -1848,6 +1966,114 @@ pub fn drop_bound_shared(
 }
 
 /// The note a drop within 1.5× of its limit carries (ruling S4).
+/// The largest bounded pin, µΩ; `None` when any pin is refused or none is.
+fn largest_bound(v: &[PinResult]) -> Option<u64> {
+    v.iter()
+        .map(|r| match r {
+            PinResult::Bounded {
+                r_bound_microohms, ..
+            } => Some(*r_bound_microohms),
+            PinResult::Refused { .. } => None,
+        })
+        .collect::<Option<Vec<u64>>>()
+        .and_then(|v| v.into_iter().max())
+}
+
+/// Bounds from `ret` to each pad of `pads` on `net`'s copper, in parallel.
+fn entry_bounds(
+    board: &Board,
+    routed: &crate::route::Routed,
+    net: &str,
+    ret: &Pad,
+    pads: &[&Pad],
+    model: &Model,
+) -> Result<Vec<Result<u64, String>>, crate::extract::Refused> {
+    let mut terminals = vec![ret];
+    terminals.extend(pads.iter().copied());
+    let nc = copper(board, routed, net, &terminals, model).map_err(to_refused)?;
+    let out = std::thread::scope(|s| {
+        let handles: Vec<_> = pads
+            .iter()
+            .map(|p| {
+                let nc = &nc;
+                s.spawn(move || match bound(nc, model, ret, p, 400) {
+                    Ok(b) => Ok(match bounded_pin(p, &b) {
+                        PinResult::Bounded {
+                            r_bound_microohms, ..
+                        } => r_bound_microohms,
+                        PinResult::Refused { .. } => u64::MAX,
+                    }),
+                    Err(e) => Err(format!("{}: {}", p.number, to_refused(e).message)),
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap_or_else(|_| Err("a bound panicked".to_owned())))
+            .collect()
+    });
+    Ok(out)
+}
+
+/// The threads [`charge`] solves at once.
+const ENTRY_THREADS: usize = 6;
+
+/// One [`Other`]: its entry pads solved farthest from `ret` first, a chunk
+/// of [`ENTRY_THREADS`] at a time, stopping once one reaches the load's own
+/// largest return bound `r11` (the charge is then `ma × r11`, whatever the
+/// rest). No pads, or a pad the gate cannot read: charged at `r11`.
+fn charge(
+    what: String,
+    ma: u64,
+    entry: &[&Pad],
+    ret: &Pad,
+    r11: Option<u64>,
+    solve: &dyn Fn(&[&Pad]) -> Result<Vec<Result<u64, String>>, crate::extract::Refused>,
+) -> Result<Other, crate::extract::Refused> {
+    let centre = |p: &Pad| {
+        (
+            i128::from(p.rect.x0 + p.rect.x1) / 2,
+            i128::from(p.rect.y0 + p.rect.y1) / 2,
+        )
+    };
+    let (rx, ry) = centre(ret);
+    let mut order: Vec<&Pad> = entry.to_vec();
+    order.sort_by_key(|p| {
+        let (x, y) = centre(p);
+        std::cmp::Reverse((x - rx) * (x - rx) + (y - ry) * (y - ry))
+    });
+    let mut worst: Option<u64> = None;
+    let mut unread = Vec::new();
+    if order.is_empty() {
+        unread.push("no ground pad on the board".to_owned());
+    }
+    for chunk in order.chunks(ENTRY_THREADS) {
+        if r11.is_some_and(|r| worst.is_some_and(|w| w >= r)) {
+            break;
+        }
+        for r in solve(chunk)? {
+            match r {
+                Ok(v) if v != u64::MAX => worst = Some(worst.map_or(v, |w| w.max(v))),
+                Ok(_) => unread.push("a pad refused".to_owned()),
+                Err(e) => unread.push(e),
+            }
+        }
+    }
+    let entry_bound = if unread.is_empty() { worst } else { None };
+    let charge = r11.map(|r| {
+        let ohms = entry_bound.map_or(r, |e| e.min(r));
+        // mA × µΩ = nV, rounded up to µV.
+        (u128::from(ma) * u128::from(ohms)).div_ceil(1000) as u64
+    });
+    Ok(Other {
+        what,
+        milliamps: ma,
+        entry_bound_microohms: entry_bound,
+        unread,
+        charge_microvolts: charge,
+    })
+}
+
 pub fn pitch_note(drop_microvolts: Option<u64>, limit_millivolts: u32) -> Option<String> {
     let limit_uv = u64::from(limit_millivolts) * 1000;
     drop_microvolts.filter(|&v| u128::from(v) * 3 > u128::from(limit_uv) * 2).map(|_| {
@@ -1907,7 +2133,7 @@ fn conditions(
         "supply: pads and via pads at their drawn size: no pad etch tolerance is cited".into(),
         "supply: each terminal pad an equipotential: the current enters and leaves through the whole pad".into(),
         "supply: the source is where the regulator's current enters the domain (a buck's inductor pad); at DC it is the net's highest potential, so the bound covers the regulator's sense point too".into(),
-        "supply: the return is the regulator's own ground pin; other domains' return currents in the ground copper are not bounded".into(),
+        "supply: the return is the regulator's own ground pin; every other current in the ground copper (each other regulated domain's load at its consumers' ground pads, each other battery-fed regulator's input current at its own ground pin) is charged at most its current times the lesser of the load's largest return bound and the largest bound from its entry pads to that pin (the maximum principle, AET-WO-4310 (3)); where it leaves the copper only lowers the load's return".into(),
         "supply: the load's VDD and VSS pins are tied inside it, so the worst supply pin and the worst return pin bound its drop [inferred]".into(),
         "supply: copper resistivity IACS x (1 + 0.00393 x (T - 20)) x 1.181 (IPC-MF-150F 3.8.1.2's foil maximum, applied to plated copper as a stated condition), at the declared copper temperature maximum".into(),
         format!("supply: plane fill at least the outline less {} mm and each knockout's measured {} mm clearance and {} mm min-thickness opening (KiCad 10.0.7, measured)", EDGE_NM as f64 / 1e6, FILL_CLEARANCE_NM as f64 / 1e6, OPENING_NM as f64 / 1e6),
@@ -1929,6 +2155,81 @@ mod tests {
             drill_nm: None,
             join: None,
         }
+    }
+
+    // ---- `AET-WO-4310` (3): another current's charge ([`charge`]) ----
+
+    fn charged(
+        entry: &[&Pad],
+        r11: Option<u64>,
+        answers: &dyn Fn(&str) -> Result<u64, String>,
+        calls: &std::cell::Cell<usize>,
+    ) -> Other {
+        let ret = pad("R", "GND", 0, 0, 1, 1);
+        charge("x".into(), 2000, entry, &ret, r11, &|ps| {
+            calls.set(calls.get() + 1);
+            Ok(ps.iter().map(|p| answers(&p.number)).collect())
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn another_current_is_charged_at_the_lesser_of_its_entry_bound_and_the_loads() {
+        let calls = std::cell::Cell::new(0);
+        let near = pad("1", "GND", 10, 0, 11, 1);
+        let far = pad("2", "GND", 9000, 0, 9001, 1);
+        // Entry bounds 30 and 40 mOhm, the load's 65: the lesser, 40, at 2 A.
+        let o = charged(&[&near, &far], Some(65_000), &|n| Ok(if n == "2" { 40_000 } else { 30_000 }), &calls);
+        assert_eq!(o.entry_bound_microohms, Some(40_000));
+        assert_eq!(o.charge_microvolts, Some(80_000));
+        // An entry bound past the load's: charged at the load's.
+        let o = charged(&[&near], Some(25_000), &|_| Ok(30_000), &calls);
+        assert_eq!(o.charge_microvolts, Some(50_000));
+        // The load's own return unbounded: no charge, so no drop bound.
+        assert_eq!(charged(&[&near], None, &|_| Ok(1), &calls).charge_microvolts, None);
+    }
+
+    #[test]
+    fn a_pad_the_gate_cannot_read_or_no_pad_is_charged_at_the_loads_bound_and_named() {
+        let calls = std::cell::Cell::new(0);
+        let p = pad("7", "GND", 10, 0, 11, 1);
+        let o = charged(&[&p], Some(65_000), &|_| Err("7: TerminalDrilled".into()), &calls);
+        assert_eq!(o.entry_bound_microohms, None);
+        assert_eq!(o.charge_microvolts, Some(130_000));
+        assert_eq!(o.unread, ["7: TerminalDrilled"]);
+        let o = charged(&[], Some(65_000), &|_| Ok(1), &calls);
+        assert_eq!(o.charge_microvolts, Some(130_000));
+        assert_eq!(o.unread, ["no ground pad on the board"]);
+        // One pad read at 10 mOhm and one not: the unread one may be worse,
+        // so the charge stays at the load's bound.
+        let q = pad("8", "GND", 20, 0, 21, 1);
+        let o = charged(
+            &[&p, &q],
+            Some(65_000),
+            &|n| if n == "7" { Err("7: TerminalDrilled".into()) } else { Ok(10_000) },
+            &calls,
+        );
+        assert_eq!(o.entry_bound_microohms, None);
+        assert_eq!(o.charge_microvolts, Some(130_000));
+    }
+
+    #[test]
+    fn entry_pads_are_solved_farthest_first_and_stop_once_one_reaches_the_loads_bound() {
+        // Seven pads: the farthest, alone in no chunk of its own, reaches
+        // the load's bound, so the second chunk is never solved.
+        let pads: Vec<Pad> = (0..7)
+            .map(|i| pad(&i.to_string(), "GND", 100 * (i + 1), 0, 100 * (i + 1) + 1, 1))
+            .collect();
+        let refs: Vec<&Pad> = pads.iter().collect();
+        let calls = std::cell::Cell::new(0);
+        let o = charged(&refs, Some(50_000), &|n| Ok(if n == "6" { 60_000 } else { 10_000 }), &calls);
+        assert_eq!(calls.get(), 1, "one chunk of {ENTRY_THREADS}");
+        assert_eq!(o.charge_microvolts, Some(100_000));
+        // Nothing reaches it: every chunk is solved.
+        let calls = std::cell::Cell::new(0);
+        let o = charged(&refs, Some(50_000), &|_| Ok(10_000), &calls);
+        assert_eq!(calls.get(), 2);
+        assert_eq!(o.charge_microvolts, Some(20_000));
     }
 
     fn part(reference: &str, pads: Vec<Pad>) -> Part {

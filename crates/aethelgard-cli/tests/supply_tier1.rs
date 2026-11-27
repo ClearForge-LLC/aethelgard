@@ -396,7 +396,8 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     assert!(
         conditions
             .iter()
-            .any(|c| c.contains("other domains' return currents")),
+            .any(|c| c.contains("every other current in the ground copper")
+                && c.contains("the maximum principle, AET-WO-4310 (3)")),
         "{conditions:?}"
     );
 }

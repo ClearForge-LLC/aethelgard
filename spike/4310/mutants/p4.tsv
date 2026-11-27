@@ -1,0 +1,10 @@
+P4-M1	crates/aethelgard-eda/src/schematic.rs	        (with_ladder_record(&board, &ladder)?, Some(ladder))	        (board, Some(ladder))	aethelgard-cli	package_built_4310_tier1
+P4-M2	crates/aethelgard-eda/src/schematic.rs	    let rung = num(r).filter(|r| *r < crate::route::RUNGS.len()).ok_or_else(bad)?;	    let rung = num(r).ok_or_else(bad)?;	aethelgard-eda	lib:ladder_record
+P4-M3	crates/aethelgard-eda/src/schematic.rs	(w == "0" || !w.starts_with('0'))	true	aethelgard-eda	lib:ladder_record
+P4-M4	crates/aethelgard-eda/src/extract.rs	c.head() == Some("comment") && c.arg(1) == Some("1") && c.len() == 3 =>	c.head() == Some("comment") && c.arg(1) == Some("1") =>	aethelgard-cli	package_built_4310_tier1
+P4-M5	crates/aethelgard-cli/src/extract.rs	        (false, None) => json!("not_run"),	        (_, None) => json!("not_run"),	aethelgard-cli	package_built_4310_tier1
+P4-M6	crates/aethelgard-cli/src/extract.rs	        (false, None) => json!("not_run"),	        (false, _) => json!("not_run"),	aethelgard-cli	package_built_4310_tier1
+P4-M7	crates/aethelgard-cli/src/rebind.rs	            .filter(|l| !ADMITTED_NOTES.iter().any(|k| l.starts_with(k)))	            .filter(|l| !l.starts_with("- "))	aethelgard-cli	bin:rebind
+P4-M8	crates/aethelgard-cli/src/rebind.rs	                .is_none_or(|n| names.contains(n))	                .is_none_or(|_| true)	aethelgard-cli	bin:rebind
+P4-M9	crates/aethelgard-cli/src/rebind.rs	        .filter(|k| !text.lines().any(|l| l.starts_with(k)))	        .filter(|_| false)	aethelgard-cli	bin:rebind
+P4-M10	crates/aethelgard-cli/src/verify.rs	            crate::input::dir_check(dir).and_then(|()| rebind::states_built(dir))	            crate::input::dir_check(dir)	aethelgard-cli	package_built_4310_tier1

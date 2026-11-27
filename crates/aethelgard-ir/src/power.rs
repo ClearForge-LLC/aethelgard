@@ -708,6 +708,11 @@ pub struct Checked {
     /// The battery-side current, steady state and fault bound, mA.
     pub input_steady_milliamps: u64,
     pub input_fault_milliamps: u64,
+    /// The input path's drop at the branch's current, mV: the pack's series,
+    /// the FET and the fuse, as every battery-fed regulator's headroom counts
+    /// it. The battery-fed regulators run from the pack's minimum less it
+    /// (`AET-WO-4310` (3): their input currents in the ground copper).
+    pub input_drop_millivolts: u64,
     /// Every named condition the verdict rests on, each once, sorted.
     pub conditions: Vec<String>,
     /// The conditions a fabrication package needs acknowledged
@@ -4955,6 +4960,7 @@ format!(
         domains,
         input_steady_milliamps: steady,
         input_fault_milliamps: fault,
+        input_drop_millivolts: input_drop,
         conditions: ctx.conditions.into_iter().collect(),
         screened: ctx.screened,
     }))

@@ -347,6 +347,10 @@ pub fn holes(drill: &[u8], expected: &[Drill]) -> Result<(), String> {
 
 /// What the notes name that the board does not carry.
 pub struct Notes<'a> {
+    /// What the board was built at, one line each (its outline, its
+    /// capacitance ladder), as `extract` read them (`AET-WO-4310` (4)):
+    /// under "What this package is". None, no line.
+    pub built: &'a [String],
     pub project: &'a str,
     pub engine_version: &'a str,
     pub specification_sha256: &'a str,
@@ -440,6 +444,7 @@ pub fn notes(n: &Notes<'_>) -> String {
         files.push_str(&format!("- `{name}`: {what}\n"));
     }
     let conditions: String = n.conditions.iter().map(|c| format!("- {c}\n")).collect();
+    let built: String = n.built.iter().map(|l| format!("{l}\n")).collect();
     let lifecycle = if n.lifecycle.is_empty() {
         String::new()
     } else {
@@ -470,7 +475,7 @@ names passed on the design generated from the specification, and these
 files were made from that design. The gates judged the design, not these
 files. It claims nothing beyond that verdict. Emitting this package made
 no board, and nothing in it was tested on hardware.
-
+{built}
 The Gerbers are KiCad {kicad}'s output (`kicad-cli pcb export gerbers
 --check-zones`), exported from a copy of the generated board with the
 sha256 the design-rule gate judged, prepared as that gate prepares its copy
@@ -1275,6 +1280,7 @@ mod tests {
         });
         let conditions = ["LAYOUT: one".to_owned(), "CLASSES: two".to_owned()];
         let text = notes(&Notes {
+            built: &[],
             project: "p",
             engine_version: "0.1.0",
             specification_sha256: "ab",
@@ -1306,6 +1312,7 @@ mod tests {
     fn sample_with(stack: &Stack, lifecycle: &[String]) -> String {
         let files = [("p-F_Cu.gtl".to_owned(), "F.Cu")];
         notes(&Notes {
+            built: &[],
             project: "p",
             engine_version: "0.1.0",
             specification_sha256: "ab",
@@ -1350,6 +1357,7 @@ mod tests {
     fn notes_with(stack: &Stack, drills: &[Drill]) -> String {
         let files = [("p-F_Cu.gtl".to_owned(), "F.Cu")];
         notes(&Notes {
+            built: &[],
             project: "p",
             engine_version: "0.1.0",
             specification_sha256: "ab",

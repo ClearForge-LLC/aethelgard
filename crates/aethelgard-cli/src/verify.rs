@@ -448,6 +448,11 @@ struct Gate {
     /// (`AET-WO-1609`): `Null` for a gate whose line states none.
     #[serde(skip)]
     parts: Value,
+    /// What the board was built at, as `extract` read it (`AET-WO-4310` (4),
+    /// ruled D6): its capacitance ladder's rung and pour step (or
+    /// `not_run`) and its outline; on the `extract` gate only.
+    #[serde(skip_serializing_if = "Value::is_null")]
+    built: Value,
 }
 
 #[derive(Serialize)]
@@ -985,6 +990,14 @@ fn gate_report(name: &'static str, harness: Option<String>, ran: &Ran) -> Gate {
         findings: v["findings"].as_array().cloned().unwrap_or_default(),
         items: None,
         parts: v["ran"].clone(),
+        built: if name == "extract" {
+            serde_json::json!({
+                "capacitance_ladder": v["capacitance_ladder"],
+                "outline_mm": v["outline_mm"],
+            })
+        } else {
+            Value::Null
+        },
     }
 }
 
@@ -1143,6 +1156,7 @@ fn pin_gates(sim: &Ran, bridges: &[Bridge]) -> Vec<Gate> {
         findings,
         items: Some(items),
         parts: Value::Null,
+        built: Value::Null,
     })
     .collect()
 }
@@ -1196,6 +1210,7 @@ fn not_run(name: &'static str) -> Gate {
         findings: Vec::new(),
         items: None,
         parts: Value::Null,
+        built: Value::Null,
     }
 }
 
@@ -2341,7 +2356,9 @@ pub fn verify(
     // An unusable `--fab-out` or `--against-fab` is refused before any gate.
     let fab_checked = match fab_mode {
         Some(FabMode::Write(dir)) => fab_out_usable(dir),
-        Some(FabMode::Compare(dir)) => crate::input::dir_check(dir),
+        Some(FabMode::Compare(dir)) => {
+            crate::input::dir_check(dir).and_then(|()| rebind::states_built(dir))
+        }
         Some(FabMode::Rebind { out, committed }) => {
             fab_out_usable(out).and_then(|()| rebind::committed(committed, &spec.project_name))
         }
@@ -2612,6 +2629,13 @@ fn conclude(report: &mut Report, fab_mode: Option<&FabMode>, t: &Tail<'_>) -> Re
             lifecycle: &lifecycle,
             support: &support_lines(report.support.as_ref()),
             campaign: &campaign_conditions(report.campaign.as_deref().unwrap_or_default()),
+            built: &fab::built_lines(
+                &report
+                    .gates
+                    .iter()
+                    .find(|g| g.gate == "extract")
+                    .map_or(Value::Null, |g| g.built.clone()),
+            ),
         };
         let scenarios: Vec<fab::Scenario> = t
             .expected

@@ -93,7 +93,10 @@ pub fn matches(dir: &Path, derived: &BTreeMap<String, Vec<u8>>) -> Result<(), St
         let held = text_of(dir, name)?;
         let ours = derived.get(name).map_or(&[][..], Vec::as_slice);
         match (std::str::from_utf8(&held), std::str::from_utf8(ours)) {
-            (Ok(h), Ok(d)) if alike(h, d) => {
+            // `AET-WO-4310` (4), (5), ruled 2026-11-27T08:22Z (2): the lines
+            // a re-bind admits are left out of both before the comparison,
+            // and nothing else is.
+            (Ok(h), Ok(d)) if alike(&admitted(name, h, h), &admitted(name, h, d)) => {
                 // Judged here; the walk below sees the committed bytes.
                 expected.insert(name.to_owned(), held);
             }
@@ -117,6 +120,106 @@ pub fn matches(dir: &Path, derived: &BTreeMap<String, Vec<u8>>) -> Result<(), St
             dir.display(),
             moved.join("; "),
             BINDING.join(", ")
+        ),
+    ))
+}
+
+/// The FAB-NOTES lines a re-bind admits, by key (`AET-WO-4310` (4)).
+const ADMITTED_NOTES: [&str; 2] = [crate::fab::OUTLINE_KEY, crate::fab::LADDER_KEY];
+
+/// `text` (the package's `name`) less what a re-bind admits against the
+/// committed `held` (`AET-WO-4310` (4), (5), ruled 2026-11-27T08:22Z (2)):
+/// in `FAB-NOTES.md`, the outline and capacitance ladder lines, by key; in
+/// `MANIFEST.json`, each scenario entry whose scenario `held` does not name
+/// (the scenarios D7 adds). Every other line stays, and must be equal.
+fn admitted(name: &str, held: &str, text: &str) -> String {
+    match name {
+        NOTES => text
+            .split_inclusive('\n')
+            .filter(|l| !ADMITTED_NOTES.iter().any(|k| l.starts_with(k)))
+            .collect(),
+        MANIFEST => without_new_scenarios(held, text),
+        _ => text.to_owned(),
+    }
+}
+
+/// `manifest` with every entry of its `scenarios` array whose scenario
+/// `held` does not name left out, the array's commas rejoined; unchanged
+/// when either is not the shape the writer gives (the comparison then
+/// refuses it as it stands).
+fn without_new_scenarios(held: &str, manifest: &str) -> String {
+    let Ok(h) = serde_json::from_str::<serde_json::Value>(held) else {
+        return manifest.to_owned();
+    };
+    let names: std::collections::BTreeSet<&str> = h["scenarios"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|s| s["scenario"].as_str())
+        .collect();
+    let lines: Vec<&str> = manifest.split('\n').collect();
+    let Some(start) = lines.iter().position(|l| *l == "  \"scenarios\": [") else {
+        return manifest.to_owned();
+    };
+    let Some(end) = lines[start..]
+        .iter()
+        .position(|l| *l == "  ]," || *l == "  ]")
+        .map(|e| start + e)
+    else {
+        return manifest.to_owned();
+    };
+    // Each entry is exactly four lines, as `to_vec_pretty` writes it.
+    let body = &lines[start + 1..end];
+    if body.len() % 4 != 0 {
+        return manifest.to_owned();
+    }
+    let kept: Vec<&[&str]> = body
+        .chunks(4)
+        .filter(|e| {
+            e[1].trim_start()
+                .strip_prefix("\"scenario\": \"")
+                .and_then(|r| r.strip_suffix("\","))
+                .is_none_or(|n| names.contains(n))
+        })
+        .collect();
+    let mut out: Vec<String> = lines[..=start].iter().map(|l| (*l).to_owned()).collect();
+    for (i, e) in kept.iter().enumerate() {
+        out.extend(e[..3].iter().map(|l| (*l).to_owned()));
+        let close = e[3].trim_end_matches(',');
+        out.push(if i + 1 < kept.len() {
+            format!("{close},")
+        } else {
+            close.to_owned()
+        });
+    }
+    out.extend(lines[end..].iter().map(|l| (*l).to_owned()));
+    out.join("\n")
+}
+
+/// Before any gate (`AET-WO-4310` (4)): the committed package in `dir`
+/// states what its board was built at, or `verify --against-fab` refuses
+/// it by name, naming each line it lacks.
+pub fn states_built(dir: &Path) -> Result<(), Stop> {
+    let notes = text_of(dir, NOTES)?;
+    let text = String::from_utf8_lossy(&notes);
+    let lacking: Vec<&str> = ADMITTED_NOTES
+        .iter()
+        .copied()
+        .filter(|k| !text.lines().any(|l| l.starts_with(k)))
+        .collect();
+    if lacking.is_empty() {
+        return Ok(());
+    }
+    Err(Stop::refused(
+        "PackageBuiltUnstated",
+        format!(
+            "no package: {}'s {NOTES} states no {}: a package names its outline and its capacitance ladder as built (AET-WO-4310 (4)); write it again",
+            dir.display(),
+            lacking
+                .iter()
+                .map(|k| format!("`{}`", k.trim_end()))
+                .collect::<Vec<_>>()
+                .join(" and ")
         ),
     ))
 }
@@ -185,6 +288,82 @@ fn hex64(hex: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ---- `AET-WO-4310` (4), (5), ruled 2026-11-27T08:22Z (2) ----
+
+    #[test]
+    fn a_package_stating_both_built_lines_passes_and_lacking_either_is_refused_by_name() {
+        let d = std::env::temp_dir().join(format!("aet-4310-states-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let both = format!(
+            "x\n{}1 x 2 mm\n{}not run\n",
+            crate::fab::OUTLINE_KEY,
+            crate::fab::LADDER_KEY
+        );
+        std::fs::write(d.join(NOTES), &both).unwrap();
+        assert!(states_built(&d).is_ok());
+        for (k, other) in [
+            (crate::fab::OUTLINE_KEY, crate::fab::LADDER_KEY),
+            (crate::fab::LADDER_KEY, crate::fab::OUTLINE_KEY),
+        ] {
+            std::fs::write(d.join(NOTES), format!("x\n{other}y\n")).unwrap();
+            let e = states_built(&d).unwrap_err();
+            assert_eq!(e.kind, "PackageBuiltUnstated");
+            assert!(e.message.contains(&format!("`{}`", k.trim_end())), "{}", e.message);
+            assert!(!e.message.contains(&format!("`{}`", other.trim_end())), "{}", e.message);
+        }
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_rebind_admits_the_two_built_lines_by_key_and_nothing_else() {
+        let held = notes('a');
+        let mut with = held.replacen(
+            "\n",
+            &format!(
+                "\n{}85.00 x 99.75 mm\n{}rung 7, pour step 1\n",
+                crate::fab::OUTLINE_KEY,
+                crate::fab::LADDER_KEY
+            ),
+            1,
+        );
+        assert!(notes_bound_alike(
+            &admitted(NOTES, &held, &held),
+            &admitted(NOTES, &held, &with)
+        ));
+        // Any other added line is still moved.
+        with.push_str("- Built by hand: no\n");
+        assert!(!notes_bound_alike(
+            &admitted(NOTES, &held, &held),
+            &admitted(NOTES, &held, &with)
+        ));
+    }
+
+    #[test]
+    fn a_rebind_admits_a_scenario_entry_the_package_lacks_and_nothing_else() {
+        let held = manifest('a', 's', 'v', 'n', 'g');
+        let one = |name: &str, h: char| {
+            format!(
+                "    {{\n      \"scenario\": \"{name}\",\n      \"sha256\": \"{}\"\n    }}",
+                h.to_string().repeat(64)
+            )
+        };
+        // The derived manifest names `s` and a new `held-low-sda`.
+        let derived = held.replace(
+            &format!("{}\n  ],", one("s", 's')),
+            &format!("{},\n{}\n  ],", one("s", 's'), one("held-low-sda", 'h')),
+        );
+        assert_ne!(derived, held);
+        assert_eq!(admitted(MANIFEST, &held, &derived), held);
+        assert!(manifest_bound_alike(
+            &admitted(MANIFEST, &held, &held),
+            &admitted(MANIFEST, &held, &derived)
+        ));
+        // A known scenario's entry changed is not admitted: the line moves.
+        let moved = held.replace("\"scenario\": \"s\"", "\"scenario\": \"t\"");
+        assert!(!manifest_bound_alike(&held, &admitted(MANIFEST, &held, &moved)));
+    }
 
     const H: &str = "{\n  \"project\": \"b\",\n  \"specification_sha256\": \"AAAA\",\n  \"scenarios\": [\n    {\n      \"scenario\": \"s\",\n      \"sha256\": \"SSSS\"\n    }\n  ],\n  \"preconditions\": [\n    {\n      \"precondition\": \"every_gate_passed\",\n      \"state\": \"met\"\n    }\n  ],\n  \"verdict_sha256\": \"VVVV\",\n  \"files\": {\n    \"FAB-NOTES.md\": \"NNNN\",\n    \"b-F_Cu.gtl\": \"GGGG\"\n  }\n}\n";
 

@@ -774,6 +774,7 @@ const TOP: &[&str] = &[
     "generator_version",
     "general",
     "paper",
+    "title_block",
     "layers",
     "gr_rect",
     "embedded_fonts",
@@ -924,6 +925,10 @@ pub struct ReadBoard {
     pub board: Board,
     pub routed: Routed,
     pub footprints: BTreeMap<String, (String, String)>,
+    /// The rung and the pour step the board records it was built at
+    /// (`AET-WO-4310` (4), ruled D6), `None` with no record; the step `None`
+    /// on a board with no buck.
+    pub ladder: Option<(usize, Option<usize>)>,
 }
 
 /// Reads a `.kicad_pcb` text and refuses, before any estimate, a board the
@@ -950,6 +955,7 @@ pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refuse
     let board = tree.root();
     let mut once = BTreeSet::new();
     let mut footprints = BTreeMap::new();
+    let mut ladder = None;
     for item in board.lists() {
         let head = keyword(&item, "the board")?;
         if !TOP.contains(&head) {
@@ -976,6 +982,26 @@ pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refuse
                 }
                 modelled(&item, head)?;
             }
+            // `AET-WO-4310` (4): the title block holds the ladder's record
+            // and nothing else.
+            "title_block" => {
+                let children: Vec<_> = item.lists().collect();
+                let record = match children.as_slice() {
+                    [c] if c.head() == Some("comment") && c.arg(1) == Some("1") && c.len() == 3 => {
+                        c.arg(2).unwrap_or_default()
+                    }
+                    _ => {
+                        return Err(refused(
+                            "LadderRecordMalformed",
+                            "the title block holds other than one `(comment 1 \"...\")`, the capacitance ladder's record".to_owned(),
+                        ));
+                    }
+                };
+                ladder = Some(
+                    crate::schematic::parse_ladder_record(record)
+                        .map_err(|e| refused("LadderRecordMalformed", e))?,
+                );
+            }
             _ => {}
         }
     }
@@ -987,6 +1013,7 @@ pub fn read_tree(tree: &strict::Tree, stack: &Stack) -> Result<ReadBoard, Refuse
         board,
         routed,
         footprints,
+        ladder,
     })
 }
 
@@ -1708,6 +1735,7 @@ mod tests {
             },
             routed: route::Routed::default(),
             footprints: BTreeMap::from([("J1".into(), ("fp".into(), "v".into()))]),
+            ladder: None,
         };
         let want = Line {
             net: "I2C_SCL".into(),
