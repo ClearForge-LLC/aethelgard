@@ -172,6 +172,27 @@ fn a_regulator_fed_from_a_rail_is_judged_and_one_fed_from_the_battery_is_named_e
     assert_eq!(verdict_of(&v, "U13.B"), 'N');
     assert_eq!(verdict_of(&v, "U10"), 'E');
     assert_eq!(verdict_of(&v, "U11"), 'E');
+    // Its SPI crossing's timing is stated only from 3.0 V, above BOR3's
+    // 2540 mV: named (ruled 2026-11-27T08:22Z (1)).
+    assert_eq!(verdict_of(&v, "U13.timing"), 'N');
+    let t = supervisor::named(&spec(&v))
+        .unwrap()
+        .into_iter()
+        .find(|n| n.device == "U13.timing")
+        .unwrap();
+    assert!(
+        t.why
+            .starts_with("SPI crossing timing stated only from 3.0 V (")
+            && t.why.ends_with("); at the release floor not judged"),
+        "{}",
+        t.why
+    );
+    // Sentinel-03's crossing is a UART one: judged at the release floor, never named for timing.
+    assert!(
+        verdicts(&sentinel_03())
+            .iter()
+            .all(|(d, _)| !d.ends_with(".timing"))
+    );
     match supervisor::judged(&spec(&v))
         .unwrap()
         .into_iter()

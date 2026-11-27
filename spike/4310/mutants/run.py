@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AET-WO-4310 mutant kit: each mutant replaces one guard (exactly once), runs
-the suite named for it (`bin:FILTER`: the CLI binary's unit tests matching FILTER), and must fail it. The source is restored from a copy
+the suite named for it (`bin:FILTER`: the CLI binary's unit tests matching FILTER; `lib:FILTER`: the crate's own), and must fail it. The source is restored from a copy
 and touched, so cargo never reuses a mutant's binary. Usage: run.py LIST.tsv"""
 import os, shutil, subprocess, sys, time
 root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.."))
@@ -16,7 +16,12 @@ for mid, path, old, new, pkg, test in rows:
     try:
         open(f, "w").write(src.replace(old, new))
         t0 = time.time()
-        target = ["--bin", "aethelgard", test[4:]] if test.startswith("bin:") else ["--test", test]
+        if test.startswith("bin:"):
+            target = ["--bin", "aethelgard", test[4:]]
+        elif test.startswith("lib:"):
+            target = ["--lib", test[4:]]
+        else:
+            target = ["--test", test]
         r = subprocess.run(["nice", "-n", "10", "cargo", "test", "-q", "-p", pkg] + target,
                            cwd=root, env=env, capture_output=True, text=True)
         out = r.stdout + r.stderr

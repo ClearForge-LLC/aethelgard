@@ -372,7 +372,7 @@ pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> 
 /// held minimum, named.
 pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
     let (reset_min, reset) = reset_floor(spec)?;
-    Ok(powered(spec)?
+    let mut out: Vec<(Powered, Judgement)> = powered(spec)?
         .into_iter()
         .map(|p| {
             let named = |why: String| Named {
@@ -404,7 +404,74 @@ pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValid
             };
             (p, j)
         })
-        .collect())
+        .collect();
+    out.extend(spi_timing(spec, reset_min, crate::power_parts::table()?)?);
+    Ok(out)
+}
+
+/// Each SPI crossing whose side on the MCU's supply has its timing stated
+/// only above the reset's falling minimum (`AET-WO-4310` (2), ruled
+/// 2026-11-27T08:22Z (1)): between the two, its lines are not judged, so it
+/// is named, never passed. A UART crossing's lines are judged at the release
+/// floor instead (`power::radio_lines`).
+fn spi_timing(
+    spec: &Specification,
+    reset_min: u32,
+    pp: &crate::power_parts::PowerPartsTable,
+) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
+    let mut out = Vec::new();
+    let Some(p) = &spec.power else {
+        return Ok(out);
+    };
+    for t in p.translators().filter(|t| !t.uart) {
+        let Some(Kind::Translator(x)) = pp.get(t.part).map(|r| &r.kind) else {
+            continue;
+        };
+        let side: Option<fn(&crate::power_parts::Supplies) -> &crate::power_parts::Ranged> =
+            if *t.a_domain == spec.mcu.supply {
+                Some(|s| &s.vcca_millivolts)
+            } else if *t.b_domain == spec.mcu.supply {
+                Some(|s| &s.vccb_millivolts)
+            } else {
+                None
+            };
+        let Some(side) = side else { continue };
+        let Some(lowest) = x
+            .supplies
+            .iter()
+            .filter(|s| !s.uart_only)
+            .map(side)
+            .min_by_key(|r| r.range.min)
+        else {
+            continue;
+        };
+        let mv = u32::try_from(lowest.range.min).unwrap_or(u32::MAX);
+        if mv <= reset_min {
+            continue;
+        }
+        let named = Named {
+            device: format!("{}.timing", t.reference),
+            part: t.part.clone(),
+            rail: spec.mcu.supply.clone(),
+            why: format!(
+                "SPI crossing timing stated only from {}.{} V ({}); at the release floor not judged",
+                mv / 1000,
+                mv % 1000 / 100,
+                pp.cite(&lowest.at)
+            ),
+        };
+        out.push((
+            Powered {
+                device: named.device.clone(),
+                part: named.part.clone(),
+                rail: named.rail.clone(),
+                min: Some((mv, pp.cite(&lowest.at))),
+                elsewhere: None,
+            },
+            Judgement::Named(named),
+        ));
+    }
+    Ok(out)
 }
 
 /// Every powered part on the MCU's supply whose minimum is above the reset's
@@ -609,4 +676,40 @@ pub fn check_against(
         ),
     ));
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests_4310 {
+    /// `AET-WO-4310` (2), ruled 08:22Z (1): an SPI crossing's timing is named
+    /// only while its lowest stated band is above the reset; at it, it holds.
+    #[test]
+    fn spi_crossing_timing_is_named_only_above_the_reset() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/sentinel-02-power.json"
+        );
+        let spec: crate::Specification =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let t = crate::power_parts::table().unwrap();
+        assert_eq!(super::spi_timing(&spec, 2999, t).unwrap().len(), 1);
+        assert!(super::spi_timing(&spec, 3000, t).unwrap().is_empty());
+        // A UART-only row is never an SPI crossing's: stated lower there, the
+        // SPI rows' 3.0 V still decides.
+        let mut v: serde_json::Value =
+            serde_json::from_str(crate::power_parts::POWER_PARTS_JSON).unwrap();
+        for row in v["parts"].as_array_mut().unwrap() {
+            if row["part"] == "TXU0304PW" {
+                for s in row["kind"]["translator"]["supplies"]
+                    .as_array_mut()
+                    .unwrap()
+                {
+                    if s["uart_only"] == true {
+                        s["vcca_millivolts"]["min"] = serde_json::json!(1650);
+                    }
+                }
+            }
+        }
+        let low = crate::power_parts::parse_power_parts(&v.to_string()).unwrap();
+        assert_eq!(super::spi_timing(&spec, 2999, &low).unwrap().len(), 1);
+    }
 }
