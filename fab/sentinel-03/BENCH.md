@@ -30,10 +30,10 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 ## Rows
 
 ### B-1 The input path's drop (`input_path_resistance_at_25c:Q1`)
-- **Prediction (rule, at 25 °C):** at 1,906 mA the drop from J4.2 to `VBAT` is at most 81 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F).
+- **Prediction (rule, at 25 °C):** at 1,918 mA the drop from J4.2 to `VBAT` is at most 82 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F): 42.375 mΩ × 1,918 mA is 81.28 mV, rounded up. The branch's current is 1,918 mA since `AET-WO-4413` raised the radio rail (1,906 mA before).
 - **Instrument:** a bench supply at 9.0 V on J4 with the board running the ELF, a DMM across J4.2 and `VBAT` (Kelvin), and a clamp meter or the supply's ammeter.
-- **Source line** (this verdict's condition `input_path_resistance_at_25c:Q1`): "the input path's drop is 81 mV at 1906 mA through DMP6023LSS-13's RDS(on) 33 mΩ (|VGS| 4500 mV) and SF-1206F700-2's 9375 µΩ, each stated at 25 °C". 42.375 mΩ × 1,906 mA is 80.77 mV, rounded up; the acknowledgement's reason says 80.
-- **Pass line:** drop ≤ 81 mV × (measured current / 1,906 mA), at an ambient near 25 °C.
+- **Source line** (this verdict's condition `input_path_resistance_at_25c:Q1`): "the input path's drop is 84 mV at 1918 mA through DMP6023LSS-13's RDS(on) 33 mΩ (|VGS| 4500 mV) and SF-1206F700-2's 9375 µΩ and the pack's series 1000 µΩ (J4 XT30PW-M contact resistance …), each stated at 25 °C". The condition's 84 mV adds the pack's declared 1 mΩ, J4's mating contact, which a probe on J4.2 leaves out; the acknowledgement's reason says 80.
+- **Pass line:** drop ≤ 82 mV × (measured current / 1,918 mA), at an ambient near 25 °C.
 - **A disagreement adds:** the measured R at 25 °C. Repeated hot (B-4 run), it gives the temperature rise the condition names.
 
 ### B-2 The supervisor's thresholds (`supervisor_hysteresis_typical:U12`)
@@ -80,9 +80,9 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 - **A disagreement adds:** Sf, with the starts that failed. An Sf under 5 is a crystal or load-capacitor finding.
 
 ### B-8 U13's temperature (`buck_junction_screened:U13`, `theta_ja_copper_mismatch:U13`)
-- **Prediction (typical):** at its 505 mA load on `VDD_3V3_RF` and 490 mW of loss, the junction rises about 17.6 K (36.0 °C/W at 10 cm², for the 13.26 cm² the board joins; SNVSAW1E Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more.
-- **Source line** (`package/FAB-NOTES.md`): "U13: its junction is screened, not guaranteed: 490 mW of loss (declared: SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)) …) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 13.26 cm² per joined layer … is 102640 m°C on a 85 °C board, 22360 mK under 125 °C". The θJA curve's copper (2 oz/1 oz against the board's 1 oz/½ oz) is `theta_ja_copper_mismatch:U13`.
-- **Instrument:** as in B-4, on `VDD_3V3_RF` at 505 mA, with U30 held in reset (C90 shorted, so `/U30_EN` is low) so the load sets the current.
+- **Prediction (typical):** at its 505 mA load on `VDD_3V3_RF` and 512 mW of loss, the junction rises about 18.4 K (36.0 °C/W at 10 cm², for the 12.81 cm² the board joins; SNVSAW1E Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more. The loss is re-derived at the raised rail's 3.589 V maximum (`AET-WO-4413` D3; 490 mW at 3.417 V before).
+- **Source line** (this verdict's `extract` condition): "U13: its junction is screened, not guaranteed: 512 mW of loss (declared: SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (AET-WO-4411 (c1)); P_loss = 3.589 V x 505 mA x (1/0.78 - 1) = 511.2 mW, rounded up (AET-WO-4413 D3)) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 12.81 cm² per joined layer … is 103432 m°C on a 85 °C board, 21568 mK under 125 °C". The θJA curve's copper (2 oz/1 oz against the board's 1 oz/½ oz) is `theta_ja_copper_mismatch:U13`.
+- **Instrument:** as in B-4, on `VDD_3V3_RF`, with an electronic load beside U30 bringing U13's output current to 505 mA on the ammeter. U30 is not held off: its EN is U32's push-pull reset, which no row overrides (shorting it would pass RESET's ±10 mA absolute maximum, SBVS193D p. 6, 7.1).
 - **Pass line:** case rise ≤ 40 K above ambient.
 - **A disagreement adds:** the board's own θ for U13.
 

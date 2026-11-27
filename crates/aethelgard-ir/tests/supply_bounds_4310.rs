@@ -26,7 +26,7 @@ fn the_headroom_counts_the_packs_declared_series_with_its_source() {
         .find(|t| t.starts_with("Q1: the input path's drop is"))
         .expect("Q1's drop");
     assert!(
-        q1.contains("the input path's drop is 84 mV at 1916 mA")
+        q1.contains("the input path's drop is 84 mV at 1918 mA")
             && q1.contains("and the pack's series 1000 µΩ (J4 XT30PW-M"),
         "{q1}"
     );

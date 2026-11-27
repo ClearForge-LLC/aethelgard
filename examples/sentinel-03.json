@@ -2267,8 +2267,8 @@
         ],
         "junction": {
           "loss_milliwatts": {
-            "value": 490,
-            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)); P_loss = 3.417 V x 505 mA x (1/0.78 - 1) = 487 mW, rounded up"
+            "value": 512,
+            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (AET-WO-4411 (c1)); P_loss = 3.589 V x 505 mA x (1/0.78 - 1) = 511.2 mW, rounded up (AET-WO-4413 D3)"
           },
           "loss_at_milliamps": 505
         },
@@ -2979,7 +2979,7 @@
     },
     {
       "id": "buck_junction_screened:U13",
-      "reason": "TI's Figure 9-3 (SNVSAW1E) is typical; U13's 490 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature"
+      "reason": "TI's Figure 9-3 (SNVSAW1E) is typical; U13's 512 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature"
     },
     {
       "id": "buck_timing_conditions:U13",
@@ -3075,7 +3075,7 @@
     },
     {
       "id": "regulation_not_production_tested:U13",
-      "reason": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3_RF's floor is held by its feedback and its 144 mV drop limit"
+      "reason": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3_RF's floor is held by its feedback and its 145 mV drop limit"
     },
     {
       "id": "theta_ja_copper_mismatch:U13",

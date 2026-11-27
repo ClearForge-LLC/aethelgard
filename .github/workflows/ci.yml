@@ -674,7 +674,7 @@ jobs:
           assert len(extract) == 1 and extract[0]["verdict"] == "fail", extract
           got = sorted(f["message"] for f in extract[0]["findings"])
           want = sorted([
-              "`VDD_3V3`: VDD + VSS drop bound 286579 uV at 750 mA exceeds the declared 110 mV",
+              "`VDD_3V3`: VDD + VSS drop bound 286657 uV at 750 mA exceeds the declared 110 mV",
               "`VDD_3V3_RF`: VDD + VSS drop bound 220845 uV at 505 mA exceeds the declared 145 mV",
           ])
           assert got == want, got

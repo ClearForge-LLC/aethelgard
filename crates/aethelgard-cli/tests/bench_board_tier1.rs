@@ -171,10 +171,16 @@ const NOT_AN_ELF: [(&str, &str); 2] = [
     ("452d906c", "the W25Q64JV row of parts.json"),
 ];
 /// [`NOT_AN_ELF`] for Sentinel-03's sheet (`fab/sentinel-03/BENCH.md`).
-const S03_NOT_AN_ELF: [(&str, &str); 1] = [(
-    "1206F700",
-    "no digest: Bourns SF-1206F700-2, F1's part number, in B-1's source line (AET-WO-4411)",
-)];
+const S03_NOT_AN_ELF: [(&str, &str); 2] = [
+    (
+        "1206F700",
+        "no digest: Bourns SF-1206F700-2, F1's part number, in B-1's source line (AET-WO-4411)",
+    ),
+    (
+        "ec440f71",
+        "no digest: the commit Sentinel-03's withdrawn package was last valid at (AET-WO-4413 D6)",
+    ),
+];
 
 /// The sha256 of `ORDERED.sha256`'s as-ordered block: its header and the ten
 /// entries, every byte before the first ruling block. Its header says nothing

@@ -1806,7 +1806,7 @@ fn uart_crossings_shape(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
         // raises last, holds the outputs high-impedance through power-up; a
         // wire's driver and level through partial power-down are not judged.
         // `AET-WO-4413` (2), ruled D3: or OE driven by a rail monitor on VCCB,
-        // the module's rail (SCES935A p. 19, 9.1: OE "can be referenced to
+        // the module's rail (SCES935A 9.1, Overview: OE "can be referenced to
         // either VCCA or VCCB", and held low keeps the outputs high-impedance
         // through power-up and power-down); `supervisor::check` judges the
         // monitor and its rail.
