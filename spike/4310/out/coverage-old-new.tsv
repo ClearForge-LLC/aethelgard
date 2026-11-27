@@ -1,0 +1,22 @@
+s01-bench	old	{"no_device":["I2C bus `EXT` (no device: nothing to fault)"],"unmet":[]}
+s01-bench	new	{"no_device":["I2C bus `EXT` (no device: nothing to fault)"],"unmet":["I2C bus `SENSORS`"]}
+s03	old	{"no_device":["I2C bus `EXT` (no device: nothing to fault)"],"unmet":[]}
+s03	new	{"no_device":["I2C bus `EXT` (no device: nothing to fault)"],"unmet":["motor output `MOTOR1` (no fault kind reaches it)","motor output `MOTOR2` (no fault kind reaches it)","motor output `MOTOR3` (no fault kind reaches it)","motor output `MOTOR4` (no fault kind reaches it)"]}
+s01-seeded	old	{"no_device":[],"unmet":[]}
+s01-seeded	new	{"no_device":[],"unmet":[]}
+motors	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`"]}
+motors	new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","motor output `MOTOR1` (no fault kind reaches it)","motor output `MOTOR2` (no fault kind reaches it)","motor output `MOTOR3` (no fault kind reaches it)","motor output `MOTOR4` (no fault kind reaches it)"]}
+motors-pwm	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","rail `VDD_3V3`"]}
+motors-pwm	new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","rail `VDD_3V3`","motor output `MOTOR1` (no fault kind reaches it)","motor output `MOTOR2` (no fault kind reaches it)","motor output `MOTOR3` (no fault kind reaches it)","motor output `MOTOR4` (no fault kind reaches it)"]}
+serial	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","serial port `GPS`","serial port `SBUS`","rail `VDD_3V3`","rail `VDD_5V`"]}
+serial	new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","serial port `GPS`","serial port `SBUS`","rail `VDD_3V3`","rail `VDD_5V`"]}
+s02-power	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","SPI bus `IMU`","rail `VDD_3V3`","rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]}
+s02-power	new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","SPI bus `IMU`","rail `VDD_3V3`","rail `VDD_5V` (`VDD_5V` has no consumer a judge observes)"]}
+four-layer	old	{"no_device":[],"unmet":[]}
+four-layer	new	{"no_device":[],"unmet":["I2C bus `SENSORS`"]}
+two-bme	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","rail `VDD_3V3`"]}
+two-bme	new	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`","rail `VDD_3V3`"]}
+spi-only	old	{"no_device":[],"unmet":["I2C bus `SENSORS`","SPI bus `FLASH`"]}
+spi-only	new	{"no_device":[],"unmet":["I2C bus `SENSORS` (only unmodelled devices: no fault on it is witnessed)","SPI bus `FLASH`"]}
+s01-ready	old	{"no_device":[],"unmet":[]}
+s01-ready	new	{"no_device":[],"unmet":["I2C bus `SENSORS`"]}

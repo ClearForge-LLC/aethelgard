@@ -1,0 +1,90 @@
+diff --git a/crates/aethelgard-eda/src/supply.rs b/crates/aethelgard-eda/src/supply.rs
+index 2c4798d7..0dc464e7 100644
+--- a/crates/aethelgard-eda/src/supply.rs
++++ b/crates/aethelgard-eda/src/supply.rs
+@@ -1777,6 +1777,85 @@ pub fn supplies(
+             Some(m) => drop_bound_shared(&pins, &returns, load, m),
+             None => drop_bound(&pins, &returns, load),
+         };
++        // 4310 proto (3c): each other regulated domain's return current on
++        // the shared GND copper, charged at the transfer bound
++        // |R12| <= sqrt(R11 * R22) (a passive reciprocal network's resistance
++        // matrix is positive semidefinite), and the naive charge at R11.
++        if std::env::var_os("PROTO_4310_RETURNS").is_some() && gnd_plane {
++            let worst = |v: &[PinResult]| -> (Option<u64>, usize) {
++                let mut m = None;
++                let mut refused = 0;
++                for r in v {
++                    match r {
++                        PinResult::Bounded { r_bound_microohms, .. } => {
++                            m = Some(m.map_or(*r_bound_microohms, |x: u64| x.max(*r_bound_microohms)))
++                        }
++                        PinResult::Refused { .. } => refused += 1,
++                    }
++                }
++                (m, refused)
++            };
++            let (r11, r11_refused) = worst(&returns);
++            eprintln!("PROTO-4310 returns victim={d} load={load} mA own_drop={:?} uV limit={} mV R11={r11:?} uOhm (refused {r11_refused})", drop, limit.max_millivolts);
++            let mut extra_sqrt: u128 = 0;
++            let mut extra_naive: u128 = 0;
++            for r in power.regulators.iter().filter(|r| &r.output != d) {
++                let k = &r.output;
++                let ik = checked.domains.get(k).map_or(0, |c| c.load_milliamps);
++                let Some(row) = pp.get(&r.part) else { continue };
++                let pin_name = match &row.kind {
++                    aethelgard_ir::power_parts::Kind::Buck(_) => "PGND",
++                    _ => "GND",
++                };
++                let Some(rp) = row.pins.get(pin_name) else { continue };
++                let Ok(reg_pad) = pad(board, gnd, &r.reference, rp) else {
++                    eprintln!("PROTO-4310 returns   aggressor={k} via {}: its {pin_name} pad unread", r.reference);
++                    continue;
++                };
++                let rail_k = crate::schematic::Conn::Rail(k.clone());
++                let mut consumers: Vec<&Pad> = Vec::new();
++                let mut names = Vec::new();
++                for part in &parts {
++                    let on = part.conns.values().any(|c| *c == rail_k)
++                        && !part.lib_id.starts_with("Device:C")
++                        && part.lib_id != "Device:L"
++                        && part.lib_id != crate::schematic::TEST_POINT
++                        && part.reference != r.reference
++                        && !power.regulators.iter().any(|q| &q.input == k && q.reference == part.reference);
++                    if !on {
++                        continue;
++                    }
++                    let g: Vec<&Pad> = pads_of(board, &part.reference)
++                        .into_iter()
++                        .filter(|q| q.net.as_deref() == Some(gnd))
++                        .collect();
++                    if !g.is_empty() {
++                        names.push(part.reference.clone());
++                    }
++                    consumers.extend(g);
++                }
++                if consumers.is_empty() {
++                    eprintln!("PROTO-4310 returns   aggressor={k} {ik} mA via {}: no on-board consumer has a GND pad (its return enters off-board)", r.reference);
++                    continue;
++                }
++                match run(gnd, reg_pad, &consumers) {
++                    Ok((res, _)) => {
++                        let (r22, refused) = worst(&res);
++                        let names_refused: Vec<String> = res.iter().filter_map(|x| match x { PinResult::Refused { pin, kind, .. } => Some(format!("{pin}:{kind}")), _ => None }).collect();
++                        let sq = match (r11, r22) {
++                            (Some(a), Some(b)) => Some(((u128::from(a) * u128::from(b)) as f64).sqrt() as u128 * u128::from(ik) / 1000),
++                            _ => None,
++                        };
++                        let nv = r11.map(|a| u128::from(a) * u128::from(ik) / 1000);
++                        if let Some(x) = sq { extra_sqrt += x; }
++                        if let Some(x) = nv { extra_naive += x; }
++                        eprintln!("PROTO-4310 returns   aggressor={k} {ik} mA via {} PGND, consumers {names:?}: R22max={r22:?} uOhm (refused {refused} {names_refused:?}); sqrt-term={sq:?} uV; naive-term={nv:?} uV", r.reference);
++                    }
++                    Err(e) => eprintln!("PROTO-4310 returns   aggressor={k} via {}: copper refused {}", r.reference, e.message),
++                }
++            }
++            eprintln!("PROTO-4310 returns   victim={d} total sqrt={} uV naive={} uV; battery-fed regulators' input returns run to {}'s GND: not counted here", drop.map_or(0, |x| u128::from(x)) + extra_sqrt, drop.map_or(0, |x| u128::from(x)) + extra_naive, power.input.reference);
++        }
+         let note = pitch_note(drop, limit.max_millivolts);
+         out.push(Gate {
+             domain: d.clone(),

@@ -1,0 +1,8 @@
+PROTO-4310 returns victim=VDD_3V3 load=750 mA own_drop=Some(85737) uV limit=110 mV R11=Some(65325) uOhm (refused 0)
+PROTO-4310 returns   aggressor=VDD_5V 2000 mA via U10 PGND, consumers ["J6", "J7", "J8"]: R22max=Some(41501) uOhm (refused 0 []); sqrt-term=Some(104134) uV; naive-term=Some(130650) uV
+PROTO-4310 returns   aggressor=VDD_3V3_RF 505 mA via U13 PGND, consumers ["U31", "U30"]: R22max=Some(32895) uOhm (refused 0 []); sqrt-term=Some(23409) uV; naive-term=Some(32989) uV
+PROTO-4310 returns   victim=VDD_3V3 total sqrt=213280 uV naive=249376 uV; battery-fed regulators' input returns run to J4's GND: not counted here
+PROTO-4310 returns victim=VDD_3V3_RF load=505 mA own_drop=Some(122724) uV limit=144 mV R11=Some(26790) uOhm (refused 0)
+PROTO-4310 returns   aggressor=VDD_5V 2000 mA via U10 PGND, consumers ["J6", "J7", "J8"]: R22max=Some(41501) uOhm (refused 0 []); sqrt-term=Some(66686) uV; naive-term=Some(53580) uV
+PROTO-4310 returns   aggressor=VDD_3V3 750 mA via U11 PGND, consumers ["U1", "U3", "U7", "U4", "U5", "U31", "J2", "J3", "U12"]: R22max=Some(67926) uOhm (refused 0 []); sqrt-term=Some(31993) uV; naive-term=Some(20092) uV
+PROTO-4310 returns   victim=VDD_3V3_RF total sqrt=221403 uV naive=196396 uV; battery-fed regulators' input returns run to J4's GND: not counted here

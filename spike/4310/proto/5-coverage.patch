@@ -1,0 +1,61 @@
+diff --git a/crates/aethelgard-cli/src/verify.rs b/crates/aethelgard-cli/src/verify.rs
+index a86e3d7e..4467eef9 100644
+--- a/crates/aethelgard-cli/src/verify.rs
++++ b/crates/aethelgard-cli/src/verify.rs
+@@ -1813,10 +1813,15 @@ fn classify(
+                 _ => None,
+             })
+             .collect();
++        // 4310 proto (5)(i): no I2C pull-up or line capacitance declares a
++        // tolerance, so a tolerated change of either covers nothing.
+         if intolerable || changed.iter().any(|(t, _)| t.is_none()) {
+             return Seeded::Tolerable(Vec::new(), lacks);
+         }
+-        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).collect(), lacks);
++        // 4310 proto (5)(i): a tolerable I2C target comes only from a raised
++        // pull-up or capacitance, and neither declares a tolerance.
++        let proto = std::env::var_os("PROTO_4310_COV").is_some();
++        return Seeded::Tolerable(changed.into_iter().filter_map(|(t, _)| t).filter(|t| !(proto && matches!(t, Target::I2c(_)))).collect(), lacks);
+     }
+     // One target, one mechanism, every changed override stressing it, and the
+     // declared findings within that mechanism's kinds.
+@@ -1903,6 +1908,15 @@ fn coverage(
+             (used, Target::Spi(b.id.clone()))
+         }))
+     {
++        let modelled = match &target {
++            Target::I2c(id) => spec.declared_i2c_devices().iter().filter(|d| &d.bus == id).any(|d| aethelgard_twin::model::kind(&d.part).ok().flatten().is_some()),
++            Target::Spi(id) => spec.declared_spi_devices().iter().filter(|d| &d.bus == id).any(|d| aethelgard_twin::model::kind(&d.part).ok().flatten().is_some()),
++            _ => true,
++        };
++        if std::env::var_os("PROTO_4310_COV").is_some() && used && !modelled {
++            c.unmet.push(format!("{} (only unmodelled devices: no fault on it is witnessed)", target.name()));
++            continue;
++        }
+         if !used {
+             c.no_device.push(format!("{} ({nothing})", target.name()));
+         } else if !covered.contains(&target) {
+@@ -1978,6 +1992,11 @@ fn coverage(
+             _ => c.unmet.push(target.name()),
+         }
+     }
++    if std::env::var_os("PROTO_4310_COV").is_some() {
++        for m in &spec.motor_outputs {
++            c.unmet.push(format!("motor output `{}` (no fault kind reaches it)", m.label));
++        }
++    }
+     if spec.power.is_some() && !covered.contains(&Target::Battery) {
+         c.unmet.push(Target::Battery.name());
+     }
+@@ -2366,6 +2385,11 @@ pub fn verify(
+     // before any gate (`AET-WO-3303` D1, ruled): the gates then decide
+     // whether each run survived or detected its fault.
+     let seeded: Vec<Seeded> = expected.iter().map(|e| e.seeded.clone()).collect();
++    if std::env::var_os("PROTO_4310_PRINT").is_some() {
++        let c = coverage(&spec, &topology, &seeded, None);
++        println!("{}", serde_json::json!({"unmet": c.unmet, "no_device": c.no_device}));
++        return ExitCode::from(0);
++    }
+     if fab_mode.is_some() {
+         let short = coverage(&spec, &topology, &seeded, None);
+         if !short.unmet.is_empty() {
