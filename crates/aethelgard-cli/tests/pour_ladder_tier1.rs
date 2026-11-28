@@ -106,7 +106,7 @@ fn a_need_no_step_clears_is_refused_by_name() {
 /// no pour step, and Sentinel-01's board is the same bytes as before the
 /// ladder (sha256 measured on 3a35be0f's build and on this one). The board
 /// names the engine's version (`generator_version`), so each version moves
-/// the hash (`AET-WO-1802`; 0.3.0's here).
+/// the hash (`AET-WO-1802`; 0.4.0-dev's here).
 #[test]
 fn a_board_with_no_buck_takes_step_0_and_moves_no_byte() {
     let (code, v, dir) = emit("s01", &root().join("examples/sentinel-01.json"));
@@ -119,7 +119,7 @@ fn a_board_with_no_buck_takes_step_0_and_moves_no_byte() {
         .collect();
     assert_eq!(
         hash,
-        "6f37e94551a3f0a8709b38069925a0746ad8cb14f58a7d602dc5850ceff54482"
+        "465568c92d36865538932d23a0aa32847018b3410dff324d05103488ff679382"
     );
     let ready = root().join("crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json");
     let (code, v, _) = emit("ready", &ready);

@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "aethelgard-chaos"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "rustix",
  "serde",
@@ -21,7 +21,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-cli"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-eda",
@@ -47,7 +47,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-eda"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-ir",
  "aethelgard-kicad-lib",
@@ -57,7 +57,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-evolve"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-svd-hal",
@@ -65,7 +65,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-hwdef"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-ir",
  "serde_json",
@@ -74,7 +74,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-ir"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "serde",
  "serde_json",
@@ -84,11 +84,11 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-kicad-lib"
-version = "0.3.0"
+version = "0.4.0-dev"
 
 [[package]]
 name = "aethelgard-pincheck"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-ir",
  "miniz_oxide",
@@ -99,11 +99,11 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-renode-models"
-version = "0.3.0"
+version = "0.4.0-dev"
 
 [[package]]
 name = "aethelgard-svd-hal"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-cli",
  "aethelgard-ir",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "aethelgard-twin"
-version = "0.3.0"
+version = "0.4.0-dev"
 dependencies = [
  "aethelgard-chaos",
  "aethelgard-ir",

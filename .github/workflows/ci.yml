@@ -121,18 +121,30 @@ jobs:
           set -euo pipefail
           # Dependency order: cargo packages a path dependency's sibling from the
           # same invocation, so this list is also the order docs/releasing.md publishes in.
-          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-renode-models aethelgard-svd-hal aethelgard-eda aethelgard-twin aethelgard-chaos aethelgard-evolve aethelgard-pincheck aethelgard-hwdef aethelgard-cli"
+          crates="aethelgard-ir aethelgard-kicad-lib aethelgard-renode-models aethelgard-svd-hal aethelgard-eda aethelgard-chaos aethelgard-twin aethelgard-evolve aethelgard-pincheck aethelgard-hwdef aethelgard-cli"
+          meta=$(cargo metadata --no-deps --format-version 1 --locked)
           # The list must be exactly the workspace members that may publish.
-          want=$(cargo metadata --no-deps --format-version 1 --locked \
-            | jq -r '.packages[] | select(.publish != []) | .name' | sort | tr '\n' ' ')
+          want=$(jq -r '.packages[] | select(.publish != []) | .name' <<<"$meta" | sort | tr '\n' ' ')
           have=$(printf '%s\n' $crates | sort | tr '\n' ' ')
           test "$want" = "$have" || { echo "publishable set drifted: workspace [$want] vs step [$have]"; exit 1; }
+          # And it must be a publish order (AET-WO-1802, ruled 2026-11-28T05:53Z):
+          # each crate's normal aethelgard-* dependencies come earlier in it. One
+          # cargo package invocation packages siblings together whatever the order,
+          # so only crates.io would see a wrong one: 0.3.0's publish stopped at twin,
+          # which needs chaos. Dev-dependencies do not bind a publish.
+          seen=" "
+          for c in $crates; do
+            for d in $(jq -r --arg c "$c" '.packages[] | select(.name == $c) | .dependencies[]
+                | select(.kind == null and (.name | startswith("aethelgard-"))) | .name' <<<"$meta"); do
+              [[ $seen == *" $d "* ]] || { echo "publish order: $c comes before its dependency $d"; exit 1; }
+            done
+            seen="$seen$c "
+          done
           args=""; for c in $crates; do args="$args -p $c"; done
           # The workspace version, read once (AET-WO-1801): every crate shares it,
           # so a release bump needs no edit here.
-          v=$(cargo metadata --no-deps --format-version 1 --locked \
-            | jq -r '.packages[] | select(.name == "aethelgard-cli") | .version')
-          [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "no workspace version: [$v]"; exit 1; }
+          v=$(jq -r '.packages[] | select(.name == "aethelgard-cli") | .version' <<<"$meta")
+          [[ $v =~ ^[0-9]+\.[0-9]+\.[0-9]+(-dev)?$ ]] || { echo "no workspace version: [$v]"; exit 1; }
           echo "ANSWER package_version=$v"
           rm -rf target/package
           # --no-verify (AET-WO-3200 F18, ruled 2026-11-12): once a version is on

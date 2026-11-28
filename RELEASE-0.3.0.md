@@ -5,9 +5,10 @@ Run this from your own workstation, never Furnace, with your own crates.io token
 ## 0. Before you start
 
 - **The commit.**
-  1. Run `git switch main && git pull && git status`. It should say `nothing to commit, working tree clean`.
-  2. Run `git log -1 --format=%H`. It should name the commit CI passed on: the 0.3.0 bump commit (`AET-WO-1802`), or a later one before `main` moves to `0.4.0-dev`.
-  3. Run `grep -m1 '^version' Cargo.toml`. It should print `version = "0.3.0"`. **If it ends in `-dev`, stop:** that is `main` between releases, and a `-dev` version is never published (`docs/releasing.md`).
+  0.3.0 is the snapshot at `ec440f71`, the merge of `AET-WO-1802` (#412), where CI passed. `main` has moved on since (specification 32, then `0.4.0-dev`), so publish from that commit, never from `main`. Read this checklist from `main`, but run every command below in a checkout of `ec440f71`.
+  1. Run `git fetch origin && git checkout ec440f71577480657e1191d7b9285519b2af363b && git status`. It should say `HEAD detached at` and the commit's short hash (`ec440f7…`), then `nothing to commit, working tree clean`.
+  2. Run `git log -1 --format=%H`. It should print `ec440f71577480657e1191d7b9285519b2af363b`.
+  3. Run `grep -m1 '^version' Cargo.toml`. It should print `version = "0.3.0"`. **If it prints anything else, `-dev` included, stop:** you are not on the snapshot, and a `-dev` version is never published (`docs/releasing.md`).
 - **The token,** made on crates.io under Account Settings, API Tokens:
   - scopes `publish-new` and `publish-update` (one crate is new: `aethelgard-hwdef`, which answered 404 on 2026-11-26);
   - crate scope `aethelgard-*`;
@@ -65,12 +66,13 @@ The second command should print `aethelgard 0.3.0 (commit unknown)`. A crates.io
 /tmp/aethelgard-0.3.0/bin/aethelgard validate < examples/sentinel-03.json; echo "exit $?"
 ```
 
-It should print one JSON line starting `{"ok":true,"project_name":"sentinel-03",`, then `exit 0`. *(The same `validate`, run on Furnace from a clean `cargo install --path crates/aethelgard-cli --locked` of the trial bump, gave exit 0. Re-run at the bump commit.)*
+Run it in the `ec440f71` checkout: that `examples/sentinel-03.json` is specification 31, which 0.3.0 reads (`main`'s is 32). It should print one JSON line starting `{"ok":true,"project_name":"sentinel-03",`, then `exit 0`. *(The same `validate`, run on Furnace from a clean `cargo install --path crates/aethelgard-cli --locked` of the trial bump, gave exit 0. Re-run at the bump commit.)*
 
 ## 3. Afterward
 
 - Revoke the token on crates.io.
-- Tell the architect. The README's install line is a docs PR after the publish, and `main` moves to `0.4.0-dev` by its own PR (`AET-WO-1802` (4)).
+- Tell the architect. The README's install line is a docs PR after the publish. `main` is already `0.4.0-dev` (`AET-WO-1802` (4)).
+- Run `git switch main` to leave the detached checkout.
 
 ## What 0.3.0 can do that 0.2.0 could not
 
