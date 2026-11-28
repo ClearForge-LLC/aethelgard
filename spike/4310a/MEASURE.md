@@ -39,3 +39,16 @@ The tools shards already run every test target, weighed. Gates runs these four a
   - `battery_sag_tier1` and `emit_tier1` run `verify`;
   - `radio_tier1` runs `check drc` with no `PATH`, and its refusal's order against the CLI's scratch is not shown.
 - **Predicted:** gates' binaries fall by 1,284 s at `86a1f280`'s speed (707 + 214 + 183 + 180), from 2,801 to about 1,517 s (25 min). The tools shards are unchanged, since the four are already in their plan.
+
+## Before and after, measured on Furnace as CI runs gates
+
+`ci/gates.sh run`, inherited descriptors closed as ci.yml closes them, `RUST_TEST_THREADS=2`, both runs in one target directory (the after run built only what the tree changed, so its wall includes less build: the binaries' sum is the like-for-like figure).
+
+| tree | gates wall | binaries' sum | binaries | failed |
+|---|---|---|---|---|
+| `808766ea` (before) | 2,313 s (38.5 min) | 2,173 s | 161 | 0 |
+| `fb835f44` (after) | 1,521 s (25.4 min) | 1,386 s | 157 | 0 |
+
+- −787 s of binaries: the four that moved (361 + 149 + 137 + 136 s), and nothing else.
+- **On CI** at `86a1f280`'s runner speed, the same four were 1,284 s of its 2,801, so gates' binaries are predicted at about 1,517 s (about 25 min of the step's 51).
+- **This PR's own `gates` run is the after** on CI. Its time is in the PR's FEEDBACK once it runs.
