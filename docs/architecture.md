@@ -698,6 +698,7 @@ Each names a decider and what it blocks. None is a placeholder.
     - clearance above the fabricator's minimum;
     - capacitance-bounded nets kept short.
   - **Each candidate trades against another bound,** which is why the objective is the smallest margin: a wider trace adds capacitance, and spreading parts lengthens nets. A separation between parts (a switching regulator from the IMU, an aggressor from a victim) is spent on only once it is a declared, cited rule the judge checks; until then it is not a margin.
+  - **Scotty agreed with the proposed rule** (2026-11-28: "A measurable increase to the worst stats on the board … They need to have a purpose and a result"). The ruling stays open for its mechanics.
   - **Decider:** Scotty and the architect, after the envelope work order. **Blocks:** the slack work order only.
 
 ## 9. What this document does not cover
