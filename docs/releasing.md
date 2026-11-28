@@ -25,16 +25,16 @@ A published release is a pinned snapshot with no promise of updates (`RUL-21`).
 
 ## The order
 
-Dependencies first. The order is the dependency graph's: no crate comes before one of its dependencies, and CI's packaging step lists the same order. Each command is `cargo publish -p <crate> --locked`:
+Dependencies first. The order is the dependency graph's: no crate comes before one of its dependencies. **Derive it from the graph at the release commit, never copy it from the last release:** `cargo metadata --no-deps --format-version 1 --locked` lists each crate's normal dependencies, and a crate's `aethelgard-*` dependencies must all come before it. CI's packaging step does not prove the order: one `cargo package` invocation packages siblings together whatever the list says. The 0.3.0 table had `aethelgard-twin` before `aethelgard-chaos`, which it depends on; the publish stopped at twin before any upload, and went on in the order below (2026-11-28). Each command is `cargo publish -p <crate> --locked`:
 
 1. `aethelgard-ir`
 2. `aethelgard-kicad-lib`
 3. `aethelgard-renode-models`
 4. `aethelgard-svd-hal` (needs 1)
 5. `aethelgard-eda` (needs 1, 2)
-6. `aethelgard-twin` (needs 1, 3, 4)
-7. `aethelgard-chaos`
-8. `aethelgard-evolve` (needs 4, 7)
+6. `aethelgard-chaos`
+7. `aethelgard-twin` (needs 1, 3, 4, 6)
+8. `aethelgard-evolve` (needs 4, 6)
 9. `aethelgard-pincheck` (needs 1)
 10. `aethelgard-hwdef` (needs 1; `AET-WO-4400b`, first published at 0.3.0)
 11. `aethelgard-cli` (needs 1, 4, 5, 6, 7, 8, 9, 10)

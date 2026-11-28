@@ -1,5 +1,7 @@
 # Releasing 0.3.0: Scotty's checklist
 
+**Published 2026-11-28 from `ec440f71`, all eleven crates,** from a cloud session whose network proxy held the token (never in a file, the environment or an argument); the token was revoked afterward. The table below is corrected: as first written it put `aethelgard-twin` (step 6) before `aethelgard-chaos`, which twin depends on. That publish stopped at twin with `failed to select a version for the requirement aethelgard-chaos = "^0.3.0"`, before any upload, and went on in this order. The step 0 workspace dry run did not catch it, because `cargo publish --workspace` orders the crates itself. `aethelgard --version` from the crates.io install printed `aethelgard 0.3.0 (commit unknown)`, and `validate` of `examples/sentinel-03.json` exited 0.
+
 Run this from your own workstation, never Furnace, with your own crates.io token. `docs/releasing.md` is the procedure behind each step, and `AET-WO-1802` prepared it. Each command is followed by what it should print.
 
 ## 0. Before you start
@@ -31,9 +33,9 @@ Before each crate from step 4 on, check that its dependencies are live:
 | 3 | `cargo publish -p aethelgard-renode-models --locked` | none |
 | 4 | `cargo publish -p aethelgard-svd-hal --locked` | 1 |
 | 5 | `cargo publish -p aethelgard-eda --locked` | 1, 2 |
-| 6 | `cargo publish -p aethelgard-twin --locked` | 1, 3, 4 |
-| 7 | `cargo publish -p aethelgard-chaos --locked` | none |
-| 8 | `cargo publish -p aethelgard-evolve --locked` | 4, 7 |
+| 6 | `cargo publish -p aethelgard-chaos --locked` | none |
+| 7 | `cargo publish -p aethelgard-twin --locked` | 1, 3, 4, 6 |
+| 8 | `cargo publish -p aethelgard-evolve --locked` | 4, 6 |
 | 9 | `cargo publish -p aethelgard-pincheck --locked` | 1 |
 | 10 | `cargo publish -p aethelgard-hwdef --locked` | 1 |
 | 11 | `cargo publish -p aethelgard-cli --locked` | 1, 4, 5, 6, 7, 8, 9, 10 |
