@@ -77,14 +77,37 @@ fn stackup(v: &mut Value) -> &mut serde_json::Map<String, Value> {
 /// 04:51Z): U30's power-down order and Ioff buffer closed; U31's two
 /// bypasses, its supply drop, partial power-down, inferred thresholds and
 /// TMAX, the firmware's pulls, and U30's high-impedance load named.
+/// `AET-WO-4310` (2), ruled 2026-11-27T07:42Z (3): every other gap of the
+/// base is closed, and it is refused for its design alone: U30 and U31's B
+/// side on `VDD_3V3_RF`. Since `AET-WO-4413` U32 drives both, but does not
+/// sense at their pins (ruled 21:31Z A1 (i)), so neither is passed: 103
+/// conditions (U30's `radio_rail_monitor` closed; U32's hysteresis and
+/// U30's supply peak, G1, named), none stale.
 #[test]
-fn the_base_passes_the_gate_with_102_conditions_from_every_source_and_none_stale() {
+fn the_base_is_refused_only_for_the_two_parts_its_monitor_does_not_sense_with_103_conditions_none_stale()
+ {
     let (spec, t, c) = base();
-    assert_eq!(readiness::check(spec, t, c), Ok(()));
-    assert_eq!(c.len(), 102);
+    let g = readiness::check(spec, t, c).expect_err("U30 and U31.B are named");
+    assert_eq!(g.id, "U30");
+    assert!(
+        g.message
+            .contains("no package: 2 powered part(s) whose supply nothing guarantees"),
+        "{}",
+        g.message
+    );
+    for named in [
+        "U30 (ESP32-C3-WROOM-02-N4) on `VDD_3V3_RF`: monitored by U32, but U32 does not sense at U30's pin; the drop between is not bounded",
+        "U31.B (TXU0304PW) on `VDD_3V3_RF`: monitored by U32, but U32 does not sense at U31's pin; the drop between is not bounded",
+    ] {
+        assert!(g.message.contains(named), "{named}: {}", g.message);
+    }
+    assert!(!g.message.contains("U31.A"), "{}", g.message);
+    assert_eq!(c.len(), 103);
     for id in [
         "buck_junction_screened:U10",
         "supervisor_hysteresis_typical:U12",
+        "supervisor_hysteresis_typical:U32",
+        "radio_supply_peak_unbounded:U30",
         "stackup_condition:outer-copper-min",
         "hse_safety_factor_unmeasured:HSE",
         "pin_capacitance_declared:U5",
@@ -99,11 +122,34 @@ fn the_base_passes_the_gate_with_102_conditions_from_every_source_and_none_stale
         "translator_threshold_inferred:U31",
         "translator_rate_inferred:U31",
         "uart_internal_pulls:U31",
-        "radio_rail_monitor:U30",
     ] {
         assert!(c.contains_key(id), "{id} missing from {:?}", c.keys());
     }
+    assert!(!c.contains_key("radio_rail_monitor:U30"), "{:?}", c.keys());
     assert_eq!(readiness::stale(spec, c), None);
+}
+
+/// Without U32 (U30 on its RC again, U31's OE strapped), the `4310`
+/// refusal is as it was: both held by no monitor.
+#[test]
+fn the_base_without_its_rail_monitor_names_u30_and_u31_b_as_held_by_none() {
+    let (_, t, c) = base();
+    let mut v = base_json();
+    v["power"].as_object_mut().unwrap().remove("rail_monitors");
+    v["radio_modules"][0]["enable"] = serde_json::json!({
+        "resistor": {"reference": "R90", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3_RF"},
+        "capacitor": {"reference": "C90", "part": "GRM188R71C105KA12"}});
+    v["power"]["uart_crossings"][0]["controls"] =
+        serde_json::json!([{"pin": "OE", "strap": "vcca", "wire": null}]);
+    let g = readiness::check(&spec_of(&v), t, c).expect_err("U30 and U31.B are named");
+    assert_eq!(g.id, "U30");
+    for named in [
+        "U30 (ESP32-C3-WROOM-02-N4) on `VDD_3V3_RF`: its supply minimum",
+        "U31.B (TXU0304PW) on `VDD_3V3_RF`: its supply minimum",
+    ] {
+        assert!(g.message.contains(named), "{named}: {}", g.message);
+    }
+    assert!(g.message.contains("held by no monitor"), "{}", g.message);
 }
 
 #[test]

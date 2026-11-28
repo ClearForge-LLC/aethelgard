@@ -92,6 +92,41 @@ pub struct Bound<'a> {
     /// What the campaign's verdicts do not claim, each once (`AET-WO-2304b`
     /// §1.7, §1.11): the notes state them verbatim.
     pub campaign: &'a [String],
+    /// What the board was built at, as `extract` read it (`AET-WO-4310`
+    /// (4)): [`built_lines`].
+    pub built: &'a [String],
+}
+
+/// The line FAB-NOTES states the board's outline on, by its key.
+pub const OUTLINE_KEY: &str = "- Outline as built: ";
+/// The line FAB-NOTES states the capacitance ladder on, by its key.
+pub const LADDER_KEY: &str = "- Capacitance ladder: ";
+
+/// FAB-NOTES' two lines of what the board was built at (`AET-WO-4310` (4),
+/// ruled D6), from the `extract` gate's `built`: its outline, and its
+/// capacitance ladder's rung and pour step or that it ran none. Empty when
+/// the gate states neither.
+pub fn built_lines(built: &serde_json::Value) -> Vec<String> {
+    let mut out = Vec::new();
+    if let Some(o) = built["outline_mm"].as_str() {
+        out.push(format!(
+            "{OUTLINE_KEY}{o} mm, the board's `Edge.Cuts` rectangle as `extract` read it"
+        ));
+    }
+    let l = &built["capacitance_ladder"];
+    if l == "not_run" {
+        out.push(format!(
+            "{LADDER_KEY}not run: the specification declares no `board.stackup.fab_tolerances`"
+        ));
+    } else if let Some(r) = l["rung"].as_u64() {
+        let step = l["pour_step"]
+            .as_u64()
+            .map_or_else(|| "none (no buck)".to_owned(), |s| s.to_string());
+        out.push(format!(
+            "{LADDER_KEY}rung {r}, pour step {step}, as the board records it and `extract` read it"
+        ));
+    }
+    out
 }
 
 /// What the export reports for the verdict's `fab` key: the tool it ran and
@@ -274,6 +309,7 @@ pub fn derive(b: &Bound<'_>) -> Result<Exported, Stop> {
         &stack,
         &drills,
         &Stated {
+            built: b.built,
             conditions: b.conditions,
             lifecycle: b.lifecycle,
             support: b.support,
@@ -323,6 +359,7 @@ pub fn gerbers(stack: &aethelgard_eda::stack::Stack) -> Vec<(String, String, usi
 /// What the verdict states that the notes repeat: `extract`'s conditions,
 /// the lifecycle lines, and the support gate's lines.
 struct Stated<'a> {
+    built: &'a [String],
     conditions: &'a [String],
     lifecycle: &'a [String],
     support: &'a [String],
@@ -350,6 +387,7 @@ fn notes(
         kicad_version: KICAD_VERSION,
         files: &described,
         stack,
+        built: stated.built,
         conditions: stated.conditions,
         lifecycle: stated.lifecycle,
         drills,
@@ -1216,6 +1254,7 @@ mod tests {
                         &aethelgard_eda::stack::Stack::of(&spec).unwrap(),
                         &vias_only(n),
                         &Stated {
+                            built: &[],
                             conditions: &stated,
                             lifecycle: &[],
                             support: &[],
@@ -1387,6 +1426,7 @@ mod tests {
                 lifecycle: &[],
                 support: &[],
                 campaign: &[],
+                built: &[],
             });
             e.err().expect("a swapped binding is refused")
         };

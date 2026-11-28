@@ -1,0 +1,13 @@
+# INV-08 at this branch's head f4110ddc (2026-11-27), against main d4c68028's build (AET-WO-1802 merged; the same result held against adbd5c66): every
+# committed specification JSON in examples/, crates/aethelgard-cli/tests/fixtures/ and crates/aethelgard-ir/tests/fixtures/ (43 files), emitted and solved by both.
+emit: 27 draw, 16 refused, as on main; every refusal keeps its kind.
+emit: every schematic and BOM byte-identical; every board byte-identical except the four laddered boards, each by its three-line
+      title-block record (AET-WO-4310 (4), ruled D6):
+  crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json   (comment 1 "aethelgard capacitance_ladder rung 7 pour_step none")
+  crates/aethelgard-cli/tests/fixtures/sentinel-03-radio.json   (rung 5 pour_step 0)
+  crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json    (rung 0 pour_step none)
+  examples/sentinel-03.json                                    (comment 1 "aethelgard capacitance_ladder rung 7 pour_step 1")
+solve: byte-identical for every specification but the three power trees, as ruled (3b): sentinel-03 (81 -> 83 mV),
+       sentinel-03-radio (80 -> 82 mV at 1871 mA) and sentinel-02-power (70 -> 72 mV); Sentinel-03 also gains the release-floor
+       notes and one screen sentence (2).
+extract: every drawn board's verdict gains `capacitance_ladder` (or "not_run") and `outline_mm` (ruled D6).

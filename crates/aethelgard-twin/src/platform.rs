@@ -703,6 +703,18 @@ pub fn emit_faulted(
     faulted: &BTreeSet<String>,
     absent: &BTreeSet<String>,
 ) -> Result<String, TwinError> {
+    emit_opened(topology, faulted, absent, &BTreeSet::new())
+}
+
+/// [`emit_faulted`] with each motor output of `open` held open by the
+/// scenario (`AET-WO-4310` (5), ruled D7 (iii)): its observer, which stands
+/// where the ESC would, is declared and left unconnected, so it sees no edge.
+pub fn emit_opened(
+    topology: &SolvedTopology,
+    faulted: &BTreeSet<String>,
+    absent: &BTreeSet<String>,
+    open: &BTreeSet<String>,
+) -> Result<String, TwinError> {
     let instances = stock_instances(topology)?;
     let kept = present(topology, faulted)?;
     let (modelled, unmodelled) = split_devices(topology, &kept)?;
@@ -860,7 +872,7 @@ pub fn emit_faulted(
         );
     }
     emit_spi(&mut out, &spi)?;
-    let observed = emit_observers(&mut out, topology, &retyped)?;
+    let observed = emit_observers(&mut out, topology, &retyped, open)?;
     out.push_str(&crate::boot::brown_out(topology)?.presentation());
     emit_clock(&mut out, topology, &retyped)?;
     crate::retype::emit(&mut out, topology, &retyped, &observed)?;
@@ -1113,6 +1125,7 @@ fn emit_observers(
     out: &mut String,
     topology: &SolvedTopology,
     retyped: &[u32],
+    open: &BTreeSet<String>,
 ) -> Result<BTreeSet<(char, u32)>, TwinError> {
     let observers = timer::observers(topology)?;
     let mut ports: std::collections::BTreeMap<char, Vec<&timer::Observer>> =
@@ -1142,7 +1155,17 @@ fn emit_observers(
             let route = timer::stock_input(o.port, o.index).expect("a routed pin");
             // A retyped timer's target on its model's variable (`AET-WO-4412` D4).
             let route = crate::retype::route(route, retyped);
-            let _ = writeln!(out, "    {} -> {route} | {}@0", o.index, o.name);
+            if open.contains(&o.label) {
+                // `AET-WO-4310` (5): the line is open between the pin and
+                // the ESC, so the observer is not on it.
+                let _ = writeln!(
+                    out,
+                    "    // {}: held open by the scenario (motor_output_open): {} is not connected\n    {} -> {route}",
+                    o.label, o.name, o.index
+                );
+            } else {
+                let _ = writeln!(out, "    {} -> {route} | {}@0", o.index, o.name);
+            }
         }
     }
     Ok(observers.iter().map(|o| (o.port, o.index)).collect())

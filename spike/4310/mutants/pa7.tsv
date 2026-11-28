@@ -1,0 +1,1 @@
+PA-F7	crates/aethelgard-cli/src/verify.rs	                .filter(|t| !matches!(t, Target::I2c(_) | Target::Analog(_)))	                .filter(|t| !matches!(t, Target::I2c(_)))	aethelgard-cli	bin:a_pin_device_s

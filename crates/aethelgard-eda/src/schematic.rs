@@ -394,6 +394,70 @@ pub struct Ladder {
     pub pour: Option<(usize, Vec<BuckCopper>)>,
 }
 
+/// The comment that records a laddered board's rung and pour step
+/// (`AET-WO-4310` (4), ruled D6), in its title block, comment 1:
+/// `aethelgard capacitance_ladder rung <r> pour_step <s>`, the step `none`
+/// on a board with no buck.
+pub const LADDER_RECORD: &str = "aethelgard capacitance_ladder";
+
+/// [`LADDER_RECORD`]'s text for `l`.
+pub fn ladder_record(l: &Ladder) -> String {
+    let step = l
+        .pour
+        .as_ref()
+        .map_or_else(|| "none".to_owned(), |(s, _)| s.to_string());
+    format!("{LADDER_RECORD} rung {} pour_step {step}", l.rung)
+}
+
+/// The rung and the pour step a record states, `None` for a step of
+/// `none`; `Err` names what is malformed.
+pub fn parse_ladder_record(text: &str) -> Result<(usize, Option<usize>), String> {
+    let bad = || format!("`{text}` is not `{LADDER_RECORD} rung <n> pour_step <n|none>`");
+    let rest = text.strip_prefix(LADDER_RECORD).ok_or_else(bad)?;
+    let words: Vec<&str> = rest.split(' ').collect();
+    let ["", "rung", r, "pour_step", s] = words[..] else {
+        return Err(bad());
+    };
+    let num = |w: &str| {
+        (!w.is_empty()
+            && w.bytes().all(|b| b.is_ascii_digit())
+            && (w == "0" || !w.starts_with('0')))
+        .then(|| w.parse::<usize>().ok())
+        .flatten()
+    };
+    let rung = num(r)
+        .filter(|r| *r < crate::route::RUNGS.len())
+        .ok_or_else(bad)?;
+    let step = match s {
+        "none" => None,
+        n => Some(
+            num(n)
+                .filter(|n| *n < crate::route::POUR_STEPS.len())
+                .ok_or_else(bad)?,
+        ),
+    };
+    Ok((rung, step))
+}
+
+/// `board` with its ladder's record in a title block after `(paper ...)`;
+/// a board with no `(paper ...)` line is an engine error, never written
+/// without its record.
+fn with_ladder_record(board: &str, l: &Ladder) -> Result<String, EmitError> {
+    let anchor = "\t(paper \"A4\")\n";
+    let i = board.find(anchor).ok_or_else(|| {
+        EmitError::Internal(
+            "the board has no `(paper \"A4\")` line to record its ladder after".to_owned(),
+        )
+    })?;
+    let at = i + anchor.len();
+    Ok(format!(
+        "{}\t(title_block\n\t\t(comment 1 \"{}\")\n\t)\n{}",
+        &board[..at],
+        ladder_record(l),
+        &board[at..]
+    ))
+}
+
 /// A symbol pin: library coordinates in nanometres, Y up.
 #[derive(Clone, Debug)]
 pub struct Pin {
@@ -920,7 +984,9 @@ pub fn emit_moved(
     } = place(spec, solved, table, moves)?;
     let (board, ladder) = if ruled {
         let (board, ladder) = laddered(spec, solved, table, &stack, footprints, outline)?;
-        (board, Some(ladder))
+        // `AET-WO-4310` (4), ruled D6: the rung and the pour step the board
+        // was built at, recorded in the board, where `extract` reads them.
+        (with_ladder_record(&board, &ladder)?, Some(ladder))
     } else {
         let board = crate::pcb::write_placed_at(
             &spec.project_name,
@@ -2773,5 +2839,36 @@ mod ladder_tests {
             Choice::Over(vec![f("A", 120, 100), f("B", 11, 10)])
         );
         assert_eq!(choose(&[None, None]), Choice::Unrouted);
+    }
+}
+
+#[cfg(test)]
+mod ladder_record_4310 {
+    use super::{LADDER_RECORD, parse_ladder_record};
+
+    /// `AET-WO-4310` (4): the record names a rung and a pour step the ladder
+    /// has, `none` for a board with no buck, and nothing else.
+    #[test]
+    fn a_ladder_record_reads_back_and_anything_else_is_refused() {
+        assert_eq!(
+            parse_ladder_record(&format!("{LADDER_RECORD} rung 7 pour_step 1")),
+            Ok((7, Some(1)))
+        );
+        assert_eq!(
+            parse_ladder_record(&format!("{LADDER_RECORD} rung 0 pour_step none")),
+            Ok((0, None))
+        );
+        for bad in [
+            "".to_owned(),
+            format!("{LADDER_RECORD} rung 8 pour_step 0"),
+            format!("{LADDER_RECORD} rung 7 pour_step 4"),
+            format!("{LADDER_RECORD} rung 07 pour_step 1"),
+            format!("{LADDER_RECORD} rung 7 pour_step 1 extra"),
+            format!("{LADDER_RECORD} rung -1 pour_step 1"),
+            format!("{LADDER_RECORD}  rung 7 pour_step 1"),
+            "aethelgard other rung 7 pour_step 1".to_owned(),
+        ] {
+            assert!(parse_ladder_record(&bad).is_err(), "{bad:?}");
+        }
     }
 }

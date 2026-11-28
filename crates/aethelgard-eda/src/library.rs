@@ -16,7 +16,7 @@ use crate::sexpr::{self, Sx};
 /// sha256 its bytes must have. The pins live
 /// here, in the consumer: a data crate that pinned its own files would be
 /// checking itself (AET-WO-1304).
-const PINS: [(&str, &str); 69] = [
+const PINS: [(&str, &str); 70] = [
     (
         "footprints/Diode_SMD.pretty/D_SOD-123.kicad_mod",
         "fd16785935b01254e1076f490e12f0f096da73cf087adefce51225585c62557a",
@@ -48,6 +48,10 @@ const PINS: [(&str, &str); 69] = [
     (
         "symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
         "51793743079229c78f742a4b5d448fd2d82e044c7e0a8355ca1504bd658ed3d5",
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/TPS3839.kicad_sym",
+        "691a9019a446e286c2584776ca00006ea59d2cfd27c8b878c94333af9c562a90",
     ),
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
@@ -273,7 +277,7 @@ const PINS: [(&str, &str); 69] = [
     ),
     (
         "aethelgard/README.md",
-        "a080272e3800796827e329ea1f5b11a50ce366a05d56c862b2c12e63fcb1d292",
+        "3066f1441dd5df15dc9a9a965dd4454d9971b0b93eb19bb92172546706550cd1",
     ),
     (
         "footprints/Button_Switch_SMD.pretty/SW_SPST_PTS810.kicad_mod",

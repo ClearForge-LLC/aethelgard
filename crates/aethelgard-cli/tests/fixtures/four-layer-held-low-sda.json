@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "name": "four-layer-held-low-sda",
+  "base": "four-layer.json",
+  "expect": "fail",
+  "expect_findings": [
+    "i2c_line_held_low",
+    "i2c_timeout"
+  ],
+  "overrides": [
+    { "bus": "SENSORS", "line_held_low": "sda" }
+  ]
+}

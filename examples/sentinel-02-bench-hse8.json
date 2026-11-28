@@ -1,5 +1,5 @@
 {
-  "schema_version": 31,
+  "schema_version": 32,
   "acknowledge_unwitnessed": [],
   "accept_lifecycle": [],
   "project_name": "sentinel-02-bench-hse8",

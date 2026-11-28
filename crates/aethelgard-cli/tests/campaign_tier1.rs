@@ -2699,7 +2699,7 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
         json!({
             "domain": domain, "floor_millivolts": floor, "from_boot_word_ns": 974_250,
             "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         })
     };
     let mut stated = droop("VDD_3V3", 2400);
@@ -2709,9 +2709,9 @@ fn a_droop_the_runner_cannot_render_is_refused_before_any_run() {
     old.as_object_mut().unwrap().remove("from_boot_word_ns");
     old["bor_level"] = 3.into();
     for (version, d, kind) in [
-        (6, droop("VDD_OTHER", 2400), "DroopNotMcuSupply"),
-        (6, droop("VDD_3V3", 2660), "DroopRefused"),
-        (6, stated, "SchemaViolation"),
+        (7, droop("VDD_OTHER", 2400), "DroopNotMcuSupply"),
+        (7, droop("VDD_3V3", 2660), "DroopRefused"),
+        (7, stated, "SchemaViolation"),
         (2, old, "PlantedEventNeedsVersion6"),
     ] {
         let work = Work::new();
@@ -2877,7 +2877,7 @@ fn sag_campaign(spec: &Value, overrides: Value, bridge: Option<&'static str>) ->
     let work = Work::new();
     work.dir.write("tree.json", spec.to_string().as_bytes());
     let doc = json!({
-        "schema_version": 6, "name": "sag", "base": "tree.json", "expect": "pass",
+        "schema_version": 7, "name": "sag", "base": "tree.json", "expect": "pass",
         "expect_findings": [], "overrides": overrides,
     });
     work.dir.write("sag.json", doc.to_string().as_bytes());
@@ -2908,8 +2908,9 @@ fn sag_refused(spec: &Value, overrides: Value, kind: &str, says: &str) -> Value 
 /// §1.6: each clause of a battery sag refuses by name before any run, with
 /// its own message; a sag the clauses admit reaches its boot (here, no
 /// bridge: the boot's analog pass, `BridgeUnavailable`, exit 4). The edges
-/// are measured: U10's regulation floor (7,000 mV, D-B9) admits 823 mΩ and
-/// refuses 824 mΩ (`AET-WO-4411`). Its instant is placed from the boot word (`AET-WO-2310`),
+/// are measured: U10's regulation floor (7,000 mV, D-B9) admits 818 mΩ and
+/// refuses 819 mΩ (823 and 824 at `AET-WO-4411`, moved by `AET-WO-4413`'s
+/// radio rail). Its instant is placed from the boot word (`AET-WO-2310`),
 /// so before the boot only the offset is judged, and says so; past the span
 /// once placed is `battery_sag_tier2`'s, after a real boot.
 #[test]
@@ -2929,18 +2930,20 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
     // The edge was 948/949 mΩ after `AET-WO-4300k` (the supervisor's two
     // 1 mA loads, U12 and R61); it is 823/824 mΩ since `AET-WO-4411`, whose
     // radio module (500 mA on its own rail through U13, 490 mW of loss, its
-    // pull-ups and U31's two 1 mA rows) raises the constant power: 824 mΩ
-    // puts the battery at 6,999,388 µV, 612 µV under U10's 7 V (measured).
-    let v = sag_refused(&spec, json!([sag(824, start)]), r, "below regulation");
+    // pull-ups and U31's two 1 mA rows) raises the constant power. It is
+    // 818/819 mΩ since `AET-WO-4413` (the radio rail at 3,303-3,589 mV, U13's
+    // loss re-derived at 3.589 V, 512 mW): 819 mΩ puts the battery at
+    // 6,998,528 µV, 1,472 µV under U10's 7 V (measured).
+    let v = sag_refused(&spec, json!([sag(819, start)]), r, "below regulation");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
         m.contains("U10")
-            && m.contains("6999388 µV")
+            && m.contains("6998528 µV")
             && m.contains("7000000 µV")
             && m.contains("3800000 µV"),
         "{m}"
     );
-    sag_refused(&spec, json!([sag(825, start)]), r, "below regulation");
+    sag_refused(&spec, json!([sag(820, start)]), r, "below regulation");
     for offset in [100_000_010, -100_000_010, 99_999_999] {
         sag_refused(
             &spec,
@@ -2951,9 +2954,9 @@ fn a_battery_sag_is_refused_by_name_wherever_the_declared_chain_would_be_wrong()
     }
     let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
         "from_boot_word_ns": -42_929_480, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     sag_refused(&spec, json!([sag(500, start), droop]), r, "combined");
-    for admitted in [2, 500, 823] {
+    for admitted in [2, 500, 818] {
         let (out, made) = sag_campaign(&spec, json!([sag(admitted, start)]), None);
         expect_refusal(&out, 4, "BridgeUnavailable");
         assert!(!made);
@@ -3067,7 +3070,7 @@ fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
     ] {
         sag_refused(&s03(), o, r, "more than one rail out of band");
     }
-    // Without its radio module (`AET-WO-4411`, its port and U31 with it):
+    // Without its radio module (`AET-WO-4411`, its port, U31 and U32 with it):
     // U11 fed from `VDD_5V` would pass the module's 500 mA to U10,
     // overloaded (`RegulatorOverloaded`, 3249 mA of 3000) before the rail is
     // judged.
@@ -3081,10 +3084,15 @@ fn a_second_rail_or_a_rail_feeding_a_regulator_is_refused_before_any_run() {
         .as_object_mut()
         .unwrap()
         .remove("uart_crossings");
+    // and U32, its monitor (`AET-WO-4413`), which would then drive nothing
+    spec["power"]
+        .as_object_mut()
+        .unwrap()
+        .remove("rail_monitors");
     spec["power"]["loads"]
         .as_array_mut()
         .unwrap()
-        .retain(|l| l["reference"] != "U31");
+        .retain(|l| l["reference"] != "U31" && l["reference"] != "U32");
     let u11 = spec["power"]["regulators"]
         .as_array_mut()
         .unwrap()
@@ -3114,13 +3122,13 @@ fn a_droop_past_the_boot_is_refused_with_its_time_once_its_boot_places_it() {
             "domain": "VDD_3V3", "floor_millivolts": 2400,
             "from_boot_word_ns": at - STUB_BOOT_WORD_NS,
             "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         }})
     };
     let work = Work::new();
     let scenario = |file: &str, at: i64| {
         let doc = json!({
-            "schema_version": 6,
+            "schema_version": 7,
             "name": "late",
             "base": "spec.json",
             "expect": "pass",

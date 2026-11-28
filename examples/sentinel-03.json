@@ -1,5 +1,5 @@
 {
-  "schema_version": 31,
+  "schema_version": 32,
   "acknowledge_unwitnessed": [
     {
       "register": "PWR.CSR1",
@@ -1221,8 +1221,8 @@
     },
     {
       "id": "VDD_3V3_RF",
-      "nominal_millivolts": 3300,
-      "tolerance_permille": 50
+      "nominal_millivolts": 3430,
+      "tolerance_permille": 49
     }
   ],
   "i2c_buses": [
@@ -2205,12 +2205,12 @@
           "top": {
             "reference": "R30",
             "part": "TNPW0603_B_E",
-            "ohms": 105000
+            "ohms": 100000
           },
           "bottom": {
             "reference": "R31",
             "part": "TNPW0603_B_E",
-            "ohms": 46400
+            "ohms": 41200
           }
         },
         "external": [
@@ -2267,8 +2267,8 @@
         ],
         "junction": {
           "loss_milliwatts": {
-            "value": 490,
-            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)); P_loss = 3.417 V x 505 mA x (1/0.78 - 1) = 487 mW, rounded up"
+            "value": 512,
+            "source": "SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (AET-WO-4411 (c1)); P_loss = 3.589 V x 505 mA x (1/0.78 - 1) = 511.2 mW, rounded up (AET-WO-4413 D3)"
           },
           "loss_at_milliamps": 505
         },
@@ -2380,25 +2380,25 @@
       {
         "domain": "VDD_3V3_RF",
         "milliamps": 1,
-        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's EN pull-up, AET-WO-4411)",
-        "reference": "R90"
+        "source": "TI SBVS193D p. 7, 7.5: IDD at most 500 nA, output not connected; its RESET drives U30's EN and U31's OE, two inputs; 1 mA rounded up (U32, AET-WO-4413)",
+        "reference": "U32"
       },
       {
         "domain": "VDD_3V3_RF",
         "milliamps": 1,
-        "source": "derived: 3.465 V / 10 kOhm = 0.347 mA, rounded up (U30's IO2 strap pull-up, AET-WO-4411)",
+        "source": "derived: 3.598 V / 10 kOhm = 0.360 mA, rounded up (U30's IO2 strap pull-up, AET-WO-4411; 3.598 V since AET-WO-4413)",
         "reference": "R91"
       },
       {
         "domain": "VDD_3V3_RF",
         "milliamps": 1,
-        "source": "derived: 3.465 V / (105 kOhm + 46.4 kOhm) = 0.023 mA, rounded up",
+        "source": "derived: 3.598 V / (100 kOhm + 41.2 kOhm) = 0.026 mA, rounded up (AET-WO-4413)",
         "reference": "R30"
       },
       {
         "domain": "VDD_3V3_RF",
         "milliamps": 1,
-        "source": "derived: 3.465 V / 100 kOhm = 0.035 mA, rounded up (U13's PG pull-up, AET-WO-4411 (iii))",
+        "source": "derived: 3.598 V / 100 kOhm = 0.036 mA, rounded up (U13's PG pull-up, AET-WO-4411 (iii); 3.598 V since AET-WO-4413)",
         "reference": "R32"
       },
       {
@@ -2457,8 +2457,9 @@
         "controls": [
           {
             "pin": "OE",
-            "strap": "vcca",
-            "wire": null
+            "strap": null,
+            "wire": null,
+            "monitor": "U32"
           }
         ]
       }
@@ -2471,8 +2472,19 @@
       },
       {
         "domain": "VDD_3V3_RF",
-        "max_millivolts": 144,
-        "source": "AET-WO-4411, ruled 2026-11-25T20:10Z: U13's guaranteed 3144.727 mV (solved) less the module's 3.0 V minimum (ESP32-C3-WROOM-02 v1.7 p. 21, Table 6-2), 144.727 mV, rounded down"
+        "max_millivolts": 145,
+        "source": "AET-WO-4413 D1, D3 (2026-11-27T19:18Z): U13's solved 3303.185 mV less U32 TPS3839G33's release, VIT- max 3126 + 31 mV typ (4300k D6; SBVS193D p. 7), strictly under: 145 mV"
+      }
+    ],
+    "rail_monitors": [
+      {
+        "reference": "U32",
+        "part": "TPS3839G33DBZR",
+        "rail": "VDD_3V3_RF",
+        "bypass": {
+          "reference": "C95",
+          "part": "GCM188R71H104KA57"
+        }
       }
     ]
   },
@@ -2942,6 +2954,10 @@
       "reason": "TLV803S's 40 mV hysteresis is typical only; its release at 3.03 V is 4 mV under VDD_3V3's 3034 mV floor at its pin (ruled D6); a bench row"
     },
     {
+      "id": "supervisor_hysteresis_typical:U32",
+      "reason": "TPS3839G33's 31 mV hysteresis is typical only (SBVS193D p. 7); its release at up to 3157 mV is 1 mV under VDD_3V3_RF's 3158 mV floor at its pin (4300k D6's precedent, AET-WO-4413 D1); a bench row"
+    },
+    {
       "id": "theta_ja_copper_mismatch:U10",
       "reason": "TI's theta-JA curve is for 2 oz/1 oz copper and the board declares 1 oz/0.5 oz, so U10's 117.8 C screen has less margin than it shows; a bench thermal row (Q2 options stand)"
     },
@@ -2963,7 +2979,7 @@
     },
     {
       "id": "buck_junction_screened:U13",
-      "reason": "TI's Figure 9-3 (SNVSAW1E) is typical; U13's 490 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature"
+      "reason": "TI's Figure 9-3 (SNVSAW1E) is typical; U13's 512 mW is screened at the copper extract measures (>= 7 cm2 needed); the bench reads its case temperature"
     },
     {
       "id": "buck_timing_conditions:U13",
@@ -3014,12 +3030,12 @@
       "reason": "In2.Cu is the VDD_3V3 plane, which U13's GND pad cannot join; the screen counts only F.Cu, In1.Cu and B.Cu"
     },
     {
-      "id": "radio_rail_monitor:U30",
-      "reason": "Ruled 2026-11-25T21:17Z (Q-SUP): a row; no Espressif document states a brown-out detector, the HDG's ~3.0 V monitor is not fitted, R90/C90 is U30's only reset"
-    },
-    {
       "id": "radio_output_load:U30",
       "reason": "WROOM-02 Table 6-3 states U30's VOH and VOL at a high-impedance load; U31's B4 draws at most 2 uA (SCES935A p. 8), and U30's 0.8 x VDD clears U31's threshold by 388 mV"
+    },
+    {
+      "id": "radio_supply_peak_unbounded:U30",
+      "reason": "U30's 3.6 V is also its absolute maximum (WROOM-02 v1.7 p. 21, Table 6-1): 10.9 mV left at the solved top, a static solve (ruled 21:31Z G1); a bench row reads the peak at U30's pads"
     },
     {
       "id": "rated_only:U31.bypass_a",
@@ -3027,11 +3043,11 @@
     },
     {
       "id": "rated_only:U31.bypass_b",
-      "reason": "SCES935A's row states no effective minimum for U31's 0.1 uF VCCB bypass; GCM188R71H104KA57 at 50 V rating sees VDD_3V3_RF, 3.4 V"
+      "reason": "SCES935A's row states no effective minimum for U31's 0.1 uF VCCB bypass; GCM188R71H104KA57 at 50 V rating sees VDD_3V3_RF, 3.6 V"
     },
     {
       "id": "translator_supply_drop:U31",
-      "reason": "U31 draws microamps (SCES935A p. 8, ICCA and ICCB); its VCCA and VCCB pins are taken at VDD_3V3's 110 mV and VDD_3V3_RF's 144 mV drop limits, which the supply gate measures at each rail's load"
+      "reason": "U31 draws microamps (SCES935A p. 8, ICCA and ICCB); its VCCA and VCCB pins are taken at VDD_3V3's 110 mV and VDD_3V3_RF's 145 mV drop limits, which the supply gate measures at each rail's load"
     },
     {
       "id": "translator_rate_inferred:U31",
@@ -3047,7 +3063,7 @@
     },
     {
       "id": "translator_partial_power:U31",
-      "reason": "SCES935A 9.3.5 states isolation under 100 mV only; OE on VCCA, the last rail up (iii), is low through power-up (9.1); each U31 output is powered from its receiver's rail"
+      "reason": "SCES935A 9.3.5 states isolation under 100 mV only; OE is driven by U32's reset on VCCB, low while VDD_3V3_RF is under 3.003 V, through power-up and down (9.1, AET-WO-4413 D3)"
     },
     {
       "id": "rated_only:U13.cboot",
@@ -3063,7 +3079,7 @@
     },
     {
       "id": "regulation_not_production_tested:U13",
-      "reason": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3_RF's floor is held by its feedback and its 144 mV drop limit"
+      "reason": "TI states VOUT regulation as a design limit, not production tested; VDD_3V3_RF's floor is held by its feedback and its 145 mV drop limit"
     },
     {
       "id": "theta_ja_copper_mismatch:U13",
@@ -3077,16 +3093,7 @@
       "serial_port": "WIFI",
       "supply": "VDD_3V3_RF",
       "enable": {
-        "resistor": {
-          "reference": "R90",
-          "part": "CRCW0603_F_K",
-          "ohms": 10000,
-          "to": "VDD_3V3_RF"
-        },
-        "capacitor": {
-          "reference": "C90",
-          "part": "GRM188R71C105KA12"
-        }
+        "monitor": "U32"
       },
       "straps": {
         "IO2": {

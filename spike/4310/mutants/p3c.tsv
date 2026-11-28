@@ -1,0 +1,5 @@
+P3c-M1	crates/aethelgard-eda/src/supply.rs	        let ohms = entry_bound.map_or(r, |e| e.min(r));	        let ohms = entry_bound.unwrap_or(r);	aethelgard-eda	lib:supply::tests::a
+P3c-M2	crates/aethelgard-eda/src/supply.rs	        if r11.is_some_and(|r| worst.is_some_and(|w| w >= r)) {	        if false && r11.is_some_and(|r| worst.is_some_and(|w| w >= r)) {	aethelgard-eda	lib:supply::tests::entry
+P3c-M3	crates/aethelgard-eda/src/supply.rs	        std::cmp::Reverse((x - rx) * (x - rx) + (y - ry) * (y - ry))	        (x - rx) * (x - rx) + (y - ry) * (y - ry)	aethelgard-eda	lib:supply::tests::entry
+P3c-M4	crates/aethelgard-eda/src/supply.rs	    let entry_bound = if unread.is_empty() { worst } else { None };	    let entry_bound = worst;	aethelgard-eda	lib:supply::tests::a_pad
+P3c-M5	crates/aethelgard-eda/src/supply.rs	        unread.push("no ground pad on the board".to_owned());	        let _ = 0;	aethelgard-eda	lib:supply::tests::a_pad

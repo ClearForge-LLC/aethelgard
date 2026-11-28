@@ -34,12 +34,15 @@ static ONE_AT_A_TIME: Mutex<()> = Mutex::new(());
 
 const FOUR: &str = "crates/aethelgard-cli/tests/fixtures/four-layer.json";
 /// The 4-layer fixture's seeded set (`AET-WO-3303` D1, ruled): a tolerated
-/// pull-up and droop, the absent flash detected, and the 2.2 kΩ baseline.
-const FOUR_SCENARIOS: [&str; 4] = [
+/// pull-up and droop, the absent flash detected, and the 2.2 kΩ baseline;
+/// since `AET-WO-4310` (5) (ruled D7 (i), a raised pull-up covering no bus)
+/// the sensor bus's held-low SDA, detected.
+const FOUR_SCENARIOS: [&str; 5] = [
     "crates/aethelgard-cli/tests/fixtures/four-layer-3k3.json",
     "crates/aethelgard-cli/tests/fixtures/four-layer-droop.json",
     "crates/aethelgard-cli/tests/fixtures/four-layer-spi-absent.json",
     "crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json",
+    "crates/aethelgard-cli/tests/fixtures/four-layer-held-low-sda.json",
 ];
 
 /// The scratch holding the 4-layer fixture made ready, as `spec.json`, and

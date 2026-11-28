@@ -36,6 +36,13 @@ struct Report {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     lifecycle: Vec<String>,
     capacitance: &'static str,
+    /// The rung and the pour step the board records it was built at, or
+    /// `not_run` for a board whose specification runs no ladder
+    /// (`AET-WO-4310` (4), ruled D6).
+    capacitance_ladder: Value,
+    /// The board's outline as built, mm, from its `Edge.Cuts` rectangle as
+    /// read (`AET-WO-4310` (4)): `<width> x <height>`, exact.
+    outline_mm: String,
     conditions: Vec<String>,
     /// The lines and supply domains judged, each with its own verdict
     /// (`AET-WO-2306`); a pair's conductors are lines, so not counted twice.
@@ -163,6 +170,27 @@ fn supply(g: &aethelgard_eda::supply::Gate) -> Value {
             "return_bound_microohms": m.return_bound_microohms,
             "charge": "on the copper it shares with the load's path: its current at the lesser of the load's largest bound and its own, each side; a side with no bound of its own (null) at the load's (maximum principle; AET-WO-4411, ruled 1 (a'))",
         });
+    }
+    // `AET-WO-4310` (3), ruled D5: every other current in the ground copper,
+    // each with its charge; absent on a board with one regulated domain.
+    if !g.others.is_empty() {
+        v["others"] = g
+            .others
+            .iter()
+            .map(|o| {
+                let mut x = json!({
+                    "what": o.what,
+                    "milliamps": o.milliamps,
+                    "entry_bound_microohms": o.entry_bound_microohms,
+                    "charge_microvolts": o.charge_microvolts,
+                });
+                if !o.unread.is_empty() {
+                    x["unread"] = o.unread.clone().into();
+                }
+                x
+            })
+            .collect::<Vec<_>>()
+            .into();
     }
     if let Some(n) = &g.note {
         v["note"] = n.clone().into();
@@ -318,6 +346,40 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         Err(r) => {
             return crate::emit(
                 &Refusal::new(r.kind, r.id.as_deref(), r.message),
+                EXIT_UNREADABLE,
+            );
+        }
+    };
+    // `AET-WO-4310` (4): the outline as built, from the copper's own layer.
+    let o = &read.board.outline;
+    let outline_mm = format!(
+        "{} x {}",
+        millimetres(o.x1 - o.x0),
+        millimetres(o.y1 - o.y0)
+    );
+    // `AET-WO-4310` (4), ruled D6: a laddered board states what it was built
+    // at, and only a laddered board does.
+    let capacitance_ladder = match (laddered, read.ladder) {
+        (true, Some((rung, step))) => json!({
+            "rung": rung,
+            "pour_step": step,
+            "pour_square_permille": step.map(|s| aethelgard_eda::route::POUR_STEPS[s]),
+        }),
+        (false, None) => json!("not_run"),
+        (true, None) => {
+            return refuse(
+                "LadderUnrecorded",
+                format!(
+                    "the specification declares `board.stackup.fab_tolerances`, so `emit` routes it by the capacitance ladder, and the board records no rung or pour step (its title block's comment 1, `{}`): it was not emitted by this engine, or was edited",
+                    aethelgard_eda::schematic::LADDER_RECORD
+                ),
+                EXIT_UNREADABLE,
+            );
+        }
+        (false, Some(_)) => {
+            return refuse(
+                "LadderUnrecorded",
+                "the board records a capacitance ladder, and its specification runs none (no `board.stackup.fab_tolerances`)".to_owned(),
                 EXIT_UNREADABLE,
             );
         }
@@ -600,6 +662,8 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         specification_sha256: spec_sha256,
         lifecycle: topology.lifecycle_banner().unwrap_or_default(),
         capacitance: CAPACITANCE,
+        capacitance_ladder,
+        outline_mm,
         conditions,
         scope,
         lines: out,
@@ -611,6 +675,19 @@ pub fn extract(board_path: &Path, spec_path: &Path) -> ExitCode {
         findings,
     };
     crate::emit(&report, if ok { 0 } else { EXIT_FAIL })
+}
+
+/// `nm` in millimetres, exact, with at least two decimals: 85000000 is
+/// `85.00`, 46350000 `46.35`, 1234500 `1.2345`.
+pub fn millimetres(nm: i64) -> String {
+    let sign = if nm < 0 { "-" } else { "" };
+    let nm = nm.unsigned_abs();
+    let frac = format!("{:06}", nm % 1_000_000);
+    let mut frac = frac.trim_end_matches('0').to_owned();
+    while frac.len() < 2 {
+        frac.push('0');
+    }
+    format!("{sign}{}.{frac}", nm / 1_000_000)
 }
 
 #[cfg(test)]

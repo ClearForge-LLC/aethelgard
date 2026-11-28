@@ -1771,3 +1771,68 @@ fn s9_never_fires_on_an_output_with_no_edge_before_its_anchor() {
     assert_eq!(indices(&a.evidence), [motor1_witness(&r)]);
     assert_eq!(indices(&a.symptoms), [motor1_witness(&r)]);
 }
+
+// ---- `AET-WO-4310` (5), ruled D7 (iii): an output held open (E4) ----
+
+fn opened(label: &str, mut records: Vec<Record>) -> Vec<Record> {
+    if let Record::Scenario { overrides, .. } = &mut records[0] {
+        overrides.push(Override::MotorOutputOpen {
+            label: label.into(),
+        });
+    }
+    records
+}
+
+fn silent() -> Vec<Record> {
+    run(
+        &Wrong::default(),
+        "unwitnessed",
+        true,
+        &[(MOTOR_UNWITNESSED_FINDING, 1)],
+    )
+}
+
+#[test]
+fn an_output_held_open_and_silent_is_electrical_e4_by_its_check_and_witness() {
+    let r = opened("MOTOR1", silent());
+    let a = attributed(&r);
+    assert_eq!((a.domain, a.rule), (Domain::Electrical, Rule::E4));
+    assert_eq!(named(&r, &a), ["kind 25", "kind 26"]);
+}
+
+#[test]
+fn e4_needs_its_own_output_open_its_check_holding_no_edge_and_no_software_cause() {
+    // Another output held open: this one's silence is still I4.
+    assert_eq!(attributed(&opened("MOTOR2", silent())).rule, Rule::I4);
+    // A wrong alternate function the output owns: software, never masked.
+    let wrong = run(
+        &Wrong {
+            afrh: Some(0x2),
+            ..Wrong::default()
+        },
+        "unwitnessed",
+        true,
+        &[("register_mismatch", 1), (MOTOR_UNWITNESSED_FINDING, 1)],
+    );
+    assert_eq!(attributed(&opened("MOTOR1", wrong)).rule, Rule::S4);
+    // Edges seen: not the open line's silence.
+    let mut edged = opened("MOTOR1", silent());
+    for rec in edged.iter_mut() {
+        if let Record::MotorWitness { rises, falls, .. } = rec {
+            *rises = 1;
+            *falls = 1;
+        }
+    }
+    assert_ne!(attributed_any(&edged).rule, Rule::E4);
+    // Its static check failing is the topology's (I4), open or not.
+    let failing = opened(
+        "MOTOR1",
+        run(
+            &Wrong::default(),
+            "unwitnessed",
+            false,
+            &[(MOTOR_UNWITNESSED_FINDING, 1), (MOTOR_STATIC_FINDING, 1)],
+        ),
+    );
+    assert_ne!(attributed_any(&failing).rule, Rule::E4);
+}

@@ -1,0 +1,1 @@
+P5-M2	crates/aethelgard-cli/src/verify.rs	                .declared_i2c_devices()\n                .iter()\n                .any(|d| &d.bus == id && modelled(&d.part)),	                .declared_i2c_devices()\n                .iter()\n                .any(|d| &d.bus == id),	aethelgard-cli	bin:verify::tests::a_bus_of

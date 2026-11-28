@@ -1,0 +1,13 @@
+[package]
+name = "probe-4310"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# A spike probe, never a workspace member: it reads the IR's own tables and
+# rules and prints what AET-WO-4310's (2) would judge on each specification.
+[workspace]
+
+[dependencies]
+aethelgard-ir = { path = "../../../crates/aethelgard-ir" }
+serde_json = "1"

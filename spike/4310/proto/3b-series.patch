@@ -1,0 +1,21 @@
+diff --git a/crates/aethelgard-ir/src/power.rs b/crates/aethelgard-ir/src/power.rs
+index ff2df3af..3a4f1069 100644
+--- a/crates/aethelgard-ir/src/power.rs
++++ b/crates/aethelgard-ir/src/power.rs
+@@ -2486,6 +2486,8 @@ fn protection(
+     let tol = i128::from(fuse.resistance_tolerance_permille.value);
+     let r_min = typ * (1000 - tol) / 1000;
+     let r_max = div_ceil(typ * (1000 + tol), 1000);
++    // 4310 proto (3b): the battery's own series resistance joins the path, µΩ.
++    let r_max = r_max + if std::env::var_os("PROTO_4310_SERIES").is_some() { ctx.power.battery.series_milliohms.as_ref().map_or(0, |s| i128::from(s.value) * 1000) } else { 0 };
+     // mA × µΩ / 10⁶ = mV, rounded up.
+     let volts = |i: i128, microohms: i128| div_ceil(i * microohms, 1_000_000);
+     // The gate drive at `i`: the pack's minimum less the fuse's drop (the gate
+@@ -2801,6 +2803,7 @@ format!(
+                     inductor.part,
+                     ctx.cite(&l.dcr_max_milliohms.at)
+                 ));
++                eprintln!("PROTO-4310 headroom {} vin_min={vin_min} mV i={i} mA avail={avail} uV vout_max={} uV margin={} uV", d.reg.reference, d.vout_uv.1, avail - i128::from(d.vout_uv.1));
+                 if avail < i128::from(d.vout_uv.1) {
+                     return Err(refuse(
+                         Refusal::BuckHeadroomViolated,

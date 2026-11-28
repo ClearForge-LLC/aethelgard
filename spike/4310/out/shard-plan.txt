@@ -1,0 +1,24 @@
+capped-run: scope=/user.slice/user-1001.slice/user@1001.service/app.slice/run-p3348833-i242356101.scope memory.max=17179869184 memory.swap.max=0 pids.max=8192
+build rc=0 144s
+shard 0: 205 tests, planned 772 s
+shard 1: 4 tests, planned 1715 s
+shard 2: 2 tests, planned 931 s
+shard 3: 196 tests, planned 772 s
+shard 4: 192 tests, planned 772 s
+shard 5: 193 tests, planned 772 s
+shard 6: 200 tests, planned 772 s
+shard 7: 194 tests, planned 772 s
+shard 8: 203 tests, planned 772 s
+shard 9: 193 tests, planned 772 s
+shard 10: 194 tests, planned 772 s
+shard 11: 195 tests, planned 772 s
+shard 12: 194 tests, planned 772 s
+shard 13: 195 tests, planned 772 s
+shard 14: 200 tests, planned 772 s
+shard 15: 204 tests, planned 772 s
+shard 16: 192 tests, planned 772 s
+shard 17: 205 tests, planned 772 s
+shard 18: 203 tests, planned 772 s
+shard 19: 195 tests, planned 772 s
+guard ok: 3559 test names, 3566 listed occurrences, 20 shards
+plan rc=0 3s

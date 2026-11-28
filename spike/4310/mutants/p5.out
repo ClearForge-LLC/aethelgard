@@ -1,0 +1,13 @@
+P5-M1	KILLED	3s
+P5-M2	BAD	'                .any(|d| &d.bus == id && modelled(&d.part)),' occurs 2 times
+P5-M3	KILLED	3s
+P5-M4	KILLED	3s
+P5-M5	KILLED	3s
+P5-M6	KILLED	1s
+P5-M7	KILLED	1s
+P5-M8	KILLED	1s
+P5-M9	KILLED	1s
+P5-M10	KILLED	1s
+P5-M11	KILLED	1s
+P5-M12	SURVIVED	1s
+P5-M2	KILLED	3s

@@ -41,7 +41,9 @@ tests/four_layer_fab_tier2.rs	931
 # across shards were weighed per test, each test carrying the shared run it waited on, so shard 0 ran 942 s of a 1,987 s plan. Kept whole, each at its
 # worst whole-binary libtest `finished in` measured on CI (the gates job runs a binary whole, 4 threads): supply_tier1 795.25 (565b32c5, run 44441889769),
 # via_ring_tier1 172.96 (e6679f12, run 44433378021).
-tests/supply_tier1.rs	703
+# AET-WO-4310 (3c), ruled D5: every Sentinel-03 extract now also bounds each other current's entry pads, 562 -> 1,078 s on Furnace (1.92x, debug).
+# supply_tier1's block is raised by that ratio from 703 to an ESTIMATE of 1350, to be refit from this PR's first CI run (REFIT RULE 3 and 5).
+tests/supply_tier1.rs	1350
 tests/via_ring_tier1.rs	367
 # AET-WO-1911 merge of main 52a2d62e: the three blocks AET-WO-3303b re-measured after the schedule split keep its rows (attribute_seeded 479,
 # verify_47k_tier2 228, four_layer_fab_tier2 582): 1911's refit runs predate the split. The other five keep 1911's refit.

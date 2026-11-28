@@ -235,7 +235,7 @@ fn a_battery_sag_and_a_rail_out_of_band_parse_under_version_4_only() {
     let e = parse(&scenario(3, json!([sag_json(500, 10)]))).unwrap_err();
     assert_eq!(e.kind, PLANTED_NEEDS_VERSION, "{e}");
     assert_eq!(
-        parse(&scenario(7, json!([]))).unwrap_err().kind,
+        parse(&scenario(8, json!([]))).unwrap_err().kind,
         "UnsupportedSchemaVersion"
     );
 }
@@ -300,12 +300,13 @@ fn a_battery_sag_s_integers_are_bounded_and_its_keys_closed() {
 fn a_combined_battery_sag_is_refused_by_name() {
     let droop = json!({"droop": {"domain": "VDD_3V3", "floor_millivolts": 3000,
         "from_boot_word_ns": -2_627_610, "fall_ns": 20_000, "hold_ns": 600_000, "rise_ns": 20_000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     for overrides in [
         json!([sag_json(500, 10), sag_json(600, 10)]),
         json!([sag_json(500, 10), droop]),
     ] {
-        let e = parse(&scenario(6, overrides)).unwrap_err();
+        // Version 7: a droop's figures are sourced (`AET-WO-4310` (3)).
+        let e = parse(&scenario(7, overrides)).unwrap_err();
         assert_eq!(e.kind, REFUSED, "{e}");
         assert!(e.message.starts_with("combined"), "{e}");
     }

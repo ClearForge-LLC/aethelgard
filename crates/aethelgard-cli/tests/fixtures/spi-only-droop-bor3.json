@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "name": "spi-only-droop-bor3",
   "base": "spi-only.json",
   "expect": "pass",
@@ -18,8 +18,18 @@
         "fall_ns": 20000,
         "hold_ns": 200000,
         "rise_ns": 20000,
-        "source_milliohms": 500,
-        "load_milliamps": 100
+        "source_milliohms": {
+          "value": 500,
+          "source": {
+            "stimulus": "a 500 mOhm source behind the rail, the sag this campaign injects; not the board's source resistance, which no held figure states (AET-WO-4310 (3))"
+          }
+        },
+        "load_milliamps": {
+          "value": 100,
+          "source": {
+            "stimulus": "a 100 mA load on the rail, the sag this campaign injects; the board declares no power tree, so it has no solved load to bound it (AET-WO-4310 (3))"
+          }
+        }
       }
     }
   ]

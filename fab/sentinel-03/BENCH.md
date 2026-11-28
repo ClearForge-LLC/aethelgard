@@ -1,5 +1,7 @@
 # Sentinel-03: the bench plan
 
+> **The package is withdrawn** (`AET-WO-4413`, ruled 2026-11-27T19:18Z D6): `extract` refuses this board by both supply drop limits, VDD_3V3's and VDD_3V3_RF's, until the ground split's follow-up work order, and `package/` is removed until then. Its last committed package is at `ec440f71`; the ELF below is that package's. Every row waits on the package the follow-up writes.
+
 The rows to run when the boards arrive (AET-WO-4300k (8)). Each row names:
 - the prediction it tests and what that prediction rests on;
 - the instrument;
@@ -8,7 +10,7 @@ The rows to run when the boards arrive (AET-WO-4300k (8)). Each row names:
 
 A failed row is a finding, never a retry.
 
-The board is `examples/sentinel-03.json`, and its package is `package/` beside this file. The ELF is `package/sentinel-03.elf`, sha256 `66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c`, the hash `package/MANIFEST.json` records (a tier-1 test holds the two equal, as `AET-WO-3308` did for Sentinel-01). Every row runs that ELF.
+The board is `examples/sentinel-03.json`, and its package was `package/` beside this file (withdrawn, above). Its ELF was `package/sentinel-03.elf`, sha256 `66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c`, the hash its `MANIFEST.json` recorded at `ec440f71` (a tier-1 test holds the sheet to it until a package returns). Every row runs the ELF of the package the follow-up writes.
 
 **What each prediction rests on** (`RUL-20`'s terms, as Sentinel-01's sheet labels them):
 - **rule:** an independent rule in `aethelgard-ir`, or a datasheet limit cited at source.
@@ -28,10 +30,10 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 ## Rows
 
 ### B-1 The input path's drop (`input_path_resistance_at_25c:Q1`)
-- **Prediction (rule, at 25 °C):** at 1,906 mA the drop from J4.2 to `VBAT` is at most 81 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F).
+- **Prediction (rule, at 25 °C):** at 1,918 mA the drop from J4.2 to `VBAT` is at most 82 mV. That is 33 mΩ (DMP6023LSS RDS(on) maximum at |VGS| 4.5 V) plus 9.375 mΩ (F1's typical plus 25 %, the 7 A Bourns SF-1206F): 42.375 mΩ × 1,918 mA is 81.28 mV, rounded up. The branch's current is 1,918 mA since `AET-WO-4413` raised the radio rail (1,906 mA before).
 - **Instrument:** a bench supply at 9.0 V on J4 with the board running the ELF, a DMM across J4.2 and `VBAT` (Kelvin), and a clamp meter or the supply's ammeter.
-- **Source line** (this verdict's condition `input_path_resistance_at_25c:Q1`): "the input path's drop is 81 mV at 1906 mA through DMP6023LSS-13's RDS(on) 33 mΩ (|VGS| 4500 mV) and SF-1206F700-2's 9375 µΩ, each stated at 25 °C". 42.375 mΩ × 1,906 mA is 80.77 mV, rounded up; the acknowledgement's reason says 80.
-- **Pass line:** drop ≤ 81 mV × (measured current / 1,906 mA), at an ambient near 25 °C.
+- **Source line** (this verdict's condition `input_path_resistance_at_25c:Q1`): "the input path's drop is 84 mV at 1918 mA through DMP6023LSS-13's RDS(on) 33 mΩ (|VGS| 4500 mV) and SF-1206F700-2's 9375 µΩ and the pack's series 1000 µΩ (J4 XT30PW-M contact resistance …), each stated at 25 °C". The condition's 84 mV adds the pack's declared 1 mΩ, J4's mating contact, which a probe on J4.2 leaves out; the acknowledgement's reason says 80.
+- **Pass line:** drop ≤ 82 mV × (measured current / 1,918 mA), at an ambient near 25 °C.
 - **A disagreement adds:** the measured R at 25 °C. Repeated hot (B-4 run), it gives the temperature rise the condition names.
 
 ### B-2 The supervisor's thresholds (`supervisor_hysteresis_typical:U12`)
@@ -78,19 +80,36 @@ The rows are the conditions `examples/sentinel-03.json` acknowledges "a bench ro
 - **A disagreement adds:** Sf, with the starts that failed. An Sf under 5 is a crystal or load-capacitor finding.
 
 ### B-8 U13's temperature (`buck_junction_screened:U13`, `theta_ja_copper_mismatch:U13`)
-- **Prediction (typical):** at its 505 mA load on `VDD_3V3_RF` and 490 mW of loss, the junction rises about 17.6 K (36.0 °C/W at 10 cm², for the 13.26 cm² the board joins; SNVSAW1E Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more.
-- **Source line** (`package/FAB-NOTES.md`): "U13: its junction is screened, not guaranteed: 490 mW of loss (declared: SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (79.09 % read from its vectors, AET-WO-4411 (c1)) …) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 13.26 cm² per joined layer … is 102640 m°C on a 85 °C board, 22360 mK under 125 °C". The θJA curve's copper (2 oz/1 oz against the board's 1 oz/½ oz) is `theta_ja_copper_mismatch:U13`.
-- **Instrument:** as in B-4, on `VDD_3V3_RF` at 505 mA, with U30 held in reset (C90 shorted, so `/U30_EN` is low) so the load sets the current.
+- **Prediction (typical):** at its 505 mA load on `VDD_3V3_RF` and 512 mW of loss, the junction rises about 18.4 K (36.0 °C/W at 10 cm², for the 12.81 cm² the board joins; SNVSAW1E Figure 9-3). The figure's board has 2 oz/1 oz copper; this one declares 1 oz/½ oz, so expect more. The loss is re-derived at the raised rail's 3.589 V maximum (`AET-WO-4413` D3; 490 mW at 3.417 V before).
+- **Source line** (this verdict's `extract` condition): "U13: its junction is screened, not guaranteed: 512 mW of loss (declared: SNVSAW1E p. 26, Figure 9-8, typical at TA 25 C: 78 % on the 36 V curve at 0.505 A (AET-WO-4411 (c1)); P_loss = 3.589 V x 505 mA x (1/0.78 - 1) = 511.2 mW, rounded up (AET-WO-4413 D3)) at θJA 36.0 °C/W, the figure's point at 10 cm² for the 12.81 cm² per joined layer … is 103432 m°C on a 85 °C board, 21568 mK under 125 °C". The θJA curve's copper (2 oz/1 oz against the board's 1 oz/½ oz) is `theta_ja_copper_mismatch:U13`.
+- **Instrument:** as in B-4, on `VDD_3V3_RF`, with an electronic load beside U30 bringing U13's output current to 505 mA on the ammeter. U30 is not held off: its EN is U32's push-pull reset, which no row overrides (shorting it would pass RESET's ±10 mA absolute maximum, SBVS193D p. 6, 7.1).
 - **Pass line:** case rise ≤ 40 K above ambient.
 - **A disagreement adds:** the board's own θ for U13.
 
 ### B-9 U31's input thresholds (`translator_threshold_inferred:U31`)
 - **Prediction (rule, by inference; ruled 04:51Z G1 (a)):** each data input switches with VT+ at most 640 ‰ of its own supply and VT− at least 296 ‰. Those are SCES935A p. 7, 7.5's VCCI 3 V row (1.92 V maximum, 0.89 V minimum) scaled to the rail. The datasheet states no 3.3 V row. The line levels `LineLevelUnmet` judged rest on these figures.
-- **Source line** (this verdict's condition): "U31: VT+ and VT- are inferred, not stated: TI TXU0304 datasheet SCES935A A (November 2021), p. 7, 7.5 VT+ data inputs, VCCI 3 V, TA -40 to 125 C: max 1.92 V = 640 per mille … ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up". VT−'s row: "min 0.89 V, 296 per mille rounded down" (`power-parts.json`).
+- **Prediction at the release floor (assumption; `AET-WO-4310` (2), ruled 2026-11-27T07:42Z 2 (a)):** at VCCI 2.87 V, U12's falling minimum, each data input switches with VT+ at most 679 ‰ (1.949 V) and VT− at least 243 ‰ (0.697 V). The datasheet states VT+ and VT− at VCCI 2.3 V (1.56 V maximum, 0.56 V minimum) and 3 V and at no supply between them, so the line levels judged at the release floor take the worse of the two rows: an assumption, which this measurement turns into a figure.
+- **Source line** (this verdict's condition): "U31: VT+ and VT- are inferred, not stated: TI TXU0304 datasheet SCES935A A (November 2021), p. 7, 7.5 VT+ data inputs, VCCI 3 V, TA -40 to 125 C: max 1.92 V = 640 per mille … ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up; at the reset's release floor of 2870 mV its A side's inputs are judged with VT+ 679 and VT- 243 per mille". VT−'s row: "min 0.89 V, 296 per mille rounded down" (`power-parts.json`).
 - **Instrument:**
   - a programmable supply, ramped at ≤ 10 mV/s up to the input's rail and back to 0 V, through 1 kΩ into the input;
   - a scope on the input and on the channel's output; a DMM on the input's rail.
   - **A1** (pad 2, `/WIFI_TX`, VCCA = VDD_3V3): U1 held in reset through J2's NRST; output B1Y (pad 13).
-  - **B4** (pad 10, `/U31_B4`, VCCB = VDD_3V3_RF): U30 held in reset (C90 shorted); output A4Y (pad 5).
-- **Pass line:** at each input, rising switch ≤ 640 ‰ × that rail's measured voltage, and falling switch ≥ 296 ‰ × it.
-- **A disagreement adds:** the measured VT+ and VT− at 3.3 V, which replace the inference in the parts row. A rising switch above the line is a finding against the UART levels (FEEDBACK §1, (c1)).
+  - **B4** (VCCB = VDD_3V3_RF): on the breakout below, VCCB at the board's measured VDD_3V3_RF, the same ramp into B4 (pad 10), output A4Y (pad 5). On the board, U30's TXD drives B4, and since `AET-WO-4413` U30's EN is U32's push-pull reset, which no row overrides: shorting it would pass RESET's ±10 mA absolute maximum (SBVS193D p. 6, 7.1).
+  - **At VCCI 2.87 V:** a TXU0304PW from the same reel on a breakout, VCCA from the programmable supply at 2.87 V (DMM-read) and VCCB at 3.3 V, the same ramp into A1, output B1Y. The board's VDD_3V3 is not lowered: U11 regulates it, and the MCU would reset.
+- **Pass line:** at each input, rising switch ≤ 640 ‰ × that rail's measured voltage, and falling switch ≥ 296 ‰ × it. At VCCI 2.87 V, rising switch ≤ 679 ‰ × the measured VCCA and falling switch ≥ 243 ‰ × it.
+- **A disagreement adds:** the measured VT+ and VT− at 3.3 V, which replace the inference in the parts row; at 2.87 V, the measured pair, which replaces the assumption in the parts row's `lower_band`. A rising switch above the line is a finding against the UART levels (FEEDBACK §1, (c1)).
+
+### B-10 The radio rail's monitor (`supervisor_hysteresis_typical:U32`)
+- **Prediction (rule and typical; `AET-WO-4413`, ruled D1):**
+  - U32 (TPS3839G33) holds `/U32_RESET`, U30's EN and U31's OE, low below a falling threshold between 3,003 and 3,126 mV (SBVS193D p. 7, 7.5, VIT−, −40 to 85 °C).
+  - It releases rising at most 3,157 mV: VIT− maximum plus the 31 mV typical hysteresis, `4300k` D6's precedent.
+  - The release comes 120–350 ms after VDD_3V3_RF rises past VIT− + VHYS (p. 8, 7.6).
+- **Instrument:** a programmable supply on VDD_3V3_RF, with U13's output isolated or back-fed per its datasheet, ramped at ≤ 10 mV/s; a scope on `/U32_RESET` and VDD_3V3_RF.
+- **Pass line:** falling 3,003–3,126 mV; rising ≤ 3,157 mV; delay 120–350 ms.
+- **A disagreement adds:** the measured release. A release above 3,158 mV (VDD_3V3_RF's floor at U32's pin: the solved 3,303 mV less its 145 mV drop limit) is a finding against the board, not a retry.
+
+### B-11 U30's supply peak (`radio_supply_peak_unbounded:U30`)
+- **Prediction (rule, static only; `AET-WO-4413`, ruled 2026-11-27T21:31Z G1):** `VDD_3V3_RF` solves to at most 3,589.075 mV at U13 (100k/41.2k), 10.9 mV under U30's 3.6 V. That 3.6 V is VDD33's recommended maximum and also its absolute maximum (WROOM-02 v1.7 p. 21, Tables 6-2 and 6-1). The solve has no ripple or load-step term, so the peak is not predicted.
+- **Instrument:** a scope at U30's pads 1 (3V3) and 2 (GND), ground spring on the probe, 20 MHz bandwidth limit off; the pack at its 17.4 V maximum, U30 transmitting (its TX current steps), and U13 at its no-load and 505 mA ends.
+- **Pass line:** the peak at U30's pads ≤ 3,600 mV at every condition.
+- **A disagreement adds:** the measured peak and ripple, which the board follow-up's window rests on (a tighter reference or a lower nominal, ruled G1). A peak above 3,600 mV is a finding against the board, not a retry.

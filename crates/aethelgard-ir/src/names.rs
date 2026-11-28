@@ -234,6 +234,12 @@ pub fn own_nets(spec: &Specification) -> Result<Vec<String>, E> {
                 format!("{}_GATE", x.fet.reference),
             ]);
         }
+        // `AET-WO-4413` (2): each rail monitor's reset net
+        out.extend(
+            p.rail_monitors
+                .iter()
+                .map(|m| crate::supervisor::reset_net(&m.reference)),
+        );
         for r in &p.regulators {
             if let Some(Kind::Buck(_)) = table.get(&r.part).map(|row| &row.kind) {
                 out.extend(BUCK_NETS.iter().map(|s| format!("{}_{s}", r.reference)));

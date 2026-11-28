@@ -21,7 +21,11 @@ use power_table::{assert_power, refused, row, spec, table_json};
 /// `AET-WO-4411`: the LMR33620ADDA row and SNVSAW1E; (c1) the TXU0304PW's
 /// timing as `supplies` with its VCCB = 3.3 V row (UART only), its `levels`
 /// and `unused_inputs_at`, and the MCU's Table 50 `output` (schema 13).
-const TABLE_SHA256: &str = "e1ceebd55718d5cf0e136d8fb14beaf96afb178b443b834778322b68c98351a1";
+/// `AET-WO-4310` (2): the MCU's `released_vdd_at`, the TXU0304PW's VCCA and
+/// VCCB operating ranges and its levels' `lower_band` (schema 14).
+/// `AET-WO-4413` (2): the TPS3839G33DBZR row and SBVS193D, and every
+/// supervisor's `output` and `delay_min_microseconds` (schema 15).
+const TABLE_SHA256: &str = "7397fd3c896707ac49befd62f1a01474f2c86ae53d02f6cfb322c145c1db1b1a";
 
 /// One refusal case: what it changes, the refusal, its id, and the change.
 type Case = (&'static str, Refusal, &'static str, fn(&mut Value));
@@ -140,6 +144,7 @@ fn the_embedded_table_parses_with_every_document_held() {
             "TLV75518PDBV",
             "TLV803SDBZR",
             "TNPW0603_B_E",
+            "TPS3839G33DBZR",
             "TXU0304PW",
             "UCZ1H470MCL1GS",
         ]

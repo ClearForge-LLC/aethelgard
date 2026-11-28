@@ -1,5 +1,5 @@
 {
-  "schema_version": 13,
+  "schema_version": 15,
   "documents": {
     "ABM8AIG": {
       "title": "Abracon ABM8AIG, automotive and industrial grade ceramic base SMD crystal",
@@ -179,6 +179,12 @@
       "title": "TI TLV803, TLV853, TLV863 datasheet SBVS157E",
       "revision": "E (December 2020)",
       "sha256": "1645cfe12f99eca88937402ac080dd3fe48f0e957fd7ddb1101fef26cd39aabb",
+      "pending": null
+    },
+    "SBVS193D": {
+      "title": "TI TPS3831, TPS3839 datasheet SBVS193D",
+      "revision": "D (June 2012, revised July 2015)",
+      "sha256": "a18940237afc63cf6d1a0bb5e1c8c0b2c3274e01c47fa5f27e470a005072621b",
       "pending": null
     }
   },
@@ -1263,6 +1269,22 @@
               "section": "p. 21, 9.3.1.1: an external pull-up no larger than 1 MOhm against the 5 MOhm internal pull-down"
             }
           },
+          "vcca_operating_millivolts": {
+            "min": 1080,
+            "max": 5500,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 6, 7.3 Recommended Operating Conditions, VCCA supply voltage A: 1.08 to 5.5 V"
+            }
+          },
+          "vccb_operating_millivolts": {
+            "min": 1080,
+            "max": 5500,
+            "at": {
+              "document": "SCES935A",
+              "section": "p. 6, 7.3 Recommended Operating Conditions, VCCB supply voltage B: 1.08 to 5.5 V"
+            }
+          },
           "levels": {
             "supply_millivolts": {
               "min": 3000,
@@ -1306,6 +1328,31 @@
                 "document": "SCES935A",
                 "section": "p. 7, 7.5 VT- data inputs, VCCI 3 V, TA -40 to 125 C: min 0.89 V, 296 per mille rounded down; 1.51 V at 4.5 V and 1.88 V at 5.5 V lie over it (AET-WO-4411 G1)"
               }
+            },
+            "lower_band": {
+              "supply_millivolts": {
+                "min": 2300,
+                "max": 3000,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 7, 7.5: VT+ and VT- are stated at VCCI 2.3 V and 3 V and at no supply between them"
+                }
+              },
+              "input_high_min_permille": {
+                "value": 679,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 7, 7.5 VT+ data inputs, TA -40 to 125 C: max 1.56 V at VCCI 2.3 V = 678.3 per mille, rounded up; 640 at 3 V lies under it"
+                }
+              },
+              "input_low_max_permille": {
+                "value": 243,
+                "at": {
+                  "document": "SCES935A",
+                  "section": "p. 7, 7.5 VT- data inputs, TA -40 to 125 C: min 0.56 V at VCCI 2.3 V = 243.5 per mille, rounded down; 296 at 3 V lies over it"
+                }
+              },
+              "assumption": "between the 2.3 V and 3 V rows, the worse of the two: SCES935A states no threshold between them (AET-WO-4310, ruled 2026-11-27T07:42Z 2 (a)); a bench row measures VT+ and VT- at VCCI 2.87 V"
             },
             "input_current_max_nanoamps": {
               "value": 2000,
@@ -1428,6 +1475,10 @@
               "document": "DS12117",
               "section": "p. 209, Table 111, VDD 1.62 to 3.6 V"
             }
+          },
+          "released_vdd_at": {
+            "document": "DS12117",
+            "section": "p. 209, Table 111 note 1: When RESET is released functionality is guaranteed down to VBOR0 min (bor_falling_min_millivolts[0])"
           },
           "idd_max_milliamps": {
             "value": 658,
@@ -3452,6 +3503,7 @@
               "section": "p. 5, 7.4 Recommended Operating Conditions, VDD 1.1 to 6 V"
             }
           },
+          "output": "open_drain",
           "pull_up_ohms": {
             "min": 10000,
             "max": 1000000,
@@ -3465,6 +3517,74 @@
             "at": {
               "document": "SBVS157E",
               "section": "p. 6, 7.6 Switching Characteristics, td delay time 120 to 280 ms at VDD >= VIT- + 0.2 V"
+            }
+          },
+          "delay_min_microseconds": {
+            "value": 120000,
+            "at": {
+              "document": "SBVS157E",
+              "section": "p. 6, 7.6 Switching Characteristics, td delay time 120 ms minimum"
+            }
+          }
+        }
+      }
+    },
+    {
+      "part": "TPS3839G33DBZR",
+      "lifecycle": "active",
+      "symbol": "Aethelgard_Power:TPS3839",
+      "footprint": "Package_TO_SOT_SMD:SOT-23-3",
+      "pins": {
+        "GND": "1",
+        "RESET": "2",
+        "VDD": "3"
+      },
+      "temperature_celsius": {
+        "min": -40,
+        "max": 85,
+        "at": {
+          "document": "SBVS193D",
+          "section": "p. 6, 7.1 Absolute Maximum Ratings, operating ambient TA -40 to 85 C (TJ assumed equal to TA, note 2)"
+        }
+      },
+      "kind": {
+        "supervisor": {
+          "falling_millivolts": {
+            "min": 3003,
+            "max": 3126,
+            "at": {
+              "document": "SBVS193D",
+              "section": "p. 7, 7.5 Electrical Characteristics, VIT- TPS383xG33 min 3.003 V, max 3.126 V, TA -40 to 85 C"
+            }
+          },
+          "hysteresis_typ_millivolts": {
+            "value": 31,
+            "at": {
+              "document": "SBVS193D",
+              "section": "p. 7, 7.5 Electrical Characteristics, Vhys TPS383xG33 31 mV in the TYP column only"
+            }
+          },
+          "vdd_millivolts": {
+            "min": 900,
+            "max": 6500,
+            "at": {
+              "document": "SBVS193D",
+              "section": "p. 7, 7.5 Electrical Characteristics, VDD input supply voltage 0.9 to 6.5 V"
+            }
+          },
+          "output": "push_pull",
+          "delay_overdrive_millivolts": {
+            "value": 31,
+            "at": {
+              "document": "SBVS193D",
+              "section": "p. 8, 7.6 Timing Requirements and Figure 1, td 120 to 350 ms after VDD rises above VIT- + VHYS"
+            }
+          },
+          "delay_min_microseconds": {
+            "value": 120000,
+            "at": {
+              "document": "SBVS193D",
+              "section": "p. 8, 7.6 Timing Requirements, td RESET delay time (power-up delay) 120 ms minimum"
             }
           }
         }

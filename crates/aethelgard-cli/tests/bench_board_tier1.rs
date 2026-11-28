@@ -27,12 +27,14 @@ const SPEC: &str = "examples/sentinel-01.json";
 const PACKAGE: &str = "fab/sentinel-01-bench/package";
 /// The scenarios the package was verified with, in the order `MANIFEST.json`
 /// records and `ci.yml`'s `bench-package` job passes them.
-const SCENARIOS: [&str; 5] = [
+const SCENARIOS: [&str; 6] = [
     "scenarios/sentinel-01-bench/pullup-3k3.json",
     "scenarios/sentinel-01-bench/droop-bor3.json",
     "scenarios/sentinel-01-bench/spi-absent-u4.json",
     "scenarios/sentinel-01-bench/pullup-2k2.json",
     "scenarios/sentinel-01-bench/serial-rx-open-console.json",
+    // `AET-WO-4310` (5), ruled D7 (i): SENSORS covered by a detected fault.
+    "scenarios/sentinel-01-bench/held-low-sda.json",
 ];
 
 fn root() -> PathBuf {
@@ -169,10 +171,16 @@ const NOT_AN_ELF: [(&str, &str); 2] = [
     ("452d906c", "the W25Q64JV row of parts.json"),
 ];
 /// [`NOT_AN_ELF`] for Sentinel-03's sheet (`fab/sentinel-03/BENCH.md`).
-const S03_NOT_AN_ELF: [(&str, &str); 1] = [(
-    "1206F700",
-    "no digest: Bourns SF-1206F700-2, F1's part number, in B-1's source line (AET-WO-4411)",
-)];
+const S03_NOT_AN_ELF: [(&str, &str); 2] = [
+    (
+        "1206F700",
+        "no digest: Bourns SF-1206F700-2, F1's part number, in B-1's source line (AET-WO-4411)",
+    ),
+    (
+        "ec440f71",
+        "no digest: the commit Sentinel-03's withdrawn package was last valid at (AET-WO-4413 D6)",
+    ),
+];
 
 /// The sha256 of `ORDERED.sha256`'s as-ordered block: its header and the ten
 /// entries, every byte before the first ruling block. Its header says nothing
@@ -513,21 +521,30 @@ fn package_elf() -> String {
         .to_owned()
 }
 
-/// `AET-WO-4300k` (8): Sentinel-03's bench sheet is bound the same way, to
-/// the ELF its package's `MANIFEST.json` names (the package is the CI
-/// dispatch's, committed unchanged).
+/// The ELF of Sentinel-03's last committed package (`ec440f71`), which its
+/// bench sheet still names: the package is withdrawn (`AET-WO-4413`, ruled
+/// D6) until the ground split's follow-up writes one.
+const S03_LAST_ELF: &str = "66d9b7f61d7057929ec14f83493d8ac9ae137476ed89b709fb1c68a787b6074c";
+
+/// `AET-WO-4300k` (8), then `AET-WO-4413` D6: Sentinel-03's package is
+/// withdrawn. No `package/` is committed beside its sheet; the sheet says so
+/// at its top, with the work order, and names the last package's ELF and no
+/// other digest but its named ones.
 #[test]
-fn sentinel_03_s_bench_sheet_names_its_package_elf() {
+fn sentinel_03_s_package_is_withdrawn_and_its_sheet_says_so() {
     let dir = root().join("fab/sentinel-03");
-    let m: Value =
-        serde_json::from_slice(&fs::read(dir.join("package/MANIFEST.json")).unwrap()).unwrap();
-    let elf = m["files"]["sentinel-03.elf"].as_str().unwrap();
-    assert_eq!(
-        sha(&fs::read(dir.join("package/sentinel-03.elf")).unwrap()),
-        elf
+    assert!(
+        !dir.join("package").exists(),
+        "a Sentinel-03 package is committed"
     );
     let text = fs::read_to_string(dir.join("BENCH.md")).unwrap();
-    bench_names_only(&text, elf, &S03_NOT_AN_ELF).unwrap();
+    let head: Vec<&str> = text.lines().take(4).collect();
+    assert!(
+        head.iter()
+            .any(|l| l.contains("**The package is withdrawn**") && l.contains("`AET-WO-4413`")),
+        "{head:?}"
+    );
+    bench_names_only(&text, S03_LAST_ELF, &S03_NOT_AN_ELF).unwrap();
     for (d, _) in S03_NOT_AN_ELF {
         assert!(
             text.contains(d),

@@ -1,0 +1,12 @@
+P5-M1	crates/aethelgard-cli/src/verify.rs	                .filter(|t| !matches!(t, Target::I2c(_)))	                .filter(|_| true)	aethelgard-cli	bin:verify::tests::a_pull_up
+P5-M2	crates/aethelgard-cli/src/verify.rs	                .any(|d| &d.bus == id && modelled(&d.part)),	                .any(|d| &d.bus == id),	aethelgard-cli	bin:verify::tests::a_bus_of
+P5-M3	crates/aethelgard-cli/src/verify.rs	    for m in &spec.motor_outputs {\n        let target = Target::Motor(m.label.clone());	    for m in spec.motor_outputs.iter().take(0) {\n        let target = Target::Motor(m.label.clone());	aethelgard-cli	bin:verify::tests::each_motor
+P5-M4	crates/aethelgard-cli/src/verify.rs	                    | Override::MotorOutputOpen { .. }	                    | Override::PinHeld { .. }	aethelgard-cli	bin:verify::tests::a_pass_scenario
+P5-M5	crates/aethelgard-cli/src/verify.rs	                    rule: "E4",	                    rule: "E3",	aethelgard-cli	bin:verify::tests::each_motor
+P5-M6	crates/aethelgard-evolve/src/lib.rs	            matches!(r, Record::MotorWitness { label: l, rises: 0, falls: 0, .. } if l == label)	            matches!(r, Record::MotorWitness { label: l, .. } if l == label)	aethelgard-evolve	motor
+P5-M7	crates/aethelgard-evolve/src/lib.rs	            if overrides.iter().any(|o| matches!(o, Override::MotorOutputOpen { label: l } if l == label)));	            if overrides.iter().any(|o| matches!(o, Override::MotorOutputOpen { .. })));	aethelgard-evolve	motor
+P5-M8	crates/aethelgard-evolve/src/lib.rs	                if let Some(evidence) = self.motor_open(m).filter(|_| software.is_empty()) {	                if let Some(evidence) = self.motor_open(m) {	aethelgard-evolve	motor
+P5-M9	crates/aethelgard-twin/src/platform.rs	            if open.contains(&o.label) {	            if false && open.contains(&o.label) {	aethelgard-twin	motor_platform
+P5-M10	crates/aethelgard-chaos/src/campaign.rs	            && raw.schema_version < DROOP_SOURCED_VERSION	            && raw.schema_version < 2	aethelgard-chaos	droop
+P5-M11	crates/aethelgard-chaos/src/campaign.rs	        if old_keys || pin_held.is_some() || analog_value.is_some() {	        if pin_held.is_some() || analog_value.is_some() {	aethelgard-chaos	droop
+P5-M12	crates/aethelgard-evolve/src/lib.rs	            matches!(r, Record::MotorTimingCheck { label: l, holds: true, .. } if l == label)	            matches!(r, Record::MotorTimingCheck { label: l, .. } if l == label)	aethelgard-evolve	motor

@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "name": "droop-bor3",
   "base": "../../examples/sentinel-03.json",
   "expect": "pass",
@@ -18,8 +18,18 @@
         "fall_ns": 20000,
         "hold_ns": 600000,
         "rise_ns": 20000,
-        "source_milliohms": 500,
-        "load_milliamps": 100
+        "source_milliohms": {
+          "value": 67,
+          "source": {
+            "stimulus": "a 67 mOhm source behind VDD_3V3 at the board's solved load, the sag this campaign injects (its I.R drop 50.25 mV, as the 500 mOhm at 100 mA it replaced); not the board's source resistance (AET-WO-4310 (3))"
+          }
+        },
+        "load_milliamps": {
+          "value": 750,
+          "source": {
+            "held": "the solved load on VDD_3V3: power.loads, each row with its own source (aethelgard solve, power.domains.VDD_3V3.load_milliamps)"
+          }
+        }
       }
     }
   ]

@@ -44,8 +44,13 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// added the `jumper` kind, the pull's series link (D4). Version 13 moved a
 /// translator's timing into `supplies`, one row per supply pair with its
 /// `uart_only`, and gave it `levels` and `unused_inputs_at`, and gave the MCU
-/// row's `io` its `output` levels (`AET-WO-4411` (c1)).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 13;
+/// row's `io` its `output` levels (`AET-WO-4411` (c1)). Version 14 gave the
+/// MCU row `released_vdd_at`, a translator its VCCA and VCCB operating
+/// ranges, and its `levels` a `lower_band` (`AET-WO-4310` (2)). Version 15
+/// gave a supervisor its `output`, open-drain with its pull-up range or
+/// push-pull with none, and its reset delay's minimum (`AET-WO-4413` (2),
+/// ruled D1).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 15;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -258,6 +263,10 @@ pub enum Direction {
 /// A fixed-direction translator (the TXU0304PW).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Translator {
+    /// VCCA's and VCCB's recommended operating range, mV: each side's supply
+    /// minimum (`AET-WO-4310` (2), ruled D3 (ii)), not a timing row's band.
+    pub vcca_operating_millivolts: Ranged,
+    pub vccb_operating_millivolts: Ranged,
     /// Each supply pair a timing row is stated for, in the row's order: a
     /// crossing reads the first whose bands hold both its domains
     /// ([`Translator::supplies_for`]).
@@ -316,6 +325,19 @@ pub struct Levels {
     pub input_current_max_nanoamps: Limit,
     /// The highest input the part takes in operation, mV.
     pub input_max_millivolts: Limit,
+    /// Thresholds for a supply below `supply_millivolts`, where the datasheet
+    /// states rows only either side: the worse of the two, an assumption it
+    /// names (`AET-WO-4310` (2), ruled 2 (a)). `None`: nothing below.
+    pub lower_band: Option<LowerBand>,
+}
+
+/// [`Levels::lower_band`]: the band, its two thresholds, and the assumption.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LowerBand {
+    pub supply_millivolts: Ranged,
+    pub input_high_min_permille: Limit,
+    pub input_low_max_permille: Limit,
+    pub assumption: String,
 }
 
 impl Translator {
@@ -513,11 +535,25 @@ pub struct Supervisor {
     pub hysteresis_typ_millivolts: Limit,
     /// The recommended VDD, mV.
     pub vdd_millivolts: Ranged,
-    /// The open-drain output's pull-up range the maker names, Ω.
-    pub pull_up_ohms: Ranged,
+    /// Its output: open-drain with the pull-up range the maker names, Ω, or
+    /// push-pull, driving its pin itself (`AET-WO-4413` (2)).
+    pub output: SupervisorOutput,
     /// How far above VIT− the supply must sit for the stated reset delay to
     /// hold, mV (`AET-WO-4300k`, the power review's F9).
     pub delay_overdrive_millivolts: Limit,
+    /// The reset delay's minimum, µs: how long the output stays asserted
+    /// after the supply rises past its release (`AET-WO-4413` (2): a module's
+    /// enable it drives must stay low for the module's settling time).
+    pub delay_min_microseconds: Limit,
+}
+
+/// A supervisor's output (`AET-WO-4413` (2)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SupervisorOutput {
+    /// Open-drain: it needs a pull-up inside this range, Ω.
+    OpenDrain { pull_up_ohms: Ranged },
+    /// Push-pull: it drives its pin high and low itself.
+    PushPull,
 }
 
 /// A zero-ohm jumper (`AET-WO-4300j` D4): its resistance and current, each
@@ -578,6 +614,10 @@ pub struct Crystal {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mcu {
     pub vdd_millivolts: Ranged,
+    /// Where the datasheet states the MCU runs, once its reset is released,
+    /// down to VBOR0's falling minimum ([`Mcu::bor_falling_min_millivolts`]
+    /// `[0]`): its supply floor (`AET-WO-4310` (2), ruled D2).
+    pub released_vdd_at: At,
     /// The largest supply current the datasheet tables (`1303` D4).
     pub idd_max_milliamps: Limit,
     pub idd_condition: String,
@@ -1244,8 +1284,11 @@ struct RawSupervisor {
     falling_millivolts: RawRanged,
     hysteresis_typ_millivolts: RawLimit,
     vdd_millivolts: RawRanged,
-    pull_up_ohms: RawRanged,
+    output: String,
+    #[serde(default)]
+    pull_up_ohms: Option<RawRanged>,
     delay_overdrive_millivolts: RawLimit,
+    delay_min_microseconds: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -1346,6 +1389,8 @@ struct RawChannel {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RawTranslator {
+    vcca_operating_millivolts: RawRanged,
+    vccb_operating_millivolts: RawRanged,
     supplies: Vec<RawSupplies>,
     pull_up_max_ohms: RawLimit,
     levels: RawLevels,
@@ -1378,6 +1423,17 @@ struct RawLevels {
     input_low_max_permille: RawLimit,
     input_current_max_nanoamps: RawLimit,
     input_max_millivolts: RawLimit,
+    #[serde(deserialize_with = "Option::deserialize")]
+    lower_band: Option<RawLowerBand>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLowerBand {
+    supply_millivolts: RawRanged,
+    input_high_min_permille: RawLimit,
+    input_low_max_permille: RawLimit,
+    assumption: String,
 }
 
 #[derive(Deserialize)]
@@ -1474,6 +1530,7 @@ struct RawInductor {
 #[serde(deny_unknown_fields)]
 struct RawMcu {
     vdd_millivolts: RawRanged,
+    released_vdd_at: RawAt,
     idd_max_milliamps: RawLimit,
     idd_condition: String,
     bor_falling_max_millivolts: Vec<RawLimit>,
@@ -2423,6 +2480,27 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             }
             let l = t.levels;
             let f = "kind.translator.levels";
+            let lower_band = match l.lower_band {
+                None => None,
+                Some(b) => {
+                    text(&b.assumption, &format!("{f}.lower_band.assumption"), 400)?;
+                    Some(LowerBand {
+                        supply_millivolts: r.ranged_positive(
+                            b.supply_millivolts,
+                            &format!("{f}.lower_band.supply_millivolts"),
+                        )?,
+                        input_high_min_permille: r.positive(
+                            b.input_high_min_permille,
+                            &format!("{f}.lower_band.input_high_min_permille"),
+                        )?,
+                        input_low_max_permille: r.positive(
+                            b.input_low_max_permille,
+                            &format!("{f}.lower_band.input_low_max_permille"),
+                        )?,
+                        assumption: b.assumption,
+                    })
+                }
+            };
             let levels = Levels {
                 supply_millivolts: r
                     .ranged_positive(l.supply_millivolts, &format!("{f}.supply_millivolts"))?,
@@ -2452,6 +2530,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                 )?,
                 input_max_millivolts: r
                     .positive(l.input_max_millivolts, &format!("{f}.input_max_millivolts"))?,
+                lower_band,
             };
             if levels.input_low_max_permille.value >= levels.input_high_min_permille.value
                 || levels.input_high_min_permille.value >= 1000
@@ -2461,7 +2540,35 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
                     levels.input_low_max_permille.value, levels.input_high_min_permille.value
                 ));
             }
+            // A lower band meets the stated band at its top, and is no
+            // better than it: its high threshold at or above, under 1000, its
+            // low at or below (the worse of the two rows, ruled 2 (a)); its
+            // low is then under its high, as the stated band's is.
+            if let Some(b) = &levels.lower_band
+                && (b.supply_millivolts.range.max != levels.supply_millivolts.range.min
+                    || b.input_high_min_permille.value < levels.input_high_min_permille.value
+                    || b.input_low_max_permille.value > levels.input_low_max_permille.value
+                    || b.input_high_min_permille.value >= 1000)
+            {
+                return Err(format!(
+                    "`{f}.lower_band` must end where `supply_millivolts` begins and be no better than it: high {} against {}, low {} against {} per mille, over {} to {} mV",
+                    b.input_high_min_permille.value,
+                    levels.input_high_min_permille.value,
+                    b.input_low_max_permille.value,
+                    levels.input_low_max_permille.value,
+                    b.supply_millivolts.range.min,
+                    b.supply_millivolts.range.max
+                ));
+            }
             Kind::Translator(Box::new(Translator {
+                vcca_operating_millivolts: r.ranged_positive(
+                    t.vcca_operating_millivolts,
+                    "kind.translator.vcca_operating_millivolts",
+                )?,
+                vccb_operating_millivolts: r.ranged_positive(
+                    t.vccb_operating_millivolts,
+                    "kind.translator.vccb_operating_millivolts",
+                )?,
                 supplies,
                 pull_up_max_ohms: r
                     .positive(t.pull_up_max_ohms, "kind.translator.pull_up_max_ohms")?,
@@ -2627,10 +2734,33 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             )?,
             vdd_millivolts: r
                 .ranged_positive(s.vdd_millivolts, "kind.supervisor.vdd_millivolts")?,
-            pull_up_ohms: r.ranged_positive(s.pull_up_ohms, "kind.supervisor.pull_up_ohms")?,
+            output: match (s.output.as_str(), s.pull_up_ohms) {
+                ("open_drain", Some(p)) => SupervisorOutput::OpenDrain {
+                    pull_up_ohms: r.ranged_positive(p, "kind.supervisor.pull_up_ohms")?,
+                },
+                ("push_pull", None) => SupervisorOutput::PushPull,
+                ("open_drain", None) => {
+                    return Err(
+                        "`kind.supervisor.output` is `open_drain` with no `pull_up_ohms`"
+                            .to_owned(),
+                    );
+                }
+                ("push_pull", Some(_)) => {
+                    return Err("`kind.supervisor.output` is `push_pull` with a `pull_up_ohms`: a push-pull output takes none".to_owned());
+                }
+                (o, _) => {
+                    return Err(format!(
+                        "`kind.supervisor.output` is `{o}`, not `open_drain` or `push_pull`"
+                    ));
+                }
+            },
             delay_overdrive_millivolts: r.positive(
                 s.delay_overdrive_millivolts,
                 "kind.supervisor.delay_overdrive_millivolts",
+            )?,
+            delay_min_microseconds: r.positive(
+                s.delay_min_microseconds,
+                "kind.supervisor.delay_min_microseconds",
             )?,
         }),
         RawKind::Tvs(t) => {
@@ -2743,6 +2873,7 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             )?;
             Kind::Mcu(Box::new(Mcu {
                 vdd_millivolts: r.ranged_positive(m.vdd_millivolts, "kind.mcu.vdd_millivolts")?,
+                released_vdd_at: r.at(m.released_vdd_at, "kind.mcu.released_vdd_at")?,
                 idd_max_milliamps: r.positive(m.idd_max_milliamps, "kind.mcu.idd_max_milliamps")?,
                 idd_condition: m.idd_condition,
                 bor_falling_max_millivolts: bor,

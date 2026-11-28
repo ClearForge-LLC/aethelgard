@@ -1,5 +1,5 @@
 {
-  "schema_version": 31,
+  "schema_version": 32,
   "project_name": "drv8833-in-in",
   "mcu": {
     "part": "STM32H753ZITx",

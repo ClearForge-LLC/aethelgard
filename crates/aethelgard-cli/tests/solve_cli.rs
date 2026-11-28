@@ -161,9 +161,11 @@ use sha2::{Digest, Sha256};
 /// hashes to `1211c`'s digest. Before: `17515df2…1ce7` and `2c4cb557…890e`.
 /// Moved by `AET-WO-4411` (specification 31) by the specification's sha256
 /// alone (the put-back below still hashes to `1211c`'s digest). Before:
-/// `bf3cce92…4f68` and `11d2153d…20f2`.
-const REFERENCE_DIGEST: &str = "17c83728fad589944b13375ca2953d432d9bdfa95b6146fabc6de215204738be";
-const STRESS_DIGEST: &str = "eeb21d3dcf2527436ffc5b9fa87b7db405285f1a30b48837305d1ae9df011934";
+/// `bf3cce92…4f68` and `11d2153d…20f2`. Moved by `AET-WO-4413` (specification
+/// 32) by the specification's sha256 alone. Before: `17c83728…38be` and
+/// `eeb21d3d…1934`.
+const REFERENCE_DIGEST: &str = "5cc6ff70e0d6c2b1ecce63d0c3af7e59d3dc255ab549c5da749e8190f0fac671";
+const STRESS_DIGEST: &str = "1c1c1801c3a30e77c6523fd5334e9a86970d61a36489e6f8531a4fa8996c5f67";
 /// `1211c`'s digests, with each file's sha256 at specification 24.
 const REFERENCE_DIGEST_24: &str =
     "651e9e56b0a4f91782dfe44100b5f69ed30357c7d329f248a4a9f0a18ca47e9d";

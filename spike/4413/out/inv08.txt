@@ -1,0 +1,11 @@
+# INV-08 for AET-WO-4413 (2026-11-27): every committed specification JSON in examples/, crates/aethelgard-cli/tests/fixtures/ and
+# crates/aethelgard-ir/tests/fixtures/ (43 files), emitted and solved by 4310's head build (each file as committed at 86a1f280,
+# version 31) and by this branch's (each file as committed here, version 32).
+emit: 27 draw, 16 refused, as at 86a1f280; every refusal keeps its kind.
+emit: every schematic, BOM and board byte-identical but Sentinel-03's three (its BOM, schematic and board: U32 and C95 drawn,
+      R90 and C90 gone, U13's feedback 100k/41.2k, the placement and routes that follow). The version line reaches no emitted byte.
+solve: every topology identical but its specification_sha256 (the version line) and Sentinel-03's, which moves by its rail
+       (3303.185-3589.075 mV), its monitor's conditions and its loads.
+specifications: all 40 at version 31 move by their version line alone; Sentinel-03 also by the keys D1-D4 rule
+       (power.rail_monitors, the radio module's enable.monitor, U31's OE monitor, U13's feedback, the domain, the drop limit,
+       the loads and the acknowledgements).

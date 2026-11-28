@@ -1,0 +1,18 @@
+# id	file	old	new	package	test
+P2-M1	crates/aethelgard-ir/src/supervisor.rs	Some((min, cite)) if p.rail != spec.mcu.supply =>	Some((min, cite)) if false && p.rail != spec.mcu.supply =>	aethelgard-ir	supply_floors_4310
+P2-M2	crates/aethelgard-ir/src/supervisor.rs	Some((min, _)) if *min > reset_min =>	Some((min, _)) if *min >= reset_min =>	aethelgard-ir	supply_floors_4310
+P2-M3	crates/aethelgard-ir/src/supervisor.rs	let battery = r.input == power::BATTERY;	let battery = false && r.input == power::BATTERY;	aethelgard-ir	supply_floors_4310
+P2-M4	crates/aethelgard-ir/src/supervisor.rs	for d in spec.declared_pin_devices() {	for d in spec.declared_pin_devices().iter().take(0) {	aethelgard-ir	supply_floors_4310
+P2-M5	crates/aethelgard-ir/src/supervisor.rs	let min = parts.get(part).and_then(|p| {	let min = parts.get(part).or_else(|| parts.get("BME280")).and_then(|p| {	aethelgard-ir	supply_floors_4310
+P2-M6	crates/aethelgard-ir/src/supervisor.rs	Kind::Mcu(m) => m.bor_falling_min_millivolts.first().map(|l| {	Kind::Mcu(m) => m.bor_falling_min_millivolts.get(1).map(|l| {	aethelgard-ir	supply_floors_4310
+P2-M7	crates/aethelgard-ir/src/supervisor.rs	("A", t.a_domain, row.map(|x| &x.vcca_operating_millivolts)),	("A", t.a_domain, row.map(|x| &x.supplies[0].vcca_millivolts)),	aethelgard-ir	supply_floors_4310
+P2-M8	crates/aethelgard-ir/src/power.rs	if release_lo >= l.supply_millivolts.range.min * 1000 {	if true || release_lo >= l.supply_millivolts.range.min * 1000 {	aethelgard-ir	supply_floors_4310
+P2-M9	crates/aethelgard-ir/src/power.rs	.filter(|b| release_lo >= b.supply_millivolts.range.min * 1000)	.filter(|b| true || release_lo >= b.supply_millivolts.range.min * 1000)	aethelgard-ir	supply_floors_4310
+P2-M10	crates/aethelgard-ir/src/power.rs	for (net, d, r, cite, banded) in &release {	for (net, d, r, cite, banded) in release.iter().take(0) {	aethelgard-ir	supply_floors_4310
+P2-M11	crates/aethelgard-ir/src/power.rs	let release_lo = release_uv - ms.drop_uv;	let release_lo = release_uv;	aethelgard-ir	supply_floors_4310
+P2-M12	crates/aethelgard-ir/src/power_parts.rs	&& (b.supply_millivolts.range.max != levels.supply_millivolts.range.min	&& (false	aethelgard-ir	supply_floors_4310
+P2-M13	crates/aethelgard-ir/src/power_parts.rs	|| b.input_high_min_permille.value < levels.input_high_min_permille.value	|| false	aethelgard-ir	supply_floors_4310
+P2-M14	crates/aethelgard-ir/src/power_parts.rs	|| b.input_low_max_permille.value > levels.input_low_max_permille.value	|| false	aethelgard-ir	supply_floors_4310
+P2-M15	crates/aethelgard-ir/src/power_parts.rs	|| b.input_high_min_permille.value >= 1000)	|| false)	aethelgard-ir	supply_floors_4310
+P2-M16	crates/aethelgard-ir/src/radio.rs	&& m.supply != spec.mcu.supply	&& false	aethelgard-ir	supply_floors_4310
+P2-M17	crates/aethelgard-cli/src/readiness.rs	aethelgard_ir::supervisor::Judgement::Named(n) => Some((n.device.clone(), n.text())),	aethelgard_ir::supervisor::Judgement::Named(_n) => None,	aethelgard-cli	readiness_tier1

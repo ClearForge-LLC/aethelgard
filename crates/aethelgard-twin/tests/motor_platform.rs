@@ -213,3 +213,35 @@ fn the_expected_image_holds_the_timer_s_stored_fields_and_names_its_tags() {
         assert!(image.unobservable.iter().any(|u| u == tag), "{tag}");
     }
 }
+
+/// `AET-WO-4310` (5), ruled D7 (iii): an output the scenario holds open keeps
+/// its pin's stock route and its observer's declaration, and the observer is
+/// left off the pin; every other output is observed as before, and with
+/// nothing open the platform is the stock emission, byte for byte.
+#[test]
+fn an_output_held_open_leaves_its_observer_off_the_pin_and_the_rest_as_before() {
+    use std::collections::BTreeSet;
+    let t = topology("motors-pwm");
+    let none = BTreeSet::new();
+    let stock = platform::emit(&t).unwrap();
+    assert_eq!(
+        platform::emit_opened(&t, &none, &none, &none).unwrap(),
+        stock
+    );
+    let observers = timer::observers(&t).unwrap();
+    let first = &observers[0];
+    let open: BTreeSet<String> = [first.label.clone()].into();
+    let text = platform::emit_opened(&t, &none, &none, &open).unwrap();
+    assert!(
+        text.contains(&format!("{}: Miscellaneous.LED @ gpioPort", first.name)),
+        "the observer stays declared"
+    );
+    assert!(!text.contains(&format!("| {}@0", first.name)), "{text}");
+    assert!(text.contains(&format!(
+        "// {}: held open by the scenario (motor_output_open): {} is not connected",
+        first.label, first.name
+    )));
+    for o in &observers[1..] {
+        assert!(text.contains(&format!("| {}@0", o.name)), "{}", o.label);
+    }
+}

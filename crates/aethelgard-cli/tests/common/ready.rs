@@ -22,12 +22,15 @@ use crate::common::verify::root;
 /// `{condition: test-fixture}`, and its conditions acknowledged.
 pub const READY: &str = "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json";
 /// The reference's seeded set (`AET-WO-3303` D1, ruled), rebased on [`READY`].
-pub const READY_SCENARIOS: [&str; 5] = [
+/// `AET-WO-4310` (5), ruled D7 (i): a raised pull-up covers no bus, so
+/// `SENSORS` is covered by its held-low SDA (as Sentinel-01-bench's).
+pub const READY_SCENARIOS: [&str; 6] = [
     "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-3k3.json",
     "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/droop-bor3.json",
     "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/spi-absent-u4.json",
     "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/pullup-2k2.json",
     "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/serial-rx-open-console.json",
+    "crates/aethelgard-cli/tests/fixtures/sentinel-01-ready/held-low-sda.json",
 ];
 
 /// Every acknowledgement [`ready`] writes gives this reason.

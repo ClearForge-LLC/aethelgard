@@ -95,6 +95,9 @@ pub const BATTERY_FUSED_NET: &str = "VBAT_FUSED";
 pub fn references(p: &Power) -> Vec<&String> {
     let mut out = vec![&p.input.reference];
     out.extend(p.input.hot_plug.iter().map(|h| &h.reference));
+    for m in &p.rail_monitors {
+        out.extend([&m.reference, &m.bypass.reference]);
+    }
     if let Some(x) = &p.input.protection {
         out.extend([
             &x.fuse.reference,
@@ -154,6 +157,12 @@ pub struct Power {
     /// (`DropLimitUndeclared`). Any other domain is named as a condition
     /// (`drop_not_judged`, ruled D13).
     pub drop_limits: Vec<DropLimit>,
+    /// Each push-pull supervisor on a rail other than the MCU's, holding the
+    /// parts that name it in reset or off while its rail is low
+    /// (`AET-WO-4413` (2), ruled D2). Absent or empty declares none and is
+    /// not written back.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub rail_monitors: Vec<crate::supervisor::RailMonitor>,
 }
 
 /// One domain's drop limit: VDD plus VSS, mV, at most, with its source.
@@ -342,6 +351,15 @@ pub struct Control {
         skip_serializing_if = "Option::is_none"
     )]
     pub after: Option<After>,
+    /// `AET-WO-4413` (2), ruled D2: this pin is driven by the named rail
+    /// monitor's push-pull reset (`power.rail_monitors`), on the monitor's
+    /// own net, so the part is off while the monitor's rail is low.
+    #[serde(
+        default,
+        deserialize_with = "crate::board::present",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub monitor: Option<String>,
 }
 
 /// An enable held by another regulator's power-good (`AET-WO-4411` (iii)).
@@ -628,6 +646,10 @@ pub enum Refusal {
     /// A reset supervisor, its supply or its pull-up outside its row
     /// (`AET-WO-4300k` (9)).
     SupervisorOutOfRange,
+    /// A rail monitor that holds nothing, is named by a part on another
+    /// rail, names no declared monitor, or is too fast for the part it holds
+    /// (`AET-WO-4413` (2)).
+    RailMonitorInvalid,
 }
 
 impl Refusal {
@@ -681,6 +703,7 @@ impl Refusal {
             Self::PeakCurrentOverLimit => "PeakCurrentOverLimit",
             Self::SupervisorBelowDeviceFloor => "SupervisorBelowDeviceFloor",
             Self::SupervisorAboveRail => "SupervisorAboveRail",
+            Self::RailMonitorInvalid => "RailMonitorInvalid",
             Self::SupervisorOutOfRange => "SupervisorOutOfRange",
         }
     }
@@ -708,6 +731,11 @@ pub struct Checked {
     /// The battery-side current, steady state and fault bound, mA.
     pub input_steady_milliamps: u64,
     pub input_fault_milliamps: u64,
+    /// The input path's drop at the branch's current, mV: the pack's series,
+    /// the FET and the fuse, as every battery-fed regulator's headroom counts
+    /// it. The battery-fed regulators run from the pack's minimum less it
+    /// (`AET-WO-4310` (3): their input currents in the ground copper).
+    pub input_drop_millivolts: u64,
     /// Every named condition the verdict rests on, each once, sorted.
     pub conditions: Vec<String>,
     /// The conditions a fabrication package needs acknowledged
@@ -1016,12 +1044,21 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
     let controls = |list: &[Control], path: &str| -> Result<(), IrValidationError> {
         for (i, c) in list.iter().enumerate() {
             id(&c.pin, format!("{path}[{i}].pin"))?;
-            let set = [c.strap.is_some(), c.wire.is_some(), c.after.is_some()];
+            let set = [
+                c.strap.is_some(),
+                c.wire.is_some(),
+                c.after.is_some(),
+                c.monitor.is_some(),
+            ];
             if set.iter().filter(|x| **x).count() != 1 {
                 return Err(invalid(
                     &format!("{path}[{i}]"),
-                    "a control pin takes exactly one of `strap`, `wire` and `after`".to_owned(),
+                    "a control pin takes exactly one of `strap`, `wire`, `after` and `monitor`"
+                        .to_owned(),
                 ));
+            }
+            if let Some(m) = &c.monitor {
+                id(m, format!("{path}[{i}].monitor"))?;
             }
             if let Some(w) = &c.wire {
                 id(&w.net, format!("{path}[{i}].wire.net"))?;
@@ -1197,6 +1234,14 @@ fn shape(spec: &Specification, power: &Power) -> Result<(), IrValidationError> {
                     .to_owned(),
             ));
         }
+    }
+    for (i, m) in power.rail_monitors.iter().enumerate() {
+        let path = format!("power.rail_monitors[{i}]");
+        id(&m.reference, format!("{path}.reference"))?;
+        id(&m.part, format!("{path}.part"))?;
+        known(&m.rail)?;
+        id(&m.bypass.reference, format!("{path}.bypass.reference"))?;
+        id(&m.bypass.part, format!("{path}.bypass.part"))?;
     }
     for (i, c) in power.uart_crossings.iter().enumerate() {
         let path = format!("power.uart_crossings[{i}]");
@@ -1651,6 +1696,25 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                     t.cite(&row.supply.at),
                 ));
             }
+            // `AET-WO-4413`, ruled 2026-11-27T21:31Z G1: the rail's solved top
+            // against the module's maximum is a static solve, with no ripple
+            // or load-step term; the peak at its pads is a bench row.
+            let max = u64::from(row.supply.max_mv) * 1000;
+            ctx.screen(
+                "radio_supply_peak_unbounded",
+                &m.reference,
+                format!(
+                    "{}: `{}`'s solved top is {} uV at {}, {} uV under the module's {} mV maximum ({}); the solve is static, with no ripple or load-step term, so the peak at {}'s pads is not bounded",
+                    m.reference,
+                    m.supply,
+                    lead.vout_uv.1,
+                    lead.reg.reference,
+                    max.saturating_sub(lead.vout_uv.1),
+                    row.supply.max_mv,
+                    t.cite(&row.supply.at),
+                    m.reference
+                ),
+            );
             // a UART crossing's Ioff holds the lines apart while either rail
             // is down (ruled 2026-11-26T04:03Z: it closes these two rows)
             if crossing.is_none() {
@@ -1689,7 +1753,10 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                 ),
             );
             }
-            ctx.screen(
+            // `AET-WO-4413` (2): a module whose enable a rail monitor drives
+            // is held, judged by `supervisor::judged`; only an RC is named.
+            if m.enable.monitor.is_none() {
+                ctx.screen(
                 "radio_rail_monitor",
                 &m.reference,
                 format!(
@@ -1702,6 +1769,7 @@ fn radio_rails(ctx: &mut Ctx<'_>, derived: &[Derived<'_>]) -> Result<(), IrValid
                     })
                 ),
             );
+            }
         }
         radio_lines(ctx, derived, m, row, t, crossing)?;
     }
@@ -1755,18 +1823,31 @@ fn uart_crossings_shape(ctx: &Ctx<'_>) -> Result<(), IrValidationError> {
         }
         // SCES935A 9.1 (ruled 04:51Z, 08:59Z R1): OE on VCCA, the rail (iii)
         // raises last, holds the outputs high-impedance through power-up; a
-        // wire's driver and level through partial power-down are not judged
+        // wire's driver and level through partial power-down are not judged.
+        // `AET-WO-4413` (2), ruled D3: or OE driven by a rail monitor on VCCB,
+        // the module's rail (SCES935A 9.1, Overview: OE "can be referenced to
+        // either VCCA or VCCB", and held low keeps the outputs high-impedance
+        // through power-up and power-down); `supervisor::check` judges the
+        // monitor and its rail.
+        let monitored = |x: &Control| {
+            x.monitor.as_ref().is_some_and(|r| {
+                ctx.power
+                    .rail_monitors
+                    .iter()
+                    .any(|mon| &mon.reference == r && mon.rail == c.b_domain)
+            })
+        };
         if !c
             .controls
             .iter()
-            .any(|x| x.pin == "OE" && x.strap == Some(pp::Strap::Vcca))
+            .any(|x| x.pin == "OE" && (x.strap == Some(pp::Strap::Vcca) || monitored(x)))
         {
             return Err(refuse(
                 Refusal::CrossingOeUnheld,
                 &c.reference,
                 format!(
-                    "{}'s OE is not strapped to VCCA (`{}`), the rail that rises last: SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
-                    c.reference, c.a_domain
+                    "{}'s OE is neither strapped to VCCA (`{}`), the rail that rises last, nor driven by a rail monitor on VCCB (`{}`): SCES935A 9.1 holds the outputs high-impedance through power-up with OE low",
+                    c.reference, c.a_domain, c.b_domain
                 ),
                 t.controls
                     .iter()
@@ -1901,6 +1982,9 @@ fn radio_lines(
     let mcu_cite = ctx.cite(&o.high_below_supply_millivolts.at);
     let module_cite = t.cite(&u.vih_min_permille.at);
     let mut lines: Vec<(String, Driver<'_>, Receiver<'_>, String)> = Vec::new();
+    // The MCU side's lines at the reset's release floor (`AET-WO-4310` (2)).
+    let mut release: Vec<(String, Driver<'_>, Receiver<'_>, String, bool)> = Vec::new();
+    let mut release_floor: Option<(u32, String, Option<String>)> = None;
     let mut subject = m.reference.as_str();
     match crossing {
         None => {
@@ -1944,6 +2028,55 @@ fn radio_lines(
                     ));
                 }
             }
+            // `AET-WO-4310` (2), ruled 2 (a): the MCU's side is judged again at
+            // the reset's release floor, where the MCU still runs: its rail's
+            // source as low as the reset's falling minimum, less the rail's
+            // drop to each pin. Its thresholds are the stated band's where
+            // they hold, else the lower band's (the worse of the two rows
+            // either side, an assumption named), else refused by name.
+            let (reset_mv, reset_why) = crate::supervisor::reset_floor_against(spec, ctx.table)?;
+            let release_uv = i64::from(reset_mv) * 1000;
+            let release_lo = release_uv - ms.drop_uv;
+            let (release_high, release_low, assumed) = if release_lo
+                >= l.supply_millivolts.range.min * 1000
+            {
+                (
+                    l.input_high_min_permille.value,
+                    l.input_low_max_permille.value,
+                    None,
+                )
+            } else if let Some(b) = l
+                .lower_band
+                .as_ref()
+                .filter(|b| release_lo >= b.supply_millivolts.range.min * 1000)
+            {
+                (
+                    b.input_high_min_permille.value,
+                    b.input_low_max_permille.value,
+                    Some(b),
+                )
+            } else {
+                let lowest = l
+                    .lower_band
+                    .as_ref()
+                    .map_or(l.supply_millivolts.range.min, |b| {
+                        b.supply_millivolts.range.min
+                    });
+                return Err(refuse(
+                    Refusal::LineLevelUnmet,
+                    &c.reference,
+                    format!(
+                        "at the reset's release floor, {release_uv} uV ({reset_why}), `{}` reaches {release_lo} uV at {}'s pins, under the lowest supply its input thresholds are stated at, {lowest} mV: nothing is stated below it (AET-WO-4310 (2))",
+                        ms.domain, c.reference
+                    ),
+                    ctx.cite(&l.supply_millivolts.at),
+                ));
+            };
+            let ms_release = crate::levels::Supply {
+                domain: ms.domain,
+                band_uv: (release_uv, ms.band_uv.1),
+                drop_uv: ms.drop_uv,
+            };
             let drv = |pin: &str, supply| Driver {
                 who: format!("{}'s {pin}", c.reference),
                 supply,
@@ -1959,6 +2092,32 @@ fn radio_lines(
                 high_max: Some(lin(0, l.input_max_millivolts.value)),
                 current_na: l.input_current_max_nanoamps.value,
             };
+            let release_rcv = Receiver {
+                high_min: lin(release_high, 0),
+                low_max: lin(release_low, 0),
+                ..rcv(&tx.input, ms_release)
+            };
+            release.push((
+                port.tx.net.clone(),
+                Driver {
+                    supply: ms_release,
+                    ..mcu_drv.clone()
+                },
+                release_rcv,
+                txu_cite.clone(),
+                true,
+            ));
+            release.push((
+                port.rx.net.clone(),
+                drv(&rx.output, ms_release),
+                Receiver {
+                    supply: ms_release,
+                    ..mcu_rcv.clone()
+                },
+                mcu_cite.clone(),
+                false,
+            ));
+            release_floor = Some((reset_mv, reset_why, assumed.map(|b| b.assumption.clone())));
             let (b_tx, b_rx) = b_nets(&c.reference, tx, rx);
             ctx.note(format!(
                 "{}: every input it does not carry is tied to `GND` ({})",
@@ -1990,9 +2149,16 @@ fn radio_lines(
                 "translator_threshold_inferred",
                 &c.reference,
                 format!(
-                    "{}: VT+ and VT- are inferred, not stated: {}; ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up",
+                    "{}: VT+ and VT- are inferred, not stated: {}; ruled 2026-11-26T04:51Z G1 (a), an inference; a bench row (RUL-20 (3)): VT+ and VT- measured at the board's rails at bring-up{}",
                     c.reference,
-                    ctx.cite(&l.input_high_min_permille.at)
+                    ctx.cite(&l.input_high_min_permille.at),
+                    assumed.map_or_else(String::new, |b| format!(
+                        "; at the reset's release floor of {reset_mv} mV its A side's inputs are judged with VT+ {} and VT- {} per mille ({}), an assumption, not a datasheet figure: {}",
+                        b.input_high_min_permille.value,
+                        b.input_low_max_permille.value,
+                        ctx.cite(&b.input_high_min_permille.at),
+                        b.assumption
+                    ))
                 ),
             );
             ctx.screen(
@@ -2057,6 +2223,32 @@ fn radio_lines(
                     r.current_na
                 ),
             );
+        }
+    }
+    if let Some((reset_mv, why, assumed)) = &release_floor {
+        for (net, d, r, cite, banded) in &release {
+            let margins = judge(net, d, r).map_err(|e| {
+                refuse(
+                    Refusal::LineLevelUnmet,
+                    subject,
+                    format!(
+                        "at the reset's release floor of {reset_mv} mV ({why}): {}",
+                        e.0
+                    ),
+                    cite.clone(),
+                )
+            })?;
+            ctx.note(format!(
+                "{subject}: `{net}`, {} to {}, at the reset's release floor of {reset_mv} mV, holds high by {} uV and low by {} uV{} (AET-WO-4310 (2))",
+                d.who,
+                r.who,
+                margins.high_uv,
+                margins.low_uv,
+                assumed
+                    .as_ref()
+                    .filter(|_| *banded)
+                    .map_or_else(String::new, |a| format!("; the receiver's thresholds are {a}"))
+            ));
         }
     }
     Ok(())
@@ -2486,14 +2678,34 @@ fn protection(
     let tol = i128::from(fuse.resistance_tolerance_permille.value);
     let r_min = typ * (1000 - tol) / 1000;
     let r_max = div_ceil(typ * (1000 + tol), 1000);
+    // The pack's own series resistance, ahead of the board (`2304b` K6,
+    // `AET-WO-4310` (3)): the pack, its leads and the connector, as the
+    // specification declares it with its source. Undeclared, it is named,
+    // never taken as 0 silently.
+    let series = ctx.power.battery.series_milliohms.clone();
+    let r_pack = series.as_ref().map_or(0, |s| i128::from(s.value) * 1000);
+    let pack_text = series.as_ref().map_or_else(String::new, |s| {
+        format!(" and the pack's series {r_pack} µΩ ({})", s.source)
+    });
+    if series.is_none() {
+        ctx.screen(
+            "headroom_pack_series_undeclared",
+            &input.reference,
+            format!(
+                "{}: `power.battery.series_milliohms` is undeclared, so each battery-fed regulator's headroom counts no drop in the pack, its leads or the connector (AET-WO-4310 (3))",
+                input.reference
+            ),
+        );
+    }
     // mA × µΩ / 10⁶ = mV, rounded up.
     let volts = |i: i128, microohms: i128| div_ceil(i * microohms, 1_000_000);
-    // The gate drive at `i`: the pack's minimum less the fuse's drop (the gate
+    // The gate drive at `i`: the pack's minimum less the pack's and the fuse's
+    // drop (the gate
     // returns to ground, its source sits after the fuse), or the zener's VZ
     // minimum if lower; and the stated RDS(on) at the highest |VGS| at or under
     // it, µΩ (the power review's F6 (a)).
     let rds_at = |i: i128| {
-        let fuse_drop = i64::try_from(volts(i, r_max)).unwrap_or(i64::MAX);
+        let fuse_drop = i64::try_from(volts(i, r_pack + r_max)).unwrap_or(i64::MAX);
         let drive = bmin
             .saturating_sub(fuse_drop)
             .min(zener.vz_millivolts.range.min);
@@ -2510,7 +2722,10 @@ fn protection(
     let i0 = current(bmin);
     let (_, row0) = rds_at(i0);
     let d0 = row0.map_or(0, |r| {
-        volts(i0, i128::from(r.max_milliohms.value) * 1000 + r_max)
+        volts(
+            i0,
+            i128::from(r.max_milliohms.value) * 1000 + r_max + r_pack,
+        )
     });
     let i_wide = current(bmin.saturating_sub(i64::try_from(d0).unwrap_or(i64::MAX)));
     let (drive, row) = rds_at(i_wide);
@@ -2524,7 +2739,7 @@ fn protection(
             ctx.cite(&fet.rds_on_max[0].max_milliohms.at),
         ));
     };
-    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max;
+    let path = i128::from(rds.max_milliohms.value) * 1000 + r_max + r_pack;
     let drop = volts(i_wide, path);
     let i_in = i64::try_from(i_wide).unwrap_or(i64::MAX);
     ctx.note(format!(
@@ -2710,21 +2925,23 @@ fn protection(
         "input_path_resistance_at_25c",
         &x.fet.reference,
         format!(
-            "{}: the input path's drop is {drop} mV at {i_in} mA through {}'s RDS(on) {} mΩ (|VGS| {} mV) and {}'s {r_max} µΩ, each stated at 25 °C; on a {board_max} °C board both rise, the FET's by its datasheet's RDS(on)-against-temperature figure",
+            "{}: the input path's drop is {drop} mV at {i_in} mA through {}'s RDS(on) {} mΩ (|VGS| {} mV) and {}'s {r_max} µΩ{}, each stated at 25 °C; on a {board_max} °C board both rise, the FET's by its datasheet's RDS(on)-against-temperature figure",
             x.fet.reference,
             x.fet.part,
             rds.max_milliohms.value,
             rds.vgs_millivolts,
-            x.fuse.part
+            x.fuse.part,
+            pack_text
         ),
     );
     ctx.note(format!(
-        "{}: {} mΩ ({} at |VGS| {} mV) and {} {r_max} µΩ at most drop {drop} mV at {i_in} mA, counted in every battery-fed regulator's headroom",
+        "{}: {} mΩ ({} at |VGS| {} mV) and {} {r_max} µΩ{} at most drop {drop} mV at {i_in} mA, counted in every battery-fed regulator's headroom",
         input.reference,
         rds.max_milliohms.value,
         x.fet.part,
         rds.vgs_millivolts,
-        x.fuse.part
+        x.fuse.part,
+        pack_text
     ));
     Ok(u64::try_from(drop).unwrap_or(u64::MAX))
 }
@@ -4627,6 +4844,15 @@ fn controls(ctx: &mut Ctx<'_>) -> Result<(), IrValidationError> {
                         rule.pin, w.net, w.role
                     ),
                 )),
+                // A rail monitor's reset is a wire its row must allow; the
+                // monitor and its rail are judged by `supervisor::check`.
+                _ if c.monitor.is_some() && !rule.wirable => {
+                    return Err(unwired(format!(
+                        "{} is driven by `{}`'s reset, and its row allows no wire",
+                        rule.pin,
+                        c.monitor.as_deref().unwrap_or_default()
+                    )));
+                }
                 _ => {}
             }
         }
@@ -4822,6 +5048,7 @@ format!(
         domains,
         input_steady_milliamps: steady,
         input_fault_milliamps: fault,
+        input_drop_millivolts: input_drop,
         conditions: ctx.conditions.into_iter().collect(),
         screened: ctx.screened,
     }))

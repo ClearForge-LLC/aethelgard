@@ -196,10 +196,10 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         ("R7", "/U4_HOLD", "VDD_3V3"),
         ("R20", "/U11_FB", "VDD_3V3"),
         ("R61", "/NRST", "VDD_3V3"),
-        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups; U13's feedback
+        // `AET-WO-4411`: U30's IO2 strap pull-up (its EN pull-up R90 gone since
+        // `AET-WO-4413`); U13's feedback
         // divider, and its PG's pull-up, which U11's EN follows; each on
         // the module's own rail.
-        ("R90", "/U30_EN", "VDD_3V3_RF"),
         ("R91", "/U30_IO2", "VDD_3V3_RF"),
         ("R30", "/U13_FB", "VDD_3V3_RF"),
         ("R32", "/U13_PG", "VDD_3V3_RF"),
@@ -340,8 +340,21 @@ fn a_limit_on_a_domain_the_load_does_not_use_is_refused() {
 #[test]
 fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     let (code, v) = extract(s024l_board(), &write("s024l-pass", &gated(s024l(), 165)));
-    assert_eq!(code, 0, "{v}");
-    assert_eq!(v["verdict"], "pass", "{v}");
+    // `AET-WO-4310` (3), ruled D5: the other domains' currents in the ground
+    // copper are charged too, and they take the fixture past its 165 mV
+    // (its 5 V load enters off the board, so it is charged at the MCU's own
+    // largest return bound): the gate fails, by `supply_drop_over_limit`.
+    // Its own drop, every pin bounded, is still within the limit.
+    assert_ne!(code, 0, "{v}");
+    assert_eq!(v["verdict"], "fail", "{v}");
+    assert!(
+        v["findings"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|f| f["kind"] == "supply_drop_over_limit"),
+        "{v}"
+    );
     // The limit declared, the part is judged by its domains (`AET-WO-1609`).
     assert_eq!(
         part(&v, "extract.supply"),
@@ -370,9 +383,15 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
             .unwrap()
     };
     let drop = s["drop_bound_microvolts"].as_u64().unwrap();
-    assert_eq!(drop, ((worst(&vdd) + worst(&vss)) * 714).div_ceil(1000));
-    assert!(drop <= 165_000, "{drop}");
-    assert!(s.get("note").is_none(), "{s}");
+    let charged: u64 = s["others"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|o| o["charge_microvolts"].as_u64().unwrap())
+        .sum();
+    let own = ((worst(&vdd) + worst(&vss)) * 714).div_ceil(1000);
+    assert_eq!(drop, own + charged);
+    assert!(own <= 165_000 && drop > 165_000, "{own} + {charged}");
     let conditions: Vec<&str> = s["conditions"]
         .as_array()
         .unwrap()
@@ -396,7 +415,8 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
     assert!(
         conditions
             .iter()
-            .any(|c| c.contains("other domains' return currents")),
+            .any(|c| c.contains("every other current in the ground copper")
+                && c.contains("the maximum principle, AET-WO-4310 (3)")),
         "{conditions:?}"
     );
 }
@@ -407,10 +427,12 @@ fn the_four_layer_board_bounds_every_supply_pin_within_its_limit() {
 /// declares no drop limit; this one adds it.
 #[test]
 fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
-    let (code, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), S03_LIMIT_MV)));
-    assert_eq!(code, 0, "{r}");
+    let (_, r) = extract(s03_board(), &write("s03-ring", &gated(s03(), S03_LIMIT_MV)));
     let s = &r["supplies"][0];
-    assert_eq!(s["verdict"], "pass", "{s}");
+    // `AET-WO-4310` (3), ruled D5 and 08:55Z: with the other domains'
+    // currents in the ground copper charged, Sentinel-03 fails its limit (a
+    // board question for Scotty); every pin is still bounded.
+    assert_eq!(s["verdict"], "fail", "{s}");
     let (vdd, vss) = (pins(s, "pins"), pins(s, "returns"));
     assert_eq!((vdd.len(), vss.len()), (16, 10), "{s}");
     for p in vdd.iter().chain(&vss) {
@@ -434,8 +456,32 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
     let mut v = gated(s03(), S03_LIMIT_MV);
+    // U31 removed, its line kept within U30's VIH by 4411's rail at a 20 mV
+    // limit: so U13 at 4411's 105k/46.4k in its 3300 mV +/- 5 % domain, U30
+    // on its RC and no U32, as `AET-WO-4413` found them.
+    for r in v["power"]["regulators"].as_array_mut().unwrap() {
+        if r["reference"] == "U13" {
+            r["feedback"]["top"]["ohms"] = json!(105_000);
+            r["feedback"]["bottom"]["ohms"] = json!(46_400);
+        }
+    }
+    for d in v["voltage_domains"].as_array_mut().unwrap() {
+        if d["id"] == "VDD_3V3_RF" {
+            d["nominal_millivolts"] = json!(3300);
+            d["tolerance_permille"] = json!(50);
+        }
+    }
+    v["radio_modules"][0]["enable"] = json!({
+        "resistor": {"reference": "R90", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3_RF"},
+        "capacitor": {"reference": "C90", "part": "GRM188R71C105KA12"}});
     let p = v["power"].as_object_mut().unwrap();
     p.remove("uart_crossings");
+    p.remove("rail_monitors");
+    for l in p["loads"].as_array_mut().unwrap() {
+        if l["reference"] == "U32" {
+            l["reference"] = json!("R90");
+        }
+    }
     p["loads"]
         .as_array_mut()
         .unwrap()

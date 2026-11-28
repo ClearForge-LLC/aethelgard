@@ -1,0 +1,43 @@
+crates/aethelgard-cli/tests/fixtures/connectors.json	0	1.5	draws -
+crates/aethelgard-cli/tests/fixtures/d1-24-i2c.json	0	1.1	draws -
+crates/aethelgard-cli/tests/fixtures/d3-24-i2c-12-spi.json	0	8.7	draws -
+crates/aethelgard-cli/tests/fixtures/driver-judges-nothing.json	0	0.6	draws -
+crates/aethelgard-cli/tests/fixtures/four-layer-3k3.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/four-layer-droop.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/four-layer.json	0	0.2	draws -
+crates/aethelgard-cli/tests/fixtures/four-layer-power.json	0	0.2	draws -
+crates/aethelgard-cli/tests/fixtures/four-layer-pullup.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/four-layer-spi-absent.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/four-port.json	0	1.8	draws -
+crates/aethelgard-cli/tests/fixtures/hse-crystal-16.json	0	3.3	draws -
+crates/aethelgard-cli/tests/fixtures/hse-external-8.json	2	0.0	refused DrawsNoBoard
+crates/aethelgard-cli/tests/fixtures/imu-baro-1v8.json	2	0.0	refused DrawsNoBoard
+crates/aethelgard-cli/tests/fixtures/logger-4600.json	0	0.5	draws -
+crates/aethelgard-cli/tests/fixtures/motors-dshot600.json	0	0.9	draws -
+crates/aethelgard-cli/tests/fixtures/motors-pwm.json	0	0.9	draws -
+crates/aethelgard-cli/tests/fixtures/pair-standin.json	0	0.4	draws -
+crates/aethelgard-cli/tests/fixtures/sentinel-01-bench.json	0	0.7	draws -
+crates/aethelgard-cli/tests/fixtures/sentinel-01-ready.json	0	4.8	draws rung=7 step=None permille=None
+crates/aethelgard-cli/tests/fixtures/sentinel-02-own-base.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/sentinel-02-own.json	0	1.7	draws -
+crates/aethelgard-cli/tests/fixtures/sentinel-02-shaped.json	0	2.4	draws -
+crates/aethelgard-cli/tests/fixtures/sentinel-03-radio.json	0	25.5	draws rung=5 step=0 permille=None
+crates/aethelgard-cli/tests/fixtures/serial-dshot-9600.json	0	1.7	draws -
+crates/aethelgard-cli/tests/fixtures/serial-four.json	0	1.9	draws -
+crates/aethelgard-cli/tests/fixtures/spi-absent-u4-one-kind.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/spi-only-droop-bor3.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/spi-only.json	0	0.2	draws -
+crates/aethelgard-cli/tests/fixtures/two-bme-collide.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/two-bme-held-low-sda.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/two-bme-i2c-timeout.json	2	0.0	refused UnsupportedSchemaVersion
+crates/aethelgard-cli/tests/fixtures/two-bme.json	0	0.4	draws -
+crates/aethelgard-ir/tests/fixtures/d1-drv8876.json	2	0.0	refused DrawsNoBoard
+crates/aethelgard-ir/tests/fixtures/d2-drv8833.json	2	0.0	refused PartLimitUndeclared
+crates/aethelgard-ir/tests/fixtures/sentinel-02-power.json	0	6.1	draws rung=0 step=None permille=None
+examples/invalid-zero-domain.json	2	0.0	refused ZeroNominalVoltage
+examples/sentinel-01-ext-bmp581.json	0	2.8	draws -
+examples/sentinel-01.json	0	2.0	draws -
+examples/sentinel-01-minimal.json	0	1.1	draws -
+examples/sentinel-02-bench-hse8.json	2	0.0	refused DrawsNoBoard
+examples/sentinel-02-bench.json	0	0.7	draws -
+examples/sentinel-03.json	0	103.5	draws rung=7 step=1 permille=1000

@@ -953,7 +953,7 @@ fn every_admitted_identifier_character_survives_every_output() {
     // 3,627,610 ns, measured (`spike/2310/results.md`), so it lands at 1 ms.
     let droop = serde_json::json!({"droop": {"domain": domain, "floor_millivolts": 2400,
         "from_boot_word_ns": -2_627_610, "fall_ns": 20000, "hold_ns": 200000, "rise_ns": 20000,
-        "source_milliohms": 500, "load_milliamps": 100}});
+        "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}}});
     let seeded = [
         (
             "scenario.json",
@@ -991,11 +991,20 @@ fn every_admitted_identifier_character_survives_every_output() {
             serde_json::json!(["serial_echo_missing"]),
             serde_json::json!([{ "serial_rx_open": "CONSOLE" }]),
         ),
+        // The sensor bus's held-low SDA, detected: a raised pull-up covers
+        // no bus (`AET-WO-4310` (5), ruled D7 (i)).
+        (
+            "held.json",
+            "held",
+            "fail",
+            serde_json::json!(["i2c_line_held_low", "i2c_timeout"]),
+            serde_json::json!([{ "bus": sensors, "line_held_low": "sda" }]),
+        ),
     ];
     for (file, name, expect, findings, overrides) in &seeded {
         let scenario = serde_json::json!({
             // 6: the droop is planted from the boot word (`AET-WO-2310`).
-            "schema_version": 6,
+            "schema_version": 7,
             "name": name,
             // Only a relative `base` inside the current directory is accepted
             // (`BaseOutsideRoot`): here, next to the scenario.
@@ -1022,6 +1031,7 @@ fn every_admitted_identifier_character_survives_every_output() {
             "absent.json",
             "baseline.json",
             "open.json",
+            "held.json",
             "--fab-out",
             pkg.to_str().unwrap(),
         ])
@@ -1927,19 +1937,32 @@ fn least_slack_pf(x: &Value) -> f64 {
 /// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
 /// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
 /// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
-/// DRC by the specification's rules with and without schematic parity,
-/// `check support` and `extract`, each with no finding.
+/// DRC by the specification's rules with and without schematic parity and
+/// `check support`, each with no finding. `extract` refuses it by its two
+/// supply drop limits alone (`AET-WO-4310` (3), ruled D5): the ground split
+/// that would pass them is the follow-up to `AET-WO-4413` (ruled D6), and
+/// this test is renamed to what it pins until then.
 #[test]
-fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
+fn the_sentinel_03_fixture_is_refused_by_its_two_drop_limits() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);
     fs::create_dir_all(&base).unwrap();
     let spec_path = root().join("examples/sentinel-03.json");
     let (outline, code, x) = bounded_gates(&spec_path, &base).unwrap();
-    assert_eq!(code, Some(0), "extract: {x}");
-    assert_eq!(x["verdict"], "pass", "extract: {x}");
-    assert_eq!(x["findings"], Value::Array(vec![]), "extract: {x}");
+    // `AET-WO-4310` (3), ruled D5 and 08:55Z: with the other domains'
+    // currents in the ground copper charged, `extract` fails Sentinel-03's
+    // two supply drop limits (a board question for Scotty), and nothing
+    // else; every gate before it passes as before.
+    assert_eq!(code, Some(1), "extract: {x}");
+    assert_eq!(x["verdict"], "fail", "extract: {x}");
+    let kinds: Vec<&str> = x["findings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(kinds, ["supply_drop_over_limit"; 2], "extract: {x}");
     eprintln!(
         "ANSWER 1313c-fixture outline {:.2} x {:.2} mm, least extract slack {:.1} pF",
         outline.0,
@@ -2025,7 +2048,7 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
     .unwrap();
     // `AET-WO-4600`'s `scenarios/driver/droop-bor3.json`, its `base` beside it.
     let droop = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "name": "droop-bor3",
         "base": "spec.json",
         "expect": "pass",
@@ -2036,7 +2059,7 @@ fn verify_names_what_judged_nothing_on_the_motor_driver() {
         "overrides": [{"droop": {
             "domain": "VDD_3V3", "floor_millivolts": 2400, "from_boot_word_ns": 982_850,
             "fall_ns": 20000, "hold_ns": 200_000, "rise_ns": 20000,
-            "source_milliohms": 500, "load_milliamps": 100
+            "source_milliohms": {"value": 500, "source": {"stimulus": "a test sag"}}, "load_milliamps": {"value": 100, "source": {"stimulus": "a test sag"}}
         }}],
     });
     fs::write(base.join("droop.json"), serde_json::to_vec(&droop).unwrap()).unwrap();
