@@ -661,10 +661,10 @@ jobs:
       - name: Sentinel-03's verify fails by extract's two drop limits alone (AET-WO-4413 D6)
         run: |
           set +e
-          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 > target/s03-verdict.json
+          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 > "$RUNNER_TEMP/s03-verdict.json"
           code=$?
           set -e
-          python3 - "$code" target/s03-verdict.json <<'EOF'
+          python3 - "$code" "$RUNNER_TEMP/s03-verdict.json" <<'EOF'
           import json, sys
           code, path = int(sys.argv[1]), sys.argv[2]
           v = json.loads(open(path).read().strip().splitlines()[-1])
@@ -688,10 +688,10 @@ jobs:
       - name: Sentinel-03's verify --fab-out is refused by readiness, U30 and U31.B named (AET-WO-4413 A1)
         run: |
           set +e
-          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package > target/s03-fab.json
+          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package > "$RUNNER_TEMP/s03-fab.json"
           code=$?
           set -e
-          python3 - "$code" target/s03-fab.json target/sentinel-03-package <<'EOF'
+          python3 - "$code" "$RUNNER_TEMP/s03-fab.json" target/sentinel-03-package <<'EOF'
           import json, os, sys
           code, path, out = int(sys.argv[1]), sys.argv[2], sys.argv[3]
           v = json.loads(open(path).read().strip().splitlines()[-1])

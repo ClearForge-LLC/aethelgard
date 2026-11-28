@@ -179,7 +179,8 @@ fn the_modules_pads_are_on_their_nets() {
     }
     // its own rail, U13's (`AET-WO-4411`, ruled 2026-11-25T20:10Z)
     assert_eq!(net("1"), "VDD_3V3_RF");
-    assert_eq!(net("2"), "/U30_EN");
+    // EN on U32's reset since `AET-WO-4413` (its RC removed, ruled D1)
+    assert_eq!(net("2"), "/U32_RESET");
     assert_eq!(net("9"), "GND");
     assert_eq!(net("19"), "GND");
     // IO2 pulled up by R91; IO8 and IO9 open.
