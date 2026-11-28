@@ -9,3 +9,13 @@ aethelgard-cli	outline_tier1
 aethelgard-cli	power_board_tier1
 aethelgard-cli	supply_tier1
 aethelgard-cli	via_ring_tier1
+# AET-WO-4310a (2026-11-28): gates' cargo test ran 23-30 min until 4411 (20971352: 1,164 s of binaries), then about 50 min
+# (86a1f280: 2,801 s), and 104 min on 808766ea on a 2.07x slower runner (untouched binaries' ratio). The growth since 4411 is
+# Sentinel-03's emit, run once per binary on gates' one runner; these four run nothing but `emit` and the library (no `verify`,
+# `check`, scratch or sandbox) and already run, weighed, in the tools shards. Their libm calls are 1910's five sites, all still
+# pinned in gates by supply_libm's golden (spike/4310a: the census). battery_sag_tier1 and emit_tier1 run `verify`, and
+# radio_tier1 `check drc` with no PATH: they stay in both.
+aethelgard-cli	hot_plug_tier1
+aethelgard-cli	pin_device_refusals
+aethelgard-cli	pour_ladder_tier1
+aethelgard-cli	readiness_tier1
