@@ -691,6 +691,15 @@ Each names a decider and what it blocks. None is a placeholder.
   - **The form:** a file, never a shared type. `INV-01` keeps Aethelgard's specification types in `aethelgard-ir`, and the sibling depends on no Aethelgard crate. The candidates are a stackup export the sibling reads, or Aethelgard's specification read by its published JSON schema.
   - **Not twinned:** Tviburi has no part in it. A radio is refused by name in the twin and bench-tested (roadmap P5, Path B).
   - **Decider:** the architect, with the seam work order (roadmap §7.1), ratified by Scotty. The sibling holds the same question as its own `OQ-03`. **Blocks:** the seam work order only.
+- **`OQ-08` How does the engine spend a board's slack?** Opened 2026-11-28 (Scotty: "the opposite of the compaction design … take advantage of any extra room"). Today the placer compacts: inside `board.max_outline_um` it seeks the smallest outline, and room the bound leaves is left empty. The mechanical envelope (roadmap §7.1) can fix the outline's size, so a board may have room the parts do not need.
+  - **The proposed rule:** slack is spent only where a figure the judge already computes gains margin, and the board reports each figure's gain. The objective is the smallest margin across every judged bound, the capacitance ladder's precedent (`AET-WO-1314`: the rung with the largest smallest margin), never one figure moved toward a target (the declined `4413` D5). A proximity the specification requires (decoupling at its pins, a crystal at its MCU) is never traded for room. The same specification gives the same board (`INV-07`).
+  - **Candidates:**
+    - supply traces widened where a rail's drop is judged (Sentinel-03's two `extract` refusals are drop limits);
+    - clearance above the fabricator's minimum;
+    - capacitance-bounded nets kept short.
+  - **Each candidate trades against another bound,** which is why the objective is the smallest margin: a wider trace adds capacitance, and spreading parts lengthens nets. A separation between parts (a switching regulator from the IMU, an aggressor from a victim) is spent on only once it is a declared, cited rule the judge checks; until then it is not a margin.
+  - **Scotty agreed with the proposed rule** (2026-11-28: "A measurable increase to the worst stats on the board … They need to have a purpose and a result"). The ruling stays open for its mechanics.
+  - **Decider:** Scotty and the architect, after the envelope work order. **Blocks:** the slack work order only.
 
 ## 9. What this document does not cover
 
@@ -753,6 +762,7 @@ Work-order-level implementation detail, and sequence. Sequence lives in `roadmap
 | 2026-11-24 | §8 | `OQ-07` added: the seam with the antenna sibling, what each side gives and takes, and that it is a file, never a shared type | Scotty, 2026-11-24: crossover needs belong in Aethelgard's steering documents |
 | 2026-11-25 | `RUL-13` | The 30 s wall bound becomes a 120 s hang guard whose kill is a `ToolError`, never a finding | `AET-WO-1918` (2), ruled (b); #401 |
 | 2026-11-27 | `RUL-13` | A foreign run's hang guard scales with its window: `max(120 s, 5 × 12.155 s × window)`, 729.3 s for 12 s | `AET-WO-4412`, ruled 21:47Z; #410 |
+| 2026-11-28 | §8 | `OQ-08` opened: how the engine spends a board's slack, with the proposed rule (only on judged margin, the smallest margin as the objective) | Scotty, 2026-11-28 |
 
 New sections continue the sequence and never reuse a number.
 
