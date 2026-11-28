@@ -615,14 +615,16 @@ jobs:
           retention-days: 7
 
 
-  # AET-WO-4300k (8), ruled 2026-11-24T16:50Z (a): Sentinel-03's package, the one Scotty
-  # orders from OSH Park, in its own job beside bench-package: its verify ran past 37 min on
-  # CI (run 45428821122, cancelled by bench-package's 45-min limit) against 16 min on Furnace.
-  # `--against-fab` on every code pull request, so a change that moves the package is seen
-  # on the pull request that makes it (3401's lesson, #232); `--fab-out` on a dispatch with
-  # `write`, under its own artifact, committed unchanged as fab/sentinel-03/package (the
-  # readiness gate, FabricationNotReady, is judged then). `tools` counts it: skipped,
-  # cancelled or failed on a code pull request is red.
+  # AET-WO-4300k (8), ruled 2026-11-24T16:50Z (a): Sentinel-03's verify, in its own job beside
+  # bench-package: it ran past 37 min on CI (run 45428821122, cancelled by bench-package's
+  # 45-min limit) against 16 min on Furnace. `tools` counts it: skipped, cancelled or failed on
+  # a code pull request is red.
+  # AET-WO-4413, ruled 2026-11-27T19:18Z D6: its package is withdrawn until the ground split's
+  # follow-up, so the job asserts both refusals on every run, a dispatch with `write` too:
+  # `verify` fails by `extract`'s two supply drop limits alone, each by name and figure, every
+  # other gate passing; `verify --fab-out` is refused by readiness, U30 and U31.B named (U32
+  # does not sense at their pins, ruled 21:31Z A1 (i)); nothing is written. A change that moves
+  # either, or passes the board, turns it red on the pull request that makes it.
   bench-package-s03:
     needs: route
     if: needs.route.outputs.class == 'code'
@@ -656,23 +658,54 @@ jobs:
       - name: the runner's CPU, disk and memory, and the Kani peak and boot probe
         run: bash ci/probe-step.sh start
 
-      - name: Sentinel-03, verify --against-fab, the committed package derived again
-        if: ${{ !inputs.write }}
-        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --against-fab fab/sentinel-03/package
+      - name: Sentinel-03's verify fails by extract's two drop limits alone (AET-WO-4413 D6)
+        run: |
+          set +e
+          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 > "$RUNNER_TEMP/s03-verdict.json"
+          code=$?
+          set -e
+          python3 - "$code" "$RUNNER_TEMP/s03-verdict.json" <<'EOF'
+          import json, sys
+          code, path = int(sys.argv[1]), sys.argv[2]
+          v = json.loads(open(path).read().strip().splitlines()[-1])
+          assert "error" not in v, f"refused before its gates: {v['error']}"
+          assert code == 1 and v["verdict"] == "fail", (code, v["verdict"])
+          gates = v["gates"]
+          extract = [g for g in gates if g["gate"] == "extract"]
+          assert len(extract) == 1 and extract[0]["verdict"] == "fail", extract
+          got = sorted(f["message"] for f in extract[0]["findings"])
+          want = sorted([
+              "`VDD_3V3`: VDD + VSS drop bound 286657 uV at 750 mA exceeds the declared 110 mV",
+              "`VDD_3V3_RF`: VDD + VSS drop bound 220845 uV at 505 mA exceeds the declared 145 mV",
+          ])
+          assert got == want, got
+          assert all(f["kind"] == "supply_drop_over_limit" for f in extract[0]["findings"])
+          others = [(g["gate"], g["verdict"]) for g in gates if g["gate"] != "extract" and g["verdict"] != "pass"]
+          assert not others, others
+          print("Sentinel-03's extract refuses it as ruled:", *got, sep="\n  ")
+          EOF
 
-      - name: Sentinel-03, verify --fab-out, the package written for committing
-        if: ${{ inputs.write }}
-        run: $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package
+      - name: Sentinel-03's verify --fab-out is refused by readiness, U30 and U31.B named (AET-WO-4413 A1)
+        run: |
+          set +e
+          $RUN --network none "$(cat container/IMAGE)" $VERIFY_S03 --fab-out target/sentinel-03-package > "$RUNNER_TEMP/s03-fab.json"
+          code=$?
+          set -e
+          python3 - "$code" "$RUNNER_TEMP/s03-fab.json" target/sentinel-03-package <<'EOF'
+          import json, os, sys
+          code, path, out = int(sys.argv[1]), sys.argv[2], sys.argv[3]
+          v = json.loads(open(path).read().strip().splitlines()[-1])
+          e = v["error"]
+          assert code == 2 and e["kind"] == "FabricationNotReady" and e["id"] == "U30", (code, e)
+          m = e["message"]
+          for part in ["U30", "U31"]:
+              want = f"monitored by U32, but U32 does not sense at {part}'s pin; the drop between is not bounded"
+              assert want in m, (want, m)
+          assert m.count("powered part(s)") == 1 and "2 powered part(s)" in m, m
+          assert not os.path.exists(out), "a package was written"
+          print("Sentinel-03's readiness refuses it as ruled:", m)
+          EOF
 
       - name: each Kani harness's peak against the ceiling (ci/kani-ceiling), and the boots
         if: always()
         run: bash ci/probe-step.sh judge --require-peak
-
-      - name: keep Sentinel-03's written package
-        if: ${{ inputs.write }}
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: sentinel-03-package
-          path: target/sentinel-03-package/
-          if-no-files-found: error
-          retention-days: 7

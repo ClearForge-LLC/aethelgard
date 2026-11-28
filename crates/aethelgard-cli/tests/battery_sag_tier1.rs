@@ -51,20 +51,23 @@ fn verify_fab_out(spec: &str, scenarios: &str) -> (Option<i32>, Value) {
 /// port's RX open, `AET-WO-4411`), `battery` (a tolerated sag),
 /// CONSOLE, CRSF, MAVLINK, SENSORS, FLASH and IMU; `EXT` has no device.
 /// Since `AET-WO-4300k` D10 its ledger is acknowledged (it was 280 rows,
-/// measured on `ee835bde`). Since `AET-WO-4310` (2) the readiness gate
-/// refuses it, by the two parts on a rail no monitor holds.
+/// measured on `ee835bde`). The readiness gate refuses it by name: U30 and
+/// U31's B side, which U32 drives but does not sense at (`AET-WO-4413`, ruled
+/// 21:31Z A1 (i)).
 #[test]
 fn sentinel_03_s_scenarios_cover_every_row_and_no_package_precondition_refuses_it() {
     let (code, v) = verify_fab_out("examples/sentinel-03.json", "scenarios/sentinel-03");
-    // `AET-WO-4310` (2), ruled D1 (B) and 08:55Z: the readiness gate now
-    // refuses Sentinel-03 by name, after its scenarios cover every row:
-    // U30 and U31.B on `VDD_3V3_RF`, which no monitor holds, until Scotty
-    // rules on the board. Nothing is written.
+    // `AET-WO-4413`, ruled 21:31Z A1 (i): U32 drives U30 and U31's B side
+    // but does not sense at their pins, so the readiness gate refuses the
+    // board by name, after its scenarios cover every row. Nothing is written.
     assert_eq!(code, Some(2), "{v}");
     assert_eq!(v["error"]["kind"], "FabricationNotReady", "{v}");
     let m = v["error"]["message"].as_str().unwrap();
     assert!(
-        m.contains("2 powered part(s)") && m.contains("U30 (") && m.contains("U31.B ("),
+        m.contains("2 powered part(s)")
+            && m.contains("U30 (")
+            && m.contains("U31.B (")
+            && m.contains("monitored by U32"),
         "{m}"
     );
 }

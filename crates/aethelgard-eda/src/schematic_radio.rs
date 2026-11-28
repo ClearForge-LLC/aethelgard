@@ -51,7 +51,12 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
         let (txd, rxd) = aethelgard_ir::power::module_uart_nets(spec, port);
         let supply = b.rail(&m.supply);
         let gnd = b.ground();
-        let en = b.own_net(radio::enable_net(r))?;
+        // A monitored enable is on its rail monitor's reset net, which the
+        // power tree drew and claimed (`AET-WO-4413` (2)).
+        let en = match &m.enable.monitor {
+            Some(mon) => aethelgard_ir::supervisor::reset_net(mon),
+            None => b.own_net(radio::enable_net(r))?,
+        };
         let mut conns = BTreeMap::from([
             (row.supply.number.clone(), supply.clone()),
             (row.enable.number.clone(), Conn::Net(en.clone())),
@@ -94,21 +99,12 @@ pub(super) fn draw(b: &mut Builder<'_>) -> Result<(), EmitError> {
             anchor(b, r, &[("1", vdd)], NEAR_NM, NEAR_RULE);
         }
         let en_pin = row.enable.number.as_str();
-        resistor(
-            b,
-            &plain(&m.enable.resistor),
-            Conn::Net(en.clone()),
-            supply.clone(),
-        )?;
-        anchor(b, r, &[("1", en_pin)], NEAR_NM, NEAR_RULE);
-        capacitor(
-            b,
-            &m.enable.capacitor.reference,
-            &m.enable.capacitor.part,
-            Conn::Net(en),
-            gnd.clone(),
-        )?;
-        anchor(b, r, &[("1", en_pin)], NEAR_NM, NEAR_RULE);
+        if let Some((er, ec)) = m.enable.rc() {
+            resistor(b, &plain(er), Conn::Net(en.clone()), supply.clone())?;
+            anchor(b, r, &[("1", en_pin)], NEAR_NM, NEAR_RULE);
+            capacitor(b, &ec.reference, &ec.part, Conn::Net(en), gnd.clone())?;
+            anchor(b, r, &[("1", en_pin)], NEAR_NM, NEAR_RULE);
+        }
         for (pin, p, net) in straps {
             let to = if p.to == aethelgard_ir::GND {
                 gnd.clone()

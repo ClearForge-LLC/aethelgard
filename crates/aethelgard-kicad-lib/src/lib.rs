@@ -12,7 +12,7 @@
 #![forbid(unsafe_code)]
 
 /// Every file: its path in the gate's library directory and its bytes.
-pub const FILES: [(&str, &[u8]); 69] = [
+pub const FILES: [(&str, &[u8]); 70] = [
     (
         "footprints/Capacitor_SMD.pretty/CP_Elec_8x10.kicad_mod",
         include_bytes!(
@@ -385,6 +385,12 @@ pub const FILES: [(&str, &[u8]); 69] = [
         "symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym",
         include_bytes!(
             "../data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TLV803S.kicad_sym"
+        ),
+    ),
+    (
+        "symbols/Aethelgard_Power.kicad_symdir/TPS3839.kicad_sym",
+        include_bytes!(
+            "../data/aethelgard/symbols/Aethelgard_Power.kicad_symdir/TPS3839.kicad_sym"
         ),
     ),
     (

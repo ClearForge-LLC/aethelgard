@@ -46,8 +46,11 @@ pub const POWER_PARTS_JSON: &str = include_str!("../data/power-parts.json");
 /// `uart_only`, and gave it `levels` and `unused_inputs_at`, and gave the MCU
 /// row's `io` its `output` levels (`AET-WO-4411` (c1)). Version 14 gave the
 /// MCU row `released_vdd_at`, a translator its VCCA and VCCB operating
-/// ranges, and its `levels` a `lower_band` (`AET-WO-4310` (2)).
-pub const POWER_PARTS_SCHEMA_VERSION: u32 = 14;
+/// ranges, and its `levels` a `lower_band` (`AET-WO-4310` (2)). Version 15
+/// gave a supervisor its `output`, open-drain with its pull-up range or
+/// push-pull with none, and its reset delay's minimum (`AET-WO-4413` (2),
+/// ruled D1).
+pub const POWER_PARTS_SCHEMA_VERSION: u32 = 15;
 
 /// A document the table cites.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -532,11 +535,25 @@ pub struct Supervisor {
     pub hysteresis_typ_millivolts: Limit,
     /// The recommended VDD, mV.
     pub vdd_millivolts: Ranged,
-    /// The open-drain output's pull-up range the maker names, Ω.
-    pub pull_up_ohms: Ranged,
+    /// Its output: open-drain with the pull-up range the maker names, Ω, or
+    /// push-pull, driving its pin itself (`AET-WO-4413` (2)).
+    pub output: SupervisorOutput,
     /// How far above VIT− the supply must sit for the stated reset delay to
     /// hold, mV (`AET-WO-4300k`, the power review's F9).
     pub delay_overdrive_millivolts: Limit,
+    /// The reset delay's minimum, µs: how long the output stays asserted
+    /// after the supply rises past its release (`AET-WO-4413` (2): a module's
+    /// enable it drives must stay low for the module's settling time).
+    pub delay_min_microseconds: Limit,
+}
+
+/// A supervisor's output (`AET-WO-4413` (2)).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SupervisorOutput {
+    /// Open-drain: it needs a pull-up inside this range, Ω.
+    OpenDrain { pull_up_ohms: Ranged },
+    /// Push-pull: it drives its pin high and low itself.
+    PushPull,
 }
 
 /// A zero-ohm jumper (`AET-WO-4300j` D4): its resistance and current, each
@@ -1267,8 +1284,11 @@ struct RawSupervisor {
     falling_millivolts: RawRanged,
     hysteresis_typ_millivolts: RawLimit,
     vdd_millivolts: RawRanged,
-    pull_up_ohms: RawRanged,
+    output: String,
+    #[serde(default)]
+    pull_up_ohms: Option<RawRanged>,
     delay_overdrive_millivolts: RawLimit,
+    delay_min_microseconds: RawLimit,
 }
 
 #[derive(Deserialize)]
@@ -2714,10 +2734,33 @@ fn kind(raw: RawKind, r: &mut Reader<'_>) -> Result<Kind, String> {
             )?,
             vdd_millivolts: r
                 .ranged_positive(s.vdd_millivolts, "kind.supervisor.vdd_millivolts")?,
-            pull_up_ohms: r.ranged_positive(s.pull_up_ohms, "kind.supervisor.pull_up_ohms")?,
+            output: match (s.output.as_str(), s.pull_up_ohms) {
+                ("open_drain", Some(p)) => SupervisorOutput::OpenDrain {
+                    pull_up_ohms: r.ranged_positive(p, "kind.supervisor.pull_up_ohms")?,
+                },
+                ("push_pull", None) => SupervisorOutput::PushPull,
+                ("open_drain", None) => {
+                    return Err(
+                        "`kind.supervisor.output` is `open_drain` with no `pull_up_ohms`"
+                            .to_owned(),
+                    );
+                }
+                ("push_pull", Some(_)) => {
+                    return Err("`kind.supervisor.output` is `push_pull` with a `pull_up_ohms`: a push-pull output takes none".to_owned());
+                }
+                (o, _) => {
+                    return Err(format!(
+                        "`kind.supervisor.output` is `{o}`, not `open_drain` or `push_pull`"
+                    ));
+                }
+            },
             delay_overdrive_millivolts: r.positive(
                 s.delay_overdrive_millivolts,
                 "kind.supervisor.delay_overdrive_millivolts",
+            )?,
+            delay_min_microseconds: r.positive(
+                s.delay_min_microseconds,
+                "kind.supervisor.delay_min_microseconds",
             )?,
         }),
         RawKind::Tvs(t) => {

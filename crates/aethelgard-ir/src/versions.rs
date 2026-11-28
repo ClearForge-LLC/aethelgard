@@ -372,6 +372,19 @@ pub const CHANGES: &[VersionChange] = &[
             "RadioTableMalformed",
         ],
     ),
+    row(
+        32,
+        "AET-WO-4413",
+        &[],
+        &[
+            "power.rail_monitors",
+            "radio_modules[].enable.monitor",
+            "power.crossings[].controls[].monitor",
+            "power.uart_crossings[].controls[].monitor",
+        ],
+        &[],
+        &[],
+    ),
 ];
 
 /// A row with nothing removed; `replaced` is the only other column a version

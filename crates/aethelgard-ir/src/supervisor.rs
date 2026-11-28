@@ -43,6 +43,67 @@ pub struct ResetSupervisor {
 
 crate::object_only!(ResetSupervisor);
 
+/// A rail monitor (`power.rail_monitors`, `AET-WO-4413` (2), ruled D2): a
+/// push-pull supervisor powered from `rail`, a rail other than the MCU's,
+/// whose reset holds each part that names it in reset or off while the rail
+/// is under the part's range: a radio module whose `enable.monitor` names
+/// it, a translator whose `OE` control's `monitor` does. It credits only the
+/// parts it drives ([`judged`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields, remote = "Self")]
+pub struct RailMonitor {
+    pub reference: String,
+    pub part: String,
+    pub rail: String,
+    pub bypass: Placed,
+}
+
+crate::object_only!(RailMonitor);
+
+/// A rail monitor's reset net, every pin it drives on it.
+pub fn reset_net(reference: &str) -> String {
+    format!("{reference}_RESET")
+}
+
+/// Each part a rail monitor holds, as [`powered`] names it, with the
+/// monitor: every radio module whose enable names it; every translator side
+/// on the monitor's rail whose `OE` names it; the monitor itself, which
+/// holds its own output. A name that matches no declared monitor holds
+/// nothing ([`check`] refuses it).
+fn held(spec: &Specification) -> Vec<(String, &RailMonitor)> {
+    let Some(p) = &spec.power else {
+        return Vec::new();
+    };
+    let find = |r: &str| p.rail_monitors.iter().find(|m| m.reference == r);
+    let mut out: Vec<(String, &RailMonitor)> = p
+        .rail_monitors
+        .iter()
+        .map(|m| (m.reference.clone(), m))
+        .collect();
+    for m in spec.declared_radio_modules() {
+        if let Some(mon) = m.enable.monitor.as_deref().and_then(find) {
+            out.push((m.reference.clone(), mon));
+        }
+    }
+    for t in p.translators() {
+        let Some(mon) = t
+            .controls
+            .iter()
+            .filter(|c| c.pin == "OE")
+            .find_map(|c| c.monitor.as_deref())
+            .and_then(find)
+        else {
+            continue;
+        };
+        for (side, rail) in [("A", t.a_domain), ("B", t.b_domain)] {
+            if *rail == mon.rail {
+                out.push((format!("{}.{side}", t.reference), mon));
+            }
+        }
+    }
+    out
+}
+
 /// One device whose VCC minimum is above the reset's falling minimum.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Floor {
@@ -315,6 +376,21 @@ pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> 
         });
     }
     if let Some(p) = &spec.power {
+        for m in &p.rail_monitors {
+            out.push(Powered {
+                device: m.reference.clone(),
+                part: m.part.clone(),
+                rail: m.rail.clone(),
+                min: pp.get(&m.part).and_then(|r| match &r.kind {
+                    Kind::Supervisor(v) => Some((
+                        u32::try_from(v.vdd_millivolts.range.min).unwrap_or(0),
+                        pp.cite(&v.vdd_millivolts.at),
+                    )),
+                    _ => None,
+                }),
+                elsewhere: None,
+            });
+        }
         for t in p.translators() {
             let row = pp.get(t.part).and_then(|r| match &r.kind {
                 Kind::Translator(x) => Some(x),
@@ -378,11 +454,34 @@ pub fn powered(spec: &Specification) -> Result<Vec<Powered>, IrValidationError> 
 }
 
 /// Each powered part, judged (ruled D1 (B)): on the MCU's supply, against
-/// the reset's falling minimum ([`reset_floor`]); on any other rail, named,
-/// since no monitor holds that rail's consumers while the MCU runs; with no
-/// held minimum, named.
+/// the reset's falling minimum ([`reset_floor`]); on another rail, against
+/// the falling minimum of the rail monitor that drives it (`AET-WO-4413`
+/// (2)), and otherwise named, since nothing holds it while the MCU runs;
+/// with no held minimum, named.
 pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValidationError> {
-    let (reset_min, reset) = reset_floor(spec)?;
+    let pp = crate::power_parts::table()?;
+    let (reset_min, reset) = reset_floor_against(spec, pp)?;
+    let held = held(spec);
+    // The monitor driving `device` on `rail`.
+    let monitor = |device: &str, rail: &str| -> Option<&RailMonitor> {
+        held.iter()
+            .find(|(d, m)| d == device && m.rail == rail)
+            .map(|(_, m)| *m)
+    };
+    // A monitor's own threshold, which it senses at its own pins.
+    let own = |m: &RailMonitor| -> Option<(u32, String)> {
+        match &pp.get(&m.part)?.kind {
+            Kind::Supervisor(v) => Some((
+                u32::try_from(v.falling_millivolts.range.min).unwrap_or(0),
+                format!(
+                    "{}'s VIT− minimum, {}",
+                    m.reference,
+                    pp.cite(&v.falling_millivolts.at)
+                ),
+            )),
+            _ => None,
+        }
+    };
     let mut out: Vec<(Powered, Judgement)> = powered(spec)?
         .into_iter()
         .map(|p| {
@@ -395,28 +494,51 @@ pub fn judged(spec: &Specification) -> Result<Vec<(Powered, Judgement)>, IrValid
             let j = if let Some(why) = &p.elsewhere {
                 Judgement::Elsewhere(why.clone())
             } else {
+                let floor = |min: u32, at: u32, by: &str| {
+                    if min > at {
+                        Judgement::Floor(Floor {
+                            device: p.device.clone(),
+                            part: p.part.clone(),
+                            vcc_min_millivolts: min,
+                            reset_min_millivolts: at,
+                            reset: by.to_owned(),
+                        })
+                    } else {
+                        Judgement::Pass
+                    }
+                };
+                let held_by = (p.rail != spec.mcu.supply)
+                    .then(|| monitor(&p.device, &p.rail))
+                    .flatten();
                 match &p.min {
                     None => Judgement::Named(named(
                         "no supply minimum is held for it, so it is never passed".to_owned(),
                     )),
+                    // The monitor itself senses at its own pins.
+                    Some((min, _)) if held_by.is_some_and(|m| m.reference == p.device) => {
+                        let (at, by) = held_by.and_then(own).unwrap_or_default();
+                        floor(*min, at, &by)
+                    }
+                    // `AET-WO-4413`, ruled 2026-11-27T21:31Z A1 (i): a part a
+                    // monitor drives is not held by it until the monitor senses
+                    // at the part's pins (bound at the part, the engine work
+                    // order's); between them the drop is not bounded.
+                    Some(_) if let Some(m) = held_by => Judgement::Named(named(format!(
+                        "monitored by {0}, but {0} does not sense at {1}'s pin; the drop between is not bounded (AET-WO-4413 A1)",
+                        m.reference,
+                        p.device.split('.').next().unwrap_or(&p.device)
+                    ))),
                     Some((min, cite)) if p.rail != spec.mcu.supply => Judgement::Named(named(format!(
                         "its supply minimum of {min} mV ({cite}) is held by no monitor: nothing holds `{}`'s consumers in reset or off, so it may run out of its range while the MCU runs",
                         p.rail
                     ))),
-                    Some((min, _)) if *min > reset_min => Judgement::Floor(Floor {
-                        device: p.device.clone(),
-                        part: p.part.clone(),
-                        vcc_min_millivolts: *min,
-                        reset_min_millivolts: reset_min,
-                        reset: reset.clone(),
-                    }),
-                    Some(_) => Judgement::Pass,
+                    Some((min, _)) => floor(*min, reset_min, &reset),
                 }
             };
             (p, j)
         })
         .collect();
-    out.extend(spi_timing(spec, reset_min, crate::power_parts::table()?)?);
+    out.extend(spi_timing(spec, reset_min, pp)?);
     Ok(out)
 }
 
@@ -530,6 +652,264 @@ pub fn check_against(
     checked: Option<&power::Checked>,
     table: &crate::power_parts::PowerPartsTable,
 ) -> Result<Vec<(String, String)>, IrValidationError> {
+    let mut out = check_nrst(spec, checked, table)?;
+    out.extend(check_rail_monitors(spec, checked, table)?);
+    Ok(out)
+}
+
+/// The rail's minimum at a supervisor's pin, mV, and how it is read: the
+/// solved minimum less the rail's drop limit with a power tree; without one,
+/// or with no limit for the rail, the domain's declared minimum.
+fn rail_minimum(
+    spec: &Specification,
+    checked: Option<&power::Checked>,
+    rail: &str,
+    domain: &crate::VoltageDomain,
+) -> (u64, String) {
+    let solved = checked.and_then(|c| c.domains.get(rail));
+    let limit = spec
+        .power
+        .as_ref()
+        .and_then(|p| p.drop_limits.iter().find(|l| l.domain == rail));
+    match (solved, limit) {
+        (Some(d), Some(l)) => {
+            let vout = d.vout_min_microvolts / 1000;
+            (
+                vout.saturating_sub(u64::from(l.max_millivolts)),
+                format!(
+                    "{rail}'s solved minimum of {vout} mV less its drop limit of {} mV",
+                    l.max_millivolts
+                ),
+            )
+        }
+        _ => (
+            u64::from(crate::minimum_millivolts(domain)),
+            format!("{rail}'s declared minimum"),
+        ),
+    }
+}
+
+/// Each rail monitor, judged (`AET-WO-4413` (2), ruled D1, D2): a
+/// push-pull supervisor row; its bypass a capacitor row; its rail a declared
+/// domain other than the MCU's; its VDD range covering the rail; its release
+/// (VIT− maximum plus its typical hysteresis, `4300k` D6's precedent) under
+/// the rail's minimum at its pin; and every part naming it on its rail and
+/// declared, at least one. A radio module's enable it drives stays low for
+/// the module's settling time: its delay's minimum at or above it.
+fn check_rail_monitors(
+    spec: &Specification,
+    checked: Option<&power::Checked>,
+    table: &crate::power_parts::PowerPartsTable,
+) -> Result<Vec<(String, String)>, IrValidationError> {
+    const RULE: &str = "AET-WO-4413 (2)";
+    let mut out = Vec::new();
+    let Some(p) = &spec.power else {
+        return Ok(out);
+    };
+    let invalid =
+        |id: &str, detail: String| refuse(Refusal::RailMonitorInvalid, id, detail, RULE.to_owned());
+    // A monitor drives a module's enable or a translator's OE, nothing else.
+    for r in &p.regulators {
+        if let Some(c) = r.controls.iter().find(|c| c.monitor.is_some()) {
+            return Err(invalid(
+                &r.reference,
+                format!(
+                    "{}.{} names a monitor: a monitor drives a radio module's enable or a translator's `OE` only",
+                    r.reference, c.pin
+                ),
+            ));
+        }
+    }
+    // Every name a part gives a monitor, with the part's rails.
+    let mut named: Vec<(String, &str, Vec<&String>)> = Vec::new();
+    for m in spec.declared_radio_modules() {
+        if let Some(mon) = &m.enable.monitor {
+            named.push((m.reference.clone(), mon, vec![&m.supply]));
+        }
+    }
+    for t in p.translators() {
+        for c in t
+            .controls
+            .iter()
+            .filter_map(|c| c.monitor.as_deref().map(|m| (c, m)))
+        {
+            // belt-and-suspenders: every held translator row's one control
+            // pin is `OE`, and `power::check` refuses a pin its row lists
+            // as none first; a later row with another would credit nothing
+            // here, so it is refused rather than silently ignored.
+            if c.0.pin != "OE" {
+                return Err(invalid(
+                    t.reference,
+                    format!(
+                        "{}.{} names `{}`: a monitor drives a translator's `OE` only",
+                        t.reference, c.0.pin, c.1
+                    ),
+                ));
+            }
+            named.push((t.reference.clone(), c.1, vec![t.a_domain, t.b_domain]));
+        }
+    }
+    for (part, mon, rails) in &named {
+        let Some(m) = p.rail_monitors.iter().find(|m| &m.reference == mon) else {
+            return Err(invalid(
+                part,
+                format!("{part} names `{mon}`, which is no declared rail monitor"),
+            ));
+        };
+        if !rails.contains(&&m.rail) {
+            return Err(invalid(
+                part,
+                format!(
+                    "{part} names `{mon}`, which monitors `{}`, a rail {part} is not on",
+                    m.rail
+                ),
+            ));
+        }
+    }
+    let radio = crate::radio::table()?;
+    for m in &p.rail_monitors {
+        let row = table.get(&m.part).ok_or_else(|| {
+            refuse(
+                Refusal::PowerPartUnknown,
+                &m.reference,
+                format!("part `{}` is not a row of the power parts table", m.part),
+                RULE.to_owned(),
+            )
+        })?;
+        let Kind::Supervisor(v) = &row.kind else {
+            return Err(refuse(
+                Refusal::PowerPartUnknown,
+                &m.reference,
+                format!(
+                    "part `{}` is a {} row, not a supervisor",
+                    m.part,
+                    row.kind.name()
+                ),
+                RULE.to_owned(),
+            ));
+        };
+        if v.output != crate::power_parts::SupervisorOutput::PushPull {
+            return Err(refuse(
+                Refusal::SupervisorOutOfRange,
+                &m.reference,
+                format!(
+                    "{} has an open-drain output: a rail monitor drives its pins itself, and declares no pull-up",
+                    m.part
+                ),
+                table.cite(&v.falling_millivolts.at),
+            ));
+        }
+        if table.get(&m.bypass.part).map(|r| r.kind.name()) != Some("capacitor") {
+            return Err(refuse(
+                Refusal::PowerPartUnknown,
+                &m.bypass.reference,
+                format!(
+                    "part `{}` is not a capacitor row of the power parts table",
+                    m.bypass.part
+                ),
+                RULE.to_owned(),
+            ));
+        }
+        if m.rail == spec.mcu.supply {
+            return Err(invalid(
+                &m.reference,
+                format!(
+                    "`{}` is the MCU's supply, held by its reset (`mcu.reset_supervisor` or the BOR), not by a rail monitor",
+                    m.rail
+                ),
+            ));
+        }
+        if !named.iter().any(|(_, mon, _)| *mon == m.reference) {
+            return Err(invalid(
+                &m.reference,
+                format!(
+                    "{} drives nothing: no part names it, so it holds nothing",
+                    m.reference
+                ),
+            ));
+        }
+        let domain = spec
+            .voltage_domains
+            .iter()
+            .find(|d| d.id == m.rail)
+            .ok_or_else(|| invalid(&m.reference, format!("`{}` is no voltage domain", m.rail)))?;
+        let (rail_min, how) = rail_minimum(spec, checked, &m.rail, domain);
+        let rising = v.falling_millivolts.range.max + v.hysteresis_typ_millivolts.value;
+        if u64::try_from(rising).unwrap_or(u64::MAX) >= rail_min {
+            return Err(refuse(
+                Refusal::SupervisorAboveRail,
+                &m.reference,
+                format!(
+                    "{} releases at up to {rising} mV (VIT− maximum {} mV plus its {} mV hysteresis, typical), at or above the rail's minimum at its pin, {rail_min} mV ({how}), so it could hold a healthy part in reset",
+                    m.part, v.falling_millivolts.range.max, v.hysteresis_typ_millivolts.value
+                ),
+                table.cite(&v.falling_millivolts.at),
+            ));
+        }
+        let (vdd_lo, vdd_hi) = (
+            u64::try_from(v.vdd_millivolts.range.min).unwrap_or(0),
+            u64::try_from(v.vdd_millivolts.range.max).unwrap_or(0),
+        );
+        if u64::from(crate::maximum_millivolts(domain)) > vdd_hi || rail_min < vdd_lo {
+            return Err(refuse(
+                Refusal::SupervisorOutOfRange,
+                &m.reference,
+                format!(
+                    "{} runs from {vdd_lo} to {vdd_hi} mV, and `{}` spans {rail_min} to {} mV",
+                    m.part,
+                    m.rail,
+                    crate::maximum_millivolts(domain)
+                ),
+                table.cite(&v.vdd_millivolts.at),
+            ));
+        }
+        // A module's enable stays low for its settling time from the
+        // supply's rise (the RC's rule, `radio.rs`): the delay's minimum.
+        for module in spec
+            .declared_radio_modules()
+            .iter()
+            .filter(|x| x.enable.monitor.as_deref() == Some(m.reference.as_str()))
+        {
+            let Some(r) = radio.get(&module.part) else {
+                continue;
+            };
+            let need = u64::from(r.enable.stable_us);
+            if u64::try_from(v.delay_min_microseconds.value).unwrap_or(0) < need {
+                return Err(invalid(
+                    &m.reference,
+                    format!(
+                        "{}'s reset delay is at least {} us ({}), under the {need} us {} must be held off after its supply settles ({}, {})",
+                        m.part,
+                        v.delay_min_microseconds.value,
+                        table.cite(&v.delay_min_microseconds.at),
+                        module.reference,
+                        r.enable.at.document,
+                        r.enable.at.section
+                    ),
+                ));
+            }
+        }
+        out.push((
+            format!("supervisor_hysteresis_typical:{}", m.reference),
+            format!(
+                "{}: {}'s rising threshold is VIT− maximum {} mV plus its hysteresis, {} mV, which is stated typical only ({}), so its release at up to {rising} mV, under the rail's minimum of {rail_min} mV ({how}), is screened, not guaranteed (`4300k` D6's precedent, ruled `AET-WO-4413` D1)",
+                m.reference,
+                m.part,
+                v.falling_millivolts.range.max,
+                v.hysteresis_typ_millivolts.value,
+                table.cite(&v.hysteresis_typ_millivolts.at)
+            ),
+        ));
+    }
+    Ok(out)
+}
+
+/// `mcu.reset_supervisor`, judged (Path B, [`check`]).
+fn check_nrst(
+    spec: &Specification,
+    checked: Option<&power::Checked>,
+    table: &crate::power_parts::PowerPartsTable,
+) -> Result<Vec<(String, String)>, IrValidationError> {
     let Some(s) = &spec.mcu.reset_supervisor else {
         return Ok(Vec::new());
     };
@@ -546,6 +926,20 @@ pub fn check_against(
     let Kind::Supervisor(v) = &row.kind else {
         unreachable!("reset_floor refused a non-supervisor row");
     };
+    // `NRST` is the MCU's own open-drain reset too: a push-pull output
+    // there would fight it (`AET-WO-4413` (2)).
+    let crate::power_parts::SupervisorOutput::OpenDrain { pull_up_ohms } = &v.output else {
+        return Err(refuse(
+            Refusal::SupervisorOutOfRange,
+            &s.reference,
+            format!(
+                "{} has a push-pull output, and `NRST` takes an open-drain one with its pull-up",
+                s.part
+            ),
+            table.cite(&v.falling_millivolts.at),
+        ));
+    };
+
     for (reference, part, want) in [
         (&s.pull_up.reference, &s.pull_up.part, "resistor"),
         (&s.bypass.reference, &s.bypass.part, "capacitor"),
@@ -639,15 +1033,15 @@ pub fn check_against(
         ));
     }
     let ohms = i64::from(s.pull_up.ohms);
-    if ohms < v.pull_up_ohms.range.min || ohms > v.pull_up_ohms.range.max {
+    if ohms < pull_up_ohms.range.min || ohms > pull_up_ohms.range.max {
         return Err(refuse(
             Refusal::SupervisorOutOfRange,
             &s.pull_up.reference,
             format!(
                 "{} is {ohms} Ω, outside the {} to {} Ω pull-up {} names",
-                s.pull_up.reference, v.pull_up_ohms.range.min, v.pull_up_ohms.range.max, s.part
+                s.pull_up.reference, pull_up_ohms.range.min, pull_up_ohms.range.max, s.part
             ),
-            table.cite(&v.pull_up_ohms.at),
+            table.cite(&pull_up_ohms.at),
         ));
     }
     let mut out = Vec::new();

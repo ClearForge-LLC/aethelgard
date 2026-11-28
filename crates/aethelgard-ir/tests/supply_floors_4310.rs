@@ -54,8 +54,11 @@ fn sentinel_03_judges_every_powered_part_by_its_rails_monitor() {
         ("U7", 'P'),
         ("U4", 'P'),
         ("U5", 'P'),
+        // `AET-WO-4413`, ruled 21:31Z A1 (i): U32 drives them but does not
+        // sense at their pins, so both stay named; U32 senses at its own.
         ("U30", 'N'),
         ("U12", 'P'),
+        ("U32", 'P'),
         ("U31.A", 'P'),
         ("U31.B", 'N'),
         ("U10", 'E'),
@@ -70,6 +73,21 @@ fn sentinel_03_judges_every_powered_part_by_its_rails_monitor() {
     );
     assert_eq!(supervisor::floors_above_reset(&spec(&v)).unwrap(), []);
     let named = supervisor::named(&spec(&v)).unwrap();
+    assert_eq!(
+        named.iter().map(|n| n.device.as_str()).collect::<Vec<_>>(),
+        ["U30", "U31.B"]
+    );
+    assert!(
+        named[0].text().contains(
+            "monitored by U32, but U32 does not sense at U30's pin; the drop between is not bounded"
+        ),
+        "{}",
+        named[0].text()
+    );
+    // Without its monitor, the 4310 finding returns: both named.
+    let mut bare = v.clone();
+    bare["power"]["rail_monitors"] = json!([]);
+    let named = supervisor::named(&spec(&bare)).unwrap();
     assert_eq!(
         named.iter().map(|n| n.device.as_str()).collect::<Vec<_>>(),
         ["U30", "U31.B"]
@@ -311,7 +329,19 @@ fn a_lower_band_better_than_the_stated_rows_or_not_meeting_them_is_refused() {
 
 #[test]
 fn the_radio_line_names_a_module_on_a_rail_no_monitor_holds() {
+    // `AET-WO-4413`, ruled 21:31Z A1 (i): driven by U32, not held.
     let lines = aethelgard_ir::radio::not_judged(&spec(&sentinel_03()));
+    assert!(
+        lines[0].contains("its EN is driven by U32's reset, the rail monitor on `VDD_3V3_RF`, which does not sense at U30's pin"),
+        "{}",
+        lines[0]
+    );
+    // On its RC, as `AET-WO-4310` found it: held by no monitor.
+    let mut bare = sentinel_03();
+    bare["radio_modules"][0]["enable"] = json!({
+        "resistor": {"reference": "R90", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3_RF"},
+        "capacitor": {"reference": "C90", "part": "GRM188R71C105KA12"}});
+    let lines = aethelgard_ir::radio::not_judged(&spec(&bare));
     assert_eq!(lines.len(), 1);
     assert!(
         lines[0].contains("its VDD minimum of 3000 mV")

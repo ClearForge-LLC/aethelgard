@@ -155,17 +155,18 @@ fn protection_refused(v: &Value, t: &Value, id: &str, clause: &str) -> E {
 }
 
 #[test]
-fn the_base_protection_computes_a_1906_ma_input_current() {
+fn the_base_protection_computes_a_1918_ma_input_current() {
     let c = checked(&base());
     // The protection's note carries the branch's input current (the figure the
     // clauses below are edged against), iterated once (the power review's
     // F4): 1653 mA before `AET-WO-4411`'s radio module; its 500 mA on a rail
     // of its own (U13, 490 mW at 505 mA, ruled 2026-11-25T21:17Z), U11's
     // loss read at its 750 mA load (570 mW), the pull-ups and U31's two 1 mA
-    // rows (`AET-WO-4411` (c1)) raise it to 1906 mA, and the drop through 33 mOhm and the fuse's 9375 uOhm to 81 mV.
+    // rows (`AET-WO-4411` (c1)) raise it to 1906 mA, and the drop through 33 mOhm and the fuse's 9375 uOhm to 81 mV;
+    // `AET-WO-4413`'s radio rail at 3303-3589 mV (100k/41.2k, ruled D3) draws more of the battery, 1918 mA (U13's loss re-derived at 3.589 V, 512 mW).
     assert!(
         c.conditions.iter().any(|t| t.contains(
-            "input current is 1906 mA at the pack's minimum of 9000 mV less the input path's drop"
+            "input current is 1918 mA at the pack's minimum of 9000 mV less the input path's drop"
         )),
         "the protection's input-current note is missing or changed"
     );
@@ -199,7 +200,7 @@ fn the_zener_must_hold_the_gate_within_the_fets_rating() {
 fn the_gate_drive_must_reach_a_stated_rds_on() {
     let v = base();
     // The drive is the lesser of the pack's minimum (3 x 3000 = 9000 mV) less
-    // the pack's and the fuse's drop at the input current (1906 mA x (1000 +
+    // the pack's and the fuse's drop at the input current (1918 mA x (1000 +
     // 9375) uOhm, 20 mV rounded up; the pack's series since `AET-WO-4310`
     // (3)), 8980 mV, and the zener's VZ minimum (11400 mV).
     let mut t = table_json();
@@ -228,11 +229,11 @@ fn the_gate_drive_must_reach_a_stated_rds_on() {
 fn the_fet_must_carry_the_input_current() {
     let v = base();
     let mut t = table_json();
-    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1906);
+    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1918);
     against(&v, &t).expect("the input current itself passes");
-    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1904);
+    row(&mut t, "DMP6023LSS-13")["kind"]["pfet"]["id_max_milliamps"]["value"] = json!(1917);
     let err = protection_refused(&v, &t, "Q1", "id");
-    assert!(err.to_string().contains("1906 mA"), "{err}");
+    assert!(err.to_string().contains("1918 mA"), "{err}");
 }
 
 #[test]
@@ -246,20 +247,20 @@ fn the_fuse_must_be_rated_for_the_pack_the_current_and_the_heat() {
     let err = protection_refused(&v, &t, "F1", "voltage");
     assert!(err.to_string().contains("17400 mV"), "{err}");
 
-    // Current: at least twice the input current, 2 x 1906 = 3812 mA.
+    // Current: at least twice the input current, 2 x 1918 = 3836 mA.
     let mut t = table_json();
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3812);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3836);
     against(&v, &t).expect("twice the input current passes");
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3811);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["rated_milliamps"]["value"] = json!(3835);
     let err = protection_refused(&v, &t, "F1", "twice");
     assert!(err.to_string().contains("twice"), "{err}");
 
     // Heat: the rating kept at 85 C is at least the input current.
-    // 7000 x 273 / 1000 = 1911 passes; 7000 x 272 / 1000 = 1904 does not.
+    // 7000 x 274 / 1000 = 1918 passes, at the input current; 7000 x 273 / 1000 = 1911 does not.
     let mut t = table_json();
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(273);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(274);
     against(&v, &t).expect("the 85 C current at the input current passes");
-    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(272);
+    row(&mut t, "SF-1206F700-2")["kind"]["fuse"]["kept_at_85c_permille"]["value"] = json!(273);
     let err = protection_refused(&v, &t, "F1", "85 C");
     assert!(err.to_string().contains("85"), "{err}");
 }
@@ -391,8 +392,14 @@ fn without_a_supervisor_the_flash_is_above_bor3() {
         f.text()
             .contains("2700 mV is above the reset's falling minimum of 2540 mV")
     );
-    // With no supervisor, `check` has nothing to judge.
-    assert_eq!(supervisor::check(&s, None).unwrap(), []);
+    // With no supervisor on `NRST`, `check` judges only the rail monitor
+    // (`AET-WO-4413` (2)).
+    let ids: Vec<String> = supervisor::check(&s, None)
+        .unwrap()
+        .into_iter()
+        .map(|(id, _)| id)
+        .collect();
+    assert_eq!(ids, ["supervisor_hysteresis_typical:U32"]);
 }
 
 #[test]
@@ -506,7 +513,8 @@ fn the_supervisor_returns_its_conditions_by_id() {
         ids,
         [
             "supervisor_delay_unstated:U12",
-            "supervisor_hysteresis_typical:U12"
+            "supervisor_hysteresis_typical:U12",
+            "supervisor_hysteresis_typical:U32"
         ]
     );
     // SBVS157E p. 6: the delay is stated from VIT- max + 200 mV, 3190 mV,
@@ -929,7 +937,7 @@ fn the_protections_and_junctions_assumptions_are_named_where_they_hold() {
     );
     let c = checked(&base());
     assert!(
-        c.screened["input_path_resistance_at_25c:Q1"].contains("83 mV at 1906 mA"),
+        c.screened["input_path_resistance_at_25c:Q1"].contains("84 mV at 1918 mA"),
         "{}",
         c.screened["input_path_resistance_at_25c:Q1"]
     );

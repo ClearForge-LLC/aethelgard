@@ -158,9 +158,13 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// `junction.copper_square_centimetres` (the copper is measured on the drawn
 /// board); it adds `board.stackup.fabricator` with each bound's `cites`,
 /// `mcu.reset_supervisor` and `acknowledge_conditions`.
+/// Version 32 (`AET-WO-4413`, ruled D2) adds `power.rail_monitors`, a
+/// push-pull supervisor on a rail other than the MCU's, and a `monitor` that
+/// a radio module's enable or a translator's `OE` control may name instead
+/// of its RC or strap.
 /// Each version's changes are a row of [`versions::CHANGES`], which a bump
 /// writes by hand (`AET-WO-1215`); a test fails when the last row is not this.
-pub const SPECIFICATION_SCHEMA_VERSION: u32 = 31;
+pub const SPECIFICATION_SCHEMA_VERSION: u32 = 32;
 
 /// The ground net: the emitter's ground symbol, never a declared domain.
 pub const GND: &str = "GND";

@@ -1937,11 +1937,13 @@ fn least_slack_pf(x: &Value) -> f64 {
 /// `AET-WO-1313` §3: the Sentinel-03 fixture, inside its declared
 /// `board.max_outline_um` (100 x 100 mm) at four layers, with its connectors
 /// on the left and right edges, passes `validate`, `generate`, `emit`, ERC,
-/// DRC by the specification's rules with and without schematic parity,
-/// `check support` and `extract`, each with no finding; since `AET-WO-4310`
-/// (3) `extract` fails by its two supply drop limits alone.
+/// DRC by the specification's rules with and without schematic parity and
+/// `check support`, each with no finding. `extract` refuses it by its two
+/// supply drop limits alone (`AET-WO-4310` (3), ruled D5): the ground split
+/// that would pass them is the follow-up to `AET-WO-4413` (ruled D6), and
+/// this test is renamed to what it pins until then.
 #[test]
-fn the_sentinel_03_fixture_passes_every_gate_inside_its_bound() {
+fn the_sentinel_03_fixture_is_refused_by_its_two_drop_limits() {
     let _turn = ONE_AT_A_TIME.lock().unwrap_or_else(|e| e.into_inner());
     let base = std::env::temp_dir().join(format!("aet-1313-outline-{}", std::process::id()));
     let _ = fs::remove_dir_all(&base);

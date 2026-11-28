@@ -196,10 +196,10 @@ fn each_load_row_s_resistor_is_the_part_its_row_describes() {
         ("R7", "/U4_HOLD", "VDD_3V3"),
         ("R20", "/U11_FB", "VDD_3V3"),
         ("R61", "/NRST", "VDD_3V3"),
-        // `AET-WO-4411`: U30's EN and IO2 strap pull-ups; U13's feedback
+        // `AET-WO-4411`: U30's IO2 strap pull-up (its EN pull-up R90 gone since
+        // `AET-WO-4413`); U13's feedback
         // divider, and its PG's pull-up, which U11's EN follows; each on
         // the module's own rail.
-        ("R90", "/U30_EN", "VDD_3V3_RF"),
         ("R91", "/U30_IO2", "VDD_3V3_RF"),
         ("R30", "/U13_FB", "VDD_3V3_RF"),
         ("R32", "/U13_PG", "VDD_3V3_RF"),
@@ -456,8 +456,32 @@ fn sentinel_03_on_rule_sized_vias_bounds_every_return() {
 #[test]
 fn a_via_pad_the_worst_hole_does_not_fit_refuses_its_pins_with_the_remedy() {
     let mut v = gated(s03(), S03_LIMIT_MV);
+    // U31 removed, its line kept within U30's VIH by 4411's rail at a 20 mV
+    // limit: so U13 at 4411's 105k/46.4k in its 3300 mV +/- 5 % domain, U30
+    // on its RC and no U32, as `AET-WO-4413` found them.
+    for r in v["power"]["regulators"].as_array_mut().unwrap() {
+        if r["reference"] == "U13" {
+            r["feedback"]["top"]["ohms"] = json!(105_000);
+            r["feedback"]["bottom"]["ohms"] = json!(46_400);
+        }
+    }
+    for d in v["voltage_domains"].as_array_mut().unwrap() {
+        if d["id"] == "VDD_3V3_RF" {
+            d["nominal_millivolts"] = json!(3300);
+            d["tolerance_permille"] = json!(50);
+        }
+    }
+    v["radio_modules"][0]["enable"] = json!({
+        "resistor": {"reference": "R90", "part": "CRCW0603_F_K", "ohms": 10000, "to": "VDD_3V3_RF"},
+        "capacitor": {"reference": "C90", "part": "GRM188R71C105KA12"}});
     let p = v["power"].as_object_mut().unwrap();
     p.remove("uart_crossings");
+    p.remove("rail_monitors");
+    for l in p["loads"].as_array_mut().unwrap() {
+        if l["reference"] == "U32" {
+            l["reference"] = json!("R90");
+        }
+    }
     p["loads"]
         .as_array_mut()
         .unwrap()
