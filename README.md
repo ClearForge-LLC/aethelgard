@@ -2,7 +2,7 @@
 
 Generates a circuit board and the firmware that drives it from one specification, and refuses to call either finished until the pair has survived simulated electrical and software faults together, before any board is manufactured.
 
-**Status:** phases P0 to P2 are complete. P3's work has merged, and its exit gate waits on the bench rows that need the sensors (first silicon ran on 2026-11-16). P4's flight-controller work is under way. P5, a second chip family and firmware ecosystem judged as one combination (`docs/northstar.md` §3.1), waits on its trigger. **Use the engine image by its digest, as the Quickstart below does: it is the supported interface.** The crates.io release is 0.2.0 (2026-11-17), all ten crates: `cargo install aethelgard-cli --version 0.2.0 --locked` installs `aethelgard`, which reads specification 13. Like every release it is a pinned snapshot with no update promise (`RUL-21`), and `main` moves past it. From one specification, `aethelgard` does five things:
+**Status:** phases P0 to P2 are complete. P3's work has merged, and its exit gate waits on the bench rows that need the sensors (first silicon ran on 2026-11-16). P4's flight-controller work is under way. P5, a second chip family and firmware ecosystem judged as one combination (`docs/northstar.md` §3.1), waits on its trigger. **Use the engine image by its digest, as the Quickstart below does: it is the supported interface.** The crates.io release is 0.3.0 (2026-11-28), all eleven crates: `cargo install aethelgard-cli --version 0.3.0 --locked` installs `aethelgard`, which reads specification 31. Like every release it is a pinned snapshot with no update promise (`RUL-21`), and `main` moves past it. From one specification, `aethelgard` does five things:
 
 - solves the pin assignment;
 - emits a schematic and a placed, routed board that pass KiCad's ERC and DRC;
@@ -71,7 +71,7 @@ echo "quickstart ok"
 
 ## Running it
 
-**From crates.io, with no image:** `cargo install aethelgard-cli --version 0.2.0 --locked`. `validate` and `solve` are pure Rust and need no external tool; the release reads specification 13:
+**From crates.io, with no image:** `cargo install aethelgard-cli --version 0.3.0 --locked`. `validate` and `solve` are pure Rust and need no external tool; the release reads specification 31:
 
 ```bash
 aethelgard validate < examples/sentinel-01-minimal.json   # {"ok":true,...}, exit 0
